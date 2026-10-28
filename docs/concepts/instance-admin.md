@@ -26,7 +26,7 @@ Its tabs:
 | **Platform keys** | The box's optional integrations | [Platform keys](../tools-and-connectors/platform-keys.md) |
 | **Users** | Every account on the box, on `compat-cookie` and `trusted-header` only | [Users](users.md#the-users-tab) |
 
-An edition places its own tabs among these.
+An extension places its own tabs among these.
 
 ### Connector catalog
 

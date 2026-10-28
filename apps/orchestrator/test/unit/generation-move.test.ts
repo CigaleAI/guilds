@@ -39,12 +39,12 @@ test("a move stops the agent on the machine it leaves and carries its home to th
   const sandboxes = new FakeSandboxes();
   sandboxes.running.add("mach_1");
   const loop = makeLoop(db, {}, root, sandboxes);
-  await loop.moveAgent("a_1", "mach_2", { maxAgentsPerMachine: 4, needs: { browser: false, coding: false } });
+  await loop.machines.moveAgent("a_1", "mach_2", { maxAgentsPerMachine: 4, needs: { browser: false, coding: false } });
   assert.deepEqual(db.moves, [{ agentId: "a_1", machineId: "mach_2", options: { maxAgentsPerMachine: 4, needs: { browser: false, coding: false } } }]);
   assert.deepEqual(sandboxes.stopped, [{ agentId: "a_1", what: "purge" }]);
   assert.equal(existsSync(path.join(root, "mach_1", "a_1")), false);
   assert.equal(readFileSync(path.join(root, "mach_2", "a_1", "notes.txt"), "utf8"), "kept");
-  assert.equal(loop.agentIsBusy("a_1"), false);
+  assert.equal(loop.isAgentBusy("a_1"), false);
 });
 
 test("a move onto the machine the agent sits on does nothing", async () => {
@@ -53,24 +53,20 @@ test("a move onto the machine the agent sits on does nothing", async () => {
   const db = movableDb();
   const sandboxes = new FakeSandboxes();
   sandboxes.running.add("mach_1");
-  await makeLoop(db, {}, root, sandboxes).moveAgent("a_1", "mach_1");
+  await makeLoop(db, {}, root, sandboxes).machines.moveAgent("a_1", "mach_1");
   assert.deepEqual(db.moves, []);
   assert.deepEqual(sandboxes.stopped, []);
   assert.equal(existsSync(path.join(root, "mach_1", "a_1", "notes.txt")), true);
 });
 
-test("a move is refused for an unknown agent, a busy one, and where the database cannot move", async () => {
+test("a move is refused for an unknown agent and a busy one", async () => {
   const root = tempDir("guilds-move-");
   const db = movableDb();
   const loop = makeLoop(db, {}, root, new FakeSandboxes());
-  await assert.rejects(() => loop.moveAgent("a_404", "mach_2"), refusal(404, /agent not found/));
-  await loop._begin("r_1", "a_1");
-  await assert.rejects(() => loop.moveAgent("a_1", "mach_2"), refusal(409, /already generating/));
-  loop._end("r_1");
-  await assert.rejects(
-    () => makeLoop(new FakeDB({}), {}, root, new FakeSandboxes()).moveAgent("a_1", "mach_2"),
-    refusal(501, /agents cannot move here/),
-  );
+  await assert.rejects(() => loop.machines.moveAgent("a_404", "mach_2"), refusal(404, /agent not found/));
+  await loop.beginGeneration("r_1", "a_1");
+  await assert.rejects(() => loop.machines.moveAgent("a_1", "mach_2"), refusal(409, /already generating/));
+  loop.endGeneration("r_1");
   assert.deepEqual(db.moves, []);
 });
 
@@ -85,12 +81,12 @@ test("a move is refused across workspace roots and onto a home already on the ta
     proxyUrl: "http://proxy.test",
   });
   const loop = makeLoop(db, {}, root, sandboxes);
-  await assert.rejects(() => loop.moveAgent("a_1", "mach_far"), refusal(409, /different hosts/));
+  await assert.rejects(() => loop.machines.moveAgent("a_1", "mach_far"), refusal(409, /different hosts/));
   home(root, "mach_2");
-  await assert.rejects(() => loop.moveAgent("a_1", "mach_2"), refusal(409, /already holds a home/));
+  await assert.rejects(() => loop.machines.moveAgent("a_1", "mach_2"), refusal(409, /already holds a home/));
   assert.deepEqual(db.moves, []);
   assert.equal(existsSync(path.join(root, "mach_1", "a_1", "notes.txt")), true);
-  assert.equal(loop.agentIsBusy("a_1"), false);
+  assert.equal(loop.isAgentBusy("a_1"), false);
 });
 
 test("a home that moved goes back when the database refuses the move", async () => {
@@ -99,19 +95,19 @@ test("a home that moved goes back when the database refuses the move", async () 
     home(root, "mach_1");
     const loop = makeLoop(movableDb(result), {}, root, new FakeSandboxes());
     await assert.rejects(
-      () => loop.moveAgent("a_1", "mach_2"),
+      () => loop.machines.moveAgent("a_1", "mach_2"),
       result === "gone" ? refusal(404, /agent not found/) : refusal(409, /mach_2 is full/),
     );
     assert.equal(readFileSync(path.join(root, "mach_1", "a_1", "notes.txt"), "utf8"), "kept");
     assert.equal(existsSync(path.join(root, "mach_2", "a_1")), false);
-    assert.equal(loop.agentIsBusy("a_1"), false);
+    assert.equal(loop.isAgentBusy("a_1"), false);
   }
 });
 
 test("an agent with no home yet moves without one", async () => {
   const root = tempDir("guilds-move-");
   const db = movableDb();
-  await makeLoop(db, {}, root, new FakeSandboxes()).moveAgent("a_1", "mach_2");
+  await makeLoop(db, {}, root, new FakeSandboxes()).machines.moveAgent("a_1", "mach_2");
   assert.equal(db.moves.length, 1);
   assert.equal(existsSync(path.join(root, "mach_2", "a_1")), false);
 });

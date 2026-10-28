@@ -107,6 +107,7 @@ export class StreamScript {
         cache_read_tokens: 0,
       },
       cost_usd: 0.0,
+      cost_source: "catalog" as const,
       finish_reason: "stop",
       model: options.model || "openrouter/openai/gpt-5.6-luna",
       response_id: "compat-response",

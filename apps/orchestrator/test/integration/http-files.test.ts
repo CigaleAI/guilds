@@ -2,17 +2,18 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { ArtifactFiles } from "../../src/artifacts/files.js";
-import { ArtifactStore } from "../../src/artifacts/store.js";
-import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
+import { artifactStore } from "../../src/artifacts/store.js";
+import { connect } from "../../src/seed/connect.js";
 import { MemoryBlobStore } from "../../src/lib/blob-store.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { insertUser } from "../../src/db/users.js";
+import { insertMember } from "../../src/db/orgs.js";
 
 const OWNER = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 const JSON_BODY = { "content-type": "application/json" };
@@ -29,21 +30,26 @@ test("operators upload, list, download, share, and delete files per level", { ti
   const database = await connect(await createIsolatedDatabase(dbName));
   const notes = new NotesStore(tempDir("guilds-http-files-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
-  await connectModelProvider(repo, "org_home", "deepinfra");
-  const artifacts = new ArtifactStore(database.pool, templatesRoot());
+  const db = database.pool;
+  await connectModelProvider(db, "org_home", "deepinfra");
+  const artifacts = artifactStore(database.pool, templatesRoot());
   const blobs = new MemoryBlobStore();
   const files = new ArtifactFiles(artifacts, blobs);
   const app = await buildApp(database, {
-    repo,
+    db,
     notes,
     artifacts,
     files,
-    scripts: new Scripts(repo),
-    schedules: new Schedules(repo),
+    scripts: new Scripts(scriptDatabase(db)),
+    schedules: new Schedules(scheduleDatabase(db)),
   });
-  const teammate = await repo.insertUser("user_teammate_files", "teammate-files", new Date(), null, "files@example.com");
-  await repo.insertMember("org_home", String(teammate.id), "member", new Date());
+  const teammate = await insertUser(db, {
+      userId: "user_teammate_files",
+      name: "teammate-files",
+      image: null,
+      email: "files@example.com",
+    }, new Date());
+  await insertMember(db, "org_home", String(teammate.id), "member", new Date());
   const TEAMMATE = { "X-Guilds-User": String(teammate.id), "X-Guilds-Org": "org_home" };
 
   try {

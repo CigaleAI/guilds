@@ -34,7 +34,7 @@ function provider(id: string) {
 }
 
 test("assistant payload excludes null tool_calls", () => {
-  assert.deepEqual(assistantPayload({ role: "assistant", content: "hi", tool_calls: null }), {
+  assert.deepEqual(assistantPayload("hi", []), {
     role: "assistant",
     content: "hi",
   });

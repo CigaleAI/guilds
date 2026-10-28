@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { CONTEXT_HISTORY_LIMIT } from "../../src/groupchat/history.js";
+import type { GroupMessageRow } from "../../src/db/group-chat.js";
+import { groupMessageRow } from "../helpers/group-chat.js";
 import { mockFetch } from "../helpers/http.js";
 import {
   AGENT_TASK_PREVIEW_CHARS,
@@ -49,18 +51,15 @@ function chatRow(
   seq: number,
   content: string,
   options: { tagged?: string[]; author?: string } = {},
-): Record<string, unknown> {
+): GroupMessageRow {
   const author = options.author;
-  return {
-    id: seq,
-    seq,
+  return groupMessageRow(seq, {
     author_type: author ? "agent" : "user",
     author_name: author ?? "user",
     author_agent_id: author ? `a_${author}` : null,
     content,
     tagged_names: options.tagged ?? [],
-    tagged_agent_ids: [],
-  };
+  });
 }
 
 const noSleep = { sleep: async () => undefined };

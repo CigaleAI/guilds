@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { persistAgent } from "../../src/agents/persist.js";
 import { persistGuild } from "../../src/guilds/persist.js";
 import { collectDirectoryListing } from "../../src/directories/index.js";
+import { agentConfig } from "../helpers/generation.js";
 
 class FakeDB {
   guilds = new Map<string, string>();
@@ -13,38 +14,39 @@ class FakeDB {
   about = "";
   description = "";
 
-  async insertGuild(
-    guildId: string,
-    name: string,
-    _now: Date,
-    orgId: string,
-    about = "",
-    _agentMessageLimit?: number,
-    _visibility?: string,
-    _ownerUserId?: string | null,
-    description = "",
-  ) {
-    this.guilds.set(guildId, name);
-    this.orgId = orgId;
-    this.about = about;
-    this.description = description;
+  async insertGuild(input: {
+    guildId: string;
+    name: string;
+    orgId: string;
+    about?: string | undefined;
+    description?: string | undefined;
+  }) {
+    this.guilds.set(input.guildId, input.name);
+    this.orgId = input.orgId;
+    this.about = input.about ?? "";
+    this.description = input.description ?? "";
   }
   async deleteGuild(guildId: string) {
     this.guilds.delete(guildId);
     this.deletedGuilds.push(guildId);
   }
-  async insertAgent(
-    agentId: string,
-    guildId: string,
-    name: string,
-    _config: unknown,
-    _now: Date,
-    focus = "",
-    wakeTriggers = "",
-    avatarShape = "teardrop",
-    avatarColor = "#7c5cff",
-  ) {
-    this.agents.set(agentId, [guildId, name, focus, wakeTriggers, avatarShape, avatarColor]);
+  async addAgent(input: {
+    agentId: string;
+    guildId: string;
+    name: string;
+    focus?: string | undefined;
+    wakeTriggers?: string | undefined;
+    avatarShape?: string | undefined;
+    avatarColor?: string | undefined;
+  }) {
+    this.agents.set(input.agentId, [
+      input.guildId,
+      input.name,
+      input.focus ?? "",
+      input.wakeTriggers ?? "",
+      input.avatarShape ?? "teardrop",
+      input.avatarColor ?? "#7c5cff",
+    ]);
   }
   async deleteAgent(agentId: string) {
     this.agents.delete(agentId);
@@ -97,7 +99,7 @@ test("agent persist deletes row when notes fails", async () => {
         guildName: "research",
         orgSlug: "acme",
         name: "researcher",
-        config: { model: "openrouter/x" },
+        config: agentConfig({ model: "openrouter/x" }),
         now: new Date(),
       }),
     /notes failed/,
@@ -115,7 +117,7 @@ test("agent persist seeds task from focus", async () => {
     guildName: "research",
     orgSlug: "acme",
     name: "researcher",
-    config: { model: "openrouter/x" },
+    config: agentConfig({ model: "openrouter/x" }),
     now: new Date(),
     focus: "read papers",
   });

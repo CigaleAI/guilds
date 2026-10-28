@@ -109,8 +109,8 @@ test("guild agent room refuses past max_agents", async () => {
       return 5;
     },
   };
-  await assert.rejects(() => assertGuildAgentRoom(full, "guild_1", 1), /limited to 5/);
-  await assertGuildAgentRoom(full, "guild_1", 0);
+  await assert.rejects(() => assertGuildAgentRoom(full as never, "guild_1", 1), /limited to 5/);
+  await assertGuildAgentRoom(full as never, "guild_1", 0);
   await assert.rejects(
     () =>
       assertGuildAgentRoom(

@@ -1,20 +1,20 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { ArtifactStore } from "../../src/artifacts/index.js";
+import { artifactStore } from "../../src/artifacts/index.js";
 import { buildApp } from "../../src/app.js";
 import { decodeMasterKey } from "../../src/config/index.js";
-import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
+import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { RecipeApplyService } from "../../src/recipes/apply.js";
-import { RecipeStore } from "../../src/recipes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { recipeApply } from "../../src/recipes/apply.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { connectModelProvider } from "../helpers/models.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { cryptoThreeRoleRecipe } from "../helpers/recipe-docs.js";
+import { getSecretByName } from "../../src/db/secrets.js";
+import { listAgents } from "../../src/db/agents.js";
 
 const AUTH = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 const JSON_AUTH = { ...AUTH, "content-type": "application/json" };
@@ -29,20 +29,18 @@ test("apply reuses a secret by granting it to the new guild and waits for the on
   const database = await connect(await createIsolatedDatabase(dbName));
   const notes = new NotesStore(tempDir("guilds-apply-secrets-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
-  await connectModelProvider(repo, "org_home", "deepinfra");
-  const artifacts = new ArtifactStore(database.pool, templatesRoot());
-  const scripts = new Scripts(repo);
-  const schedules = new Schedules(repo);
-  const recipes = new RecipeStore(repo.pool);
+  const db = database.pool;
+  await connectModelProvider(db, "org_home", "deepinfra");
+  const artifacts = artifactStore(database.pool, templatesRoot());
+  const scripts = new Scripts(scriptDatabase(db));
+  const schedules = new Schedules(scheduleDatabase(db));
   const app = await buildApp(database, {
-    repo,
+    db,
     notes,
     artifacts,
     scripts,
     schedules,
-    recipes,
-    apply: new RecipeApplyService({ repo, recipes, artifacts, notes, scripts, schedules, registry: null }),
+    apply: recipeApply({ db, artifacts, notes, scripts, schedules, registry: null }),
     masterKey: decodeMasterKey(HEX_MASTER_KEY),
   });
   try {
@@ -86,7 +84,7 @@ test("apply reuses a secret by granting it to the new guild and waits for the on
     const status = Object.fromEntries(apply.checklist.map((step) => [step.id, step.status]));
     assert.equal(status["secret:MARKET_KEY"], "verified");
     assert.equal(status["secret:FUND_KEY"], "open");
-    const market = await repo.getSecretByName("org_home", "MARKET_KEY");
+    const market = await getSecretByName(db, "org_home", "MARKET_KEY");
     assert.deepEqual(
       (market?.grants as Array<{ guild_id: string }>).map((grant) => grant.guild_id),
       [apply.guild_id],
@@ -100,7 +98,7 @@ test("apply reuses a secret by granting it to the new guild and waits for the on
     assert.equal(early.statusCode, 422, early.body);
     assert.match(early.body, /FUND_KEY does not reach crypto-fund/);
 
-    const fund = (await repo.listAgents(apply.guild_id)).find((row) => row.name === "crypto-fund");
+    const fund = (await listAgents(db, apply.guild_id)).find((row) => row.name === "crypto-fund");
     assert.ok(fund);
     const created = await app.inject({
       method: "POST",

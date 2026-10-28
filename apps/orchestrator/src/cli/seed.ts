@@ -1,8 +1,8 @@
 import { loadToolConfig } from "../config/index.js";
-import { connect } from "../db/client.js";
-import { seedOperator } from "../db/seed/operator.js";
-import { seedSystem } from "../db/seed/system.js";
-import { seedTest } from "../db/seed/test.js";
+import { connect } from "../seed/connect.js";
+import { seedOperator } from "../seed/operator.js";
+import { seedSystem } from "../seed/system.js";
+import { seedTest } from "../seed/test.js";
 
 const kind = process.argv[2];
 if (kind !== "system" && kind !== "operator" && kind !== "test") {

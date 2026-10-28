@@ -1,3 +1,4 @@
+import type { ToolMessage, ToolResultMetadata } from "../db/schema/index.js";
 import { writeLog } from "../observability/log.js";
 import { redact } from "../secrets/index.js";
 
@@ -22,12 +23,15 @@ export function capBytes(text: string, maxBytes: number): [string, boolean] {
   return [cut + TRUNCATION_MARKER, true];
 }
 
+/** How a tool's output was kept: whether it was cut, its size before and after, and why the filter failed. */
+export type OutputRecord = Pick<ToolResultMetadata, "truncated" | "original_bytes" | "stored_bytes" | "error">;
+
 export function processOutput(
   raw: string,
   outputFilter: (result: string) => string,
   secrets: Record<string, string>,
   maxBytes: number,
-): [string, Record<string, unknown>] {
+): [string, OutputRecord] {
   let error: string | null = null;
   let filtered: string;
   try {
@@ -62,22 +66,20 @@ export function remainingAfter(maxToolCalls: number, executed: number): number {
 }
 
 export function withRemainingToolCalls(content: string, remaining: number): string {
-  const body = typeof content === "string" ? content : "";
   const trailer = `${REMAINING_TOOL_CALLS_PREFIX}${remaining}`;
   if (remaining <= LOW_TOOL_CALL_BUDGET) {
-    return `${body.trimEnd()}\n\n${LOW_TOOL_CALL_WRAP_UP}\n\n${trailer}`;
+    return `${content.trimEnd()}\n\n${LOW_TOOL_CALL_WRAP_UP}\n\n${trailer}`;
   }
-  return `${body.trimEnd()}\n\n${trailer}`;
+  return `${content.trimEnd()}\n\n${trailer}`;
 }
 
-export function stampToolResult(
-  payload: Record<string, unknown>,
-  metadata: Record<string, unknown>,
+export function stampToolResult<M extends ToolResultMetadata>(
+  payload: ToolMessage,
+  metadata: M,
   remaining: number,
-): [Record<string, unknown>, Record<string, unknown>] {
-  const content = typeof payload.content === "string" ? payload.content : "";
+): [ToolMessage, M & { remaining_tool_calls: number }] {
   return [
-    { ...payload, content: withRemainingToolCalls(content, remaining) },
+    { ...payload, content: withRemainingToolCalls(payload.content, remaining) },
     { ...metadata, remaining_tool_calls: remaining },
   ];
 }

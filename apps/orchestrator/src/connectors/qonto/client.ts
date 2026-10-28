@@ -1,8 +1,19 @@
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import type { Static, TSchema } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
 import { AgentFileError, readAgentFile } from "../../lib/agent-file.js";
+import { decode } from "../../lib/decode.js";
 import { proxyFetch, type FetchFn } from "../../net/http.js";
 import { argStr, clipRows, fmtNum, joinParts } from "../format.js";
+import {
+  ErrorBody,
+  OrganizationResponse,
+  TransactionResponse,
+  TransactionsResponse,
+  UploadResponse,
+  type Transaction,
+} from "./responses.js";
 
 export const API_BASE = "https://thirdparty.qonto.com";
 export const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024;
@@ -41,9 +52,8 @@ export type QontoOptions = {
 
 const idempotencyKeys = new Map<string, string>();
 
-export function isMissingInvoice(row: Record<string, unknown>): boolean {
-  const ids = row.attachment_ids;
-  if (Array.isArray(ids) && ids.length) {
+export function isMissingInvoice(row: Transaction): boolean {
+  if (row.attachment_ids?.length) {
     return false;
   }
   if (row.attachment_required !== true) {
@@ -121,17 +131,9 @@ async function errorDetail(response: Response): Promise<string> {
   } catch {
     return text.trim() || `Qonto HTTP ${response.status}`;
   }
-  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
-    const errors = (payload as { errors?: unknown }).errors;
-    if (Array.isArray(errors) && errors[0] && typeof errors[0] === "object" && !Array.isArray(errors[0])) {
-      const first = errors[0] as { detail?: unknown; message?: unknown };
-      const detail = first.detail ?? first.message;
-      if (typeof detail === "string" && detail.trim()) {
-        return detail.trim();
-      }
-    }
-  }
-  return `Qonto HTTP ${response.status}`;
+  const first = Value.Check(ErrorBody, payload) ? payload.errors[0] : undefined;
+  const detail = first?.detail ?? first?.message;
+  return typeof detail === "string" && detail.trim() ? detail.trim() : `Qonto HTTP ${response.status}`;
 }
 
 function messageForStatus(status: number, detail: string, requestPath: string): string {
@@ -157,47 +159,12 @@ async function sleepMs(ms: number, sleep?: (ms: number) => Promise<void>): Promi
   });
 }
 
-async function qontoRequest(
-  method: string,
-  requestPath: string,
-  creds: QontoCreds,
-  options: {
-    client?: FetchFn;
-    proxyUrl?: string;
-    params?: Record<string, string | boolean | number | undefined>;
-    body?: RequestInit["body"];
-    extraHeaders?: Record<string, string>;
-    sleep?: (ms: number) => Promise<void>;
-  } = {},
-): Promise<unknown> {
-  const fetchFn = options.client ?? proxyFetch(options.proxyUrl ?? "");
-  const url = qontoUrl(requestPath, options.params);
-  const headers: Record<string, string> = { ...authHeaders(creds), ...options.extraHeaders };
-  let wait = 1_000;
-  let last: Response | null = null;
-  for (let attempt = 1; attempt <= MAX_TRIES; attempt += 1) {
-    const response = await fetchFn(url, { method, headers, body: options.body ?? null });
-    last = response;
-    if (response.status !== 429 && response.status < 500) {
-      break;
-    }
-    if (attempt === MAX_TRIES) {
-      break;
-    }
-    const retryAfter = response.headers.get("retry-after");
-    const seconds = retryAfter ? Number(retryAfter) : Number.NaN;
-    const delay = Number.isFinite(seconds) ? Math.max(0, seconds * 1000) : wait;
-    await sleepMs(delay, options.sleep);
-    wait *= 2;
-  }
-  if (!last) {
-    throw new QontoError("Qonto request failed");
-  }
-  if (last.status >= 400) {
-    const detail = await errorDetail(last);
-    throw new QontoError(messageForStatus(last.status, detail, requestPath), last.status);
-  }
-  const text = await last.text();
+function unexpected(problem: string): QontoError {
+  return new QontoError(`Qonto returned an unexpected response at ${problem}`);
+}
+
+async function jsonBody(response: Response): Promise<unknown> {
+  const text = await response.text();
   if (!text) {
     return {};
   }
@@ -208,31 +175,57 @@ async function qontoRequest(
   }
 }
 
-function asObject(value: unknown, label: string): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new QontoError(`unexpected ${label} response`);
+/**
+ * The response of `send`, sent again on a 429 or a server error up to `MAX_TRIES` times, after the
+ * wait the response's `Retry-After` names, else a doubling backoff.
+ */
+async function sendWithRetry(
+  send: () => Promise<Response>,
+  sleep?: (ms: number) => Promise<void>,
+): Promise<Response> {
+  let wait = 1_000;
+  for (let attempt = 1; ; attempt += 1) {
+    const response = await send();
+    if ((response.status !== 429 && response.status < 500) || attempt === MAX_TRIES) {
+      return response;
+    }
+    const retryAfter = response.headers.get("retry-after");
+    const seconds = retryAfter ? Number(retryAfter) : Number.NaN;
+    await sleepMs(Number.isFinite(seconds) ? Math.max(0, seconds * 1000) : wait, sleep);
+    wait *= 2;
   }
-  return value as Record<string, unknown>;
 }
 
-function asList(value: unknown): Array<Record<string, unknown>> {
-  if (!Array.isArray(value)) {
-    return [];
+/** The response of `method` on `path`, as `schema` describes it; an empty body reads as `{}`. */
+async function qontoRequest<T extends TSchema>(
+  request: { method: string; path: string; schema: T },
+  creds: QontoCreds,
+  options: {
+    client?: FetchFn;
+    proxyUrl?: string;
+    params?: Record<string, string | boolean | number | undefined>;
+    body?: RequestInit["body"];
+    extraHeaders?: Record<string, string>;
+    sleep?: (ms: number) => Promise<void>;
+  } = {},
+): Promise<Static<T>> {
+  const fetchFn = options.client ?? proxyFetch(options.proxyUrl ?? "");
+  const url = qontoUrl(request.path, options.params);
+  const headers: Record<string, string> = { ...authHeaders(creds), ...options.extraHeaders };
+  const init = { method: request.method, headers, body: options.body ?? null };
+  const last = await sendWithRetry(() => fetchFn(url, init), options.sleep);
+  if (last.status >= 400) {
+    const detail = await errorDetail(last);
+    throw new QontoError(messageForStatus(last.status, detail, request.path), last.status);
   }
-  return value.filter(
-    (item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item),
-  );
+  return decode(request.schema, await jsonBody(last), unexpected);
 }
 
-function attachmentIds(row: Record<string, unknown>): string[] {
-  const ids = row.attachment_ids;
-  if (!Array.isArray(ids)) {
-    return [];
-  }
-  return ids.map((id) => String(id)).filter(Boolean);
+function attachmentIds(row: Transaction): string[] {
+  return (row.attachment_ids ?? []).map((id) => String(id)).filter(Boolean);
 }
 
-function transactionRow(row: Record<string, unknown>, extra: string[] = []): string {
+function transactionRow(row: Transaction, extra: string[] = []): string {
   return joinParts(
     row.id,
     row.settled_at,
@@ -250,69 +243,63 @@ function transactionRow(row: Record<string, unknown>, extra: string[] = []): str
   );
 }
 
+const ORGANIZATION = { method: "GET", path: "/v2/organization", schema: OrganizationResponse };
+
+async function organization(creds: QontoCreds, options: Omit<QontoOptions, "login" | "secretKey">) {
+  return (await qontoRequest(ORGANIZATION, creds, options)).organization ?? {};
+}
+
 export async function ping(creds: QontoCreds, options: Omit<QontoOptions, "login" | "secretKey"> = {}): Promise<string> {
-  const payload = asObject(await qontoRequest("GET", "/v2/organization", creds, options), "organization");
-  const organization = asObject(payload.organization ?? {}, "organization");
-  const name = organization.name;
+  const name = (await organization(creds, options)).name;
   return typeof name === "string" && name.trim() ? name.trim() : "";
 }
 
 async function listBankAccounts(options: QontoOptions): Promise<string> {
-  const payload = asObject(
-    await qontoRequest("GET", "/v2/organization", options, options),
-    "organization",
-  );
-  const organization = asObject(payload.organization ?? {}, "organization");
-  const rows = asList(organization.bank_accounts).map((account) =>
+  const accounts = (await organization(options, options)).bank_accounts ?? [];
+  const rows = accounts.map((account) =>
     joinParts(account.id, account.name, account.iban, account.currency, account.status),
   );
   return clipRows(rows, 100);
 }
 
 async function activeAccountIds(options: QontoOptions): Promise<string[]> {
-  const payload = asObject(
-    await qontoRequest("GET", "/v2/organization", options, options),
-    "organization",
-  );
-  const organization = asObject(payload.organization ?? {}, "organization");
-  return asList(organization.bank_accounts)
+  const accounts = (await organization(options, options)).bank_accounts ?? [];
+  return accounts
     .filter((account) => account.status === "active" && typeof account.id === "string" && account.id)
     .map((account) => String(account.id));
 }
 
+const TRANSACTIONS = { method: "GET", path: "/v2/transactions", schema: TransactionsResponse };
+
 async function listAccountTransactions(
   options: QontoOptions,
   query: Record<string, string | boolean | number | undefined>,
-): Promise<Array<Record<string, unknown>>> {
-  const collected: Array<Record<string, unknown>> = [];
+): Promise<Transaction[]> {
+  const collected: Transaction[] = [];
   let page: string | number | undefined = 1;
-  while (page !== undefined && page !== null && page !== "") {
-    const payload = asObject(
-      await qontoRequest("GET", "/v2/transactions", options, { ...options, params: { ...query, page } }),
-      "transactions",
-    );
-    collected.push(...asList(payload.transactions));
-    const meta =
-      payload.meta && typeof payload.meta === "object" && !Array.isArray(payload.meta)
-        ? (payload.meta as Record<string, unknown>)
-        : {};
-    const next = meta.next_page;
-    page = next === undefined || next === null || next === "" ? undefined : (next as string | number);
+  while (page !== undefined && page !== "") {
+    const payload: TransactionsResponse = await qontoRequest(TRANSACTIONS, options, { ...options, params: { ...query, page } });
+    collected.push(...(payload.transactions ?? []));
+    page = payload.meta?.next_page ?? undefined;
   }
   return collected;
 }
 
-async function listMissingInvoices(arguments_: Record<string, unknown>, options: QontoOptions): Promise<string> {
-  const now = options.now ? options.now() : new Date();
+type MissingQuery = {
+  query: Record<string, string | boolean | number | undefined>;
+  minAmount: number | null;
+  limit: number;
+};
+
+/** The transactions query, amount floor and row limit `list_missing_invoices` is called with. */
+function missingQuery(arguments_: Record<string, unknown>, now: Date): MissingQuery {
   const range = settledRange(arguments_, now);
   const side = argStr(arguments_, "side") || "debit";
   if (side !== "debit" && side !== "credit" && side !== "both") {
     throw new QontoError("side must be debit, credit, or both");
   }
   const minRaw = arguments_.min_amount;
-  const minAmount = minRaw === undefined || minRaw === null || minRaw === "" ? null : asAmount(minRaw);
-  const accountArg = argStr(arguments_, "bank_account_id");
-  const accountIds = accountArg ? [accountArg] : await activeAccountIds(options);
+  const limitRaw = arguments_.limit;
   const query: Record<string, string | boolean | number | undefined> = {
     "status[]": "completed",
     settled_at_from: range.from,
@@ -324,48 +311,53 @@ async function listMissingInvoices(arguments_: Record<string, unknown>, options:
   if (side !== "both") {
     query.side = side;
   }
-  const missing: Array<Record<string, unknown>> = [];
+  return {
+    query,
+    minAmount: minRaw === undefined || minRaw === null || minRaw === "" ? null : asAmount(minRaw),
+    limit:
+      typeof limitRaw === "number" && Number.isFinite(limitRaw)
+        ? Math.max(1, Math.min(100, Math.trunc(limitRaw)))
+        : MISSING_DISPLAY_CAP,
+  };
+}
+
+/** The account's transactions that miss their invoice, at or over the amount floor. */
+async function accountMissing(options: QontoOptions, request: MissingQuery & { accountId: string }): Promise<Transaction[]> {
+  const rows = await listAccountTransactions(options, { ...request.query, bank_account_id: request.accountId });
+  return rows
+    .map((row) => (row.bank_account_id ? row : { ...row, bank_account_id: request.accountId }))
+    .filter((row) => isMissingInvoice(row))
+    .filter((row) => request.minAmount === null || asAmount(row.amount) >= request.minAmount);
+}
+
+async function listMissingInvoices(arguments_: Record<string, unknown>, options: QontoOptions): Promise<string> {
+  const request = missingQuery(arguments_, options.now ? options.now() : new Date());
+  const accountArg = argStr(arguments_, "bank_account_id");
+  const accountIds = accountArg ? [accountArg] : await activeAccountIds(options);
+  const missing: Transaction[] = [];
   for (const accountId of accountIds) {
-    const rows = await listAccountTransactions(options, { ...query, bank_account_id: accountId });
-    for (const row of rows) {
-      const withAccount = row.bank_account_id ? row : { ...row, bank_account_id: accountId };
-      if (!isMissingInvoice(withAccount)) {
-        continue;
-      }
-      if (minAmount !== null && asAmount(withAccount.amount) < minAmount) {
-        continue;
-      }
-      missing.push(withAccount);
-    }
+    missing.push(...(await accountMissing(options, { ...request, accountId })));
   }
   missing.sort((left, right) => String(right.settled_at ?? "").localeCompare(String(left.settled_at ?? "")));
   const total = missing.reduce((sum, row) => sum + asAmount(row.amount), 0);
   const currencies = [...new Set(missing.map((row) => String(row.currency ?? "")).filter(Boolean))];
-  const limitRaw = arguments_.limit;
-  const limit =
-    typeof limitRaw === "number" && Number.isFinite(limitRaw)
-      ? Math.max(1, Math.min(100, Math.trunc(limitRaw)))
-      : MISSING_DISPLAY_CAP;
   const summary = joinParts(`count=${missing.length}`, `total=${fmtNum(total)}`, currencies.length === 1 ? currencies[0] : currencies.join(","));
   if (!missing.length) {
     return summary;
   }
-  return [summary, clipRows(missing.map((row) => transactionRow(row)), limit)].join("\n");
+  return [summary, clipRows(missing.map((row) => transactionRow(row)), request.limit)].join("\n");
 }
 
-async function getTransaction(arguments_: Record<string, unknown>, options: QontoOptions): Promise<Record<string, unknown>> {
+async function getTransaction(arguments_: Record<string, unknown>, options: QontoOptions): Promise<Transaction> {
   const transactionId = argStr(arguments_, "transaction_id");
   if (!transactionId) {
     throw new QontoError("transaction_id is required");
   }
-  const payload = asObject(
-    await qontoRequest("GET", `/v2/transactions/${transactionId}`, options, options),
-    "transaction",
-  );
-  return asObject(payload.transaction, "transaction");
+  const request = { method: "GET", path: `/v2/transactions/${transactionId}`, schema: TransactionResponse };
+  return (await qontoRequest(request, options, options)).transaction;
 }
 
-function formatTransaction(row: Record<string, unknown>): string {
+function formatTransaction(row: Transaction): string {
   const ids = attachmentIds(row);
   return transactionRow(row, [`attachments=${ids.length ? ids.join(",") : "-"}`]);
 }
@@ -453,7 +445,8 @@ async function uploadInvoice(arguments_: Record<string, unknown>, options: Qonto
   }
   const form = new FormData();
   form.append("file", new Blob([new Uint8Array(file.content)], { type: file.mime }), file.name);
-  await qontoRequest("POST", `/v2/transactions/${transactionId}/attachments`, options, {
+  const upload = { method: "POST", path: `/v2/transactions/${transactionId}/attachments`, schema: UploadResponse };
+  await qontoRequest(upload, options, {
     ...options,
     body: form,
     extraHeaders: { "X-Qonto-Idempotency-Key": idempotencyKey(transactionId, file.path) },

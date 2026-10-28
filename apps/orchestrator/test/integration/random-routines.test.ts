@@ -1,17 +1,17 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
-import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
+import { connect } from "../../src/seed/connect.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
 import { planAfterFire } from "../../src/schedules/timing.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { windowEndAt } from "../../src/schedules/window.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { getSchedule, markScheduleFired } from "../../src/db/schedules.js";
 
 const OWNER = {
   "X-Guilds-User": "user_operator",
@@ -32,10 +32,10 @@ test("random-window routines persist, plan inside the window, and users keep a t
   const database = await connect(databaseUrl);
   const notes = new NotesStore(tempDir("guilds-random-routines-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
-  await connectModelProvider(repo, "org_home", "deepinfra");
-  const schedules = new Schedules(repo);
-  const app = await buildApp(database, { repo, notes, scripts: new Scripts(repo), schedules });
+  const db = database.pool;
+  await connectModelProvider(db, "org_home", "deepinfra");
+  const schedules = new Schedules(scheduleDatabase(db));
+  const app = await buildApp(database, { db, notes, scripts: new Scripts(scriptDatabase(db)), schedules });
   const json = { ...OWNER, "content-type": "application/json" };
 
   try {
@@ -93,11 +93,11 @@ test("random-window routines persist, plan inside the window, and users keep a t
     const listed = await app.inject({ method: "GET", url, headers: OWNER });
     assert.deepEqual(listed.json()[0].window, WINDOW);
 
-    const row = await repo.getSchedule(agentId, String(item.id));
+    const row = await getSchedule(db, agentId, String(item.id));
     assert.ok(row);
     const wake = planAfterFire(row, nextRun);
-    await repo.markScheduleFired(String(item.id), nextRun, wake);
-    const fired = await repo.getSchedule(agentId, String(item.id));
+    await markScheduleFired(db, String(item.id), nextRun, wake);
+    const fired = await getSchedule(db, agentId, String(item.id));
     assert.equal(Number(fired?.window_fires), wake.windowFires);
     assert.equal(new Date(String(fired?.next_run_at)).getTime(), wake.at.getTime());
 
@@ -106,7 +106,7 @@ test("random-window routines persist, plan inside the window, and users keep a t
     const resumed = await app.inject({ method: "PATCH", url: `${url}/${item.id}`, headers: json, payload: { paused: false } });
     assert.equal(resumed.json().paused, false);
     assert.notEqual(windowEndAt(WINDOW, new Date(resumed.json().next_run_at)), null);
-    assert.equal(Number((await repo.getSchedule(agentId, String(item.id)))?.window_fires), 0);
+    assert.equal(Number((await getSchedule(db, agentId, String(item.id)))?.window_fires), 0);
 
     await assert.rejects(
       database.pool.query(`UPDATE schedules SET cron = '0 9 * * 1' WHERE id = $1`, [item.id]),

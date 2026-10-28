@@ -1,17 +1,26 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
-import { connect } from "../../src/db/client.js";
+import { connect } from "../../src/seed/connect.js";
 import { GroupChatCleared } from "../../src/db/errors.js";
-import { Repositories } from "../../src/db/repositories.js";
-import { GenerationLoop } from "../../src/generation/index.js";
+import { generationDatabase, GenerationLoop } from "../../src/generation/index.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { ExportSandboxes } from "../helpers/live.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { insertUser } from "../../src/db/users.js";
+import { insertMember } from "../../src/db/orgs.js";
+import { addAgent } from "../../src/agents/persist.js";
+import { createRun } from "../../src/db/runs.js";
+import {
+  markGroupChatSeen,
+  postAgentGroupMessage,
+  postUserGroupMessage,
+} from "../../src/db/group-chat.js";
+import { agentConfig, runSnapshot } from "../helpers/generation.js";
 
 const OWNER = {
   "X-Guilds-User": "user_operator",
@@ -35,30 +44,29 @@ test(
     const database = await connect(databaseUrl);
     const notes = new NotesStore(tempDir("guilds-group-clear-notes-"), templatesRoot());
     await notes.ensureSystemPrompt();
-    const repo = new Repositories(database.pool);
+    const db = database.pool;
     const workspaceRoot = tempDir("guilds-group-clear-workspaces-");
-    const generation = new GenerationLoop(
-      repo,
+    const generation = new GenerationLoop({
+      db: generationDatabase(db),
       notes,
       workspaceRoot,
-      new ExportSandboxes(workspaceRoot),
-    );
+      sandboxes: new ExportSandboxes(workspaceRoot),
+    });
     const app = await buildApp(database, {
-      repo,
+      db,
       notes,
-      scripts: new Scripts(repo),
-      schedules: new Schedules(repo),
+      scripts: new Scripts(scriptDatabase(db)),
+      schedules: new Schedules(scheduleDatabase(db)),
       generation,
     });
 
-    const teammate = await repo.insertUser(
-      "user_teammate_clear",
-      "teammate-clear",
-      new Date(),
-      null,
-      "teammate-clear@example.com",
-    );
-    await repo.insertMember("org_home", String(teammate.id), "member", new Date());
+    const teammate = await insertUser(db, {
+        userId: "user_teammate_clear",
+        name: "teammate-clear",
+        image: null,
+        email: "teammate-clear@example.com",
+      }, new Date());
+    await insertMember(db, "org_home", String(teammate.id), "member", new Date());
     const TEAMMATE = {
       "X-Guilds-User": String(teammate.id),
       "X-Guilds-Org": "org_home",
@@ -76,22 +84,41 @@ test(
       const base = `/api/guilds/${guildId}/group-chat`;
 
       const started = new Date(Date.now() - 60_000);
-      await repo.insertAgent("a_clear", guildId, "scout", {}, started);
-      await repo.createRun("r_before", "a_clear", {}, "sys", "task", null, started, HASHES);
-      await repo.postUserGroupMessage(guildId, "first", [], [], [], started);
-      await repo.postAgentGroupMessage(
-        guildId,
-        "a_clear",
-        "scout",
-        "r_before",
-        "second",
-        [],
-        [],
-        [],
+      await addAgent(db, { agentId: "a_clear", guildId, name: "scout", config: agentConfig({}) }, started);
+      await createRun(db,
+        {
+          runId: "r_before",
+          agentId: "a_clear",
+          configSnapshot: runSnapshot(),
+          systemContent: "sys",
+          taskContent: "task",
+          userContent: null,
+          ...HASHES,
+        },
         started,
       );
-      await repo.postUserGroupMessage(guildId, "third", [], [], [], started);
-      await repo.markGroupChatSeen(guildId, "user_operator", 2, started);
+      await postUserGroupMessage(db,
+        { guildId, content: "first", taggedNames: [], taggedAgentIds: [], taggedUserIds: [] },
+        started,
+      );
+      await postAgentGroupMessage(db,
+        {
+          guildId,
+          agentId: "a_clear",
+          authorName: "scout",
+          sourceRunId: "r_before",
+          content: "second",
+          taggedNames: [],
+          taggedAgentIds: [],
+          taggedUserIds: [],
+        },
+        started,
+      );
+      await postUserGroupMessage(db,
+        { guildId, content: "third", taggedNames: [], taggedAgentIds: [], taggedUserIds: [] },
+        started,
+      );
+      await markGroupChatSeen(db, guildId, "user_operator", 2, started);
 
       const denied = await app.inject({
         method: "DELETE",
@@ -117,29 +144,44 @@ test(
 
       await assert.rejects(
         () =>
-          repo.postAgentGroupMessage(
-            guildId,
-            "a_clear",
-            "scout",
-            "r_before",
-            "stale",
-            [],
-            [],
-            [],
+          postAgentGroupMessage(db,
+            {
+              guildId,
+              agentId: "a_clear",
+              authorName: "scout",
+              sourceRunId: "r_before",
+              content: "stale",
+              taggedNames: [],
+              taggedAgentIds: [],
+              taggedUserIds: [],
+            },
             new Date(),
           ),
         GroupChatCleared,
       );
-      await repo.createRun("r_after", "a_clear", {}, "sys", "task", null, new Date(), HASHES);
-      const fresh = await repo.postAgentGroupMessage(
-        guildId,
-        "a_clear",
-        "scout",
-        "r_after",
-        "fresh",
-        [],
-        [],
-        [],
+      await createRun(db,
+        {
+          runId: "r_after",
+          agentId: "a_clear",
+          configSnapshot: runSnapshot(),
+          systemContent: "sys",
+          taskContent: "task",
+          userContent: null,
+          ...HASHES,
+        },
+        new Date(),
+      );
+      const fresh = await postAgentGroupMessage(db,
+        {
+          guildId,
+          agentId: "a_clear",
+          authorName: "scout",
+          sourceRunId: "r_after",
+          content: "fresh",
+          taggedNames: [],
+          taggedAgentIds: [],
+          taggedUserIds: [],
+        },
         new Date(),
       );
       assert.equal(Number(fresh?.seq), 4, "the next message continues the sequence");

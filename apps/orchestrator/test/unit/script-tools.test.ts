@@ -2,73 +2,14 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { agentActor, type ArtifactActor } from "../../src/artifacts/index.js";
+import { agentActor } from "../../src/artifacts/index.js";
 import { Scripts, scriptItem } from "../../src/scripts/catalog.js";
 import { SCRIPT_ARGS_ENV, launcherCommand } from "../../src/scripts/materialise.js";
 import { scriptSourceHash } from "../../src/scripts/validation.js";
 import { createToolContext, dynamicScriptTools, invokeTool } from "../../src/toolbox/index.js";
 import { tempDir } from "../helpers/env.js";
+import { MemoryScriptDB } from "../helpers/generation.js";
 
-class MemoryScriptDB {
-  rows: Array<Record<string, unknown>> = [];
-  actors: ArtifactActor[] = [];
-
-  async listAgentScripts(agentId: string) {
-    return this.rows.filter((row) => row.agent_id === agentId);
-  }
-
-  async upsertAgentScript(
-    actor: ArtifactActor,
-    scriptId: string,
-    agentId: string,
-    name: string,
-    description: string,
-    parameters: Record<string, unknown> | null,
-    source: string,
-    sourceHash: string,
-    now: Date,
-  ) {
-    this.actors.push(actor);
-    const index = this.rows.findIndex((row) => row.agent_id === agentId && row.name === name);
-    if (index >= 0) {
-      const updated = {
-        ...this.rows[index],
-        description,
-        parameters,
-        source,
-        source_hash: sourceHash,
-        updated_at: now,
-      };
-      this.rows[index] = updated;
-      return updated;
-    }
-    const row = {
-      id: scriptId,
-      agent_id: agentId,
-      name,
-      description,
-      parameters,
-      source,
-      source_hash: sourceHash,
-      created_at: now,
-      updated_at: now,
-    };
-    this.rows.push(row);
-    return row;
-  }
-
-  async getAgentScript(agentId: string, name: string) {
-    return this.rows.find((row) => row.agent_id === agentId && row.name === name) ?? null;
-  }
-
-  async deleteAgentScript(_actor: ArtifactActor, agentId: string, name: string) {
-    const index = this.rows.findIndex((row) => row.agent_id === agentId && row.name === name);
-    if (index < 0) {
-      return null;
-    }
-    return this.rows.splice(index, 1)[0] ?? null;
-  }
-}
 
 class MemoryFiles {
   files = new Map<string, string>();
@@ -107,7 +48,7 @@ async function invoke(
 ) {
   const [payload, metadata] = await invokeTool(
     ctx,
-    { id: "call_1", function: { name, arguments: arguments_ } },
+    { id: "call_1", type: "function", function: { name, arguments: JSON.stringify(arguments_) } },
     {},
     1024,
   );
@@ -301,7 +242,7 @@ test("script create stores parameters in catalog", async () => {
       parameters: schema,
     },
   ]);
-  assert.deepEqual(scriptItem(row, { source: true }).parameters, schema);
+  assert.deepEqual(scriptItem(row).parameters, schema);
   assert.equal(row.source_hash, scriptSourceHash("print('sent')\n"));
 });
 

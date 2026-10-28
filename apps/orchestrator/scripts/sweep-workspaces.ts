@@ -1,18 +1,18 @@
 import { loadToolConfig } from "../src/config/index.js";
-import { connect } from "../src/db/client.js";
-import { Repositories } from "../src/db/repositories.js";
+import { connect } from "../src/seed/connect.js";
 import { applyWorkspaceSweep, parseSweepArgs, planWorkspaceSweep } from "../src/sandbox/sweep.js";
+import { listMachineIds, listMachinePlacements } from "../src/db/machines.js";
 
 const args = parseSweepArgs(process.argv.slice(2));
 const config = loadToolConfig();
 const database = await connect(config.databaseUrl);
 try {
-  const repo = new Repositories(database.pool);
+  const db = database.pool;
   const machines = new Map<string, Set<string>>();
-  for (const machineId of await repo.listMachineIds()) {
+  for (const machineId of await listMachineIds(db)) {
     machines.set(machineId, new Set());
   }
-  for (const { machineId, agentId } of await repo.listMachinePlacements()) {
+  for (const { machineId, agentId } of await listMachinePlacements(db)) {
     machines.get(machineId)?.add(agentId);
   }
   const planned = planWorkspaceSweep(config.workspaceRoot, machines, args.ageDays);

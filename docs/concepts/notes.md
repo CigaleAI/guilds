@@ -321,5 +321,7 @@ A note is an `artifacts` row with `kind` `note`, a `level`, an
 document is the content; its search text is the title and key.
 Deletion sets `deleted_at`.
 
-Code: `apps/orchestrator/src/artifacts/store.ts`,
+Code: `apps/orchestrator/src/artifacts/notes.ts`,
+`apps/orchestrator/src/artifacts/memory.ts`,
+`apps/orchestrator/src/db/artifacts.ts`,
 `apps/orchestrator/src/toolbox/artifacts.ts`.

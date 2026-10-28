@@ -1,12 +1,11 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
-import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
+import { connect } from "../../src/seed/connect.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { createToolContext, REGISTRY } from "../../src/toolbox/index.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
@@ -15,7 +14,10 @@ import {
   dropIsolatedDatabase,
   uniqueDbName,
 } from "../helpers/postgres.js";
-import { userActor } from "../../src/db/config-changes.js";
+import { userActor } from "../../src/lib/change-actor.js";
+import { getSchedule } from "../../src/db/schedules.js";
+import { createRun } from "../../src/db/runs.js";
+import { runSnapshot } from "../helpers/generation.js";
 
 const TEST_ACTOR = userActor({ id: "user_operator", name: "operator" });
 
@@ -39,10 +41,10 @@ test("an operator and an agent can change a routine in place", { timeout: 60_000
   const database = await connect(databaseUrl);
   const notes = new NotesStore(tempDir("guilds-routine-update-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
-  await connectModelProvider(repo, "org_home", "deepinfra");
-  const schedules = new Schedules(repo);
-  const app = await buildApp(database, { repo, notes, scripts: new Scripts(repo), schedules });
+  const db = database.pool;
+  await connectModelProvider(db, "org_home", "deepinfra");
+  const schedules = new Schedules(scheduleDatabase(db));
+  const app = await buildApp(database, { db, notes, scripts: new Scripts(scriptDatabase(db)), schedules });
 
   try {
     const guild = await app.inject({
@@ -67,7 +69,7 @@ test("an operator and an agent can change a routine in place", { timeout: 60_000
     const plannedAt = async () => {
       await database.pool.query(`UPDATE schedules SET next_run_at = $2 WHERE id = $1`, [scheduleId, PAST]);
     };
-    const nextRun = async () => Date.parse(String((await repo.getSchedule(agentId, scheduleId))?.next_run_at));
+    const nextRun = async () => Date.parse(String((await getSchedule(db, agentId, scheduleId))?.next_run_at));
 
     await plannedAt();
     const text = await app.inject({
@@ -109,11 +111,20 @@ test("an operator and an agent can change a routine in place", { timeout: 60_000
     });
     assert.equal(missing.statusCode, 404);
 
-    await repo.createRun("r_edit", agentId, {}, "system prompt", "task prompt", null, new Date(), {
-      systemPromptHash: "s",
-      taskPromptHash: "t",
-      memoryPromptHash: "m",
-    });
+    await createRun(db,
+      {
+        runId: "r_edit",
+        agentId,
+        configSnapshot: runSnapshot(),
+        systemContent: "system prompt",
+        taskContent: "task prompt",
+        userContent: null,
+        systemPromptHash: "s",
+        taskPromptHash: "t",
+        memoryPromptHash: "m",
+      },
+      new Date(),
+    );
     const ctx = createToolContext({
       run_id: "r_edit",
       agent_id: agentId,
@@ -130,7 +141,7 @@ test("an operator and an agent can change a routine in place", { timeout: 60_000
       instruction: "Write the morning digest.",
     });
     assert.match(String(output), new RegExp(`^updated ${scheduleId} `));
-    const updated = await repo.getSchedule(agentId, scheduleId);
+    const updated = await getSchedule(db, agentId, scheduleId);
     assert.equal(updated?.cron, "30 7 * * *");
     assert.equal(updated?.wake_window, null);
     assert.equal(updated?.instruction, "Write the morning digest.");

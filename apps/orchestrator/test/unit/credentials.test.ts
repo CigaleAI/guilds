@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { completionMetadata } from "../helpers/generation.js";
 import { test } from "node:test";
 import { encryptPayload } from "../../src/credentials/crypto.js";
+import type { OrgModelProviderRow } from "../../src/db/orgs.js";
 import {
   ModelNotConnectedError,
   assertModelConnected,
@@ -13,9 +15,19 @@ import {
 import { PolicyError } from "../../src/policy/index.js";
 import { TEST_MASTER_KEY } from "../helpers/models.js";
 
-function row(payload: Record<string, unknown>): Record<string, unknown> {
+function row(payload: Record<string, unknown>): OrgModelProviderRow {
   const [ciphertext, nonce] = encryptPayload(payload, TEST_MASTER_KEY);
-  return { provider: "openrouter", ciphertext, nonce, key_hint: "abcd", models: [] };
+  return {
+    id: "mp_1",
+    org_id: "org_1",
+    provider: "openrouter",
+    ciphertext,
+    nonce,
+    key_hint: "abcd",
+    models: [],
+    created_at: "2026-01-01T00:00:00.000Z",
+    updated_at: "2026-01-01T00:00:00.000Z",
+  };
 }
 
 test("keyHint keeps the last four characters", () => {
@@ -24,7 +36,7 @@ test("keyHint keeps the last four characters", () => {
 });
 
 test("core's credentials are the organisation's row: its key, and a local endpoint's URL", async () => {
-  const rows = new Map<string, Record<string, unknown>>([
+  const rows = new Map<string, OrgModelProviderRow>([
     ["org_1/openrouter", row({ api_key: " sk-or-key " })],
     ["org_1/local", row({ api_key: "", base_url: "http://127.0.0.1:11434/v1" })],
     ["org_1/xai", row({ api_key: "" })],
@@ -68,11 +80,11 @@ test("a model is connected when its provider's credentials resolve", async () =>
 });
 
 test("usage is read from a completion's metadata and the callback's failure is swallowed", async () => {
-  const usage = modelUsageOf("r_1", "openai/gpt-5", {
-    usage: { input_tokens: 10, output_tokens: 4, cache_read_tokens: 2 },
-    cost_usd: 0.5,
-    cost_source: "provider",
-  });
+  const usage = modelUsageOf(
+    "r_1",
+    "openai/gpt-5",
+    completionMetadata({ usage: { input_tokens: 10, output_tokens: 4, cache_read_tokens: 2 }, cost_usd: 0.5, cost_source: "provider" }),
+  );
   assert.deepEqual(usage, {
     run_id: "r_1",
     model: "openai/gpt-5",
@@ -80,7 +92,7 @@ test("usage is read from a completion's metadata and the callback's failure is s
     cost_usd: 0.5,
     cost_source: "provider",
   });
-  assert.equal(modelUsageOf("r_1", "m", {}).cost_source, "unavailable");
+  assert.equal(modelUsageOf("r_1", "m", completionMetadata({ cost_source: "unavailable" })).cost_source, "unavailable");
   const heard: string[] = [];
   await reportModelUsage(
     {

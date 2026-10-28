@@ -4,11 +4,12 @@ import { pathToFileURL } from "node:url";
 import { installedConnectors, removeInstalledConnector, replaceInstalledConnector } from "../connectors/index.js";
 import { loadManifest, serverIdOf } from "../connectors/manifest.js";
 import { ConnectorRegistry, type ConnectorEntry } from "../connectors/registry.js";
+import { listMcpServers } from "../connectors/servers.js";
 import type { Adapter } from "../connectors/types.js";
-import type { Repositories } from "../db/repositories.js";
 import { CONNECTOR_CODE, integrationValue, integrationValues } from "../instance/integrations.js";
 import { writeLog } from "../observability/log.js";
 import type { ConnectorPackage } from "./client.js";
+import type { Queryable } from "../db/pg.js";
 
 // Code connectors live under CONNECTORS_ROOT, one folder per version: `<root>/<slug>/<version>/`
 // holding connector.json, adapter.js, and logo.svg. The row's version names the folder that serves.
@@ -119,11 +120,11 @@ export type CodeSync = { loaded: string[]; removed: string[]; failed: string[] }
  * version that does not load is logged and the one served before stays. While the code tier is
  * off, code on disk is a warning and is not loaded. Runs at boot and after each change.
  */
-export async function syncCodeConnectors(repo: Repositories, env: NodeJS.ProcessEnv = process.env): Promise<CodeSync> {
+export async function syncCodeConnectors(db: Queryable, env: NodeJS.ProcessEnv = process.env): Promise<CodeSync> {
   const result: CodeSync = { loaded: [], removed: [], failed: [] };
   const root = connectorsRoot(env);
   const on = codeTierRoot(env) !== null;
-  const rows = (await repo.listMcpServers()).filter((row) => !row.owner_org_id && row.source === "registry");
+  const rows = (await listMcpServers(db)).filter((row) => !row.owner_org_id && row.source === "registry");
   const wanted = new Set<string>();
   for (const row of root === null ? [] : rows) {
     const slug = String(row.slug);

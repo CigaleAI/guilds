@@ -1,16 +1,35 @@
-import {
-  ArtifactError,
-  ArtifactStore,
-  describeColumn,
-  isArtifactLevel,
-  parseDisplayPath,
-  type ArtifactActor,
-} from "../artifacts/index.js";
+import { ArtifactError, type ArtifactStore, describeColumn, isArtifactLevel, parseDisplayPath, type ArtifactActor } from "../artifacts/index.js";
 import { argInteger, argRecord, argString, functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
 import type { Tool, ToolContext } from "./types.js";
+import { addRecord, listRecords, removeRecord, searchRecords, updateRecord } from "../artifacts/records.js";
+import { collectionFacts } from "../artifacts/collections.js";
+import { deleteByDisplayPath, findNotes, getByDisplayPath, writeNote, writeNoteAt, type DisplayPathRead } from "../artifacts/notes.js";
+import { artifactView } from "../artifacts/store.js";
+import { writeMemory } from "../artifacts/memory.js";
+import { bindQuery } from "../db/pg.js";
 
-function store(ctx: ToolContext): ArtifactStore {
+/** The artifact functions the note, record, and Memory tools call, on `store`. */
+export function toolArtifacts(store: ArtifactStore) {
+  return {
+    findNotes: bindQuery(store, findNotes),
+    getByDisplayPath: bindQuery(store, getByDisplayPath),
+    writeNote: bindQuery(store, writeNote),
+    writeNoteAt: bindQuery(store, writeNoteAt),
+    deleteByDisplayPath: bindQuery(store, deleteByDisplayPath),
+    collectionFacts: bindQuery(store, collectionFacts),
+    listRecords: bindQuery(store, listRecords),
+    searchRecords: bindQuery(store, searchRecords),
+    addRecord: bindQuery(store, addRecord),
+    updateRecord: bindQuery(store, updateRecord),
+    removeRecord: bindQuery(store, removeRecord),
+    writeMemory: bindQuery(store, writeMemory),
+  };
+}
+
+export type ToolArtifacts = ReturnType<typeof toolArtifacts>;
+
+function store(ctx: ToolContext): ToolArtifacts {
   if (!ctx.artifacts) {
     throw new ArtifactError("artifact store is not available", 500);
   }
@@ -86,9 +105,9 @@ function assertDeletableNote(row: { kind: string } | undefined): void {
 }
 
 function renderGet(
-  artifacts: ArtifactStore,
+  artifacts: ToolArtifacts,
   path: string,
-  loaded: Awaited<ReturnType<ArtifactStore["getByDisplayPath"]>>,
+  loaded: DisplayPathRead,
 ): string {
   if (loaded.tombstone && loaded.row) {
     return `${path}\n\ntombstone: this artifact was deleted`;
@@ -96,7 +115,7 @@ function renderGet(
   if (!loaded.row) {
     throw new ArtifactError("artifact not found", 404);
   }
-  const view = artifacts.view(loaded.row);
+  const view = artifactView(loaded.row);
   return `${view.display_path}\n\n${String(view.content ?? "")}`;
 }
 
@@ -115,7 +134,7 @@ export async function readArtifactText(ctx: ToolContext, path: string): Promise<
     throw new ArtifactError("artifact not found", 404);
   }
   assertReadableNote(loaded.row);
-  const view = artifacts.view(loaded.row);
+  const view = artifactView(loaded.row);
   const shown = typeof view.display_path === "string" ? view.display_path : path;
   if (parsed.kind === "record") {
     return { path: shown, text: JSON.stringify(view, null, 2) };
@@ -143,7 +162,7 @@ export const noteFind: Tool = {
     [],
   ),
   async handler(ctx, args) {
-    const result = await store(ctx).find(actor(ctx), findArgs(args));
+    const result = await store(ctx).findNotes(actor(ctx), findArgs(args));
     return JSON.stringify({ notes: result.notes });
   },
 };
@@ -211,7 +230,7 @@ export const noteWrite: Tool = {
   ),
   async handler(ctx, args) {
     const row = await writeNoteArgs(ctx, args);
-    const display = String(store(ctx).view(row).display_path);
+    const display = String(artifactView(row).display_path);
     await publish(ctx, display);
     return display;
   },

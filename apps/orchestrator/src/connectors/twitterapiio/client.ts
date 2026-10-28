@@ -1,5 +1,16 @@
+import { Value } from "@sinclair/typebox/value";
+import { decode } from "../../lib/decode.js";
 import { proxyFetch, withQuery, type FetchFn } from "../../net/http.js";
 import { LIST_DEFAULT, argStr, clipRows, clipText, fmtNum, joinParts, rowLimit } from "../format.js";
+import {
+  Entry,
+  EntryList,
+  ErrorBody,
+  ErrorEntry,
+  ErrorList,
+  TwitterBody,
+  type ListKey,
+} from "./responses.js";
 
 export const API_BASE = "https://api.twitterapi.io";
 export const TEXT_CAP = 280;
@@ -41,27 +52,12 @@ function screenName(value: unknown): string {
   return String(value || "").trim().replace(/^@+/, "");
 }
 
-function asObj(value: unknown): Record<string, unknown> | null {
-  if (value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length) {
-    return value as Record<string, unknown>;
-  }
-  return null;
+/** `value` as an entry with at least one field; none otherwise. */
+function entry(value: unknown): Entry | null {
+  return Value.Check(Entry, value) && Object.keys(value).length ? value : null;
 }
 
-function asList(value: unknown): Array<Record<string, unknown>> {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.filter((item): item is Record<string, unknown> =>
-    Boolean(item) && typeof item === "object" && !Array.isArray(item),
-  );
-}
-
-function dataObj(payload: Record<string, unknown>): Record<string, unknown> | null {
-  return asObj(payload.data);
-}
-
-function pick(item: Record<string, unknown>, ...keys: string[]): unknown {
+function pick(item: Entry, ...keys: string[]): unknown {
   for (const key of keys) {
     if (item[key] !== undefined && item[key] !== null && item[key] !== "") {
       return item[key];
@@ -70,63 +66,25 @@ function pick(item: Record<string, unknown>, ...keys: string[]): unknown {
   return undefined;
 }
 
-function authorOf(item: Record<string, unknown>): Record<string, unknown> {
-  return asObj(item.author) ?? asObj(item.user) ?? {};
+function authorOf(item: Entry): Entry {
+  return entry(item.author) ?? entry(item.user) ?? {};
 }
 
-function tweetsOf(payload: Record<string, unknown>): Array<Record<string, unknown>> {
-  const top = asList(payload.tweets);
+/** The entries a body lists under `key`: at its top, as `data` itself, or under `data`. */
+function listed(payload: TwitterBody, key: ListKey): Entry[] {
+  const top = payload[key] ?? [];
   if (top.length) {
     return top;
   }
-  const data = payload.data;
-  if (Array.isArray(data)) {
-    return asList(data);
+  if (Value.Check(EntryList, payload.data)) {
+    return payload.data;
   }
-  const wrapped = asObj(data);
-  if (wrapped) {
-    const inner = asList(wrapped.tweets);
-    if (inner.length) {
-      return inner;
-    }
-  }
-  return [];
+  const inner = entry(payload.data)?.[key];
+  return Value.Check(EntryList, inner) ? inner : [];
 }
 
-function usersOf(payload: Record<string, unknown>, key: string): Array<Record<string, unknown>> {
-  const top = asList(payload[key]);
-  if (top.length) {
-    return top;
-  }
-  const data = payload.data;
-  if (Array.isArray(data)) {
-    return asList(data);
-  }
-  const wrapped = asObj(data);
-  if (wrapped) {
-    return asList(wrapped[key]);
-  }
-  return [];
-}
-
-function trendsOf(payload: Record<string, unknown>): Array<Record<string, unknown>> {
-  const top = asList(payload.trends);
-  if (top.length) {
-    return top;
-  }
-  const data = payload.data;
-  if (Array.isArray(data)) {
-    return asList(data);
-  }
-  const wrapped = asObj(data);
-  if (wrapped) {
-    return asList(wrapped.trends);
-  }
-  return [];
-}
-
-function pageKeyOf(payload: Record<string, unknown>): string {
-  const data = asObj(payload.data);
+function pageKeyOf(payload: TwitterBody): string {
+  const data = entry(payload.data);
   const hasNext = payload.has_next_page ?? data?.has_next_page;
   const cursor = payload.next_cursor ?? data?.next_cursor;
   if (hasNext === false) {
@@ -135,7 +93,7 @@ function pageKeyOf(payload: Record<string, unknown>): string {
   return typeof cursor === "string" && cursor.trim() ? cursor.trim() : "";
 }
 
-function withPage(body: string, payload: Record<string, unknown>): string {
+function withPage(body: string, payload: TwitterBody): string {
   if (body === "no results") {
     return body;
   }
@@ -143,7 +101,7 @@ function withPage(body: string, payload: Record<string, unknown>): string {
   return token ? `${body}\npage=${token}` : body;
 }
 
-function postRow(item: Record<string, unknown>): string {
+function postRow(item: Entry): string {
   const author = authorOf(item);
   return joinParts(
     pick(item, "id"),
@@ -158,17 +116,21 @@ function postRow(item: Record<string, unknown>): string {
   );
 }
 
-function userRow(item: Record<string, unknown>): string {
-  const marks: string[] = [];
-  if (item.isBlueVerified === true || item.verified === true) {
-    const kind = pick(item, "verifiedType", "verified_type");
-    marks.push(typeof kind === "string" && kind.trim() ? kind.trim() : "verified");
+/** The verification mark of a user: its kind, or `verified`; none when unverified. */
+function verifiedMark(item: Entry): string[] {
+  if (item.isBlueVerified !== true && item.verified !== true) {
+    return [];
   }
+  const kind = pick(item, "verifiedType", "verified_type");
+  return [typeof kind === "string" && kind.trim() ? kind.trim() : "verified"];
+}
+
+function userRow(item: Entry): string {
   return joinParts(
     pick(item, "id"),
     handle(pick(item, "userName", "username", "screen_name")),
     pick(item, "name"),
-    ...marks,
+    ...verifiedMark(item),
     `followers=${fmtNum(pick(item, "followers", "followers_count"))}`,
     `following=${fmtNum(pick(item, "following", "friends_count", "following_count"))}`,
     `posts=${fmtNum(pick(item, "statusesCount", "statuses_count", "tweet_count"))}`,
@@ -176,8 +138,13 @@ function userRow(item: Record<string, unknown>): string {
   );
 }
 
-export function formatUser(payload: Record<string, unknown>): string {
-  const item = dataObj(payload) ?? asObj(payload.user) ?? (asObj(payload.id ? payload : null));
+/** The user a body describes: its `data`, its `user`, or the body itself when it carries an id. */
+function userOf(payload: TwitterBody): Entry | null {
+  return entry(payload.data) ?? entry(payload.user) ?? (payload.id ? entry(payload) : null);
+}
+
+export function formatUser(payload: TwitterBody): string {
+  const item = userOf(payload);
   if (!item || pick(item, "id", "userName", "username") === undefined) {
     return "no results";
   }
@@ -186,27 +153,23 @@ export function formatUser(payload: Record<string, unknown>): string {
   return [head, bio].filter(Boolean).join("\n") || "no results";
 }
 
-export function formatPosts(payload: Record<string, unknown>, options: { limit?: number } = {}): string {
+export function formatPosts(payload: TwitterBody, options: { limit?: number } = {}): string {
   const limit = options.limit ?? LIST_DEFAULT;
-  const rows = tweetsOf(payload).map(postRow).filter(Boolean);
+  const rows = listed(payload, "tweets").map(postRow).filter(Boolean);
   return withPage(clipRows(rows, limit), payload);
 }
 
-export function formatSearch(
-  payload: Record<string, unknown>,
-  options: { query: string; limit?: number },
-): string {
+export function formatSearch(payload: TwitterBody, options: { query: string; limit?: number }): string {
   const body = options.limit === undefined ? formatPosts(payload) : formatPosts(payload, { limit: options.limit });
   if (body === "no results") {
     return body;
   }
-  const count = tweetsOf(payload).length;
+  const count = listed(payload, "tweets").length;
   return [joinParts(options.query, `n=${fmtNum(count)}`), body].join("\n");
 }
 
-export function formatPost(payload: Record<string, unknown>): string {
-  const tweets = tweetsOf(payload);
-  const item = tweets[0] ?? dataObj(payload) ?? asObj(payload.tweet);
+export function formatPost(payload: TwitterBody): string {
+  const item = listed(payload, "tweets")[0] ?? entry(payload.data) ?? entry(payload.tweet);
   if (!item) {
     return "no results";
   }
@@ -224,21 +187,38 @@ export function formatPost(payload: Record<string, unknown>): string {
 }
 
 export function formatUsers(
-  payload: Record<string, unknown>,
-  key: string,
+  payload: TwitterBody,
+  key: "followers" | "followings",
   options: { limit?: number } = {},
 ): string {
   const limit = options.limit ?? LIST_DEFAULT;
-  const rows = usersOf(payload, key).map(userRow).filter(Boolean);
+  const rows = listed(payload, key).map(userRow).filter(Boolean);
   return withPage(clipRows(rows, limit), payload);
 }
 
-export function formatTrends(payload: Record<string, unknown>, options: { limit?: number } = {}): string {
+export function formatTrends(payload: TwitterBody, options: { limit?: number } = {}): string {
   const limit = options.limit ?? LIST_DEFAULT;
-  const rows = trendsOf(payload).map((item) =>
+  const rows = listed(payload, "trends").map((item) =>
     joinParts(pick(item, "name"), `tweets=${fmtNum(pick(item, "tweetCount", "tweet_volume", "tweet_count"))}`),
   ).filter(Boolean);
   return clipRows(rows, limit);
+}
+
+function trimmed(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+/** The message of an error body: its text, or the first entry's of its list. */
+function errorMessage(payload: unknown): string | null {
+  if (!Value.Check(ErrorBody, payload)) {
+    return null;
+  }
+  const detail = payload.detail ?? payload.msg ?? payload.message ?? payload.error;
+  if (Value.Check(ErrorList, detail) && Value.Check(ErrorEntry, detail[0])) {
+    const first = detail[0];
+    return trimmed(first.msg ?? first.message);
+  }
+  return trimmed(detail);
 }
 
 async function errorDetail(response: Response): Promise<string> {
@@ -250,45 +230,31 @@ async function errorDetail(response: Response): Promise<string> {
     const stripped = text.trim();
     return stripped || `TwitterAPI.io HTTP ${response.status}`;
   }
-  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
-    const detail =
-      (payload as { detail?: unknown; msg?: unknown; message?: unknown; error?: unknown }).detail
-      ?? (payload as { msg?: unknown }).msg
-      ?? (payload as { message?: unknown }).message
-      ?? (payload as { error?: unknown }).error;
-    if (typeof detail === "string" && detail.trim()) {
-      return detail.trim();
-    }
-    if (Array.isArray(detail) && detail.length) {
-      const first = detail[0];
-      if (first && typeof first === "object" && !Array.isArray(first)) {
-        const inner = (first as { msg?: unknown; message?: unknown }).msg
-          ?? (first as { message?: unknown }).message;
-        if (typeof inner === "string" && inner.trim()) {
-          return inner.trim();
-        }
-      }
-    }
-  }
-  return `TwitterAPI.io HTTP ${response.status}`;
+  return errorMessage(payload) ?? `TwitterAPI.io HTTP ${response.status}`;
 }
 
-function assertSuccess(payload: Record<string, unknown>): void {
+function assertSuccess(payload: TwitterBody): void {
   const status = payload.status;
   if (typeof status === "string" && status.toLowerCase() === "error") {
     const message = payload.msg ?? payload.message ?? payload.error;
-    throw new TwitterApiIoError(
-      typeof message === "string" && message.trim() ? message.trim() : "TwitterAPI.io returned an error",
-    );
+    throw new TwitterApiIoError(trimmed(message) ?? "TwitterAPI.io returned an error");
   }
+}
+
+type TwitterApiIoOptions = { client?: FetchFn; proxyUrl?: string };
+
+type ToolOptions = TwitterApiIoOptions & { apiKey: string };
+
+function unexpected(problem: string): TwitterApiIoError {
+  return new TwitterApiIoError(`TwitterAPI.io returned an unexpected response at ${problem}`);
 }
 
 async function getJson(
   path: string,
   params: Record<string, string>,
   apiKey: string,
-  options: { client?: FetchFn; proxyUrl?: string } = {},
-): Promise<Record<string, unknown>> {
+  options: TwitterApiIoOptions = {},
+): Promise<TwitterBody> {
   const key = apiKey.trim();
   if (!key) {
     throw new TwitterApiIoError("TwitterAPI.io API key is missing", 401);
@@ -307,10 +273,7 @@ async function getJson(
   } catch {
     throw new TwitterApiIoError("TwitterAPI.io returned a non-JSON body");
   }
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new TwitterApiIoError("TwitterAPI.io returned a non-object");
-  }
-  const body = payload as Record<string, unknown>;
+  const body = decode(TwitterBody, payload, unexpected);
   assertSuccess(body);
   return body;
 }
@@ -351,17 +314,11 @@ export function constrainSearchQuery(query: string): string {
   return `${stripped} ${SEARCH_WINDOW}`;
 }
 
-export async function ping(
-  apiKey: string,
-  options: { client?: FetchFn; proxyUrl?: string } = {},
-): Promise<void> {
+export async function ping(apiKey: string, options: TwitterApiIoOptions = {}): Promise<void> {
   await getJson("/oapi/my/info", {}, apiKey, options);
 }
 
-export async function searchTool(
-  arguments_: Record<string, unknown>,
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-): Promise<string> {
+export async function searchTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
   const query = constrainSearchQuery(argStr(arguments_, "query"));
   const limit = rowLimit(arguments_);
   const payload = await getJson(
@@ -373,10 +330,7 @@ export async function searchTool(
   return formatSearch(payload, { query, limit });
 }
 
-export async function userTool(
-  arguments_: Record<string, unknown>,
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-): Promise<string> {
+export async function userTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
   const user = screenName(argStr(arguments_, "user"));
   if (!user) {
     throw new TwitterApiIoError("user is required");
@@ -385,19 +339,13 @@ export async function userTool(
   const path = isUserId(user) ? "/twitter/user/batch_info_by_ids" : "/twitter/user/info";
   const payload = await getJson(path, params, options.apiKey, options);
   if (isUserId(user)) {
-    const users = asList(payload.users);
-    if (!users.length) {
-      return "no results";
-    }
-    return formatUser({ data: users[0] });
+    const first = payload.users?.[0];
+    return first ? formatUser({ data: first }) : "no results";
   }
   return formatUser(payload);
 }
 
-export async function postsTool(
-  arguments_: Record<string, unknown>,
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-): Promise<string> {
+export async function postsTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
   const limit = rowLimit(arguments_);
   const payload = await getJson(
     "/twitter/user/last_tweets",
@@ -408,19 +356,13 @@ export async function postsTool(
   return formatPosts(payload, { limit });
 }
 
-export async function postTool(
-  arguments_: Record<string, unknown>,
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-): Promise<string> {
+export async function postTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
   const tweetId = postId(argStr(arguments_, "id"));
   const payload = await getJson("/twitter/tweets", { tweet_ids: tweetId }, options.apiKey, options);
   return formatPost(payload);
 }
 
-export async function followersTool(
-  arguments_: Record<string, unknown>,
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-): Promise<string> {
+export async function followersTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
   const limit = rowLimit(arguments_);
   const payload = await getJson(
     "/twitter/user/followers",
@@ -431,10 +373,7 @@ export async function followersTool(
   return formatUsers(payload, "followers", { limit });
 }
 
-export async function followingTool(
-  arguments_: Record<string, unknown>,
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-): Promise<string> {
+export async function followingTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
   const limit = rowLimit(arguments_);
   const payload = await getJson(
     "/twitter/user/followings",
@@ -445,10 +384,7 @@ export async function followingTool(
   return formatUsers(payload, "followings", { limit });
 }
 
-export async function mentionsTool(
-  arguments_: Record<string, unknown>,
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-): Promise<string> {
+export async function mentionsTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
   const limit = rowLimit(arguments_);
   const payload = await getJson(
     "/twitter/user/mentions",
@@ -459,10 +395,7 @@ export async function mentionsTool(
   return formatPosts(payload, { limit });
 }
 
-export async function repliesTool(
-  arguments_: Record<string, unknown>,
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-): Promise<string> {
+export async function repliesTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
   const limit = rowLimit(arguments_);
   const payload = await getJson(
     "/twitter/tweet/replies",
@@ -473,10 +406,7 @@ export async function repliesTool(
   return formatPosts(payload, { limit });
 }
 
-export async function quotesTool(
-  arguments_: Record<string, unknown>,
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-): Promise<string> {
+export async function quotesTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
   const limit = rowLimit(arguments_);
   const payload = await getJson(
     "/twitter/tweet/quotes",
@@ -487,10 +417,7 @@ export async function quotesTool(
   return formatPosts(payload, { limit });
 }
 
-export async function trendsTool(
-  arguments_: Record<string, unknown>,
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-): Promise<string> {
+export async function trendsTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
   const limit = rowLimit(arguments_);
   const woeid = argStr(arguments_, "woeid") || WORLDWIDE_WOEID;
   if (!/^\d+$/.test(woeid)) {
@@ -500,13 +427,7 @@ export async function trendsTool(
   return formatTrends(payload, { limit });
 }
 
-const HANDLERS: Record<
-  string,
-  (
-    arguments_: Record<string, unknown>,
-    options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-  ) => Promise<string>
-> = {
+const HANDLERS: Record<string, (arguments_: Record<string, unknown>, options: ToolOptions) => Promise<string>> = {
   search: searchTool,
   user: userTool,
   posts: postsTool,
@@ -522,7 +443,7 @@ const HANDLERS: Record<
 export async function callTool(
   name: string,
   arguments_: Record<string, unknown>,
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
+  options: ToolOptions,
 ): Promise<string> {
   const handler = HANDLERS[name];
   if (!handler) {

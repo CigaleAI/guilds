@@ -299,4 +299,4 @@ The generated Memory section owns the `memory_write` guidance.
 
 Code: `apps/orchestrator/src/prompts/index.ts` (composition),
 `apps/orchestrator/src/state/index.ts` (State),
-`apps/orchestrator/src/generation/index.ts` (`_prepare_run`).
+`apps/orchestrator/src/generation/prepare.ts` (`RunPreparation.prepare`).

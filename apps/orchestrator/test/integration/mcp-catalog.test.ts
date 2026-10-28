@@ -1,16 +1,16 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { persistAgent } from "../../src/agents/persist.js";
-import { persistGuild } from "../../src/guilds/persist.js";
+import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
+import { getMcpServer, saveOauthClient } from "../../src/connectors/servers.js";
+import { guildDatabase, persistGuild } from "../../src/guilds/persist.js";
 import { buildApp } from "../../src/app.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
-import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
-import { seedSystem } from "../../src/db/seed/system.js";
+import { connect } from "../../src/seed/connect.js";
+import { seedSystem } from "../../src/seed/system.js";
 import { newId } from "../../src/lib/ids.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { limitedPolicy } from "../helpers/policy.js";
@@ -19,6 +19,10 @@ import {
   dropIsolatedDatabase,
   uniqueDbName,
 } from "../helpers/postgres.js";
+import { insertUser } from "../../src/db/users.js";
+import { insertMember, insertOrg } from "../../src/db/orgs.js";
+import { connectMcp, replaceMcpTools } from "../../src/db/mcp.js";
+import { agentConfig } from "../helpers/generation.js";
 
 const AUTH = {
   "X-Guilds-User": "user_operator",
@@ -37,17 +41,17 @@ test("admin catalog, overrides, seed preservation, listed tools, and leaks", { t
   const database = await connect(databaseUrl);
   const notes = new NotesStore(tempDir("guilds-catalog-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
+  const db = database.pool;
   const app = await buildApp(database, {
-    repo,
+    db,
     notes,
-    scripts: new Scripts(repo),
-    schedules: new Schedules(repo),
+    scripts: new Scripts(scriptDatabase(db)),
+    schedules: new Schedules(scheduleDatabase(db)),
     policy: limitedPolicy({ maxAgents: 25, maxBrowserAgents: 10, maxCodingAgents: 10 }),
   });
 
-  const outsider = await repo.insertUser("user_other", "other", new Date(), null, "other@example.com");
-  await repo.insertMember("org_home", String(outsider.id), "member", new Date());
+  const outsider = await insertUser(db, { userId: "user_other", name: "other", image: null, email: "other@example.com" }, new Date());
+  await insertMember(db, "org_home", String(outsider.id), "member", new Date());
 
   const denied = await app.inject({
     method: "GET",
@@ -87,13 +91,9 @@ test("admin catalog, overrides, seed preservation, listed tools, and leaks", { t
   });
   assert.equal(endpoint.statusCode, 422);
 
-  await repo.updateMcpServerConfig(
-    String(notion.id),
-    { url: "https://mcp.notion.com/mcp", oauth_client: { client_id: "keep-me" } },
-    new Date(),
-  );
+  await saveOauthClient(db, String(notion.id), { client_id: "keep-me", client_secret: null, redirect_uris: [] }, new Date());
   await seedSystem(database.pool);
-  const afterSeed = await repo.getMcpServer(String(notion.id));
+  const afterSeed = await getMcpServer(db, String(notion.id));
   assert.equal(afterSeed?.description, "Admin-authored Notion copy");
   const cleared = await app.inject({
     method: "PATCH",
@@ -102,8 +102,7 @@ test("admin catalog, overrides, seed preservation, listed tools, and leaks", { t
     payload: { limitations: null },
   });
   assert.deepEqual(cleared.json().overridden, ["description"]);
-  const config = afterSeed?.config as { oauth_client?: { client_id?: string } };
-  assert.equal(config.oauth_client?.client_id, "keep-me");
+  assert.equal(afterSeed?.config.oauth_client?.client_id, "keep-me");
 
   const created = await app.inject({
     method: "POST",
@@ -224,18 +223,20 @@ test("admin catalog, overrides, seed preservation, listed tools, and leaks", { t
   assert.ok(mcp.some((row) => row.slug === "tavily"));
 
   const [ciphertext, nonce] = encryptPayload({ token: "coingecko-test" }, Buffer.from(HEX_MASTER_KEY, "hex"));
-  const connection = await repo.connectMcp(
-    newId("conn"),
-    newId("bind"),
-    String(coingecko.id),
-    "org",
-    "org_home",
-    ciphertext,
-    nonce,
+  const connection = await connectMcp(db,
+    {
+      connectionId: newId("conn"),
+      bindingId: newId("bind"),
+      serverId: String(coingecko.id),
+      ownerScope: "org",
+      ownerId: "org_home",
+      ciphertext,
+      nonce,
+      status: "connected",
+    },
     new Date(),
-    { status: "connected" },
   );
-  await repo.replaceMcpTools(
+  await replaceMcpTools(db,
     String(connection.id),
     [
       {
@@ -257,7 +258,7 @@ test("admin catalog, overrides, seed preservation, listed tools, and leaks", { t
   );
   assert.equal(probe?.tool, "coingecko_secret_probe");
   assert.equal(probe?.default_enabled, true);
-  const elsewhere = await repo.insertOrg("org_elsewhere", "elsewhere", "elsewhere", "user_operator", new Date());
+  const elsewhere = await insertOrg(db, { orgId: "org_elsewhere", name: "elsewhere", slug: "elsewhere", userId: "user_operator" }, new Date());
   const otherOrg = await app.inject({
     method: "GET",
     url: "/api/builder/capabilities/search?q=secret_probe",
@@ -281,7 +282,7 @@ test("admin catalog, overrides, seed preservation, listed tools, and leaks", { t
   const remaining = body.remaining as { agents: number; browser_agents: number };
   assert.equal(remaining.agents, 25);
   const now = new Date();
-  await persistGuild(repo, notes, {
+  await persistGuild(guildDatabase(db), notes, {
     guildId: "guild_catalog",
     name: "catalog-guild",
     now,
@@ -290,7 +291,7 @@ test("admin catalog, overrides, seed preservation, listed tools, and leaks", { t
     about: "",
     creatorUserId: "user_operator",
   });
-  await persistAgent(repo, notes, {
+  await persistAgent(agentDatabase(db), notes, {
     agentId: "a_catalog",
     guildId: "guild_catalog",
     guildName: "catalog-guild",
@@ -298,7 +299,7 @@ test("admin catalog, overrides, seed preservation, listed tools, and leaks", { t
     orgId: "org_home",
     name: "catalog-agent",
     focus: "",
-    config: {
+    config: agentConfig({
       model: "openrouter/openai/gpt-5.6-luna",
       temperature: 1,
       max_tokens: 8192,
@@ -306,7 +307,7 @@ test("admin catalog, overrides, seed preservation, listed tools, and leaks", { t
       max_tool_calls: 50,
       max_input_tokens: 100000,
       browser: false,
-    },
+    }),
     now,
   });
   const afterAgent = await app.inject({ method: "GET", url: "/api/builder/capabilities", headers: AUTH });

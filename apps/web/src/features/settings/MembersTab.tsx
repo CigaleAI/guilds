@@ -24,7 +24,7 @@ import {
 } from "@guildsrun/ui";
 import { assignableRoles, canChangeMember, canManageMembers, roleLabel } from "./members";
 
-/** The organisation's members with their roles, adding people by name, and what an edition adds under them. */
+/** The organisation's members with their roles, adding people by name, and what an extension adds under them. */
 export function MembersTab() {
   const { user, org } = useIdentity();
   const manager = canManageMembers(org.role);

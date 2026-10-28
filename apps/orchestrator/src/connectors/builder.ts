@@ -1,10 +1,11 @@
 import { installedConnectors } from "./index.js";
 import type { ConnectorEntry } from "./registry.js";
+import type { LoadedConnector } from "./load.js";
 
 /** The role of a connector that holds the operator's long-lived records. */
 export const SYSTEM_OF_RECORD = "system_of_record";
 
-function entryOf(serverRef: string | Record<string, unknown>): ConnectorEntry | null {
+function entryOf(serverRef: string | LoadedConnector): ConnectorEntry | null {
   const connectors = installedConnectors();
   if (typeof serverRef !== "string") {
     return connectors.forServer(serverRef);
@@ -13,12 +14,12 @@ function entryOf(serverRef: string | Record<string, unknown>): ConnectorEntry | 
 }
 
 /** Whether the builder may search a connected login of this server. */
-export function isSearchable(serverRef: string | Record<string, unknown>): boolean {
+export function isSearchable(serverRef: string | LoadedConnector): boolean {
   return entryOf(serverRef)?.manifest.builder?.searchable === true;
 }
 
 /** Whether the server holds the operator's long-lived records. */
-export function isSystemOfRecord(serverRef: string | Record<string, unknown>): boolean {
+export function isSystemOfRecord(serverRef: string | LoadedConnector): boolean {
   return entryOf(serverRef)?.manifest.builder?.role === SYSTEM_OF_RECORD;
 }
 

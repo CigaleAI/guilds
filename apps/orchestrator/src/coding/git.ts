@@ -4,12 +4,15 @@ import {
   mintRepositoryToken,
   RepositoryAccessError,
   TOKEN_REFRESH_MS,
-  type GithubRepositoryRecorder,
+  githubRepositoryRecorder,
   type RepositoryToken,
 } from "../github/tokens.js";
+import { getMcpConnection, saveMcpConnection, type McpConnectionRow } from "../db/mcp.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
 import { markDisconnected } from "../mcp/index.js";
 import type { FetchFn } from "../net/http.js";
 import type { SandboxFiles } from "../toolbox/types.js";
+import type { AgentRow } from "../db/agents.js";
 
 /** Where an agent's repository tokens are kept in its machine, outside every home. */
 export function gitTokensPath(agentId: string): string {
@@ -21,29 +24,25 @@ const CODING_PERMISSIONS: TokenPermissions = { contents: "write", pull_requests:
 
 /** The agent's git identity: its name, and a valid email (guild override or the platform default). */
 export function agentGitIdentity(
-  agent: Record<string, unknown>,
+  agent: Pick<AgentRow, "id" | "name">,
   options: { email?: string | null } = {},
 ): { name: string; email: string } {
   const email = typeof options.email === "string" ? options.email.trim() : "";
-  return { name: String(agent.name), email: email || `${String(agent.id)}@agents.guilds.run` };
+  return { name: agent.name, email: email || `${agent.id}@agents.guilds.run` };
 }
 
 export type TokenEntry = { token: string; expires_at: string; host: string; path: string };
 
-export type RepositoryTokenDb = GithubRepositoryRecorder & {
-  getMcpConnection(connectionId: string): Promise<Record<string, unknown> | null>;
-  saveMcpConnection?(
-    connectionId: string,
-    options: {
-      ciphertext: Buffer;
-      nonce: Buffer;
-      status: string;
-      accountHint: string;
-      oauthState: string | null;
-      now: Date;
-    },
-  ): Promise<Record<string, unknown> | null>;
-};
+/** The db/ functions a run's repository tokens are minted and stored through, on `db`. */
+export function repositoryTokenDatabase(db: Queryable) {
+  return {
+    ...githubRepositoryRecorder(db),
+    getMcpConnection: bindQuery(db, getMcpConnection),
+    saveMcpConnection: bindQuery(db, saveMcpConnection),
+  };
+}
+
+export type RepositoryTokenDb = ReturnType<typeof repositoryTokenDatabase>;
 
 /**
  * The installation tokens of a run's guild repositories, one per GitHub connection, each
@@ -106,7 +105,7 @@ export class RepositoryTokens {
   }
 
   /** The connection a repository uses, refused unless it is connected. */
-  private async connectedLogin(connectionId: string): Promise<Record<string, unknown>> {
+  private async connectedLogin(connectionId: string): Promise<McpConnectionRow> {
     const connection = await this.db.getMcpConnection(connectionId);
     if (connection === null || connection.status !== "connected") {
       const account = String(connection?.account_hint ?? "");
@@ -117,7 +116,7 @@ export class RepositoryTokens {
 
   /** The login's token for its repositories here. GitHub refusing the installation marks the login disconnected. */
   private async mintCodingToken(
-    connection: Record<string, unknown>,
+    connection: McpConnectionRow,
     rows: Array<Record<string, unknown>>,
   ): Promise<RepositoryToken> {
     try {
@@ -130,9 +129,7 @@ export class RepositoryTokens {
       if (!(error instanceof GithubInstallationGoneError)) {
         throw error;
       }
-      if (this.db.saveMcpConnection) {
-        await markDisconnected(this.db as never, connection);
-      }
+      await markDisconnected(this.db, connection);
       throw new RepositoryAccessError(
         `GitHub refused the installation for ${loginAccount(connection)}; the connection is now disconnected`,
       );

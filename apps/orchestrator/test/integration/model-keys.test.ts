@@ -1,17 +1,18 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
-import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
-import { coreModelCredentials } from "../../src/llm/credentials.js";
-import { ModelsService } from "../../src/llm/models.js";
+import { connect } from "../../src/seed/connect.js";
+import { coreModelCredentials, modelProviderStore } from "../../src/llm/credentials.js";
+import { ModelsService, modelsDatabase } from "../../src/llm/models.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { TEST_MASTER_KEY } from "../helpers/models.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { insertUser } from "../../src/db/users.js";
+import { insertMember } from "../../src/db/orgs.js";
 
 const OWNER = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 const MEMBER = { "X-Guilds-User": "user_member", "X-Guilds-Org": "org_home" };
@@ -27,9 +28,9 @@ test("an organisation connects providers, chooses models, and names a default", 
   const database = await connect(await createIsolatedDatabase(dbName));
   const notes = new NotesStore(tempDir("guilds-model-keys-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
-  const member = await repo.insertUser("user_member", "member", new Date(), null, "member@example.com");
-  await repo.insertMember("org_home", String(member.id), "member", new Date());
+  const db = database.pool;
+  const member = await insertUser(db, { userId: "user_member", name: "member", image: null, email: "member@example.com" }, new Date());
+  await insertMember(db, "org_home", String(member.id), "member", new Date());
   const probed: string[] = [];
   const fetchFn = (async (url: string | URL | Request, init?: RequestInit) => {
     const key = String((init?.headers as Record<string, string> | undefined)?.Authorization ?? "");
@@ -42,15 +43,15 @@ test("an organisation connects providers, chooses models, and names a default", 
       headers: { "content-type": "application/json" },
     });
   }) as typeof fetch;
-  const credentials = coreModelCredentials(repo, TEST_MASTER_KEY);
+  const credentials = coreModelCredentials(modelProviderStore(db), TEST_MASTER_KEY);
   const app = await buildApp(database, {
-    repo,
+    db,
     notes,
-    scripts: new Scripts(repo),
-    schedules: new Schedules(repo),
+    scripts: new Scripts(scriptDatabase(db)),
+    schedules: new Schedules(scheduleDatabase(db)),
     masterKey: TEST_MASTER_KEY,
     modelCredentials: credentials,
-    models: new ModelsService({ repo, credentials, fetch: fetchFn, masterKey: TEST_MASTER_KEY }),
+    models: new ModelsService({ db: modelsDatabase(db), credentials, fetch: fetchFn, masterKey: TEST_MASTER_KEY }),
   });
   const base = "/api/orgs/org_home";
   const put = (headers: Record<string, string>, path: string, payload: Record<string, unknown>) =>

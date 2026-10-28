@@ -1,28 +1,21 @@
-import {
-  DEFAULT_AGENT_MESSAGE_LIMIT,
-  DEFAULT_GUILD_AGENTS,
-  type GuildVisibility,
-} from "./validation.js";
+import { DEFAULT_AGENT_MESSAGE_LIMIT, DEFAULT_GUILD_AGENTS } from "../db/schema/index.js";
+import type { GuildVisibility } from "./validation.js";
+import { deleteGuild, insertGuild } from "../db/guilds.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
 
 export type GuildNotes = {
   createGuild(orgSlug: string, name: string): Promise<void>;
 };
 
-export type GuildDatabase = {
-  insertGuild(
-    guildId: string,
-    name: string,
-    now: Date,
-    orgId: string,
-    about: string,
-    agentMessageLimit?: number,
-    visibility?: string,
-    creatorUserId?: string | null,
-    description?: string,
-    maxAgents?: number,
-  ): Promise<void>;
-  deleteGuild(guildId: string): Promise<void>;
-};
+/** The db/ functions a new guild is written through, on `db`. */
+export function guildDatabase(db: Queryable) {
+  return {
+    insertGuild: bindQuery(db, insertGuild),
+    deleteGuild: bindQuery(db, deleteGuild),
+  };
+}
+
+export type GuildDatabase = ReturnType<typeof guildDatabase>;
 
 export async function persistGuild(
   db: GuildDatabase,
@@ -45,16 +38,18 @@ export async function persistGuild(
   const description = args.description ?? "";
   const visibility = args.visibility ?? "org";
   await db.insertGuild(
-    args.guildId,
-    args.name,
+    {
+      guildId: args.guildId,
+      name: args.name,
+      orgId: args.orgId,
+      about,
+      agentMessageLimit: args.groupAgentMessageLimit ?? DEFAULT_AGENT_MESSAGE_LIMIT,
+      visibility,
+      creatorUserId: args.creatorUserId,
+      description,
+      maxAgents: args.maxAgents ?? DEFAULT_GUILD_AGENTS,
+    },
     args.now,
-    args.orgId,
-    about,
-    args.groupAgentMessageLimit ?? DEFAULT_AGENT_MESSAGE_LIMIT,
-    visibility,
-    args.creatorUserId,
-    description,
-    args.maxAgents ?? DEFAULT_GUILD_AGENTS,
   );
   try {
     await notes.createGuild(args.orgSlug, args.name);

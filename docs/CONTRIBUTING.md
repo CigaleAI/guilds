@@ -22,7 +22,9 @@ submitting it. There is no separate contributor agreement.
 A change is a branch and a pull request against `main`.
 
 `make check` runs what CI runs. The pre-push hook runs it for you.
-A pull request whose check passes is ready for review.
+A pull request whose check passes is ready for review. What it
+contains and what its reviewer checks is in
+[Pull requests](contributing/pull-requests.md).
 
 Keep a change to one thing. Update the documentation page that
 describes what it changes in the same commit. Add a security

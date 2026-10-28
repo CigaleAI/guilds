@@ -3,7 +3,12 @@ import { agentActor } from "./actors.js";
 import { ArtifactError } from "./errors.js";
 import { isDisplayPath, parseDisplayPath } from "./paths.js";
 import { EMBED_BUDGET, type ArtifactActor } from "./types.js";
-import type { ArtifactRow, ArtifactStore } from "./store.js";
+import type { AgentRow } from "../db/agents.js";
+import { bindQuery } from "../db/pg.js";
+import type { TaskEmbedSnapshot } from "../db/schema/index.js";
+import { describeCollection } from "./collections.js";
+import { getByDisplayPath, type DisplayPathRead } from "./notes.js";
+import type { ArtifactRow, ArtifactStore, CollectionDescription } from "./store.js";
 
 const EMBED_RE = /!\[\[([^\]]+)\]\]/g;
 
@@ -39,12 +44,12 @@ export function unreachableMarker(href: string): string {
 }
 
 /** The actor a Task's embeds resolve as: the agent whose Task it is. */
-export function taskEmbedActor(orgId: string, agent: Record<string, unknown>): ArtifactActor {
+export function taskEmbedActor(orgId: string, agent: Pick<AgentRow, "id" | "guild_id" | "name">): ArtifactActor {
   return agentActor({
     orgId,
-    guildId: String(agent.guild_id),
-    agentId: String(agent.id),
-    agentName: String(agent.name),
+    guildId: agent.guild_id,
+    agentId: agent.id,
+    agentName: agent.name,
   });
 }
 
@@ -80,7 +85,18 @@ export const EMBED_DEPTH = 2;
 
 type EmbedBudget = { used: number };
 type EmbedMemory = { seen: Set<string>; titles: Map<string, string> };
-type InlineContext = { store: ArtifactStore; actor: ArtifactActor; budget: EmbedBudget; memory: EmbedMemory };
+type InlineContext = { source: EmbedSource; actor: ArtifactActor; budget: EmbedBudget; memory: EmbedMemory };
+
+/** What task embeds read, as an actor: what a display path holds, and a collection's description. */
+export type EmbedSource = {
+  getByDisplayPath(actor: ArtifactActor, href: string): Promise<DisplayPathRead>;
+  describeCollection(actor: ArtifactActor, name: string): Promise<CollectionDescription | null>;
+};
+
+/** The embed source over the store's notes and collections. */
+export function embedSource(store: ArtifactStore): EmbedSource {
+  return { getByDisplayPath: bindQuery(store, getByDisplayPath), describeCollection: bindQuery(store, describeCollection) };
+}
 
 /** One embed a run meets: the note that holds it (null for the Task), its depth, and whether the run inlines it. */
 export type EmbedStep = { from: string | null; href: string; depth: number; inlined: boolean };
@@ -129,11 +145,11 @@ async function walkEmbedChild(walk: EmbedWalk, href: string, depth: number): Pro
 type EmbedNote = { row: ArtifactRow; reason?: undefined } | { row?: undefined; reason: string };
 
 /** The live note an embed names, as the actor reads it, or why it does not resolve. */
-async function readEmbedNote(store: ArtifactStore, actor: ArtifactActor, href: string): Promise<EmbedNote> {
+async function readEmbedNote(source: EmbedSource, actor: ArtifactActor, href: string): Promise<EmbedNote> {
   if (!isDisplayPath(href)) {
     return { reason: href.startsWith("recipe:") ? "recipe link was not rewritten to a file path" : "not a file path" };
   }
-  const loaded = await loadDisplayPath(store, actor, href);
+  const loaded = await loadDisplayPath(source, actor, href);
   if (!loaded || loaded.tombstone) {
     return { reason: NOT_REACHABLE };
   }
@@ -145,12 +161,12 @@ async function readEmbedNote(store: ArtifactStore, actor: ArtifactActor, href: s
 
 /** What a display path holds for the actor, or null when the store refuses it. */
 async function loadDisplayPath(
-  store: ArtifactStore,
+  source: EmbedSource,
   actor: ArtifactActor,
   href: string,
-): Promise<Awaited<ReturnType<ArtifactStore["getByDisplayPath"]>> | null> {
+): Promise<DisplayPathRead | null> {
   try {
-    return await store.getByDisplayPath(actor, href);
+    return await source.getByDisplayPath(actor, href);
   } catch (error) {
     if (error instanceof ArtifactError) {
       return null;
@@ -161,26 +177,26 @@ async function loadDisplayPath(
 
 /** Whether the actor can read the collection an embed names. */
 async function readsEmbedCollection(
-  store: ArtifactStore,
+  source: EmbedSource,
   actor: ArtifactActor,
   collection: { orgId: string; name: string },
 ): Promise<boolean> {
-  return collection.orgId === actor.orgId && (await store.describeCollection(actor, collection.name)) !== null;
+  return collection.orgId === actor.orgId && (await source.describeCollection(actor, collection.name)) !== null;
 }
 
 /** A walk reader over the notes the actor can read. */
-export function storeNoteReader(store: ArtifactStore, actor: ArtifactActor): EmbedReader {
+export function noteReader(source: EmbedSource, actor: ArtifactActor): EmbedReader {
   return async (href) => {
     if (collectionEmbed(href)) {
       return null;
     }
-    const note = await readEmbedNote(store, actor, href);
+    const note = await readEmbedNote(source, actor, href);
     return note.row ? String(note.row.content_text ?? "") : null;
   };
 }
 
-async function collectEmbedsDeep(store: ArtifactStore, actor: ArtifactActor, text: string): Promise<string[]> {
-  const steps = await walkTaskEmbeds(text, storeNoteReader(store, actor));
+async function collectEmbedsDeep(source: EmbedSource, actor: ArtifactActor, text: string): Promise<string[]> {
+  const steps = await walkTaskEmbeds(text, noteReader(source, actor));
   return steps.map((step) => step.href);
 }
 
@@ -191,44 +207,37 @@ export type TaskEmbedInspection = {
 };
 
 export async function inspectTaskEmbeds(
-  store: ArtifactStore,
+  source: EmbedSource,
   actor: ArtifactActor,
   task: string,
 ): Promise<TaskEmbedInspection[]> {
   const items: TaskEmbedInspection[] = [];
-  for (const href of await collectEmbedsDeep(store, actor, task)) {
-    items.push(await inspectEmbed(store, actor, href));
+  for (const href of await collectEmbedsDeep(source, actor, task)) {
+    items.push(await inspectEmbed(source, actor, href));
   }
   return items;
 }
 
 /** Whether one embed resolves to a note or table the actor can read, and why not when it does not. */
-export async function inspectEmbed(store: ArtifactStore, actor: ArtifactActor, href: string): Promise<TaskEmbedInspection> {
+export async function inspectEmbed(source: EmbedSource, actor: ArtifactActor, href: string): Promise<TaskEmbedInspection> {
   const collection = collectionEmbed(href);
   if (collection) {
-    const reads = await readsEmbedCollection(store, actor, collection);
+    const reads = await readsEmbedCollection(source, actor, collection);
     return reads ? { href, ok: true } : { href, ok: false, reason: NOT_REACHABLE };
   }
-  const note = await readEmbedNote(store, actor, href);
+  const note = await readEmbedNote(source, actor, href);
   return note.row ? { href, ok: true } : { href, ok: false, reason: note.reason };
 }
 
-export type TaskEmbedSnapshot = {
-  display_path: string;
-  version: number;
-  content_hash: string;
-  kind: string;
-};
-
 /** The notes a run inlines from a Task, directly or through other notes, as the actor reads them. */
 export async function snapshotTaskEmbeds(
-  store: ArtifactStore,
+  source: EmbedSource,
   actor: ArtifactActor,
   task: string,
 ): Promise<TaskEmbedSnapshot[]> {
   const items: TaskEmbedSnapshot[] = [];
-  for (const href of await collectEmbedsDeep(store, actor, task)) {
-    const note = collectionEmbed(href) ? null : await readEmbedNote(store, actor, href);
+  for (const href of await collectEmbedsDeep(source, actor, task)) {
+    const note = collectionEmbed(href) ? null : await readEmbedNote(source, actor, href);
     if (note?.row) {
       items.push(noteSnapshot(href, note.row));
     }
@@ -247,14 +256,14 @@ function noteSnapshot(href: string, row: ArtifactRow): TaskEmbedSnapshot {
 
 /** The collections a Task embeds that the actor can read, directly or through the notes it inlines, by display path. */
 export async function snapshotTaskCollections(
-  store: ArtifactStore,
+  source: EmbedSource,
   actor: ArtifactActor,
   task: string,
 ): Promise<string[]> {
   const found: string[] = [];
-  for (const href of await collectEmbedsDeep(store, actor, task)) {
+  for (const href of await collectEmbedsDeep(source, actor, task)) {
     const collection = collectionEmbed(href);
-    if (collection && (await readsEmbedCollection(store, actor, collection))) {
+    if (collection && (await readsEmbedCollection(source, actor, collection))) {
       found.push(href);
     }
   }
@@ -271,11 +280,11 @@ function hashFromRow(row: { content_text?: string | null; content_json?: unknown
  * a collection as its name, and anything else as the unreachable marker. Throws past the embed budget.
  */
 export async function inlineTaskEmbeds(
-  store: ArtifactStore,
+  source: EmbedSource,
   actor: ArtifactActor,
   task: string,
 ): Promise<string> {
-  const context: InlineContext = { store, actor, budget: { used: 0 }, memory: { seen: new Set(), titles: new Map() } };
+  const context: InlineContext = { source, actor, budget: { used: 0 }, memory: { seen: new Set(), titles: new Map() } };
   return expandEmbedLayer(context, task, EMBED_DEPTH);
 }
 
@@ -306,7 +315,7 @@ async function resolveEmbedBlock(context: InlineContext, href: string, depth: nu
   if (collection) {
     return resolveCollectionBlock(context, href, collection);
   }
-  const note = await readEmbedNote(context.store, context.actor, href);
+  const note = await readEmbedNote(context.source, context.actor, href);
   return note.row ? noteBlock(context, { href, row: note.row }, depth) : unreachableMarker(href);
 }
 
@@ -315,7 +324,7 @@ async function resolveCollectionBlock(
   href: string,
   collection: { orgId: string; name: string },
 ): Promise<string> {
-  if (!(await readsEmbedCollection(context.store, context.actor, collection))) {
+  if (!(await readsEmbedCollection(context.source, context.actor, collection))) {
     return unreachableMarker(href);
   }
   context.memory.titles.set(href, collection.name);

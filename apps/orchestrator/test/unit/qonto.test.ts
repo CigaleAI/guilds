@@ -16,6 +16,8 @@ import { ListedTool, McpPool } from "../../src/mcp/index.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { mockFetch } from "../helpers/http.js";
+import { serverRow } from "../helpers/servers.js";
+import { connectionRow } from "../helpers/servers.js";
 
 /** A temporary host directory named after agent a_1, as its home sits on its machine. */
 async function agentWorkspace(prefix: string): Promise<string> {
@@ -295,11 +297,12 @@ test("sync Qonto writes the curated catalog", async () => {
     async listMcpTools() {
       return this.rows;
     },
+    async insertBindingIfAbsent() {},
   };
-  const connection = { id: "conn_qonto", status: "connected", ciphertext, nonce };
-  const server = { id: "mcp_qonto", slug: "qonto", auth: "token" };
-  const first = await pool.syncTools(db, connection, server, { force: true });
-  const second = await pool.syncTools(db, connection, server);
+  const connection = connectionRow({ id: "conn_qonto", status: "connected", ciphertext, nonce });
+  const server = serverRow("qonto", { id: "mcp_qonto", auth: "token" });
+  const first = await pool.syncTools(db as never, connection, server, { force: true });
+  const second = await pool.syncTools(db as never, connection, server);
   assert.equal(pinged, 1);
   assert.deepEqual(first.map((tool) => tool.namespaced_name), TOOLS.map((spec) => `qonto_${spec.name}`));
   assert.deepEqual(first, second);
@@ -322,9 +325,9 @@ test("call Qonto dispatches with stored login and secret", async () => {
   });
   const [ciphertext, nonce] = encryptPayload({ login: "org-login", secret_key: "org-secret" }, KEY);
   const stored = await pool.call(
-    { async listMcpTools() { return []; }, async replaceMcpTools() { return; } },
-    { id: "conn_qonto", status: "connected", ciphertext, nonce },
-    { id: "mcp_qonto", slug: "qonto", auth: "token" },
+    { async listMcpTools() { return []; }, async replaceMcpTools() { return; } } as never,
+    connectionRow({ id: "conn_qonto", status: "connected", ciphertext, nonce }),
+    serverRow("qonto", { id: "mcp_qonto", auth: "token" }),
     "list_missing_invoices",
     { side: "debit" },
     { workspaceDir: "/tmp/ws" },

@@ -1,43 +1,59 @@
 import { newId } from "../lib/ids.js";
 import { ScheduleError, validateInstruction, validateScheduleDescription } from "./cron.js";
-import { formatScheduleRow, scheduleItem } from "./item.js";
-import { planWake, rowTiming, validateTiming, type ScheduleTiming } from "./timing.js";
-import type { PlannedWake } from "./window.js";
-import type { ChangeActor } from "../db/config-changes.js";
+import { routineChange } from "./changes.js";
+import { formatScheduleRow, rowDescription, scheduleItem, type ScheduleItem } from "./item.js";
+import { planWake, rowTiming, validateTiming } from "./timing.js";
+import type { ChangeActor } from "../lib/change-actor.js";
+import { recordChangeIfAny } from "../db/config-changes.js";
+import type {
+  ScheduleDefinition,
+  ScheduleFields,
+  ScheduleKey,
+  ScheduleRow,
+} from "../db/schedules.js";
+import {
+  deleteSchedule,
+  getSchedule,
+  insertSchedule,
+  listSchedules,
+  listSchedulesForGuild,
+  lockSchedule,
+  pauseSchedule,
+  resumeSchedule,
+  setScheduleNextRun,
+  updateSchedule,
+} from "../db/schedules.js";
+import { bindQuery, bindTransaction, type Queryable, type Transaction } from "../db/pg.js";
 
-export type ScheduleDatabase = {
-  insertSchedule(
-    scheduleId: string,
-    agentId: string,
-    timing: ScheduleTiming,
-    description: string,
-    instruction: string,
-    wake: PlannedWake,
-    now: Date,
-    actor: ChangeActor,
-    options?: { paused?: boolean },
-  ): Promise<Record<string, unknown>>;
-  deleteSchedule(agentId: string, scheduleId: string, actor: ChangeActor): Promise<Record<string, unknown> | null>;
-  getSchedule(agentId: string, scheduleId: string): Promise<Record<string, unknown> | null>;
-  setSchedulePaused(
-    agentId: string,
-    scheduleId: string,
-    paused: boolean,
-    wake: PlannedWake | null,
-    now: Date,
-    actor: ChangeActor,
-  ): Promise<Record<string, unknown> | null>;
-  listSchedules(agentId: string): Promise<Array<Record<string, unknown>>>;
-  listSchedulesForGuild(guildId: string): Promise<Array<Record<string, unknown>>>;
-  updateSchedule(
-    agentId: string,
-    scheduleId: string,
-    fields: { timing: ScheduleTiming; description: string; instruction: string; paused: boolean },
-    wake: PlannedWake | null,
-    now: Date,
-    actor: ChangeActor,
-  ): Promise<Record<string, unknown> | null>;
-  setScheduleNextRun(scheduleId: string, wake: PlannedWake, now: Date): Promise<void>;
+/** The db/ functions routines are read and written through, on `db`. */
+export function scheduleQueries(db: Queryable) {
+  return {
+    insertSchedule: bindQuery(db, insertSchedule),
+    deleteSchedule: bindQuery(db, deleteSchedule),
+    getSchedule: bindQuery(db, getSchedule),
+    lockSchedule: bindQuery(db, lockSchedule),
+    pauseSchedule: bindQuery(db, pauseSchedule),
+    resumeSchedule: bindQuery(db, resumeSchedule),
+    listSchedules: bindQuery(db, listSchedules),
+    listSchedulesForGuild: bindQuery(db, listSchedulesForGuild),
+    updateSchedule: bindQuery(db, updateSchedule),
+    setScheduleNextRun: bindQuery(db, setScheduleNextRun),
+    recordChangeIfAny: bindQuery(db, recordChangeIfAny),
+  };
+}
+
+export type ScheduleQueries = ReturnType<typeof scheduleQueries>;
+
+export type ScheduleDatabase = ScheduleQueries & { scheduleTransaction: Transaction<ScheduleQueries> };
+
+/** The routines' queries on `db`, and a transaction that runs them on one client. */
+export function scheduleDatabase(db: Queryable): ScheduleDatabase {
+  return { ...scheduleQueries(db), scheduleTransaction: bindTransaction(db, scheduleQueries) };
+}
+
+/** A routine of a guild's listing, with the agent it wakes. */
+export type GuildScheduleItem = ScheduleItem & {
+  agent: { id: string; name: string; avatar_shape: string; avatar_color: string };
 };
 
 /**
@@ -54,25 +70,29 @@ export class Schedules {
     description: unknown,
     instruction: unknown,
     options: { paused?: boolean } = {},
-  ): Promise<Record<string, unknown>> {
+  ): Promise<ScheduleRow> {
     const timing = validateTiming(when);
     const summary = validateScheduleDescription(description);
     const text = validateInstruction(instruction);
     const now = new Date();
     const scheduleId = newId("sch");
     const paused = Boolean(options.paused);
-    const row = await this.db.insertSchedule(
-      scheduleId,
-      agentId,
-      timing,
-      summary,
-      text,
-      paused ? { at: now, windowFires: 0 } : planWake(timing, now),
-      now,
-      actor,
-      { paused },
-    );
-    return row;
+    return this.db.scheduleTransaction(async (tx) => {
+      const row = await tx.insertSchedule(
+        {
+          scheduleId,
+          agentId,
+          timing,
+          description: summary,
+          instruction: text,
+          wake: paused ? { at: now, windowFires: 0 } : planWake(timing, now),
+          paused,
+        },
+        now,
+      );
+      await tx.recordChangeIfAny(actor, routineChange(null, row));
+      return row;
+    });
   }
 
   async listForAgent(agentId: string): Promise<string> {
@@ -87,40 +107,55 @@ export class Schedules {
     return lines.join("\n\n");
   }
 
-  async listForGuild(guildId: string): Promise<Array<Record<string, unknown>>> {
-    const items: Array<Record<string, unknown>> = [];
+  async listForGuild(guildId: string): Promise<GuildScheduleItem[]> {
+    const items: GuildScheduleItem[] = [];
     for (const row of await this.db.listSchedulesForGuild(guildId)) {
       const item = await this.view(row);
-      item.agent = {
-        id: row.agent_id,
-        name: row.agent_name,
-        avatar_shape: row.avatar_shape || "teardrop",
-        avatar_color: row.avatar_color || "#7c5cff",
-      };
-      items.push(item);
+      items.push({
+        ...item,
+        agent: {
+          id: row.agent_id,
+          name: row.agent_name,
+          avatar_shape: row.avatar_shape || "teardrop",
+          avatar_color: row.avatar_color || "#7c5cff",
+        },
+      });
     }
     return items;
   }
 
-  async view(row: Record<string, unknown>): Promise<Record<string, unknown>> {
+  async viewsForAgent(agentId: string): Promise<ScheduleItem[]> {
+    const items: ScheduleItem[] = [];
+    for (const row of await this.db.listSchedules(agentId)) {
+      items.push(await this.view(row));
+    }
+    return items;
+  }
+
+  async view(row: ScheduleRow): Promise<ScheduleItem> {
     const item = scheduleItem(row);
-    item.instruction = await this.instructionFor(String(row.agent_id), row);
-    item.description = rowDescription(row, String(item.instruction));
+    const instruction = await this.instructionFor(row.agent_id, row);
+    item.instruction = instruction;
+    item.description = rowDescription(row, instruction);
     return item;
   }
 
-  async instructionFor(_agentId: string, row: Record<string, unknown>): Promise<string> {
-    return String(row.instruction ?? "");
+  async instructionFor(_agentId: string, row: ScheduleDefinition): Promise<string> {
+    return row.instruction;
   }
 
-  async delete(actor: ChangeActor, agentId: string, scheduleId: string): Promise<Record<string, unknown>> {
+  async delete(actor: ChangeActor, agentId: string, scheduleId: string): Promise<ScheduleRow> {
     const token = (scheduleId || "").trim();
     if (!token) {
       throw new ScheduleError("schedule_id is required");
     }
-    const row = await this.db.deleteSchedule(agentId, token, actor);
+    const row = await this.db.scheduleTransaction(async (tx) => {
+      const deleted = await tx.deleteSchedule(agentId, token);
+      await tx.recordChangeIfAny(actor, deleted ? routineChange(deleted, null) : null);
+      return deleted;
+    });
     if (row === null) {
-      throw new ScheduleError("schedule not found");
+      throw new ScheduleError("schedule not found", 404);
     }
     return row;
   }
@@ -130,20 +165,22 @@ export class Schedules {
     agentId: string,
     scheduleId: string,
     paused: boolean,
-  ): Promise<Record<string, unknown>> {
+  ): Promise<ScheduleRow> {
     const token = (scheduleId || "").trim();
     if (!token) {
       throw new ScheduleError("schedule_id is required");
     }
     const row = await this.db.getSchedule(agentId, token);
     if (row === null) {
-      throw new ScheduleError("schedule not found");
+      throw new ScheduleError("schedule not found", 404);
     }
     const now = new Date();
-    const nxt = paused ? null : planWake(rowTiming(row), now);
-    const updated = await this.db.setSchedulePaused(agentId, token, paused, nxt, now, actor);
+    const key = { agentId, scheduleId: token };
+    const updated = await this.changeSchedule(key, actor, (tx) =>
+      paused ? tx.pauseSchedule(key, now) : tx.resumeSchedule(key, planWake(rowTiming(row), now), now),
+    );
     if (updated === null) {
-      throw new ScheduleError("schedule not found");
+      throw new ScheduleError("schedule not found", 404);
     }
     return updated;
   }
@@ -158,26 +195,36 @@ export class Schedules {
     agentId: string,
     scheduleId: string,
     changes: ScheduleChanges,
-  ): Promise<Record<string, unknown>> {
+  ): Promise<ScheduleRow> {
     const row = await this.db.getSchedule(agentId, (scheduleId || "").trim());
     if (row === null) {
-      throw new ScheduleError("schedule not found");
+      throw new ScheduleError("schedule not found", 404);
     }
     const fields = changedFields(row, changes);
-    const replan = !fields.paused && (changes.when !== undefined || Boolean(row.paused));
+    const replan = !fields.paused && (changes.when !== undefined || row.paused);
     const now = new Date();
-    const updated = await this.db.updateSchedule(
-      agentId,
-      String(row.id),
-      fields,
-      replan ? planWake(fields.timing, now) : null,
-      now,
-      actor,
+    const key = { agentId, scheduleId: row.id };
+    const updated = await this.changeSchedule(key, actor, (tx) =>
+      tx.updateSchedule(key, { ...fields, wake: replan ? planWake(fields.timing, now) : null }, now),
     );
     if (updated === null) {
-      throw new ScheduleError("schedule not found");
+      throw new ScheduleError("schedule not found", 404);
     }
     return updated;
+  }
+
+  /** Runs `write` on one routine, locked, and logs what it changed against `actor`. */
+  private changeSchedule(
+    key: ScheduleKey,
+    actor: ChangeActor,
+    write: (tx: ScheduleQueries) => Promise<ScheduleRow | null>,
+  ): Promise<ScheduleRow | null> {
+    return this.db.scheduleTransaction(async (tx) => {
+      const before = await tx.lockSchedule(key);
+      const after = await write(tx);
+      await tx.recordChangeIfAny(actor, before && after ? routineChange(before, after) : null);
+      return after;
+    });
   }
 
   async releaseGuild(guildId: string): Promise<void> {
@@ -186,7 +233,7 @@ export class Schedules {
       if (row.paused) continue;
       const at = scheduleInstant(row.next_run_at);
       if (at === null || at > now.getTime()) continue;
-      await this.db.setScheduleNextRun(String(row.id), planWake(rowTiming(row), now), now);
+      await this.db.setScheduleNextRun(row.id, planWake(rowTiming(row), now), now);
     }
   }
 }
@@ -214,45 +261,34 @@ export function scheduleChanges(input: Record<string, unknown>): ScheduleChanges
   };
 }
 
-/** A routine's definition after `changes`, each changed field validated. */
+/**
+ * A routine's definition after `changes`, each changed field validated. A field
+ * `changes` leaves out keeps `before`'s value; with no `before`, the routine is
+ * new, so its timing, description, and instruction are required and it starts
+ * unpaused unless `changes` pauses it.
+ */
 export function changedFields(
-  row: Record<string, unknown>,
+  before: ScheduleDefinition | null,
   changes: ScheduleChanges,
-): { timing: ScheduleTiming; description: string; instruction: string; paused: boolean } {
+): ScheduleFields {
   return {
-    timing: changes.when === undefined ? rowTiming(row) : validateTiming(changes.when),
+    timing:
+      changes.when === undefined && before
+        ? rowTiming(before)
+        : validateTiming(changes.when ?? {}),
     description:
-      changes.description === undefined
-        ? String(row.description ?? "")
+      changes.description === undefined && before
+        ? before.description
         : validateScheduleDescription(changes.description),
     instruction:
-      changes.instruction === undefined
-        ? String(row.instruction ?? "")
+      changes.instruction === undefined && before
+        ? before.instruction
         : validateInstruction(changes.instruction),
-    paused: changes.paused === undefined ? Boolean(row.paused) : changes.paused,
+    paused: changes.paused ?? before?.paused ?? false,
   };
 }
 
-function scheduleInstant(value: unknown): number | null {
-  if (value instanceof Date) {
-    return value.getTime();
-  }
-  if (typeof value === "string" && value) {
-    const time = Date.parse(value);
-    return Number.isFinite(time) ? time : null;
-  }
-  return null;
-}
-
-function rowDescription(row: Record<string, unknown>, instruction?: string | null): string {
-  const raw = row.description;
-  const text = String(raw ?? "").trim();
-  if (text) {
-    return text;
-  }
-  const body = instruction === undefined || instruction === null ? row.instruction : instruction;
-  if (!body) {
-    return "";
-  }
-  return String(body).split("\n")[0] ?? "";
+function scheduleInstant(value: string): number | null {
+  const time = Date.parse(value);
+  return Number.isFinite(time) ? time : null;
 }

@@ -2,17 +2,19 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { decodeMasterKey } from "../../src/config/index.js";
-import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
+import { connect } from "../../src/seed/connect.js";
 import type { GenerationLoop } from "../../src/generation/index.js";
 import { McpPool } from "../../src/mcp/index.js";
-import { ArtifactStore } from "../../src/artifacts/index.js";
+import { artifactStore } from "../../src/artifacts/index.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, testEnv } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { addAgent } from "../../src/agents/persist.js";
+import { createRun, insertMessage } from "../../src/db/runs.js";
+import { agentConfig, runSnapshot } from "../helpers/generation.js";
 
 const AUTH = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 const JSON_AUTH = { ...AUTH, "content-type": "application/json" };
@@ -30,27 +32,29 @@ test("a code_task's diff and log are read from its own checkpoints and log, and 
   const database = await connect(databaseUrl);
   const notes = new NotesStore(env.NOTES_ROOT ?? "", templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
+  const db = database.pool;
   const diffs: Array<[string, string, string | null]> = [];
   const logs: Array<[string, string, string]> = [];
-  // Only what the routes reach: the group-chat feed they observe, and the diff and log read from the machine.
+  // Only what the routes reach: the group-chat feed they observe, and the diff and log the coding runs read from the machine.
   const generation = {
-    group_chat: { observe: () => undefined },
-    async runDiff(runId: string, repository: string, task: string | null = null) {
-      diffs.push([runId, repository, task]);
-      return { diff: "+print('hello, guild')\n", truncated: false };
-    },
-    async harnessLog(runId: string, callId: string, harness: string) {
-      logs.push([runId, callId, harness]);
-      return { lines: ["Bash: ls"], raw: '{"type":"init"}\n', bytes: 16 };
+    groupChat: { observe: () => undefined },
+    coding: {
+      async runDiff(runId: string, repository: string, task: string | null = null) {
+        diffs.push([runId, repository, task]);
+        return { diff: "+print('hello, guild')\n", truncated: false };
+      },
+      async harnessLog(runId: string, callId: string, harness: string) {
+        logs.push([runId, callId, harness]);
+        return { lines: ["Bash: ls"], raw: '{"type":"init"}\n', bytes: 16 };
+      },
     },
   } as unknown as GenerationLoop;
   const app = await buildApp(database, {
-    repo,
+    db,
     notes,
-    artifacts: new ArtifactStore(database.pool, notes.templates),
-    scripts: new Scripts(repo),
-    schedules: new Schedules(repo),
+    artifacts: artifactStore(database.pool, notes.templates),
+    scripts: new Scripts(scriptDatabase(db)),
+    schedules: new Schedules(scheduleDatabase(db)),
     masterKey: decodeMasterKey(HEX_MASTER_KEY),
     mcp: new McpPool(),
     generation,
@@ -59,18 +63,37 @@ test("a code_task's diff and log are read from its own checkpoints and log, and 
     const guild = await app.inject({ method: "POST", url: "/api/guilds", headers: JSON_AUTH, payload: { name: "diff-desk" } });
     assert.equal(guild.statusCode, 201, guild.body);
     const now = new Date();
-    await repo.insertAgent("a_diff", String(guild.json().id), "coder", { model: "openrouter/openai/gpt-5.6-luna" }, now);
-    await repo.createRun("r_diff", "a_diff", {}, "sys", "task", null, now, {
-      systemPromptHash: "s",
-      taskPromptHash: "t",
-      memoryPromptHash: "m",
-    });
+    await addAgent(db,
+      {
+        agentId: "a_diff",
+        guildId: String(guild.json().id),
+        name: "coder",
+        config: agentConfig({ model: "openrouter/openai/gpt-5.6-luna" }),
+      },
+      now,
+    );
+    await createRun(db,
+      {
+        runId: "r_diff",
+        agentId: "a_diff",
+        configSnapshot: runSnapshot(),
+        systemContent: "sys",
+        taskContent: "task",
+        userContent: null,
+        systemPromptHash: "s",
+        taskPromptHash: "t",
+        memoryPromptHash: "m",
+      },
+      now,
+    );
     const result = (callId: string, metadata: Record<string, unknown>, seq: number) =>
-      repo.insertMessage(
-        "r_diff",
-        seq,
-        { role: "tool", tool_call_id: callId, content: "done" },
-        { tool_call_id: callId, ...metadata },
+      insertMessage(db,
+        {
+          runId: "r_diff",
+          seq,
+          payload: { role: "tool", tool_call_id: callId, content: "done" },
+          metadata: { tool_call_id: callId, ...metadata },
+        },
         now,
       );
     await result(

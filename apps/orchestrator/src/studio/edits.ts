@@ -1,27 +1,25 @@
 import { createHash } from "node:crypto";
-import {
-  ArtifactError,
-  assertNoteKeyFree,
-  hashArtifactContent,
-  normalizeNoteKey,
-  ownerPrefix,
-  parseDisplayPath,
-  type ArtifactStore,
-} from "../artifacts/index.js";
+import { ArtifactError, assertNoteKeyFree, hashArtifactContent, normalizeNoteKey, ownerPrefix, parseDisplayPath, type ArtifactStore } from "../artifacts/index.js";
 import { WRITE_MAX_BYTES } from "../artifacts/types.js";
-import { jsonObj } from "../db/json.js";
-import type { Repositories } from "../db/repositories.js";
+import { changeGuild } from "../guilds/changes.js";
 import type { Schedules } from "../schedules/service.js";
 import { GuildValidationError, validateAbout, validateGuildDescription } from "../guilds/validation.js";
 import { argString } from "../toolbox/schema.js";
 import { STUDIO_ACCESS_TOOLS, applyAccess, isAccessTool, reviewAccess, reviewAccessRequest } from "./access.js";
 import { StudioConflictError, StudioError, StudioUnprocessableError } from "./errors.js";
-import type { StudioStore } from "./store.js";
-import type { StudioOrigin } from "../db/config-changes.js";
+import type { StudioOrigin } from "../lib/change-actor.js";
 import { editActor } from "./actor.js";
 import { editActionOf } from "./actions.js";
 import { STUDIO_TABLE_TOOL, applyTable, isTableTool, reviewTable } from "./tables.js";
 import { STUDIO_ROUTINE_TOOL, applyRoutine, isRoutineTool, reviewRoutine, type RoutineChange } from "./routines.js";
+import { getAgent, listAgents, type AgentRow } from "../db/agents.js";
+import { getGuild, type GuildRow } from "../db/guilds.js";
+import type { Queryable } from "../db/pg.js";
+import { getConversationMessage, updateConversationMessage, type ConversationMessageRow } from "../db/conversations.js";
+import type { ConversationMessageMetadata, ToolCall } from "../db/schema/index.js";
+import type { UserRow } from "../db/users.js";
+import { deleteByDisplayPath, getByDisplayPath, writeNote } from "../artifacts/notes.js";
+import { getMemoryRow, writeMemory } from "../artifacts/memory.js";
 
 // An edit tool never writes. It returns this widget; the turn pauses until
 // the operator applies or declines the proposal from the Studio log.
@@ -69,8 +67,8 @@ export type EditScope = {
   sessionId: string;
   /** The coach message being applied; set by `applyEdit` so every write links to it. */
   origin?: StudioOrigin;
-  user: Record<string, unknown>;
-  repo: Repositories;
+  user: UserRow;
+  db: Queryable;
   artifacts: ArtifactStore;
   schedules: Schedules;
 };
@@ -102,17 +100,17 @@ function artifactFailure(error: unknown): never {
 }
 
 async function sourceAgentIds(scope: EditScope): Promise<Set<string>> {
-  const agents = await scope.repo.listAgents(scope.sourceGuildId);
+  const agents = await listAgents(scope.db, scope.sourceGuildId);
   return new Set(agents.map((row) => String(row.id)));
 }
 
-export async function loadMemoryBase(scope: EditScope, agent: Record<string, unknown>): Promise<EditBase> {
-  const agentId = String(agent.id);
-  const row = await scope.artifacts.getMemoryRow(editActor(scope, { agentId }), agentId);
+export async function loadMemoryBase(scope: EditScope, agent: Pick<AgentRow, "id" | "name">): Promise<EditBase> {
+  const agentId = agent.id;
+  const row = await getMemoryRow(scope.artifacts, editActor(scope, { agentId }), agentId);
   return {
     kind: "memory",
     agentId,
-    agentName: String(agent.name),
+    agentName: agent.name,
     guildId: scope.sourceGuildId,
     version: Number(row?.version ?? 0),
     content: row?.content_text ?? "",
@@ -140,7 +138,7 @@ export async function loadNoteBase(scope: EditScope, displayPath: string): Promi
   }
   let loaded;
   try {
-    loaded = await scope.artifacts.getByDisplayPath(editActor(scope), displayPath);
+    loaded = await getByDisplayPath(scope.artifacts, editActor(scope), displayPath);
   } catch (error) {
     artifactFailure(error);
   }
@@ -167,7 +165,7 @@ export async function loadNoteBase(scope: EditScope, displayPath: string): Promi
 }
 
 export async function loadGuildBase(scope: EditScope): Promise<EditBase> {
-  const guild = await scope.repo.getGuild(scope.sourceGuildId);
+  const guild = await getGuild(scope.db, scope.sourceGuildId);
   if (!guild || String(guild.org_id) !== scope.orgId) {
     throw new StudioUnprocessableError("source guild not found");
   }
@@ -366,7 +364,7 @@ function names(rows: Array<Record<string, unknown>>): string {
 /** A note at a display path, or null when none is live there. */
 async function liveNoteAt(scope: EditScope, displayPath: string): Promise<{ version: number } | null> {
   try {
-    const loaded = await scope.artifacts.getByDisplayPath(editActor(scope), displayPath);
+    const loaded = await getByDisplayPath(scope.artifacts, editActor(scope), displayPath);
     return loaded.row && !loaded.tombstone ? { version: Number(loaded.row.version) } : null;
   } catch (error) {
     if (error instanceof ArtifactError && error.status === 404) return null;
@@ -399,15 +397,15 @@ async function reviewNoteCreate(
   let ownerId: string;
   let reader: string;
   if (level === "agent") {
-    const agents = await scope.repo.listAgents(scope.sourceGuildId);
+    const agents = await listAgents(scope.db, scope.sourceGuildId);
     const agent = agents.find((row) => String(row.id) === agentId);
     if (!agent) {
       throw new StudioUnprocessableError("an agent note needs agent_id: a live agent of the source guild");
     }
-    ownerId = String(agent.id);
+    ownerId = agent.id;
     reader = `Only ${agent.name} reads it.`;
   } else if (level === "guild") {
-    const guild = await scope.repo.getGuild(scope.sourceGuildId);
+    const guild = await getGuild(scope.db, scope.sourceGuildId);
     ownerId = scope.sourceGuildId;
     reader = `Every agent of ${guild?.name ?? "the guild"} that reads guild notes reaches it.`;
   } else {
@@ -441,7 +439,7 @@ async function reviewNoteDelete(scope: EditScope, displayPath: string): Promise<
   if (base.kind !== "note") {
     throw new StudioUnprocessableError("only notes can be deleted here");
   }
-  const members = await scope.repo.listAgents(scope.sourceGuildId);
+  const members = await listAgents(scope.db, scope.sourceGuildId);
   const embedding = members.filter((row) => String(row.task ?? "").includes(`![[${base.displayPath}]]`));
   const naming = members.filter(
     (row) => !embedding.includes(row) && String(row.task ?? "").includes(base.displayPath),
@@ -497,7 +495,7 @@ async function applyNote(scope: EditScope, plan: NotePlan): Promise<number | nul
   });
   try {
     if (plan.action === "create") {
-      const row = await scope.artifacts.writeNote(toolActor, {
+      const row = await writeNote(scope.artifacts, toolActor, {
         level: plan.level,
         key: plan.key,
         content: plan.content,
@@ -507,7 +505,7 @@ async function applyNote(scope: EditScope, plan: NotePlan): Promise<number | nul
       });
       return row.version;
     }
-    await scope.artifacts.deleteByDisplayPath(toolActor, plan.displayPath);
+    await deleteByDisplayPath(scope.artifacts, toolActor, plan.displayPath);
     return null;
   } catch (error) {
     artifactFailure(error);
@@ -575,7 +573,7 @@ export type EditRecord = {
   toolCallId: string;
   widget: Record<string, unknown>;
   args: Record<string, unknown>;
-  metadata: Record<string, unknown>;
+  metadata: ConversationMessageMetadata;
 };
 
 function parseJsonObject(text: unknown): Record<string, unknown> | null {
@@ -588,47 +586,47 @@ function parseJsonObject(text: unknown): Record<string, unknown> | null {
   }
 }
 
-export function findEditRecord(messages: Array<Record<string, unknown>>, seq: number): EditRecord {
-  const message = messages.find((row) => Number(row.seq) === seq);
-  const payload = (jsonObj(message?.payload) as Record<string, unknown> | null) ?? {};
-  const widget = payload.role === "tool" ? parseJsonObject(payload.content) : null;
-  if (!message || !widget || widget.widget !== STUDIO_EDIT_WIDGET) {
-    throw new StudioError(404, "edit request not found");
-  }
-  const toolCallId = String(payload.tool_call_id ?? "");
-  for (const row of messages) {
-    const assistant = (jsonObj(row.payload) as Record<string, unknown> | null) ?? {};
-    if (assistant.role !== "assistant" || !Array.isArray(assistant.tool_calls)) continue;
-    for (const call of assistant.tool_calls as Array<Record<string, unknown>>) {
-      if (String(call.id ?? "") !== toolCallId) continue;
-      const fn = (call.function ?? {}) as Record<string, unknown>;
-      const name = String(fn.name ?? "");
-      const args = parseJsonObject(fn.arguments);
-      if (!args || !(STUDIO_EDIT_TOOLS as readonly string[]).includes(name)) break;
-      return {
-        seq,
-        toolName: name as StudioEditTool,
-        toolCallId,
-        widget,
-        args,
-        metadata: (jsonObj(message.metadata) as Record<string, unknown> | null) ?? {},
-      };
+function isEditTool(name: string): name is StudioEditTool {
+  return STUDIO_EDIT_TOOLS.some((tool) => tool === name);
+}
+
+/** The call of an assistant message in `messages` with the id `callId`. */
+function callById(messages: ConversationMessageRow[], callId: string): ToolCall | undefined {
+  for (const { payload } of messages) {
+    const call = payload.role === "assistant" ? payload.tool_calls?.find((item) => item.id === callId) : undefined;
+    if (call) {
+      return call;
     }
   }
-  throw new StudioError(404, "edit request not found");
+  return undefined;
+}
+
+export function findEditRecord(messages: ConversationMessageRow[], seq: number): EditRecord {
+  const message = messages.find((row) => row.seq === seq);
+  const payload = message?.payload;
+  const widget = payload?.role === "tool" ? parseJsonObject(payload.content) : null;
+  if (!message || payload?.role !== "tool" || !widget || widget.widget !== STUDIO_EDIT_WIDGET) {
+    throw new StudioError(404, "edit request not found");
+  }
+  const toolCallId = payload.tool_call_id;
+  const call = callById(messages, toolCallId);
+  const args = call ? parseJsonObject(call.function.arguments) : null;
+  if (!call || !args || !isEditTool(call.function.name)) {
+    throw new StudioError(404, "edit request not found");
+  }
+  return { seq, toolName: call.function.name, toolCallId, widget, args, metadata: message.metadata };
 }
 
 export function editStatus(record: EditRecord): StudioEditStatus {
-  const status = record.metadata.edit_status;
-  return status === "applied" || status === "declined" ? status : "pending";
+  return record.metadata.edit_status ?? "pending";
 }
 
 async function loadBaseFor(scope: EditScope, record: EditRecord): Promise<EditBase> {
   const edit = (record.widget.edit ?? {}) as Record<string, unknown>;
   const target = (edit.target ?? {}) as Record<string, unknown>;
   if (record.toolName === "studio_edit_memory") {
-    const agent = await scope.repo.getAgent(String(target.agent_id ?? ""));
-    if (!agent || String(agent.guild_id) !== scope.sourceGuildId) {
+    const agent = await getAgent(scope.db, String(target.agent_id ?? ""));
+    if (!agent || agent.guild_id !== scope.sourceGuildId) {
       throw new StudioUnprocessableError("agent is not in the source guild");
     }
     return loadMemoryBase(scope, agent);
@@ -763,7 +761,7 @@ function assertBound(review: { baseHash: string; proposedHash: string }, edit: R
 export async function applyEdit(
   live: EditScope,
   record: EditRecord,
-): Promise<{ version: number | null; guild?: Record<string, unknown>; routine?: RoutineChange }> {
+): Promise<{ version: number | null; guild?: GuildRow; routine?: RoutineChange }> {
   const scope: EditScope = { ...live, origin: { sessionId: live.sessionId, seq: record.seq } };
   const edit = (record.widget.edit ?? {}) as Record<string, unknown>;
   if (isRoutineTool(record.toolName)) {
@@ -804,13 +802,7 @@ export async function applyEdit(
   if (base.kind === "memory") {
     const actor = { ...editActor(scope, { agentId: base.agentId }), toolCall };
     try {
-      const row = await scope.artifacts.writeMemory(
-        actor,
-        base.agentId,
-        proposed as string,
-        record.toolName,
-        base.version > 0 ? base.version : undefined,
-      );
+      const row = await writeMemory(scope.artifacts, actor, base.agentId, { content: proposed as string, detail: record.toolName, ...(base.version > 0 ? { expectedVersion: base.version } : {}) });
       return { version: row.version };
     } catch (error) {
       artifactFailure(error);
@@ -829,7 +821,7 @@ export async function applyEdit(
       toolCall,
     };
     try {
-      const row = await scope.artifacts.writeNote(actor, {
+      const row = await writeNote(scope.artifacts, actor, {
         level: base.level,
         key: parsed.key,
         content: proposed as string,
@@ -842,9 +834,9 @@ export async function applyEdit(
     }
   }
   const text = proposed as GuildText;
-  const row = await scope.repo.updateGuild(
+  const row = await changeGuild(
+    scope.db,
     base.guildId,
-    new Date(),
     { about: text.about, description: text.description },
     editActor(scope),
   );
@@ -862,23 +854,23 @@ export type EditResolution = {
 };
 
 export async function markEdit(
-  store: StudioStore,
+  db: Queryable,
   sessionId: string,
   record: EditRecord,
   resolution: EditResolution,
 ): Promise<void> {
-  const message = await store.getMessage(sessionId, record.seq);
+  const message = await getConversationMessage(db, "studio", sessionId, record.seq);
   if (!message) return;
-  await store.updateMessage(
-    sessionId,
-    record.seq,
-    (jsonObj(message.payload) as Record<string, unknown>) ?? {},
-    {
+  await updateConversationMessage(db, "studio", {
+    session_id: sessionId,
+    seq: record.seq,
+    payload: message.payload,
+    metadata: {
       ...record.metadata,
       edit_status: resolution.status,
       edit_resolved_at: new Date().toISOString(),
       resolved_by_user_id: resolution.userId,
       ...(resolution.status === "applied" ? { edit_version: resolution.version } : {}),
     },
-  );
+  });
 }

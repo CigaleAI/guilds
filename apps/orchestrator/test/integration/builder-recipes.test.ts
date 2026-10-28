@@ -1,20 +1,19 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { persistAgent } from "../../src/agents/persist.js";
-import { ArtifactStore } from "../../src/artifacts/index.js";
+import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
+import { writeAgentTask } from "../../src/agents/task.js";
+import { artifactStore } from "../../src/artifacts/index.js";
 import { buildApp } from "../../src/app.js";
 import { BuilderService } from "../../src/builder/index.js";
 import { CapabilityService } from "../../src/capabilities/index.js";
 import { generationLive } from "../../src/conversation/runner.js";
-import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
+import { connect } from "../../src/seed/connect.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { persistGuild } from "../../src/guilds/persist.js";
-import { RecipeApplyService } from "../../src/recipes/apply.js";
-import { RecipeStore } from "../../src/recipes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { guildDatabase, persistGuild } from "../../src/guilds/persist.js";
+import { recipeApply } from "../../src/recipes/apply.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { completionReply } from "../helpers/generation.js";
@@ -25,13 +24,24 @@ import {
   dropIsolatedDatabase,
   uniqueDbName,
 } from "../helpers/postgres.js";
+import { getGuild, listGuilds } from "../../src/db/guilds.js";
+import { insertUser } from "../../src/db/users.js";
+import { insertMember } from "../../src/db/orgs.js";
+import { getAgentTask, listAgents } from "../../src/db/agents.js";
+import { listSchedules } from "../../src/db/schedules.js";
+import { listBindingsCovering } from "../../src/db/bindings.js";
+import { agentConfig } from "../helpers/generation.js";
+import { grantAccess } from "../../src/artifacts/access-lists.js";
+import { writeNote } from "../../src/artifacts/notes.js";
+import { createCollection } from "../../src/artifacts/collections.js";
+import { operatorContext } from "../../src/artifacts/store.js";
 
 const AUTH = {
   "X-Guilds-User": "user_operator",
   "X-Guilds-Org": "org_home",
 };
 
-const CONFIG = {
+const CONFIG = agentConfig({
   model: TEST_MODEL,
   temperature: 1,
   max_tokens: 8192,
@@ -39,7 +49,7 @@ const CONFIG = {
   max_tool_calls: 50,
   max_input_tokens: 100000,
   browser: false,
-};
+});
 
 const dbName = uniqueDbName("agent_platform_builder");
 const originalStream = generationLive.streamCompletion;
@@ -49,30 +59,28 @@ after(async () => {
   await dropIsolatedDatabase(dbName);
 });
 
-test("builder, recipes, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => {
+test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => {
   const databaseUrl = await createIsolatedDatabase(dbName);
   const database = await connect(databaseUrl);
   const notes = new NotesStore(tempDir("guilds-builder-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
-  await connectModelProvider(repo, "org_home", "deepinfra");
-  const artifacts = new ArtifactStore(database.pool, templatesRoot());
-  const scripts = new Scripts(repo);
-  const schedules = new Schedules(repo);
-  const recipes = new RecipeStore(repo.pool);
+  const db = database.pool;
+  await connectModelProvider(db, "org_home", "deepinfra");
+  const artifacts = artifactStore(database.pool, templatesRoot());
+  const scripts = new Scripts(scriptDatabase(db));
+  const schedules = new Schedules(scheduleDatabase(db));
   const caps = { maxAgents: 25 };
   const policy = limitedPolicy(caps);
-  const capabilities = new CapabilityService(repo, policy);
-  const apply = new RecipeApplyService({ repo, recipes, artifacts, notes, scripts, schedules, policy, registry: null });
-  const builder = new BuilderService({ repo, recipes, capabilities, apply, policy });
+  const capabilities = new CapabilityService(db, policy);
+  const apply = recipeApply({ db, artifacts, notes, scripts, schedules, policy, registry: null });
+  const builder = new BuilderService({ db, capabilities, apply, policy });
   const app = await buildApp(database, {
-    repo,
+    db,
     notes,
     artifacts,
     scripts,
     schedules,
     capabilities,
-    recipes,
     apply,
     builder,
   });
@@ -83,7 +91,7 @@ test("builder, recipes, apply, and LinkedIn to Notion", { timeout: 90_000 }, asy
   };
 
   const now = new Date();
-  const guildsBefore = await repo.listGuilds("org_home");
+  const guildsBefore = await listGuilds(db, "org_home");
 
   try {
     const created = await app.inject({
@@ -98,15 +106,20 @@ test("builder, recipes, apply, and LinkedIn to Notion", { timeout: 90_000 }, asy
     assert.ok(session.recipe_id);
     assert.equal(session.recipe.status, "draft");
     assert.equal(session.recipe.body_version, 1);
-    const guildsAfterCreate = await repo.listGuilds("org_home");
+    const guildsAfterCreate = await listGuilds(db, "org_home");
     assert.equal(guildsAfterCreate.length, guildsBefore.length);
     const listedSessions = await app.inject({ method: "GET", url: "/api/builder/sessions", headers: AUTH });
     assert.equal(listedSessions.statusCode, 200, listedSessions.body);
     const listedRow = (listedSessions.json() as Array<Record<string, unknown>>).find((row) => row.id === session.id);
     assert.equal((listedRow?.recipe as { name?: string } | undefined)?.name, "Untitled guild");
 
-    const teammate = await repo.insertUser("user_teammate_b", "teammate-b", now, null, "teammate-b@example.com");
-    await repo.insertMember("org_home", String(teammate.id), "member", now);
+    const teammate = await insertUser(db, {
+        userId: "user_teammate_b",
+        name: "teammate-b",
+        image: null,
+        email: "teammate-b@example.com",
+      }, now);
+    await insertMember(db, "org_home", String(teammate.id), "member", now);
     const denied = await app.inject({
       method: "GET",
       url: `/api/builder/sessions/${session.id}`,
@@ -146,7 +159,7 @@ test("builder, recipes, apply, and LinkedIn to Notion", { timeout: 90_000 }, asy
       headers: AUTH,
     });
     assert.ok((messages.json() as unknown[]).length >= 2);
-    const stored = await builder.store.listMessages(session.id);
+    const stored = await builder.messages(session);
     const system = stored[0]?.payload as { role: string; content: string };
     assert.equal(system.role, "system");
     assert.match(system.content, new RegExp(`"role": "${linkedInNotionRecipe().roles[0]?.role}"`));
@@ -215,7 +228,7 @@ test("builder, recipes, apply, and LinkedIn to Notion", { timeout: 90_000 }, asy
       payload: {},
     });
     assert.equal(blocked.statusCode, 422, blocked.body);
-    assert.equal((await repo.listGuilds("org_home")).length, guildsBefore.length);
+    assert.equal((await listGuilds(db, "org_home")).length, guildsBefore.length);
     caps.maxAgents = 10;
 
     const deployed = await app.inject({
@@ -228,16 +241,16 @@ test("builder, recipes, apply, and LinkedIn to Notion", { timeout: 90_000 }, asy
     const applyRow = deployed.json();
     assert.equal(applyRow.status, "checklist");
     assert.ok(applyRow.guild_id);
-    const members = await repo.listAgents(String(applyRow.guild_id));
+    const members = await listAgents(db, String(applyRow.guild_id));
     assert.equal(members.length, 2);
     for (const member of members) {
-      const rows = await repo.listSchedules(String(member.id));
+      const rows = await listSchedules(db, String(member.id));
       assert.ok(rows.length);
       assert.ok(rows.every((row) => row.paused === true));
-      const task = (await repo.getAgentTask("org_home", String(member.id)))?.content_text ?? "";
+      const task = (await getAgentTask(db, "org_home", String(member.id)))?.content_text ?? "";
       assert.ok(task.trim().length > 20, `${member.name} task`);
     }
-    const orgBindings = await repo.listBindingsCovering({ orgId: "org_home" });
+    const orgBindings = await listBindingsCovering(db, { orgId: "org_home" });
     assert.equal(
       orgBindings.filter((row) => row.scope === "org" && row.catalog_kind === "mcp").length,
       0,
@@ -272,7 +285,7 @@ test("builder, recipes, apply, and LinkedIn to Notion", { timeout: 90_000 }, asy
       headers: AUTH,
     });
     assert.equal(abort.statusCode, 200, abort.body);
-    assert.equal((await repo.getGuild(String(applyRow.guild_id)))?.id, undefined);
+    assert.equal((await getGuild(db, String(applyRow.guild_id)))?.id, undefined);
     // Aborting an apply that created its guild also removes the tables it created.
     const abortedTables = await app.inject({ method: "GET", url: "/api/collections", headers: AUTH });
     const abortedNames = (abortedTables.json() as Array<{ name: string }>).map((row) => row.name);
@@ -327,11 +340,11 @@ test("builder, recipes, apply, and LinkedIn to Notion", { timeout: 90_000 }, asy
     });
     assert.equal(huskApply.statusCode, 201, huskApply.body);
     const huskGuildId = String(huskApply.json().guild_id);
-    const huskMembers = await repo.listAgents(huskGuildId);
+    const huskMembers = await listAgents(db, huskGuildId);
     assert.equal(huskMembers.length, 1);
-    const huskSchedules = await repo.listSchedules(String(huskMembers[0]?.id));
+    const huskSchedules = await listSchedules(db, String(huskMembers[0]?.id));
     assert.equal(huskSchedules.length, 0);
-    const huskTask = (await repo.getAgentTask("org_home", String(huskMembers[0]?.id)))?.content_text ?? "";
+    const huskTask = (await getAgentTask(db, "org_home", String(huskMembers[0]?.id)))?.content_text ?? "";
     assert.match(huskTask, /Match Cigale stories/);
     const huskAbort = await app.inject({
       method: "POST",
@@ -340,7 +353,7 @@ test("builder, recipes, apply, and LinkedIn to Notion", { timeout: 90_000 }, asy
     });
     assert.equal(huskAbort.statusCode, 200, huskAbort.body);
 
-    await persistGuild(repo, notes, {
+    await persistGuild(guildDatabase(db), notes, {
       guildId: "guild_capture",
       name: "capture-src",
       now,
@@ -349,7 +362,7 @@ test("builder, recipes, apply, and LinkedIn to Notion", { timeout: 90_000 }, asy
       about: "source",
       creatorUserId: "user_operator",
     });
-    await persistAgent(repo, notes, {
+    await persistAgent(agentDatabase(db), notes, {
       agentId: "a_capture",
       guildId: "guild_capture",
       guildName: "capture-src",
@@ -361,26 +374,22 @@ test("builder, recipes, apply, and LinkedIn to Notion", { timeout: 90_000 }, asy
       now,
       artifacts,
     });
-    await repo.writeAgentTask(
-      artifacts.operatorContext("org_home", "user_operator", "operator", {
+    await writeAgentTask(db, operatorContext("org_home", "user_operator", "operator", {
         guildId: "guild_capture",
         agentId: "a_capture",
-      }),
-      "a_capture",
-      "Ping @scout and keep @user.",
-    );
-    const captureActor = artifacts.operatorContext("org_home", "user_operator", "operator", { guildId: "guild_capture" });
-    await artifacts.createCollection(captureActor, {
+      }), "a_capture", "Ping @scout and keep @user.");
+    const captureActor = operatorContext("org_home", "user_operator", "operator", { guildId: "guild_capture" });
+    await createCollection(artifacts, captureActor, {
       name: "capture-shared",
       purpose: "One record per lead the organisation shares.",
       columns: [{ name: "email", type: "text", description: "the lead's email", required: true, unique: true }],
     });
-    const glossary = await artifacts.writeNote(captureActor, {
+    const glossary = await writeNote(artifacts, captureActor, {
       level: "org",
       key: "capture-glossary.md",
       content: "Lead: a person worth a reply.\n",
     });
-    await artifacts.grantAccess(captureActor, { kind: "note", id: String(glossary.id) }, { type: "guild", id: "guild_capture" }, "write");
+    await grantAccess(artifacts, captureActor, { kind: "note", id: String(glossary.id) }, { type: "guild", id: "guild_capture", mode: "write" });
     const captured = await app.inject({
       method: "POST",
       url: "/api/guilds/guild_capture/recipes",

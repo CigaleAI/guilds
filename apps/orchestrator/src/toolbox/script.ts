@@ -1,5 +1,7 @@
 import { ScriptError } from "../scripts/validation.js";
-import { liveExtraRows, type RunScriptSnapshot } from "../scripts/snapshot.js";
+import type { AgentScript } from "../scripts/catalog.js";
+import type { RunScriptSnapshot } from "../db/schema/index.js";
+import { liveExtraRows } from "../scripts/snapshot.js";
 import {
   launcherCommand,
   SCRIPT_ARGS_ENV,
@@ -282,9 +284,6 @@ export function firstClassScriptSchemas(snapshot: RunScriptSnapshot[]): Array<Re
   return Object.values(dynamicScriptTools(snapshot)).map((tool) => tool.schema);
 }
 
-export function liveExtraForAgent(
-  snapshot: RunScriptSnapshot[],
-  live: Array<Record<string, unknown>>,
-): Array<Record<string, unknown>> {
+export function liveExtraForAgent(snapshot: RunScriptSnapshot[], live: AgentScript[]): AgentScript[] {
   return liveExtraRows(snapshot, live);
 }

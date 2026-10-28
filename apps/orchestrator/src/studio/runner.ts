@@ -4,41 +4,27 @@ import type { OrgPolicy } from "../policy/index.js";
 import {
   ConversationRunner,
   generationLive,
-  type ConversationStore,
   type ConversationTool,
 } from "../conversation/runner.js";
 import {
-  STUDIO_MAX_INPUT_TOKENS,
-  STUDIO_MAX_STEPS,
-  STUDIO_MAX_TOKENS,
-  STUDIO_MAX_TOOL_CALLS,
   STUDIO_MIN_UNSTUBBED_TOOL_RESULTS,
   STUDIO_PROJECTION_POLICY_VERSION,
   STUDIO_TOOL_RESULT_STUB_HINT,
 } from "./constants.js";
 import type { ModelCredentialsProvider } from "../llm/credentials.js";
-import type { StudioStore } from "./store.js";
+import type { Queryable } from "../db/pg.js";
 import { studioToolMap, type StudioTool, type StudioToolContext } from "./tools.js";
+import type { UserRow } from "../db/users.js";
+import type { StudioSessionRow } from "../db/studio.js";
 
 export { generationLive };
 
 export type StudioRunnerDeps = {
-  store: StudioStore;
+  db: Queryable;
   admission: AdmissionCoordinator;
   credentials?: ModelCredentialsProvider;
   policy?: OrgPolicy;
 };
-
-function studioConversationStore(store: StudioStore): ConversationStore {
-  return {
-    getSession: (sessionId) => store.getSession(sessionId),
-    nextSeq: (sessionId, client) => store.nextSeq(sessionId, client),
-    insertMessage: (...args) => store.insertMessage(...args),
-    listMessages: (sessionId) => store.listMessages(sessionId),
-    updateSession: (...args) => store.updateSession(...args),
-    incrementUsage: (...args) => store.incrementStudioUsage(...args),
-  };
-}
 
 function conversationTools(tools: Map<string, StudioTool>): Map<string, ConversationTool> {
   return new Map(
@@ -58,9 +44,9 @@ export class StudioRunner {
 
   constructor(public deps: StudioRunnerDeps) {
     this.inner = new ConversationRunner({
-      store: studioConversationStore(deps.store),
+      db: deps.db,
+      kind: "studio",
       admission: deps.admission,
-      admissionKind: "studio",
       stubHint: STUDIO_TOOL_RESULT_STUB_HINT,
       projectionPolicyVersion: STUDIO_PROJECTION_POLICY_VERSION,
       minUnstubbedToolResults: STUDIO_MIN_UNSTUBBED_TOOL_RESULTS,
@@ -95,14 +81,14 @@ export class StudioRunner {
   }
 
   start(args: {
-    session: Record<string, unknown>;
-    user: Record<string, unknown>;
+    session: StudioSessionRow;
+    user: UserRow;
     toolContext: Omit<StudioToolContext, "generation">;
     generation: number;
     generationContext: string;
     systemContent?: string;
   }): void {
-    const config = (args.session.config_snapshot ?? {}) as Record<string, unknown>;
+    const config = args.session.config_snapshot;
     this.inner.start({
       session: args.session,
       user: args.user,
@@ -117,15 +103,15 @@ export class StudioRunner {
           generation: args.generation,
           nextMessageSeq: upcoming,
         }) as StudioToolContext,
-      maxTokens: Number(config.max_tokens ?? STUDIO_MAX_TOKENS),
-      maxSteps: Number(config.max_steps ?? STUDIO_MAX_STEPS),
-      maxToolCalls: Number(config.max_tool_calls ?? STUDIO_MAX_TOOL_CALLS),
-      maxInput: Number(config.max_input_tokens ?? STUDIO_MAX_INPUT_TOKENS),
+      maxTokens: config.max_tokens,
+      maxSteps: config.max_steps,
+      maxToolCalls: config.max_tool_calls,
+      maxInput: config.max_input_tokens,
       minUnstubbed: STUDIO_MIN_UNSTUBBED_TOOL_RESULTS,
     });
   }
 
-  async reconcile(session: Record<string, unknown>): Promise<void> {
+  async reconcile(session: StudioSessionRow): Promise<void> {
     await this.inner.reconcile(session);
   }
 }

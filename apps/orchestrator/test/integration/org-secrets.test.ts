@@ -1,18 +1,25 @@
+import type pg from "pg";
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../../src/app.js";
 import { decodeMasterKey } from "../../src/config/index.js";
 import { decryptPayload } from "../../src/credentials/crypto.js";
-import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
+import { connect } from "../../src/seed/connect.js";
 import { TEST_MODEL } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { insertUser } from "../../src/db/users.js";
+import { insertMember, insertOrg } from "../../src/db/orgs.js";
+import { deleteGuild, insertGuild } from "../../src/db/guilds.js";
+import { addAgent } from "../../src/agents/persist.js";
+import { deleteAgent } from "../../src/db/agents.js";
+import { getSecret, listAgentSecrets } from "../../src/db/secrets.js";
+import { agentConfig } from "../helpers/generation.js";
 
 const dbName = uniqueDbName("agent_platform_org_secrets");
 const as = (user: string) => ({ "X-Guilds-User": user, "X-Guilds-Org": "org_home" });
@@ -30,7 +37,7 @@ type Meta = {
 };
 
 let app: FastifyInstance;
-let repo: Repositories;
+let db: pg.Pool;
 let closeDb: () => Promise<void>;
 const accessChanges: string[][] = [];
 const valueChanges: string[] = [];
@@ -41,39 +48,68 @@ before(async () => {
   closeDb = () => database.close();
   const notes = new NotesStore(tempDir("guilds-secrets-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  repo = new Repositories(database.pool);
+  db = database.pool;
   const generation = {
-    group_chat: { observe: () => undefined },
-    agent_is_busy: () => false,
-    secretAccessChanged: async (agentIds: string[]) => {
-      accessChanges.push([...agentIds].sort());
-    },
-    secretChanged: async (secretId: string) => {
-      valueChanges.push(secretId);
+    groupChat: { observe: () => undefined },
+    isAgentBusy: () => false,
+    secrets: {
+      secretAccessChanged: async (agentIds: string[]) => {
+        accessChanges.push([...agentIds].sort());
+      },
+      secretChanged: async (secretId: string) => {
+        valueChanges.push(secretId);
+      },
     },
   };
   app = await buildApp(database, {
-    repo,
+    db,
     notes,
-    scripts: new Scripts(repo),
-    schedules: new Schedules(repo),
+    scripts: new Scripts(scriptDatabase(db)),
+    schedules: new Schedules(scheduleDatabase(db)),
     masterKey: decodeMasterKey(HEX_MASTER_KEY),
     generation: generation as never,
   });
   const now = new Date();
-  await repo.insertUser("user_secret_admin", "secret-admin", now, null, "secret-admin@example.com");
-  await repo.insertMember("org_home", "user_secret_admin", "admin", now);
-  await repo.insertUser("user_secret_member", "secret-member", now, null, "secret-member@example.com");
-  await repo.insertMember("org_home", "user_secret_member", "member", now);
-  await repo.insertGuild("guild_open", "open-desk", now, "org_home");
-  await repo.insertGuild("guild_side", "side-desk", now, "org_home");
-  await repo.insertGuild("guild_hidden", "hidden-lab", now, "org_home", "", 20, "private", "user_operator");
-  const config = { model: TEST_MODEL };
-  await repo.insertAgent("a_open", "guild_open", "opener", config, now);
-  await repo.insertAgent("a_open_two", "guild_open", "second", config, now);
-  await repo.insertAgent("a_side", "guild_side", "sider", config, now);
-  await repo.insertAgent("a_hidden", "guild_hidden", "hider", config, now);
-  await repo.insertOrg("org_elsewhere", "Elsewhere", "elsewhere", "user_secret_member", now);
+  await insertUser(db, {
+      userId: "user_secret_admin",
+      name: "secret-admin",
+      image: null,
+      email: "secret-admin@example.com",
+    }, now);
+  await insertMember(db, "org_home", "user_secret_admin", "admin", now);
+  await insertUser(db, {
+      userId: "user_secret_member",
+      name: "secret-member",
+      image: null,
+      email: "secret-member@example.com",
+    }, now);
+  await insertMember(db, "org_home", "user_secret_member", "member", now);
+  await insertGuild(db, { guildId: "guild_open", name: "open-desk", orgId: "org_home" }, now);
+  await insertGuild(db, { guildId: "guild_side", name: "side-desk", orgId: "org_home" }, now);
+  await insertGuild(db,
+    {
+      guildId: "guild_hidden",
+      name: "hidden-lab",
+      orgId: "org_home",
+      about: "",
+      agentMessageLimit: 20,
+      visibility: "private",
+      creatorUserId: "user_operator",
+    },
+    now,
+  );
+  const config = agentConfig({ model: TEST_MODEL });
+  await addAgent(db, { agentId: "a_open", guildId: "guild_open", name: "opener", config }, now);
+  await addAgent(db,
+    { agentId: "a_open_two", guildId: "guild_open", name: "second", config },
+    now,
+  );
+  await addAgent(db, { agentId: "a_side", guildId: "guild_side", name: "sider", config }, now);
+  await addAgent(db,
+    { agentId: "a_hidden", guildId: "guild_hidden", name: "hider", config },
+    now,
+  );
+  await insertOrg(db, { orgId: "org_elsewhere", name: "Elsewhere", slug: "elsewhere", userId: "user_secret_member" }, now);
 });
 
 after(async () => {
@@ -101,7 +137,7 @@ async function create(headers: Record<string, string>, body: Record<string, unkn
 }
 
 async function environment(agentId: string, guildId: string): Promise<string[]> {
-  const rows = await repo.listAgentSecrets({ orgId: "org_home", guildId, agentId });
+  const rows = await listAgentSecrets(db, { orgId: "org_home", guildId, agentId });
   return rows.map((row) => String(row.name));
 }
 
@@ -122,7 +158,7 @@ test("a name is one secret per organisation", async () => {
 });
 
 async function storedValue(secretId: string): Promise<unknown> {
-  const row = (await repo.getSecret(secretId))!;
+  const row = (await getSecret(db, secretId))!;
   return decryptPayload(row.ciphertext as Buffer, row.nonce as Buffer).value;
 }
 
@@ -167,6 +203,7 @@ test("owners and admins write any secret; members write secrets local to their g
   assert.equal(local.json().can_manage, true);
   assert.deepEqual(local.json().created_by, { kind: "user", id: "user_secret_member", name: "secret-member" });
   assert.equal((await call(MEMBER, "PATCH", `/api/secrets/${localId}`, { description: "rotated" })).statusCode, 200);
+  assert.equal((await call(MEMBER, "PATCH", `/api/secrets/${localId}`, {})).statusCode, 422, "a change names a field");
   const memberAccess = await call(MEMBER, "PUT", `/api/secrets/${localId}/access`, {
     org_wide: false,
     guild_ids: ["guild_open"],
@@ -291,26 +328,29 @@ test("access changes replace the set and refresh the agents they reach", async (
 
 test("a secret goes with the guild or agent that held its last grant", async () => {
   const now = new Date();
-  const config = { model: TEST_MODEL };
-  await repo.insertGuild("guild_doomed", "doomed-desk", now, "org_home");
-  await repo.insertAgent("a_doomed", "guild_doomed", "doomed", config, now);
-  await repo.insertAgent("a_gone", "guild_side", "leaver", config, now);
+  const config = agentConfig({ model: TEST_MODEL });
+  await insertGuild(db, { guildId: "guild_doomed", name: "doomed-desk", orgId: "org_home" }, now);
+  await addAgent(db,
+    { agentId: "a_doomed", guildId: "guild_doomed", name: "doomed", config },
+    now,
+  );
+  await addAgent(db, { agentId: "a_gone", guildId: "guild_side", name: "leaver", config }, now);
   const inGuild = (await create(OWNER, { name: "ONLY_DOOMED", guild_ids: ["guild_doomed"], agent_ids: ["a_doomed"] })).json().id;
   const shared = (await create(OWNER, { name: "DOOMED_AND_SIDE", guild_ids: ["guild_doomed", "guild_side"] })).json().id;
   const onlyAgent = (await create(OWNER, { name: "ONLY_LEAVER", agent_ids: ["a_gone"] })).json().id;
   const agentAndGuild = (await create(OWNER, { name: "LEAVER_AND_SIDE", agent_ids: ["a_gone"], guild_ids: ["guild_side"] })).json().id;
   const unassigned = (await create(OWNER, { name: "NEVER_GRANTED" })).json().id;
 
-  await repo.deleteAgent("a_gone");
-  assert.equal(await repo.getSecret(onlyAgent), null);
-  const kept = await repo.getSecret(agentAndGuild);
+  await deleteAgent(db, "a_gone");
+  assert.equal(await getSecret(db, onlyAgent), null);
+  const kept = await getSecret(db, agentAndGuild);
   assert.ok(kept);
   assert.deepEqual((kept.grants as Array<{ guild_id: string }>).map((grant) => grant.guild_id), ["guild_side"]);
 
-  await repo.deleteGuild("guild_doomed");
-  assert.equal(await repo.getSecret(inGuild), null);
-  const survivor = await repo.getSecret(shared);
+  await deleteGuild(db, "guild_doomed");
+  assert.equal(await getSecret(db, inGuild), null);
+  const survivor = await getSecret(db, shared);
   assert.ok(survivor);
   assert.deepEqual((survivor.grants as Array<{ guild_id: string }>).map((grant) => grant.guild_id), ["guild_side"]);
-  assert.ok(await repo.getSecret(unassigned));
+  assert.ok(await getSecret(db, unassigned));
 });

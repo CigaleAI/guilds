@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import type { McpConnectionRow } from "../../src/db/mcp.js";
+import type { GithubRepositorySelection } from "../../src/db/schema/index.js";
 import { createVerify, generateKeyPairSync } from "node:crypto";
 import { test } from "node:test";
 import { RepositoryTokens } from "../../src/coding/git.js";
@@ -35,6 +37,7 @@ import {
   manifestAction,
 } from "../../src/github/manifest.js";
 import { HEX_MASTER_KEY, storeKeys } from "../helpers/env.js";
+import { connectionRow } from "../helpers/servers.js";
 
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const PEM = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
@@ -361,9 +364,9 @@ test("a repository needs a valid name and an https URL; a GitHub connection need
   assert.throws(() => validateRepositoryInput({ name: "shop", url: "https://github.com/a/b", default_branch: "a..b" }), /default_branch/);
 });
 
-function connection(id: string, status: string, installationId: number): Record<string, unknown> {
+function connection(id: string, status: McpConnectionRow["status"], installationId: number): McpConnectionRow {
   const [ciphertext, nonce] = encryptPayload({ installation_id: installationId, account: "acme" }, MASTER);
-  return { id, status, account_hint: "acme", ciphertext, nonce };
+  return connectionRow({ id, status, account_hint: "acme", ciphertext, nonce });
 }
 
 test("repository tokens: one per connection, limited to its repositories, refreshed near expiry", async () => {
@@ -392,7 +395,7 @@ test("repository tokens: one per connection, limited to its repositories, refres
     });
   });
   const tokens = new RepositoryTokens(
-    db,
+    db as never,
     [
       { name: "shop", url: "https://github.com/acme/shop", connection_id: "conn_a", github_id: 101 },
       { name: "site", url: "https://github.com/acme/site.git", connection_id: "conn_a", github_id: "102" },
@@ -434,7 +437,11 @@ test("a repository stored without an id finds it by its path, and one GitHub ren
   const recorded: Array<[string, string, number, string]> = [];
   const db = {
     getMcpConnection: async (id: string) => connection(id, "connected", 11),
-    recordGithubRepository: async (connectionId: string, name: string, repository: { githubId: number; url: string }) => {
+    recordGithubRepository: async (
+      connectionId: string,
+      name: string,
+      repository: { githubId: number; url: string },
+    ) => {
       recorded.push([connectionId, name, repository.githubId, repository.url]);
     },
   };
@@ -467,7 +474,7 @@ test("a repository stored without an id finds it by its path, and one GitHub ren
     { name: "site", url: "https://github.com/acme/site", connection_id: "conn_a" },
     { name: "docs", url: "https://github.com/OldOwner/docs", connection_id: "conn_a" },
   ];
-  const tokens = new RepositoryTokens(db, rows, { app: APP, fetch: fake.fetch, masterKey: MASTER });
+  const tokens = new RepositoryTokens(db as never, rows, { app: APP, fetch: fake.fetch, masterKey: MASTER });
   await tokens.mint();
   assert.deepEqual(scoped, [[101, 102, 103]]);
   assert.equal(rows[0]!.url, "https://github.com/acme/shop");
@@ -498,7 +505,7 @@ test("a repository the App no longer reaches is named, whether it has an id or n
       : json(201, { token: "ghs_list", expires_at: "2026-09-30T13:00:00Z" });
   });
   const unnamed = new RepositoryTokens(
-    db,
+    db as never,
     [{ name: "gone", url: "https://github.com/acme/gone", connection_id: "conn_a" }],
     { app: APP, fetch: reaches101.fetch, masterKey: MASTER },
   );
@@ -508,7 +515,7 @@ test("a repository the App no longer reaches is named, whether it has an id or n
       error instanceof RepositoryAccessError && /the GitHub App installed for acme does not reach gone \(acme\/gone\)/.test(error.message),
   );
   const revoked = new RepositoryTokens(
-    db,
+    db as never,
     [
       { name: "shop", url: "https://github.com/acme/shop", connection_id: "conn_a", github_id: 101 },
       { name: "infra", url: "https://github.com/acme/infra", connection_id: "conn_a", github_id: 103 },
@@ -524,7 +531,7 @@ test("a repository the App no longer reaches is named, whether it has an id or n
 test("a disconnected connection is refused; GitHub refusing the installation disconnects it", async () => {
   const saved: string[] = [];
   const offline = new RepositoryTokens(
-    { getMcpConnection: async (id: string) => connection(id, "disconnected", 11) },
+    { getMcpConnection: async (id: string) => connection(id, "disconnected", 11) } as never,
     [{ name: "shop", url: "https://github.com/acme/shop", connection_id: "conn_a" }],
     { app: APP, masterKey: MASTER },
   );
@@ -536,7 +543,7 @@ test("a disconnected connection is refused; GitHub refusing the installation dis
         saved.push(`${id}:${options.status}`);
         return null;
       },
-    },
+    } as never,
     [{ name: "shop", url: "https://github.com/acme/shop", connection_id: "conn_a", github_id: 101 }],
     { app: APP, masterKey: MASTER, fetch: fakeFetch(() => json(403, { message: "suspended" })).fetch },
   );
@@ -550,10 +557,10 @@ test("a login token reaches the repositories the login picked with every permiss
     bodies.push(JSON.parse(String(init.body)));
     return json(201, { token: "ghs_login", expires_at: "2026-09-30T13:00:00Z", repositories: [{ id: 101, full_name: "acme/shop" }] });
   });
-  const login = (repositories: unknown[]) => ({ ...connection("conn_a", "connected", 11), settings: { repositories } });
+  const login = (repositories: GithubRepositorySelection[]) => ({ ...connection("conn_a", "connected", 11), settings: { repositories } });
   const minted = await mintLoginToken(
-    {},
-    login([{ name: "shop", url: "https://github.com/acme/shop", github_id: 101 }]),
+    {} as never,
+    login([{ name: "shop", url: "https://github.com/acme/shop", default_branch: "main", github_id: 101 }]),
     { app: APP, fetch: fake.fetch, masterKey: MASTER },
   );
   assert.equal(minted.token, "ghs_login");
@@ -561,7 +568,7 @@ test("a login token reaches the repositories the login picked with every permiss
   assert.deepEqual([...minted.paths], [["shop", "acme/shop"]]);
   assert.deepEqual(bodies, [{ repository_ids: [101] }]);
   await assert.rejects(
-    mintLoginToken({}, login([]), { app: APP, fetch: fake.fetch, masterKey: MASTER }),
+    mintLoginToken({} as never, login([]), { app: APP, fetch: fake.fetch, masterKey: MASTER }),
     (error: unknown) => error instanceof RepositoryAccessError && /GitHub login for acme has no repositories picked/.test(error.message),
   );
   assert.equal(bodies.length, 1);
@@ -581,12 +588,12 @@ test("a GitHub login stores the repositories its coding agents clone", () => {
     () => validateGithubRepositories([{ name: "shop", url: "https://github.com/acme/shop", github_id: "shop" }]),
     /github_id must be a positive integer/,
   );
-  const github = {
+  const github = connectionRow({
     id: "conn_front",
     status: "connected",
     account_hint: "acme",
     settings: { repositories: selected },
-  };
+  });
   const cloned = codingRepositories(
     [
       { name: "shop", url: "https://github.com/acme/shop", default_branch: "main", connection_id: "conn_front" },

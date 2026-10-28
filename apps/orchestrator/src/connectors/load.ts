@@ -1,24 +1,10 @@
+import type { ConnectorRow } from "../db/connectors.js";
 import { jsonObj } from "../db/json.js";
+import type { Manifest, ManifestTool, OAuthClient, Overrides, ToolInputSchema } from "../db/schema/index.js";
 import { namespacedName } from "../mcp/names.js";
 import { nameMutates } from "../mcp/verbs.js";
 import { installedConnectors } from "./index.js";
-import { matchesPattern, type Manifest, type ManifestTool } from "./manifest.js";
-
-/** An admin's edit to one tool, by name: its copy, its schema, and whether it starts On. */
-export type ToolOverride = {
-  description?: string;
-  input_schema?: Record<string, unknown>;
-  default?: boolean;
-};
-
-/** An admin's edits to a connector the box did not write: copy fields and tools, applied on read. */
-export type Overrides = {
-  display_name?: string;
-  description?: string;
-  limitations?: string;
-  setup_hint?: string;
-  tools?: Record<string, ToolOverride>;
-};
+import { matchesPattern } from "./manifest.js";
 
 /** The copy fields an override may replace. */
 export const OVERRIDE_FIELDS = ["display_name", "description", "limitations", "setup_hint"] as const;
@@ -56,7 +42,36 @@ export function applyOverrides(manifest: Manifest, overrides: Overrides): Manife
   return next;
 }
 
-function oauthStrategyOf(manifest: Manifest): "none" | "dynamic" | "configured" {
+type OauthStrategy = "none" | "dynamic" | "configured";
+
+/** A `connectors` row as every reader sees it: see `loadConnector`. */
+export type LoadedConnector = {
+  id: string;
+  slug: string;
+  tool_prefix: string;
+  owner_org_id: string | null;
+  display_name: string;
+  transport: "http";
+  config: { url?: string; oauth_client?: OAuthClient };
+  auth: Manifest["auth"]["kind"];
+  oauth_strategy: OauthStrategy;
+  description: string;
+  limitations: string | null;
+  setup_hint: string | null;
+  enabled: boolean;
+  source: string;
+  version: string;
+  verified: boolean;
+  experimental: boolean;
+  publisher: string;
+  manifest: Manifest;
+  upstream: Manifest;
+  overrides: Overrides;
+  created_at: string;
+  updated_at: string;
+};
+
+function oauthStrategyOf(manifest: Manifest): OauthStrategy {
   const strategy = manifest.auth.oauth?.strategy;
   if (manifest.auth.kind !== "oauth" || strategy === undefined) {
     return "none";
@@ -69,16 +84,16 @@ function oauthStrategyOf(manifest: Manifest): "none" | "dynamic" | "configured" 
  * server fields the pool, OAuth, and the API read (`config` holds the endpoint and the registered
  * OAuth client).
  */
-export function loadConnector(row: Record<string, unknown>): Record<string, unknown> {
-  const upstream = record(row.manifest) as Manifest;
-  const overrides = overridesOf(row.overrides);
+export function loadConnector(row: ConnectorRow): LoadedConnector {
+  const upstream = row.manifest;
+  const overrides = row.overrides;
   const manifest = applyOverrides(upstream, overrides);
-  const oauthClient = jsonObj(row.oauth_client);
+  const oauthClient = row.oauth_client;
   return {
     id: row.id,
     slug: row.slug,
     tool_prefix: row.tool_prefix,
-    owner_org_id: row.owner_org_id ?? null,
+    owner_org_id: row.owner_org_id,
     display_name: manifest.display_name,
     transport: "http",
     config: {
@@ -90,12 +105,12 @@ export function loadConnector(row: Record<string, unknown>): Record<string, unkn
     description: manifest.description,
     limitations: manifest.limitations ?? null,
     setup_hint: manifest.setup_hint ?? null,
-    enabled: row.enabled !== false,
+    enabled: row.enabled,
     source: row.source,
-    version: row.version ?? "",
-    verified: row.verified === true,
-    experimental: row.experimental === true,
-    publisher: row.publisher ?? "",
+    version: row.version,
+    verified: row.verified,
+    experimental: row.experimental,
+    publisher: row.publisher,
     manifest,
     upstream,
     overrides,
@@ -105,7 +120,7 @@ export function loadConnector(row: Record<string, unknown>): Record<string, unkn
 }
 
 /** The effective manifest of a server row: the loaded one, else its installed connector's. */
-export function serverManifest(server: Record<string, unknown>): Manifest | null {
+export function serverManifest(server: LoadedConnector): Manifest | null {
   const loaded = server.manifest;
   if (loaded && typeof loaded === "object" && !Array.isArray(loaded)) {
     return loaded as Manifest;
@@ -113,7 +128,7 @@ export function serverManifest(server: Record<string, unknown>): Manifest | null
   return installedConnectors().forServer(server)?.manifest ?? null;
 }
 
-function serverOverrides(server: Record<string, unknown>): Overrides {
+function serverOverrides(server: LoadedConnector): Overrides {
   return overridesOf(server.overrides);
 }
 
@@ -141,7 +156,7 @@ export function manifestExcludes(manifest: Manifest | null, name: string): boole
  * absent hint decides nothing, and `readOnlyHint` never turns a tool On.
  */
 export function toolStartsOff(
-  server: Record<string, unknown>,
+  server: LoadedConnector,
   name: string,
   listing: { destructiveHint?: boolean | null } = {},
 ): boolean {
@@ -160,8 +175,8 @@ export function toolStartsOff(
 }
 
 /** A listed tool with the admin's edits to its copy and schema. */
-export function overriddenTool<T extends { remote_name: string; description: string; input_schema: Record<string, unknown> }>(
-  server: Record<string, unknown>,
+export function overriddenTool<T extends { remote_name: string; description: string; input_schema: ToolInputSchema }>(
+  server: LoadedConnector,
   tool: T,
 ): T {
   const edit = serverOverrides(server).tools?.[tool.remote_name];
@@ -179,13 +194,13 @@ export type CatalogTool = {
   remote_name: string;
   namespaced_name: string;
   description: string;
-  input_schema: Record<string, unknown>;
+  input_schema: ToolInputSchema;
   mutating: boolean;
   default_enabled: boolean;
 };
 
 /** The tools a server's manifest names, by namespaced name, as the builder and the access views show them. */
-export function manifestTools(server: Record<string, unknown>): CatalogTool[] {
+export function manifestTools(server: LoadedConnector): CatalogTool[] {
   const manifest = serverManifest(server);
   const prefix = String(server.tool_prefix || server.slug);
   return (manifest?.tools ?? []).map((tool: ManifestTool) => ({

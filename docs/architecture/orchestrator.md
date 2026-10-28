@@ -62,7 +62,7 @@ lives is the [Code map](code-map.md).
 catalog reads `MODELS_DEV_URL` on its own
 ([Configure](../operations/configure.md#model-catalog)).
 
-`loadConfig` accepts the modes an edition identifies requests in
+`loadConfig` accepts the modes an extension identifies requests in
 beside core's two. The instance keys are read through the registry
 in `src/instance/integrations.ts` and the encrypted store it
 snapshots (`src/instance/keys.ts`), so a platform key a platform
@@ -138,8 +138,9 @@ Local Compose uses `make up` or `make dev`.
 `server.ts` is core's process entry. It loads `AppConfig` and calls
 `runServer` (`src/run.ts`). `runServer` builds the server with
 `createServer` (`src/compose.ts`), listens, and shuts it down on a
-signal or a fatal error. An edition has an entry of its own, which
-passes its extensions with its configuration loaded beside core's
+signal or a fatal error. The extending repository has an entry of
+its own, which passes its extensions with its configuration loaded
+beside core's
 ([Extension points](extension-points.md)). Core passes none.
 
 ```mermaid
@@ -174,7 +175,7 @@ sequenceDiagram
    the connector-declared integrations (`instance/connectors.ts`),
    load the instance keys into their snapshot (`instance/keys.ts`),
    and sync the platform logins (`connectors/instance.ts`)
-5. construct `ArtifactStore`, `Scripts`, `Schedules`, the model
+5. build the artifact store (`artifactStore`), `Scripts`, `Schedules`, the model
    service, and `McpPool`
 6. start the sandbox provider: one `RunSandboxes` manager on
    `OPENSANDBOX_URL`, or the one an extension supplies; then lay out
@@ -224,8 +225,8 @@ and exits 1.
 ```mermaid
 flowchart TD
   UI["React app"] --> API["/api/*"]
-  API --> ID["identity: cookie / trusted-header / an edition's provider"]
-  ID --> R["http/routes.ts and siblings"]
+  API --> ID["identity: cookie / trusted-header / an extension's provider"]
+  ID --> R["http/*-routes.ts, one per domain"]
   R --> CRUD["guilds / agents / artifacts / secrets / MCP"]
   R --> Run["POST /api/agents/:agent_id/runs"]
   R --> Group["POST .../group-chat/messages"]
@@ -245,12 +246,17 @@ CRUD writes PostgreSQL and returns JSON. Runs go through
 (SSE). Studio and Builder use the shared conversation runner and
 their own streams.
 
+A route reads the request, calls its domain, and writes the reply.
+A domain refuses a request with a named error that carries the HTTP
+status it answers with, or with a validation error, which is a 422.
+`domainHttp` in `http/errors.ts` turns either into the reply.
+
 ## Generation
 
 ### Work queuing
 
-An agent runs at most one generation at a time (`GenerationLoop`
-busy registry). Direct, group, and schedule work all take that same
+An agent runs at most one generation at a time (`ActiveGenerations`
+in `generation/admission.ts`). Direct, group, and schedule work all take that same
 lock. Work waits in that registry, in group dispatch, and in the
 schedule's `next_run_at`, never in a job table.
 
@@ -278,7 +284,7 @@ flowchart TD
   Start["createRun / deliverGroupRun / schedule wake"] --> Prep["PreparedRun"]
   Prep --> Snap["Snapshot: prompts, tools, secrets, scripts"]
   Snap --> Persist["Insert run + messages in Postgres"]
-  Persist --> Loop["_generate"]
+  Persist --> Loop["RunGenerator.generate"]
   Loop --> WS["prepareWorkspace: the agent's home"]
   WS --> Box["sandboxes.ensure(machine)"]
   Box --> Step["streamCompletion"]
@@ -291,9 +297,10 @@ flowchart TD
   Save --> SSE["SSE subscribers"]
 ```
 
-`PreparedRun` hydrates `task` + `memory`. It builds the State JSON.
-It resolves bindings and the agent's secrets. It hashes the opening
-system prompt.
+`RunPreparation` (`generation/prepare.ts`) builds the `PreparedRun`:
+it hydrates `task` + `memory`, builds the State JSON, and resolves
+bindings and the agent's secrets. The run row keeps the hashes of
+its opening prompts.
 
 That prompt and the ordered message rows are the stored history.
 Each model call projects tool results from those rows
@@ -429,8 +436,10 @@ An extension keeps its tables and its record in a schema of its own
 ([Extension points](extension-points.md#data)).
 
 New core schema lands as the next numbered SQL file in
-`apps/orchestrator/drizzle/`. It is mirrored in
-`src/db/schema/index.ts` and stamped after the migration before it.
+`apps/orchestrator/drizzle/`. It is mirrored in `src/db/schema/`,
+one file per table family that `index.ts` re-exports, which the row
+types in `db/` derive from, and stamped after the migration before
+it.
 
 Core's tables:
 
@@ -500,7 +509,7 @@ The host-side trees beside PostgreSQL are in
 container lifecycle in its own SQLite store, which holds no
 application data.
 
-Seeds stay separate from schema (`src/db/seed/`):
+Seeds stay separate from schema (`src/seed/`):
 
 ```text
 catalog.ts        seed identifiers and native-tool lists
@@ -508,6 +517,7 @@ mcp-manifests.ts  the installed connectors projected into catalog rows and tool 
 system.ts         upsert catalog, platform bindings
 operator.ts       the operator and the Home organisation, on a box with no user
 test.ts           deterministic fixtures
+connect.ts        open the pool, migrate, and seed
 ```
 
 Boot runs the system seed, each extension's seed, and the operator
@@ -685,7 +695,7 @@ only the fields in its row.
 ## Sandbox and tools
 
 A `RunSandboxes` manager drives one OpenSandbox, from the
-configuration. An edition may supply a sandbox provider of its own
+configuration. An extension may supply a sandbox provider of its own
 ([Extension points](extension-points.md)).
 
 A manager's work:

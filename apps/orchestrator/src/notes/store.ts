@@ -82,6 +82,17 @@ export class NotesStore {
     await this.lock.run(() => this.renameGuildUnlocked(orgSlug, from, to));
   }
 
+  /** Moves an organisation's folder to its new slug; a folder already at the new slug stays as it is. */
+  async renameOrg(from: string, to: string): Promise<void> {
+    await this.lock.run(() => {
+      const source = path.join(this.root, "orgs", from);
+      const dest = path.join(this.root, "orgs", to);
+      if (existsSync(source) && !existsSync(dest)) {
+        renameSync(source, dest);
+      }
+    });
+  }
+
   async renameAgent(orgSlug: string, guildName: string, from: string, to: string): Promise<void> {
     await this.lock.run(() => this.renameAgentUnlocked(orgSlug, guildName, from, to));
   }

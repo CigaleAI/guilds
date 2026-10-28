@@ -1,15 +1,7 @@
-import {
-  isAccessMode,
-  resolveAccess,
-  type AccessMode,
-  type AccessSubject,
-  type AccessTarget,
-  type AgentAccessMode,
-  type ArtifactActor,
-  type ArtifactStore,
-} from "../artifacts/index.js";
+import { isAccessMode, resolveAccess, type AccessMode, type AccessSubject, type AccessTarget, type AgentAccessMode, type ArtifactActor, type ArtifactStore } from "../artifacts/index.js";
 import type { AccessEntry, AccessGrant } from "../artifacts/access.js";
 import type { RecipeCollection, RecipeNote } from "./schema.js";
+import { grantAccess, listAccess } from "../artifacts/access-lists.js";
 
 /**
  * What a recipe carries of a table's or a note's access list: the mode every
@@ -148,8 +140,8 @@ export async function raiseRecipeAccess(
   target: AccessTarget,
   wanted: { access: RecipeAccess; guildId: string; writerIds: string[] },
 ): Promise<void> {
-  const entries = await deps.artifacts.listAccess(deps.actor, target);
+  const entries = await listAccess(deps.artifacts, deps.actor, target);
   for (const grant of accessRaises(entries, wanted.access, wanted)) {
-    await deps.artifacts.grantAccess(deps.actor, target, grant, grant.mode);
+    await grantAccess(deps.artifacts, deps.actor, target, { ...grant, mode: grant.mode });
   }
 }

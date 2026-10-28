@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { groupMessageRow } from "../helpers/group-chat.js";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
@@ -26,16 +27,7 @@ test("collaboration_cases_latest_message_matches_history", () => {
     const rows = item.history.map((entry, index) => {
       const seq = index + 1;
       const sentBy = entry.sentBy;
-      return {
-        id: seq,
-        seq,
-        author_type: sentBy === "user" ? "user" : "agent",
-        author_name: sentBy === "user" ? "user" : sentBy,
-        author_agent_id: sentBy === "user" ? null : sentBy,
-        content: entry.content,
-        tagged_names: [],
-        tagged_agent_ids: [],
-      };
+      return groupMessageRow(seq, { author_type: sentBy === "user" ? "user" : "agent", author_name: sentBy === "user" ? "user" : sentBy, author_agent_id: sentBy === "user" ? null : sentBy, content: entry.content, });
     });
     const [payload] = groupChatUserMessage({
       members: item.members.map((name) => ({ id: name, name })),

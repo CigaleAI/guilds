@@ -1,20 +1,30 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { persistAgent } from "../../src/agents/persist.js";
-import { agentActor, ArtifactStore } from "../../src/artifacts/index.js";
+import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
+import { agentActor, artifactStore } from "../../src/artifacts/index.js";
 import { buildApp } from "../../src/app.js";
-import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
+import { connect } from "../../src/seed/connect.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import type { ActivityView } from "../../src/studio/activity.js";
 import { StudioService } from "../../src/studio/index.js";
 import { tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
-import { userActor } from "../../src/db/config-changes.js";
+import { userActor } from "../../src/lib/change-actor.js";
+import { insertGuild } from "../../src/db/guilds.js";
+import { postAgentGroupMessage, postUserGroupMessage } from "../../src/db/group-chat.js";
+import {
+  appendRunError,
+  createGroupRun,
+  createRun,
+  createScheduleRun,
+  insertMessage,
+} from "../../src/db/runs.js";
+import { agentConfig, runSnapshot } from "../helpers/generation.js";
+import { writeNote } from "../../src/artifacts/notes.js";
 
 const TEST_ACTOR = userActor({ id: "user_operator", name: "operator" });
 
@@ -23,7 +33,7 @@ const AUTH = {
   "X-Guilds-Org": "org_home",
 };
 
-const CONFIG = {
+const CONFIG = agentConfig({
   model: TEST_MODEL,
   temperature: 1,
   max_tokens: 8192,
@@ -31,10 +41,10 @@ const CONFIG = {
   max_tool_calls: 50,
   max_input_tokens: 100000,
   browser: false,
-};
+});
 
 const HASHES = { systemPromptHash: "s", taskPromptHash: "t", memoryPromptHash: "m" };
-const SNAPSHOT = { ...CONFIG, tools: [], mcp: [] };
+const SNAPSHOT = runSnapshot(CONFIG);
 
 const dbName = uniqueDbName("agent_platform_studio_activity");
 
@@ -47,21 +57,24 @@ test("studio activity lists each wake with what started it and what it produced"
   const database = await connect(databaseUrl);
   const notes = new NotesStore(tempDir("guilds-studio-activity-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
-  await connectModelProvider(repo, "org_home", "deepinfra");
-  const artifacts = new ArtifactStore(database.pool, templatesRoot());
-  const scripts = new Scripts(repo);
-  const schedules = new Schedules(repo);
-  const studio = new StudioService({ repo, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
-  const app = await buildApp(database, { repo, notes, artifacts, scripts, schedules, studio });
+  const db = database.pool;
+  await connectModelProvider(db, "org_home", "deepinfra");
+  const artifacts = artifactStore(database.pool, templatesRoot());
+  const scripts = new Scripts(scriptDatabase(db));
+  const schedules = new Schedules(scheduleDatabase(db));
+  const studio = new StudioService({ db, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
+  const app = await buildApp(database, { db, notes, artifacts, scripts, schedules, studio });
 
   const now = new Date();
-  await repo.insertGuild("guild_act", "activity-guild", now, "org_home", "Activity");
+  await insertGuild(db,
+    { guildId: "guild_act", name: "activity-guild", orgId: "org_home", about: "Activity" },
+    now,
+  );
   for (const [agentId, name] of [
     ["a_scout", "scout"],
     ["a_desk", "desk"],
   ] as const) {
-    await persistAgent(repo, notes, {
+    await persistAgent(agentDatabase(db), notes, {
       agentId,
       guildId: "guild_act",
       guildName: "activity-guild",
@@ -76,76 +89,156 @@ test("studio activity lists each wake with what started it and what it produced"
   }
 
   // The operator tags scout; scout's wake posts a row that tags desk.
-  const first = await repo.postUserGroupMessage("guild_act", "@scout go", ["scout"], ["a_scout"], [], now, {
-    authorName: "operator",
-    authorUserId: "user_operator",
-  });
-  const firstSeq = Number(first?.seq);
-  await repo.createGroupRun(
-    "r_scout",
-    "a_scout",
-    SNAPSHOT,
-    "system prompt",
-    "task prompt",
-    [
-      [{ role: "user", content: "Group Chat info: {}" }, { generation: 1, source: "group_chat", group_seq: firstSeq, you_were_tagged: true }],
-      [
-        { role: "assistant", content: "", tool_calls: [{ id: "call_post", type: "function", function: { name: "group_post", arguments: "{}" } }] },
-        { generation: 1 },
-      ],
-    ],
-    firstSeq,
+  const first = await postUserGroupMessage(db,
+    {
+      guildId: "guild_act",
+      content: "@scout go",
+      taggedNames: ["scout"],
+      taggedAgentIds: ["a_scout"],
+      taggedUserIds: [],
+      authorName: "operator",
+      authorUserId: "user_operator",
+    },
     now,
-    { ...HASHES, runMetadata: { typesafe: { recipients: { source: "typesafe", choice: "scout", confidence: 0.9 } } } },
   );
-  const second = await repo.postAgentGroupMessage("guild_act", "a_scout", "scout", "r_scout", "@desk leads ready", ["desk"], ["a_desk"], [], now);
+  const firstSeq = Number(first?.seq);
+  await createGroupRun(db,
+    {
+      runId: "r_scout",
+      agentId: "a_scout",
+      configSnapshot: SNAPSHOT,
+      systemContent: "system prompt",
+      taskContent: "task prompt",
+      projected: [
+        [
+          { role: "user", content: "Group Chat info: {}" },
+          { generation: 1, source: "group_chat", group_seq: firstSeq, you_were_tagged: true },
+        ],
+        [
+          {
+            role: "assistant",
+            content: "",
+            tool_calls: [
+              {
+                id: "call_post",
+                type: "function",
+                function: { name: "group_post", arguments: "{}" },
+              },
+            ],
+          },
+          { generation: 1 },
+        ],
+      ],
+      throughSeq: firstSeq,
+      ...HASHES,
+      runMetadata: {
+        typesafe: { recipients: { source: "typesafe", names: ["scout"], choice: "scout", confidence: 0.9 } },
+      },
+    },
+    now,
+  );
+  const second = await postAgentGroupMessage(db,
+    {
+      guildId: "guild_act",
+      agentId: "a_scout",
+      authorName: "scout",
+      sourceRunId: "r_scout",
+      content: "@desk leads ready",
+      taggedNames: ["desk"],
+      taggedAgentIds: ["a_desk"],
+      taggedUserIds: [],
+    },
+    now,
+  );
   const secondSeq = Number(second?.seq);
-  await repo.insertMessage(
-    "r_scout",
-    3,
-    { role: "tool", tool_call_id: "call_post", content: `posted id=${String(second?.id)} seq=${secondSeq}` },
-    { generation: 1, tool_name: "group_post", tool_call_id: "call_post", duration_ms: 12, error: null },
+  await insertMessage(db,
+    {
+      runId: "r_scout",
+      seq: 3,
+      payload: {
+        role: "tool",
+        tool_call_id: "call_post",
+        content: `posted id=${String(second?.id)} seq=${secondSeq}`,
+      },
+      metadata: {
+        generation: 1,
+        tool_name: "group_post",
+        tool_call_id: "call_post",
+        duration_ms: 12,
+        error: null,
+      },
+    },
     now,
   );
 
   // desk's wake, which stores the row that woke it, writes a note, then runs out of tool calls without posting.
-  await repo.createGroupRun(
-    "r_desk",
-    "a_desk",
-    SNAPSHOT,
-    "system prompt",
-    "task prompt",
-    [[{ role: "user", content: "Group Chat info: {}" }, { generation: 1, source: "group_chat", group_seq: secondSeq, you_were_tagged: true }]],
-    secondSeq,
+  await createGroupRun(db,
+    {
+      runId: "r_desk",
+      agentId: "a_desk",
+      configSnapshot: SNAPSHOT,
+      systemContent: "system prompt",
+      taskContent: "task prompt",
+      projected: [
+        [
+          { role: "user", content: "Group Chat info: {}" },
+          { generation: 1, source: "group_chat", group_seq: secondSeq, you_were_tagged: true },
+        ],
+      ],
+      throughSeq: secondSeq,
+      ...HASHES,
+      wakeGroupMessageId: Number(second?.id),
+    },
     now,
-    { ...HASHES, wakeGroupMessageId: Number(second?.id) },
   );
   const deskActor = {
     ...agentActor({ orgId: "org_home", guildId: "guild_act", agentId: "a_desk", agentName: "desk", runId: "r_desk" }),
     toolCall: { id: "call_note", name: "note_write" },
   };
-  await artifacts.writeNote(deskActor, { level: "agent", key: "leads.md", content: "- one\n", title: "Leads" });
-  await repo.appendRunError("r_desk", { at: now.toISOString(), operation: "generation.max_tool_calls", message: "Tool call limit reached." }, now);
+  await writeNote(artifacts, deskActor, { level: "agent", key: "leads.md", content: "- one\n", title: "Leads" });
+  await appendRunError(
+    db,
+    "r_desk",
+    { at: now.toISOString(), generation: 1, operation: "generation.max_tool_calls", error_type: "RunLimitError", message: "Tool call limit reached." },
+    now,
+  );
 
   // A routine wake for desk that changes nothing.
   const routine = await schedules.create(TEST_ACTOR, "a_desk", { cron: "0 * * * *" }, "Hourly check", "Check the leads.");
   const scheduleId = String(routine.id);
-  await repo.createScheduleRun(
-    "r_tick",
-    "a_desk",
-    SNAPSHOT,
-    "system prompt",
-    "task prompt",
-    [[{ role: "user", content: "Schedule wake-up: {}" }, { generation: 1, source: "schedule", schedule_id: scheduleId }]],
+  await createScheduleRun(db,
+    {
+      runId: "r_tick",
+      agentId: "a_desk",
+      configSnapshot: SNAPSHOT,
+      systemContent: "system prompt",
+      taskContent: "task prompt",
+      projected: [
+        [
+          { role: "user", content: "Schedule wake-up: {}" },
+          { generation: 1, source: "schedule", schedule_id: scheduleId },
+        ],
+      ],
+      ...HASHES,
+      scheduleId,
+    },
     now,
-    { ...HASHES, scheduleId },
   );
 
   // The operator chats with scout directly.
-  await repo.createRun("r_chat", "a_scout", SNAPSHOT, "system prompt", "task prompt", "how are the leads?", now, {
-    ...HASHES,
-    startedByUserId: "user_operator",
-  });
+  await createRun(db,
+    {
+      runId: "r_chat",
+      agentId: "a_scout",
+      configSnapshot: SNAPSHOT,
+      systemContent: "system prompt",
+      taskContent: "task prompt",
+      userContent: "how are the leads?",
+      ...HASHES,
+      startedByUserId: "user_operator",
+    },
+    now,
+  );
 
   try {
     const created = await app.inject({

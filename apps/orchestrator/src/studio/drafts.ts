@@ -1,12 +1,5 @@
-import {
-  ArtifactError,
-  collectTaskEmbeds,
-  displayPathFor,
-  hashArtifactContent,
-  inlineTaskEmbeds,
-  taskEmbedActor,
-  type ArtifactStore,
-} from "../artifacts/index.js";
+import { writeAgentTaskInTransaction } from "../agents/task.js";
+import { ArtifactError, collectTaskEmbeds, displayPathFor, hashArtifactContent, inlineTaskEmbeds, taskEmbedActor, type ArtifactStore } from "../artifacts/index.js";
 import { WRITE_MAX_BYTES } from "../artifacts/types.js";
 import { jsonObj as _jsonObj } from "../db/json.js";
 import { newId } from "../lib/ids.js";
@@ -22,42 +15,53 @@ import {
 } from "./constants.js";
 import { StudioConflictError, StudioError, StudioUnprocessableError } from "./errors.js";
 import { previewCurrentState, projectOfferedToolSchemas } from "./preview.js";
-import type { StudioStore } from "./store.js";
+import { withLockedSession } from "./session-lock.js";
 import type { StudioToolContext } from "./tools.js";
-import { resolveSourceGuildAgent, studioAgentHandleFromArgs } from "./tools.js";
+import { resolveSourceGuildAgent, sourceGuildAgents, studioAgentHandleFromArgs } from "./tools.js";
 import { argString } from "../toolbox/schema.js";
 import { excerptBytes } from "./system.js";
+import { getAgent, getAgentTask, listAgents, type AgentRow } from "../db/agents.js";
+import { nextConversationSeq } from "../db/conversations.js";
+import type { Queryable } from "../db/pg.js";
+import { getStudioDraft, insertStudioDraft, listStudioDraftHeads, lockStudioDraft, updateStudioDraft, type StudioDraftRow, type StudioSessionRow } from "../db/studio.js";
+import { listConversationMessages, type ConversationMessageRow } from "../db/conversations.js";
+import { isPlainRecord } from "../db/json.js";
+import { EVIDENCE_REF_KINDS, type EvidenceRef, type EvidenceRefKind, type EvidenceWarning } from "../db/schema/index.js";
+import type { UserRow } from "../db/users.js";
+import { getMemoryRow } from "../artifacts/memory.js";
+import { operatorContext } from "../artifacts/store.js";
+import { embedSource } from "../artifacts/embeds.js";
 
 export type StudioDraftService = {
   createFromTool(ctx: StudioToolContext, args: Record<string, unknown>): Promise<Record<string, unknown>>;
 };
 
-const REF_KINDS = new Set([
-  "run_message",
-  "group_message",
-  "artifact",
-  "task_revision",
-  "memory_revision",
-  "routine",
-]);
-
 // A draft is decided like an edit: the tool returns this widget and the turn
 // pauses until the operator publishes or discards it.
 export const STUDIO_TASK_DRAFT_WIDGET = "studio_task_draft";
 
+/** The risks the coach lists for a draft: its text entries. */
+function risksOf(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function userIdOf(user: UserRow): string | null {
+  return typeof user.id === "string" ? user.id : null;
+}
+
 export class StudioDrafts implements StudioDraftService {
   constructor(
-    public store: StudioStore,
+    public db: Queryable,
     public artifacts: ArtifactStore,
   ) {}
 
   async createFromTool(ctx: StudioToolContext, args: Record<string, unknown>): Promise<Record<string, unknown>> {
     const handle = studioAgentHandleFromArgs(args);
-    const agent = await resolveSourceGuildAgent(ctx, handle);
+    const agent = await resolveSourceGuildAgent(sourceGuildAgents(ctx.db), ctx, handle);
     if (!agent) {
       throw new StudioUnprocessableError(await missingDraftAgentMessage(ctx, handle));
     }
-    const targetId = String(agent.id);
+    const targetId = agent.id;
     const proposed = argString(args, "proposed_content");
     const rationale = argString(args, "rationale");
     if (!proposed.trim() || !rationale.trim()) {
@@ -66,26 +70,27 @@ export class StudioDrafts implements StudioDraftService {
     if (Buffer.byteLength(proposed, "utf8") > WRITE_MAX_BYTES) {
       throw new StudioUnprocessableError("proposed_content exceeds the 256 KiB artifact write limit");
     }
-    const task = await ctx.repo.getAgentTask(ctx.orgId, targetId);
+    const task = await getAgentTask(ctx.db, ctx.orgId, targetId);
     if (!task) {
       throw new StudioUnprocessableError("task.md not found");
     }
-    const messages = await ctx.store.listMessages(String(ctx.session.id));
+    const messages = await listConversationMessages(ctx.db, "studio", String(ctx.session.id));
     const { refs, warnings } = resolveEvidenceRefs(args.evidence_refs, messages);
     const now = new Date();
-    return this.store.withSessionLock(String(ctx.session.id), async (client, session) => {
+    return withLockedSession(this.db, String(ctx.session.id), async (client, session) => {
       if (session.generation_state !== "generating" && session.generation_state !== "idle") {
         throw new StudioConflictError("session cannot accept a draft");
       }
-      const heads = (await this.store.listDraftHeads(String(session.id))).filter(
+      const heads = (await listStudioDraftHeads(this.db, session.id)).filter(
         (row) => row.target_agent_id === targetId && row.status === "draft",
       );
       const previous = heads[0] ?? null;
       if (previous) {
-        await this.store.updateDraft(String(previous.id), { status: "superseded", resolved_at: now }, client);
+        await updateStudioDraft(client, String(previous.id), { status: "superseded", resolved_at: now });
       }
-      const seq = await this.store.nextSeq(String(session.id), client);
-      const draft = await this.store.insertDraft(
+      const seq = await nextConversationSeq(client, "studio", session.id);
+      const draft = await insertStudioDraft(
+        client,
         {
           id: newId("std"),
           session_id: session.id,
@@ -113,20 +118,19 @@ export class StudioDrafts implements StudioDraftService {
           rationale,
           evidence_refs: refs,
           evidence_warnings: warnings,
-          risks: Array.isArray(args.risks) ? args.risks : [],
+          risks: risksOf(args.risks),
           status: "draft",
           draft_number: Number(previous?.draft_number ?? 0) + 1,
           supersedes_draft_id: previous ? previous.id : null,
           created_generation: ctx.generation,
           created_message_seq: ctx.nextMessageSeq ?? seq,
-          now,
         },
-        client,
+        now,
       );
       return {
         widget: STUDIO_TASK_DRAFT_WIDGET,
         await_operator: true,
-        agent: { id: targetId, name: String(agent.name) },
+        agent: { id: targetId, name: agent.name },
         draft_id: draft.id,
         rationale,
         draft: viewDraft(draft),
@@ -137,8 +141,8 @@ export class StudioDrafts implements StudioDraftService {
   }
 
   async revise(
-    session: Record<string, unknown>,
-    user: Record<string, unknown>,
+    session: StudioSessionRow,
+    user: UserRow,
     draftId: string,
     proposed: string,
     expectedHeadId: string,
@@ -147,8 +151,8 @@ export class StudioDrafts implements StudioDraftService {
       throw new StudioUnprocessableError("proposed_content exceeds the 256 KiB artifact write limit");
     }
     const now = new Date();
-    return this.store.withSessionLock(String(session.id), async (client) => {
-      const current = await this.store.lockDraft(draftId, client);
+    return withLockedSession(this.db, session.id, async (client) => {
+      const current = await lockStudioDraft(client, draftId);
       if (!current || current.session_id !== session.id) {
         throw new StudioError(404, "draft not found");
       }
@@ -158,8 +162,9 @@ export class StudioDrafts implements StudioDraftService {
       if (String(current.id) !== expectedHeadId) {
         throw new StudioConflictError("stale draft head");
       }
-      await this.store.updateDraft(String(current.id), { status: "superseded", resolved_at: now }, client);
-      const next = await this.store.insertDraft(
+      await updateStudioDraft(client, String(current.id), { status: "superseded", resolved_at: now });
+      const next = await insertStudioDraft(
+        client,
         {
           ...current,
           id: newId("std"),
@@ -169,42 +174,41 @@ export class StudioDrafts implements StudioDraftService {
           supersedes_draft_id: current.id,
           created_generation: current.created_generation,
           created_message_seq: current.created_message_seq,
-          now,
         },
-        client,
+        now,
       );
       return viewDraft(next);
     });
   }
 
   async discard(
-    session: Record<string, unknown>,
-    user: Record<string, unknown>,
+    session: StudioSessionRow,
+    user: UserRow,
     draftId: string,
   ): Promise<Record<string, unknown>> {
     const now = new Date();
-    return this.store.withSessionLock(String(session.id), async (client) => {
-      const current = await this.store.lockDraft(draftId, client);
+    return withLockedSession(this.db, session.id, async (client) => {
+      const current = await lockStudioDraft(client, draftId);
       if (!current || current.session_id !== session.id) {
         throw new StudioError(404, "draft not found");
       }
       if (current.status !== "draft" && current.status !== "conflicted") {
         throw new StudioConflictError("draft cannot be discarded");
       }
-      const updated = await this.store.updateDraft(
-        String(current.id),
-        { status: "discarded", resolved_at: now, discarded_by_user_id: user.id ?? null },
+      const updated = await updateStudioDraft(
         client,
+        String(current.id),
+        { status: "discarded", resolved_at: now, discarded_by_user_id: userIdOf(user) },
       );
       return viewDraft(updated ?? current);
     });
   }
 
   async publish(args: {
-    session: Record<string, unknown>;
-    user: Record<string, unknown>;
+    session: StudioSessionRow;
+    user: UserRow;
     draftId: string;
-    repo: StudioToolContext["repo"];
+    db: StudioToolContext["db"];
     preview: StudioToolContext["preview"];
     notesSystemPath: string;
     publishFilesChanged?: (guildId: string) => Promise<void>;
@@ -213,8 +217,8 @@ export class StudioDrafts implements StudioDraftService {
     const { session, user, draftId } = args;
     const now = new Date();
     const preflight = await this.preflight(args);
-    return this.store.withSessionLock(String(session.id), async (client) => {
-      const draft = await this.store.lockDraft(draftId, client);
+    return withLockedSession(this.db, session.id, async (client) => {
+      const draft = await lockStudioDraft(client, draftId);
       if (!draft) {
         throw new StudioError(404, "draft not found");
       }
@@ -227,7 +231,7 @@ export class StudioDrafts implements StudioDraftService {
       if (!draft.target_agent_id || !draft.source_guild_id) {
         throw new StudioUnprocessableError("draft target is no longer live");
       }
-      const agent = await args.repo.getAgent(String(draft.target_agent_id));
+      const agent = await getAgent(args.db, String(draft.target_agent_id));
       if (!agent) {
         throw new StudioUnprocessableError("target is not a publishable agent");
       }
@@ -236,55 +240,49 @@ export class StudioDrafts implements StudioDraftService {
         const again = await this.runPreflight(agent, String(draft.proposed_content), args);
         Object.assign(preflight, again);
       }
-      const actor = this.artifacts.operatorContext(
-        String(session.org_id),
+      const actor = operatorContext(
+        session.org_id,
         String(user.id ?? "orphan"),
-        String(user.name ?? "operator"),
+        user.name,
         { guildId: String(draft.source_guild_id), agentId: String(draft.target_agent_id) },
       );
-      const live = await args.repo.getAgentTask(String(session.org_id), String(draft.target_agent_id), client);
+      const live = await getAgentTask(client ?? args.db, session.org_id, String(draft.target_agent_id));
       if (!live) {
         throw new StudioUnprocessableError("task.md not found");
       }
       if (Number(live.version) !== Number(draft.base_version)) {
-        await this.store.updateDraft(String(draft.id), { status: "conflicted", resolved_at: now }, client);
+        await updateStudioDraft(client, String(draft.id), { status: "conflicted", resolved_at: now });
         throw new StudioConflictError("task version conflict");
       }
       const proposedHash = hashArtifactContent(String(draft.proposed_content));
       if (proposedHash === live.content_hash) {
-        const unchanged = await this.store.updateDraft(
-          String(draft.id),
-          { status: "unchanged", resolved_at: now, published_at: now, published_by_user_id: user.id ?? null },
+        const unchanged = await updateStudioDraft(
           client,
+          String(draft.id),
+          { status: "unchanged", resolved_at: now, published_at: now, published_by_user_id: userIdOf(user) },
         );
         return { outcome: "unchanged", draft: viewDraft(unchanged ?? draft), preflight };
       }
       let written;
       try {
-        written = await args.repo.writeAgentTask(
-          actor,
-          String(draft.target_agent_id),
-          String(draft.proposed_content),
-          Number(draft.base_version),
-          client,
-        );
+        written = await writeAgentTaskInTransaction(client, actor, String(draft.target_agent_id), String(draft.proposed_content), Number(draft.base_version));
       } catch (error) {
         if (error instanceof ArtifactError && error.status === 409) {
-          await this.store.updateDraft(String(draft.id), { status: "conflicted", resolved_at: now }, client);
+          await updateStudioDraft(client, String(draft.id), { status: "conflicted", resolved_at: now });
           throw new StudioConflictError("task version conflict");
         }
         throw error;
       }
-      const published = await this.store.updateDraft(
+      const published = await updateStudioDraft(
+        client,
         String(draft.id),
         {
           status: "published",
           resolved_at: now,
           published_at: now,
-          published_by_user_id: user.id ?? null,
+          published_by_user_id: userIdOf(user),
           published_resource_version: written.version,
         },
-        client,
       );
       return {
         outcome: "published",
@@ -298,17 +296,17 @@ export class StudioDrafts implements StudioDraftService {
   }
 
   async preflight(args: {
-    session: Record<string, unknown>;
+    session: StudioSessionRow;
     draftId: string;
-    repo: StudioToolContext["repo"];
+    db: StudioToolContext["db"];
     preview: StudioToolContext["preview"];
     notesSystemPath: string;
   }): Promise<Record<string, unknown>> {
-    const draft = await this.store.getDraft(args.draftId);
+    const draft = await getStudioDraft(this.db, args.draftId);
     if (!draft || !draft.target_agent_id) {
       throw new StudioError(404, "draft not found");
     }
-    const agent = await args.repo.getAgent(String(draft.target_agent_id));
+    const agent = await getAgent(args.db, String(draft.target_agent_id));
     if (!agent) {
       throw new StudioUnprocessableError("target agent not found");
     }
@@ -316,19 +314,19 @@ export class StudioDrafts implements StudioDraftService {
   }
 
   private async runPreflight(
-    agent: Record<string, unknown>,
+    agent: AgentRow,
     proposed: string,
     args: { preview: StudioToolContext["preview"]; notesSystemPath: string },
   ): Promise<Record<string, unknown>> {
-    const actor = this.artifacts.operatorContext(
-      String(agent.org_id),
+    const actor = operatorContext(
+      agent.org_id,
       "studio-preflight",
       "studio",
-      { guildId: String(agent.guild_id), agentId: String(agent.id) },
+      { guildId: agent.guild_id, agentId: agent.id },
     );
     let expanded: string;
     try {
-      expanded = await inlineTaskEmbeds(this.artifacts, taskEmbedActor(String(agent.org_id), agent), proposed);
+      expanded = await inlineTaskEmbeds(embedSource(this.artifacts), taskEmbedActor(agent.org_id, agent), proposed);
     } catch (error) {
       if (error instanceof ArtifactError) {
         throw new StudioUnprocessableError(error.message);
@@ -337,10 +335,10 @@ export class StudioDrafts implements StudioDraftService {
     }
     const standing = hydrateStanding({
       systemPath: args.notesSystemPath,
-      agentName: String(agent.name),
-      agentId: String(agent.id),
+      agentName: agent.name,
+      agentId: agent.id,
     });
-    const memoryRow = await this.artifacts.getMemoryRow(actor, String(agent.id));
+    const memoryRow = await getMemoryRow(this.artifacts, actor, agent.id);
     const preview = await previewCurrentState(args.preview, agent);
     const tools = await projectOfferedToolSchemas(args.preview, agent);
     const config = (agent.config && typeof agent.config === "object" ? agent.config : {}) as Record<string, unknown>;
@@ -363,7 +361,7 @@ export class StudioDrafts implements StudioDraftService {
     if (liveContent) {
       try {
         priorEffective = promptHash(
-          await inlineTaskEmbeds(this.artifacts, taskEmbedActor(String(agent.org_id), agent), liveContent),
+          await inlineTaskEmbeds(embedSource(this.artifacts), taskEmbedActor(agent.org_id, agent), liveContent),
         );
       } catch {
         priorEffective = typeof agent.task_hash === "string" ? agent.task_hash : null;
@@ -382,14 +380,14 @@ export class StudioDrafts implements StudioDraftService {
   }
 }
 
-export function viewDraft(row: Record<string, unknown>): Record<string, unknown> {
-  const base = String(row.base_content ?? "");
-  const proposed = String(row.proposed_content ?? "");
+export function viewDraft(row: StudioDraftRow): Record<string, unknown> {
+  const base = row.base_content;
+  const proposed = row.proposed_content;
   const baseBytes = Buffer.byteLength(base, "utf8");
   const proposedBytes = Buffer.byteLength(proposed, "utf8");
   const deleted = Math.max(0, baseBytes - proposedBytes);
   const deletionRatio = baseBytes === 0 ? 0 : deleted / baseBytes;
-  const refs = Array.isArray(row.evidence_refs) ? row.evidence_refs : [];
+  const refs = row.evidence_refs;
   return {
     id: row.id,
     session_id: row.session_id,
@@ -418,52 +416,58 @@ export function viewDraft(row: Record<string, unknown>): Record<string, unknown>
   };
 }
 
+function isEvidenceRefKind(value: string): value is EvidenceRefKind {
+  return EVIDENCE_REF_KINDS.some((kind) => kind === value);
+}
+
+/** One cited reference checked against the tool result it names: the reference, or why it does not check out. */
+type CheckedRef = { ref: EvidenceRef } | { warning: EvidenceWarning };
+
+function resolveEvidenceRef(item: unknown, bySeq: Map<number, ConversationMessageRow>): CheckedRef {
+  if (!isPlainRecord(item)) {
+    return { warning: { reason: "invalid_reference" } };
+  }
+  const kind = String(item.kind ?? item.type ?? "");
+  if (!isEvidenceRefKind(kind)) {
+    return { warning: { reason: "unknown_kind", kind } };
+  }
+  const seq = Number(item.tool_message_seq);
+  const message = bySeq.get(seq);
+  if (!message) {
+    return { warning: { reason: "missing_tool_message", tool_message_seq: seq } };
+  }
+  const payload = JSON.stringify(message.payload);
+  if (!evidenceCoordinates(kind, item).every((value) => payload.includes(String(value)))) {
+    return { warning: { reason: "coordinates_not_in_tool_result", kind, tool_message_seq: seq } };
+  }
+  const excerpt = excerptBytes(payload, STUDIO_EVIDENCE_EXCERPT_BYTES).text;
+  const ref: EvidenceRef = {
+    ...Object.fromEntries(Object.entries(item).filter(([key]) => !["content_hash", "instruction_hash", "excerpt"].includes(key))),
+    kind,
+    tool_message_seq: seq,
+    content_hash: kind === "routine" ? instructionHash(String(item.instruction ?? excerpt)) : promptHash(excerpt),
+    excerpt: capBytes(excerpt, STUDIO_EVIDENCE_EXCERPT_BYTES)[0],
+  };
+  return { ref };
+}
+
 function resolveEvidenceRefs(
   raw: unknown,
-  messages: Array<Record<string, unknown>>,
-): { refs: Array<Record<string, unknown>>; warnings: Array<Record<string, unknown>> } {
-  const refs: Array<Record<string, unknown>> = [];
-  const warnings: Array<Record<string, unknown>> = [];
+  messages: ConversationMessageRow[],
+): { refs: EvidenceRef[]; warnings: EvidenceWarning[] } {
+  const refs: EvidenceRef[] = [];
+  const warnings: EvidenceWarning[] = [];
   if (!Array.isArray(raw)) {
     return { refs, warnings };
   }
-  const bySeq = new Map<number, Record<string, unknown>>();
-  for (const message of messages) {
-    bySeq.set(Number(message.seq), message);
-  }
+  const bySeq = new Map(messages.map((message) => [message.seq, message]));
   for (const item of raw.slice(0, STUDIO_EVIDENCE_REF_MAX)) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) {
-      warnings.push({ reason: "invalid_reference" });
-      continue;
+    const checked = resolveEvidenceRef(item, bySeq);
+    if ("ref" in checked) {
+      refs.push(checked.ref);
+    } else {
+      warnings.push(checked.warning);
     }
-    const candidate = item as Record<string, unknown>;
-    const kind = String(candidate.kind ?? candidate.type ?? "");
-    if (!REF_KINDS.has(kind)) {
-      warnings.push({ reason: "unknown_kind", kind });
-      continue;
-    }
-    const seq = Number(candidate.tool_message_seq);
-    const message = bySeq.get(seq);
-    if (!message) {
-      warnings.push({ reason: "missing_tool_message", tool_message_seq: seq });
-      continue;
-    }
-    const payload = JSON.stringify(message.payload ?? {});
-    const coordinates = evidenceCoordinates(kind, candidate);
-    if (!coordinates.every((value) => payload.includes(String(value)))) {
-      warnings.push({ reason: "coordinates_not_in_tool_result", kind, tool_message_seq: seq });
-      continue;
-    }
-    const excerpt = excerptBytes(payload, STUDIO_EVIDENCE_EXCERPT_BYTES).text;
-    refs.push({
-      kind,
-      tool_message_seq: seq,
-      ...Object.fromEntries(
-        Object.entries(candidate).filter(([key]) => !["content_hash", "instruction_hash", "excerpt"].includes(key)),
-      ),
-      content_hash: kind === "routine" ? instructionHash(String(candidate.instruction ?? excerpt)) : promptHash(excerpt),
-      excerpt: capBytes(excerpt, STUDIO_EVIDENCE_EXCERPT_BYTES)[0],
-    });
   }
   return { refs, warnings };
 }
@@ -474,7 +478,7 @@ async function missingDraftAgentMessage(
 ): Promise<string> {
   let known = "";
   try {
-    const members = await ctx.repo.listAgents(ctx.sourceGuildId);
+    const members = await listAgents(ctx.db, ctx.sourceGuildId);
     const live = members.filter((row) => String(row.guild_id) === String(ctx.sourceGuildId));
     if (live.length) {
       known = ` Known agents: ${live.map((row) => `${row.name} (${row.id})`).join(", ")}.`;

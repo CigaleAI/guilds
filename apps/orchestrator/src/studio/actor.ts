@@ -1,5 +1,6 @@
 import type { ArtifactActor } from "../artifacts/types.js";
 import type { EditScope } from "./edits.js";
+import { operatorContext } from "../artifacts/store.js";
 
 /**
  * The operator a Studio edit reads and writes as. While an edit is applied,
@@ -10,7 +11,7 @@ export function editActor(
   scope: EditScope,
   extra: { guildId?: string | null; agentId?: string | null } = {},
 ): ArtifactActor {
-  const actor = scope.artifacts.operatorContext(
+  const actor = operatorContext(
     scope.orgId,
     String(scope.user.id),
     String(scope.user.name ?? "operator"),

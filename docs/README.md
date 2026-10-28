@@ -79,7 +79,8 @@ These pages are also published at
 ## Concepts
 
 How the product works, for the operator. Start with
-[How it fits together](concepts/how-it-fits.md).
+[How it fits together](concepts/how-it-fits.md). The
+[glossary](GLOSSARY.md) defines the words used throughout.
 
 **People**
 
@@ -201,8 +202,8 @@ For the people who change the code.
   the request path, the run flow
 - [Screen map](architecture/screen-map.md) — every screen of the
   operator app
-- [Extension points](architecture/extension-points.md) — what an
-  edition built on core may replace
+- [Extension points](architecture/extension-points.md) — where
+  custom code replaces a part of core
 - [Design system](architecture/design-system.md) — `@guildsrun/ui`:
   tokens, components, Storybook
 - [Security register](architecture/security-register.md) — issues
@@ -216,6 +217,8 @@ For the people who change the code.
   stack, Make targets, tests, the check, CI
 - [Code guidelines](contributing/code-guidelines.md) — names,
   functions, boundaries, docs
+- [Pull requests](contributing/pull-requests.md) — size, content,
+  what a reviewer checks
 
 ## Licence
 
@@ -224,5 +227,5 @@ under the GNU Affero General Public License, version 3 only
 ([LICENSE](../LICENSE)). What it builds on is listed in
 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
 
-The hosted edition, the layer Cigale AI runs its own service with,
-is separate and proprietary.
+The hosted service extends core through those extension points. It
+is a separate repository, and it is proprietary.

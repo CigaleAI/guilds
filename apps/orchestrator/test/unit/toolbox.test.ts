@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { operatorActor, type ArtifactActor } from "../../src/artifacts/index.js";
+import { operatorActor } from "../../src/artifacts/index.js";
 import {
   REGISTRY,
   capBytes,
@@ -16,69 +16,13 @@ import {
   stampToolResult,
   withRemainingToolCalls,
 } from "../../src/toolbox/index.js";
+import type { ToolCall } from "../../src/db/schema/index.js";
 import { functionSchema, omitEmptyOptionalStrings } from "../../src/toolbox/schema.js";
 import { HELPER } from "../../src/toolbox/browser.js";
 import { Scripts } from "../../src/scripts/catalog.js";
+import { MemoryScriptDB } from "../helpers/generation.js";
 import { CancelEvent } from "../../src/toolbox/types.js";
 
-class MemoryScriptDB {
-  rows: Array<Record<string, unknown>> = [];
-
-  async listAgentScripts(agentId: string) {
-    return this.rows.filter((row) => row.agent_id === agentId);
-  }
-
-  async upsertAgentScript(
-    _actor: ArtifactActor,
-    scriptId: string,
-    agentId: string,
-    name: string,
-    description: string,
-    parameters: Record<string, unknown> | null,
-    source: string,
-    sourceHash: string,
-    now: Date,
-  ) {
-    const index = this.rows.findIndex((row) => row.agent_id === agentId && row.name === name);
-    if (index >= 0) {
-      const updated = {
-        ...this.rows[index],
-        description,
-        parameters,
-        source,
-        source_hash: sourceHash,
-        updated_at: now,
-      };
-      this.rows[index] = updated;
-      return updated;
-    }
-    const row = {
-      id: scriptId,
-      agent_id: agentId,
-      name,
-      description,
-      parameters,
-      source,
-      source_hash: sourceHash,
-      created_at: now,
-      updated_at: now,
-    };
-    this.rows.push(row);
-    return row;
-  }
-
-  async getAgentScript(agentId: string, name: string) {
-    return this.rows.find((row) => row.agent_id === agentId && row.name === name) ?? null;
-  }
-
-  async deleteAgentScript(_actor: ArtifactActor, agentId: string, name: string) {
-    const index = this.rows.findIndex((row) => row.agent_id === agentId && row.name === name);
-    if (index < 0) {
-      return null;
-    }
-    return this.rows.splice(index, 1)[0] ?? null;
-  }
-}
 
 function schemaRequired(name: string): unknown {
   const schema = REGISTRY[name]?.schema as {
@@ -350,7 +294,7 @@ test("invoke_script_run stores payload and exit_code", async () => {
   });
   const [payload, metadata] = await invokeTool(
     ctx,
-    { id: "call_1", function: { name: "script_run", arguments: '{"name":"hello"}' } },
+    { id: "call_1", type: "function", function: { name: "script_run", arguments: '{"name":"hello"}' } },
     {},
     1024,
   );
@@ -374,7 +318,7 @@ test("invoke unknown tool is error message", async () => {
   });
   const [payload, metadata] = await invokeTool(
     ctx,
-    { id: "call_x", function: { name: "nope", arguments: "{}" } },
+    { id: "call_x", type: "function", function: { name: "nope", arguments: "{}" } },
     {},
     1024,
   );
@@ -398,6 +342,7 @@ test("invoke refuses a native tool the run did not offer", async () => {
     ctx,
     {
       id: "call_x",
+      type: "function",
       function: {
         name: "script_create",
         arguments: '{"name":"scratch","description":"why","source":"print(1)"}',
@@ -440,7 +385,7 @@ test("invoke still runs a first-class script when it is not in offered_tools", a
   });
   const [payload, metadata] = await invokeTool(
     ctx,
-    { id: "call_1", function: { name: "priced", arguments: "{}" } },
+    { id: "call_1", type: "function", function: { name: "priced", arguments: "{}" } },
     {},
     1024,
   );
@@ -582,16 +527,16 @@ test("browser_eval runs helper", async () => {
   assert.equal(result, '"ok"');
 });
 
-test("parseArguments accepts an object or a JSON object string", () => {
-  assert.deepEqual(parseArguments({ function: { arguments: { path: "a.ts" } } }), { path: "a.ts" });
-  assert.deepEqual(parseArguments({ function: { arguments: '{"path":"a.ts"}' } }), { path: "a.ts" });
-  assert.deepEqual(parseArguments({ function: { arguments: "" } }), {});
-  assert.deepEqual(parseArguments({}), {});
+const withArguments = (raw: string): ToolCall => ({ id: "c1", type: "function", function: { name: "note_get", arguments: raw } });
+
+test("parseArguments reads a JSON object string, and none as empty", () => {
+  assert.deepEqual(parseArguments(withArguments('{"path":"a.ts"}')), { path: "a.ts" });
+  assert.deepEqual(parseArguments(withArguments("")), {});
 });
 
 test("parseArguments throws when JSON is not an object", () => {
-  assert.throws(() => parseArguments({ function: { arguments: "[]" } }), /JSON object/);
-  assert.throws(() => parseArguments({ function: { arguments: 3 } }), /JSON object/);
+  assert.throws(() => parseArguments(withArguments("[]")), /JSON object/);
+  assert.throws(() => parseArguments(withArguments("3")), /JSON object/);
 });
 
 test("remaining tool calls stamp", () => {
@@ -609,7 +554,16 @@ test("remaining tool calls stamp", () => {
   );
   const [payload, metadata] = stampToolResult(
     { role: "tool", tool_call_id: "c1", content: "page found" },
-    { tool_name: "note_read" },
+    {
+      tool_name: "note_read",
+      tool_call_id: "c1",
+      duration_ms: 1,
+      output_filter: "identity",
+      truncated: false,
+      original_bytes: 10,
+      stored_bytes: 10,
+      error: null,
+    },
     12,
   );
   assert.equal(payload.content, "page found\n\nremaining_tool_calls: 12");

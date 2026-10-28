@@ -25,8 +25,25 @@ everything it does. Nothing happens inside that the name does not
 promise, including side effects. If the name needs an "and", it is
 two functions.
 
-- A function has at most **4 parameters**. If you need more, pass
-  one object with named fields.
+- A function has at most **4 parameters**. ESLint warns at 5 and
+  fails at 6.
+- An object parameter is one of two kinds, and its type is always
+  a named type:
+  - A **record** names a thing that exists in the application
+    outside this call (a new row, a patch, a key, a spec, an editing
+    session) and holds only that thing's fields. A settings type is
+    a record when several callers and instances share it.
+  - A **dependencies object** holds the services a module needs. It
+    could be built once at composition and reused by every call, so
+    it never holds a per-call value such as the user or the actor.
+
+  Every other object parameter is an argument bag and is not
+  allowed. That includes an inline object type of optional settings,
+  and a type named after its function that bundles the call's
+  arguments; neither brings a function under the parameter limit.
+  Call context (the clock, the actor, a transaction client, a hook)
+  is a parameter of its own, never a field of a record or a
+  dependencies object.
 - A function has a **cyclomatic complexity of 11 or less**. A flat
   body with many early returns is fine; the limit exists to keep one
   function from holding several contracts.
@@ -36,7 +53,10 @@ two functions.
 - Parameters are typed for what they are. A function does not take
   `Record<string, unknown>` or `unknown` when the caller has a type.
 - A function does not take a flag that selects between behaviours.
-  Each behaviour is its own function with its own name.
+  Each behaviour is its own function with its own name. A boolean
+  that selects a behaviour is a flag wherever it sits, in a
+  parameter of its own or inside an object; a boolean that is data,
+  such as a field of a patch, is not.
 
 **What counts towards complexity:** `if`, `else if`, `case`, loops,
 `&&`, `||`, `??`, ternaries (`a ? b : c`), and `catch`. A JSX
@@ -79,7 +99,7 @@ function; it is a block of its caller.
 - Two functions that differ in behaviour differ in name, in the
   part of the name that carries the difference
   (`readAgentFile`, `readAgentFolder`).
-- Types and tables are the domain noun (`Repositories`,
+- Types and tables are the domain noun (`ArtifactStore`,
   `artifact_collections`).
 - Booleans read as a question (`isReadOnlyRemote`).
 
@@ -193,10 +213,30 @@ from another feature; when two features must share behaviour, move
 that behaviour to a shared directory or keep a thin call at the composition
 root (`compose.ts`, the router, a page that mounts both).
 
-Core imports nothing from an edition built on it.
+Core imports nothing from an extension built on it.
 `eslint.boundary.js` fails the file that tries.
 
-An edition attaches through the
+A domain module imports the `db/` modules it reads and writes
+through, and takes a `Queryable` as its connection. Where a unit
+test fakes the database, the module takes a dependencies object of
+the `db/` functions it calls instead, each bound to the connection
+with `bindQuery`; writes that commit together run in a transaction
+bound beside them with `bindTransaction`. Nothing else stands
+between a domain module and `db/`: no facade, no class that forwards
+every query. Only `http/` is kept out of `db/`.
+
+`db/` imports nothing outside `db/` and `lib/`, and `lib/` nothing
+outside `lib/`. `db/` holds the queries and the types and defaults
+of what it stores. The validation, the decisions, and the change
+records a write needs belong to the domain module that calls it,
+which opens the transaction they share. ESLint fails the file that
+imports across either line.
+
+A domain module imports nothing from the HTTP framework. Only
+`http/`, the app and composition roots, the extension points and
+the observability hooks import `fastify`.
+
+Custom code attaches through the
 [extension points](../architecture/extension-points.md). A need
 it has that core lacks becomes an extension point with a core
 default, not a branch.
@@ -220,8 +260,16 @@ for what arrives from the operator or the model.
 
 Inside the domain the types are trusted. `any` does not appear.
 
-A repository returns typed rows. A function in `db/` declares a
-row type per table (`AgentRow`, `ScheduleRow`) and returns it; it
+A repository returns typed rows. Row types are derived from the
+Drizzle schema in `db/schema/`, never written out by hand: a table's
+row is `InferSelectModel<typeof table>`, a projection is a `Pick` or
+`Omit` of it, and a joined column takes the type of the column it
+reads (`Agent["name"] | null` for a left join). `db/` declares a
+field's type itself only for a value a query computes, such as a
+count or a JSON aggregate. A column list in SQL is built from the
+same keys (`tableColumns`, `pickColumns` in `db/columns.ts`), so the
+query and its type cannot drift apart. A write's input takes each
+column's type from the row (`IssueRow["status"]`). A repository
 does not return `Record<string, unknown>`. A domain that receives
 a row reads its fields by name without `String(row.x)` guards,
 because the type is the contract.
@@ -229,10 +277,21 @@ because the type is the contract.
 Public functions have **explicit types** for inputs and outputs.
 Types are documentation that cannot go out of date.
 
+A cast creates no knowledge. `as Type` appears only after a check
+that proves the type, or as `as const`. `as unknown as` and
+`as never` do not appear. A value whose shape is unknown is
+validated or narrowed with a type guard, never asserted.
+
 Use **one error-handling pattern**. A domain throws a named
 error class (`RecipeError`, `MachineConflict`). HTTP maps that
 class to `HttpError` and a status. Do not mix thrown strings,
 ad-hoc objects, and classes for the same kind of failure.
+
+A `catch` does one of two things: it throws a named error, or it
+returns a value whose type says the failure was expected, such as
+`null` from a lookup of something that may be absent. A `catch`
+that logs and continues, or returns a default that hides the
+failure, does not appear.
 
 ## Clean code
 
@@ -315,10 +374,13 @@ Before you submit a change, check:
 
 - [ ] Each function's name and signature say everything it does.
       No flag parameters, complexity of 11 or less, nesting of 3 or
-      less, 4 parameters or fewer.
+      less, 4 parameters or fewer, object parameters only for
+      records and dependencies objects.
 - [ ] Every file is under 800 lines and holds one concern.
 - [ ] Rows leave `db/` typed; route handlers call one domain
       function and never touch `db/`.
+- [ ] No cast asserts a shape; every `catch` throws a named error
+      or returns an expected absence.
 - [ ] No helper exists only to shorten its caller.
 - [ ] Every new branch has a test.
 - [ ] I searched for existing code before writing new code.

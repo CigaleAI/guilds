@@ -131,7 +131,7 @@
       "path": "sse/run.txt",
       "source": "GET /api/runs/{run_id}/stream",
       "generator_version": "1",
-      "sha256": "0bd516fbcaca806f5b0ec4b5f0c57f50641b15be20bc9a051b539cb0e0dafdd4"
+      "sha256": "9c1a3666eeae82534473e29a23829d4d0e05d292b8eea4a1c825788eb4f634a5"
     },
     {
       "path": "state/snapshot.json",

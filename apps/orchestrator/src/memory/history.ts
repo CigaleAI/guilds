@@ -1,10 +1,12 @@
 import type { ArtifactStore } from "../artifacts/store.js";
 import type { ArtifactActor } from "../artifacts/types.js";
-import { listFileChanges } from "../artifacts/file-changes.js";
+import { listFileChanges } from "../db/file-changes.js";
 import { displayPathFor, MEMORY_KEY } from "../artifacts/paths.js";
-import type { Repositories } from "../db/repositories.js";
 import { iso } from "../db/views.js";
 import { buildMemoryTimeline, type MemoryTimelineEntry } from "./timeline.js";
+import { getRun } from "../db/runs.js";
+import type { Queryable } from "../db/pg.js";
+import { getMemoryRow, listRevisions } from "../artifacts/memory.js";
 
 export type MemoryWriteCall = { call_id: string; name: string | null };
 
@@ -63,12 +65,12 @@ export function attachRunsToMemoryEntries(
 }
 
 async function runsById(
-  repo: Pick<Repositories, "getRun">,
+  db: Queryable,
   runIds: string[],
 ): Promise<Map<string, Record<string, unknown>>> {
   const runs = new Map<string, Record<string, unknown>>();
   for (const runId of runIds) {
-    const run = await repo.getRun(runId);
+    const run = await getRun(db, runId);
     if (run) {
       runs.set(runId, run);
     }
@@ -81,12 +83,12 @@ async function runsById(
 // run and the memory_write call that did it. The archive is operator-only,
 // so `actor` is an operator.
 export async function memoryHistory(
-  deps: { artifacts: ArtifactStore; repo: Repositories },
+  deps: { artifacts: ArtifactStore; db: Queryable },
   actor: ArtifactActor,
   agent: { id: string; name: string },
 ): Promise<Record<string, unknown>> {
-  const live = await deps.artifacts.getMemoryRow(actor, agent.id);
-  const revisions = await deps.artifacts.listRevisions(actor, agent.id);
+  const live = await getMemoryRow(deps.artifacts, actor, agent.id);
+  const revisions = await listRevisions(deps.artifacts, actor, agent.id);
   const entries = buildMemoryTimeline({ live: { content: live?.content_text ?? "" }, revisions });
   const memoryPath = displayPathFor({
     orgId: actor.orgId,
@@ -96,10 +98,10 @@ export async function memoryHistory(
     path: "",
     key: MEMORY_KEY,
   });
-  const changes = await listFileChanges(deps.repo.pool, actor.orgId, memoryPath);
+  const changes = await listFileChanges(deps.db, actor.orgId, memoryPath);
   const callByRun = firstMemoryWriteByRun(changes);
   const runIds = [...new Set(entries.flatMap((entry) => (entry.run_id ? [entry.run_id] : [])))];
-  const runs = await runsById(deps.repo, runIds);
+  const runs = await runsById(deps.db, runIds);
   return {
     agent: { id: agent.id, name: agent.name },
     display_path: memoryPath,

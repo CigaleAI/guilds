@@ -45,7 +45,7 @@ The orchestrator serves the build at the site root
 | `/storybook` | The Storybook build at `dist/storybook`, when the image built it |
 | Anything else not found | A JSON 404 |
 
-Without a build, every page is a 404. An edition serves its own build
+Without a build, every page is a 404. An extension serves its own build
 through `ServerExtension.webApp`
 ([Extension points](extension-points.md)).
 
@@ -61,12 +61,12 @@ through `ServerExtension.webApp`
 1. installs the client error log
 2. applies the stored theme (`src/app/theme.ts` writes `data-theme`
    on `<html>`)
-3. records the edition's sign-in path, if any
+3. records the extension's sign-in path, if any
 4. renders `App` into `#root`, with React's error hooks reporting to
    the client error log
 
 `App.tsx` mounts the query client, the slots, `TooltipProvider`, and
-`Toaster`. It shows the edition's public page when one owns the path,
+`Toaster`. It shows the extension's public page when one owns the path,
 and otherwise resolves the operator and organisation
 (`src/api/identity.ts`) before the router renders any page.
 
@@ -97,7 +97,7 @@ the tab's `X-Request-Id`. The `guilds_user` and `guilds_org` cookies
 carry the user and organisation for event streams, which cannot send
 headers.
 
-A 401 outside `compat-cookie` mode goes to the edition's sign-in page
+A 401 outside `compat-cookie` mode goes to the extension's sign-in page
 when it has one, returning to the same page afterwards. Without one
 it is an error on the page.
 
@@ -114,8 +114,8 @@ not-found page (`features/home/NotFound.tsx`).
 |---|---|---|
 | `/` | Home: the last guild visited, or the first; with none, the empty state | |
 | `/inbox` | Inbox | |
-| `/settings` | Organisation settings | `tab`: `general`, `members`, `machines`, `keys`, `secrets`, `tools`, `usage`, or an edition's |
-| `/admin` | Admin | `tab`: `catalog`, `instance`, `users` on the modes whose server serves a user directory, or an edition's |
+| `/settings` | Organisation settings | `tab`: `general`, `members`, `machines`, `keys`, `secrets`, `tools`, `usage`, or an extension's |
+| `/admin` | Admin | `tab`: `catalog`, `instance`, `users` on the modes whose server serves a user directory, or an extension's |
 | `/builder`, `/builder/$sessionId` | Builder landing and workspace | |
 | `/recipes`, `/recipes/$recipeId` | Recipe library and recipe page | |
 | `/recipes/$recipeId/apply` | Apply preview | |
@@ -140,13 +140,13 @@ not-found page (`features/home/NotFound.tsx`).
 
 ## Extension slots
 
-An edition built on core may fill slots of the app. Core fills none of
+An extension built on core may fill slots of the app. Core fills none of
 them, and the app is whole without a slot. The slots are `AppSlots`
 (`src/app/slots.ts`), passed to `mount(slots)`:
 
 | Slot | What it adds |
 |---|---|
-| `publicPage` | A page for a path the edition owns, shown before identity loads |
+| `publicPage` | A page for a path the extension owns, shown before identity loads |
 | `signInPath` | Where a signed-out request goes to sign in |
 | `signOut` | **Sign out** in the account menu |
 | `settingsTabs`, `adminTabs` | Tabs on Settings and Admin, each placed after the core tab it names, or last |
@@ -156,7 +156,7 @@ them, and the app is whole without a slot. The slots are `AppSlots`
 [Extension points](extension-points.md) lists the server-side points
 beside these.
 
-`package.json` lists under `exports` what an edition's package may
+`package.json` lists under `exports` what an extension's package may
 import: `mount`, the slots, the router, the build recipe
 (`appConfig()` in `vite.app.ts`), the API client, session, and
 types, identity, formatting, tool-call formatting
@@ -236,5 +236,5 @@ import components from the package barrel
 | `apps/web/src/app/theme.ts` | Theme preference and `data-theme` |
 | `apps/web/src/api/` | API client, identity, session storage, streams, client log |
 | `apps/web/src/features/` | One directory per area of the app |
-| `apps/web/vite.app.ts` | Build and dev-server configuration, shared with an edition's package |
+| `apps/web/vite.app.ts` | Build and dev-server configuration, shared with an extension's package |
 | `apps/orchestrator/src/http/web-app.ts` | Serving the build and the page fallback |

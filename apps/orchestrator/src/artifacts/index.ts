@@ -5,23 +5,23 @@ export {
   recordFileChange,
   type FileChangeOperation,
   type FileChangeView,
-} from "./file-changes.js";
+} from "../db/file-changes.js";
 export {
-  ArtifactStore,
+  artifactStore,
   hashArtifactContent,
   type ArtifactRow,
-  validateCollectionName,
-  validatePurpose,
+  type ArtifactStore,
   type CollectionDescription,
   type CollectionView,
-  type MemoryRevisionRow,
   type ReachedNote,
   type ReachedTable,
   type RecordView,
   type StateArtifact,
 } from "./store.js";
+export { validateCollectionName, validatePurpose } from "./collections.js";
+export { type MemoryRevisionView } from "./memory.js";
 export { ArtifactFiles, fileBlobKey, mimeForName, normalizeMime, validateFileDescription, type FileView } from "./files.js";
-export { agentActor, operatorActor } from "./actors.js";
+export { agentActor, loadOperatorActor, operatorActor, type OperatorScope } from "./actors.js";
 export { type AccessEntry, type AccessList } from "./access.js";
 export {
   inlineTaskEmbeds,
@@ -30,7 +30,9 @@ export {
   inspectEmbed,
   inspectTaskEmbeds,
   snapshotTaskEmbeds,
-  storeNoteReader,
+  noteReader,
+  embedSource,
+  type EmbedSource,
   taskEmbedActor,
   walkTaskEmbeds,
   withoutEmbeds,
@@ -38,17 +40,9 @@ export {
   type EmbedStep,
   snapshotTaskCollections,
   type TaskEmbedInspection,
-  type TaskEmbedSnapshot,
 } from "./embeds.js";
-export {
-  COLUMN_TYPES,
-  columnCatalog,
-  describeColumn,
-  parseColumnChange,
-  parseColumns,
-  type CollectionColumn,
-  type ColumnType,
-} from "./columns.js";
+export { columnCatalog, describeColumn, parseColumnChange, parseColumns } from "./columns.js";
+export { COLUMN_TYPES, type CollectionColumn, type ColumnType } from "../db/schema/index.js";
 export {
   ACCESS_MODES,
   ACCESS_SUBJECTS,

@@ -1,6 +1,9 @@
 import { defaultSearchServer, isSearchable, storageHint } from "../connectors/builder.js";
-import type { Repositories } from "../db/repositories.js";
-import { McpError } from "../mcp/index.js";
+import { getMcpServer, getMcpServerBySlug } from "../connectors/servers.js";
+import { type McpDatabase, mcpDatabase, McpError } from "../mcp/index.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
+import type { LoadedConnector } from "../connectors/load.js";
+import type { McpConnectionRow } from "../db/mcp.js";
 
 
 const SEARCH_REMOTES = ["search", "notion-search", "Search"];
@@ -10,13 +13,24 @@ const MAX_RAW = 4_000;
 
 export type BuilderMcpClient = {
   call(
-    db: Repositories,
-    connection: Record<string, unknown>,
-    server: Record<string, unknown>,
+    db: McpDatabase,
+    connection: McpConnectionRow,
+    server: LoadedConnector,
     remoteName: string,
     arguments_: Record<string, unknown>,
   ): Promise<string>;
 };
+
+/** The db/ functions the Builder's connected-workspace tools read and call through, on `db`. */
+export function connectedDatabase(db: Queryable) {
+  return {
+    ...mcpDatabase(db),
+    getMcpServer: bindQuery(db, getMcpServer),
+    getMcpServerBySlug: bindQuery(db, getMcpServerBySlug),
+  };
+}
+
+export type ConnectedDatabase = ReturnType<typeof connectedDatabase>;
 
 export type WorkspaceHit = {
   kind: "database" | "page" | "other";
@@ -42,16 +56,16 @@ export type ConnectedSearchResult = {
 
 /** The enabled server an organisation sees by id or slug: the platform's, or its own. */
 export async function resolvePublishedServer(
-  repo: Repositories,
+  db: ConnectedDatabase,
   serverRef: string,
   orgId: string,
-): Promise<Record<string, unknown> | null> {
+): Promise<LoadedConnector | null> {
   const trimmed = serverRef.trim();
   if (!trimmed) {
     return null;
   }
-  const byId = await repo.getMcpServer(trimmed);
-  const row = byId && (!byId.owner_org_id || byId.owner_org_id === orgId) ? byId : await repo.getMcpServerBySlug(trimmed, orgId);
+  const byId = await db.getMcpServer(trimmed);
+  const row = byId && (!byId.owner_org_id || byId.owner_org_id === orgId) ? byId : await db.getMcpServerBySlug(trimmed, orgId);
   if (!row || row.enabled === false) {
     return null;
   }
@@ -59,15 +73,15 @@ export async function resolvePublishedServer(
 }
 
 export async function findReusableOrgConnection(
-  repo: Repositories,
+  db: ConnectedDatabase,
   orgId: string,
-  server: Record<string, unknown>,
-): Promise<Record<string, unknown> | null> {
-  const connections = await repo.listMcpConnections({ orgId });
+  server: LoadedConnector,
+): Promise<McpConnectionRow | null> {
+  const connections = await db.listMcpConnections({ orgId });
   return (
     connections.find(
       (row) =>
-        String(row.mcp_server_id) === String(server.id) &&
+        String(row.mcp_server_id) === server.id &&
         row.status === "connected" &&
         (row.owner_scope === "org" || row.owner_scope === "platform"),
     ) ?? null
@@ -254,7 +268,7 @@ export function parseWorkspaceHits(raw: string): { hits: WorkspaceHit[]; raw_exc
 }
 
 export async function searchConnectedWorkspace(args: {
-  repo: Repositories;
+  db: ConnectedDatabase;
   mcp?: BuilderMcpClient | null | undefined;
   orgId: string;
   serverRef: string;
@@ -265,7 +279,7 @@ export async function searchConnectedWorkspace(args: {
   const hint = isSearchable(serverRef)
     ? storageHint()
     : "Prefer local notes and collections unless this connector is the operator's durable system of record.";
-  const server = await resolvePublishedServer(args.repo, serverRef, args.orgId);
+  const server = await resolvePublishedServer(args.db, serverRef, args.orgId);
   if (!server) {
     return {
       server: serverRef,
@@ -278,9 +292,9 @@ export async function searchConnectedWorkspace(args: {
       error: "unknown or unpublished connector",
     };
   }
-  const slug = String(server.slug);
+  const slug = server.slug;
   const displayName = String(server.display_name || slug);
-  const connection = await findReusableOrgConnection(args.repo, args.orgId, server);
+  const connection = await findReusableOrgConnection(args.db, args.orgId, server);
   if (!connection) {
     return {
       server: slug,
@@ -299,7 +313,7 @@ export async function searchConnectedWorkspace(args: {
       server: slug,
       display_name: displayName,
       connected: true,
-      scope: String(connection.owner_scope),
+      scope: connection.owner_scope,
       query,
       hits: [],
       databases: [],
@@ -307,17 +321,17 @@ export async function searchConnectedWorkspace(args: {
       error: "connected workspace search is unavailable",
     };
   }
-  const tools = await args.repo.listMcpTools(String(connection.id));
+  const tools = await args.db.listMcpTools(connection.id);
   const remoteName = pickSearchRemote(tools);
   try {
-    const raw = await args.mcp.call(args.repo, connection, server, remoteName, query ? { query } : {});
+    const raw = await args.mcp.call(args.db, connection, server, remoteName, query ? { query } : {});
     const parsed = parseWorkspaceHits(raw);
     const databases = parsed.hits.filter((hit) => hit.kind === "database");
     return {
       server: slug,
       display_name: displayName,
       connected: true,
-      scope: String(connection.owner_scope),
+      scope: connection.owner_scope,
       query,
       hits: parsed.hits,
       databases,
@@ -330,7 +344,7 @@ export async function searchConnectedWorkspace(args: {
       server: slug,
       display_name: displayName,
       connected: true,
-      scope: String(connection.owner_scope),
+      scope: connection.owner_scope,
       query,
       hits: [],
       databases: [],

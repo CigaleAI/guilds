@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { applyMigrations, createPool } from "../../src/db/client.js";
+import { reportPoolError } from "../../src/observability/runtime.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { applySql, drizzleMigrationSql, dumpSchema, normalizeDump } from "../helpers/schema-dump.js";
 
@@ -21,7 +22,7 @@ test.skip("normalized migrate dump matches applying drizzle SQL", async () => {
   applySql(sqlDb, drizzleMigrationSql());
 
   const migrateUrl = await createIsolatedDatabase(migrateDb);
-  const pool = await createPool(migrateUrl);
+  const pool = await createPool(migrateUrl, reportPoolError);
   try {
     await applyMigrations(pool);
   } finally {

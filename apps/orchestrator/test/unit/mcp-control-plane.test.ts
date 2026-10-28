@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
+import type { McpConnectionRow } from "../../src/db/mcp.js";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { test } from "node:test";
 import { agentRuntime, snapshotEnvValues } from "../../src/access/runtime.js";
-import { httpAccess } from "../../src/http/access.js";
+import { loadAccessView } from "../../src/access/view.js";
 import { encryptPayload, environmentFingerprint } from "../../src/credentials/crypto.js";
 import { decodeMasterKey } from "../../src/config/index.js";
 import {
@@ -16,6 +17,8 @@ import {
 import { proxyFetch } from "../../src/net/http.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
+import { serverRow, connectionRow } from "../helpers/servers.js";
+import type { LoadedConnector } from "../../src/connectors/load.js";
 
 const GMAIL_TOOLS = CONNECTORS.bySlug("gmail")!.manifest.tools!;
 
@@ -36,7 +39,7 @@ class MemoryDb {
   rows: Array<Record<string, unknown>> = [];
   bindings = new Map<string, Record<string, unknown>>();
   secrets: Array<Record<string, unknown>> = [];
-  servers: Array<Record<string, unknown>> = [];
+  servers: LoadedConnector[] = [];
   connections: Array<Record<string, unknown>> = [];
   ensureCalls = 0;
 
@@ -54,14 +57,15 @@ class MemoryDb {
     return this.rows;
   }
 
-  async insertBindingIfAbsent(
-    bindingId: string,
-    catalogKind: string,
-    catalogId: string,
-    scope: string,
-    scopeId: string | null,
-    enabled: boolean,
-  ) {
+  async insertBindingIfAbsent(input: {
+    bindingId: string;
+    catalogKind: string;
+    catalogId: string;
+    scope: string;
+    scopeId: string | null;
+    enabled: boolean;
+  }) {
+    const { bindingId, catalogKind, catalogId, scope, scopeId, enabled } = input;
     const key = `${catalogKind}:${catalogId}:${scopeId}`;
     const existing = this.bindings.get(key);
     if (existing) {
@@ -119,18 +123,9 @@ class MemoryDb {
   }
 }
 
-function connectionOf(token: string, extra: Record<string, unknown> = {}) {
+function connectionOf(token: string, extra: Partial<McpConnectionRow> = {}): McpConnectionRow {
   const [ciphertext, nonce] = encryptPayload({ token, access_token: token }, KEY);
-  return {
-    id: "conn_1",
-    mcp_server_id: "mcp_fixture",
-    status: "connected",
-    owner_scope: "org",
-    owner_id: "org_1",
-    ciphertext,
-    nonce,
-    ...extra,
-  };
+  return connectionRow({ id: "conn_1", mcp_server_id: "mcp_fixture", ciphertext, nonce, ...extra });
 }
 
 async function startFixture(): Promise<Fixture> {
@@ -258,9 +253,9 @@ test("a session refuses an endpoint that resolves to a private address", async (
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const fixture = await startFixture();
   try {
-    const server = { id: "mcp_fixture", slug: "fixture", auth: "token", config: { url: fixture.url } };
+    const server = serverRow("fixture", { id: "mcp_fixture", auth: "token", config: { url: fixture.url } });
     await assert.rejects(
-      () => new McpPool().call(new MemoryDb(), connectionOf("mcp-test"), server, "ping", {}),
+      () => new McpPool().call(new MemoryDb() as never, connectionOf("mcp-test"), server, "ping", {}),
       (error: unknown) => error instanceof McpError && error.status === 403 && /private or local/.test(error.message),
     );
     assert.equal(fixture.called, 0);
@@ -280,13 +275,7 @@ test("catalog refresh does not call sandbox ensure", async () => {
     const pool = localPool();
     const db = new MemoryDb();
     const connection = connectionOf("mcp-test");
-    const server = {
-      id: "mcp_fixture",
-      slug: "fixture",
-      display_name: "Fixture",
-      auth: "token",
-      config: { url: fixture.url },
-    };
+    const server = serverRow("fixture", { id: "mcp_fixture", display_name: "Fixture", auth: "token", config: { url: fixture.url } });
     db.servers = [server];
     db.connections = [connection];
     const runtime = await agentRuntime(db as never, { id: "a_1", guild_id: "guild_1", org_id: "org_1" }, { mcpPool: pool });
@@ -321,15 +310,15 @@ test("provider error and malformed MCP result surface as McpError", async () => 
   const pool = localPool();
   const db = new MemoryDb();
   const connection = connectionOf("mcp-test");
-  const server = { id: "mcp_fixture", slug: "fixture", auth: "token", config: { url: fixture.url } };
+  const server = serverRow("fixture", { id: "mcp_fixture", auth: "token", config: { url: fixture.url } });
   try {
     fixture.mode = "error";
     await assert.rejects(
-      () => pool.call(db, connection, server, "ping", {}),
+      () => pool.call(db as never, connection, server, "ping", {}),
       (error: unknown) => error instanceof McpError && error.status === 502,
     );
     fixture.mode = "malformed";
-    await assert.rejects(() => pool.call(db, connection, server, "ping", {}));
+    await assert.rejects(() => pool.call(db as never, connection, server, "ping", {}));
   } finally {
     await fixture.close();
   }
@@ -342,9 +331,9 @@ test("gmail send stays Off and the sandbox env has no Gmail token", async () => 
   const db = new MemoryDb();
   const token = "ya29.gmail-secret";
   const connection = connectionOf(token, { id: "conn_gmail", mcp_server_id: "mcp_gmail" });
-  db.servers = [{ id: "mcp_gmail", slug: "gmail", display_name: "Gmail", auth: "oauth" }];
+  db.servers = [serverRow("gmail", { display_name: "Gmail" })];
   db.connections = [connection];
-  await pool.syncTools(db, connection, db.servers[0]!, { force: true });
+  await pool.syncTools(db as never, connection, db.servers[0]!, { force: true });
   assert.equal(db.bindings.get("mcp_tool:gmail_send_message:org_1")?.enabled, false);
   const runtime = await agentRuntime(db as never, { id: "a_1", guild_id: "guild_1", org_id: "org_1" }, { mcpPool: pool });
   const offered = ((runtime.mcp[0] as { tools: Array<{ name: string }> } | undefined)?.tools ?? []).map(
@@ -362,7 +351,7 @@ test("gmail send stays Off and the sandbox env has no Gmail token", async () => 
 test("a GitHub login's listed tools are offered to its agents like any connector's", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const db = new MemoryDb();
-  db.servers = [{ id: "mcp_github", slug: "github", display_name: "GitHub", auth: "oauth" }];
+  db.servers = [serverRow("github", { id: "mcp_github", display_name: "GitHub", auth: "oauth" })];
   db.connections = [connectionOf("unused", { id: "conn_github", mcp_server_id: "mcp_github" })];
   db.rows = [
     {
@@ -393,7 +382,7 @@ test("a run that lists a login's tools for the first time is not offered the one
       },
     }) as never;
   const db = new MemoryDb();
-  db.servers = [{ id: "mcp_fixture", slug: "fixture", display_name: "Fixture", auth: "token", config: { url: "https://mcp.example.com/mcp" } }];
+  db.servers = [serverRow("fixture", { id: "mcp_fixture", display_name: "Fixture", auth: "token", config: { url: "https://mcp.example.com/mcp" } })];
   db.connections = [connectionOf("mcp-test")];
   const runtime = await agentRuntime(db as never, { id: "a_1", guild_id: "guild_1", org_id: "org_1" }, { mcpPool: pool });
   assert.equal(db.bindings.get("mcp_tool:fixture_send_ping:org_1")?.enabled, false);
@@ -416,9 +405,9 @@ test("the access view that lists a login's tools for the first time shows the on
       },
     }) as never;
   const db = new MemoryDb();
-  db.servers = [{ id: "mcp_fixture", slug: "fixture", display_name: "Fixture", auth: "token", config: { url: "https://mcp.example.com/mcp" } }];
+  db.servers = [serverRow("fixture", { id: "mcp_fixture", display_name: "Fixture", auth: "token", config: { url: "https://mcp.example.com/mcp" } })];
   db.connections = [connectionOf("mcp-test")];
-  const view = await httpAccess(db as never, { orgId: "org_1", guildId: "guild_1", agentId: "a_1", viewScope: "agent", mcp: pool });
+  const view = await loadAccessView(db as never, { orgId: "org_1", guildId: "guild_1", agentId: "a_1", viewScope: "agent", mcp: pool });
   const fixture = (view.mcp as Array<{ slug: string; tools: Array<{ name: string; enabled: boolean }> }>).find(
     (server) => server.slug === "fixture",
   );

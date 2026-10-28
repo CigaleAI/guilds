@@ -10,23 +10,23 @@ import {
 import { memoryHistory } from "../memory/history.js";
 import { canSeeGuild } from "../guilds/validation.js";
 import {
-  ModelNotConnectedError,
   assertModelConnected,
   coreModelCredentials,
   type ModelCredentialsProvider,
+  ModelNotConnectedError,
+  modelProviderStore,
 } from "../llm/credentials.js";
 import { isMarketplaceModel } from "../llm/providers.js";
 import { newId } from "../lib/ids.js";
 import { EventQueue } from "../lib/event.js";
 import { memoryOf } from "../agents/validation.js";
 import { composeAgentSystemPrompt, hydrateStanding, promptHash, schemasOffer } from "../prompts/index.js";
-import type { Repositories } from "../db/repositories.js";
 import { jsonObj } from "../db/json.js";
 import { iso } from "../db/views.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { Schedules } from "../schedules/service.js";
 import { AdmissionCoordinator } from "../generation/admission.js";
-import { OPEN_POLICY, claimCoachRun, type OrgPolicy } from "../policy/index.js";
+import { OPEN_POLICY, claimCoachRun, coachRunClaims, type OrgPolicy } from "../policy/index.js";
 import {
   STUDIO_DEFAULT_TEMPERATURE,
   STUDIO_MAX_STEPS,
@@ -34,10 +34,24 @@ import {
 import { StudioConflictError, StudioError, StudioUnprocessableError } from "./errors.js";
 import { StudioDrafts, viewDraft } from "./drafts.js";
 import { StudioRunner } from "./runner.js";
-import { StudioStore } from "./store.js";
-import { composeGenerationContext, composeStudioSystemMessage, hydrateStudioMember, readStudioSystemTemplate, studioSystemHash } from "./system.js";
+import { withLockedSession } from "./session-lock.js";
+import {
+  composeGenerationContext,
+  composeStudioSystemMessage,
+  hydrateStudioMember,
+  readStudioSystemTemplate,
+  studioSystemHash,
+  type RosterAgent,
+  type StudioMemberHydration,
+} from "./system.js";
 import { studioToolSchemas } from "./tools.js";
-import { previewCurrentState, projectGuildConnections, projectOfferedToolSchemas, type PreviewDeps } from "./preview.js";
+import {
+  previewCurrentState,
+  previewDatabase,
+  projectGuildConnections,
+  projectOfferedToolSchemas,
+  type PreviewDeps,
+} from "./preview.js";
 import {
   findLoginRecord,
   grantedConnectionIds,
@@ -45,13 +59,51 @@ import {
   reachableConnection,
   type StudioMcpClient,
 } from "./connections.js";
-import { resolveStudioFocus, STUDIO_FOCUS_SOURCE, type StudioFocus } from "./focus.js";
+import type { StudioFocus } from "../db/schema/index.js";
+import { resolveStudioFocus, STUDIO_FOCUS_SOURCE } from "./focus.js";
 import { isAccessTool } from "./access.js";
 import { applyEdit, editStatus, findEditRecord, markEdit, viewEdit, type EditScope } from "./edits.js";
 import type { RoutineChange } from "./routines.js";
+import { getGuild, type GuildRow } from "../db/guilds.js";
+import { getAgent, getAgentTask } from "../db/agents.js";
+import { listRunHeaders } from "../db/runs.js";
+import type pg from "pg";
+import type { Queryable } from "../db/pg.js";
+import {
+  type ConversationMessageRow,
+  type ConversationUsageRow,
+  conversationUsageByOrg,
+  getConversationMessage,
+  insertConversationMessage,
+  listConversationMessages,
+  nextConversationSeq,
+  updateConversationMessage,
+} from "../db/conversations.js";
+import {
+  getStudioDraft,
+  getStudioSession,
+  insertStudioSession,
+  listGeneratingStudioSessions,
+  listOrphanStudioDrafts,
+  listStudioDraftHeads,
+  listStudioDrafts,
+  listStudioSessions,
+  type StudioDraftRow,
+  type StudioInventoryRow,
+  type StudioSessionRow,
+  studioInventory,
+  updateStudioSession,
+} from "../db/studio.js";
+import type { UserRow } from "../db/users.js";
+import type { AgentRow } from "../db/agents.js";
+import type { OrgMembershipRow } from "../db/orgs.js";
+import type { StudioSourceGuild } from "../db/schema/index.js";
+import { operatorContext } from "../artifacts/store.js";
+import { getMemoryRow, readStoredMemory } from "../artifacts/memory.js";
+import { embedSource } from "../artifacts/embeds.js";
 
 export type StudioServiceDeps = {
-  repo: Repositories;
+  db: Queryable;
   artifacts: ArtifactStore;
   scripts: Scripts;
   schedules: Schedules;
@@ -66,8 +118,35 @@ export type StudioServiceDeps = {
   isAgentBusy?: (agentId: string) => boolean;
 };
 
+/** A session an operator can still work in: not archived or blocked, its source guild still there. */
+export type LiveStudioSession = StudioSessionRow & { source_guild_id: string };
+
+/** The guild as a session records it; its description is the coach's objective. */
+function sourceGuildSnapshot(guild: Pick<GuildRow, "id" | "name" | "about" | "description">): StudioSourceGuild {
+  const objective = guild.description.trim();
+  return { id: guild.id, name: guild.name, about: guild.about, ...(objective ? { objective } : {}) };
+}
+
+/** An agent as the Studio inventory lists it: its roster header's fields, its avatar, excerpt, and latest run. */
+export type StudioInventoryItem = Omit<RosterAgent, "latest_run"> & {
+  avatar_shape: string;
+  avatar_color: string;
+  scripting: boolean;
+  task_excerpt: StudioMemberHydration["task_excerpt"];
+  task_excerpt_truncated: StudioMemberHydration["task_excerpt_truncated"];
+  task_updated_at: string;
+  paused_count: number;
+  latest_run: {
+    id: string;
+    kind: StudioInventoryRow["latest_run_kind"];
+    status: StudioInventoryRow["latest_run_status"];
+    at: StudioInventoryRow["latest_run_at"];
+    task_prompt_hash: StudioInventoryRow["latest_task_hash"];
+  } | null;
+  draft_status: StudioInventoryRow["draft_status"];
+};
+
 export class StudioService {
-  store: StudioStore;
   drafts: StudioDrafts;
   runner: StudioRunner;
   admission: AdmissionCoordinator;
@@ -75,13 +154,12 @@ export class StudioService {
   credentials: ModelCredentialsProvider;
 
   constructor(public deps: StudioServiceDeps) {
-    this.store = new StudioStore(deps.repo.pool);
-    this.drafts = new StudioDrafts(this.store, deps.artifacts);
+    this.drafts = new StudioDrafts(deps.db, deps.artifacts);
     this.admission = deps.admission ?? new AdmissionCoordinator();
     this.policy = deps.policy ?? OPEN_POLICY;
-    this.credentials = deps.credentials ?? coreModelCredentials(deps.repo);
+    this.credentials = deps.credentials ?? coreModelCredentials(modelProviderStore(deps.db));
     this.runner = new StudioRunner({
-      store: this.store,
+      db: deps.db,
       admission: this.admission,
       policy: this.policy,
       credentials: this.credentials,
@@ -90,28 +168,21 @@ export class StudioService {
 
   previewDeps(): PreviewDeps {
     return {
-      db: this.deps.repo,
+      db: previewDatabase(this.deps.db),
       artifacts: this.deps.artifacts,
       scripts: this.deps.scripts,
     };
   }
 
   async reconcile(): Promise<void> {
-    const result = await this.store.pool.query(
-      `SELECT * FROM studio_sessions WHERE generation_state IN ('generating', 'cancelling')`,
-    );
-    for (const row of result.rows as Array<Record<string, unknown>>) {
-      await this.runner.reconcile({
-        ...row,
-        config_snapshot: row.config_snapshot,
-        errors: row.errors,
-      });
+    for (const row of await listGeneratingStudioSessions(this.deps.db)) {
+      await this.runner.reconcile(row);
     }
   }
 
   async createSession(args: {
-    user: Record<string, unknown>;
-    org: Record<string, unknown>;
+    user: UserRow;
+    org: OrgMembershipRow;
     mode: string;
     sourceGuildId: string;
     model: string;
@@ -123,7 +194,7 @@ export class StudioService {
     if (args.mode !== "optimize") {
       throw new StudioUnprocessableError("create mode is not available");
     }
-    const guild = await this.deps.repo.getGuild(args.sourceGuildId);
+    const guild = await getGuild(this.deps.db, args.sourceGuildId);
     if (
       !guild ||
       String(guild.org_id) !== String(args.org.id) ||
@@ -134,7 +205,7 @@ export class StudioService {
     const model = await this.validateModel(String(args.org.id), args.model);
     const temperature = this.validateTemperature(args.temperature);
     if (args.parentSessionId) {
-      const parent = await this.store.getSession(args.parentSessionId);
+      const parent = await getStudioSession(this.deps.db, args.parentSessionId);
       if (
         !parent ||
         String(parent.org_id) !== String(args.org.id) ||
@@ -151,14 +222,8 @@ export class StudioService {
       max_steps: STUDIO_MAX_STEPS,
       ...limits,
     };
-    const objective = String(guild.description ?? "").trim();
-    const sourceGuild = {
-      id: String(guild.id),
-      name: String(guild.name),
-      about: String(guild.about ?? ""),
-      ...(objective ? { objective } : {}),
-    };
-    const members = (await this.store.inventory(String(guild.id), null)).map((row) => hydrateStudioMember(row));
+    const sourceGuild = sourceGuildSnapshot(guild);
+    const members = (await studioInventory(this.deps.db, guild.id, null)).map((row) => hydrateStudioMember(row));
     const system = composeStudioSystemMessage({
       mode: "optimize",
       sourceGuild,
@@ -167,39 +232,50 @@ export class StudioService {
       template,
     });
     const now = new Date();
-    const session = await this.store.insertSession({
-      id: newId("stu"),
-      org_id: args.org.id,
-      created_by_user_id: args.user.id,
-      created_by_name: args.user.name ?? "operator",
-      mode: "optimize",
-      source_guild_id: guild.id,
-      source_guild_snapshot: sourceGuild,
-      config_snapshot: {
-        ...coachConfig,
-        system_prompt_hash: system.hash,
-        tool_schemas: studioToolSchemas(),
+    const session = await insertStudioSession(
+      this.deps.db,
+      {
+        id: newId("stu"),
+        org_id: String(args.org.id),
+        created_by_user_id: String(args.user.id),
+        created_by_name: typeof args.user.name === "string" ? args.user.name : "operator",
+        mode: "optimize",
+        source_guild_id: guild.id,
+        source_guild_snapshot: sourceGuild,
+        config_snapshot: {
+          ...coachConfig,
+          system_prompt_hash: system.hash,
+          tool_schemas: studioToolSchemas(),
+        },
+        parent_session_id: args.parentSessionId ?? null,
+        selected_target_agent_id: args.selectedTargetAgentId ?? null,
+        status: "active",
       },
-      parent_session_id: args.parentSessionId ?? null,
-      selected_target_agent_id: args.selectedTargetAgentId ?? null,
-      status: "active",
       now,
-    });
-    await this.store.insertMessage(
-      String(session.id),
-      0,
-      0,
-      { role: "system", content: system.content },
-      { source: "studio_system", system_prompt_hash: system.hash },
+    );
+    await insertConversationMessage(
+      this.deps.db,
+      "studio",
+      {
+        session_id: session.id,
+        seq: 0,
+        generation: 0,
+        payload: { role: "system", content: system.content },
+        metadata: { source: "studio_system", system_prompt_hash: system.hash },
+      },
       now,
     );
     if (args.summary) {
-      await this.store.insertMessage(
-        String(session.id),
-        1,
-        0,
-        { role: "user", content: args.summary },
-        { source: "continuation" },
+      await insertConversationMessage(
+        this.deps.db,
+        "studio",
+        {
+          session_id: session.id,
+          seq: 1,
+          generation: 0,
+          payload: { role: "user", content: args.summary },
+          metadata: { source: "continuation" },
+        },
         now,
       );
     }
@@ -235,10 +311,10 @@ export class StudioService {
   }
 
   async listSessions(orgId: string, userId: string): Promise<Array<Record<string, unknown>>> {
-    const rows = await this.store.listSessions(orgId, userId);
+    const rows = await listStudioSessions(this.deps.db, orgId, userId);
     const hidden = new Set<string>();
     for (const guildId of new Set(rows.map((row) => String(row.source_guild_id ?? "")).filter(Boolean))) {
-      const guild = await this.deps.repo.getGuild(guildId);
+      const guild = await getGuild(this.deps.db, guildId);
       if (guild && !canSeeGuild(guild, userId)) hidden.add(guildId);
     }
     return rows
@@ -246,12 +322,12 @@ export class StudioService {
       .map((row) => this.viewSession(row));
   }
 
-  async getOwnedSession(sessionId: string, user: Record<string, unknown>, org: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const session = await this.store.getSession(sessionId);
-    if (!session || String(session.org_id) !== String(org.id)) {
+  async getOwnedSession(sessionId: string, user: UserRow, org: OrgMembershipRow): Promise<StudioSessionRow> {
+    const session = await getStudioSession(this.deps.db, sessionId);
+    if (!session || session.org_id !== org.id) {
       throw new StudioError(404, "studio session not found");
     }
-    if (session.created_by_user_id && String(session.created_by_user_id) !== String(user.id)) {
+    if (session.created_by_user_id && session.created_by_user_id !== user.id) {
       throw new StudioError(404, "studio session not found");
     }
     if (!session.created_by_user_id) {
@@ -260,21 +336,21 @@ export class StudioService {
     // Seeing the guild is checked on every request, not only at creation: a
     // user who can no longer see a private guild loses its sessions too.
     if (session.source_guild_id) {
-      const guild = await this.deps.repo.getGuild(String(session.source_guild_id));
-      if (guild && !canSeeGuild(guild, String(user.id))) {
+      const guild = await getGuild(this.deps.db, session.source_guild_id);
+      if (guild && !canSeeGuild(guild, user.id)) {
         throw new StudioError(404, "studio session not found");
       }
     }
     if (!session.source_guild_id && session.status === "active") {
-      await this.store.updateSession(sessionId, { status: "blocked", blocked_reason: "source_deleted" }, new Date());
+      await updateStudioSession(this.deps.db, sessionId, { status: "blocked", blocked_reason: "source_deleted" }, new Date());
       session.status = "blocked";
       session.blocked_reason = "source_deleted";
     }
     return session;
   }
 
-  viewSession(row: Record<string, unknown>): Record<string, unknown> {
-    const config = (row.config_snapshot ?? {}) as Record<string, unknown>;
+  viewSession(row: StudioSessionRow): Record<string, unknown> {
+    const config = row.config_snapshot;
     return {
       id: row.id,
       org_id: row.org_id,
@@ -303,15 +379,15 @@ export class StudioService {
     };
   }
 
-  async listConnections(session: Record<string, unknown>): Promise<Array<Record<string, unknown>>> {
+  async listConnections(session: StudioSessionRow): Promise<Array<Record<string, unknown>>> {
     if (!session.source_guild_id) {
       return [];
     }
     const granted = new Set(grantedConnectionIds(session));
     const projected = await projectGuildConnections(
       this.previewDeps(),
-      String(session.org_id),
-      String(session.source_guild_id),
+      session.org_id,
+      session.source_guild_id,
     );
     return projected.map((connection) => ({
       id: connection.id,
@@ -327,13 +403,14 @@ export class StudioService {
   }
 
   async setConnectionGrant(
-    session: Record<string, unknown>,
+    session: StudioSessionRow,
     connectionId: string,
     granted: boolean,
   ): Promise<Record<string, unknown>> {
     const next = await this.grantedAfter(session, connectionId, granted);
-    const updated = await this.store.updateSession(
-      String(session.id),
+    const updated = await updateStudioSession(
+      this.deps.db,
+      session.id,
       { granted_connection_ids: next },
       new Date(),
     );
@@ -343,7 +420,7 @@ export class StudioService {
   // The session's granted logins once one is granted or withdrawn. A grant
   // must name a connected login the source guild can reach.
   private async grantedAfter(
-    session: Record<string, unknown>,
+    session: StudioSessionRow,
     connectionId: string,
     granted: boolean,
   ): Promise<string[]> {
@@ -358,9 +435,9 @@ export class StudioService {
       return current.filter((id) => id !== connectionId);
     }
     const reach = await reachableConnection(
-      this.deps.repo,
-      String(session.org_id),
-      String(session.source_guild_id),
+      this.deps.db,
+      session.org_id,
+      session.source_guild_id,
       connectionId,
     );
     if (!reach) {
@@ -376,83 +453,87 @@ export class StudioService {
   // who gave it are kept on the request's tool message; a grant also adds the
   // login to the session. The session lock serialises answers.
   async resolveLogin(
-    session: Record<string, unknown>,
-    user: Record<string, unknown>,
+    session: StudioSessionRow,
+    user: UserRow,
     seq: number,
     decision: "grant" | "decline",
   ): Promise<Record<string, unknown>> {
     this.assertLive(session);
-    const sessionId = String(session.id);
-    const updated = await this.store.withSessionLock(sessionId, async (client, locked) => {
-      const record = findLoginRecord(await this.store.getMessage(sessionId, seq, client), seq);
+    const sessionId = session.id;
+    const updated = await withLockedSession(this.deps.db, sessionId, async (client, locked) => {
+      const record = findLoginRecord(await getConversationMessage(client, "studio", sessionId, seq), seq);
       const status = loginStatus(record);
       if (status !== "pending") {
         throw new StudioConflictError(`login request is already ${status}`);
       }
       const now = new Date();
-      await this.store.updateMessage(sessionId, seq, record.payload, {
+      await updateConversationMessage(
+        client,
+        "studio",
+        { session_id: sessionId, seq, payload: record.payload, metadata: {
         ...record.metadata,
         access_status: decision === "grant" ? "granted" : "declined",
         access_resolved_at: now.toISOString(),
         resolved_by_user_id: user.id ?? null,
-      }, client);
+      } },
+      );
       if (decision === "decline") {
         return locked;
       }
       const next = await this.grantedAfter(locked, record.connectionId, true);
-      return (await this.store.updateSession(sessionId, { granted_connection_ids: next }, now, client)) ?? locked;
+      return (await updateStudioSession(client, sessionId, { granted_connection_ids: next }, now)) ?? locked;
     });
     return this.viewSession(updated);
   }
 
-  async archive(session: Record<string, unknown>): Promise<Record<string, unknown>> {
+  async archive(session: StudioSessionRow): Promise<Record<string, unknown>> {
     if (session.generation_state === "generating") {
       throw new StudioConflictError("cannot archive while generating");
     }
     const now = new Date();
-    const updated = await this.store.updateSession(
-      String(session.id),
+    const updated = await updateStudioSession(
+      this.deps.db,
+      session.id,
       { status: "archived", archived_at: now, generation_state: "idle" },
       now,
     );
     return this.viewSession(updated ?? session);
   }
 
-  async setTarget(session: Record<string, unknown>, agentId: string | null): Promise<Record<string, unknown>> {
-    return this.store.withSessionLock(String(session.id), async (client, locked) => {
+  async setTarget(session: StudioSessionRow, agentId: string | null): Promise<Record<string, unknown>> {
+    return withLockedSession(this.deps.db, session.id, async (client, locked) => {
       if (locked.status !== "active") {
         throw new StudioConflictError("session cannot change inspector");
       }
       if (agentId) {
-        const agent = await this.deps.repo.getAgent(agentId);
-        if (!agent || String(agent.guild_id) !== String(locked.source_guild_id)) {
+        const agent = await getAgent(this.deps.db, agentId);
+        if (!agent || agent.guild_id !== locked.source_guild_id) {
           throw new StudioUnprocessableError("agent is not in the source guild");
         }
       }
-      const updated = await this.store.updateSession(
-        String(locked.id),
+      const updated = await updateStudioSession(
+        client,
+        locked.id,
         { selected_target_agent_id: agentId },
         new Date(),
-        client,
       );
       return this.viewSession(updated ?? locked);
     });
   }
 
-  async inventory(session: Record<string, unknown>): Promise<Array<Record<string, unknown>>> {
+  async inventory(session: StudioSessionRow): Promise<Array<Record<string, unknown>>> {
     this.assertLive(session);
-    const rows = await this.store.inventory(String(session.source_guild_id), String(session.id));
+    const rows = await studioInventory(this.deps.db, session.source_guild_id, session.id);
     return rows.map((row) => this.inventoryItem(row));
   }
 
-  inventoryItem(row: Record<string, unknown>): Record<string, unknown> {
-    const content = String(row.task_content ?? "");
+  inventoryItem(row: StudioInventoryRow): StudioInventoryItem {
+    const content = row.task_content;
     const member = hydrateStudioMember(row);
     const warnings: string[] = [];
     if (!content.trim()) warnings.push("empty_task");
-    const errors = Array.isArray(row.latest_run_errors) ? row.latest_run_errors : [];
-    if (errors.length) warnings.push("generation_errors");
-    if (row.draft_id && Number(row.draft_base_version) !== Number(row.task_version)) {
+    if (row.latest_run_errors?.length) warnings.push("generation_errors");
+    if (row.draft_id && row.draft_base_version !== row.task_version) {
       warnings.push("stale_draft");
     }
     return {
@@ -461,15 +542,15 @@ export class StudioService {
       focus: row.focus,
       avatar_shape: row.avatar_shape,
       avatar_color: row.avatar_color,
-      scripting: (jsonObj(row.config) as Record<string, unknown> | null)?.scripting !== false,
+      scripting: row.config.scripting,
       task_version: row.task_version,
       task_hash: row.task_hash,
       task_excerpt: member.task_excerpt,
       task_excerpt_truncated: member.task_excerpt_truncated,
       has_embeds: collectTaskEmbeds(content).length > 0,
       task_updated_at: row.task_updated_at,
-      routine_count: Number(row.routine_count ?? 0),
-      paused_count: Number(row.paused_count ?? 0),
+      routine_count: row.routine_count,
+      paused_count: row.paused_count,
       latest_run: row.latest_run_id
         ? {
             id: row.latest_run_id,
@@ -479,35 +560,35 @@ export class StudioService {
             task_prompt_hash: row.latest_task_hash,
           }
         : null,
-      draft_id: row.draft_id ?? null,
-      draft_status: row.draft_status ?? null,
+      draft_id: row.draft_id,
+      draft_status: row.draft_status,
       warnings,
     };
   }
 
-  async inspector(session: Record<string, unknown>, user: Record<string, unknown>, agentId: string): Promise<Record<string, unknown>> {
+  async inspector(session: StudioSessionRow, user: UserRow, agentId: string): Promise<Record<string, unknown>> {
     this.assertLive(session);
     const agent = await this.requireGuildAgent(session, agentId);
-    const actor = this.deps.artifacts.operatorContext(
-      String(session.org_id),
-      String(user.id),
-      String(user.name ?? "operator"),
-      { guildId: String(session.source_guild_id), agentId },
+    const actor = operatorContext(
+      session.org_id,
+      user.id,
+      user.name,
+      { guildId: session.source_guild_id, agentId },
     );
-    const task = await this.deps.repo.getAgentTask(String(session.org_id), agentId);
-    const memory = await this.deps.artifacts.getMemoryRow(actor, agentId);
+    const task = await getAgentTask(this.deps.db, session.org_id, agentId);
+    const memory = await getMemoryRow(this.deps.artifacts, actor, agentId);
     const standing = hydrateStanding({
       systemPath: this.deps.notesSystemPath,
-      agentName: String(agent.name),
-      agentId: String(agent.id),
+      agentName: agent.name,
+      agentId: agent.id,
     });
     const preview = await previewCurrentState(this.previewDeps(), agent);
     let effectiveTask = task?.content_text ?? "";
     let embedWarning: string | null = null;
     try {
       effectiveTask = await inlineTaskEmbeds(
-        this.deps.artifacts,
-        taskEmbedActor(String(session.org_id), agent),
+        embedSource(this.deps.artifacts),
+        taskEmbedActor(session.org_id, agent),
         task?.content_text ?? "",
       );
     } catch (error) {
@@ -516,7 +597,7 @@ export class StudioService {
     const sourceHash = task?.content_hash ?? hashArtifactContent("");
     const effectiveHash = promptHash(effectiveTask);
     const tools = await projectOfferedToolSchemas(this.previewDeps(), agent);
-    const memoryText = await this.deps.artifacts.readMemory(actor, agentId);
+    const memoryText = await readStoredMemory(this.deps.artifacts, actor, agentId);
     const memoryEnabled = memoryOf(jsonObj(agent.config));
     const composed = composeAgentSystemPrompt(
       standing,
@@ -526,7 +607,7 @@ export class StudioService {
       memoryEnabled,
       memoryEnabled && schemasOffer(tools.schemas, "memory_write"),
     );
-    const latestRun = (await this.deps.repo.listRunHeaders(agentId, { limit: 1 }))[0] ?? null;
+    const latestRun = (await listRunHeaders(this.deps.db, agentId, { limit: 1 }))[0] ?? null;
     const guidelinesHash = promptHash(standing);
     const memoryPromptHash = promptHash(memoryText);
     return {
@@ -547,7 +628,7 @@ export class StudioService {
         editable: true,
         display_path: task
           ? displayPathFor({
-              orgId: String(session.org_id),
+              orgId: session.org_id,
               level: "agent",
               ownerId: agentId,
               kind: "task",
@@ -605,44 +686,32 @@ export class StudioService {
   }
 
   async memoryTimeline(
-    session: Record<string, unknown>,
-    user: Record<string, unknown>,
+    session: StudioSessionRow,
+    user: UserRow,
     agentId: string,
   ): Promise<Record<string, unknown>> {
     this.assertLive(session);
     const agent = await this.requireGuildAgent(session, agentId);
-    const actor = this.deps.artifacts.operatorContext(
-      String(session.org_id),
-      String(user.id),
-      String(user.name ?? "operator"),
-      { guildId: String(session.source_guild_id), agentId },
+    const actor = operatorContext(
+      session.org_id,
+      user.id,
+      user.name,
+      { guildId: session.source_guild_id, agentId },
     );
-    return memoryHistory(this.deps, actor, { id: String(agent.id), name: String(agent.name) });
+    return memoryHistory(this.deps, actor, { id: agent.id, name: agent.name });
   }
 
   /** The system message for this generation, from the roster rows the caller already read. */
   composeLiveSystem(
-    session: Record<string, unknown>,
+    session: StudioSessionRow,
     rows: Array<Record<string, unknown>>,
   ): { content: string; hash: string } {
-    const snapshot = (session.source_guild_snapshot ?? {}) as {
-      name?: string;
-      about?: string;
-      objective?: string;
-    };
-    const config = (session.config_snapshot ?? {}) as Record<string, unknown>;
+    const config = session.config_snapshot;
     const members = rows.map((row) => hydrateStudioMember(row));
     return composeStudioSystemMessage({
       mode: String(session.mode ?? "optimize"),
       template: readStudioSystemTemplate({ guidelinesPath: this.deps.notesSystemPath }),
-      sourceGuild: session.source_guild_id
-        ? {
-            id: String(session.source_guild_id),
-            name: String(snapshot.name ?? ""),
-            about: String(snapshot.about ?? ""),
-            ...(snapshot.objective ? { objective: String(snapshot.objective) } : {}),
-          }
-        : null,
+      sourceGuild: session.source_guild_id ? { ...session.source_guild_snapshot, id: session.source_guild_id } : null,
       members,
       config: {
         model: config.model,
@@ -656,31 +725,26 @@ export class StudioService {
   }
 
   async refreshSystemMessage(
-    session: Record<string, unknown>,
+    session: StudioSessionRow,
     rows: Array<Record<string, unknown>>,
-    client?: Parameters<StudioStore["updateMessage"]>[4],
+    client?: pg.PoolClient,
   ): Promise<string> {
     const system = this.composeLiveSystem(session, rows);
-    const existing = await this.store.getMessage(String(session.id), 0, client);
-    const metadata =
-      existing?.metadata && typeof existing.metadata === "object" && !Array.isArray(existing.metadata)
-        ? (existing.metadata as Record<string, unknown>)
-        : {};
-    if (existing && String(metadata.system_prompt_hash ?? "") !== system.hash) {
-      await this.store.updateMessage(
-        String(session.id),
-        0,
-        { role: "system", content: system.content },
-        { ...metadata, source: "studio_system", system_prompt_hash: system.hash, refreshed: true },
-        client,
-      );
+    const existing = await getConversationMessage(client ?? this.deps.db, "studio", session.id, 0);
+    if (existing && existing.metadata.system_prompt_hash !== system.hash) {
+      await updateConversationMessage(client ?? this.deps.db, "studio", {
+        session_id: session.id,
+        seq: 0,
+        payload: { role: "system", content: system.content },
+        metadata: { ...existing.metadata, source: "studio_system", system_prompt_hash: system.hash, refreshed: true },
+      });
     }
     return system.content;
   }
 
   async postMessage(
-    session: Record<string, unknown>,
-    user: Record<string, unknown>,
+    session: StudioSessionRow,
+    user: UserRow,
     content: string,
     focusInput?: unknown,
   ): Promise<Record<string, unknown>> {
@@ -694,16 +758,15 @@ export class StudioService {
         ? null
         : await resolveStudioFocus(
             {
-              repo: this.deps.repo,
+              db: this.deps.db,
               artifacts: this.deps.artifacts,
-              pool: this.deps.repo.pool,
-              orgId: String(session.org_id),
-              sourceGuildId: String(session.source_guild_id),
+              orgId: session.org_id,
+              sourceGuildId: session.source_guild_id,
               user,
             },
             focusInput,
           );
-    const started = await this.store.withSessionLock(String(session.id), async (client, locked) => {
+    const started = await withLockedSession(this.deps.db, session.id, async (client, locked) => {
       if (locked.status !== "active") {
         throw new StudioConflictError("session cannot generate");
       }
@@ -711,37 +774,44 @@ export class StudioService {
         throw new StudioConflictError("studio session is already generating");
       }
       const now = new Date();
-      await claimCoachRun(this.policy, this.deps.repo, String(locked.org_id), now, client);
-      const rows = await this.store.inventory(String(locked.source_guild_id), String(locked.id));
+      await claimCoachRun(this.policy, coachRunClaims(client), locked.org_id, now);
+      const rows = await studioInventory(this.deps.db, session.source_guild_id, locked.id);
       const systemContent = await this.refreshSystemMessage(locked, rows, client);
       const generation = Number(locked.generation_number) + 1;
-      let seq = await this.store.nextSeq(String(locked.id), client);
+      let seq = await nextConversationSeq(client, "studio", locked.id);
       if (focus) {
         // A stored user row, so the pin stays in the projected history of
         // every later turn of this session.
-        await this.store.insertMessage(
-          String(locked.id),
-          seq,
-          generation,
-          { role: "user", content: focus.content },
-          { generation, source: STUDIO_FOCUS_SOURCE, focus: focus.focus },
-          now,
+        await insertConversationMessage(
           client,
+          "studio",
+          {
+            session_id: locked.id,
+            seq,
+            generation,
+            payload: { role: "user", content: focus.content },
+            metadata: { generation, source: STUDIO_FOCUS_SOURCE, focus: focus.focus },
+          },
+          now,
         );
         seq += 1;
       }
-      await this.store.insertMessage(
-        String(locked.id),
-        seq,
-        generation,
-        { role: "user", content },
-        { generation, source: "ui" },
-        now,
+      await insertConversationMessage(
         client,
+        "studio",
+        {
+          session_id: locked.id,
+          seq,
+          generation,
+          payload: { role: "user", content },
+          metadata: { generation, source: "ui" },
+        },
+        now,
       );
       const token = newId("stg");
-      const updated = await this.store.updateSession(
-        String(locked.id),
+      const updated = await updateStudioSession(
+        client,
+        locked.id,
         {
           generation_state: "generating",
           generation_number: generation,
@@ -749,21 +819,20 @@ export class StudioService {
           generation_started_at: now,
         },
         now,
-        client,
       );
       return { session: updated ?? locked, generation, systemContent, rows };
     });
-    const drafts = await this.store.listDraftHeads(String(started.session.id));
+    const drafts = await listStudioDraftHeads(this.deps.db, started.session.id);
     const generationContext = composeGenerationContext({
-      sourceGuild: { id: String(started.session.source_guild_id) },
+      sourceGuild: { id: session.source_guild_id },
       roster: started.rows.map((row) => this.inventoryItem(row)),
       draft: drafts[0] ?? null,
     });
-    const limits = (await this.policy.standing(String(started.session.org_id))).limits.coach.studio;
+    const limits = (await this.policy.standing(started.session.org_id)).limits.coach.studio;
     this.runner.start({
       session: {
         ...started.session,
-        config_snapshot: { ...((started.session.config_snapshot ?? {}) as Record<string, unknown>), ...limits },
+        config_snapshot: { ...started.session.config_snapshot, ...limits },
       },
       user,
       generation: started.generation,
@@ -772,11 +841,10 @@ export class StudioService {
       toolContext: {
         session: started.session,
         user,
-        orgId: String(started.session.org_id),
-        sourceGuildId: String(started.session.source_guild_id),
-        store: this.store,
+        orgId: started.session.org_id,
+        sourceGuildId: session.source_guild_id,
         artifacts: this.deps.artifacts,
-        repo: this.deps.repo,
+        db: this.deps.db,
         schedules: this.deps.schedules,
         drafts: this.drafts,
         preview: this.previewDeps(),
@@ -787,9 +855,46 @@ export class StudioService {
     return this.viewSession(started.session);
   }
 
-  async cancel(session: Record<string, unknown>): Promise<Record<string, unknown>> {
-    await this.store.updateSession(String(session.id), { generation_state: "cancelling" }, new Date());
-    this.runner.cancel(String(session.id));
+  /** The guild's agents as the coach sees them, outside any session. */
+  guildInventory(guildId: string): Promise<StudioInventoryRow[]> {
+    return studioInventory(this.deps.db, guildId, null);
+  }
+
+  /** The session's conversation, in order. */
+  messages(session: StudioSessionRow): Promise<ConversationMessageRow[]> {
+    return listConversationMessages(this.deps.db, "studio", session.id);
+  }
+
+  /** Every draft of the session, newest first. */
+  sessionDrafts(session: StudioSessionRow): Promise<StudioDraftRow[]> {
+    return listStudioDrafts(this.deps.db, session.id);
+  }
+
+  /** The organisation's open drafts whose session's user is gone. */
+  orphanDrafts(orgId: string): Promise<StudioDraftRow[]> {
+    return listOrphanStudioDrafts(this.deps.db, orgId);
+  }
+
+  /** The draft and its session when the draft belongs to the organisation, otherwise null. */
+  async orgDraft(
+    orgId: string,
+    draftId: string,
+  ): Promise<{ draft: StudioDraftRow; session: StudioSessionRow | null } | null> {
+    const draft = await getStudioDraft(this.deps.db, draftId);
+    if (!draft || draft.org_id !== orgId) {
+      return null;
+    }
+    return { draft, session: await getStudioSession(this.deps.db, draft.session_id) };
+  }
+
+  /** What Studio sessions spent, per organisation. */
+  usageByOrg(): Promise<Map<string, ConversationUsageRow>> {
+    return conversationUsageByOrg(this.deps.db, "studio");
+  }
+
+  async cancel(session: StudioSessionRow): Promise<Record<string, unknown>> {
+    await updateStudioSession(this.deps.db, session.id, { generation_state: "cancelling" }, new Date());
+    this.runner.cancel(session.id);
     return this.viewSession({ ...session, generation_state: "cancelling" });
   }
 
@@ -802,9 +907,9 @@ export class StudioService {
   }
 
   async continueSession(
-    session: Record<string, unknown>,
-    user: Record<string, unknown>,
-    org: Record<string, unknown>,
+    session: StudioSessionRow,
+    user: UserRow,
+    org: OrgMembershipRow,
   ): Promise<Record<string, unknown>> {
     if (session.blocked_reason !== "input_token_limit" && session.status !== "blocked") {
       throw new StudioUnprocessableError("session is not blocked on input tokens");
@@ -812,25 +917,25 @@ export class StudioService {
     if (!session.source_guild_id) {
       throw new StudioUnprocessableError("source guild is gone");
     }
-    const config = (session.config_snapshot ?? {}) as Record<string, unknown>;
-    const heads = await this.store.listDraftHeads(String(session.id));
+    const config = session.config_snapshot;
+    const heads = await listStudioDraftHeads(this.deps.db, session.id);
     const summary = `Continue from Studio session ${session.id}. Active draft heads: ${heads.map((row) => row.id).join(", ") || "none"}.`;
     return this.createSession({
       user,
       org,
       mode: "optimize",
-      sourceGuildId: String(session.source_guild_id),
-      model: String(config.model ?? ""),
-      temperature: Number(config.temperature ?? STUDIO_DEFAULT_TEMPERATURE),
-      parentSessionId: String(session.id),
+      sourceGuildId: session.source_guild_id,
+      model: config.model,
+      temperature: config.temperature,
+      parentSessionId: session.id,
       summary,
       selectedTargetAgentId: session.selected_target_agent_id ? String(session.selected_target_agent_id) : null,
     });
   }
 
   async publishDraft(
-    session: Record<string, unknown>,
-    user: Record<string, unknown>,
+    session: StudioSessionRow,
+    user: UserRow,
     draftId: string,
     options: { orphan?: boolean } = {},
   ): Promise<Record<string, unknown>> {
@@ -838,13 +943,13 @@ export class StudioService {
       session,
       user,
       draftId,
-      repo: this.deps.repo,
+      db: this.deps.db,
       preview: this.previewDeps(),
       notesSystemPath: this.deps.notesSystemPath,
       ...(options.orphan ? { orphan: true } : {}),
     });
     if (result.outcome === "published" && this.deps.publishFilesChanged && session.source_guild_id) {
-      await this.deps.publishFilesChanged(String(session.source_guild_id));
+      await this.deps.publishFilesChanged(session.source_guild_id);
     }
     const targetId = String((result.draft as { target_agent_id?: string } | undefined)?.target_agent_id ?? "");
     return {
@@ -853,52 +958,53 @@ export class StudioService {
     };
   }
 
-  private editScope(session: Record<string, unknown>, user: Record<string, unknown>): EditScope {
+  private editScope(session: LiveStudioSession, user: UserRow): EditScope {
     return {
-      orgId: String(session.org_id),
-      sourceGuildId: String(session.source_guild_id),
-      sessionId: String(session.id),
+      orgId: session.org_id,
+      sourceGuildId: session.source_guild_id,
+      sessionId: session.id,
       user,
-      repo: this.deps.repo,
+      db: this.deps.db,
       artifacts: this.deps.artifacts,
       schedules: this.deps.schedules,
     };
   }
 
   async getEdit(
-    session: Record<string, unknown>,
-    user: Record<string, unknown>,
+    session: StudioSessionRow,
+    user: UserRow,
     seq: number,
   ): Promise<Record<string, unknown>> {
-    if (!session.source_guild_id) {
+    const sourceGuildId = session.source_guild_id;
+    if (!sourceGuildId) {
       throw new StudioUnprocessableError("source guild is gone");
     }
-    const record = findEditRecord(await this.store.listMessages(String(session.id)), seq);
-    return viewEdit(this.editScope(session, user), record);
+    const record = findEditRecord(await listConversationMessages(this.deps.db, "studio", session.id), seq);
+    return viewEdit(this.editScope({ ...session, source_guild_id: sourceGuildId }, user), record);
   }
 
   // Apply or decline one edit request from the Studio log. The session lock
   // serialises answers, so a request resolves once.
   async resolveEdit(
-    session: Record<string, unknown>,
-    user: Record<string, unknown>,
+    session: StudioSessionRow,
+    user: UserRow,
     seq: number,
     decision: "apply" | "decline",
   ): Promise<Record<string, unknown>> {
     this.assertLive(session);
     const scope = this.editScope(session, user);
-    const userId = user.id === undefined || user.id === null ? null : String(user.id);
-    const outcome = await this.store.withSessionLock(String(session.id), async () => {
-      const record = findEditRecord(await this.store.listMessages(String(session.id)), seq);
+    const userId = user.id;
+    const outcome = await withLockedSession(this.deps.db, session.id, async () => {
+      const record = findEditRecord(await listConversationMessages(this.deps.db, "studio", session.id), seq);
       if (editStatus(record) !== "pending") {
         throw new StudioConflictError(`edit request is already ${editStatus(record)}`);
       }
       if (decision === "decline") {
-        await markEdit(this.store, String(session.id), record, { status: "declined", version: null, userId });
+        await markEdit(this.deps.db, session.id, record, { status: "declined", version: null, userId });
         return { record, applied: null };
       }
       const applied = await applyEdit(scope, record);
-      await markEdit(this.store, String(session.id), record, {
+      await markEdit(this.deps.db, session.id, record, {
         status: "applied",
         version: applied.version,
         userId,
@@ -906,30 +1012,22 @@ export class StudioService {
       return { record, applied };
     });
     if (outcome.applied?.guild) {
-      const guild = outcome.applied.guild;
-      const description = String(guild.description ?? "").trim();
-      await this.store.updateSession(
-        String(session.id),
-        {
-          source_guild_snapshot: {
-            id: String(guild.id),
-            name: String(guild.name),
-            about: String(guild.about ?? ""),
-            ...(description ? { objective: description } : {}),
-          },
-        },
+      await updateStudioSession(
+        this.deps.db,
+        session.id,
+        { source_guild_snapshot: sourceGuildSnapshot(outcome.applied.guild) },
         new Date(),
       );
     } else if (outcome.applied?.routine) {
-      await this.deps.publishRoutinesChanged?.(String(session.source_guild_id), outcome.applied.routine);
+      await this.deps.publishRoutinesChanged?.(session.source_guild_id, outcome.applied.routine);
     } else if (outcome.applied && !isAccessTool(outcome.record.toolName) && this.deps.publishFilesChanged) {
-      await this.deps.publishFilesChanged(String(session.source_guild_id));
+      await this.deps.publishFilesChanged(session.source_guild_id);
     }
-    const record = findEditRecord(await this.store.listMessages(String(session.id)), seq);
+    const record = findEditRecord(await listConversationMessages(this.deps.db, "studio", session.id), seq);
     return viewEdit(scope, record);
   }
 
-  assertLive(session: Record<string, unknown>): void {
+  assertLive(session: StudioSessionRow): asserts session is LiveStudioSession {
     if (session.status === "archived") {
       throw new StudioConflictError("session is archived");
     }
@@ -938,9 +1036,9 @@ export class StudioService {
     }
   }
 
-  async requireGuildAgent(session: Record<string, unknown>, agentId: string): Promise<Record<string, unknown>> {
-    const agent = await this.deps.repo.getAgent(agentId);
-    if (!agent || String(agent.guild_id) !== String(session.source_guild_id)) {
+  async requireGuildAgent(session: StudioSessionRow, agentId: string): Promise<AgentRow> {
+    const agent = await getAgent(this.deps.db, agentId);
+    if (!agent || agent.guild_id !== session.source_guild_id) {
       throw new StudioError(404, "agent not found");
     }
     return agent;

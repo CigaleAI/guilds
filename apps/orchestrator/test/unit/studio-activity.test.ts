@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import type { ToolCall } from "../../src/db/schema/index.js";
+import type { RunActivityStepRow } from "../../src/db/activity.js";
 import { test } from "node:test";
 import {
   activityWindow,
@@ -8,11 +10,38 @@ import {
   projectActivity,
   type ActivityInput,
 } from "../../src/studio/activity.js";
+import type { GuildActivityRunRow } from "../../src/db/activity.js";
 import { StudioUnprocessableError } from "../../src/studio/errors.js";
 
 const NOW = new Date("2026-09-25T17:40:00Z");
 const since = new Date("2026-09-25T13:40:00Z");
 const ts = (hhmmss: string) => new Date(`2026-09-25T${hhmmss}Z`);
+
+/** A run as the activity query returns it: a completed run with no errors, metadata or group snapshot unless given. */
+function activityRun(
+  fields: Partial<Omit<GuildActivityRunRow, "created_at" | "updated_at">> & { id: string; created_at: Date; updated_at: Date },
+): GuildActivityRunRow {
+  return {
+    agent_id: "a_desk",
+    kind: "direct",
+    status: "completed",
+    errors: [],
+    metadata: {},
+    schedule_id: null,
+    group_chat_through_seq: null,
+    started_by_user_id: null,
+    wake_seq: null,
+    previous_through_seq: null,
+    ...fields,
+    created_at: fields.created_at.toISOString(),
+    updated_at: fields.updated_at.toISOString(),
+  };
+}
+
+/** A run of `fields` at a fixed time, for what its group snapshot decides. */
+function floorRun(fields: Partial<Omit<GuildActivityRunRow, "created_at" | "updated_at">>): GuildActivityRunRow {
+  return activityRun({ id: "r_floor", created_at: NOW, updated_at: NOW, ...fields });
+}
 
 function input(overrides: Partial<ActivityInput> = {}): ActivityInput {
   return {
@@ -76,17 +105,17 @@ test("a tagged wake points at the latest row that tagged it, not the snapshot's 
     input({
       messages: [message(4, "14:00:00", null, ["desk"]), message(5, "14:00:30", "scout", [])],
       runs: [
-        {
+        activityRun({
           id: "r_desk",
           agent_id: "a_desk",
           kind: "group",
           errors: [],
-          metadata: { typesafe: { recipients: { source: "typesafe", choice: "none", confidence: 0.51 } } },
-          group_chat_through_seq: "5",
-          previous_through_seq: "3",
+          metadata: { typesafe: { recipients: { source: "typesafe", names: [], choice: "none", confidence: 0.51 } } },
+          group_chat_through_seq: 5,
+          previous_through_seq: 3,
           created_at: ts("14:00:31"),
           updated_at: ts("14:01:00"),
-        },
+        }),
       ],
       stats: [{ run_id: "r_desk", last_seq: 6, first_at: ts("14:00:31"), last_at: ts("14:01:00"), cost_usd: "0.012" }],
       deliveries: [{ run_id: "r_desk", metadata: { source: "group_chat", you_were_tagged: true } }],
@@ -108,28 +137,28 @@ test("a tagged wake points at the latest row that tagged it, not the snapshot's 
 
 test("untagged operator rows and Jev picks are told apart", () => {
   const runs = [
-    {
+    activityRun({
       id: "r_fanout",
       agent_id: "a_scout",
       kind: "group",
       errors: [],
-      metadata: { typesafe: { recipients: { source: "low_confidence", choice: "desk", confidence: 0.41 } } },
+      metadata: { typesafe: { recipients: { source: "low_confidence", names: ["desk"], choice: "desk", confidence: 0.41 } } },
       group_chat_through_seq: 8,
       previous_through_seq: 6,
       created_at: ts("15:00:00"),
       updated_at: ts("15:00:10"),
-    },
-    {
+    }),
+    activityRun({
       id: "r_jev",
       agent_id: "a_desk",
       kind: "group",
       errors: [],
-      metadata: { typesafe: { recipients: { source: "typesafe", choice: "desk", confidence: 0.55 } } },
+      metadata: { typesafe: { recipients: { source: "typesafe", names: ["desk"], choice: "desk", confidence: 0.55 } } },
       group_chat_through_seq: 9,
       previous_through_seq: 7,
       created_at: ts("15:01:00"),
       updated_at: ts("15:01:10"),
-    },
+    }),
   ];
   const view = projectActivity(
     input({
@@ -152,7 +181,7 @@ test("a group run that stored its waking row points there, not at an inferred ro
     input({
       messages: [message(4, "14:00:00", null, ["desk"]), message(5, "14:00:30", null, ["desk"])],
       runs: [
-        {
+        activityRun({
           id: "r_desk",
           agent_id: "a_desk",
           kind: "group",
@@ -160,10 +189,10 @@ test("a group run that stored its waking row points there, not at an inferred ro
           metadata: {},
           group_chat_through_seq: 5,
           previous_through_seq: 3,
-          wake_seq: "4",
+          wake_seq: 4,
           created_at: ts("14:00:31"),
           updated_at: ts("14:01:00"),
-        },
+        }),
       ],
       deliveries: [{ run_id: "r_desk", metadata: { source: "group_chat", you_were_tagged: true } }],
     }),
@@ -176,7 +205,7 @@ test("a group run that stored its waking row points there, not at an inferred ro
 test("a direct chat nobody is recorded as starting has no user", () => {
   const view = projectActivity(
     input({
-      runs: [{ id: "r_chat", agent_id: "a_desk", kind: "direct", errors: [], metadata: {}, created_at: ts("09:00:00"), updated_at: ts("16:00:00") }],
+      runs: [activityRun({ id: "r_chat", agent_id: "a_desk", kind: "direct", errors: [], metadata: {}, created_at: ts("09:00:00"), updated_at: ts("16:00:00") })],
       stats: [{ run_id: "r_chat", last_seq: 4, first_at: ts("15:58:00"), last_at: ts("16:00:00"), cost_usd: "0" }],
     }),
   );
@@ -184,32 +213,32 @@ test("a direct chat nobody is recorded as starting has no user", () => {
 });
 
 test("the message floor sits before a stored waking row, or at the bottom of the tag scan", () => {
-  assert.equal(messageFloor({ kind: "group", group_chat_through_seq: 900, previous_through_seq: 10, wake_seq: 850 }), 849);
-  assert.equal(messageFloor({ kind: "group", group_chat_through_seq: 900, previous_through_seq: 10 }), 400);
-  assert.equal(messageFloor({ kind: "group", group_chat_through_seq: 20, previous_through_seq: 10 }), 10);
-  assert.equal(messageFloor({ kind: "group", group_chat_through_seq: null }), null);
-  assert.equal(messageFloor({ kind: "direct", group_chat_through_seq: 5 }), null);
+  assert.equal(messageFloor(floorRun({ kind: "group", group_chat_through_seq: 900, previous_through_seq: 10, wake_seq: 850 })), 849);
+  assert.equal(messageFloor(floorRun({ kind: "group", group_chat_through_seq: 900, previous_through_seq: 10 })), 400);
+  assert.equal(messageFloor(floorRun({ kind: "group", group_chat_through_seq: 20, previous_through_seq: 10 })), 10);
+  assert.equal(messageFloor(floorRun({ kind: "group", group_chat_through_seq: null })), null);
+  assert.equal(messageFloor(floorRun({ kind: "direct", group_chat_through_seq: 5 })), null);
 });
 
 test("posts, writes, and errors inside the window decide the outcome", () => {
   const view = projectActivity(
     input({
       runs: [
-        {
+        activityRun({
           id: "r_scout",
           agent_id: "a_scout",
           kind: "schedule",
           schedule_id: "sch_1",
           errors: [
-            { at: "2026-09-25T13:00:00Z", operation: "llm.complete", message: "old failure" },
-            { at: "2026-09-25T14:02:00Z", operation: "generation.max_tool_calls", message: "Tool call limit reached." },
+            { at: "2026-09-25T13:00:00Z", generation: 1, operation: "llm.complete", error_type: "Error", message: "old failure" },
+            { at: "2026-09-25T14:02:00Z", generation: 1, operation: "generation.max_tool_calls", error_type: "Error", message: "Tool call limit reached." },
           ],
           metadata: {},
           group_chat_through_seq: null,
           previous_through_seq: null,
           created_at: ts("14:00:00"),
           updated_at: ts("14:02:00"),
-        },
+        }),
       ],
       posts: [
         { run_id: "r_scout", seq: 9, created_at: ts("14:01:00"), content: "posted id=40 seq=12", call_id: "call_post" },
@@ -219,7 +248,22 @@ test("posts, writes, and errors inside the window decide the outcome", () => {
         { run_id: "r_scout", display_path: "org/o/collections/leads/3", operation: "create", tool_name: "record_add", tool_call_id: "call_add", created_at: ts("14:00:40") },
         { run_id: "r_scout", display_path: "org/o/agents/a_scout/memory.md", operation: "update", tool_name: "memory_write", tool_call_id: "call_mem", created_at: ts("14:01:50") },
       ],
-      schedules: [{ id: "sch_1", agent_id: "a_scout", cron: "0 * * * *", description: "Hunt", instruction: "Hunt for leads." }],
+      schedules: [
+        {
+          id: "sch_1",
+          agent_id: "a_scout",
+          cron: "0 * * * *",
+          wake_window: null,
+          window_fires: 0,
+          description: "Hunt",
+          instruction: "Hunt for leads.",
+          paused: false,
+          next_run_at: "2026-09-25T15:00:00.000Z",
+          last_run_at: null,
+          created_at: "2026-09-20T09:00:00.000Z",
+          updated_at: "2026-09-20T09:00:00.000Z",
+        },
+      ],
     }),
   );
   const [wake] = view.wakes;
@@ -241,9 +285,9 @@ test("a direct chat is a wake only when it has steps in the window, and a runnin
   const view = projectActivity(
     input({
       runs: [
-        { id: "r_old", agent_id: "a_desk", kind: "direct", errors: [], metadata: {}, created_at: ts("09:00:00"), updated_at: ts("13:50:00") },
-        { id: "r_chat", agent_id: "a_desk", kind: "direct", errors: [], metadata: {}, started_by_user_id: "user_ada", created_at: ts("09:00:00"), updated_at: ts("16:00:00") },
-        { id: "r_live", agent_id: "a_scout", kind: "group", errors: [], metadata: {}, group_chat_through_seq: 3, created_at: ts("17:39:00"), updated_at: ts("17:39:30") },
+        activityRun({ id: "r_old", agent_id: "a_desk", kind: "direct", errors: [], metadata: {}, created_at: ts("09:00:00"), updated_at: ts("13:50:00") }),
+        activityRun({ id: "r_chat", agent_id: "a_desk", kind: "direct", errors: [], metadata: {}, started_by_user_id: "user_ada", created_at: ts("09:00:00"), updated_at: ts("16:00:00") }),
+        activityRun({ id: "r_live", agent_id: "a_scout", kind: "group", errors: [], metadata: {}, group_chat_through_seq: 3, created_at: ts("17:39:00"), updated_at: ts("17:39:30") }),
       ],
       stats: [
         { run_id: "r_old", last_seq: 20, first_at: null, last_at: ts("13:30:00"), cost_usd: "0" },
@@ -260,20 +304,28 @@ test("a direct chat is a wake only when it has steps in the window, and a runnin
 });
 
 test("a wake lists its tool calls with their results, its last text, and a direct chat's opening", () => {
-  const call = (id: string, name: string, args: string) => ({ id, type: "function", function: { name, arguments: args } });
+  const call = (id: string, name: string, args: string) => ({ id, type: "function" as const, function: { name, arguments: args } }) satisfies ToolCall;
+  const step = (row: Pick<RunActivityStepRow, "run_id" | "seq" | "created_at" | "role"> & Partial<RunActivityStepRow>): RunActivityStepRow => ({
+    tool_calls: null,
+    text: null,
+    tool_call_id: null,
+    error: null,
+    duration_ms: null,
+    ...row,
+  });
   const view = projectActivity(
     input({
       runs: [
-        { id: "r_chat", agent_id: "a_desk", kind: "direct", errors: [], metadata: {}, created_at: ts("09:00:00"), updated_at: ts("15:00:00") },
-        { id: "r_tick", agent_id: "a_scout", kind: "schedule", schedule_id: "sch_1", errors: [], metadata: {}, created_at: ts("14:00:00"), updated_at: ts("14:01:00") },
+        activityRun({ id: "r_chat", agent_id: "a_desk", kind: "direct", errors: [], metadata: {}, created_at: ts("09:00:00"), updated_at: ts("15:00:00") }),
+        activityRun({ id: "r_tick", agent_id: "a_scout", kind: "schedule", schedule_id: "sch_1", errors: [], metadata: {}, created_at: ts("14:00:00"), updated_at: ts("14:01:00") }),
       ],
       stats: [{ run_id: "r_chat", last_seq: 12, first_at: ts("14:58:00"), last_at: ts("15:00:00"), cost_usd: "0" }],
       steps: [
-        { run_id: "r_tick", seq: 1, created_at: ts("14:00:10"), role: "assistant", tool_calls: [call("c_bal", "wallet_get_balance", '{"chain":"base"}'), call("c_note", "note_get", `{"path":"${"p".repeat(300)}"}`)], text: "" },
-        { run_id: "r_tick", seq: 2, created_at: ts("14:00:11"), role: "tool", tool_call_id: "c_bal", error: "wallet credentials are missing", duration_ms: "98" },
-        { run_id: "r_tick", seq: 3, created_at: ts("14:00:12"), role: "tool", tool_call_id: "c_note", error: null, duration_ms: "4" },
-        { run_id: "r_tick", seq: 4, created_at: ts("14:00:40"), role: "assistant", tool_calls: null, text: "  Balances unavailable; nothing to post.  " },
-        { run_id: "r_chat", seq: 11, created_at: ts("14:59:00"), role: "assistant", tool_calls: [], text: "Here are the likes." },
+        step({ run_id: "r_tick", seq: 1, created_at: ts("14:00:10").toISOString(), role: "assistant", tool_calls: [call("c_bal", "wallet_get_balance", '{"chain":"base"}'), call("c_note", "note_get", `{"path":"${"p".repeat(300)}"}`)], text: "" }),
+        step({ run_id: "r_tick", seq: 2, created_at: ts("14:00:11").toISOString(), role: "tool", tool_call_id: "c_bal", error: "wallet credentials are missing", duration_ms: "98" }),
+        step({ run_id: "r_tick", seq: 3, created_at: ts("14:00:12").toISOString(), role: "tool", tool_call_id: "c_note", error: null, duration_ms: "4" }),
+        step({ run_id: "r_tick", seq: 4, created_at: ts("14:00:40").toISOString(), role: "assistant", tool_calls: null, text: "  Balances unavailable; nothing to post.  " }),
+        step({ run_id: "r_chat", seq: 11, created_at: ts("14:59:00").toISOString(), role: "assistant", tool_calls: [], text: "Here are the likes." }),
       ],
       openings: [{ run_id: "r_chat", text: "how many likes on my last post?" }, { run_id: "r_tick", text: "Schedule wake-up: {}" }],
     }),
@@ -313,20 +365,20 @@ test("a coding wake lists what it changed in each repository as code writes", ()
   const view = projectActivity(
     input({
       runs: [
-        {
+        activityRun({
           id: "r_code",
           agent_id: "a_desk",
           kind: "schedule",
           errors: [],
           metadata: {
             repos: [
-              { name: "shop", branch: "agent/desk/refunds", files_changed: 3, insertions: 40, deletions: 2 },
-              { name: "docs", branch: "main", files_changed: 0, insertions: 0, deletions: 0 },
+              { name: "shop", branch: "agent/desk/refunds", head_sha: "h", start_sha: "s", end_sha: "e", files_changed: 3, insertions: 40, deletions: 2 },
+              { name: "docs", branch: "main", head_sha: "h", start_sha: "s", end_sha: "e", files_changed: 0, insertions: 0, deletions: 0 },
             ],
           },
           created_at: ts("15:00:00"),
           updated_at: ts("15:10:00"),
-        },
+        }),
       ],
     }),
   );

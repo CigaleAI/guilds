@@ -1,19 +1,20 @@
+import type pg from "pg";
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
-import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
+import { connect } from "../../src/seed/connect.js";
 import { GITHUB_SERVER_ID } from "../../src/github/index.js";
 import { GITHUB_MANIFEST_STATE_COOKIE, MANIFEST_CALLBACK_PATH } from "../../src/github/manifest.js";
 import { setInstanceKeys } from "../../src/instance/integrations.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { connectMcp, getMcpConnection, getMcpConnectionForOwner } from "../../src/db/mcp.js";
 
 const OWNER = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 const JSON_HEADERS = { ...OWNER, "content-type": "application/json" };
@@ -36,21 +37,21 @@ after(async () => {
 type App = Awaited<ReturnType<typeof buildApp>>;
 type Status = { id: string; state: string; set_by: string | null; updated_at: string | null };
 
-async function bootstrap(dbName: string, prefix: string): Promise<{ database: Awaited<ReturnType<typeof connect>>; repo: Repositories; app: App }> {
+async function bootstrap(dbName: string, prefix: string): Promise<{ database: Awaited<ReturnType<typeof connect>>; db: pg.Pool; app: App }> {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   setInstanceKeys({});
   const database = await connect(await createIsolatedDatabase(dbName));
   const notes = new NotesStore(tempDir(prefix), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
+  const db = database.pool;
   const app = await buildApp(database, {
-    repo,
+    db,
     notes,
-    scripts: new Scripts(repo),
-    schedules: new Schedules(repo),
+    scripts: new Scripts(scriptDatabase(db)),
+    schedules: new Schedules(scheduleDatabase(db)),
     masterKey: MASTER,
   });
-  return { database, repo, app };
+  return { database, db, app };
 }
 
 async function status(app: App, id: string): Promise<Status> {
@@ -71,12 +72,12 @@ function setCookies(headers: Record<string, unknown>): string[] {
 }
 
 test("instance keys switch platform logins and the GitHub connector; replacing the App is confirmed with its logins", { timeout: 60_000 }, async () => {
-  const { database, repo, app } = await bootstrap(keysDb, "guilds-instance-keys-");
+  const { database, db, app } = await bootstrap(keysDb, "guilds-instance-keys-");
   const put = (integration: string, payload: Record<string, unknown>) =>
     app.inject({ method: "PUT", url: `/api/admin/instance/keys/${integration}`, headers: JSON_HEADERS, payload });
   const remove = (integration: string, query = "") =>
     app.inject({ method: "DELETE", url: `/api/admin/instance/keys/${integration}${query}`, headers: OWNER });
-  const platformLogin = () => repo.getMcpConnectionForOwner(TAVILY_SERVER_ID, "platform", null);
+  const platformLogin = () => getMcpConnectionForOwner(db, TAVILY_SERVER_ID, "platform", null);
   const connectGithub = () =>
     app.inject({
       method: "POST",
@@ -87,13 +88,23 @@ test("instance keys switch platform logins and the GitHub connector; replacing t
   /** A GitHub login installed with the current App, at the organisation. */
   const seedConnectedGithub = async (): Promise<string> => {
     const [ciphertext, nonce] = encryptPayload({ installation_id: 77, account: "acme" }, MASTER);
-    const row = await repo.connectMcp("conn_github_seed", "bind_github_seed", GITHUB_SERVER_ID, "org", "org_home", ciphertext, nonce, new Date(), {
-      status: "connected",
-      accountHint: "acme",
-    });
+    const row = await connectMcp(db,
+      {
+        connectionId: "conn_github_seed",
+        bindingId: "bind_github_seed",
+        serverId: GITHUB_SERVER_ID,
+        ownerScope: "org",
+        ownerId: "org_home",
+        ciphertext,
+        nonce,
+        status: "connected",
+        accountHint: "acme",
+      },
+      new Date(),
+    );
     return String(row.id);
   };
-  const connectionStatus = async (id: string) => String((await repo.getMcpConnection(id))?.status);
+  const connectionStatus = async (id: string) => String((await getMcpConnection(db, id))?.status);
   try {
     // Web search: the Tavily platform login follows the key.
     assert.equal(await platformLogin(), null);

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { builderWriteRecipe, builderWriteRejection, builderWriteToolResult } from "../../src/builder/tools.js";
 import { emptyRecipe } from "../../src/recipes/minimal.js";
-import { parseRecipe } from "../../src/recipes/schema.js";
+import { parseRecipe } from "../../src/recipes/parse.js";
 import { huskLeadMatcherRecipe, linkedInNotionRecipe } from "../helpers/recipe-docs.js";
 import {
   parseToolArgs,

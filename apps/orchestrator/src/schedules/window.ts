@@ -1,20 +1,8 @@
 import { Cron } from "croner";
+import { isPlainRecord } from "../db/json.js";
+import type { PlannedWake } from "../db/schedules.js";
+import type { WakeWindow } from "../db/schema/index.js";
 import { MIN_GAP_MS, ScheduleError } from "./cron.js";
-
-/**
- * A random wake window: every day, between `start` and `end` local time in
- * `timezone`, the routine wakes at random instants, aiming for `max_wakes`
- * wake-ups. `end` earlier than `start` spans midnight.
- */
-export type WakeWindow = {
-  timezone: string;
-  start: string;
-  end: string;
-  max_wakes: number;
-};
-
-/** A planned wake-up plus how many wake-ups already fired in its window. */
-export type PlannedWake = { at: Date; windowFires: number };
 
 /** Each gap is drawn uniformly within ±JITTER of the current mean gap. */
 export const JITTER = 0.5;
@@ -46,21 +34,20 @@ function clockMinutes(value: string): number {
 }
 
 export function validateWindow(value: unknown): WakeWindow {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+  if (!isPlainRecord(value)) {
     throw new ScheduleError("window must be an object with timezone, start, end, and max_wakes");
   }
-  const record = value as Record<string, unknown>;
-  const extra = Object.keys(record).filter((key) => !WINDOW_KEYS.includes(key));
+  const extra = Object.keys(value).filter((key) => !WINDOW_KEYS.includes(key));
   if (extra.length) {
     throw new ScheduleError(`window has unknown field ${extra[0]}`);
   }
-  const timezone = validateTimezone(record.timezone, "window.timezone");
-  const start = validateClock(record.start, "start");
-  const end = validateClock(record.end, "end");
+  const timezone = validateTimezone(value.timezone, "window.timezone");
+  const start = validateClock(value.start, "start");
+  const end = validateClock(value.end, "end");
   if (start === end) {
     throw new ScheduleError("window.start and window.end must differ");
   }
-  const maxWakes = record.max_wakes;
+  const maxWakes = value.max_wakes;
   if (typeof maxWakes !== "number" || !Number.isInteger(maxWakes) || maxWakes < 1) {
     throw new ScheduleError("window.max_wakes must be a positive integer");
   }

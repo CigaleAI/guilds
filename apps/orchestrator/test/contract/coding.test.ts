@@ -73,7 +73,7 @@ test("two agents share one machine: each runs in its own home, with its own secr
     });
     const [payload] = await invokeTool(
       ctx,
-      { id: "call_1", function: { name: "script_run", arguments: JSON.stringify({ name: "greet", arguments: { who: "left" } }) } },
+      { id: "call_1", type: "function", function: { name: "script_run", arguments: JSON.stringify({ name: "greet", arguments: { who: "left" } }) } },
       leftSecrets,
       32768,
     );
@@ -132,7 +132,7 @@ test("two agents on one machine each run their own Chrome, on their own ports an
       });
       const [payload] = await invokeTool(
         ctx,
-        { id: "call_1", function: { name: "browser_navigate", arguments: JSON.stringify({ url: page }) } },
+        { id: "call_1", type: "function", function: { name: "browser_navigate", arguments: JSON.stringify({ url: page }) } },
         {},
         32768,
       );
@@ -189,7 +189,7 @@ test("coding tools run through execd in the runtime image", { skip: imageMissing
       count += 1;
       const [payload, metadata] = await invokeTool(
         ctx,
-        { id: `call_${count}`, function: { name, arguments: JSON.stringify(args) } },
+        { id: `call_${count}`, type: "function", function: { name, arguments: JSON.stringify(args) } },
         secrets,
         32768,
       );

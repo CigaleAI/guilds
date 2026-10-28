@@ -1,4 +1,4 @@
-import { AttachmentError, MAX_ATTACHMENT_BYTES, type AttachmentKind } from "./types.js";
+import { AttachmentError, MAX_ATTACHMENT_BYTES } from "./types.js";
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const GIF87 = Buffer.from("GIF87a");
@@ -47,8 +47,4 @@ export function sanitizeFilename(raw: string): string {
   const cleaned = stripped.replace(/^\.+/, "");
   const name = cleaned.slice(0, 200).trim();
   return name || "image";
-}
-
-export function isAttachmentKind(value: string): value is AttachmentKind {
-  return value === "image" || value === "file";
 }

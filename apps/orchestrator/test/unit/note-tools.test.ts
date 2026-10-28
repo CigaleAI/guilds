@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { agentActor, type ArtifactActor } from "../../src/artifacts/index.js";
-import { parseColumns, type CollectionColumn } from "../../src/artifacts/columns.js";
+import { parseColumns } from "../../src/artifacts/columns.js";
 import { ArtifactError } from "../../src/artifacts/errors.js";
+import type { CollectionColumn } from "../../src/db/schema/index.js";
 import { createToolContext, invokeTool } from "../../src/toolbox/index.js";
+import { noteRowAt } from "../helpers/artifacts.js";
 
 type Stored = {
   display_path: string;
@@ -57,7 +59,7 @@ class FakeStore {
     };
     this.rows = this.rows.filter((item) => item.display_path !== display);
     this.rows.push(row);
-    return row;
+    return noteRowAt(display, args.content);
   }
 
   async writeNoteAt(actor: ArtifactActor, path: string, content: string) {
@@ -67,10 +69,10 @@ class FakeStore {
       throw new ArtifactError("artifact not found", 404);
     }
     row.content_text = content;
-    return row;
+    return noteRowAt(path, content);
   }
 
-  async find(actor: ArtifactActor) {
+  async findNotes(actor: ArtifactActor) {
     const notes = this.rows.filter((row) => this.readable(actor, row) && row.kind === "note").map((row) => this.view(row));
     return { notes };
   }
@@ -80,7 +82,7 @@ class FakeStore {
     if (!row || !this.readable(actor, row)) {
       throw new Error("artifact not found");
     }
-    return { row };
+    return { row: noteRowAt(row.display_path, row.content_text ?? "") };
   }
 
   async deleteByDisplayPath(actor: ArtifactActor, path: string) {
@@ -166,7 +168,7 @@ async function invoke(
 ) {
   const [payload, metadata] = await invokeTool(
     toolCtx,
-    { id: "call_1", function: { name, arguments: arguments_ } },
+    { id: "call_1", type: "function", function: { name, arguments: JSON.stringify(arguments_) } },
     {},
     32_768,
   );

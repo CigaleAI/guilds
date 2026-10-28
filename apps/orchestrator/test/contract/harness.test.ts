@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import type { Harness } from "../../src/coding/harnesses.js";
+import type { Harness } from "../../src/db/schema/index.js";
 import { agentHome } from "../../src/lib/agent-file.js";
 import {
   RunSandboxes,
@@ -72,6 +72,7 @@ for (const { harness, credential } of LIVE) {
         ctx,
         {
           id: "call_live",
+          type: "function",
           function: {
             name: "code_task",
             arguments: JSON.stringify({

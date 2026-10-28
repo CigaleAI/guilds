@@ -1,4 +1,16 @@
-import type pg from "pg";
+import {
+  type ConversationKind,
+  type ConversationMessageRow,
+  type ConversationSessionKey,
+  conversationSessionErrors,
+  insertConversationMessage,
+  listConversationMessages,
+  nextConversationSeq,
+  updateConversationSession,
+} from "../db/conversations.js";
+import type { Queryable } from "../db/pg.js";
+import type { MessagePayload, ToolCall, ToolMessage } from "../db/schema/index.js";
+import { incrementOrgUsage } from "../db/usage.js";
 import { EventQueue } from "../lib/event.js";
 import {
   LLMError,
@@ -18,15 +30,19 @@ import {
   type ModelCredentials,
   type ModelCredentialsProvider,
 } from "../llm/credentials.js";
-import { AdmissionConflictError, AdmissionCoordinator, type WorkloadKind } from "../generation/admission.js";
+import { AdmissionConflictError, AdmissionCoordinator } from "../generation/admission.js";
 import { promptHash } from "../prompts/index.js";
 import { ConversationConflictError, ConversationError } from "./errors.js";
 import {
   projectToolResults,
   TOOL_RESULT_STUB_MIN_BYTES,
+  type ProjectedRow,
   type ProjectionBudget,
 } from "./projection.js";
 import { writeLog } from "../observability/log.js";
+import type { UserRow } from "../db/users.js";
+import type { StudioSessionRow } from "../db/studio.js";
+import type { BuilderSessionRow } from "../db/builder.js";
 
 export const generationLive = {
   streamCompletion,
@@ -37,33 +53,6 @@ const INTERRUPTED_CONTENT = "ERROR: execution interrupted";
 
 const EVENT_QUEUE_LIMIT = 4096;
 
-export type ConversationStore = {
-  getSession(sessionId: string): Promise<Record<string, unknown> | null>;
-  nextSeq(sessionId: string, client?: pg.PoolClient): Promise<number>;
-  insertMessage(
-    sessionId: string,
-    seq: number,
-    generation: number,
-    payload: Record<string, unknown>,
-    metadata: Record<string, unknown>,
-    now: Date,
-    client?: pg.PoolClient,
-  ): Promise<Record<string, unknown>>;
-  listMessages(sessionId: string): Promise<Array<Record<string, unknown>>>;
-  updateSession(
-    sessionId: string,
-    patch: Record<string, unknown>,
-    now: Date,
-    client?: pg.PoolClient,
-  ): Promise<Record<string, unknown> | null>;
-  incrementUsage(
-    orgId: string,
-    metadata: Record<string, unknown>,
-    now: Date,
-    client?: pg.PoolClient,
-  ): Promise<void>;
-};
-
 export type ConversationTool = {
   name: string;
   schema: Record<string, unknown>;
@@ -73,12 +62,14 @@ export type ConversationTool = {
 export type ConversationProjectionBudget = ProjectionBudget;
 
 export type ConversationRunnerDeps = {
-  store: ConversationStore;
+  /** The connection the conversation's session and messages are read and written on. */
+  db: Queryable;
+  /** Whose conversation it is, which names its tables and its admission. */
+  kind: ConversationKind;
   admission: AdmissionCoordinator;
   /** What a model provider is called with; nothing resolves when absent. */
   credentials?: ModelCredentialsProvider;
   policy?: OrgPolicy;
-  admissionKind?: WorkloadKind;
   /** What a stubbed older tool result tells this coach to do instead. */
   stubHint: string;
   projectionPolicyVersion?: number;
@@ -97,6 +88,10 @@ export class ConversationRunner {
   private tasks = new Map<string, Promise<void>>();
 
   constructor(public deps: ConversationRunnerDeps) {}
+
+  private session(sessionId: string): ConversationSessionKey {
+    return { kind: this.deps.kind, sessionId };
+  }
 
   subscribe(sessionId: string): EventQueue<[string, Record<string, unknown>]> {
     const queue = new EventQueue<[string, Record<string, unknown>]>();
@@ -132,8 +127,8 @@ export class ConversationRunner {
   }
 
   start(args: {
-    session: Record<string, unknown>;
-    user: Record<string, unknown>;
+    session: StudioSessionRow | BuilderSessionRow;
+    user: UserRow;
     generation: number;
     generationContext: string;
     systemContent?: string;
@@ -146,7 +141,7 @@ export class ConversationRunner {
     maxInput: number;
     minUnstubbed?: number;
   }): void {
-    const sessionId = String(args.session.id);
+    const sessionId = args.session.id;
     const task = this.run(args).finally(() => {
       if (this.tasks.get(sessionId) === task) {
         this.tasks.delete(sessionId);
@@ -155,21 +150,17 @@ export class ConversationRunner {
     this.tasks.set(sessionId, task);
   }
 
-  async reconcile(session: Record<string, unknown>): Promise<void> {
+  async reconcile(session: StudioSessionRow | BuilderSessionRow): Promise<void> {
     if (session.generation_state !== "generating" && session.generation_state !== "cancelling") {
       return;
     }
-    await this.repair(String(session.id), Number(session.generation_number || 1), "execution interrupted");
-    await this.deps.store.updateSession(
-      String(session.id),
-      { generation_state: "idle", generation_token: null },
-      new Date(),
-    );
+    await this.repair(session.id, Number(session.generation_number || 1), "execution interrupted");
+    await updateConversationSession(this.deps.db, this.session(session.id), { generation_state: "idle", generation_token: null }, new Date());
   }
 
   private async run(args: {
-    session: Record<string, unknown>;
-    user: Record<string, unknown>;
+    session: StudioSessionRow | BuilderSessionRow;
+    user: UserRow;
     generation: number;
     generationContext: string;
     systemContent?: string;
@@ -182,17 +173,17 @@ export class ConversationRunner {
     maxInput: number;
     minUnstubbed?: number;
   }): Promise<void> {
-    const sessionId = String(args.session.id);
-    const orgId = String(args.session.org_id);
+    const sessionId = args.session.id;
+    const orgId = args.session.org_id;
     const cancel = new CancelEvent();
     this.cancels.set(sessionId, cancel);
     await this.publish(sessionId, "generation.started", {
       session_id: sessionId,
       generation: args.generation,
     });
-    const config = (args.session.config_snapshot ?? {}) as Record<string, unknown>;
-    const model = String(config.model ?? "");
-    const temperature = Number(config.temperature ?? 0.2);
+    const config = args.session.config_snapshot;
+    const model = config.model;
+    const temperature = config.temperature;
     const maxTokens = args.maxTokens;
     const maxSteps = args.maxSteps;
     const maxToolCalls = args.maxToolCalls;
@@ -202,7 +193,7 @@ export class ConversationRunner {
     let toolCalls = 0;
     let step = 0;
     const stubbed: number[] = [];
-    const kind = this.deps.admissionKind ?? "studio";
+    const kind = this.deps.kind;
     let exhaustedSteps;
     try {
       await this.deps.admission.acquire(kind, sessionId, orgId, await this.maxConcurrent(orgId));
@@ -219,7 +210,7 @@ export class ConversationRunner {
           await this.repair(sessionId, args.generation, "cancelled");
           break;
         }
-        const history = await this.deps.store.listMessages(sessionId);
+        const history = await listConversationMessages(this.deps.db, this.deps.kind, sessionId);
         const stubbedThisStep: number[] = [];
         const minUnstubbed = args.minUnstubbed ?? this.deps.minUnstubbedToolResults;
         const providerMessages = projectConversationHistory({
@@ -241,8 +232,9 @@ export class ConversationRunner {
         stubbed.push(...stubbedThisStep.filter((seq) => !stubbed.includes(seq)));
         const projectedTokens = generationLive.countInputTokens(model, providerMessages, schemas);
         if (projectedTokens > maxInput) {
-          await this.deps.store.updateSession(
-            sessionId,
+          await updateConversationSession(
+            this.deps.db,
+            this.session(sessionId),
             {
               status: "blocked",
               blocked_reason: "input_token_limit",
@@ -287,7 +279,7 @@ export class ConversationRunner {
           break;
         }
         const now = new Date();
-        const seq = await this.deps.store.nextSeq(sessionId);
+        const seq = await nextConversationSeq(this.deps.db, this.deps.kind, sessionId);
         const metadata = {
           generation: args.generation,
           projection_policy_version: this.deps.projectionPolicyVersion ?? 2,
@@ -295,23 +287,25 @@ export class ConversationRunner {
           stubbed_message_seqs: stubbed,
           ...completion.metadata,
         };
-        const row = await this.deps.store.insertMessage(
-          sessionId,
-          seq,
-          args.generation,
-          completion.payload,
-          metadata,
+        const row = await insertConversationMessage(
+          this.deps.db,
+          this.deps.kind,
+          {
+            session_id: sessionId,
+            seq,
+            generation: args.generation,
+            payload: completion.payload,
+            metadata,
+          },
           now,
         );
-        await this.deps.store.incrementUsage(orgId, metadata, now);
+        await incrementOrgUsage(this.deps.db, orgId, metadata, now);
         await this.publish(sessionId, "message.committed", { message: row });
-        const calls = Array.isArray((completion.payload as { tool_calls?: unknown }).tool_calls)
-          ? (completion.payload as { tool_calls: Array<Record<string, unknown>> }).tool_calls
-          : [];
+        const calls = completion.payload.tool_calls ?? [];
         if (!calls.length) {
           break;
         }
-        const finishReason = completion.metadata?.finish_reason;
+        const finishReason = completion.metadata.finish_reason;
         let awaitOperator = false;
         for (const call of calls) {
           toolCalls += 1;
@@ -319,13 +313,10 @@ export class ConversationRunner {
             await this.commitToolError(sessionId, args.generation, call, "tool call limit reached");
             continue;
           }
-          const fn = (call.function && typeof call.function === "object" ? call.function : {}) as Record<
-            string,
-            unknown
-          >;
-          const name = String(fn.name ?? "");
+          const fn = call.function;
+          const name = fn.name;
           const tool = tools.get(name);
-          const upcoming = await this.deps.store.nextSeq(sessionId);
+          const upcoming = await nextConversationSeq(this.deps.db, this.deps.kind, sessionId);
           let result: Record<string, unknown>;
           try {
             if (!tool) {
@@ -353,7 +344,7 @@ export class ConversationRunner {
             { role: "tool", tool_call_id: call.id, content: JSON.stringify(envelope) },
           ];
           const nextTokens = generationLive.countInputTokens(model, candidateMessages, schemas);
-          const payload =
+          const payload: ToolMessage =
             nextTokens > maxInput
               ? {
                   role: "tool",
@@ -364,12 +355,16 @@ export class ConversationRunner {
                   }),
                 }
               : { role: "tool", tool_call_id: call.id, content: JSON.stringify(envelope) };
-          const committed = await this.deps.store.insertMessage(
-            sessionId,
-            upcoming,
-            args.generation,
-            payload,
-            { generation: args.generation, tool_name: name },
+          const committed = await insertConversationMessage(
+            this.deps.db,
+            this.deps.kind,
+            {
+              session_id: sessionId,
+              seq: upcoming,
+              generation: args.generation,
+              payload,
+              metadata: { generation: args.generation, tool_name: name },
+            },
             new Date(),
           );
           await this.publish(sessionId, "message.committed", { message: committed });
@@ -392,11 +387,7 @@ export class ConversationRunner {
     } finally {
       this.cancels.delete(sessionId);
       this.deps.admission.release(kind, sessionId);
-      await this.deps.store.updateSession(
-        sessionId,
-        { generation_state: "idle", generation_token: null, generation_started_at: null },
-        new Date(),
-      );
+      await updateConversationSession(this.deps.db, this.session(sessionId), { generation_state: "idle", generation_token: null, generation_started_at: null }, new Date());
       await this.publish(sessionId, "generation.finished", { session_id: sessionId, generation: args.generation });
     }
   }
@@ -470,16 +461,20 @@ export class ConversationRunner {
   }
 
   private async repair(sessionId: string, generation: number, detail: string): Promise<void> {
-    const messages = await this.deps.store.listMessages(sessionId);
+    const messages = await listConversationMessages(this.deps.db, this.deps.kind, sessionId);
     const pending = unresolvedCalls(messages);
     for (const call of pending) {
-      const seq = await this.deps.store.nextSeq(sessionId);
-      const row = await this.deps.store.insertMessage(
-        sessionId,
-        seq,
-        generation,
-        { role: "tool", tool_call_id: call.id, content: INTERRUPTED_CONTENT },
-        { generation, interrupted: true, detail },
+      const seq = await nextConversationSeq(this.deps.db, this.deps.kind, sessionId);
+      const row = await insertConversationMessage(
+        this.deps.db,
+        this.deps.kind,
+        {
+          session_id: sessionId,
+          seq,
+          generation,
+          payload: { role: "tool", tool_call_id: call.id, content: INTERRUPTED_CONTENT },
+          metadata: { generation, interrupted: true, detail },
+        },
         new Date(),
       );
       await this.publish(sessionId, "message.committed", { message: row });
@@ -489,33 +484,36 @@ export class ConversationRunner {
   private async commitToolError(
     sessionId: string,
     generation: number,
-    call: Record<string, unknown>,
+    call: ToolCall,
     detail: string,
   ): Promise<void> {
-    const seq = await this.deps.store.nextSeq(sessionId);
-    const row = await this.deps.store.insertMessage(
-      sessionId,
-      seq,
-      generation,
-      { role: "tool", tool_call_id: call.id, content: JSON.stringify({ error: detail }) },
-      { generation, tool_error: true },
+    const seq = await nextConversationSeq(this.deps.db, this.deps.kind, sessionId);
+    const row = await insertConversationMessage(
+      this.deps.db,
+      this.deps.kind,
+      {
+        session_id: sessionId,
+        seq,
+        generation,
+        payload: { role: "tool", tool_call_id: call.id, content: JSON.stringify({ error: detail }) },
+        metadata: { generation, tool_error: true },
+      },
       new Date(),
     );
     await this.publish(sessionId, "message.committed", { message: row });
   }
 
   private async fail(sessionId: string, detail: string): Promise<void> {
-    const kind = this.deps.admissionKind ?? "studio";
+    const kind = this.deps.kind;
     writeLog("error", detail, {
       source: "backend",
       operation: `${kind}.session`,
       session_id: sessionId,
       error_type: "ConversationError",
     });
-    const session = await this.deps.store.getSession(sessionId);
-    const errors = Array.isArray(session?.errors) ? [...(session.errors as unknown[])] : [];
+    const errors = [...((await conversationSessionErrors(this.deps.db, this.session(sessionId))) ?? [])];
     errors.push({ at: new Date().toISOString(), detail });
-    await this.deps.store.updateSession(sessionId, { errors }, new Date());
+    await updateConversationSession(this.deps.db, this.session(sessionId), { errors }, new Date());
     await this.publish(sessionId, "session.error", { detail });
   }
 
@@ -536,7 +534,7 @@ export class ConversationRunner {
 }
 
 export function projectConversationHistory(args: {
-  history: Array<Record<string, unknown>>;
+  history: ProjectedRow[];
   generationContext: string;
   currentGeneration: number;
   stubHint: string;
@@ -544,7 +542,7 @@ export function projectConversationHistory(args: {
   minUnstubbed?: number;
   budget?: ConversationProjectionBudget;
   systemContent?: string;
-}): Array<Record<string, unknown>> {
+}): MessagePayload[] {
   const messages = projectToolResults({
     history: args.history,
     currentGeneration: args.currentGeneration,
@@ -556,11 +554,9 @@ export function projectConversationHistory(args: {
     ...(args.minUnstubbed !== undefined ? { minUnstubbed: args.minUnstubbed } : {}),
     ...(args.budget ? { budget: args.budget } : {}),
   });
-  if (messages[0]?.role === "system") {
-    messages[0] = { ...messages[0] };
-    if (args.systemContent) {
-      messages[0].content = args.systemContent;
-    }
+  const [first] = messages;
+  if (first?.role === "system") {
+    messages[0] = args.systemContent ? { ...first, content: args.systemContent } : first;
     messages.splice(1, 0, { role: "user", content: args.generationContext });
   }
   return messages;
@@ -621,16 +617,13 @@ export function recoverPartialToolArgs(raw: string): Record<string, unknown> {
   return out;
 }
 
-function unresolvedCalls(messages: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
-  const pending = new Map<string, Record<string, unknown>>();
-  for (const row of messages) {
-    const payload = row.payload as Record<string, unknown>;
-    if (payload.role === "assistant" && Array.isArray(payload.tool_calls)) {
-      for (const call of payload.tool_calls as Array<Record<string, unknown>>) {
-        if (typeof call.id === "string") pending.set(call.id, call);
-      }
+function unresolvedCalls(messages: ConversationMessageRow[]): ToolCall[] {
+  const pending = new Map<string, ToolCall>();
+  for (const { payload } of messages) {
+    if (payload.role === "assistant") {
+      for (const call of payload.tool_calls ?? []) pending.set(call.id, call);
     }
-    if (payload.role === "tool" && typeof payload.tool_call_id === "string") {
+    if (payload.role === "tool") {
       pending.delete(payload.tool_call_id);
     }
   }

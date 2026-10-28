@@ -64,7 +64,7 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
 /**
  * The organisation's settings: the operator's own profile and the organisation's name, its
  * members, its machines, its model keys, the secrets and tools every guild inherits, its usage, and
- * the tabs an edition adds.
+ * the tabs an extension adds.
  */
 export function SettingsPage() {
   const { org } = useIdentity();

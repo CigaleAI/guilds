@@ -7,6 +7,7 @@ import {
   usageFields,
 } from "../../src/db/codecs.js";
 import { applyMigrations, createPool } from "../../src/db/client.js";
+import { reportPoolError } from "../../src/observability/runtime.js";
 import {
   createIsolatedDatabase,
   dropIsolatedDatabase,
@@ -21,7 +22,7 @@ after(async () => {
 
 test("node-postgres codecs round-trip int8, timestamptz strings, and numeric cost", async () => {
   const databaseUrl = await createIsolatedDatabase(dbName);
-  const pool = await createPool(databaseUrl);
+  const pool = await createPool(databaseUrl, reportPoolError);
   try {
     await applyMigrations(pool);
     const ints = await pool.query("SELECT 4294967303::int8 AS id");

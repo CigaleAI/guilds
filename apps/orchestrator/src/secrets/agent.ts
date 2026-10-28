@@ -5,6 +5,13 @@ import { CredentialError, secretPayload, validateSecretDescription, validateSecr
 import { encryptPayload } from "../credentials/crypto.js";
 import { newId } from "../lib/ids.js";
 import { secretGrants } from "./access.js";
+import {
+  countSecretsCreatedByAgent,
+  getSecretByName,
+  insertSecret,
+  updateSecret,
+} from "../db/secrets.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
 
 /** Secrets one agent may have created in its organisation. */
 export const AGENT_SECRET_CAP = 20;
@@ -18,26 +25,17 @@ export class AgentSecretError extends Error {
   }
 }
 
-export type AgentSecretsDatabase = {
-  getSecretByName(orgId: string, name: string): Promise<Record<string, unknown> | null>;
-  countSecretsCreatedByAgent(agentId: string): Promise<number>;
-  insertSecret(input: {
-    secretId: string;
-    orgId: string;
-    name: string;
-    description: string;
-    access: { org_wide: boolean; guild_ids: string[]; agent_ids: string[] };
-    ciphertext: Buffer;
-    nonce: Buffer;
-    createdByAgentId?: string | null;
-    now: Date;
-  }): Promise<Record<string, unknown>>;
-  updateSecret(
-    secretId: string,
-    changes: { description?: string | null; ciphertext?: Buffer | null; nonce?: Buffer | null },
-    now: Date,
-  ): Promise<Record<string, unknown> | null>;
-};
+/** The db/ functions the secrets an agent creates are written through, on `db`. */
+export function agentSecretsDatabase(db: Queryable) {
+  return {
+    getSecretByName: bindQuery(db, getSecretByName),
+    countSecretsCreatedByAgent: bindQuery(db, countSecretsCreatedByAgent),
+    insertSecret: bindQuery(db, insertSecret),
+    updateSecret: bindQuery(db, updateSecret),
+  };
+}
+
+export type AgentSecretsDatabase = ReturnType<typeof agentSecretsDatabase>;
 
 /** What `secret_store` changed, for the caller to refresh environments with. */
 export type StoredSecret = {
@@ -125,17 +123,19 @@ export async function storeAgentSecret(
     );
   }
   try {
-    const row = await db.insertSecret({
-      secretId: newId("sec"),
-      orgId: agent.orgId,
-      name,
-      description,
-      access: { org_wide: false, guild_ids: [], agent_ids: [agent.id] },
-      ciphertext,
-      nonce,
-      createdByAgentId: agent.id,
+    const row = await db.insertSecret(
+      {
+        secretId: newId("sec"),
+        orgId: agent.orgId,
+        name,
+        description,
+        access: { org_wide: false, guild_ids: [], agent_ids: [agent.id] },
+        ciphertext,
+        nonce,
+        createdByAgentId: agent.id,
+      },
       now,
-    });
+    );
     return { secretId: String(row.id), name, rotated: false, value: payload.value };
   } catch (error) {
     if (error instanceof SecretNameTaken) {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseRecipe } from "../../src/recipes/schema.js";
+import { parseRecipe } from "../../src/recipes/parse.js";
 import { linkedInNotionRecipe } from "../helpers/recipe-docs.js";
 import {
   hitFromUnknown,
@@ -17,6 +17,7 @@ function notionServer() {
     display_name: "Notion",
     publication_state: "published",
     auth: "oauth",
+    config: {},
     setup_hint: "Connect Notion",
   };
 }
@@ -75,7 +76,7 @@ test("builder_search_connected asks for an org widget when Notion is missing", a
     {
       orgId: "org_1",
       capabilities: {} as never,
-      repo: repoStub({ connections: [] }) as never,
+      db: repoStub({ connections: [] }) as never,
     },
     { query: "CRM" },
   )) as Record<string, unknown>;
@@ -87,7 +88,7 @@ test("builder_search_connected asks for an org widget when Notion is missing", a
 
 test("builder_search_connected returns databases from the org workspace", async () => {
   const result = await searchConnectedWorkspace({
-    repo: repoStub({
+    db: repoStub({
       connections: [
         {
           id: "conn_1",
@@ -118,7 +119,7 @@ test("connection widgets emit org-now and any-scope payloads", async () => {
     servers: [notionServer()],
   });
   const orgWidget = (await builderAskOrgConnection.handler(
-    { orgId: "org_1", capabilities: {} as never, repo: repo as never },
+    { orgId: "org_1", capabilities: {} as never, db: repo as never },
     { server_ref: "notion", reason: "Search existing CRM tables." },
   )) as Record<string, unknown>;
   assert.equal(orgWidget.widget, "connect");
@@ -128,7 +129,7 @@ test("connection widgets emit org-now and any-scope payloads", async () => {
   assert.deepEqual(orgWidget.allowed_scopes, ["org"]);
 
   const anyWidget = (await builderAskConnection.handler(
-    { orgId: "org_1", capabilities: {} as never, repo: repo as never },
+    { orgId: "org_1", capabilities: {} as never, db: repo as never },
     { reason: "Pick the right login.", recommended_scope: "guild" },
   )) as Record<string, unknown>;
   assert.equal(anyWidget.widget, "connect");

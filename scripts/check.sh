@@ -9,14 +9,14 @@
 # The orchestrator, web, and core-stack lanes run side by side. Each step logs to its own file; a
 # failing step prints its log.
 #
-# An edition on top of core holds core in a subdirectory and runs this script with EDITION_ROOT set
-# to its own root. The checkout, the install and every step then happen in that root, with core and
-# every other submodule at the commit the edition pins, and the edition's check.steps adds steps,
-# one per line: the lane it joins (orchestrator or web), a name, and the command.
+# A repository that extends core holds core in a subdirectory and runs this script with CHECK_ROOT
+# set to its own root. The checkout, the install and every step then happen in that root, with core
+# and every other submodule at the commit it pins, and its check.steps adds steps, one per line: the
+# lane it joins (orchestrator or web), a name, and the command.
 set -euo pipefail
 
 core="$(cd "$(dirname "$0")/.." && pwd -P)"
-repo="$(cd "${EDITION_ROOT:-$core}" && pwd -P)"
+repo="$(cd "${CHECK_ROOT:-$core}" && pwd -P)"
 # Core's path under the root the check runs in: `.` when that root is core itself.
 core_path="${core#"$repo"}"
 core_path="${core_path#/}"
@@ -53,8 +53,8 @@ if [[ $# -gt 0 ]]; then
   echo "check: $(git -C "$repo" log -1 --format='%h %s' "$commit")"
   tree="$work/tree"
   git -C "$repo" worktree add --detach --quiet "$tree" "$commit"
-  # The commit names each submodule's commit (core's, for an edition); the clone of each beside the
-  # repository has it without asking a remote.
+  # The commit names each submodule's commit (core's, for an extending repository); the clone of
+  # each beside the repository has it without asking a remote.
   while IFS=$'\t' read -r meta submodule; do
     [[ "$meta" == *" commit "* ]] || continue
     rmdir "$tree/$submodule"
@@ -103,7 +103,7 @@ step() {
   fi
 }
 
-edition_steps() {
+extension_steps() {
   local lane="$1" step_lane name command
   [[ "$core" != "$repo" && -f "$tree/check.steps" ]] || return 0
   while read -r step_lane name command; do
@@ -117,7 +117,7 @@ orchestrator_lane() {
     step lint pnpm -r lint &&
     step compat-verify pnpm --filter @guildsrun/orchestrator compat:verify &&
     step test-orchestrator pnpm --filter @guildsrun/orchestrator test &&
-    edition_steps orchestrator
+    extension_steps orchestrator
 }
 
 web_lane() {
@@ -125,7 +125,7 @@ web_lane() {
     step test-web pnpm --filter @guildsrun/web test &&
     step build-web pnpm --filter @guildsrun/web build &&
     step build-storybook pnpm --filter @guildsrun/ui build-storybook &&
-    edition_steps web
+    extension_steps web
 }
 
 stack_lane() {

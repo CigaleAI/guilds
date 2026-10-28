@@ -1,13 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import {
-  messageCostUsd,
-  usageCounterKey,
-  usageDelta,
-  usageFields,
-  usageTree,
-  utcMonth,
-} from "../../src/usage.js";
+import { messageCostUsd, usageDelta, utcMonth } from "../../src/db/usage.js";
+import { usageCounterKey, usageFields, usageTree, type UsageSource } from "../../src/usage/index.js";
 
 test("usage_delta_reads_assistant_metadata", () => {
   const delta = usageDelta({
@@ -26,12 +20,12 @@ test("usage_delta_reads_assistant_metadata", () => {
 });
 
 test("usage_delta_ignores_rows_without_usage", () => {
-  assert.equal(usageDelta({ source: "tool", tool_name: "note_read" }), null);
+  assert.equal(usageDelta({ cost_usd: 0 }), null);
   assert.equal(usageDelta({}), null);
 });
 
 test("message_cost_usd_null_without_usage", () => {
-  assert.equal(messageCostUsd({ source: "tool", tool_name: "note_read" }), null);
+  assert.equal(messageCostUsd({ cost_usd: 0 }), null);
   assert.equal(messageCostUsd({}), null);
 });
 
@@ -43,7 +37,7 @@ test("message_cost_usd_reads_assistant_cost", () => {
     }),
     0.001,
   );
-  assert.equal(messageCostUsd({ usage: {} }), 0);
+  assert.equal(messageCostUsd({ usage: { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 } }), 0);
 });
 
 test("usage_fields_zeros_missing_row", () => {
@@ -86,7 +80,7 @@ test("usage_fields_formats_row", () => {
 });
 
 test("usage_tree_nests_resources_under_organisations", () => {
-  const counters = new Map<string, unknown>([
+  const counters = new Map<string, UsageSource>([
     [
       usageCounterKey("global", ""),
       {
@@ -170,7 +164,7 @@ test("usage_tree_nests_resources_under_organisations", () => {
 });
 
 test("usage_tree_exposes_studio_and_archived_residual", () => {
-  const counters = new Map<string, unknown>([
+  const counters = new Map<string, UsageSource>([
     [
       usageCounterKey("org", "org_manu"),
       {

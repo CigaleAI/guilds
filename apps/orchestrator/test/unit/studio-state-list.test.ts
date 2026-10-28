@@ -125,17 +125,22 @@ test("reads come from what a run inlined, its Memory, and the tool calls that na
     item("org/o/agents/a_1/memory.md", { kind: "memory", owner_id: "a_1" }),
     item("org/o/agents/a_1/scripts/tally", { kind: "script", owner_id: "a_1", title: "tally" }),
   ];
-  const run = { id: "r_1", agent_id: "a_1", created_at: at };
+  const run = { id: "r_1", run_id: "r_1", agent_id: "a_1", created_at: at };
+  const embed = (displayPath: string) => ({ display_path: displayPath, version: 1, content_hash: "h", kind: "note" });
   const events = readEvents(
     [
       {
         ...run,
         task_source: {
-          embeds: [{ display_path: "org/o/guilds/g/rules.md" }, { display_path: "org/o/guilds/g/gone.md" }],
+          version: 1,
+          hash: "t",
+          display_path: "org/o/agents/a_1/task.md",
+          embeds: [embed("org/o/guilds/g/rules.md"), embed("org/o/guilds/g/gone.md")],
           collections: ["org/o/collections/leads"],
+          has_embeds: true,
         },
       },
-      { id: "r_2", agent_id: "a_2", created_at: at, task_source: null },
+      { id: "r_2", run_id: "r_2", agent_id: "a_2", created_at: at, task_source: null },
     ],
     [
       { run_id: "r_1", agent_id: "a_1", created_at: at, tool_name: "note_get", arguments: '{"path":"org/o/guilds/g/rules.md"}' },

@@ -1,29 +1,35 @@
+import type pg from "pg";
 import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { after, before, describe, test } from "node:test";
-import { persistAgent } from "../../src/agents/persist.js";
+import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
 import { ArtifactFiles, fileBlobKey } from "../../src/artifacts/files.js";
 import { agentActor, listFileChanges, operatorActor } from "../../src/artifacts/index.js";
-import { ArtifactStore } from "../../src/artifacts/store.js";
-import { connect, type Database } from "../../src/db/client.js";
+import { artifactStore, type ArtifactStore } from "../../src/artifacts/store.js";
+import type { Database } from "../../src/db/client.js";
+import { connect } from "../../src/seed/connect.js";
 import { listConfigChanges } from "../../src/db/config-changes.js";
-import { Repositories } from "../../src/db/repositories.js";
 import { MemoryBlobStore } from "../../src/lib/blob-store.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { createToolContext, invokeTool } from "../../src/toolbox/index.js";
 import { tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { insertGuild } from "../../src/db/guilds.js";
+import { agentConfig } from "../helpers/generation.js";
+import { accessList, grantAccess } from "../../src/artifacts/access-lists.js";
+import { deleteByDisplayPath, listStateArtifacts } from "../../src/artifacts/notes.js";
+import { toolArtifacts } from "../../src/toolbox/artifacts.js";
 
 const dbName = uniqueDbName("agent_platform_files");
 let database: Database;
 let store: ArtifactStore;
 let blobs: MemoryBlobStore;
 let files: ArtifactFiles;
-let repo: Repositories;
+let db: pg.Pool;
 
-const CONFIG = {
+const CONFIG = agentConfig({
   model: "openrouter/openai/gpt-5.6-luna",
   temperature: 1,
   max_tokens: 8192,
@@ -31,12 +37,12 @@ const CONFIG = {
   max_tool_calls: 50,
   max_input_tokens: 100000,
   browser: false,
-};
+});
 
 before(async () => {
   database = await connect(await createIsolatedDatabase(dbName));
-  repo = new Repositories(database.pool);
-  store = new ArtifactStore(database.pool, templatesRoot());
+  db = database.pool;
+  store = artifactStore(database.pool, templatesRoot());
   blobs = new MemoryBlobStore();
   files = new ArtifactFiles(store, blobs);
 });
@@ -48,7 +54,7 @@ after(async () => {
 
 async function seedAgent(agentId: string, guildId: string, guildName: string, name: string) {
   const notes = new NotesStore(tempDir(`guilds-${name}-notes-`), templatesRoot());
-  await persistAgent(repo, notes, {
+  await persistAgent(agentDatabase(db), notes, {
     agentId,
     guildId,
     guildName,
@@ -68,8 +74,14 @@ const beta = agentActor({ orgId: "org_home", guildId: "guild_beta", agentId: "a_
 describe("shared files", { concurrency: 1 }, () => {
   before(async () => {
     const now = new Date();
-    await repo.insertGuild("guild_alpha", "alpha", now, "org_home", "");
-    await repo.insertGuild("guild_beta", "beta", now, "org_home", "");
+    await insertGuild(db,
+      { guildId: "guild_alpha", name: "alpha", orgId: "org_home", about: "" },
+      now,
+    );
+    await insertGuild(db,
+      { guildId: "guild_beta", name: "beta", orgId: "org_home", about: "" },
+      now,
+    );
     await seedAgent("a_alpha", "guild_alpha", "alpha", "alpha");
     await seedAgent("a_beta", "guild_beta", "beta", "beta");
   });
@@ -125,9 +137,9 @@ describe("shared files", { concurrency: 1 }, () => {
     await assert.rejects(() => files.loadFile(beta, "org/org_home/guilds/guild_alpha/files/figures.csv"), /artifact not found/);
 
     const target = { kind: "file" as const, id: row.id };
-    const access = await store.accessList(operator, target);
+    const access = await accessList(store, operator, target);
     assert.deepEqual(access.subjects.map((entry) => [entry.type, entry.id, entry.mode]), [["guild", "guild_alpha", "write"]]);
-    await store.grantAccess(operator, target, { type: "guild", id: "guild_beta" }, "read");
+    await grantAccess(store, operator, target, { type: "guild", id: "guild_beta", mode: "read" });
     const read = await files.loadFile(beta, "org/org_home/guilds/guild_alpha/files/figures.csv");
     assert.equal(read.access, "read");
     await assert.rejects(() => files.deleteFile(beta, read), /write not allowed/);
@@ -138,7 +150,7 @@ describe("shared files", { concurrency: 1 }, () => {
     const logged = await listConfigChanges(database.pool, "org_home", { kind: "file", id: row.id });
     assert.match(String(logged[0]?.summary), /Gave guild beta read on the file org\/org_home\/guilds\/guild_alpha\/files\/figures\.csv/);
 
-    assert.equal((await store.listStateArtifacts(operator, { guildId: "guild_alpha", agentIds: ["a_alpha"] })).some(
+    assert.equal((await listStateArtifacts(store, operator, { guildId: "guild_alpha", agentIds: ["a_alpha"] })).some(
       (item) => item.kind === "file" && item.title === "figures.csv" && item.size === 21,
     ), true);
   });
@@ -153,9 +165,9 @@ describe("shared files", { concurrency: 1 }, () => {
     assert.equal(files.view(own).display_path, "org/org_home/agents/a_alpha/files/scratch.bin");
     await assert.rejects(() => files.loadFile(beta, files.view(own).display_path), /artifact not found/);
 
-    await assert.rejects(() => store.deleteByDisplayPath(alpha, files.view(own).display_path), /use file_delete for files/);
-    const ctx = createToolContext({ run_id: "r_1", agent_id: "a_alpha", guild_id: "guild_alpha", sandbox: null, secrets: {}, artifacts: store, artifact_actor: alpha });
-    const [got] = await invokeTool(ctx, { id: "c1", function: { name: "note_get", arguments: { path: files.view(own).display_path } } }, {}, 32_768);
+    await assert.rejects(() => deleteByDisplayPath(store, alpha, files.view(own).display_path), /use file_delete for files/);
+    const ctx = createToolContext({ run_id: "r_1", agent_id: "a_alpha", guild_id: "guild_alpha", sandbox: null, secrets: {}, artifacts: toolArtifacts(store), artifact_actor: alpha });
+    const [got] = await invokeTool(ctx, { id: "c1", type: "function", function: { name: "note_get", arguments: JSON.stringify({ path: files.view(own).display_path }) } }, {}, 32_768);
     assert.match(String(got.content), /use file_fetch for files/);
   });
 
@@ -169,13 +181,13 @@ describe("shared files", { concurrency: 1 }, () => {
       guild_id: "guild_alpha",
       sandbox: null,
       secrets: {},
-      artifacts: store,
+      artifacts: toolArtifacts(store),
       artifact_actor: alpha,
       files,
       workspace_dir: workspace,
     });
     const call = (name: string, args: Record<string, unknown>) =>
-      invokeTool(ctx, { id: `c_${name}`, function: { name, arguments: args } }, {}, 32_768).then(([message]) => String(message.content));
+      invokeTool(ctx, { id: `c_${name}`, type: "function", function: { name, arguments: JSON.stringify(args) } }, {}, 32_768).then(([message]) => String(message.content));
 
     const put = await call("file_put", { home_path: "out/report.pdf", level: "guild", description: "The quarterly report" });
     assert.equal(put, "org/org_home/guilds/guild_alpha/files/report.pdf");
@@ -196,7 +208,7 @@ describe("shared files", { concurrency: 1 }, () => {
     assert.equal(await call("file_delete", { path: put }), put);
     assert.equal(blobs.objects.has(fileBlobKey("org_home", row.id, row.version)), false);
     await assert.rejects(() => files.loadFile(alpha, put), /artifact not found/);
-    assert.equal((await store.accessList(operator, { kind: "file", id: row.id }).catch((error: Error) => error.message)), "file not found");
+    assert.equal((await accessList(store, operator, { kind: "file", id: row.id }).catch((error: Error) => error.message)), "file not found");
     const changes = await listFileChanges(database.pool, "org_home", put);
     assert.deepEqual(changes.map((change) => change.operation), ["delete", "create"]);
   });

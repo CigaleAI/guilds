@@ -19,6 +19,8 @@ import { CONNECTORS } from "../../src/connectors/index.js";
 import { ConnectorError } from "../../src/connectors/types.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { mockFetch } from "../helpers/http.js";
+import { serverRow } from "../helpers/servers.js";
+import { connectionRow } from "../helpers/servers.js";
 
 const KEY = decodeMasterKey(HEX_MASTER_KEY);
 const TOOLS = CONNECTORS.bySlug("x")!.manifest.tools!;
@@ -34,22 +36,20 @@ class MemoryDb {
 }
 
 test("formatSearch is compact TSV", () => {
-  const stored = formatSearch(
-    {
-      data: [{
-        id: "123",
-        author_id: "44196397",
-        created_at: "2026-09-13T12:00:00.000Z",
-        text: "hello world",
-        public_metrics: { like_count: 12, retweet_count: 3, reply_count: 1, quote_count: 0 },
-      }],
-      includes: {
-        users: [{ id: "44196397", username: "elonmusk", name: "Elon Musk", profile_image_url: "https://example.com/elon.jpg" }],
-      },
-      meta: { result_count: 1, next_token: "page-2" },
+  const payload = {
+    data: [{
+      id: "123",
+      author_id: "44196397",
+      created_at: "2026-09-13T12:00:00.000Z",
+      text: "hello world",
+      public_metrics: { like_count: 12, retweet_count: 3, reply_count: 1, quote_count: 0 },
+    }],
+    includes: {
+      users: [{ id: "44196397", username: "elonmusk", name: "Elon Musk", profile_image_url: "https://example.com/elon.jpg" }],
     },
-    { query: "from:elonmusk" },
-  );
+    meta: { result_count: 1, next_token: "page-2" },
+  };
+  const stored = formatSearch(payload, { query: "from:elonmusk" });
   assert.equal(
     stored,
     "from:elonmusk  n=1\n"
@@ -79,7 +79,7 @@ test("formatPosts caps rows and clips text", () => {
 });
 
 test("formatUser and formatPost keep metrics", () => {
-  const user = formatUser({
+  const profile = {
     data: {
       id: "44196397",
       username: "elonmusk",
@@ -91,7 +91,8 @@ test("formatUser and formatPost keep metrics", () => {
       profile_image_url: "https://example.com/elon.jpg",
       public_metrics: { followers_count: 200_000_000, following_count: 800, tweet_count: 50_000 },
     },
-  });
+  };
+  const user = formatUser(profile);
   assert.equal(
     user,
     "44196397  @elonmusk  Elon Musk  blue  followers=2e+08  "
@@ -201,10 +202,10 @@ test("sync X writes the curated catalog", async () => {
   });
   const [ciphertext, nonce] = encryptPayload({ token: "tok-test" }, KEY);
   const db = new MemoryDb();
-  const connection = { id: "conn_x", status: "connected", ciphertext, nonce };
-  const server = { id: "mcp_x", slug: "x", auth: "token" };
-  const first = await pool.syncTools(db, connection, server, { force: true });
-  const second = await pool.syncTools(db, connection, server);
+  const connection = connectionRow({ id: "conn_x", status: "connected", ciphertext, nonce });
+  const server = serverRow("x", { id: "mcp_x", auth: "token" });
+  const first = await pool.syncTools(db as never, connection, server, { force: true });
+  const second = await pool.syncTools(db as never, connection, server);
   assert.equal(pinged, 1);
   assert.deepEqual(first.map((tool) => tool.namespaced_name), TOOLS.map((spec) => `x_${spec.name}`));
   assert.deepEqual(first, second);
@@ -221,7 +222,7 @@ test("sync X rejects a bad key", async () => {
   });
   const [ciphertext, nonce] = encryptPayload({ token: "bad" }, KEY);
   await assert.rejects(
-    () => pool.syncTools(new MemoryDb(), { id: "conn_x", status: "connected", ciphertext, nonce }, { id: "mcp_x", slug: "x", auth: "token" }, { force: true }),
+    () => pool.syncTools(new MemoryDb() as never, connectionRow({ id: "conn_x", status: "connected", ciphertext, nonce }), serverRow("x", { id: "mcp_x", auth: "token" }), { force: true }),
     (error: unknown) => error instanceof McpError && error.status === 401,
   );
 });
@@ -240,9 +241,9 @@ test("call X dispatches", async () => {
   });
   const [ciphertext, nonce] = encryptPayload({ token: "tok-test" }, KEY);
   const stored = await pool.call(
-    new MemoryDb(),
-    { id: "conn_x", status: "connected", ciphertext, nonce },
-    { id: "mcp_x", slug: "x", auth: "token" },
+    new MemoryDb() as never,
+    connectionRow({ id: "conn_x", status: "connected", ciphertext, nonce }),
+    serverRow("x", { id: "mcp_x", auth: "token" }),
     "search",
     { query: "from:x" },
   );

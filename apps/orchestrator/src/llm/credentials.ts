@@ -1,8 +1,11 @@
-import { asBuffer, decryptPayload } from "../credentials/crypto.js";
+import { decryptPayload } from "../credentials/crypto.js";
+import type { OrgModelProviderRow } from "../db/orgs.js";
 import { writeLog } from "../observability/log.js";
 import { PolicyError } from "../policy/index.js";
-import type { CostSource, TokenUsage } from "./cost.js";
+import type { CompletionMetadata, CostSource, TokenUsage } from "../db/schema/index.js";
 import { parseModelId, providerLabel, providerById, type ProviderDef } from "./providers.js";
+import { getOrgModelProvider } from "../db/orgs.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
 
 // The credentials a run calls a provider with. Core asks one function for them: an extension
 // point (docs/architecture/extension-points.md) whose core default reads the organisation's own
@@ -54,19 +57,24 @@ export class ModelNotConnectedError extends Error {
   }
 }
 
-export type ModelProviderStore = {
-  getOrgModelProvider(orgId: string, provider: string): Promise<Record<string, unknown> | null>;
-};
+/** The db/ function an organisation's provider rows are read through, on `db`. */
+export function modelProviderStore(db: Queryable) {
+  return {
+    getOrgModelProvider: bindQuery(db, getOrgModelProvider),
+  };
+}
+
+export type ModelProviderStore = ReturnType<typeof modelProviderStore>;
 
 /** The stored secret of a provider row: its key, and the base URL of a local endpoint. */
 export function decryptProviderRow(
-  row: Record<string, unknown>,
+  row: Pick<OrgModelProviderRow, "ciphertext" | "nonce">,
   masterKey?: Buffer,
 ): { apiKey: string; baseURL: string | null } {
   if (!row.ciphertext || !row.nonce) {
     return { apiKey: "", baseURL: null };
   }
-  const payload = decryptPayload(asBuffer(row.ciphertext), asBuffer(row.nonce), masterKey);
+  const payload = decryptPayload(row.ciphertext, row.nonce, masterKey);
   const apiKey = typeof payload.api_key === "string" ? payload.api_key.trim() : "";
   const baseURL = typeof payload.base_url === "string" && payload.base_url.trim() ? payload.base_url.trim() : null;
   return { apiKey, baseURL };
@@ -134,19 +142,14 @@ export function isPolicyError(error: unknown): error is PolicyError {
 }
 
 /** What a completion's metadata says about its usage, for the credentials' callback. */
-export function modelUsageOf(runId: string, model: string, metadata: Record<string, unknown>): ModelUsage {
-  const usage = (metadata.usage ?? {}) as Partial<TokenUsage>;
-  const source = metadata.cost_source;
+export function modelUsageOf(runId: string, model: string, metadata: CompletionMetadata): ModelUsage {
+  const { input_tokens, output_tokens, cache_read_tokens } = metadata.usage;
   return {
     run_id: runId,
     model,
-    usage: {
-      input_tokens: Number(usage.input_tokens ?? 0),
-      output_tokens: Number(usage.output_tokens ?? 0),
-      cache_read_tokens: Number(usage.cache_read_tokens ?? 0),
-    },
-    cost_usd: Number(metadata.cost_usd ?? 0),
-    cost_source: source === "provider" || source === "catalog" ? source : "unavailable",
+    usage: { input_tokens, output_tokens, cache_read_tokens },
+    cost_usd: metadata.cost_usd,
+    cost_source: metadata.cost_source,
   };
 }
 

@@ -35,7 +35,7 @@ export {
 } from "./models-dev.js";
 export type { ModelsDevFeed, ModelsDevModel, ModelsDevSnapshot } from "./models-dev.js";
 export { catalogCostUsd } from "./cost.js";
-export type { CostSource, TokenUsage } from "./cost.js";
+export type { CostSource, TokenUsage } from "../db/schema/index.js";
 export {
   GenerationLimitError,
   INPUT_TOKEN_LIMIT_MESSAGE,
@@ -60,7 +60,7 @@ export {
 } from "./credentials.js";
 export type { ModelCredentials, ModelCredentialsProvider, ModelUsage } from "./credentials.js";
 export { ModelsError, ModelsService, validateChosenModels } from "./models.js";
-export type { ModelsRepository, ModelsServiceDeps, OrgModelsPayload, ProviderItem, ProviderSource } from "./models.js";
+export type { ModelsDatabase, ModelsServiceDeps, OrgModelsPayload, ProviderItem, ProviderSource } from "./models.js";
 export {
   LLMError,
   MODEL_USER_AGENT,
@@ -76,5 +76,6 @@ export {
   redactApiKey,
   streamCompletion,
 } from "./client.js";
-export type { Completion, ModelEvent, ReasoningDetail } from "./client.js";
+export type { Completion, ModelEvent } from "./client.js";
+export type { ReasoningDetail } from "../db/schema/index.js";
 export { listMessagesModels, messagesFromHistory, messagesRequestBody, streamMessages } from "./anthropic.js";

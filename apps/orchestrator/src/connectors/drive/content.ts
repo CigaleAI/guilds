@@ -9,11 +9,13 @@ import {
   driveJson,
   type DriveClientOptions,
 } from "./folder.js";
+import type { ToolInputSchema } from "../../db/schema/index.js";
+import { DriveFile, PermissionList } from "./responses.js";
 
 export const DRIVE_DOWNLOAD_FILE_DESCRIPTION =
   "Download a file from the connected Drive folder into the agent workspace. Pass an optional file_path in your home. The result is that path, not file bytes.";
 
-export const DRIVE_DOWNLOAD_FILE_SCHEMA: Record<string, unknown> = {
+export const DRIVE_DOWNLOAD_FILE_SCHEMA: ToolInputSchema = {
   type: "object",
   properties: {
     fileId: { type: "string", description: "Drive file id." },
@@ -44,69 +46,51 @@ function requireFileId(arguments_: Record<string, unknown>, tool: string): strin
   return fileId;
 }
 
-function parentIdOf(payload: Record<string, unknown>): string {
-  const parents = Array.isArray(payload.parents)
-    ? payload.parents.filter((item): item is string => typeof item === "string" && Boolean(item))
-    : [];
-  return parents[0] ?? "";
+/** The fields of a file's metadata the result carries under its own name, each when Drive has a value. */
+const META_FIELDS = [
+  ["size", "fileSize"],
+  ["description", "description"],
+  ["fileExtension", "fileExtension"],
+  ["webViewLink", "viewUrl"],
+  ["createdTime", "createdTime"],
+  ["modifiedTime", "modifiedTime"],
+  ["viewedByMeTime", "viewedByMeTime"],
+  ["sharedWithMeTime", "sharedWithMeTime"],
+] as const;
+
+/** The fields every file carries: its id, title, first parent and type, empty when Drive has none. */
+function mcpFileHead(payload: DriveFile): Record<string, string | boolean> {
+  return {
+    id: payload.id ?? "",
+    title: payload.name ?? "",
+    parentId: (payload.parents ?? []).find(Boolean) ?? "",
+    mimeType: payload.mimeType ?? "",
+  };
 }
 
-function mcpFileFromMeta(payload: Record<string, unknown>): Record<string, unknown> {
-  const owners = Array.isArray(payload.owners) ? payload.owners : [];
-  const owner0 = owners[0] && typeof owners[0] === "object" ? (owners[0] as { emailAddress?: unknown }).emailAddress : "";
-  const caps =
-    payload.capabilities && typeof payload.capabilities === "object" && !Array.isArray(payload.capabilities)
-      ? (payload.capabilities as { canAddChildren?: unknown })
-      : {};
-  const file: Record<string, unknown> = {
-    id: typeof payload.id === "string" ? payload.id : "",
-    title: typeof payload.name === "string" ? payload.name : "",
-    parentId: parentIdOf(payload),
-    mimeType: typeof payload.mimeType === "string" ? payload.mimeType : "",
-  };
-  if (typeof payload.size === "string" && payload.size) {
-    file.fileSize = payload.size;
+/** A file's metadata as the Drive MCP tools return it. */
+function mcpFileFromMeta(payload: DriveFile): Record<string, string | boolean> {
+  const file = mcpFileHead(payload);
+  for (const [from, to] of META_FIELDS) {
+    const value = payload[from];
+    if (value) {
+      file[to] = value;
+    }
   }
-  if (typeof payload.description === "string" && payload.description) {
-    file.description = payload.description;
+  const owner = payload.owners?.[0]?.emailAddress;
+  if (owner) {
+    file.owner = owner;
   }
-  if (typeof payload.fileExtension === "string" && payload.fileExtension) {
-    file.fileExtension = payload.fileExtension;
-  }
-  if (typeof payload.webViewLink === "string" && payload.webViewLink) {
-    file.viewUrl = payload.webViewLink;
-  }
-  if (typeof payload.createdTime === "string" && payload.createdTime) {
-    file.createdTime = payload.createdTime;
-  }
-  if (typeof payload.modifiedTime === "string" && payload.modifiedTime) {
-    file.modifiedTime = payload.modifiedTime;
-  }
-  if (typeof payload.viewedByMeTime === "string" && payload.viewedByMeTime) {
-    file.viewedByMeTime = payload.viewedByMeTime;
-  }
-  if (typeof payload.sharedWithMeTime === "string" && payload.sharedWithMeTime) {
-    file.sharedWithMeTime = payload.sharedWithMeTime;
-  }
-  if (typeof owner0 === "string" && owner0) {
-    file.owner = owner0;
-  }
-  if (typeof caps.canAddChildren === "boolean") {
-    file.canAddChildren = caps.canAddChildren;
+  const canAddChildren = payload.capabilities?.canAddChildren;
+  if (canAddChildren !== undefined) {
+    file.canAddChildren = canAddChildren;
   }
   return file;
 }
 
-async function loadFile(
-  accessToken: string,
-  fileId: string,
-  options: DriveClientOptions,
-): Promise<Record<string, unknown>> {
-  return driveJson(
-    accessToken,
-    fileUrl(fileId, `fields=${encodeURIComponent(FILE_FIELDS)}&supportsAllDrives=true`),
-    options,
-  );
+async function loadFile(accessToken: string, fileId: string, options: DriveClientOptions): Promise<DriveFile> {
+  const url = fileUrl(fileId, `fields=${encodeURIComponent(FILE_FIELDS)}&supportsAllDrives=true`);
+  return driveJson(accessToken, { url, schema: DriveFile }, options);
 }
 
 function defaultExportMime(mimeType: string): string {
@@ -123,13 +107,15 @@ function isGoogleNative(mimeType: string): boolean {
   return mimeType.startsWith(GOOGLE_APP) && mimeType !== DRIVE_FOLDER_MIME;
 }
 
+/** A file to fetch: its id, its type, and the type to export a Google file to, when one is asked. */
+type FileFetch = { id: string; mimeType: string; exportMimeType: string };
+
 async function fetchFileBytes(
   accessToken: string,
-  fileId: string,
-  mimeType: string,
-  exportMimeType: string,
+  file: FileFetch,
   options: DriveClientOptions,
 ): Promise<{ bytes: Buffer; mimeType: string }> {
+  const { id: fileId, mimeType, exportMimeType } = file;
   if (mimeType === DRIVE_FOLDER_MIME) {
     throw new DriveFolderError("cannot download a folder");
   }
@@ -199,39 +185,31 @@ export async function getDriveFileMetadata(
   return JSON.stringify(mcpFileFromMeta(payload));
 }
 
+const PERMISSION_FIELDS = ["role", "displayName", "type", "emailAddress"] as const;
+
+type Permission = NonNullable<PermissionList["permissions"]>[number];
+
+/** A permission with the fields Drive gave it. */
+function permissionView(row: Permission): Record<string, string> {
+  const permission: Record<string, string> = {};
+  for (const field of PERMISSION_FIELDS) {
+    const value = row[field];
+    if (value !== undefined) {
+      permission[field] = value;
+    }
+  }
+  return permission;
+}
+
 export async function getDriveFilePermissions(
   accessToken: string,
   arguments_: Record<string, unknown>,
   options: DriveClientOptions,
 ): Promise<string> {
   const fileId = requireFileId(arguments_, "get_file_permissions");
-  const payload = await driveJson(
-    accessToken,
-    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}/permissions?supportsAllDrives=true&fields=permissions(role,displayName,type,emailAddress)`,
-    options,
-  );
-  const rows = Array.isArray(payload.permissions) ? payload.permissions : [];
-  const permissions: Array<Record<string, unknown>> = [];
-  for (const item of rows) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) {
-      continue;
-    }
-    const row = item as Record<string, unknown>;
-    const permission: Record<string, unknown> = {};
-    if (typeof row.role === "string") {
-      permission.role = row.role;
-    }
-    if (typeof row.displayName === "string") {
-      permission.displayName = row.displayName;
-    }
-    if (typeof row.type === "string") {
-      permission.type = row.type;
-    }
-    if (typeof row.emailAddress === "string") {
-      permission.emailAddress = row.emailAddress;
-    }
-    permissions.push(permission);
-  }
+  const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}/permissions?supportsAllDrives=true&fields=permissions(role,displayName,type,emailAddress)`;
+  const payload = await driveJson(accessToken, { url, schema: PermissionList }, options);
+  const permissions = (payload.permissions ?? []).map(permissionView);
   return JSON.stringify({ permissions });
 }
 
@@ -245,10 +223,9 @@ export async function downloadDriveFileContent(
   }
   const fileId = requireFileId(arguments_, "download_file_content");
   const meta = await loadFile(accessToken, fileId, options);
-  const title = typeof meta.name === "string" ? meta.name : "";
-  const mimeType = typeof meta.mimeType === "string" ? meta.mimeType : "";
+  const title = meta.name ?? "";
   const exportMimeType = driveArg(arguments_, "exportMimeType", "export_mime_type");
-  const downloaded = await fetchFileBytes(accessToken, fileId, mimeType, exportMimeType, options);
+  const downloaded = await fetchFileBytes(accessToken, { id: fileId, mimeType: meta.mimeType ?? "", exportMimeType }, options);
   const requested = driveArg(arguments_, "file_path", "filePath");
   let resolved: string;
   try {
@@ -279,7 +256,7 @@ export async function readDriveFileContent(
 ): Promise<string> {
   const fileId = requireFileId(arguments_, "read_file_content");
   const meta = await loadFile(accessToken, fileId, options);
-  const mimeType = typeof meta.mimeType === "string" ? meta.mimeType : "";
+  const mimeType = meta.mimeType ?? "";
   const includeComments = arguments_.includeComments === true || arguments_.include_comments === true;
   const result: Record<string, unknown> = {};
   if (includeComments) {
@@ -290,7 +267,7 @@ export async function readDriveFileContent(
     return JSON.stringify(result);
   }
   try {
-    const downloaded = await fetchFileBytes(accessToken, fileId, mimeType, "", options);
+    const downloaded = await fetchFileBytes(accessToken, { id: fileId, mimeType, exportMimeType: "" }, options);
     if (!textReadable(downloaded.mimeType) && !isGoogleNative(mimeType)) {
       result.textFormattingNotSupported = true;
       return JSON.stringify(result);
@@ -323,9 +300,12 @@ export async function copyDriveFile(
   }
   const payload = await driveJson(
     accessToken,
-    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}/copy?supportsAllDrives=true&fields=id,name,mimeType,parents`,
+    {
+      url: `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}/copy?supportsAllDrives=true&fields=id,name,mimeType,parents`,
+      schema: DriveFile,
+      init: { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
+    },
     options,
-    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
   );
   return JSON.stringify(mcpFileFromMeta(payload));
 }

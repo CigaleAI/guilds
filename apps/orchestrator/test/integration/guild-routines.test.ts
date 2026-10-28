@@ -1,12 +1,11 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
-import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
+import { connect } from "../../src/seed/connect.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import {
@@ -14,7 +13,8 @@ import {
   dropIsolatedDatabase,
   uniqueDbName,
 } from "../helpers/postgres.js";
-import { userActor } from "../../src/db/config-changes.js";
+import { userActor } from "../../src/lib/change-actor.js";
+import { getSchedule, listDueSchedules } from "../../src/db/schedules.js";
 
 const TEST_ACTOR = userActor({ id: "user_operator", name: "operator" });
 
@@ -35,13 +35,13 @@ test("a guild can hold every routine without changing pause", { timeout: 60_000 
   const database = await connect(databaseUrl);
   const notes = new NotesStore(tempDir("guilds-guild-routines-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
-  await connectModelProvider(repo, "org_home", "deepinfra");
-  const schedules = new Schedules(repo);
+  const db = database.pool;
+  await connectModelProvider(db, "org_home", "deepinfra");
+  const schedules = new Schedules(scheduleDatabase(db));
   const app = await buildApp(database, {
-    repo,
+    db,
     notes,
-    scripts: new Scripts(repo),
+    scripts: new Scripts(scriptDatabase(db)),
     schedules,
   });
 
@@ -93,7 +93,7 @@ test("a guild can hold every routine without changing pause", { timeout: 60_000 
       "2020-01-01T00:00:00.000Z",
     ]);
 
-    const dueBefore = (await repo.listDueSchedules(new Date())).map((row) => String(row.id));
+    const dueBefore = (await listDueSchedules(db, new Date())).map((row) => String(row.id));
     assert.ok(dueBefore.includes(String(active.id)));
     assert.ok(dueBefore.includes(String(neighbor.id)));
     assert.equal(dueBefore.includes(String(paused.id)), false);
@@ -115,7 +115,7 @@ test("a guild can hold every routine without changing pause", { timeout: 60_000 
     assert.equal(off.statusCode, 200);
     assert.equal(off.json().routines_enabled, false);
 
-    const dueWhileOff = (await repo.listDueSchedules(new Date())).map((row) => String(row.id));
+    const dueWhileOff = (await listDueSchedules(db, new Date())).map((row) => String(row.id));
     assert.equal(dueWhileOff.includes(String(active.id)), false);
     assert.ok(dueWhileOff.includes(String(neighbor.id)));
 
@@ -138,12 +138,12 @@ test("a guild can hold every routine without changing pause", { timeout: 60_000 
     assert.equal(on.statusCode, 200);
     assert.equal(on.json().routines_enabled, true);
 
-    const dueAfter = (await repo.listDueSchedules(new Date())).map((row) => String(row.id));
+    const dueAfter = (await listDueSchedules(db, new Date())).map((row) => String(row.id));
     assert.equal(dueAfter.includes(String(active.id)), false);
     assert.ok(dueAfter.includes(String(neighbor.id)));
 
-    const restored = await repo.getSchedule(agentId, String(active.id));
-    const stillPaused = await repo.getSchedule(agentId, String(paused.id));
+    const restored = await getSchedule(db, agentId, String(active.id));
+    const stillPaused = await getSchedule(db, agentId, String(paused.id));
     assert.ok(Date.parse(String(restored?.next_run_at)) > Date.now());
     assert.equal(stillPaused?.paused, true);
     assert.ok(Date.parse(String(stillPaused?.next_run_at)) < Date.now());

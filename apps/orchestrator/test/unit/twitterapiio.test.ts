@@ -25,6 +25,8 @@ import { ConnectorError } from "../../src/connectors/types.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { loadJsonFixture } from "../helpers/fixtures.js";
 import { mockFetch } from "../helpers/http.js";
+import { serverRow } from "../helpers/servers.js";
+import { connectionRow } from "../helpers/servers.js";
 
 const fixture = loadJsonFixture<{
   search: string;
@@ -223,10 +225,10 @@ test("sync TwitterAPI.io writes the curated catalog", async () => {
   });
   const [ciphertext, nonce] = encryptPayload({ token: "tok-test" }, KEY);
   const db = new MemoryDb();
-  const connection = { id: "conn_twitterapiio", status: "connected", ciphertext, nonce };
-  const server = { id: "mcp_twitterapiio", slug: "twitterapiio", auth: "token" };
-  const first = await pool.syncTools(db, connection, server, { force: true });
-  const second = await pool.syncTools(db, connection, server);
+  const connection = connectionRow({ id: "conn_twitterapiio", status: "connected", ciphertext, nonce });
+  const server = serverRow("twitterapiio", { id: "mcp_twitterapiio", auth: "token" });
+  const first = await pool.syncTools(db as never, connection, server, { force: true });
+  const second = await pool.syncTools(db as never, connection, server);
   assert.equal(pinged, 1);
   assert.deepEqual(first.map((tool) => tool.namespaced_name), TOOLS.map((spec) => `twitterapiio_${spec.name}`));
   assert.deepEqual(first, second);
@@ -246,9 +248,9 @@ test("sync TwitterAPI.io rejects a bad key", async () => {
   await assert.rejects(
     () =>
       pool.syncTools(
-        new MemoryDb(),
-        { id: "conn_twitterapiio", status: "connected", ciphertext, nonce },
-        { id: "mcp_twitterapiio", slug: "twitterapiio", auth: "token" },
+        new MemoryDb() as never,
+        connectionRow({ id: "conn_twitterapiio", status: "connected", ciphertext, nonce }),
+        serverRow("twitterapiio", { id: "mcp_twitterapiio", auth: "token" }),
         { force: true },
       ),
     (error: unknown) => error instanceof McpError && error.status === 401,
@@ -269,9 +271,9 @@ test("call TwitterAPI.io dispatches", async () => {
   });
   const [ciphertext, nonce] = encryptPayload({ token: "tok-test" }, KEY);
   const stored = await pool.call(
-    new MemoryDb(),
-    { id: "conn_twitterapiio", status: "connected", ciphertext, nonce },
-    { id: "mcp_twitterapiio", slug: "twitterapiio", auth: "token" },
+    new MemoryDb() as never,
+    connectionRow({ id: "conn_twitterapiio", status: "connected", ciphertext, nonce }),
+    serverRow("twitterapiio", { id: "mcp_twitterapiio", auth: "token" }),
     "search",
     { query: "from:x" },
   );

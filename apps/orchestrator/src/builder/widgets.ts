@@ -1,12 +1,13 @@
 import { isSystemOfRecord, storageHint } from "../connectors/builder.js";
 import { connectorFacts } from "../connectors/view.js";
-import type { Repositories } from "../db/repositories.js";
 import type { CapabilityService } from "../capabilities/index.js";
 import { oauthSetupState } from "../oauth/index.js";
 import {
   findReusableOrgConnection,
   resolvePublishedServer,
+  type ConnectedDatabase,
 } from "./connected.js";
+import type { LoadedConnector } from "../connectors/load.js";
 
 export const CONNECT_WIDGET = "connect";
 export const QUESTION_WIDGET = "question";
@@ -18,7 +19,7 @@ export type ConnectWidgetScope = (typeof CONNECT_SCOPES)[number];
 
 export type ConnectWidgetMode = "org" | "any";
 
-function compactServer(row: Record<string, unknown>, extras: Record<string, unknown> = {}): Record<string, unknown> {
+function compactServer(row: LoadedConnector, extras: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id: row.id,
     slug: row.slug,
@@ -36,17 +37,17 @@ export function normalizeConnectScope(value: string, fallback: ConnectWidgetScop
 }
 
 export async function buildOrgConnectWidget(args: {
-  repo: Repositories;
+  db: ConnectedDatabase;
   orgId: string;
   serverRef: string;
   reason: string;
 }): Promise<Record<string, unknown>> {
-  const server = await resolvePublishedServer(args.repo, args.serverRef, args.orgId);
+  const server = await resolvePublishedServer(args.db, args.serverRef, args.orgId);
   if (!server) {
     return { error: "unknown or unpublished connector" };
   }
-  const connection = await findReusableOrgConnection(args.repo, args.orgId, server);
-  const slug = String(server.slug);
+  const connection = await findReusableOrgConnection(args.db, args.orgId, server);
+  const slug = server.slug;
   return {
     widget: CONNECT_WIDGET,
     mode: "org" as ConnectWidgetMode,
@@ -68,7 +69,7 @@ export async function buildOrgConnectWidget(args: {
 }
 
 export async function buildAnyConnectWidget(args: {
-  repo: Repositories;
+  db: ConnectedDatabase;
   capabilities: CapabilityService;
   orgId: string;
   serverRef?: string | undefined;
@@ -77,10 +78,10 @@ export async function buildAnyConnectWidget(args: {
   reason: string;
 }): Promise<Record<string, unknown>> {
   void args.capabilities;
-  const published = (await args.repo.listMcpServers(args.orgId)).filter(
+  const published = (await args.db.listMcpServers(args.orgId)).filter(
     (row) => row.enabled !== false,
   );
-  const connections = await args.repo.listMcpConnections({ orgId: args.orgId });
+  const connections = await args.db.listMcpConnections({ orgId: args.orgId });
   const connectedIds = new Set(
     connections
       .filter(
@@ -101,13 +102,13 @@ export async function buildAnyConnectWidget(args: {
     ? [...CONNECT_SCOPES]
     : [args.recommendedScope];
   const selected = args.serverRef?.trim()
-    ? await resolvePublishedServer(args.repo, args.serverRef, args.orgId)
+    ? await resolvePublishedServer(args.db, args.serverRef, args.orgId)
     : null;
   if (args.serverRef?.trim() && !selected) {
     return { error: "unknown or unpublished connector" };
   }
   const orgConnected = selected
-    ? Boolean(await findReusableOrgConnection(args.repo, args.orgId, selected))
+    ? Boolean(await findReusableOrgConnection(args.db, args.orgId, selected))
     : false;
   const connectNow = args.recommendedScope === "org" && !orgConnected;
   return {

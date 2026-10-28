@@ -35,7 +35,7 @@ Identity resolution is one module behind `AUTH_MODE`:
 - `compat-cookie` (whoever reaches the port)
 - `trusted-header` (the email an authenticating proxy sends)
 
-An edition built on core may add a mode of its own with an identity
+An extension built on core may add a mode of its own with an identity
 provider for it ([Extension points](extension-points.md)).
 Cross-organisation and non-member access returns 404.
 
@@ -126,13 +126,13 @@ server images on ghcr.io (`.github/workflows/images.yml`). That
 runtime carries Chromium and none of the proprietary coding
 harnesses.
 
-An edition's image is this Dockerfile built in the edition's
+The extending repository's image is this Dockerfile built in its
 workspace, plus its own package
 ([Extension points](extension-points.md)).
 
 Core reaches sandboxes through one
 [`RunSandboxes`](../../apps/orchestrator/src/sandbox/index.ts)
-manager on `OPENSANDBOX_URL`. An edition can supply a provider of
+manager on `OPENSANDBOX_URL`. An extension can supply a provider of
 its own.
 
 The sandbox profile is the `opensandbox-config` in
@@ -177,7 +177,7 @@ The stack listens on loopback and does not authenticate. Whoever
 reaches the port is the operator. A box reached from elsewhere sits
 behind the operator's own gate. `trusted-header` takes each person's
 identity from that proxy
-([Remote access](../operations/remote-access.md)). An edition may
+([Remote access](../operations/remote-access.md)). An extension may
 supply its own identity provider.
 
 The orchestrator serves a request only for a loopback host or the

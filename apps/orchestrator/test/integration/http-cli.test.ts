@@ -2,19 +2,19 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { decodeMasterKey } from "../../src/config/index.js";
-import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
-import { GenerationLoop } from "../../src/generation/index.js";
+import { connect } from "../../src/seed/connect.js";
+import { generationDatabase, GenerationLoop, LOOP_TIMINGS } from "../../src/generation/index.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { McpPool } from "../../src/mcp/index.js";
-import { ArtifactStore } from "../../src/artifacts/index.js";
+import { artifactStore } from "../../src/artifacts/index.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, testEnv } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { ExportSandboxes, openWs, startSandboxUpstream, wsRecv } from "../helpers/live.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { generationArtifacts } from "../../src/generation/prepare.js";
 
 const AUTH = {
   "X-Guilds-User": "user_operator",
@@ -39,24 +39,30 @@ test(
     const database = await connect(databaseUrl);
     const notes = new NotesStore(env.NOTES_ROOT ?? "", templatesRoot());
     await notes.ensureSystemPrompt();
-    const repo = new Repositories(database.pool);
-  await connectModelProvider(repo, "org_home", "deepinfra");
-    const artifacts = new ArtifactStore(database.pool, notes.templates);
+    const db = database.pool;
+  await connectModelProvider(db, "org_home", "deepinfra");
+    const artifacts = artifactStore(database.pool, notes.templates);
     const sandboxes = new ExportSandboxes(env.WORKSPACE_ROOT ?? "");
     const upstream = await startSandboxUpstream({ subprotocol: "tty" });
     sandboxes.cliBase = upstream.base;
     const secret = `/t/${sandboxes.cliToken}`;
-    const generation = new GenerationLoop(repo, notes, env.WORKSPACE_ROOT ?? "", sandboxes, {
-      mcp: new McpPool(),
-      artifacts,
-      idleTimeoutMs: 5 * 60 * 1000,
-    });
+    const generation = new GenerationLoop(
+      {
+        db: generationDatabase(db),
+        notes,
+        workspaceRoot: env.WORKSPACE_ROOT ?? "",
+        sandboxes,
+        mcp: new McpPool(),
+        artifacts: generationArtifacts(artifacts),
+      },
+      { ...LOOP_TIMINGS, idleTimeoutMs: 5 * 60 * 1000 },
+    );
     const app = await buildApp(database, {
-      repo,
+      db,
       notes,
       artifacts,
-      scripts: new Scripts(repo),
-      schedules: new Schedules(repo),
+      scripts: new Scripts(scriptDatabase(db)),
+      schedules: new Schedules(scheduleDatabase(db)),
       masterKey: decodeMasterKey(HEX_MASTER_KEY),
       mcp: new McpPool(),
       generation,
@@ -98,7 +104,7 @@ test(
       assert.ok(sandboxes.running.has(machineId));
       assert.deepEqual(sandboxes.browserStarts, []);
       assert.equal(sandboxes.cliStarts, 1);
-      assert.ok(generation._idle_tasks.has(machineId));
+      assert.ok(generation.machines.idle.has(machineId));
 
       const page = await app.inject({
         method: "GET",
@@ -121,7 +127,7 @@ test(
       await app.listen({ host: "127.0.0.1", port: 0 });
       const address = app.server.address();
       const port = typeof address === "object" && address ? address.port : 0;
-      const armed = generation._idle_tasks.get(machineId);
+      const armed = generation.machines.idle.get(machineId);
       const socket = await openWs(
         `ws://127.0.0.1:${port}/api/agents/${agentId}/cli/tty/ws`,
         AUTH,
@@ -132,10 +138,10 @@ test(
         socket.send('{"AuthToken":"x","columns":80,"rows":24}');
         const echoed = await wsRecv(socket);
         assert.equal(echoed.text, 'echo-text:{"AuthToken":"x","columns":80,"rows":24}');
-        for (let tries = 0; tries < 100 && generation._idle_tasks.get(machineId) === armed; tries += 1) {
+        for (let tries = 0; tries < 100 && generation.machines.idle.get(machineId) === armed; tries += 1) {
           await new Promise((resolve) => setTimeout(resolve, 10));
         }
-        const restarted = generation._idle_tasks.get(machineId);
+        const restarted = generation.machines.idle.get(machineId);
         assert.ok(restarted);
         assert.notEqual(restarted, armed, "operator input restarts the idle timer");
       } finally {
@@ -159,8 +165,8 @@ test(
       assert.deepEqual(sandboxes.browserStarts, [], "the CLI tab starts no Chrome");
       assert.equal(browserAgent.json().machine_id, machineId, "both agents share the organisation's machine");
     } finally {
-      for (const id of [...generation._idle_tasks.keys()]) {
-        generation._cancel_idle(id);
+      for (const id of [...generation.machines.idle.keys()]) {
+        generation.machines.cancelIdle(id);
       }
       try {
         app.server.closeAllConnections();

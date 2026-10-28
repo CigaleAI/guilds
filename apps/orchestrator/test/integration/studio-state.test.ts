@@ -1,22 +1,30 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { persistAgent } from "../../src/agents/persist.js";
-import { agentActor, ArtifactStore, ownerPrefix, snapshotTaskCollections } from "../../src/artifacts/index.js";
+import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
+import { agentActor, artifactStore, ownerPrefix, snapshotTaskCollections } from "../../src/artifacts/index.js";
 import { buildApp } from "../../src/app.js";
-import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
+import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { StudioService } from "../../src/studio/index.js";
 import { tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { insertGuild } from "../../src/db/guilds.js";
+import { createScheduleRun, type RunMessage } from "../../src/db/runs.js";
+import type { RunTaskSource } from "../../src/db/schema/index.js";
+import { agentConfig, runSnapshot } from "../helpers/generation.js";
+import { writeNote } from "../../src/artifacts/notes.js";
+import { addRecord, removeRecord } from "../../src/artifacts/records.js";
+import { createCollection } from "../../src/artifacts/collections.js";
+import { operatorContext } from "../../src/artifacts/store.js";
+import { embedSource } from "../../src/artifacts/embeds.js";
 
 const AUTH = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 
-const CONFIG = {
+const CONFIG = agentConfig({
   model: TEST_MODEL,
   temperature: 1,
   max_tokens: 8192,
@@ -24,7 +32,7 @@ const CONFIG = {
   max_tool_calls: 50,
   max_input_tokens: 100000,
   browser: false,
-};
+});
 
 const dbName = uniqueDbName("agent_platform_studio_state");
 
@@ -34,7 +42,7 @@ after(async () => {
 
 type Call = { id: string; name: string; args: Record<string, unknown> };
 
-function steps(calls: Call[]): Array<[Record<string, unknown>, Record<string, unknown>]> {
+function steps(calls: Call[]): RunMessage[] {
   return [
     [{ role: "user", content: "Schedule wake-up: {}" }, { generation: 1, source: "schedule" }],
     [
@@ -49,7 +57,7 @@ function steps(calls: Call[]): Array<[Record<string, unknown>, Record<string, un
       },
       { generation: 1 },
     ],
-    ...calls.map((call): [Record<string, unknown>, Record<string, unknown>] => [
+    ...calls.map((call): RunMessage => [
       { role: "tool", tool_call_id: call.id, content: "ok" },
       { generation: 1, tool_name: call.name, tool_call_id: call.id, duration_ms: 5, error: null },
     ]),
@@ -60,24 +68,30 @@ test("studio's State lists the guild's items with who changed and read each one"
   const database = await connect(await createIsolatedDatabase(dbName));
   const notes = new NotesStore(tempDir("guilds-studio-state-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
-  await connectModelProvider(repo, "org_home", "deepinfra");
-  const artifacts = new ArtifactStore(database.pool, templatesRoot());
-  const scripts = new Scripts(repo);
-  const schedules = new Schedules(repo);
-  const studio = new StudioService({ repo, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
-  const app = await buildApp(database, { repo, notes, artifacts, scripts, schedules, studio });
+  const db = database.pool;
+  await connectModelProvider(db, "org_home", "deepinfra");
+  const artifacts = artifactStore(database.pool, templatesRoot());
+  const scripts = new Scripts(scriptDatabase(db));
+  const schedules = new Schedules(scheduleDatabase(db));
+  const studio = new StudioService({ db, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
+  const app = await buildApp(database, { db, notes, artifacts, scripts, schedules, studio });
   try {
     const now = new Date();
-    await repo.insertGuild("guild_st", "state-guild", now, "org_home", "State");
-    await repo.insertGuild("guild_far", "far-guild", now, "org_home", "Far");
+    await insertGuild(db,
+      { guildId: "guild_st", name: "state-guild", orgId: "org_home", about: "State" },
+      now,
+    );
+    await insertGuild(db,
+      { guildId: "guild_far", name: "far-guild", orgId: "org_home", about: "Far" },
+      now,
+    );
     const agents: Array<[string, string, string]> = [
       ["a_scout", "scout", "guild_st"],
       ["a_writer", "writer", "guild_st"],
       ["a_far", "far", "guild_far"],
     ];
     for (const [agentId, name, guildId] of agents) {
-      await persistAgent(repo, notes, {
+      await persistAgent(agentDatabase(db), notes, {
         agentId,
         guildId,
         guildName: guildId === "guild_st" ? "state-guild" : "far-guild",
@@ -90,28 +104,45 @@ test("studio's State lists the guild's items with who changed and read each one"
         artifacts,
       });
     }
-    const operator = artifacts.operatorContext("org_home", "user_operator", "operator", { guildId: "guild_st" });
+    const operator = operatorContext("org_home", "user_operator", "operator", { guildId: "guild_st" });
     const asRun = (agentId: string, name: string, guildId: string, runId: string) => ({
       ...agentActor({ orgId: "org_home", guildId, agentId, agentName: name, runId }),
       toolCall: { id: `call_${runId}`, name: "note_write" },
     });
-    const run = (id: string, agentId: string, calls: Call[], taskSource: Record<string, unknown> = {}) =>
-      repo.createScheduleRun(id, agentId, { ...CONFIG, tools: [], mcp: [] }, "system", "task", steps(calls), now, {
-        systemPromptHash: "s",
-        taskPromptHash: "t",
-        memoryPromptHash: "m",
-        scheduleId: null,
-        runMetadata: { task_source: taskSource },
-      });
+    const run = (
+      id: string,
+      agentId: string,
+      calls: Call[],
+      embedded: Pick<RunTaskSource, "embeds" | "collections"> = { embeds: [], collections: [] },
+    ) =>
+      createScheduleRun(db,
+        {
+          runId: id,
+          agentId,
+          configSnapshot: runSnapshot(CONFIG),
+          systemContent: "system",
+          taskContent: "task",
+          projected: steps(calls),
+          systemPromptHash: "s",
+          taskPromptHash: "t",
+          memoryPromptHash: "m",
+          scheduleId: null,
+          runMetadata: {
+            task_source: { version: 1, hash: "h", display_path: "task.md", has_embeds: embedded.embeds.length > 0, ...embedded },
+          },
+        },
+        now,
+      );
 
-    const rules = await artifacts.writeNote(operator, { level: "guild", key: "rules.md", content: "Cite sources.\n" });
+    const rules = await writeNote(artifacts, operator, { level: "guild", key: "rules.md", content: "Cite sources.\n" });
     const rulesPath = `${ownerPrefix("org_home", "guild", "guild_st")}${rules.key}`;
-    await artifacts.writeNote(operator, { level: "guild", key: "idle.md", content: "Nobody reads this.\n" });
-    const farNote = await artifacts.writeNote(
-      artifacts.operatorContext("org_home", "user_operator", "operator", { guildId: "guild_far" }),
+    await writeNote(artifacts, operator, { level: "guild", key: "idle.md", content: "Nobody reads this.\n" });
+    const farNote = await writeNote(
+      artifacts,
+      operatorContext("org_home", "user_operator", "operator", { guildId: "guild_far" }),
       { level: "guild", key: "far.md", content: "Elsewhere.\n" },
     );
-    const leads = await artifacts.createCollection(operator, {
+    const leads = await createCollection(artifacts, operator, {
       name: "leads",
       purpose: "prospects",
       columns: [{ name: "title", type: "text", description: "name", required: true }],
@@ -119,9 +150,9 @@ test("studio's State lists the guild's items with who changed and read each one"
     });
     await scripts.create(operator, "a_writer", "tally", "Counts", "print(1)", { type: "object", properties: {} });
     // A run records the tables its Task embeds, directly or through a note it inlines.
-    const viaNote = await artifacts.writeNote(operator, { level: "guild", key: "leads-note.md", content: `![[${leads.display_path}]]\n` });
+    const viaNote = await writeNote(artifacts, operator, { level: "guild", key: "leads-note.md", content: `![[${leads.display_path}]]\n` });
     assert.deepEqual(
-      await snapshotTaskCollections(artifacts, operator, `![[${ownerPrefix("org_home", "guild", "guild_st")}${viaNote.key}]]\n`),
+      await snapshotTaskCollections(embedSource(artifacts), operator, `![[${ownerPrefix("org_home", "guild", "guild_st")}${viaNote.key}]]\n`),
       [leads.display_path],
     );
 
@@ -136,15 +167,15 @@ test("studio's State lists the guild's items with who changed and read each one"
       { id: "c4", name: "tally", args: {} },
     ]);
     await run("r_far", "a_far", []);
-    await artifacts.writeNote(asRun("a_writer", "writer", "guild_st", "r_writer"), {
+    await writeNote(artifacts, asRun("a_writer", "writer", "guild_st", "r_writer"), {
       level: "guild",
       key: "rules.md",
       content: "Cite every source.\n",
       expectedVersion: 1,
     });
     const scoutRun = asRun("a_scout", "scout", "guild_st", "r_scout");
-    const added = await artifacts.addRecord(scoutRun, { collection: "leads", body: { title: "Acme" } });
-    await artifacts.removeRecord(asRun("a_writer", "writer", "guild_st", "r_writer"), { collection: "leads", id: added.record.id });
+    const added = await addRecord(artifacts, scoutRun, { collection: "leads", body: { title: "Acme" } });
+    await removeRecord(artifacts, asRun("a_writer", "writer", "guild_st", "r_writer"), { collection: "leads", id: added.record.id });
 
     const created = await app.inject({
       method: "POST",
@@ -230,7 +261,7 @@ test("studio's State lists the guild's items with who changed and read each one"
     assert.equal((await get(`/state/item?path=${encodeURIComponent(`org/org_home/guilds/guild_far/${farNote.key}`)}`)).statusCode, 404);
 
     // A change by another guild's agent shows without its name and is not counted.
-    await artifacts.writeNote(asRun("a_far", "far", "guild_far", "r_far"), {
+    await writeNote(artifacts, asRun("a_far", "far", "guild_far", "r_far"), {
       level: "guild",
       key: "rules.md",
       content: "Cite no source.\n",

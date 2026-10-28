@@ -1,15 +1,16 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
-import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
+import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { insertUser } from "../../src/db/users.js";
+import { insertMember } from "../../src/db/orgs.js";
 
 const OWNER = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 const JSON_BODY = { "content-type": "application/json" };
@@ -25,11 +26,16 @@ test("organisation-wide note, table, and change routes keep a private guild to i
   const database = await connect(await createIsolatedDatabase(dbName));
   const notes = new NotesStore(tempDir("guilds-private-artifacts-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
-  await connectModelProvider(repo, "org_home", "deepinfra");
-  const app = await buildApp(database, { repo, notes, scripts: new Scripts(repo), schedules: new Schedules(repo) });
-  const teammate = await repo.insertUser("user_teammate_vault", "teammate-vault", new Date(), null, "vault@example.com");
-  await repo.insertMember("org_home", String(teammate.id), "member", new Date());
+  const db = database.pool;
+  await connectModelProvider(db, "org_home", "deepinfra");
+  const app = await buildApp(database, { db, notes, scripts: new Scripts(scriptDatabase(db)), schedules: new Schedules(scheduleDatabase(db)) });
+  const teammate = await insertUser(db, {
+      userId: "user_teammate_vault",
+      name: "teammate-vault",
+      image: null,
+      email: "vault@example.com",
+    }, new Date());
+  await insertMember(db, "org_home", String(teammate.id), "member", new Date());
   const TEAMMATE = { "X-Guilds-User": String(teammate.id), "X-Guilds-Org": "org_home" };
 
   try {

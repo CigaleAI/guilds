@@ -1,14 +1,4 @@
-import {
-  ArtifactError,
-  collectTaskEmbeds,
-  displayPathFor,
-  hashArtifactContent,
-  inlineTaskEmbeds,
-  listFileChanges,
-  parseDisplayPath,
-  taskEmbedActor,
-  type ArtifactStore,
-} from "../artifacts/index.js";
+import { ArtifactError, collectTaskEmbeds, displayPathFor, hashArtifactContent, inlineTaskEmbeds, listFileChanges, parseDisplayPath, taskEmbedActor, type ArtifactStore } from "../artifacts/index.js";
 import { jsonObj } from "../db/json.js";
 import { iso } from "../db/views.js";
 import { buildMemoryTimeline, memoryDiffText, type MemoryTimelineEntry } from "../memory/timeline.js";
@@ -17,15 +7,14 @@ import { composeAgentSystemPrompt, hydrateStanding, promptHash, schemasOffer } f
 import { argInteger, argString, functionSchema } from "../toolbox/schema.js";
 import { scheduleItem } from "../schedules/item.js";
 import { capBytes } from "../toolbox/output.js";
-import type { Repositories } from "../db/repositories.js";
+import type { AgentScheduleRow } from "../db/schedules.js";
 import type { Schedules } from "../schedules/service.js";
-import type { StudioStore } from "./store.js";
 import { previewCurrentState, projectAgentAccess, projectOfferedToolSchemas, type PreviewDeps } from "./preview.js";
 import { wrapEvidence } from "./system.js";
 import { StudioUnprocessableError } from "./errors.js";
 import { ScriptError } from "../scripts/validation.js";
 import { ABOUT_MAX, DESCRIPTION_MAX } from "../guilds/validation.js";
-import { NATIVE_TOOLS } from "../db/seed/catalog.js";
+import { NATIVE_TOOLS } from "../seed/catalog.js";
 import {
   STUDIO_CONNECTION_ACCESS_WIDGET,
   callConnectionTool,
@@ -59,17 +48,28 @@ import {
 import { editActionOf } from "./actions.js";
 import { listTables, readTable } from "./tables.js";
 import { studioReachesParsed, studioReachesPath } from "./reach.js";
+import { getAgent, getAgentTask, listAgentTaskRevisions, listAgents, type AgentRow } from "../db/agents.js";
+import { listSchedules, listSchedulesForGuild } from "../db/schedules.js";
+import { getRun, listMessages, listRunHeaders, routineRunStats, type MessageRow, type RunHeaderRow } from "../db/runs.js";
+import { listGroupMessages } from "../db/group-chat.js";
+import { listGuildsForUser } from "../db/guilds.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
+import { getStudioSession, type StudioSessionRow } from "../db/studio.js";
+import type { UserRow } from "../db/users.js";
+import { findNotes, getByDisplayPath } from "../artifacts/notes.js";
+import { operatorContext } from "../artifacts/store.js";
+import { getMemoryRow, listRevisions, readStoredMemory } from "../artifacts/memory.js";
+import { embedSource } from "../artifacts/embeds.js";
 
 export type StudioToolContext = {
-  session: Record<string, unknown>;
-  user: Record<string, unknown>;
+  session: StudioSessionRow;
+  user: UserRow;
   orgId: string;
   sourceGuildId: string;
   generation: number;
   nextMessageSeq?: number;
-  store: StudioStore;
   artifacts: ArtifactStore;
-  repo: Repositories;
+  db: Queryable;
   schedules: Schedules;
   drafts: StudioDraftService;
   preview: PreviewDeps;
@@ -96,8 +96,8 @@ function cursorOffset(cursor: unknown): number {
   return Number.isInteger(n) && n >= 0 ? n : 0;
 }
 
-async function resolveHandle(ctx: StudioToolContext, handle: string | undefined): Promise<Record<string, unknown>> {
-  const agent = await resolveSourceGuildAgent(ctx, handle);
+async function resolveHandle(ctx: StudioToolContext, handle: string | undefined): Promise<AgentRow> {
+  const agent = await resolveSourceGuildAgent(sourceGuildAgents(ctx.db), ctx, handle);
   if (!agent) {
     throw new StudioUnprocessableError(handle ? "agent is not in the source guild" : "agent handle required");
   }
@@ -118,45 +118,54 @@ function normalizeAgentHandle(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
+/** The db/ functions an agent of the source guild is found by handle through, on `db`. */
+export function sourceGuildAgents(db: Queryable) {
+  return {
+    getAgent: bindQuery(db, getAgent),
+    listAgents: bindQuery(db, listAgents),
+  };
+}
+
+export type SourceGuildAgents = ReturnType<typeof sourceGuildAgents>;
+
 export async function resolveSourceGuildAgent(
-  ctx: Pick<StudioToolContext, "repo" | "sourceGuildId" | "orgId">,
+  agents: SourceGuildAgents,
+  ctx: Pick<StudioToolContext, "sourceGuildId" | "orgId">,
   handle: string | null | undefined,
-): Promise<Record<string, unknown> | null> {
+): Promise<AgentRow | null> {
   const needle = String(handle ?? "").trim();
   if (!needle) {
     return null;
   }
-  const byId = await ctx.repo.getAgent(needle);
+  const byId = await agents.getAgent(needle);
   if (byId && String(byId.guild_id) === String(ctx.sourceGuildId) && (!ctx.orgId || String(byId.org_id) === ctx.orgId)) {
     return byId;
   }
-  const members = await ctx.repo.listAgents(ctx.sourceGuildId);
+  const members = await agents.listAgents(ctx.sourceGuildId);
   const lower = needle.toLowerCase();
   const normalized = normalizeAgentHandle(needle);
   const live = members.filter((row) => String(row.guild_id) === String(ctx.sourceGuildId));
   const match =
-    live.find((row) => String(row.id) === needle || String(row.name).toLowerCase() === lower) ??
+    live.find((row) => row.id === needle || String(row.name).toLowerCase() === lower) ??
     live.find((row) => normalizeAgentHandle(String(row.name)) === normalized) ??
     null;
   // The roster query omits org and guild columns; projections need the full row.
-  return match ? ctx.repo.getAgent(String(match.id)) : null;
+  return match ? agents.getAgent(String(match.id)) : null;
 }
 
 // The run facts a listing carries: enough to pick a run without its transcript.
-function runHeader(row: Record<string, unknown>): Record<string, unknown> {
-  const metadata = (jsonObj(row.metadata) as Record<string, unknown> | null) ?? {};
-  const errors = jsonObj(row.errors);
+function runHeader(row: RunHeaderRow): Record<string, unknown> {
   return {
     id: row.id,
     kind: row.kind,
     status: row.status,
     task_prompt_hash: row.task_prompt_hash,
     system_prompt_hash: row.system_prompt_hash,
-    schedule_id: row.schedule_id ?? null,
-    instruction_hash: typeof metadata.instruction_hash === "string" ? metadata.instruction_hash : null,
+    schedule_id: row.schedule_id,
+    instruction_hash: row.metadata.instruction_hash ?? null,
     created_at: iso(row.created_at),
     updated_at: iso(row.updated_at),
-    error_count: Array.isArray(errors) ? errors.length : 0,
+    error_count: row.errors.length,
   };
 }
 
@@ -259,12 +268,12 @@ export const studioGetAgentContext: StudioTool = {
       : [...STUDIO_DEFAULT_CONTEXT_SECTIONS];
     const want = new Set(requested);
     const cursor = args.cursor;
-    const actor = ctx.artifacts.operatorContext(ctx.orgId, String(ctx.user.id), String(ctx.user.name ?? "operator"), {
+    const actor = operatorContext(ctx.orgId, String(ctx.user.id), String(ctx.user.name ?? "operator"), {
       guildId: ctx.sourceGuildId,
-      agentId: String(agent.id),
+      agentId: agent.id,
     });
-    const task = await ctx.repo.getAgentTask(ctx.orgId, String(agent.id));
-    const memory = await ctx.artifacts.getMemoryRow(actor, String(agent.id));
+    const task = await getAgentTask(ctx.db, ctx.orgId, agent.id);
+    const memory = await getMemoryRow(ctx.artifacts, actor, agent.id);
     // state and effective_prompt read the same projection; take it once.
     let statePreview: ReturnType<typeof previewCurrentState> | null = null;
     const currentState = () => (statePreview ??= previewCurrentState(ctx.preview, agent));
@@ -279,7 +288,7 @@ export const studioGetAgentContext: StudioTool = {
         display_path: displayPathFor({
           orgId: ctx.orgId,
           level: "agent",
-          ownerId: String(agent.id),
+          ownerId: agent.id,
           kind: "task",
           path: "",
           key: "task.md",
@@ -324,19 +333,19 @@ export const studioGetAgentContext: StudioTool = {
     if (want.has("effective_prompt")) {
       const standing = hydrateStanding({
         systemPath: ctx.notesSystemPath,
-        agentName: String(agent.name),
-        agentId: String(agent.id),
+        agentName: agent.name,
+        agentId: agent.id,
       });
       let effectiveTask = task?.content_text ?? "";
       let embedWarning: string | null = null;
       try {
-        effectiveTask = await inlineTaskEmbeds(ctx.artifacts, taskEmbedActor(ctx.orgId, agent), effectiveTask);
+        effectiveTask = await inlineTaskEmbeds(embedSource(ctx.artifacts), taskEmbedActor(ctx.orgId, agent), effectiveTask);
       } catch (error) {
         embedWarning = error instanceof Error ? error.message : "embed preflight failed";
       }
       const preview = await currentState();
       const tools = await projectOfferedToolSchemas(ctx.preview, agent);
-      const memoryText = await ctx.artifacts.readMemory(actor, String(agent.id));
+      const memoryText = await readStoredMemory(ctx.artifacts, actor, agent.id);
       const memoryEnabled = memoryOf(jsonObj(agent.config));
       const composed = composeAgentSystemPrompt(
         standing,
@@ -355,7 +364,7 @@ export const studioGetAgentContext: StudioTool = {
         memory_hash: promptHash(memoryText),
         projected_at: preview.projected_at,
         ...(embedWarning ? { embed_warning: embedWarning } : {}),
-        content: wrapEvidence({ source: "effective_prompt", coordinates: { agent_id: String(agent.id) }, body: sliced.text }),
+        content: wrapEvidence({ source: "effective_prompt", coordinates: { agent_id: agent.id }, body: sliced.text }),
         ...(sliced.next_cursor ? { next_cursor: sliced.next_cursor } : {}),
         ...(sliced.truncated ? { truncated: true } : {}),
       };
@@ -388,29 +397,29 @@ export const studioListRoutines: StudioTool = {
   async handler(ctx, args) {
     const limit = clampLimit(args.limit, STUDIO_DEFAULT_LIMIT, 100);
     const offset = cursorOffset(args.cursor);
-    let rows: Array<Record<string, unknown>>;
+    let rows: AgentScheduleRow[];
     if (studioAgentHandleFromArgs(args)) {
       const agent = await resolveHandle(ctx, studioAgentHandleFromArgs(args) || undefined);
-      rows = await ctx.repo.listSchedules(String(agent.id));
+      rows = await listSchedules(ctx.db, agent.id);
     } else {
-      rows = await ctx.repo.listSchedulesForGuild(ctx.sourceGuildId);
+      rows = await listSchedulesForGuild(ctx.db, ctx.sourceGuildId);
     }
     const filtered = rows.filter((row) => {
       if (args.paused === undefined) return true;
       return Boolean(row.paused) === Boolean(args.paused);
     });
     const slice = filtered.slice(offset, offset + limit);
-    const stats = await ctx.repo.routineRunStats(slice.map((row) => String(row.id)));
+    const stats = await routineRunStats(ctx.db, slice.map((row) => row.id));
     const routines = [];
     for (const row of slice) {
-      const mine = stats.get(String(row.id));
+      const mine = stats.get(row.id);
       routines.push({
         ...scheduleItem(row),
         run_count: mine?.count ?? 0,
         latest_run: mine ? runHeader(mine.latest) : null,
         instruction: wrapEvidence({
           source: "routine",
-          coordinates: { schedule_id: String(row.id) },
+          coordinates: { schedule_id: row.id },
           body: String(row.instruction ?? ""),
         }),
       });
@@ -444,7 +453,7 @@ export const studioListRuns: StudioTool = {
     const limit = clampLimit(args.limit, STUDIO_DEFAULT_LIMIT, STUDIO_RUN_LIST_MAX);
     const offset = cursorOffset(args.cursor);
     // One row past the page says whether another page follows.
-    const rows = await ctx.repo.listRunHeaders(String(agent.id), {
+    const rows = await listRunHeaders(ctx.db, agent.id, {
       kind: argString(args, "kind"),
       status: argString(args, "status"),
       taskPromptHash: argString(args, "task_prompt_hash"),
@@ -457,13 +466,26 @@ export const studioListRuns: StudioTool = {
     return {
       runs: slice.map((row) => ({
         ...runHeader(row),
-        errors: jsonObj(row.errors) ?? [],
-        task_source: (jsonObj(row.metadata) as Record<string, unknown> | null)?.task_source ?? null,
+        errors: row.errors,
+        task_source: row.metadata.task_source ?? null,
       })),
       next_cursor: rows.length > limit ? String(offset + limit) : null,
     };
   },
 };
+
+/** The assistant messages of `messages` that called `toolName`, and those calls' results. */
+function callsOfTool(messages: MessageRow[], toolName: string): MessageRow[] {
+  const callIds = new Set<string>();
+  return messages.filter(({ payload }) => {
+    if (payload.role === "assistant") {
+      const mine = (payload.tool_calls ?? []).filter((call) => call.function.name === toolName);
+      for (const call of mine) callIds.add(call.id);
+      return mine.length > 0;
+    }
+    return payload.role === "tool" && callIds.has(payload.tool_call_id);
+  });
+}
 
 export const studioGetRun: StudioTool = {
   name: "studio_get_run",
@@ -480,48 +502,25 @@ export const studioGetRun: StudioTool = {
   ),
   async handler(ctx, args) {
     const runId = argString(args, "run_id");
-    const run = await ctx.repo.getRun(runId);
+    const run = await getRun(ctx.db, runId);
     if (!run) {
       throw new StudioUnprocessableError("run not found");
     }
-    const agent = await ctx.repo.getAgent(String(run.agent_id));
-    if (!agent || String(agent.guild_id) !== ctx.sourceGuildId) {
+    const agent = await getAgent(ctx.db, String(run.agent_id));
+    if (!agent || agent.guild_id !== ctx.sourceGuildId) {
       throw new StudioUnprocessableError("run is not in the source guild");
     }
     const seqStart = argInteger(args, "seq_start", 0);
     const seqEnd = argInteger(args, "seq_end", 10_000);
     const toolName = argString(args, "tool_name");
-    let messages = (await ctx.repo.listMessages(runId)).filter(
-      (row) => Number(row.seq) >= seqStart && Number(row.seq) <= seqEnd,
-    );
+    let messages = (await listMessages(ctx.db, runId)).filter((row) => row.seq >= seqStart && row.seq <= seqEnd);
     if (toolName) {
-      const callIds = new Set<string>();
-      messages = messages.filter((row) => {
-        const payload = jsonObj(row.payload) as Record<string, unknown>;
-        if (payload.role === "assistant") {
-          const calls = Array.isArray(payload.tool_calls) ? (payload.tool_calls as Array<Record<string, unknown>>) : [];
-          const mine = calls.filter((call) => String((call.function as Record<string, unknown> | undefined)?.name ?? "") === toolName);
-          for (const call of mine) callIds.add(String(call.id ?? ""));
-          return mine.length > 0;
-        }
-        if (payload.role === "tool") {
-          return callIds.has(String(payload.tool_call_id ?? ""));
-        }
-        return false;
-      });
+      messages = callsOfTool(messages, toolName);
     }
-    const capped = [];
-    for (const row of messages) {
-      const payload = jsonObj(row.payload) as Record<string, unknown>;
-      const content = typeof payload.content === "string" ? payload.content : JSON.stringify(payload);
-      const [cut, truncated] = capBytes(content, STUDIO_TOOL_RESULT_MAX_BYTES);
-      capped.push({
-        seq: row.seq,
-        payload: { ...payload, content: cut },
-        metadata: jsonObj(row.metadata),
-        truncated,
-      });
-    }
+    const capped = messages.map((row) => {
+      const [cut, truncated] = capBytes(row.payload.content, STUDIO_TOOL_RESULT_MAX_BYTES);
+      return { seq: row.seq, payload: { ...row.payload, content: cut }, metadata: row.metadata, truncated };
+    });
     return {
       run: {
         id: run.id,
@@ -529,22 +528,19 @@ export const studioGetRun: StudioTool = {
         kind: run.kind,
         status: run.status,
         task_prompt_hash: run.task_prompt_hash,
-        schedule_id: run.schedule_id ?? null,
-        metadata: jsonObj(run.metadata),
+        schedule_id: run.schedule_id,
+        metadata: run.metadata,
       },
       ...(toolName ? { tool_name: toolName, matched: capped.length } : {}),
       messages: capped.map((row) => ({
         ...row,
         payload: {
           ...row.payload,
-          content:
-            typeof row.payload.content === "string"
-              ? wrapEvidence({
-                  source: "run_message",
-                  coordinates: { run_id: runId, seq: row.seq },
-                  body: String(row.payload.content),
-                })
-              : row.payload.content,
+          content: wrapEvidence({
+            source: "run_message",
+            coordinates: { run_id: runId, seq: row.seq },
+            body: row.payload.content,
+          }),
         },
       })),
     };
@@ -567,7 +563,7 @@ export const studioListGroupMessages: StudioTool = {
   async handler(ctx, args) {
     const limit = clampLimit(args.limit, STUDIO_DEFAULT_LIMIT, STUDIO_GROUP_LIST_MAX);
     const offset = cursorOffset(args.cursor);
-    let rows = await ctx.repo.listGroupMessages(ctx.sourceGuildId);
+    let rows = await listGroupMessages(ctx.db, ctx.sourceGuildId);
     if (argString(args, "author_type")) {
       rows = rows.filter((row) => row.author_type === args.author_type);
     }
@@ -605,7 +601,7 @@ export const studioListTaskRevisions: StudioTool = {
     const agent = await resolveHandle(ctx, studioAgentHandleFromArgs(args) || undefined);
     const limit = clampLimit(args.limit, STUDIO_DEFAULT_LIMIT, STUDIO_REVISION_LIST_MAX);
     const offset = cursorOffset(args.cursor);
-    const rows = await ctx.repo.listAgentTaskRevisions(ctx.orgId, String(agent.id));
+    const rows = await listAgentTaskRevisions(ctx.db, ctx.orgId, agent.id);
     const slice = rows.slice(offset, offset + limit);
     return {
       revisions: slice.map((row) => ({
@@ -615,7 +611,7 @@ export const studioListTaskRevisions: StudioTool = {
         content_hash: hashArtifactContent(row.content),
         content: wrapEvidence({
           source: "task_revision",
-          coordinates: { agent_id: String(agent.id), version: row.version },
+          coordinates: { agent_id: agent.id, version: row.version },
           body: capBytes(row.content, STUDIO_TOOL_RESULT_MAX_BYTES)[0],
         }),
       })),
@@ -624,13 +620,13 @@ export const studioListTaskRevisions: StudioTool = {
   },
 };
 
-async function memoryTimelineFor(ctx: StudioToolContext, agent: Record<string, unknown>): Promise<MemoryTimelineEntry[]> {
-  const actor = ctx.artifacts.operatorContext(ctx.orgId, String(ctx.user.id), String(ctx.user.name ?? "operator"), {
+async function memoryTimelineFor(ctx: StudioToolContext, agent: Pick<AgentRow, "id">): Promise<MemoryTimelineEntry[]> {
+  const actor = operatorContext(ctx.orgId, String(ctx.user.id), String(ctx.user.name ?? "operator"), {
     guildId: ctx.sourceGuildId,
-    agentId: String(agent.id),
+    agentId: agent.id,
   });
-  const live = await ctx.artifacts.getMemoryRow(actor, String(agent.id));
-  const revisions = await ctx.artifacts.listRevisions(actor, String(agent.id));
+  const live = await getMemoryRow(ctx.artifacts, actor, agent.id);
+  const revisions = await listRevisions(ctx.artifacts, actor, agent.id);
   return buildMemoryTimeline({ live: { content: live?.content_text ?? "" }, revisions });
 }
 
@@ -703,7 +699,7 @@ export const studioGetMemoryVersion: StudioTool = {
       ...timelineHeader(entry),
       content: wrapEvidence({
         source: "memory_version",
-        coordinates: { agent_id: String(agent.id), revision_id: entry.revision_id, version_index: entry.index },
+        coordinates: { agent_id: agent.id, revision_id: entry.revision_id, version_index: entry.index },
         body: sliced.text,
       }),
       ...(sliced.next_cursor ? { next_cursor: sliced.next_cursor } : {}),
@@ -711,7 +707,7 @@ export const studioGetMemoryVersion: StudioTool = {
       diff_from_previous: diff
         ? wrapEvidence({
             source: "memory_version_diff",
-            coordinates: { agent_id: String(agent.id), version_index: entry.index },
+            coordinates: { agent_id: agent.id, version_index: entry.index },
             body: capBytes(diff, STUDIO_TOOL_RESULT_MAX_BYTES)[0],
           })
         : null,
@@ -734,7 +730,7 @@ export const studioFindArtifacts: StudioTool = {
   ),
   async handler(ctx, args) {
     const limit = clampLimit(args.limit, STUDIO_DEFAULT_LIMIT, STUDIO_ARTIFACT_LIST_MAX);
-    const actor = ctx.artifacts.operatorContext(ctx.orgId, String(ctx.user.id), String(ctx.user.name ?? "operator"), {
+    const actor = operatorContext(ctx.orgId, String(ctx.user.id), String(ctx.user.name ?? "operator"), {
       guildId: ctx.sourceGuildId,
     });
     const findArgs: {
@@ -747,7 +743,7 @@ export const studioFindArtifacts: StudioTool = {
     };
     const level = argString(args, "level");
     if (level === "agent" || level === "guild" || level === "org") findArgs.level = level;
-    const found = await ctx.artifacts.find(actor, findArgs);
+    const found = await findNotes(ctx.artifacts, actor, findArgs);
     const allowed = [];
     for (const item of found.notes) {
       if (await studioReachesPath(ctx, String(item.display_path ?? ""))) allowed.push(item);
@@ -797,12 +793,12 @@ export const studioGetArtifact: StudioTool = {
     if (!(await studioReachesParsed(ctx, parsed))) {
       throw new StudioUnprocessableError("artifact is not in the source guild or the organisation's shared files");
     }
-    const actor = ctx.artifacts.operatorContext(ctx.orgId, String(ctx.user.id), String(ctx.user.name ?? "operator"), {
+    const actor = operatorContext(ctx.orgId, String(ctx.user.id), String(ctx.user.name ?? "operator"), {
       guildId: ctx.sourceGuildId,
     });
     let loaded;
     try {
-      loaded = await ctx.artifacts.getByDisplayPath(actor, displayPath);
+      loaded = await getByDisplayPath(ctx.artifacts, actor, displayPath);
     } catch (error) {
       if (error instanceof ArtifactError) {
         throw new StudioUnprocessableError(error.message);
@@ -863,7 +859,7 @@ export const studioListFileChanges: StudioTool = {
     }
     const limit = clampLimit(args.limit, STUDIO_DEFAULT_LIMIT, STUDIO_REVISION_LIST_MAX);
     const offset = cursorOffset(args.cursor);
-    const rows = await listFileChanges(ctx.repo.pool, ctx.orgId, displayPath);
+    const rows = await listFileChanges(ctx.db, ctx.orgId, displayPath);
     const slice = rows.slice(offset, offset + limit);
     return {
       display_path: displayPath,
@@ -900,7 +896,7 @@ export const studioGetScript: StudioTool = {
     const agent = await resolveHandle(ctx, studioAgentHandleFromArgs(args) || undefined);
     let script: Record<string, unknown>;
     try {
-      script = await ctx.preview.scripts.get(String(agent.id), argString(args, "name"));
+      script = await ctx.preview.scripts.get(agent.id, argString(args, "name"));
     } catch (error) {
       if (error instanceof ScriptError) {
         throw new StudioUnprocessableError(error.message);
@@ -918,7 +914,7 @@ export const studioGetScript: StudioTool = {
       editable: false,
       content: wrapEvidence({
         source: "script",
-        coordinates: { agent_id: String(agent.id), name: String(script.name), source_hash: String(script.source_hash ?? "") },
+        coordinates: { agent_id: agent.id, name: String(script.name), source_hash: String(script.source_hash ?? "") },
         body: sliced.text,
       }),
       ...(sliced.next_cursor ? { next_cursor: sliced.next_cursor } : {}),
@@ -928,7 +924,7 @@ export const studioGetScript: StudioTool = {
 };
 
 async function liveGrantedConnectionIds(ctx: StudioToolContext): Promise<Set<string>> {
-  const live = await ctx.store.getSession(String(ctx.session.id));
+  const live = await getStudioSession(ctx.db, String(ctx.session.id));
   return new Set(grantedConnectionIds(live ?? ctx.session));
 }
 
@@ -984,7 +980,7 @@ export const studioRequestConnectionAccess: StudioTool = {
   ),
   async handler(ctx, args) {
     const connectionId = argString(args, "connection_id");
-    const reach = await reachableConnection(ctx.repo, ctx.orgId, ctx.sourceGuildId, connectionId);
+    const reach = await reachableConnection(ctx.db, ctx.orgId, ctx.sourceGuildId, connectionId);
     if (!reach) {
       throw new StudioUnprocessableError("connection is not reachable from the source guild");
     }
@@ -1024,7 +1020,7 @@ export const studioCallConnectionTool: StudioTool = {
       throw new StudioUnprocessableError("connection tools are unavailable");
     }
     const connectionId = argString(args, "connection_id");
-    const reach = await reachableConnection(ctx.repo, ctx.orgId, ctx.sourceGuildId, connectionId);
+    const reach = await reachableConnection(ctx.db, ctx.orgId, ctx.sourceGuildId, connectionId);
     if (!reach) {
       throw new StudioUnprocessableError("connection is not reachable from the source guild");
     }
@@ -1041,7 +1037,7 @@ export const studioCallConnectionTool: StudioTool = {
         ? (args.arguments as Record<string, unknown>)
         : {};
     const result = await callConnectionTool({
-      repo: ctx.repo,
+      db: ctx.db,
       mcp: ctx.mcp,
       reach,
       tool: argString(args, "tool"),
@@ -1074,7 +1070,7 @@ export const studioCreateTaskDraft: StudioTool = {
       },
       rationale: { type: "string" },
       evidence_refs: { type: "array" },
-      risks: { type: "array" },
+      risks: { type: "array", items: { type: "string" } },
     },
     ["agent_id", "proposed_content", "rationale"],
   ),
@@ -1089,7 +1085,7 @@ function editScope(ctx: StudioToolContext): EditScope {
     sourceGuildId: ctx.sourceGuildId,
     sessionId: String(ctx.session.id),
     user: ctx.user,
-    repo: ctx.repo,
+    db: ctx.db,
     artifacts: ctx.artifacts,
     schedules: ctx.schedules,
   };
@@ -1140,8 +1136,8 @@ export const studioListGuilds: StudioTool = {
   async handler(ctx, args) {
     const limit = clampLimit(args.limit, STUDIO_DEFAULT_LIMIT, STUDIO_GROUP_LIST_MAX);
     const offset = cursorOffset(args.cursor);
-    const others = (await ctx.repo.listGuildsForUser(ctx.orgId, String(ctx.user.id))).filter(
-      (row) => String(row.id) !== String(ctx.sourceGuildId),
+    const others = (await listGuildsForUser(ctx.db, ctx.orgId, String(ctx.user.id))).filter(
+      (row) => row.id !== String(ctx.sourceGuildId),
     );
     // A page ends at the limit or where the next guild would pass the byte cap.
     const guilds: Array<Record<string, unknown>> = [];
@@ -1149,11 +1145,11 @@ export const studioListGuilds: StudioTool = {
     for (const row of others.slice(offset, offset + limit)) {
       const item = {
         guild_id: row.id,
-        name: wrapEvidence({ source: "guild_name", coordinates: { guild_id: String(row.id) }, body: String(row.name ?? "") }),
-        about: wrapEvidence({ source: "guild_about", coordinates: { guild_id: String(row.id) }, body: String(row.about ?? "") }),
+        name: wrapEvidence({ source: "guild_name", coordinates: { guild_id: row.id }, body: String(row.name ?? "") }),
+        about: wrapEvidence({ source: "guild_about", coordinates: { guild_id: row.id }, body: String(row.about ?? "") }),
         description: wrapEvidence({
           source: "guild_description",
-          coordinates: { guild_id: String(row.id) },
+          coordinates: { guild_id: row.id },
           body: String(row.description ?? ""),
         }),
       };
@@ -1265,7 +1261,7 @@ export const studioEditAccess: StudioTool = {
   ),
   async handler(ctx, args) {
     const agent = await resolveHandle(ctx, studioAgentHandleFromArgs(args) || undefined);
-    return accessEditRequest(editScope(ctx), String(agent.id), args);
+    return accessEditRequest(editScope(ctx), agent.id, args);
   },
 };
 

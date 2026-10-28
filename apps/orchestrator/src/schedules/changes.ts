@@ -1,17 +1,16 @@
 import type { ConfigChange, ConfigOperation } from "../db/config-changes.js";
+import type { ScheduleRow } from "../db/schedules.js";
 import { rowTiming } from "./timing.js";
-
-type ScheduleRow = Record<string, unknown>;
 
 // The fields a routine's change log names, each read so two rows compare.
 const ROUTINE_FIELDS: Array<[string, (row: ScheduleRow) => string]> = [
   ["timing", (row) => JSON.stringify(rowTiming(row))],
-  ["description", (row) => String(row.description ?? "")],
-  ["instruction", (row) => String(row.instruction ?? "")],
+  ["description", (row) => row.description],
+  ["instruction", (row) => row.instruction],
 ];
 
 function routineLabel(row: ScheduleRow): string {
-  return `"${String(row.description ?? "").trim() || String(row.id)}"`;
+  return `"${row.description.trim() || row.id}"`;
 }
 
 function joinWords(words: string[]): string {
@@ -25,7 +24,7 @@ function changedFieldNames(before: ScheduleRow, after: ScheduleRow): string[] {
 }
 
 function pauseVerb(before: ScheduleRow, after: ScheduleRow): string | null {
-  if (Boolean(before.paused) === Boolean(after.paused)) {
+  if (before.paused === after.paused) {
     return null;
   }
   return after.paused ? "paused" : "resumed";
@@ -59,7 +58,10 @@ function routineSummary(before: ScheduleRow | null, after: ScheduleRow | null): 
   if (before && after) {
     return routineUpdateSummary(before, after);
   }
-  return after ? `Created ${routineLabel(after)}` : `Deleted ${routineLabel(before ?? {})}`;
+  if (after) {
+    return `Created ${routineLabel(after)}`;
+  }
+  return before ? `Deleted ${routineLabel(before)}` : null;
 }
 
 /**
@@ -71,14 +73,14 @@ export function routineChange(
   after: ScheduleRow | null,
 ): ConfigChange | null {
   const row = after ?? before;
-  const summary = row ? routineSummary(before, after) : null;
+  const summary = routineSummary(before, after);
   if (!row || !summary) {
     return null;
   }
   return {
     targetKind: "routine",
-    targetId: String(row.id),
-    agentId: String(row.agent_id),
+    targetId: row.id,
+    agentId: row.agent_id,
     operation: routineOperation(before, after),
     summary,
   };

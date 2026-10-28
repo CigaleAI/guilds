@@ -2,6 +2,11 @@ import { iso } from "../db/views.js";
 import { guildOperators } from "../guilds/validation.js";
 import { issueItem } from "../issues/index.js";
 import { EventQueue } from "../lib/event.js";
+import { getAgent, type AgentRow } from "../db/agents.js";
+import { getGuild, listGuildViewerIds } from "../db/guilds.js";
+import { listInboxIssues, listInboxMentions, markInboxMentionsRead, type InboxMentionRow } from "../db/issues.js";
+import { listUnreadGroupChats } from "../db/group-chat.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
 
 // An operator's inbox is a view over existing rows, not a table of its own:
 // open issues in the guilds they operate, messages tagging them that are past
@@ -19,43 +24,53 @@ export const INBOX_MENTION_LIMIT = 100;
 export const NOTICE_PREVIEW_LENGTH = 300;
 const EVENT_QUEUE_LIMIT = 256;
 
-export type NotificationsDatabase = {
-  getAgent(agentId: string): Promise<Record<string, unknown> | null>;
-  getGuild(guildId: string): Promise<Record<string, unknown> | null>;
-  listGuildViewerIds(guildId: string): Promise<string[]>;
-  listInboxIssues(orgId: string, userId: string, limit: number): Promise<Array<Record<string, unknown>>>;
-  listInboxMentions(orgId: string, userId: string, limit: number): Promise<Array<Record<string, unknown>>>;
-  listUnreadGroupChats(orgId: string, userId: string): Promise<Array<Record<string, unknown>>>;
-  markInboxMentionsRead(orgId: string, userId: string, now: Date): Promise<string[]>;
-};
+/** The db/ functions a user's inbox is read through, on `db`. */
+export function notificationsDatabase(db: Queryable) {
+  return {
+    getAgent: bindQuery(db, getAgent),
+    getGuild: bindQuery(db, getGuild),
+    listGuildViewerIds: bindQuery(db, listGuildViewerIds),
+    listInboxIssues: bindQuery(db, listInboxIssues),
+    listInboxMentions: bindQuery(db, listInboxMentions),
+    listUnreadGroupChats: bindQuery(db, listUnreadGroupChats),
+    markInboxMentionsRead: bindQuery(db, markInboxMentionsRead),
+  };
+}
+
+export type NotificationsDatabase = ReturnType<typeof notificationsDatabase>;
 
 type Event = [string, Record<string, unknown>];
 type Queue = EventQueue<Event>;
 
 /** An agent as the inbox names it: its id, name and look, with the look's defaults filled in. */
-function agentBrief(agent: Record<string, unknown>): Record<string, unknown> {
+function agentBrief(agent: AgentLook): Record<string, unknown> {
   return {
-    id: String(agent.id),
-    name: String(agent.name ?? ""),
-    avatar_shape: String(agent.avatar_shape || "teardrop"),
-    avatar_color: String(agent.avatar_color || "#7c5cff"),
+    id: agent.id,
+    name: agent.name,
+    avatar_shape: agent.avatar_shape || "teardrop",
+    avatar_color: agent.avatar_color || "#7c5cff",
   };
 }
 
-export function mentionItem(row: Record<string, unknown>): Record<string, unknown> {
-  const agentId = row.author_agent_id ? String(row.author_agent_id) : null;
+/** An agent's id, name and look, as its row or a message's join holds them; a look the join misses is null. */
+type AgentLook = Pick<AgentRow, "id" | "name"> & {
+  avatar_shape: AgentRow["avatar_shape"] | null;
+  avatar_color: AgentRow["avatar_color"] | null;
+};
+
+export function mentionItem(row: InboxMentionRow): Record<string, unknown> {
   return {
     id: row.id,
     guild_id: row.guild_id,
     guild_name: row.guild_name,
-    seq: Number(row.seq),
+    seq: row.seq,
     author_type: row.author_type,
     author_name: row.author_name,
     content: row.content,
     created_at: iso(row.created_at),
-    agent: agentId
+    agent: row.author_agent_id
       ? agentBrief({
-          id: agentId,
+          id: row.author_agent_id,
           name: row.author_name,
           avatar_shape: row.avatar_shape,
           avatar_color: row.avatar_color,
@@ -74,7 +89,7 @@ export function unreadItem(row: Record<string, unknown>): Record<string, unknown
  */
 export function messageNotice(
   message: Record<string, unknown>,
-  agent: Record<string, unknown> | null,
+  agent: AgentLook | null,
 ): Record<string, unknown> {
   return {
     guild_id: String(message.guild_id),

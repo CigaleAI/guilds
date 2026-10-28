@@ -1,9 +1,27 @@
-import type { Repositories } from "../db/repositories.js";
+import type { ScheduleRow } from "../db/schedules.js";
 import { jsonObj } from "../db/json.js";
 import { iso } from "../db/views.js";
 import { rowDescription } from "../schedules/item.js";
 import { describeTiming, rowTiming } from "../schedules/timing.js";
 import { StudioUnprocessableError } from "./errors.js";
+import { listAgents } from "../db/agents.js";
+import {
+  listGuildActivityRuns,
+  listRunActivityStats,
+  listRunActivitySteps,
+  listRunFileChanges,
+  listRunGroupDeliveries,
+  listRunGroupPosts,
+  listRunOpenings,
+  type GuildActivityRunRow,
+  type RunActivityStepRow,
+  type RunGroupDeliveryRow,
+} from "../db/activity.js";
+import type { RunError, RunMetadata } from "../db/schema/index.js";
+import { listSchedulesForGuild } from "../db/schedules.js";
+import type { MessageMetadata } from "../db/schema/index.js";
+import { listGroupMessagesForActivity } from "../db/group-chat.js";
+import type { Queryable } from "../db/pg.js";
 
 // The guild activity ledger: one row per wake (a run of any kind) with what
 // started it, how it was routed, the tools it called, and what it produced,
@@ -141,15 +159,15 @@ export type ActivityInput = {
   until: Date;
   now: Date;
   agents: Array<Record<string, unknown>>;
-  runs: Array<Record<string, unknown>>;
+  runs: GuildActivityRunRow[];
   stats: Array<Record<string, unknown>>;
-  deliveries: Array<Record<string, unknown>>;
+  deliveries: RunGroupDeliveryRow[];
   posts: Array<Record<string, unknown>>;
   changes: Array<Record<string, unknown>>;
-  steps: Array<Record<string, unknown>>;
+  steps: RunActivityStepRow[];
   openings: Array<Record<string, unknown>>;
   messages: Array<Record<string, unknown>>;
-  schedules: Array<Record<string, unknown>>;
+  schedules: ScheduleRow[];
   generating: (runId: string) => boolean;
 };
 
@@ -185,11 +203,6 @@ function num(value: unknown): number | null {
   }
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
-}
-
-function obj(value: unknown): Record<string, unknown> {
-  const parsed = jsonObj(value);
-  return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
 }
 
 function list(value: unknown): unknown[] {
@@ -232,16 +245,15 @@ export function groupPostSeq(content: unknown): number | null {
   return match ? Number(match[1]) : null;
 }
 
-function routingOf(runMetadata: Record<string, unknown>): ActivityRouting | null {
-  const recipients = obj(obj(runMetadata.typesafe).recipients);
-  const source = text(recipients.source);
-  if (!source) {
+function routingOf(runMetadata: RunMetadata): ActivityRouting | null {
+  const recipients = runMetadata.typesafe?.recipients;
+  if (!recipients) {
     return null;
   }
   return {
-    source,
-    choice: text(recipients.choice),
-    confidence: num(recipients.confidence),
+    source: recipients.source,
+    choice: recipients.choice ?? null,
+    confidence: recipients.confidence ?? null,
   };
 }
 
@@ -277,19 +289,19 @@ function wokeOn(message: Record<string, unknown> | undefined, why: WakeReason): 
 }
 
 // The lowest sequence a tag scan reaches back to, exclusive.
-function scanFloor(run: Record<string, unknown>, throughSeq: number): number {
-  return Math.max(num(run.previous_through_seq) ?? 0, throughSeq - TRIGGER_SCAN_MAX);
+function scanFloor(run: GuildActivityRunRow, throughSeq: number): number {
+  return Math.max(run.previous_through_seq ?? 0, throughSeq - TRIGGER_SCAN_MAX);
 }
 
 // The waking row of a run that stored none. A tag always selects its target,
 // so a tagged agent woke on the latest row that tags it; an untagged operator
 // row wakes every member; otherwise the snapshot's latest row decided it.
 function inferWakeSeq(
-  run: Record<string, unknown>,
+  run: GuildActivityRunRow,
   why: WakeReason,
   messagesBySeq: Map<number, Record<string, unknown>>,
 ): number | null {
-  const throughSeq = num(run.group_chat_through_seq);
+  const throughSeq = run.group_chat_through_seq;
   if (throughSeq === null || !SCANNED_REASONS.has(why.reason)) {
     return throughSeq;
   }
@@ -300,44 +312,36 @@ function inferWakeSeq(
 // The public row that woke a group run: the one the run stored, or for an
 // older run the one its tags point to.
 function messageTrigger(
-  run: Record<string, unknown>,
+  run: GuildActivityRunRow,
   agentName: string,
-  delivery: Record<string, unknown>,
+  delivery: MessageMetadata,
   messagesBySeq: Map<number, Record<string, unknown>>,
 ): ActivityTrigger {
-  const routing = routingOf(obj(run.metadata));
+  const routing = routingOf(run.metadata);
   const reason = triggerReason(delivery.you_were_tagged === true, routing, agentName);
-  const stored = num(run.wake_seq);
+  const stored = run.wake_seq;
   return {
     type: "message",
     seq: stored ?? inferWakeSeq(run, { reason, agentName }, messagesBySeq),
-    through_seq: num(run.group_chat_through_seq),
+    through_seq: run.group_chat_through_seq,
     reason,
     routing,
     inferred: stored === null,
   };
 }
 
-function errorsOf(value: unknown, sinceMs: number): ActivityError[] {
-  const out: ActivityError[] = [];
-  for (const entry of list(value)) {
-    const row = obj(entry);
-    const at = text(row.at);
-    const atMs = ms(at);
-    if (atMs !== null && atMs < sinceMs) {
-      continue;
-    }
-    out.push({ operation: text(row.operation), message: text(row.message), at });
-  }
-  return out;
+function errorsOf(errors: RunError[], sinceMs: number): ActivityError[] {
+  return errors
+    .filter((entry) => Date.parse(entry.at) >= sinceMs)
+    .map((entry) => ({ operation: entry.operation, message: entry.message, at: entry.at }));
 }
 
 type WakeSteps = { calls: ActivityToolCall[]; count: number; reply: string | null };
 
 // Each run's tool calls in order, paired with their results, and its last text.
-function stepsByRun(rows: Array<Record<string, unknown>>): Map<string, WakeSteps> {
-  const resultKey = (runId: unknown, callId: unknown) => `${String(runId)}\u0000${String(callId)}`;
-  const results = new Map<string, Record<string, unknown>>();
+function stepsByRun(rows: RunActivityStepRow[]): Map<string, WakeSteps> {
+  const resultKey = (runId: string, callId: string) => `${runId}\u0000${callId}`;
+  const results = new Map<string, RunActivityStepRow>();
   for (const row of rows) {
     if (row.role === "tool" && row.tool_call_id) {
       results.set(resultKey(row.run_id, row.tool_call_id), row);
@@ -348,28 +352,24 @@ function stepsByRun(rows: Array<Record<string, unknown>>): Map<string, WakeSteps
     if (row.role !== "assistant") {
       continue;
     }
-    const runId = String(row.run_id);
+    const runId = row.run_id;
     const steps = byRun.get(runId) ?? { calls: [], count: 0, reply: null };
-    for (const entry of list(row.tool_calls)) {
-      const call = obj(entry);
-      const fn = obj(call.function);
-      const callId = text(call.id);
+    for (const call of row.tool_calls ?? []) {
       steps.count += 1;
       if (steps.calls.length >= ACTIVITY_TOOL_CALLS_MAX) {
         continue;
       }
-      const result = callId ? results.get(resultKey(runId, callId)) : undefined;
-      const args = typeof fn.arguments === "string" ? fn.arguments : JSON.stringify(fn.arguments ?? {});
+      const result = call.id ? results.get(resultKey(runId, call.id)) : undefined;
       steps.calls.push({
-        call_id: callId,
-        name: String(fn.name ?? ""),
-        arguments: preview(args, ACTIVITY_ARGUMENT_CHARS),
-        error: text(result?.error),
+        call_id: call.id || null,
+        name: call.function.name,
+        arguments: preview(call.function.arguments, ACTIVITY_ARGUMENT_CHARS),
+        error: result?.error || null,
         duration_ms: num(result?.duration_ms),
         at: iso(row.created_at),
       });
     }
-    const said = typeof row.text === "string" ? row.text.trim() : "";
+    const said = row.text?.trim() ?? "";
     if (said) {
       steps.reply = preview(said, ACTIVITY_PREVIEW_CHARS);
     }
@@ -383,7 +383,7 @@ export function projectActivity(input: ActivityInput): ActivityView {
   const nowIso = input.now.toISOString();
   const agentsById = new Map(input.agents.map((agent) => [String(agent.id), agent]));
   const statsByRun = new Map(input.stats.map((row) => [String(row.run_id), row]));
-  const deliveryByRun = new Map(input.deliveries.map((row) => [String(row.run_id), obj(row.metadata)]));
+  const deliveryByRun = new Map(input.deliveries.map((row) => [row.run_id, row.metadata]));
   const messagesBySeq = new Map<number, Record<string, unknown>>();
   for (const message of input.messages) {
     const seq = num(message.seq);
@@ -439,10 +439,10 @@ export function projectActivity(input: ActivityInput): ActivityView {
 
   const wakes: ActivityWake[] = [];
   for (const run of input.runs) {
-    const runId = String(run.id);
-    const agentId = String(run.agent_id);
+    const runId = run.id;
+    const agentId = run.agent_id;
     const agent = agentsById.get(agentId);
-    const kind = run.kind === "group" || run.kind === "schedule" ? run.kind : "direct";
+    const kind = run.kind;
     const stats = statsByRun.get(runId);
     const running = input.generating(runId);
     const firstAt = stats?.first_at ?? null;
@@ -451,15 +451,15 @@ export function projectActivity(input: ActivityInput): ActivityView {
       continue;
     }
     const startedAt = kind === "direct" && firstAt !== null ? iso(firstAt) : iso(run.created_at);
-    const lastAt = stats?.last_at ?? run.updated_at ?? run.created_at;
+    const lastAt = stats?.last_at ?? run.updated_at;
     const endedAt = running ? nowIso : iso(lastAt);
     let trigger: ActivityTrigger;
     if (kind === "group") {
       trigger = messageTrigger(run, String(agent?.name ?? ""), deliveryByRun.get(runId) ?? {}, messagesBySeq);
     } else if (kind === "schedule") {
-      trigger = { type: "routine", schedule_id: text(run.schedule_id) };
+      trigger = { type: "routine", schedule_id: run.schedule_id };
     } else {
-      trigger = { type: "direct", user_id: text(run.started_by_user_id) };
+      trigger = { type: "direct", user_id: run.started_by_user_id };
     }
     const posts = postsByRun.get(runId) ?? [];
     const writes = [...(writesByRun.get(runId) ?? []), ...codeWrites(run, endedAt)];
@@ -516,11 +516,11 @@ export function projectActivity(input: ActivityInput): ActivityView {
       avatar_shape: String(agent.avatar_shape ?? ""),
     })),
     routines: input.schedules.map((row) => ({
-      id: String(row.id),
-      agent_id: String(row.agent_id),
+      id: row.id,
+      agent_id: row.agent_id,
       description: rowDescription(row),
       label: describeTiming(rowTiming(row)),
-      instruction: String(row.instruction ?? ""),
+      instruction: row.instruction,
     })),
     messages,
     wakes,
@@ -528,74 +528,63 @@ export function projectActivity(input: ActivityInput): ActivityView {
 }
 
 /** A coding wake's repositories with changes, from `metadata.repos`, as writes of kind `code`. */
-function codeWrites(run: Record<string, unknown>, at: string): ActivityWrite[] {
-  const repos = obj(run.metadata).repos;
-  if (!Array.isArray(repos)) {
-    return [];
-  }
-  return repos.flatMap((raw) => {
-    const repo = obj(raw);
-    const files = num(repo.files_changed) ?? 0;
-    if (!files || typeof repo.name !== "string") {
-      return [];
-    }
-    return [
-      {
-        kind: "code" as const,
-        target: repo.name,
-        display_path: `repos/${repo.name}`,
-        operation: "change",
-        tool_name: null,
-        call_id: null,
-        at,
-        code: {
-          branch: text(repo.branch),
-          files_changed: files,
-          insertions: num(repo.insertions) ?? 0,
-          deletions: num(repo.deletions) ?? 0,
-        },
+function codeWrites(run: GuildActivityRunRow, at: string): ActivityWrite[] {
+  return (run.metadata.repos ?? [])
+    .filter((repo) => repo.files_changed > 0)
+    .map((repo) => ({
+      kind: "code" as const,
+      target: repo.name,
+      display_path: `repos/${repo.name}`,
+      operation: "change",
+      tool_name: null,
+      call_id: null,
+      at,
+      code: {
+        branch: repo.branch,
+        files_changed: repo.files_changed,
+        insertions: repo.insertions,
+        deletions: repo.deletions,
       },
-    ];
-  });
+    }));
 }
 
 /**
  * The sequence after which a group run's waking row lies: just before the
  * row it stored, or the bottom of its tag scan. Null for any other run.
  */
-export function messageFloor(run: Record<string, unknown>): number | null {
-  const throughSeq = num(run.group_chat_through_seq);
+export function messageFloor(run: GuildActivityRunRow): number | null {
+  const throughSeq = run.group_chat_through_seq;
   if (run.kind !== "group" || throughSeq === null) {
     return null;
   }
-  const stored = num(run.wake_seq);
+  const stored = run.wake_seq;
   return stored !== null ? stored - 1 : scanFloor(run, throughSeq);
 }
 
 export async function loadGuildActivity(
-  repo: Repositories,
+  db: Queryable,
   guildId: string,
   window: ActivityWindow & { now?: Date; generating?: (runId: string) => boolean },
 ): Promise<ActivityView> {
   const { since, until } = window;
   const [agents, runs, schedules] = await Promise.all([
-    repo.listAgents(guildId),
-    repo.listGuildActivityRuns(guildId, since, until),
-    repo.listSchedulesForGuild(guildId),
+    listAgents(db, guildId),
+    listGuildActivityRuns(db, guildId, since, until),
+    listSchedulesForGuild(db, guildId),
   ]);
-  const runIds = runs.map((run) => String(run.id));
-  const groupRunIds = runs.filter((run) => run.kind === "group").map((run) => String(run.id));
-  const directRunIds = runs.filter((run) => run.kind === "direct").map((run) => String(run.id));
+  const runIds = runs.map((run) => run.id);
+  const groupRunIds = runs.filter((run) => run.kind === "group").map((run) => run.id);
+  const directRunIds = runs.filter((run) => run.kind === "direct").map((run) => run.id);
   const floors = runs.map(messageFloor).filter((floor): floor is number => floor !== null);
   const afterSeq = floors.length ? Math.min(...floors) : null;
   const [stats, deliveries, posts, changes, steps, openings, messages] = await Promise.all([
-    repo.listRunActivityStats(runIds, since),
-    repo.listRunGroupDeliveries(groupRunIds),
-    repo.listRunGroupPosts(runIds),
-    repo.listRunFileChanges(runIds),
-    repo.listRunActivitySteps(runIds, since),
-    repo.listRunOpenings(directRunIds, since),
-    repo.listGroupMessagesForActivity(guildId, since, until, afterSeq),
+    listRunActivityStats(db, runIds, since),
+    listRunGroupDeliveries(db, groupRunIds),
+    listRunGroupPosts(db, runIds),
+    listRunFileChanges(db, runIds),
+    listRunActivitySteps(db, runIds, since),
+    listRunOpenings(db, directRunIds, since),
+    listGroupMessagesForActivity(db, guildId, since, until, afterSeq),
   ]);
   return projectActivity({
     guildId,

@@ -1,9 +1,13 @@
+import { Type } from "@sinclair/typebox";
+import { getMcpServerBySlug } from "../connectors/servers.js";
+import { HARNESSES } from "../db/schema/index.js";
+import { decode } from "../lib/decode.js";
 import { newId } from "../lib/ids.js";
 import { operatorActor } from "../artifacts/actors.js";
 import { collectTaskEmbeds } from "../artifacts/index.js";
 import type { AccessEntry, ArtifactActor, ArtifactStore } from "../artifacts/index.js";
-import { httpAccess } from "../http/access.js";
-import type { Repositories } from "../db/repositories.js";
+import { rowDisplayPath, type ArtifactRow } from "../artifacts/store.js";
+import { loadAccessView } from "../access/view.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { Schedules } from "../schedules/service.js";
 import { rowTiming } from "../schedules/timing.js";
@@ -18,20 +22,61 @@ import {
   addMissingThinkingLevel,
   secretAliasesOf,
 } from "../agents/validation.js";
-import { HARNESS_INFO, HARNESSES, harnessSecretSource } from "../coding/harnesses.js";
-import { jsonObj } from "../db/json.js";
-import { secretGrants } from "../secrets/access.js";
-import { DEFAULT_AGENT_MESSAGE_LIMIT } from "../guilds/validation.js";
+import { HARNESS_INFO, harnessSecretSource } from "../coding/harnesses.js";
 import { emptyRecipe } from "./minimal.js";
-import { operatorAuthor, parseRecipe, RECIPE_HINT_MAX, type RecipeDocument } from "./schema.js";
+import { parseRecipe } from "./parse.js";
+import {
+  operatorAuthor,
+  RECIPE_HINT_MAX,
+  type RecipeConnection,
+  type RecipeDocument,
+  type RecipeNote,
+  type RecipeRole,
+  type RecipeSecret,
+} from "./schema.js";
 import { recipeNotePath, rewriteGuildTextToRecipeRefs } from "./rewrite.js";
 import { RecipeError } from "./errors.js";
 import { capturedNoteAccess, capturedTableAccess, type CapturedGuild } from "./access.js";
 import { exportManifest } from "../mcp/catalog.js";
+import { mcpDatabase } from "../mcp/index.js";
+import { getAgentTask, listAgents, type GuildAgentRow } from "../db/agents.js";
+import { listSchedules } from "../db/schedules.js";
+import { listSecrets, type SecretRow } from "../db/secrets.js";
+import { listGuildRepositories, type GuildRow } from "../db/guilds.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
+import type { UserRow } from "../db/users.js";
+import { getByDisplayPath, listEmbeddableNotes } from "../artifacts/notes.js";
+import { listAccess } from "../artifacts/access-lists.js";
+import { listCollections } from "../artifacts/collections.js";
+
+/** The db/ functions a guild is captured into a recipe through, on `db`. */
+export function captureDatabase(db: Queryable) {
+  return {
+    ...mcpDatabase(db),
+    listAgents: bindQuery(db, listAgents),
+    getAgentTask: bindQuery(db, getAgentTask),
+    listSchedules: bindQuery(db, listSchedules),
+    getMcpServerBySlug: bindQuery(db, getMcpServerBySlug),
+    listSecrets: bindQuery(db, listSecrets),
+    listGuildRepositories: bindQuery(db, listGuildRepositories),
+  };
+}
+
+/** The artifact functions a capture reads notes, tables, and their access lists through, on `store`. */
+export function captureArtifacts(store: ArtifactStore) {
+  return {
+    getByDisplayPath: bindQuery(store, getByDisplayPath),
+    listAccess: bindQuery(store, listAccess),
+    listCollections: bindQuery(store, listCollections),
+    listEmbeddableNotes: bindQuery(store, listEmbeddableNotes),
+  };
+}
+
+export type CaptureArtifacts = ReturnType<typeof captureArtifacts>;
 
 export type CaptureDeps = {
-  repo: Repositories;
-  artifacts: ArtifactStore;
+  db: ReturnType<typeof captureDatabase>;
+  artifacts: CaptureArtifacts;
   scripts: Scripts;
   schedules: Schedules;
 };
@@ -50,9 +95,9 @@ export function preferRecipeScope(
 }
 
 /** How an agent of `guildId` gets a secret: organisation-wide, through its guild, or granted itself. */
-function secretRecipeScope(secret: Record<string, unknown>, guildId: string): "org" | "guild" | "agent" {
+function secretRecipeScope(secret: SecretRow, guildId: string): "org" | "guild" | "agent" {
   if (secret.org_wide) return "org";
-  return secretGrants(secret).some((grant) => grant.guild_id === guildId) ? "guild" : "agent";
+  return secret.grants.some((grant) => grant.guild_id === guildId) ? "guild" : "agent";
 }
 
 /** The harness keys a role leaves out while unset. */
@@ -81,12 +126,12 @@ function portableSecretAliases(config: Record<string, unknown>): Record<string, 
   return Object.fromEntries(Object.entries(aliases).filter(([variable]) => !HARNESS_TOKEN_VARIABLES.has(variable)));
 }
 
-function clippedHint(value: unknown): string {
-  return String(value ?? "").slice(0, RECIPE_HINT_MAX);
+function clippedHint(value: string | null | undefined): string {
+  return (value ?? "").slice(0, RECIPE_HINT_MAX);
 }
 
 /** The access list of the live note at `displayPath`; empty when there is none. */
-async function noteAccessEntries(artifacts: ArtifactStore, actor: ArtifactActor, displayPath: string): Promise<AccessEntry[]> {
+async function noteAccessEntries(artifacts: CaptureArtifacts, actor: ArtifactActor, displayPath: string): Promise<AccessEntry[]> {
   const found = await artifacts.getByDisplayPath(actor, displayPath);
   return found.row ? artifacts.listAccess(actor, { kind: "note", id: found.row.id }) : [];
 }
@@ -134,324 +179,414 @@ export function portableRoleConfig(
   return out;
 }
 
-export async function captureGuild(
-  deps: CaptureDeps,
-  args: {
-    guild: Record<string, unknown>;
-    user: Record<string, unknown>;
-    includeNotes?: string[];
-  },
-): Promise<RecipeDocument> {
-  const guildId = String(args.guild.id);
-  const orgId = String(args.guild.org_id);
-  const agents = await deps.repo.listAgents(guildId);
-  if (!agents.length) {
-    throw new RecipeError("guild has no agents to capture");
-  }
-  const nameToRole = new Map<string, string>();
-  for (const agent of agents) {
-    nameToRole.set(String(agent.name), String(agent.name));
-  }
-  const actor = operatorActor({
-    orgId,
-    actorId: String(args.user.id),
-    actorName: String(args.user.name ?? "operator"),
-    guildId,
-  });
-  const recipe = emptyRecipe({
-    name: String(args.guild.name),
-    source: { kind: "guild", guild_id: guildId },
-  });
-  recipe.meta.name = String(args.guild.name);
-  recipe.meta.description = String(args.guild.about ?? "");
-  recipe.guild.name_suggestion = String(args.guild.name);
-  recipe.guild.about = String(args.guild.about ?? "");
-  recipe.guild.group_agent_message_limit = Number(args.guild.group_agent_message_limit ?? DEFAULT_AGENT_MESSAGE_LIMIT);
-  recipe.guild.objective = String(args.guild.description ?? "");
+/** A tool as the access view lists it: its name, and whether the agent has it on. */
+const ToolView = Type.Object({ name: Type.String(), enabled: Type.Boolean() });
 
-  const hrefToNoteId = new Map<string, string>();
-  // Every table the guild reaches: its own, and the organisation tables its
-  // organisation's row, its own row, or one of its agents' rows reaches.
-  const captured: CapturedGuild = {
-    guildId,
-    members: new Map(agents.map((agent) => [String(agent.id), String(agent.name)])),
-  };
+/** A server as an agent's access view lists it, with the fields a recipe connection is captured from. */
+const ServerView = Type.Object({
+  slug: Type.String(),
+  enabled: Type.Boolean(),
+  auth: Type.Optional(Type.Unknown()),
+  description: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  setup_hint: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  org_owned: Type.Optional(Type.Boolean()),
+  source_scope: Type.Optional(Type.Unknown()),
+  connection_owner_scope: Type.Optional(Type.Unknown()),
+  tools: Type.Optional(Type.Array(ToolView)),
+});
+
+type ServerView = (typeof ServerView)["static"];
+
+/** The parts of an agent's access view a capture reads: its native tools and its servers. */
+const AgentAccess = Type.Object({
+  tools: Type.Array(ToolView),
+  mcp: Type.Optional(Type.Array(ServerView)),
+});
+
+type AgentAccess = (typeof AgentAccess)["static"];
+
+function uncapturable(problem: string): RecipeError {
+  return new RecipeError(`the guild cannot be captured: unexpected view at ${problem}`);
+}
+
+/** The guild fields a capture reads. */
+export type CapturedGuildRow = Pick<GuildRow, "id" | "org_id" | "name" | "about" | "description" | "group_agent_message_limit">;
+
+/** What a capture works from, and the recipe it writes into while it walks the guild. */
+type Capture = {
+  deps: CaptureDeps;
+  recipe: RecipeDocument;
+  orgId: string;
+  guildId: string;
+  actor: ArtifactActor;
+  agents: GuildAgentRow[];
+  captured: CapturedGuild;
+};
+
+/** The recipe a guild starts from: its name, about and objective, and its group message limit. */
+function guildRecipe(guild: CapturedGuildRow): RecipeDocument {
+  const recipe = emptyRecipe({ name: guild.name, source: { kind: "guild", guild_id: guild.id } });
+  recipe.meta.name = guild.name;
+  recipe.meta.description = guild.about;
+  recipe.guild.name_suggestion = guild.name;
+  recipe.guild.about = guild.about;
+  recipe.guild.group_agent_message_limit = guild.group_agent_message_limit;
+  recipe.guild.objective = guild.description;
+  return recipe;
+}
+
+/**
+ * Every table the guild reaches: its own, and the organisation tables its organisation's row,
+ * its own row, or one of its agents' rows reaches.
+ */
+async function captureCollections(capture: Capture): Promise<void> {
+  const { deps, recipe, actor, guildId } = capture;
   for (const collection of await deps.artifacts.listCollections(actor)) {
+    const table = { name: collection.name, purpose: collection.purpose, columns: collection.columns };
     if (collection.scope === "guild") {
-      if (collection.guild?.id !== guildId) {
-        continue;
+      if (collection.guild?.id === guildId) {
+        recipe.collections.push({ ...table, scope: "guild", guild: "write", writers: [] });
       }
-      recipe.collections.push({
-        name: collection.name,
-        purpose: collection.purpose,
-        columns: collection.columns,
-        scope: "guild",
-        guild: "write",
-        writers: [],
-      });
       continue;
     }
     const entries = await deps.artifacts.listAccess(actor, { kind: "collection", id: collection.id });
-    const reach = capturedTableAccess(entries, captured);
-    if (reach === null) {
-      continue;
-    }
-    recipe.collections.push({
-      name: collection.name,
-      purpose: collection.purpose,
-      columns: collection.columns,
-      scope: "org",
-      ...reach,
-    });
-  }
-
-  for (const agent of agents) {
-    const agentId = String(agent.id);
-    const role = String(agent.name);
-    const config = (jsonObj(agent.config) ?? {}) as Record<string, unknown>;
-    const taskRow = await deps.repo.getAgentTask(orgId, agentId);
-    const taskBody = String(taskRow?.content_text ?? "");
-    const access = await httpAccess(deps.repo, { orgId, guildId, agentId, viewScope: "agent" });
-    const nativeTools = Object.fromEntries(
-      (access.tools as Array<Record<string, unknown>>).map((item) => [String(item.name), Boolean(item.enabled)]),
-    );
-    const scripts = await deps.scripts.listForAgent(agentId);
-    const schedules = await deps.repo.listSchedules(agentId);
-    const browserRequired = Boolean(config.browser);
-    const portable = portableRoleConfig(config, browserRequired);
-    if (scripts.length > Number(portable.max_scripts ?? 0)) {
-      portable.max_scripts = scripts.length;
-    }
-    recipe.roles.push({
-      role,
-      name_suggestion: role,
-      focus: String(agent.focus ?? ""),
-      wake_triggers: String(agent.wake_triggers ?? ""),
-      avatar_shape: String(agent.avatar_shape ?? "teardrop"),
-      avatar_color: String(agent.avatar_color ?? "#7c5cff"),
-      config: portable,
-      task: { body: taskBody, embeds: collectTaskEmbeds(taskBody), author: operatorAuthor() },
-      scripts: scripts.map((script) => ({
-        name: String(script.name),
-        description: String(script.description ?? ""),
-        parameters: (script.parameters as Record<string, unknown> | null) ?? null,
-        source: String(script.source ?? ""),
-        secrets: [],
-        author: operatorAuthor(),
-      })),
-      schedules: schedules.map((row, index) => {
-        const timing = rowTiming(row);
-        return {
-          key: `${role}-${index + 1}`,
-          ...(timing.window === null ? { cron: timing.cron } : { window: timing.window }),
-          description: String(row.description ?? ""),
-          instruction: String(row.instruction ?? ""),
-          author: operatorAuthor(),
-        };
-      }),
-      native_tools: nativeTools,
-      browser: {
-        required: browserRequired,
-        instructions: "",
-        author: operatorAuthor(),
-      },
-    });
-    const mcp = (access.mcp as Array<Record<string, unknown>>) ?? [];
-    for (const server of mcp) {
-      if (!server.enabled && !(server.tools as unknown[] | undefined)?.length) {
-        continue;
-      }
-      if (!server.enabled) {
-        continue;
-      }
-      const slug = String(server.slug);
-      const scope = recipeScope(server.connection_owner_scope ?? server.source_scope);
-      let connection = recipe.connections.find((item) => item.server === slug);
-      if (!connection) {
-        connection = {
-          server: slug,
-          auth: (server.auth as "oauth" | "token" | "none") ?? "token",
-          recommended_scope: scope,
-          hint: clippedHint(server.description),
-          setup: String(server.setup_hint ?? ""),
-          author: operatorAuthor(),
-          roles: {},
-        };
-        if (scope === "agent") {
-          connection.recommended_role = role;
-        }
-        // An organisation's own server travels whole: the box applying the recipe may lack it.
-        if (server.org_owned) {
-          const row = await deps.repo.getMcpServerBySlug(slug, orgId);
-          if (row && row.owner_org_id === orgId) {
-            connection.manifest = exportManifest(row);
-          }
-        }
-        recipe.connections.push(connection);
-      } else {
-        connection.recommended_scope = preferRecipeScope(connection.recommended_scope, scope);
-        if (connection.recommended_scope !== "agent") {
-          delete connection.recommended_role;
-        } else if (!connection.recommended_role) {
-          connection.recommended_role = role;
-        }
-        if (!connection.setup && server.setup_hint) {
-          connection.setup = String(server.setup_hint);
-        }
-        if (!connection.hint && server.description) {
-          connection.hint = clippedHint(server.description);
-        }
-      }
-      const tools = Object.fromEntries(
-        ((server.tools as Array<Record<string, unknown>>) ?? []).map((tool) => [
-          String(tool.name),
-          Boolean(tool.enabled),
-        ]),
-      );
-      connection.roles[role] = { enabled: Boolean(server.enabled), tools };
-    }
-    const harnessTokens = harnessTokenSecrets(config);
-    for (const secret of await deps.repo.listSecrets(orgId, { agentId })) {
-      const name = String(secret.name);
-      if (harnessTokens.has(name)) {
-        continue;
-      }
-      const scope = secretRecipeScope(secret, guildId);
-      let entry = recipe.secrets.find((item) => item.name === name);
-      if (!entry) {
-        entry = {
-          name,
-          description: String(secret.description ?? ""),
-          recommended_scope: scope,
-          roles: [],
-        };
-        if (scope === "agent") {
-          entry.recommended_role = role;
-        }
-        recipe.secrets.push(entry);
-      } else {
-        entry.recommended_scope = preferRecipeScope(entry.recommended_scope, scope);
-        if (entry.recommended_scope !== "agent") {
-          delete entry.recommended_role;
-        } else if (!entry.recommended_role) {
-          entry.recommended_role = role;
-        }
-      }
-      if (!entry.roles.includes(role)) {
-        entry.roles.push(role);
-      }
+    const reach = capturedTableAccess(entries, capture.captured);
+    if (reach !== null) {
+      recipe.collections.push({ ...table, scope: "org", ...reach });
     }
   }
+}
 
-  // Repositories travel by name only: their URLs and connections stay with the guild.
-  recipe.repositories = (await deps.repo.listGuildRepositories(guildId)).map((row) => ({
-    name: String(row.name),
-    purpose: "",
+/** A role's scripts, as its agent holds them. */
+async function captureScripts(capture: Capture, agentId: string): Promise<RecipeRole["scripts"]> {
+  return (await capture.deps.scripts.listForAgent(agentId)).map((script) => ({
+    name: script.name,
+    description: script.description,
+    parameters: script.parameters,
+    source: script.source,
+    secrets: [],
+    author: operatorAuthor(),
   }));
+}
 
-  const include = new Set(args.includeNotes ?? []);
-  for (const role of recipe.roles) {
-    for (const href of role.task.embeds) {
-      include.add(href);
-    }
-  }
-  const notes = await deps.artifacts.listEmbeddableNotes(actor);
-  for (const note of notes) {
-    const display = String(note.display_path ?? "");
-    const key = String(note.key ?? "");
-    if (!include.has(display) && !include.has(key)) {
-      continue;
-    }
-    if (key === "memory.md" || String(note.kind) !== "note") {
-      continue;
-    }
-    const id = newId("nte").slice(0, 16);
-    const seed: RecipeDocument["notes"][number] = {
-      id,
-      level: String(note.level) as "org" | "guild" | "agent",
-      key,
-      body: String(note.content ?? ""),
-      kind: "seed",
+/** A role's routines, keyed by the role and their order. */
+async function captureSchedules(capture: Capture, agentId: string, role: string): Promise<RecipeRole["schedules"]> {
+  return (await capture.deps.db.listSchedules(agentId)).map((row, index) => {
+    const timing = rowTiming(row);
+    return {
+      key: `${role}-${index + 1}`,
+      ...(timing.window === null ? { cron: timing.cron } : { window: timing.window }),
+      description: row.description,
+      instruction: row.instruction,
       author: operatorAuthor(),
-      writers: [],
     };
-    if (seed.level === "agent") {
-      const ownerId = String(note.owner_id ?? "");
-      const owner = agents.find((agent) => String(agent.id) === ownerId);
-      if (owner) {
-        seed.role = String(owner.name);
-      }
-    }
-    Object.assign(seed, capturedNoteAccess(await noteAccessEntries(deps.artifacts, actor, display), seed, captured));
-    hrefToNoteId.set(display, recipeNotePath(seed));
-    recipe.notes.push(seed);
-  }
+  });
+}
 
+/** The role an agent becomes: its config made portable, its task, scripts, routines and native tools. */
+async function captureRole(capture: Capture, agent: GuildAgentRow, access: AgentAccess): Promise<RecipeRole> {
+  const role = agent.name;
+  const config: Record<string, unknown> = agent.config;
+  const taskBody = (await capture.deps.db.getAgentTask(capture.orgId, agent.id))?.content_text ?? "";
+  const scripts = await captureScripts(capture, agent.id);
+  const browserRequired = Boolean(config.browser);
+  const portable = portableRoleConfig(config, browserRequired);
+  if (scripts.length > Number(portable.max_scripts ?? 0)) {
+    portable.max_scripts = scripts.length;
+  }
+  return {
+    role,
+    name_suggestion: role,
+    focus: agent.focus,
+    wake_triggers: agent.wake_triggers,
+    avatar_shape: agent.avatar_shape,
+    avatar_color: agent.avatar_color,
+    config: portable,
+    task: { body: taskBody, embeds: collectTaskEmbeds(taskBody), author: operatorAuthor() },
+    scripts,
+    schedules: await captureSchedules(capture, agent.id, role),
+    native_tools: Object.fromEntries(access.tools.map((item) => [item.name, item.enabled])),
+    browser: { required: browserRequired, instructions: "", author: operatorAuthor() },
+  };
+}
+
+/** The auth a server's connection takes, as the access view names it; token when it names none. */
+function connectionAuth(value: unknown): RecipeConnection["auth"] {
+  return value === "oauth" || value === "none" || value === "token" ? value : "token";
+}
+
+type RecipeScope = "org" | "guild" | "agent";
+
+/** Settles a scope several roles share: the widest one, naming a role only while it stays an agent's. */
+function widenScope(entry: { recommended_scope: RecipeScope; recommended_role?: string }, scope: RecipeScope, role: string): void {
+  entry.recommended_scope = preferRecipeScope(entry.recommended_scope, scope);
+  if (entry.recommended_scope !== "agent") {
+    delete entry.recommended_role;
+  } else if (!entry.recommended_role) {
+    entry.recommended_role = role;
+  }
+}
+
+/** The scope a role reaches a server at: its connection's owner, else the binding that turns it on. */
+function serverScope(server: ServerView): RecipeScope {
+  return recipeScope(server.connection_owner_scope ?? server.source_scope);
+}
+
+/** A recipe connection for a server, as the first role that has it reaches it. */
+async function newConnection(capture: Capture, server: ServerView, role: string): Promise<RecipeConnection> {
+  const scope = serverScope(server);
+  const connection: RecipeConnection = {
+    server: server.slug,
+    auth: connectionAuth(server.auth),
+    recommended_scope: scope,
+    hint: clippedHint(server.description),
+    setup: server.setup_hint ?? "",
+    author: operatorAuthor(),
+    roles: {},
+  };
+  if (scope === "agent") {
+    connection.recommended_role = role;
+  }
+  // An organisation's own server travels whole: the box applying the recipe may lack it.
+  const row = server.org_owned ? await capture.deps.db.getMcpServerBySlug(server.slug, capture.orgId) : null;
+  if (row && row.owner_org_id === capture.orgId) {
+    connection.manifest = exportManifest(row);
+  }
+  return connection;
+}
+
+/** Joins a further role's server to its recipe connection: the wider scope, and the setup and hint it lacked. */
+function joinConnection(connection: RecipeConnection, server: ServerView, role: string): void {
+  widenScope(connection, serverScope(server), role);
+  if (!connection.setup && server.setup_hint) {
+    connection.setup = server.setup_hint;
+  }
+  if (!connection.hint && server.description) {
+    connection.hint = clippedHint(server.description);
+  }
+}
+
+/** The servers a role has on, as recipe connections with the role's tool overlay. */
+async function captureConnections(capture: Capture, servers: ServerView[], role: string): Promise<void> {
+  for (const server of servers.filter((item) => item.enabled)) {
+    let connection = capture.recipe.connections.find((item) => item.server === server.slug);
+    if (connection) {
+      joinConnection(connection, server, role);
+    } else {
+      connection = await newConnection(capture, server, role);
+      capture.recipe.connections.push(connection);
+    }
+    const tools = Object.fromEntries((server.tools ?? []).map((tool) => [tool.name, tool.enabled]));
+    connection.roles[role] = { enabled: server.enabled, tools };
+  }
+}
+
+/** Adds a role to the recipe secret of `secret`'s name, created with the first role that gets it. */
+function captureSecret(capture: Capture, secret: SecretRow, role: string): void {
+  const scope = secretRecipeScope(secret, capture.guildId);
+  let entry: RecipeSecret | undefined = capture.recipe.secrets.find((item) => item.name === secret.name);
+  if (entry) {
+    widenScope(entry, scope, role);
+  } else {
+    entry = { name: secret.name, description: secret.description, recommended_scope: scope, roles: [] };
+    if (scope === "agent") {
+      entry.recommended_role = role;
+    }
+    capture.recipe.secrets.push(entry);
+  }
+  if (!entry.roles.includes(role)) {
+    entry.roles.push(role);
+  }
+}
+
+/** The secrets an agent gets, but a coding agent's harness tokens: those are the operator's own subscription. */
+async function captureSecrets(capture: Capture, agent: GuildAgentRow): Promise<void> {
+  const harnessTokens = harnessTokenSecrets(agent.config);
+  for (const secret of await capture.deps.db.listSecrets(capture.orgId, { agentId: agent.id })) {
+    if (!harnessTokens.has(secret.name)) {
+      captureSecret(capture, secret, agent.name);
+    }
+  }
+}
+
+/** An agent as a role, with the connections and secrets it reaches. */
+async function captureAgent(capture: Capture, agent: GuildAgentRow): Promise<void> {
+  const view = await loadAccessView(capture.deps.db, {
+    orgId: capture.orgId,
+    guildId: capture.guildId,
+    agentId: agent.id,
+    viewScope: "agent",
+  });
+  const access = decode(AgentAccess, view, uncapturable);
+  capture.recipe.roles.push(await captureRole(capture, agent, access));
+  await captureConnections(capture, access.mcp ?? [], agent.name);
+  await captureSecrets(capture, agent);
+}
+
+/** Repositories travel by name only: their URLs and connections stay with the guild. */
+async function captureRepositories(capture: Capture): Promise<void> {
+  const rows = await capture.deps.db.listGuildRepositories(capture.guildId);
+  capture.recipe.repositories = rows.map((row) => ({ name: row.name, purpose: "" }));
+}
+
+/** The seed note a live note becomes, with the role of the agent that owns an agent note. */
+function seedNote(capture: Capture, note: ArtifactRow): RecipeNote {
+  const seed: RecipeNote = {
+    id: newId("nte").slice(0, 16),
+    level: note.level,
+    key: note.key,
+    body: note.content_text ?? "",
+    kind: "seed",
+    author: operatorAuthor(),
+    writers: [],
+  };
+  const owner = note.level === "agent" ? capture.agents.find((agent) => agent.id === note.owner_id) : undefined;
+  if (owner) {
+    seed.role = owner.name;
+  }
+  return seed;
+}
+
+/**
+ * The notes the operator includes and the roles' tasks embed, as seed notes with their access;
+ * an agent's Memory stays behind. Returns each captured note's recipe path by its display path.
+ */
+async function captureNotes(capture: Capture, includeNotes: string[]): Promise<Map<string, string>> {
+  const { deps, actor } = capture;
+  const include = new Set([...includeNotes, ...capture.recipe.roles.flatMap((role) => role.task.embeds)]);
+  const hrefToNoteId = new Map<string, string>();
+  for (const note of await deps.artifacts.listEmbeddableNotes(actor)) {
+    const displayPath = rowDisplayPath(note);
+    const wanted = include.has(displayPath) || include.has(note.key);
+    if (!wanted || note.key === "memory.md" || note.kind !== "note") {
+      continue;
+    }
+    const seed = seedNote(capture, note);
+    const entries = await noteAccessEntries(deps.artifacts, actor, displayPath);
+    Object.assign(seed, capturedNoteAccess(entries, seed, capture.captured));
+    hrefToNoteId.set(displayPath, recipeNotePath(seed));
+    capture.recipe.notes.push(seed);
+  }
+  return hrefToNoteId;
+}
+
+/** Points the recipe's text at its own roles and notes: tasks, routines, scripts and note bodies. */
+function rewriteRefs(recipe: RecipeDocument, refs: { nameToRole: Map<string, string>; hrefToNoteId: Map<string, string> }): void {
+  const rewrite = (text: string) => rewriteGuildTextToRecipeRefs(text, refs.nameToRole, refs.hrefToNoteId);
   for (const role of recipe.roles) {
-    role.task.body = rewriteGuildTextToRecipeRefs(role.task.body, nameToRole, hrefToNoteId);
-    role.task.embeds = role.task.embeds.map((href) => hrefToNoteId.get(href) ?? href);
+    role.task.body = rewrite(role.task.body);
+    role.task.embeds = role.task.embeds.map((href) => refs.hrefToNoteId.get(href) ?? href);
     for (const schedule of role.schedules) {
-      schedule.instruction = rewriteGuildTextToRecipeRefs(schedule.instruction, nameToRole, hrefToNoteId);
+      schedule.instruction = rewrite(schedule.instruction);
     }
     for (const script of role.scripts) {
-      script.source = rewriteGuildTextToRecipeRefs(script.source, nameToRole, hrefToNoteId);
+      script.source = rewrite(script.source);
     }
   }
   for (const note of recipe.notes) {
-    note.body = rewriteGuildTextToRecipeRefs(note.body, nameToRole, hrefToNoteId);
+    note.body = rewrite(note.body);
   }
-  if (recipe.roles.length === 1) {
-    const only = recipe.roles[0];
-    if (only && !recipe.design.specialization.some((item) => item.role === only.role)) {
-      recipe.design.specialization.push({
+}
+
+/** A guild of one role already runs as that role: the design records the specialization as accepted. */
+function designSpecialization(recipe: RecipeDocument): void {
+  const only = recipe.roles.length === 1 ? recipe.roles[0] : undefined;
+  if (only && !recipe.design.specialization.some((item) => item.role === only.role)) {
+    recipe.design.specialization.push({
+      proposed_by: "operator",
+      accepted: true,
+      role: only.role,
+      reason: "other",
+      detail: "Captured from a live guild that already runs as this single role.",
+    });
+  }
+}
+
+/** A guild of several roles hands off from its first role to its second, within its group message limit. */
+function designHandoff(recipe: RecipeDocument): void {
+  const [from, to] = recipe.roles;
+  if (from && to && !recipe.design.handoffs.length) {
+    recipe.design.handoffs.push({
+      proposed_by: "operator",
+      accepted: true,
+      from: from.role,
+      to: to.role,
+      kind: "tagged",
+      budget: recipe.guild.group_agent_message_limit,
+    });
+  }
+}
+
+/** Each routine a role runs, as an accepted design routine. */
+function designRoutines(recipe: RecipeDocument, role: RecipeRole): void {
+  for (const schedule of role.schedules) {
+    if (!recipe.design.routines.some((item) => item.key === schedule.key)) {
+      recipe.design.routines.push({
         proposed_by: "operator",
         accepted: true,
-        role: only.role,
-        reason: "other",
-        detail: "Captured from a live guild that already runs as this single role.",
-      });
-    }
-  }
-  if (recipe.roles.length > 1 && !recipe.design.handoffs.length) {
-    const from = recipe.roles[0];
-    const to = recipe.roles[1];
-    if (from && to) {
-      recipe.design.handoffs.push({
-        proposed_by: "operator",
-        accepted: true,
-        from: from.role,
-        to: to.role,
-        kind: "tagged",
-        budget: recipe.guild.group_agent_message_limit,
-      });
-    }
-  }
-  for (const role of recipe.roles) {
-    for (const schedule of role.schedules) {
-      if (!recipe.design.routines.some((item) => item.key === schedule.key)) {
-        recipe.design.routines.push({
-          proposed_by: "operator",
-          accepted: true,
-          key: schedule.key,
-          role: role.role,
-          cadence: schedule.cron ?? (schedule.window ? describeWindow(schedule.window) : ""),
-          dedupe_key: "key",
-        });
-      }
-    }
-    if (
-      (role.browser.required || Boolean(role.config.browser)) &&
-      !recipe.design.browser.some((item) => item.role === role.role)
-    ) {
-      recipe.design.browser.push({
-        proposed_by: "operator",
-        accepted: true,
+        key: schedule.key,
         role: role.role,
-        site: "",
-        viable: true,
-        login_failure_policy: "pause the routine and ask the operator to log in again",
+        cadence: schedule.cron ?? (schedule.window ? describeWindow(schedule.window) : ""),
+        dedupe_key: "key",
       });
     }
   }
-  return parseRecipe(recipe);
+}
+
+/** A role that browses, as an accepted design browser login. */
+function designBrowser(recipe: RecipeDocument, role: RecipeRole): void {
+  const browses = role.browser.required || Boolean(role.config.browser);
+  if (browses && !recipe.design.browser.some((item) => item.role === role.role)) {
+    recipe.design.browser.push({
+      proposed_by: "operator",
+      accepted: true,
+      role: role.role,
+      site: "",
+      viable: true,
+      login_failure_policy: "pause the routine and ask the operator to log in again",
+    });
+  }
+}
+
+/** The design a live guild already runs by, recorded as accepted decisions. */
+function captureDesign(recipe: RecipeDocument): void {
+  designSpecialization(recipe);
+  designHandoff(recipe);
+  for (const role of recipe.roles) {
+    designRoutines(recipe, role);
+    designBrowser(recipe, role);
+  }
+}
+
+/**
+ * A portable recipe of a live guild: its roles with their tasks, scripts, routines and access, the
+ * tables and notes it reaches, its connections, secrets and repositories, and the design it runs by.
+ */
+export async function captureGuild(
+  deps: CaptureDeps,
+  source: { guild: CapturedGuildRow; user: UserRow; includeNotes?: string[] },
+): Promise<RecipeDocument> {
+  const { guild, user } = source;
+  const agents = await deps.db.listAgents(guild.id);
+  if (!agents.length) {
+    throw new RecipeError("guild has no agents to capture");
+  }
+  const capture: Capture = {
+    deps,
+    recipe: guildRecipe(guild),
+    orgId: guild.org_id,
+    guildId: guild.id,
+    actor: operatorActor({ orgId: guild.org_id, actorId: user.id, actorName: user.name, guildId: guild.id }),
+    agents,
+    captured: { guildId: guild.id, members: new Map(agents.map((agent) => [agent.id, agent.name])) },
+  };
+  await captureCollections(capture);
+  for (const agent of agents) {
+    await captureAgent(capture, agent);
+  }
+  await captureRepositories(capture);
+  const hrefToNoteId = await captureNotes(capture, source.includeNotes ?? []);
+  rewriteRefs(capture.recipe, { nameToRole: new Map(agents.map((agent) => [agent.name, agent.name])), hrefToNoteId });
+  captureDesign(capture.recipe);
+  return parseRecipe(capture.recipe);
 }

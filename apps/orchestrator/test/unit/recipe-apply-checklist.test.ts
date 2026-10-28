@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { blockingApplySteps, browserLoginAgentIds, checklistFromPlan, configFromRecipeRole, deferLaunchSteps, prepareRecipeForApply, skipApplyChecklistStep } from "../../src/recipes/apply.js";
+import { blockingApplySteps, browserLoginAgentIds, checklistFromPlan, deferLaunchSteps, skipApplyChecklistStep } from "../../src/recipes/checklist.js";
+import { parseRecipe } from "../../src/recipes/parse.js";
+import { configFromRecipeRole, prepareRecipeForApply } from "../../src/recipes/prepare.js";
 import { TEST_MODEL } from "../helpers/models.js";
 import {
   DEFAULT_MAX_STEPS,
@@ -8,19 +10,37 @@ import {
   DEFAULT_TEMPERATURE,
 } from "../../src/agents/validation.js";
 import { operatorAuthor, linkedInNotionRecipe, huskLeadMatcherRecipe } from "../helpers/recipe-docs.js";
-import { parseRecipe } from "../../src/recipes/schema.js";
 import { validateRecipe } from "../../src/recipes/validate.js";
+import type { ApplyPlan, PlannedConnection } from "../../src/db/schema/index.js";
+
+function applyPlan(overrides: Partial<ApplyPlan> = {}): ApplyPlan {
+  return { names: [], connections: [], secrets: [], collections: [], activate_keys: [], ...overrides };
+}
+
+/** A connection the operator still creates on its checklist step. */
+function plannedConnection(server: string, setup: string): PlannedConnection {
+  return {
+    server,
+    auth: "oauth",
+    recommended_scope: "guild",
+    reusable: [],
+    action: "create",
+    connection_id: null,
+    setup,
+    resources: [],
+  };
+}
 
 test("ready apply names agents whose browser login was deferred", () => {
   const deferred = deferLaunchSteps([
-    { id: "browser:watcher", kind: "browser", role: "watcher", status: "open" },
-    { id: "browser:writer", kind: "browser", role: "writer", status: "confirmed", resolution: "done" },
-    { id: "activate", kind: "activate", status: "open" },
+    { id: "browser:watcher", kind: "browser", title: "Log in", closure: "confirmed", role: "watcher", status: "open" },
+    { id: "browser:writer", kind: "browser", title: "Log in", closure: "confirmed", role: "writer", status: "confirmed", resolution: "done" },
+    { id: "activate", kind: "activate", title: "Activate", closure: "confirmed", status: "open" },
   ]);
   assert.deepEqual(
     browserLoginAgentIds({
       status: "ready",
-      plan: { names: [{ role: "watcher", agent_id: "a_watch" }, { role: "writer", agent_id: "a_write" }] },
+      plan: applyPlan({ names: [{ role: "watcher", name: "watch", agent_id: "a_watch" }, { role: "writer", name: "write", agent_id: "a_write" }] }),
       checklist: deferred,
     }),
     ["a_watch"],
@@ -28,7 +48,7 @@ test("ready apply names agents whose browser login was deferred", () => {
   assert.deepEqual(
     browserLoginAgentIds({
       status: "checklist",
-      plan: { names: [{ role: "watcher", agent_id: "a_watch" }] },
+      plan: applyPlan({ names: [{ role: "watcher", name: "watch", agent_id: "a_watch" }] }),
       checklist: deferred,
     }),
     [],
@@ -38,10 +58,7 @@ test("ready apply names agents whose browser login was deferred", () => {
 
 test("apply checklist defers browser login until after apply", () => {
   const recipe = linkedInNotionRecipe(operatorAuthor());
-  const steps = checklistFromPlan(recipe, {
-    connections: [{ server: "notion", action: "create", setup: "Connect Notion." }],
-    secrets: [],
-  });
+  const steps = checklistFromPlan(recipe, applyPlan({ connections: [plannedConnection("notion", "Connect Notion.")] }));
   const browser = steps.find((item) => item.id === "browser:watcher");
   assert.ok(browser);
   assert.equal(browser.kind, "browser");
@@ -65,10 +82,7 @@ test("apply checklist defers browser login until after apply", () => {
 
 test("skipping a connection also skips its overlays and does not block launch", () => {
   const recipe = linkedInNotionRecipe(operatorAuthor());
-  const steps = checklistFromPlan(recipe, {
-    connections: [{ server: "notion", action: "create", setup: "Connect Notion." }],
-    secrets: [],
-  });
+  const steps = checklistFromPlan(recipe, applyPlan({ connections: [plannedConnection("notion", "Connect Notion.")] }));
   const skipped = skipApplyChecklistStep(steps, "conn:notion");
   const notion = skipped.checklist.find((item) => item.id === "conn:notion");
   const overlays = skipped.checklist.find((item) => item.id === "overlays:notion");
@@ -85,7 +99,7 @@ test("apply fills sparse builder config so the browser can start", () => {
   sparse.roles[0]!.config = { browser: true };
   sparse.roles[0]!.browser.required = true;
   assert.equal(configFromRecipeRole(sparse.roles[0]!).model, "");
-  const filled = configFromRecipeRole(sparse.roles[0]!, TEST_MODEL);
+  const filled = configFromRecipeRole(sparse.roles[0]!, { model: TEST_MODEL });
   assert.equal(filled.model, TEST_MODEL);
   assert.equal(filled.browser, true);
   assert.equal(filled.temperature, DEFAULT_TEMPERATURE);
@@ -104,7 +118,7 @@ test("a recipe's repositories add a GitHub login and a check per repository", ()
       { name: "web", purpose: "" },
     ],
   });
-  const steps = checklistFromPlan(recipe, { connections: [], secrets: [] });
+  const steps = checklistFromPlan(recipe, applyPlan());
   const github = steps.find((item) => item.id === "conn:github");
   assert.equal(github?.kind, "connection");
   assert.equal(github?.closure, "verified");
@@ -129,10 +143,7 @@ test("a recipe's repositories add a GitHub login and a check per repository", ()
 
   // A recipe that already lists GitHub among its connections keeps that one step, which also
   // says what the repositories need.
-  const listed = checklistFromPlan(recipe, {
-    connections: [{ server: "github", action: "create", setup: "Install the App." }],
-    secrets: [],
-  });
+  const listed = checklistFromPlan(recipe, applyPlan({ connections: [plannedConnection("github", "Install the App.")] }));
   assert.equal(listed.filter((item) => item.id === "conn:github").length, 1);
   assert.match(String(listed.find((item) => item.id === "conn:github")?.setup), /^Install the App\. .*Commit author email/);
 });
@@ -150,18 +161,18 @@ test("apply gives a coding role the harness chosen, else the recipe's, and no ot
   const role = recipe.roles[0]!;
   role.config = { coding: true, harness: "codex" };
   assert.equal(configFromRecipeRole(role).harness, "codex");
-  assert.equal(configFromRecipeRole(role, undefined, "cursor").harness, "cursor");
+  assert.equal(configFromRecipeRole(role, { harness: "cursor" }).harness, "cursor");
   role.config = { coding: true };
   assert.equal(configFromRecipeRole(role).harness, null);
   role.config = { coding: false, harness: "codex" };
-  assert.equal(configFromRecipeRole(role, undefined, "cursor").harness, null);
+  assert.equal(configFromRecipeRole(role, { harness: "cursor" }).harness, null);
   role.config = { coding: true, harness: "claude-code", harness_model: "opus" };
   assert.equal(configFromRecipeRole(role).harness_model, "opus");
-  assert.equal(configFromRecipeRole(role, undefined, "claude-code").harness_model, "opus");
-  assert.equal(configFromRecipeRole(role, undefined, "codex").harness_model, null, "another harness takes its default");
+  assert.equal(configFromRecipeRole(role, { harness: "claude-code" }).harness_model, "opus");
+  assert.equal(configFromRecipeRole(role, { harness: "codex" }).harness_model, null, "another harness takes its default");
   role.config = { coding: true, harness: "codex", harness_model: "gpt-5.6-terra", harness_effort: "ultra" };
   assert.equal(configFromRecipeRole(role).harness_effort, "ultra");
-  assert.equal(configFromRecipeRole(role, undefined, "claude-code").harness_effort, null, "another harness takes its default");
+  assert.equal(configFromRecipeRole(role, { harness: "claude-code" }).harness_effort, null, "another harness takes its default");
   role.config = { coding: true, harness: "codex", harness_model: "gpt-6-luna", harness_effort: "ultra" };
   assert.equal(configFromRecipeRole(role).harness_effort, null, "an effort its model does not run at");
   role.config = { coding: true, harness: "codex", harness_effort: "turbo" };

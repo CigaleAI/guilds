@@ -1,29 +1,45 @@
 import { isoOrNull } from "../db/views.js";
-import { jsonObj } from "../db/json.js";
+import type { McpConnectionRow } from "../db/mcp.js";
+import type { ConnectionSettings } from "../db/schema/index.js";
+import { awaitingSettings } from "../connectors/login.js";
+import type { LoadedConnector } from "../connectors/load.js";
 import { connectorFacts } from "../connectors/view.js";
 
-export function serverItem(row: Record<string, unknown>): Record<string, unknown> {
-  const config = jsonObj(row.config) as { url?: unknown } | null;
+export function serverItem(row: LoadedConnector): Record<string, unknown> {
   return {
     id: row.id,
     slug: row.slug,
     display_name: row.display_name,
     transport: row.transport,
-    config: typeof config?.url === "string" ? { url: config.url } : {},
+    config: row.config.url === undefined ? {} : { url: row.config.url },
     auth: row.auth,
-    description: row.description || "",
-    limitations: row.limitations ?? null,
-    setup_hint: row.setup_hint ?? null,
-    enabled: row.enabled !== false,
-    owner_org_id: row.owner_org_id ?? null,
-    tool_prefix: row.tool_prefix ?? row.slug,
-    oauth_strategy: row.oauth_strategy ?? (row.auth === "oauth" ? "dynamic" : "none"),
+    description: row.description,
+    limitations: row.limitations,
+    setup_hint: row.setup_hint,
+    enabled: row.enabled,
+    owner_org_id: row.owner_org_id,
+    tool_prefix: row.tool_prefix,
+    oauth_strategy: row.oauth_strategy,
     ...connectorFacts(row),
   };
 }
 
-export function connectionMetadata(row: Record<string, unknown>): Record<string, unknown> {
-  const settings = jsonObj(row.settings);
+/** A login as the API shows it: its owner, its state, and its settings, without its credentials. */
+export type ConnectionView = {
+  id: string;
+  mcp_server_id: string;
+  owner_scope: McpConnectionRow["owner_scope"];
+  owner_id: string | null;
+  account_hint: string;
+  status: McpConnectionRow["status"];
+  created_at: string | null;
+  updated_at: string | null;
+  rotated_at: string | null;
+  settings: ConnectionSettings;
+  needs_settings: boolean;
+};
+
+export function connectionMetadata(row: McpConnectionRow): ConnectionView {
   return {
     id: row.id,
     mcp_server_id: row.mcp_server_id,
@@ -34,8 +50,8 @@ export function connectionMetadata(row: Record<string, unknown>): Record<string,
     created_at: isoOrNull(row.created_at),
     updated_at: isoOrNull(row.updated_at),
     rotated_at: isoOrNull(row.rotated_at),
-    settings: settings && typeof settings === "object" && !Array.isArray(settings) ? settings : {},
-    needs_settings: row.status === "pending" && !row.oauth_state,
+    settings: row.settings,
+    needs_settings: awaitingSettings(row),
   };
 }
 

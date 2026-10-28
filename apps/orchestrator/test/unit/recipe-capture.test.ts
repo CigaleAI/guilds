@@ -1,17 +1,17 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { TEST_MODEL } from "../helpers/models.js";
-import {
-  captureGuild,
+import { captureGuild,
   portableRoleConfig,
   preferRecipeScope,
   recipeScope,
-  type CaptureDeps,
-} from "../../src/recipes/capture.js";
-import type { ArtifactStore } from "../../src/artifacts/index.js";
-import type { Repositories } from "../../src/db/repositories.js";
+  type CaptureDeps, type CaptureArtifacts } from "../../src/recipes/capture.js";
 import type { Scripts } from "../../src/scripts/catalog.js";
 import type { Schedules } from "../../src/schedules/service.js";
+import { userRow } from "../helpers/users.js";
+import { rowDisplayPath, type ArtifactRow } from "../../src/artifacts/store.js";
+import type { ArtifactLevel } from "../../src/artifacts/index.js";
+import { artifactRow, noteRowAt } from "../helpers/artifacts.js";
 
 const GUILD = {
   id: "guild_live",
@@ -22,7 +22,7 @@ const GUILD = {
   group_agent_message_limit: 12,
 };
 
-const USER = { id: "user_operator", name: "operator" };
+const USER = userRow();
 
 const SEEN_MAIL_COLUMNS = [
   { name: "thread_id", type: "text", description: "mail thread id", required: true, unique: true },
@@ -62,7 +62,7 @@ const DEFAULT_ACCESS: Record<string, AccessRow[]> = {
 function captureDeps(options: {
   agents?: Array<Record<string, unknown>>;
   task?: string;
-  notes?: Array<Record<string, unknown>>;
+  notes?: ArtifactRow[];
   collections?: Array<Record<string, unknown>>;
   bindings?: Array<Record<string, unknown>>;
   access?: Record<string, AccessRow[]>;
@@ -103,16 +103,21 @@ function captureDeps(options: {
     },
   ];
   return {
-    repo: {
+    db: {
       listAgents: async () => agents,
       getAgentTask: async (_orgId: string, agentId: string) =>
         agentId === "a_scout"
-          ? { content_text: options.task ?? "Ping @scout and keep @user. See ![[guild/playbook.md]]" }
+          ? { content_text: options.task ?? "Ping @scout and keep @user. See ![[org/org_1/guilds/guild_live/playbook.md]]" }
           : { content_text: "Draft the reply." },
       listSchedules: async (agentId: string) =>
         agentId === "a_scout"
           ? (options.schedules ?? [
-              { cron: "*/15 * * * *", description: "Poll", instruction: "Ask @writer after @scout." },
+              {
+                cron: "*/15 * * * *",
+                wake_window: null,
+                description: "Poll",
+                instruction: "Ask @writer after @scout.",
+              },
             ])
           : [],
       listBindingsCovering: async () => options.bindings ?? [],
@@ -129,10 +134,10 @@ function captureDeps(options: {
       listMcpServers: async () => options.servers ?? [],
       listMcpTools: async () => options.tools ?? [],
       listMcpCatalogTools: async () => options.tools ?? [],
-    } as unknown as Repositories,
+    } as never,
     artifacts: {
       getByDisplayPath: async (_actor: unknown, displayPath: string) => {
-        const note = (options.notes ?? []).find((item) => item.display_path === displayPath);
+        const note = (options.notes ?? []).find((item) => rowDisplayPath(item) === displayPath);
         return note ? { row: { id: note.id } } : {};
       },
       listCollections: async () =>
@@ -145,23 +150,10 @@ function captureDeps(options: {
         (options.access ?? DEFAULT_ACCESS)[target.id] ?? [],
       listEmbeddableNotes: async () =>
         options.notes ?? [
-          {
-            display_path: "guild/playbook.md",
-            key: "playbook.md",
-            kind: "note",
-            level: "guild",
-            content: "Hand off to @writer.",
-          },
-          {
-            display_path: "agent/a_scout/memory.md",
-            key: "memory.md",
-            kind: "note",
-            level: "agent",
-            owner_id: "a_scout",
-            content: "lived memory",
-          },
+          noteRowAt("org/org_1/guilds/guild_live/playbook.md", "Hand off to @writer."),
+          noteRowAt("org/org_1/agents/a_scout/memory.md", "lived memory"),
         ],
-    } as unknown as ArtifactStore,
+    } as unknown as CaptureArtifacts,
     scripts: {
       listForAgent: async (agentId: string) =>
         agentId === "a_scout"
@@ -281,15 +273,8 @@ test("captureGuild carries what each note's access list gives the guild and its 
     guild_id: "guild_other",
     guild_name: "other",
   };
-  const note = (id: string, level: string, key: string, ownerId = "") => ({
-    id,
-    display_path: `${level}/${key}`,
-    key,
-    kind: "note",
-    level,
-    owner_id: ownerId,
-    content: "Body.",
-  });
+  const note = (id: string, level: ArtifactLevel, key: string, ownerId = "org_1") =>
+    artifactRow({ id, level, key, owner_id: ownerId, content_text: "Body." });
   const recipe = await captureGuild(
     captureDeps({
       notes: [
@@ -322,6 +307,9 @@ test("captureGuild carries what each note's access list gives the guild and its 
     // an agent note nobody else reaches carries no guild mode
     "own.md": [null, []],
   });
+  // an agent note is the role of the agent that owns it
+  const roles = Object.fromEntries(recipe.notes.map((item) => [item.key, item.role ?? null]));
+  assert.deepEqual(roles, { "glossary.md": null, "open.md": null, "rules.md": null, "map.md": "scout", "own.md": "writer" });
 });
 
 test("captureGuild lists the guild's repositories by name, without their URLs", async () => {
@@ -356,6 +344,7 @@ test("captureGuild records a single-role specialization and org connector scope"
           display_name: "Notion",
           publication_state: "published",
           auth: "oauth",
+          config: {},
           description: "Workspace",
           setup_hint: "Connect Notion at organisation scope.",
         },

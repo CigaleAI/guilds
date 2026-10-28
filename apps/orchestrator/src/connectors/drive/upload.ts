@@ -1,13 +1,15 @@
 import path from "node:path";
 import { AgentFileError, readAgentFile } from "../../lib/agent-file.js";
 import { DRIVE_FOLDER_MIME, DriveFolderError, driveJson, type DriveClientOptions } from "./folder.js";
+import type { ToolInputSchema } from "../../db/schema/index.js";
+import { DriveFile } from "./responses.js";
 
 export const MAX_DRIVE_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 export const DRIVE_CREATE_FILE_DESCRIPTION =
   "Create a file or folder in the connected Drive folder. Pass file_path in your home (absolute, or relative to it) for file bytes; the orchestrator reads and encodes them. Do not pass base64. Small UTF-8 text may use textContent. To create a folder, set title and contentMimeType application/vnd.google-apps.folder.";
 
-export const DRIVE_CREATE_FILE_SCHEMA: Record<string, unknown> = {
+export const DRIVE_CREATE_FILE_SCHEMA: ToolInputSchema = {
   type: "object",
   properties: {
     title: { type: "string", description: "File or folder name." },
@@ -121,17 +123,39 @@ function googleConvertedMimeType(contentMimeType: string): string {
   return TEXT_TO_GOOGLE_DOC;
 }
 
-function createdFileJson(payload: Record<string, unknown>): string {
-  const id = typeof payload.id === "string" ? payload.id : "";
-  const parents = Array.isArray(payload.parents)
-    ? payload.parents.filter((item): item is string => typeof item === "string" && Boolean(item))
-    : [];
+function createdFileJson(payload: DriveFile): string {
   return JSON.stringify({
-    id,
-    title: typeof payload.name === "string" ? payload.name : "",
-    parentId: parents[0] ?? "",
-    mimeType: typeof payload.mimeType === "string" ? payload.mimeType : "",
+    id: payload.id ?? "",
+    title: payload.name ?? "",
+    parentId: (payload.parents ?? []).find(Boolean) ?? "",
+    mimeType: payload.mimeType ?? "",
   });
+}
+
+/** The bytes a create uploads: its encoded file, else its text. */
+function uploadBytes(prepared: Record<string, unknown>): Buffer | null {
+  const base64 = argString(prepared, "base64Content", "base64_content");
+  if (base64) {
+    return Buffer.from(base64, "base64");
+  }
+  if (typeof prepared.textContent === "string") {
+    return Buffer.from(prepared.textContent, "utf8");
+  }
+  if (typeof prepared.text_content === "string") {
+    return Buffer.from(prepared.text_content, "utf8");
+  }
+  return null;
+}
+
+/** The type Drive stores an upload as: its own when conversion is turned off, else the converted one. */
+function storedMimeType(prepared: Record<string, unknown>, contentMimeType: string): string {
+  const disableConversion =
+    prepared.disableConversionToGoogleType === true || prepared.disable_conversion_to_google_type === true;
+  return disableConversion ? contentMimeType : googleConvertedMimeType(contentMimeType);
+}
+
+function jsonPost(body: Record<string, unknown>): { method: string; headers: Record<string, string>; body: string } {
+  return { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
 }
 
 function multipartBody(
@@ -172,35 +196,23 @@ export async function createDriveFile(
   const metadata: Record<string, unknown> = { name: title, parents: [parentId] };
   if (contentMimeType === DRIVE_FOLDER_MIME) {
     metadata.mimeType = DRIVE_FOLDER_MIME;
-    const payload = await driveJson(
-      accessToken,
-      "https://www.googleapis.com/drive/v3/files?supportsAllDrives=true&fields=id,name,mimeType,parents",
-      options,
-      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(metadata) },
-    );
-    return createdFileJson(payload);
+    const url = "https://www.googleapis.com/drive/v3/files?supportsAllDrives=true&fields=id,name,mimeType,parents";
+    return createdFileJson(await driveJson(accessToken, { url, schema: DriveFile, init: jsonPost(metadata) }, options));
   }
-  let bytes: Buffer | null = null;
-  const base64 = argString(prepared, "base64Content", "base64_content");
-  if (base64) {
-    bytes = Buffer.from(base64, "base64");
-  } else if (typeof prepared.textContent === "string") {
-    bytes = Buffer.from(prepared.textContent, "utf8");
-  } else if (typeof prepared.text_content === "string") {
-    bytes = Buffer.from(prepared.text_content, "utf8");
-  }
+  const bytes = uploadBytes(prepared);
   if (!bytes) {
     throw new DriveFolderError("create_file requires file_path or textContent");
   }
-  const disableConversion =
-    prepared.disableConversionToGoogleType === true || prepared.disable_conversion_to_google_type === true;
-  metadata.mimeType = disableConversion ? contentMimeType : googleConvertedMimeType(contentMimeType);
+  metadata.mimeType = storedMimeType(prepared, contentMimeType);
   const part = multipartBody(metadata, bytes, contentMimeType);
   const payload = await driveJson(
     accessToken,
-    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name,mimeType,parents",
+    {
+      url: "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name,mimeType,parents",
+      schema: DriveFile,
+      init: { method: "POST", headers: { "Content-Type": part.contentType }, body: part.body },
+    },
     options,
-    { method: "POST", headers: { "Content-Type": part.contentType }, body: part.body },
   );
   return createdFileJson(payload);
 }

@@ -31,6 +31,7 @@ import {
 } from "../../src/organisations/index.js";
 import { repoRoot } from "../../src/lib/paths.js";
 import { groupMessageItem, iso, isoOrNull, messageItem, runItem } from "../../src/db/views.js";
+import { runSnapshot } from "../helpers/generation.js";
 
 test("validate user name", () => {
   assert.equal(validateUserName("operator"), "operator");
@@ -152,6 +153,8 @@ test("org and member items", () => {
     user_id: "user_manu",
     name: "manu",
     image: "/static/users/manu.jpeg",
+    email: null,
+    color: null,
     role: "owner",
     created_at: "2026-09-15T00:00:00+00:00",
   });
@@ -169,7 +172,6 @@ test("run and message views match R0 fixtures", () => {
       payload: { role: "user", content: "hi" },
       metadata: { generation: 1 },
       created_at: "2026-09-13T12:00:00.123456+00:00",
-      cost_usd: 0.001,
     }),
     fixture.message_us,
   );
@@ -189,7 +191,7 @@ test("run and message views match R0 fixtures", () => {
         id: "r_1",
         agent_id: "a_1",
         status: "active",
-        config_snapshot: { model: "openrouter/openai/gpt-5.6-luna" },
+        config_snapshot: runSnapshot(),
         errors: [],
         system_prompt_hash: "abc",
         task_prompt_hash: "def",
@@ -199,18 +201,21 @@ test("run and message views match R0 fixtures", () => {
         updated_at: "2026-09-13T12:00:00.123456+00:00",
         kind: "direct",
         group_chat_through_seq: null,
+        schedule_id: null,
       },
-      { generating: true },
+      true,
     ),
-    fixture.run,
+    Object.assign({}, fixture.run, { config_snapshot: runSnapshot() }),
   );
   assert.deepEqual(
     groupMessageItem({
       id: 9,
+      guild_id: "guild_1",
       seq: 1,
       author_type: "user",
       author_name: "operator",
       author_agent_id: null,
+      author_user_id: null,
       source_run_id: null,
       content: "hello @ada",
       tagged_names: ["ada"],

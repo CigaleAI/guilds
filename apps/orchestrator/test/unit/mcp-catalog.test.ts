@@ -11,6 +11,7 @@ import { namespacedName } from "../../src/mcp/names.js";
 import { oauthSetupState, oauthStrategy, startsBrowserOauth } from "../../src/oauth/index.js";
 import { LIST_TOOLS_MAX, McpError, McpSession } from "../../src/mcp/index.js";
 import { storeKeys } from "../helpers/env.js";
+import { serverRow } from "../helpers/servers.js";
 
 test("reserved slugs and generated prefixes stay collision-proof", () => {
   assert.equal(isReservedSlug("note"), true);
@@ -45,23 +46,23 @@ test("public https endpoints reject private and local networks", () => {
 });
 
 test("oauth setup state distinguishes configured, dynamic, and unsupported", () => {
-  assert.equal(oauthStrategy({ auth: "token", slug: "cigale" }), "none");
-  assert.equal(oauthStrategy({ auth: "oauth", slug: "gmail" }), "configured");
-  assert.equal(oauthStrategy({ auth: "oauth", slug: "drive" }), "configured");
-  assert.equal(oauthStrategy({ auth: "oauth", slug: "notion" }), "dynamic");
-  assert.equal(startsBrowserOauth({ auth: "oauth", slug: "custom" }), true);
+  assert.equal(oauthStrategy(serverRow("cigale", { auth: "token" })), "none");
+  assert.equal(oauthStrategy(serverRow("gmail", { auth: "oauth" })), "configured");
+  assert.equal(oauthStrategy(serverRow("drive", { auth: "oauth" })), "configured");
+  assert.equal(oauthStrategy(serverRow("notion", { auth: "oauth" })), "dynamic");
+  assert.equal(startsBrowserOauth(serverRow("custom", { auth: "oauth" })), true);
   assert.equal(
-    oauthSetupState({ auth: "oauth", slug: "gmail", oauth_strategy: "configured" }, { keys: {} }),
+    oauthSetupState(serverRow("gmail", { auth: "oauth", oauth_strategy: "configured" }), { keys: {} }),
     "unsupported",
   );
   assert.equal(
     oauthSetupState(
-      { auth: "oauth", slug: "gmail", oauth_strategy: "configured" },
+      serverRow("gmail", { auth: "oauth", oauth_strategy: "configured" }),
       { keys: storeKeys({ "google-connectors": { client_id: "id", client_secret: "secret" } }) },
     ),
     "configured",
   );
-  assert.equal(oauthSetupState({ auth: "oauth", slug: "notion", oauth_strategy: "dynamic" }), "dynamic");
+  assert.equal(oauthSetupState(serverRow("notion", { auth: "oauth", oauth_strategy: "dynamic" })), "dynamic");
 });
 
 test("tools/list enforces tool count and byte limits", async () => {

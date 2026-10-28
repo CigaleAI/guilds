@@ -1,13 +1,35 @@
-import { isoOrNull } from "../db/views.js";
+import type { UserMessage } from "../db/schema/index.js";
+import type { AgentScheduleRow, ScheduleDefinition, ScheduleRow, ScheduleTiming } from "../db/schedules.js";
+import { iso, isoOrNull } from "../db/views.js";
 import { promptHash } from "../prompts/index.js";
-import { describeTiming, rowTiming, type ScheduleTiming } from "./timing.js";
+import { describeTiming, rowTiming } from "./timing.js";
 
-function rowDescription(
-  row: Record<string, unknown>,
-  instruction?: string | null,
-): string {
-  const raw = row.description;
-  const text = String(raw ?? "").trim();
+/** A routine as the API and the tools show it. */
+export type ScheduleItem = ScheduleTiming & {
+  id: string;
+  agent_id: string;
+  label: string;
+  description: string;
+  instruction: string;
+  instruction_hash: string;
+  paused: boolean;
+  guild_routines_enabled?: boolean;
+  next_run_at: string;
+  last_run_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/** The metadata of the user message a routine's wake-up opens its run with. */
+export type ScheduleWakeMetadata = {
+  generation: number;
+  source: "schedule";
+  schedule_id: string;
+  instruction_hash: string;
+};
+
+function rowDescription(row: ScheduleDefinition, instruction?: string | null): string {
+  const text = row.description.trim();
   if (text) {
     return text;
   }
@@ -15,7 +37,7 @@ function rowDescription(
   if (!body) {
     return "";
   }
-  return String(body).split("\n")[0] ?? "";
+  return body.split("\n")[0] ?? "";
 }
 
 export function instructionHash(instruction: string): string {
@@ -27,26 +49,24 @@ export function timingText(timing: ScheduleTiming): string {
   return timing.cron ? `${timing.cron}  ${describeTiming(timing)}` : describeTiming(timing);
 }
 
-export function scheduleItem(row: Record<string, unknown>): Record<string, unknown> {
+export function scheduleItem(row: ScheduleRow | AgentScheduleRow): ScheduleItem {
   const timing = rowTiming(row);
-  const instruction = String(row.instruction ?? "");
   return {
     id: row.id,
     agent_id: row.agent_id,
-    cron: timing.cron,
-    window: timing.window,
+    ...timing,
     label: describeTiming(timing),
     description: rowDescription(row),
     instruction: row.instruction,
-    instruction_hash: instructionHash(instruction),
-    paused: Boolean(row.paused),
+    instruction_hash: instructionHash(row.instruction),
+    paused: row.paused,
     ...("guild_routines_enabled" in row
       ? { guild_routines_enabled: row.guild_routines_enabled !== false }
       : {}),
-    next_run_at: isoOrNull(row.next_run_at),
+    next_run_at: iso(row.next_run_at),
     last_run_at: isoOrNull(row.last_run_at),
-    created_at: isoOrNull(row.created_at),
-    updated_at: isoOrNull(row.updated_at),
+    created_at: iso(row.created_at),
+    updated_at: iso(row.updated_at),
   };
 }
 
@@ -55,7 +75,7 @@ export function scheduleWakeUserMessage(row: {
   timing: ScheduleTiming;
   instruction: string;
   previousRunAt: string | null;
-}): [{ role: string; content: string }, Record<string, unknown>] {
+}): [UserMessage, ScheduleWakeMetadata] {
   const info = {
     id: row.id,
     ...(row.timing.cron ? { cron: row.timing.cron } : { window: row.timing.window }),
@@ -76,23 +96,11 @@ export function scheduleWakeUserMessage(row: {
   ];
 }
 
-export function formatScheduleStamp(value: unknown): string {
-  if (value instanceof Date) {
-    return value.toISOString().replace("+00:00", "Z");
-  }
-  if (typeof value === "string") {
-    return value.replace("+00:00", "Z");
-  }
-  if (value === null || value === undefined) {
-    return String(value);
-  }
-  return String(value);
+export function formatScheduleStamp(value: string): string {
+  return value.replace("+00:00", "Z");
 }
 
-export function formatScheduleRow(
-  row: Record<string, unknown>,
-  instruction?: string | null,
-): string {
+export function formatScheduleRow(row: ScheduleRow, instruction?: string | null): string {
   const stamp = formatScheduleStamp(row.next_run_at);
   const status = row.paused ? "paused" : `next ${stamp}`;
   const summary = rowDescription(row, instruction);

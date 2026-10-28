@@ -2,16 +2,15 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { decodeMasterKey } from "../../src/config/index.js";
-import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
-import * as generationMod from "../../src/generation/index.js";
-import { GenerationLoop } from "../../src/generation/index.js";
+import { connect } from "../../src/seed/connect.js";
+import { generationLive } from "../../src/generation/completion.js";
+import { generationDatabase, GenerationLoop } from "../../src/generation/index.js";
 import { AsyncEvent, sleep } from "../../src/lib/event.js";
 import { McpPool } from "../../src/mcp/index.js";
-import { ArtifactStore } from "../../src/artifacts/index.js";
+import { artifactStore } from "../../src/artifacts/index.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, clearInstanceKeys, testEnv } from "../helpers/env.js";
 import { connectModelProvider } from "../helpers/models.js";
 import { loadJsonFixture, loadTextFixture, templatesRoot } from "../helpers/fixtures.js";
@@ -29,8 +28,9 @@ import {
   dropIsolatedDatabase,
   uniqueDbName,
 } from "../helpers/postgres.js";
+import { generationArtifacts } from "../../src/generation/prepare.js";
 
-const live = generationMod.generationLive;
+const live = generationLive;
 const originalStream = live.streamCompletion;
 
 const AUTH = {
@@ -83,11 +83,11 @@ test("R6 HTTP SSE and WS recordings replay over real HTTP", { timeout: 180_000 }
   const database = await connect(databaseUrl);
   const notes = new NotesStore(env.NOTES_ROOT ?? "", templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
-  await connectModelProvider(repo, "org_home", "openrouter");
-  const artifacts = new ArtifactStore(database.pool, notes.templates);
-  const scripts = new Scripts(repo);
-  const schedules = new Schedules(repo);
+  const db = database.pool;
+  await connectModelProvider(db, "org_home", "openrouter");
+  const artifacts = artifactStore(database.pool, notes.templates);
+  const scripts = new Scripts(scriptDatabase(db));
+  const schedules = new Schedules(scheduleDatabase(db));
   const upstream = await startSandboxUpstream();
   const sandboxes = new ExportSandboxes(env.WORKSPACE_ROOT ?? "");
   sandboxes.novncBase = upstream.base;
@@ -95,13 +95,17 @@ test("R6 HTTP SSE and WS recordings replay over real HTTP", { timeout: 180_000 }
   const stream = new StreamScript();
   live.streamCompletion = ((options: Parameters<typeof originalStream>[0]) =>
     stream.run(options)) as typeof live.streamCompletion;
-  const generation = new GenerationLoop(repo, notes, env.WORKSPACE_ROOT ?? "", sandboxes, {
+  const generation = new GenerationLoop({
+    db: generationDatabase(db),
+    notes,
+    workspaceRoot: env.WORKSPACE_ROOT ?? "",
+    sandboxes,
     mcp: new McpPool(),
-    artifacts,
+    artifacts: generationArtifacts(artifacts),
   });
   await generation.reconcile();
   const app = await buildApp(database, {
-    repo,
+    db,
     notes,
     artifacts,
     scripts,
@@ -189,7 +193,7 @@ test("R6 HTTP SSE and WS recordings replay over real HTTP", { timeout: 180_000 }
       }
       if (recorded.name === "run-message" || recorded.name === "run-create-with-message") {
         const id = String(jsonByName.get(recorded.name)?.id ?? "");
-        await waitUntil(() => !generation.generating(id), 10_000, recorded.name);
+        await waitUntil(() => !generation.isGenerating(id), 10_000, recorded.name);
       }
       if (recorded.name === "sse-run-create") {
         const runId = String(jsonByName.get("sse-run-create")?.id ?? "");

@@ -1,12 +1,11 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
-import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
-import { GenerationLoop } from "../../src/generation/index.js";
+import { connect } from "../../src/seed/connect.js";
+import { generationDatabase, GenerationLoop } from "../../src/generation/index.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { ExportSandboxes } from "../helpers/live.js";
@@ -30,19 +29,19 @@ test("an operator post may ask to interrupt the runs it targets", { timeout: 60_
   const database = await connect(databaseUrl);
   const notes = new NotesStore(tempDir("guilds-group-interrupt-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
+  const db = database.pool;
   const workspaceRoot = tempDir("guilds-group-interrupt-workspaces-");
-  const generation = new GenerationLoop(
-    repo,
+  const generation = new GenerationLoop({
+    db: generationDatabase(db),
     notes,
     workspaceRoot,
-    new ExportSandboxes(workspaceRoot),
-  );
+    sandboxes: new ExportSandboxes(workspaceRoot),
+  });
   const app = await buildApp(database, {
-    repo,
+    db,
     notes,
-    scripts: new Scripts(repo),
-    schedules: new Schedules(repo),
+    scripts: new Scripts(scriptDatabase(db)),
+    schedules: new Schedules(scheduleDatabase(db)),
     generation,
   });
 

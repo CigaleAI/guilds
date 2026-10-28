@@ -23,6 +23,12 @@ import { editActor } from "./actor.js";
 import { StudioConflictError, StudioUnprocessableError } from "./errors.js";
 import { excerptBytes, wrapEvidence } from "./system.js";
 import { studioReachesTable } from "./reach.js";
+import { getGuild, hiddenGuildsFor } from "../db/guilds.js";
+import { listAgents } from "../db/agents.js";
+import { listRecords } from "../artifacts/records.js";
+import { grantAccess, listAccess, reachOf as subjectReach } from "../artifacts/access-lists.js";
+import { createCollection, deleteCollection, describeCollection, getCollection, listCollectionsWithCounts, updateCollection } from "../artifacts/collections.js";
+import { operatorContext } from "../artifacts/store.js";
 
 // Tables (collections) the coach reads and proposes to create, change, or
 // delete. It reaches the tables the source guild's agents can be given: the
@@ -147,15 +153,15 @@ function plural(count: number, noun: string): string {
 
 /** The operator reading tables, without the private guilds they do not operate. */
 async function tableActor(scope: EditScope): Promise<ArtifactActor> {
-  return scope.artifacts.operatorContext(scope.orgId, String(scope.user.id), String(scope.user.name ?? "operator"), {
+  return operatorContext(scope.orgId, String(scope.user.id), String(scope.user.name ?? "operator"), {
     guildId: scope.sourceGuildId,
-    hidden: await scope.repo.hiddenGuildsFor(scope.orgId, String(scope.user.id)),
+    hidden: await hiddenGuildsFor(scope.db, scope.orgId, String(scope.user.id)),
   });
 }
 
 async function tableContext(scope: EditScope): Promise<TableContext> {
-  const guild = await scope.repo.getGuild(scope.sourceGuildId);
-  const agents = await scope.repo.listAgents(scope.sourceGuildId);
+  const guild = await getGuild(scope.db, scope.sourceGuildId);
+  const agents = await listAgents(scope.db, scope.sourceGuildId);
   return {
     scope,
     actor: await tableActor(scope),
@@ -170,7 +176,7 @@ async function loadTable(
 ): Promise<Table | null> {
   let id: string;
   if ("name" in ref) {
-    const described = await tc.scope.artifacts.describeCollection(tc.actor, ref.name);
+    const described = await describeCollection(tc.scope.artifacts, tc.actor, ref.name);
     if (!described) return null;
     id = described.id;
   } else {
@@ -179,8 +185,8 @@ async function loadTable(
   let view;
   let entries;
   try {
-    view = await tc.scope.artifacts.getCollection(tc.actor, id);
-    entries = await tc.scope.artifacts.listAccess(tc.actor, { kind: "collection", id });
+    view = await getCollection(tc.scope.artifacts, tc.actor, id);
+    entries = await listAccess(tc.scope.artifacts, tc.actor, { kind: "collection", id });
   } catch (error) {
     if (error instanceof ArtifactError && error.status === 404) return null;
     throw error;
@@ -645,12 +651,12 @@ export async function applyTable(scope: EditScope, plan: TablePlan): Promise<voi
   const actor = editActor(scope);
   try {
     if (plan.action === "delete") {
-      await scope.artifacts.deleteCollection(actor, plan.id);
+      await deleteCollection(scope.artifacts, actor, plan.id);
       return;
     }
     let id = plan.action === "edit" ? plan.id : "";
     if (plan.action === "create") {
-      const created = await scope.artifacts.createCollection(actor, {
+      const created = await createCollection(scope.artifacts, actor, {
         name: plan.name,
         purpose: plan.purpose,
         columns: plan.columns,
@@ -658,10 +664,10 @@ export async function applyTable(scope: EditScope, plan: TablePlan): Promise<voi
       });
       id = created.id;
     } else if (plan.definition) {
-      await scope.artifacts.updateCollection(actor, id, plan.definition);
+      await updateCollection(scope.artifacts, actor, id, plan.definition);
     }
     for (const change of plan.rowChanges) {
-      await scope.artifacts.grantAccess(actor, { kind: "collection", id }, { type: change.subject, id: change.id }, change.mode);
+      await grantAccess(scope.artifacts, actor, { kind: "collection", id }, { type: change.subject, id: change.id, mode: change.mode });
     }
   } catch (error) {
     tableFailure(error);
@@ -671,10 +677,10 @@ export async function applyTable(scope: EditScope, plan: TablePlan): Promise<voi
 /** The tables Studio reaches: the source guild's own first, then the organisation's. */
 export async function listTables(scope: EditScope): Promise<Array<Record<string, unknown>>> {
   const actor = await tableActor(scope);
-  const views = (await scope.artifacts.listCollections(actor, { counts: true })).filter((view) =>
+  const views = (await listCollectionsWithCounts(scope.artifacts, actor)).filter((view) =>
     studioReachesTable(scope.sourceGuildId, view.guild?.id),
   );
-  const reached = await scope.artifacts.reachOf(actor, {
+  const reached = await subjectReach(scope.artifacts, actor, {
     type: "guild",
     id: scope.sourceGuildId,
     guildId: scope.sourceGuildId,
@@ -704,7 +710,7 @@ export async function readTable(scope: EditScope, name: string): Promise<Record<
     );
   }
   const displayPath = collectionDisplayPath(scope.orgId, table.name);
-  const recent = await scope.artifacts.listRecords(tc.actor, {
+  const recent = await listRecords(scope.artifacts, tc.actor, {
     collection: table.name,
     order: { column: "updated_at", direction: "desc" },
     limit: RECENT_RECORDS,

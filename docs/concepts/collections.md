@@ -272,7 +272,9 @@ agent form of a record, and no folder inside a collection.
 
 Name rule: `^[a-z][a-z0-9_-]{0,62}$`.
 
-Code: `apps/orchestrator/src/artifacts/store.ts`.
+Code: `apps/orchestrator/src/artifacts/collections.ts`,
+`apps/orchestrator/src/artifacts/records.ts`,
+`apps/orchestrator/src/db/collections.ts`.
 
 ### Columns
 
@@ -544,7 +546,7 @@ PUT    /api/collections/:id/access               { subjects: [{ type, id, mode }
   removal record no file change
   ([Artifact store](artifacts.md#file-provenance)).
 
-Code: `apps/orchestrator/src/http/routes.ts`,
-`apps/orchestrator/src/http/artifact-notes.ts`,
+Code: `apps/orchestrator/src/http/collection-routes.ts`,
+`apps/orchestrator/src/artifacts/collection-views.ts`,
 `apps/orchestrator/src/artifacts/search.ts`,
 `apps/orchestrator/src/toolbox/artifacts.ts`.

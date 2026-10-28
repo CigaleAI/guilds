@@ -1,13 +1,16 @@
 import { createHash } from "node:crypto";
+import type { ScheduleDefinition, ScheduleTiming } from "../db/schedules.js";
 import { ScheduleError } from "../schedules/cron.js";
 import { timingText } from "../schedules/item.js";
 import { changedFields, scheduleChanges, type ScheduleChanges } from "../schedules/service.js";
-import type { ScheduleTiming } from "../schedules/timing.js";
 import { argString } from "../toolbox/schema.js";
 import type { EditAction } from "./actions.js";
 import type { EditScope } from "./edits.js";
 import { editActor } from "./actor.js";
 import { StudioUnprocessableError } from "./errors.js";
+import { getGuild } from "../db/guilds.js";
+import { listAgents } from "../db/agents.js";
+import { listSchedulesForGuild } from "../db/schedules.js";
 
 // Routines the coach proposes to create, change, or delete for the source
 // guild's live agents. Like every Studio edit, a proposal writes nothing
@@ -87,8 +90,8 @@ function valid<T>(read: () => T): T {
 }
 
 async function routineContext(scope: EditScope): Promise<RoutineContext> {
-  const guild = await scope.repo.getGuild(scope.sourceGuildId);
-  const agents = await scope.repo.listAgents(scope.sourceGuildId);
+  const guild = await getGuild(scope.db, scope.sourceGuildId);
+  const agents = await listAgents(scope.db, scope.sourceGuildId);
   return {
     scope,
     guildName: String(guild?.name ?? "this guild"),
@@ -106,7 +109,7 @@ function requireMember(rc: RoutineContext, agentId: string | null): Member {
 }
 
 async function loadRoutine(rc: RoutineContext, scheduleId: string): Promise<Routine> {
-  const rows = await rc.scope.repo.listSchedulesForGuild(rc.scope.sourceGuildId);
+  const rows = await listSchedulesForGuild(rc.scope.db, rc.scope.sourceGuildId);
   const row = rows.find((item) => String(item.id) === scheduleId);
   if (!row) {
     throw new StudioUnprocessableError(
@@ -158,17 +161,7 @@ function firingEffect(rc: RoutineContext, paused: boolean): string[] {
 
 function reviewCreate(rc: RoutineContext, call: RoutineCall): RoutineReview {
   const agent = requireMember(rc, call.agentId);
-  const definition = valid(() =>
-    changedFields(
-      {},
-      {
-        when: scheduleChanges(call.args).when ?? {},
-        description: call.args.description ?? null,
-        instruction: call.args.instruction ?? null,
-        paused: call.args.paused === true,
-      },
-    ),
-  );
+  const definition = valid(() => changedFields(null, scheduleChanges(call.args)));
   return {
     action: "create",
     title: `Create routine for ${agent.name}`,
@@ -229,9 +222,11 @@ function reviewEdit(rc: RoutineContext, routine: Routine, call: RoutineCall): Ro
 }
 
 /** A routine's definition in the shape a stored schedule row has. */
-function routineRow(routine: Routine): Record<string, unknown> {
+function routineRow(routine: Routine): ScheduleDefinition {
   const { timing, ...rest } = routine.definition;
-  return { ...rest, cron: timing.cron, wake_window: timing.window };
+  return timing.window === null
+    ? { ...rest, cron: timing.cron, wake_window: null }
+    : { ...rest, cron: null, wake_window: timing.window };
 }
 
 function reviewDelete(routine: Routine): RoutineReview {

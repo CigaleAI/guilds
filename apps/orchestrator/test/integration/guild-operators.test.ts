@@ -1,12 +1,11 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
-import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
+import { connect } from "../../src/seed/connect.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import {
@@ -14,6 +13,8 @@ import {
   dropIsolatedDatabase,
   uniqueDbName,
 } from "../helpers/postgres.js";
+import { insertUser } from "../../src/db/users.js";
+import { insertMember } from "../../src/db/orgs.js";
 
 const OWNER = {
   "X-Guilds-User": "user_operator",
@@ -32,18 +33,28 @@ test("guild admins manage operators, and private guilds show only to operators",
   const database = await connect(databaseUrl);
   const notes = new NotesStore(tempDir("guilds-operators-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
-  await connectModelProvider(repo, "org_home", "deepinfra");
+  const db = database.pool;
+  await connectModelProvider(db, "org_home", "deepinfra");
   const app = await buildApp(database, {
-    repo,
+    db,
     notes,
-    scripts: new Scripts(repo),
-    schedules: new Schedules(repo),
+    scripts: new Scripts(scriptDatabase(db)),
+    schedules: new Schedules(scheduleDatabase(db)),
   });
 
-  const teammate = await repo.insertUser("user_teammate_ops", "teammate-ops", new Date(), null, "teammate-ops@example.com");
-  await repo.insertMember("org_home", String(teammate.id), "member", new Date());
-  const outsider = await repo.insertUser("user_outsider_ops", "outsider-ops", new Date(), null, "outsider-ops@elsewhere.dev");
+  const teammate = await insertUser(db, {
+      userId: "user_teammate_ops",
+      name: "teammate-ops",
+      image: null,
+      email: "teammate-ops@example.com",
+    }, new Date());
+  await insertMember(db, "org_home", String(teammate.id), "member", new Date());
+  const outsider = await insertUser(db, {
+      userId: "user_outsider_ops",
+      name: "outsider-ops",
+      image: null,
+      email: "outsider-ops@elsewhere.dev",
+    }, new Date());
   const TEAMMATE = {
     "X-Guilds-User": String(teammate.id),
     "X-Guilds-Org": "org_home",
@@ -193,7 +204,7 @@ test("guild admins manage operators, and private guilds show only to operators",
     });
     assert.equal(renamed.statusCode, 409, renamed.body);
     assert.equal(renamed.json().detail, "outsider-ops is already an agent in a guild you operate");
-    await repo.insertMember("org_home", String(outsider.id), "member", new Date());
+    await insertMember(db, "org_home", String(outsider.id), "member", new Date());
     const operatorClash = await app.inject({
       method: "PUT",
       url: `/api/guilds/${sharedId}/operators/${String(outsider.id)}`,

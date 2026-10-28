@@ -1,8 +1,34 @@
 import { ArtifactError } from "../artifacts/errors.js";
+import { AttachmentError } from "../attachments/index.js";
+import { RepositoryValidationError } from "../coding/repositories.js";
+import { ConnectError } from "../connectors/connect.js";
+import { SettingsError } from "../connectors/settings.js";
+import { CredentialError } from "../credentials/validate.js";
+import { AgentError } from "../agents/errors.js";
+import { AgentValidationError } from "../agents/validation.js";
+import { BindingError } from "../access/index.js";
+import { RunRequestError } from "../generation/index.js";
+import { GroupChatError } from "../groupchat/index.js";
+import { GuildError } from "../guilds/errors.js";
+import { GuildValidationError } from "../guilds/validation.js";
+import { IssueError } from "../issues/index.js";
 import { ModelNotConnectedError } from "../llm/credentials.js";
+import { InstanceKeyError } from "../instance/keys.js";
 import { MachineError } from "../machines/index.js";
+import { CatalogError } from "../mcp/catalog.js";
+import { OperatorCallError } from "../mcp/operator-call.js";
+import { ConnectionError } from "../mcp/visibility.js";
+import { NotesError } from "../notes/store.js";
+import { OrgValidationError } from "../organisations/index.js";
+import { OrgError } from "../organisations/service.js";
 import { PolicyError } from "../policy/index.js";
 import { RecipeConflictError } from "../recipes/errors.js";
+import { ScheduleError } from "../schedules/cron.js";
+import { ScriptError } from "../scripts/validation.js";
+import { SecretAccessError } from "../secrets/access.js";
+import { SecretError } from "../secrets/service.js";
+import { UserError } from "../users/directory.js";
+import { UserValidationError } from "../users/index.js";
 
 export class HttpError extends Error {
   status: number;
@@ -53,6 +79,24 @@ export function notesWriteHttp(error: Error): HttpError {
   return new HttpError(status, message);
 }
 
+/** Awaits a read of the notes folder, answering a refused one as `notesReadHttp` does. */
+export async function notesRead<T>(read: Promise<T>): Promise<T> {
+  try {
+    return await read;
+  } catch (error) {
+    throw error instanceof NotesError ? notesReadHttp(error) : error;
+  }
+}
+
+/** Awaits a write that touches the notes folder, answering a refused one as `notesWriteHttp` does. */
+export async function notesWrite<T>(write: Promise<T>): Promise<T> {
+  try {
+    return await write;
+  } catch (error) {
+    throw error instanceof NotesError ? notesWriteHttp(error) : error;
+  }
+}
+
 export function artifactHttp(error: ArtifactError): HttpError {
   return new HttpError(error.status, error.message);
 }
@@ -69,13 +113,58 @@ export function notesReadHttp(error: Error): HttpError {
   return new HttpError(message === "invalid path" ? 422 : 404, message);
 }
 
+/** Domain errors that carry the status they answer with. */
+const REFUSALS = [
+  MachineError,
+  PolicyError,
+  ModelNotConnectedError,
+  UserError,
+  OrgError,
+  GuildError,
+  AgentError,
+  ArtifactError,
+  RunRequestError,
+  GroupChatError,
+  ScheduleError,
+  ScriptError,
+  IssueError,
+  AttachmentError,
+  SecretError,
+  BindingError,
+  ConnectionError,
+  ConnectError,
+  OperatorCallError,
+  CatalogError,
+  InstanceKeyError,
+  RepositoryValidationError,
+] as const;
+
+/** Domain errors for a value a validator refused, each a 422. */
+const INVALID = [
+  UserValidationError,
+  OrgValidationError,
+  GuildValidationError,
+  AgentValidationError,
+  CredentialError,
+  SecretAccessError,
+  SettingsError,
+] as const;
+
 /**
- * The HTTP answer for a refusal a domain module raises with its own status: a machine request, a
- * policy limit, or a model with no key. Any other error is null.
+ * The HTTP answer for a refusal a domain module raises: one with its own status, answered with its
+ * detail when it carries one, or a value its validator refused. Any other error is null.
  */
 export function domainHttp(error: unknown): HttpError | null {
-  if (error instanceof MachineError || error instanceof PolicyError || error instanceof ModelNotConnectedError) {
-    return new HttpError(error.status, error.message);
+  for (const kind of REFUSALS) {
+    if (error instanceof kind) {
+      const detail = "detail" in error && error.detail !== undefined ? error.detail : error.message;
+      return new HttpError(error.status, detail);
+    }
+  }
+  for (const kind of INVALID) {
+    if (error instanceof kind) {
+      return new HttpError(422, error.message);
+    }
   }
   return null;
 }

@@ -1,11 +1,18 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { ArtifactFiles, FILE_MAX_BYTES, type ArtifactActor, type ArtifactLevel } from "../artifacts/index.js";
+import {
+  loadOperatorActor,
+  ArtifactFiles,
+  FILE_MAX_BYTES,
+  type ArtifactActor,
+  type ArtifactLevel,
+} from "../artifacts/index.js";
+import { requireVisibleGuild } from "../guilds/access.js";
+import { requireVisibleAgent } from "../agents/access.js";
 import { attachmentDisposition } from "../attachments/index.js";
-import { catchArtifact, operatorFor } from "./artifact-notes.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
 import { currentOrg, currentUser } from "./identity.js";
-import { ownedAgent, ownedGuild } from "./items.js";
+import { identityDatabase } from "../users/identity.js";
 import { publishGroup } from "./publish.js";
 import { param } from "./request.js";
 
@@ -41,9 +48,9 @@ function uploadBytes(request: FastifyRequest): Buffer {
 type FileOwner = { level: ArtifactLevel; ownerId: string; guildId: string | null; actor: ArtifactActor };
 
 async function agentOwner(deps: AppDeps, request: FastifyRequest): Promise<FileOwner> {
-  const user = await currentUser(deps.repo, request, deps);
-  const row = await ownedAgent(deps.repo, param(request, "agent_id"), user);
-  const actor = await operatorFor(deps.repo, user, {
+  const user = await currentUser(identityDatabase(deps.db), request, deps);
+  const row = await requireVisibleAgent(deps.db, param(request, "agent_id"), user.id);
+  const actor = await loadOperatorActor(deps.db, user, {
     orgId: String(row.org_id),
     guildId: String(row.guild_id),
     agentId: String(row.id),
@@ -52,16 +59,16 @@ async function agentOwner(deps: AppDeps, request: FastifyRequest): Promise<FileO
 }
 
 async function guildOwner(deps: AppDeps, request: FastifyRequest): Promise<FileOwner> {
-  const user = await currentUser(deps.repo, request, deps);
-  const row = await ownedGuild(deps.repo, param(request, "guild_id"), user);
-  const actor = await operatorFor(deps.repo, user, { orgId: String(row.org_id), guildId: String(row.id) });
+  const user = await currentUser(identityDatabase(deps.db), request, deps);
+  const row = await requireVisibleGuild(deps.db, param(request, "guild_id"), user.id);
+  const actor = await loadOperatorActor(deps.db, user, { orgId: String(row.org_id), guildId: String(row.id) });
   return { level: "guild", ownerId: String(row.id), guildId: String(row.id), actor };
 }
 
 async function orgOwner(deps: AppDeps, request: FastifyRequest): Promise<FileOwner> {
-  const user = await currentUser(deps.repo, request, deps);
-  const org = await currentOrg(deps.repo, request, user);
-  const actor = await operatorFor(deps.repo, user, { orgId: String(org.id) });
+  const user = await currentUser(identityDatabase(deps.db), request, deps);
+  const org = await currentOrg(identityDatabase(deps.db), request, user);
+  const actor = await loadOperatorActor(deps.db, user, { orgId: String(org.id) });
   return { level: "org", ownerId: String(org.id), guildId: null, actor };
 }
 
@@ -79,25 +86,17 @@ function registerOwnerRoutes(
 ): void {
   app.get(path, async (request) => {
     const { level, ownerId, actor } = await owner(deps, request);
-    try {
-      return await filesOf(deps).listOwnerFiles(actor, level, ownerId);
-    } catch (error) {
-      catchArtifact(error);
-    }
+    return await filesOf(deps).listOwnerFiles(actor, level, ownerId);
   });
 
   app.post(path, { bodyLimit: FILE_MAX_BYTES + 4096 }, async (request, reply) => {
     const { level, guildId, actor } = await owner(deps, request);
     const files = filesOf(deps);
     const bytes = uploadBytes(request);
-    try {
-      const row = await files.putFile(actor, { level, ...uploadHeaders(request), bytes });
-      const view = files.view(row);
-      await publishFileChanged(deps, guildId, view.display_path);
-      return reply.code(201).send(view);
-    } catch (error) {
-      catchArtifact(error);
-    }
+    const row = await files.putFile(actor, { level, ...uploadHeaders(request), bytes });
+    const view = files.view(row);
+    await publishFileChanged(deps, guildId, view.display_path);
+    return reply.code(201).send(view);
   });
 }
 
@@ -119,24 +118,16 @@ export async function registerFileRoutes(app: FastifyInstance, deps: AppDeps): P
   app.get("/api/files/:file_id", async (request, reply) => {
     const { actor } = await orgOwner(deps, request);
     const files = filesOf(deps);
-    try {
-      const row = await files.loadFileById(actor, param(request, "file_id"));
-      return sendBytes(reply, files.view(row), await files.readBytes(row));
-    } catch (error) {
-      catchArtifact(error);
-    }
+    const row = await files.loadFileById(actor, param(request, "file_id"));
+    return sendBytes(reply, files.view(row), await files.readBytes(row));
   });
 
   app.delete("/api/files/:file_id", async (request, reply) => {
     const { actor } = await orgOwner(deps, request);
     const files = filesOf(deps);
-    try {
-      const row = await files.loadFileById(actor, param(request, "file_id"));
-      await files.deleteFile(actor, row);
-      await publishFileChanged(deps, row.guild_id, files.view(row).display_path);
-      return reply.code(204).send();
-    } catch (error) {
-      catchArtifact(error);
-    }
+    const row = await files.loadFileById(actor, param(request, "file_id"));
+    await files.deleteFile(actor, row);
+    await publishFileChanged(deps, row.guild_id, files.view(row).display_path);
+    return reply.code(204).send();
   });
 }

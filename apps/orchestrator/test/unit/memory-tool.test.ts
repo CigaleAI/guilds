@@ -5,6 +5,7 @@ import { ArtifactError } from "../../src/artifacts/errors.js";
 import { MemoryError } from "../../src/memory/index.js";
 import { memoryWrite } from "../../src/toolbox/memory.js";
 import { createToolContext } from "../../src/toolbox/types.js";
+import { noteRowAt } from "../helpers/artifacts.js";
 
 const actor = agentActor({
   orgId: "org_1",
@@ -23,16 +24,8 @@ test("memory_write stores through artifacts and publishes a file change", async 
     sandbox: {} as never,
     secrets: {},
     artifacts: {
-      async writeMemory(
-        _actor: unknown,
-        agentId: string,
-        content: string,
-        detail: string,
-      ) {
-        return { display_path: `org/org_1/agents/${agentId}/memory.md`, content, detail };
-      },
-      view(row: { display_path: string }) {
-        return row;
+      async writeMemory(_actor: unknown, agentId: string, write: { content: string }) {
+        return noteRowAt(`org/org_1/agents/${agentId}/memory.md`, write.content, { kind: "memory" });
       },
     } as never,
     artifact_actor: actor,

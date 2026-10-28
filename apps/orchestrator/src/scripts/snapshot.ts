@@ -1,13 +1,5 @@
-import { scriptSourceHash } from "./validation.js";
-
-export type RunScriptSnapshot = {
-  id: string;
-  name: string;
-  description: string;
-  parameters: Record<string, unknown> | null;
-  source: string;
-  source_hash: string;
-};
+import type { RunScriptSnapshot } from "../db/schema/index.js";
+import type { AgentScript } from "./catalog.js";
 
 export const RUN_SCRIPT_SNAPSHOT_FIELDS = [
   "id",
@@ -18,27 +10,19 @@ export const RUN_SCRIPT_SNAPSHOT_FIELDS = [
   "source_hash",
 ] as const;
 
-export function toRunScriptSnapshot(row: Record<string, unknown>): RunScriptSnapshot {
-  const source = String(row.source ?? "");
-  const hash = typeof row.source_hash === "string" && row.source_hash
-    ? row.source_hash
-    : scriptSourceHash(source);
-  const parameters = row.parameters;
+export function toRunScriptSnapshot(script: AgentScript): RunScriptSnapshot {
   return {
-    id: String(row.id ?? ""),
-    name: String(row.name ?? ""),
-    description: String(row.description ?? ""),
-    parameters:
-      parameters && typeof parameters === "object" && !Array.isArray(parameters)
-        ? (parameters as Record<string, unknown>)
-        : null,
-    source,
-    source_hash: hash,
+    id: script.id,
+    name: script.name,
+    description: script.description,
+    parameters: script.parameters,
+    source: script.source,
+    source_hash: script.source_hash,
   };
 }
 
-export function snapshotAgentScripts(rows: Array<Record<string, unknown>>): RunScriptSnapshot[] {
-  return rows.map(toRunScriptSnapshot);
+export function snapshotAgentScripts(scripts: AgentScript[]): RunScriptSnapshot[] {
+  return scripts.map(toRunScriptSnapshot);
 }
 
 export function firstClassSnapshots(snapshot: RunScriptSnapshot[]): RunScriptSnapshot[] {
@@ -49,10 +33,7 @@ export function snapshotNameSet(snapshot: RunScriptSnapshot[]): Set<string> {
   return new Set(snapshot.map((row) => row.name));
 }
 
-export function liveExtraRows(
-  snapshot: RunScriptSnapshot[],
-  live: Array<Record<string, unknown>>,
-): Array<Record<string, unknown>> {
+export function liveExtraRows(snapshot: RunScriptSnapshot[], live: AgentScript[]): AgentScript[] {
   const pinned = snapshotNameSet(snapshot);
-  return live.filter((row) => typeof row.name === "string" && !pinned.has(row.name));
+  return live.filter((script) => !pinned.has(script.name));
 }

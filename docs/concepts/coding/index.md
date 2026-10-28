@@ -353,7 +353,7 @@ agent's live `coding` flag ([Code tools](code-tools.md#tools)).
 ### Policy
 
 The organisation policy's `maxCodingAgents` bounds how many of its
-agents have `coding` on. Core sets no bound. Where an edition's policy
+agents have `coding` on. Core sets no bound. Where an extension's policy
 sets one, creating a coding agent, or turning `coding` on, is refused
 above it with 409 `<source> limit reached: coding agents`. The
 capabilities payload reports `max_coding_agents` and the remaining
@@ -363,7 +363,7 @@ capabilities payload reports `max_coding_agents` and the remaining
 
 | Path | Holds |
 | --- | --- |
-| `apps/orchestrator/src/coding/` | Harnesses (`harnesses.ts`), the model catalogue (`harness-models.ts`), repositories (`repositories.ts`), GitHub tokens and clone errors (`git.ts`) |
+| `apps/orchestrator/src/coding/` | Harnesses (`harnesses.ts`), the model catalogue (`harness-models.ts`), repositories (`repositories.ts`), a guild's repositories and their GitHub logins (`guild-repositories.ts`), a coding agent's harness view and a run's changes (`run-review.ts`), GitHub tokens and clone errors (`git.ts`) |
 | `apps/orchestrator/src/toolbox/harness.ts` | `code_task` and the harness checks |
 | `apps/orchestrator/src/toolbox/code.ts` | `shell`, `shell_status`, `file_read`, `code_search`, and the sandbox helper transport |
 | `apps/orchestrator/src/http/coding-routes.ts` | Repository, harness, and diff routes |

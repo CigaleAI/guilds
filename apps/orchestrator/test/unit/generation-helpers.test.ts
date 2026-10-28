@@ -3,17 +3,17 @@ import { test } from "node:test";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import {
   INTERRUPTED_CONTENT,
-  configSnapshot,
   executedToolCalls,
   interruptionRecord,
-  mcpIndex,
-  mcpRedactions,
   pendingToolCalls,
-  workspaceMaxMib,
-} from "../../src/generation/index.js";
+} from "../../src/generation/tool-calls.js";
+import { configSnapshot } from "../../src/generation/snapshot.js";
+import { mcpIndex } from "../../src/generation/offered-tools.js";
+import { mcpRedactions } from "../../src/generation/run-secrets.js";
+import { workspaceMaxMib } from "../../src/generation/workspace.js";
 import { offeredToolNames } from "../../src/toolbox/offered.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
-import { AGENT_CONFIG } from "../helpers/generation.js";
+import { AGENT_CONFIG, runSnapshot, toolCall } from "../helpers/generation.js";
 
 test("workspaceMaxMib uses a positive integer env value and otherwise the default", () => {
   assert.equal(workspaceMaxMib({ WORKSPACE_MAX_MIB: "512" }), 512);
@@ -34,12 +34,8 @@ test("pendingToolCalls ignores assistant calls without ids and keeps first-seen 
     {
       payload: {
         role: "assistant",
-        tool_calls: [
-          { function: { name: "note_find" } },
-          { id: "", function: { name: "note_get" } },
-          { id: "call_b", function: { name: "note_write" } },
-          { id: "call_a", function: { name: "note_find" } },
-        ],
+        content: "",
+        tool_calls: [toolCall("", "note_get"), toolCall("call_b", "note_write"), toolCall("call_a", "note_find")],
       },
       metadata: { generation: 2 },
     },
@@ -55,11 +51,12 @@ test("pendingToolCalls leaves unmatched tool rows out of the pending map", () =>
     {
       payload: {
         role: "assistant",
-        tool_calls: [{ id: "call_1", function: { name: "note_find" } }],
+        content: "",
+        tool_calls: [toolCall("call_1", "note_find")],
       },
       metadata: { generation: 1 },
     },
-    { payload: { role: "tool", tool_call_id: "call_other", content: "ok" } },
+    { payload: { role: "tool", tool_call_id: "call_other", content: "ok" }, metadata: {} },
   ]);
   assert.equal(pending.length, 1);
   assert.equal(pending[0]?.[0].id, "call_1");
@@ -68,20 +65,17 @@ test("pendingToolCalls leaves unmatched tool rows out of the pending map", () =>
 test("executedToolCalls counts tool role rows only", () => {
   assert.equal(
     executedToolCalls([
-      { payload: { role: "assistant" } },
-      { payload: { role: "tool" } },
-      { payload: { role: "tool" } },
-      { payload: { role: "user" } },
+      { payload: { role: "assistant", content: "" } },
+      { payload: { role: "tool", tool_call_id: "call_1", content: "" } },
+      { payload: { role: "tool", tool_call_id: "call_2", content: "" } },
+      { payload: { role: "user", content: "" } },
     ]),
     2,
   );
 });
 
 test("interruptionRecord writes interrupted content and exit_code for shell", () => {
-  const [payload, metadata] = interruptionRecord(
-    { id: "call_1", function: { name: "shell" } },
-    4,
-  );
+  const [payload, metadata] = interruptionRecord(toolCall("call_1", "shell"), 4);
   assert.equal(payload.content, INTERRUPTED_CONTENT);
   assert.equal(payload.tool_call_id, "call_1");
   assert.equal(metadata.tool_name, "shell");
@@ -90,46 +84,47 @@ test("interruptionRecord writes interrupted content and exit_code for shell", ()
 });
 
 test("interruptionRecord omits exit_code for non-shell tools", () => {
-  const [, metadata] = interruptionRecord({ id: "call_2", function: { name: "note_find" } }, 1);
+  const [, metadata] = interruptionRecord(toolCall("call_2", "note_find"), 1);
   assert.equal(metadata.tool_name, "note_find");
   assert.equal("exit_code" in metadata, false);
 });
 
-test("mcpIndex ignores native registry names and incomplete groups", () => {
+test("mcpIndex maps each connection tool to its connection and remote name, never a native tool", () => {
   const index = mcpIndex([
-    null,
-    { connection_id: 1, tools: [{ name: "remote", remote_name: "x" }] },
     {
       connection_id: "conn_1",
+      server_id: "srv_notion",
+      slug: "notion",
       tools: [
         { name: "note_find", remote_name: "search" },
         { name: "notion_search", remote_name: "search" },
-        { name: "broken" },
       ],
     },
   ]);
   assert.deepEqual(index, { notion_search: ["conn_1", "search"] });
 });
 
-test("configSnapshot skips invalid mcp tool entries", () => {
+test("configSnapshot offers each connection tool's schema and keeps the connection's tools by name", () => {
   const snapshot = configSnapshot(AGENT_CONFIG, {
     tools: [],
     secrets: [],
     mcp: [
-      { connection_id: "conn_1", tools: "nope" },
-      { connection_id: "conn_2", tools: [null, { name: "ok", remote_name: "r", schema: { type: "object" } }] },
+      {
+        connection_id: "conn_1",
+        server_id: "srv_notion",
+        slug: "notion",
+        tools: [{ name: "ok", remote_name: "r", schema: { type: "object" } }],
+      },
     ],
-  });
-  const tools = snapshot.tools as Array<Record<string, unknown>>;
-  assert.equal(tools.some((tool) => tool.type === "object"), true);
-  const mcp = snapshot.mcp as Array<{ tools: unknown[] }>;
-  assert.deepEqual(mcp[0]?.tools, []);
-  assert.deepEqual(mcp[1]?.tools, [{ name: "ok", remote_name: "r" }]);
+  }, "schedule");
+  assert.equal(snapshot.tools.some((tool) => tool.type === "object"), true);
+  assert.deepEqual(snapshot.mcp[0]?.tools, [{ name: "ok", remote_name: "r" }]);
 });
 
 test("mcpRedactions skips missing connections and decrypt failures", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const [ciphertext, nonce] = encryptPayload({ access_token: "tok-live" });
+  const connection = (id: string) => ({ connection_id: id, server_id: "srv", slug: "srv", tools: [] });
   const values = await mcpRedactions(
     {
       async getMcpConnection(connectionId: string) {
@@ -142,20 +137,10 @@ test("mcpRedactions skips missing connections and decrypt failures", async () =>
         return { ciphertext, nonce };
       },
     },
-    {
-      mcp: [
-        { connection_id: "missing" },
-        { connection_id: "broken" },
-        { connection_id: "live" },
-        { connection_id: 1 },
-      ],
-    },
+    { ...runSnapshot(), mcp: [connection("missing"), connection("broken"), connection("live")] },
   );
   assert.equal(values.mcp_live_access_token, "tok-live");
   assert.equal("mcp_missing_access_token" in values, false);
   assert.equal("mcp_broken_access_token" in values, false);
 });
 
-test("mcpRedactions returns empty when mcp is not a list", async () => {
-  assert.deepEqual(await mcpRedactions({ async getMcpConnection() { return null; } }, {}), {});
-});

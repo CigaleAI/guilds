@@ -1,8 +1,10 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
+import type { AuthField } from "../db/schema/index.js";
 import { installedConnectors } from "./index.js";
-import { authFields, type AuthField, type Manifest } from "./manifest.js";
+import { authFields } from "./manifest.js";
 import type { ConnectorEntry, ConnectorSource } from "./registry.js";
+import type { LoadedConnector } from "./load.js";
 
 /** What the API says about a server beside its row: how to sign in, where it came from, and its mark. */
 export type ConnectorFacts = {
@@ -32,23 +34,18 @@ export function logoPath(entry: ConnectorEntry | null): string | null {
  * The facts of a server: from its installed entry (a folder in the image, or a registry connector
  * with code), else from its row (a registry connector without code, or one made on this box).
  */
-export function connectorFacts(server: Record<string, unknown>): ConnectorFacts {
+export function connectorFacts(server: LoadedConnector): ConnectorFacts {
   const entry = installedConnectors().forServer(server);
-  const experimental = server.experimental === true;
+  const experimental = server.experimental;
   if (entry === null) {
-    const manifest = server.manifest as Manifest | undefined;
     const source: ConnectorSource = server.source === "registry" ? "registry" : "local";
     return {
-      auth_fields: manifest
-        ? authFields(manifest)
-        : server.auth === "token"
-          ? [{ name: "token", label: "API key", secret: true }]
-          : [],
-      settings_schema: manifest?.settings_schema ?? null,
+      auth_fields: authFields(server.manifest),
+      settings_schema: server.manifest.settings_schema ?? null,
       source,
-      verified: source === "registry" && server.verified === true,
+      verified: source === "registry" && server.verified,
       experimental,
-      publisher: source === "registry" ? String(server.publisher ?? "") : "",
+      publisher: source === "registry" ? server.publisher : "",
       logo_url: null,
     };
   }

@@ -4,7 +4,7 @@ import { normalizeEmail } from "../lib/email.js";
 
 export const USER_HEADER = "X-Guilds-User";
 export const USER_COOKIE = "guilds_user";
-/** The user a fresh box starts with (`db/seed/operator.ts`). */
+/** The user a fresh box starts with (`seed/operator.ts`). */
 export const SEED_USERS = [
   {
     id: "user_operator",

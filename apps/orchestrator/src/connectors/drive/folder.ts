@@ -1,4 +1,17 @@
+import { Type, type Static, type TSchema } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
+import { decode } from "../../lib/decode.js";
 import { proxyFetch, type FetchFn } from "../../net/http.js";
+import {
+  DriveFile,
+  ErrorBody,
+  FileList,
+  JsonObject,
+  ListedFile,
+  Reasoned,
+  SharedDrive,
+  TextPart,
+} from "./responses.js";
 
 export const DRIVE_FOLDER_MIME = "application/vnd.google-apps.folder";
 export const DRIVE_MY_DRIVE = "root";
@@ -15,7 +28,17 @@ export class DriveFolderError extends Error {
 
 export type DriveClientOptions = { client?: FetchFn | undefined; proxyUrl?: string | undefined };
 
+/** The client options of a call scoped to the connected folder, with the login that makes it. */
+export type ScopedDrive = DriveClientOptions & { accessToken: string; folderId: string };
+
 export type DriveFolder = { id: string; name: string };
+
+/** One Drive API request: its URL, the schema of its response, and its method and body. */
+export type DriveRequest<T extends TSchema> = {
+  url: string;
+  schema: T;
+  init?: Omit<RequestInit, "headers"> & { headers?: Record<string, string> };
+};
 
 type DriveFileMeta = {
   id: string;
@@ -23,6 +46,10 @@ type DriveFileMeta = {
   mimeType: string;
   parents: string[];
 };
+
+type McpFile = { id: string; title: string; parentId: string; mimeType: string };
+
+const UnknownList = Type.Array(Type.Unknown());
 
 function driveFetch(options: DriveClientOptions): FetchFn {
   return options.client ?? proxyFetch(options.proxyUrl ?? "");
@@ -32,25 +59,37 @@ function escapeDriveQuery(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
 
+function isJsonObject(value: unknown): value is JsonObject {
+  return Value.Check(JsonObject, value);
+}
+
+/** The folder id a Drive link names, or null when `text` is not a Drive link. */
+function folderIdFromUrl(text: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(text);
+  } catch {
+    // Plain folder ids are not URLs.
+    return null;
+  }
+  if (url.hostname !== "drive.google.com" && !url.hostname.endsWith(".google.com")) {
+    return null;
+  }
+  const folder = url.pathname.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  if (folder?.[1]) {
+    return folder[1];
+  }
+  return url.searchParams.get("id")?.trim() || null;
+}
+
 export function parseDriveFolderRef(raw: unknown): string {
   if (typeof raw !== "string" || !raw.trim()) {
     throw new DriveFolderError("Google Drive Connect requires picking one folder");
   }
   const trimmed = raw.trim();
-  try {
-    const url = new URL(trimmed);
-    if (url.hostname === "drive.google.com" || url.hostname.endsWith(".google.com")) {
-      const folder = url.pathname.match(/\/folders\/([a-zA-Z0-9_-]+)/);
-      if (folder?.[1]) {
-        return folder[1];
-      }
-      const id = url.searchParams.get("id");
-      if (id?.trim()) {
-        return id.trim();
-      }
-    }
-  } catch {
-    // Plain folder ids are not URLs.
+  const linked = folderIdFromUrl(trimmed);
+  if (linked) {
+    return linked;
   }
   const prefixed = trimmed.startsWith(DRIVE_ID_PREFIX) ? trimmed.slice(DRIVE_ID_PREFIX.length) : trimmed;
   if (/^[a-zA-Z0-9_-]+$/.test(prefixed)) {
@@ -59,40 +98,49 @@ export function parseDriveFolderRef(raw: unknown): string {
   throw new DriveFolderError("Google Drive Connect requires a Drive folder link or id");
 }
 
-function googleDriveError(text: string): { message: string; reason: string } {
+function reasonOf(item: unknown): string {
+  return Value.Check(Reasoned, item) ? item.reason : "";
+}
+
+/** The reason of the first entry of `errors`. */
+function errorsReason(errors: unknown): string {
+  return Value.Check(UnknownList, errors) ? reasonOf(errors[0]) : "";
+}
+
+/** The first reason among `details`. */
+function detailsReason(details: unknown): string {
+  if (!Value.Check(UnknownList, details)) {
+    return "";
+  }
+  for (const item of details) {
+    const reason = reasonOf(item);
+    if (reason) {
+      return reason;
+    }
+  }
+  return "";
+}
+
+function parsedOrNull(text: string): unknown {
   try {
-    const payload: unknown = JSON.parse(text);
-    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-      return { message: "", reason: "" };
-    }
-    const err = (payload as { error?: unknown }).error;
-    if (!err || typeof err !== "object" || Array.isArray(err)) {
-      return { message: "", reason: "" };
-    }
-    const row = err as { message?: unknown; status?: unknown; errors?: unknown; details?: unknown };
-    const message = typeof row.message === "string" ? row.message : "";
-    let reason = typeof row.status === "string" ? row.status : "";
-    if (Array.isArray(row.errors) && row.errors[0] && typeof row.errors[0] === "object") {
-      const first = row.errors[0] as { reason?: unknown };
-      if (typeof first.reason === "string" && first.reason) {
-        reason = first.reason;
-      }
-    }
-    if (Array.isArray(row.details)) {
-      for (const item of row.details) {
-        if (item && typeof item === "object" && typeof (item as { reason?: unknown }).reason === "string") {
-          const detailReason = (item as { reason: string }).reason;
-          if (detailReason) {
-            reason = detailReason;
-            break;
-          }
-        }
-      }
-    }
-    return { message, reason };
+    return JSON.parse(text);
   } catch {
+    return null;
+  }
+}
+
+/** The message and reason of a Google error body: the reason of `details`, else of `errors`, else `status`. */
+function googleDriveError(text: string): { message: string; reason: string } {
+  const payload = parsedOrNull(text);
+  if (!Value.Check(ErrorBody, payload)) {
     return { message: "", reason: "" };
   }
+  const error = payload.error;
+  const status = typeof error.status === "string" ? error.status : "";
+  return {
+    message: typeof error.message === "string" ? error.message : "",
+    reason: detailsReason(error.details) || errorsReason(error.errors) || status,
+  };
 }
 
 function driveLookupError(status: number, text: string): string {
@@ -116,13 +164,18 @@ function driveLookupError(status: number, text: string): string {
   return `Drive folder lookup failed: ${status}`;
 }
 
-export async function driveJson(
+function unexpected(problem: string): DriveFolderError {
+  return new DriveFolderError(`Drive returned an unexpected response at ${problem}`);
+}
+
+/** The response to `request`, as its schema describes it. */
+export async function driveJson<T extends TSchema>(
   accessToken: string,
-  url: string,
+  request: DriveRequest<T>,
   options: DriveClientOptions,
-  init: Omit<RequestInit, "headers"> & { headers?: Record<string, string> } = {},
-): Promise<Record<string, unknown>> {
-  const response = await driveFetch(options)(url, {
+): Promise<Static<T>> {
+  const init = request.init ?? {};
+  const response = await driveFetch(options)(request.url, {
     ...init,
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -134,16 +187,11 @@ export async function driveJson(
   if (response.status >= 400) {
     throw new DriveFolderError(driveLookupError(response.status, text));
   }
-  let payload: unknown;
-  try {
-    payload = JSON.parse(text);
-  } catch {
+  const payload = parsedOrNull(text);
+  if (!isJsonObject(payload)) {
     throw new DriveFolderError("Drive folder lookup returned a non-object");
   }
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new DriveFolderError("Drive folder lookup returned a non-object");
-  }
-  return payload as Record<string, unknown>;
+  return decode(request.schema, payload, unexpected);
 }
 
 export async function driveBytes(
@@ -171,18 +219,15 @@ async function loadDriveFile(
   const url =
     `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}` +
     "?fields=id,name,mimeType,parents&supportsAllDrives=true";
-  const payload = await driveJson(accessToken, url, options);
-  if (typeof payload.id !== "string" || !payload.id) {
+  const payload = await driveJson(accessToken, { url, schema: DriveFile }, options);
+  if (!payload.id) {
     throw new DriveFolderError("Drive folder lookup is missing id or name");
   }
-  const parents = Array.isArray(payload.parents)
-    ? payload.parents.filter((item): item is string => typeof item === "string" && Boolean(item))
-    : [];
   return {
     id: payload.id,
-    name: typeof payload.name === "string" ? payload.name : "",
-    mimeType: typeof payload.mimeType === "string" ? payload.mimeType : "",
-    parents,
+    name: payload.name ?? "",
+    mimeType: payload.mimeType ?? "",
+    parents: (payload.parents ?? []).filter(Boolean),
   };
 }
 
@@ -191,27 +236,21 @@ async function loadSharedDrive(
   driveId: string,
   options: DriveClientOptions = {},
 ): Promise<DriveFolder> {
-  const payload = await driveJson(
-    accessToken,
-    `https://www.googleapis.com/drive/v3/drives/${encodeURIComponent(driveId)}?fields=id,name`,
-    options,
-  );
-  if (typeof payload.id !== "string" || !payload.id || typeof payload.name !== "string" || !payload.name.trim()) {
+  const url = `https://www.googleapis.com/drive/v3/drives/${encodeURIComponent(driveId)}?fields=id,name`;
+  const payload = await driveJson(accessToken, { url, schema: SharedDrive }, options);
+  const name = payload.name?.trim();
+  if (!payload.id || !name) {
     throw new DriveFolderError("Drive folder lookup is missing id or name");
   }
-  return { id: payload.id, name: payload.name.trim() };
+  return { id: payload.id, name };
 }
 
-function foldersFromFiles(payload: Record<string, unknown>): DriveFolder[] {
-  const files = Array.isArray(payload.files) ? payload.files : [];
+function foldersFromFiles(payload: FileList): DriveFolder[] {
   const folders: DriveFolder[] = [];
-  for (const item of files) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) {
-      continue;
-    }
-    const row = item as { id?: unknown; name?: unknown };
-    if (typeof row.id === "string" && row.id && typeof row.name === "string" && row.name.trim()) {
-      folders.push({ id: row.id, name: row.name.trim() });
+  for (const row of payload.files ?? []) {
+    const name = row.name?.trim();
+    if (row.id && name) {
+      folders.push({ id: row.id, name });
     }
   }
   folders.sort((left, right) => left.name.localeCompare(right.name));
@@ -245,8 +284,8 @@ export async function loadDriveRootId(
   options: DriveClientOptions = {},
 ): Promise<string> {
   const url = "https://www.googleapis.com/drive/v3/files/root?fields=id&supportsAllDrives=true";
-  const payload = await driveJson(accessToken, url, options);
-  if (typeof payload.id !== "string" || !payload.id) {
+  const payload = await driveJson(accessToken, { url, schema: DriveFile }, options);
+  if (!payload.id) {
     throw new DriveFolderError("Drive root lookup is missing id");
   }
   return payload.id;
@@ -283,12 +322,20 @@ export async function searchDriveFolders(
     supportsAllDrives: "true",
     q: `mimeType = '${DRIVE_FOLDER_MIME}' and name contains '${escapeDriveQuery(query.trim())}' and trashed = false`,
   });
-  const payload = await driveJson(
-    accessToken,
-    `https://www.googleapis.com/drive/v3/files?${params.toString()}`,
-    options,
-  );
-  return foldersFromFiles(payload);
+  const url = `https://www.googleapis.com/drive/v3/files?${params.toString()}`;
+  return foldersFromFiles(await driveJson(accessToken, { url, schema: FileList }, options));
+}
+
+/** The parents of a file, or none when this login cannot read it. */
+async function readableParents(accessToken: string, fileId: string, options: DriveClientOptions): Promise<string[]> {
+  try {
+    return (await loadDriveFile(accessToken, fileId, options)).parents;
+  } catch (error) {
+    if (error instanceof DriveFolderError) {
+      return [];
+    }
+    throw error;
+  }
 }
 
 export async function fileInDriveFolder(
@@ -308,22 +355,11 @@ export async function fileInDriveFolder(
     return false;
   }
   seen.add(fileId);
-  let meta: DriveFileMeta;
-  try {
-    meta = await loadDriveFile(accessToken, fileId, options);
-  } catch (error) {
-    if (error instanceof DriveFolderError) {
-      return false;
-    }
-    throw error;
-  }
-  if (meta.parents.includes(folderId)) {
+  const parents = await readableParents(accessToken, fileId, options);
+  if (parents.includes(folderId)) {
     return true;
   }
-  for (const parent of meta.parents) {
-    if (parent === DRIVE_MY_DRIVE) {
-      continue;
-    }
+  for (const parent of parents.filter((id) => id !== DRIVE_MY_DRIVE)) {
     if (await fileInDriveFolder(accessToken, parent, folderId, { ...options, seen })) {
       return true;
     }
@@ -365,27 +401,20 @@ function drivePageToken(args: Record<string, unknown>): string {
   return typeof raw === "string" ? raw.trim() : "";
 }
 
-async function driveSearchCorpus(
-  accessToken: string,
-  folderId: string,
-  options: DriveClientOptions,
-): Promise<{ corpora: "user" } | { corpora: "drive"; driveId: string }> {
+type DriveCorpus = { corpora: "user" } | { corpora: "drive"; driveId: string };
+
+async function driveSearchCorpus(scoped: ScopedDrive): Promise<DriveCorpus> {
+  const { accessToken, folderId } = scoped;
+  const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(folderId)}?fields=id,driveId&supportsAllDrives=true`;
   try {
-    const payload = await driveJson(
-      accessToken,
-      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(folderId)}?fields=id,driveId&supportsAllDrives=true`,
-      options,
-    );
-    if (typeof payload.driveId === "string" && payload.driveId.trim()) {
-      return { corpora: "drive", driveId: payload.driveId.trim() };
-    }
-    return { corpora: "user" };
+    const driveId = (await driveJson(accessToken, { url, schema: DriveFile }, scoped)).driveId?.trim();
+    return driveId ? { corpora: "drive", driveId } : { corpora: "user" };
   } catch (error) {
     if (!(error instanceof DriveFolderError)) {
       throw error;
     }
     try {
-      const drive = await loadSharedDrive(accessToken, folderId, options);
+      const drive = await loadSharedDrive(accessToken, folderId, scoped);
       return { corpora: "drive", driveId: drive.id };
     } catch {
       throw error;
@@ -393,42 +422,42 @@ async function driveSearchCorpus(
   }
 }
 
-function mcpFileFromDrive(row: Record<string, unknown>): { id: string; title: string; parentId: string; mimeType: string } | null {
-  const id = typeof row.id === "string" ? row.id : "";
-  if (!id) {
+function setCorpus(params: URLSearchParams, corpus: DriveCorpus): void {
+  if (corpus.corpora === "user") {
+    params.set("corpora", "user");
+    return;
+  }
+  params.set("corpora", "drive");
+  params.set("driveId", corpus.driveId);
+  params.set("includeItemsFromAllDrives", "true");
+  params.set("supportsAllDrives", "true");
+}
+
+function mcpFileFromDrive(row: DriveFile): McpFile | null {
+  if (!row.id) {
     return null;
   }
-  const parents = Array.isArray(row.parents)
-    ? row.parents.filter((item): item is string => typeof item === "string" && Boolean(item))
-    : [];
   return {
-    id,
-    title: typeof row.name === "string" ? row.name : "",
-    parentId: parents[0] ?? "",
-    mimeType: typeof row.mimeType === "string" ? row.mimeType : "",
+    id: row.id,
+    title: row.name ?? "",
+    parentId: (row.parents ?? []).find(Boolean) ?? "",
+    mimeType: row.mimeType ?? "",
   };
 }
 
-async function keepDriveSearchHits(
-  accessToken: string,
-  folderId: string,
-  rows: unknown[],
-  options: DriveClientOptions,
-): Promise<Array<{ id: string; title: string; parentId: string; mimeType: string }>> {
-  const kept: Array<{ id: string; title: string; parentId: string; mimeType: string }> = [];
-  for (const item of rows) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) {
-      continue;
-    }
-    const mapped = mcpFileFromDrive(item as Record<string, unknown>);
-    if (!mapped) {
-      continue;
-    }
-    if (
-      mapped.id === folderId ||
-      mapped.parentId === folderId ||
-      (await fileInDriveFolder(accessToken, mapped.id, folderId, options))
-    ) {
+/** Whether a listed file is the connected folder, directly in it, or below it. */
+async function inScopedFolder(scoped: ScopedDrive, file: { id: string; parentId: string }): Promise<boolean> {
+  if (file.id === scoped.folderId || file.parentId === scoped.folderId) {
+    return true;
+  }
+  return fileInDriveFolder(scoped.accessToken, file.id, scoped.folderId, scoped);
+}
+
+async function keepDriveSearchHits(scoped: ScopedDrive, rows: DriveFile[]): Promise<McpFile[]> {
+  const kept: McpFile[] = [];
+  for (const row of rows) {
+    const mapped = mcpFileFromDrive(row);
+    if (mapped && (await inScopedFolder(scoped, mapped))) {
       kept.push(mapped);
     }
   }
@@ -436,13 +465,11 @@ async function keepDriveSearchHits(
 }
 
 async function listScopedDriveFiles(
-  accessToken: string,
-  folderId: string,
+  scoped: ScopedDrive,
   arguments_: Record<string, unknown>,
-  options: DriveClientOptions,
   extra: { q: string; orderBy?: string; pageSize: number },
 ): Promise<string> {
-  const corpus = await driveSearchCorpus(accessToken, folderId, options);
+  const corpus = await driveSearchCorpus(scoped);
   const params = new URLSearchParams({
     q: extra.q,
     fields: DRIVE_LIST_FIELDS,
@@ -455,26 +482,11 @@ async function listScopedDriveFiles(
   if (pageToken) {
     params.set("pageToken", pageToken);
   }
-  if (corpus.corpora === "drive") {
-    params.set("corpora", "drive");
-    params.set("driveId", corpus.driveId);
-    params.set("includeItemsFromAllDrives", "true");
-    params.set("supportsAllDrives", "true");
-  } else {
-    params.set("corpora", "user");
-  }
-  const payload = await driveJson(
-    accessToken,
-    `https://www.googleapis.com/drive/v3/files?${params.toString()}`,
-    options,
-  );
-  const kept = await keepDriveSearchHits(
-    accessToken,
-    folderId,
-    Array.isArray(payload.files) ? payload.files : [],
-    options,
-  );
-  const nextPageToken = typeof payload.nextPageToken === "string" ? payload.nextPageToken : "";
+  setCorpus(params, corpus);
+  const url = `https://www.googleapis.com/drive/v3/files?${params.toString()}`;
+  const payload = await driveJson(scoped.accessToken, { url, schema: FileList }, scoped);
+  const kept = await keepDriveSearchHits(scoped, payload.files ?? []);
+  const nextPageToken = payload.nextPageToken ?? "";
   return JSON.stringify(nextPageToken ? { files: kept, nextPageToken } : { files: kept });
 }
 
@@ -485,7 +497,7 @@ export async function searchDriveFolder(
   options: DriveClientOptions = {},
 ): Promise<string> {
   const translated = translateDriveSearchQuery(typeof arguments_.query === "string" ? arguments_.query : "");
-  return listScopedDriveFiles(accessToken, folderId, arguments_, options, {
+  return listScopedDriveFiles({ ...options, accessToken, folderId }, arguments_, {
     q: translated ? `${translated} and trashed = false` : "trashed = false",
     pageSize: drivePageSize(arguments_, 10),
   });
@@ -498,7 +510,7 @@ export async function listRecentDriveFiles(
   options: DriveClientOptions = {},
 ): Promise<string> {
   const order = typeof arguments_.orderBy === "string" ? arguments_.orderBy : typeof arguments_.order_by === "string" ? arguments_.order_by : "";
-  return listScopedDriveFiles(accessToken, folderId, arguments_, options, {
+  return listScopedDriveFiles({ ...options, accessToken, folderId }, arguments_, {
     q: "trashed = false",
     orderBy: order === "lastModifiedByMe" ? "modifiedByMeTime desc" : "modifiedTime desc",
     pageSize: drivePageSize(arguments_, 10),
@@ -534,108 +546,84 @@ function driveQueryParents(query: string): { neq: boolean; ids: string[] } {
   return { neq, ids };
 }
 
-async function assertInFolder(
-  accessToken: string,
-  fileId: string,
-  folderId: string,
-  options: DriveClientOptions,
-  message: string,
-): Promise<void> {
-  if (!(await fileInDriveFolder(accessToken, fileId, folderId, options))) {
-    throw new DriveFolderError(message);
+const OUTSIDE_FOLDER = "Drive tools are limited to the connected folder";
+
+/** The tools that act on one file, and so need a file to act on. */
+const FILE_TOOLS = new Set(["get_file_metadata", "get_file_permissions", "read_file_content", "download_file_content"]);
+
+async function assertInFolder(scoped: ScopedDrive, fileId: string): Promise<void> {
+  if (!(await fileInDriveFolder(scoped.accessToken, fileId, scoped.folderId, scoped))) {
+    throw new DriveFolderError(OUTSIDE_FOLDER);
   }
+}
+
+/** A search may name parents inside the connected folder, and never exclude one. */
+async function constrainSearch(scoped: ScopedDrive, arguments_: Record<string, unknown>): Promise<void> {
+  const parents = driveQueryParents(typeof arguments_.query === "string" ? arguments_.query : "");
+  if (parents.neq) {
+    throw new DriveFolderError("Drive search cannot exclude the connected folder");
+  }
+  for (const id of parents.ids) {
+    await assertInFolder(scoped, id);
+  }
+}
+
+/** A create goes into the connected folder, or a folder inside it. */
+async function constrainCreate(scoped: ScopedDrive, arguments_: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const parent = driveArg(arguments_, "parentId", "parent_id");
+  if (!parent) {
+    return { ...arguments_, parentId: scoped.folderId };
+  }
+  await assertInFolder(scoped, parent);
+  return arguments_;
 }
 
 export async function constrainDriveTool(
   remoteName: string,
   arguments_: Record<string, unknown>,
-  options: DriveClientOptions & { accessToken: string; folderId: string },
+  options: ScopedDrive,
 ): Promise<Record<string, unknown>> {
-  const { accessToken, folderId } = options;
-  const outside = "Drive tools are limited to the connected folder";
   if (remoteName === "search_files") {
-    const query = typeof arguments_.query === "string" ? arguments_.query : "";
-    const parents = driveQueryParents(query);
-    if (parents.neq) {
-      throw new DriveFolderError("Drive search cannot exclude the connected folder");
-    }
-    for (const id of parents.ids) {
-      await assertInFolder(accessToken, id, folderId, options, outside);
-    }
+    await constrainSearch(options, arguments_);
     return arguments_;
   }
   if (remoteName === "list_recent_files") {
     return arguments_;
   }
   if (remoteName === "create_file") {
-    const parent = driveArg(arguments_, "parentId", "parent_id");
-    if (!parent) {
-      return { ...arguments_, parentId: folderId };
-    }
-    await assertInFolder(accessToken, parent, folderId, options, outside);
-    return arguments_;
-  }
-  if (remoteName === "copy_file") {
-    const fileId = driveArg(arguments_, "fileId", "file_id");
-    if (!fileId) {
-      throw new DriveFolderError("copy_file requires fileId");
-    }
-    await assertInFolder(accessToken, fileId, folderId, options, outside);
-    const parent = driveArg(arguments_, "parentId", "parent_id");
-    if (parent) {
-      await assertInFolder(accessToken, parent, folderId, options, outside);
-    }
-    return arguments_;
+    return constrainCreate(options, arguments_);
   }
   const fileId = driveArg(arguments_, "fileId", "file_id");
+  if (remoteName === "copy_file" && !fileId) {
+    throw new DriveFolderError("copy_file requires fileId");
+  }
   if (fileId) {
-    await assertInFolder(accessToken, fileId, folderId, options, outside);
+    await assertInFolder(options, fileId);
   }
   const parent = driveArg(arguments_, "parentId", "parent_id");
   if (parent) {
-    await assertInFolder(accessToken, parent, folderId, options, outside);
+    await assertInFolder(options, parent);
   }
-  if (
-    !fileId &&
-    !parent &&
-    (remoteName === "get_file_metadata" ||
-      remoteName === "get_file_permissions" ||
-      remoteName === "read_file_content" ||
-      remoteName === "download_file_content")
-  ) {
+  if (!fileId && !parent && FILE_TOOLS.has(remoteName)) {
     throw new DriveFolderError(`${remoteName} requires fileId`);
   }
   return arguments_;
 }
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
-  }
-  return null;
-}
-
-function mcpContentText(result: Record<string, unknown>): string {
+function mcpContentText(result: JsonObject): string {
   const content = result.content;
   if (typeof content === "string") {
     return content;
   }
-  if (!Array.isArray(content)) {
+  if (!Value.Check(UnknownList, content)) {
     return "";
   }
   const parts: string[] = [];
   for (const item of content) {
     if (typeof item === "string") {
       parts.push(item);
-      continue;
-    }
-    if (
-      item &&
-      typeof item === "object" &&
-      !Array.isArray(item) &&
-      typeof (item as { text?: unknown }).text === "string"
-    ) {
-      parts.push((item as { text: string }).text);
+    } else if (Value.Check(TextPart, item)) {
+      parts.push(item.text);
     }
   }
   return parts.join("\n");
@@ -645,7 +633,7 @@ function coerceFileRows(files: unknown): unknown[] | null {
   if (files == null) {
     return [];
   }
-  if (Array.isArray(files)) {
+  if (Value.Check(UnknownList, files)) {
     return files;
   }
   if (typeof files === "object") {
@@ -654,28 +642,42 @@ function coerceFileRows(files: unknown): unknown[] | null {
   return null;
 }
 
-function driveFileListing(value: unknown): { payload: Record<string, unknown>; files: unknown[] } | null {
+type DriveFileListing = { payload: JsonObject; files: unknown[] };
+
+function emptyListing(): DriveFileListing {
+  return { payload: {}, files: [] };
+}
+
+/** The listing a remote tool result holds, or null when it holds none this filter can read. */
+function driveFileListing(value: unknown): DriveFileListing | null {
   if (value == null) {
-    return { payload: {}, files: [] };
+    return emptyListing();
   }
   if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      return { payload: {}, files: [] };
-    }
-    try {
-      return driveFileListing(JSON.parse(trimmed) as unknown);
-    } catch {
-      return null;
-    }
+    return listingFromText(value);
   }
-  if (Array.isArray(value)) {
+  if (Value.Check(UnknownList, value)) {
     return { payload: {}, files: value };
   }
-  const rec = asRecord(value);
-  if (!rec) {
+  return isJsonObject(value) ? listingFromObject(value) : null;
+}
+
+function listingFromText(value: string): DriveFileListing | null {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return emptyListing();
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
     return null;
   }
+  return driveFileListing(parsed);
+}
+
+/** A result object's listing: its structured content, its files, its text content, or a bare page token. */
+function listingFromObject(rec: JsonObject): DriveFileListing | null {
   if (rec.structuredContent !== undefined) {
     const inner = driveFileListing(rec.structuredContent);
     if (inner) {
@@ -684,78 +686,66 @@ function driveFileListing(value: unknown): { payload: Record<string, unknown>; f
   }
   if ("files" in rec) {
     const files = coerceFileRows(rec.files);
-    if (files) {
-      return { payload: rec, files };
-    }
-    return null;
+    return files ? { payload: rec, files } : null;
   }
   if (rec.content !== undefined) {
     const text = mcpContentText(rec);
-    if (!text.trim()) {
-      return { payload: {}, files: [] };
-    }
-    return driveFileListing(text);
+    return text.trim() ? driveFileListing(text) : emptyListing();
   }
   const extra = Object.keys(rec).filter((key) => key !== "nextPageToken" && key !== "next_page_token");
-  if (extra.length === 0) {
-    return { payload: rec, files: [] };
+  return extra.length === 0 ? { payload: rec, files: [] } : null;
+}
+
+/** A result with no listing in it: its text when that text is a message, not unreadable JSON. */
+function unlistedResultText(result: unknown, rec: JsonObject | null): string {
+  const text = typeof result === "string" ? result.trim() : rec ? mcpContentText(rec).trim() : "";
+  if (text && text[0] !== "[" && text[0] !== "{") {
+    return text;
   }
-  return null;
+  throw new DriveFolderError("Drive folder filter could not read the result");
+}
+
+/** The listed files inside the connected folder, each as the remote tool returned it. */
+async function keepListedFiles(scoped: ScopedDrive, files: unknown[]): Promise<unknown[]> {
+  const kept: unknown[] = [];
+  for (const item of files) {
+    if (!Value.Check(ListedFile, item) || !item.id) {
+      continue;
+    }
+    const parentId =
+      typeof item.parentId === "string" ? item.parentId : typeof item.parent_id === "string" ? item.parent_id : "";
+    if (await inScopedFolder(scoped, { id: item.id, parentId })) {
+      kept.push(item);
+    }
+  }
+  return kept;
+}
+
+function listingPageToken(payload: JsonObject): string {
+  if (typeof payload.nextPageToken === "string") {
+    return payload.nextPageToken;
+  }
+  return typeof payload.next_page_token === "string" ? payload.next_page_token : "";
 }
 
 export async function filterDriveToolResult(
   remoteName: string,
   result: unknown,
-  options: DriveClientOptions & { accessToken: string; folderId: string },
+  options: ScopedDrive,
 ): Promise<string> {
   if (remoteName !== "search_files" && remoteName !== "list_recent_files") {
     return typeof result === "string" ? result : JSON.stringify(result);
   }
-  const rec = asRecord(result);
-  if (rec?.isError === true) {
-    const text = mcpContentText(rec).trim();
-    if (text) {
-      return text;
-    }
+  const rec = isJsonObject(result) ? result : null;
+  const errorText = rec?.isError === true ? mcpContentText(rec).trim() : "";
+  if (errorText) {
+    return errorText;
   }
   const listing = driveFileListing(result);
   if (!listing) {
-    const text =
-      typeof result === "string"
-        ? result.trim()
-        : rec
-          ? mcpContentText(rec).trim()
-          : "";
-    if (text && text[0] !== "[" && text[0] !== "{") {
-      return text;
-    }
-    throw new DriveFolderError("Drive folder filter could not read the result");
+    return unlistedResultText(result, rec);
   }
-  const kept: unknown[] = [];
-  for (const item of listing.files) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) {
-      continue;
-    }
-    const row = item as { id?: unknown; parentId?: unknown; parent_id?: unknown };
-    const id = typeof row.id === "string" ? row.id : "";
-    const parentId =
-      typeof row.parentId === "string" ? row.parentId : typeof row.parent_id === "string" ? row.parent_id : "";
-    if (!id) {
-      continue;
-    }
-    if (
-      id === options.folderId ||
-      parentId === options.folderId ||
-      (await fileInDriveFolder(options.accessToken, id, options.folderId, options))
-    ) {
-      kept.push(item);
-    }
-  }
-  const nextPageToken =
-    typeof listing.payload.nextPageToken === "string"
-      ? listing.payload.nextPageToken
-      : typeof listing.payload.next_page_token === "string"
-        ? listing.payload.next_page_token
-        : "";
+  const kept = await keepListedFiles(options, listing.files);
+  const nextPageToken = listingPageToken(listing.payload);
   return JSON.stringify(nextPageToken ? { files: kept, nextPageToken } : { files: kept });
 }

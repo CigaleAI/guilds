@@ -20,6 +20,8 @@ import { CONNECTORS } from "../../src/connectors/index.js";
 import { ConnectorError } from "../../src/connectors/types.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { mockFetch } from "../helpers/http.js";
+import { serverRow } from "../helpers/servers.js";
+import { connectionRow } from "../helpers/servers.js";
 
 const KEY = decodeMasterKey(HEX_MASTER_KEY);
 const TOOLS = CONNECTORS.bySlug("dexpaprika")!.manifest.tools!;
@@ -35,31 +37,29 @@ class MemoryDb {
 }
 
 test("formatSearch drops descriptions and caps rows", () => {
-  const stored = formatSearch(
-    {
-      tokens: [{
-        id: "So11111111111111111111111111111111111111112",
-        name: "Wrapped SOL",
-        symbol: "SOL",
-        chain: "solana",
-        price_usd: 103.8,
-        description: "long html",
-        website: "https://solana.com",
-      }],
-      pools: [{
-        id: "pool-1",
-        dex_name: "Raydium",
-        chain: "solana",
-        volume_usd_24h: 1_200_000,
-        tokens: [
-          { symbol: "SOL", id: "So11111111111111111111111111111111111111112" },
-          { symbol: "USDC", id: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" },
-        ],
-      }],
-      dexes: [{ dex_id: "raydium", dex_name: "Raydium", chain: "solana", volume_usd_24h: 9e9 }],
-    },
-    15,
-  );
+  const payload = {
+    tokens: [{
+      id: "So11111111111111111111111111111111111111112",
+      name: "Wrapped SOL",
+      symbol: "SOL",
+      chain: "solana",
+      price_usd: 103.8,
+      description: "long html",
+      website: "https://solana.com",
+    }],
+    pools: [{
+      id: "pool-1",
+      dex_name: "Raydium",
+      chain: "solana",
+      volume_usd_24h: 1_200_000,
+      tokens: [
+        { symbol: "SOL", id: "So11111111111111111111111111111111111111112" },
+        { symbol: "USDC", id: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" },
+      ],
+    }],
+    dexes: [{ dex_id: "raydium", dex_name: "Raydium", chain: "solana", volume_usd_24h: 9e9 }],
+  };
+  const stored = formatSearch(payload, 15);
   assert.equal(
     stored,
     "tokens\nsolana  So11111111111111111111111111111111111111112  SOL  Wrapped SOL  p=103.8\n\n"
@@ -86,7 +86,7 @@ test("formatSearch caps rows", () => {
 });
 
 test("formatToken keeps lean market", () => {
-  const stored = formatToken({
+  const payload = {
     id: "So11111111111111111111111111111111111111112",
     name: "Wrapped SOL",
     symbol: "SOL",
@@ -100,7 +100,8 @@ test("formatToken keeps lean market", () => {
       pools: 12897,
       "24h": { volume_usd: 5.1e9, last_price_usd_change: 0.67 },
     },
-  });
+  };
+  const stored = formatToken(payload);
   assert.equal(
     stored,
     "solana  So11111111111111111111111111111111111111112  SOL  Wrapped SOL\n"
@@ -252,10 +253,10 @@ test("sync DexPaprika writes the curated catalog", async () => {
   });
   const [ciphertext, nonce] = encryptPayload({ token: "api_test" }, KEY);
   const db = new MemoryDb();
-  const connection = { id: "conn_dp", status: "connected", ciphertext, nonce };
-  const server = { id: "mcp_dexpaprika", slug: "dexpaprika", auth: "token" };
-  const first = await pool.syncTools(db, connection, server, { force: true });
-  const second = await pool.syncTools(db, connection, server);
+  const connection = connectionRow({ id: "conn_dp", status: "connected", ciphertext, nonce });
+  const server = serverRow("dexpaprika", { id: "mcp_dexpaprika", auth: "token" });
+  const first = await pool.syncTools(db as never, connection, server, { force: true });
+  const second = await pool.syncTools(db as never, connection, server);
   assert.equal(pinged, 1);
   assert.deepEqual(first.map((tool) => tool.namespaced_name), TOOLS.map((spec) => `dexpaprika_${spec.name}`));
   assert.deepEqual(first, second);
@@ -272,7 +273,7 @@ test("sync DexPaprika rejects a bad key", async () => {
   });
   const [ciphertext, nonce] = encryptPayload({ token: "bad" }, KEY);
   await assert.rejects(
-    () => pool.syncTools(new MemoryDb(), { id: "conn_dp", status: "connected", ciphertext, nonce }, { id: "mcp_dexpaprika", slug: "dexpaprika", auth: "token" }, { force: true }),
+    () => pool.syncTools(new MemoryDb() as never, connectionRow({ id: "conn_dp", status: "connected", ciphertext, nonce }), serverRow("dexpaprika", { id: "mcp_dexpaprika", auth: "token" }), { force: true }),
     (error: unknown) => error instanceof McpError && error.status === 401 && error.message === "invalid key",
   );
 });
@@ -291,9 +292,9 @@ test("call DexPaprika dispatches", async () => {
   });
   const [ciphertext, nonce] = encryptPayload({ token: "api_test" }, KEY);
   const stored = await pool.call(
-    new MemoryDb(),
-    { id: "conn_dp", status: "connected", ciphertext, nonce },
-    { id: "mcp_dexpaprika", slug: "dexpaprika", auth: "token" },
+    new MemoryDb() as never,
+    connectionRow({ id: "conn_dp", status: "connected", ciphertext, nonce }),
+    serverRow("dexpaprika", { id: "mcp_dexpaprika", auth: "token" }),
     "search",
     { query: "sol" },
   );

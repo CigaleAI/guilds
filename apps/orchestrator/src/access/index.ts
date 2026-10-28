@@ -1,8 +1,11 @@
-import { NATIVE_TOOLS } from "../db/seed/catalog.js";
+import { NATIVE_TOOLS } from "../seed/catalog.js";
 import { visibleAt } from "../credentials/visibility.js";
 import { oauthSetupState } from "../oauth/index.js";
 import { connectorFacts } from "../connectors/view.js";
-import { awaitingSettings, connectionSettings } from "../connectors/login.js";
+import { awaitingSettings } from "../connectors/login.js";
+import type { LoadedConnector } from "../connectors/load.js";
+import type { McpConnectionRow } from "../db/mcp.js";
+import type { ToolInputSchema } from "../db/schema/index.js";
 
 export const NOTE_TOOLS = [
   "note_find",
@@ -50,10 +53,14 @@ export const ACCESS_NATIVE_TOOLS = NATIVE_TOOLS;
 export const CATALOG_KINDS = ["native_tool", "mcp", "mcp_tool"] as const;
 export const SCOPES = ["platform", "org", "guild", "agent"] as const;
 
+/** A refused binding request, with the HTTP status it answers with: 422 unless it says otherwise. */
 export class BindingError extends Error {
-  constructor(message: string) {
+  status: 400 | 404 | 422;
+
+  constructor(message: string, status: 400 | 404 | 422 = 422) {
     super(message);
     this.name = "BindingError";
+    this.status = status;
   }
 }
 
@@ -124,8 +131,8 @@ export function validateBinding(args: {
   enabled: boolean;
   guildId?: string | null;
   orgId?: string | null;
-  server?: Record<string, unknown> | null;
-  connection?: Record<string, unknown> | null;
+  server?: LoadedConnector | null;
+  connection?: McpConnectionRow | null;
   connectionId?: string | null;
 }): Overlay {
   const [catalogKind, catalogId] = validateCatalog(args.catalogKind, args.catalogId);
@@ -286,16 +293,16 @@ export function enabledToolNames(items: Resolved[]): string[] {
 
 export function resolvedMcp(
   rows: Array<Record<string, unknown>>,
-  servers: Array<Record<string, unknown>>,
+  servers: LoadedConnector[],
   options: {
     orgId?: string | null | undefined;
     guildId?: string | null | undefined;
     agentId?: string | null | undefined;
     viewScope?: string | undefined;
   } = {},
-): Array<[Resolved, Record<string, unknown>]> {
+): Array<[Resolved, LoadedConnector]> {
   return servers.map((server) => [
-    resolveItem(rows, "mcp", String(server.id), {
+    resolveItem(rows, "mcp", server.id, {
       orgId: options.orgId,
       guildId: options.guildId,
       agentId: options.agentId,
@@ -314,31 +321,24 @@ export function toolView(item: Resolved): Record<string, unknown> {
   };
 }
 
-function inputSchemaOf(value: unknown): Record<string, unknown> {
-  let loaded = value;
-  if (typeof loaded === "string") {
-    try {
-      loaded = JSON.parse(loaded);
-    } catch {
-      return { type: "object" };
-    }
-  }
-  return loaded && typeof loaded === "object" && !Array.isArray(loaded)
-    ? (loaded as Record<string, unknown>)
-    : { type: "object" };
-}
+/** A tool as a listing or a manifest names it: what its view shows of it. */
+export type ListedToolFields = {
+  namespaced_name: string;
+  remote_name: string;
+  description: string;
+  input_schema: ToolInputSchema;
+};
 
 export function mcpToolView(
   item: Resolved,
-  listed: { namespaced_name?: unknown; remote_name?: unknown; description?: unknown } | Record<string, unknown>,
+  listed: ListedToolFields,
   options: { serverSource?: string | null } = {},
 ): Record<string, unknown> {
-  const record = listed as Record<string, unknown>;
   return {
-    name: record.namespaced_name ?? record.name,
-    remote_name: record.remote_name,
-    description: record.description ?? "",
-    input_schema: inputSchemaOf(record.input_schema),
+    name: listed.namespaced_name,
+    remote_name: listed.remote_name,
+    description: listed.description,
+    input_schema: listed.input_schema,
     enabled: item.enabled,
     source_scope: item.source_scope || options.serverSource || null,
     overlay: item.overlay === null ? null : { enabled: item.overlay.enabled },
@@ -347,8 +347,8 @@ export function mcpToolView(
 
 export function mcpView(
   item: Resolved,
-  server: Record<string, unknown>,
-  connection: Record<string, unknown> | null,
+  server: LoadedConnector,
+  connection: McpConnectionRow | null,
   options: { tools?: Array<Record<string, unknown>> | null } = {},
 ): Record<string, unknown> {
   const overlay =
@@ -364,11 +364,11 @@ export function mcpView(
     name: server.display_name,
     auth: server.auth,
     description: server.description || "",
-    limitations: server.limitations ?? null,
-    setup_hint: server.setup_hint ?? null,
-    oauth_strategy: server.oauth_strategy ?? null,
+    limitations: server.limitations,
+    setup_hint: server.setup_hint,
+    oauth_strategy: server.oauth_strategy,
     oauth_setup_state: oauthSetupState(server),
-    catalog_enabled: server.enabled !== false,
+    catalog_enabled: server.enabled,
     org_owned: Boolean(server.owner_org_id),
     enabled: item.enabled,
     source_scope: item.source_scope,
@@ -379,7 +379,7 @@ export function mcpView(
     overlay,
     tools: options.tools ?? [],
     ...connectorFacts(server),
-    settings: connection === null ? {} : connectionSettings(connection),
+    settings: connection === null ? {} : connection.settings,
     needs_settings: connection !== null && awaitingSettings(connection),
   };
   return view;
@@ -391,8 +391,8 @@ export function accessPayload(args: {
   guildId?: string | null | undefined;
   agentId?: string | null | undefined;
   viewScope: string;
-  servers?: Array<Record<string, unknown>> | null | undefined;
-  connections?: Array<Record<string, unknown>> | null | undefined;
+  servers?: LoadedConnector[] | null | undefined;
+  connections?: McpConnectionRow[] | null | undefined;
   listedTools?: Record<string, unknown[]> | null | undefined;
 }): Record<string, unknown> {
   const options = {
@@ -402,9 +402,9 @@ export function accessPayload(args: {
     viewScope: args.viewScope,
   };
   const tools = resolvedTools(args.rows, options).map(toolView);
-  const byConnection = new Map<string, Record<string, unknown>>();
+  const byConnection = new Map<string, McpConnectionRow>();
   for (const connection of args.connections ?? []) {
-    byConnection.set(String(connection.id), connection);
+    byConnection.set(connection.id, connection);
   }
   const mcp = resolvedMcp(args.rows, args.servers ?? [], options).map(([item, server]) => {
     const connection =

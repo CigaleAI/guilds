@@ -3,6 +3,8 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { applyAccessEdit } from "../../src/recipes/access-edits.js";
+import { parseRecipe } from "../../src/recipes/parse.js";
 import { TEST_MODEL } from "../helpers/models.js";
 import {
   composeBuilderGenerationContext,
@@ -15,7 +17,6 @@ import {
   readBuilderWriteExample,
 } from "../../src/conversation/templates.js";
 import { emptyRecipe } from "../../src/recipes/minimal.js";
-import { applyAccessEdit, parseRecipe } from "../../src/recipes/schema.js";
 import { fixtureDeskRecipe } from "../helpers/recipe-docs.js";
 
 test("builder write example is a valid recipe using real field names", () => {

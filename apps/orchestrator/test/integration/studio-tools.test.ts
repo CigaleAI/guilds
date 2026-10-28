@@ -1,13 +1,12 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { persistAgent } from "../../src/agents/persist.js";
-import { ArtifactStore } from "../../src/artifacts/index.js";
+import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
+import { artifactStore } from "../../src/artifacts/index.js";
 import { buildApp } from "../../src/app.js";
-import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
+import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { resolveStudioFocus } from "../../src/studio/focus.js";
 import { StudioService } from "../../src/studio/index.js";
 import { TOOL_CALLS_PAGE } from "../../src/studio/tool-usage.js";
@@ -15,10 +14,16 @@ import { tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { insertGuild } from "../../src/db/guilds.js";
+import { createScheduleRun, type RunMessage } from "../../src/db/runs.js";
+import { userRow } from "../helpers/users.js";
+import { writeBinding } from "../../src/access/bindings.js";
+import { userActor } from "../../src/lib/change-actor.js";
+import { agentConfig, runSnapshot } from "../helpers/generation.js";
 
 const AUTH = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 
-const CONFIG = {
+const CONFIG = agentConfig({
   model: TEST_MODEL,
   temperature: 1,
   max_tokens: 8192,
@@ -26,7 +31,7 @@ const CONFIG = {
   max_tool_calls: 50,
   max_input_tokens: 100000,
   browser: false,
-};
+});
 
 const dbName = uniqueDbName("agent_platform_studio_tools");
 
@@ -37,7 +42,7 @@ after(async () => {
 type Call = { id: string; name: string; args: Record<string, unknown>; error?: string; ms: number };
 
 /** One assistant step with its calls, then each call's result as a run records it. */
-function steps(calls: Call[]): Array<[Record<string, unknown>, Record<string, unknown>]> {
+function steps(calls: Call[]): RunMessage[] {
   return [
     [{ role: "user", content: "Schedule wake-up: {}" }, { generation: 1, source: "schedule" }],
     [
@@ -52,7 +57,7 @@ function steps(calls: Call[]): Array<[Record<string, unknown>, Record<string, un
       },
       { generation: 1 },
     ],
-    ...calls.map((call): [Record<string, unknown>, Record<string, unknown>] => [
+    ...calls.map((call): RunMessage => [
       { role: "tool", tool_call_id: call.id, content: call.error ? `ERROR: ${call.error}` : "ok" },
       {
         generation: 1,
@@ -69,21 +74,24 @@ test("studio lists the guild's tools with who is offered each and how their call
   const database = await connect(await createIsolatedDatabase(dbName));
   const notes = new NotesStore(tempDir("guilds-studio-tools-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
-  await connectModelProvider(repo, "org_home", "deepinfra");
-  const artifacts = new ArtifactStore(database.pool, templatesRoot());
-  const scripts = new Scripts(repo);
-  const schedules = new Schedules(repo);
-  const studio = new StudioService({ repo, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
-  const app = await buildApp(database, { repo, notes, artifacts, scripts, schedules, studio });
+  const db = database.pool;
+  await connectModelProvider(db, "org_home", "deepinfra");
+  const artifacts = artifactStore(database.pool, templatesRoot());
+  const scripts = new Scripts(scriptDatabase(db));
+  const schedules = new Schedules(scheduleDatabase(db));
+  const studio = new StudioService({ db, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
+  const app = await buildApp(database, { db, notes, artifacts, scripts, schedules, studio });
   try {
     const now = new Date();
-    await repo.insertGuild("guild_tl", "tools-guild", now, "org_home", "Tools");
+    await insertGuild(db,
+      { guildId: "guild_tl", name: "tools-guild", orgId: "org_home", about: "Tools" },
+      now,
+    );
     for (const [agentId, name] of [
       ["a_scout", "scout"],
       ["a_writer", "writer"],
     ]) {
-      await persistAgent(repo, notes, {
+      await persistAgent(agentDatabase(db), notes, {
         agentId: String(agentId),
         guildId: "guild_tl",
         guildName: "tools-guild",
@@ -97,13 +105,22 @@ test("studio lists the guild's tools with who is offered each and how their call
       });
     }
     const run = (id: string, agentId: string, calls: Call[]) =>
-      repo.createScheduleRun(id, agentId, { ...CONFIG, tools: [], mcp: [] }, "system", "task", steps(calls), now, {
-        systemPromptHash: "s",
-        taskPromptHash: "t",
-        memoryPromptHash: "m",
-        scheduleId: null,
-        runMetadata: {},
-      });
+      createScheduleRun(db,
+        {
+          runId: id,
+          agentId,
+          configSnapshot: runSnapshot(CONFIG),
+          systemContent: "system",
+          taskContent: "task",
+          projected: steps(calls),
+          systemPromptHash: "s",
+          taskPromptHash: "t",
+          memoryPromptHash: "m",
+          scheduleId: null,
+          runMetadata: {},
+        },
+        now,
+      );
     await run("r_scout", "a_scout", [
       { id: "c1", name: "note_get", args: { path: "a.md" }, ms: 100 },
       { id: "c2", name: "note_get", args: { path: "missing.md" }, error: "note not found", ms: 300 },
@@ -122,6 +139,21 @@ test("studio lists the guild's tools with who is offered each and how their call
     assert.equal(created.statusCode, 200, created.body);
     const session = created.json() as { id: string };
 
+    // An organisation's binding reaches every agent of its guilds.
+    await writeBinding(
+      db,
+      {
+        bindingId: "bind_org_note_find",
+        catalogKind: "native_tool",
+        catalogId: "note_find",
+        scope: "org",
+        scopeId: "org_home",
+        enabled: false,
+        connectionId: null,
+      },
+      now,
+      userActor(userRow()),
+    );
     const listed = await app.inject({ method: "GET", url: `/api/studio/sessions/${session.id}/tools?hours=24`, headers: AUTH });
     assert.equal(listed.statusCode, 200, listed.body);
     type Row = {
@@ -154,9 +186,10 @@ test("studio lists the guild's tools with who is offered each and how their call
     assert.deepEqual(retired?.offered_to, []);
     assert.equal(retired?.source, null);
     assert.equal(retired?.calls, 1);
-    const neverCalled = rows.find((row) => row.name === "note_find");
+    const neverCalled = rows.find((row) => row.name === "note_write");
     assert.equal(neverCalled?.calls, 0);
     assert.deepEqual(neverCalled?.offered_to, ["a_scout", "a_writer"]);
+    assert.equal(rows.find((row) => row.name === "note_find"), undefined);
     assert.equal(
       (await app.inject({ method: "GET", url: `/api/studio/sessions/${session.id}/tools?hours=-1`, headers: AUTH })).statusCode,
       422,
@@ -217,12 +250,12 @@ test("studio lists the guild's tools with who is offered each and how their call
 
     // A tool pin quotes how the agents called it and its latest failures.
     const deps = {
-      repo,
+      db,
       artifacts,
       pool: database.pool,
       orgId: "org_home",
       sourceGuildId: "guild_tl",
-      user: { id: "user_operator", name: "operator" },
+      user: userRow(),
     };
     const pinned = await resolveStudioFocus(deps, { kind: "tool", tool_name: "note_get" });
     assert.equal(pinned.focus.kind, "tool");

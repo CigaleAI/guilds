@@ -11,6 +11,7 @@ import {
   sanitizeFilename,
   sniffImage,
 } from "../../src/attachments/index.js";
+import type { NewAttachment } from "../../src/db/attachments.js";
 import { MemoryBlobStore, type BlobStore } from "../../src/lib/blob-store.js";
 import { countInputTokens } from "../../src/llm/index.js";
 
@@ -53,9 +54,9 @@ test("hydrateMessages turns stored refs into image_url parts without writing byt
   await store.put("org_1/att_1", PNG, "image/png");
   const rows = [
     {
-      payload: { role: "user", content: "look" },
+      payload: { role: "user" as const, content: "look" },
       metadata: {
-        attachments: [{ id: "att_1", filename: "shot.png", mime: "image/png", kind: "image" }],
+        attachments: [{ id: "att_1", filename: "shot.png", mime: "image/png", kind: "image" as const }],
       },
     },
   ];
@@ -82,9 +83,9 @@ test("hydrateMessages inlines images when the provider refuses public URLs", asy
   };
   const rows = [
     {
-      payload: { role: "user", content: "look" },
+      payload: { role: "user" as const, content: "look" },
       metadata: {
-        attachments: [{ id: "att_1", filename: "shot.png", mime: "image/png", kind: "image" }],
+        attachments: [{ id: "att_1", filename: "shot.png", mime: "image/png", kind: "image" as const }],
       },
     },
   ];
@@ -101,9 +102,9 @@ test("hydrateMessages inlines images when the provider refuses public URLs", asy
 test("countRunInputTokens adds a flat image cost and does not encode a data URL", () => {
   const rows = [
     {
-      payload: { role: "user", content: "look" },
+      payload: { role: "user" as const, content: "look" },
       metadata: {
-        attachments: [{ id: "att_1", filename: "shot.png", mime: "image/png", kind: "image" }],
+        attachments: [{ id: "att_1", filename: "shot.png", mime: "image/png", kind: "image" as const }],
       },
     },
   ];
@@ -123,17 +124,7 @@ test("countRunInputTokens adds a flat image cost and does not encode a data URL"
 test("AttachmentService uploads and resolves only for models that accept images", async () => {
   const rows = new Map<string, Record<string, unknown>>();
   const db = {
-    async insertAttachment(row: {
-      id: string;
-      orgId: string;
-      uploadedBy: string;
-      filename: string;
-      mime: string;
-      bytes: number;
-      sha256: string;
-      kind: string;
-      createdAt: Date;
-    }) {
+    async insertAttachment(row: NewAttachment, now: Date) {
       const stored = {
         id: row.id,
         org_id: row.orgId,
@@ -143,7 +134,7 @@ test("AttachmentService uploads and resolves only for models that accept images"
         bytes: row.bytes,
         sha256: row.sha256,
         kind: row.kind,
-        created_at: row.createdAt.toISOString(),
+        created_at: now.toISOString(),
       };
       rows.set(row.id, stored);
       return stored;
@@ -157,7 +148,7 @@ test("AttachmentService uploads and resolves only for models that accept images"
         .filter((row): row is Record<string, unknown> => Boolean(row && row.org_id === orgId));
     },
   };
-  const service = new AttachmentService(db, new MemoryBlobStore());
+  const service = new AttachmentService(db as never, new MemoryBlobStore());
   const uploaded = await service.upload({
     orgId: "org_1",
     userId: "user_1",

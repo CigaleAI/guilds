@@ -362,15 +362,15 @@ is `http://host.docker.internal:<port>/v1`: Compose maps that name to
 the host on every platform. The server must listen on an address the
 Docker bridge reaches, not on loopback alone.
 
-### Editions
+### Extensions
 
-An edition built on core may resolve model credentials its own way,
+An extension built on core may resolve model credentials its own way,
 with usage reporting and a policy
 ([Extension points](../architecture/extension-points.md)).
 
 A provider's `source` is `own` when the organisation's row holds its
 key, and `platform` when its credentials resolve without one: the
-edition provides the key and writes the models the row offers. In
+extension provides the key and writes the models the row offers. In
 core every connected provider is `own`.
 
 - **Provided by the platform** heads **Model keys** when a provider

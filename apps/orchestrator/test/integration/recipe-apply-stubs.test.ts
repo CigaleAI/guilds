@@ -1,19 +1,17 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { ArtifactStore } from "../../src/artifacts/index.js";
+import { artifactStore } from "../../src/artifacts/index.js";
 import { buildApp } from "../../src/app.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
-import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
+import { connect } from "../../src/seed/connect.js";
 import { newId } from "../../src/lib/ids.js";
-import { CALL_TOOL_TIMEOUT_MS, McpPool } from "../../src/mcp/index.js";
+import { CALL_TOOL_TIMEOUT_MS, mcpDatabase, McpPool } from "../../src/mcp/index.js";
 import { proxyFetch } from "../../src/net/http.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { RecipeApplyService } from "../../src/recipes/apply.js";
+import { recipeApply } from "../../src/recipes/apply.js";
 import { operatorAuthor } from "../../src/recipes/schema.js";
-import { RecipeStore } from "../../src/recipes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { connectModelProvider } from "../helpers/models.js";
 import { templatesRoot } from "../helpers/fixtures.js";
@@ -24,6 +22,14 @@ import {
   uniqueDbName,
 } from "../helpers/postgres.js";
 import { fixtureDeskRecipe, fixtureHuskDeskRecipe, inboxQueueColumns } from "../helpers/recipe-docs.js";
+import { insertConnector } from "../../src/db/connectors.js";
+import { loadConnector } from "../../src/connectors/load.js";
+import { getAgentTask, listAgentTaskRevisions, listAgents } from "../../src/db/agents.js";
+import { connectMcp } from "../../src/db/mcp.js";
+import { listSchedules } from "../../src/db/schedules.js";
+import { listBindingsCovering } from "../../src/db/bindings.js";
+import { getByDisplayPath } from "../../src/artifacts/notes.js";
+import { operatorContext } from "../../src/artifacts/store.js";
 
 const AUTH = {
   "X-Guilds-User": "user_operator",
@@ -54,23 +60,21 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
   const database = await connect(databaseUrl);
   const notes = new NotesStore(tempDir("guilds-apply-stubs-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
-  await connectModelProvider(repo, "org_home", "deepinfra");
-  const artifacts = new ArtifactStore(database.pool, templatesRoot());
-  const scripts = new Scripts(repo);
-  const schedules = new Schedules(repo);
-  const recipes = new RecipeStore(repo.pool);
-  const apply = new RecipeApplyService({ repo, recipes, artifacts, notes, scripts, schedules, registry: null });
+  const db = database.pool;
+  await connectModelProvider(db, "org_home", "deepinfra");
+  const artifacts = artifactStore(database.pool, templatesRoot());
+  const scripts = new Scripts(scriptDatabase(db));
+  const schedules = new Schedules(scheduleDatabase(db));
+  const apply = recipeApply({ db, artifacts, notes, scripts, schedules, registry: null });
   const mcp = new McpPool();
   // The stub servers listen on loopback, which the pool refuses by default.
   mcp.endpointFetch = proxyFetch("", CALL_TOOL_TIMEOUT_MS);
   const app = await buildApp(database, {
-    repo,
+    db,
     notes,
     artifacts,
     scripts,
     schedules,
-    recipes,
     apply,
     mcp,
   });
@@ -78,7 +82,7 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
   const key = Buffer.from(HEX_MASTER_KEY, "hex");
 
   async function seedStub(slug: string, url: string) {
-    const server = await repo.insertConnector(
+    const server = await insertConnector(db,
       {
         id: newId("mcp"),
         slug,
@@ -100,7 +104,7 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
       },
       now,
     );
-    return server;
+    return loadConnector(server);
   }
 
   async function importRecipe(body: unknown) {
@@ -214,11 +218,11 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
   }
 
   async function assertLiveTask(guildId: string, agentId: string, pattern: RegExp) {
-    const row = await repo.getAgentTask("org_home", agentId);
+    const row = await getAgentTask(db, "org_home", agentId);
     assert.ok(row?.content_text);
     assert.match(row.content_text, pattern);
     assert.equal(row.version, 1);
-    const revisions = await repo.listAgentTaskRevisions("org_home", agentId);
+    const revisions = await listAgentTaskRevisions(db, "org_home", agentId);
     assert.equal(revisions.length, 0);
   }
 
@@ -264,18 +268,21 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
 
     for (const server of [mailServer, crmServer]) {
       const [ciphertext, nonce] = encryptPayload({ token: `${server.slug}-test` }, key);
-      const connection = await repo.connectMcp(
-        newId("conn"),
-        newId("bind"),
-        String(server.id),
-        "org",
-        "org_home",
-        ciphertext,
-        nonce,
+      const connection = await connectMcp(db,
+        {
+          connectionId: newId("conn"),
+          bindingId: newId("bind"),
+          serverId: String(server.id),
+          ownerScope: "org",
+          ownerId: "org_home",
+          ciphertext,
+          nonce,
+          status: "connected",
+          bind: false,
+        },
         now,
-        { status: "connected", bind: false },
       );
-      const listed = await mcp.syncTools(repo, connection, server, { force: true });
+      const listed = await mcp.syncTools(mcpDatabase(db), connection, server, { force: true });
       assert.deepEqual(
         listed.map((tool) => tool.namespaced_name),
         [`${server.slug}_ping`],
@@ -300,7 +307,7 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
     assert.ok(completePreview.creates.connections.every((item) => item.action === "reuse"));
 
     const completeApply = await applyRecipe(completeId, "fixture-desk");
-    const completeAgents = await repo.listAgents(completeApply.guild_id);
+    const completeAgents = await listAgents(db, completeApply.guild_id);
     assert.equal(completeAgents.length, 2);
     const deskReader = completeAgents.find((row) => row.name === "desk-reader");
     const deskWriter = completeAgents.find((row) => row.name === "desk-writer");
@@ -363,24 +370,24 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
     assert.equal((await listCollections()).length, tablesAfterFirst.length);
     await assertLiveTask(completeApply.guild_id, String(deskReader.id), /Call mail_ping/);
     await assertLiveTask(completeApply.guild_id, String(deskWriter.id), /Call crm_ping/);
-    const readerSchedules = await repo.listSchedules(String(deskReader.id));
-    const writerSchedules = await repo.listSchedules(String(deskWriter.id));
+    const readerSchedules = await listSchedules(db, String(deskReader.id));
+    const writerSchedules = await listSchedules(db, String(deskWriter.id));
     assert.equal(readerSchedules.length, 1);
     assert.equal(readerSchedules[0]?.cron, "*/15 * * * *");
     assert.equal(readerSchedules[0]?.paused, true);
     assert.equal(writerSchedules.length, 1);
     assert.equal(writerSchedules[0]?.cron, "*/20 * * * *");
     assert.equal(writerSchedules[0]?.paused, true);
-    const orgMcp = (await repo.listBindingsCovering({ orgId: "org_home" })).filter(
+    const orgMcp = (await listBindingsCovering(db, { orgId: "org_home" })).filter(
       (row) => row.scope === "org" && row.catalog_kind === "mcp",
     );
     assert.equal(orgMcp.length, 0);
-    const readerBindings = await repo.listBindingsCovering({
+    const readerBindings = await listBindingsCovering(db, {
       orgId: "org_home",
       guildId: completeApply.guild_id,
       agentId: String(deskReader.id),
     });
-    const writerBindings = await repo.listBindingsCovering({
+    const writerBindings = await listBindingsCovering(db, {
       orgId: "org_home",
       guildId: completeApply.guild_id,
       agentId: String(deskWriter.id),
@@ -481,7 +488,7 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
     mixed.roles[1]!.task.embeds = ["agent/writer/crm-map.md"];
     const mixedId = await importReady(mixed);
     const mixedApply = await applyRecipe(mixedId, "fixture-desk-mixed");
-    const mixedAgents = await repo.listAgents(mixedApply.guild_id);
+    const mixedAgents = await listAgents(db, mixedApply.guild_id);
     const mixedReader = mixedAgents.find((row) => row.name === "mixed-reader");
     const mixedWriter = mixedAgents.find((row) => row.name === "mixed-writer");
     assert.ok(mixedReader && mixedWriter);
@@ -489,22 +496,22 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
     // Recipe notes land flat at their owner, and task embeds point at the written files.
     const rulesPath = `org/org_home/guilds/${mixedApply.guild_id}/desk-rules.md`;
     const mapPath = `org/org_home/agents/${mixedWriter.id}/crm-map.md`;
-    const mixedReaderTask = await repo.getAgentTask("org_home", String(mixedReader.id));
-    const mixedWriterTask = await repo.getAgentTask("org_home", String(mixedWriter.id));
+    const mixedReaderTask = await getAgentTask(db, "org_home", String(mixedReader.id));
+    const mixedWriterTask = await getAgentTask(db, "org_home", String(mixedWriter.id));
     assert.ok(mixedReaderTask?.content_text.includes(`![[${rulesPath}]]`));
     assert.ok(mixedWriterTask?.content_text.includes(`![[${mapPath}]]`));
     assert.ok(mixedWriterTask?.content_text.includes(`Then note_get ${rulesPath}.`));
-    const mixedWriterSchedules = await repo.listSchedules(String(mixedWriter.id));
+    const mixedWriterSchedules = await listSchedules(db, String(mixedWriter.id));
     assert.ok(mixedWriterSchedules.some((row) => String(row.instruction).includes(`Read ${mapPath} first.`)));
-    const noteReader = artifacts.operatorContext("org_home", "user_operator", "operator", {
+    const noteReader = operatorContext("org_home", "user_operator", "operator", {
       guildId: mixedApply.guild_id,
       agentId: String(mixedWriter.id),
     });
-    const rulesNote = await artifacts.getByDisplayPath(noteReader, rulesPath);
+    const rulesNote = await getByDisplayPath(artifacts, noteReader, rulesPath);
     assert.equal(rulesNote.row?.key, "desk-rules.md");
     assert.equal(rulesNote.row?.path, "");
     assert.equal(rulesNote.row?.content_text, "Skip thread ids already in seen-ids.\n");
-    const mapNote = await artifacts.getByDisplayPath(noteReader, mapPath);
+    const mapNote = await getByDisplayPath(artifacts, noteReader, mapPath);
     assert.equal(mapNote.row?.key, "crm-map.md");
     assert.equal(mapNote.row?.path, "");
     // Each note's access list gains the recipe's guild mode and writers on top of its level's rows.
@@ -513,16 +520,16 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
     assert.equal(modeOf(mapAccess, mixedGuild), "read");
     assert.equal(modeOf(mapAccess, { type: "agent", id: String(mixedReader.id) }), "write");
     assert.equal(modeOf(await noteAccess(String(rulesNote.row?.id)), mixedGuild), "write");
-    const glossary = await artifacts.getByDisplayPath(noteReader, "org/org_home/mixed-glossary.md");
+    const glossary = await getByDisplayPath(artifacts, noteReader, "org/org_home/mixed-glossary.md");
     const glossaryAccess = await noteAccess(String(glossary.row?.id));
     assert.equal(modeOf(glossaryAccess, { type: "org", id: "org_home" }), "read");
     assert.equal(modeOf(glossaryAccess, mixedGuild), "write");
-    const mixedReaderBindings = await repo.listBindingsCovering({
+    const mixedReaderBindings = await listBindingsCovering(db, {
       orgId: "org_home",
       guildId: mixedApply.guild_id,
       agentId: String(mixedReader.id),
     });
-    const mixedWriterBindings = await repo.listBindingsCovering({
+    const mixedWriterBindings = await listBindingsCovering(db, {
       orgId: "org_home",
       guildId: mixedApply.guild_id,
       agentId: String(mixedWriter.id),
@@ -567,7 +574,7 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
     };
     const sharedId = await importReady(shared);
     const sharedApply = await applyRecipe(sharedId, "fixture-desk-shared");
-    const sharedBindings = await repo.listBindingsCovering({
+    const sharedBindings = await listBindingsCovering(db, {
       orgId: "org_home",
       guildId: sharedApply.guild_id,
     });
@@ -583,7 +590,7 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
 
     await markReady(huskId);
     const huskApply = await applyRecipe(huskId, "fixture-husk-desk");
-    const huskAgents = await repo.listAgents(huskApply.guild_id);
+    const huskAgents = await listAgents(db, huskApply.guild_id);
     assert.equal(huskAgents.length, 2);
     const huskReader = huskAgents.find((row) => row.name === "husk-reader");
     const huskWriter = huskAgents.find((row) => row.name === "husk-writer");
@@ -591,7 +598,7 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
     await assertLiveTask(huskApply.guild_id, String(huskReader.id), /Read mail threads/);
     await assertLiveTask(huskApply.guild_id, String(huskWriter.id), /Write CRM rows/);
     for (const member of [huskReader, huskWriter]) {
-      const rows = await repo.listSchedules(String(member.id));
+      const rows = await listSchedules(db, String(member.id));
       assert.equal(rows.length, 0);
     }
     // The husk's inbox-queue matches the live table column for column, so the
@@ -603,7 +610,7 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
     const huskGuild = { type: "guild", id: huskApply.guild_id };
     assert.equal(modeOf(await collectionAccess(inboxQueue.id), huskGuild), "write");
     assert.equal(modeOf(await collectionAccess(seenIds.id), huskGuild), null);
-    const huskGuildBindings = await repo.listBindingsCovering({
+    const huskGuildBindings = await listBindingsCovering(db, {
       orgId: "org_home",
       guildId: huskApply.guild_id,
     });

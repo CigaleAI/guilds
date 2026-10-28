@@ -4,32 +4,29 @@ import { modelNeedsInlineImages } from "../llm/providers.js";
 import { newId } from "../lib/ids.js";
 import { iso } from "../db/views.js";
 import { sanitizeFilename, sniffImage } from "./sniff.js";
-import { hydrateMessages } from "./hydrate.js";
+import { hydrateMessages, type AttachedMessage } from "./hydrate.js";
 import {
   AttachmentError,
   MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENTS_PER_MESSAGE,
   objectKey,
-  type AttachmentRef,
   type AttachmentRow,
 } from "./types.js";
+import type { AttachmentRef } from "../db/schema/index.js";
 import { BlobMissing, type BlobStore } from "../lib/blob-store.js";
+import { getAttachment, insertAttachment, listAttachmentsByIds } from "../db/attachments.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
 
-export type AttachmentDatabase = {
-  insertAttachment(row: {
-    id: string;
-    orgId: string;
-    uploadedBy: string;
-    filename: string;
-    mime: string;
-    bytes: number;
-    sha256: string;
-    kind: string;
-    createdAt: Date;
-  }): Promise<Record<string, unknown>>;
-  getAttachment(id: string): Promise<Record<string, unknown> | null>;
-  listAttachmentsByIds(orgId: string, ids: string[]): Promise<Array<Record<string, unknown>>>;
-};
+/** The db/ functions attachment rows are read and written through, on `db`. */
+export function attachmentDatabase(db: Queryable) {
+  return {
+    insertAttachment: bindQuery(db, insertAttachment),
+    getAttachment: bindQuery(db, getAttachment),
+    listAttachmentsByIds: bindQuery(db, listAttachmentsByIds),
+  };
+}
+
+export type AttachmentDatabase = ReturnType<typeof attachmentDatabase>;
 
 function asRow(row: Record<string, unknown>): AttachmentRow {
   return {
@@ -53,7 +50,7 @@ export class AttachmentService {
 
   async projectMessages(
     orgId: string,
-    rows: Array<{ payload?: unknown; metadata?: unknown }>,
+    rows: AttachedMessage[],
     model = "",
   ): Promise<Array<Record<string, unknown>>> {
     return hydrateMessages(rows, this.blobs, orgId, {
@@ -78,17 +75,19 @@ export class AttachmentService {
     const id = newId("att");
     const sha256 = createHash("sha256").update(args.bytes).digest("hex");
     await this.blobs.put(objectKey(args.orgId, id), args.bytes, sniffed.mime);
-    const created = await this.db.insertAttachment({
-      id,
-      orgId: args.orgId,
-      uploadedBy: args.userId,
-      filename,
-      mime: sniffed.mime,
-      bytes: args.bytes.length,
-      sha256,
-      kind: sniffed.kind,
-      createdAt: new Date(),
-    });
+    const created = await this.db.insertAttachment(
+      {
+        id,
+        orgId: args.orgId,
+        uploadedBy: args.userId,
+        filename,
+        mime: sniffed.mime,
+        bytes: args.bytes.length,
+        sha256,
+        kind: sniffed.kind,
+      },
+      new Date(),
+    );
     return asRow(created);
   }
 

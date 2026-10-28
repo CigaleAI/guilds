@@ -3,18 +3,20 @@ import { generateKeyPairSync } from "node:crypto";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { decryptPayload } from "../../src/credentials/crypto.js";
-import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
+import { connect } from "../../src/seed/connect.js";
 import { McpPool } from "../../src/mcp/index.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { setInstanceKeys } from "../../src/instance/integrations.js";
 import { HEX_MASTER_KEY, storeKeys, tempDir } from "../helpers/env.js";
 import { connectModelProvider } from "../helpers/models.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { codeDefaultMachine } from "../helpers/machines.js";
+import { listBindingsForConnection } from "../../src/db/bindings.js";
+import { getMcpConnection } from "../../src/db/mcp.js";
+import { listGuildRepositories } from "../../src/db/guilds.js";
 
 const OWNER = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 const JSON_HEADERS = { ...OWNER, "content-type": "application/json" };
@@ -103,13 +105,13 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
   const database = await connect(databaseUrl);
   const notes = new NotesStore(tempDir("guilds-repositories-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
-  await connectModelProvider(repo, "org_home", "openrouter");
+  const db = database.pool;
+  await connectModelProvider(db, "org_home", "openrouter");
   const app = await buildApp(database, {
-    repo,
+    db,
     notes,
-    scripts: new Scripts(repo),
-    schedules: new Schedules(repo),
+    scripts: new Scripts(scriptDatabase(db)),
+    schedules: new Schedules(scheduleDatabase(db)),
     masterKey: Buffer.from(HEX_MASTER_KEY, "hex"),
   });
   try {
@@ -185,7 +187,7 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
     const state = String(authorize.searchParams.get("state"));
     const connectionId = String(connectRes.json().id);
     assert.equal(connectRes.json().status, "pending");
-    assert.deepEqual(await repo.listBindingsForConnection(connectionId), []);
+    assert.deepEqual(await listBindingsForConnection(db, connectionId), []);
 
     // An installation id the user cannot reach proves nothing: the attempt is dropped.
     const forged = await app.inject({
@@ -194,7 +196,7 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
     });
     assert.equal(forged.statusCode, 400);
     assert.match(forged.body, /not one the authorizing user can reach/);
-    assert.equal(await repo.getMcpConnection(connectionId), null);
+    assert.equal(await getMcpConnection(db, connectionId), null);
 
     const asked = await app.inject({
       method: "POST",
@@ -209,7 +211,7 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
     });
     assert.equal(requested.statusCode, 400);
     assert.match(requested.body, /organisation admin needs to approve/);
-    assert.equal(await repo.getMcpConnection(String(asked.json().id)), null);
+    assert.equal(await getMcpConnection(db, String(asked.json().id)), null);
 
     const retry = await app.inject({
       method: "POST",
@@ -232,13 +234,13 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
       url: `/api/mcp/oauth/callback?code=good-code&state=${retryState}`,
     });
     assert.equal(callback.statusCode, 200, callback.body);
-    const connected = await repo.getMcpConnection(githubId);
+    const connected = await getMcpConnection(db, githubId);
     assert.equal(connected?.status, "connected");
     assert.equal(connected?.account_hint, "acme");
     assert.equal(connected?.oauth_state, null);
     const stored = decryptPayload(connected?.ciphertext as Buffer, connected?.nonce as Buffer);
     assert.deepEqual(stored, { installation_id: 77, account: "acme" });
-    assert.equal((await repo.listBindingsForConnection(githubId)).length, 1);
+    assert.equal((await listBindingsForConnection(db, githubId)).length, 1);
 
     const picker = await app.inject({
       method: "GET",
@@ -271,7 +273,7 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
     assert.equal(shop.statusCode, 201, shop.body);
     assert.equal(shop.json().default_branch, "trunk");
     assert.deepEqual(shop.json().connection, { id: githubId, status: "connected", account_hint: "acme" });
-    const shopRow = (await repo.listGuildRepositories(guildId)).find((row) => row.name === "shop");
+    const shopRow = (await listGuildRepositories(db, guildId)).find((row) => row.name === "shop");
     assert.equal(Number(shopRow?.github_id), 101, "GitHub's id is recorded with the repository");
     const afterConnect = await app.inject({ method: "GET", url: base, headers: OWNER });
     assert.deepEqual(
@@ -312,7 +314,7 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
       headers: { cookie: cookieHeader! },
     });
     assert.equal(dropped.statusCode, 200, dropped.body);
-    const hopRow = await repo.getMcpConnection(String(hop.json().id));
+    const hopRow = await getMcpConnection(db, String(hop.json().id));
     assert.equal(hopRow?.status, "connected");
     assert.deepEqual(decryptPayload(hopRow?.ciphertext as Buffer, hopRow?.nonce as Buffer), {
       installation_id: 77,
@@ -341,7 +343,7 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
     const install = new URL(String(toInstall.headers.location));
     assert.equal(install.origin + install.pathname, "https://github.com/apps/guilds-run-test/installations/new");
     assert.equal(install.searchParams.get("state"), freshState);
-    assert.equal((await repo.getMcpConnection(String(fresh.json().id)))?.status, "pending");
+    assert.equal((await getMcpConnection(db, String(fresh.json().id)))?.status, "pending");
     exchangedRedirects.length = 0;
     const installed = await app.inject({
       method: "GET",
@@ -349,7 +351,7 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
     });
     assert.equal(installed.statusCode, 200, installed.body);
     assert.deepEqual(exchangedRedirects, [undefined]);
-    assert.equal((await repo.getMcpConnection(String(fresh.json().id)))?.status, "connected");
+    assert.equal((await getMcpConnection(db, String(fresh.json().id)))?.status, "connected");
   } finally {
     globalThis.fetch = realFetch;
     setInstanceKeys({});
@@ -369,18 +371,18 @@ test("a second guild reuses the GitHub App and picks its own repositories", { ti
   const database = await connect(databaseUrl);
   const notes = new NotesStore(tempDir("guilds-repositories-guilds-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
-  await connectModelProvider(repo, "org_home", "openrouter");
+  const db = database.pool;
+  await connectModelProvider(db, "org_home", "openrouter");
   const mcp = new McpPool();
   const dropped: string[] = [];
   mcp.drop = (connectionId: string) => {
     dropped.push(connectionId);
   };
   const app = await buildApp(database, {
-    repo,
+    db,
     notes,
-    scripts: new Scripts(repo),
-    schedules: new Schedules(repo),
+    scripts: new Scripts(scriptDatabase(db)),
+    schedules: new Schedules(scheduleDatabase(db)),
     masterKey: Buffer.from(HEX_MASTER_KEY, "hex"),
     mcp,
   });
@@ -423,7 +425,7 @@ test("a second guild reuses the GitHub App and picks its own repositories", { ti
       url: `/api/mcp/oauth/callback?code=good-code&state=${firstState}`,
     });
     assert.equal(callback.statusCode, 200, callback.body);
-    assert.equal((await repo.getMcpConnection(firstId))?.status, "connected");
+    assert.equal((await getMcpConnection(db, firstId))?.status, "connected");
 
     const backendListed = await app.inject({
       method: "GET",
@@ -467,7 +469,7 @@ test("a second guild reuses the GitHub App and picks its own repositories", { ti
       url: `/api/mcp/oauth/callback?code=good-code&state=${retryState}`,
     });
     assert.equal(reused.statusCode, 200, reused.body);
-    const backendConn = await repo.getMcpConnection(retryId);
+    const backendConn = await getMcpConnection(db, retryId);
     assert.equal(backendConn?.status, "connected");
     assert.equal(backendConn?.account_hint, "acme");
     assert.deepEqual(decryptPayload(backendConn?.ciphertext as Buffer, backendConn?.nonce as Buffer), {
@@ -563,13 +565,13 @@ test("several GitHub installations open a picker so a guild can choose the accou
   const database = await connect(databaseUrl);
   const notes = new NotesStore(tempDir("guilds-repositories-picker-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
-  await connectModelProvider(repo, "org_home", "openrouter");
+  const db = database.pool;
+  await connectModelProvider(db, "org_home", "openrouter");
   const app = await buildApp(database, {
-    repo,
+    db,
     notes,
-    scripts: new Scripts(repo),
-    schedules: new Schedules(repo),
+    scripts: new Scripts(scriptDatabase(db)),
+    schedules: new Schedules(scheduleDatabase(db)),
     masterKey: Buffer.from(HEX_MASTER_KEY, "hex"),
   });
   try {
@@ -617,7 +619,7 @@ test("several GitHub installations open a picker so a guild can choose the accou
       payload: { state: pickerState, installation_id: 88 },
     });
     assert.equal(picked.statusCode, 200, picked.body);
-    const connected = await repo.getMcpConnection(connectionId);
+    const connected = await getMcpConnection(db, connectionId);
     assert.equal(connected?.status, "connected");
     assert.equal(connected?.account_hint, "widgets");
     assert.equal(guild.statusCode, 201);

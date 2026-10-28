@@ -71,12 +71,12 @@ export function identityHeaders(): Record<string, string> {
 
 let signInPath: string | null = null;
 
-/** Names the edition's sign-in page, as a path under the app's root; null when it has none. */
+/** Names the extension's sign-in page, as a path under the app's root; null when it has none. */
 export function setSignInPath(path: string | null): void {
   signInPath = path;
 }
 
-/** The sign-in page, returning to where the operator was; null when the edition has none. */
+/** The sign-in page, returning to where the operator was; null when the extension has none. */
 export function signInUrl(): string | null {
   if (signInPath === null) return null;
   return `${import.meta.env.BASE_URL}${signInPath}?next=${encodeURIComponent(window.location.pathname + window.location.search)}`;

@@ -1,5 +1,4 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { GITHUB_SERVER_ID } from "../github/index.js";
 import {
   APP_NAME_MAX,
   clearGithubManifestStateCookie,
@@ -10,7 +9,7 @@ import {
   MANIFEST_CALLBACK_PATH,
   manifestAction,
 } from "../github/manifest.js";
-import { applyKeyChange, replacesGithubApp } from "../instance/changes.js";
+import { applyKeyChange, assertKeyChangeConfirmed } from "../instance/changes.js";
 import {
   GITHUB_APP,
   installedIntegrations,
@@ -73,7 +72,7 @@ function keysOf(deps: AppDeps): InstanceKeys {
 }
 
 export async function registerAdminInstanceRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
-  const { repo } = deps;
+  const { db } = deps;
   const keys = keysOf(deps);
   const pending = new Map<string, PendingManifest>();
   const integrations = () => deps.integrations ?? installedIntegrations();
@@ -105,28 +104,6 @@ export async function registerAdminInstanceRoutes(app: FastifyInstance, deps: Ap
     return { base: configured || origin, origin };
   }
 
-  /**
-   * A GitHub App write that puts another App in place, or takes it away, strands every login
-   * installed with the old one. The admin confirms that, with the count, before it happens.
-   */
-  async function confirmGithubReplace(integration: Integration, next: Record<string, string> | null, confirmed: boolean): Promise<void> {
-    if (integration.id !== GITHUB_APP.id || confirmed) {
-      return;
-    }
-    if (!replacesGithubApp(keys.current(integration.id), next)) {
-      return;
-    }
-    const connections = await repo.countServerConnections(GITHUB_SERVER_ID);
-    if (connections === 0) {
-      return;
-    }
-    throw new HttpError(409, {
-      message: `Replacing the GitHub App disconnects ${connections} GitHub login${connections === 1 ? "" : "s"}.`,
-      replaces_app: true,
-      connections,
-    });
-  }
-
   app.put("/api/admin/instance/keys/:integration", async (request) => {
     const user = await requireInstanceAdmin(deps, request);
     const integration = integrationOf(request);
@@ -140,10 +117,12 @@ export async function registerAdminInstanceRoutes(app: FastifyInstance, deps: Ap
       }
       throw error;
     }
-    await confirmGithubReplace(integration, values, body.confirm_replace === true);
-    const { previous } = await keys.put(integration, values, String(user.id));
+    if (body.confirm_replace !== true) {
+      await assertKeyChangeConfirmed(db, integration, keys.current(integration.id), values);
+    }
+    const { previous } = await keys.put(integration, values, user.id);
     const { disconnected } = await applyKeyChange(
-      { repo, masterKey: deps.masterKey, mcp: deps.mcp },
+      { db, masterKey: deps.masterKey, mcp: deps.mcp },
       integration.id,
       previous,
       values,
@@ -158,10 +137,12 @@ export async function registerAdminInstanceRoutes(app: FastifyInstance, deps: Ap
       throw new HttpError(400, `${integration.label} is read from the environment`);
     }
     const confirm = queryOf(request).confirm_replace;
-    await confirmGithubReplace(integration, null, confirm === "1" || confirm === "true");
+    if (confirm !== "1" && confirm !== "true") {
+      await assertKeyChangeConfirmed(db, integration, keys.current(integration.id), null);
+    }
     const { previous } = await keys.remove(integration.id);
     const { disconnected } = await applyKeyChange(
-      { repo, masterKey: deps.masterKey, mcp: deps.mcp },
+      { db, masterKey: deps.masterKey, mcp: deps.mcp },
       integration.id,
       previous,
       null,
@@ -190,7 +171,7 @@ export async function registerAdminInstanceRoutes(app: FastifyInstance, deps: Ap
       }
     }
     const state = newState();
-    pending.set(state, { userId: String(user.id), returnTo, expiresAt: now + PENDING_MS });
+    pending.set(state, { userId: user.id, returnTo, expiresAt: now + PENDING_MS });
     appendSetCookie(reply, githubManifestStateCookie(state, secure()));
     return {
       action: manifestAction(owner || null, state),
@@ -236,7 +217,7 @@ export async function registerAdminInstanceRoutes(app: FastifyInstance, deps: Ap
     };
     try {
       const { previous } = await keys.put(GITHUB_APP, values, entry.userId);
-      await applyKeyChange({ repo, masterKey: deps.masterKey, mcp: deps.mcp }, GITHUB_APP.id, previous, values);
+      await applyKeyChange({ db, masterKey: deps.masterKey, mcp: deps.mcp }, GITHUB_APP.id, previous, values);
     } catch (error) {
       writeLog("error", `github app could not be stored: ${error instanceof Error ? error.message : String(error)}`, {
         operation: "instance_keys.github_manifest",

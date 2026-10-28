@@ -1,7 +1,9 @@
-import { SEED_ORG_ID } from "../organisations/index.js";
+import { ownsSeedOrg } from "../organisations/service.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
 import { currentUser, type IdentityRequest } from "./identity.js";
+import { identityDatabase } from "../users/identity.js";
+import type { UserRow } from "../db/users.js";
 
 /** Decides whether a user may administer the instance, in place of core's rule. */
 export type InstanceAdmin = (userId: string) => Promise<boolean>;
@@ -11,23 +13,22 @@ export type InstanceAdmin = (userId: string) => Promise<boolean>;
  * and new organisations. Core's rule is an owner of the seed organisation.
  */
 export async function isInstanceAdmin(
-  deps: Pick<AppDeps, "repo" | "instanceAdmin">,
+  deps: Pick<AppDeps, "db" | "instanceAdmin">,
   userId: string,
 ): Promise<boolean> {
   if (deps.instanceAdmin) {
     return deps.instanceAdmin(userId);
   }
-  const membership = await deps.repo.getMembership(SEED_ORG_ID, userId);
-  return membership?.role === "owner";
+  return ownsSeedOrg(deps.db, userId);
 }
 
 /** The request's user when they administer the instance; otherwise the route does not exist (404). */
 export async function requireInstanceAdmin(
-  deps: Pick<AppDeps, "repo" | "instanceAdmin" | "config" | "identity">,
+  deps: Pick<AppDeps, "db" | "instanceAdmin" | "config" | "identity">,
   request: IdentityRequest,
-): Promise<Record<string, unknown>> {
-  const user = await currentUser(deps.repo, request, deps);
-  if (!(await isInstanceAdmin(deps, String(user.id)))) {
+): Promise<UserRow> {
+  const user = await currentUser(identityDatabase(deps.db), request, deps);
+  if (!(await isInstanceAdmin(deps, user.id))) {
     throw new HttpError(404, "Not Found");
   }
   return user;

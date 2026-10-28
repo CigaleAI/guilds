@@ -8,6 +8,59 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** Migrations 0015 and 0016 drop `studio_sessions.coach_snapshot`
+and `studio_sessions.coach_agent_id`, which held nothing, and the
+defaults of `studio_sessions.source_guild_snapshot` and
+`recipe_applies.preview`, which every insert sets. Every JSON column
+has the type its writers store: runs, sessions and messages, connector
+OAuth clients, login settings, tool input schemas, collection columns,
+record bodies, studio drafts, recipe bodies and apply previews. A row
+read back is used as stored: a field the type requires and the row
+lacks fails where it is read, where some readers filled it in before.
+
+**No impact.** A tool result keeps the metadata fields the app reads
+(`exit_code`, `cwd`, `path`, `range`, `content_hash`, `lines`,
+`log_path`, `timed_out`, `background_id`, `state`, `matches`,
+`files`); other keys a sandbox helper reports are not stored. Tool
+call arguments are read only as the JSON string both providers send.
+
+**No impact.** A stored recipe opens as stored: reading it no longer
+re-applies the recipe checks, which run on every write, import and
+registry install.
+
+**No impact.** A remote connector tool whose input schema has a
+malformed `type`, `properties` or `required` is offered with
+`{"type": "object"}`; an operator-edited input schema with one of
+those malformed is refused with a 422 naming the field. A member that
+does not exist is a 404.
+
+**No impact.** Capturing a guild as a recipe keeps each agent note
+with the role of the agent that owns it, so applying the recipe gives
+the note to that role's agent. Before, every captured agent note went
+to the recipe's first agent.
+
+**No impact.** A recipe's `design.specialization[].reason` and
+`design.handoffs[].kind` are checked against the values the Builder
+is told to use. A recipe with another value is refused, naming the
+allowed ones, where it was read as written.
+
+**No impact.** The built-in connectors (CoinGecko, X, TwitterAPI.io,
+Alchemy, DexPaprika, Google Drive, Gmail, Qonto, Tavily) check each
+provider response against the shape they read. A response that does
+not match fails the tool call with the field at fault, such as
+`CoinGecko returned an unexpected response at /coins/0: …`, where a
+malformed item was skipped before. Output for well-formed responses
+is unchanged.
+
+**Rebuild.** Migration 0014 gives every stored agent config each
+setting it predates, with the value the app already read for it, so
+a config holds every key. Applying a recipe refuses a role whose
+config does not validate as an agent's.
+
+**No impact.** The Studio's Tools view takes an organisation's
+bindings into account for every agent of the guild: a tool the
+organisation turns off is no longer listed as offered.
+
 **Rebuild.** Agents share whole files. A file is an artifact at agent,
 guild, or organisation level with a description and an access list;
 its bytes sit in the blob store under `ATTACHMENTS_ROOT`. Agents move
@@ -18,12 +71,59 @@ new **State › Files** view of a guild and of an agent, and give each
 file an access list like a note's ([Files](docs/concepts/files.md)).
 Migration 0013 adds the `file` kind.
 
+**Rebuild.** The diff of a run's changes, the diff of a `code_task`,
+and its log answer 503 when the agent's secrets cannot be read, where
+they were shown unredacted
+([SEC-49](docs/architecture/security-register.md#sec-49--a-runs-diff-and-a-code-tasks-log-were-served-unredacted-when-the-agents-secrets-could-not-be-read)).
+
 **Breaking for API clients.** The notes routes moved from `/files` to
 `/notes`: `/api/agents/:id/notes`, `/api/guilds/:id/notes`, and
 `/api/org/notes`. The guild's notes view is **State › Notes** at
 `/guilds/<id>/state/notes`. The live event `guild.files.changed` is
-`guild.artifacts.changed`. An edition that imported `BlobStore` from
-`attachments/types.js` imports it from `lib/blob-store.js`.
+`guild.artifacts.changed`. An extension that imported `BlobStore` from
+`attachments/types.js` imports it from `lib/blob-store.js`. `GET` and
+`DELETE /api/agents/:id/scripts/:name` answer a name that is not a
+script name with 422 in place of 404.
+
+**Breaking for extensions.** `Repositories` and the export
+`db/repositories.js` are gone. The `ServerExtension` factories and
+`AppDeps` take the database connection as `db`, a `Queryable`, in
+place of `repo`. An extension calls the functions of `db/orgs.js`,
+`db/users.js`, `db/connectors.js`, `db/mcp.js`, and `db/usage.js`
+with that connection, or a transaction's client, as the first
+argument, and each takes one input object per write. A new
+organisation's hook is `AppDeps.orgCreated`. `ModelsRepository` is
+`ModelsDatabase`, built with `modelsDatabase(db)`
+([Extension points](docs/architecture/extension-points.md)).
+The export `usage.js` is `usage/index.js`, and `http/usage-view.js` is
+`usage/view.js`: `usageForOrg` and `usageForPlatform` take
+`{ db, studio, builder }`, which `AppDeps` satisfies. `identityDatabase`,
+which `currentUser` and `currentOrg` take, is exported from
+`users/identity.js`. The seeds are under `seed/`: the exports
+`db/seed/catalog.js` and `db/seed/mcp-manifests.js` are
+`seed/catalog.js` and `seed/mcp-manifests.js`, and `connect` and
+`DatabaseExtension` are exported from `seed/connect.js`.
+`createPool` takes the handler for a connection that fails while
+idle as its second argument, `reportPoolError` from
+`observability/runtime.js` for the default report. `getMcpServer`,
+`getMcpServerBySlug`, `listMcpServers`, and `updateMcpServerConfig`
+are exported from `connectors/servers.js`; the functions of
+`db/connectors.js` return the stored row, `ConnectorRow`, and are
+`getConnector`, `getConnectorBySlug`, `listOrgConnectors`, and
+`setConnectorOauthClient`. An `IdentityProvider`'s `currentUser`
+resolves to a `UserRow` (`db/users.js`), and `serverItem`
+(`credentials/items.js`) takes a `LoadedConnector`. `ArtifactStore`
+is the store's dependencies, `{ db, templatesRoot }`, built with
+`artifactStore(db, templatesRoot)`; what were its methods are
+functions that take it first, one module per sub-domain:
+`artifacts/notes.js`, `memory.js`, `collections.js`, `records.js`,
+and `access-lists.js` (`writeNote(store, actor, …)`).
+
+**Breaking for extending repositories.** The Makefile variables
+`EDITION`, `EDITION_TEST_PACKAGES`, and `EDITION_COMPOSE_FILES` are
+`DEV_STACK`, `EXTENSION_TEST_PACKAGES`, and `EXTENSION_COMPOSE_FILES`.
+`scripts/check.sh` reads the root it checks from `CHECK_ROOT` in
+place of `EDITION_ROOT`.
 
 **Breaking.** Agents run on machines: containers an organisation
 sizes and shares between its agents. A box whose agents each run in
@@ -55,11 +155,11 @@ a sandbox of their own moves them onto machines.
    installs, and npm installs. The home is `/home/<agent id>`. Run
    the install again from the agent's **CLI** tab, or let the agent
    run it.
-5. Update API clients and editions to the machine API. Agent create
+5. Update API clients and extensions to the machine API. Agent create
    takes `machine_id`, required when the organisation has more than
    one machine. Agent payloads carry `machine_id` and `machine`. A
    machine holds the tier and size
-   ([Machines](docs/concepts/machines.md)). An edition's
+   ([Machines](docs/concepts/machines.md)). An extension's
    `SandboxProvider`, `GenerationSandboxes`, and `machineHost` are
    keyed by machine
    ([Extension points](docs/architecture/extension-points.md)).

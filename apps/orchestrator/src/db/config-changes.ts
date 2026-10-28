@@ -1,27 +1,15 @@
-import type pg from "pg";
+import type { InferSelectModel } from "drizzle-orm";
+import type { ChangeActor } from "../lib/change-actor.js";
 import { newId } from "../lib/ids.js";
-import { stamp } from "./pg.js";
+import { pickColumns } from "./columns.js";
+import { type Queryable, stamp } from "./pg.js";
+import { configChanges } from "./schema/index.js";
 import { iso } from "./views.js";
 
-type Queryable = Pick<pg.Pool | pg.PoolClient, "query">;
+type ConfigChangeRow = Omit<InferSelectModel<typeof configChanges>, "org_id">;
 
-/** The coach message an operator applied a change from: its Studio session and sequence. */
-export type StudioOrigin = { sessionId: string; seq: number };
-
-/**
- * Who made a change: a person, an agent, or an agent's run, with the tool
- * call that carried it and, for an edit applied in the Studio, its coach message.
- */
-export type ChangeActor = {
-  actorType: "user" | "agent" | "run";
-  actorId: string;
-  actorName: string;
-  toolCall: { id: string; name: string } | null;
-  studio?: StudioOrigin;
-};
-
-export type ConfigTargetKind = "routine" | "access" | "guild_text" | "collection" | "note" | "file";
-export type ConfigOperation = "create" | "update" | "delete";
+export type ConfigTargetKind = ConfigChangeRow["target_kind"];
+export type ConfigOperation = ConfigChangeRow["operation"];
 
 /**
  * One change to record. Where it sits defaults from what is named: an agent
@@ -54,24 +42,6 @@ export type ConfigChangeView = {
   created_at: string;
 };
 
-/** A person acting through the app or the API. */
-export function userActor(user: Record<string, unknown>): ChangeActor {
-  return {
-    actorType: "user",
-    actorId: String(user.id),
-    actorName: String(user.name ?? "operator"),
-    toolCall: null,
-  };
-}
-
-/** An agent's run acting through one of its tool calls. */
-export function runActor(
-  run: { runId: string; agentName: string },
-  toolCall: { id: string; name: string },
-): ChangeActor {
-  return { actorType: "run", actorId: run.runId, actorName: run.agentName, toolCall };
-}
-
 /** The actor, run, tool call, and coach message columns `file_changes` and `config_changes` share, in that order. */
 export function actorColumns(actor: ChangeActor): unknown[] {
   return [
@@ -87,11 +57,11 @@ export function actorColumns(actor: ChangeActor): unknown[] {
 }
 
 /** The coach message a stored change links to, or null when none does. */
-export function studioLink(row: Record<string, unknown>): ChangeLink | null {
-  if (!row.studio_session_id || row.studio_seq === null || row.studio_seq === undefined) {
+export function studioLink(row: Pick<ConfigChangeRow, "studio_session_id" | "studio_seq">): ChangeLink | null {
+  if (!row.studio_session_id || row.studio_seq === null) {
     return null;
   }
-  return { session_id: String(row.studio_session_id), seq: Number(row.studio_seq) };
+  return { session_id: row.studio_session_id, seq: row.studio_seq };
 }
 
 // The organisation and guild a change names nothing for follow from its agent or guild.
@@ -139,24 +109,41 @@ export async function recordChangeIfAny(
   }
 }
 
-function mapConfigChange(row: Record<string, unknown>): ConfigChangeView {
+function mapConfigChange(row: ConfigChangeRow): ConfigChangeView {
   return {
-    id: String(row.id),
-    guild_id: row.guild_id ? String(row.guild_id) : null,
-    agent_id: row.agent_id ? String(row.agent_id) : null,
-    target_kind: String(row.target_kind) as ConfigTargetKind,
-    target_id: String(row.target_id),
-    operation: String(row.operation) as ConfigOperation,
-    summary: String(row.summary),
-    actor: { type: String(row.actor_type), id: String(row.actor_id), name: String(row.actor_name) },
-    run_id: row.run_id ? String(row.run_id) : null,
-    tool: row.tool_call_id
-      ? { call_id: String(row.tool_call_id), name: row.tool_name ? String(row.tool_name) : null }
-      : null,
+    id: row.id,
+    guild_id: row.guild_id || null,
+    agent_id: row.agent_id || null,
+    target_kind: row.target_kind,
+    target_id: row.target_id,
+    operation: row.operation,
+    summary: row.summary,
+    actor: { type: row.actor_type, id: row.actor_id, name: row.actor_name },
+    run_id: row.run_id || null,
+    tool: row.tool_call_id ? { call_id: row.tool_call_id, name: row.tool_name || null } : null,
     studio: studioLink(row),
     created_at: iso(row.created_at),
   };
 }
+
+const CONFIG_CHANGE_COLUMNS = pickColumns(configChanges, [
+  "id",
+  "guild_id",
+  "agent_id",
+  "target_kind",
+  "target_id",
+  "operation",
+  "summary",
+  "actor_type",
+  "actor_id",
+  "actor_name",
+  "run_id",
+  "tool_call_id",
+  "tool_name",
+  "studio_session_id",
+  "studio_seq",
+  "created_at",
+]);
 
 /** Every recorded change to one target of an organisation, newest first. */
 export async function listConfigChanges(
@@ -164,14 +151,12 @@ export async function listConfigChanges(
   orgId: string,
   target: { kind: ConfigTargetKind; id: string },
 ): Promise<ConfigChangeView[]> {
-  const result = await db.query(
-    `SELECT id, guild_id, agent_id, target_kind, target_id, operation, summary,
-            actor_type, actor_id, actor_name, run_id, tool_call_id, tool_name,
-            studio_session_id, studio_seq, created_at
+  const result = await db.query<ConfigChangeRow>(
+    `SELECT ${CONFIG_CHANGE_COLUMNS}
        FROM config_changes
       WHERE org_id = $1 AND target_kind = $2 AND target_id = $3
       ORDER BY created_at DESC, id DESC`,
     [orgId, target.kind, target.id],
   );
-  return (result.rows as Array<Record<string, unknown>>).map(mapConfigChange);
+  return result.rows.map(mapConfigChange);
 }

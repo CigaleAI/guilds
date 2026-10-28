@@ -15,7 +15,7 @@ const slot = (id: string, after?: string): TabSlot => ({
 });
 const order = (slots: TabSlot[]) => placeTabs(core, slots).map((tab) => tab.value);
 
-test("core's tabs stand alone when no edition adds one", () => {
+test("core's tabs stand alone when no extension adds one", () => {
   assert.deepEqual(placeTabs(core), core);
   assert.deepEqual(order([]), ["general", "members", "keys"]);
 });

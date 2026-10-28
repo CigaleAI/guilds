@@ -1,11 +1,21 @@
-import {
-  DEFAULT_AVATAR_COLOR,
-  DEFAULT_AVATAR_SHAPE,
-  type AgentConfig,
-} from "./validation.js";
+import type { AgentConfig } from "../db/schema/index.js";
+import { DEFAULT_AVATAR_COLOR, DEFAULT_AVATAR_SHAPE } from "./validation.js";
 import type { ArtifactActor, ArtifactStore } from "../artifacts/index.js";
 import { operatorActor } from "../artifacts/actors.js";
-import { hashTaskContent, resolveTaskContent } from "./task.js";
+import { FALLBACK_TASK, FALLBACK_TASK_HASH, hashTaskContent, resolveTaskContent, taskDisplayPath } from "./task.js";
+import {
+  deleteAgent,
+  guildHasOperatorNamed,
+  insertAgent,
+  type AgentPlacement,
+  type NewAgent,
+} from "../db/agents.js";
+import { GuildNameTaken, RowMissing } from "../db/errors.js";
+import { recordFileChange } from "../db/file-changes.js";
+import { getGuild } from "../db/guilds.js";
+import { bindQuery, type Queryable, withTransaction } from "../db/pg.js";
+import { freeSlot, placementMachine } from "../machines/placement.js";
+import { ensureAgentRows } from "../artifacts/memory.js";
 
 export type AgentNotes = {
   createAgent(
@@ -16,24 +26,63 @@ export type AgentNotes = {
   ): Promise<void>;
 };
 
-export type AgentDatabase = {
-  insertAgent(
-    agentId: string,
-    guildId: string,
-    name: string,
-    config: AgentConfig | Record<string, unknown>,
-    now: Date,
-    focus: string,
-    wakeTriggers: string,
-    avatarShape: string,
-    avatarColor: string,
-    task?: string,
-    taskHash?: string,
-    actor?: ArtifactActor,
-    placement?: { machineId?: string | null; maxAgentsPerMachine?: number | null },
-  ): Promise<void>;
-  deleteAgent(agentId: string): Promise<void>;
-};
+/**
+ * Adds an agent to its guild, on the machine `placement` names or else the organisation's only
+ * one, in the lowest free slot there. With `actor`, its task's creation is logged against it.
+ */
+export async function addAgent(
+  db: Queryable,
+  agent: NewAgent,
+  now: Date,
+  actor?: ArtifactActor,
+  placement: AgentPlacement = {},
+): Promise<void> {
+  await withTransaction(db, async (client) => {
+    if (await guildHasOperatorNamed(client, agent.guildId, agent.name)) {
+      throw new GuildNameTaken(agent.name, "operator");
+    }
+    const guild = await getGuild(client, agent.guildId);
+    if (!guild) {
+      throw new RowMissing("agent insert failed: guild not found");
+    }
+    const machine = await placementMachine(client, guild.org_id, placement.machineId, {
+      browser: agent.config.browser === true,
+      coding: agent.config.coding === true,
+    });
+    const slot = await freeSlot(client, machine, placement.maxAgentsPerMachine ?? undefined);
+    const inserted = await insertAgent(
+      client,
+      {
+        ...agent,
+        task: agent.task ?? FALLBACK_TASK,
+        taskHash: agent.taskHash ?? FALLBACK_TASK_HASH,
+        machineId: machine.id,
+        machineSlot: slot,
+      },
+      now,
+    );
+    if (actor) {
+      await recordFileChange(client, actor, {
+        orgId: inserted.org_id,
+        taskAgentId: agent.agentId,
+        displayPath: taskDisplayPath(inserted.org_id, agent.agentId),
+        operation: "create",
+        version: inserted.task_version,
+        createdAt: now,
+      });
+    }
+  });
+}
+
+/** The db/ functions a new agent is written through, on `db`. */
+export function agentDatabase(db: Queryable) {
+  return {
+    addAgent: bindQuery(db, addAgent),
+    deleteAgent: bindQuery(db, deleteAgent),
+  };
+}
+
+export type AgentDatabase = ReturnType<typeof agentDatabase>;
 
 export async function persistAgent(
   db: AgentDatabase,
@@ -44,7 +93,7 @@ export async function persistAgent(
     guildName: string;
     orgSlug: string;
     name: string;
-    config: AgentConfig | Record<string, unknown>;
+    config: AgentConfig;
     now: Date;
     focus?: string;
     wakeTriggers?: string;
@@ -72,24 +121,29 @@ export async function persistAgent(
         agentId: args.agentId,
       }))
     : null;
-  await db.insertAgent(
-    args.agentId,
-    args.guildId,
-    args.name,
-    args.config,
+  await db.addAgent(
+    {
+      agentId: args.agentId,
+      guildId: args.guildId,
+      name: args.name,
+      config: args.config,
+      focus: args.focus ?? "",
+      wakeTriggers: args.wakeTriggers ?? "",
+      avatarShape: args.avatarShape ?? DEFAULT_AVATAR_SHAPE,
+      avatarColor: args.avatarColor ?? DEFAULT_AVATAR_COLOR,
+      task,
+      taskHash,
+    },
     args.now,
-    args.focus ?? "",
-    args.wakeTriggers ?? "",
-    args.avatarShape ?? DEFAULT_AVATAR_SHAPE,
-    args.avatarColor ?? DEFAULT_AVATAR_COLOR,
-    task,
-    taskHash,
     actor ?? undefined,
-    { machineId: args.machineId ?? null, maxAgentsPerMachine: args.maxAgentsPerMachine ?? null },
+    {
+      machineId: args.machineId ?? null,
+      maxAgentsPerMachine: args.maxAgentsPerMachine ?? null,
+    },
   );
   try {
     if (args.artifacts && actor) {
-      await args.artifacts.ensureAgentRows({
+      await ensureAgentRows(args.artifacts, {
         orgId: actor.orgId,
         guildId: args.guildId,
         agentId: args.agentId,

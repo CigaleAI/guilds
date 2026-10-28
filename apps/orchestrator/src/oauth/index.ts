@@ -1,6 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
+import { Type } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
+import { saveOauthClient } from "../connectors/servers.js";
 import { proxyFetch, type FetchFn } from "../net/http.js";
-import { jsonObj } from "../db/json.js";
 import { encryptPayload } from "../credentials/crypto.js";
 import { githubAppConfig } from "../github/index.js";
 import {
@@ -9,8 +11,10 @@ import {
   type Integration,
   type IntegrationSources,
 } from "../instance/integrations.js";
-import { serverManifest } from "../connectors/load.js";
-import type { Manifest } from "../connectors/manifest.js";
+import { serverManifest, type LoadedConnector } from "../connectors/load.js";
+import { saveMcpConnection, type McpConnectionRow } from "../db/mcp.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
+import type { Manifest, OAuthClient, OAuthClientCredentials } from "../db/schema/index.js";
 import { connectorIntegration } from "../instance/connectors.js";
 
 /** An instance integration that holds an OAuth client: its fields, and how its provider authorizes. */
@@ -41,7 +45,7 @@ const OAUTH_PROVIDERS: Readonly<Record<string, OAuthProvider>> = {
 };
 
 /** The effective manifest's OAuth block for a server, or null for a non-OAuth one. */
-function manifestOauth(server: Record<string, unknown>): NonNullable<Manifest["auth"]["oauth"]> | null {
+function manifestOauth(server: LoadedConnector): NonNullable<Manifest["auth"]["oauth"]> | null {
   return serverManifest(server)?.auth.oauth ?? null;
 }
 
@@ -49,7 +53,7 @@ function manifestOauth(server: Record<string, unknown>): NonNullable<Manifest["a
  * The integration that holds a server's OAuth client: the shipped one its manifest's provider
  * names, or, for a configured client with no provider, the connector's own.
  */
-function providerOf(server: Record<string, unknown>): OAuthProvider | null {
+function providerOf(server: LoadedConnector): OAuthProvider | null {
   const manifest = serverManifest(server);
   const oauth = manifest?.auth.oauth;
   if (!manifest || !oauth) {
@@ -68,7 +72,7 @@ function providerOf(server: Record<string, unknown>): OAuthProvider | null {
 }
 
 /** Whether the server's login is the platform GitHub App's installation flow. */
-export function isGithubApp(server: Record<string, unknown>): boolean {
+export function isGithubApp(server: LoadedConnector): boolean {
   return manifestOauth(server)?.strategy === "github_app";
 }
 
@@ -102,7 +106,7 @@ export class OAuthUnsupportedError extends OAuthError {
   }
 }
 
-export function oauthStrategy(server: Record<string, unknown>): "none" | "dynamic" | "configured" {
+export function oauthStrategy(server: LoadedConnector): "none" | "dynamic" | "configured" {
   const explicit = server.oauth_strategy;
   if (explicit === "dynamic" || explicit === "configured" || explicit === "none") {
     return explicit;
@@ -114,12 +118,12 @@ export function oauthStrategy(server: Record<string, unknown>): "none" | "dynami
   return strategy === "configured" || strategy === "github_app" ? "configured" : "dynamic";
 }
 
-export function startsBrowserOauth(server: Record<string, unknown>): boolean {
+export function startsBrowserOauth(server: LoadedConnector): boolean {
   return server.auth === "oauth";
 }
 
 export function oauthSetupState(
-  server: Record<string, unknown>,
+  server: LoadedConnector,
   sources?: IntegrationSources,
 ): "not_applicable" | "dynamic" | "configured" | "unsupported" {
   if (isGithubApp(server)) {
@@ -198,26 +202,16 @@ export function authorizationUrl(
   return `${discovery.authorization_endpoint}?${params.toString()}`;
 }
 
-function configOf(server: Record<string, unknown>): Record<string, unknown> {
-  const config = jsonObj(server.config);
-  return config && typeof config === "object" && !Array.isArray(config)
-    ? { ...(config as Record<string, unknown>) }
-    : {};
-}
-
-export function storedClient(server: Record<string, unknown>): Record<string, unknown> | null {
-  const client = configOf(server).oauth_client;
-  if (client && typeof client === "object" && !Array.isArray(client) && typeof (client as { client_id?: unknown }).client_id === "string") {
-    return client as Record<string, unknown>;
-  }
-  return null;
+/** The OAuth client the connector registered, or null when it registered none. */
+export function storedClient(server: LoadedConnector): OAuthClient | null {
+  return server.config.oauth_client ?? null;
 }
 
 /** The OAuth client the manifest's provider integration holds, or null while that integration is off. */
 export function providerClient(
-  server: Record<string, unknown>,
+  server: LoadedConnector,
   sources?: IntegrationSources,
-): Record<string, unknown> | null {
+): OAuthClientCredentials | null {
   const provider = providerOf(server);
   if (provider === null) {
     return null;
@@ -226,19 +220,18 @@ export function providerClient(
   if (values === null) {
     return null;
   }
-  return { client_id: values[provider.clientId], client_secret: values[provider.clientSecret] };
+  return { client_id: values[provider.clientId] ?? "", client_secret: values[provider.clientSecret] ?? null };
 }
 
 export function configuredClient(
-  server: Record<string, unknown>,
+  server: LoadedConnector,
   sources?: IntegrationSources,
-): Record<string, unknown> | null {
+): OAuthClientCredentials | null {
   return storedClient(server) ?? providerClient(server, sources);
 }
 
-export function clientCoversRedirect(client: Record<string, unknown>, redirectUri: string): boolean {
-  const uris = client.redirect_uris;
-  return Array.isArray(uris) && uris.includes(redirectUri);
+export function clientCoversRedirect(client: OAuthClient, redirectUri: string): boolean {
+  return client.redirect_uris.includes(redirectUri);
 }
 
 export function tokenPayload(
@@ -404,7 +397,7 @@ async function getJson(fetchFn: FetchFn, urls: string[]): Promise<Record<string,
   throw new OAuthError(last);
 }
 
-function scopedDiscovery(server: Record<string, unknown>, discovery: OAuthDiscovery): OAuthDiscovery {
+function scopedDiscovery(server: LoadedConnector, discovery: OAuthDiscovery): OAuthDiscovery {
   const scopes = manifestOauth(server)?.scopes;
   if (!scopes?.length) {
     return discovery;
@@ -421,12 +414,12 @@ function scopedDiscovery(server: Record<string, unknown>, discovery: OAuthDiscov
  * connector with no endpoint, the one its provider integration names.
  */
 export async function serverDiscovery(
-  server: Record<string, unknown>,
+  server: LoadedConnector,
   options: { client?: FetchFn | undefined; proxyUrl?: string | undefined } = {},
 ): Promise<OAuthDiscovery> {
-  const url = configOf(server).url;
-  if (typeof url === "string" && url.trim()) {
-    return scopedDiscovery(server, await discover(url.trim(), options));
+  const url = server.config.url?.trim();
+  if (url) {
+    return scopedDiscovery(server, await discover(url, options));
   }
   const provider = providerOf(server);
   if (provider === null || provider.discovery === null) {
@@ -467,11 +460,14 @@ export async function discover(
   };
 }
 
+/** What a dynamic client registration answers: the client's id, and a secret when the server issues one. */
+const Registration = Type.Object({ client_id: Type.String(), client_secret: Type.Optional(Type.Unknown()) });
+
 export async function registerClient(
   discovery: OAuthDiscovery,
   redirectUri: string,
   options: { client?: FetchFn | undefined; proxyUrl?: string | undefined } = {},
-): Promise<Record<string, unknown>> {
+): Promise<OAuthClient> {
   if (!discovery.registration_endpoint) {
     throw new OAuthError("authorization server does not support dynamic client registration");
   }
@@ -495,13 +491,12 @@ export async function registerClient(
     );
   }
   const payload: unknown = text ? JSON.parse(text) : {};
-  if (!payload || typeof payload !== "object" || Array.isArray(payload) || typeof (payload as { client_id?: unknown }).client_id !== "string") {
+  if (!Value.Check(Registration, payload)) {
     throw new OAuthError("client registration did not return a client_id");
   }
-  const body = payload as Record<string, unknown>;
   return {
-    client_id: body.client_id,
-    client_secret: typeof body.client_secret === "string" ? body.client_secret : null,
+    client_id: payload.client_id,
+    client_secret: typeof payload.client_secret === "string" ? payload.client_secret : null,
     redirect_uris: [redirectUri],
   };
 }
@@ -599,31 +594,22 @@ export async function refreshTokens(
   );
 }
 
-type OauthDb = {
-  updateMcpServerConfig?(
-    serverId: string,
-    config: unknown,
-    now: Date,
-  ): Promise<Record<string, unknown> | null>;
-  saveMcpConnection?(
-    connectionId: string,
-    options: {
-      ciphertext: Buffer;
-      nonce: Buffer;
-      status: string;
-      accountHint: string;
-      oauthState: string | null;
-      now: Date;
-    },
-  ): Promise<Record<string, unknown> | null>;
-};
+/** The db/ functions a login's OAuth client and tokens are saved through, on `db`. */
+export function oauthDatabase(db: Queryable) {
+  return {
+    saveOauthClient: bindQuery(db, saveOauthClient),
+    saveMcpConnection: bindQuery(db, saveMcpConnection),
+  };
+}
+
+export type OauthDatabase = ReturnType<typeof oauthDatabase>;
 
 export async function ensureClient(
-  db: OauthDb,
-  server: Record<string, unknown>,
+  db: OauthDatabase,
+  server: LoadedConnector,
   redirectUri: string,
   options: { client?: FetchFn | undefined; proxyUrl?: string | undefined; sources?: IntegrationSources | undefined } = {},
-): Promise<[OAuthDiscovery, Record<string, unknown>]> {
+): Promise<[OAuthDiscovery, OAuthClientCredentials]> {
   const strategy = oauthStrategy(server);
   if (strategy === "none" || server.auth !== "oauth") {
     throw new OAuthUnsupportedError("connector is not oauth");
@@ -646,18 +632,14 @@ export async function ensureClient(
     );
   }
   const registered = await registerClient(discovery, redirectUri, options);
-  const config = { ...configOf(server), oauth_client: registered };
-  if (!db.updateMcpServerConfig) {
-    throw new OAuthError("mcp db cannot save server config");
-  }
-  await db.updateMcpServerConfig(String(server.id), config, new Date());
+  await db.saveOauthClient(server.id, registered, new Date());
   return [discovery, registered];
 }
 
 export async function refreshConnection(
-  db: OauthDb,
-  connection: Record<string, unknown>,
-  server: Record<string, unknown>,
+  db: OauthDatabase,
+  connection: McpConnectionRow,
+  server: LoadedConnector,
   options: {
     client?: FetchFn | undefined;
     proxyUrl?: string | undefined;
@@ -665,9 +647,9 @@ export async function refreshConnection(
     decrypt: (ciphertext: Buffer, nonce: Buffer) => Record<string, unknown>;
     encrypt?: typeof encryptPayload;
   },
-): Promise<Record<string, unknown>> {
+): Promise<McpConnectionRow> {
   const now = options.now ?? new Date();
-  const payload = options.decrypt(connection.ciphertext as Buffer, connection.nonce as Buffer);
+  const payload = options.decrypt(connection.ciphertext, connection.nonce);
   const refresh = payload.refresh_token;
   if (typeof refresh !== "string" || !refresh) {
     throw new OAuthReauthError("connection has no refresh token");
@@ -679,24 +661,24 @@ export async function refreshConnection(
   }
   const tokens = await refreshTokens(discovery, omitUndefined({
     refreshToken: refresh,
-    clientId: String(client.client_id),
-    clientSecret: typeof client.client_secret === "string" ? client.client_secret : null,
+    clientId: client.client_id,
+    clientSecret: client.client_secret,
     client: options.client,
     proxyUrl: options.proxyUrl,
   }));
   const stored = tokenPayload(tokens, { now, existing: payload });
   const [ciphertext, nonce] = (options.encrypt ?? encryptPayload)(stored);
-  if (!db.saveMcpConnection) {
-    throw new OAuthError("mcp db cannot save connections");
-  }
-  const row = await db.saveMcpConnection(String(connection.id), {
-    ciphertext,
-    nonce,
-    status: String(connection.status || "connected"),
-    accountHint: String(connection.account_hint || accountHint(stored)),
-    oauthState: typeof connection.oauth_state === "string" ? connection.oauth_state : null,
+  const row = await db.saveMcpConnection(
+    connection.id,
+    {
+      ciphertext,
+      nonce,
+      status: connection.status,
+      accountHint: connection.account_hint || accountHint(stored),
+      oauthState: connection.oauth_state,
+    },
     now,
-  });
+  );
   if (row === null) {
     throw new OAuthError("connection was deleted");
   }

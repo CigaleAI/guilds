@@ -34,7 +34,7 @@ A user has:
 - an optional identity colour. It tints the person's messages and
   avatar.
 - an optional image. Core never sets one, so the account button shows
-  initials. An image an edition sets shows in their place.
+  initials. An image an extension sets shows in their place.
 
 The name `user` is reserved: `@user` is the group-chat tag for every
 operator of a guild.
@@ -55,7 +55,7 @@ The request's user is the one who holds that email. The proxy also
 proves itself with a shared secret. Everyone else gets an account
 from **Admin**, **Users**.
 
-An edition built on core may add a mode of its own by supplying an
+An extension built on core may add a mode of its own by supplying an
 identity provider
 ([Extension points](../architecture/extension-points.md)).
 
@@ -73,7 +73,7 @@ organisations. They work from the **Admin** page
 ([Instance admin](instance-admin.md)).
 
 In core, an instance admin is an owner of the seed organisation
-**Home**. An edition may replace the rule.
+**Home**. An extension may replace the rule.
 
 ### Deleting a user
 
@@ -100,7 +100,7 @@ and organisation. Its menu:
   permission ([Group chat](group-chat.md#in-the-app))
 - offers **Settings**, and **Admin** for the instance admin only
 
-An edition that signs people in adds **Sign out** here.
+An extension that signs people in adds **Sign out** here.
 
 ### Settings, General, You
 
@@ -181,7 +181,7 @@ back to the browser's.
 ### Modes
 
 `AUTH_MODE` selects the mode. Core's configuration accepts
-`compat-cookie` and `trusted-header`, and an edition's own modes.
+`compat-cookie` and `trusted-header`, and an extension's own modes.
 Code: `apps/orchestrator/src/http/identity.ts`.
 
 | `AUTH_MODE` | Proof | Typical box |
@@ -230,12 +230,12 @@ Who reaches the directory:
   whoever reaches the box.
 - On `trusted-header` it answers the instance admin. It is 404 to
   anyone else.
-- A mode an edition adds has no directory (404).
+- A mode an extension adds has no directory (404).
 
 ### Seed identity
 
 On a box with no user at all, boot (`seedOperator`,
-`apps/orchestrator/src/db/seed/operator.ts`) inserts one user row and
+`apps/orchestrator/src/seed/operator.ts`) inserts one user row and
 the organisation it owns:
 
 | Id | Name | Email | Image |
@@ -249,13 +249,13 @@ personal organisation.
 When `OPERATOR_EMAIL` is set, each boot gives the seed user that
 address. Boot refuses to start when another user holds it.
 
-An edition that seeds its own first user before core looks gets no
+An extension that seeds its own first user before core looks gets no
 seed user.
 
 ### Instance admin
 
 `isInstanceAdmin` (`apps/orchestrator/src/http/instance-admin.ts`):
-in core, an owner of `org_home`. An edition may replace the rule. The
+in core, an owner of `org_home`. An extension may replace the rule. The
 routes it opens are on [Instance admin](instance-admin.md#routes).
 
 ### Delete

@@ -2,12 +2,15 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ModelCatalog } from "../../src/llm/catalog.js";
 import { coreModelCredentials, type ModelCredentialsProvider } from "../../src/llm/credentials.js";
-import { ModelsError, ModelsService, type ModelsRepository } from "../../src/llm/models.js";
+import { ModelsError, ModelsService, type ModelsDatabase } from "../../src/llm/models.js";
 import { projectModelsDevFeed } from "../../src/llm/models-dev.js";
+import type { NewOrgModelProvider, OrgModelProviderRow } from "../../src/db/orgs.js";
 import { TEST_MASTER_KEY } from "../helpers/models.js";
 
-class MemoryRepo implements ModelsRepository {
-  rows = new Map<string, Record<string, unknown>>();
+const STORED_AT = "2026-01-01T00:00:00.000Z";
+
+class MemoryRepo implements ModelsDatabase {
+  rows = new Map<string, OrgModelProviderRow>();
   defaults = new Map<string, string | null>();
 
   async listOrgModelProviders(orgId: string) {
@@ -20,13 +23,19 @@ class MemoryRepo implements ModelsRepository {
     return this.rows.get(`${orgId}/${provider}`) ?? null;
   }
 
-  async upsertOrgModelProvider(
-    id: string,
-    orgId: string,
-    provider: string,
-    row: { ciphertext: Buffer | null; nonce: Buffer | null; keyHint: string | null; models: string[] },
-  ) {
-    const stored = { id, org_id: orgId, provider, ...row, key_hint: row.keyHint };
+  async upsertOrgModelProvider(input: NewOrgModelProvider, _now: Date) {
+    const { providerId: id, orgId, provider, ciphertext, nonce, keyHint, models } = input;
+    const stored = {
+      id,
+      org_id: orgId,
+      provider,
+      ciphertext,
+      nonce,
+      key_hint: keyHint,
+      models,
+      created_at: STORED_AT,
+      updated_at: STORED_AT,
+    };
     this.rows.set(`${orgId}/${provider}`, stored);
     return stored;
   }
@@ -82,7 +91,7 @@ function service(
     });
   }) as typeof fetch;
   const models = new ModelsService({
-    repo,
+    db: repo,
     credentials: credentialsOf(repo),
     catalog: new ModelCatalog({ snapshot: { fetched_at: "2026-01-01", providers: feed }, url: "" }),
     fetch: fetchFn,
@@ -199,10 +208,16 @@ test("a provider the platform serves is marked so, offers its models, and is not
     };
   });
   await repo.upsertOrgModelProvider(
-    "mp_1",
-    "org_1",
-    "openai",
-    { ciphertext: null, nonce: null, keyHint: null, models: ["openai/gpt-5"] },
+    {
+      providerId: "mp_1",
+      orgId: "org_1",
+      provider: "openai",
+      ciphertext: null,
+      nonce: null,
+      keyHint: null,
+      models: ["openai/gpt-5"],
+    },
+    new Date(STORED_AT),
   );
   const payload = await models.read("org_1");
   assert.deepEqual(

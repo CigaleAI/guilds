@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { WakeWindow } from "../../src/db/schema/index.js";
 import { MIN_GAP_MS, ScheduleError } from "../../src/schedules/cron.js";
 import { planAfterFire, planWake, validateTiming } from "../../src/schedules/timing.js";
 import {
@@ -8,7 +9,6 @@ import {
   planWindowWake,
   validateWindow,
   windowEndAt,
-  type WakeWindow,
 } from "../../src/schedules/window.js";
 
 const PARIS: WakeWindow = { timezone: "Europe/Paris", start: "08:00", end: "20:00", max_wakes: 20 };
@@ -135,7 +135,20 @@ test("a simulated month never exceeds max_wakes per window", () => {
     perDay.set(day, (perDay.get(day) ?? 0) + 1);
     previous = wake.at;
     wake = planAfterFire(
-      { cron: null, wake_window: PARIS, next_run_at: wake.at, window_fires: wake.windowFires },
+      {
+        id: "sch_1",
+        agent_id: "a_1",
+        cron: null,
+        wake_window: PARIS,
+        window_fires: wake.windowFires,
+        description: "Wander",
+        instruction: "Look around.",
+        paused: false,
+        next_run_at: wake.at.toISOString(),
+        last_run_at: null,
+        created_at: "2026-10-12T09:00:00.000Z",
+        updated_at: "2026-10-12T09:00:00.000Z",
+      },
       wake.at,
       random,
     );

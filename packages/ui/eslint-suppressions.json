@@ -4,6 +4,11 @@
       "count": 1
     }
   },
+  "src/components/content/JsonTree.tsx": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    }
+  },
   "src/components/content/TaskEditor.tsx": {
     "complexity": {
       "count": 1
@@ -19,6 +24,11 @@
       "count": 1
     }
   },
+  "src/components/content/promptBlocks.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    }
+  },
   "src/components/controls/Composer.tsx": {
     "complexity": {
       "count": 2
@@ -26,6 +36,11 @@
   },
   "src/components/controls/FormField.tsx": {
     "complexity": {
+      "count": 1
+    }
+  },
+  "src/components/controls/Segmented.tsx": {
+    "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     }
   },
@@ -41,6 +56,11 @@
   },
   "src/components/controls/TextField.tsx": {
     "complexity": {
+      "count": 1
+    }
+  },
+  "src/components/controls/ToneSwatches.tsx": {
+    "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     }
   },
@@ -95,6 +115,9 @@
     }
   },
   "src/components/runs/FlowTimeline.tsx": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 2
+    },
     "complexity": {
       "count": 1
     }
@@ -110,7 +133,15 @@
     }
   },
   "src/components/runs/ToolCall.tsx": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    },
     "complexity": {
+      "count": 1
+    }
+  },
+  "src/primitives/Mark.tsx": {
+    "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     }
   },

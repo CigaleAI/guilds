@@ -293,6 +293,8 @@ A coding agent's State carries `repositories`:
 list), `apps/orchestrator/src/coding/git.ts` (the agent's tokens,
 identity, clone errors), `apps/orchestrator/src/github/tokens.ts`
 (minting a login's installation token),
+`apps/orchestrator/src/coding/guild-repositories.ts` (a guild's
+repositories and the GitHub logins they use),
 `apps/orchestrator/src/http/coding-routes.ts` (routes),
 `apps/web/src/features/guild/pages/GuildRepositories.tsx`, and
 `apps/web/src/features/agent/CodingRepositories.tsx`.

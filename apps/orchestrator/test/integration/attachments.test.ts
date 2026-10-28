@@ -3,19 +3,21 @@ import { after, test } from "node:test";
 import { AttachmentService } from "../../src/attachments/index.js";
 import { MemoryBlobStore } from "../../src/lib/blob-store.js";
 import { buildApp } from "../../src/app.js";
-import { ArtifactStore } from "../../src/artifacts/index.js";
-import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
-import { GenerationLoop } from "../../src/generation/index.js";
+import { artifactStore } from "../../src/artifacts/index.js";
+import { connect } from "../../src/seed/connect.js";
+import { generationDatabase, GenerationLoop } from "../../src/generation/index.js";
 import { newId } from "../../src/lib/ids.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { ExportSandboxes } from "../helpers/live.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { insertOrg } from "../../src/db/orgs.js";
+import { attachmentDatabase } from "../../src/attachments/store.js";
+import { generationArtifacts } from "../../src/generation/prepare.js";
 
 const OWNER = {
   "X-Guilds-User": "user_operator",
@@ -39,24 +41,28 @@ test("operators upload images, attach them to a run, and cannot read another org
   const database = await connect(databaseUrl);
   const notes = new NotesStore(tempDir("guilds-attachments-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
-  await connectModelProvider(repo, "org_home", "deepinfra", {
+  const db = database.pool;
+  await connectModelProvider(db, "org_home", "deepinfra", {
     models: [TEST_MODEL, "deepinfra/Qwen/Qwen3.8-2.4T-A95B"],
   });
-  const attachments = new AttachmentService(repo, new MemoryBlobStore());
-  const artifacts = new ArtifactStore(database.pool, notes.templates);
+  const attachments = new AttachmentService(attachmentDatabase(db), new MemoryBlobStore());
+  const artifacts = artifactStore(database.pool, notes.templates);
   const workspaceRoot = tempDir("guilds-attachments-workspaces-");
-  const generation = new GenerationLoop(repo, notes, workspaceRoot, new ExportSandboxes(workspaceRoot), {
+  const generation = new GenerationLoop({
+    db: generationDatabase(db),
+    notes,
+    workspaceRoot,
+    sandboxes: new ExportSandboxes(workspaceRoot),
     attachments,
-    artifacts,
+    artifacts: generationArtifacts(artifacts),
   });
-  generation._spawn = () => undefined;
+  generation.generateInBackground = () => undefined;
   const app = await buildApp(database, {
-    repo,
+    db,
     notes,
     artifacts,
-    scripts: new Scripts(repo),
-    schedules: new Schedules(repo),
+    scripts: new Scripts(scriptDatabase(db)),
+    schedules: new Schedules(scheduleDatabase(db)),
     attachments,
     generation,
   });
@@ -99,7 +105,9 @@ test("operators upload images, attach them to a run, and cannot read another org
     assert.deepEqual(fetched.rawPayload, PNG);
 
     const otherOrg = String(
-      (await repo.insertOrg(newId("org"), "Elsewhere", "elsewhere", "user_operator", new Date())).id,
+      (
+        await insertOrg(db, { orgId: newId("org"), name: "Elsewhere", slug: "elsewhere", userId: "user_operator" }, new Date())
+      ).id,
     );
     const hidden = await app.inject({
       method: "GET",

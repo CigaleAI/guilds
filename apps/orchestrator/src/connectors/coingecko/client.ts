@@ -1,3 +1,6 @@
+import { Value } from "@sinclair/typebox/value";
+import { Type, type Static, type TSchema } from "@sinclair/typebox";
+import { decode } from "../../lib/decode.js";
 import { proxyFetch, withQuery, type FetchFn } from "../../net/http.js";
 import {
   LIST_CAP,
@@ -10,6 +13,24 @@ import {
   rowLimit,
   tsSec,
 } from "../format.js";
+import {
+  ChartResponse,
+  CoinResponse,
+  ErrorBody,
+  ErrorDetail,
+  MoversResponse,
+  NewCoinsResponse,
+  OhlcResponse,
+  PerCurrency,
+  PricesResponse,
+  SearchResponse,
+  SupplyResponse,
+  TrendingResponse,
+  type Mover,
+  type TrendingCategory,
+  type TrendingCoin,
+  type TrendingNft,
+} from "./responses.js";
 
 export const PRO_BASE = "https://pro-api.coingecko.com/api/v3";
 export const VS_DEFAULT = "usd";
@@ -47,18 +68,15 @@ function pct(value: unknown): string {
   return `+${number}%`;
 }
 
+/** A figure CoinGecko sends either as one number or per quote currency: the `vs` one, else USD. */
 function currency(value: unknown, vs: string): string {
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    const mapped = value as Record<string, unknown>;
-    if (vs in mapped) {
-      return fmtNum(mapped[vs]);
-    }
-    if ("usd" in mapped) {
-      return fmtNum(mapped.usd);
-    }
-    return "-";
+  if (!Value.Check(PerCurrency, value)) {
+    return fmtNum(value);
   }
-  return fmtNum(value);
+  if (vs in value) {
+    return fmtNum(value[vs]);
+  }
+  return "usd" in value ? fmtNum(value.usd) : "-";
 }
 
 function section(title: string, rows: string[], limit: number): string {
@@ -69,93 +87,53 @@ function section(title: string, rows: string[], limit: number): string {
   return `${title}\n${body}`;
 }
 
-function pairs(payload: Record<string, unknown>, keys: string[]): Array<[unknown, unknown]> {
-  for (const key of keys) {
-    const value = payload[key];
-    if (Array.isArray(value) && value.length) {
-      return value.filter((point) => Array.isArray(point) && point.length >= 2) as Array<
-        [unknown, unknown]
-      >;
-    }
-  }
-  return [];
-}
-
-export function formatSearch(payload: Record<string, unknown>, limit = LIST_DEFAULT): string {
-  const blocks: string[] = [];
-  const coins = payload.coins;
-  if (Array.isArray(coins) && coins.length) {
-    const rows: string[] = [];
-    for (const item of coins) {
-      if (!item || typeof item !== "object" || Array.isArray(item)) {
-        continue;
-      }
-      const row = item as Record<string, unknown>;
-      rows.push(joinParts(row.id, row.symbol, row.name, rank(row.market_cap_rank)));
-    }
-    blocks.push(section("coins", rows, limit));
-  }
-  const nfts = payload.nfts;
-  if (Array.isArray(nfts) && nfts.length) {
-    const lines: string[] = [];
-    for (const item of nfts) {
-      if (!item || typeof item !== "object" || Array.isArray(item)) {
-        continue;
-      }
-      const row = item as Record<string, unknown>;
-      lines.push(joinParts(row.id, row.symbol, row.name));
-    }
-    blocks.push(section("nfts", lines, limit));
-  }
-  const categories = payload.categories;
-  if (Array.isArray(categories) && categories.length) {
-    const lines: string[] = [];
-    for (const item of categories) {
-      if (!item || typeof item !== "object" || Array.isArray(item)) {
-        continue;
-      }
-      const row = item as Record<string, unknown>;
-      lines.push(joinParts(row.id, row.name));
-    }
-    blocks.push(section("categories", lines, limit));
-  }
+function sections(blocks: string[]): string {
   const shown = blocks.filter(Boolean);
   return shown.length ? shown.join("\n\n") : "no results";
 }
 
-export function formatPlatforms(payload: Record<string, unknown>): string {
+/** The points of a series that carry a timestamp and a value. */
+function pairs(points: unknown[][] | undefined): unknown[][] {
+  return (points ?? []).filter((point) => point.length >= 2);
+}
+
+export function formatSearch(payload: SearchResponse, limit = LIST_DEFAULT): string {
+  const blocks: string[] = [];
+  if (payload.coins?.length) {
+    const rows = payload.coins.map((row) => joinParts(row.id, row.symbol, row.name, rank(row.market_cap_rank)));
+    blocks.push(section("coins", rows, limit));
+  }
+  if (payload.nfts?.length) {
+    blocks.push(section("nfts", payload.nfts.map((row) => joinParts(row.id, row.symbol, row.name)), limit));
+  }
+  if (payload.categories?.length) {
+    blocks.push(section("categories", payload.categories.map((row) => joinParts(row.id, row.name)), limit));
+  }
+  return sections(blocks);
+}
+
+/** A coin's contracts, `chain=address`: its platforms, else its own platform and address. */
+export function formatPlatforms(payload: CoinResponse): string {
   const found: string[] = [];
-  const platforms = payload.platforms;
-  if (platforms && typeof platforms === "object" && !Array.isArray(platforms)) {
-    for (const [chain, address] of Object.entries(platforms as Record<string, unknown>)) {
-      if (typeof chain === "string" && typeof address === "string" && address.trim()) {
-        found.push(`${chain}=${address.trim()}`);
-      }
+  for (const [chain, address] of Object.entries(payload.platforms ?? {})) {
+    if (typeof address === "string" && address.trim()) {
+      found.push(`${chain}=${address.trim()}`);
     }
   }
-  if (!found.length) {
-    const platform = payload.asset_platform_id;
-    const address = payload.contract_address;
-    if (typeof platform === "string" && typeof address === "string" && address.trim()) {
-      found.push(`${platform}=${address.trim()}`);
-    }
+  const platform = payload.asset_platform_id;
+  const address = payload.contract_address;
+  if (!found.length && typeof platform === "string" && typeof address === "string" && address.trim()) {
+    found.push(`${platform}=${address.trim()}`);
   }
   return found.join("  ");
 }
 
-export function formatCoin(payload: Record<string, unknown>, vs = VS_DEFAULT): string {
-  if (!payload || Object.keys(payload).length === 0) {
+export function formatCoin(payload: CoinResponse, vs = VS_DEFAULT): string {
+  if (Object.keys(payload).length === 0) {
     return "no results";
   }
-  const market =
-    payload.market_data && typeof payload.market_data === "object" && !Array.isArray(payload.market_data)
-      ? (payload.market_data as Record<string, unknown>)
-      : {};
-  let rankValue = payload.market_cap_rank;
-  if (rankValue === null || rankValue === undefined) {
-    rankValue = market.market_cap_rank;
-  }
-  const head = joinParts(payload.id, payload.symbol, payload.name, rank(rankValue));
+  const market = payload.market_data ?? {};
+  const head = joinParts(payload.id, payload.symbol, payload.name, rank(payload.market_cap_rank ?? market.market_cap_rank));
   const stats = joinParts(
     `p=${currency(market.current_price, vs)}`,
     `mcap=${currency(market.market_cap, vs)}`,
@@ -164,74 +142,44 @@ export function formatCoin(payload: Record<string, unknown>, vs = VS_DEFAULT): s
     `total=${fmtNum(market.total_supply)}`,
     `chg_24h=${pct(market.price_change_percentage_24h)}`,
   );
-  const platforms = formatPlatforms(payload);
-  return [head, stats, platforms].filter(Boolean).join("\n");
+  return [head, stats, formatPlatforms(payload)].filter(Boolean).join("\n");
 }
 
-export function formatNew(payload: unknown, limit = LIST_DEFAULT): string {
-  if (!Array.isArray(payload)) {
-    return "no results";
-  }
-  const rows: string[] = [];
-  for (const item of payload) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) {
-      continue;
-    }
-    const row = item as Record<string, unknown>;
-    rows.push(joinParts(row.id, row.symbol, row.name, row.activated_at));
-  }
-  return clipRows(rows, limit);
+export function formatNew(payload: NewCoinsResponse, limit = LIST_DEFAULT): string {
+  return clipRows(payload.map((row) => joinParts(row.id, row.symbol, row.name, row.activated_at)), limit);
 }
 
-export function formatMovers(
-  payload: Record<string, unknown>,
-  vs = VS_DEFAULT,
-  limit = LIST_DEFAULT,
-): string {
+/** A mover's row in the `vs` currency, falling back to USD for each figure CoinGecko leaves out. */
+function moverRow(row: Mover, vs: string): string {
+  return joinParts(
+    row.id,
+    row.symbol,
+    row.name,
+    rank(row.market_cap_rank),
+    fmtNum(row[vs] ?? row.usd),
+    fmtNum(row[`${vs}_24h_vol`] ?? row.usd_24h_vol),
+    pct(row[`${vs}_24h_change`] ?? row.usd_24h_change),
+  );
+}
+
+export function formatMovers(payload: MoversResponse, vs = VS_DEFAULT, limit = LIST_DEFAULT): string {
   const blocks: string[] = [];
-  for (const [key, label] of [
-    ["top_gainers", "gainers"],
-    ["top_losers", "losers"],
+  for (const [items, label] of [
+    [payload.top_gainers, "gainers"],
+    [payload.top_losers, "losers"],
   ] as const) {
-    const items = payload[key];
-    if (!Array.isArray(items) || !items.length) {
-      continue;
+    if (items?.length) {
+      blocks.push(section(label, items.map((row) => moverRow(row, vs)), limit));
     }
-    const rows: string[] = [];
-    for (const item of items) {
-      if (!item || typeof item !== "object" || Array.isArray(item)) {
-        continue;
-      }
-      const row = item as Record<string, unknown>;
-      let change = row[`${vs}_24h_change`];
-      if (change === null || change === undefined) {
-        change = row.usd_24h_change;
-      }
-      rows.push(
-        joinParts(
-          row.id,
-          row.symbol,
-          row.name,
-          rank(row.market_cap_rank),
-          fmtNum(row[vs] ?? row.usd),
-          fmtNum(row[`${vs}_24h_vol`] ?? row.usd_24h_vol),
-          pct(change),
-        ),
-      );
-    }
-    blocks.push(section(label, rows, limit));
   }
   return blocks.length ? blocks.join("\n\n") : "no results";
 }
 
-export function formatSupply(payload: Record<string, unknown>): string {
-  if (!payload || Object.keys(payload).length === 0) {
+export function formatSupply(payload: SupplyResponse): string {
+  if (Object.keys(payload).length === 0) {
     return "no results";
   }
-  const data =
-    payload.supply_data && typeof payload.supply_data === "object" && !Array.isArray(payload.supply_data)
-      ? (payload.supply_data as Record<string, unknown>)
-      : {};
+  const data = payload.supply_data ?? {};
   const head = joinParts(payload.id, payload.symbol, payload.name);
   const stats = joinParts(
     `circ=${fmtNum(data.circulating_supply)}`,
@@ -240,152 +188,121 @@ export function formatSupply(payload: Record<string, unknown>): string {
     `outstanding=${fmtNum(data.outstanding_supply)}`,
   );
   const lines = [head, stats];
-  const wallets = payload.non_circulating_wallets;
-  if (Array.isArray(wallets) && wallets.length) {
+  const wallets = payload.non_circulating_wallets ?? [];
+  if (wallets.length) {
     lines.push("wallets");
-    for (const wallet of wallets.slice(0, LIST_CAP)) {
-      if (!wallet || typeof wallet !== "object" || Array.isArray(wallet)) {
-        continue;
-      }
-      const row = wallet as Record<string, unknown>;
+    for (const row of wallets.slice(0, LIST_CAP)) {
       const mark = row.anomaly ? " anomaly" : "";
-      lines.push(
-        joinParts(row.address, row.label, fmtNum(row.balance), pct(row.percentage_of_total_supply)) + mark,
-      );
+      lines.push(joinParts(row.address, row.label, fmtNum(row.balance), pct(row.percentage_of_total_supply)) + mark);
     }
   }
   return lines.filter(Boolean).join("\n");
 }
 
-export function formatChart(
-  payload: unknown,
-  options: { title: string; kind?: string; series?: string },
-): string {
-  const kind = options.kind ?? "price";
-  const series = options.series ?? "price";
-  if (kind === "ohlc") {
-    const points = Array.isArray(payload) ? payload : [];
-    const rows: string[] = [];
-    for (const point of downsample(points, CHART_POINTS)) {
-      if (!Array.isArray(point) || point.length < 5) {
-        continue;
-      }
-      rows.push(joinParts(tsSec(point[0]), fmtNum(point[1]), fmtNum(point[2]), fmtNum(point[3]), fmtNum(point[4])));
-    }
-    const header = `${options.title} ohlc n=${rows.length}`;
-    return rows.length ? [header, "t  o  h  l  c", ...rows].join("\n") : `${header}\nno results`;
-  }
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    return `${options.title}\nno results`;
-  }
-  const body = payload as Record<string, unknown>;
+export function formatOhlc(payload: OhlcResponse, title: string): string {
+  const rows = downsample(payload, CHART_POINTS)
+    .filter((point) => point.length >= 5)
+    .map((point) => joinParts(tsSec(point[0]), fmtNum(point[1]), fmtNum(point[2]), fmtNum(point[3]), fmtNum(point[4])));
+  const header = `${title} ohlc n=${rows.length}`;
+  return rows.length ? [header, "t  o  h  l  c", ...rows].join("\n") : `${header}\nno results`;
+}
+
+/** The series a chart shows: `price`, `mcap` and `vol`, comma separated; price when none is named. */
+function chartSeries(series: string): Set<string> {
   const wanted = new Set(
     series
       .split(",")
       .map((part) => part.trim())
       .filter(Boolean),
   );
-  if (!wanted.size) {
-    wanted.add("price");
-  }
-  const price = pairs(body, ["prices"]);
-  const mcap = pairs(body, ["market_caps"]);
-  const volume = pairs(body, ["total_volumes"]);
+  return wanted.size ? wanted : new Set(["price"]);
+}
+
+export function formatChart(payload: ChartResponse, options: { title: string; series?: string }): string {
+  const wanted = chartSeries(options.series ?? "price");
+  const price = pairs(payload.prices);
+  const mcap = pairs(payload.market_caps);
+  const volume = pairs(payload.total_volumes);
   const base = downsample(price.length ? price : mcap.length ? mcap : volume, CHART_POINTS);
+  const values = (points: unknown[][]) =>
+    downsample(points.length ? points : base, CHART_POINTS).map((point) => fmtNum(point[1]));
   const columns: Array<[string, string[]]> = [["t", base.map((point) => tsSec(point[0]))]];
-  if (wanted.has("price")) {
-    columns.push(["p", downsample(price.length ? price : base, CHART_POINTS).map((point) => fmtNum(point[1]))]);
-  }
-  if (wanted.has("mcap")) {
-    columns.push(["m", downsample(mcap.length ? mcap : base, CHART_POINTS).map((point) => fmtNum(point[1]))]);
-  }
-  if (wanted.has("vol")) {
-    columns.push(["v", downsample(volume.length ? volume : base, CHART_POINTS).map((point) => fmtNum(point[1]))]);
-  }
-  const width = columns.length ? Math.min(...columns.map((column) => column[1].length)) : 0;
+  if (wanted.has("price")) columns.push(["p", values(price)]);
+  if (wanted.has("mcap")) columns.push(["m", values(mcap)]);
+  if (wanted.has("vol")) columns.push(["v", values(volume)]);
+  const width = Math.min(...columns.map((column) => column[1].length));
   if (width === 0) {
     return `${options.title} n=0\nno results`;
   }
   const header = `${options.title} n=${width}`;
   const labels = columns.map(([name]) => name).join("  ");
-  const rows = Array.from({ length: width }, (_, index) =>
-    columns.map((column) => column[1][index]).join("  "),
-  );
+  const rows = Array.from({ length: width }, (_, index) => columns.map((column) => column[1][index]).join("  "));
   return [header, labels, ...rows].join("\n");
 }
 
-export function formatTrending(payload: Record<string, unknown>, limit = LIST_DEFAULT): string {
+function trendingCoinRow(row: TrendingCoin): string {
+  const data = row.data ?? {};
+  return joinParts(
+    row.id,
+    row.symbol,
+    row.name,
+    rank(row.market_cap_rank),
+    fmtNum(data.price),
+    pct(data.price_change_percentage_24h?.usd),
+  );
+}
+
+function trendingNftRow(row: TrendingNft): string {
+  return joinParts(
+    row.id,
+    row.symbol,
+    row.name,
+    fmtNum(row.floor_price_in_native_currency),
+    row.native_currency_symbol,
+    pct(row.floor_price_24h_percentage_change),
+  );
+}
+
+function trendingCategoryRow(row: TrendingCategory): string {
+  const data = row.data ?? {};
+  return joinParts(row.slug ?? row.id, row.name, fmtNum(data.market_cap), pct(data.market_cap_change_percentage_24h?.usd));
+}
+
+export function formatTrending(payload: TrendingResponse, limit = LIST_DEFAULT): string {
   const blocks: string[] = [];
-  const coins = payload.coins;
-  if (Array.isArray(coins) && coins.length) {
-    const rows: string[] = [];
-    for (const wrapper of coins) {
-      const item =
-        wrapper && typeof wrapper === "object" && !Array.isArray(wrapper)
-          ? (wrapper as { item?: unknown }).item
-          : undefined;
-      if (!item || typeof item !== "object" || Array.isArray(item)) {
-        continue;
-      }
-      const row = item as Record<string, unknown>;
-      const data =
-        row.data && typeof row.data === "object" && !Array.isArray(row.data)
-          ? (row.data as Record<string, unknown>)
-          : {};
-      const change = data.price_change_percentage_24h;
-      const usdChange =
-        change && typeof change === "object" && !Array.isArray(change)
-          ? (change as Record<string, unknown>).usd
-          : undefined;
-      rows.push(
-        joinParts(row.id, row.symbol, row.name, rank(row.market_cap_rank), fmtNum(data.price), pct(usdChange)),
-      );
-    }
-    blocks.push(section("coins", rows, limit));
+  const coins = (payload.coins ?? []).flatMap((wrapper) => (wrapper.item ? [wrapper.item] : []));
+  if (payload.coins?.length) {
+    blocks.push(section("coins", coins.map(trendingCoinRow), limit));
   }
-  const nfts = payload.nfts;
-  if (Array.isArray(nfts) && nfts.length) {
-    const rows: string[] = [];
-    for (const item of nfts) {
-      if (!item || typeof item !== "object" || Array.isArray(item)) {
-        continue;
-      }
-      const row = item as Record<string, unknown>;
-      rows.push(
-        joinParts(
-          row.id,
-          row.symbol,
-          row.name,
-          fmtNum(row.floor_price_in_native_currency),
-          row.native_currency_symbol,
-          pct(row.floor_price_24h_percentage_change),
-        ),
-      );
-    }
-    blocks.push(section("nfts", rows, limit));
+  if (payload.nfts?.length) {
+    blocks.push(section("nfts", payload.nfts.map(trendingNftRow), limit));
   }
-  const categories = payload.categories;
-  if (Array.isArray(categories) && categories.length) {
-    const rows: string[] = [];
-    for (const item of categories) {
-      if (!item || typeof item !== "object" || Array.isArray(item)) {
-        continue;
-      }
-      const row = item as Record<string, unknown>;
-      const data =
-        row.data && typeof row.data === "object" && !Array.isArray(row.data)
-          ? (row.data as Record<string, unknown>)
-          : {};
-      const change = data.market_cap_change_percentage_24h;
-      const usdChange =
-        change && typeof change === "object" && !Array.isArray(change)
-          ? (change as Record<string, unknown>).usd
-          : undefined;
-      rows.push(joinParts(row.slug ?? row.id, row.name, fmtNum(data.market_cap), pct(usdChange)));
-    }
-    blocks.push(section("categories", rows, limit));
+  if (payload.categories?.length) {
+    blocks.push(section("categories", payload.categories.map(trendingCategoryRow), limit));
   }
   return blocks.length ? blocks.join("\n\n") : "no results";
+}
+
+/** The first non-empty text among `values`. */
+function firstText(...values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
+/** The message of an error body, as text or one object deeper. */
+function errorMessage(payload: unknown): string | null {
+  if (!Value.Check(ErrorBody, payload)) {
+    return null;
+  }
+  const detail = payload.error ?? payload.status ?? payload.message;
+  if (Value.Check(ErrorDetail, detail)) {
+    return firstText(detail.error_message ?? detail.error ?? detail.message);
+  }
+  return firstText(detail);
 }
 
 async function errorDetail(response: Response): Promise<string> {
@@ -397,50 +314,40 @@ async function errorDetail(response: Response): Promise<string> {
     const stripped = text.trim();
     return stripped || `CoinGecko HTTP ${response.status}`;
   }
-  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
-    const detail =
-      (payload as { error?: unknown; status?: unknown; message?: unknown }).error
-      ?? (payload as { status?: unknown }).status
-      ?? (payload as { message?: unknown }).message;
-    if (typeof detail === "string" && detail.trim()) {
-      return detail.trim();
-    }
-    if (detail && typeof detail === "object" && !Array.isArray(detail)) {
-      const inner =
-        (detail as { error_message?: unknown; error?: unknown; message?: unknown }).error_message
-        ?? (detail as { error?: unknown }).error
-        ?? (detail as { message?: unknown }).message;
-      if (typeof inner === "string" && inner.trim()) {
-        return inner.trim();
-      }
-    }
-  }
-  return `CoinGecko HTTP ${response.status}`;
+  return errorMessage(payload) ?? `CoinGecko HTTP ${response.status}`;
 }
 
-async function getJson(
-  path: string,
-  params: Record<string, string>,
+type CoinGeckoOptions = { client?: FetchFn; proxyUrl?: string };
+
+function unexpected(problem: string): CoinGeckoError {
+  return new CoinGeckoError(`CoinGecko returned an unexpected response at ${problem}`);
+}
+
+/** The response at `path` with `params`, as `schema` describes it. */
+async function getJson<T extends TSchema>(
+  request: { path: string; params: Record<string, string>; schema: T },
   apiKey: string,
-  options: { client?: FetchFn; proxyUrl?: string } = {},
-): Promise<unknown> {
+  options: CoinGeckoOptions = {},
+): Promise<Static<T>> {
   const key = apiKey.trim();
   if (!key) {
     throw new CoinGeckoError("CoinGecko API key is missing", 401);
   }
   const fetchFn = options.client ?? proxyFetch(options.proxyUrl ?? "");
-  const response = await fetchFn(withQuery(`${PRO_BASE}${path}`, params), {
+  const response = await fetchFn(withQuery(`${PRO_BASE}${request.path}`, request.params), {
     method: "GET",
     headers: { "x-cg-pro-api-key": key, Accept: "application/json" },
   });
   if (response.status >= 400) {
     throw new CoinGeckoError(await errorDetail(response), response.status);
   }
+  let payload: unknown;
   try {
-    return JSON.parse(await response.text());
+    payload = JSON.parse(await response.text());
   } catch {
     throw new CoinGeckoError("CoinGecko returned a non-JSON body");
   }
+  return decode(request.schema, payload, unexpected);
 }
 
 function idOrContract(
@@ -464,32 +371,24 @@ function idOrContract(
   return ["", platform, address];
 }
 
-export async function ping(
-  apiKey: string,
-  options: { client?: FetchFn; proxyUrl?: string } = {},
-): Promise<void> {
-  await getJson("/ping", {}, apiKey, options);
+const PING = Type.Unknown();
+
+export async function ping(apiKey: string, options: CoinGeckoOptions = {}): Promise<void> {
+  await getJson({ path: "/ping", params: {}, schema: PING }, apiKey, options);
 }
 
-export async function searchTool(
-  arguments_: Record<string, unknown>,
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-): Promise<string> {
+type ToolOptions = CoinGeckoOptions & { apiKey: string };
+
+export async function searchTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
   const query = argStr(arguments_, "query");
   if (!query) {
     throw new CoinGeckoError("query is required");
   }
-  const payload = await getJson("/search", { query }, options.apiKey, options);
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new CoinGeckoError("CoinGecko returned a non-object");
-  }
-  return formatSearch(payload as Record<string, unknown>, rowLimit(arguments_));
+  const payload = await getJson({ path: "/search", params: { query }, schema: SearchResponse }, options.apiKey, options);
+  return formatSearch(payload, rowLimit(arguments_));
 }
 
-export async function coinTool(
-  arguments_: Record<string, unknown>,
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-): Promise<string> {
+export async function coinTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
   const [coinId, platform, address] = idOrContract(arguments_);
   const params = {
     localization: "false",
@@ -497,27 +396,16 @@ export async function coinTool(
     market_data: "true",
     sparkline: "false",
   };
-  const payload = coinId
-    ? await getJson(`/coins/${coinId}`, params, options.apiKey, options)
-    : await getJson(`/coins/${platform}/contract/${address}`, params, options.apiKey, options);
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new CoinGeckoError("CoinGecko returned a non-object");
-  }
-  return formatCoin(payload as Record<string, unknown>);
+  const path = coinId ? `/coins/${coinId}` : `/coins/${platform}/contract/${address}`;
+  return formatCoin(await getJson({ path, params, schema: CoinResponse }, options.apiKey, options));
 }
 
-export async function newTool(
-  arguments_: Record<string, unknown>,
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-): Promise<string> {
-  const payload = await getJson("/coins/list/new", {}, options.apiKey, options);
+export async function newTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+  const payload = await getJson({ path: "/coins/list/new", params: {}, schema: NewCoinsResponse }, options.apiKey, options);
   return formatNew(payload, rowLimit(arguments_));
 }
 
-export async function moversTool(
-  arguments_: Record<string, unknown>,
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-): Promise<string> {
+export async function moversTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
   const vs = argStr(arguments_, "vs", VS_DEFAULT) || VS_DEFAULT;
   const params: Record<string, string> = { vs_currency: vs };
   const duration = argStr(arguments_, "duration");
@@ -528,37 +416,41 @@ export async function moversTool(
   if (top) {
     params.top_coins = top;
   }
-  const payload = await getJson("/coins/top_gainers_losers", params, options.apiKey, options);
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new CoinGeckoError("CoinGecko returned a non-object");
-  }
-  return formatMovers(payload as Record<string, unknown>, vs, rowLimit(arguments_));
+  const payload = await getJson(
+    { path: "/coins/top_gainers_losers", params, schema: MoversResponse },
+    options.apiKey,
+    options,
+  );
+  return formatMovers(payload, vs, rowLimit(arguments_));
 }
 
-export async function supplyTool(
-  arguments_: Record<string, unknown>,
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-): Promise<string> {
+export async function supplyTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
   const coinId = argStr(arguments_, "id");
   if (!coinId) {
     throw new CoinGeckoError("id is required");
   }
-  const payload = await getJson(`/coins/${coinId}/supply_breakdown`, {}, options.apiKey, options);
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new CoinGeckoError("CoinGecko returned a non-object");
-  }
-  return formatSupply(payload as Record<string, unknown>);
+  const payload = await getJson(
+    { path: `/coins/${coinId}/supply_breakdown`, params: {}, schema: SupplyResponse },
+    options.apiKey,
+    options,
+  );
+  return formatSupply(payload);
 }
 
-export async function chartTool(
-  arguments_: Record<string, unknown>,
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-): Promise<string> {
+/** What the chart tool is asked for: a coin by id or by contract, over `days`, in `vs`. */
+type ChartRequest = {
+  coinId: string;
+  platform: string;
+  address: string;
+  days: string;
+  kind: "price" | "ohlc";
+  vs: string;
+  series: string;
+};
+
+function chartRequest(arguments_: Record<string, unknown>): ChartRequest {
   const [coinId, platform, address] = idOrContract(arguments_, { required: false });
-  const days = argStr(arguments_, "days", "7") || "7";
   const kind = argStr(arguments_, "kind", "price") || "price";
-  const vs = argStr(arguments_, "vs", VS_DEFAULT) || VS_DEFAULT;
-  const series = argStr(arguments_, "series", "price") || "price";
   if (kind !== "price" && kind !== "ohlc") {
     throw new CoinGeckoError("kind must be price or ohlc");
   }
@@ -568,31 +460,33 @@ export async function chartTool(
   if (!coinId && !(platform && address)) {
     throw new CoinGeckoError("id, or platform and address, is required");
   }
+  return {
+    coinId,
+    platform,
+    address,
+    kind,
+    days: argStr(arguments_, "days", "7") || "7",
+    vs: argStr(arguments_, "vs", VS_DEFAULT) || VS_DEFAULT,
+    series: argStr(arguments_, "series", "price") || "price",
+  };
+}
+
+export async function chartTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+  const { coinId, platform, address, days, kind, vs, series } = chartRequest(arguments_);
   const params = { vs_currency: vs, days };
   if (kind === "ohlc") {
-    const payload = await getJson(`/coins/${coinId}/ohlc`, params, options.apiKey, options);
-    return formatChart(payload, { title: `${coinId} ${vs} ${days}d`, kind: "ohlc" });
+    const payload = await getJson({ path: `/coins/${coinId}/ohlc`, params, schema: OhlcResponse }, options.apiKey, options);
+    return formatOhlc(payload, `${coinId} ${vs} ${days}d`);
   }
-  const path = coinId
-    ? `/coins/${coinId}/market_chart`
-    : `/coins/${platform}/contract/${address}/market_chart`;
+  const path = coinId ? `/coins/${coinId}/market_chart` : `/coins/${platform}/contract/${address}/market_chart`;
   const title = coinId ? `${coinId} ${vs} ${days}d` : `${platform}:${address} ${vs} ${days}d`;
-  const payload = await getJson(path, params, options.apiKey, options);
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new CoinGeckoError("CoinGecko returned a non-object");
-  }
+  const payload = await getJson({ path, params, schema: ChartResponse }, options.apiKey, options);
   return formatChart(payload, { title, series });
 }
 
-export async function trendingTool(
-  arguments_: Record<string, unknown>,
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-): Promise<string> {
-  const payload = await getJson("/search/trending", {}, options.apiKey, options);
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new CoinGeckoError("CoinGecko returned a non-object");
-  }
-  return formatTrending(payload as Record<string, unknown>, rowLimit(arguments_));
+export async function trendingTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+  const payload = await getJson({ path: "/search/trending", params: {}, schema: TrendingResponse }, options.apiKey, options);
+  return formatTrending(payload, rowLimit(arguments_));
 }
 
 export type CoinMatch = {
@@ -613,28 +507,14 @@ function finite(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-export async function searchCoins(
-  query: string,
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-): Promise<CoinMatch[]> {
+export async function searchCoins(query: string, options: ToolOptions): Promise<CoinMatch[]> {
   const text = query.trim();
   if (!text) {
     throw new CoinGeckoError("query is required");
   }
-  const payload = await getJson("/search", { query: text }, options.apiKey, options);
-  const coins =
-    payload && typeof payload === "object" && !Array.isArray(payload)
-      ? (payload as { coins?: unknown }).coins
-      : undefined;
-  if (!Array.isArray(coins)) {
-    return [];
-  }
+  const payload = await getJson({ path: "/search", params: { query: text }, schema: SearchResponse }, options.apiKey, options);
   const matches: CoinMatch[] = [];
-  for (const item of coins.slice(0, LIST_CAP)) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) {
-      continue;
-    }
-    const row = item as Record<string, unknown>;
+  for (const row of (payload.coins ?? []).slice(0, LIST_CAP)) {
     if (typeof row.id !== "string" || !row.id) {
       continue;
     }
@@ -649,42 +529,23 @@ export async function searchCoins(
   return matches;
 }
 
-export async function simplePrices(
-  ids: string[],
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-): Promise<Record<string, CoinPrice>> {
+export async function simplePrices(ids: string[], options: ToolOptions): Promise<Record<string, CoinPrice>> {
   if (!ids.length) {
     return {};
   }
-  const payload = await getJson(
-    "/simple/price",
-    {
-      ids: ids.join(","),
-      vs_currencies: VS_DEFAULT,
-      include_24hr_change: "true",
-      include_last_updated_at: "true",
-    },
-    options.apiKey,
-    options,
-  );
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new CoinGeckoError("CoinGecko returned a non-object");
-  }
+  const params = {
+    ids: ids.join(","),
+    vs_currencies: VS_DEFAULT,
+    include_24hr_change: "true",
+    include_last_updated_at: "true",
+  };
+  const payload = await getJson({ path: "/simple/price", params, schema: PricesResponse }, options.apiKey, options);
   const prices: Record<string, CoinPrice> = {};
-  for (const [id, value] of Object.entries(payload as Record<string, unknown>)) {
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
-      continue;
-    }
-    const row = value as Record<string, unknown>;
+  for (const [id, row] of Object.entries(payload)) {
     const usd = finite(row.usd);
-    if (usd === null) {
-      continue;
+    if (usd !== null) {
+      prices[id] = { usd, change_24h: finite(row.usd_24h_change), updated_at: finite(row.last_updated_at) };
     }
-    prices[id] = {
-      usd,
-      change_24h: finite(row.usd_24h_change),
-      updated_at: finite(row.last_updated_at),
-    };
   }
   return prices;
 }

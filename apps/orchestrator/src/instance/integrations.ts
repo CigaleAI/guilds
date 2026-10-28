@@ -3,8 +3,8 @@
 // needs an instance key asks here, so one list says what the box can be given and what it has.
 
 import { installedConnectors } from "../connectors/index.js";
-import type { Manifest } from "../connectors/manifest.js";
 import type { ConnectorRegistry } from "../connectors/registry.js";
+import type { Manifest } from "../db/schema/index.js";
 
 /** Where an integration's values come from: the encrypted `instance_keys` store, or the process environment. */
 export type IntegrationSource = "store" | "env";

@@ -1,6 +1,14 @@
 import { assignGuildLooks } from "../avatars/looks.js";
+import { operatorAccessCuts } from "../recipes/access-edits.js";
+import type { ValidationContext } from "../recipes/findings.js";
+import { parseRecipe } from "../recipes/parse.js";
+import { stampBuilderWrite } from "../recipes/review.js";
 import { RECIPE_WRITE_HINT } from "./constants.js";
-import { searchConnectedWorkspace, type BuilderMcpClient } from "./connected.js";
+import {
+  searchConnectedWorkspace,
+  type BuilderMcpClient,
+  type ConnectedDatabase,
+} from "./connected.js";
 import {
   buildAnyConnectWidget,
   buildOrgConnectWidget,
@@ -9,28 +17,25 @@ import {
 } from "./widgets.js";
 import { argInteger, argString, functionSchema } from "../toolbox/schema.js";
 import type { CapabilityService } from "../capabilities/index.js";
-import type { Repositories } from "../db/repositories.js";
-import {
-  operatorAccessCuts,
-  parseRecipe,
-  stampBuilderWrite,
-  type RecipeDocument,
-} from "../recipes/schema.js";
+import type { RecipeDocument } from "../recipes/schema.js";
 import { RecipeConflictError, RecipeError } from "../recipes/errors.js";
-import type { RecipeStore } from "../recipes/store.js";
-import { validateRecipe, type ValidationContext } from "../recipes/validate.js";
+import type { Queryable } from "../db/pg.js";
+import { getRecipe } from "../db/recipes.js";
+import { writeRecipe } from "../recipes/library.js";
+import { validateRecipe } from "../recipes/validate.js";
 
 export type BuilderCapabilityContext = {
   orgId: string;
   capabilities: CapabilityService;
-  repo?: Repositories;
+  db?: ConnectedDatabase;
   mcp?: BuilderMcpClient | null;
 };
 
 export type BuilderToolContext = BuilderCapabilityContext & {
   recipeId: string;
   expectedWrite?: boolean;
-  recipes: RecipeStore;
+  /** The connection the recipe is read and written on. */
+  connection: Queryable;
   /** The coach's own model: the recommendation a role without one is written with. */
   coachModel?: string;
   validationContext: () => Promise<ValidationContext>;
@@ -441,11 +446,11 @@ export const builderWriteRecipe = {
       };
     }
     try {
-      const row = await ctx.recipes.get(ctx.recipeId);
+      const row = await getRecipe(ctx.connection, ctx.recipeId);
       if (!row) {
         return { error: "recipe not found" };
       }
-      const currentVersion = Number(row.body_version);
+      const currentVersion = row.body_version;
       if (expected !== currentVersion) {
         return {
           error: "recipe body_version conflict",
@@ -453,7 +458,7 @@ export const builderWriteRecipe = {
           body_version: currentVersion,
         };
       }
-      const previous = parseRecipe(row.body);
+      const previous = row.body;
       const next = parseRecipe(args.recipe);
       recommendCoachModel(next, ctx.coachModel ?? "");
       const rejected = builderWriteRejection(previous, next);
@@ -462,11 +467,10 @@ export const builderWriteRecipe = {
       }
       const stamped = stampBuilderWrite(next, previous);
       assignGuildLooks(stamped.roles, previous.roles);
-      const written = await ctx.recipes.writeBody(
-        ctx.recipeId,
-        expected,
-        stamped,
-        { name: stamped.meta.name, description: stamped.meta.description },
+      const written = await writeRecipe(
+        ctx.connection,
+        { id: ctx.recipeId, body_version: expected },
+        { body: stamped, name: stamped.meta.name, description: stamped.meta.description },
         new Date(),
       );
       if (ctx.onRecipeChanged) {
@@ -509,11 +513,11 @@ export const builderValidateRecipe = {
     [],
   ),
   async handler(ctx: BuilderToolContext) {
-    const row = await ctx.recipes.get(ctx.recipeId);
+    const row = await getRecipe(ctx.connection, ctx.recipeId);
     if (!row) {
       return { error: "recipe not found" };
     }
-    const recipe = parseRecipe(row.body);
+    const recipe = row.body;
     const findings = validateRecipe(recipe, await ctx.validationContext());
     return { findings, access_cuts: operatorAccessCuts(recipe), body_version: row.body_version };
   },
@@ -539,11 +543,11 @@ export const builderSearchConnected = {
     [],
   ),
   async handler(ctx: BuilderCapabilityContext, args: Record<string, unknown>) {
-    if (!ctx.repo) {
+    if (!ctx.db) {
       return { error: "workspace search is unavailable" };
     }
     return searchConnectedWorkspace({
-      repo: ctx.repo,
+      db: ctx.db,
       mcp: ctx.mcp ?? null,
       orgId: ctx.orgId,
       serverRef: argString(args, "server_ref"),
@@ -572,11 +576,11 @@ export const builderAskOrgConnection = {
     ["server_ref", "reason"],
   ),
   async handler(ctx: BuilderCapabilityContext, args: Record<string, unknown>) {
-    if (!ctx.repo) {
+    if (!ctx.db) {
       return { error: "connection widgets are unavailable" };
     }
     return buildOrgConnectWidget({
-      repo: ctx.repo,
+      db: ctx.db,
       orgId: ctx.orgId,
       serverRef: argString(args, "server_ref"),
       reason: argString(args, "reason"),
@@ -614,11 +618,11 @@ export const builderAskConnection = {
     ["reason"],
   ),
   async handler(ctx: BuilderCapabilityContext, args: Record<string, unknown>) {
-    if (!ctx.repo) {
+    if (!ctx.db) {
       return { error: "connection widgets are unavailable" };
     }
     return buildAnyConnectWidget({
-      repo: ctx.repo,
+      db: ctx.db,
       capabilities: ctx.capabilities,
       orgId: ctx.orgId,
       serverRef: argString(args, "server_ref") || undefined,

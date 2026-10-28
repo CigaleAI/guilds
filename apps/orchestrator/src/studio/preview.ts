@@ -1,6 +1,9 @@
 import { agentActor, type ArtifactStore } from "../artifacts/index.js";
 import { enabledToolNames, resolvedMcp, resolvedTools } from "../access/index.js";
-import { agentSecrets, resolveMcpTool, type AccessDatabase } from "../access/runtime.js";
+import { accessDatabase, agentSecrets, resolveMcpTool } from "../access/runtime.js";
+import { listAgents, type AgentPlaceRow, type AgentRow } from "../db/agents.js";
+import { listGroupMessages } from "../db/group-chat.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
 import { isReadOnlyRemote, listedFromRows, mcpSchema, previewConnectorState } from "../mcp/index.js";
 import { collectRunState } from "../state/index.js";
 import { guildOperators } from "../guilds/validation.js";
@@ -8,51 +11,50 @@ import { memoryOf } from "../agents/validation.js";
 import { schemasFor } from "../toolbox/index.js";
 import { CONTEXT_HISTORY_LIMIT } from "../groupchat/history.js";
 import type { Scripts } from "../scripts/catalog.js";
+import type { LoadedConnector } from "../connectors/load.js";
+import type { McpConnectionRow } from "../db/mcp.js";
+import { listCollections } from "../artifacts/collections.js";
+
+/** The db/ functions a preview of an agent's run state reads, on `db`. */
+export function previewDatabase(db: Queryable) {
+  return {
+    ...accessDatabase(db),
+    listAgents: bindQuery(db, listAgents),
+    listGroupMessages: bindQuery(db, listGroupMessages),
+  };
+}
 
 export type PreviewDeps = {
-  db: AccessDatabase & {
-    listAgents(guildId: string): Promise<Array<Record<string, unknown>>>;
-    listGroupMessages(
-      guildId: string,
-      options?: { throughSeq?: number | null },
-    ): Promise<Array<Record<string, unknown>>>;
-    listMcpServers(orgId?: string | null): Promise<Array<Record<string, unknown>>>;
-    listMcpConnections(options: {
-      orgId?: string | null;
-      guildId?: string | null;
-      agentId?: string | null;
-    }): Promise<Array<Record<string, unknown>>>;
-    listMcpTools(connectionId: string): Promise<Array<Record<string, unknown>>>;
-  };
+  db: ReturnType<typeof previewDatabase>;
   artifacts: ArtifactStore;
   scripts: Scripts;
 };
 
 export async function previewCurrentState(
   deps: PreviewDeps,
-  agent: Record<string, unknown>,
+  agent: AgentRow,
 ): Promise<{ state: Record<string, unknown>; projected_at: string }> {
   const projectedAt = new Date().toISOString();
-  const orgId = String(agent.org_id);
-  const guildId = String(agent.guild_id);
-  const agentId = String(agent.id);
+  const orgId = agent.org_id;
+  const guildId = agent.guild_id;
+  const agentId = agent.id;
   const secrets = await agentSecrets(deps.db, agent);
   const members = await deps.db.listAgents(guildId);
   const historyRows = await deps.db.listGroupMessages(guildId);
-  const actor = agentActor({ orgId, guildId, agentId, agentName: String(agent.name) });
+  const actor = agentActor({ orgId, guildId, agentId, agentName: agent.name });
   let collections: unknown[] = [];
   try {
-    collections = await deps.artifacts.listCollections(actor);
+    collections = await listCollections(deps.artifacts, actor);
   } catch {
     /* keep empty collections */
   }
-  const config = (agent.config && typeof agent.config === "object" ? agent.config : {}) as Record<string, unknown>;
-  const state = collectRunState(null, String(agent.org_slug ?? ""), String(agent.guild_name ?? ""), String(agent.name), {
+  const config = agent.config;
+  const state = collectRunState(null, agent.org_slug, agent.guild_name, agent.name, {
     members,
     operators: guildOperators({ operators: agent.guild_operators }),
     historyRows: historyRows.slice(-CONTEXT_HISTORY_LIMIT),
-    guildAbout: String(agent.guild_about || agent.about || ""),
-    guildDescription: String(agent.guild_description || agent.description || ""),
+    guildAbout: agent.guild_about,
+    guildDescription: agent.guild_description,
     collections,
     secrets,
     scripts: await deps.scripts.catalog(agentId),
@@ -72,35 +74,35 @@ export type ProjectedConnection = {
   tools: Array<{ name: string; remote_name: string; description: string; read_only: boolean }>;
 };
 
-function serverSummary(server: Record<string, unknown>): ProjectedConnection["server"] {
+function serverSummary(server: LoadedConnector): ProjectedConnection["server"] {
   return {
-    id: String(server.id),
-    slug: String(server.slug),
+    id: server.id,
+    slug: server.slug,
     display_name: String(server.display_name || server.slug),
   };
 }
 
 export async function projectConnection(
   deps: PreviewDeps,
-  connection: Record<string, unknown>,
-  server: Record<string, unknown>,
+  connection: McpConnectionRow,
+  server: LoadedConnector,
 ): Promise<ProjectedConnection> {
-  const slug = String(server.slug);
-  const listed = listedFromRows(await deps.db.listMcpTools(String(connection.id)));
+  const slug = server.slug;
+  const listed = listedFromRows(await deps.db.listMcpTools(connection.id));
   return {
-    id: String(connection.id),
+    id: connection.id,
     server: serverSummary(server),
-    owner_scope: String(connection.owner_scope),
+    owner_scope: connection.owner_scope,
     owner_id: connection.owner_id === null || connection.owner_id === undefined ? null : String(connection.owner_id),
     account_hint: String(connection.account_hint ?? ""),
-    status: String(connection.status),
+    status: connection.status,
     tools: listed.map((tool) => ({
       name: tool.namespaced_name,
       remote_name: tool.remote_name,
       description: tool.description,
       read_only: isReadOnlyRemote(slug, tool.remote_name, {
         readOnlyHint: tool.read_only_hint,
-        verified: server.verified === true,
+        verified: server.verified,
       }),
     })),
   };
@@ -113,21 +115,21 @@ export async function projectGuildConnections(
   orgId: string,
   guildId: string,
 ): Promise<ProjectedConnection[]> {
-  const servers = new Map<string, Record<string, unknown>>();
+  const servers = new Map<string, LoadedConnector>();
   for (const server of await deps.db.listMcpServers(orgId)) {
-    servers.set(String(server.id), server);
+    servers.set(server.id, server);
   }
   const members = await deps.db.listAgents(guildId);
-  const seen = new Map<string, Record<string, unknown>>();
+  const seen = new Map<string, McpConnectionRow>();
   const scopes: Array<{ agentId: string | null }> = [{ agentId: null }, ...members.map((row) => ({ agentId: String(row.id) }))];
   for (const scope of scopes) {
     for (const connection of await deps.db.listMcpConnections({ orgId, guildId, agentId: scope.agentId })) {
-      seen.set(String(connection.id), connection);
+      seen.set(connection.id, connection);
     }
   }
   const projected: ProjectedConnection[] = [];
   for (const connection of seen.values()) {
-    const server = servers.get(String(connection.mcp_server_id));
+    const server = servers.get(connection.mcp_server_id);
     if (!server) {
       continue;
     }
@@ -140,16 +142,16 @@ export async function projectGuildConnections(
 // stored MCP catalog: no remote list, no credential decryption.
 export async function projectAgentAccess(
   deps: PreviewDeps,
-  agent: Record<string, unknown>,
+  agent: AgentPlaceRow,
 ): Promise<{
   native_tools: string[];
   scripts: Array<Record<string, unknown>>;
   secrets: Array<{ name: string; description: string }>;
   connections: Array<ProjectedConnection & { server_enabled: boolean; offered_tools: string[] }>;
 }> {
-  const orgId = String(agent.org_id);
-  const guildId = String(agent.guild_id);
-  const agentId = String(agent.id);
+  const orgId = agent.org_id;
+  const guildId = agent.guild_id;
+  const agentId = agent.id;
   const rows = await deps.db.listBindingsCovering({ orgId, guildId, agentId });
   const scope = { orgId, guildId, agentId };
   const nativeTools = enabledToolNames(resolvedTools(rows, scope));
@@ -157,9 +159,9 @@ export async function projectAgentAccess(
     name: row.name ?? "",
     description: row.description ?? "",
   }));
-  const connections = new Map<string, Record<string, unknown>>();
+  const connections = new Map<string, McpConnectionRow>();
   for (const connection of await deps.db.listMcpConnections(scope)) {
-    connections.set(String(connection.id), connection);
+    connections.set(connection.id, connection);
   }
   const projected: Array<ProjectedConnection & { server_enabled: boolean; offered_tools: string[] }> = [];
   for (const [item, server] of resolvedMcp(rows, await deps.db.listMcpServers(scope.orgId), scope)) {
@@ -188,25 +190,25 @@ export async function projectAgentAccess(
 
 export async function projectOfferedToolSchemas(
   deps: PreviewDeps,
-  agent: Record<string, unknown>,
+  agent: Pick<AgentRow, "id" | "guild_id" | "org_id" | "config">,
 ): Promise<{
   schemas: Array<Record<string, unknown>>;
   catalog_revision: string | null;
   config_hash: string;
 }> {
-  const orgId = String(agent.org_id);
-  const guildId = String(agent.guild_id);
-  const agentId = String(agent.id);
+  const orgId = agent.org_id;
+  const guildId = agent.guild_id;
+  const agentId = agent.id;
   const rows = await deps.db.listBindingsCovering({ orgId, guildId, agentId });
   const nativeNames = enabledToolNames(resolvedTools(rows, { orgId, guildId, agentId })).filter(
     (name) => memoryOf(agent.config as Record<string, unknown> | undefined) || name !== "memory_write",
   );
   const schemas = [...schemasFor(nativeNames)];
   const servers = await deps.db.listMcpServers(orgId);
-  const connections = new Map<string, Record<string, unknown>>();
+  const connections = new Map<string, McpConnectionRow>();
   let latest: string | null = null;
   for (const connection of await deps.db.listMcpConnections({ orgId, guildId, agentId })) {
-    connections.set(String(connection.id), connection);
+    connections.set(connection.id, connection);
     const stamp = String(connection.updated_at ?? connection.created_at ?? "");
     if (stamp && (!latest || stamp > latest)) {
       latest = stamp;
@@ -220,7 +222,7 @@ export async function projectOfferedToolSchemas(
     if (!connection) {
       continue;
     }
-    const listed = listedFromRows(await deps.db.listMcpTools(String(connection.id)));
+    const listed = listedFromRows(await deps.db.listMcpTools(connection.id));
     for (const tool of listed) {
       const resolved = resolveMcpTool(rows, tool.namespaced_name, {
         serverEnabled: true,

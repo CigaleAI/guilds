@@ -3,23 +3,25 @@
 Core is the whole product. One person runs it on their own machine
 from one Compose file.
 
-An **edition** is a layer built on top of core. It adds what core
-does not have: a way to sign people in, a way to charge them, more
-than one host to run sandboxes on. Core does not know an edition
-exists.
+Custom code extends parts of the server and the operator app through
+extension points. An extension supplies another implementation of a
+core interface. Core ships a default for every point and runs with
+no extension loaded.
 
-One edition exists today: the hosted service Cigale AI runs with
-core underneath it. That service is proprietary and documented in
-its own repository.
+The hosted service is one repository that does this. It supplies the
+extensions it needs, including sign-in, billing, and sandboxes on
+more than one host. Any repository can supply extensions the same
+way. That service is proprietary and documented in its own
+repository.
 
 ## Rules
 
-1. **An edition depends on core, never the reverse.** No core
-   module imports an edition's, reads its settings, queries its
-   tables, or branches on the edition that is running.
+1. **An extension depends on core, never the reverse.** No core
+   module imports an extension's, reads its settings, queries its
+   tables, or branches on the extension that is running.
 2. **Core is the whole product.** Guilds, agents, runs, tools,
    connectors, coding agents, Studio, Builder, recipes, collections,
-   and usage are core. An edition adds no agent feature.
+   and usage are core. An extension adds no agent feature.
 3. **Core starts on Docker alone.** No cloud account, email
    provider, payment provider, or object store. Every instance key
    is optional: the operator sets the ones they want, each switches
@@ -36,28 +38,38 @@ its own repository.
    Compose stack. Core never assumes every machine shares one host:
    where a machine runs and where its directory lives come from the
    sandbox provider.
-6. **An edition attaches through extension points.** When an
-   edition needs something core lacks, core gains an extension
-   point with a default of its own. It does not gain a branch for
-   that edition.
+6. **Custom code attaches at an extension point.** When an extension
+   needs something core lacks, core gains an extension point with a
+   default of its own. Core gains no branch for that extension.
 7. **The core repository is the source of truth.** Core changes
-   land here. An edition's repository adds its layer over a pinned
-   core revision and carries no patch to core.
+   land here. A repository that extends core adds its code over a
+   pinned core revision and carries no patch to core.
 
-## What an edition may replace
+## What an extension may replace
 
 Each extension point is a core interface with a core default. An
-edition supplies another implementation when it composes the
+extension supplies another implementation when it composes the
 server or the operator app.
 
 The server's composition root is `createServer` (`src/compose.ts`).
-It takes a list of `ServerExtension` (`src/extension.ts`). Each
-edition has an entry point that loads its configuration and hands
-its extensions to `runServer` (`src/run.ts`). Core's
+It takes a list of `ServerExtension` (`src/extension.ts`). The
+extending repository has an entry point that loads its configuration
+and hands its extensions to `runServer` (`src/run.ts`). Core's
 `src/server.ts` passes none.
 
+A factory on `ServerExtension` (`policy`, `modelCredentials`,
+`instanceAdmin`, `sandboxes`, `identity`) runs once at boot and
+receives the database connection as `db`, a `Queryable`
+(`db/pg.js`). The extension reads and writes core's tables through
+the `db/` modules the package exports (`db/orgs.js`, `db/users.js`,
+`db/connectors.js`, `db/mcp.js`, `db/usage.js`), and loads a
+connector with its overrides applied through `connectors/servers.js`.
+Each function takes that connection, or the client of a transaction
+the extension has open, as its first argument; a function whose
+writes commit together runs them in a savepoint of that transaction.
+
 `loadConfig` (`src/config/index.ts`) takes the `AUTH_MODE` values
-an edition identifies requests in, beside core's `compat-cookie`
+an extension identifies requests in, beside core's `compat-cookie`
 and `trusted-header`. Paths below are under
 `apps/orchestrator/src/` unless they say `apps/web`.
 
@@ -66,7 +78,7 @@ and `trusted-header`. Paths below are under
 | Identity | `IdentityProvider` (`http/identity.ts`) | `ServerExtension.identity` | `compat-cookie` or `trusted-header` |
 | Organisation policy | `OrgPolicy` (`policy/index.ts`) | `ServerExtension.policy` | `OPEN_POLICY`: no cap |
 | Model credentials | `ModelCredentialsProvider` (`llm/credentials.ts`) | `ServerExtension.modelCredentials` | The organisation's own row under Settings → Model keys |
-| Organisation created | `OrgCreatedHook` (`db/repositories.ts`) | `ServerExtension.orgCreated` | Nothing |
+| Organisation created | `OrgCreatedHook` (`db/orgs.ts`) | `ServerExtension.orgCreated` | Nothing |
 | Sandbox provider | `SandboxProvider` (`extension.ts`) | `ServerExtension.sandboxes` | One `RunSandboxes` (`sandbox/`) |
 | Blob store | `BlobStore` (`lib/blob-store.ts`) | `ServerExtension.blobStore` | `FileBlobStore` under `ATTACHMENTS_ROOT` |
 | Instance admin | `InstanceAdmin` (`http/instance-admin.ts`) | `ServerExtension.instanceAdmin` | An owner of the seed organisation `org_home` |
@@ -111,9 +123,12 @@ and `trusted-header`. Paths below are under
   ([Orchestrator](orchestrator.md#credentials)).
 - **Organisation created.** The hook runs inside the transaction that
   creates an organisation. Hooks from several extensions run in
-  order. A hook passed for one creation replaces them.
+  order. `insertOrg` and `insertUser` (`db/orgs.ts`, `db/users.ts`)
+  run the hook they are passed. The routes pass `AppDeps.orgCreated`,
+  which is the extensions' hooks unless the caller of `buildApp`
+  gives its own.
 - **Sandbox provider.** `GenerationSandboxes`
-  (`generation/index.ts`), keyed by machine: `ensure(machine)`,
+  (`generation/machines.ts`), keyed by machine: `ensure(machine)`,
   `connectRunning`, `destroy`, `listRunningMachineIds`, and an
   optional `harnessesOf(machineId)` (the harness CLIs the machine's
   container carries). On an agent's seat (agent id, machine id, slot,
@@ -129,12 +144,12 @@ and `trusted-header`. Paths below are under
   the Compose stack. Without it, core uses `MemoryBlobStore`, which
   the tests use.
 - **Instance integrations.** Each declares its `source` (`store` or
-  `env`) and its `fields`. An edition's are listed with core's in
+  `env`) and its `fields`. An extension's are listed with core's in
   `GET /api/instance`, and its store integrations are written through
   the same admin routes.
 - **Connectors.** Each is built from a connector folder with
   `folderEntry(manifest, adapter, folder, { publisher })`. An
-  edition's are installed after core's, before the seed runs, and are
+  extension's are installed after core's, before the seed runs, and are
   listed and seeded like core's. A slug core already has fails boot.
 - **Database.** An extension's migrations and seeds run after core's,
   on every boot.
@@ -144,60 +159,60 @@ and `trusted-header`. Paths below are under
   without a slot. The app reads `GET /api/instance` for the
   integrations.
 
-## How an edition's repository holds core
+## How an extending repository holds core
 
-An edition is a repository of its own. It holds core's repository
-as a git submodule pinned to a commit. Beside it sit its own
-server package, its own operator app, its Compose overlays, and
-its deployment files.
+A repository that extends core holds this repository as a git
+submodule pinned to a commit. Beside it sit its own server package,
+its own operator app, its Compose overlays, and its deployment
+files. It passes its extensions when it composes the server and the
+operator app.
 
-- **Workspace.** The edition's pnpm workspace spans core's
-  packages (`core/apps/*`, `core/packages/*`) and its own, under a
-  lockfile of its own. Its packages list core's as dependencies
-  and import only what those packages export.
+- **Workspace.** Its pnpm workspace spans core's packages
+  (`core/apps/*`, `core/packages/*`) and its own, under a lockfile
+  of its own. Its packages list core's as dependencies and import
+  only what those packages export.
   `apps/orchestrator/package.json` lists under `exports` the
   modules another package may import: the composition root and
   process runner, the extension interfaces, and the domain modules
-  and test helpers an edition builds on. A module left off the
+  and test helpers an extension builds on. A module left off the
   list does not resolve from outside. `apps/web/package.json`
   exports `mount`, the slots, the build recipe (`appConfig()` in
   `vite.app.ts`), and the API client, identity, formatting, and
-  role helpers an edition's screens use.
+  role helpers an extension's screens use.
 - **Boundary lint.** `eslint.boundary.js` is a lint rule a core
   package loads from its `eslint.config.js` with the packages it
   may not import and the repository its relative imports must stay
   inside. It fails any orchestrator or web file, tests and scripts
   included, that imports one of those packages or a relative path
   that leaves core's repository. No file is excepted. Core's
-  repository holds nothing of an edition and passes its own check
+  repository holds nothing of an extension and passes its own check
   alone.
 - **Images.** Core's image (`apps/orchestrator/Dockerfile`) holds
-  no edition code, starts core's entry point, and serves core's
+  no extension code, starts core's entry point, and serves core's
   build of the operator app. Its `CORE` build argument is where
-  core sits in the build context and under `/app`. An edition
-  builds that Dockerfile from its own root with
-  `CORE=<its core directory>`, so the install comes from the
-  edition's lockfile. Its own Dockerfile adds its server package
-  and its app's build to the result, started from its entry point.
-- **Compose.** An edition's Compose files are overlays on core's
+  core sits in the build context and under `/app`. The extending
+  repository builds that Dockerfile from its own root with
+  `CORE=<its core directory>`, so the install comes from its
+  lockfile. Its own Dockerfile adds its server package and its
+  app's build to the result, started from its entry point.
+- **Compose.** Its Compose files are overlays on core's
   `docker-compose.yml`. Relative paths in the merged files resolve
   from core's directory.
 - **Makefile.** Core's `Makefile` runs in whichever root includes
   it. `CORE` is core's path under that root (`.` in core's
-  repository). An edition's Makefile sets `CORE`, `EDITION`, its
-  development stack (`COMPOSE_DEV`, `DEV_BASE_IMAGE`,
+  repository). The extending repository's Makefile sets `CORE`,
+  its development stack (`DEV_STACK`, `COMPOSE_DEV`, `DEV_BASE_IMAGE`,
   `WEB_PACKAGE`, `SEED_USER`, `SEED_ORG_SLUG`,
-  `EDITION_TEST_PACKAGES`, `EDITION_COMPOSE_FILES`), and
+  `EXTENSION_TEST_PACKAGES`, `EXTENSION_COMPOSE_FILES`), and
   `SECRET_GOALS`, the goals that start a box with real secrets and
   therefore get no development default. It then includes core's
-  and adds its own targets. In the edition's repository `make up`
-  and `make dev` start the edition's stack. `make -C <core
-  directory> up` starts core alone.
-- **Check.** `scripts/check.sh` checks an edition when
-  `EDITION_ROOT` names its root. The checkout, the install, and
+  and adds its own targets. In that repository `make up` and
+  `make dev` start its stack. `make -C <core directory> up` starts
+  core alone.
+- **Check.** `scripts/check.sh` checks that repository when
+  `CHECK_ROOT` names its root. The checkout, the install, and
   every step happen there, with core and any other submodule at
-  the commit the edition pins. The edition's `check.steps` adds
-  steps, one per line: the
+  the commit it pins. Its `check.steps` adds steps, one per line: the
   lane it joins (`orchestrator` or `web`), a name, and the command
   ([Development](../contributing/development.md)).
 
@@ -238,7 +253,7 @@ does; an optional field tunes it and never switches it off.
   integration, its source, its fields, and what it switches on.
   Modules ask the registry (`integrationValue`, `integrationValues`,
   `missingFields`, `integrationState`), not the environment or the
-  table. An edition registers its own integrations through its
+  table. An extension registers its own integrations through its
   extension, in the same shape: each declares its `source` and its
   `fields`, and a `store` one is written through the same routes.
 - A connector may declare an integration of its own,
@@ -248,12 +263,12 @@ does; an optional field tunes it and never switches it off.
   `client_secret`). `instance/connectors.ts` derives these from the
   platform connector rows at boot and after a connector is
   installed, updated, removed, reloaded, created, or patched, and
-  `installedIntegrations()` lists core's, an edition's, then these.
+  `installedIntegrations()` lists core's, an extension's, then these.
   They are store integrations like the others, written through the
   same routes; a registry connector's row is deleted with it. The
   `{ integration, field }` form of `auth.instance`, the box's OAuth
   client (`oauth.provider`), and the GitHub App are for connectors
-  the box ships, core or an edition: a connector installed at
+  the box ships, core or an extension: a connector installed at
   runtime may not name them
   ([Registry](../tools-and-connectors/connector-registry.md)).
 - The instance descriptor (`GET /api/instance`, any signed-in
@@ -295,13 +310,13 @@ Core's tables are in schema `public`. Its migration chain starts at
 tables, recorded in `public.__drizzle_migrations`
 ([Orchestrator](orchestrator.md#postgresql)).
 
-An edition keeps its tables in a schema of its own. The two never
+An extension keeps its tables in a schema of its own. The two never
 share a name. A core box has no such schema. Its migration chain
 starts at a baseline of its own, recorded in that schema, and is
 applied by its extension's `migrate` after core's.
 
-An edition's table may reference a core table. No core table
-references an edition's. An edition's SQL that reads core's
+An extension's table may reference a core table. No core table
+references an extension's. An extension's SQL that reads core's
 tables, and a seed that writes rows in them, follows a change to
 those tables' columns.
 
@@ -332,8 +347,8 @@ Core is free software under the GNU Affero General Public License,
 version 3 only, copyright Cigale AI (`LICENSE`). Every core
 package declares `AGPL-3.0-only`.
 
-A layer plugs into core by importing it. Under the licence anyone
-who offers an edition on top of core publishes it. The copyright
+Custom code plugs into core by importing it. Under the licence
+anyone who offers that extended software publishes it. The copyright
 holder does not have to. That holds only while Cigale AI owns or
 can relicense everything in core, and no contributor agreement is
 in place.

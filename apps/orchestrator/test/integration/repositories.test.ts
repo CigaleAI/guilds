@@ -1,11 +1,20 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
-import { connect, type Database } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
-import { Scripts } from "../../src/scripts/catalog.js";
+import { writeAgentTask } from "../../src/agents/task.js";
+import type { Database } from "../../src/db/client.js";
+import { connect } from "../../src/seed/connect.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
 import { newId } from "../../src/lib/ids.js";
 import { listFileChanges, operatorActor } from "../../src/artifacts/index.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { insertUser } from "../../src/db/users.js";
+import { listUsersInSeedOrder } from "../../src/users/directory.js";
+import { getMembership, listOrgsForUser } from "../../src/db/orgs.js";
+import { insertGuild } from "../../src/db/guilds.js";
+import { addAgent } from "../../src/agents/persist.js";
+import { createRun, insertMessage, nextSeq } from "../../src/db/runs.js";
+import { getUsage } from "../../src/db/usage.js";
+import { agentConfig, runSnapshot } from "../helpers/generation.js";
 
 const dbName = uniqueDbName("agent_platform_r2");
 let database: Database;
@@ -22,45 +31,50 @@ after(async () => {
 
 describe("repositories", { concurrency: 1 }, () => {
   test("insert_user creates a personal org and list_users keeps seed order", async () => {
-    const repo = new Repositories(database.pool);
-    const users = await repo.listUsers();
+    const db = database.pool;
+    const users = await listUsersInSeedOrder(db);
     assert.equal(users[0]?.id, "user_operator");
     assert.equal(users[0]?.name, "operator");
-    const created = await repo.insertUser(newId("user"), "other", new Date());
+    const created = await insertUser(db, { userId: newId("user"), name: "other" }, new Date());
     assert.equal(created.name, "other");
-    const listed = await repo.listUsers();
+    const listed = await listUsersInSeedOrder(db);
     assert.deepEqual(
       listed.map((row) => row.name),
       ["operator", "other"],
     );
-    const orgs = await repo.listOrgsForUser(String(created.id));
+    const orgs = await listOrgsForUser(db, String(created.id));
     assert.equal(orgs.length, 1);
     assert.equal(orgs[0]?.slug, "other");
     assert.equal(orgs[0]?.role, "owner");
-    const home = await repo.getMembership("org_home", "user_operator");
+    const home = await getMembership(db, "org_home", "user_operator");
     assert.ok(home);
     assert.equal(home.slug, "home");
   });
 
   test("script catalog persists through the repository", async () => {
-    const repo = new Repositories(database.pool);
-    await repo.insertGuild("guild_scripts", "scripts-guild", new Date(), "org_home", "");
-    await repo.insertAgent(
-      "a_scripts",
-      "guild_scripts",
-      "scripter",
+    const db = database.pool;
+    await insertGuild(db,
+      { guildId: "guild_scripts", name: "scripts-guild", orgId: "org_home", about: "" },
+      new Date(),
+    );
+    await addAgent(db,
       {
-        model: "openrouter/openai/gpt-5.6-luna",
-        temperature: 1,
-        max_tokens: 8192,
-        max_steps: 30,
-        max_tool_calls: 50,
-        max_input_tokens: 100000,
-        browser: false,
+        agentId: "a_scripts",
+        guildId: "guild_scripts",
+        name: "scripter",
+        config: agentConfig({
+          model: "openrouter/openai/gpt-5.6-luna",
+          temperature: 1,
+          max_tokens: 8192,
+          max_steps: 30,
+          max_tool_calls: 50,
+          max_input_tokens: 100000,
+          browser: false,
+        }),
       },
       new Date(),
     );
-    const scripts = new Scripts(repo);
+    const scripts = new Scripts(scriptDatabase(db));
     const actor = operatorActor({
       orgId: "org_home",
       actorId: "user_operator",
@@ -84,7 +98,7 @@ describe("repositories", { concurrency: 1 }, () => {
       name: "operator",
     });
 
-    await repo.writeAgentTask(actor, "a_scripts", "Updated task");
+    await writeAgentTask(db, actor, "a_scripts", "Updated task");
     const taskChanges = await listFileChanges(
       database.pool,
       "org_home",
@@ -95,44 +109,60 @@ describe("repositories", { concurrency: 1 }, () => {
   });
 
   test("insertMessage with assistant usage increments counters", async () => {
-    const repo = new Repositories(database.pool);
+    const db = database.pool;
     const now = new Date("2026-09-15T12:00:00.000Z");
-    await repo.insertGuild("guild_usage", "usage-guild", now, "org_home", "");
-    await repo.insertAgent(
-      "a_usage",
-      "guild_usage",
-      "counter",
+    await insertGuild(db,
+      { guildId: "guild_usage", name: "usage-guild", orgId: "org_home", about: "" },
+      now,
+    );
+    await addAgent(db,
       {
-        model: "openrouter/openai/gpt-5.6-luna",
-        temperature: 1,
-        max_tokens: 8192,
-        max_steps: 30,
-        max_tool_calls: 50,
-        max_input_tokens: 100000,
-        browser: false,
+        agentId: "a_usage",
+        guildId: "guild_usage",
+        name: "counter",
+        config: agentConfig({
+          model: "openrouter/openai/gpt-5.6-luna",
+          temperature: 1,
+          max_tokens: 8192,
+          max_steps: 30,
+          max_tool_calls: 50,
+          max_input_tokens: 100000,
+          browser: false,
+        }),
       },
       now,
     );
-    await repo.createRun("r_usage", "a_usage", {}, "sys", "task", null, now, {
-      systemPromptHash: "s",
-      taskPromptHash: "t",
-      memoryPromptHash: "m",
-    });
-    const seq = await repo.nextSeq("r_usage");
-    await repo.insertMessage(
-      "r_usage",
-      seq,
-      { role: "assistant", content: "hello" },
+    await createRun(db,
       {
-        usage: { input_tokens: 10, output_tokens: 4, cache_read_tokens: 2 },
-        cost_usd: 0.001,
+        runId: "r_usage",
+        agentId: "a_usage",
+        configSnapshot: runSnapshot(),
+        systemContent: "sys",
+        taskContent: "task",
+        userContent: null,
+        systemPromptHash: "s",
+        taskPromptHash: "t",
+        memoryPromptHash: "m",
       },
       now,
     );
-    const agentUsage = await repo.getUsage("agent", "a_usage");
-    const guildUsage = await repo.getUsage("guild", "guild_usage");
-    const orgUsage = await repo.getUsage("org", "org_home");
-    const globalUsage = await repo.getUsage("global", "");
+    const seq = await nextSeq(db, "r_usage");
+    await insertMessage(db,
+      {
+        runId: "r_usage",
+        seq,
+        payload: { role: "assistant", content: "hello" },
+        metadata: {
+          usage: { input_tokens: 10, output_tokens: 4, cache_read_tokens: 2 },
+          cost_usd: 0.001,
+        },
+      },
+      now,
+    );
+    const agentUsage = await getUsage(db, "agent", "a_usage");
+    const guildUsage = await getUsage(db, "guild", "guild_usage");
+    const orgUsage = await getUsage(db, "org", "org_home");
+    const globalUsage = await getUsage(db, "global", "");
     for (const row of [agentUsage, guildUsage, orgUsage, globalUsage]) {
       assert.ok(row);
       assert.equal(Number(row.input_tokens), 10);
@@ -141,26 +171,30 @@ describe("repositories", { concurrency: 1 }, () => {
       assert.equal(Number(row.cost_usd), 0.001);
       assert.equal(Number(row.calls), 1);
     }
-    await repo.insertMessage(
-      "r_usage",
-      seq + 1,
-      { role: "tool", tool_call_id: "c1", content: "ok" },
-      { tool_name: "note_read" },
-      now,
-    );
-    const afterTool = await repo.getUsage("agent", "a_usage");
-    assert.equal(Number(afterTool?.calls), 1);
-    await repo.insertMessage(
-      "r_usage",
-      seq + 2,
-      { role: "assistant", content: "again" },
+    await insertMessage(db,
       {
-        usage: { input_tokens: 1, output_tokens: 2, cache_read_tokens: 0 },
-        cost_usd: 0.0005,
+        runId: "r_usage",
+        seq: seq + 1,
+        payload: { role: "tool", tool_call_id: "c1", content: "ok" },
+        metadata: { tool_name: "note_read" },
       },
       now,
     );
-    const stacked = await repo.getUsage("agent", "a_usage");
+    const afterTool = await getUsage(db, "agent", "a_usage");
+    assert.equal(Number(afterTool?.calls), 1);
+    await insertMessage(db,
+      {
+        runId: "r_usage",
+        seq: seq + 2,
+        payload: { role: "assistant", content: "again" },
+        metadata: {
+          usage: { input_tokens: 1, output_tokens: 2, cache_read_tokens: 0 },
+          cost_usd: 0.0005,
+        },
+      },
+      now,
+    );
+    const stacked = await getUsage(db, "agent", "a_usage");
     assert.equal(Number(stacked?.input_tokens), 11);
     assert.equal(Number(stacked?.output_tokens), 6);
     assert.equal(Number(stacked?.cache_read_tokens), 2);

@@ -6,7 +6,7 @@ import {
   MCP_SEED_SERVERS,
   NATIVE_TOOLS,
   PLATFORM_NATIVE_TOOLS,
-} from "../../src/db/seed/catalog.js";
+} from "../../src/seed/catalog.js";
 
 export type SeedManifest = {
   system: {

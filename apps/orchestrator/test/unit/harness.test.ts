@@ -37,6 +37,7 @@ import {
 import { applySecretAliases } from "../../src/access/runtime.js";
 import { answerOps, HostCodeSandbox } from "../helpers/code-sandbox.js";
 import { tempDir } from "../helpers/env.js";
+import { noteRowAt } from "../helpers/artifacts.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const STUB = path.join(HERE, "../helpers/harness/stub-cli");
@@ -133,7 +134,7 @@ function context(sandbox: HostCodeSandbox, overrides: Partial<ToolContext> = {})
 async function codeTask(ctx: ToolContext, args: Record<string, unknown>, callId = "call_task") {
   const [payload, metadata] = await invokeTool(
     ctx,
-    { id: callId, function: { name: "code_task", arguments: JSON.stringify(args) } },
+    { id: callId, type: "function", function: { name: "code_task", arguments: JSON.stringify(args) } },
     ctx.secrets,
     65536,
   );
@@ -267,10 +268,7 @@ describe("code_task with the Claude Code driver", () => {
         if (!(displayPath in notes)) {
           throw new Error("artifact not found");
         }
-        return { row: { kind: "note", path: displayPath } };
-      },
-      view(row: { path: string }) {
-        return { display_path: row.path, content: notes[row.path] };
+        return { row: noteRowAt(displayPath, notes[displayPath] ?? "") };
       },
     };
     const { ctx } = context(new HostCodeSandbox(), {

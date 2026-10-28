@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { agentRuntime } from "../../src/access/runtime.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import { decodeMasterKey } from "../../src/config/index.js";
-import { NATIVE_TOOLS } from "../../src/db/seed/catalog.js";
+import { NATIVE_TOOLS } from "../../src/seed/catalog.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { instanceCredentials, instanceKey, instanceRedactions } from "../../src/connectors/instance.js";
 import { TavilyError, formatSearch, search } from "../../src/connectors/tavily/client.js";
@@ -15,12 +15,14 @@ import { setInstanceKeys } from "../../src/instance/integrations.js";
 import { HEX_MASTER_KEY, storeKeys } from "../helpers/env.js";
 import { loadJsonFixture } from "../helpers/fixtures.js";
 import { mockFetch } from "../helpers/http.js";
+import { serverRow, connectionRow } from "../helpers/servers.js";
+import type { McpConnectionRow } from "../../src/db/mcp.js";
 
 const fixture = loadJsonFixture<{ results: string; empty: string }>("adapters/tavily.json");
 
 const KEY = decodeMasterKey(HEX_MASTER_KEY);
 const TAVILY = CONNECTORS.bySlug("tavily")!;
-const SERVER = { id: "mcp_tavily", slug: "tavily", auth: "token" };
+const SERVER = serverRow("tavily", { id: "mcp_tavily", auth: "token" });
 
 /** Holds the web search key in the process's instance keys for one block, then empties them. */
 async function withInstanceKey<T>(value: string, work: () => Promise<T>): Promise<T> {
@@ -36,9 +38,13 @@ function webSearch(apiKey: string) {
   return { keys: storeKeys({ "web-search": { api_key: apiKey } }) };
 }
 
-function login(scope: "platform" | "org", payload: Record<string, unknown>, status = "connected") {
+function login(
+  scope: "platform" | "org",
+  payload: Record<string, unknown>,
+  status: McpConnectionRow["status"] = "connected",
+): McpConnectionRow {
   const [ciphertext, nonce] = encryptPayload(payload, KEY);
-  return {
+  return connectionRow({
     id: `conn_${scope}`,
     mcp_server_id: SERVER.id,
     owner_scope: scope,
@@ -46,7 +52,7 @@ function login(scope: "platform" | "org", payload: Record<string, unknown>, stat
     status,
     ciphertext,
     nonce,
-  };
+  });
 }
 
 class MeterDb {
@@ -161,9 +167,9 @@ test("a platform login calls with the instance key; an organisation's login with
   const seen: string[] = [];
   const pool = searchPool(seen);
   await withInstanceKey("tvly-instance", async () => {
-    const result = await pool.call(new MeterDb(), login("platform", {}), SERVER, "search", { query: "messi" });
+    const result = await pool.call(new MeterDb() as never, login("platform", {}), SERVER, "search", { query: "messi" });
     assert.equal(result, "Messi\nhttps://example.com/messi\nFootballer");
-    await pool.call(new MeterDb(), login("org", { token: "tvly-own" }), SERVER, "search", { query: "messi" });
+    await pool.call(new MeterDb() as never, login("org", { token: "tvly-own" }), SERVER, "search", { query: "messi" });
   });
   assert.deepEqual(seen, ["Bearer tvly-instance", "Bearer tvly-own"]);
 });
@@ -183,15 +189,15 @@ test("a plan's monthly cap refuses platform-login calls past it and leaves an or
     const platform = login("platform", {});
     const results = [];
     for (let index = 0; index < 3; index += 1) {
-      results.push(await pool.call(db, platform, SERVER, "search", { query: "q" }, { orgId: "org_1" }));
+      results.push(await pool.call(db as never, platform, SERVER, "search", { query: "q" }, { orgId: "org_1" }));
     }
     assert.equal(results[2], "ERROR: plan limit reached: tavily calls this month");
     assert.equal(seen.length, 2);
     assert.equal(
-      await pool.call(db, platform, SERVER, "search", { query: "q" }, { orgId: "org_2" }),
+      await pool.call(db as never, platform, SERVER, "search", { query: "q" }, { orgId: "org_2" }),
       "Messi\nhttps://example.com/messi\nFootballer",
     );
-    await pool.call(db, login("org", { token: "tvly-own" }), SERVER, "search", { query: "q" }, { orgId: "org_1" });
+    await pool.call(db as never, login("org", { token: "tvly-own" }), SERVER, "search", { query: "q" }, { orgId: "org_1" });
   });
   assert.equal(seen.length, 4);
   assert.deepEqual([...db.calls.values()], [2, 1]);

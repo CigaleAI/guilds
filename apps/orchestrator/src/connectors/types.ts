@@ -1,3 +1,4 @@
+import type { ConnectionSettings, ToolInputSchema } from "../db/schema/index.js";
 import type { FetchFn } from "../net/http.js";
 
 /** A login's decrypted credentials, keyed by the manifest's field names. Values are trimmed strings. */
@@ -7,7 +8,7 @@ export type Credentials = Readonly<Record<string, string>>;
 export type ConnectorTool = {
   name: string;
   description: string;
-  input_schema: Record<string, unknown>;
+  input_schema: ToolInputSchema;
   mutating?: boolean;
   read_only_hint?: boolean | null;
   destructive_hint?: boolean | null;
@@ -39,7 +40,7 @@ export type ConnectorContext = {
   remote: RemoteSession;
   connection_id: string;
   /** The login's settings. */
-  settings: Readonly<Record<string, unknown>>;
+  settings: Readonly<ConnectionSettings>;
   /** The agent's workspace when the call comes from a run. */
   workspace_dir?: string;
 };

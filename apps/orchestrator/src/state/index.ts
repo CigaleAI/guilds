@@ -66,27 +66,30 @@ export const CORE_STATE_KEYS: ReadonlySet<string> = new Set([
   "repositories",
 ]);
 
+/** What a run's State is built from, besides the agent's notes. */
+export type RunStateInputs = {
+  members: unknown[];
+  operators?: GuildOperator[];
+  historyRows: Array<Record<string, unknown>>;
+  guildAbout?: string;
+  guildDescription?: string;
+  collections?: unknown[] | null;
+  secrets?: Array<Record<string, unknown>> | null | undefined;
+  scripts?: unknown[] | null | undefined;
+  maxToolCalls?: number;
+  /** The entries connectors' State hooks returned, by key. A key core uses is not one of them. */
+  connectors?: Record<string, unknown>;
+  /** A coding agent's guild repositories; other agents' State has no `repositories`. */
+  repositories?: Array<Record<string, string>> | null;
+  now?: Date;
+};
+
 export function collectRunState(
   notes: DirectoryNotes | null,
   orgSlug: string,
   guildName: string,
   agentName: string,
-  options: {
-    members: unknown[];
-    operators?: GuildOperator[];
-    historyRows: Array<Record<string, unknown>>;
-    guildAbout?: string;
-    guildDescription?: string;
-    collections?: unknown[] | null;
-    secrets?: Array<Record<string, unknown>> | null | undefined;
-    scripts?: unknown[] | null | undefined;
-    maxToolCalls?: number;
-    /** The entries connectors' State hooks returned, by key. A key core uses is not one of them. */
-    connectors?: Record<string, unknown>;
-    /** A coding agent's guild repositories; other agents' State has no `repositories`. */
-    repositories?: Array<Record<string, string>> | null;
-    now?: Date;
-  },
+  options: RunStateInputs,
 ): Record<string, unknown> {
   const listing = notes
     ? collectDirectoryListing(notes, orgSlug, guildName, agentName, {

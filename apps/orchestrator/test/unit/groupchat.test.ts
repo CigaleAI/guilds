@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, test } from "node:test";
 import { AgentMessageLimitReached, GroupChatCleared } from "../../src/db/errors.js";
+import type { GroupMessageRow, NewAgentGroupMessage, NewUserGroupMessage } from "../../src/db/group-chat.js";
+import { groupMessageRow } from "../helpers/group-chat.js";
 import { groupMessageItem } from "../../src/db/views.js";
 import {
   CLEARED_ERROR,
@@ -20,7 +22,6 @@ import {
   wakeMessage,
   withActiveCursors,
   type ActiveDelivery,
-  type GroupChatDatabase,
   type GroupDelivery,
   type GroupRunner,
 } from "../../src/groupchat/index.js";
@@ -34,7 +35,7 @@ import {
   type GroupRouter,
 } from "../../src/typesafe/index.js";
 
-class MemoryGroupDB implements GroupChatDatabase {
+class MemoryGroupDB {
   private readonly lock = new AsyncLock();
   guilds: Record<string, Record<string, unknown>> = {};
   agents: Record<string, Record<string, unknown>> = {};
@@ -184,15 +185,8 @@ class MemoryGroupDB implements GroupChatDatabase {
     return guild.group_chat_errors as unknown[];
   }
 
-  async postUserGroupMessage(
-    guildId: string,
-    content: string,
-    taggedNames: string[],
-    taggedAgentIds: string[],
-    taggedUserIds: string[],
-    now: Date,
-    options: { authorName?: string } = {},
-  ) {
+  async postUserGroupMessage(input: NewUserGroupMessage, now: Date) {
+    const { guildId, content, taggedNames, taggedAgentIds, taggedUserIds, authorName } = input;
     return this.lock.run(async () => {
       const guild = this.guilds[guildId];
       if (!guild) {
@@ -204,7 +198,7 @@ class MemoryGroupDB implements GroupChatDatabase {
         guildId,
         Number(guild.group_chat_seq),
         "user",
-        options.authorName ?? "user",
+        authorName ?? "user",
         null,
         null,
         content,
@@ -216,17 +210,17 @@ class MemoryGroupDB implements GroupChatDatabase {
     });
   }
 
-  async postAgentGroupMessage(
-    guildId: string,
-    agentId: string,
-    authorName: string,
-    sourceRunId: string,
-    content: string,
-    taggedNames: string[],
-    taggedAgentIds: string[],
-    taggedUserIds: string[],
-    now: Date,
-  ) {
+  async postAgentGroupMessage(input: NewAgentGroupMessage, now: Date) {
+    const {
+      guildId,
+      agentId,
+      authorName,
+      sourceRunId,
+      content,
+      taggedNames,
+      taggedAgentIds,
+      taggedUserIds,
+    } = input;
     return this.lock.run(async () => {
       const guild = this.guilds[guildId];
       if (!guild) {
@@ -303,7 +297,7 @@ function chatFor(
   deleting: Set<string> = new Set(),
   router?: GroupRouter,
 ): GroupChat {
-  return new GroupChat(db, {
+  return new GroupChat(db as never, {
     is_deleting: (guildId) => deleting.has(guildId),
     ...(router ? { router } : {}),
   });
@@ -362,7 +356,7 @@ class FakeRunner implements GroupRunner {
   deliveries: Array<[string, number]> = [];
   delivery_cursors: number[] = [];
   fail_agents = new Set<string>();
-  lock_generation = 0;
+  lockGeneration = 0;
   private readonly lockEvent = new AsyncEvent();
   gate: AsyncEvent | null = null;
   /** Holds one agent's runs open until set; a cancel sets it. */
@@ -370,14 +364,14 @@ class FakeRunner implements GroupRunner {
   started: string[] = [];
   cancelled: string[] = [];
 
-  agent_is_busy(agentId: string): boolean {
+  isAgentBusy(agentId: string): boolean {
     return this.busy.has(agentId);
   }
 
-  async wait_lock_release(seen: number): Promise<void> {
-    while (this.lock_generation <= seen) {
+  async waitForLockRelease(seen: number): Promise<void> {
+    while (this.lockGeneration <= seen) {
       this.lockEvent.clear();
-      if (this.lock_generation > seen) {
+      if (this.lockGeneration > seen) {
         return;
       }
       await this.lockEvent.wait();
@@ -385,11 +379,11 @@ class FakeRunner implements GroupRunner {
   }
 
   release(): void {
-    this.lock_generation += 1;
+    this.lockGeneration += 1;
     this.lockEvent.set();
   }
 
-  async deliver_group_run(delivery: GroupDelivery): Promise<void> {
+  async deliverGroupRun(delivery: GroupDelivery): Promise<void> {
     const { agentId, throughSeq, deliveredThrough } = delivery;
     if (this.fail_agents.has(agentId)) {
       throw new DeliveryCreateError("invalid prompt files");
@@ -403,7 +397,7 @@ class FakeRunner implements GroupRunner {
     this.delivery_cursors.push(deliveredThrough);
   }
 
-  async cancel_agent_run(agentId: string): Promise<void> {
+  async cancelAgentRuns(agentId: string): Promise<void> {
     this.cancelled.push(agentId);
     this.gates.get(agentId)?.set();
   }
@@ -434,18 +428,14 @@ async function waitDispatch(chat: GroupChat, guildId = "guild_1"): Promise<void>
   }
 }
 
-function chatRow(seq: number, content: string, author = "user"): Record<string, unknown> {
+function chatRow(seq: number, content: string, author = "user"): GroupMessageRow {
   const agent = author !== "user";
-  return {
-    id: seq,
-    seq,
+  return groupMessageRow(seq, {
     author_type: agent ? "agent" : "user",
     author_name: author,
     author_agent_id: agent ? "a_1" : null,
     content,
-    tagged_names: [],
-    tagged_agent_ids: [],
-  };
+  });
 }
 
 describe("groupchat", { concurrency: 1 }, () => {
@@ -729,6 +719,7 @@ describe("groupchat", { concurrency: 1 }, () => {
       ctx,
       {
         id: "call_1",
+        type: "function",
         function: { name: "group_post", arguments: '{"content":"shared finding"}' },
       },
       {},
@@ -757,6 +748,7 @@ describe("groupchat", { concurrency: 1 }, () => {
       ctx,
       {
         id: "call_2",
+        type: "function",
         function: { name: "group_post", arguments: '{"content":"too many"}' },
       },
       {},
@@ -770,18 +762,22 @@ describe("groupchat", { concurrency: 1 }, () => {
   });
 
   test("purge_guild_deletes_the_guild_row", () => {
-    const source = readFileSync(
-      path.join(orchestratorRoot(import.meta.url), "src/db/repositories.ts"),
+    const guildsSource = readFileSync(
+      path.join(orchestratorRoot(import.meta.url), "src/db/guilds.ts"),
       "utf8",
     );
-    assert.ok(source.includes("DELETE FROM guilds"));
-    assert.match(source, /group_chat_seq/);
-    assert.match(source, /group_chat_delivered_through/);
+    const groupChatSource = readFileSync(
+      path.join(orchestratorRoot(import.meta.url), "src/db/group-chat.ts"),
+      "utf8",
+    );
+    assert.ok(guildsSource.includes("DELETE FROM guilds"));
+    assert.match(groupChatSource, /group_chat_seq/);
+    assert.match(groupChatSource, /group_chat_delivered_through/);
   });
 
   test("purge_agent_deletes_the_agent_row", () => {
     const source = readFileSync(
-      path.join(orchestratorRoot(import.meta.url), "src/db/repositories.ts"),
+      path.join(orchestratorRoot(import.meta.url), "src/db/agents.ts"),
       "utf8",
     );
     assert.ok(source.includes("DELETE FROM agents"));
@@ -791,15 +787,18 @@ describe("groupchat", { concurrency: 1 }, () => {
     const now = new Date();
     const item = groupMessageItem({
       id: 42,
+      guild_id: "guild_1",
       seq: 7,
       author_type: "agent",
       author_name: "researcher",
       author_agent_id: "a_1",
+      author_user_id: null,
       source_run_id: "r_1",
       content: "found it",
       tagged_names: ["writer"],
       tagged_agent_ids: ["a_2"],
-      created_at: now,
+      tagged_user_ids: [],
+      created_at: now.toISOString(),
     });
     assert.equal(item.id, 42);
     assert.equal(item.seq, 7);
@@ -815,26 +814,8 @@ describe("groupchat", { concurrency: 1 }, () => {
         { id: "a_2", name: "agent2" },
       ],
       rows: [
-        {
-          id: 1,
-          seq: 1,
-          author_type: "user",
-          author_name: "user",
-          author_agent_id: null,
-          content: "Plan the release.",
-          tagged_names: [],
-          tagged_agent_ids: [],
-        },
-        {
-          id: 2,
-          seq: 2,
-          author_type: "agent",
-          author_name: "agent1",
-          author_agent_id: "a_1",
-          content: "I found the relevant constraints.",
-          tagged_names: [],
-          tagged_agent_ids: [],
-        },
+        groupMessageRow(1, { author_type: "user", author_name: "user", author_agent_id: null, content: "Plan the release.", tagged_names: [], tagged_agent_ids: [] }),
+        groupMessageRow(2, { author_type: "agent", author_name: "agent1", author_agent_id: "a_1", content: "I found the relevant constraints.", tagged_names: [], tagged_agent_ids: [] }),
       ],
     });
     assert.equal(payload.role, "user");
@@ -925,16 +906,7 @@ describe("groupchat", { concurrency: 1 }, () => {
         { id: "a_2", name: "writer" },
       ],
       rows: [
-        {
-          id: 1,
-          seq: 1,
-          author_type: "user",
-          author_name: "user",
-          author_agent_id: null,
-          content: "@writer please take this.",
-          tagged_names: ["writer"],
-          tagged_agent_ids: ["a_2"],
-        },
+        groupMessageRow(1, { author_type: "user", author_name: "user", author_agent_id: null, content: "@writer please take this.", tagged_names: ["writer"], tagged_agent_ids: ["a_2"] }),
       ],
       viewerName: "writer",
     });
@@ -950,26 +922,8 @@ describe("groupchat", { concurrency: 1 }, () => {
 
   test("group_chat_user_message_flags_tag_anywhere_after_cursor", () => {
     const rows = [
-      {
-        id: 1,
-        seq: 1,
-        author_type: "user",
-        author_name: "user",
-        author_agent_id: null,
-        content: "@writer please take this.",
-        tagged_names: ["writer"],
-        tagged_agent_ids: ["a_2"],
-      },
-      {
-        id: 2,
-        seq: 2,
-        author_type: "agent",
-        author_name: "researcher",
-        author_agent_id: "a_1",
-        content: "Status update.",
-        tagged_names: [],
-        tagged_agent_ids: [],
-      },
+      groupMessageRow(1, { author_type: "user", author_name: "user", author_agent_id: null, content: "@writer please take this.", tagged_names: ["writer"], tagged_agent_ids: ["a_2"] }),
+      groupMessageRow(2, { author_type: "agent", author_name: "researcher", author_agent_id: "a_1", content: "Status update.", tagged_names: [], tagged_agent_ids: [] }),
     ];
     const members = [
       { id: "a_1", name: "researcher" },

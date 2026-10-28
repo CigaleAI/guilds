@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { RunScriptSnapshot } from "./snapshot.js";
+import type { RunScriptSnapshot } from "../db/schema/index.js";
 
 export const SCRIPT_LAUNCHER = "/usr/local/bin/guilds-script-run";
 export const SCRIPT_ARGS_ENV = "GUILDS_SCRIPT_ARGS";

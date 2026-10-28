@@ -4,14 +4,14 @@ import react from "@vitejs/plugin-react";
 import type { UserConfig } from "vite";
 
 /**
- * How the operator app is built and served in development, for this package and for an edition's
+ * How the operator app is built and served in development, for this package and for an extension's
  * package that mounts the app with its own slots. The app is the whole site; the orchestrator
  * answers its API, avatars and health check.
  */
 export function appConfig(): UserConfig {
   return {
     base: "/",
-    // Every edition serves the same favicon.
+    // Every extension serves the same favicon.
     publicDir: fileURLToPath(new URL("./public", import.meta.url)),
     plugins: [react(), tailwindcss()],
     build: {

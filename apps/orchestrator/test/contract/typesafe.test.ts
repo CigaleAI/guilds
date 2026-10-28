@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
+import type { GroupMessageRow } from "../../src/db/group-chat.js";
+import { groupMessageRow } from "../helpers/group-chat.js";
 import {
   RECIPIENT_CONFIDENCE_MIN,
   createGroupRouter,
@@ -44,33 +46,15 @@ const DESK = [
   },
 ];
 
-function userRow(seq: number, content: string): Record<string, unknown> {
-  return {
-    id: seq,
-    seq,
-    author_type: "user",
-    author_name: "user",
-    author_agent_id: null,
-    content,
-    tagged_names: [],
-    tagged_agent_ids: [],
-  };
+function userRow(seq: number, content: string): GroupMessageRow {
+  return groupMessageRow(seq, { content });
 }
 
-function agentRow(seq: number, name: string, content: string): Record<string, unknown> {
-  return {
-    id: seq,
-    seq,
-    author_type: "agent",
-    author_name: name,
-    author_agent_id: `a_${name}`,
-    content,
-    tagged_names: [],
-    tagged_agent_ids: [],
-  };
+function agentRow(seq: number, name: string, content: string): GroupMessageRow {
+  return groupMessageRow(seq, { author_type: "agent", author_name: name, author_agent_id: `a_${name}`, content });
 }
 
-function chatterRows(count: number, startSeq = 1): Array<Record<string, unknown>> {
+function chatterRows(count: number, startSeq = 1): GroupMessageRow[] {
   const phrases = ["gm", "lol", "solid day", "ty", "brb", "nice", "ok", "sure", "cool", "yep", "gm again"];
   return Array.from({ length: count }, (_, index) =>
     userRow(startSeq + index, phrases[index % phrases.length] ?? "gm"),

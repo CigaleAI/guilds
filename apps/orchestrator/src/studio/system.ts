@@ -155,27 +155,32 @@ export function composeStudioSystemMessage(args: {
   return { content, hash: createHash("sha256").update(content, "utf8").digest("hex") };
 }
 
-function latestRunKind(agent: Record<string, unknown>): unknown {
-  const run = agent.latest_run;
-  return run && typeof run === "object" ? (run as Record<string, unknown>).kind : agent.latest_run_kind;
-}
+/** An agent as its roster header shows it: what the Studio inventory lists of it. */
+export type RosterAgent = {
+  id: string;
+  name: string;
+  focus: string;
+  task_version: number;
+  task_hash: string;
+  has_embeds: boolean;
+  routine_count: number;
+  latest_run: { kind: string | null } | null;
+  draft_id: string | null;
+  warnings: string[];
+};
 
-function warningsLabel(agent: Record<string, unknown>): string {
-  const warnings = Array.isArray(agent.warnings) ? agent.warnings : [];
-  return warnings.length ? warnings.join(",") : "none";
-}
-
-function rosterHeader(agent: Record<string, unknown>): string {
-  const name = wrapUntrustedText("agent.name", String(agent.name ?? ""));
-  const focus = String(agent.focus ?? "").trim();
+function rosterHeader(agent: RosterAgent): string {
+  const name = wrapUntrustedText("agent.name", agent.name);
+  const focus = agent.focus.trim();
   const focusBlock = focus ? ` focus=${wrapUntrustedText("agent.focus", focus)}` : "";
-  return `- ${agent.id} ${name}${focusBlock} task_version=${agent.task_version ?? "null"} source_hash=${agent.task_hash ?? "null"} has_embeds=${Boolean(agent.has_embeds)} routines=${agent.routine_count ?? 0} latest_run=${latestRunKind(agent) ?? "none"} draft=${agent.draft_id ?? "none"} warnings=${warningsLabel(agent)}`;
+  const warnings = agent.warnings.length ? agent.warnings.join(",") : "none";
+  return `- ${agent.id} ${name}${focusBlock} task_version=${agent.task_version} source_hash=${agent.task_hash} has_embeds=${agent.has_embeds} routines=${agent.routine_count} latest_run=${agent.latest_run?.kind ?? "none"} draft=${agent.draft_id ?? "none"} warnings=${warnings}`;
 }
 
 /** The per-generation map: roster headers and the open draft. Task excerpts live in the system message only. */
 export function composeGenerationContext(args: {
   sourceGuild: { id: string };
-  roster: Array<Record<string, unknown>>;
+  roster: RosterAgent[];
   draft: Record<string, unknown> | null;
 }): string {
   const parts = [

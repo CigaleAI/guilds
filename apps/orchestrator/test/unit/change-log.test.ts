@@ -7,8 +7,10 @@ import {
   collectionColumnsChanged,
   collectionDeleted,
 } from "../../src/artifacts/collection-changes.js";
-import { ArtifactStore } from "../../src/artifacts/store.js";
-import { actorColumns, runActor, studioLink, userActor } from "../../src/db/config-changes.js";
+import { artifactStore } from "../../src/artifacts/store.js";
+import { actorColumns, studioLink } from "../../src/db/config-changes.js";
+import { runActor, userActor } from "../../src/lib/change-actor.js";
+import type { ScheduleRow } from "../../src/db/schedules.js";
 import { guildTextChange } from "../../src/guilds/changes.js";
 import { routineChange, routineUpdateSummary } from "../../src/schedules/changes.js";
 import { editActor } from "../../src/studio/actor.js";
@@ -19,10 +21,15 @@ const ROUTINE = {
   agent_id: "a_1",
   cron: "0 9 * * 1",
   wake_window: null,
+  window_fires: 0,
   description: "Weekly sweep",
   instruction: "Sweep the feed.",
   paused: false,
-};
+  next_run_at: "2026-10-19T09:00:00.000Z",
+  last_run_at: null,
+  created_at: "2026-10-12T09:00:00.000Z",
+  updated_at: "2026-10-12T09:00:00.000Z",
+} satisfies ScheduleRow;
 
 test("a routine coming into existence is logged as a create against its agent", () => {
   assert.deepEqual(routineChange(null, ROUTINE), {
@@ -68,6 +75,10 @@ test("a routine edit names what it paused, resumed, or changed", () => {
     'Paused and changed the timing, description and instruction of "Daily"',
   );
   assert.equal(routineChange(ROUTINE, { ...ROUTINE, paused: true })?.operation, "update");
+});
+
+test("a routine change with neither a before nor an after logs nothing", () => {
+  assert.equal(routineChange(null, null), null);
 });
 
 test("a routine write that changes nothing logs nothing", () => {
@@ -155,12 +166,12 @@ test("table deletes, delete all, and column renames or removals are logged again
 });
 
 test("change actors fill the shared actor, run, call, and coach columns", () => {
-  const person = userActor({ id: "user_ada" });
-  assert.equal(person.actorName, "operator");
+  const person = userActor({ id: "user_ada", name: "ada" });
+  assert.equal(person.actorName, "ada");
   assert.deepEqual(actorColumns({ ...person, studio: { sessionId: "ss_1", seq: 7 } }), [
     "user",
     "user_ada",
-    "operator",
+    "ada",
     null,
     null,
     null,
@@ -184,7 +195,7 @@ test("change actors fill the shared actor, run, call, and coach columns", () => 
 });
 
 test("a stored change links to its coach message only when it has both session and sequence", () => {
-  assert.deepEqual(studioLink({ studio_session_id: "ss_1", studio_seq: "7" }), {
+  assert.deepEqual(studioLink({ studio_session_id: "ss_1", studio_seq: 7 }), {
     session_id: "ss_1",
     seq: 7,
   });
@@ -198,7 +209,7 @@ test("a Studio edit writes as the operator, linked to the coach message being ap
     sourceGuildId: "g_1",
     sessionId: "ss_1",
     user: { id: "user_ada", name: "ada" },
-    artifacts: new ArtifactStore({} as pg.Pool),
+    artifacts: artifactStore({} as pg.Pool),
   } as unknown as EditScope;
   const reading = editActor(scope, { agentId: "a_1" });
   assert.equal(reading.studio, undefined);

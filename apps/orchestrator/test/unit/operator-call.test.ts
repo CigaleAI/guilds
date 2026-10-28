@@ -8,6 +8,8 @@ import {
   callOwnedConnectionTool,
 } from "../../src/mcp/operator-call.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
+import { serverRow, connectionRow } from "../helpers/servers.js";
+import type { McpConnectionRow } from "../../src/db/mcp.js";
 
 const masterKey = Buffer.from(HEX_MASTER_KEY, "hex");
 
@@ -28,31 +30,25 @@ function listed(
   };
 }
 
-function connection(overrides: Record<string, unknown> = {}) {
-  return {
-    id: "conn_1",
-    status: "connected",
-    ciphertext: Buffer.alloc(0),
-    nonce: Buffer.alloc(0),
-    ...overrides,
-  };
+function connection(overrides: Partial<McpConnectionRow> = {}): McpConnectionRow {
+  return connectionRow({ id: "conn_1", ...overrides });
 }
 
 function call(args: {
   tool?: string;
   arguments?: Record<string, unknown>;
-  connection?: Record<string, unknown>;
+  connection?: McpConnectionRow;
   tools?: Array<ReturnType<typeof listed>>;
   mcp?: (remoteName: string, arguments_: Record<string, unknown>) => Promise<string>;
 }) {
   return callOwnedConnectionTool({
-    repo: { listMcpTools: async () => args.tools ?? [listed()] },
+    db: { listMcpTools: async () => args.tools ?? [listed()] } as never,
     mcp: {
       call: async (_db, _connection, _server, remoteName, arguments_) =>
         (args.mcp ?? (async () => "ok"))(remoteName, arguments_),
     },
     connection: args.connection ?? connection(),
-    server: { slug: "coingecko", tool_prefix: "coingecko" },
+    server: serverRow("coingecko"),
     tool: args.tool ?? "coingecko_search",
     arguments: args.arguments ?? { query: "eth" },
     masterKey,

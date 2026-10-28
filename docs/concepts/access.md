@@ -460,7 +460,8 @@ DELETE /api/bindings     ?catalog_kind=&catalog_id=&scope=&scope_id=
   unknown or another organisation's server or connection is 404.
 
 Code: `apps/orchestrator/src/access/index.ts`,
-`apps/orchestrator/src/http/routes.ts`.
+`apps/orchestrator/src/access/operator.ts`,
+`apps/orchestrator/src/http/binding-routes.ts`.
 
 ### Access views
 
@@ -609,5 +610,6 @@ Any member of the organisation may call these routes. No role is
 required.
 
 Code: `apps/orchestrator/src/artifacts/access.ts`,
-`apps/orchestrator/src/artifacts/store.ts`,
-`apps/orchestrator/src/http/routes.ts`.
+`apps/orchestrator/src/artifacts/access-lists.ts`,
+`apps/orchestrator/src/db/artifact-access.ts`,
+`apps/orchestrator/src/http/artifact-access-routes.ts`.

@@ -1,5 +1,5 @@
 import { encryptPayload } from "../credentials/crypto.js";
-import type { Repositories } from "../db/repositories.js";
+import type { Manifest } from "../db/schema/index.js";
 import { connectorIntegration, platformConnectors } from "../instance/connectors.js";
 import {
   connectorIntegrationId,
@@ -11,8 +11,10 @@ import {
   type IntegrationSources,
 } from "../instance/integrations.js";
 import { newId } from "../lib/ids.js";
-import { authFields, type Manifest } from "./manifest.js";
+import { authFields } from "./manifest.js";
 import type { Credentials } from "./types.js";
+import { connectMcp, getMcpConnectionForOwner, saveMcpConnection } from "../db/mcp.js";
+import type { Queryable } from "../db/pg.js";
 
 /** The integration a manifest's `auth.instance` reads: a shipped one by id, or the connector's own. */
 function instanceIntegration(manifest: Manifest): Integration | null {
@@ -92,7 +94,7 @@ export function instanceRedactions(sources?: IntegrationSources): Record<string,
  * is off, that login is disconnected. Runs at boot and after every instance key write.
  */
 export async function syncInstanceLogins(
-  repo: Repositories,
+  db: Queryable,
   masterKey?: Buffer,
   now = new Date(),
   sources?: IntegrationSources,
@@ -102,27 +104,40 @@ export async function syncInstanceLogins(
       continue;
     }
     const on = instanceKey(item.manifest, sources) !== null;
-    const login = await repo.getMcpConnectionForOwner(item.id, "platform", null);
+    const login = await getMcpConnectionForOwner(db, item.id, "platform", null);
     if (login === null) {
       if (on) {
         const [ciphertext, nonce] = encryptPayload({}, masterKey);
-        await repo.connectMcp(newId("conn"), newId("bind"), item.id, "platform", null, ciphertext, nonce, now, {
-          status: "connected",
-          accountHint: "platform key",
-        });
+        await connectMcp(db,
+          {
+            connectionId: newId("conn"),
+            bindingId: newId("bind"),
+            serverId: item.id,
+            ownerScope: "platform",
+            ownerId: null,
+            ciphertext,
+            nonce,
+            status: "connected",
+            accountHint: "platform key",
+          },
+          now,
+        );
       }
       continue;
     }
     const status = on ? "connected" : "disconnected";
     if (login.status !== status) {
-      await repo.saveMcpConnection(String(login.id), {
-        ciphertext: login.ciphertext as Buffer,
-        nonce: login.nonce as Buffer,
-        status,
-        accountHint: String(login.account_hint ?? ""),
-        oauthState: null,
+      await saveMcpConnection(db,
+        login.id,
+        {
+          ciphertext: login.ciphertext as Buffer,
+          nonce: login.nonce as Buffer,
+          status,
+          accountHint: login.account_hint ?? "",
+          oauthState: null,
+        },
         now,
-      });
+      );
     }
   }
 }

@@ -20,9 +20,14 @@ Every connector the box ships is a folder under
 - `connector.json`, the manifest: everything that is not code
 - `adapter.ts` when the connector has code, and the client code it
   needs
+- `responses.ts` beside a client that calls a provider's API: a
+  TypeBox schema for each response the client reads. The client
+  decodes each response against its schema once, with
+  `lib/decode.ts`, and formats the decoded value; a response that
+  does not match fails the call with the field at fault
 - an optional `logo.svg` (24×24, `currentColor`)
 
-`src/connectors/index.ts` lists core's folders. An edition adds its
+`src/connectors/index.ts` lists core's folders. An extension adds its
 own through `ServerExtension.connectors`
 ([Extension points](../architecture/extension-points.md)). A connector
 also comes from the [connector registry](connector-registry.md), or
@@ -171,7 +176,7 @@ key, for every organisation without a login of its own. It takes one
 of two forms:
 
 - `{ integration, field }`: that field of one of the box's own
-  integrations. Only a connector the box ships, core or an edition,
+  integrations. Only a connector the box ships, core or an extension,
   may use it. The Web search connector names `web-search`'s `api_key`.
 - `{ own: true }`: the token connector's own login fields, as the
   platform key `connector:<slug>`

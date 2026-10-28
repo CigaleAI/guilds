@@ -2,16 +2,16 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { instanceRedactions } from "../../src/connectors/instance.js";
-import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
+import { connect } from "../../src/seed/connect.js";
 import { setInstanceKeys } from "../../src/instance/integrations.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { endpointManifest, fakeRegistry } from "../helpers/registry.js";
+import { getMcpConnectionForOwner } from "../../src/db/mcp.js";
 
 const OWNER = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 const JSON_HEADERS = { ...OWNER, "content-type": "application/json" };
@@ -34,7 +34,7 @@ test("a connector's own key or OAuth client is an instance key the admin fills u
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   setInstanceKeys({});
   const database = await connect(await createIsolatedDatabase(dbName));
-  const repo = new Repositories(database.pool);
+  const db = database.pool;
   const registry = fakeRegistry();
   const publish = (slug: string, extra: Record<string, unknown>) =>
     registry.connector(slug, "1.0.0", { "connector.json": JSON.stringify(endpointManifest(slug, extra)) });
@@ -45,10 +45,10 @@ test("a connector's own key or OAuth client is an instance key the admin fills u
   const notes = new NotesStore(tempDir("guilds-instance-connectors-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const app = await buildApp(database, {
-    repo,
+    db,
     notes,
-    scripts: new Scripts(repo),
-    schedules: new Schedules(repo),
+    scripts: new Scripts(scriptDatabase(db)),
+    schedules: new Schedules(scheduleDatabase(db)),
     registry: registry.client,
     masterKey: Buffer.from(HEX_MASTER_KEY, "hex"),
   });
@@ -80,7 +80,7 @@ test("a connector's own key or OAuth client is an instance key the admin fills u
     assert.equal(listed.state, "off");
     assert.deepEqual(listed.fields, [{ name: "api_key", label: "Acme key", optional: false, secret: true, multiline: false, set: false }]);
     assert.deepEqual(listed.provides, { native_tools: [], connectors: ["acme"] });
-    assert.equal(await repo.getMcpConnectionForOwner("mcp_acme", "platform", null), null);
+    assert.equal(await getMcpConnectionForOwner(db, "mcp_acme", "platform", null), null);
     assert.deepEqual(instanceRedactions(), {});
 
     // Filling it connects the platform login and redacts the value from tool output.
@@ -91,7 +91,7 @@ test("a connector's own key or OAuth client is an instance key the admin fills u
     assert.equal(stored.json().integration.id, "connector:acme");
     assert.equal(stored.json().integration.state, "on");
     assert.equal(stored.body.includes("acme-platform-key"), false);
-    const login = await repo.getMcpConnectionForOwner("mcp_acme", "platform", null);
+    const login = await getMcpConnectionForOwner(db, "mcp_acme", "platform", null);
     assert.equal(login?.status, "connected");
     assert.equal(login?.owner_scope, "platform");
     assert.deepEqual(instanceRedactions(), { platform_acme_api_key: "acme-platform-key" });
@@ -139,7 +139,7 @@ test("a connector's own key or OAuth client is an instance key the admin fills u
     const configured = await catalogItem("mcp_portal");
     assert.equal(configured.json().oauth_setup_state, "configured");
     assert.equal(configured.body.includes("portal-secret"), false);
-    assert.equal(await repo.getMcpConnectionForOwner("mcp_portal", "platform", null), null, "a client is not a platform login");
+    assert.equal(await getMcpConnectionForOwner(db, "mcp_portal", "platform", null), null, "a client is not a platform login");
 
     // A hand-made server with a configured client of its own is listed the same way.
     const handy = await app.inject({

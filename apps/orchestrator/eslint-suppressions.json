@@ -1,6 +1,14 @@
 {
   "src/access/index.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 8
+    },
     "complexity": {
+      "count": 2
+    }
+  },
+  "src/access/runtime.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
       "count": 3
     }
   },
@@ -9,18 +17,31 @@
       "count": 1
     }
   },
+  "src/agents/validation.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 4
+    }
+  },
   "src/app.ts": {
     "complexity": {
       "count": 1
     }
   },
+  "src/artifacts/access.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 2
+    }
+  },
   "src/artifacts/columns.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 2
+    },
     "complexity": {
       "count": 2
     }
   },
-  "src/artifacts/file-changes.ts": {
-    "complexity": {
+  "src/artifacts/embeds.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     }
   },
@@ -30,28 +51,30 @@
     }
   },
   "src/artifacts/search.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 6
+    },
     "complexity": {
       "count": 2
     }
   },
-  "src/artifacts/store.ts": {
-    "complexity": {
+  "src/artifacts/types.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
       "count": 5
-    },
-    "max-lines": {
-      "count": 1
-    },
-    "max-params": {
-      "count": 3
-    }
-  },
-  "src/attachments/hydrate.ts": {
-    "complexity": {
-      "count": 1
     }
   },
   "src/attachments/sniff.ts": {
     "complexity": {
+      "count": 1
+    }
+  },
+  "src/avatars/clay.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 2
+    }
+  },
+  "src/avatars/index.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     }
   },
@@ -61,6 +84,9 @@
     }
   },
   "src/builder/connected.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 5
+    },
     "complexity": {
       "count": 2
     },
@@ -68,22 +94,26 @@
       "count": 2
     }
   },
-  "src/builder/store.ts": {
-    "max-params": {
-      "count": 2
-    }
-  },
   "src/builder/tools.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    },
     "complexity": {
       "count": 1
     }
   },
   "src/builder/widgets.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 5
+    },
     "complexity": {
       "count": 2
     }
   },
   "src/capabilities/index.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    },
     "complexity": {
       "count": 1
     }
@@ -93,7 +123,15 @@
       "count": 1
     }
   },
+  "src/coding/harnesses.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    }
+  },
   "src/coding/repositories.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 3
+    },
     "complexity": {
       "count": 2
     }
@@ -103,50 +141,12 @@
       "count": 1
     }
   },
-  "src/connectors/alchemy/client.ts": {
-    "complexity": {
-      "count": 5
-    },
-    "max-depth": {
-      "count": 1
-    },
-    "max-params": {
-      "count": 1
-    }
-  },
   "src/connectors/coingecko/client.ts": {
     "complexity": {
-      "count": 9
+      "count": 1
     }
   },
   "src/connectors/connect.ts": {
-    "complexity": {
-      "count": 1
-    },
-    "max-params": {
-      "count": 1
-    }
-  },
-  "src/connectors/drive/content.ts": {
-    "complexity": {
-      "count": 1
-    },
-    "max-params": {
-      "count": 1
-    }
-  },
-  "src/connectors/drive/folder.ts": {
-    "complexity": {
-      "count": 6
-    },
-    "max-depth": {
-      "count": 2
-    },
-    "max-params": {
-      "count": 2
-    }
-  },
-  "src/connectors/drive/upload.ts": {
     "complexity": {
       "count": 1
     }
@@ -156,9 +156,14 @@
       "count": 1
     }
   },
-  "src/connectors/gmail/client.ts": {
-    "complexity": {
+  "src/connectors/instance.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
       "count": 2
+    }
+  },
+  "src/connectors/load.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 3
     }
   },
   "src/connectors/manifest.ts": {
@@ -166,93 +171,52 @@
       "count": 1
     }
   },
-  "src/connectors/qonto/client.ts": {
-    "complexity": {
-      "count": 3
-    }
-  },
   "src/connectors/settings.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/connectors/tavily/client.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/connectors/twitterapiio/client.ts": {
-    "complexity": {
-      "count": 1
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 2
     },
-    "max-depth": {
-      "count": 1
-    }
-  },
-  "src/connectors/view.ts": {
     "complexity": {
       "count": 1
     }
   },
-  "src/connectors/x/client.ts": {
-    "complexity": {
-      "count": 3
-    },
-    "max-depth": {
+  "src/connectors/types.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     }
   },
   "src/conversation/runner.ts": {
-    "complexity": {
-      "count": 1
-    },
-    "max-depth": {
-      "count": 7
-    }
-  },
-  "src/db/repositories.ts": {
-    "max-lines": {
-      "count": 1
-    },
-    "max-params": {
-      "count": 26
-    }
-  },
-  "src/db/schema/index.ts": {
-    "max-lines": {
-      "count": 1
-    }
-  },
-  "src/directories/index.ts": {
-    "max-params": {
-      "count": 1
-    }
-  },
-  "src/generation/admission.ts": {
-    "max-depth": {
-      "count": 1
-    }
-  },
-  "src/generation/index.ts": {
-    "complexity": {
-      "count": 15
-    },
-    "max-depth": {
+    "@typescript-eslint/consistent-type-assertions": {
       "count": 5
     },
-    "max-lines": {
+    "complexity": {
       "count": 1
     },
-    "max-params": {
-      "count": 11
+    "max-depth": {
+      "count": 6
+    }
+  },
+  "src/conversation/templates.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 2
+    }
+  },
+  "src/credentials/crypto.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
     }
   },
   "src/github/index.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 12
+    },
     "complexity": {
       "count": 1
     }
   },
   "src/github/manifest.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 2
+    },
     "complexity": {
       "count": 1
     }
@@ -263,69 +227,71 @@
     },
     "max-lines": {
       "count": 1
-    },
-    "max-params": {
-      "count": 2
     }
   },
-  "src/http/access.ts": {
-    "complexity": {
-      "count": 1
+  "src/guilds/validation.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 7
     }
   },
   "src/http/admin-instance-routes.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 2
+    },
     "complexity": {
       "count": 1
     }
   },
-  "src/http/artifact-notes.ts": {
-    "complexity": {
-      "count": 1
-    },
-    "max-params": {
-      "count": 5
-    }
-  },
-  "src/http/coding-routes.ts": {
-    "complexity": {
-      "count": 3
-    },
-    "max-depth": {
+  "src/http/builder-capability-routes.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     }
   },
-  "src/http/me-routes.ts": {
-    "complexity": {
+  "src/http/identity.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     }
   },
-  "src/http/routes.ts": {
-    "complexity": {
-      "count": 18
-    },
-    "max-depth": {
-      "count": 4
-    },
-    "max-lines": {
+  "src/http/recipe-routes.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
       "count": 1
+    }
+  },
+  "src/http/request.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 2
     }
   },
   "src/http/sandbox-proxy.ts": {
-    "max-params": {
-      "count": 3
-    }
-  },
-  "src/instance/changes.ts": {
-    "max-params": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 6
+    },
+    "@typescript-eslint/max-params": {
       "count": 1
     }
   },
+  "src/http/sse.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    }
+  },
+  "src/http/studio-routes.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 7
+    }
+  },
   "src/instance/integrations.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    },
     "complexity": {
       "count": 2
     }
   },
   "src/instance/keys.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 4
+    },
     "complexity": {
       "count": 1
     },
@@ -334,16 +300,32 @@
     }
   },
   "src/issues/index.ts": {
-    "complexity": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 2
+    }
+  },
+  "src/lib/blob-store.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     }
   },
+  "src/lib/json.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 2
+    }
+  },
   "src/llm/anthropic.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 6
+    },
     "complexity": {
       "count": 1
     }
   },
   "src/llm/client.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 15
+    },
     "complexity": {
       "count": 6
     },
@@ -352,24 +334,41 @@
     }
   },
   "src/llm/models-dev.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 2
+    },
     "complexity": {
       "count": 2
     }
   },
   "src/llm/models.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    },
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/machines/index.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    }
+  },
+  "src/mcp/catalog.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 4
+    },
     "complexity": {
       "count": 2
     }
   },
-  "src/mcp/catalog.ts": {
-    "complexity": {
-      "count": 3
-    },
-    "max-params": {
-      "count": 1
-    }
-  },
   "src/mcp/index.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 14
+    },
+    "@typescript-eslint/max-params": {
+      "count": 4
+    },
     "complexity": {
       "count": 3
     },
@@ -378,9 +377,6 @@
     },
     "max-lines": {
       "count": 1
-    },
-    "max-params": {
-      "count": 9
     }
   },
   "src/net/endpoints.ts": {
@@ -388,7 +384,18 @@
       "count": 2
     }
   },
+  "src/net/http.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 3
+    }
+  },
   "src/notes/store.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 3
+    },
+    "@typescript-eslint/max-params": {
+      "count": 5
+    },
     "complexity": {
       "count": 2
     },
@@ -397,87 +404,63 @@
     },
     "max-lines": {
       "count": 1
-    },
-    "max-params": {
-      "count": 11
     }
   },
   "src/oauth/index.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 9
+    },
     "complexity": {
-      "count": 4
+      "count": 2
     }
   },
   "src/observability/client-errors.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 3
+    },
     "complexity": {
       "count": 1
+    }
+  },
+  "src/observability/http.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 2
     }
   },
   "src/observability/log.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    },
     "complexity": {
       "count": 1
     }
   },
-  "src/policy/index.ts": {
-    "max-params": {
+  "src/organisations/index.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
       "count": 2
     }
   },
   "src/prompts/index.ts": {
-    "complexity": {
+    "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     },
-    "max-params": {
+    "@typescript-eslint/max-params": {
       "count": 2
-    }
-  },
-  "src/recipes/apply.ts": {
-    "complexity": {
-      "count": 7
     },
-    "max-depth": {
-      "count": 3
-    },
-    "max-lines": {
-      "count": 1
-    },
-    "max-params": {
-      "count": 1
-    }
-  },
-  "src/recipes/capture.ts": {
     "complexity": {
       "count": 1
-    },
-    "max-depth": {
-      "count": 8
-    }
-  },
-  "src/recipes/schema.ts": {
-    "complexity": {
-      "count": 7
-    },
-    "max-depth": {
-      "count": 1
-    },
-    "max-lines": {
-      "count": 1
-    }
-  },
-  "src/recipes/store.ts": {
-    "max-params": {
-      "count": 1
-    }
-  },
-  "src/recipes/validate.ts": {
-    "complexity": {
-      "count": 3
-    },
-    "max-depth": {
-      "count": 2
     }
   },
   "src/registry/code.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 3
+    },
     "complexity": {
+      "count": 1
+    }
+  },
+  "src/registry/index.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     }
   },
@@ -487,6 +470,9 @@
     }
   },
   "src/sandbox/index.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 23
+    },
     "complexity": {
       "count": 1
     },
@@ -500,47 +486,55 @@
     }
   },
   "src/schedules/describe.ts": {
-    "complexity": {
+    "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     },
-    "max-params": {
+    "@typescript-eslint/max-params": {
+      "count": 1
+    },
+    "complexity": {
       "count": 1
     }
   },
   "src/schedules/service.ts": {
-    "max-params": {
-      "count": 1
-    }
-  },
-  "src/schedules/window.ts": {
-    "max-params": {
+    "@typescript-eslint/max-params": {
       "count": 1
     }
   },
   "src/scripts/catalog.ts": {
-    "max-params": {
+    "@typescript-eslint/max-params": {
       "count": 1
     }
   },
   "src/scripts/materialise.ts": {
     "complexity": {
       "count": 1
-    },
-    "max-params": {
-      "count": 1
+    }
+  },
+  "src/secrets/access.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 2
     }
   },
   "src/state/index.ts": {
-    "complexity": {
+    "@typescript-eslint/consistent-type-assertions": {
       "count": 2
     },
-    "max-params": {
-      "count": 1
+    "complexity": {
+      "count": 2
     }
   },
   "src/studio/access.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 4
+    },
     "complexity": {
       "count": 1
+    }
+  },
+  "src/studio/actions.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 2
     }
   },
   "src/studio/activity.ts": {
@@ -549,53 +543,72 @@
     }
   },
   "src/studio/connections.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 2
+    },
     "complexity": {
       "count": 1
     }
   },
   "src/studio/drafts.ts": {
-    "complexity": {
-      "count": 3
-    },
-    "max-params": {
+    "@typescript-eslint/consistent-type-assertions": {
       "count": 1
+    },
+    "complexity": {
+      "count": 2
     }
   },
   "src/studio/edits.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 17
+    },
     "complexity": {
       "count": 6
     },
     "max-lines": {
       "count": 1
-    },
-    "max-params": {
-      "count": 1
     }
   },
   "src/studio/focus.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 2
+    },
     "complexity": {
       "count": 5
     }
   },
   "src/studio/index.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    },
     "complexity": {
-      "count": 4
+      "count": 2
     },
     "max-lines": {
       "count": 1
     }
   },
   "src/studio/preview.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    },
     "complexity": {
       "count": 1
     }
   },
-  "src/studio/store.ts": {
-    "complexity": {
-      "count": 1
-    },
-    "max-params": {
+  "src/studio/runner.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
       "count": 2
+    }
+  },
+  "src/studio/state-data.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    }
+  },
+  "src/studio/state-list.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
     }
   },
   "src/studio/system.ts": {
@@ -604,6 +617,9 @@
     }
   },
   "src/studio/tables.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 6
+    },
     "complexity": {
       "count": 4
     },
@@ -612,11 +628,17 @@
     }
   },
   "src/studio/tool-usage.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 2
+    },
     "complexity": {
       "count": 1
     }
   },
   "src/studio/tools.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 2
+    },
     "complexity": {
       "count": 2
     },
@@ -624,20 +646,20 @@
       "count": 1
     }
   },
-  "src/toolbox/browser.ts": {
-    "max-params": {
+  "src/toolbox/artifacts.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     }
   },
   "src/toolbox/code.ts": {
-    "complexity": {
-      "count": 1
-    },
-    "max-params": {
-      "count": 1
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 3
     }
   },
   "src/toolbox/harness.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 3
+    },
     "max-lines": {
       "count": 1
     }
@@ -647,9 +669,22 @@
       "count": 1
     }
   },
+  "src/toolbox/offered.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 3
+    }
+  },
   "src/toolbox/schema.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    },
     "complexity": {
       "count": 1
+    }
+  },
+  "src/toolbox/script.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 2
     }
   },
   "src/toolbox/shell.ts": {
@@ -658,6 +693,9 @@
     }
   },
   "src/typesafe/client.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 8
+    },
     "complexity": {
       "count": 2
     },
@@ -671,13 +709,21 @@
     }
   },
   "src/typesafe/replay.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 2
+    },
     "complexity": {
       "count": 1
     }
   },
-  "src/usage.ts": {
+  "src/usage/index.ts": {
     "complexity": {
-      "count": 3
+      "count": 2
+    }
+  },
+  "src/users/index.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 2
     }
   }
 }

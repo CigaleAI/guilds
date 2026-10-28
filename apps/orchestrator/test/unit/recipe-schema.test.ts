@@ -1,20 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { emptyRecipe } from "../../src/recipes/minimal.js";
 import {
   applyAccessEdit,
   applyAccessEdits,
-  applyReview,
-  builderAuthor,
   formatAccessCutsMessage,
-  hasForbiddenSecrets,
   operatorAccessCuts,
-  operatorAuthor,
-  parseRecipe,
-  resetReview,
-  stampBuilderWrite,
-  unreviewedFields,
-} from "../../src/recipes/schema.js";
+} from "../../src/recipes/access-edits.js";
+import { emptyRecipe } from "../../src/recipes/minimal.js";
+import { parseRecipe } from "../../src/recipes/parse.js";
+import { applyReview, stampBuilderWrite, unreviewedFields } from "../../src/recipes/review.js";
+import { builderAuthor, hasForbiddenSecrets, operatorAuthor, resetReview } from "../../src/recipes/schema.js";
 import { applyBlockingErrors, blockingErrors, validateRecipe } from "../../src/recipes/validate.js";
 import {
   cryptoThreeRoleRecipe,
@@ -24,7 +19,7 @@ import {
   inboxQueueColumns,
   linkedInNotionRecipe,
 } from "../helpers/recipe-docs.js";
-import { prepareRecipeForApply } from "../../src/recipes/apply.js";
+import { prepareRecipeForApply } from "../../src/recipes/prepare.js";
 import { RECIPE_VERSION } from "../../src/recipes/schema.js";
 
 const ctx = {
@@ -300,7 +295,7 @@ test("empty task is derived when focus exists, and unreviewed fields do not bloc
 });
 
 test("apply fills an empty task and does not invent wakes or connectors", () => {
-  const prepared = prepareRecipeForApply(parseRecipe(huskLeadMatcherRecipe()), new Set(["notion", "cigale", "x"]));
+  const prepared = prepareRecipeForApply(parseRecipe(huskLeadMatcherRecipe()));
   const role = prepared.roles[0];
   assert.ok(role);
   assert.match(role.task.body, /Match Cigale stories/);
@@ -313,7 +308,7 @@ test("apply does not infer a wake from prose cadence", () => {
   const recipe = parseRecipe(huskLeadMatcherRecipe());
   recipe.guild.objective = "Monitor markets and post proposals.";
   recipe.meta.description = "Proposal-only research, reporting to guild chat every 15 minutes.";
-  const prepared = prepareRecipeForApply(recipe, new Set());
+  const prepared = prepareRecipeForApply(recipe);
   assert.equal(prepared.roles[0]?.schedules.length, 0);
 });
 
@@ -335,7 +330,7 @@ test("fixture desk recipes are apply-ready against stub mail and crm", () => {
   assert.ok(findings.some((item) => item.code === "schedule.missing"));
   assert.ok(findings.some((item) => item.code === "connection.missing"));
   assert.equal(applyBlockingErrors(findings).some((item) => item.code === "review.required"), false);
-  const prepared = prepareRecipeForApply(husk, stubs.publishedServers);
+  const prepared = prepareRecipeForApply(husk);
   assert.equal(prepared.roles.every((item) => item.task.body.trim().length > 0), true);
   assert.deepEqual(
     prepared.roles.flatMap((item) => item.schedules.map((row) => row.cron)),
@@ -409,9 +404,9 @@ test("applyReview covers schedules, notes, and external cards", () => {
     setup: "Open the board.",
     author: builderAuthor(),
   });
-  applyReview(recipe, "roles.watcher.schedules.watch-feed", "confirm");
-  applyReview(recipe, "notes.playbook", "confirm");
-  applyReview(recipe, "external[0]", "edit", "Open the live board.");
+  applyReview(recipe, "roles.watcher.schedules.watch-feed", { action: "confirm" });
+  applyReview(recipe, "notes.playbook", { action: "confirm" });
+  applyReview(recipe, "external[0]", { action: "edit", value: "Open the live board." });
   assert.equal(recipe.roles[0]?.schedules[0]?.author.reviewed, true);
   assert.equal(recipe.notes[0]?.author.reviewed, true);
   assert.equal(recipe.external[0]?.author.by, "operator");

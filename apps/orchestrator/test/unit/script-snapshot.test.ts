@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { operatorActor, type ArtifactActor } from "../../src/artifacts/index.js";
+import { operatorActor } from "../../src/artifacts/index.js";
 import { repoRoot } from "../../src/lib/paths.js";
 import {
   SCRIPT_ARGS_ENV,
@@ -18,9 +18,9 @@ import {
   liveExtraRows,
   snapshotAgentScripts,
   toRunScriptSnapshot,
-  type RunScriptSnapshot,
 } from "../../src/scripts/snapshot.js";
-import { Scripts } from "../../src/scripts/catalog.js";
+import type { RunScriptSnapshot } from "../../src/db/schema/index.js";
+import { type AgentScript, Scripts } from "../../src/scripts/catalog.js";
 import { NATIVE_TOOL_NAMES, ScriptError, scriptSourceHash } from "../../src/scripts/validation.js";
 import {
   REGISTRY,
@@ -30,6 +30,11 @@ import {
   invokeTool,
 } from "../../src/toolbox/index.js";
 import { loadJsonFixture } from "../helpers/fixtures.js";
+import { MemoryScriptDB } from "../helpers/generation.js";
+
+function liveScript(fields: Omit<AgentScript, "agent_id" | "source_hash">): AgentScript {
+  return { ...fields, agent_id: "a_1", source_hash: scriptSourceHash(fields.source) };
+}
 
 const HOME = "/home/a_1";
 const SCRIPTS = scriptsDirectory(HOME);
@@ -41,64 +46,6 @@ type ScriptFixture = {
 
 const fixture = loadJsonFixture<ScriptFixture>("scripts/cases.json");
 
-class MemoryScriptDB {
-  rows: Array<Record<string, unknown>> = [];
-
-  async listAgentScripts(agentId: string) {
-    return this.rows.filter((row) => row.agent_id === agentId);
-  }
-
-  async upsertAgentScript(
-    _actor: ArtifactActor,
-    scriptId: string,
-    agentId: string,
-    name: string,
-    description: string,
-    parameters: Record<string, unknown> | null,
-    source: string,
-    sourceHash: string,
-    now: Date,
-  ) {
-    const index = this.rows.findIndex((row) => row.agent_id === agentId && row.name === name);
-    if (index >= 0) {
-      const updated = {
-        ...this.rows[index],
-        description,
-        parameters,
-        source,
-        source_hash: sourceHash,
-        updated_at: now,
-      };
-      this.rows[index] = updated;
-      return updated;
-    }
-    const row = {
-      id: scriptId,
-      agent_id: agentId,
-      name,
-      description,
-      parameters,
-      source,
-      source_hash: sourceHash,
-      created_at: now,
-      updated_at: now,
-    };
-    this.rows.push(row);
-    return row;
-  }
-
-  async getAgentScript(agentId: string, name: string) {
-    return this.rows.find((row) => row.agent_id === agentId && row.name === name) ?? null;
-  }
-
-  async deleteAgentScript(_actor: ArtifactActor, agentId: string, name: string) {
-    const index = this.rows.findIndex((row) => row.agent_id === agentId && row.name === name);
-    if (index < 0) {
-      return null;
-    }
-    return this.rows.splice(index, 1)[0] ?? null;
-  }
-}
 
 const scriptOperator = operatorActor({
   orgId: "org_1",
@@ -162,7 +109,7 @@ async function invoke(
 ) {
   const [payload, metadata] = await invokeTool(
     ctx,
-    { id: "call_1", function: { name, arguments: arguments_ } },
+    { id: "call_1", type: "function", function: { name, arguments: JSON.stringify(arguments_) } },
     {},
     32_768,
   );
@@ -183,10 +130,15 @@ test("snapshot-pin-ignores-live-edit", async () => {
     given.run_scripts.map((item) => ({
       ...item,
       source_hash: scriptSourceHash(String(item.source)),
-    })),
+    })) as AgentScript[],
   );
   const db = new MemoryScriptDB();
-  db.rows = snapshot.map((item) => ({ ...item, agent_id: "a_1" }));
+  db.rows = snapshot.map((item) => ({
+    ...item,
+    agent_id: "a_1",
+    created_at: "2026-10-12T09:00:00.000Z",
+    updated_at: "2026-10-12T09:00:00.000Z",
+  }));
   const scripts = new Scripts(db);
   await scripts.create(scriptOperator, "a_1", given.live_edit.name, "Sign and send USDC", given.live_edit.source, {
     type: "object",
@@ -231,13 +183,13 @@ test("snapshot-pin-ignores-live-edit", async () => {
 
 test("deleted-live-row-still-executable", async () => {
   const snapshot: RunScriptSnapshot[] = [
-    toRunScriptSnapshot({
+    toRunScriptSnapshot(liveScript({
       id: "script_1",
       name: "send_usdc",
       description: "Sign and send USDC",
       parameters: null,
       source: "print('snap')\n",
-    }),
+    })),
   ];
   const db = new MemoryScriptDB();
   const scripts = new Scripts(db);
@@ -350,7 +302,7 @@ test("parameterised-next-run-only", async () => {
 
 test("first-class schema drops required names that are not properties", () => {
   const schemas = firstClassScriptSchemas([
-    toRunScriptSnapshot({
+    toRunScriptSnapshot(liveScript({
       id: "script_1",
       name: "priced",
       description: "price a bag",
@@ -360,7 +312,7 @@ test("first-class schema drops required names that are not properties", () => {
         required: ["symbol", "missing"],
       },
       source: "print(1)\n",
-    }),
+    })),
   ]);
   assert.deepEqual(
     (schemas[0] as { function: { parameters: { required: string[] } } }).function.parameters.required,
@@ -372,13 +324,13 @@ test("materialise-temp-then-move", async () => {
   const files = new MemoryFiles();
   files.files.set(`${SCRIPTS}/stale.py`, "print('old')\n");
   const snapshot: RunScriptSnapshot[] = [
-    toRunScriptSnapshot({
+    toRunScriptSnapshot(liveScript({
       id: "script_1",
       name: "send_usdc",
       description: "Sign and send USDC",
       parameters: null,
       source: "print('snap')\n",
-    }),
+    })),
   ];
   const extra = [{ name: "scratch", source: "print('extra')\n" }];
   await materialiseScripts(files, HOME, snapshot, extra);
@@ -405,13 +357,13 @@ test("materialise replaces an existing managed script", async () => {
   const files = new MemoryFiles();
   files.files.set(`${SCRIPTS}/utc_now.py`, "print('old')\n");
   const snapshot: RunScriptSnapshot[] = [
-    toRunScriptSnapshot({
+    toRunScriptSnapshot(liveScript({
       id: "script_1",
       name: "utc_now",
       description: "utc clock",
       parameters: null,
       source: "print('new')\n",
-    }),
+    })),
   ];
   await materialiseScripts(files, HOME, snapshot);
   assert.equal(files.files.get(`${SCRIPTS}/utc_now.py`), "print('new')\n");
@@ -430,13 +382,13 @@ test("materialise retries after a files API failure", async () => {
     return original(entries);
   };
   const snapshot: RunScriptSnapshot[] = [
-    toRunScriptSnapshot({
+    toRunScriptSnapshot(liveScript({
       id: "script_1",
       name: "send_usdc",
       description: "why",
       parameters: null,
       source: "print('snap')\n",
-    }),
+    })),
   ];
   await assert.rejects(() => materialiseScripts(files, HOME, snapshot), /files api/);
   await materialiseScripts(files, HOME, snapshot);
@@ -447,7 +399,7 @@ test("json-stdin-launcher", async () => {
   const row = caseById("json-stdin-launcher");
   const given = row.given as { arguments: Record<string, unknown> };
   const snapshot: RunScriptSnapshot[] = [
-    toRunScriptSnapshot({
+    toRunScriptSnapshot(liveScript({
       id: "script_1",
       name: "priced",
       description: "price a bag",
@@ -462,7 +414,7 @@ test("json-stdin-launcher", async () => {
         required: ["quoted", "newline", "unicode", "large"],
       },
       source: "import json,sys; print(json.load(sys.stdin)['quoted'])\n",
-    }),
+    })),
   ];
   let envs: Record<string, string> | undefined;
   const ctx = createToolContext({
@@ -510,13 +462,13 @@ test("schema-collision-rejection", async () => {
 test("write-through skips names pinned on the snapshot", async () => {
   const files = new MemoryFiles();
   const snapshot: RunScriptSnapshot[] = [
-    toRunScriptSnapshot({
+    toRunScriptSnapshot(liveScript({
       id: "script_1",
       name: "send_usdc",
       description: "why",
       parameters: null,
       source: "print('snap')\n",
-    }),
+    })),
   ];
   const wrote = await writeThroughLiveExtra(files, HOME, "send_usdc", "print('live')\n", snapshot);
   assert.equal(wrote, false);
@@ -529,13 +481,13 @@ test("reconcile-after-sandbox-recreate", async () => {
   files.files.set(`${SCRIPTS}/scratch.py`, "gone");
   files.files.set(`${SCRIPTS}/unmanaged.py`, "keep out");
   const snapshot: RunScriptSnapshot[] = [
-    toRunScriptSnapshot({
+    toRunScriptSnapshot(liveScript({
       id: "script_1",
       name: "send_usdc",
       description: "why",
       parameters: null,
       source: "print('snap')\n",
-    }),
+    })),
   ];
   const extra = [{ name: "scratch", source: "print('extra')\n" }];
   await materialiseScripts(files, HOME, snapshot, extra);

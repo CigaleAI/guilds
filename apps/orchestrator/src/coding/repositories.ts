@@ -1,19 +1,20 @@
-import { jsonObj } from "../db/json.js";
 import { iso } from "../db/views.js";
 import { parseGithubUrl } from "../github/index.js";
 import { agentHome } from "../lib/agent-file.js";
+import type { McpConnectionRow } from "../db/mcp.js";
+import type { GithubRepositorySelection } from "../db/schema/index.js";
 
 export const REPOSITORY_NAME_RE = /^[a-z][a-z0-9_-]{0,62}$/;
 /** The branch a repository without a GitHub connection is recorded with when none is given. */
 export const DEFAULT_BRANCH = "main";
 const BRANCH_RE = /^(?!\/|.*\/\/|.*\.\.|.*@\{|.*\/$|.*\.lock$)[A-Za-z0-9._/-]{1,200}$/;
 
-export class RepositoryError extends Error {
+export class RepositoryValidationError extends Error {
   status: number;
 
   constructor(message: string, status = 422) {
     super(message);
-    this.name = "RepositoryError";
+    this.name = "RepositoryValidationError";
     this.status = status;
   }
 }
@@ -28,31 +29,35 @@ export type RepositoryInput = {
 export function validateRepositoryInput(body: Record<string, unknown>): RepositoryInput {
   const name = String(body.name ?? "").trim();
   if (!REPOSITORY_NAME_RE.test(name)) {
-    throw new RepositoryError("name must match ^[a-z][a-z0-9_-]{0,62}$");
+    throw new RepositoryValidationError("name must match ^[a-z][a-z0-9_-]{0,62}$");
   }
   const url = String(body.url ?? "").trim();
   let parsed: URL;
   try {
     parsed = new URL(url);
   } catch {
-    throw new RepositoryError("url must be an https git URL");
+    throw new RepositoryValidationError("url must be an https git URL");
   }
   if (parsed.protocol !== "https:" || !parsed.host || parsed.username || parsed.password || parsed.search || parsed.hash) {
-    throw new RepositoryError("url must be an https git URL without credentials, query, or fragment");
+    throw new RepositoryValidationError(
+      "url must be an https git URL without credentials, query, or fragment",
+    );
   }
   const rawBranch = body.default_branch;
   let defaultBranch: string | null = null;
   if (rawBranch !== undefined && rawBranch !== null && String(rawBranch).trim() !== "") {
     defaultBranch = String(rawBranch).trim();
     if (!BRANCH_RE.test(defaultBranch)) {
-      throw new RepositoryError("default_branch is not a valid branch name");
+      throw new RepositoryValidationError("default_branch is not a valid branch name");
     }
   }
   const rawConnection = body.connection_id;
   const connectionId =
     rawConnection === undefined || rawConnection === null || rawConnection === "" ? null : String(rawConnection);
   if (connectionId !== null && parseGithubUrl(url) === null) {
-    throw new RepositoryError("with a GitHub connection, url must be https://github.com/<owner>/<repository>");
+    throw new RepositoryValidationError(
+      "with a GitHub connection, url must be https://github.com/<owner>/<repository>",
+    );
   }
   return { name, url, defaultBranch, connectionId };
 }
@@ -79,14 +84,6 @@ export function repositoryItem(row: Record<string, unknown>): Record<string, unk
   };
 }
 
-export type GithubRepositorySelection = {
-  name: string;
-  url: string;
-  default_branch: string;
-  /** GitHub's id for the repository, which a rename of it or its owner keeps. */
-  github_id?: number;
-};
-
 /** GitHub's id for a repository row or selection entry, or null when none is recorded. */
 export function githubIdOf(row: Record<string, unknown>): number | null {
   const id = Number(row.github_id);
@@ -96,26 +93,26 @@ export function githubIdOf(row: Record<string, unknown>): number | null {
 /** The repositories stored on a GitHub login. */
 export function validateGithubRepositories(value: unknown): GithubRepositorySelection[] {
   if (!Array.isArray(value)) {
-    throw new RepositoryError("repositories must be an array");
+    throw new RepositoryValidationError("repositories must be an array");
   }
   const seen = new Set<string>();
   const selected: GithubRepositorySelection[] = [];
   for (const item of value) {
     if (!item || typeof item !== "object" || Array.isArray(item)) {
-      throw new RepositoryError("repositories entries must be objects");
+      throw new RepositoryValidationError("repositories entries must be objects");
     }
     const input = validateRepositoryInput({
       ...(item as Record<string, unknown>),
       connection_id: "github",
     });
     if (seen.has(input.name)) {
-      throw new RepositoryError(`the login already has a repository named ${input.name}`);
+      throw new RepositoryValidationError(`the login already has a repository named ${input.name}`);
     }
     seen.add(input.name);
     const raw = (item as Record<string, unknown>).github_id;
     const githubId = githubIdOf(item as Record<string, unknown>);
     if (raw !== undefined && raw !== null && githubId === null) {
-      throw new RepositoryError("github_id must be a positive integer");
+      throw new RepositoryValidationError("github_id must be a positive integer");
     }
     selected.push({
       name: input.name,
@@ -129,17 +126,9 @@ export function validateGithubRepositories(value: unknown): GithubRepositorySele
 
 /** Repositories pinned on a GitHub connection, or none. */
 export function githubRepositoriesOf(
-  connection: Record<string, unknown> | null | undefined,
+  connection: McpConnectionRow | null | undefined,
 ): GithubRepositorySelection[] {
-  if (!connection) {
-    return [];
-  }
-  try {
-    const settings = jsonObj(connection.settings) as { repositories?: unknown } | null;
-    return validateGithubRepositories(settings?.repositories ?? []);
-  } catch {
-    return [];
-  }
+  return connection?.settings.repositories ?? [];
 }
 
 /**
@@ -148,7 +137,7 @@ export function githubRepositoriesOf(
  */
 export function codingRepositories(
   guildRepos: Array<Record<string, unknown>>,
-  github: Record<string, unknown> | null | undefined,
+  github: McpConnectionRow | null | undefined,
 ): Array<Record<string, unknown>> {
   const selected = githubRepositoriesOf(github).map((item) => ({
     name: item.name,

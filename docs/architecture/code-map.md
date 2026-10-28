@@ -27,14 +27,14 @@ flowchart LR
 | `docker-compose.yml`, `docker-compose.watch.yml`, `docker-compose.dev.yml` | The shipped stack, the development overlay, and the two merged ([Deployment](deployment.md#compose-stacks-and-images)) |
 | `setup.sh` | Writes `.env` (state path and generated secrets) and builds the OpenSandbox and runtime images |
 | `.env.example` | Core's settings, by integration ([Configure](../operations/configure.md)) |
-| `scripts/` | `check.sh` (the whole check; with `EDITION_ROOT` it checks an edition), `images.sh` (the OpenSandbox and runtime images), `smoke-core-stack.sh` (the shipped stack, end to end) ([Development](../contributing/development.md)) |
-| `Makefile` | `state`, `opensandbox-image`, `runtime-image`, `core-image`, `build`, `up`, `dev`, `down`, `reset`, `migrate`, `verify`, `check`, `contract`, `compat-verify`, `soak`; an edition's Makefile includes it, with `CORE` naming core's path |
-| `eslint.boundary.js` | The lint rule holding core code inside core ([Extension points](extension-points.md#how-an-editions-repository-holds-core)) |
+| `scripts/` | `check.sh` (the whole check; with `CHECK_ROOT` it checks an extending repository), `images.sh` (the OpenSandbox and runtime images), `smoke-core-stack.sh` (the shipped stack, end to end) ([Development](../contributing/development.md)) |
+| `Makefile` | `state`, `opensandbox-image`, `runtime-image`, `core-image`, `build`, `up`, `dev`, `down`, `reset`, `migrate`, `verify`, `check`, `contract`, `compat-verify`, `soak`; an extending repository's Makefile includes it, with `CORE` naming core's path |
+| `eslint.boundary.js` | The lint rule holding core code inside core ([Extension points](extension-points.md#how-an-extending-repository-holds-core)) |
 | `.github/workflows/` | `verify` (every push: `scripts/check.sh`), `images` (a version tag publishes the orchestrator, runtime, and OpenSandbox server images on ghcr.io) |
 | `.state/` | The local `STATE_ROOT`, not in git ([Deployment](deployment.md#state-on-disk)) |
 
-An edition on top of core is a repository of its own that holds this
-one as a submodule ([Extension points](extension-points.md)).
+A repository that extends core holds this one as a submodule
+([Extension points](extension-points.md)).
 
 ## `apps/orchestrator/`
 
@@ -43,9 +43,8 @@ one as a submodule ([Extension points](extension-points.md)).
 | `src/server.ts` | Core's process entry: loads config and runs the server with no extension |
 | `src/run.ts` | `runServer`: builds the server, listens, shuts down on a signal or a fatal error |
 | `src/compose.ts` | `createServer`, the composition root ([Startup](orchestrator.md#startup-and-shutdown)) |
-| `src/extension.ts` | `ServerExtension`, what an edition adds ([Extension points](extension-points.md)) |
+| `src/extension.ts` | `ServerExtension`, what an extension adds ([Extension points](extension-points.md)) |
 | `src/app.ts` | The Fastify app: the web build, `/storybook`, `/health`, `/avatars/:style.svg`, client-error intake, domain routes |
-| `src/usage.ts` | Usage counter keys, deltas, and tree |
 | `drizzle/` | `0001_baseline` (with `0001.notes.md`), then numbered migrations ([PostgreSQL](orchestrator.md#postgresql)) |
 | `test/` | `unit/`, `integration/`, `contract/`, `helpers/` ([Tests](orchestrator.md#tests)) |
 | `scripts/` | `compat-verify`, `compat-digest`, `dump-baseline-schema`, `patch-http-mcp-catalog`, `build-connector`, `models-dev-snapshot`, `sweep-workspaces`, `typesafe-replay` |
@@ -56,28 +55,28 @@ one as a submodule ([Extension points](extension-points.md)).
 
 | Directory | What it holds |
 | --- | --- |
-| `http/` | Routes (`routes.ts` and the `*-routes.ts` siblings), the `AUTH_MODE` seam (`identity.ts`), the host and origin check (`origin.ts`), SSE, the sandbox proxies (`sandbox-proxy.ts`), the Host Finder over the artifact store (`artifact-notes.ts`), the files API (`file-routes.ts`), the group-stream publisher (`publish.ts`), and the web build (`web-app.ts`) |
-| `generation/` | `GenerationLoop`, run chains (`chain.ts`), organisation admission (`admission.ts`), idle stops (`idle.ts`) ([Generation](orchestrator.md#generation)) |
+| `http/` | One `*-routes.ts` file per domain, registered in `routes.ts`; the `AUTH_MODE` seam (`identity.ts`), the host and origin check (`origin.ts`), the mapping of domain errors to HTTP (`errors.ts`), SSE, the sandbox proxies (`sandbox-proxy.ts`), the group-stream publisher (`publish.ts`), and the web build (`web-app.ts`) |
+| `generation/` | `GenerationLoop`, a run's config snapshot and the prepared run it is created from (`snapshot.ts`), the tools a generation offers (`offered-tools.ts`), the tool calls of a run, run in order and resolved when a generation stops without their results (`tool-calls.ts`), its named errors (`errors.ts`), a run's event stream (`events.ts`), the machines' containers with their idle stops and each agent's Chrome and terminal (`machines.ts`), the preparation of a run's prompts and State (`prepare.ts`), the model calls with their history projection and cancel (`completion.ts`), the steps of a coding run and the diffs, logs, and harness checks read outside one (`coding.ts`), the disk limits of an agent's home and its machine (`workspace.ts`), the secrets of the runs under way and the values their output is redacted with (`run-secrets.ts`), the creation of direct, group, schedule, and continuation runs and the scheduler (`runs.ts`), a generation from its setup through its model steps to its end (`generate.ts`), run chains and their hand-off (`chain.ts`), organisation admission and the generations in progress (`admission.ts`), idle stops (`idle.ts`), and the runs an operator opens and talks to (`operator.ts`) ([Generation](orchestrator.md#generation)) |
 | `toolbox/` | Native tools, the sandbox command runner (`shell.ts`), and the result pipeline (`output.ts`) ([Native tools](../tools-and-connectors/native.md)) |
 | `connectors/` | One folder per connector, the manifest schema, the adapter contract, and the connector registry ([Connectors](../tools-and-connectors/connectors.md)) |
 | `registry/` | Installing connectors from a registry, and the code tier ([Connector registry](../tools-and-connectors/connector-registry.md)) |
-| `mcp/` | `McpPool`, the catalog and its policy, tool names, and an operator's direct tool call (`operator-call.ts`) |
-| `oauth/` | Connect flows from each manifest's `auth.oauth` |
+| `mcp/` | `McpPool`, the catalog and its policy, the catalog's servers as the instance admin and an organisation's managers change them (`servers.ts`), tool names, an operator's direct tool call (`operator-call.ts`), the logins an operator reads, uses and sets up (`connections.ts`), and who sees a connector and a login (`visibility.ts`) |
+| `oauth/` | Connect flows from each manifest's `auth.oauth`: a login started (`connect-start.ts`), the provider's callback (`connect-callback.ts`), and a GitHub App installation traded, picked or installed (`github-install.ts`) |
 | `github/` | The GitHub App, its manifest flow, and the installation tokens minted for a login's repositories ([GitHub](../tools-and-connectors/github.md)) |
-| `coding/` | Guild repositories, a coding run's git side, the harnesses (`harnesses.ts`), and each harness's models and efforts (`harness-models.ts`) ([Coding agents](../concepts/coding/index.md)) |
-| `machines/` | Tiers, sizes, slots, placement access, and the boot layout of agent homes ([Machines](../concepts/machines.md)) |
-| `access/` | Binding resolution and a run's tools, MCP, and secrets ([Access](../concepts/access.md)) |
+| `coding/` | Guild repositories and the GitHub logins they use (`guild-repositories.ts`), a coding run's git side, the harnesses (`harnesses.ts`), each harness's models and efforts (`harness-models.ts`), and a harness view and a run's changes (`run-review.ts`) ([Coding agents](../concepts/coding/index.md)) |
+| `machines/` | Tiers, sizes, slots, placement and its access, an organisation's machines as its members manage them (`service.ts`), and the boot layout of agent homes ([Machines](../concepts/machines.md)) |
+| `access/` | Binding resolution, a run's tools, MCP, and secrets, the access view a scope's page shows (`view.ts`), and the bindings an operator sets (`operator.ts`) ([Access](../concepts/access.md)) |
 | `credentials/` | AES-GCM, environment fingerprints, connection views, and validation |
-| `secrets/` | Who reaches and manages a secret, `secret_store`, and redaction ([Secrets](../concepts/secrets.md)) |
-| `db/` | Pool, codecs, Drizzle schema, `Repositories`, seeds, and the migration check |
+| `secrets/` | Who reaches and manages a secret, `secret_store`, redaction, and an organisation's secrets as its members manage them (`service.ts`) ([Secrets](../concepts/secrets.md)) |
+| `db/` | Pool, codecs, Drizzle schema, one query module per table family (`users.ts`, `agents.ts`, `runs.ts`, …), seeds, and the migration check |
 | `attachments/` | Chat images: sniffing, upload, and hydration |
-| `artifacts/` | `ArtifactStore` and `ArtifactFiles` (`files.ts`): notes, memory, scripts, files, collections, records, and the access lists of notes, collections, and files ([Artifacts](../concepts/artifacts.md), [Access](../concepts/access.md)) |
-| `notes/` | `NotesStore`: `system.md` and the routine shadow files; the store the generation unit tests use |
+| `artifacts/` | One module per sub-domain over the artifact store (`store.ts`): notes (`notes.ts`), Memory (`memory.ts`), collections (`collections.ts`), records (`records.ts`), and access lists (`access-lists.ts`), with `ArtifactFiles` (`files.ts`) for shared files; their queries are `db/artifacts.ts`, `db/collections.ts`, and `db/artifact-access.ts`; the files an operator's pages read and write at each level (`host-files.ts`) and the collection views (`collection-views.ts`) ([Artifacts](../concepts/artifacts.md), [Access](../concepts/access.md)) |
+| `notes/` | `NotesStore`: `system.md` and the routine shadow files; the store the generation unit tests use; and an operator's notes on a guild, agent or organisation page (`operator.ts`) |
 | `directories/` | State listing over `NotesStore` for those tests |
 | `memory/` | Hydration, the cap, the archive, and the version history ([Memory](../concepts/memory.md)) |
 | `prompts/` | Prompt composition and the `system.md` and `task.md` templates ([System prompt](../concepts/system-prompt.md)) |
 | `state/` | The State JSON a run sees |
-| `groupchat/` | Group history, tags, and the dispatcher ([Group chat](../concepts/group-chat.md)) |
+| `groupchat/` | Group history, tags, the dispatcher, and what an operator reads and posts (`operator.ts`) ([Group chat](../concepts/group-chat.md)) |
 | `typesafe/` | The group routing client |
 | `schedules/` | Routine timing and the `Schedules` service ([Routines](../concepts/routines.md)) |
 | `scripts/` | The agent `script` catalog and its materialisation ([Scripts](../concepts/scripts.md)) |
@@ -87,18 +86,19 @@ one as a submodule ([Extension points](extension-points.md)).
 | `avatars/` | [DiceBear](https://www.dicebear.com/) SVGs in seven styles (critters, cameo, pixelbot, bottts-neutral, clay, cutouts, voxel-bot); `looks.ts` assigns a guild family and a variant per builder role |
 | `issues/` | Guild issues from `report_issue` |
 | `notifications/` | The inbox view and its per-user stream |
-| `studio/` | Prompt Studio: sessions, tools, drafts, edit, table, and routine requests, focus pins, and the activity ledger ([Prompt Studio](../concepts/prompt-studio.md)) |
+| `usage/` | Usage counter keys, deltas, and tree (`index.ts`), and the organisation, guild, and agent listings (`view.ts`) |
+| `studio/` | Prompt Studio: sessions, tools, drafts, edit, table, and routine requests, focus pins, the activity ledger, and the runs and routines the inspector reads (`inspector.ts`) ([Prompt Studio](../concepts/prompt-studio.md)) |
 | `builder/` | The guild builder: sessions, tools, widgets, and workspace search ([Guild builder](../concepts/guild-builder.md)) |
 | `recipes/` | The `guilds.recipe` schema, capture, rewrite, validation, and apply ([Recipes](../concepts/recipes.md)) |
 | `conversation/` | The shared coach runner and tool-result projection |
 | `capabilities/` | The catalog facts the builder may name |
-| `guilds/`, `agents/`, `organisations/`, `users/` | Validation and persistence |
+| `guilds/`, `agents/`, `organisations/`, `users/` | Validation, persistence, who sees what (`access.ts`), the API views (`view.ts`), and what an operator creates, changes and deletes (`service.ts`, `operators.ts`, `directory.ts`) |
 | `config/` | Environment → `AppConfig` ([Configuration](orchestrator.md#configuration)) |
 | `instance/` | Instance keys: the integration registry, the encrypted store, write effects, and connector-declared integrations ([Instance keys](extension-points.md#instance-keys)) |
 | `cli/` | `seed:system`, `seed:operator`, `migrate`, and `pnpm connector` |
 | `observability/` | Logs, request ids, client-error intake, Sentry, and runtime metrics ([Observability](orchestrator.md#observability)) |
 | `net/` | Outbound HTTP and endpoint validation |
-| `lib/` | Shared helpers: ids, paths, locks, the event queue, the clock, JSON, names, numbers, an agent's home files (`agent-file.ts`), and the blob store under attachments and shared files (`blob-store.ts`) |
+| `lib/` | Shared helpers: ids, paths, locks, the event queue, the clock, JSON, names, numbers, change actors (`change-actor.ts`), an agent's home files (`agent-file.ts`), and the blob store under attachments and shared files (`blob-store.ts`) |
 
 ## `apps/web/`
 
@@ -109,8 +109,8 @@ one as a submodule ([Extension points](extension-points.md)).
 | `src/app/` | The app frame: providers, identity, routes, slots, theme, storage helpers, formatting, and the back button (`returnTrail.ts`) |
 | `src/api/` | The typed API client, identity, queries, streams, and the client error log ([State and events](web-app.md#state-and-events)) |
 | `public/` | Files served as-is |
-| `vite.app.ts` | `appConfig()`: build and dev-server configuration, shared with an edition |
-| `package.json` | `exports`: what an edition's package may import ([Extension slots](web-app.md#extension-slots)) |
+| `vite.app.ts` | `appConfig()`: build and dev-server configuration, shared with an extension |
+| `package.json` | `exports`: what an extension's package may import ([Extension slots](web-app.md#extension-slots)) |
 | `claude-design-export/` | The first Claude Design export; not the live library |
 
 ### `src/features/`

@@ -1,5 +1,4 @@
 import { memoryOf } from "../agents/validation.js";
-import type { Repositories } from "../db/repositories.js";
 import { jsonObj } from "../db/json.js";
 import { iso } from "../db/views.js";
 import { REGISTRY } from "../toolbox/index.js";
@@ -7,6 +6,9 @@ import { offeredToolNames } from "../toolbox/offered.js";
 import { StudioUnprocessableError } from "./errors.js";
 import { projectAgentAccess, type PreviewDeps } from "./preview.js";
 import type { ActivityWindow } from "./activity.js";
+import { listAgents, type AgentRow } from "../db/agents.js";
+import { listGuildToolCallStats, listGuildToolCalls } from "../db/activity.js";
+import type { Queryable } from "../db/pg.js";
 
 // The guild's tools as Studio's Tools section lists them: what each agent is
 // offered now, from the live access projection, beside how the agents called
@@ -66,7 +68,7 @@ export function nativeGroup(name: string): string {
 
 type AgentAccess = Awaited<ReturnType<typeof projectAgentAccess>>;
 
-function nativeEntries(agent: Record<string, unknown>, access: AgentAccess): ToolEntry[] {
+function nativeEntries(agent: Pick<AgentRow, "id" | "config">, access: AgentAccess): ToolEntry[] {
   const config = (jsonObj(agent.config) as Record<string, unknown> | null) ?? {};
   const offered = offeredToolNames(access.native_tools, {
     browser: Boolean(config.browser),
@@ -82,12 +84,12 @@ function nativeEntries(agent: Record<string, unknown>, access: AgentAccess): Too
     group: nativeGroup(name),
     description: REGISTRY[name]?.description ?? "",
     serverId: null,
-    agentId: String(agent.id),
+    agentId: agent.id,
     offered: true,
   }));
 }
 
-function scriptEntries(agent: Record<string, unknown>, access: AgentAccess, scripting: boolean): ToolEntry[] {
+function scriptEntries(agent: Pick<AgentRow, "id">, access: AgentAccess, scripting: boolean): ToolEntry[] {
   return access.scripts
     .filter((script) => script.parameters !== null && script.parameters !== undefined)
     .map((script) => ({
@@ -96,12 +98,12 @@ function scriptEntries(agent: Record<string, unknown>, access: AgentAccess, scri
       group: "scripts",
       description: String(script.description ?? ""),
       serverId: null,
-      agentId: String(agent.id),
+      agentId: agent.id,
       offered: scripting,
     }));
 }
 
-function connectorEntries(agent: Record<string, unknown>, access: AgentAccess): ToolEntry[] {
+function connectorEntries(agent: Pick<AgentRow, "id">, access: AgentAccess): ToolEntry[] {
   return access.connections.flatMap((connection) =>
     connection.tools.map((tool) => ({
       name: tool.name,
@@ -109,14 +111,14 @@ function connectorEntries(agent: Record<string, unknown>, access: AgentAccess): 
       group: connection.server.display_name,
       description: tool.description,
       serverId: connection.server.id,
-      agentId: String(agent.id),
+      agentId: agent.id,
       offered: connection.offered_tools.includes(tool.name),
     })),
   );
 }
 
 /** Every tool one agent is offered now, and every script or connection tool it is withheld. */
-export function agentToolEntries(agent: Record<string, unknown>, access: AgentAccess): ToolEntry[] {
+export function agentToolEntries(agent: Pick<AgentRow, "id" | "config">, access: AgentAccess): ToolEntry[] {
   const config = (jsonObj(agent.config) as Record<string, unknown> | null) ?? {};
   return [
     ...nativeEntries(agent, access),
@@ -181,15 +183,15 @@ export function buildToolRows(entries: ToolEntry[], stats: StatRow[]): ToolRow[]
 
 /** The guild's tools: what each agent is offered now, and their calls in the window. */
 export async function loadGuildTools(
-  deps: { repo: Repositories; preview: PreviewDeps },
+  deps: { db: Queryable; preview: PreviewDeps },
   guildId: string,
   window: ActivityWindow,
 ): Promise<{ since: string; until: string; tools: ToolRow[] }> {
-  const agents = await deps.repo.listAgents(guildId);
+  const agents = await listAgents(deps.db, guildId);
   const entries = (
     await Promise.all(agents.map(async (agent) => agentToolEntries(agent, await projectAgentAccess(deps.preview, agent))))
   ).flat();
-  const stats = await deps.repo.listGuildToolCallStats(guildId, window.since, window.until);
+  const stats = await listGuildToolCallStats(deps.db, guildId, window.since, window.until);
   return { since: iso(window.since), until: iso(window.until), tools: buildToolRows(entries, stats) };
 }
 
@@ -230,11 +232,11 @@ export function viewToolCall(row: Record<string, unknown>): Record<string, unkno
 
 /** One tool's calls in the window, newest first, a page at a time. */
 export async function loadToolCalls(
-  repo: Repositories,
+  db: Queryable,
   guildId: string,
   request: { tool: string; window: ActivityWindow; query: ToolCallsQuery },
 ): Promise<{ calls: Array<Record<string, unknown>>; next_cursor: string | null }> {
-  const rows = await repo.listGuildToolCalls(guildId, request.tool, {
+  const rows = await listGuildToolCalls(db, guildId, request.tool, {
     ...request.window,
     errorsOnly: request.query.errorsOnly,
     before: parseToolCursor(request.query.cursor),

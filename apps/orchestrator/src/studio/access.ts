@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { resetBinding, writeBinding } from "../access/bindings.js";
 import {
   BindingError,
   resolvedMcp,
@@ -7,11 +8,16 @@ import {
   type Resolved,
 } from "../access/index.js";
 import { resolveMcpTool } from "../access/runtime.js";
+import { listMcpServers } from "../connectors/servers.js";
 import { newId } from "../lib/ids.js";
 import { isReadOnlyRemote, listedFromRows } from "../mcp/index.js";
 import type { EditScope } from "./edits.js";
 import { editActor } from "./actor.js";
 import { StudioConflictError, StudioUnprocessableError } from "./errors.js";
+import { getAgent } from "../db/agents.js";
+import { getBinding, listBindingsCovering } from "../db/bindings.js";
+import { listMcpConnections, listMcpTools } from "../db/mcp.js";
+import type { LoadedConnector } from "../connectors/load.js";
 
 // One agent's access as the coach proposes to narrow or widen it: the native
 // tools, and the connections and connection tools it is offered. A change is an agent-level overlay; the guild's and the
@@ -48,7 +54,7 @@ type Snapshot = {
   agentName: string;
   scope: { orgId: string; guildId: string; agentId: string };
   rows: Array<Record<string, unknown>>;
-  servers: Array<Record<string, unknown>>;
+  servers: LoadedConnector[];
   connections: Map<string, AgentConnection>;
 };
 
@@ -75,31 +81,31 @@ function hashOf(value: unknown): string {
 }
 
 async function loadSnapshot(scope: EditScope, agentId: string): Promise<Snapshot> {
-  const agent = await scope.repo.getAgent(agentId);
+  const agent = await getAgent(scope.db, agentId);
   if (!agent || String(agent.guild_id) !== scope.sourceGuildId || String(agent.org_id) !== scope.orgId) {
     throw new StudioUnprocessableError("agent is not in the source guild");
   }
   const resolveScope = { orgId: scope.orgId, guildId: scope.sourceGuildId, agentId };
-  const rows = await scope.repo.listBindingsCovering(resolveScope);
-  const servers = await scope.repo.listMcpServers(scope.orgId);
-  const serverById = new Map(servers.map((server) => [String(server.id), server]));
+  const rows = await listBindingsCovering(scope.db, resolveScope);
+  const servers = await listMcpServers(scope.db, scope.orgId);
+  const serverById = new Map(servers.map((server) => [server.id, server]));
   const connections = new Map<string, AgentConnection>();
-  for (const connection of await scope.repo.listMcpConnections(resolveScope)) {
+  for (const connection of await listMcpConnections(scope.db, resolveScope)) {
     const server = serverById.get(String(connection.mcp_server_id));
     if (!server) continue;
-    const listed = listedFromRows(await scope.repo.listMcpTools(String(connection.id)));
+    const listed = listedFromRows(await listMcpTools(scope.db, String(connection.id)));
     const name = String(server.display_name || server.slug);
     const account = String(connection.account_hint ?? "");
     connections.set(String(connection.id), {
       id: String(connection.id),
-      serverId: String(server.id),
+      serverId: server.id,
       label: `${name} (${connection.owner_scope} login${account ? `, ${account}` : ""})`,
       status: String(connection.status),
       tools: listed.map((tool) => ({
         name: tool.namespaced_name,
-        readOnly: isReadOnlyRemote(String(server.slug), tool.remote_name, {
+        readOnly: isReadOnlyRemote(server.slug, tool.remote_name, {
           readOnlyHint: tool.read_only_hint,
-          verified: server.verified === true,
+          verified: server.verified,
         }),
       })),
     });
@@ -339,14 +345,34 @@ export async function applyAccess(scope: EditScope, agentId: string, review: Acc
   const actor = editActor(scope, { agentId });
   for (const change of review.changes) {
     if (change.setting === "inherit") {
-      await scope.repo.deleteBinding(change.kind, change.id, "agent", agentId, actor);
+      await resetBinding(scope.db,
+        { catalogKind: change.kind, catalogId: change.id, scope: "agent", scopeId: agentId },
+        actor,
+      );
       continue;
     }
-    const existing = await scope.repo.getBinding(change.kind, change.id, "agent", agentId);
+    const existing = await getBinding(scope.db, {
+      catalogKind: change.kind,
+      catalogId: change.id,
+      scope: "agent",
+      scopeId: agentId,
+    });
     const connectionId =
       change.kind === "mcp" && existing?.connection_id !== null && existing?.connection_id !== undefined
         ? String(existing.connection_id)
         : null;
-    await scope.repo.upsertBinding(newId("bind"), change.kind, change.id, "agent", agentId, change.setting === "on", connectionId, now, actor);
+    await writeBinding(scope.db,
+      {
+        bindingId: newId("bind"),
+        catalogKind: change.kind,
+        catalogId: change.id,
+        scope: "agent",
+        scopeId: agentId,
+        enabled: change.setting === "on",
+        connectionId,
+      },
+      now,
+      actor,
+    );
   }
 }

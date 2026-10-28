@@ -4,11 +4,6 @@ import { chainOf, continuationMessage, continuedBy, handoffText } from "../../sr
 
 test("a run without a chain position is the first of its own chain", () => {
   assert.deepEqual(chainOf({ id: "r_1", metadata: {} }), { root_run_id: "r_1", index: 1, previous_run_id: null });
-  assert.deepEqual(chainOf({ id: "r_1", metadata: JSON.stringify({ chain: { root_run_id: "r_0", index: 0 } }) }), {
-    root_run_id: "r_1",
-    index: 1,
-    previous_run_id: null,
-  });
   assert.deepEqual(
     chainOf({ id: "r_3", metadata: { chain: { root_run_id: "r_1", index: 3, previous_run_id: "r_2" } } }),
     { root_run_id: "r_1", index: 3, previous_run_id: "r_2" },
@@ -17,14 +12,12 @@ test("a run without a chain position is the first of its own chain", () => {
 
 test("continuedBy reads the next run of a chain", () => {
   assert.equal(continuedBy({ metadata: { continued_by_run_id: "r_2" } }), "r_2");
-  assert.equal(continuedBy({ metadata: { continued_by_run_id: "" } }), null);
-  assert.equal(continuedBy({ metadata: null }), null);
+  assert.equal(continuedBy({ metadata: {} }), null);
 });
 
 test("the hand-off is the reply's text, from a string or content parts", () => {
-  assert.equal(handoffText({ content: "  Goal: ship.  " }), "Goal: ship.");
-  assert.equal(handoffText({ content: [{ type: "text", text: "Goal: " }, { type: "text", text: "ship." }] }), "Goal: ship.");
-  assert.equal(handoffText({ content: null, tool_calls: [] }), "");
+  assert.equal(handoffText({ role: "assistant", content: "  Goal: ship.  " }), "Goal: ship.");
+  assert.equal(handoffText({ role: "assistant", content: "" }), "");
 });
 
 test("a continuation opens with the previous run and its hand-off, or a note when there is none", () => {

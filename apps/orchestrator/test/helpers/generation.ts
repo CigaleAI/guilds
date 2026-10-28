@@ -6,55 +6,137 @@ import { encryptPayload } from "../../src/credentials/crypto.js";
 import { secretPayload } from "../../src/credentials/validate.js";
 import {
   GenerationLoop,
-  type GenerationDb,
-  type GenerationNotes,
-  type GenerationSandboxes,
+  LOOP_TIMINGS,
+  type GenerationDatabase,
+  type GenerationLoopServices,
+  type GenerationLoopTimings,
 } from "../../src/generation/index.js";
+import { type GenerationSandboxes } from "../../src/generation/machines.js";
 import type { Completion } from "../../src/llm/index.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { SandboxError, type AgentSeat, type MachineSpec } from "../../src/sandbox/index.js";
 import { HEX_MASTER_KEY, tempDir } from "./env.js";
 import { templatesRoot } from "./fixtures.js";
 import { TEST_CREDENTIALS } from "./models.js";
-import type { PlannedWake } from "../../src/schedules/window.js";
+import type { AgentRow, AgentScriptRow, NewAgentScript } from "../../src/db/agents.js";
+import type { ScriptDatabase } from "../../src/scripts/catalog.js";
+import type { NewDirectRun, NewGroupRun, NewMessage, NewScheduleRun } from "../../src/db/runs.js";
+import type { ScheduleRow, PlannedWake } from "../../src/db/schedules.js";
+import type { AgentConfig, CompletionMetadata, RunConfigSnapshot, ToolCall } from "../../src/db/schema/index.js";
+import { validateConfig } from "../../src/agents/validation.js";
 
-export const AGENT_CONFIG = {
+export const AGENT_CONFIG: AgentConfig = {
   model: "openrouter/openai/gpt-5.6-luna",
   temperature: 0,
   max_tokens: 32,
   max_steps: 30,
   max_tool_calls: 50,
   max_input_tokens: 100000,
+  keep_tool_result_generations: 1,
+  max_scripts: 10,
+  max_workspace_mib: 10240,
   browser: false,
+  browser_language: "en-US",
+  coding: false,
+  harness: null,
+  harness_model: null,
+  harness_effort: null,
+  secret_aliases: {},
+  scripting: true,
+  memory: true,
+  thinking_level: "none",
 };
 
-export class MemoryScriptDB {
-  rows: Array<Record<string, unknown>> = [];
+/** The config snapshot a run of an agent with `config` starts with, offering no tools, connections or secrets. */
+export function runSnapshot(config: AgentConfig = AGENT_CONFIG): RunConfigSnapshot {
+  const { max_scripts: _maxScripts, max_workspace_mib: _maxWorkspaceMib, ...settings } = config;
+  return { ...settings, projection_policy_version: 1, database: false, tools: [], mcp: [], secrets: [] };
+}
 
-  async listAgentScripts(agentId: string): Promise<Array<Record<string, unknown>>> {
+/** An agent config as a create with these settings stores it: every key, the defaults filling the rest. */
+export function agentConfig(overrides: Record<string, unknown> = {}): AgentConfig {
+  return validateConfig({ model: AGENT_CONFIG.model, ...overrides });
+}
+
+export function scheduleRow(
+  overrides: Partial<Omit<ScheduleRow, "cron" | "wake_window">> = {},
+): ScheduleRow {
+  return {
+    id: "sch_1",
+    agent_id: "a_1",
+    cron: "*/30 * * * *",
+    wake_window: null,
+    window_fires: 0,
+    description: "",
+    instruction: "ping",
+    paused: false,
+    next_run_at: "2026-10-12T09:30:00.000Z",
+    last_run_at: null,
+    created_at: "2026-10-12T09:00:00.000Z",
+    updated_at: "2026-10-12T09:00:00.000Z",
+    ...overrides,
+  };
+}
+
+/** An agent row as `getAgent` returns it, on its organisation's default machine. */
+export function agentRow(overrides: Partial<AgentRow> = {}): AgentRow {
+  return {
+    id: "a_1",
+    guild_id: "guild_1",
+    org_id: "org_1",
+    name: "researcher",
+    avatar_shape: "teardrop",
+    avatar_color: "#7c5cff",
+    focus: "",
+    wake_triggers: "",
+    config: { ...AGENT_CONFIG },
+    task: "",
+    task_version: 1,
+    task_hash: "",
+    task_updated_at: "2026-10-12T09:00:00.000Z",
+    created_at: "2026-10-12T09:00:00.000Z",
+    updated_at: "2026-10-12T09:00:00.000Z",
+    workspace_mib: null,
+    harness_logins: {},
+    ...AGENT_MACHINE,
+    machine_box: "standard",
+    machine_harnesses: [],
+    guild_name: "guild",
+    guild_about: "",
+    guild_description: "",
+    org_slug: "org",
+    guild_operators: [],
+    ...overrides,
+  };
+}
+
+/** Agent scripts in memory, with the actor of every write. */
+export class MemoryScriptDB implements ScriptDatabase {
+  rows: AgentScriptRow[] = [];
+  actors: ArtifactActor[] = [];
+
+  async listAgentScripts(agentId: string): Promise<AgentScriptRow[]> {
     return this.rows.filter((row) => row.agent_id === agentId);
   }
 
-  async upsertAgentScript(
-    _actor: ArtifactActor,
-    scriptId: string,
-    agentId: string,
-    name: string,
-    description: string,
-    parameters: Record<string, unknown> | null,
-    source: string,
-    sourceHash: string,
+  async writeAgentScript(
+    script: NewAgentScript,
+    actor: ArtifactActor,
     now: Date,
-  ): Promise<Record<string, unknown>> {
+  ): Promise<AgentScriptRow> {
+    const { scriptId, agentId, name, description, parameters, source, sourceHash } = script;
+    this.actors.push(actor);
+    const stamp = now.toISOString();
     const index = this.rows.findIndex((row) => row.agent_id === agentId && row.name === name);
-    if (index >= 0) {
+    const existing = this.rows[index];
+    if (existing) {
       const updated = {
-        ...this.rows[index],
+        ...existing,
         description,
         parameters,
         source,
         source_hash: sourceHash,
-        updated_at: now,
+        updated_at: stamp,
       };
       this.rows[index] = updated;
       return updated;
@@ -67,22 +149,22 @@ export class MemoryScriptDB {
       parameters,
       source,
       source_hash: sourceHash,
-      created_at: now,
-      updated_at: now,
+      created_at: stamp,
+      updated_at: stamp,
     };
     this.rows.push(row);
     return row;
   }
 
-  async getAgentScript(agentId: string, name: string): Promise<Record<string, unknown> | null> {
+  async getAgentScript(agentId: string, name: string): Promise<AgentScriptRow | null> {
     return this.rows.find((row) => row.agent_id === agentId && row.name === name) ?? null;
   }
 
-  async deleteAgentScript(
+  async removeAgentScript(
     _actor: ArtifactActor,
     agentId: string,
     name: string,
-  ): Promise<Record<string, unknown> | null> {
+  ): Promise<AgentScriptRow | null> {
     const index = this.rows.findIndex((row) => row.agent_id === agentId && row.name === name);
     if (index < 0) {
       return null;
@@ -95,9 +177,9 @@ function attachScripts<T extends object>(target: T, scripts: MemoryScriptDB): T 
   const bound = target as T & MemoryScriptDB;
   bound.rows = scripts.rows;
   bound.listAgentScripts = scripts.listAgentScripts.bind(scripts);
-  bound.upsertAgentScript = scripts.upsertAgentScript.bind(scripts);
+  bound.writeAgentScript = scripts.writeAgentScript.bind(scripts);
   bound.getAgentScript = scripts.getAgentScript.bind(scripts);
-  bound.deleteAgentScript = scripts.deleteAgentScript.bind(scripts);
+  bound.removeAgentScript = scripts.removeAgentScript.bind(scripts);
   return bound;
 }
 
@@ -212,31 +294,24 @@ export class FakeDB {
   mcp_connection: Record<string, unknown> | null = null;
   mcp_server: Record<string, unknown> | null = null;
   monthlyUsage: Record<string, unknown> | null = null;
-  due_schedules: Array<Record<string, unknown>> = [];
+  due_schedules: ScheduleRow[] = [];
   fired: Array<Record<string, unknown>> = [];
 
-  constructor(snapshot: Record<string, unknown>) {
+  /** A store holding one active run, `r_1`, whose snapshot is `runSnapshot()` with `snapshot` over it. */
+  constructor(snapshot: Partial<RunConfigSnapshot> = {}) {
     const now = new Date();
     this.run = {
       id: "r_1",
       agent_id: "a_1",
       status: "active",
-      config_snapshot: snapshot,
+      kind: "direct",
+      config_snapshot: { ...runSnapshot(), ...snapshot },
       errors: [],
       created_at: now,
       updated_at: now,
       metadata: {},
     };
-    this.agent = {
-      id: "a_1",
-      guild_id: "guild_1",
-      name: "researcher",
-      guild_name: "research",
-      org_id: "org_1",
-      org_slug: "acme",
-      config: {},
-      ...AGENT_MACHINE,
-    };
+    this.agent = agentRow({ guild_name: "research", org_slug: "acme" });
     this.messages = [
       {
         id: 1,
@@ -258,6 +333,24 @@ export class FakeDB {
 
   async getRun(runId: string) {
     return this.run.id === runId ? this.run : null;
+  }
+
+  /** Sizes, logins and harness lists a generation stores are dropped until a test records them. */
+  async setAgentWorkspaceMib(_agentId: string, _mib: number): Promise<void> {}
+
+  async setMachineWorkspaceMib(_machineId: string, _mib: number): Promise<void> {}
+
+  async markHarnessLogin(_agentId: string, _harness: string, _now: Date, _account?: unknown): Promise<void> {}
+
+  async clearHarnessLogin(_agentId: string, _harness: string): Promise<void> {}
+
+  /** A guild has no repositories until a test gives it some. */
+  async listGuildRepositories(_guildId: string): Promise<Array<Record<string, unknown>>> {
+    return [];
+  }
+
+  async getMcpConnectionForOwner(_serverId: string, _scope: string, _ownerId: string | null) {
+    return null;
   }
 
   async getAgent(agentId: string) {
@@ -361,19 +454,13 @@ export class FakeDB {
     return (gens.length ? Math.max(...gens) : 0) + 1;
   }
 
-  async insertMessage(
-    runId: string,
-    seq: number,
-    payload: Record<string, unknown>,
-    metadata: Record<string, unknown>,
-    now: Date,
-  ) {
+  async insertMessage(input: NewMessage, now: Date) {
     const row = {
       id: this.messages.length + 1,
-      run_id: runId,
-      seq,
-      payload,
-      metadata,
+      run_id: input.runId,
+      seq: input.seq,
+      payload: input.payload,
+      metadata: input.metadata,
       created_at: now,
     };
     this.messages.push(row);
@@ -433,11 +520,11 @@ export class FakeDB {
     this.fired.push({ id: scheduleId, now, next_run_at: wake.at, window_fires: wake.windowFires });
   }
 
-  async purgeAgent(_agentId: string) {
+  async deleteAgent(_agentId: string) {
     return undefined;
   }
 
-  async purgeGuild(_guildId: string) {
+  async deleteGuild(_guildId: string) {
     return undefined;
   }
 
@@ -462,7 +549,7 @@ export class RecordingDB {
   group_messages: Array<Record<string, unknown>> = [];
   bindings: Array<Record<string, unknown>> = [];
   secrets: Array<Record<string, unknown>> = [];
-  due_schedules: Array<Record<string, unknown>> = [];
+  due_schedules: ScheduleRow[] = [];
   fired: Array<Record<string, unknown>> = [];
   delivered: string | undefined;
   mcp_connection: Record<string, unknown> | null = null;
@@ -471,6 +558,24 @@ export class RecordingDB {
   constructor(agent: Record<string, unknown>) {
     this.agent = agent;
     attachScripts(this, new MemoryScriptDB());
+  }
+
+  /** Sizes, logins and harness lists a generation stores are dropped until a test records them. */
+  async setAgentWorkspaceMib(_agentId: string, _mib: number): Promise<void> {}
+
+  async setMachineWorkspaceMib(_machineId: string, _mib: number): Promise<void> {}
+
+  async markHarnessLogin(_agentId: string, _harness: string, _now: Date, _account?: unknown): Promise<void> {}
+
+  async clearHarnessLogin(_agentId: string, _harness: string): Promise<void> {}
+
+  /** A guild has no repositories until a test gives it some. */
+  async listGuildRepositories(_guildId: string): Promise<Array<Record<string, unknown>>> {
+    return [];
+  }
+
+  async getMcpConnectionForOwner(_serverId: string, _scope: string, _ownerId: string | null) {
+    return null;
   }
 
   async getAgent(agentId: string) {
@@ -567,30 +672,28 @@ export class RecordingDB {
     this.run.updated_at = now;
   }
 
-  async createRun(
-    runId: string,
-    agentId: string,
-    configSnapshot: Record<string, unknown>,
-    systemContent: string,
-    taskContent: string,
-    userContent: string | null,
-    now: Date,
-    options: {
-      systemPromptHash: string;
-      taskPromptHash: string;
-      memoryPromptHash: string;
-      extraMessages?: Array<[Record<string, unknown>, Record<string, unknown>]>;
-      userMetadata?: Record<string, unknown>;
-    },
-  ) {
-    const extraMessages = options.extraMessages ?? [];
+  async createRun(input: NewDirectRun, now: Date) {
+    const {
+      runId,
+      agentId,
+      configSnapshot,
+      systemContent,
+      taskContent,
+      userContent,
+      systemPromptHash,
+      taskPromptHash,
+      memoryPromptHash,
+      extraMessages: rawExtra,
+      userMetadata,
+    } = input;
+    const extraMessages = rawExtra ?? [];
     this.create_args = {
       run_id: runId,
       system_content: systemContent,
       task_content: taskContent,
       user_content: userContent,
       extra_messages: extraMessages,
-      user_metadata: options.userMetadata,
+      user_metadata: userMetadata,
     };
     this.messages = [
       {
@@ -609,7 +712,7 @@ export class RecordingDB {
       this.messages.push({
         seq,
         payload: { role: "user", content: userContent },
-        metadata: { generation: 1, source: "ui", ...(options.userMetadata ?? {}) },
+        metadata: { generation: 1, source: "ui", ...(userMetadata ?? {}) },
         created_at: now,
       });
     }
@@ -617,13 +720,14 @@ export class RecordingDB {
       id: runId,
       agent_id: agentId,
       status: "active",
+      kind: "direct",
       config_snapshot: configSnapshot,
       errors: [],
       created_at: now,
       updated_at: now,
-      system_prompt_hash: options.systemPromptHash,
-      task_prompt_hash: options.taskPromptHash,
-      memory_prompt_hash: options.memoryPromptHash,
+      system_prompt_hash: systemPromptHash,
+      task_prompt_hash: taskPromptHash,
+      memory_prompt_hash: memoryPromptHash,
       metadata: {},
     };
   }
@@ -639,19 +743,13 @@ export class RecordingDB {
     return (gens.length ? Math.max(...gens) : 0) + 1;
   }
 
-  async insertMessage(
-    runId: string,
-    seq: number,
-    payload: Record<string, unknown>,
-    metadata: Record<string, unknown>,
-    now: Date,
-  ) {
+  async insertMessage(input: NewMessage, now: Date) {
     const row = {
       id: this.messages.length + 1,
-      run_id: runId,
-      seq,
-      payload,
-      metadata,
+      run_id: input.runId,
+      seq: input.seq,
+      payload: input.payload,
+      metadata: input.metadata,
       created_at: now,
     };
     this.messages.push(row);
@@ -679,16 +777,18 @@ export class RecordingDB {
     return this.run.errors as unknown[];
   }
 
-  async createScheduleRun(
-    runId: string,
-    agentId: string,
-    configSnapshot: Record<string, unknown>,
-    systemContent: string,
-    taskContent: string,
-    projected: Array<[Record<string, unknown>, Record<string, unknown>]>,
-    now: Date,
-    options: { systemPromptHash: string; taskPromptHash: string; memoryPromptHash: string },
-  ) {
+  async createScheduleRun(input: NewScheduleRun, now: Date) {
+    const {
+      runId,
+      agentId,
+      configSnapshot,
+      systemContent,
+      taskContent,
+      projected,
+      systemPromptHash,
+      taskPromptHash,
+      memoryPromptHash,
+    } = input;
     this.create_args = {
       run_id: runId,
       system_content: systemContent,
@@ -717,24 +817,26 @@ export class RecordingDB {
       errors: [],
       created_at: now,
       updated_at: now,
-      system_prompt_hash: options.systemPromptHash,
-      task_prompt_hash: options.taskPromptHash,
-      memory_prompt_hash: options.memoryPromptHash,
+      system_prompt_hash: systemPromptHash,
+      task_prompt_hash: taskPromptHash,
+      memory_prompt_hash: memoryPromptHash,
       metadata: {},
     };
   }
 
-  async createGroupRun(
-    runId: string,
-    agentId: string,
-    configSnapshot: Record<string, unknown>,
-    systemContent: string,
-    taskContent: string,
-    projected: Array<[Record<string, unknown>, Record<string, unknown>]>,
-    throughSeq: number,
-    now: Date,
-    options: { systemPromptHash: string; taskPromptHash: string; memoryPromptHash: string },
-  ) {
+  async createGroupRun(input: NewGroupRun, now: Date) {
+    const {
+      runId,
+      agentId,
+      configSnapshot,
+      systemContent,
+      taskContent,
+      projected,
+      throughSeq,
+      systemPromptHash,
+      taskPromptHash,
+      memoryPromptHash,
+    } = input;
     this.create_args = {
       run_id: runId,
       system_content: systemContent,
@@ -764,9 +866,9 @@ export class RecordingDB {
       errors: [],
       created_at: now,
       updated_at: now,
-      system_prompt_hash: options.systemPromptHash,
-      task_prompt_hash: options.taskPromptHash,
-      memory_prompt_hash: options.memoryPromptHash,
+      system_prompt_hash: systemPromptHash,
+      task_prompt_hash: taskPromptHash,
+      memory_prompt_hash: memoryPromptHash,
       metadata: {},
     };
   }
@@ -822,11 +924,11 @@ export class RecordingDB {
     return [];
   }
 
-  async purgeAgent(_agentId: string) {
+  async deleteAgent(_agentId: string) {
     return undefined;
   }
 
-  async purgeGuild(_guildId: string) {
+  async deleteGuild(_guildId: string) {
     return undefined;
   }
 }
@@ -845,19 +947,28 @@ export function parsedState(system: string): Record<string, unknown> {
   return JSON.parse(rest) as Record<string, unknown>;
 }
 
+/** The services and timings a test loop is built with besides its database, notes, root, and sandboxes. */
+export type LoopOptions = Partial<Omit<GenerationLoopServices, "db" | "notes" | "workspaceRoot" | "sandboxes">> &
+  Partial<GenerationLoopTimings>;
+
 export function makeLoop(
   db: object,
   notes: object,
   workspaceRoot: string,
   sandboxes: object,
-  options: ConstructorParameters<typeof GenerationLoop>[4] = {},
+  options: LoopOptions = {},
 ): GenerationLoop {
+  const { idleTimeoutMs = 0, schedulerTickMs = LOOP_TIMINGS.schedulerTickMs, ...services } = options;
   return new GenerationLoop(
-    db as GenerationDb,
-    notes as GenerationNotes,
-    workspaceRoot,
-    sandboxes as GenerationSandboxes,
-    { idleTimeoutMs: 0, credentials: TEST_CREDENTIALS, ...options },
+    {
+      db: db as GenerationDatabase,
+      notes: notes as NotesStore,
+      workspaceRoot,
+      sandboxes: sandboxes as GenerationSandboxes,
+      credentials: TEST_CREDENTIALS,
+      ...services,
+    },
+    { idleTimeoutMs, schedulerTickMs },
   );
 }
 
@@ -872,61 +983,51 @@ export async function seededLoop(
   await notes.ensureSystemPrompt();
   await notes.createGuild("acme", "research");
   await notes.createAgent("acme", "research", "researcher");
-  const db = new RecordingDB({
-    id: "a_1",
-    guild_id: "guild_1",
-    name: "researcher",
-    guild_name: "research",
-    org_id: "org_1",
-    org_slug: "acme",
-    config: { ...AGENT_CONFIG },
-    ...AGENT_MACHINE,
-  });
+  const db = new RecordingDB(agentRow({ guild_name: "research", org_slug: "acme" }));
   const loop = makeLoop(db, notes, workspaceRoot, new FakeSandboxes());
   return { loop, db, notes, tmp };
 }
 
 export function fakeStream(
   db: { llm_histories: Array<Array<Record<string, unknown>>> },
-  calls: Array<Record<string, unknown>>,
+  calls: ToolCall[],
 ): (options: { messages: Array<Record<string, unknown>> }) => AsyncGenerator<["done", Completion]> {
   return async function* stream(options: { messages: Array<Record<string, unknown>> }) {
     db.llm_histories.push([...options.messages]);
-    const payload =
-      db.llm_histories.length === 1
-        ? { role: "assistant", content: null, tool_calls: calls }
-        : { role: "assistant", content: "done" };
-    yield [
-      "done",
-      {
-        payload,
-        metadata: {
-          usage: { input_tokens: 1, output_tokens: 1, cache_read_tokens: 0 },
-          latency_ms: 1,
-          finish_reason: "tool_calls" in payload ? "tool_calls" : "stop",
-          model: "test",
-          response_id: "c1",
-          provider_request_id: null,
-          cost_usd: 0.0,
-        },
-      },
-    ];
+    yield ["done", db.llm_histories.length === 1 ? completionCalling(calls) : completionReply()];
+  };
+}
+
+/** What a completion records, with `overrides`. */
+export function completionMetadata(overrides: Partial<CompletionMetadata> = {}): CompletionMetadata {
+  return {
+    usage: { input_tokens: 1, output_tokens: 1, cache_read_tokens: 0 },
+    latency_ms: 1,
+    finish_reason: "stop",
+    model: "test",
+    response_id: "c1",
+    provider_request_id: null,
+    cost_usd: 0.0,
+    cost_source: "unavailable",
+    ...overrides,
   };
 }
 
 export function completionReply(content = "done"): Completion {
+  return { payload: { role: "assistant", content }, metadata: completionMetadata() };
+}
+
+/** A completion that makes `calls` and says nothing. */
+export function completionCalling(calls: ToolCall[]): Completion {
   return {
-    payload: { role: "assistant", content },
-    metadata: {
-      usage: { input_tokens: 1, output_tokens: 1, cache_read_tokens: 0 },
-      latency_ms: 1,
-      finish_reason: "stop",
-      model: "test",
-      response_id: "c1",
-      provider_request_id: null,
-      cost_usd: 0.0,
-    },
+    payload: { role: "assistant", content: "", tool_calls: calls },
+    metadata: completionMetadata({ finish_reason: "tool_calls" }),
   };
+}
+
+/** A call of the tool `name` with `args`, as the model makes it. */
+export function toolCall(id: string, name: string, args: Record<string, unknown> = {}): ToolCall {
+  return { id, type: "function", function: { name, arguments: JSON.stringify(args) } };
 }
 
 /** A secret granted to agent a_1 of guild_1. */
@@ -961,8 +1062,8 @@ export function guildDb(agentIds: string[]) {
     purged: string[];
     getGuild: (guildId: string) => Promise<Record<string, unknown> | null>;
     listAgents: (guildId: string) => Promise<Array<Record<string, unknown>>>;
-    purgeGuild: (guildId: string) => Promise<void>;
-    getAgent?: (agentId: string) => Promise<Record<string, unknown> | null>;
+    deleteGuild: (guildId: string) => Promise<void>;
+    getAgent?: (agentId: string) => Promise<AgentRow | null>;
   } = {
     purged: [],
     async getGuild(guildId: string) {
@@ -976,9 +1077,9 @@ export function guildDb(agentIds: string[]) {
     },
     async getAgent(agentId: string) {
       const slot = agentIds.indexOf(agentId);
-      return slot < 0 ? null : { id: agentId, ...AGENT_MACHINE, machine_slot: slot };
+      return slot < 0 ? null : agentRow({ id: agentId, machine_slot: slot });
     },
-    async purgeGuild(guildId: string) {
+    async deleteGuild(guildId: string) {
       db.purged.push(guildId);
     },
   };

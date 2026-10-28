@@ -6,7 +6,7 @@ import { App } from "./app/App";
 import type { AppSlots } from "./app/slots";
 import { applyTheme, readThemePreference } from "./app/theme";
 
-/** Starts the app in the page's `#root`, with what the edition adds to it. */
+/** Starts the app in the page's `#root`, with what the extension adds to it. */
 export function mount(slots: AppSlots = {}): void {
   installClientLog();
   applyTheme(readThemePreference());

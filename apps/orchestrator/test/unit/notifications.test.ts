@@ -11,12 +11,17 @@ import {
 
 type Operator = { user_id: string; name: string; role: string };
 
+/** The inbox's db functions with the rows a test hands back, which are partial. */
+type FakeInbox = {
+  [K in keyof NotificationsDatabase]: (...args: Parameters<NotificationsDatabase[K]>) => Promise<unknown>;
+};
+
 function hub(
   operators: Operator[],
-  extras: Partial<NotificationsDatabase> = {},
+  extras: Partial<FakeInbox> = {},
   viewers: string[] = operators.map((operator) => operator.user_id),
 ): Notifications {
-  const db: NotificationsDatabase = {
+  const db: FakeInbox = {
     async getAgent(agentId) {
       return agentId === "agent_scout" ? scout : null;
     },
@@ -40,7 +45,7 @@ function hub(
     },
     ...extras,
   };
-  return new Notifications(db);
+  return new Notifications(db as never);
 }
 
 const scout = {
@@ -88,7 +93,7 @@ test("a message notice carries the start of the message and the author agent's l
   assert.deepEqual(messageNotice(message, scout), notice);
   const long = messageNotice({ ...message, content: "x".repeat(NOTICE_PREVIEW_LENGTH + 50) }, scout);
   assert.equal(String(long.preview).length, NOTICE_PREVIEW_LENGTH);
-  const bare = messageNotice(message, { id: "agent_scout" });
+  const bare = messageNotice(message, { id: "agent_scout", name: "", avatar_shape: null, avatar_color: null });
   assert.deepEqual(bare.agent, { id: "agent_scout", name: "", avatar_shape: "teardrop", avatar_color: "#7c5cff" });
 });
 

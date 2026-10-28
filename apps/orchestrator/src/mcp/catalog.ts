@@ -1,21 +1,18 @@
 import { installedConnectors } from "../connectors/index.js";
-import {
-  manifestTools,
-  OVERRIDE_FIELDS,
-  overridesOf,
-  toolStartsOff,
-  type Overrides,
-  type ToolOverride,
-} from "../connectors/load.js";
-import { loadManifest, ManifestError, SLUG_PATTERN, SLUG_RE, type Manifest } from "../connectors/manifest.js";
+import { loadConnector, manifestTools, OVERRIDE_FIELDS, overridesOf, toolStartsOff, type LoadedConnector } from "../connectors/load.js";
+import { loadManifest, ManifestError, SLUG_RE } from "../connectors/manifest.js";
+import { getMcpServerBySlug } from "../connectors/servers.js";
 import { connectorFacts } from "../connectors/view.js";
-import { jsonObj } from "../db/json.js";
-import type { Repositories } from "../db/repositories.js";
+import { isPlainRecord, jsonObj } from "../db/json.js";
+import { SLUG_PATTERN, ToolInputSchema, type Manifest, type Overrides, type ToolOverride } from "../db/schema/index.js";
+import { decode } from "../lib/decode.js";
 import { newId } from "../lib/ids.js";
 import { generateToolPrefix, isReservedSlug, isReservedToolPrefix } from "../mcp/policy.js";
 import { namespacedName } from "../mcp/names.js";
 import { assertPublicHttpsUrl, EndpointError } from "../net/endpoints.js";
 import { oauthSetupState } from "../oauth/index.js";
+import { insertConnector, listConnectorSlugOwners, listTakenToolPrefixes, updateConnector } from "../db/connectors.js";
+import type { Queryable } from "../db/pg.js";
 
 export const AUTH_KINDS = ["none", "token", "oauth"] as const;
 export const OAUTH_STRATEGIES = ["none", "dynamic", "configured"] as const;
@@ -33,11 +30,11 @@ export class CatalogError extends Error {
 }
 
 /** Whether the admin edits the connector's own fields (a server made on this box) or overrides its manifest. */
-function editsFields(server: Record<string, unknown>): boolean {
+function editsFields(server: LoadedConnector): boolean {
   return server.source === "local";
 }
 
-function catalogToolItems(server: Record<string, unknown>): Array<Record<string, unknown>> {
+function catalogToolItems(server: LoadedConnector): Array<Record<string, unknown>> {
   const overrides = overridesOf(server.overrides).tools ?? {};
   const prefix = String(server.tool_prefix || server.slug);
   const items = manifestTools(server).map((tool) => ({
@@ -65,8 +62,8 @@ function catalogToolItems(server: Record<string, unknown>): Array<Record<string,
 }
 
 /** A connector as the Admin tab shows it: the effective copy, what overrides it, and its tools. */
-export function catalogServerItem(server: Record<string, unknown>): Record<string, unknown> {
-  const upstream = (server.upstream ?? {}) as Partial<Manifest>;
+export function catalogServerItem(server: LoadedConnector): Record<string, unknown> {
+  const upstream = server.upstream;
   const overrides = overridesOf(server.overrides);
   const config = jsonObj(server.config) as { url?: unknown } | null;
   return {
@@ -77,12 +74,12 @@ export function catalogServerItem(server: Record<string, unknown>): Record<strin
     oauth_strategy: server.oauth_strategy,
     oauth_setup_state: oauthSetupState(server),
     description: server.description || "",
-    limitations: server.limitations ?? null,
-    setup_hint: server.setup_hint ?? null,
+    limitations: server.limitations,
+    setup_hint: server.setup_hint,
     url: typeof config?.url === "string" ? config.url : null,
-    enabled: server.enabled !== false,
+    enabled: server.enabled,
     tool_prefix: server.tool_prefix,
-    version: server.version ?? "",
+    version: server.version,
     editable: editsFields(server) ? "fields" : "overrides",
     upstream: {
       display_name: upstream.display_name ?? "",
@@ -173,16 +170,17 @@ export function validateEndpointUrl(raw: unknown): string {
   }
 }
 
-export function validateInputSchema(raw: unknown): Record<string, unknown> {
+export function validateInputSchema(raw: unknown): ToolInputSchema {
   const obj = jsonObj(raw);
-  if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+  if (!isPlainRecord(obj)) {
     throw new CatalogError("input_schema must be an object");
   }
-  const encoded = JSON.stringify(obj);
+  const schema = decode(ToolInputSchema, obj, (problem) => new CatalogError(`input_schema ${problem}`));
+  const encoded = JSON.stringify(schema);
   if (Buffer.byteLength(encoded, "utf8") > SCHEMA_MAX_BYTES) {
     throw new CatalogError("input_schema exceeds size limit");
   }
-  return obj as Record<string, unknown>;
+  return schema;
 }
 
 /** A hand-made connector's manifest from the Admin form, checked like a folder's. */
@@ -226,7 +224,7 @@ function handManifest(fields: {
  * may each add a server under one slug. The refusal names the side that holds it.
  */
 export async function assertSlugFree(
-  repo: Repositories,
+  db: Queryable,
   slug: string,
   ownerOrgId: string | null,
   serverId?: string,
@@ -235,8 +233,8 @@ export async function assertSlugFree(
   if (installed && installed.id !== serverId) {
     throw new CatalogError(`slug ${slug} is the platform's ${installed.manifest.display_name} connector`, 409);
   }
-  const holders = [...new Set(await repo.listConnectorSlugOwners(slug))];
-  const existing = await repo.getMcpServerBySlug(slug, ownerOrgId);
+  const holders = [...new Set(await listConnectorSlugOwners(db, slug))];
+  const existing = await getMcpServerBySlug(db, slug, ownerOrgId);
   if (existing && existing.id === serverId) {
     return;
   }
@@ -253,13 +251,13 @@ export async function assertSlugFree(
 
 /** Installs a remote MCP server the instance admin adds by hand: a platform row with no folder, on at creation. */
 export async function createConnector(
-  repo: Repositories,
+  db: Queryable,
   body: Record<string, unknown>,
   now = new Date(),
   ownerOrgId: string | null = null,
-): Promise<Record<string, unknown>> {
+): Promise<LoadedConnector> {
   const slug = validateSlug(requireString(body.slug, "slug"));
-  await assertSlugFree(repo, slug, ownerOrgId);
+  await assertSlugFree(db, slug, ownerOrgId);
   const auth = validateAuth(String(body.auth ?? "token"));
   if (ownerOrgId !== null && auth === "oauth" && body.oauth_strategy === "configured") {
     throw new CatalogError("an organisation's server signs in with a dynamically registered client");
@@ -274,11 +272,12 @@ export async function createConnector(
     limitations: validateOptionalText(body.limitations, "limitations"),
     setupHint: validateOptionalText(body.setup_hint, "setup_hint"),
   });
-  const toolPrefix = generateToolPrefix(slug, await repo.listTakenToolPrefixes());
+  const toolPrefix = generateToolPrefix(slug, await listTakenToolPrefixes(db));
   if (isReservedToolPrefix(toolPrefix)) {
     throw new CatalogError("generated tool prefix is reserved");
   }
-  return repo.insertConnector(
+  const row = await insertConnector(
+    db,
     {
       id: newId("mcp"),
       slug,
@@ -292,6 +291,7 @@ export async function createConnector(
     },
     now,
   );
+  return loadConnector(row);
 }
 
 /**
@@ -300,11 +300,11 @@ export async function createConnector(
  * box did not write come from its manifest.
  */
 export async function patchConnector(
-  repo: Repositories,
-  server: Record<string, unknown>,
+  db: Queryable,
+  server: LoadedConnector,
   body: Record<string, unknown>,
   now = new Date(),
-): Promise<Record<string, unknown>> {
+): Promise<LoadedConnector> {
   const patch: { slug?: string; manifest?: Manifest; overrides?: Overrides; enabled?: boolean } = {};
   if (body.enabled !== undefined) {
     if (typeof body.enabled !== "boolean") {
@@ -313,11 +313,11 @@ export async function patchConnector(
     patch.enabled = body.enabled;
   }
   if (editsFields(server)) {
-    const current = server.manifest as Manifest;
+    const current = server.manifest;
     const slug = body.slug !== undefined ? validateSlug(String(body.slug)) : current.slug;
     const ownerOrgId = server.owner_org_id ? String(server.owner_org_id) : null;
     if (slug !== current.slug) {
-      await assertSlugFree(repo, slug, ownerOrgId, String(server.id));
+      await assertSlugFree(db, slug, ownerOrgId, server.id);
       patch.slug = slug;
     }
     const auth = body.auth !== undefined ? validateAuth(String(body.auth)) : current.auth.kind;
@@ -367,21 +367,21 @@ export async function patchConnector(
     }
     patch.overrides = overrides;
   }
-  const updated = await repo.updateConnector(String(server.id), patch, now);
+  const updated = await updateConnector(db, server.id, patch, now);
   if (!updated) {
     throw new CatalogError("mcp server not found", 404);
   }
-  return updated;
+  return loadConnector(updated);
 }
 
 /** Edits one tool by name: its description, its input schema, and whether it starts On. Null clears an edit. */
 export async function patchConnectorTool(
-  repo: Repositories,
-  server: Record<string, unknown>,
+  db: Queryable,
+  server: LoadedConnector,
   name: string,
   body: Record<string, unknown>,
   now = new Date(),
-): Promise<Record<string, unknown>> {
+): Promise<LoadedConnector> {
   const toolName = name.trim();
   if (!toolName || toolName.length > 128) {
     throw new CatalogError("tool name is invalid");
@@ -422,14 +422,14 @@ export async function patchConnectorTool(
   } else {
     delete overrides.tools;
   }
-  const updated = await repo.updateConnector(String(server.id), { overrides }, now);
+  const updated = await updateConnector(db, server.id, { overrides }, now);
   if (!updated) {
     throw new CatalogError("mcp server not found", 404);
   }
-  return updated;
+  return loadConnector(updated);
 }
 
 /** The connector in the folder format: its manifest with the admin's overrides applied. */
-export function exportManifest(server: Record<string, unknown>): Manifest {
-  return server.manifest as Manifest;
+export function exportManifest(server: LoadedConnector): Manifest {
+  return server.manifest;
 }

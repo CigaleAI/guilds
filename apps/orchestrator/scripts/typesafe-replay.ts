@@ -7,11 +7,13 @@
 //                                                   hypothetical user post
 //   add --json for the raw report, --min 0.7 to try another confidence gate.
 import { decodeMasterKey, loadToolConfig } from "../src/config/index.js";
-import { connect } from "../src/db/client.js";
-import { Repositories } from "../src/db/repositories.js";
+import { connect } from "../src/seed/connect.js";
 import { InstanceKeys } from "../src/instance/keys.js";
 import { createTypeSafeClient } from "../src/typesafe/client.js";
 import { formatRecipientReplay, replayRecipients } from "../src/typesafe/replay.js";
+import { getGuild } from "../src/db/guilds.js";
+import { listGroupMessages } from "../src/db/group-chat.js";
+import { listAgents } from "../src/db/agents.js";
 
 function parseArgs(argv: string[]): {
   guild: string;
@@ -81,15 +83,15 @@ try {
     process.stderr.write("the group routing key is not set; a platform admin sets it under Admin, Platform keys\n");
     process.exit(2);
   }
-  const repo = new Repositories(database.pool);
-  const guild = await repo.getGuild(args.guild);
+  const db = database.pool;
+  const guild = await getGuild(db, args.guild);
   if (guild === null) {
     process.stderr.write(`guild ${args.guild} not found\n`);
     process.exit(1);
   }
   const report = await replayRecipients({
-    rows: await repo.listGroupMessages(args.guild),
-    members: await repo.listAgents(args.guild),
+    rows: await listGroupMessages(db, args.guild),
+    members: await listAgents(db, args.guild),
     client,
     ...(args.seq !== undefined ? { seq: args.seq } : {}),
     ...(args.message !== undefined ? { message: args.message } : {}),

@@ -107,6 +107,8 @@ test("schedule_item and wake payload match fixtures", () => {
       id: "sch_1",
       agent_id: "a_1",
       cron: "0 9 * * 1",
+      wake_window: null,
+      window_fires: 0,
       description: "Monday inbox",
       instruction: "Check Gmail and write a note.",
       paused: false,
@@ -132,13 +134,15 @@ test("schedule_item falls back to first instruction line", () => {
     id: "sch_2",
     agent_id: "a_1",
     cron: "0 9 * * 1",
+    wake_window: null,
+    window_fires: 0,
     description: "",
     instruction: "First line\nRest of the note.",
     paused: false,
-    next_run_at: null,
+    next_run_at: "2026-09-14T09:00:00+00:00",
     last_run_at: null,
-    created_at: null,
-    updated_at: null,
+    created_at: "2026-09-13T12:00:00+00:00",
+    updated_at: "2026-09-13T12:00:00+00:00",
   });
   assert.equal(fallback.description, "First line");
 });

@@ -1,28 +1,37 @@
-import type { FastifyInstance } from "fastify";
-import { userActor } from "../db/config-changes.js";
-import { newId } from "../lib/ids.js";
-import { captureGuild } from "../recipes/capture.js";
+import { applyAccessEdits, operatorAccessCuts, parseAccessEdits } from "../recipes/access-edits.js";
 import {
-  applyAccessEdits,
-  applyReview,
-  hasForbiddenSecrets,
-  operatorAccessCuts,
-  parseAccessEdits,
-  parseRecipe,
-  resetReview,
-  unreviewedFields,
-  type RecipeDocument,
-} from "../recipes/schema.js";
+  addRecipeDraft,
+  deleteOrgRecipe,
+  markRecipeReady,
+  orgRecipe,
+  orgRecipes,
+  writeRecipe,
+} from "../recipes/library.js";
+import type { FastifyInstance } from "fastify";
+import { requireVisibleGuild } from "../guilds/access.js";
+import { userActor } from "../lib/change-actor.js";
+import { newId } from "../lib/ids.js";
+import { captureArtifacts, captureDatabase, captureGuild } from "../recipes/capture.js";
+import { parseRecipe } from "../recipes/parse.js";
+import { applyReview, parseReviewAction, unreviewedFields } from "../recipes/review.js";
+import { hasForbiddenSecrets, resetReview, type RecipeDocument } from "../recipes/schema.js";
 import { RecipeConflictError, RecipeError } from "../recipes/errors.js";
 import { blockingErrors, validateRecipe } from "../recipes/validate.js";
 import { PolicyError } from "../policy/index.js";
+import type { UserRow } from "../db/users.js";
 import type { AppDeps } from "./deps.js";
 import { pickEntry, RegistryError } from "../registry/index.js";
 import { latestEntries, registryHttp, registryOf } from "./admin-registry-routes.js";
 import { HttpError, recipeConflictHttp } from "./errors.js";
 import { currentOrg, currentUser } from "./identity.js";
-import { ownedGuild } from "./items.js";
+import { identityDatabase } from "../users/identity.js";
 import { bodyOf, param } from "./request.js";
+import type { OrgMembershipRow } from "../db/orgs.js";
+import { validationContext } from "../recipes/apply.js";
+import { applyGuild, confirmStep, skipStep, verifyStep, writeOverlays } from "../recipes/checklist.js";
+import { abortApply, activateApply, getApply, guildApplyState } from "../recipes/lifecycle.js";
+import { previewApply } from "../recipes/plan.js";
+import { createSkeleton } from "../recipes/skeleton.js";
 
 function mapError(error: unknown): never {
   if (error instanceof RecipeConflictError) {
@@ -35,13 +44,6 @@ function mapError(error: unknown): never {
     throw new HttpError(error.status, error.message);
   }
   throw error;
-}
-
-function recipesOf(deps: AppDeps) {
-  if (!deps.recipes) {
-    throw new HttpError(422, "recipes are not available");
-  }
-  return deps.recipes;
 }
 
 function applyOf(deps: AppDeps) {
@@ -65,55 +67,56 @@ function resetImported(recipe: RecipeDocument): RecipeDocument {
   return recipe;
 }
 
-async function ownedRecipe(deps: AppDeps, recipeId: string, org: Record<string, unknown>) {
-  const row = await recipesOf(deps).get(recipeId);
-  if (!row || String(row.org_id) !== String(org.id)) {
+async function ownedRecipe(deps: AppDeps, recipeId: string, org: OrgMembershipRow) {
+  const row = await orgRecipe(deps.db, org.id, recipeId);
+  if (!row) {
     throw new HttpError(404, "recipe not found");
   }
   return row;
 }
 
-async function ownedApply(deps: AppDeps, applyId: string, org: Record<string, unknown>) {
-  const row = await applyOf(deps).get(applyId);
-  if (!row || String(row.org_id) !== String(org.id)) {
+async function ownedApply(deps: AppDeps, applyId: string, org: OrgMembershipRow) {
+  const row = await getApply(applyOf(deps), applyId);
+  if (!row || String(row.org_id) !== org.id) {
     throw new HttpError(404, "apply not found");
   }
   return row;
 }
 
 export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
-  const { repo } = deps;
+  const { db } = deps;
+  const identityDb = identityDatabase(db);
 
   app.get("/api/recipes", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
-    return recipesOf(deps).list(String(org.id));
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
+    return orgRecipes(db, org.id);
   });
 
   /** Adds an imported document to the organisation's library as a private draft. */
-  async function importRecipe(org: Record<string, unknown>, user: Record<string, unknown>, document: unknown) {
+  async function importRecipe(org: OrgMembershipRow, user: UserRow, document: unknown) {
     const parsed = resetImported(parseRecipe(document));
     if (hasForbiddenSecrets(parsed)) {
       throw new RecipeError("recipe must not contain secrets or ciphertext");
     }
-    return recipesOf(deps).insert({
-      id: newId("rcp"),
-      org_id: org.id,
-      created_by_user_id: user.id,
-      name: parsed.meta.name,
-      description: parsed.meta.description,
-      visibility: "private",
-      status: "draft",
-      body: parsed,
-      body_version: 1,
-      source_kind: "file",
-      now: new Date(),
-    });
+    return addRecipeDraft(
+      db,
+      {
+        recipeId: newId("rcp"),
+        orgId: org.id,
+        createdByUserId: user.id,
+        name: parsed.meta.name,
+        description: parsed.meta.description,
+        body: parsed,
+        sourceKind: "file",
+      },
+      new Date(),
+    );
   }
 
   app.post("/api/recipes/import", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     try {
       const body = bodyOf(request);
       const row = await importRecipe(org, user, body.recipe ?? body);
@@ -125,7 +128,7 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/recipes/registry", async (request) => {
-    await currentUser(repo, request, deps);
+    await currentUser(identityDb, request, deps);
     const client = registryOf(deps);
     if (client === null) {
       return { offline: true, url: null, recipes: [] };
@@ -139,8 +142,8 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.post("/api/recipes/registry/import", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     const body = bodyOf(request);
     const client = registryOf(deps);
     if (client === null) {
@@ -165,18 +168,18 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.post("/api/guilds/:guild_id/recipes", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
-    await currentOrg(repo, request, user);
-    if (!deps.artifacts || !deps.recipes) {
+    const user = await currentUser(identityDb, request, deps);
+    await currentOrg(identityDb, request, user);
+    if (!deps.artifacts) {
       throw new HttpError(422, "recipes are not available");
     }
     try {
-      const guild = await ownedGuild(repo, param(request, "guild_id"), user);
+      const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
       const body = bodyOf(request);
       const parsed = await captureGuild(
         {
-          repo,
-          artifacts: deps.artifacts,
+          db: captureDatabase(db),
+          artifacts: captureArtifacts(deps.artifacts),
           scripts: deps.scripts,
           schedules: deps.schedules,
         },
@@ -186,21 +189,20 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
           includeNotes: Array.isArray(body.include_notes) ? (body.include_notes as string[]) : [],
         },
       );
-      const now = new Date();
-      const row = await deps.recipes.insert({
-        id: newId("rcp"),
-        org_id: guild.org_id,
-        created_by_user_id: user.id,
-        name: parsed.meta.name,
-        description: parsed.meta.description,
-        visibility: "private",
-        status: "draft",
-        body: parsed,
-        body_version: 1,
-        source_kind: "guild",
-        source_guild_id: guild.id,
-        now,
-      });
+      const row = await addRecipeDraft(
+        db,
+        {
+          recipeId: newId("rcp"),
+          orgId: String(guild.org_id),
+          createdByUserId: user.id,
+          name: parsed.meta.name,
+          description: parsed.meta.description,
+          body: parsed,
+          sourceKind: "guild",
+          sourceGuildId: String(guild.id),
+        },
+        new Date(),
+      );
       reply.code(201);
       return row;
     } catch (error) {
@@ -209,23 +211,23 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/recipes/:recipe_id", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     return ownedRecipe(deps, param(request, "recipe_id"), org);
   });
 
   app.put("/api/recipes/:recipe_id", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     const body = bodyOf(request);
     try {
       const row = await ownedRecipe(deps, param(request, "recipe_id"), org);
-      const parsed = parseRecipe(body.recipe ?? row.body);
-      return await recipesOf(deps).writeBody(
-        String(row.id),
-        Number(body.expected_body_version ?? row.body_version),
-        parsed,
+      const parsed = body.recipe === undefined || body.recipe === null ? row.body : parseRecipe(body.recipe);
+      return await writeRecipe(
+        db,
+        { id: row.id, body_version: Number(body.expected_body_version ?? row.body_version) },
         {
+          body: parsed,
           name: typeof body.name === "string" ? body.name : parsed.meta.name,
           description: typeof body.description === "string" ? body.description : parsed.meta.description,
         },
@@ -237,14 +239,14 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.post("/api/recipes/:recipe_id/access", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     const body = bodyOf(request);
     try {
       const row = await ownedRecipe(deps, param(request, "recipe_id"), org);
-      const recipe = parseRecipe(row.body);
+      const recipe = row.body;
       const cuts = applyAccessEdits(recipe, parseAccessEdits(body));
-      const written = await recipesOf(deps).writeBody(String(row.id), Number(row.body_version), recipe, {}, new Date());
+      const written = await writeRecipe(db, row, { body: recipe }, new Date());
       return { ...written, access_cuts: cuts };
     } catch (error) {
       mapError(error);
@@ -252,34 +254,35 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.post("/api/recipes/:recipe_id/review", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     const body = bodyOf(request);
     try {
       const row = await ownedRecipe(deps, param(request, "recipe_id"), org);
-      const recipe = parseRecipe(row.body);
-      applyReview(recipe, String(body.path ?? ""), body.action === "edit" ? "edit" : "confirm", typeof body.value === "string" ? body.value : undefined);
-      return await recipesOf(deps).writeBody(String(row.id), Number(row.body_version), recipe, {}, new Date());
+      const recipe = row.body;
+      applyReview(recipe, String(body.path ?? ""), parseReviewAction(body));
+      return await writeRecipe(db, row, { body: recipe }, new Date());
     } catch (error) {
       mapError(error);
     }
   });
 
   app.delete("/api/recipes/:recipe_id", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
-    const row = await ownedRecipe(deps, param(request, "recipe_id"), org);
-    await recipesOf(deps).delete(String(row.id));
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
+    if (!(await deleteOrgRecipe(db, org.id, param(request, "recipe_id")))) {
+      throw new HttpError(404, "recipe not found");
+    }
     return { ok: true };
   });
 
   app.post("/api/recipes/:recipe_id/validate", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     try {
       const row = await ownedRecipe(deps, param(request, "recipe_id"), org);
-      const recipe = parseRecipe(row.body);
-      const ctx = await applyOf(deps).validationContext(String(org.id), recipe);
+      const recipe = row.body;
+      const ctx = await validationContext(applyOf(deps), org.id, recipe);
       ctx.groupLimit = recipe.guild.group_agent_message_limit;
       const findings = validateRecipe(recipe, ctx);
       return {
@@ -296,31 +299,31 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.post("/api/recipes/:recipe_id/publish", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     try {
       const row = await ownedRecipe(deps, param(request, "recipe_id"), org);
-      const recipe = parseRecipe(row.body);
-      const ctx = await applyOf(deps).validationContext(String(org.id));
+      const recipe = row.body;
+      const ctx = await validationContext(applyOf(deps), org.id);
       ctx.groupLimit = recipe.guild.group_agent_message_limit;
       const errors = blockingErrors(validateRecipe(recipe, ctx));
       if (errors.length) {
         throw new RecipeError(errors.map((item) => item.message).join("; "));
       }
-      return (await recipesOf(deps).setStatus(String(row.id), "ready", new Date())) ?? row;
+      return await markRecipeReady(db, row, new Date());
     } catch (error) {
       mapError(error);
     }
   });
 
   app.get("/api/recipes/:recipe_id/export", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     const row = await ownedRecipe(deps, param(request, "recipe_id"), org);
     if (row.status === "draft") {
       throw new HttpError(409, "export refused while draft");
     }
-    const recipe = parseRecipe(row.body);
+    const recipe = row.body;
     if (hasForbiddenSecrets(recipe)) {
       throw new HttpError(422, "recipe must not contain secrets");
     }
@@ -329,22 +332,22 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.post("/api/recipes/:recipe_id/preview", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     try {
       const row = await ownedRecipe(deps, param(request, "recipe_id"), org);
-      return await applyOf(deps).preview(org, row, bodyOf(request), user);
+      return await previewApply(applyOf(deps), { org, recipeRow: row, user }, bodyOf(request));
     } catch (error) {
       mapError(error);
     }
   });
 
   app.post("/api/recipes/:recipe_id/apply", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     try {
       const row = await ownedRecipe(deps, param(request, "recipe_id"), org);
-      const created = await applyOf(deps).createSkeleton(org, user, row, bodyOf(request));
+      const created = await createSkeleton(applyOf(deps), { org, user, recipeRow: row }, bodyOf(request));
       reply.code(201);
       return created;
     } catch (error) {
@@ -353,27 +356,27 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/applies/:apply_id", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     return ownedApply(deps, param(request, "apply_id"), org);
   });
 
   app.get("/api/guilds/:guild_id/apply", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const guild = await ownedGuild(repo, param(request, "guild_id"), user);
-    return applyOf(deps).guildApplyState(String(guild.id));
+    const user = await currentUser(identityDb, request, deps);
+    const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
+    return guildApplyState(applyOf(deps), guild.id);
   });
 
   app.post("/api/applies/:apply_id/overlays", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     try {
       const row = await ownedApply(deps, param(request, "apply_id"), org);
       const body = bodyOf(request);
-      await applyOf(deps).writeOverlays(
-        row,
-        String(body.server ?? ""),
-        String(body.connection_id ?? ""),
+      await writeOverlays(
+        applyOf(deps),
+        { ...row, guild_id: applyGuild(row), names: row.plan.names },
+        { server: String(body.server ?? ""), connectionId: String(body.connection_id ?? "") },
         userActor(user),
       );
       return { ok: true };
@@ -383,48 +386,48 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.post("/api/applies/:apply_id/steps/:step_id/verify", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     try {
       const row = await ownedApply(deps, param(request, "apply_id"), org);
-      return await applyOf(deps).verifyStep(row, param(request, "step_id"), userActor(user));
+      return await verifyStep(applyOf(deps), row, param(request, "step_id"), userActor(user));
     } catch (error) {
       mapError(error);
     }
   });
 
   app.post("/api/applies/:apply_id/steps/:step_id/confirm", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     try {
       const row = await ownedApply(deps, param(request, "apply_id"), org);
       const body = bodyOf(request);
-      return await applyOf(deps).confirmStep(row, param(request, "step_id"), {
-        later: body.later === true,
-        skip: body.skip === true,
-      });
+      if (body.skip === true) {
+        return await skipStep(applyOf(deps), row, param(request, "step_id"));
+      }
+      return await confirmStep(applyOf(deps), row, param(request, "step_id"), { later: body.later === true });
     } catch (error) {
       mapError(error);
     }
   });
 
   app.post("/api/applies/:apply_id/activate", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     try {
       const row = await ownedApply(deps, param(request, "apply_id"), org);
-      return await applyOf(deps).activate(row, userActor(user));
+      return await activateApply(applyOf(deps), row, userActor(user));
     } catch (error) {
       mapError(error);
     }
   });
 
   app.post("/api/applies/:apply_id/abort", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     try {
       const row = await ownedApply(deps, param(request, "apply_id"), org);
-      return await applyOf(deps).abort(row);
+      return await abortApply(applyOf(deps), row);
     } catch (error) {
       mapError(error);
     }

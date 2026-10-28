@@ -11,6 +11,20 @@ import {
   type RecipientDecision,
 } from "../typesafe/index.js";
 import { groupChatHistory, storedTags } from "./history.js";
+import { advanceGroupCursor,
+  appendGroupChatError,
+  clearGroupMessages,
+  getGroupChatState,
+  listGroupMessages,
+  listPendingGroupAgents,
+  postAgentGroupMessage,
+  postUserGroupMessage,
+  updateGroupAgentMessageLimit, type GroupChatStateRow, type GroupMessageRow, type PendingGroupAgentRow } from "../db/group-chat.js";
+import { getGuild, listGuilds } from "../db/guilds.js";
+import { getAgent, listAgents } from "../db/agents.js";
+import { getRun, type RunMessage } from "../db/runs.js";
+import type { RecipientRouting, UserMessage } from "../db/schema/index.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
 
 export {
   CONTEXT_HISTORY_LIMIT,
@@ -235,10 +249,10 @@ function viewerWasTagged(
 
 export function groupChatUserMessage(args: {
   members: Array<Record<string, unknown>>;
-  rows: Array<Record<string, unknown>>;
+  rows: GroupMessageRow[];
   viewerName?: string;
   deliveredThrough?: number;
-}): [Record<string, unknown>, Record<string, unknown>] {
+}): RunMessage {
   const viewerName = args.viewerName ?? "";
   const deliveredThrough = args.deliveredThrough ?? 0;
   const history = groupChatHistory(args.rows);
@@ -247,71 +261,50 @@ export function groupChatUserMessage(args: {
     latestMessage: latest,
     youWereTagged: viewerWasTagged(args.rows, viewerName, deliveredThrough),
   };
-  const payload = {
+  const payload: UserMessage = {
     role: "user",
     content: `Group Chat info: ${JSON.stringify(info, null, 2)}`,
   };
-  const metadata: Record<string, unknown> = { source: "group_chat" };
-  if (args.rows.length) {
-    const last = args.rows[args.rows.length - 1] as Record<string, unknown>;
-    metadata.group_message_id = last.id;
-    metadata.group_seq = last.seq;
-    metadata.author_type = last.author_type;
-    metadata.author_name = last.author_name;
-    metadata.tagged = latest ? latest.tagged : [];
-    metadata.you_were_tagged = info.youWereTagged;
-    metadata.recipients = [
-      ...recipientNamesAfter(args.rows, args.members, deliveredThrough),
-    ].sort();
+  const last = args.rows.at(-1);
+  if (last === undefined) {
+    return [payload, { source: "group_chat" }];
   }
-  return [payload, metadata];
+  return [
+    payload,
+    {
+      source: "group_chat",
+      group_message_id: last.id,
+      group_seq: last.seq,
+      author_type: last.author_type,
+      author_name: last.author_name,
+      tagged: latest ? latest.tagged : [],
+      you_were_tagged: info.youWereTagged,
+      recipients: [...recipientNamesAfter(args.rows, args.members, deliveredThrough)].sort(),
+    },
+  ];
 }
 
-export type GroupChatDatabase = {
-  getGroupChatState(guildId: string): Promise<Record<string, unknown> | null>;
-  updateGroupAgentMessageLimit(
-    guildId: string,
-    limit: number,
-    now: Date,
-  ): Promise<Record<string, unknown> | null>;
-  clearGroupMessages(guildId: string, now: Date): Promise<Record<string, unknown> | null>;
-  getGuild(guildId: string): Promise<Record<string, unknown> | null>;
-  listGroupMessages(
-    guildId: string,
-    options?: { throughSeq?: number | null },
-  ): Promise<Array<Record<string, unknown>>>;
-  listAgents(guildId: string): Promise<Array<Record<string, unknown>>>;
-  postUserGroupMessage(
-    guildId: string,
-    content: string,
-    taggedNames: string[],
-    taggedAgentIds: string[],
-    taggedUserIds: string[],
-    now: Date,
-    options?: { authorName?: string; authorUserId?: string | null },
-  ): Promise<Record<string, unknown> | null>;
-  postAgentGroupMessage(
-    guildId: string,
-    agentId: string,
-    authorName: string,
-    sourceRunId: string,
-    content: string,
-    taggedNames: string[],
-    taggedAgentIds: string[],
-    taggedUserIds: string[],
-    now: Date,
-  ): Promise<Record<string, unknown> | null>;
-  getRun(runId: string): Promise<Record<string, unknown> | null>;
-  getAgent(agentId: string): Promise<Record<string, unknown> | null>;
-  listPendingGroupAgents(guildId: string, chatSeq: number): Promise<Array<Record<string, unknown>>>;
-  advanceGroupCursor(agentId: string, seq: number): Promise<void>;
-  appendGroupChatError(
-    guildId: string,
-    entry: Record<string, unknown>,
-    now: Date,
-  ): Promise<unknown[]>;
-  listGuilds?(orgId?: string | null): Promise<Array<Record<string, unknown>>>;
-};
+/** The db/ functions a guild's group chat is read and written through, on `db`. */
+export function groupChatDatabase(db: Queryable) {
+  return {
+    getGroupChatState: bindQuery(db, getGroupChatState),
+    updateGroupAgentMessageLimit: bindQuery(db, updateGroupAgentMessageLimit),
+    clearGroupMessages: bindQuery(db, clearGroupMessages),
+    getGuild: bindQuery(db, getGuild),
+    listGroupMessages: bindQuery(db, listGroupMessages),
+    listAgents: bindQuery(db, listAgents),
+    postUserGroupMessage: bindQuery(db, postUserGroupMessage),
+    postAgentGroupMessage: bindQuery(db, postAgentGroupMessage),
+    getRun: bindQuery(db, getRun),
+    getAgent: bindQuery(db, getAgent),
+    listPendingGroupAgents: bindQuery(db, listPendingGroupAgents),
+    advanceGroupCursor: bindQuery(db, advanceGroupCursor),
+    appendGroupChatError: bindQuery(db, appendGroupChatError),
+    listGuilds: bindQuery(db, listGuilds),
+  };
+}
+
+export type GroupChatDatabase = ReturnType<typeof groupChatDatabase>;
 
 export type GuildEventObserver = (
   guildId: string,
@@ -324,16 +317,16 @@ export type GroupDelivery = {
   agentId: string;
   throughSeq: number;
   deliveredThrough: number;
-  recipients: Record<string, unknown> | null;
+  recipients: RecipientRouting | null;
 };
 
 export type GroupRunner = {
-  agent_is_busy(agentId: string): boolean;
-  wait_lock_release(seen: number): Promise<void>;
-  deliver_group_run(delivery: GroupDelivery): Promise<void>;
+  isAgentBusy(agentId: string): boolean;
+  waitForLockRelease(seen: number): Promise<void>;
+  deliverGroupRun(delivery: GroupDelivery): Promise<void>;
   /** Stops the run the agent is generating, if any. */
-  cancel_agent_run(agentId: string): Promise<void>;
-  lock_generation: number;
+  cancelAgentRuns(agentId: string): Promise<void>;
+  lockGeneration: number;
 };
 
 /** A group run under way: its agent and the snapshot it was given. */
@@ -351,25 +344,27 @@ type DispatchHandle = {
   done(): boolean;
 };
 
+/** A pending agent as the dispatcher reads it: who it is, and how far it has seen the chat. */
+type PendingAgent = Pick<PendingGroupAgentRow, "id" | "name" | "group_chat_delivered_through">;
+
 /**
  * Pending agents as the dispatcher sees them: an agent in a group run has seen the chat through
  * that run's snapshot, so it is pending only for what came after.
  */
-export function withActiveCursors(
-  pending: Array<Record<string, unknown>>,
+export function withActiveCursors<T extends PendingAgent>(
+  pending: T[],
   active: ReadonlyMap<string, ActiveDelivery>,
   snapshot: number,
-): Array<Record<string, unknown>> {
+): T[] {
   return pending
     .map((agent) => {
-      const delivery = active.get(String(agent.id));
-      const cursor = Number(agent.group_chat_delivered_through);
+      const delivery = active.get(agent.id);
       if (delivery === undefined) {
         return agent;
       }
-      return { ...agent, group_chat_delivered_through: Math.max(cursor, delivery.throughSeq) };
+      return { ...agent, group_chat_delivered_through: Math.max(agent.group_chat_delivered_through, delivery.throughSeq) };
     })
-    .filter((agent) => Number(agent.group_chat_delivered_through) < snapshot);
+    .filter((agent) => agent.group_chat_delivered_through < snapshot);
 }
 
 /**
@@ -377,16 +372,16 @@ export function withActiveCursors(
  * other group runs. An agent picked without a tag runs alone: it starts only when no other group
  * run is under way or starting.
  */
-export function deliveriesToStart(args: {
-  actionable: Array<Record<string, unknown>>;
+export function deliveriesToStart<T extends Pick<PendingAgent, "id" | "name">>(args: {
+  actionable: T[];
   tagged: ReadonlySet<string>;
   active: ReadonlyMap<string, ActiveDelivery>;
   isBusy: (agentId: string) => boolean;
-}): { start: Array<Record<string, unknown>>; waitsForRelease: boolean } {
-  const waiting = args.actionable.filter((agent) => !args.active.has(String(agent.id)));
-  const idle = waiting.filter((agent) => !args.isBusy(String(agent.id)));
-  const start = idle.filter((agent) => args.tagged.has(String(agent.name)));
-  const untagged = idle.find((agent) => !args.tagged.has(String(agent.name)));
+}): { start: T[]; waitsForRelease: boolean } {
+  const waiting = args.actionable.filter((agent) => !args.active.has(agent.id));
+  const idle = waiting.filter((agent) => !args.isBusy(agent.id));
+  const start = idle.filter((agent) => args.tagged.has(agent.name));
+  const untagged = idle.find((agent) => !args.tagged.has(agent.name));
   if (untagged && args.active.size + start.length === 0) {
     start.push(untagged);
   }
@@ -587,13 +582,16 @@ export class GroupChat {
     const text = requireContent(content);
     const tags = await this._tags(guildId, text);
     const row = await this.db.postUserGroupMessage(
-      guildId,
-      text,
-      tags.names,
-      tags.agentIds,
-      tags.userIds,
+      {
+        guildId,
+        content: text,
+        taggedNames: tags.names,
+        taggedAgentIds: tags.agentIds,
+        taggedUserIds: tags.userIds,
+        authorName: options.author_name ?? "user",
+        authorUserId: options.author_user_id ?? null,
+      },
       new Date(),
-      { authorName: options.author_name ?? "user", authorUserId: options.author_user_id ?? null },
     );
     if (row === null) {
       throw new GroupChatError(404, "guild not found");
@@ -637,17 +635,19 @@ export class GroupChat {
     if (agent === null || agent.guild_id !== guildId) {
       throw new Error("agent is not a member of this guild");
     }
-    let row: Record<string, unknown> | null;
+    let row: GroupMessageRow | null;
     try {
       row = await this.db.postAgentGroupMessage(
-        guildId,
-        agentId,
-        agentName,
-        runId,
-        content,
-        tags.names,
-        tags.agentIds,
-        tags.userIds,
+        {
+          guildId,
+          agentId,
+          authorName: agentName,
+          sourceRunId: runId,
+          content,
+          taggedNames: tags.names,
+          taggedAgentIds: tags.agentIds,
+          taggedUserIds: tags.userIds,
+        },
         new Date(),
       );
     } catch (error) {
@@ -683,7 +683,7 @@ export class GroupChat {
       return;
     }
     const targets = interruptTargets([...this._active_for(guildId).keys()], taggedAgentIds);
-    await Promise.all(targets.map((agentId) => runner.cancel_agent_run(agentId)));
+    await Promise.all(targets.map((agentId) => runner.cancelAgentRuns(agentId)));
   }
 
   async _tags(guildId: string, text: string): Promise<GroupTags> {
@@ -744,7 +744,7 @@ export class GroupChat {
 
   async _recipients(
     guildId: string,
-    pending: Array<Record<string, unknown>>,
+    pending: PendingAgent[],
     snapshot: number,
   ): Promise<RecipientPick> {
     if (
@@ -766,8 +766,8 @@ export class GroupChat {
     const tagged = new Set<string>();
     const fanout = new Set<string>();
     for (const agent of pending) {
-      const name = String(agent.name);
-      const deliveredThrough = Number(agent.group_chat_delivered_through);
+      const name = agent.name;
+      const deliveredThrough = agent.group_chat_delivered_through;
       if (taggedRecipientNamesAfter(rows, members, deliveredThrough).has(name)) {
         tagged.add(name);
       }
@@ -837,7 +837,7 @@ export class GroupChat {
   async _dispatch_step(guildId: string, runner: GroupRunner): Promise<boolean> {
     const kick = this._kick(guildId);
     kick.clear();
-    const seen = runner.lock_generation;
+    const seen = runner.lockGeneration;
     const active = this._active_for(guildId);
     const snapshot = Number((await this.state(guildId)).chat_seq);
     const pending = withActiveCursors(
@@ -854,7 +854,7 @@ export class GroupChat {
     if (!active.size && !plan.waitsForRelease) {
       return false;
     }
-    const release = plan.waitsForRelease ? [runner.wait_lock_release(seen)] : [];
+    const release = plan.waitsForRelease ? [runner.waitForLockRelease(seen)] : [];
     await Promise.race([kick.wait(), ...release]);
     return true;
   }
@@ -862,39 +862,39 @@ export class GroupChat {
   /** Moves agents no unseen message picks past the snapshot, and says which picked ones start. */
   async _plan(
     guildId: string,
-    pending: Array<Record<string, unknown>>,
+    pending: PendingAgent[],
     snapshot: number,
     runner: GroupRunner,
   ): Promise<{
-    start: Array<Record<string, unknown>>;
+    start: PendingAgent[];
     waitsForRelease: boolean;
     pick: RecipientPick;
   }> {
     const pick = await this._recipients(guildId, pending, snapshot);
-    const actionable = pending.filter((agent) => pick.decision.names.has(String(agent.name)));
+    const actionable = pending.filter((agent) => pick.decision.names.has(agent.name));
     for (const agent of pending) {
-      if (!pick.decision.names.has(String(agent.name))) {
-        await this.db.advanceGroupCursor(String(agent.id), snapshot);
+      if (!pick.decision.names.has(agent.name)) {
+        await this.db.advanceGroupCursor(agent.id, snapshot);
       }
     }
     const plan = deliveriesToStart({
       actionable,
       tagged: pick.tagged,
       active: this._active_for(guildId),
-      isBusy: (agentId) => runner.agent_is_busy(agentId),
+      isBusy: (agentId) => runner.isAgentBusy(agentId),
     });
     return { ...plan, pick };
   }
 
   _start_delivery(
     guildId: string,
-    agent: Record<string, unknown>,
+    agent: PendingAgent,
     through: { snapshot: number; pick: RecipientPick | null },
   ): void {
     const active = this._active_for(guildId);
     const delivery: ActiveDelivery = {
-      id: String(agent.id),
-      name: String(agent.name),
+      id: agent.id,
+      name: agent.name,
       throughSeq: through.snapshot,
     };
     active.set(delivery.id, delivery);
@@ -902,7 +902,7 @@ export class GroupChat {
     delivery.task = this._deliver(guildId, {
       agentId: delivery.id,
       throughSeq: through.snapshot,
-      deliveredThrough: Number(agent.group_chat_delivered_through),
+      deliveredThrough: agent.group_chat_delivered_through,
       recipients,
     }).finally(() => {
       active.delete(delivery.id);
@@ -921,9 +921,9 @@ export class GroupChat {
       agent_name: active?.name ?? null,
       through_seq: delivery.throughSeq,
     });
-    const seen = runner.lock_generation;
+    const seen = runner.lockGeneration;
     try {
-      await runner.deliver_group_run(delivery);
+      await runner.deliverGroupRun(delivery);
       await this.db.advanceGroupCursor(delivery.agentId, delivery.throughSeq);
       await this.publish(guildId, "group.delivery.finished", {
         agent_id: delivery.agentId,
@@ -942,7 +942,7 @@ export class GroupChat {
   ): Promise<void> {
     const { error, seen } = failure;
     if (error instanceof DeliveryBusyError) {
-      await this._runner?.wait_lock_release(seen);
+      await this._runner?.waitForLockRelease(seen);
       return;
     }
     if (!(error instanceof DeliveryCreateError)) {
@@ -980,22 +980,21 @@ export class GroupChat {
     await this.publish(guildId, "group.delivery.failed", entry);
   }
 
-  _state_view(row: Record<string, unknown>): Record<string, unknown> {
-    const errors = jsonObj(row.errors);
-    const count = Number(row.agent_message_count);
-    const limit = Number(row.agent_message_limit);
-    const guildId = String(row.guild_id);
+  _state_view(row: GroupChatStateRow): Record<string, unknown> {
+    const count = row.agent_message_count;
+    const limit = row.agent_message_limit;
+    const guildId = row.guild_id;
     const active = [...(this._active.get(guildId)?.values() ?? [])];
     return {
       guild_id: guildId,
-      chat_seq: Number(row.chat_seq),
+      chat_seq: row.chat_seq,
       agent_message_count: count,
       agent_message_limit: limit,
       dispatching: this.is_dispatching(guildId),
-      pending_agent_count: Number(row.pending_agent_count),
+      pending_agent_count: row.pending_agent_count,
       active_agents: active.map((delivery) => ({ id: delivery.id, name: delivery.name })),
       limit_reached: count >= limit,
-      errors: Array.isArray(errors) ? errors : [],
+      errors: row.errors,
       last_recipient_decision:
         this._recipientCache && this._recipientCache.guildId === guildId
           ? {

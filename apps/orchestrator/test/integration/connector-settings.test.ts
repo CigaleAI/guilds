@@ -2,15 +2,14 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { installConnectors, installedConnectors } from "../../src/connectors/index.js";
-import { projectConnectors } from "../../src/db/seed/system.js";
+import { projectConnectors } from "../../src/seed/system.js";
 import { QUOTES } from "../helpers/quotes.js";
 import { ConnectorError } from "../../src/connectors/types.js";
-import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
+import { connect } from "../../src/seed/connect.js";
 import { McpPool } from "../../src/mcp/index.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
@@ -29,7 +28,7 @@ test("a login waits for its settings, looks them up, and connects once they are 
   await projectConnectors(database.pool);
   const notes = new NotesStore(tempDir("guilds-settings-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
+  const db = database.pool;
   const mcp = new McpPool();
   const validated: unknown[] = [];
   mcp.connectors = installedConnectors().withAdapter("quotes", {
@@ -48,10 +47,10 @@ test("a login waits for its settings, looks them up, and connects once they are 
     },
   });
   const app = await buildApp(database, {
-    repo,
+    db,
     notes,
-    scripts: new Scripts(repo),
-    schedules: new Schedules(repo),
+    scripts: new Scripts(scriptDatabase(db)),
+    schedules: new Schedules(scheduleDatabase(db)),
     mcp,
     masterKey: Buffer.from(HEX_MASTER_KEY, "hex"),
   });

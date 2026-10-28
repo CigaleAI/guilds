@@ -1,7 +1,10 @@
 import path from "node:path";
 import { NAME_RE } from "../lib/names.js";
 import { numberOrNull } from "../lib/numbers.js";
-import { isHarness, type Harness } from "../coding/harnesses.js";
+import { maxWorkspaceMibOf } from "../agents/validation.js";
+import { isHarness } from "../coding/harnesses.js";
+import type { MachineWithAgentsQueryRow } from "../db/machines.js";
+import { DEFAULT_MACHINE_BOX, DEFAULT_MACHINE_MAX_WORKSPACE_MIB, type Harness } from "../db/schema/index.js";
 
 /**
  * An organisation's machines (docs/concepts/machines.md): one sandbox container
@@ -28,11 +31,6 @@ export const CUSTOM_CPU_STEP = 0.25;
 export const CUSTOM_MIN_MEMORY_MIB = 512;
 export const CUSTOM_MAX_MEMORY_MIB = 8192;
 
-/** The machine every new organisation starts with. */
-export const DEFAULT_MACHINE_NAME = "default";
-export const DEFAULT_MACHINE_BOX: MachineBox = "standard";
-/** A machine's disk cap in MiB, over every agent home on it. */
-export const DEFAULT_MACHINE_MAX_WORKSPACE_MIB = 10240;
 /** The most agents one machine holds, whatever the organisation's policy says: slots 0 to 31. */
 export const MAX_AGENTS_PER_MACHINE = 32;
 
@@ -354,6 +352,18 @@ export function machineFromRow(row: Record<string, unknown>): MachineRow {
     max_workspace_mib: Number(row.max_workspace_mib ?? DEFAULT_MACHINE_MAX_WORKSPACE_MIB),
     workspace_mib: numberOrNull(row.workspace_mib),
     harnesses: Array.isArray(row.harnesses) ? row.harnesses.filter(isHarness) : null,
+  };
+}
+
+/** A machine row with the agents on it, each with its own disk cap from its config. */
+export function machineWithAgentsFromRow(row: MachineWithAgentsQueryRow): MachineWithAgents {
+  const agents = row.agents ?? [];
+  return {
+    ...machineFromRow(row),
+    agents: agents.map((agent) => ({
+      ...agent,
+      max_workspace_mib: maxWorkspaceMibOf(agent),
+    })),
   };
 }
 

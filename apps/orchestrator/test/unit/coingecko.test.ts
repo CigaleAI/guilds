@@ -22,6 +22,8 @@ import { CONNECTORS } from "../../src/connectors/index.js";
 import { ConnectorError } from "../../src/connectors/types.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { mockFetch } from "../helpers/http.js";
+import { serverRow } from "../helpers/servers.js";
+import { connectionRow } from "../helpers/servers.js";
 
 const KEY = decodeMasterKey(HEX_MASTER_KEY);
 const TOOLS = CONNECTORS.bySlug("coingecko")!.manifest.tools!;
@@ -37,7 +39,7 @@ class MemoryDb {
 }
 
 test("formatSearch drops images and exchanges", () => {
-  const stored = formatSearch({
+  const payload = {
     coins: [{
       id: "ethereum",
       name: "Ethereum",
@@ -49,7 +51,8 @@ test("formatSearch drops images and exchanges", () => {
     exchanges: [{ id: "uniswap_v3", name: "Uniswap V3" }],
     nfts: [{ id: "ens", name: "ENS", symbol: "ENS", thumb: "x" }],
     categories: [{ id: "layer-1", name: "Layer 1" }],
-  });
+  };
+  const stored = formatSearch(payload);
   assert.equal(stored, "coins\nethereum  ETH  Ethereum  #2\n\nnfts\nens  ENS  ENS\n\ncategories\nlayer-1  Layer 1");
   assert.ok(!stored.includes("example.com"));
   assert.ok(!stored.includes("uniswap"));
@@ -70,7 +73,7 @@ test("formatSearch caps rows", () => {
 });
 
 test("formatCoin keeps platforms and lean market", () => {
-  const stored = formatCoin({
+  const payload = {
     id: "uniswap",
     symbol: "uni",
     name: "Uniswap",
@@ -89,7 +92,8 @@ test("formatCoin keeps platforms and lean market", () => {
       total_supply: 894_182_420,
       price_change_percentage_24h: 1.2,
     },
-  });
+  };
+  const stored = formatCoin(payload);
   assert.ok(stored.includes("uniswap  uni  Uniswap  #28"));
   assert.ok(stored.includes("p=6.12"));
   assert.ok(stored.includes("ethereum=0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3"));
@@ -156,27 +160,25 @@ test("formatChart downsamples and keeps price only", () => {
 });
 
 test("formatTrending drops media", () => {
-  assert.equal(
-    formatTrending({
-      coins: [{
-        item: {
-          id: "bonk",
-          name: "Bonk",
-          symbol: "BONK",
-          market_cap_rank: 103,
-          thumb: "https://example.com/bonk.png",
-          data: {
-            price: 0.00000594,
-            price_change_percentage_24h: { usd: -3.27 },
-            sparkline: "https://example.com/spark.svg",
-          },
+  const payload = {
+    coins: [{
+      item: {
+        id: "bonk",
+        name: "Bonk",
+        symbol: "BONK",
+        market_cap_rank: 103,
+        thumb: "https://example.com/bonk.png",
+        data: {
+          price: 0.00000594,
+          price_change_percentage_24h: { usd: -3.27 },
+          sparkline: "https://example.com/spark.svg",
         },
-      }],
-      nfts: [],
-      categories: [],
-    }),
-    "coins\nbonk  BONK  Bonk  #103  5.94e-06  -3.27%",
-  );
+      },
+    }],
+    nfts: [],
+    categories: [],
+  };
+  assert.equal(formatTrending(payload), "coins\nbonk  BONK  Bonk  #103  5.94e-06  -3.27%");
 });
 
 test("search uses the pro key header", async () => {
@@ -224,10 +226,10 @@ test("sync CoinGecko writes the curated catalog", async () => {
   });
   const [ciphertext, nonce] = encryptPayload({ token: "cg-test" }, KEY);
   const db = new MemoryDb();
-  const connection = { id: "conn_cg", status: "connected", ciphertext, nonce };
-  const server = { id: "mcp_coingecko", slug: "coingecko", auth: "token" };
-  const first = await pool.syncTools(db, connection, server, { force: true });
-  const second = await pool.syncTools(db, connection, server);
+  const connection = connectionRow({ id: "conn_cg", status: "connected", ciphertext, nonce });
+  const server = serverRow("coingecko", { id: "mcp_coingecko", auth: "token" });
+  const first = await pool.syncTools(db as never, connection, server, { force: true });
+  const second = await pool.syncTools(db as never, connection, server);
   assert.equal(pinged, 1);
   assert.deepEqual(first.map((tool) => tool.namespaced_name), TOOLS.map((spec) => `coingecko_${spec.name}`));
   assert.deepEqual(first, second);
@@ -244,7 +246,7 @@ test("sync CoinGecko rejects a bad key", async () => {
   });
   const [ciphertext, nonce] = encryptPayload({ token: "bad" }, KEY);
   await assert.rejects(
-    () => pool.syncTools(new MemoryDb(), { id: "conn_cg", status: "connected", ciphertext, nonce }, { id: "mcp_coingecko", slug: "coingecko", auth: "token" }, { force: true }),
+    () => pool.syncTools(new MemoryDb() as never, connectionRow({ id: "conn_cg", status: "connected", ciphertext, nonce }), serverRow("coingecko", { id: "mcp_coingecko", auth: "token" }), { force: true }),
     (error: unknown) => error instanceof McpError && error.status === 401 && error.message === "invalid key",
   );
 });
@@ -263,9 +265,9 @@ test("call CoinGecko dispatches", async () => {
   });
   const [ciphertext, nonce] = encryptPayload({ token: "cg-test" }, KEY);
   const stored = await pool.call(
-    new MemoryDb(),
-    { id: "conn_cg", status: "connected", ciphertext, nonce },
-    { id: "mcp_coingecko", slug: "coingecko", auth: "token" },
+    new MemoryDb() as never,
+    connectionRow({ id: "conn_cg", status: "connected", ciphertext, nonce }),
+    serverRow("coingecko", { id: "mcp_coingecko", auth: "token" }),
     "search",
     { query: "bitcoin" },
   );
@@ -378,7 +380,7 @@ function toolDb(options: { toolOff?: boolean; serverOff?: boolean; status?: stri
 
 test("agentToolConnection follows the prices tool toggle", async () => {
   const agent = { id: "agent_1", guild_id: "guild_1", org_id: "org_1" };
-  const found = await agentToolConnection(toolDb(), agent, "coingecko", "prices");
+  const found = await agentToolConnection(toolDb() as never, agent, "coingecko", "prices");
   assert.equal(found?.id, "conn_1");
   for (const off of [
     { toolOff: true },
@@ -386,6 +388,6 @@ test("agentToolConnection follows the prices tool toggle", async () => {
     { status: "disconnected" },
     { listed: false },
   ]) {
-    assert.equal(await agentToolConnection(toolDb(off), agent, "coingecko", "prices"), null, JSON.stringify(off));
+    assert.equal(await agentToolConnection(toolDb(off) as never, agent, "coingecko", "prices"), null, JSON.stringify(off));
   }
 });

@@ -1,18 +1,22 @@
-import { coreModelCredentials } from "../llm/credentials.js";
-import { ModelsService } from "../llm/models.js";
+import { listMcpServers } from "../connectors/servers.js";
+import { coreModelCredentials, modelProviderStore } from "../llm/credentials.js";
+import { modelsDatabase, ModelsService } from "../llm/models.js";
 import { isSearchable } from "../connectors/builder.js";
-import { manifestTools, overriddenTool, toolStartsOff } from "../connectors/load.js";
+import { manifestTools, overriddenTool, toolStartsOff, type LoadedConnector } from "../connectors/load.js";
 import { connectorFacts } from "../connectors/view.js";
 import { oauthSetupState } from "../oauth/index.js";
 import { OPEN_POLICY, remaining, type OrgPolicy } from "../policy/index.js";
-import { usageFields, utcMonth } from "../usage.js";
-import type { Repositories } from "../db/repositories.js";
+import { usageFields } from "../usage/index.js";
 import {
   ALWAYS_OFFERED_TOOLS,
   BROWSER_CAPABILITY,
   CODING_CAPABILITY,
   NATIVE_CAPABILITY_GROUPS,
 } from "./native.js";
+import { listMcpConnections, listMcpTools } from "../db/mcp.js";
+import { countOrgAgents, countOrgBrowserAgents, countOrgCodingAgents } from "../db/orgs.js";
+import { getOrgMonthlyUsage, utcMonth } from "../db/usage.js";
+import type { Queryable } from "../db/pg.js";
 
 const FORBIDDEN_CONNECTION_KEYS = new Set([
   "connection_id",
@@ -31,7 +35,7 @@ export type CapabilityOrgContext = {
 };
 
 
-function capabilityServer(row: Record<string, unknown>): Record<string, unknown> {
+function capabilityServer(row: LoadedConnector): Record<string, unknown> {
   return {
     slug: row.slug,
     display_name: row.display_name,
@@ -103,19 +107,19 @@ export class CapabilityService {
   private models: ModelsService;
 
   constructor(
-    private repo: Repositories,
+    private db: Queryable,
     private policy: OrgPolicy = OPEN_POLICY,
     models?: ModelsService,
   ) {
-    this.models = models ?? new ModelsService({ repo, credentials: coreModelCredentials(repo) });
+    this.models = models ?? new ModelsService({ db: modelsDatabase(db), credentials: coreModelCredentials(modelProviderStore(db)) });
   }
 
   /** The enabled servers the organisation may use, with its logins on each. */
   private async servers(ctx: CapabilityOrgContext): Promise<
-    Array<{ server: Record<string, unknown>; mine: Array<Record<string, unknown>> }>
+    Array<{ server: LoadedConnector; mine: Array<Record<string, unknown>> }>
   > {
-    const servers = (await this.repo.listMcpServers(ctx.orgId)).filter((row) => row.enabled !== false);
-    const connections = await this.repo.listMcpConnections({ orgId: ctx.orgId });
+    const servers = (await listMcpServers(this.db, ctx.orgId)).filter((row) => row.enabled !== false);
+    const connections = await listMcpConnections(this.db, { orgId: ctx.orgId });
     return servers.map((server) => ({
       server,
       mine: connections.filter(
@@ -126,7 +130,7 @@ export class CapabilityService {
   }
 
   /** A server's manifest tools, then the tools the organisation's connected logins list that the manifest does not name. */
-  private async tools(server: Record<string, unknown>, mine: Array<Record<string, unknown>>): Promise<CapabilityTool[]> {
+  private async tools(server: LoadedConnector, mine: Array<Record<string, unknown>>): Promise<CapabilityTool[]> {
     const tools: CapabilityTool[] = manifestTools(server).map((tool) => ({
       remote_name: tool.remote_name,
       namespaced_name: tool.namespaced_name,
@@ -136,7 +140,7 @@ export class CapabilityService {
     }));
     const named = new Set(tools.map((tool) => tool.namespaced_name));
     for (const connection of mine.filter((row) => row.status === "connected")) {
-      for (const row of await this.repo.listMcpTools(String(connection.id))) {
+      for (const row of await listMcpTools(this.db, String(connection.id))) {
         const listed = overriddenTool(server, {
           remote_name: String(row.remote_name),
           description: String(row.description ?? ""),
@@ -183,11 +187,11 @@ export class CapabilityService {
       });
     }
     const { limits } = await this.policy.standing(ctx.orgId);
-    const agents = await this.repo.countOrgAgents(ctx.orgId);
-    const browsers = await this.repo.countOrgBrowserAgents(ctx.orgId);
-    const coders = await this.repo.countOrgCodingAgents(ctx.orgId);
+    const agents = await countOrgAgents(this.db, ctx.orgId);
+    const browsers = await countOrgBrowserAgents(this.db, ctx.orgId);
+    const coders = await countOrgCodingAgents(this.db, ctx.orgId);
     const month = utcMonth();
-    const usage = usageFields(await this.repo.getOrgMonthlyUsage(ctx.orgId, month));
+    const usage = usageFields(await getOrgMonthlyUsage(this.db, ctx.orgId, month));
     const payload = {
       native: NATIVE_CAPABILITY_GROUPS,
       always_offered: ALWAYS_OFFERED_TOOLS,
@@ -222,9 +226,9 @@ export class CapabilityService {
     const hits: Array<Record<string, unknown>> = [];
     for (const { server, mine } of await this.servers(ctx)) {
       const serverFields = [
-        String(server.slug),
-        String(server.display_name ?? ""),
-        String(server.description ?? ""),
+        server.slug,
+        server.display_name,
+        server.description,
         String(server.limitations ?? ""),
       ];
       const serverScore = q ? Math.max(...serverFields.map((text) => matchScore(q, text))) : 0;
@@ -232,7 +236,7 @@ export class CapabilityService {
         server: server.slug,
         display_name: server.display_name,
         server_description: server.description || "",
-        limitations: server.limitations ?? null,
+        limitations: server.limitations,
         auth: server.auth,
       };
       const tools = await this.tools(server, mine);

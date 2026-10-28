@@ -292,7 +292,9 @@ that has a tag there ([Inbox and issues](inbox.md)).
 - `apps/orchestrator/src/generation/`: `deliverGroupRun`, the busy
   lock
 - `apps/orchestrator/src/toolbox/group.ts`: `group_post`
-- HTTP in `apps/orchestrator/src/http/routes.ts`
+- `apps/orchestrator/src/groupchat/operator.ts`: what an operator
+  reads and posts
+- HTTP in `apps/orchestrator/src/http/group-chat-routes.ts`
 
 ### Public message
 
@@ -415,7 +417,7 @@ for the lock. The cursor does not advance until delivery succeeds or
 fails.
 
 An interrupting post commits first, then cancels the targeted runs
-through `cancel_agent_run`. Each cancelled run ends like any other: the
+through `cancelAgentRuns`. Each cancelled run ends like any other: the
 agent's cursor moves through that run's snapshot, and the agent is
 pending again for the new message.
 

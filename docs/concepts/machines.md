@@ -378,7 +378,7 @@ The move is refused in these cases:
 - The target machine hosts an agent of a guild the caller cannot
   see (403).
 - The target machine is below the agent's minimum (422).
-- The edition does not support moving agents (501, `agents cannot
+- The sandbox provider does not support moving agents (501, `agents cannot
   move here`).
 
 ### The container

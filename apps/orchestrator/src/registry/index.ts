@@ -1,7 +1,7 @@
+import { SLUG_PATTERN } from "../db/schema/index.js";
 import { createPrivateKey, createPublicKey, sign, verify, type KeyObject } from "node:crypto";
 import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
-import { SLUG_PATTERN } from "../connectors/manifest.js";
 
 /**
  * A registry's index: what it offers, one entry per published version. `path` is the package's

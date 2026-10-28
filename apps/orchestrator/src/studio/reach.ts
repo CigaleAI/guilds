@@ -1,5 +1,8 @@
 import { parseDisplayPath, type ArtifactStore, type ParsedDisplayPath } from "../artifacts/index.js";
-import type { Repositories } from "../db/repositories.js";
+import { listAgents } from "../db/agents.js";
+import type { Queryable } from "../db/pg.js";
+import { operatorContext } from "../artifacts/store.js";
+import { describeCollection } from "../artifacts/collections.js";
 
 // What a Studio session reaches outside its own transcript: the source
 // guild, its agents, the organisation's notes, and the tables the source
@@ -9,7 +12,7 @@ import type { Repositories } from "../db/repositories.js";
 export type StudioReachScope = {
   orgId: string;
   sourceGuildId: string;
-  repo: Repositories;
+  db: Queryable;
   artifacts: ArtifactStore;
 };
 
@@ -24,8 +27,9 @@ export async function studioReachesParsed(scope: StudioReachScope, parsed: Parse
     return false;
   }
   if (parsed.kind === "collection" || parsed.kind === "record") {
-    const table = await scope.artifacts.describeCollection(
-      scope.artifacts.operatorContext(scope.orgId, "studio", "studio", { guildId: scope.sourceGuildId }),
+    const table = await describeCollection(
+      scope.artifacts,
+      operatorContext(scope.orgId, "studio", "studio", { guildId: scope.sourceGuildId }),
       parsed.collectionName,
     );
     return Boolean(table) && studioReachesTable(scope.sourceGuildId, table?.guild_id);
@@ -54,6 +58,6 @@ export async function studioReachesPath(scope: StudioReachScope, displayPath: st
 }
 
 async function sourceAgentIds(scope: StudioReachScope): Promise<Set<string>> {
-  const agents = await scope.repo.listAgents(scope.sourceGuildId);
+  const agents = await listAgents(scope.db, scope.sourceGuildId);
   return new Set(agents.map((row) => String(row.id)));
 }

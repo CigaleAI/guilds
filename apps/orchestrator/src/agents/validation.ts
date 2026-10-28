@@ -1,8 +1,10 @@
+import { HARNESSES, type Harness, EFFORTS, type Effort } from "../db/schema/index.js";
 import { isCodingOnlyModel, parseModelId } from "../llm/providers.js";
-import { HARNESS_MODEL_RE, HARNESSES, harnessOffMessage, isHarness, isHarnessOff, type Harness } from "../coding/harnesses.js";
-import { EFFORTS, harnessEffortsFor, isEffort, type Effort } from "../coding/harness-models.js";
+import { HARNESS_MODEL_RE, harnessOffMessage, isHarness, isHarnessOff } from "../coding/harnesses.js";
+import { harnessEffortsFor, isEffort } from "../coding/harness-models.js";
 import { SECRET_NAME } from "../credentials/validate.js";
 import { NAME_RE } from "../lib/names.js";
+import type { AgentConfig, ThinkingLevel } from "../db/schema/index.js";
 
 export const CONFIG_KEYS = new Set([
   "model",
@@ -44,8 +46,6 @@ export const SECRET_ALIASES_MAX = 32;
 /** The step and tool-call budgets an agent created with `coding` on starts with. */
 export const CODING_MAX_STEPS = 200;
 export const CODING_MAX_TOOL_CALLS = 200;
-export const THINKING_LEVELS = ["none", "low", "medium", "high"] as const;
-export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
 export const DEFAULT_THINKING_LEVEL: ThinkingLevel = "none";
 /** Chrome UI and Accept-Language when the agent has a browser and none is stored. */
 export const DEFAULT_BROWSER_LANGUAGE = "en-US";
@@ -108,35 +108,6 @@ export class AgentValidationError extends Error {
     this.name = "AgentValidationError";
   }
 }
-
-export type AgentConfig = {
-  model: string;
-  temperature: number;
-  max_tokens: number;
-  max_steps: number;
-  max_tool_calls: number;
-  max_input_tokens: number;
-  keep_tool_result_generations: number;
-  max_scripts: number;
-  max_workspace_mib: number;
-  browser: boolean;
-  browser_language: string;
-  coding: boolean;
-  harness: Harness | null;
-  /** The model the harness runs; null leaves it to the harness's subscription. */
-  harness_model: string | null;
-  /** The effort the harness runs its model at; null leaves it to the harness. */
-  harness_effort: Effort | null;
-  /**
-   * Variable names the agent's commands see beside the secrets reaching it, each holding the
-   * value of the secret it names: `{ CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN" }`. An alias wins over
-   * a secret of its own name.
-   */
-  secret_aliases: Record<string, string>;
-  scripting: boolean;
-  memory: boolean;
-  thinking_level: ThinkingLevel;
-};
 
 export function validateAgentName(name: string): string {
   if (!NAME_RE.test(name)) {
