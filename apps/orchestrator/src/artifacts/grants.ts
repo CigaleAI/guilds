@@ -1,7 +1,6 @@
 import { deleteAccessRow, upsertAccessRow } from "../db/artifact-access.js";
 import type { Queryable } from "../db/pg.js";
-import type { AccessGrant } from "./access.js";
-import type { AccessTarget, ArtifactActor } from "./types.js";
+import type { AccessGrant, AccessTarget, ArtifactActor } from "./types.js";
 
 /** Writes or replaces the rows of `grants` on an item's access list. */
 export async function writeGrants(

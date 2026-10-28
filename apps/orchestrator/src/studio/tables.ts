@@ -1,9 +1,20 @@
 import { createHash } from "node:crypto";
+import { loadOperatorActor } from "../artifacts/actors.js";
 import { ArtifactError } from "../artifacts/errors.js";
-import { collectionDisplayPath } from "../artifacts/paths.js";
-import { columnCatalog, describeColumn, parseColumnChange, parseColumns } from "../artifacts/columns.js";
-import { resolveAccess, type AgentAccessMode, type ArtifactActor } from "../artifacts/types.js";
-import type { AccessEntry } from "../artifacts/access.js";
+import { columnCatalog, describeColumn, type ColumnChange } from "../artifacts/columns.js";
+import { listRecords } from "../artifacts/records.js";
+import {
+  applyCollectionStep,
+  effectiveAccess,
+  guildTable,
+  guildTables,
+  planCollection,
+  planCollectionChange,
+  type AccessRowChange,
+  type CollectionLookup,
+  type CollectionStep,
+} from "../artifacts/service.js";
+import type { AccessEntry, AgentAccessMode, ArtifactActor } from "../artifacts/types.js";
 import type { AccessMode, CollectionColumn } from "../db/schema/index.js";
 import { argString } from "../toolbox/schema.js";
 import { STUDIO_TOOL_RESULT_MAX_BYTES } from "./constants.js";
@@ -12,13 +23,8 @@ import type { EditScope } from "./edits.js";
 import { editActor } from "./actor.js";
 import { StudioConflictError, StudioUnprocessableError } from "./errors.js";
 import { excerptBytes, wrapEvidence } from "./system.js";
-import { studioReachesTable } from "./reach.js";
-import { getGuild, hiddenGuildsFor } from "../db/guilds.js";
+import { getGuild } from "../db/guilds.js";
 import { listAgents } from "../db/agents.js";
-import { listRecords } from "../artifacts/records.js";
-import { grantAccess, listAccess, reachOf as subjectReach } from "../artifacts/access-lists.js";
-import { createCollection, deleteCollection, describeCollection, getCollection, listCollectionsWithCounts, updateCollection, validateCollectionName, validatePurpose } from "../artifacts/collections.js";
-import { operatorContext } from "../artifacts/store.js";
 
 // Tables (collections) the coach reads and proposes to create, change, or
 // delete. It reaches the tables the source guild's agents can be given: the
@@ -47,17 +53,18 @@ type Member = { id: string; name: string };
  */
 type SourceAccess = { guild: AccessMode | null; org: AccessMode | null; agents: Map<string, AgentAccessMode> };
 
-type RowChange = { subject: "guild" | "agent"; id: string; mode: AccessMode | AgentAccessMode | null };
-
 type Table = {
   id: string;
   name: string;
   purpose: string;
+  displayPath: string;
   guildId: string | null;
   guildName: string | null;
   columns: CollectionColumn[];
   updatedAt: string;
   count: number;
+  /** The table's whole access list. */
+  entries: AccessEntry[];
   access: SourceAccess;
   /** Rows of other guilds and their agents: shown, never changed. */
   outside: string[];
@@ -75,23 +82,6 @@ type Shape = {
   outside: string[];
 };
 
-type TablePlan =
-  | {
-      action: "create";
-      name: string;
-      purpose: string;
-      columns: CollectionColumn[];
-      guildId: string | null;
-      rowChanges: RowChange[];
-    }
-  | {
-      action: "edit";
-      id: string;
-      definition: { name?: string; purpose?: string; columns?: unknown } | null;
-      rowChanges: RowChange[];
-    }
-  | { action: "delete"; id: string };
-
 /**
  * A table proposal checked against the live organisation: what the operator
  * reviews (the table before and after, rendered as text, and what applying
@@ -106,7 +96,7 @@ export type TableReview = {
   live: string;
   proposed: string;
   effects: string[];
-  plan: TablePlan;
+  plan: CollectionStep;
 };
 
 type TableContext = {
@@ -143,10 +133,7 @@ function plural(count: number, noun: string): string {
 
 /** The operator reading tables, without the private guilds they do not operate. */
 async function tableActor(scope: EditScope): Promise<ArtifactActor> {
-  return operatorContext(scope.orgId, String(scope.user.id), String(scope.user.name ?? "operator"), {
-    guildId: scope.sourceGuildId,
-    hidden: await hiddenGuildsFor(scope.db, scope.orgId, String(scope.user.id)),
-  });
+  return loadOperatorActor(scope.db, scope.user, { orgId: scope.orgId, guildId: scope.sourceGuildId });
 }
 
 async function tableContext(scope: EditScope): Promise<TableContext> {
@@ -160,40 +147,25 @@ async function tableContext(scope: EditScope): Promise<TableContext> {
   };
 }
 
-async function loadTable(
-  tc: TableContext,
-  ref: { id: string } | { name: string },
-): Promise<Table | null> {
-  let id: string;
-  if ("name" in ref) {
-    const described = await describeCollection(tc.scope.artifacts, tc.actor, ref.name);
-    if (!described) return null;
-    id = described.id;
-  } else {
-    id = ref.id;
-  }
-  let view;
-  let entries;
-  try {
-    view = await getCollection(tc.scope.artifacts, tc.actor, id);
-    entries = await listAccess(tc.scope.artifacts, tc.actor, { kind: "collection", id });
-  } catch (error) {
-    if (error instanceof ArtifactError && error.status === 404) return null;
-    throw error;
-  }
-  if (!studioReachesTable(tc.scope.sourceGuildId, view.guild?.id)) {
+/** A table Studio reaches, the source guild's own or the organisation's, with the rows that reach the source guild. */
+async function loadTable(tc: TableContext, lookup: CollectionLookup): Promise<Table | null> {
+  const found = await guildTable(tc.scope.artifacts, tc.actor, tc.scope.sourceGuildId, lookup);
+  if (!found) {
     return null;
   }
-  const { access, outside } = sourceAccess(tc, entries);
+  const view = found.collection;
+  const { access, outside } = sourceAccess(tc, found.access);
   return {
     id: view.id,
     name: view.name,
     purpose: view.purpose,
+    displayPath: view.display_path,
     guildId: view.guild?.id ?? null,
     guildName: view.guild?.name ?? null,
     columns: view.columns,
     updatedAt: view.updated_at,
     count: view.count ?? 0,
+    entries: found.access,
     access,
     outside,
   };
@@ -219,11 +191,6 @@ function sourceAccess(tc: TableContext, entries: AccessEntry[]): { access: Sourc
   return { access, outside };
 }
 
-/** The mode the source guild's rows give a member with no row of its own. */
-function baseMode(access: SourceAccess): AccessMode | null {
-  return access.guild === "write" || access.org === "write" ? "write" : (access.guild ?? access.org);
-}
-
 /** What a proposal may change on a table: all of the source guild's own; columns added to the organisation's. */
 type TableReach = "edit_or_delete" | "add_columns_and_access";
 
@@ -239,7 +206,7 @@ function assertOrgTableEdit(
   table: Table,
   name: string,
   purpose: string,
-  change: { columns: CollectionColumn[]; renamed: Array<{ from: string; to: string }>; removed: string[] } | null,
+  change: ColumnChange | null,
 ): void {
   if (table.guildId !== null) return;
   if (name !== table.name || purpose !== table.purpose) {
@@ -279,9 +246,9 @@ function parseAccess(
   tc: TableContext,
   raw: unknown,
   base: SourceAccess,
-): { access: SourceAccess; rowChanges: RowChange[] } {
+): { access: SourceAccess; rowChanges: AccessRowChange[] } {
   const access: SourceAccess = { guild: base.guild, org: base.org, agents: new Map(base.agents) };
-  const rowChanges: RowChange[] = [];
+  const rowChanges: AccessRowChange[] = [];
   if (raw === undefined || raw === null) {
     return { access, rowChanges };
   }
@@ -301,7 +268,7 @@ function parseAccess(
     const mode = body.guild === "none" ? null : (body.guild as AccessMode);
     if (mode !== access.guild) {
       access.guild = mode;
-      rowChanges.push({ subject: "guild", id: tc.scope.sourceGuildId, mode });
+      rowChanges.push({ type: "guild", id: tc.scope.sourceGuildId, mode });
     }
   }
   if (body.agents !== undefined) {
@@ -337,7 +304,7 @@ function parseAccess(
       if (mode !== (access.agents.get(member.id) ?? null)) {
         if (mode === null) access.agents.delete(member.id);
         else access.agents.set(member.id, mode);
-        rowChanges.push({ subject: "agent", id: member.id, mode });
+        rowChanges.push({ type: "agent", id: member.id, mode });
       }
     }
   }
@@ -465,17 +432,12 @@ function editEffects(
   return effects;
 }
 
-function targetOf(
-  tc: TableContext,
-  id: string | null,
-  name: string,
-  guildId: string | null,
-): Record<string, unknown> {
+function targetOf(id: string | null, name: string, guildId: string | null, displayPath: string): Record<string, unknown> {
   return {
     collection_id: id,
     name,
     scope: guildId ? "guild" : "org",
-    display_path: collectionDisplayPath(tc.scope.orgId, name),
+    display_path: displayPath,
   };
 }
 
@@ -495,9 +457,10 @@ export async function reviewTable(
   const requesting = recorded === null;
 
   if (action === "create") {
-    const name = valid(() => validateCollectionName(argString(args, "name")));
-    const purpose = valid(() => validatePurpose(argString(args, "purpose")));
-    const columns = valid(() => parseColumns(args.columns ?? []));
+    const checked = valid(() =>
+      planCollection(scope.orgId, { name: argString(args, "name"), purpose: argString(args, "purpose"), columns: args.columns }),
+    );
+    const { name, purpose, columns } = checked;
     const scopeArg = args.scope ?? "guild";
     if (scopeArg !== "guild" && scopeArg !== "org") {
       throw new StudioUnprocessableError("scope must be guild or org");
@@ -526,7 +489,7 @@ export async function reviewTable(
     return {
       action,
       title: `Create table ${name}`,
-      target: targetOf(tc, null, name, guildId),
+      target: targetOf(null, name, guildId, checked.href),
       baseHash: hashOf(["absent", name]),
       proposedHash: shapeHash(shape),
       live: "",
@@ -536,7 +499,7 @@ export async function reviewTable(
           ? `Creates ${name} as ${tc.guildName}'s own table, reached through the access listed.`
           : `Creates ${name} as an organisation table that every agent of the organisation reads, reached further through the access listed.`,
       ],
-      plan: { action, name, purpose, columns, guildId, rowChanges },
+      plan: { action, collection: { name, purpose, columns, guildId }, access: rowChanges },
     };
   }
 
@@ -551,7 +514,7 @@ export async function reviewTable(
         : "the table no longer exists",
     );
   }
-  const target = targetOf(tc, table.id, table.name, table.guildId);
+  const target = targetOf(table.id, table.name, table.guildId, table.displayPath);
 
   if (action === "delete") {
     if (table.guildId === null) {
@@ -588,12 +551,13 @@ export async function reviewTable(
       );
     }
   }
-  const name =
-    args.name === undefined ? table.name : valid(() => validateCollectionName(String(args.name)));
-  const purpose =
-    args.purpose === undefined ? table.purpose : valid(() => validatePurpose(String(args.purpose)));
-  const change =
-    args.columns === undefined ? null : valid(() => parseColumnChange(table.columns, args.columns));
+  const { name, purpose, columns: change } = valid(() =>
+    planCollectionChange(table, {
+      ...(args.name !== undefined ? { name: String(args.name) } : {}),
+      ...(args.purpose !== undefined ? { purpose: String(args.purpose) } : {}),
+      ...(args.columns !== undefined ? { columns: args.columns } : {}),
+    }),
+  );
   assertOrgTableEdit(table, name, purpose, change);
   if (name !== table.name && (await loadTable(tc, { name }))) {
     throw new StudioConflictError(`a table named ${name} already exists`);
@@ -624,41 +588,22 @@ export async function reviewTable(
     plan: {
       action,
       id: table.id,
-      definition: definitionChanged
+      changes: definitionChanged
         ? {
             ...(name !== table.name ? { name } : {}),
             ...(purpose !== table.purpose ? { purpose } : {}),
             ...(columnsChanged ? { columns: args.columns } : {}),
           }
         : null,
-      rowChanges,
+      access: rowChanges,
     },
   };
 }
 
 /** Writes a reviewed proposal as the operator: the table first, then each access row it changes. */
-export async function applyTable(scope: EditScope, plan: TablePlan): Promise<void> {
-  const actor = editActor(scope);
+export async function applyTable(scope: EditScope, plan: CollectionStep): Promise<void> {
   try {
-    if (plan.action === "delete") {
-      await deleteCollection(scope.artifacts, actor, plan.id);
-      return;
-    }
-    let id = plan.action === "edit" ? plan.id : "";
-    if (plan.action === "create") {
-      const created = await createCollection(scope.artifacts, actor, {
-        name: plan.name,
-        purpose: plan.purpose,
-        columns: plan.columns,
-        guildId: plan.guildId,
-      });
-      id = created.id;
-    } else if (plan.definition) {
-      await updateCollection(scope.artifacts, actor, id, plan.definition);
-    }
-    for (const change of plan.rowChanges) {
-      await grantAccess(scope.artifacts, actor, { kind: "collection", id }, { type: change.subject, id: change.id, mode: change.mode });
-    }
+    await applyCollectionStep(scope.artifacts, editActor(scope), plan);
   } catch (error) {
     tableFailure(error);
   }
@@ -667,25 +612,17 @@ export async function applyTable(scope: EditScope, plan: TablePlan): Promise<voi
 /** The tables Studio reaches: the source guild's own first, then the organisation's. */
 export async function listTables(scope: EditScope): Promise<Array<Record<string, unknown>>> {
   const actor = await tableActor(scope);
-  const views = (await listCollectionsWithCounts(scope.artifacts, actor)).filter((view) =>
-    studioReachesTable(scope.sourceGuildId, view.guild?.id),
-  );
-  const reached = await subjectReach(scope.artifacts, actor, {
-    type: "guild",
-    id: scope.sourceGuildId,
-    guildId: scope.sourceGuildId,
-  });
-  const modes = new Map(reached.tables.map((table) => [table.id, table.mode]));
-  return views
-    .sort((a, b) => Number(!a.guild) - Number(!b.guild) || a.name.localeCompare(b.name))
-    .map((view) => ({
+  const tables = await guildTables(scope.artifacts, actor, scope.sourceGuildId);
+  return tables
+    .sort((a, b) => Number(!a.collection.guild) - Number(!b.collection.guild) || a.collection.name.localeCompare(b.collection.name))
+    .map(({ collection: view, access }) => ({
       name: view.name,
       display_path: view.display_path,
       purpose: view.purpose,
       owner: view.guild ? `guild ${view.guild.name}` : "organisation",
       records: view.count ?? 0,
       columns: view.columns.map((column) => column.name),
-      guild_access: modes.get(view.id) ?? null,
+      guild_access: effectiveAccess(access, { guildId: scope.sourceGuildId, agentId: null }),
       studio_can: reachOf(view.guild?.id ?? null),
     }));
 }
@@ -699,7 +636,6 @@ export async function readTable(scope: EditScope, name: string): Promise<Record<
       `unknown table ${name || "(none named)"}; list the tables with studio_list_collections`,
     );
   }
-  const displayPath = collectionDisplayPath(scope.orgId, table.name);
   const recent = await listRecords(scope.artifacts, tc.actor, {
     collection: table.name,
     order: { column: "updated_at", direction: "desc" },
@@ -711,7 +647,7 @@ export async function readTable(scope: EditScope, name: string): Promise<Record<
   );
   return {
     name: table.name,
-    display_path: displayPath,
+    display_path: table.displayPath,
     purpose: table.purpose,
     owner: table.guildId ? `guild ${table.guildName}` : "organisation",
     records: table.count,
@@ -722,21 +658,18 @@ export async function readTable(scope: EditScope, name: string): Promise<Record<
       org: table.access.org,
       guild: table.access.guild,
       own_table: table.guildId === scope.sourceGuildId,
-      agents: tc.members.map((member) => {
-        const own = table.access.agents.get(member.id) ?? null;
-        return {
-          agent_id: member.id,
-          name: member.name,
-          own,
-          effective: resolveAccess(baseMode(table.access), own),
-        };
-      }),
+      agents: tc.members.map((member) => ({
+        agent_id: member.id,
+        name: member.name,
+        own: table.access.agents.get(member.id) ?? null,
+        effective: effectiveAccess(table.entries, { guildId: scope.sourceGuildId, agentId: member.id }),
+      })),
     },
     outside: table.outside,
     recent_records: wrapEvidence({
       source: "collection_records",
       coordinates: {
-        display_path: displayPath,
+        display_path: table.displayPath,
         shown: recent.records.length,
         truncated: body.truncated || null,
       },

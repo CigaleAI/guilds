@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { ArtifactError } from "../artifacts/errors.js";
 import { parseDisplayPath } from "../artifacts/paths.js";
 import { artifactAt, parseActorPath, planNote, writeNote, type PlannedNote } from "../artifacts/service.js";
-import { hashArtifactContent, rowDisplayPath, type ArtifactStore } from "../artifacts/store.js";
+import { hashArtifactContent, type ArtifactStore } from "../artifacts/store.js";
 import { WRITE_MAX_BYTES } from "../artifacts/types.js";
 import { changeGuild } from "../guilds/changes.js";
 import type { Schedules } from "../schedules/service.js";
@@ -146,7 +146,7 @@ export async function loadNoteBase(scope: EditScope, displayPath: string): Promi
     }
     return {
       kind: "note",
-      displayPath: rowDisplayPath(row),
+      displayPath: view.href,
       level: row.level,
       ownerId: row.owner_id,
       title: row.title,
@@ -794,7 +794,7 @@ export async function applyEdit(
   if (base.kind === "memory") {
     const actor = { ...editActor(scope, { agentId: base.agentId }), toolCall };
     try {
-      const row = await writeMemory(scope.artifacts, actor, base.agentId, { content: proposed as string, detail: record.toolName, ...(base.version > 0 ? { expectedVersion: base.version } : {}) });
+      const { row } = await writeMemory(scope.artifacts, actor, base.agentId, { content: proposed as string, detail: record.toolName, ...(base.version > 0 ? { expectedVersion: base.version } : {}) });
       return { version: row.version };
     } catch (error) {
       artifactFailure(error);

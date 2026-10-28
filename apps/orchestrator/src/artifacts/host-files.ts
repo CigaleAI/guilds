@@ -259,8 +259,8 @@ export async function writeHostFile(
     return withFileMeta(services, actor, owner, { payload, kind: "task", version: row.version });
   }
   if (owner.level === "agent" && name === MEMORY_KEY) {
-    const row = await writeMemory(store, actor, owner.ownerId, { content: content, detail: `host ${actor.actorName}` });
-    const payload = { path: name, content, display_path: String(artifactView(row).display_path) };
+    const { row, href } = await writeMemory(store, actor, owner.ownerId, { content: content, detail: `host ${actor.actorName}` });
+    const payload = { path: name, content, display_path: href };
     return withFileMeta(services, actor, owner, { payload, kind: "memory", version: row.version });
   }
   const { row, href } = await writeNote(store, actor, { level: owner.level, key: name, content });

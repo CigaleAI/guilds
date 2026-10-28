@@ -34,7 +34,7 @@ import {
   collectionDeleted,
   type CollectionRef,
 } from "./collection-changes.js";
-import { columnCatalog, normalizeIdentity, parseColumnChange, parseColumns, uniqueColumn } from "./columns.js";
+import { columnCatalog, normalizeIdentity, parseColumnChange, parseColumns, uniqueColumn, type ColumnChange } from "./columns.js";
 import { ArtifactError } from "./errors.js";
 import { writeGrants } from "./grants.js";
 import { collectionDisplayPath } from "./paths.js";
@@ -50,6 +50,9 @@ import {
 
 /** What a collection's update may change; a field left out keeps its value. */
 export type CollectionChanges = { name?: string; purpose?: string; columns?: unknown; guildId?: string | null };
+
+/** A collection as the operator defines it: its name, purpose and columns, and the guild that owns it, none for an organisation table. */
+export type NewCollection = { name: string; purpose: string; columns?: unknown; guildId?: string | null };
 
 export function validateCollectionName(name: string): string {
   const text = (name || "").trim();
@@ -156,7 +159,7 @@ export async function accessibleCollections(
 export async function createCollection(
   store: ArtifactStore,
   actor: ArtifactActor,
-  args: { name: string; purpose: string; columns?: unknown; guildId?: string | null },
+  args: NewCollection,
 ): Promise<CollectionView> {
   assertOperator(actor);
   const name = validateCollectionName(args.name);
@@ -233,7 +236,7 @@ function uniqueChanged(
 async function applyColumnChange(
   client: Queryable,
   current: CollectionQueryRow,
-  change: NonNullable<ReturnType<typeof parseColumnChange>>,
+  change: ColumnChange,
 ): Promise<void> {
   for (const rename of change.renamed) {
     await renameRecordKey(client, current.id, rename);
@@ -443,15 +446,14 @@ export async function requireWritable(store: ArtifactStore, actor: ArtifactActor
   return described;
 }
 
+/** How many live records a collection holds, when the newest changed, and its columns. */
+export type CollectionFacts = { name: string; count: number; newest_updated_at: string | null; columns: CollectionColumn[] };
+
 /**
  * What an empty search should say about a collection the actor can read:
  * how many records it holds, when the newest changed, and its columns.
  */
-export async function collectionFacts(
-  store: ArtifactStore,
-  actor: ArtifactActor,
-  name: string,
-): Promise<{ name: string; count: number; newest_updated_at: string | null; columns: CollectionColumn[] } | null> {
+export async function collectionFacts(store: ArtifactStore, actor: ArtifactActor, name: string): Promise<CollectionFacts | null> {
   const described = await describeCollection(store, actor, name);
   if (!described) {
     return null;

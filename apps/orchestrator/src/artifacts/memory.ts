@@ -32,6 +32,9 @@ export type MemoryRevisionView = {
 /** A Memory write: the new text, why it changed, and the version it replaces when the writer read one. */
 export type MemoryWrite = { content: string; detail: string; expectedVersion?: number };
 
+/** A Memory as written: its display path and its row. */
+export type WrittenMemory = { href: string; row: ArtifactRow };
+
 /** Where an agent's Memory sits: its organisation, its guild, and the agent. */
 type MemoryOwner = { orgId: string; guildId: string; agentId: string };
 
@@ -89,15 +92,16 @@ export async function getMemoryRow(
 }
 
 /**
- * Replaces the agent's Memory with `content`, archiving the text it replaces with `detail`. An
- * agent writes its own Memory; the operator writes any it reaches.
+ * Replaces the agent's Memory with `content`, archiving the text it replaces with `detail`, and
+ * returns its display path with its row. An agent writes its own Memory; the operator writes any
+ * it reaches.
  */
 export async function writeMemory(
   store: ArtifactStore,
   actor: ArtifactActor,
   agentId: string,
   write: MemoryWrite,
-): Promise<ArtifactRow> {
+): Promise<WrittenMemory> {
   if (!actor.operator && actor.agentId !== agentId) {
     throw new ArtifactError("memory is not writable", 422);
   }
@@ -118,14 +122,15 @@ export async function writeMemory(
       { id: live.id, content_text: write.content, search_text: MEMORY_KEY, content_hash: hash, written_at: writtenAt },
       actor,
     );
+    const href = rowDisplayPath(row);
     await recordFileChange(client, actor, {
       orgId: row.org_id,
       artifactId: row.id,
-      displayPath: rowDisplayPath(row),
+      displayPath: href,
       operation: "update",
       version: row.version,
     });
-    return row;
+    return { href, row };
   });
 }
 

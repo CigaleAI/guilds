@@ -70,7 +70,7 @@ class FakeStore {
       throw new ArtifactError("artifact not found", 404);
     }
     row.content_text = content;
-    return noteRowAt(path, content);
+    return { href: path, row: noteRowAt(path, content) };
   }
 
   async findNotes(actor: ArtifactActor) {
@@ -78,12 +78,13 @@ class FakeStore {
     return { notes };
   }
 
-  async getByDisplayPath(actor: ArtifactActor, path: string) {
+  async artifactAt(actor: ArtifactActor, path: string) {
     const row = this.rows.find((item) => item.display_path === path);
     if (!row || !this.readable(actor, row)) {
       throw new Error("artifact not found");
     }
-    return { row: noteRowAt(row.display_path, row.content_text ?? "") };
+    const text = row.content_text ?? "";
+    return { kind: "row", row: noteRowAt(row.display_path, text), href: row.display_path, text, deleted: false };
   }
 
   async deleteByDisplayPath(actor: ArtifactActor, path: string) {
@@ -94,17 +95,13 @@ class FakeStore {
     this.rows = this.rows.filter((item) => item.display_path !== path);
   }
 
-  async collectionFacts(_actor: ArtifactActor, name: string) {
-    const known = this.collections.get(name);
-    if (!known) return null;
-    return { name, count: known.count, newest_updated_at: known.count ? "2026-09-22T05:42:10Z" : null, columns: known.columns };
-  }
-
-  async listRecords(_actor: ArtifactActor, args: Record<string, unknown>) {
-    this.calls.push({ method: "listRecords", args });
+  /** Lists a collection's records; a narrowed listing that finds nothing carries a hint naming the collection. */
+  async listRecordsWithHint(_actor: ArtifactActor, args: Record<string, unknown>) {
+    this.calls.push({ method: "listRecordsWithHint", args });
     const known = this.collection(String(args.collection));
     const records = this.records.get(known.name) ?? [];
-    return { total: records.length, records, columns: known.columns };
+    const narrowed = Boolean(args.where || args.since);
+    return { total: records.length, records, hint: records.length === 0 && narrowed ? `hint about ${known.name}` : null };
   }
 
   async searchRecords(_actor: ArtifactActor, args: Record<string, unknown>) {
@@ -263,32 +260,32 @@ test("note tools point at the record tools for collection paths", async () => {
   assert.match((await invoke(toolCtx, "note_delete", { path: "org/org_1/collections/scout-board" })).content, /managed by the operator/);
 });
 
-test("record_list explains an empty narrowed result from the collection's facts", async () => {
+test("record_list returns the listing with the hint the store gives an empty narrowed result", async () => {
   const store = new FakeStore();
   store.declare("scout-board", SCOUT_COLUMNS, "write", 11);
   store.declare("fresh", SCOUT_COLUMNS, "read", 0);
   const toolCtx = ctx(store);
 
   const byWhere = parse((await invoke(toolCtx, "record_list", { collection: "scout-board", where: { handled: false } })).content);
-  assert.equal(byWhere.total, 0);
-  assert.deepEqual(byWhere.records, []);
-  assert.match(
-    String(byWhere.hint),
-    /^No records in scout-board where \{"handled":false\}\. scout-board holds 11 records; the newest changed at 2026-09-22T05:42:10Z\./,
-  );
-  assert.match(String(byWhere.hint), /Its columns: project \(text, required\); handled \(boolean, required\); status \(text: new \| done\)\./);
-  assert.match(String(byWhere.hint), /a larger limit will not change it\. where matches by column type/);
+  assert.deepEqual(byWhere, { total: 0, records: [], hint: "hint about scout-board" });
 
-  const bySince = parse((await invoke(toolCtx, "record_list", { collection: "fresh", since: "2026-09-22T06:13:00Z" })).content);
-  assert.match(String(bySince.hint), /^No records in fresh changed at or after 2026-09-22T06:13:00Z\. fresh holds no records yet\./);
-  assert.match(String(bySince.hint), /since is for picking up new work — to check whether something is already recorded, use where on the unique column or record_search/);
+  const bySince = parse((await invoke(toolCtx, "record_list", { collection: "fresh", since: " 2026-09-22T06:13:00Z " })).content);
+  assert.equal(bySince.hint, "hint about fresh");
 
   // a plain listing gets no hint, an unknown collection is an error
   assert.equal("hint" in parse((await invoke(toolCtx, "record_list", { collection: "scout-board" })).content), false);
   assert.match((await invoke(toolCtx, "record_list", { collection: "other", where: { x: 1 } })).content, /ERROR: unknown collection other/);
   assert.deepEqual(store.calls[0], {
-    method: "listRecords",
+    method: "listRecordsWithHint",
     args: { collection: "scout-board", where: { handled: false }, since: undefined, order: undefined, limit: undefined, offset: undefined },
+  });
+  assert.deepEqual(store.calls[1]?.args, {
+    collection: "fresh",
+    where: undefined,
+    since: "2026-09-22T06:13:00Z",
+    order: undefined,
+    limit: undefined,
+    offset: undefined,
   });
 });
 

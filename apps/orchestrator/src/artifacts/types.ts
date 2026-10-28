@@ -36,6 +36,26 @@ export const ACCESS_TARGETS = ["note", "collection", "file"] as const;
 export type AccessTargetKind = (typeof ACCESS_TARGETS)[number];
 export type AccessTarget = { kind: AccessTargetKind; id: string };
 
+/** One row of an item's access list as the operator reads and writes it. */
+export type AccessEntry = {
+  type: AccessSubject;
+  id: string;
+  name: string;
+  mode: AgentAccessMode;
+  /** The guild of a guild subject, or of an agent subject; null for the organisation. */
+  guild_id: string | null;
+  guild_name: string | null;
+};
+
+export type AccessGrant = { type: AccessSubject; id: string; mode: AgentAccessMode };
+
+/**
+ * An item's access list as the operator reads it. `owner_agent_id` is the
+ * agent that owns an agent-level note: it always writes its own note, so the
+ * list takes no row for it. Null for every other item.
+ */
+export type AccessList = { subjects: AccessEntry[]; owner_agent_id: string | null };
+
 export const WRITE_MAX_BYTES = 256 * 1024;
 /** The largest file one put may store. */
 export const FILE_MAX_BYTES = 10 * 1024 * 1024;
@@ -74,16 +94,4 @@ export function isAgentAccessMode(value: unknown): value is AgentAccessMode {
 
 export function isAccessSubject(value: unknown): value is AccessSubject {
   return typeof value === "string" && (ACCESS_SUBJECTS as readonly string[]).includes(value);
-}
-
-/**
- * The mode an agent ends up with: its own row when it has one, `none` meaning
- * no access, otherwise the base its guild and organisation rows give it.
- * `write` implies `read`; no row is no access.
- */
-export function resolveAccess(base: AccessMode | null, override: AgentAccessMode | null): AccessMode | null {
-  if (override === null || override === undefined) {
-    return base;
-  }
-  return override === "none" ? null : override;
 }

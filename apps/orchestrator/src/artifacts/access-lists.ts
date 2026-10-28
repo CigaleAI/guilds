@@ -9,15 +9,12 @@ import {
   parseGrant,
   parseGrants,
   subjectAt,
-  type AccessEntry,
-  type AccessGrant,
-  type AccessList,
 } from "./access.js";
 import { accessibleCollections, assertOperator, collectionView, loadCollectionById } from "./collections.js";
 import { ArtifactError } from "./errors.js";
 import { removeGrants, writeGrants } from "./grants.js";
 import { reachesOwner, type ArtifactStore, type ReachedNote, type ReachedTable, rowDisplayPath } from "./store.js";
-import type { AccessSubject, AccessTarget, AgentAccessMode, ArtifactActor } from "./types.js";
+import type { AccessEntry, AccessGrant, AccessList, AccessSubject, AccessTarget, AgentAccessMode, ArtifactActor } from "./types.js";
 
 /** An item whose access list is being changed, as its change-log entries name it. */
 type AccessItem = {

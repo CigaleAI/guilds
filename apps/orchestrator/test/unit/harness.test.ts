@@ -265,11 +265,12 @@ describe("code_task with the Claude Code driver", () => {
       "org/org_1/guilds/guild_1/large.md": "x".repeat(70 * 1024),
     };
     const fakeStore = {
-      async getByDisplayPath(_actor: unknown, displayPath: string) {
+      async artifactAt(_actor: unknown, displayPath: string) {
         if (!(displayPath in notes)) {
           throw new Error("artifact not found");
         }
-        return { row: noteRowAt(displayPath, notes[displayPath] ?? "") };
+        const text = notes[displayPath] ?? "";
+        return { kind: "row", row: noteRowAt(displayPath, text), href: displayPath, text, deleted: false };
       },
     };
     const { ctx } = context(new HostCodeSandbox(), {

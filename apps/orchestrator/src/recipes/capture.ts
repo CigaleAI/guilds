@@ -5,9 +5,9 @@ import { decode } from "../lib/decode.js";
 import { newId } from "../lib/ids.js";
 import { operatorActor } from "../artifacts/actors.js";
 import { collectTaskEmbeds } from "../artifacts/embeds.js";
-import type { AccessEntry } from "../artifacts/access.js";
+import { guildTables, notesNamed } from "../artifacts/service.js";
 import type { ArtifactActor } from "../artifacts/types.js";
-import { rowDisplayPath, type ArtifactStore } from "../artifacts/store.js";
+import type { ArtifactStore } from "../artifacts/store.js";
 import type { ArtifactRow } from "../db/artifacts.js";
 import { accessViewDatabase, loadAccessView } from "../access/view.js";
 import type { Scripts } from "../scripts/catalog.js";
@@ -46,9 +46,6 @@ import { listSecrets, type SecretRow } from "../db/secrets.js";
 import { listGuildRepositories, type GuildRow } from "../db/guilds.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import type { UserRow } from "../db/users.js";
-import { getByDisplayPath, listEmbeddableNotes } from "../artifacts/notes.js";
-import { listAccess } from "../artifacts/access-lists.js";
-import { listCollections } from "../artifacts/collections.js";
 
 /** The db/ functions a guild is captured into a recipe through, and the access view it reads, on `db`. */
 export function captureDatabase(db: Queryable) {
@@ -66,10 +63,8 @@ export function captureDatabase(db: Queryable) {
 /** The artifact functions a capture reads notes, tables, and their access lists through, on `store`. */
 export function captureArtifacts(store: ArtifactStore) {
   return {
-    getByDisplayPath: bindQuery(store, getByDisplayPath),
-    listAccess: bindQuery(store, listAccess),
-    listCollections: bindQuery(store, listCollections),
-    listEmbeddableNotes: bindQuery(store, listEmbeddableNotes),
+    guildTables: bindQuery(store, guildTables),
+    notesNamed: bindQuery(store, notesNamed),
   };
 }
 
@@ -129,12 +124,6 @@ function portableSecretAliases(config: Record<string, unknown>): Record<string, 
 
 function clippedHint(value: string | null | undefined): string {
   return (value ?? "").slice(0, RECIPE_HINT_MAX);
-}
-
-/** The access list of the live note at `displayPath`; empty when there is none. */
-async function noteAccessEntries(artifacts: CaptureArtifacts, actor: ArtifactActor, displayPath: string): Promise<AccessEntry[]> {
-  const found = await artifacts.getByDisplayPath(actor, displayPath);
-  return found.row ? artifacts.listAccess(actor, { kind: "note", id: found.row.id }) : [];
 }
 
 export function portableRoleConfig(
@@ -242,16 +231,13 @@ function guildRecipe(guild: CapturedGuildRow): RecipeDocument {
  */
 async function captureCollections(capture: Capture): Promise<void> {
   const { deps, recipe, actor, guildId } = capture;
-  for (const collection of await deps.artifacts.listCollections(actor)) {
+  for (const { collection, access } of await deps.artifacts.guildTables(actor, guildId)) {
     const table = { name: collection.name, purpose: collection.purpose, columns: collection.columns };
     if (collection.scope === "guild") {
-      if (collection.guild?.id === guildId) {
-        recipe.collections.push({ ...table, scope: "guild", guild: "write", writers: [] });
-      }
+      recipe.collections.push({ ...table, scope: "guild", guild: "write", writers: [] });
       continue;
     }
-    const entries = await deps.artifacts.listAccess(actor, { kind: "collection", id: collection.id });
-    const reach = capturedTableAccess(entries, capture.captured);
+    const reach = capturedTableAccess(access, capture.captured);
     if (reach !== null) {
       recipe.collections.push({ ...table, scope: "org", ...reach });
     }
@@ -456,16 +442,13 @@ async function captureNotes(capture: Capture, includeNotes: string[]): Promise<M
   const { deps, actor } = capture;
   const include = new Set([...includeNotes, ...capture.recipe.roles.flatMap((role) => role.task.embeds)]);
   const hrefToNoteId = new Map<string, string>();
-  for (const note of await deps.artifacts.listEmbeddableNotes(actor)) {
-    const displayPath = rowDisplayPath(note);
-    const wanted = include.has(displayPath) || include.has(note.key);
-    if (!wanted || note.key === "memory.md" || note.kind !== "note") {
+  for (const note of await deps.artifacts.notesNamed(actor, include)) {
+    if (note.row.key === "memory.md" || note.row.kind !== "note") {
       continue;
     }
-    const seed = seedNote(capture, note);
-    const entries = await noteAccessEntries(deps.artifacts, actor, displayPath);
-    Object.assign(seed, capturedNoteAccess(entries, seed, capture.captured));
-    hrefToNoteId.set(displayPath, recipeNotePath(seed));
+    const seed = seedNote(capture, note.row);
+    Object.assign(seed, capturedNoteAccess(note.access, seed, capture.captured));
+    hrefToNoteId.set(note.href, recipeNotePath(seed));
     capture.recipe.notes.push(seed);
   }
   return hrefToNoteId;

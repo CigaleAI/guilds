@@ -34,7 +34,7 @@ import {
 } from "./paths.js";
 import { removeRecord } from "./records.js";
 import { parseRecordId } from "./search.js";
-import { artifactMode, artifactView, assertBytes, assertRead, assertWrite, hashArtifactContent, hostNoteView, reachesOwner, type ArtifactOwnerRef, type ArtifactStore, type StateArtifact, rowDisplayPath } from "./store.js";
+import { artifactMode, artifactView, assertRead, assertWrite, hashArtifactContent, hostNoteView, reachesOwner, type ArtifactOwnerRef, type ArtifactStore, type StateArtifact, rowDisplayPath } from "./store.js";
 import { FIND_DEFAULT, FIND_MAX, type ArtifactActor, type ArtifactLevel } from "./types.js";
 
 /** A parsed display path that names a note, file, Memory, or script by where it sits. */
@@ -74,34 +74,6 @@ export async function loadParsedOrTombstone(
   parsed: ArtifactPath,
 ): Promise<ArtifactOrTombstoneRow | null> {
   return getArtifactOrTombstoneAt(store.db, addressOf(parsed));
-}
-
-/** Rewrites the live note a display path names, with write access to it. */
-export async function writeNoteAt(
-  store: ArtifactStore,
-  actor: ArtifactActor,
-  displayPath: string,
-  content: string,
-): Promise<ArtifactRow> {
-  const parsed = parseDisplayPath(displayPath);
-  if (parsed.kind !== "artifact" || parsed.orgId !== actor.orgId) {
-    throw new ArtifactError("artifact not found", 404);
-  }
-  const row = await loadParsed(store, parsed);
-  if (!row || row.kind !== "note") {
-    throw new ArtifactError("artifact not found", 404);
-  }
-  await assertRead(store, actor, row);
-  assertBytes(content);
-  return upsertNote(store, actor, {
-    level: row.level,
-    owner: { orgId: row.org_id, ownerId: row.owner_id, guildId: row.guild_id, agentId: row.agent_id },
-    path: row.path,
-    key: row.key,
-    title: row.title,
-    contentText: content,
-    searchText: row.search_text,
-  });
 }
 
 /** Writes a note: the live one at its address with write access to it, else a new one with its starting access list. */

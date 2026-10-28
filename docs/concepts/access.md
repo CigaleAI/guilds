@@ -507,13 +507,16 @@ replaces its mode and its `updated_*` columns. Rows are indexed by
 subject.
 
 An agent's mode on an item is one SQL expression
-(`agentModeSql` in `apps/orchestrator/src/artifacts/access.ts`): the
+(`agentModeSql` in `apps/orchestrator/src/db/artifact-access.ts`): the
 agent's own row; when there is none, the greater of its guild's row
 and the organisation's row; when there is neither, no access. `none`
 and no row both mean no access. Every note, file, and record tool,
 State, and every listing an agent gets apply it. An operator actor skips it
 and reaches every item except those of the private guilds it does
-not operate.
+not operate. The same rule over an item's listed rows
+(`effectiveAccess` in `apps/orchestrator/src/artifacts/service.ts`)
+gives the modes Studio shows for a table and the access a recipe
+captures and raises.
 
 An agent reaches its own agent-level notes and files, its Memory, and
 its scripts without a row. Memory and scripts never have rows. An

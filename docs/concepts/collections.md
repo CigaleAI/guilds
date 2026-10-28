@@ -274,6 +274,9 @@ Name rule: `^[a-z][a-z0-9_-]{0,62}$`.
 
 Code: `apps/orchestrator/src/artifacts/collections.ts`,
 `apps/orchestrator/src/artifacts/records.ts`,
+`apps/orchestrator/src/artifacts/service.ts` (`guildTables`,
+`guildTable`, `planCollection`, `planCollectionChange`,
+`applyCollectionStep`, `listRecordsWithHint`),
 `apps/orchestrator/src/db/collections.ts`.
 
 ### Columns

@@ -2,21 +2,29 @@ import type pg from "pg";
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 import { agentActor, operatorActor } from "../../src/artifacts/actors.js";
-import { grantAccess } from "../../src/artifacts/access-lists.js";
-import { createCollection } from "../../src/artifacts/collections.js";
+import { grantAccess, listAccess } from "../../src/artifacts/access-lists.js";
+import { createCollection, getCollection } from "../../src/artifacts/collections.js";
 import { unreachableMarker } from "../../src/artifacts/embeds.js";
 import { listRevisions, writeMemory } from "../../src/artifacts/memory.js";
 import { deleteByDisplayPath } from "../../src/artifacts/notes.js";
+import { addRecord } from "../../src/artifacts/records.js";
 import {
   agentTask,
+  applyCollectionStep,
   artifactAt,
   brokenTaskEmbeds,
   embedGraph,
   expandTaskText,
+  guildTable,
+  guildTables,
+  listRecordsWithHint,
   memoryTimeline,
+  notesNamed,
+  raiseAccess,
   taskEmbedRun,
   taskSnapshot,
   writeNote,
+  writeNoteAt,
 } from "../../src/artifacts/service.js";
 import { artifactStore, hashArtifactContent, rowDisplayPath, type ArtifactStore } from "../../src/artifacts/store.js";
 import { writeAgentTask } from "../../src/artifacts/task.js";
@@ -39,6 +47,7 @@ let db: pg.Pool;
 
 const ORG = "org_home";
 const GUILD = "guild_svc";
+const OTHER_GUILD = "guild_other";
 const AGENT = "a_svc";
 const operator = operatorActor({ orgId: ORG, actorId: "user_operator", actorName: "operator", guildId: GUILD });
 const agent = agentActor({ orgId: ORG, guildId: GUILD, agentId: AGENT, agentName: "svc" });
@@ -50,6 +59,7 @@ before(async () => {
   db = database.pool;
   store = artifactStore(db, templatesRoot());
   await insertGuild(db, { guildId: GUILD, name: "svc", orgId: ORG, about: "" }, new Date());
+  await insertGuild(db, { guildId: OTHER_GUILD, name: "other", orgId: ORG, about: "" }, new Date());
   await persistAgent(agentDatabase(db), new NotesStore(tempDir("guilds-svc-notes-"), templatesRoot()), {
     agentId: AGENT,
     guildId: GUILD,
@@ -165,6 +175,127 @@ describe("artifact service", { concurrency: 1 }, () => {
     assert.ok(revision);
     await assert.rejects(artifactAt(store, agent, revision.display_path), { name: "ArtifactError", message: "unknown artifact path" });
     await assert.rejects(artifactAt(store, agent, shutPath), { name: "ArtifactError", message: "artifact not found" });
+  });
+
+  test("artifactAt gives a row's display path and its text, a record's as its JSON view", async () => {
+    const note = await artifactAt(store, operator, rulesPath);
+    assert.ok(note.kind === "row");
+    assert.equal(note.href, rulesPath);
+    assert.equal(note.text, "Cite sources.\n");
+
+    await createCollection(store, operator, { name: "viewed", purpose: "Viewed", columns: [{ name: "title", type: "text", description: "title" }] });
+    const { record } = await addRecord(store, operator, { collection: "viewed", body: { title: "First" } });
+    const href = `org/${ORG}/collections/viewed/${String(record.id)}`;
+    const view = await artifactAt(store, operator, href);
+    assert.ok(view.kind === "row");
+    assert.equal(view.href, href);
+    assert.deepEqual(Object.keys(JSON.parse(view.text)).slice(0, 4), ["id", "collection", "display_path", "title"]);
+    assert.equal(JSON.parse(view.text).title, "First");
+    assert.match(view.text, /^\{\n {2}"id"/);
+  });
+
+  test("writeNoteAt rewrites a live note and says where it sits, and refuses a path that holds no note", async () => {
+    const written = await writeNoteAt(store, operator, rulesPath, "Cite sources twice.\n");
+    assert.equal(written.href, rulesPath);
+    assert.equal(written.row.content_text, "Cite sources twice.\n");
+    await assert.rejects(writeNoteAt(store, operator, `org/${ORG}/collections/viewed`, "x"), { name: "ArtifactError", message: "artifact not found" });
+    await assert.rejects(writeNoteAt(store, operator, `org/${ORG}/absent.md`, "x"), { name: "ArtifactError", message: "artifact not found" });
+    await writeNoteAt(store, operator, rulesPath, "Cite sources.\n");
+  });
+
+  test("writeMemory says where the Memory sits", async () => {
+    const written = await writeMemory(store, operator, AGENT, { content: "- noted\n", detail: "test" });
+    assert.equal(written.href, `org/${ORG}/agents/${AGENT}/memory.md`);
+    assert.equal(written.row.content_text, "- noted\n");
+  });
+
+  test("notesNamed finds the notes named by display path or file name, each with its access list", async () => {
+    const found = await notesNamed(store, operator, new Set([rulesPath, "shut.md", "absent.md"]));
+    assert.deepEqual(
+      found.map((note) => [note.href, note.access.map((entry) => [entry.type, entry.id, entry.mode])]),
+      [
+        [rulesPath, [["guild", GUILD, "write"]]],
+        [shutPath, [["org", ORG, "read"], ["agent", AGENT, "none"]]],
+      ],
+    );
+    assert.deepEqual(await notesNamed(store, operator, new Set()), []);
+  });
+
+  test("guildTables lists the guild's own tables and the organisation's with counts and access lists, not another guild's own", async () => {
+    await createCollection(store, operator, { name: "own-desk", purpose: "Own", guildId: GUILD });
+    await createCollection(store, operator, { name: "other-desk", purpose: "Other", guildId: OTHER_GUILD });
+    const tables = await guildTables(store, operator, GUILD);
+    const names = tables.map((table) => table.collection.name);
+    assert.ok(names.includes("own-desk"));
+    assert.ok(names.includes("viewed"));
+    assert.ok(!names.includes("other-desk"));
+    const viewed = tables.find((table) => table.collection.name === "viewed");
+    assert.equal(viewed?.collection.count, 1);
+    assert.deepEqual(viewed?.access.map((entry) => [entry.type, entry.mode]), [["org", "read"]]);
+    const own = tables.find((table) => table.collection.name === "own-desk");
+    assert.deepEqual(own?.access.map((entry) => [entry.type, entry.id, entry.mode]), [["guild", GUILD, "write"]]);
+  });
+
+  test("guildTable finds one of the guild's tables by name or id, and nothing for another guild's own or an unknown one", async () => {
+    const byName = await guildTable(store, operator, GUILD, { name: "own-desk" });
+    assert.equal(byName?.collection.name, "own-desk");
+    assert.deepEqual(byName?.access.map((entry) => entry.type), ["guild"]);
+    const byId = await guildTable(store, operator, GUILD, { id: String(byName?.collection.id) });
+    assert.equal(byId?.collection.id, byName?.collection.id);
+    assert.equal(await guildTable(store, operator, GUILD, { name: "other-desk" }), null);
+    assert.equal(await guildTable(store, operator, GUILD, { name: "Not A Name" }), null);
+    assert.equal(await guildTable(store, operator, GUILD, { id: "acol_missing" }), null);
+  });
+
+  test("raiseAccess writes only the rows that raise the guild and its writers, and never lowers a row", async () => {
+    const table = await createCollection(store, operator, { name: "raised", purpose: "Raised" });
+    const target = { kind: "collection" as const, id: table.id };
+    await raiseAccess(store, operator, target, { guildId: GUILD, mode: "read", writerIds: [AGENT] });
+    const rows = async () => (await listAccess(store, operator, target)).map((entry) => [entry.type, entry.id, entry.mode]);
+    assert.deepEqual(await rows(), [["org", ORG, "read"], ["agent", AGENT, "write"]]);
+    await raiseAccess(store, operator, target, { guildId: GUILD, mode: "write", writerIds: [AGENT] });
+    assert.deepEqual(await rows(), [["org", ORG, "read"], ["guild", GUILD, "write"], ["agent", AGENT, "write"]]);
+    await raiseAccess(store, operator, target, { guildId: GUILD, mode: "read", writerIds: [] });
+    assert.deepEqual(await rows(), [["org", ORG, "read"], ["guild", GUILD, "write"], ["agent", AGENT, "write"]]);
+  });
+
+  test("applyCollectionStep creates a table with its access rows, edits its definition and rows, and deletes it", async () => {
+    await applyCollectionStep(store, operator, {
+      action: "create",
+      collection: { name: "stepped", purpose: "Stepped", columns: [], guildId: GUILD },
+      access: [{ type: "agent", id: AGENT, mode: "read" }],
+    });
+    const created = await guildTable(store, operator, GUILD, { name: "stepped" });
+    assert.ok(created);
+    assert.deepEqual(created.access.map((entry) => [entry.type, entry.mode]), [["guild", "write"], ["agent", "read"]]);
+
+    await applyCollectionStep(store, operator, {
+      action: "edit",
+      id: created.collection.id,
+      changes: { purpose: "Stepped twice" },
+      access: [{ type: "agent", id: AGENT, mode: null }],
+    });
+    const edited = await getCollection(store, operator, created.collection.id);
+    assert.equal(edited.purpose, "Stepped twice");
+    assert.deepEqual((await listAccess(store, operator, { kind: "collection", id: created.collection.id })).map((entry) => entry.type), ["guild"]);
+
+    await applyCollectionStep(store, operator, { action: "edit", id: created.collection.id, changes: null, access: [] });
+    assert.equal((await getCollection(store, operator, created.collection.id)).purpose, "Stepped twice");
+
+    await applyCollectionStep(store, operator, { action: "delete", id: created.collection.id });
+    assert.equal(await guildTable(store, operator, GUILD, { id: created.collection.id }), null);
+  });
+
+  test("listRecordsWithHint explains an empty narrowed listing, and only that one", async () => {
+    const narrowed = await listRecordsWithHint(store, operator, { collection: "viewed", where: { title: "Absent" } });
+    assert.deepEqual(narrowed.records, []);
+    assert.match(String(narrowed.hint), /^No records in viewed where \{"title":"Absent"\}\. viewed holds 1 record;/);
+    const plain = await listRecordsWithHint(store, operator, { collection: "viewed" });
+    assert.equal(plain.total, 1);
+    assert.equal(plain.hint, null);
+    const found = await listRecordsWithHint(store, operator, { collection: "viewed", where: { title: "First" } });
+    assert.equal(found.records.length, 1);
+    assert.equal(found.hint, null);
   });
 
   test("writeNote writes under the owner the level names for the actor and says where the note sits", async () => {

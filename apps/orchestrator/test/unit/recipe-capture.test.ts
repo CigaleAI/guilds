@@ -138,23 +138,26 @@ function captureDeps(options: {
       listMcpCatalogTools: async () => options.tools ?? [],
     } as never,
     artifacts: {
-      getByDisplayPath: async (_actor: unknown, displayPath: string) => {
-        const note = (options.notes ?? []).find((item) => rowDisplayPath(item) === displayPath);
-        return note ? { row: { id: note.id } } : {};
-      },
-      listCollections: async () =>
-        options.collections ?? [
-          { id: "acol_seen", name: "seen-mail", purpose: "Dedupe", columns: SEEN_MAIL_COLUMNS },
-          { id: "acol_leads", name: "leads", purpose: "Qualified leads", columns: LEADS_COLUMNS },
-          { id: "acol_other", name: "other-desk", purpose: "Another guild's table", columns: LEADS_COLUMNS },
-        ],
-      listAccess: async (_actor: unknown, target: { kind: string; id: string }) =>
-        (options.access ?? DEFAULT_ACCESS)[target.id] ?? [],
-      listEmbeddableNotes: async () =>
-        options.notes ?? [
-          noteRowAt("org/org_1/guilds/guild_live/playbook.md", "Hand off to @writer."),
-          noteRowAt("org/org_1/agents/a_scout/memory.md", "lived memory"),
-        ],
+      guildTables: async () =>
+        (
+          options.collections ?? [
+            { id: "acol_seen", name: "seen-mail", purpose: "Dedupe", columns: SEEN_MAIL_COLUMNS },
+            { id: "acol_leads", name: "leads", purpose: "Qualified leads", columns: LEADS_COLUMNS },
+            { id: "acol_other", name: "other-desk", purpose: "Another guild's table", columns: LEADS_COLUMNS },
+          ]
+        ).map((collection) => ({
+          collection: { scope: "org", guild: null, ...collection },
+          access: (options.access ?? DEFAULT_ACCESS)[String(collection.id)] ?? [],
+        })),
+      notesNamed: async (_actor: unknown, names: ReadonlySet<string>) =>
+        (
+          options.notes ?? [
+            noteRowAt("org/org_1/guilds/guild_live/playbook.md", "Hand off to @writer."),
+            noteRowAt("org/org_1/agents/a_scout/memory.md", "lived memory"),
+          ]
+        )
+          .filter((row) => names.has(rowDisplayPath(row)) || names.has(row.key))
+          .map((row) => ({ href: rowDisplayPath(row), row, access: (options.access ?? DEFAULT_ACCESS)[row.id] ?? [] })),
     } as unknown as CaptureArtifacts,
     scripts: {
       listForAgent: async (agentId: string) =>

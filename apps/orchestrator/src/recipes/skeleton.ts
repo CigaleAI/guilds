@@ -7,7 +7,7 @@ import { createCollection, deleteCollection } from "../artifacts/collections.js"
 import { ArtifactError } from "../artifacts/errors.js";
 import type { ArtifactActor } from "../artifacts/types.js";
 import type { CollectionView } from "../artifacts/store.js";
-import { writeNote } from "../artifacts/service.js";
+import { raiseAccess, writeNote } from "../artifacts/service.js";
 import { deleteAgent } from "../db/agents.js";
 import { deleteGuild } from "../db/guilds.js";
 import type { OrgMembershipRow } from "../db/orgs.js";
@@ -20,7 +20,7 @@ import { assertGuildAgentRoom, GuildAgentLimitError, guildAgentRoom } from "../g
 import type { ChangeActor } from "../lib/change-actor.js";
 import { newId } from "../lib/ids.js";
 import { assertCanCreateAgents, assertCanCreateGuild, assertCanPlaceAgents, machineCounts, orgCounts } from "../policy/index.js";
-import { agentsOfRoles, raiseRecipeAccess } from "./access.js";
+import { agentsOfRoles } from "./access.js";
 import type { ApplyChoices, RecipeApply } from "./apply.js";
 import { checklistFromPlan, grantReusedSecrets, writeOverlays } from "./checklist.js";
 import { RecipeConflictError, RecipeError } from "./errors.js";
@@ -197,9 +197,9 @@ async function writeNotes(skeleton: Skeleton, recipe: RecipeDocument): Promise<v
     }
   }
   for (const { note, id } of written) {
-    await raiseRecipeAccess({ artifacts: skeleton.apply.artifacts, actor: skeleton.actor }, { kind: "note", id }, {
-      access: note,
+    await raiseAccess(skeleton.apply.artifacts, skeleton.actor, { kind: "note", id }, {
       guildId: skeleton.guildId,
+      mode: note.guild ?? null,
       writerIds: agentsOfRoles(note.writers, skeleton.roleToAgent),
     });
   }
@@ -310,11 +310,11 @@ async function settleCollections(skeleton: Skeleton, planned: CollectionPlan[]):
   for (const item of planned) {
     const collectionId = item.action === "create" ? await createPlannedCollection(skeleton, item) : item.collection_id;
     if (collectionId) {
-      await raiseRecipeAccess(
-        { artifacts: skeleton.apply.artifacts, actor: skeleton.actor },
-        { kind: "collection", id: collectionId },
-        { access: item, guildId: skeleton.guildId, writerIds: agentsOfRoles(item.writers, skeleton.roleToAgent) },
-      );
+      await raiseAccess(skeleton.apply.artifacts, skeleton.actor, { kind: "collection", id: collectionId }, {
+        guildId: skeleton.guildId,
+        mode: item.guild ?? null,
+        writerIds: agentsOfRoles(item.writers, skeleton.roleToAgent),
+      });
     }
     settled.push({ name: item.name, action: item.action, collection_id: collectionId, guild: item.guild, writers: item.writers });
   }

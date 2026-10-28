@@ -395,16 +395,16 @@ export function columnCatalog(columns: CollectionColumn[]): Array<Record<string,
   }));
 }
 
+/** A replacement of a live collection's columns: the columns it stores, the columns it renames, and the names it drops. */
+export type ColumnChange = { columns: CollectionColumn[]; renamed: Array<{ from: string; to: string }>; removed: string[] };
+
 /**
  * What changes when the columns of a live collection are replaced: renamed
  * columns move their key in every record, removed columns drop it. A rename
  * is a column whose `rename_from` names a previous column; the field is
  * consumed here and never stored.
  */
-export function parseColumnChange(
-  previous: CollectionColumn[],
-  raw: unknown,
-): { columns: CollectionColumn[]; renamed: Array<{ from: string; to: string }>; removed: string[] } {
+export function parseColumnChange(previous: CollectionColumn[], raw: unknown): ColumnChange {
   if (!Array.isArray(raw)) {
     throw new ArtifactError("columns must be an array", 422);
   }
