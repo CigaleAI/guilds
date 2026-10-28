@@ -162,7 +162,10 @@ functions that take it first, one module per sub-domain:
 `artifacts/notes.js`, `memory.js`, `collections.js`, `records.js`,
 and `access-lists.js` (`writeNote(store, actor, …)`). The export
 `recipes/schema.js` is `recipes/parse.js`, which exports
-`parseRecipe`, and `credentials/items.js` is `mcp/view.js`. The export
+`parseRecipe`, and `credentials/items.js` is `mcp/view.js`.
+`RegistryClient.recipe` (`registry/client.js`) is `recipeFile`, which
+answers the recipe's bytes checked against the index; `parseRecipe`
+reads the document from them. The export
 `mcp/index.js` is four: `mcp/pool.js` (`McpPool`, built with its
 `McpDatabase` from `mcpDatabase(db)`; its methods take no connection),
 `mcp/service.js` (`connectionTools`, `currentTools`, `callTool`,

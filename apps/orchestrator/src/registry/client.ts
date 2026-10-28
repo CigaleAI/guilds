@@ -3,8 +3,6 @@ import { ManifestError, boxWiringProblem, endpointOnlyProblem, loadManifest } fr
 import type { Manifest } from "../db/schema/index.js";
 import { integrationValue, REGISTRY } from "../instance/integrations.js";
 import { proxyFetch, type FetchFn } from "../net/http.js";
-import { parseRecipe } from "../recipes/parse.js";
-import type { RecipeDocument } from "../recipes/schema.js";
 import type { KeyObject } from "node:crypto";
 import {
   assertSigned,
@@ -52,7 +50,7 @@ export function codeManifestProblem(manifest: Manifest): string | null {
 }
 
 /**
- * Reads one registry: its index, connector packages, and recipe documents, each checked against
+ * Reads one registry: its index, connector packages, and recipe files, each checked against
  * its hash. Given a public key, it refuses an index that key does not verify.
  */
 export class RegistryClient {
@@ -142,13 +140,9 @@ export class RegistryClient {
     return { manifest, adapter, logo: files.get("logo.svg") ?? null };
   }
 
-  async recipe(entry: RegistryRecipeEntry): Promise<RecipeDocument> {
-    const body = await this.checked(entry);
-    try {
-      return parseRecipe(JSON.parse(body.toString("utf8")));
-    } catch (error) {
-      throw new RegistryError(`recipe ${entry.name}: ${error instanceof Error ? error.message : String(error)}`);
-    }
+  /** A recipe's file as the registry serves it, checked against the index's size and hash. */
+  recipeFile(entry: RegistryRecipeEntry): Promise<Buffer> {
+    return this.checked(entry);
   }
 }
 

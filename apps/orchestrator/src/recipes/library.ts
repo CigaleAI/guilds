@@ -163,7 +163,10 @@ export async function importRecipe(db: Queryable, document: unknown, owner: Reci
   );
 }
 
-/** Imports the recipe `wanted` names from the registry as `importRecipe` imports a document; one the index lacks is a 404. */
+/**
+ * Imports the recipe `wanted` names from the registry as `importRecipe` imports a document. One
+ * the index lacks is a 404; a file that is not a recipe is refused naming the registry's recipe.
+ */
 export async function importRegistryRecipe(
   db: Queryable,
   registry: RegistryClient,
@@ -182,7 +185,14 @@ export async function importRegistryRecipe(
       404,
     );
   }
-  return importRecipe(db, await registry.recipe(entry), owner);
+  const file = await registry.recipeFile(entry);
+  let document: RecipeDocument;
+  try {
+    document = parseRecipe(JSON.parse(file.toString("utf8")));
+  } catch (error) {
+    throw new RegistryError(`recipe ${entry.name}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  return importRecipe(db, document, owner);
 }
 
 /** Captures the guild as `actor` reads it (`captureGuild`) into its organisation's library, as the actor's private draft. */

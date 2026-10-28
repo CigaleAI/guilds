@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { test } from "node:test";
 import pg from "pg";
 import type { RecipeRow } from "../../src/db/recipes.js";
@@ -58,6 +59,40 @@ test("refuses_a_registry_recipe_the_index_lacks_with_404_naming_it", async () =>
     await assert.rejects(
       importRegistryRecipe(db, registry.client, { name: "crm-desk", version: undefined }, OWNER),
       (error) => error instanceof RegistryError && error.status === 404 && error.message === "the registry has no recipe crm-desk",
+    );
+  } finally {
+    await db.end();
+  }
+});
+
+test("refuses_a_registry_file_that_is_not_a_recipe_naming_the_registry_recipe", async () => {
+  const registry = fakeRegistry();
+  registry.recipe("crm-desk", "1.0.0", { format: "not-a-recipe" });
+  const db = new pg.Pool();
+  try {
+    await assert.rejects(
+      importRegistryRecipe(db, registry.client, { name: "crm-desk", version: undefined }, OWNER),
+      (error) => error instanceof RegistryError && error.status === 422 && error.message.startsWith("recipe crm-desk: "),
+    );
+  } finally {
+    await db.end();
+  }
+});
+
+test("refuses_a_registry_file_that_is_not_json_naming_the_registry_recipe", async () => {
+  const registry = fakeRegistry();
+  registry.recipe("crm-desk", "1.0.0", {});
+  const [entry] = registry.index.recipes;
+  assert.ok(entry);
+  const body = Buffer.from("{ not json", "utf8");
+  registry.files.set(entry.path, body);
+  entry.size = body.length;
+  entry.sha256 = createHash("sha256").update(body).digest("hex");
+  const db = new pg.Pool();
+  try {
+    await assert.rejects(
+      importRegistryRecipe(db, registry.client, { name: "crm-desk", version: undefined }, OWNER),
+      (error) => error instanceof RegistryError && error.status === 422 && error.message.startsWith("recipe crm-desk: "),
     );
   } finally {
     await db.end();
