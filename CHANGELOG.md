@@ -117,14 +117,14 @@ are exported from `connectors/servers.js`; the functions of
 `getConnector`, `getConnectorBySlug`, `listOrgConnectors`, and
 `setConnectorOauthClient`. An `IdentityProvider`'s `currentUser`
 resolves to a `UserRow` (`db/users.js`), and `serverItem`
-(`credentials/items.js`) takes a `LoadedConnector`. `ArtifactStore`
+(`mcp/view.js`) takes a `LoadedConnector`. `ArtifactStore`
 is the store's dependencies, `{ db, templatesRoot }`, built with
 `artifactStore(db, templatesRoot)`; what were its methods are
 functions that take it first, one module per sub-domain:
 `artifacts/notes.js`, `memory.js`, `collections.js`, `records.js`,
 and `access-lists.js` (`writeNote(store, actor, …)`). The export
 `recipes/schema.js` is `recipes/parse.js`, which exports
-`parseRecipe`.
+`parseRecipe`, and `credentials/items.js` is `mcp/view.js`.
 
 **Breaking for extending repositories.** The Makefile variables
 `EDITION`, `EDITION_TEST_PACKAGES`, and `EDITION_COMPOSE_FILES` are

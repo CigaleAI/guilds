@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import { serverItem } from "../credentials/items.js";
+import { serverItem } from "../mcp/view.js";
 import {
   createOrgServer,
   deleteOrgServer,

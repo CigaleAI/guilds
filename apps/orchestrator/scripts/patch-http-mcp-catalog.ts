@@ -6,7 +6,7 @@ import { repoRoot } from "../src/lib/paths.js";
 import { installedConnectors } from "../src/connectors/index.js";
 import type { ConnectorEntry } from "../src/connectors/registry.js";
 import { connectorFacts, loadConnector, serverTools, type LoadedConnector } from "../src/connectors/servers.js";
-import { serverItem } from "../src/credentials/items.js";
+import { serverItem } from "../src/mcp/view.js";
 import { oauthSetupState } from "../src/oauth/index.js";
 import { REGISTRY } from "../src/toolbox/index.js";
 

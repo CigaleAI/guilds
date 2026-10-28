@@ -9,7 +9,7 @@ import {
   type LoadedConnector,
 } from "../connectors/servers.js";
 import { validateSettings } from "../connectors/settings.js";
-import { bindingItem, connectionMetadata, serverItem } from "../credentials/items.js";
+import { bindingItem, connectionMetadata, serverItem } from "./view.js";
 import { listBindingsForConnection } from "../db/bindings.js";
 import { isPlainRecord } from "../db/json.js";
 import {
