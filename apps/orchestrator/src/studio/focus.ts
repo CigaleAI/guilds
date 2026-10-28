@@ -1,10 +1,9 @@
 import { ArtifactError } from "../artifacts/errors.js";
-import { memoryTimeline } from "../artifacts/service.js";
+import { memoryDiffText, memoryTimeline, type MemoryTimelineEntry } from "../artifacts/memory.js";
 import { artifactAt, parseActorPath } from "../artifacts/notes.js";
 import { listFileChanges, type FileChangeView } from "../db/file-changes.js";
 import { wrapEvidence } from "../conversation/trust.js";
 import { isoOrNull } from "../db/views.js";
-import { memoryDiffText, type MemoryTimelineEntry } from "../artifacts/memory-timeline.js";
 import { issueItem } from "../issues/index.js";
 import { scheduleItem } from "../schedules/item.js";
 import { capBytes } from "../toolbox/output.js";

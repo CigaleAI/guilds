@@ -16,9 +16,7 @@ import {
 } from "./collections.js";
 import { describeColumn, parseColumnChange, parseColumns, type ColumnChange } from "./columns.js";
 import { ArtifactError } from "./errors.js";
-import { getMemoryRow, listRevisions } from "./memory.js";
-import { buildMemoryTimeline, type MemoryTimelineEntry } from "./memory-timeline.js";
-import { collectionDisplayPath, displayPathFor, MEMORY_KEY } from "./paths.js";
+import { collectionDisplayPath } from "./paths.js";
 import { listRecords } from "./records.js";
 import { type ArtifactStore, type CollectionView, type RecordView } from "./store.js";
 import {
@@ -30,25 +28,6 @@ import {
   type AgentAccessMode,
   type ArtifactActor,
 } from "./types.js";
-
-/** Every version an agent's Memory has held, newest first, with its display path and the live version and hash. */
-export type MemoryTimeline = {
-  displayPath: string;
-  /** The live Memory's version and the hash of its text; null when the agent has no Memory. */
-  live: { version: number; contentHash: string } | null;
-  entries: MemoryTimelineEntry[];
-};
-
-/** The agent's Memory as the actor reads its versions: the archived ones only reach an operator. */
-export async function memoryTimeline(store: ArtifactStore, actor: ArtifactActor, agentId: string): Promise<MemoryTimeline> {
-  const live = await getMemoryRow(store, actor, agentId);
-  const revisions = await listRevisions(store, actor, agentId);
-  return {
-    displayPath: displayPathFor({ orgId: actor.orgId, level: "agent", ownerId: agentId, kind: "memory", path: "", key: MEMORY_KEY }),
-    live: live ? { version: live.version, contentHash: live.content_hash } : null,
-    entries: buildMemoryTimeline({ live: { content: live?.content_text ?? "" }, revisions }),
-  };
-}
 
 /** Who an access list is read for: a guild, or one agent of that guild. */
 export type AccessReader = { guildId: string; agentId: string | null };

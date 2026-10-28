@@ -17,7 +17,6 @@ import { templatesRoot } from "../helpers/fixtures.js";
 import { tempDir } from "../helpers/env.js";
 import { compareColumnTimestamps } from "../../src/db/codecs.js";
 import { listConfigChanges } from "../../src/db/config-changes.js";
-import { buildMemoryTimeline } from "../../src/artifacts/memory-timeline.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { deleteGuild, insertGuild } from "../../src/db/guilds.js";
 import { insertOrg } from "../../src/db/orgs.js";
@@ -34,7 +33,12 @@ import {
   writeNote,
   writeNoteAt,
 } from "../../src/artifacts/notes.js";
-import { getMemoryRow, listRevisions, writeMemory } from "../../src/artifacts/memory.js";
+import {
+  buildMemoryTimeline,
+  getMemoryRow,
+  listRevisions,
+  writeMemory,
+} from "../../src/artifacts/memory.js";
 import { accessList, grantAccess, listAccess, reachOf, replaceAccess } from "../../src/artifacts/access-lists.js";
 import { clearRecords, collectionCatalog, collectionFacts, createCollection, deleteCollection, describeCollection, getCollection, listCollectionsWithCounts, updateCollection } from "../../src/artifacts/collections.js";
 import { addRecord, exportRecords, getRecord, listRecords, removeRecord, searchRecords, updateRecord } from "../../src/artifacts/records.js";

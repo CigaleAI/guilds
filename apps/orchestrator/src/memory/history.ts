@@ -2,8 +2,7 @@ import type { ArtifactStore } from "../artifacts/store.js";
 import type { ArtifactActor } from "../artifacts/types.js";
 import { listFileChanges } from "../db/file-changes.js";
 import { iso } from "../db/views.js";
-import type { MemoryTimelineEntry } from "../artifacts/memory-timeline.js";
-import { memoryTimeline } from "../artifacts/service.js";
+import { memoryTimeline, type MemoryTimelineEntry } from "../artifacts/memory.js";
 import { getRun } from "../db/runs.js";
 import type { Queryable } from "../db/pg.js";
 

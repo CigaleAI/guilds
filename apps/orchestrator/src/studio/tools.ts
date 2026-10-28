@@ -1,7 +1,6 @@
-import { memoryTimeline } from "../artifacts/service.js";
+import { memoryDiffText, memoryTimeline, type MemoryTimelineEntry } from "../artifacts/memory.js";
 import { agentTask } from "../artifacts/task.js";
 import { iso } from "../db/views.js";
-import { memoryDiffText, type MemoryTimelineEntry } from "../artifacts/memory-timeline.js";
 import { composeAgentSystemPrompt, hydrateStanding, promptHash, schemasOffer } from "../prompts/index.js";
 import { argInteger, argString, functionSchema } from "../toolbox/schema.js";
 import { scheduleItem } from "../schedules/item.js";

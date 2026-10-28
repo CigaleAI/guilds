@@ -5,7 +5,7 @@ import { agentActor, operatorActor } from "../../src/artifacts/actors.js";
 import { grantAccess, listAccess } from "../../src/artifacts/access-lists.js";
 import { createCollection, getCollection } from "../../src/artifacts/collections.js";
 import { embedGraph, unreachableMarker } from "../../src/artifacts/embeds.js";
-import { listRevisions, writeMemory } from "../../src/artifacts/memory.js";
+import { listRevisions, memoryTimeline, writeMemory } from "../../src/artifacts/memory.js";
 import {
   artifactAt,
   deleteByDisplayPath,
@@ -19,7 +19,6 @@ import {
   guildTable,
   guildTables,
   listRecordsWithHint,
-  memoryTimeline,
   raiseAccess,
 } from "../../src/artifacts/service.js";
 import { artifactStore, hashArtifactContent, rowDisplayPath, type ArtifactStore } from "../../src/artifacts/store.js";

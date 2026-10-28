@@ -249,8 +249,7 @@ say* stays a question for the run history.
 ### Timeline
 
 The Memory view and Prompt Studio read the archive as a timeline
-(`apps/orchestrator/src/artifacts/memory-timeline.ts`, read through
-`memoryTimeline` in `apps/orchestrator/src/artifacts/service.ts` and served by
+(`memoryTimeline` in `apps/orchestrator/src/artifacts/memory.ts`, served by
 `apps/orchestrator/src/memory/history.ts`):
 
 - revision *k* holds version *k−1* and names the actor and time of
