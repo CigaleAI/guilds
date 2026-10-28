@@ -1,7 +1,5 @@
-import { assignGuildLooks } from "../avatars/looks.js";
 import type { RecipeApply } from "../recipes/apply.js";
 import { parseRecipe } from "../recipes/parse.js";
-import { stampBuilderWrite } from "../recipes/review.js";
 import { RECIPE_WRITE_HINT } from "./constants.js";
 import {
   searchConnectedWorkspace,
@@ -20,7 +18,7 @@ import type { RecipeDocument } from "../recipes/schema.js";
 import { RecipeConflictError, RecipeError } from "../recipes/errors.js";
 import type { Queryable } from "../db/pg.js";
 import { getRecipe } from "../db/recipes.js";
-import { validateLibraryRecipe, writeRecipe } from "../recipes/library.js";
+import { validateLibraryRecipe, writeBuilderRecipe } from "../recipes/library.js";
 
 export type BuilderCapabilityContext = {
   orgId: string;
@@ -464,18 +462,11 @@ export const builderWriteRecipe = {
       if (rejected) {
         return { error: rejected };
       }
-      const stamped = stampBuilderWrite(next, previous);
-      assignGuildLooks(stamped.roles, previous.roles);
-      const written = await writeRecipe(
-        ctx.connection,
-        { id: ctx.recipeId, body_version: expected },
-        { body: stamped, name: stamped.meta.name, description: stamped.meta.description },
-        new Date(),
-      );
+      const written = await writeBuilderRecipe(ctx.connection, { id: ctx.recipeId, body_version: expected }, next, previous);
       if (ctx.onRecipeChanged) {
         await ctx.onRecipeChanged(written);
       }
-      return builderWriteToolResult(written, stamped);
+      return builderWriteToolResult(written, next);
     } catch (error) {
       if (error instanceof RecipeConflictError) {
         return { error: error.message, code: "conflict", body_version: error.body_version };
