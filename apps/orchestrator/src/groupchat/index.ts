@@ -403,6 +403,23 @@ export function interruptTargets(activeAgentIds: string[], taggedAgentIds: strin
   return activeAgentIds.filter((agentId) => taggedAgentIds.includes(agentId));
 }
 
+/** A group run under way as the chat's state names it. */
+export type ActiveAgent = Pick<ActiveDelivery, "id" | "name">;
+
+/** A guild's group chat as its operators and streams see it: its counters, its runs, its last pick. */
+export type GroupChatView = {
+  guild_id: GroupChatStateRow["guild_id"];
+  chat_seq: GroupChatStateRow["chat_seq"];
+  agent_message_count: GroupChatStateRow["agent_message_count"];
+  agent_message_limit: GroupChatStateRow["agent_message_limit"];
+  dispatching: boolean;
+  pending_agent_count: GroupChatStateRow["pending_agent_count"];
+  active_agents: ActiveAgent[];
+  limit_reached: boolean;
+  errors: GroupChatStateRow["errors"];
+  last_recipient_decision: (RecipientRouting & { through_seq: number }) | null;
+};
+
 /** What a group chat runs with beside its database: whether a guild is being deleted, and the recipient router. */
 export type GroupChatServices = { is_deleting: (guildId: string) => boolean; router: GroupRouter };
 
@@ -490,7 +507,7 @@ export class GroupChat {
       return;
     }
     const state = await this.state(guildId);
-    if (Number(state.pending_agent_count) === 0) {
+    if (state.pending_agent_count === 0) {
       return;
     }
     this._ensure_dispatch(guildId);
@@ -511,7 +528,7 @@ export class GroupChat {
     await Promise.allSettled(handles.map((handle) => handle.promise));
   }
 
-  async state(guildId: string): Promise<Record<string, unknown>> {
+  async state(guildId: string): Promise<GroupChatView> {
     const row = await this.db.getGroupChatState(guildId);
     if (row === null) {
       throw new GroupChatError(404, "guild not found");
@@ -519,7 +536,7 @@ export class GroupChat {
     return this._state_view(row);
   }
 
-  async setLimit(guildId: string, limit: number): Promise<Record<string, unknown>> {
+  async setLimit(guildId: string, limit: number): Promise<GroupChatView> {
     if (this._is_deleting(guildId)) {
       throw new GroupChatError(409, "guild is being deleted");
     }
@@ -534,7 +551,7 @@ export class GroupChat {
   }
 
   /** Deletes the guild's public messages for everyone and tells open chats. */
-  async clear(guildId: string): Promise<Record<string, unknown>> {
+  async clear(guildId: string): Promise<GroupChatView> {
     if (this._is_deleting(guildId)) {
       throw new GroupChatError(409, "guild is being deleted");
     }
@@ -550,7 +567,7 @@ export class GroupChat {
     return state;
   }
 
-  async listMessages(guildId: string): Promise<Array<Record<string, unknown>>> {
+  async listMessages(guildId: string): Promise<GroupMessageView[]> {
     const guild = await this.db.getGuild(guildId);
     if (guild === null) {
       throw new GroupChatError(404, "guild not found");
@@ -679,7 +696,7 @@ export class GroupChat {
     if (state.limit_reached) {
       await this.publish(guildId, "group.limit_reached", state);
     }
-    if (Number(state.pending_agent_count) === 0) {
+    if (state.pending_agent_count === 0) {
       await this.publish(guildId, "group.idle", state);
     }
     await this.wake(guildId);
@@ -820,7 +837,7 @@ export class GroupChat {
     kick.clear();
     const seen = runner.lockGeneration;
     const active = this._active_for(guildId);
-    const snapshot = Number((await this.state(guildId)).chat_seq);
+    const snapshot = (await this.state(guildId)).chat_seq;
     const pending = withActiveCursors(
       await this.db.listPendingGroupAgents(guildId, snapshot),
       active,
@@ -961,7 +978,7 @@ export class GroupChat {
     await this.publish(guildId, "group.delivery.failed", entry);
   }
 
-  _state_view(row: GroupChatStateRow): Record<string, unknown> {
+  _state_view(row: GroupChatStateRow): GroupChatView {
     const count = row.agent_message_count;
     const limit = row.agent_message_limit;
     const guildId = row.guild_id;
