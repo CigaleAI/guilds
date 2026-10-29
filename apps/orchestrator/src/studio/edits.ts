@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { ArtifactError } from "../artifacts/errors.js";
-import { displayPathFor, MEMORY_KEY } from "../artifacts/paths.js";
 import { hashArtifactContent, type ArtifactStore } from "../artifacts/store.js";
 import { WRITE_MAX_BYTES } from "../artifacts/types.js";
 import { updateGuildText } from "../guilds/service.js";
@@ -29,7 +28,7 @@ import {
   writeNote,
   writeNoteAt,
 } from "../artifacts/notes.js";
-import { writeMemory } from "../artifacts/memory.js";
+import { readMemoryVersion, writeMemory } from "../artifacts/memory.js";
 
 // An edit tool never writes. It returns this widget; the turn pauses until
 // the operator applies or declines the proposal from the Studio log.
@@ -114,27 +113,24 @@ async function sourceAgentIds(scope: EditScope): Promise<Set<string>> {
   return new Set(agents.map((row) => String(row.id)));
 }
 
-/** The agent's Memory as the operator reads it at its display path; an agent without one has an empty Memory at version 0. */
-export async function loadMemoryBase(scope: EditScope, agent: Pick<AgentRow, "id" | "name">): Promise<EditBase> {
-  const agentId = agent.id;
-  const href = displayPathFor({ orgId: scope.orgId, level: "agent", ownerId: agentId, kind: "memory", path: "", key: MEMORY_KEY });
-  const empty: Extract<EditBase, { kind: "memory" }> = {
+/** The agent's Memory as the operator reads it; an agent without one has an empty Memory at version 0. */
+export async function loadMemoryBase(
+  scope: EditScope,
+  agent: Pick<AgentRow, "id" | "name">,
+): Promise<EditBase> {
+  const memory = await readMemoryVersion(
+    scope.artifacts,
+    editActor(scope, { agentId: agent.id }),
+    agent.id,
+  );
+  return {
     kind: "memory",
-    agentId,
+    agentId: agent.id,
     agentName: agent.name,
     guildId: scope.sourceGuildId,
-    version: 0,
-    content: "",
+    version: memory.version,
+    content: memory.content,
   };
-  try {
-    const view = await artifactAt(scope.artifacts, editActor(scope, { agentId }), href);
-    return view.kind === "row" && !view.deleted ? { ...empty, version: view.row.version, content: view.text } : empty;
-  } catch (error) {
-    if (error instanceof ArtifactError && error.status === 404) {
-      return empty;
-    }
-    throw error;
-  }
 }
 
 export async function loadNoteBase(scope: EditScope, displayPath: string): Promise<EditBase> {

@@ -37,6 +37,7 @@ import {
   buildMemoryTimeline,
   getMemoryRow,
   listRevisions,
+  readMemoryVersion,
   writeMemory,
 } from "../../src/artifacts/memory.js";
 import { accessList, grantAccess, listAccess, reachOf, replaceAccess } from "../../src/artifacts/access-lists.js";
@@ -1217,6 +1218,33 @@ describe("artifact store", { concurrency: 1 }, () => {
     });
     const read = await getByDisplayPath(store, ownOperator, revisionPath);
     assert.equal(read.revision?.content, "kept elsewhere\n");
+  });
+
+  test("readMemoryVersion reads an agent without a Memory row as version 0 and empty, then its live version and text", async () => {
+    await insertGuild(
+      db,
+      { guildId: "guild_memread", name: "memread", orgId: "org_home", about: "" },
+      new Date(),
+    );
+    const operator = operatorActor({
+      orgId: "org_home",
+      actorId: "user_operator",
+      actorName: "operator",
+      guildId: "guild_memread",
+    });
+    assert.deepEqual(await readMemoryVersion(store, operator, "a_memread"), {
+      version: 0,
+      content: "",
+    });
+    await seedAgent("a_memread", "guild_memread", "memread", "art-mem-read");
+    const written = await writeMemory(store, operator, "a_memread", {
+      content: "kept\n",
+      detail: "user operator",
+    });
+    assert.deepEqual(await readMemoryVersion(store, operator, "a_memread"), {
+      version: written.row.version,
+      content: "kept\n",
+    });
   });
 
   test("memory timeline keeps write order when two writes share a millisecond", async () => {

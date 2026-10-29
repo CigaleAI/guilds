@@ -92,6 +92,19 @@ export async function getMemoryRow(
   return loadMemoryRow(client ?? store.db, actor.orgId, agentId);
 }
 
+/** An agent's Memory as an actor reads it: the live version and its text. */
+export type MemoryVersion = { version: number; content: string };
+
+/** The agent's Memory as `actor` reads it in its organisation; version 0 and the empty text when the agent has no Memory row. */
+export async function readMemoryVersion(
+  store: ArtifactStore,
+  actor: ArtifactActor,
+  agentId: string,
+): Promise<MemoryVersion> {
+  const row = await getMemoryRow(store, actor, agentId);
+  return { version: row?.version ?? 0, content: storedMemoryText(row) };
+}
+
 /**
  * Replaces the agent's Memory with `content`, archiving the text it replaces with `detail`, and
  * returns its display path with its row. An agent writes its own Memory; the operator writes any
