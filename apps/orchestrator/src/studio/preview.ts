@@ -84,7 +84,7 @@ function serverSummary(server: LoadedConnector): ProjectedConnection["server"] {
   return {
     id: server.id,
     slug: server.slug,
-    display_name: String(server.display_name || server.slug),
+    display_name: server.display_name || server.slug,
   };
 }
 
@@ -98,8 +98,8 @@ export async function projectConnection(
     id: connection.id,
     server: serverSummary(server),
     owner_scope: connection.owner_scope,
-    owner_id: connection.owner_id === null || connection.owner_id === undefined ? null : String(connection.owner_id),
-    account_hint: String(connection.account_hint ?? ""),
+    owner_id: connection.owner_id,
+    account_hint: connection.account_hint,
     status: connection.status,
     tools: listed.map((tool) => ({
       name: tool.namespaced_name,
@@ -123,7 +123,7 @@ export async function projectGuildConnections(
   }
   const members = await deps.db.listAgents(guildId);
   const seen = new Map<string, McpConnectionRow>();
-  const scopes: Array<{ agentId: string | null }> = [{ agentId: null }, ...members.map((row) => ({ agentId: String(row.id) }))];
+  const scopes: Array<{ agentId: string | null }> = [{ agentId: null }, ...members.map((row) => ({ agentId: row.id }))];
   for (const scope of scopes) {
     for (const connection of await deps.db.listMcpConnections({ orgId, guildId, agentId: scope.agentId })) {
       seen.set(connection.id, connection);
@@ -211,9 +211,8 @@ export async function projectOfferedToolSchemas(
   let latest: string | null = null;
   for (const connection of await deps.db.listMcpConnections({ orgId, guildId, agentId })) {
     connections.set(connection.id, connection);
-    const stamp = String(connection.updated_at ?? connection.created_at ?? "");
-    if (stamp && (!latest || stamp > latest)) {
-      latest = stamp;
+    if (!latest || connection.updated_at > latest) {
+      latest = connection.updated_at;
     }
   }
   for (const [item, server] of resolvedMcp(rows, servers, { orgId, guildId, agentId })) {
