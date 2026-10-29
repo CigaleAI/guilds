@@ -1,4 +1,5 @@
 import path from "node:path";
+import { Type, type Static } from "@sinclair/typebox";
 import { NAME_RE } from "../lib/names.js";
 import { numberOrNull } from "../lib/numbers.js";
 import { isHarness } from "../coding/harnesses.js";
@@ -256,6 +257,17 @@ function validateCustomMemory(value: unknown): number {
   return value;
 }
 
+/** A machine's fields as a create or update request sends them; an update leaves out what it keeps. */
+export const MachineBodySchema = Type.Object({
+  name: Type.Optional(Type.String()),
+  box: Type.Optional(Type.String()),
+  cpu: Type.Optional(Type.Number()),
+  memory_mib: Type.Optional(Type.Number()),
+  max_workspace_mib: Type.Optional(Type.Number()),
+});
+
+export type MachineBody = Static<typeof MachineBodySchema>;
+
 export type MachineInput = {
   name: string;
   box: MachineBox;
@@ -266,15 +278,15 @@ export type MachineInput = {
 
 const MACHINE_INPUT_KEYS = new Set(["name", "box", "cpu", "memory_mib", "max_workspace_mib"]);
 
-function rejectUnknownKeys(body: Record<string, unknown>): void {
+function rejectUnknownKeys(body: MachineBody): void {
   const unknown = Object.keys(body).filter((key) => !MACHINE_INPUT_KEYS.has(key)).sort();
   if (unknown.length) {
     throw new MachineError(422, `unknown keys: ${unknown.join(", ")}`);
   }
 }
 
-function resolveName(body: Record<string, unknown>, current: MachineRow | undefined): string {
-  if ("name" in body) {
+function resolveName(body: MachineBody, current: MachineRow | undefined): string {
+  if (body.name !== undefined) {
     return validateMachineName(body.name);
   }
   if (current === undefined) {
@@ -283,8 +295,8 @@ function resolveName(body: Record<string, unknown>, current: MachineRow | undefi
   return current.name;
 }
 
-function resolveBox(body: Record<string, unknown>, current: MachineRow | undefined): MachineBox {
-  const box = "box" in body ? body.box : (current?.box ?? DEFAULT_MACHINE_BOX);
+function resolveBox(body: MachineBody, current: MachineRow | undefined): MachineBox {
+  const box = body.box ?? current?.box ?? DEFAULT_MACHINE_BOX;
   if (!isMachineBox(box)) {
     throw new MachineError(422, "box must be standard, code, or custom");
   }
@@ -293,7 +305,7 @@ function resolveBox(body: Record<string, unknown>, current: MachineRow | undefin
 
 /** A custom machine's size: the body's, else the current custom size. Other tiers carry none. */
 function resolveCustomSize(
-  body: Record<string, unknown>,
+  body: MachineBody,
   box: MachineBox,
   current: MachineRow | undefined,
 ): { cpu: number | null; memory_mib: number | null } {
@@ -305,16 +317,15 @@ function resolveCustomSize(
   }
   const kept = current?.box === "custom" ? current : undefined;
   return {
-    cpu: validateCustomCpu("cpu" in body ? body.cpu : kept?.cpu),
-    memory_mib: validateCustomMemory("memory_mib" in body ? body.memory_mib : kept?.memory_mib),
+    cpu: validateCustomCpu(body.cpu ?? kept?.cpu),
+    memory_mib: validateCustomMemory(body.memory_mib ?? kept?.memory_mib),
   };
 }
 
-function resolveWorkspaceCap(body: Record<string, unknown>, current: MachineRow | undefined): number {
-  const cap = "max_workspace_mib" in body
-    ? body.max_workspace_mib
-    : (current?.max_workspace_mib ?? DEFAULT_MACHINE_MAX_WORKSPACE_MIB);
-  if (typeof cap !== "number" || !Number.isInteger(cap) || cap < 1) {
+function resolveWorkspaceCap(body: MachineBody, current: MachineRow | undefined): number {
+  const cap =
+    body.max_workspace_mib ?? current?.max_workspace_mib ?? DEFAULT_MACHINE_MAX_WORKSPACE_MIB;
+  if (!Number.isInteger(cap) || cap < 1) {
     throw new MachineError(422, "max_workspace_mib must be a positive integer");
   }
   return cap;
@@ -325,7 +336,7 @@ function resolveWorkspaceCap(body: Record<string, unknown>, current: MachineRow 
  * leaves out; a body that names a tier other than custom drops the size, and a custom machine
  * must have one.
  */
-export function validateMachineInput(body: Record<string, unknown>, current?: MachineRow): MachineInput {
+export function validateMachineInput(body: MachineBody, current?: MachineRow): MachineInput {
   rejectUnknownKeys(body);
   const box = resolveBox(body, current);
   return {
