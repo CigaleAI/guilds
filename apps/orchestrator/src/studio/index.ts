@@ -896,11 +896,11 @@ export class StudioService {
     });
   }
 
+  /** Publishes a draft of the session to its target agent's task. */
   async publishDraft(
     session: StudioSessionRow,
     user: UserRow,
     draftId: string,
-    options: { orphan?: boolean } = {},
   ): Promise<Record<string, unknown>> {
     const result = await this.drafts.publish({
       session,
@@ -909,8 +909,34 @@ export class StudioService {
       db: this.deps.db,
       preview: this.previewDeps(),
       notesSystemPath: this.deps.notesSystemPath,
-      ...(options.orphan ? { orphan: true } : {}),
     });
+    return this.announcePublish(session, result);
+  }
+
+  /** Publishes a draft of a session whose operator is gone, for an organisation manager. */
+  async publishOrphanDraft(
+    session: StudioSessionRow,
+    user: UserRow,
+    draftId: string,
+  ): Promise<Record<string, unknown>> {
+    const result = await this.drafts.publish({
+      session,
+      user,
+      draftId,
+      db: this.deps.db,
+      preview: this.previewDeps(),
+      notesSystemPath: this.deps.notesSystemPath,
+      orphan: true,
+    });
+    return this.announcePublish(session, result);
+  }
+
+  // Tells the source guild its files changed when the draft was published,
+  // and adds whether the target agent is generating to the outcome.
+  private async announcePublish(
+    session: StudioSessionRow,
+    result: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
     if (result.outcome === "published" && this.deps.publishFilesChanged && session.source_guild_id) {
       await this.deps.publishFilesChanged(session.source_guild_id);
     }

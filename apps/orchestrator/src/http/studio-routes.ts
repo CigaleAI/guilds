@@ -239,9 +239,10 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
     const user = await currentUser(db, request, deps);
     const org = await currentOrg(db, request, user);
     const loaded = await loadDraftContext(deps, user, org, param(request, "draft_id"));
-    return await studioOf(deps).publishDraft(loaded.session, loaded.user, loaded.draft.id, {
-      orphan: loaded.orphan,
-    });
+    const studio: StudioService = studioOf(deps);
+    return loaded.orphan
+      ? await studio.publishOrphanDraft(loaded.session, loaded.user, loaded.draft.id)
+      : await studio.publishDraft(loaded.session, loaded.user, loaded.draft.id);
   });
 
   app.post("/api/studio/drafts/:draft_id/discard", async (request) => {
