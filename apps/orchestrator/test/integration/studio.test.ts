@@ -2089,6 +2089,17 @@ test("studio proposes routines to create, change, and delete that the operator a
 
     // Create: refused without a timing or with a bad one; applied as the operator.
     await assert.rejects(
+      studioEditRoutine.handler(await ctx(), {
+        action: "create",
+        agent_id: "watcher",
+        window: { timezone: "Europe/Paris", start: "09:00", end: "18:00" },
+        description: "d",
+        instruction: "i",
+        reason: "r",
+      }),
+      /\/window\/max_wakes: Expected required property/,
+    );
+    await assert.rejects(
       studioEditRoutine.handler(await ctx(), { action: "create", agent_id: "watcher", description: "d", instruction: "i", reason: "r" }),
       /exactly one of cron or window/,
     );

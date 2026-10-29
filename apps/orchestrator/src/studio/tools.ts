@@ -3,14 +3,13 @@ import { agentTask } from "../artifacts/task.js";
 import { iso } from "../db/views.js";
 import { composeAgentSystemPrompt, hydrateStanding, promptHash, schemasOffer } from "../prompts/index.js";
 import { Type, type Static } from "@sinclair/typebox";
-import { functionSchema } from "../toolbox/schema.js";
 import { scheduleItem } from "../schedules/item.js";
 import { capBytes } from "../lib/bytes.js";
 import type { AgentScheduleRow } from "../db/schedules.js";
 import type { Schedules } from "../schedules/service.js";
 import { previewCurrentState, projectAgentAccess, projectOfferedToolSchemas, type PreviewDeps } from "./preview.js";
 import { wrapEvidence } from "./system.js";
-import { decodeStudioArguments, studioAgentHandleFromArgs, studioFunctionSchema } from "./arguments.js";
+import { decodeStudioArguments, studioFunctionSchema } from "./arguments.js";
 import { StudioUnprocessableError } from "./errors.js";
 import { ScriptError } from "../scripts/validation.js";
 import { ABOUT_MAX, DESCRIPTION_MAX } from "../guilds/validation.js";
@@ -83,13 +82,12 @@ export type StudioTool = {
   handler: (ctx: StudioToolContext, args: Record<string, unknown>) => Promise<Record<string, unknown>>;
 };
 
-function clampLimit(value: unknown, fallback: number, max: number): number {
-  const n = typeof value === "number" && Number.isInteger(value) ? value : fallback;
-  return Math.min(Math.max(n, 1), max);
+function clampLimit(value: number | undefined, fallback: number, max: number): number {
+  return Math.min(Math.max(value ?? fallback, 1), max);
 }
 
-function cursorOffset(cursor: unknown): number {
-  if (typeof cursor !== "string" || !cursor) {
+function cursorOffset(cursor: string | null | undefined): number {
+  if (!cursor) {
     return 0;
   }
   const n = Number(cursor);
@@ -173,7 +171,7 @@ function truncatePayload(payload: Record<string, unknown>): Record<string, unkno
 
 export function sliceStudioBytes(
   text: string,
-  cursor: unknown,
+  cursor: string | null | undefined,
   maxBytes = STUDIO_TOOL_RESULT_MAX_BYTES,
 ): { text: string; next_cursor: string | null; truncated: boolean } {
   const offset = cursorOffset(cursor);
@@ -283,7 +281,7 @@ export const studioGetAgentContext: StudioTool = {
       };
     }
     if (want.has("memory") && memory) {
-      const sliced = sliceStudioBytes(memory.content_text ?? "", want.has("task") ? 0 : cursor);
+      const sliced = sliceStudioBytes(memory.content_text ?? "", want.has("task") ? undefined : cursor);
       result.memory = {
         version: memory.version,
         content_hash: memory.content_hash,
@@ -296,7 +294,7 @@ export const studioGetAgentContext: StudioTool = {
     }
     if (want.has("state")) {
       const preview = await currentState();
-      const sliced = sliceStudioBytes(JSON.stringify(preview.state, null, 2), want.has("task") || want.has("memory") ? 0 : cursor);
+      const sliced = sliceStudioBytes(JSON.stringify(preview.state, null, 2), want.has("task") || want.has("memory") ? undefined : cursor);
       result.state = {
         ownership: "derived",
         editable: false,
@@ -327,7 +325,7 @@ export const studioGetAgentContext: StudioTool = {
         memoryEnabled,
         memoryEnabled && schemasOffer(tools.schemas, "memory_write"),
       );
-      const sliced = sliceStudioBytes(composed, want.size === 1 ? cursor : 0);
+      const sliced = sliceStudioBytes(composed, want.size === 1 ? cursor : undefined);
       result.effective_prompt = {
         ownership: "derived",
         editable: false,
@@ -1442,61 +1440,58 @@ export const studioEditCollection: StudioTool = {
   },
 };
 
-const ROUTINE_TIMING = {
-  cron: {
-    type: "string",
-    description:
-      "5-field UTC expression (minute hour day month weekday), for example '0 9 * * 1'; wake-ups at least 5 minutes apart. Pass cron or window, not both.",
-  },
-  window: {
-    type: "object",
-    description: "Random wake-ups inside a daily local-time window. Pass cron or window, not both.",
-    properties: {
-      timezone: { type: "string", description: "IANA name, for example Europe/Paris." },
-      start: { type: "string", description: "HH:MM local time." },
-      end: { type: "string", description: "HH:MM local time; earlier than start spans midnight." },
-      max_wakes: { type: "integer", description: "Most wake-ups per window; gaps are at least 5 minutes." },
-    },
-    required: ["timezone", "start", "end", "max_wakes"],
-    additionalProperties: false,
-  },
-};
-
-const ROUTINE_TEXT = {
-  description: { type: "string", description: "One-line label shown in the Routine tab, at most 400 characters." },
-  instruction: {
-    type: "string",
-    description: "Short markdown the agent receives on each wake-up, at most 2000 characters: what this wake-up is for, not the agent's whole Task.",
-  },
-};
-
-const ROUTINE_REASON = { type: "string", description: "Why this change, one or two sentences, citing evidence. Required." };
+const EditRoutineArguments = Type.Object({
+  action: Type.String({ enum: ["create", "edit", "delete"], description: "Required." }),
+  agent_id: Type.Optional(Type.String({ description: "create: source-guild agent id or name." })),
+  schedule_id: Type.Optional(Type.String({ description: "edit and delete: the routine's id from studio_list_routines." })),
+  cron: Type.Optional(
+    Type.String({
+      description:
+        "5-field UTC expression (minute hour day month weekday), for example '0 9 * * 1'; wake-ups at least 5 minutes apart. Pass cron or window, not both.",
+    }),
+  ),
+  window: Type.Optional(
+    Type.Object(
+      {
+        timezone: Type.String({ description: "IANA name, for example Europe/Paris." }),
+        start: Type.String({ description: "HH:MM local time." }),
+        end: Type.String({ description: "HH:MM local time; earlier than start spans midnight." }),
+        max_wakes: Type.Integer({ description: "Most wake-ups per window; gaps are at least 5 minutes." }),
+      },
+      {
+        description: "Random wake-ups inside a daily local-time window. Pass cron or window, not both.",
+        additionalProperties: false,
+      },
+    ),
+  ),
+  description: Type.Optional(
+    Type.String({ description: "One-line label shown in the Routine tab, at most 400 characters." }),
+  ),
+  instruction: Type.Optional(
+    Type.String({
+      description: "Short markdown the agent receives on each wake-up, at most 2000 characters: what this wake-up is for, not the agent's whole Task.",
+    }),
+  ),
+  paused: Type.Optional(
+    Type.Boolean({ description: "create: true creates it paused. edit: true pauses it; false resumes it." }),
+  ),
+  reason: Type.String({ description: "Why this change, one or two sentences, citing evidence. Required." }),
+});
+type EditRoutineArguments = Static<typeof EditRoutineArguments>;
 
 export const studioEditRoutine: StudioTool = {
   name: "studio_edit_routine",
-  schema: functionSchema(
+  schema: studioFunctionSchema(
     "studio_edit_routine",
     "Propose a change to one routine of a source-guild agent. Nothing is written: the turn pauses and the operator applies or declines. create: a new routine that wakes one agent on a UTC cron or at random times inside a daily window; check studio_list_routines first and change a routine that fits instead. edit: a new timing, description, instruction, or paused state; fields left out stay as they are. delete: its past runs stay; propose pausing it instead when it may be needed again. edit and delete name the routine by schedule_id from studio_list_routines.",
-    {
-      action: { type: "string", enum: ["create", "edit", "delete"], description: "Required." },
-      agent_id: { type: "string", description: "create: source-guild agent id or name." },
-      schedule_id: { type: "string", description: "edit and delete: the routine's id from studio_list_routines." },
-      ...ROUTINE_TIMING,
-      ...ROUTINE_TEXT,
-      paused: { type: "boolean", description: "create: true creates it paused. edit: true pauses it; false resumes it." },
-      reason: ROUTINE_REASON,
-    },
-    ["action", "reason"],
+    EditRoutineArguments,
   ),
   async handler(ctx, args) {
-    const agentId = editActionOf(args) === "create" ? await routineAgentId(ctx, args) : null;
-    return routineEditRequest(editScope(ctx), { args, agentId });
+    const input: EditRoutineArguments = decodeStudioArguments(EditRoutineArguments, args);
+    const agentId = editActionOf(input) === "create" ? (await resolveHandle(ctx, input.agent_id)).id : null;
+    return routineEditRequest(editScope(ctx), { args: input, agentId });
   },
 };
-
-async function routineAgentId(ctx: StudioToolContext, args: Record<string, unknown>): Promise<string> {
-  return String((await resolveHandle(ctx, studioAgentHandleFromArgs(args) || undefined)).id);
-}
 
 export const STUDIO_TOOLS: StudioTool[] = [
   studioGetGuidelines,
