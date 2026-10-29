@@ -33,7 +33,7 @@ export function agentGitIdentity(
 export type TokenEntry = { token: string; expires_at: string; host: string; path: string };
 
 /** The db/ functions a run's repository tokens are minted and stored through, on `db`. */
-export function repositoryTokenDatabase(db: Queryable) {
+function repositoryTokenDatabase(db: Queryable) {
   return {
     ...githubRepositoryRecorder(db),
     getMcpConnection: bindQuery(db, getMcpConnection),
@@ -149,6 +149,11 @@ export class RepositoryTokens {
   async write(files: SandboxFiles, agentId: string): Promise<void> {
     await files.writeFiles([{ path: gitTokensPath(agentId), data: JSON.stringify({ repositories: this.entries }) }]);
   }
+}
+
+/** The installation tokens of a run's `repositories`, minted and recorded on `db`. */
+export function repositoryTokens(db: Queryable, repositories: Array<Record<string, unknown>>): RepositoryTokens {
+  return new RepositoryTokens(repositoryTokenDatabase(db), repositories);
 }
 
 const CREDENTIAL_FAILURE = /could not read (username|password)|authentication failed|terminal prompts disabled/i;

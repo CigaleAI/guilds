@@ -28,6 +28,7 @@ import { templatesRoot } from "./fixtures.js";
 import { TEST_CREDENTIALS } from "./models.js";
 import type { AgentPlaceRow, AgentRow, AgentScriptRow, NewAgentScript } from "../../src/db/agents.js";
 import { Scripts, type ScriptDatabase } from "../../src/scripts/catalog.js";
+import { RepositoryTokens } from "../../src/coding/git.js";
 import type { NewDirectRun, NewGroupRun, NewMessage, NewScheduleRun } from "../../src/db/runs.js";
 import type { ScheduleRow, PlannedWake } from "../../src/db/schedules.js";
 import { Schedules, type ScheduleDatabase } from "../../src/schedules/service.js";
@@ -456,6 +457,11 @@ export class FakeDB {
     return this.mcp_connection;
   }
 
+  /** A run's repository tokens, minted and recorded through this fake. */
+  repositoryTokens(repositories: Array<Record<string, unknown>>): RepositoryTokens {
+    return new RepositoryTokens(this as never, repositories);
+  }
+
   async getMcpServer(_serverId: string) {
     return this.mcp_server;
   }
@@ -677,6 +683,11 @@ export class RecordingDB {
 
   async getMcpConnection(_connectionId: string) {
     return this.mcp_connection;
+  }
+
+  /** A run's repository tokens, minted and recorded through this fake. */
+  repositoryTokens(repositories: Array<Record<string, unknown>>): RepositoryTokens {
+    return new RepositoryTokens(this as never, repositories);
   }
 
   async getMcpServer(_serverId: string) {

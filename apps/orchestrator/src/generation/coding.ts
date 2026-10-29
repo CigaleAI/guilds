@@ -3,9 +3,8 @@ import { agentSecrets, snapshotEnvValues } from "../access/runtime.js";
 import {
   agentGitIdentity,
   cloneFailures,
-  repositoryTokenDatabase,
+  repositoryTokens,
   RepositoryTokenInstallationGoneError,
-  RepositoryTokens,
 } from "../coding/git.js";
 import { codingRepositories } from "../coding/repositories.js";
 import { clearHarnessLogin, getAgent, markHarnessLogin, type AgentRow } from "../db/agents.js";
@@ -81,12 +80,11 @@ export async function guildRepositories(
   return codingRepositories(await db.listGuildRepositories(agent.guild_id), await githubConnectionOf(db, agent));
 }
 
-/** The db/ functions coding runs read and keep their repositories, logins and checkpoints through, and the retiring of a login, on `db`. */
+/** The db/ functions coding runs read and keep their repositories, logins and checkpoints through, the retiring of a login, and the minting of a run's repository tokens, on `db`. */
 export function codingRunsDatabase(db: Queryable) {
   return {
     agentSecrets: bindQuery(db, agentSecrets),
     snapshotEnvValues: bindQuery(db, snapshotEnvValues),
-    ...repositoryTokenDatabase(db),
     ...codingRepositoriesDatabase(db),
     /** Retires a login that stopped working, and `pool` forgets it when there is one (`retireLogin`). */
     retireLogin: (pool: Pick<McpPool, "forget"> | null, connection: McpConnectionRow, failure: LoginFailure) =>
@@ -97,6 +95,7 @@ export function codingRunsDatabase(db: Queryable) {
     mergeRunMetadata: bindQuery(db, mergeRunMetadata),
     markHarnessLogin: bindQuery(db, markHarnessLogin),
     clearHarnessLogin: bindQuery(db, clearHarnessLogin),
+    repositoryTokens: bindQuery(db, repositoryTokens),
   };
 }
 
@@ -156,7 +155,7 @@ export class CodingRuns {
   ): Promise<boolean> {
     const { db, events } = this.services;
     const repositories = await guildRepositories(db, agent);
-    const tokens = new RepositoryTokens(db, repositories);
+    const tokens = db.repositoryTokens(repositories);
     const mint = async () => {
       try {
         await tokens.mint();
