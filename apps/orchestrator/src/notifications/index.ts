@@ -24,7 +24,7 @@ export const NOTICE_PREVIEW_LENGTH = 300;
 const EVENT_QUEUE_LIMIT = 256;
 
 /** The db/ functions a user's inbox is read through, on `db`. */
-export function notificationsDatabase(db: Queryable) {
+function notificationsDatabase(db: Queryable) {
   return {
     getAgent: bindQuery(db, getAgent),
     getGuild: bindQuery(db, getGuild),
@@ -206,4 +206,9 @@ export class Notifications {
       await this.ping(guild ? guild.operators.map((operator) => operator.user_id) : []);
     }
   }
+}
+
+/** Operators' inboxes and their streams, read on `db`. */
+export function operatorNotifications(db: Queryable): Notifications {
+  return new Notifications(notificationsDatabase(db));
 }
