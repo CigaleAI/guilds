@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { test } from "node:test";
-import { createToolContext, createToolHooks } from "../../src/toolbox/index.js";
+import { createToolHooks } from "../../src/toolbox/index.js";
 import { runCodeHelper } from "../../src/toolbox/code.js";
 import { HostCodeSandbox } from "../helpers/code-sandbox.js";
 import { tempDir } from "../helpers/env.js";
+import { toolFixture } from "../helpers/toolbox.js";
 
 function bare(root: string, name: string): string {
   const dir = path.join(root, `${name}.git`);
@@ -28,8 +29,8 @@ test("the clone step clones what is missing and points a clone at its repository
   execFileSync("git", ["init", "--quiet", path.join(repos, "fork")]);
   execFileSync("git", ["-C", path.join(repos, "fork"), "remote", "add", "origin", "https://git.example.com/fork.git"]);
 
-  const ctx = createToolContext({ run_id: "r_setup", agent_id: "a_1", guild_id: "g_1", sandbox, secrets: {} });
-  const result = await runCodeHelper(ctx, createToolHooks(), {
+  const ctx = toolFixture({ run_id: "r_setup", agent_id: "a_1", guild_id: "g_1", sandbox, secrets: {} });
+  const result = await runCodeHelper(ctx.run, createToolHooks(), {
     op: "git_setup",
     identity: { name: "coder", email: "coder@agents.guilds.invalid" },
     repositories: [

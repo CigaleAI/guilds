@@ -7,7 +7,7 @@ import { agentHome } from "../lib/agent-file.js";
 import { errorMessage, errorName, writeLog } from "../observability/log.js";
 import { agentSandbox, seatEnvironment, type SandboxHandle } from "../sandbox/index.js";
 import { measureMachine, measureWorkspace } from "../toolbox/code.js";
-import { createToolContext, createToolHooks, type ToolContext } from "../toolbox/index.js";
+import { createToolHooks, createToolRun, type ToolRun } from "../toolbox/index.js";
 import type { RunEvents, RunGeneration } from "./events.js";
 import { agentSeat } from "./machines.js";
 
@@ -27,10 +27,10 @@ export function agentWorkspaceMaxMib(
   return Math.min(config.max_workspace_mib, workspaceMaxMib(env));
 }
 
-/** A tool context for platform work in the sandbox: not cancellable, not tracked, no secrets. */
-export function maintenanceContext(runId: string, agent: AgentRow, sandbox: SandboxHandle): ToolContext {
+/** A run record for platform work in the sandbox: not cancellable, no secrets; its commands run untracked. */
+export function maintenanceRun(runId: string, agent: AgentRow, sandbox: SandboxHandle): ToolRun {
   const seat = agentSeat(agent);
-  return createToolContext({
+  return createToolRun({
     run_id: runId,
     agent_id: agent.id,
     guild_id: agent.guild_id,
@@ -74,7 +74,7 @@ export class WorkspaceLimits {
    * generation that may not start records why.
    */
   async hasRoom(turn: RunGeneration, agent: AgentRow, sandbox: SandboxHandle): Promise<boolean> {
-    for (const check of this.checks(maintenanceContext(turn.runId, agent, sandbox), agent)) {
+    for (const check of this.checks(maintenanceRun(turn.runId, agent, sandbox), agent)) {
       if (check.stored === null || check.stored <= check.limit) {
         continue;
       }
@@ -97,10 +97,10 @@ export class WorkspaceLimits {
 
   /** Measures the agent's home and its machine's directory and stores both sizes; a failure is logged. */
   async recordSize(runId: string, agent: AgentRow, sandbox: SandboxHandle): Promise<void> {
-    const ctx = maintenanceContext(runId, agent, sandbox);
+    const run = maintenanceRun(runId, agent, sandbox);
     try {
-      await this.db.setAgentWorkspaceMib(agent.id, await measureWorkspace(ctx, createToolHooks()));
-      await this.db.setMachineWorkspaceMib(agent.machine_id, await measureMachine(ctx, createToolHooks()));
+      await this.db.setAgentWorkspaceMib(agent.id, await measureWorkspace(run, createToolHooks()));
+      await this.db.setMachineWorkspaceMib(agent.machine_id, await measureMachine(run, createToolHooks()));
     } catch (error) {
       writeLog(
         "warn",
@@ -110,19 +110,19 @@ export class WorkspaceLimits {
     }
   }
 
-  private checks(ctx: ToolContext, agent: AgentRow): WorkspaceCheck[] {
+  private checks(run: ToolRun, agent: AgentRow): WorkspaceCheck[] {
     return [
       {
         limit: agentWorkspaceMaxMib(agent.config),
         stored: agent.workspace_mib,
-        measure: () => measureWorkspace(ctx, createToolHooks()),
+        measure: () => measureWorkspace(run, createToolHooks()),
         store: (mib) => this.db.setAgentWorkspaceMib(agent.id, mib),
         what: "the agent's home",
       },
       {
         limit: agent.machine_max_workspace_mib ?? DEFAULT_MACHINE_MAX_WORKSPACE_MIB,
         stored: agent.machine_workspace_mib,
-        measure: () => measureMachine(ctx, createToolHooks()),
+        measure: () => measureMachine(run, createToolHooks()),
         store: (mib) => this.db.setMachineWorkspaceMib(agent.machine_id, mib),
         what: `machine ${agent.machine_name ?? agent.machine_id}`,
       },

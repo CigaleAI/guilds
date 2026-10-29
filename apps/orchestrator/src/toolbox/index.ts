@@ -23,7 +23,8 @@ import { reportIssue } from "./report.js";
 import { scheduleCreateCron, scheduleCreateWindow, scheduleDelete, scheduleList, schedulePause, scheduleResume, scheduleUpdate } from "./schedule.js";
 import { scriptCreate, scriptDelete, scriptList, scriptRead, scriptRun } from "./script.js";
 import { secretRequest, secretStore } from "./secret.js";
-import type { Tool, ToolContext, ToolInvocation } from "./types.js";
+import type { ToolServices } from "./services.js";
+import type { Tool, ToolHooks, ToolInvocation, ToolRun } from "./types.js";
 
 export const REGISTRY: Record<string, Tool> = {};
 
@@ -93,25 +94,29 @@ export function parseArguments(call: ToolCall): Record<string, unknown> {
   return loaded;
 }
 
+/**
+ * Runs the model's `call` with the tool it names, and returns its result as the model reads it:
+ * filtered, redacted with the run's secrets, and cut to `TOOL_RESULT_MAX_BYTES`, with its metadata.
+ */
 export async function invokeTool(
-  ctx: ToolContext,
+  services: ToolServices,
+  run: ToolRun,
+  hooks: ToolHooks,
   call: ToolCall,
-  secrets: Record<string, string>,
-  maxBytes: number,
 ): Promise<[ToolMessage, ToolResultMetadata]> {
   const name = call.function.name;
   const callId = call.id;
   const started = performance.now();
   let error: string | null = null;
-  const registered = REGISTRY[name] ?? ctx.dynamic_tools[name];
+  const registered = REGISTRY[name] ?? run.dynamic_tools[name];
   let reported: ReportedToolMetadata | null = null;
   let exitCode: number | null = null;
   let raw: string;
   let outputFilter = identityOutput;
   let filterName = "identity";
-  const offered = ctx.offered_tools;
+  const offered = run.offered_tools;
   const blocked =
-    offered !== null && !offered.has(name) && !(name in ctx.dynamic_tools);
+    offered !== null && !offered.has(name) && !(name in run.dynamic_tools);
   if (registered === undefined || blocked) {
     const message = blocked
       ? `tool ${name} is not offered this run`
@@ -130,7 +135,7 @@ export async function invokeTool(
         metadata: null,
       };
       try {
-        raw = await registered.handler(ctx, ctx, ctx, invocation);
+        raw = await registered.handler(services, run, hooks, invocation);
       } finally {
         exitCode = invocation.exit_code;
         reported = invocation.metadata;
@@ -141,9 +146,9 @@ export async function invokeTool(
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : String(caught);
       writeLog("warn", message, {
-        run_id: ctx.run_id,
-        agent_id: ctx.agent_id,
-        guild_id: ctx.guild_id,
+        run_id: run.run_id,
+        agent_id: run.agent_id,
+        guild_id: run.guild_id,
         operation: `tool.${name}`,
         error_type: caught instanceof Error ? caught.name : "Error",
       });
@@ -151,7 +156,7 @@ export async function invokeTool(
       error = message;
     }
   }
-  const [content, pipeline] = processOutput(raw, outputFilter, secrets, maxBytes);
+  const [content, pipeline] = processOutput(raw, outputFilter, run.secrets, toolResultMaxBytes());
   if (pipeline.error) {
     error = pipeline.error;
   }
@@ -186,8 +191,8 @@ export {
   stampToolResult,
   withRemainingToolCalls,
 } from "./output.js";
-export { createToolContext, createToolHooks, CancelEvent } from "./types.js";
-export type { Tool, ToolContext } from "./types.js";
+export { createToolHooks, createToolRun, CancelEvent } from "./types.js";
+export type { Tool, ToolHooks, ToolRun } from "./types.js";
 export { encodeSpec, HELPER } from "./browser.js";
 export { formatExecution } from "./shell.js";
 export { dynamicScriptTools, firstClassScriptSchemas } from "./script.js";

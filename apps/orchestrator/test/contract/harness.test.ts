@@ -11,9 +11,10 @@ import {
   type AgentSeat,
   type MachineSpec,
 } from "../../src/sandbox/index.js";
-import { createToolContext, invokeTool } from "../../src/toolbox/index.js";
+import { invokeTool } from "../../src/toolbox/index.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { gated, run, startOpenSandboxServer, stdoutOf } from "../helpers/opensandbox-server.js";
+import { toolFixture } from "../helpers/toolbox.js";
 
 // A live turn of each harness in the runtime image, on a real subscription. Each runs when its
 // credential is in the environment: CLAUDE_CODE_OAUTH_TOKEN, CURSOR_API_KEY, or for Codex
@@ -59,7 +60,7 @@ for (const { harness, credential } of LIVE) {
         { timeoutSeconds: 30 },
       );
       assert.equal(stdoutOf(setup).trim(), "ready");
-      const ctx = createToolContext({
+      const ctx = toolFixture({
         run_id: "r_live",
         agent_id: agentId,
         guild_id: "g_1",
@@ -69,7 +70,7 @@ for (const { harness, credential } of LIVE) {
         code_repositories: ["live"],
       });
       const [payload, metadata] = await invokeTool(
-        ctx,
+        ctx.services, ctx.run, ctx.hooks,
         {
           id: "call_live",
           type: "function",
@@ -81,8 +82,6 @@ for (const { harness, credential } of LIVE) {
             }),
           },
         },
-        secrets,
-        65536,
       );
       const text = String(payload.content);
       assert.equal(metadata.status, "completed", text);

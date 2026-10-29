@@ -34,13 +34,14 @@ import {
   type HarnessLog,
   type LostTurnEnd,
 } from "../toolbox/harness.js";
-import { createToolHooks, type ToolContext } from "../toolbox/index.js";
+import { createToolHooks, type ToolRun } from "../toolbox/index.js";
+import type { ToolServices } from "../toolbox/services.js";
 import type { ActiveGenerations } from "./active-generations.js";
 import { RunRequestError } from "./errors.js";
 import type { RunEvents, RunGeneration } from "./events.js";
 import type { AgentMachines } from "./machines.js";
-import { lostCodeTask, type LostCodeTask } from "./tool-calls.js";
-import { maintenanceContext } from "./workspace.js";
+import { lostCodeTask, type GenerationTools, type LostCodeTask } from "./tool-calls.js";
+import { maintenanceRun } from "./workspace.js";
 
 export const RUN_DIFF_MAX_BYTES = 256 * 1024;
 
@@ -107,6 +108,8 @@ export type CodingRunsServices = {
   generations: ActiveGenerations;
   machines: AgentMachines;
   events: RunEvents;
+  /** The toolbox's services, which a harness check records the agent's logins through. */
+  tools: ToolServices;
 };
 
 /** The repositories the helper's `git_setup` could not clone, with why. */
@@ -130,9 +133,9 @@ export class CodingRuns {
   constructor(private readonly services: CodingRunsServices) {}
 
   /** Whether the run's harness is installed and has a credential; a run that cannot delegate code work fails here. */
-  async harnessReady(turn: RunGeneration, ctx: ToolContext): Promise<boolean> {
+  async harnessReady(turn: RunGeneration, run: ToolRun): Promise<boolean> {
     try {
-      await assertHarnessReady(ctx, ctx);
+      await assertHarnessReady(this.services.tools, run);
       return true;
     } catch (error) {
       await this.services.events.recordError(turn, error instanceof HarnessSetupError ? error.code : "harness.check", error);
@@ -151,7 +154,7 @@ export class CodingRuns {
     turn: RunGeneration,
     agent: AgentRow,
     sandbox: SandboxHandle,
-    tools: { ctx: ToolContext; secrets: Record<string, string> },
+    tools: GenerationTools,
   ): Promise<boolean> {
     const { db, events } = this.services;
     const repositories = await guildRepositories(db, agent);
@@ -179,7 +182,7 @@ export class CodingRuns {
       await events.recordError(turn, "repository.token", error);
       return false;
     }
-    const maintenance = maintenanceContext(turn.runId, agent, sandbox);
+    const maintenance = maintenanceRun(turn.runId, agent, sandbox);
     let failed: Array<{ name: string; error: string }>;
     try {
       const guild = await db.getGuild(agent.guild_id);
@@ -204,12 +207,12 @@ export class CodingRuns {
       return false;
     }
     await this.checkpoint(maintenance, "start", agent);
-    tools.ctx.code_repositories = repositories.map((row) => String(row.name));
+    tools.run.code_repositories = repositories.map((row) => String(row.name));
     if (repositories.length === 1) {
-      tools.ctx.code_default_cwd = `repos/${String(repositories[0]?.name)}`;
+      tools.run.code_default_cwd = `repos/${String(repositories[0]?.name)}`;
     }
     if (tokens.connected.length) {
-      tools.ctx.before_command = async () => {
+      tools.hooks.before_command = async () => {
         if (!tokens.needsRefresh()) {
           return;
         }
@@ -224,7 +227,7 @@ export class CodingRuns {
 
   /** The end checkpoint of every working tree, and what the run changed since its start. */
   async recordCheckpoints(runId: string, agent: AgentRow, sandbox: SandboxHandle): Promise<void> {
-    const repos = await this.checkpoint(maintenanceContext(runId, agent, sandbox), "end", agent);
+    const repos = await this.checkpoint(maintenanceRun(runId, agent, sandbox), "end", agent);
     if (repos.length) {
       await this.services.db.mergeRunMetadata(runId, { repos }, new Date());
     }
@@ -244,7 +247,7 @@ export class CodingRuns {
     let result;
     try {
       const request = task === null ? { op: "diff", repository } : { op: "diff", repository, task: callSegment(task) };
-      result = await runCodeHelper(maintenanceContext(runId, agent, sandbox), createToolHooks(), request, {
+      result = await runCodeHelper(maintenanceRun(runId, agent, sandbox), createToolHooks(), request, {
         maxBytes: RUN_DIFF_MAX_BYTES,
       });
     } catch (error) {
@@ -263,7 +266,7 @@ export class CodingRuns {
     const secrets = await this.secretValues(agent);
     let log: HarnessLog | null;
     try {
-      log = await readHarnessLog(maintenanceContext(runId, agent, sandbox), harness, callSegment(callId), secrets);
+      log = await readHarnessLog(maintenanceRun(runId, agent, sandbox), harness, callSegment(callId), secrets);
     } catch (error) {
       throw new RunRequestError(503, errorMessage(error));
     }
@@ -289,7 +292,7 @@ export class CodingRuns {
     const sandbox = await machines.wakeSandbox(agentId);
     let check: HarnessCheck;
     try {
-      check = await checkHarnessOn(maintenanceContext("", agent, sandbox), harness);
+      check = await checkHarnessOn(maintenanceRun("", agent, sandbox), harness);
     } catch (error) {
       throw new RunRequestError(503, errorMessage(error));
     }
@@ -346,7 +349,7 @@ export class CodingRuns {
       if (agent === null || sandbox === null) {
         return { stopped: true, session_id: null, start_sha: null, end_sha: null };
       }
-      return await endLostTurn(maintenanceContext(task.run_id, agent, sandbox), task.call_id, task.harness, task.repository);
+      return await endLostTurn(maintenanceRun(task.run_id, agent, sandbox), task.call_id, task.harness, task.repository);
     } catch (error) {
       writeLog("warn", errorMessage(error), {
         run_id: task.run_id,
@@ -362,15 +365,15 @@ export class CodingRuns {
    * Takes a checkpoint of every working tree; the end one lists what each repository changed since
    * the start. One that fails, or reports repositories in another shape, is logged and lists none.
    */
-  private async checkpoint(ctx: ToolContext, which: "start" | "end", agent: AgentRow): Promise<RunRepositoryChange[]> {
+  private async checkpoint(run: ToolRun, which: "start" | "end", agent: AgentRow): Promise<RunRepositoryChange[]> {
     try {
-      const result = await runCodeHelper(ctx, createToolHooks(), { op: "checkpoint", which }, { timeoutSeconds: 300 });
+      const result = await runCodeHelper(run, createToolHooks(), { op: "checkpoint", which }, { timeoutSeconds: 300 });
       return which === "end"
         ? decode(Type.Array(RunRepositoryChangeSchema), result.meta.repositories, (problem) => new Error(`checkpoint ${problem}`))
         : [];
     } catch (error) {
       writeLog("warn", errorMessage(error), {
-        run_id: ctx.run_id,
+        run_id: run.run_id,
         agent_id: agent.id,
         operation: "repository.checkpoint",
         error_type: errorName(error),

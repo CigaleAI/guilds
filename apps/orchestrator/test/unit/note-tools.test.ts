@@ -6,8 +6,9 @@ import { parseColumns } from "../../src/artifacts/columns.js";
 import { ArtifactError } from "../../src/artifacts/errors.js";
 import type { NoteRewrite } from "../../src/artifacts/notes.js";
 import type { CollectionColumn } from "../../src/db/schema/index.js";
-import { createToolContext, invokeTool } from "../../src/toolbox/index.js";
+import { invokeTool } from "../../src/toolbox/index.js";
 import { noteRowAt } from "../helpers/artifacts.js";
+import { toolFixture, type ToolFixture } from "../helpers/toolbox.js";
 
 type Stored = {
   display_path: string;
@@ -144,7 +145,7 @@ class FakeStore {
 function ctx(store: FakeStore, extra: { agentId?: string; guildId?: string } = {}) {
   const agentId = extra.agentId ?? "a_1";
   const guildId = extra.guildId ?? "guild_1";
-  return createToolContext({
+  return toolFixture({
     run_id: "r_1",
     agent_id: agentId,
     guild_id: guildId,
@@ -161,15 +162,13 @@ function ctx(store: FakeStore, extra: { agentId?: string; guildId?: string } = {
 }
 
 async function invoke(
-  toolCtx: ReturnType<typeof createToolContext>,
+  toolCtx: ToolFixture,
   name: string,
   arguments_: Record<string, unknown>,
 ) {
   const [payload, metadata] = await invokeTool(
-    toolCtx,
+    toolCtx.services, toolCtx.run, toolCtx.hooks,
     { id: "call_1", type: "function", function: { name, arguments: JSON.stringify(arguments_) } },
-    {},
-    32_768,
   );
   return { content: String(payload.content), metadata };
 }

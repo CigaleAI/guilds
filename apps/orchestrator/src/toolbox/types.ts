@@ -159,49 +159,33 @@ export type ToolHooks = {
   secret_store: AgentSecretStore | null;
 };
 
-/** What a tool reaches: the toolbox's services, its run, and the run's hooks. */
-export type ToolContext = ToolServices & ToolRun & ToolHooks;
-
-export function createToolContext(
-  partial: Pick<ToolContext, "run_id" | "agent_id" | "guild_id" | "sandbox" | "secrets"> &
-    Partial<ToolContext>,
-): ToolContext {
+/** The run record of `partial`, every field it leaves out at its default. */
+export function createToolRun(
+  partial: Pick<ToolRun, "run_id" | "agent_id" | "guild_id" | "sandbox" | "secrets"> & Partial<ToolRun>,
+): ToolRun {
   return {
-    notes: null,
-    artifacts: null,
-    artifact_actor: null,
-    files: null,
-    workspace_dir: null,
     guild_name: "",
     agent_name: "",
     org_slug: "",
-    cancel_event: null,
-    track_command: null,
-    group_chat: null,
-    issues: null,
-    schedules: null,
-    scripts: null,
     run_kind: "direct",
     secret_names: [],
-    secret_store: null,
+    secret_aliases: {},
+    artifact_actor: null,
+    workspace_dir: null,
+    agent_home: agentHome(partial.agent_id),
+    cdp_port: null,
+    cancel_event: null,
     memory_replaced_by: "",
     run_scripts: [],
     max_scripts: DEFAULT_MAX_SCRIPTS,
     connection_tool_names: [],
     dynamic_tools: {},
     offered_tools: null,
-    agent_home: agentHome(partial.agent_id),
-    cdp_port: null,
-    ensure_browser: null,
-    code_default_cwd: "",
-    before_command: null,
     harness: null,
     harness_model: null,
     harness_effort: null,
-    secret_aliases: {},
     code_repositories: [],
-    db: null,
-    events: null,
+    code_default_cwd: "",
     ...partial,
   };
 }

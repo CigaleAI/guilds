@@ -54,7 +54,7 @@ import { newId } from "../../src/lib/ids.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { completionReply } from "../helpers/generation.js";
-import { toolInvocation } from "../helpers/toolbox.js";
+import { toolInvocation, toolFixture } from "../helpers/toolbox.js";
 import {
   createIsolatedDatabase,
   dropIsolatedDatabase,
@@ -62,7 +62,6 @@ import {
 } from "../helpers/postgres.js";
 import { listConfigChanges } from "../../src/db/config-changes.js";
 import { userActor } from "../../src/lib/change-actor.js";
-import { createToolContext } from "../../src/toolbox/index.js";
 import { scheduleCreateCron, schedulePause } from "../../src/toolbox/schedule.js";
 import { getGuild, insertGuild, updateGuild } from "../../src/db/guilds.js";
 import { insertUser } from "../../src/db/users.js";
@@ -2283,7 +2282,7 @@ test("studio proposes routines to create, change, and delete that the operator a
       },
       now,
     );
-    const toolCtx = createToolContext({
+    const toolCtx = toolFixture({
       run_id: "r_wt",
       agent_id: "a_wt",
       guild_id: "guild_rt",
@@ -2293,9 +2292,9 @@ test("studio proposes routines to create, change, and delete that the operator a
       agent_name: "watcher",
     });
     const create = { cron: "0 7 * * *", description: "Morning check", instruction: "Check." };
-    await scheduleCreateCron.handler(toolCtx, toolCtx, toolCtx, toolInvocation("schedule_create_cron", create, "call_create"));
+    await scheduleCreateCron.handler(toolCtx.services, toolCtx.run, toolCtx.hooks, toolInvocation("schedule_create_cron", create, "call_create"));
     const [own] = await listSchedules(db, "a_wt");
-    await schedulePause.handler(toolCtx, toolCtx, toolCtx, toolInvocation("schedule_pause", { schedule_id: String(own?.id) }, "call_pause"));
+    await schedulePause.handler(toolCtx.services, toolCtx.run, toolCtx.hooks, toolInvocation("schedule_pause", { schedule_id: String(own?.id) }, "call_pause"));
     const agentHistory = await listConfigChanges(db, "org_home", { kind: "routine", id: String(own?.id) });
     assert.deepEqual(
       agentHistory.map((change) => [change.operation, change.actor.type, change.actor.name, change.run_id, change.tool]),

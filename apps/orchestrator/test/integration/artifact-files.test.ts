@@ -14,7 +14,7 @@ import { connect } from "../../src/seed/connect.js";
 import { listConfigChanges } from "../../src/db/config-changes.js";
 import { MemoryBlobStore } from "../../src/lib/blob-store.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { createToolContext, invokeTool } from "../../src/toolbox/index.js";
+import { invokeTool } from "../../src/toolbox/index.js";
 import { tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
@@ -23,6 +23,7 @@ import { agentConfig } from "../helpers/generation.js";
 import { accessList, grantAccess } from "../../src/artifacts/access-lists.js";
 import { deleteByDisplayPath, listStateArtifacts } from "../../src/artifacts/notes.js";
 import { toolArtifacts } from "../../src/toolbox/artifacts.js";
+import { toolFixture } from "../helpers/toolbox.js";
 
 const dbName = uniqueDbName("agent_platform_files");
 let database: Database;
@@ -163,8 +164,8 @@ describe("shared files", { concurrency: 1 }, () => {
     await assert.rejects(() => files.loadFile(beta, files.view(own).display_path), /artifact not found/);
 
     await assert.rejects(() => deleteByDisplayPath(store, alpha, files.view(own).display_path), /use file_delete for files/);
-    const ctx = createToolContext({ run_id: "r_1", agent_id: "a_alpha", guild_id: "guild_alpha", sandbox: null, secrets: {}, artifacts: toolArtifacts(store), artifact_actor: alpha });
-    const [got] = await invokeTool(ctx, { id: "c1", type: "function", function: { name: "note_get", arguments: JSON.stringify({ path: files.view(own).display_path }) } }, {}, 32_768);
+    const ctx = toolFixture({ run_id: "r_1", agent_id: "a_alpha", guild_id: "guild_alpha", sandbox: null, secrets: {}, artifacts: toolArtifacts(store), artifact_actor: alpha });
+    const [got] = await invokeTool(ctx.services, ctx.run, ctx.hooks, { id: "c1", type: "function", function: { name: "note_get", arguments: JSON.stringify({ path: files.view(own).display_path }) } });
     assert.match(String(got.content), /use file_fetch for files/);
   });
 
@@ -172,7 +173,7 @@ describe("shared files", { concurrency: 1 }, () => {
     const workspace = path.join(tempDir("guilds-files-"), "a_alpha");
     mkdirSync(path.join(workspace, "out"), { recursive: true });
     writeFileSync(path.join(workspace, "out", "report.pdf"), Buffer.from("%PDF-1.4 fake"));
-    const ctx = createToolContext({
+    const ctx = toolFixture({
       run_id: "r_2",
       agent_id: "a_alpha",
       guild_id: "guild_alpha",
@@ -184,7 +185,7 @@ describe("shared files", { concurrency: 1 }, () => {
       workspace_dir: workspace,
     });
     const call = (name: string, args: Record<string, unknown>) =>
-      invokeTool(ctx, { id: `c_${name}`, type: "function", function: { name, arguments: JSON.stringify(args) } }, {}, 32_768).then(([message]) => String(message.content));
+      invokeTool(ctx.services, ctx.run, ctx.hooks, { id: `c_${name}`, type: "function", function: { name, arguments: JSON.stringify(args) } }).then(([message]) => String(message.content));
 
     const put = await call("file_put", { home_path: "out/report.pdf", level: "guild", description: "The quarterly report" });
     assert.equal(put, "org/org_home/guilds/guild_alpha/files/report.pdf");

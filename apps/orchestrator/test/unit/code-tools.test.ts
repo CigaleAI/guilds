@@ -11,7 +11,7 @@ import { generationLive } from "../../src/generation/completion.js";
 import { configSnapshot } from "../../src/generation/snapshot.js";
 import { offeredToolNames } from "../../src/toolbox/offered.js";
 import type { Completion } from "../../src/llm/index.js";
-import { createToolContext, invokeTool } from "../../src/toolbox/index.js";
+import { invokeTool } from "../../src/toolbox/index.js";
 import {
   callSegment,
   CODING_TOOLS,
@@ -30,6 +30,7 @@ import { connectionRow } from "../helpers/servers.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import type { McpConnectionRow } from "../../src/db/mcp.js";
 import { setInstanceKeys } from "../../src/instance/integrations.js";
+import { toolFixture } from "../helpers/toolbox.js";
 
 const live = generationLive;
 /** The box's GitHub App, as the instance admin stored it. */
@@ -75,7 +76,7 @@ function readySandbox(options: { clones?: boolean } = {}): HostCodeSandbox {
 }
 
 function ctxFor(sandbox: HostCodeSandbox, runId = "r_code") {
-  return createToolContext({
+  return toolFixture({
     run_id: runId,
     agent_id: "a_1",
     guild_id: "g_1",
@@ -94,10 +95,8 @@ async function call(
 ): Promise<[string, Record<string, unknown>]> {
   callCount += 1;
   const [payload, metadata] = await invokeTool(
-    ctxFor(sandbox, runId),
+    ctxFor(sandbox, runId).services, ctxFor(sandbox, runId).run, ctxFor(sandbox, runId).hooks,
     { id: `call_${callCount}`, type: "function", function: { name, arguments: JSON.stringify(args) } },
-    { TOKEN: "s3cr3t-value" },
-    32768,
   );
   return [String(payload.content), metadata];
 }

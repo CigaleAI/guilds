@@ -4,9 +4,8 @@ import { agentActor } from "../../src/artifacts/actors.js";
 import { ArtifactError } from "../../src/artifacts/errors.js";
 import { MemoryError } from "../../src/memory/index.js";
 import { memoryWrite } from "../../src/toolbox/memory.js";
-import { createToolContext } from "../../src/toolbox/types.js";
 import { noteRowAt } from "../helpers/artifacts.js";
-import { toolInvocation } from "../helpers/toolbox.js";
+import { toolInvocation, toolFixture } from "../helpers/toolbox.js";
 
 const actor = agentActor({
   orgId: "org_1",
@@ -18,7 +17,7 @@ const actor = agentActor({
 
 test("memory_write stores through artifacts and publishes a file change", async () => {
   const published: unknown[] = [];
-  const ctx = createToolContext({
+  const ctx = toolFixture({
     run_id: "r_1",
     agent_id: "a_1",
     guild_id: "g_1",
@@ -37,7 +36,7 @@ test("memory_write stores through artifacts and publishes a file change", async 
       },
     } as never,
   });
-  const result = await memoryWrite.handler(ctx, ctx, ctx, toolInvocation("memory_write", { content: "keep this" }));
+  const result = await memoryWrite.handler(ctx.services, ctx.run, ctx.hooks, toolInvocation("memory_write", { content: "keep this" }));
   assert.equal(result, "org/org_1/agents/a_1/memory.md");
   assert.deepEqual(published, [
     ["guild.artifacts.changed", { scope: "agent", path: "memory.md", agent_id: "a_1" }],
@@ -45,7 +44,7 @@ test("memory_write stores through artifacts and publishes a file change", async 
 });
 
 test("memory_write falls back to notes when artifacts are absent", async () => {
-  const ctx = createToolContext({
+  const ctx = toolFixture({
     run_id: "r_1",
     agent_id: "a_1",
     guild_id: "g_1",
@@ -66,12 +65,12 @@ test("memory_write falls back to notes when artifacts are absent", async () => {
       },
     } as never,
   });
-  const result = await memoryWrite.handler(ctx, ctx, ctx, toolInvocation("memory_write", { content: "keep this" }));
+  const result = await memoryWrite.handler(ctx.services, ctx.run, ctx.hooks, toolInvocation("memory_write", { content: "keep this" }));
   assert.equal(result, "acme/research/researcher:keep this:r_1:run r_1 (direct)");
 });
 
 test("memory_write uses memory_replaced_by when the run already named the writer", async () => {
-  const ctx = createToolContext({
+  const ctx = toolFixture({
     run_id: "r_1",
     agent_id: "a_1",
     guild_id: "g_1",
@@ -93,11 +92,11 @@ test("memory_write uses memory_replaced_by when the run already named the writer
       },
     } as never,
   });
-  assert.equal(await memoryWrite.handler(ctx, ctx, ctx, toolInvocation("memory_write", { content: "keep" })), "user manu (Files pane)");
+  assert.equal(await memoryWrite.handler(ctx.services, ctx.run, ctx.hooks, toolInvocation("memory_write", { content: "keep" })), "user manu (Files pane)");
 });
 
 test("memory_write fails when neither artifacts nor notes are available", async () => {
-  const ctx = createToolContext({
+  const ctx = toolFixture({
     run_id: "r_1",
     agent_id: "a_1",
     guild_id: "g_1",
@@ -105,18 +104,18 @@ test("memory_write fails when neither artifacts nor notes are available", async 
     secrets: {},
   });
   await assert.rejects(
-    () => memoryWrite.handler(ctx, ctx, ctx, toolInvocation("memory_write", { content: "keep" })),
+    () => memoryWrite.handler(ctx.services, ctx.run, ctx.hooks, toolInvocation("memory_write", { content: "keep" })),
     (error: Error) => error instanceof ArtifactError && error.message.includes("artifact store"),
   );
 });
 
 test("memory_write rejects a body over the cap before writing", async () => {
-  const ctx = createToolContext({
+  const ctx = toolFixture({
     run_id: "r_1",
     agent_id: "a_1",
     guild_id: "g_1",
     sandbox: {} as never,
     secrets: {},
   });
-  await assert.rejects(() => memoryWrite.handler(ctx, ctx, ctx, toolInvocation("memory_write", { content: "x".repeat(12_001) })), MemoryError);
+  await assert.rejects(() => memoryWrite.handler(ctx.services, ctx.run, ctx.hooks, toolInvocation("memory_write", { content: "x".repeat(12_001) })), MemoryError);
 });

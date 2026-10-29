@@ -14,10 +14,11 @@ import {
   storeAgentSecretThrough,
   type AgentSecretsDatabase,
 } from "../../src/secrets/agent.js";
-import { createToolContext, invokeTool, type Tool } from "../../src/toolbox/index.js";
+import { invokeTool, type Tool } from "../../src/toolbox/index.js";
 
 import { agentRow, FakeDB, FakeSandboxes, makeLoop } from "../helpers/generation.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
+import { toolFixture } from "../helpers/toolbox.js";
 
 process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
 
@@ -197,7 +198,7 @@ test("secret_store redacts the stored value from later results in the generation
     handler: async () => "the key is sk-live-999",
   };
   const stores: Array<Record<string, unknown>> = [];
-  const ctx = createToolContext({
+  const ctx = toolFixture({
     run_id: "r_1",
     agent_id: "a_1",
     guild_id: "g_1",
@@ -211,17 +212,17 @@ test("secret_store redacts the stored value from later results in the generation
       },
     },
   });
-  const [stored] = await invokeTool(ctx, call("secret_store", { name: "ACME_KEY", description: "d", file: "key.txt" }), redactions, 32768);
+  const [stored] = await invokeTool(ctx.services, ctx.run, ctx.hooks, call("secret_store", { name: "ACME_KEY", description: "d", file: "key.txt" }));
   assert.deepEqual(stores, [{ name: "ACME_KEY", description: "d", file: "key.txt" }]);
   assert.match(String(stored.content), /\{"stored":"ACME_KEY","rotated":false\}/);
   assert.match(String(stored.content), /in your environment from the next generation/);
   assert.equal(String(stored.content).includes("sk-live-999"), false);
-  const [echoed] = await invokeTool(ctx, call("echo_value", {}), redactions, 32768);
+  const [echoed] = await invokeTool(ctx.services, ctx.run, ctx.hooks, call("echo_value", {}));
   assert.match(String(echoed.content), /the key is \[REDACTED:ACME_KEY\]/);
 });
 
 test("secret_request asks in a direct chat and writes nothing", async () => {
-  const ctx = createToolContext({
+  const ctx = toolFixture({
     run_id: "r_1",
     agent_id: "a_1",
     guild_id: "g_1",
@@ -230,16 +231,16 @@ test("secret_request asks in a direct chat and writes nothing", async () => {
     secret_names: ["ALREADY_SET"],
   });
   const args = { name: "ACME_KEY", description: "Calls Acme", reason: "The report needs Acme data." };
-  const [asked] = await invokeTool(ctx, call("secret_request", args), {}, 32768);
+  const [asked] = await invokeTool(ctx.services, ctx.run, ctx.hooks, call("secret_request", args));
   const [first, line] = String(asked.content).split("\n");
   assert.deepEqual(JSON.parse(first!), { widget: "secret_request", name: "ACME_KEY", status: "asked" });
   assert.match(String(line), /End your turn now/);
-  const [available] = await invokeTool(ctx, call("secret_request", { ...args, name: "ALREADY_SET" }), {}, 32768);
+  const [available] = await invokeTool(ctx.services, ctx.run, ctx.hooks, call("secret_request", { ...args, name: "ALREADY_SET" }));
   assert.match(String(available.content), /^\{"status":"available"\}/);
-  const [noReason] = await invokeTool(ctx, call("secret_request", { ...args, reason: " " }), {}, 32768);
+  const [noReason] = await invokeTool(ctx.services, ctx.run, ctx.hooks, call("secret_request", { ...args, reason: " " }));
   assert.match(String(noReason.content), /reason must contain/);
-  const groupCtx = { ...ctx, run_kind: "group" };
-  const [group] = await invokeTool(groupCtx, call("secret_request", args), {}, 32768);
+  const groupCtx = { ...ctx, run: { ...ctx.run, run_kind: "group" } };
+  const [group] = await invokeTool(groupCtx.services, groupCtx.run, groupCtx.hooks, call("secret_request", args));
   assert.match(String(group.content), /only available in a direct chat/);
 });
 
