@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { catalogServerItem } from "../mcp/catalog.js";
 import { registryClient, type RegistryClient } from "../registry/client.js";
-import { compareVersions, RegistryError } from "../registry/index.js";
+import { compareVersions } from "../registry/index.js";
 import { codeTierRoot, connectorsRoot, syncCodeConnectors, type CodeSync } from "../registry/code.js";
 import { installConnector, removeConnector, updateConnectors } from "../registry/install.js";
 import type { AppDeps } from "./deps.js";
@@ -14,13 +14,6 @@ import { listPlatformServers, reloadServer } from "../mcp/servers.js";
 /** The box's registry client: the one the deps carry, else `REGISTRY_URL`'s; null while offline. */
 export function registryOf(deps: AppDeps): RegistryClient | null {
   return deps.registry === undefined ? registryClient() : deps.registry;
-}
-
-export function registryHttp(error: unknown): never {
-  if (error instanceof RegistryError) {
-    throw new HttpError(error.status, error.message);
-  }
-  throw error;
 }
 
 /** Each name's newest entry, with every version the index offers for it. */
@@ -74,70 +67,54 @@ export async function registerAdminRegistryRoutes(app: FastifyInstance, deps: Ap
     if (client === null) {
       return { offline: true, url: null, connectors: [] };
     }
-    try {
-      const index = await client.index();
-      const installed = new Map(
-        (await listPlatformServers(db)).map((row) => [row.slug, row]),
-      );
-      return {
-        offline: false,
-        url: client.baseUrl,
-        connectors: latestEntries(index.connectors, (entry) => entry.slug).map((entry) => {
-          const row = installed.get(entry.slug);
-          return {
-            ...entry,
-            installed: row ? { source: String(row.source), version: String(row.version ?? "") } : null,
-          };
-        }),
-      };
-    } catch (error) {
-      registryHttp(error);
-    }
+    const index = await client.index();
+    const installed = new Map(
+      (await listPlatformServers(db)).map((row) => [row.slug, row]),
+    );
+    return {
+      offline: false,
+      url: client.baseUrl,
+      connectors: latestEntries(index.connectors, (entry) => entry.slug).map((entry) => {
+        const row = installed.get(entry.slug);
+        return {
+          ...entry,
+          installed: row ? { source: String(row.source), version: String(row.version ?? "") } : null,
+        };
+      }),
+    };
   });
 
   app.post("/api/admin/registry/connectors", async (request, reply) => {
     await requireInstanceAdmin(deps, request);
     const body = bodyOf(request);
-    try {
-      const { row } = await installConnector(db, onlineClient(), typeof body.slug === "string" ? body.slug : "", {
-        ...(typeof body.version === "string" && body.version ? { version: body.version } : {}),
-        unverified: body.unverified === true,
-        experimental: body.experimental === true,
-        codeRoot: codeTierRoot(),
-      });
-      await applyChange();
-      reply.code(201);
-      return catalogServerItem(await reloadServer(db, row));
-    } catch (error) {
-      registryHttp(error);
-    }
+    const { row } = await installConnector(db, onlineClient(), typeof body.slug === "string" ? body.slug : "", {
+      ...(typeof body.version === "string" && body.version ? { version: body.version } : {}),
+      unverified: body.unverified === true,
+      experimental: body.experimental === true,
+      codeRoot: codeTierRoot(),
+    });
+    await applyChange();
+    reply.code(201);
+    return catalogServerItem(await reloadServer(db, row));
   });
 
   app.post("/api/admin/registry/connectors/:slug/update", async (request) => {
     await requireInstanceAdmin(deps, request);
-    try {
-      const body = bodyOf(request);
-      const moved = await updateConnectors(db, onlineClient(), {
-        slug: param(request, "slug"),
-        unverified: body.unverified === true,
-        experimental: body.experimental === true,
-        codeRoot: codeTierRoot(),
-        connectorsRoot: connectorsRoot(),
-      });
-      await applyChange();
-      return { moved };
-    } catch (error) {
-      registryHttp(error);
-    }
+    const body = bodyOf(request);
+    const moved = await updateConnectors(db, onlineClient(), {
+      slug: param(request, "slug"),
+      unverified: body.unverified === true,
+      experimental: body.experimental === true,
+      codeRoot: codeTierRoot(),
+      connectorsRoot: connectorsRoot(),
+    });
+    await applyChange();
+    return { moved };
   });
 
   app.delete("/api/admin/registry/connectors/:slug", async (request, reply) => {
     await requireInstanceAdmin(deps, request);
-    try {
-      await removeConnector(db, param(request, "slug"), connectorsRoot());
-    } catch (error) {
-      registryHttp(error);
-    }
+    await removeConnector(db, param(request, "slug"), connectorsRoot());
     await applyChange();
     return reply.code(204).send();
   });
