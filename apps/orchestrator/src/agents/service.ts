@@ -74,7 +74,7 @@ export type AgentRequest = {
   avatarShape: string | undefined;
   avatarColor: string | undefined;
   config: unknown;
-  machineId: unknown;
+  machineId: string | null | undefined;
 };
 
 /**
@@ -86,7 +86,7 @@ export type AgentDraft = { agent: NewAgent; task: string; placement: AgentPlacem
 /** An agent's settings as a change asks for them, before validation; an undefined profile field stays as it is. */
 export type AgentSettingsPatch = {
   config: unknown;
-  machineId: unknown;
+  machineId: string | null | undefined;
   name: string | undefined;
   focus: string | undefined;
   wakeTriggers: string | undefined;
@@ -403,7 +403,7 @@ export async function moveAgentToMachine(
   services: AgentServices,
   agent: AgentRow,
   userId: string,
-  machineId: unknown,
+  machineId: string | null | undefined,
 ): Promise<AgentRow> {
   if (machineId === undefined || machineId === null) {
     throw new AgentError(422, "machine_id is required");

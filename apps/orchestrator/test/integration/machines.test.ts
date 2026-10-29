@@ -338,6 +338,30 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
     assert.equal(moved.json().machine_id, codeId);
     assert.equal(readFileSync(path.join(workspaceRoot, codeId, scripterId, "notes.txt"), "utf8"), "keep");
     assert.equal(existsSync(home), false);
+    const numberedMachine = await app.inject({
+      method: "PUT",
+      url: `/api/agents/${scripterId}/machine`,
+      headers: JSON_AUTH,
+      payload: { machine_id: 7 },
+    });
+    assert.equal(numberedMachine.statusCode, 422, numberedMachine.body);
+    assert.deepEqual(numberedMachine.json().detail[0].loc, ["body", "machine_id"]);
+    const numberedFocus = await app.inject({
+      method: "PUT",
+      url: `/api/agents/${scripterId}/config`,
+      headers: JSON_AUTH,
+      payload: { focus: 3 },
+    });
+    assert.equal(numberedFocus.statusCode, 422, numberedFocus.body);
+    assert.deepEqual(numberedFocus.json().detail[0].loc, ["body", "focus"]);
+    const configless = await app.inject({
+      method: "POST",
+      url: `/api/guilds/${guildId}/agents`,
+      headers: JSON_AUTH,
+      payload: { name: "configless" },
+    });
+    assert.equal(configless.statusCode, 422, configless.body);
+    assert.deepEqual(configless.json().detail[0].loc, ["body", "config"]);
 
     // The settings save moves an agent too, checked against the machine it goes to.
     const detail = await app.inject({ method: "GET", url: `/api/agents/${scripterId}`, headers: AUTH });

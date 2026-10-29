@@ -8,6 +8,15 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** The agent routes refuse, with a 422 that names the field
+and before the request's user is identified: a `name`, `focus`,
+`wake_triggers`, `avatar_shape` or `avatar_color` that is not a string,
+and a `machine_id` that is neither a string nor null. A create without
+`config` names it. Before, those were read as their text, so a `name`
+of `null` on a change was refused as an empty name and a number was
+checked as its digits, and a create missing both `name` and `config`
+named each of them.
+
 **No impact.** The organisation routes refuse, with a 422 that names
 the field and before the request's user is identified: a create
 without a string `name` and `slug`, a change whose `name` or `slug` is
