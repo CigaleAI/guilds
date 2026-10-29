@@ -9,6 +9,7 @@ import type { AgentScheduleRow } from "../db/schedules.js";
 import type { Schedules } from "../schedules/service.js";
 import { previewCurrentState, projectAgentAccess, projectOfferedToolSchemas, type PreviewDeps } from "./preview.js";
 import { wrapEvidence } from "./system.js";
+import { studioAgentHandleFromArgs } from "./arguments.js";
 import { StudioUnprocessableError } from "./errors.js";
 import { ScriptError } from "../scripts/validation.js";
 import { ABOUT_MAX, DESCRIPTION_MAX } from "../guilds/validation.js";
@@ -100,16 +101,6 @@ async function resolveHandle(ctx: StudioToolContext, handle: string | undefined)
     throw new StudioUnprocessableError(handle ? "agent is not in the source guild" : "agent handle required");
   }
   return agent;
-}
-
-export function studioAgentHandleFromArgs(args: Record<string, unknown>): string {
-  for (const key of ["agent_id", "agent", "agent_name"]) {
-    const value = args[key];
-    if (typeof value === "string" && value.trim()) {
-      return value.trim();
-    }
-  }
-  return "";
 }
 
 function normalizeAgentHandle(value: string): string {

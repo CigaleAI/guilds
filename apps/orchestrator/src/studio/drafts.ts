@@ -19,7 +19,8 @@ import { StudioConflictError, StudioError, StudioUnprocessableError } from "./er
 import { previewCurrentState, projectOfferedToolSchemas } from "./preview.js";
 import { withLockedSession } from "./session-lock.js";
 import type { StudioToolContext } from "./tools.js";
-import { resolveSourceGuildAgent, sourceGuildAgents, studioAgentHandleFromArgs } from "./tools.js";
+import { resolveSourceGuildAgent, sourceGuildAgents } from "./tools.js";
+import { studioAgentHandleFromArgs } from "./arguments.js";
 import { argString } from "../toolbox/schema.js";
 import { excerptBytes } from "./system.js";
 import { getAgent, getAgentTask, listAgents, type AgentRow } from "../db/agents.js";
