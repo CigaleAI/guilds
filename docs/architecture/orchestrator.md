@@ -692,7 +692,12 @@ only the fields in its row.
   schema.
 
 - Streaming emits text deltas, reasoning deltas, and one final
-  assembled assistant payload.
+  assembled assistant payload. A `chat-completions` chunk is read
+  into its id, served model, text, reasoning (`reasoning`, else
+  `reasoning_content`, else the text of `reasoning_details`), tool
+  call pieces, finish reason, and usage; a field that is missing or
+  of another type is read as empty, and a tool call piece without an
+  index belongs to the first call.
 - Final metadata: `usage.input_tokens`, `usage.output_tokens`,
   `usage.cache_read_tokens`, `latency_ms`, `finish_reason`, served
   `model`, `response_id`, `provider_request_id`, `cost_usd`,

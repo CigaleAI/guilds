@@ -5,3 +5,8 @@
 export function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+
+/** A string with something in it; null for anything else. */
+export function optionalString(value: unknown): string | null {
+  return typeof value === "string" && value ? value : null;
+}

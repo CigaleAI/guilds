@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import type { Stream } from "openai/streaming";
 import type { ReasoningDetail } from "../db/schema/index.js";
 import { listMessagesModels, streamMessages } from "./anthropic.js";
 import { modelCatalog } from "./catalog.js";
@@ -12,8 +13,19 @@ import {
   providerForModel,
   reasoningEffortForModel,
   type ModelEvent,
+  type ProviderUsage,
 } from "./completion.js";
+import { isPlainObject, optionalString } from "./payload.js";
 import type { ProviderDef } from "./providers.js";
+
+/** The ids a `/models` listing names: a list, or OpenAI's `{ data: [...] }`, of ids or of rows with an `id`. */
+function modelIdsOf(body: unknown): string[] {
+  const rows: unknown[] = Array.isArray(body) ? body : isPlainObject(body) && Array.isArray(body.data) ? body.data : [];
+  return rows.flatMap((row) => {
+    const id = isPlainObject(row) ? row.id : row;
+    return typeof id === "string" && id.trim() ? [id.trim()] : [];
+  });
+}
 
 /**
  * The models the key lists: the probe a save runs, and the local endpoint's catalog. A rejected
@@ -66,18 +78,10 @@ export async function listProviderModels(
   } catch {
     body = null;
   }
-  const rows = Array.isArray(body)
-    ? body
-    : body && typeof body === "object" && Array.isArray((body as { data?: unknown }).data)
-      ? ((body as { data: unknown[] }).data)
-      : [];
-  return rows.flatMap((row) => {
-    const id = row && typeof row === "object" ? (row as { id?: unknown }).id : row;
-    return typeof id === "string" && id.trim() ? [id.trim()] : [];
-  });
+  return modelIdsOf(body);
 }
 
-const REASONING_TEXT_KEYS = ["text", "summary", "data"] as const;
+const REASONING_TEXT_KEYS: ReadonlySet<string> = new Set(["text", "summary", "data"]);
 
 function reasoningTextOf(detail: ReasoningDetail): string {
   const text = detail.text ?? detail.summary;
@@ -86,17 +90,14 @@ function reasoningTextOf(detail: ReasoningDetail): string {
 
 export function applyReasoningDetailDelta(acc: ReasoningDetail[], delta: ReasoningDetail[]): void {
   for (const part of delta) {
-    if (!part || typeof part !== "object") {
-      continue;
-    }
-    const index = typeof part.index === "number" ? part.index : acc.length;
+    const index = part.index ?? acc.length;
     const current = acc[index];
     if (current === undefined) {
       acc[index] = { ...part };
       continue;
     }
     for (const [key, value] of Object.entries(part)) {
-      if ((REASONING_TEXT_KEYS as readonly string[]).includes(key) && typeof value === "string") {
+      if (REASONING_TEXT_KEYS.has(key) && typeof value === "string") {
         const previous = current[key];
         current[key] = (typeof previous === "string" ? previous : "") + value;
       } else {
@@ -106,39 +107,122 @@ export function applyReasoningDetailDelta(acc: ReasoningDetail[], delta: Reasoni
   }
 }
 
-type ToolCallAcc = {
-  id?: string;
-  type?: string;
-  function?: { name?: string; arguments?: string };
+/** A piece of one tool call, as a stream chunk carries it: the strings are appended to the call at `index`. */
+export type ToolCallDelta = { index: number; id: string; type: string; name: string; arguments: string };
+
+/** One Chat Completions stream chunk, read into the fields a completion assembles. */
+export type CompletionChunk = {
+  id: string | null;
+  model: string | null;
+  text: string;
+  reasoning: string;
+  reasoningDetails: ReasoningDetail[];
+  toolCalls: ToolCallDelta[];
+  finishReason: string | null;
+  usage: ProviderUsage | null;
 };
 
-function applyToolCallDelta(
-  acc: ToolCallAcc[],
-  delta: Array<{ index?: number; id?: string; type?: string; function?: { name?: string; arguments?: string } }>,
-): void {
+type ToolCallAcc = Omit<ToolCallDelta, "index">;
+
+function applyToolCallDelta(acc: ToolCallAcc[], delta: ToolCallDelta[]): void {
   for (const part of delta) {
-    const index = part.index ?? 0;
-    const current = acc[index] ?? {};
-    if (part.id) {
-      current.id = part.id;
-    }
-    if (part.type) {
-      current.type = part.type;
-    }
-    if (part.function) {
-      current.function = current.function ?? { name: "", arguments: "" };
-      if (part.function.name) {
-        current.function.name = (current.function.name ?? "") + part.function.name;
-      }
-      if (part.function.arguments) {
-        current.function.arguments = (current.function.arguments ?? "") + part.function.arguments;
-      }
-    }
-    acc[index] = current;
+    const current = acc[part.index] ?? { id: "", type: "", name: "", arguments: "" };
+    current.id = part.id || current.id;
+    current.type = part.type || current.type;
+    current.name += part.name;
+    current.arguments += part.arguments;
+    acc[part.index] = current;
   }
 }
 
+function isReasoningDetail(value: unknown): value is ReasoningDetail {
+  return isPlainObject(value) && (value.index === undefined || typeof value.index === "number");
+}
+
+function toolCallDeltaOf(part: unknown): ToolCallDelta[] {
+  if (!isPlainObject(part)) {
+    return [];
+  }
+  const fn = isPlainObject(part.function) ? part.function : {};
+  return [
+    {
+      // A server that streams a single tool call may leave out its index.
+      index: typeof part.index === "number" ? part.index : 0,
+      id: typeof part.id === "string" ? part.id : "",
+      type: typeof part.type === "string" ? part.type : "",
+      name: typeof fn.name === "string" ? fn.name : "",
+      arguments: typeof fn.arguments === "string" ? fn.arguments : "",
+    },
+  ];
+}
+
+/** The usage fields a chunk reports: OpenAI's, and the cache read and cost that OpenRouter adds. */
+function providerUsageOf(usage: Record<string, unknown>): ProviderUsage {
+  const parsed: ProviderUsage = {};
+  if (typeof usage.prompt_tokens === "number") {
+    parsed.prompt_tokens = usage.prompt_tokens;
+  }
+  if (typeof usage.completion_tokens === "number") {
+    parsed.completion_tokens = usage.completion_tokens;
+  }
+  if (typeof usage.cache_read_input_tokens === "number") {
+    parsed.cache_read_input_tokens = usage.cache_read_input_tokens;
+  }
+  const details = usage.prompt_tokens_details;
+  if (isPlainObject(details) && typeof details.cached_tokens === "number") {
+    parsed.prompt_tokens_details = { cached_tokens: details.cached_tokens };
+  }
+  if (typeof usage.cost === "number") {
+    parsed.cost = usage.cost;
+  }
+  return parsed;
+}
+
+/**
+ * The reasoning a delta carries: `reasoning` (OpenRouter), else `reasoning_content` (DeepSeek and
+ * vLLM-style servers), else the text of its reasoning details.
+ */
+function reasoningOfDelta(delta: Record<string, unknown>, details: ReasoningDetail[]): string {
+  const thought = delta.reasoning ?? delta.reasoning_content ?? details.map(reasoningTextOf).join("");
+  return typeof thought === "string" ? thought : "";
+}
+
+/** A stream chunk read into named fields; a field the chunk lacks or holds in another shape is empty. */
+export function parseCompletionChunk(chunk: unknown): CompletionChunk {
+  const root = isPlainObject(chunk) ? chunk : {};
+  const choices: unknown[] = Array.isArray(root.choices) ? root.choices : [];
+  const first = choices[0];
+  const choice = isPlainObject(first) ? first : {};
+  const delta = isPlainObject(choice.delta) ? choice.delta : {};
+  const details: unknown[] = Array.isArray(delta.reasoning_details) ? delta.reasoning_details : [];
+  const reasoningDetails = details.filter(isReasoningDetail);
+  const toolCalls: unknown[] = Array.isArray(delta.tool_calls) ? delta.tool_calls : [];
+  return {
+    id: optionalString(root.id),
+    model: optionalString(root.model),
+    text: typeof delta.content === "string" ? delta.content : "",
+    reasoning: reasoningOfDelta(delta, reasoningDetails),
+    reasoningDetails,
+    toolCalls: toolCalls.flatMap(toolCallDeltaOf),
+    finishReason: optionalString(choice.finish_reason),
+    usage: isPlainObject(root.usage) ? providerUsageOf(root.usage) : null,
+  };
+}
+
 const PROMPT_CACHE_CONTROL = { type: "ephemeral" } as const;
+
+/** The parts with their last non-empty text part marked for the prompt cache; null when none is text. */
+function cacheLastTextPart(parts: unknown[]): unknown[] | null {
+  for (let index = parts.length - 1; index >= 0; index -= 1) {
+    const part = parts[index];
+    if (isPlainObject(part) && part.type === "text" && typeof part.text === "string" && part.text) {
+      const next = parts.slice();
+      next[index] = { ...part, cache_control: PROMPT_CACHE_CONTROL };
+      return next;
+    }
+  }
+  return null;
+}
 
 export function applyPromptCacheControl(
   messages: Array<Record<string, unknown>>,
@@ -153,26 +237,31 @@ export function applyPromptCacheControl(
       };
       return next;
     }
-    if (Array.isArray(content)) {
-      for (let partIndex = content.length - 1; partIndex >= 0; partIndex -= 1) {
-        const part = content[partIndex];
-        if (!part || typeof part !== "object" || Array.isArray(part)) {
-          continue;
-        }
-        const row = part as Record<string, unknown>;
-        if (row.type !== "text" || typeof row.text !== "string" || !row.text) {
-          continue;
-        }
-        const parts = content.slice() as Array<Record<string, unknown>>;
-        parts[partIndex] = { ...row, cache_control: PROMPT_CACHE_CONTROL };
-        const next = messages.slice();
-        next[i] = { ...messages[i], content: parts };
-        return next;
-      }
+    const parts = Array.isArray(content) ? cacheLastTextPart(content) : null;
+    if (parts) {
+      const next = messages.slice();
+      next[i] = { ...messages[i], content: parts };
+      return next;
     }
   }
   return messages;
 }
+
+/** The Chat Completions body a call sends: OpenAI's streaming fields, and the ones OpenRouter adds. */
+export type ChatCompletionsBody = {
+  model: string;
+  messages: Array<Record<string, unknown>>;
+  stream: true;
+  stream_options: { include_usage: true };
+  temperature?: number;
+  max_completion_tokens?: number;
+  max_tokens?: number;
+  cache_control?: typeof PROMPT_CACHE_CONTROL;
+  reasoning?: { effort: string };
+  reasoning_effort?: string;
+  tools?: unknown[];
+  tool_choice?: unknown;
+};
 
 /** The Chat Completions body a provider takes: the fields in its row, and `temperature` only when the catalog says the model takes one. */
 export function completionRequestBody(options: {
@@ -183,10 +272,10 @@ export function completionRequestBody(options: {
   tools?: unknown[] | null;
   tool_choice?: unknown;
   thinking_level?: string;
-}): Record<string, unknown> {
+}): ChatCompletionsBody {
   const { provider, upstream } = providerForModel(options.model);
   const openrouter = provider.id === "openrouter";
-  const body: Record<string, unknown> = {
+  const body: ChatCompletionsBody = {
     model: upstream,
     messages: openrouter ? applyPromptCacheControl(options.messages) : options.messages,
     stream: true,
@@ -254,108 +343,59 @@ export async function* streamCompletion(options: {
   });
   const started = performance.now();
   const body = completionRequestBody(options);
-  type StreamUsage = {
-    prompt_tokens?: number;
-    completion_tokens?: number;
-    cache_read_input_tokens?: number;
-    prompt_tokens_details?: { cached_tokens?: number };
-    cost?: number;
-  };
-  let stream: AsyncIterable<{
-    id?: string;
-    model?: string;
-    choices?: Array<{
-      delta?: {
-        content?: string | null;
-        tool_calls?: unknown[];
-        reasoning?: string | null;
-        reasoning_content?: string | null;
-        reasoning_details?: ReasoningDetail[] | null;
-      };
-      finish_reason?: string | null;
-    }>;
-    usage?: StreamUsage;
-  }>;
+  let stream: Stream<unknown>;
   try {
-    stream = (await client.chat.completions.create(body as never, {
+    // The body carries fields the SDK's request type does not name, so it goes through `post`, which
+    // `chat.completions.create` calls too. `stream: true` makes the SDK answer with a Stream; each
+    // chunk is parsed below.
+    stream = await client.post<Stream<unknown>>("/chat/completions", {
+      body,
+      stream: true,
       signal: options.signal,
-    })) as unknown as typeof stream;
+    });
   } catch (error) {
     throw asLlmError(error, apiKey);
   }
-  const chunks: Array<Record<string, unknown>> = [];
+  let received = false;
   let content = "";
   let reasoning = "";
   const reasoningDetails: ReasoningDetail[] = [];
   const toolCalls: ToolCallAcc[] = [];
   let finishReason: string | null = null;
-  let responseId: string | undefined;
-  let servedModel: string | undefined;
-  let usage: StreamUsage = {};
-  let providerRequestId: string | null = null;
+  let responseId: string | null = null;
+  let servedModel: string | null = null;
+  let usage: ProviderUsage = {};
   try {
-    for await (const chunk of stream) {
-      const raw = chunk as unknown as Record<string, unknown>;
-      chunks.push(raw);
-      if (typeof chunk.id === "string" && chunk.id) {
-        responseId = chunk.id;
+    for await (const raw of stream) {
+      received = true;
+      const chunk = parseCompletionChunk(raw);
+      responseId = chunk.id ?? responseId;
+      servedModel = chunk.model ?? servedModel;
+      applyReasoningDetailDelta(reasoningDetails, chunk.reasoningDetails);
+      if (chunk.reasoning) {
+        reasoning += chunk.reasoning;
+        yield ["reasoning", chunk.reasoning];
       }
-      if (typeof chunk.model === "string" && chunk.model) {
-        servedModel = chunk.model;
+      if (chunk.text) {
+        content += chunk.text;
+        yield ["delta", chunk.text];
       }
-      const choice = chunk.choices?.[0];
-      const delta = choice?.delta;
-      const detailDelta = delta?.reasoning_details;
-      if (Array.isArray(detailDelta) && detailDelta.length) {
-        applyReasoningDetailDelta(reasoningDetails, detailDelta);
-      }
-      const thought =
-        delta?.reasoning ??
-        delta?.reasoning_content ??
-        (Array.isArray(detailDelta) ? detailDelta.map(reasoningTextOf).join("") : "");
-      if (typeof thought === "string" && thought) {
-        reasoning += thought;
-        yield ["reasoning", thought];
-      }
-      const text = delta?.content;
-      if (typeof text === "string" && text) {
-        content += text;
-        yield ["delta", text];
-      }
-      const toolDelta = delta?.tool_calls;
-      if (Array.isArray(toolDelta) && toolDelta.length) {
-        applyToolCallDelta(toolCalls, toolDelta as never);
-      }
-      if (choice?.finish_reason) {
-        finishReason = choice.finish_reason;
-      }
-      if (chunk.usage) {
-        usage = chunk.usage as typeof usage;
-      }
+      applyToolCallDelta(toolCalls, chunk.toolCalls);
+      finishReason = chunk.finishReason ?? finishReason;
+      usage = chunk.usage ?? usage;
     }
   } catch (error) {
     throw asLlmError(error, apiKey);
   }
-  try {
-    const response = (stream as { response?: Response }).response
-      ?? (stream as { controller?: { response?: Response } }).controller?.response;
-    const headerId = response?.headers?.get("x-request-id")
-      ?? response?.headers?.get("llm_provider-request-id");
-    if (headerId) {
-      providerRequestId = headerId;
-    }
-  } catch {
-    providerRequestId = null;
-  }
-  if (!chunks.length) {
+  if (!received) {
     throw new LLMError("provider returned no chunks");
   }
   const payload = assistantPayload(
     content,
     toolCalls.map((call) => ({
-      id: call.id ?? "",
-      type: call.type ?? "function",
-      function: { name: call.function?.name ?? "", arguments: call.function?.arguments ?? "" },
+      id: call.id,
+      type: call.type || "function",
+      function: { name: call.name, arguments: call.arguments },
     })),
   );
   const latencyMs = Math.trunc(performance.now() - started);
@@ -369,8 +409,6 @@ export async function* streamCompletion(options: {
           model: servedModel,
           usage,
           finish_reason: finishReason,
-          provider_request_id: providerRequestId,
-          provider_cost: typeof usage.cost === "number" ? usage.cost : undefined,
           reasoning,
           reasoning_details: reasoningDetails.filter((detail) => detail !== undefined),
         },
