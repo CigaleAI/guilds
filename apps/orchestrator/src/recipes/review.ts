@@ -1,3 +1,4 @@
+import { Type } from "@sinclair/typebox";
 import { RecipeError } from "./errors.js";
 import { roleBrowses } from "./prepare.js";
 import type { FieldAuthor, RecipeDocument, RecipeRole } from "../db/schema/index.js";
@@ -204,6 +205,13 @@ function reviewField(recipe: RecipeDocument, path: string): ReviewField | null {
 export type ReviewAction = { action: "confirm" } | { action: "edit"; value?: string | undefined };
 
 /** The review a request asks for: `{ action: "edit", value }` edits, anything else confirms. */
+/** A review of one recipe field: its path, and whether it is confirmed or edited to a value. */
+export const ReviewSchema = Type.Object({
+  path: Type.Optional(Type.String()),
+  action: Type.Optional(Type.String()),
+  value: Type.Optional(Type.String()),
+});
+
 export function parseReviewAction(body: Record<string, unknown>): ReviewAction {
   if (body.action !== "edit") {
     return { action: "confirm" };

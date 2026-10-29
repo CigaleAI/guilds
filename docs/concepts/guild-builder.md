@@ -426,7 +426,10 @@ GET    /api/builder/servers/:server_ref
   organisation.
 - A session of another user or organisation is 404.
 - `POST /api/builder/sessions` is 422 without a model, or with one that
-  is not a marketplace model of a connected provider.
+  is not a marketplace model of a connected provider. `model` is a
+  string and `temperature` a number; a message's `content` is a
+  string, and a recipe write takes a number `expected_body_version`.
+  Another type is 422 naming the field.
 - Posting an empty message is 422. Posting while the coach generates,
   or to a session that is not active, is 409. A month past
   `monthlyCoachRuns` is 409.

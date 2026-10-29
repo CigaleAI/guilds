@@ -8,6 +8,20 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** The Builder's routes refuse, with a 422 that names the
+field and before the request's user is identified: a session whose
+`model` is not a string or whose `temperature` is not a number, a
+message whose `content` is not a string, a recipe write without a
+number `expected_body_version`, an access edit without `edits`, a
+review whose `path`, `action` or `value` is not a string, and a deploy
+whose choices do not have the apply preview's shape (`guild_name`,
+`guild_id` and `machine_id` strings; `names`, `models`, `harnesses`,
+`connections` and `secrets` lists of decisions; `activate_keys` a list
+of strings). Before, a `temperature` that was not a number was left
+out, a `model`, `content` or `path` was read as its text, a missing
+`expected_body_version` was a version conflict, and a deploy's choices
+were taken as sent.
+
 **No impact.** The coding routes refuse, with a 422 that names the
 field and before the request's user is identified: a repository without
 a string `name` and `url`, or with a `default_branch` or
