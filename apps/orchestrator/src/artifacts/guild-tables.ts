@@ -1,6 +1,6 @@
 // The tables a guild's agents are given, the guild's own and the organisation's, each with its
 // access list, and the steps the operator applies to them.
-import { grantAccess, listAccess } from "./access-lists.js";
+import { type AccessRowChange, grantAccess, listAccess } from "./access-lists.js";
 import {
   createCollection,
   deleteCollection,
@@ -14,7 +14,7 @@ import {
 } from "./collections.js";
 import { ArtifactError } from "./errors.js";
 import type { ArtifactStore, CollectionView } from "./store.js";
-import type { AccessEntry, AccessSubject, AgentAccessMode, ArtifactActor } from "./types.js";
+import type { AccessEntry, ArtifactActor } from "./types.js";
 
 /** A collection as the operator reads it, with its access list. */
 export type CollectionAccess = { collection: CollectionView; access: AccessEntry[] };
@@ -75,9 +75,6 @@ export async function guildTable(
   }
   return isGuildOrOrgTable(table.collection, guildId) ? table : null;
 }
-
-/** One subject's row a collection step sets on the collection's access list; a null mode removes the row. */
-export type AccessRowChange = { type: AccessSubject; id: string; mode: AgentAccessMode | null };
 
 /** One change to a collection as the operator applies it: a create or an edit with the access rows it then sets, or a delete. */
 export type CollectionStep =

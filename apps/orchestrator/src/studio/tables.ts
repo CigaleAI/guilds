@@ -4,7 +4,6 @@ import { ArtifactError } from "../artifacts/errors.js";
 import { columnCatalog, describeColumn, type ColumnChange } from "../artifacts/columns.js";
 import { listRecords } from "../artifacts/records.js";
 import {
-  type AccessRowChange,
   applyCollectionStep,
   type CollectionLookup,
   type CollectionStep,
@@ -12,9 +11,17 @@ import {
   guildTables,
 } from "../artifacts/guild-tables.js";
 import { planCollection, planCollectionChange } from "../artifacts/collections.js";
-import { effectiveAccess } from "../artifacts/access-lists.js";
-import type { AccessEntry, AgentAccessMode, ArtifactActor } from "../artifacts/types.js";
-import type { AccessMode, CollectionColumn } from "../db/schema/index.js";
+import {
+  effectiveAccess,
+  type GuildAccess,
+  type GuildAccessProposal,
+  isAgentRowMode,
+  isGuildRowMode,
+  planGuildAccess,
+} from "../artifacts/access-lists.js";
+import type { AccessEntry, ArtifactActor } from "../artifacts/types.js";
+import type { CollectionColumn } from "../db/schema/index.js";
+import { isPlainRecord } from "../db/json.js";
 import { argString } from "../toolbox/schema.js";
 import { STUDIO_TOOL_RESULT_MAX_BYTES } from "./constants.js";
 import type { EditAction } from "./actions.js";
@@ -37,20 +44,12 @@ export const STUDIO_TABLE_TOOL = "studio_edit_collection";
 export type TableAction = EditAction;
 
 const RECENT_RECORDS = 5;
-const GUILD_MODES = ["read", "write", "none"] as const;
-const AGENT_MODES = ["read", "write", "none", "inherit"] as const;
 
 export function isTableTool(name: string): boolean {
   return name === STUDIO_TABLE_TOOL;
 }
 
 type Member = { id: string; name: string };
-
-/**
- * The rows that reach the source guild: its own row and its live members'
- * rows, which Studio can change, and the organisation's row, which it shows.
- */
-type SourceAccess = { guild: AccessMode | null; org: AccessMode | null; agents: Map<string, AgentAccessMode> };
 
 type Table = {
   id: string;
@@ -64,7 +63,8 @@ type Table = {
   count: number;
   /** The table's whole access list. */
   entries: AccessEntry[];
-  access: SourceAccess;
+  /** The rows that reach the source guild: its own and its live members', which Studio can change, and the organisation's, which it shows. */
+  access: GuildAccess;
   /** Rows of other guilds and their agents: shown, never changed. */
   outside: string[];
 };
@@ -77,7 +77,7 @@ type Shape = {
   guildName: string | null;
   columns: CollectionColumn[];
   renamed: Array<{ from: string; to: string }>;
-  access: SourceAccess;
+  access: GuildAccess;
   outside: string[];
 };
 
@@ -171,10 +171,10 @@ async function loadTable(tc: TableContext, lookup: CollectionLookup): Promise<Ta
 }
 
 /** A table's access list split into the rows that reach the source guild and the rest. */
-function sourceAccess(tc: TableContext, entries: AccessEntry[]): { access: SourceAccess; outside: string[] } {
+function sourceAccess(tc: TableContext, entries: AccessEntry[]): { access: GuildAccess; outside: string[] } {
   const source = tc.scope.sourceGuildId;
   const live = new Set(tc.members.map((member) => member.id));
-  const access: SourceAccess = { guild: null, org: null, agents: new Map() };
+  const access: GuildAccess = { guild: null, org: null, agents: new Map() };
   const outside: string[] = [];
   for (const entry of entries) {
     if (entry.type === "org") {
@@ -240,77 +240,62 @@ function memberNamed(members: Member[], handle: string): Member | null {
   );
 }
 
-/** The access a proposal asks for: only the subjects it names change. */
-function parseAccess(
-  tc: TableContext,
-  raw: unknown,
-  base: SourceAccess,
-): { access: SourceAccess; rowChanges: AccessRowChange[] } {
-  const access: SourceAccess = { guild: base.guild, org: base.org, agents: new Map(base.agents) };
-  const rowChanges: AccessRowChange[] = [];
+/** The access rows a request names, each agent resolved to a live member of the source guild; no `access` names none. */
+function parseAccessProposal(tc: TableContext, raw: unknown): GuildAccessProposal {
   if (raw === undefined || raw === null) {
-    return { access, rowChanges };
+    return { guild: null, agents: [] };
   }
-  if (typeof raw !== "object" || Array.isArray(raw)) {
+  if (!isPlainRecord(raw)) {
     throw new StudioUnprocessableError("access must be an object with guild, agents, or both");
   }
-  const body = raw as Record<string, unknown>;
-  for (const key of Object.keys(body)) {
-    if (key !== "guild" && key !== "agents") {
-      throw new StudioUnprocessableError(`access: unknown field "${key}"`);
-    }
+  const unknownField = Object.keys(raw).find((key) => key !== "guild" && key !== "agents");
+  if (unknownField !== undefined) {
+    throw new StudioUnprocessableError(`access: unknown field "${unknownField}"`);
   }
-  if (body.guild !== undefined) {
-    if (!(GUILD_MODES as readonly unknown[]).includes(body.guild)) {
-      throw new StudioUnprocessableError("access.guild must be read, write, or none");
-    }
-    const mode = body.guild === "none" ? null : (body.guild as AccessMode);
-    if (mode !== access.guild) {
-      access.guild = mode;
-      rowChanges.push({ type: "guild", id: tc.scope.sourceGuildId, mode });
-    }
-  }
-  if (body.agents !== undefined) {
-    if (!Array.isArray(body.agents)) {
-      throw new StudioUnprocessableError("access.agents must be a list of { agent_id, mode }");
-    }
-    const seen = new Set<string>();
-    for (const item of body.agents) {
-      const entry =
-        item && typeof item === "object" && !Array.isArray(item)
-          ? (item as Record<string, unknown>)
-          : null;
-      if (!entry) {
-        throw new StudioUnprocessableError("access.agents must be a list of { agent_id, mode }");
-      }
-      const handle = String(entry.agent_id ?? "");
-      const member = memberNamed(tc.members, handle);
-      if (!member) {
-        throw new StudioUnprocessableError(
-          `access.agents: ${handle || "agent_id"} is not a live agent of ${tc.guildName}`,
-        );
-      }
-      if (seen.has(member.id)) {
-        throw new StudioUnprocessableError(`access.agents: ${member.name} is listed twice`);
-      }
-      seen.add(member.id);
-      if (!(AGENT_MODES as readonly unknown[]).includes(entry.mode)) {
-        throw new StudioUnprocessableError(
-          `access.agents: ${member.name}: mode must be read, write, none, or inherit`,
-        );
-      }
-      const mode = entry.mode === "inherit" ? null : (entry.mode as AgentAccessMode);
-      if (mode !== (access.agents.get(member.id) ?? null)) {
-        if (mode === null) access.agents.delete(member.id);
-        else access.agents.set(member.id, mode);
-        rowChanges.push({ type: "agent", id: member.id, mode });
-      }
-    }
-  }
-  return { access, rowChanges };
+  return { guild: parseGuildRow(raw.guild), agents: parseAgentRows(tc, raw.agents) };
 }
 
-function accessKey(access: SourceAccess): unknown {
+/** The mode `access.guild` names for the source guild's row, or null when it is left out. */
+function parseGuildRow(value: unknown): GuildAccessProposal["guild"] {
+  if (value === undefined) {
+    return null;
+  }
+  if (!isGuildRowMode(value)) {
+    throw new StudioUnprocessableError("access.guild must be read, write, or none");
+  }
+  return value;
+}
+
+/** The rows `access.agents` names, each for a live member of the source guild named once. */
+function parseAgentRows(tc: TableContext, value: unknown): GuildAccessProposal["agents"] {
+  if (value === undefined) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    throw new StudioUnprocessableError("access.agents must be a list of { agent_id, mode }");
+  }
+  const seen = new Set<string>();
+  return value.map((item: unknown) => {
+    if (!isPlainRecord(item)) {
+      throw new StudioUnprocessableError("access.agents must be a list of { agent_id, mode }");
+    }
+    const handle = String(item.agent_id ?? "");
+    const member = memberNamed(tc.members, handle);
+    if (!member) {
+      throw new StudioUnprocessableError(`access.agents: ${handle || "agent_id"} is not a live agent of ${tc.guildName}`);
+    }
+    if (seen.has(member.id)) {
+      throw new StudioUnprocessableError(`access.agents: ${member.name} is listed twice`);
+    }
+    seen.add(member.id);
+    if (!isAgentRowMode(item.mode)) {
+      throw new StudioUnprocessableError(`access.agents: ${member.name}: mode must be read, write, none, or inherit`);
+    }
+    return { id: member.id, mode: item.mode };
+  });
+}
+
+function accessKey(access: GuildAccess): unknown {
   return [access.guild, access.org, [...access.agents.entries()].sort(([a], [b]) => a.localeCompare(b))];
 }
 
@@ -470,11 +455,11 @@ export async function reviewTable(
         `a table named ${name} already exists${requesting ? "; change it with studio_edit_collection action edit" : ""}`,
       );
     }
-    const { access, rowChanges } = parseAccess(tc, args.access, {
-      guild: guildId ? "write" : null,
-      org: guildId ? null : "read",
-      agents: new Map(),
-    });
+    const { access, rowChanges } = planGuildAccess(
+      { guild: guildId ? "write" : null, org: guildId ? null : "read", agents: new Map() },
+      scope.sourceGuildId,
+      parseAccessProposal(tc, args.access),
+    );
     const shape: Shape = {
       name,
       purpose,
@@ -561,7 +546,7 @@ export async function reviewTable(
   if (name !== table.name && (await loadTable(tc, { name }))) {
     throw new StudioConflictError(`a table named ${name} already exists`);
   }
-  const { access, rowChanges } = parseAccess(tc, args.access, table.access);
+  const { access, rowChanges } = planGuildAccess(table.access, scope.sourceGuildId, parseAccessProposal(tc, args.access));
   const shape: Shape = {
     ...shapeOf(table),
     name,

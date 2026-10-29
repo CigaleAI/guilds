@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { accessRaises, effectiveAccess } from "../../src/artifacts/access-lists.js";
+import {
+  accessRaises,
+  effectiveAccess,
+  type GuildAccess,
+  isAgentRowMode,
+  isGuildRowMode,
+  planGuildAccess,
+} from "../../src/artifacts/access-lists.js";
 import type { AccessEntry } from "../../src/artifacts/types.js";
 
 function row(type: AccessEntry["type"], id: string, mode: AccessEntry["mode"]): AccessEntry {
@@ -86,4 +93,61 @@ test("accessRaises raises a writer whose own row shuts it out or only reads", ()
 
 test("accessRaises gives nothing to a guild the raise names no mode for", () => {
   assert.deepEqual(accessRaises([], { guildId: "guild_new", mode: null, writerIds: [] }), []);
+});
+
+test("a guild's row takes read, write, or none, and an agent's row inherit too", () => {
+  assert.deepEqual(["read", "write", "none", "inherit", null].map(isGuildRowMode), [true, true, true, false, false]);
+  assert.deepEqual(["read", "write", "none", "inherit", null].map(isAgentRowMode), [true, true, true, true, false]);
+});
+
+const BASE: GuildAccess = { guild: "read", org: "read", agents: new Map([["a_writer", "write"]]) };
+
+test("planGuildAccess keeps every row when the proposal names none", () => {
+  const plan = planGuildAccess(BASE, "guild_new", { guild: null, agents: [] });
+  assert.deepEqual(plan.access, BASE);
+  assert.deepEqual(plan.rowChanges, []);
+});
+
+test("planGuildAccess sets the guild's row to a mode that differs", () => {
+  const plan = planGuildAccess(BASE, "guild_new", { guild: "write", agents: [] });
+  assert.equal(plan.access.guild, "write");
+  assert.deepEqual(plan.rowChanges, [{ type: "guild", id: "guild_new", mode: "write" }]);
+});
+
+test("planGuildAccess removes the guild's row for none", () => {
+  const plan = planGuildAccess(BASE, "guild_new", { guild: "none", agents: [] });
+  assert.equal(plan.access.guild, null);
+  assert.deepEqual(plan.rowChanges, [{ type: "guild", id: "guild_new", mode: null }]);
+});
+
+test("planGuildAccess records no change for a row already at the proposed mode", () => {
+  const plan = planGuildAccess(BASE, "guild_new", { guild: "read", agents: [{ id: "a_writer", mode: "write" }] });
+  assert.deepEqual(plan.rowChanges, []);
+});
+
+test("planGuildAccess removes an agent's row for inherit and keeps none as a row that shuts it out", () => {
+  const plan = planGuildAccess(BASE, "guild_new", {
+    guild: null,
+    agents: [
+      { id: "a_writer", mode: "inherit" },
+      { id: "a_reader", mode: "none" },
+    ],
+  });
+  assert.deepEqual([...plan.access.agents], [["a_reader", "none"]]);
+  assert.deepEqual(plan.rowChanges, [
+    { type: "agent", id: "a_writer", mode: null },
+    { type: "agent", id: "a_reader", mode: "none" },
+  ]);
+});
+
+test("planGuildAccess records no change for inherit on an agent without a row", () => {
+  const plan = planGuildAccess(BASE, "guild_new", { guild: null, agents: [{ id: "a_reader", mode: "inherit" }] });
+  assert.deepEqual(plan.rowChanges, []);
+});
+
+test("planGuildAccess keeps the organisation's row and leaves the base as it is", () => {
+  const plan = planGuildAccess(BASE, "guild_new", { guild: "none", agents: [{ id: "a_writer", mode: "read" }] });
+  assert.equal(plan.access.org, "read");
+  assert.equal(BASE.guild, "read");
+  assert.equal(BASE.agents.get("a_writer"), "write");
 });

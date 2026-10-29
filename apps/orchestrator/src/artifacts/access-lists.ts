@@ -161,6 +161,9 @@ export async function replaceAccess(
   });
 }
 
+/** One subject's row a change sets on an item's access list; a null mode removes the row. */
+export type AccessRowChange = { type: AccessSubject; id: string; mode: AgentAccessMode | null };
+
 /**
  * Sets one subject's row on an item, or removes it when the row's `mode` is null, and
  * logs the change. Only a subject whose row is written must exist.
@@ -169,7 +172,7 @@ export async function grantAccess(
   store: ArtifactStore,
   actor: ArtifactActor,
   target: AccessTarget,
-  row: { type: AccessSubject; id: string; mode: AgentAccessMode | null },
+  row: AccessRowChange,
 ): Promise<void> {
   assertOperator(actor);
   const item = await requireTarget(store, actor, target);
@@ -243,6 +246,60 @@ async function reachedTables(store: ArtifactStore, actor: ArtifactActor, reacher
         mode: item.mode,
       };
     });
+}
+
+/**
+ * The rows of an item's access list that reach one guild: its own row, its agents' rows, and
+ * the organisation's row. A null mode means the list has no such row.
+ */
+export type GuildAccess = { guild: AccessMode | null; org: AccessMode | null; agents: Map<string, AgentAccessMode> };
+
+/** The modes a proposal gives a guild's row: `none` removes the row. */
+export const GUILD_ROW_MODES = ["read", "write", "none"] as const;
+export type GuildRowMode = (typeof GUILD_ROW_MODES)[number];
+
+/** The modes a proposal gives an agent's row: `none` shuts the agent out, `inherit` removes the row so the agent takes its guild's mode. */
+export const AGENT_ROW_MODES = ["read", "write", "none", "inherit"] as const;
+export type AgentRowMode = (typeof AGENT_ROW_MODES)[number];
+
+export function isGuildRowMode(value: unknown): value is GuildRowMode {
+  return GUILD_ROW_MODES.some((mode) => mode === value);
+}
+
+export function isAgentRowMode(value: unknown): value is AgentRowMode {
+  return AGENT_ROW_MODES.some((mode) => mode === value);
+}
+
+/** The rows a proposal names among those that reach a guild: the guild's own, null to leave it, and some of its agents'. */
+export type GuildAccessProposal = { guild: GuildRowMode | null; agents: Array<{ id: string; mode: AgentRowMode }> };
+
+/** The rows that reach a guild once a proposal is applied, and the row changes that get them there. */
+export type GuildAccessPlan = { access: GuildAccess; rowChanges: AccessRowChange[] };
+
+/**
+ * What a proposal does to the rows that reach guild `guildId`: only the subjects it names change,
+ * and a subject's row changes only when its mode differs from `base`. The organisation's row stays.
+ */
+export function planGuildAccess(base: GuildAccess, guildId: string, proposal: GuildAccessProposal): GuildAccessPlan {
+  const access: GuildAccess = { guild: base.guild, org: base.org, agents: new Map(base.agents) };
+  const rowChanges: AccessRowChange[] = [];
+  if (proposal.guild !== null) {
+    const mode = proposal.guild === "none" ? null : proposal.guild;
+    if (mode !== access.guild) {
+      access.guild = mode;
+      rowChanges.push({ type: "guild", id: guildId, mode });
+    }
+  }
+  for (const agent of proposal.agents) {
+    const mode = agent.mode === "inherit" ? null : agent.mode;
+    if (mode === (access.agents.get(agent.id) ?? null)) {
+      continue;
+    }
+    if (mode === null) access.agents.delete(agent.id);
+    else access.agents.set(agent.id, mode);
+    rowChanges.push({ type: "agent", id: agent.id, mode });
+  }
+  return { access, rowChanges };
 }
 
 /** Who an access list is read for: a guild, or one agent of that guild. */

@@ -609,14 +609,11 @@
     }
   },
   "src/studio/tables.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 6
-    },
     "complexity": {
-      "count": 3
+      "count": 2
     },
     "max-depth": {
-      "count": 2
+      "count": 1
     }
   },
   "src/studio/tool-usage.ts": {
