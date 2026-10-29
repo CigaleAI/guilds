@@ -9,7 +9,8 @@ import {
   wrapUntrustedText,
   type RosterAgent,
 } from "../../src/studio/system.js";
-import { STUDIO_TOOLS, sliceStudioBytes, studioToolMap, resolveSourceGuildAgent, studioAgentHandleFromArgs } from "../../src/studio/tools.js";
+import { STUDIO_TOOLS, sliceStudioBytes, studioToolMap, resolveSourceGuildAgent } from "../../src/studio/tools.js";
+import { studioAgentHandleFromArgs } from "../../src/studio/arguments.js";
 import { STUDIO_DEFAULT_TEMPERATURE, STUDIO_TASK_EXCERPT_WORDS } from "../../src/studio/constants.js";
 import { STUDIO_EDIT_TOOLS } from "../../src/studio/edits.js";
 import { editActionOf } from "../../src/studio/actions.js";

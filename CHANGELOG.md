@@ -8,6 +8,17 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** Studio's `studio_get_agent_context`,
+`studio_list_routines`, `studio_list_runs`, `studio_get_run`,
+`studio_list_group_messages`, `studio_list_task_revisions`,
+`studio_list_memory_revisions`, and `studio_get_memory_version`
+refuse a call whose arguments do not match the parameters the tool
+declares, with the first mismatch, such as `/limit: Expected integer`.
+Before, a mistyped argument counted as left out, a numeric string was
+read as a `seq_start` or `seq_end`, and a missing `run_id` or
+`agent_id` was refused with `run not found` or `agent handle required`.
+An optional argument sent as `null` still counts as left out.
+
 **No impact.** The browser and terminal views of an agent's sandbox
 proxy a path only to the sandbox daemon. Before, a path written as a URL
 made the orchestrator send the request to the host it named, with the
