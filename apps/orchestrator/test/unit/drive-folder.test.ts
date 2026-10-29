@@ -9,6 +9,7 @@ import {
   filterDriveToolResult,
   searchDriveFolders,
   parseDriveFolderRef,
+  pastedDriveFolderRef,
   searchDriveFolder,
   translateDriveSearchQuery,
 } from "../../src/connectors/drive/folder.js";
@@ -24,6 +25,16 @@ test("parseDriveFolderRef accepts ids and Drive folder links", () => {
   assert.equal(parseDriveFolderRef("drive:shared_1"), "shared_1");
   assert.throws(() => parseDriveFolderRef(""), DriveFolderError);
   assert.throws(() => parseDriveFolderRef("https://example.com/x"), DriveFolderError);
+});
+
+test("pastedDriveFolderRef names a folder for a Drive link or a long id, and not for a name", () => {
+  assert.equal(pastedDriveFolderRef("https://drive.google.com/drive/folders/abc_12"), "abc_12");
+  assert.equal(pastedDriveFolderRef(" 1a2b3c4d5e6f7g8h9i0j1k2l "), "1a2b3c4d5e6f7g8h9i0j1k2l");
+  assert.equal(pastedDriveFolderRef("drive:1a2b3c4d5e6f7g8h9i0j1k2l"), "1a2b3c4d5e6f7g8h9i0j1k2l");
+  assert.equal(pastedDriveFolderRef("Invoices"), null);
+  assert.equal(pastedDriveFolderRef("Invoices drive.google.com"), null);
+  assert.equal(pastedDriveFolderRef("https://example.com/drive.google.com/folders/abc_12"), null);
+  assert.equal(pastedDriveFolderRef(""), null);
 });
 
 test("assertPickedDriveFolder rejects My Drive", async () => {

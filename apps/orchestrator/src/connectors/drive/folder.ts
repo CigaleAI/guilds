@@ -87,15 +87,34 @@ export function parseDriveFolderRef(raw: unknown): string {
     throw new DriveFolderError("Google Drive Connect requires picking one folder");
   }
   const trimmed = raw.trim();
+  const id = folderIdFromUrl(trimmed) ?? bareFolderId(trimmed);
+  if (id) {
+    return id;
+  }
+  throw new DriveFolderError("Google Drive Connect requires a Drive folder link or id");
+}
+
+/** The folder id `text` is on its own, with or without the Drive id prefix; null when it is not one. */
+function bareFolderId(text: string): string | null {
+  const prefixed = text.startsWith(DRIVE_ID_PREFIX) ? text.slice(DRIVE_ID_PREFIX.length) : text;
+  return /^[a-zA-Z0-9_-]+$/.test(prefixed) ? prefixed : null;
+}
+
+/** A bare id shorter than this is a folder name to search for, not an id. */
+const SHORT_ID_LENGTH = 20;
+
+/**
+ * The folder a lookup query names outright: a pasted Drive folder link, or a bare id of at least
+ * 20 characters. Null when the query is a folder name to search for.
+ */
+export function pastedDriveFolderRef(query: string): string | null {
+  const trimmed = query.trim();
   const linked = folderIdFromUrl(trimmed);
   if (linked) {
     return linked;
   }
-  const prefixed = trimmed.startsWith(DRIVE_ID_PREFIX) ? trimmed.slice(DRIVE_ID_PREFIX.length) : trimmed;
-  if (/^[a-zA-Z0-9_-]+$/.test(prefixed)) {
-    return prefixed;
-  }
-  throw new DriveFolderError("Google Drive Connect requires a Drive folder link or id");
+  const id = bareFolderId(trimmed);
+  return id !== null && id.length >= SHORT_ID_LENGTH ? id : null;
 }
 
 function reasonOf(item: unknown): string {

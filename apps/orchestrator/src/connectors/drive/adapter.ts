@@ -5,7 +5,7 @@ import {
   DriveFolderError,
   listRecentDriveFiles,
   loadDriveFolder,
-  parseDriveFolderRef,
+  pastedDriveFolderRef,
   searchDriveFolder,
   searchDriveFolders,
 } from "./folder.js";
@@ -59,16 +59,6 @@ async function folderWork<T>(work: () => Promise<T>): Promise<T> {
   }
 }
 
-/** A pasted folder link or id, or null when the query is a name to search for. */
-function folderRef(query: string): string | null {
-  try {
-    const id = parseDriveFolderRef(query);
-    return /^[a-zA-Z0-9_-]{20,}$/.test(id) || query.includes("drive.google.com") ? id : null;
-  } catch {
-    return null;
-  }
-}
-
 const adapter: Adapter = {
   /** Checks the picked folder: a folder inside the Drive, not My Drive. Its name is the account hint. */
   async validate(creds, ctx) {
@@ -86,7 +76,7 @@ const adapter: Adapter = {
       throw new ConnectorError(`Drive has no lookup for ${property}`, 404);
     }
     const accessToken = requiredCredential(creds, "access_token", "Drive access token is missing");
-    const ref = folderRef(query);
+    const ref = pastedDriveFolderRef(query);
     const folders = await folderWork(async () =>
       ref ? [await loadDriveFolder(accessToken, ref, { client: ctx.http })] : searchDriveFolders(accessToken, query, { client: ctx.http }),
     );
