@@ -1,10 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { BuilderError } from "../builder/errors.js";
 import type { BuilderService } from "../builder/index.js";
-import { PolicyError } from "../policy/index.js";
-import { RecipeConflictError, RecipeError } from "../recipes/errors.js";
 import type { AppDeps } from "./deps.js";
-import { HttpError, recipeConflictHttp } from "./errors.js";
+import { HttpError } from "./errors.js";
 import { currentOrg, currentUser } from "./identity.js";
 import { frameSse, SSE_HEADERS } from "./sse.js";
 import { bodyOf, param } from "./request.js";
@@ -16,20 +13,6 @@ function builderOf(deps: AppDeps): BuilderService {
     throw new HttpError(422, "builder is not available");
   }
   return deps.builder;
-}
-
-function mapError(error: unknown): never {
-  if (error instanceof RecipeConflictError) {
-    throw recipeConflictHttp(error);
-  }
-  if (
-    error instanceof BuilderError ||
-    error instanceof RecipeError ||
-    error instanceof PolicyError
-  ) {
-    throw new HttpError(error.status, error.message);
-  }
-  throw error;
 }
 
 export async function registerBuilderSessionRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
@@ -45,152 +28,104 @@ export async function registerBuilderSessionRoutes(app: FastifyInstance, deps: A
     const user = await currentUser(db, request, deps);
     const org = await currentOrg(db, request, user);
     const body = bodyOf(request);
-    try {
-      return await builderOf(deps).createSession({
-        user,
-        org,
-        model: String(body.model ?? ""),
-        ...(typeof body.temperature === "number" ? { temperature: body.temperature } : {}),
-      });
-    } catch (error) {
-      mapError(error);
-    }
+    return await builderOf(deps).createSession({
+      user,
+      org,
+      model: String(body.model ?? ""),
+      ...(typeof body.temperature === "number" ? { temperature: body.temperature } : {}),
+    });
   });
 
   app.get("/api/builder/sessions/:session_id", async (request) => {
     const user = await currentUser(db, request, deps);
     const org = await currentOrg(db, request, user);
-    try {
-      const builder = builderOf(deps);
-      const session = await builder.getOwnedSession(param(request, "session_id"), user, org);
-      const recipe = await builder.recipeFor(session);
-      return builder.viewSession(session, recipe);
-    } catch (error) {
-      mapError(error);
-    }
+    const builder = builderOf(deps);
+    const session = await builder.getOwnedSession(param(request, "session_id"), user, org);
+    const recipe = await builder.recipeFor(session);
+    return builder.viewSession(session, recipe);
   });
 
   app.get("/api/builder/sessions/:session_id/messages", async (request) => {
     const user = await currentUser(db, request, deps);
     const org = await currentOrg(db, request, user);
-    try {
-      const builder = builderOf(deps);
-      const session = await builder.getOwnedSession(param(request, "session_id"), user, org);
-      return builder.messages(session);
-    } catch (error) {
-      mapError(error);
-    }
+    const builder = builderOf(deps);
+    const session = await builder.getOwnedSession(param(request, "session_id"), user, org);
+    return builder.messages(session);
   });
 
   app.post("/api/builder/sessions/:session_id/messages", async (request) => {
     const user = await currentUser(db, request, deps);
     const org = await currentOrg(db, request, user);
-    try {
-      const builder = builderOf(deps);
-      const session = await builder.getOwnedSession(param(request, "session_id"), user, org);
-      return await builder.postMessage(session, user, String(bodyOf(request).content ?? ""));
-    } catch (error) {
-      mapError(error);
-    }
+    const builder = builderOf(deps);
+    const session = await builder.getOwnedSession(param(request, "session_id"), user, org);
+    return await builder.postMessage(session, user, String(bodyOf(request).content ?? ""));
   });
 
   app.post("/api/builder/sessions/:session_id/cancel", async (request) => {
     const user = await currentUser(db, request, deps);
     const org = await currentOrg(db, request, user);
-    try {
-      const builder = builderOf(deps);
-      const session = await builder.getOwnedSession(param(request, "session_id"), user, org);
-      return await builder.cancel(session);
-    } catch (error) {
-      mapError(error);
-    }
+    const builder = builderOf(deps);
+    const session = await builder.getOwnedSession(param(request, "session_id"), user, org);
+    return await builder.cancel(session);
   });
 
   app.put("/api/builder/sessions/:session_id/recipe", async (request) => {
     const user = await currentUser(db, request, deps);
     const org = await currentOrg(db, request, user);
     const body = bodyOf(request);
-    try {
-      const builder = builderOf(deps);
-      const session = await builder.getOwnedSession(param(request, "session_id"), user, org);
-      return await builder.writeRecipe(session, Number(body.expected_body_version), body.recipe);
-    } catch (error) {
-      mapError(error);
-    }
+    const builder = builderOf(deps);
+    const session = await builder.getOwnedSession(param(request, "session_id"), user, org);
+    return await builder.writeRecipe(session, Number(body.expected_body_version), body.recipe);
   });
 
   app.post("/api/builder/sessions/:session_id/access", async (request) => {
     const user = await currentUser(db, request, deps);
     const org = await currentOrg(db, request, user);
     const body = bodyOf(request);
-    try {
-      const builder = builderOf(deps);
-      const session = await builder.getOwnedSession(param(request, "session_id"), user, org);
-      return await builder.editAccess(session, body);
-    } catch (error) {
-      mapError(error);
-    }
+    const builder = builderOf(deps);
+    const session = await builder.getOwnedSession(param(request, "session_id"), user, org);
+    return await builder.editAccess(session, body);
   });
 
   app.post("/api/builder/sessions/:session_id/review", async (request) => {
     const user = await currentUser(db, request, deps);
     const org = await currentOrg(db, request, user);
     const body = bodyOf(request);
-    try {
-      const builder = builderOf(deps);
-      const session = await builder.getOwnedSession(param(request, "session_id"), user, org);
-      return await builder.reviewField(session, String(body.path ?? ""), parseReviewAction(body));
-    } catch (error) {
-      mapError(error);
-    }
+    const builder = builderOf(deps);
+    const session = await builder.getOwnedSession(param(request, "session_id"), user, org);
+    return await builder.reviewField(session, String(body.path ?? ""), parseReviewAction(body));
   });
 
   app.post("/api/builder/sessions/:session_id/validate", async (request) => {
     const user = await currentUser(db, request, deps);
     const org = await currentOrg(db, request, user);
-    try {
-      const builder = builderOf(deps);
-      const session = await builder.getOwnedSession(param(request, "session_id"), user, org);
-      return await builder.validate(session);
-    } catch (error) {
-      mapError(error);
-    }
+    const builder = builderOf(deps);
+    const session = await builder.getOwnedSession(param(request, "session_id"), user, org);
+    return await builder.validate(session);
   });
 
   app.post("/api/builder/sessions/:session_id/publish", async (request) => {
     const user = await currentUser(db, request, deps);
     const org = await currentOrg(db, request, user);
-    try {
-      const builder = builderOf(deps);
-      const session = await builder.getOwnedSession(param(request, "session_id"), user, org);
-      return await builder.publish(session);
-    } catch (error) {
-      mapError(error);
-    }
+    const builder = builderOf(deps);
+    const session = await builder.getOwnedSession(param(request, "session_id"), user, org);
+    return await builder.publish(session);
   });
 
   app.post("/api/builder/sessions/:session_id/deploy", async (request) => {
     const user = await currentUser(db, request, deps);
     const org = await currentOrg(db, request, user);
-    try {
-      const builder = builderOf(deps);
-      const session = await builder.getOwnedSession(param(request, "session_id"), user, org);
-      return await builder.deploy(session, org, user, bodyOf(request));
-    } catch (error) {
-      mapError(error);
-    }
+    const builder = builderOf(deps);
+    const session = await builder.getOwnedSession(param(request, "session_id"), user, org);
+    return await builder.deploy(session, org, user, bodyOf(request));
   });
 
   app.get("/api/builder/sessions/:session_id/stream", async (request, reply) => {
     const user = await currentUser(db, request, deps);
     const org = await currentOrg(db, request, user);
     const builder = builderOf(deps);
-    try {
-      const session = await builder.getOwnedSession(param(request, "session_id"), user, org);
-      await pipeBuilderSse(request, reply, builder, String(session.id));
-    } catch (error) {
-      mapError(error);
-    }
+    const session = await builder.getOwnedSession(param(request, "session_id"), user, org);
+    await pipeBuilderSse(request, reply, builder, String(session.id));
   });
 }
 
