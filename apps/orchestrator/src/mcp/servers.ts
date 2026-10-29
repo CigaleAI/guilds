@@ -3,9 +3,13 @@ import { countOrgConnectors, deleteConnector } from "../db/connectors.js";
 import { isUniqueViolation, type Queryable } from "../db/pg.js";
 import { refreshConnectorIntegrations } from "../connectors/instance.js";
 import { LimitError, type OrgPolicy } from "../policy/index.js";
-import { CatalogError, createConnector, patchConnector } from "./catalog.js";
-
-type Item = Record<string, unknown>;
+import {
+  CatalogError,
+  createConnector,
+  patchConnector,
+  type ConnectorDraft,
+  type ConnectorPatch,
+} from "./catalog.js";
 
 /** The 409 for a connector whose slug or tool prefix another one holds; any other error as it is. */
 function nameConflict(error: unknown): unknown {
@@ -32,7 +36,10 @@ export async function requirePlatformServer(
 }
 
 /** Adds a connector to the platform's catalog, and the integrations it brings. */
-export async function createPlatformServer(db: Queryable, body: Item): Promise<LoadedConnector> {
+export async function createPlatformServer(
+  db: Queryable,
+  body: ConnectorDraft,
+): Promise<LoadedConnector> {
   try {
     const row = await createConnector(db, body);
     await refreshConnectorIntegrations(db);
@@ -46,7 +53,7 @@ export async function createPlatformServer(db: Queryable, body: Item): Promise<L
 export async function patchPlatformServer(
   db: Queryable,
   server: LoadedConnector,
-  body: Item,
+  body: ConnectorPatch,
 ): Promise<LoadedConnector> {
   try {
     const patched = await patchConnector(db, server, body);
@@ -85,7 +92,7 @@ export async function createOrgServer(
   db: Queryable,
   policy: OrgPolicy,
   orgId: string,
-  body: Item,
+  body: ConnectorDraft,
 ): Promise<LoadedConnector> {
   const { limits } = await policy.standing(orgId);
   if (
@@ -104,7 +111,7 @@ export async function createOrgServer(
 export async function patchOrgServer(
   db: Queryable,
   server: LoadedConnector,
-  body: Item,
+  body: ConnectorPatch,
 ): Promise<LoadedConnector> {
   try {
     return await patchConnector(db, server, body);

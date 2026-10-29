@@ -65,6 +65,9 @@ test("an organisation adds remote servers of its own that no other organisation 
     assert.match((await add(HOME, "org_home", { slug: "notion", url: "https://mcp.example.com/mcp" })).json().detail, /platform/);
     assert.equal((await add(HOME, "org_home", { slug: "crm", url: "https://mcp.example.com/mcp" })).statusCode, 409);
     assert.equal((await add(HOME, "org_home", { slug: "inside", url: "https://10.0.0.8/mcp" })).statusCode, 422);
+    const urlless = await add(HOME, "org_home", { slug: "nowhere" });
+    assert.equal(urlless.statusCode, 422);
+    assert.deepEqual(urlless.json().detail[0].loc, ["body", "url"]);
     assert.equal(
       (await add(HOME, "org_home", { slug: "own_oauth", url: "https://mcp.example.com/mcp", auth: "oauth", oauth_strategy: "configured" })).statusCode,
       422,
@@ -139,6 +142,14 @@ test("an organisation adds remote servers of its own that no other organisation 
     });
     assert.equal(renamed.statusCode, 200, renamed.body);
     assert.equal(renamed.json().display_name, "Acme CRM");
+    const numbered = await app.inject({
+      method: "PATCH",
+      url: `/api/orgs/org_home/mcp/servers/${crmId}`,
+      headers: { ...HOME, ...JSON_HEADERS },
+      payload: { slug: 7 },
+    });
+    assert.equal(numbered.statusCode, 422);
+    assert.deepEqual(numbered.json().detail[0].loc, ["body", "slug"]);
 
     const removed = await app.inject({ method: "DELETE", url: `/api/orgs/org_home/mcp/servers/${crmId}`, headers: HOME });
     assert.equal(removed.statusCode, 204);

@@ -429,6 +429,8 @@ An organisation's owners and admins add remote MCP servers under
   organisation adds. Core's open policy sets none.
 - `PATCH` and `DELETE /api/orgs/{org}/mcp/servers/{id}` edit the
   server, or remove it with its logins and the bindings that name it.
+- The bodies take the fields and types of the instance admin's
+  connector bodies; a field of another type is 422.
 
 A slug is unique per owner. Two organisations may each use one slug.
 An organisation's slug may not be a platform connector's, and a
