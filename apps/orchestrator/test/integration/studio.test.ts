@@ -1475,6 +1475,11 @@ test("studio proposes tables to create, change, and delete that the operator app
       [["shared", "add_columns_and_access"]],
     );
     await assert.rejects(studioGetCollection.handler(await ctx(), { collection: "their-queue" }), /unknown table/);
+    await assert.rejects(studioGetCollection.handler(await ctx(), { collection: 7 }), /\/collection: Expected string/);
+    await assert.rejects(
+      studioEditCollection.handler(await ctx(), { action: "create", name: "leads", purpose: "p", columns: "email", reason: "r" }),
+      /\/columns: Expected array/,
+    );
     await assert.rejects(
       studioEditCollection.handler(await ctx(), {
         action: "edit",
@@ -1518,7 +1523,7 @@ test("studio proposes tables to create, change, and delete that the operator app
         name: "Bad Name",
         access: "everyone",
       }),
-      /access must be an object/,
+      /\/access: Expected object/,
     );
     const createWidget = (await studioEditCollection.handler(await ctx(), createArgs)) as Widget;
     assert.equal(createWidget.widget, "studio_edit_request");

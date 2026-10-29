@@ -15,13 +15,17 @@ commands for each effect are in
 `studio_find_artifacts`, `studio_get_artifact`,
 `studio_list_file_changes`, `studio_get_script`,
 `studio_get_agent_access`, `studio_request_connection_access`,
-`studio_call_connection_tool`, `studio_create_task_draft`, and
-`studio_list_guilds` refuse a call whose arguments do not match the parameters the tool
-declares, with the first mismatch, such as `/limit: Expected integer`.
-Before, a mistyped argument counted as left out, a numeric string was
-read as a `seq_start` or `seq_end`, and a missing `run_id` or
-`agent_id` was refused with `run not found` or `agent handle required`.
-An optional argument sent as `null` still counts as left out.
+`studio_call_connection_tool`, `studio_create_task_draft`,
+`studio_list_guilds`, `studio_get_collection`, and
+`studio_edit_collection` refuse a call whose arguments do not match
+the parameters the tool declares, with the first mismatch, such as
+`/limit: Expected integer`. Before, a mistyped argument counted as left
+out, a numeric string was read as a `seq_start` or `seq_end`, a missing
+`run_id` or `agent_id` was refused with `run not found` or `agent
+handle required`, and a collection `access` that is not an object was
+refused with `access must be an object`. An optional argument sent as
+`null` counts as left out, where a collection's `name` or `purpose`
+sent as `null` was read as the text `null`.
 
 **No impact.** The browser and terminal views of an agent's sandbox
 proxy a path only to the sandbox daemon. Before, a path written as a URL
