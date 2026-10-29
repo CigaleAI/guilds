@@ -190,6 +190,14 @@ test("admin catalog, overrides, seed preservation, listed tools, and leaks", { t
     false,
   );
 
+  const twice = await app.inject({
+    method: "GET",
+    url: "/api/builder/capabilities/search?q=linear&q=linkedin",
+    headers: AUTH,
+  });
+  assert.equal(twice.statusCode, 422);
+  assert.deepEqual(twice.json().detail[0].loc, ["querystring", "q"]);
+
   const overview = await app.inject({ method: "GET", url: "/api/builder/capabilities", headers: AUTH });
   assert.equal(overview.statusCode, 200);
   const body = overview.json() as Record<string, unknown>;
