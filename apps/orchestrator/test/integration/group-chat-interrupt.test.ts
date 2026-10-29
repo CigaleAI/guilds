@@ -10,8 +10,7 @@ import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { ExportSandboxes } from "../helpers/live.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
-import { mcpDatabase } from "../../src/mcp/database.js";
-import { McpPool } from "../../src/mcp/pool.js";
+import { mcpPool } from "../../src/mcp/pool.js";
 
 const OWNER = {
   "X-Guilds-User": "user_operator",
@@ -34,7 +33,7 @@ test("an operator post may ask to interrupt the runs it targets", { timeout: 60_
   const db = database.pool;
   const workspaceRoot = tempDir("guilds-group-interrupt-workspaces-");
   const generation = generationLoop(db, {
-    mcp: new McpPool(mcpDatabase(db)),
+    mcp: mcpPool(db),
     notes,
     workspaceRoot,
     sandboxes: new ExportSandboxes(workspaceRoot),

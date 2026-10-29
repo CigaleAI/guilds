@@ -18,8 +18,7 @@ import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../h
 import { insertOrg } from "../../src/db/orgs.js";
 import { attachmentDatabase } from "../../src/attachments/store.js";
 import { generationArtifacts } from "../../src/generation/prepare.js";
-import { mcpDatabase } from "../../src/mcp/database.js";
-import { McpPool } from "../../src/mcp/pool.js";
+import { mcpPool } from "../../src/mcp/pool.js";
 
 const OWNER = {
   "X-Guilds-User": "user_operator",
@@ -51,7 +50,7 @@ test("operators upload images, attach them to a run, and cannot read another org
   const artifacts = artifactStore(database.pool, notes.templates);
   const workspaceRoot = tempDir("guilds-attachments-workspaces-");
   const generation = generationLoop(db, {
-    mcp: new McpPool(mcpDatabase(db)),
+    mcp: mcpPool(db),
     notes,
     workspaceRoot,
     sandboxes: new ExportSandboxes(workspaceRoot),

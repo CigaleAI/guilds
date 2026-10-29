@@ -11,8 +11,7 @@ import { generationLive } from "../../src/generation/completion.js";
 import { type GenerationSandboxes } from "../../src/generation/machines.js";
 import type { Completion } from "../../src/llm/index.js";
 import type { AssistantMessage } from "../../src/db/schema/index.js";
-import { mcpDatabase } from "../../src/mcp/database.js";
-import { McpPool } from "../../src/mcp/pool.js";
+import { mcpPool } from "../../src/mcp/pool.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
 import { agentSchedules } from "../../src/schedules/service.js";
@@ -89,7 +88,7 @@ test("a coding run near its input limit hands off and continues in a new run", {
       notes,
       workspaceRoot: tempDir("guilds-chain-ws-"),
       sandboxes: sandboxes as unknown as GenerationSandboxes,
-      mcp: new McpPool(mcpDatabase(db)),
+      mcp: mcpPool(db),
       artifacts: generationArtifacts(artifacts),
     },
     { ...LOOP_TIMINGS, idleTimeoutMs: 0 },

@@ -6,8 +6,7 @@ import { connect } from "../../src/seed/connect.js";
 import { generationLive } from "../../src/generation/completion.js";
 import { generationLoop } from "../../src/generation/index.js";
 import { AsyncEvent, sleep } from "../../src/lib/event.js";
-import { mcpDatabase } from "../../src/mcp/database.js";
-import { McpPool } from "../../src/mcp/pool.js";
+import { mcpPool } from "../../src/mcp/pool.js";
 import { artifactStore } from "../../src/artifacts/store.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
@@ -100,7 +99,7 @@ test("R6 HTTP SSE and WS recordings replay over real HTTP", { timeout: 180_000 }
     notes,
     workspaceRoot: env.WORKSPACE_ROOT ?? "",
     sandboxes,
-    mcp: new McpPool(mcpDatabase(db)),
+    mcp: mcpPool(db),
     artifacts: generationArtifacts(artifacts),
   });
   await generation.reconcile();
@@ -111,7 +110,7 @@ test("R6 HTTP SSE and WS recordings replay over real HTTP", { timeout: 180_000 }
     scripts,
     schedules,
     masterKey: decodeMasterKey(HEX_MASTER_KEY),
-    mcp: new McpPool(mcpDatabase(db)),
+    mcp: mcpPool(db),
     generation,
   });
   await app.listen({ host: "127.0.0.1", port: 0 });

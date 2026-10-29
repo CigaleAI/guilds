@@ -201,8 +201,8 @@ and `access-lists.js` (`writeNote(store, actor, …)`). The export
 `RegistryClient.recipe` (`registry/client.js`) is `recipeFile`, which
 answers the recipe's bytes checked against the index; `parseRecipe`
 reads the document from them. The export
-`mcp/index.js` is four: `mcp/pool.js` (`McpPool`, built with its
-`McpDatabase` from `mcpDatabase(db)`; its methods take no connection),
+`mcp/index.js` is four: `mcp/pool.js` (`McpPool`, built with
+`mcpPool(db)`; its methods take no connection),
 `mcp/service.js` (`connectionTools`, `currentTools`, `callTool`,
 `retireLogin`), `mcp/errors.js`, and `mcp/database.js`. The connect
 flows are under `mcp/`: `connectors/connect.js` is `mcp/connect-token.js`.
