@@ -308,7 +308,8 @@ except `as const`. The orchestrator also requires explicit
 parameter and return types on what a module exports
 (`@typescript-eslint/explicit-module-boundary-types`). It refuses an
 empty `catch`; a throw of a plain `Error` outside the commands in
-`cli/`; an import of `fastify` outside `http/`, the roots, the
+`cli/`; an object type written inline in a function's parameter; an
+import of `fastify` outside `http/`, the roots, the
 extension points and the observability hooks; a value import of
 `db/` from `http/`;
 an import from `db/` of anything outside `db/` and `lib/`; and an
