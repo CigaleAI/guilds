@@ -610,9 +610,6 @@
   },
   "src/studio/tables.ts": {
     "complexity": {
-      "count": 2
-    },
-    "max-depth": {
       "count": 1
     }
   },

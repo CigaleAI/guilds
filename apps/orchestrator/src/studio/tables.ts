@@ -8,6 +8,8 @@ import {
   type CollectionLookup,
   type CollectionStep,
   guildTable,
+  guildTableEditEffects,
+  type GuildTableEffect,
   guildTables,
 } from "../artifacts/guild-tables.js";
 import { planCollection, planCollectionChange } from "../artifacts/collections.js";
@@ -170,6 +172,11 @@ async function loadTable(tc: TableContext, lookup: CollectionLookup): Promise<Ta
   };
 }
 
+/** How the operator reads a row of another guild, or of one of its agents. */
+function outsideRow(entry: AccessEntry): string {
+  return entry.type === "guild" ? `guild ${entry.name} ${entry.mode}` : `agent ${entry.name} (${entry.guild_name}) ${entry.mode}`;
+}
+
 /** A table's access list split into the rows that reach the source guild and the rest. */
 function sourceAccess(tc: TableContext, entries: AccessEntry[]): { access: GuildAccess; outside: string[] } {
   const source = tc.scope.sourceGuildId;
@@ -180,7 +187,7 @@ function sourceAccess(tc: TableContext, entries: AccessEntry[]): { access: Guild
     if (entry.type === "org") {
       access.org = entry.mode === "none" ? null : entry.mode;
     } else if (entry.guild_id !== source) {
-      outside.push(entry.type === "guild" ? `guild ${entry.name} ${entry.mode}` : `agent ${entry.name} (${entry.guild_name}) ${entry.mode}`);
+      outside.push(outsideRow(entry));
     } else if (entry.type === "guild") {
       access.guild = entry.mode === "none" ? null : entry.mode;
     } else if (live.has(entry.id)) {
@@ -362,58 +369,26 @@ function render(tc: TableContext, shape: Shape): string {
   ].join("\n");
 }
 
-function editEffects(
-  table: Table,
-  shape: Shape,
-  change: { renamed: Array<{ from: string; to: string }>; removed: string[] } | null,
-): string[] {
-  const effects: string[] = [];
-  const records = plural(table.count, "record");
-  if (shape.name !== table.name) {
-    effects.push(
-      `Renames the table from ${table.name} to ${shape.name}; Tasks, notes, and routines that name ${table.name} keep the old name until they change too.`,
-    );
+/** The sentence the operator reads for one effect of a table edit. */
+function effectSentence(effect: GuildTableEffect): string {
+  switch (effect.kind) {
+    case "table_renamed":
+      return `Renames the table from ${effect.from} to ${effect.to}; Tasks, notes, and routines that name ${effect.from} keep the old name until they change too.`;
+    case "column_dropped":
+      return `Drops ${effect.column} from ${plural(effect.records, "record")}.`;
+    case "column_moved":
+      return `Moves ${effect.from} to ${effect.to} in ${plural(effect.records, "record")}.`;
+    case "required_column_added":
+      return `Adds required ${effect.column}; the ${plural(effect.records, "record")} without it report a warning on their next update.`;
+    case "column_retyped":
+      return `Keeps stored ${effect.column} values as they are; a record that no longer fits reports a warning on its next update.`;
+    case "column_made_required":
+      return `Makes ${effect.column} required; records without it report a warning on their next update.`;
+    case "column_made_unique":
+      return `Makes ${effect.column} unique; applying fails while two records share a value.`;
+    case "reached_outside_guild":
+      return `Reached outside this guild too: ${effect.rows.map(outsideRow).join(", ")}.`;
   }
-  if (change) {
-    for (const name of change.removed) effects.push(`Drops ${name} from ${records}.`);
-    for (const item of change.renamed)
-      effects.push(`Moves ${item.from} to ${item.to} in ${records}.`);
-    const before = new Map(table.columns.map((column) => [column.name, column]));
-    const fromOf = new Map(change.renamed.map((item) => [item.to, item.from]));
-    for (const column of shape.columns) {
-      const previous = before.get(fromOf.get(column.name) ?? column.name);
-      if (!previous) {
-        if (column.required && table.count) {
-          effects.push(
-            `Adds required ${column.name}; the ${records} without it report a warning on their next update.`,
-          );
-        }
-        continue;
-      }
-      if (
-        previous.type !== column.type ||
-        JSON.stringify(previous.values ?? null) !== JSON.stringify(column.values ?? null)
-      ) {
-        effects.push(
-          `Keeps stored ${column.name} values as they are; a record that no longer fits reports a warning on its next update.`,
-        );
-      }
-      if (column.required && !previous.required && table.count) {
-        effects.push(
-          `Makes ${column.name} required; records without it report a warning on their next update.`,
-        );
-      }
-      if (column.unique && !previous.unique) {
-        effects.push(
-          `Makes ${column.name} unique; applying fails while two records share a value.`,
-        );
-      }
-    }
-  }
-  if (table.outside.length && (shape.name !== table.name || change)) {
-    effects.push(`Reached outside this guild too: ${table.outside.join(", ")}.`);
-  }
-  return effects;
 }
 
 function targetOf(id: string | null, name: string, guildId: string | null, displayPath: string): Record<string, unknown> {
@@ -568,7 +543,9 @@ export async function reviewTable(
     proposedHash: shapeHash(shape),
     live: render(tc, shapeOf(table)),
     proposed: render(tc, shape),
-    effects: editEffects(table, shape, columnsChanged ? change : null),
+    effects: guildTableEditEffects(table, scope.sourceGuildId, { name, columns: columnsChanged ? change : null }).map(
+      effectSentence,
+    ),
     plan: {
       action,
       id: table.id,

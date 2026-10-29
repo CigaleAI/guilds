@@ -1,5 +1,6 @@
 // The tables a guild's agents are given, the guild's own and the organisation's, each with its
-// access list, and the steps the operator applies to them.
+// access list, the steps the operator applies to them, and what an edit does to their records
+// and readers.
 import { type AccessRowChange, grantAccess, listAccess } from "./access-lists.js";
 import {
   createCollection,
@@ -12,9 +13,11 @@ import {
   type CollectionChanges,
   type NewCollection,
 } from "./collections.js";
+import type { ColumnChange } from "./columns.js";
 import { ArtifactError } from "./errors.js";
 import type { ArtifactStore, CollectionView } from "./store.js";
 import type { AccessEntry, ArtifactActor } from "./types.js";
+import type { CollectionColumn } from "../db/schema/index.js";
 
 /** A collection as the operator reads it, with its access list. */
 export type CollectionAccess = { collection: CollectionView; access: AccessEntry[] };
@@ -95,4 +98,79 @@ export async function applyCollectionStep(store: ArtifactStore, actor: ArtifactA
   for (const row of step.access) {
     await grantAccess(store, actor, { kind: "collection", id }, row);
   }
+}
+
+/** A guild table as an edit finds it: its name, its columns, its live record count, and its access list. */
+export type GuildTableBefore = { name: string; columns: CollectionColumn[]; count: number; entries: AccessEntry[] };
+
+/** What an edit leaves of a guild table: its name, and the change to its columns, null when they stay as they are. */
+export type GuildTableEdit = { name: string; columns: ColumnChange | null };
+
+/** One thing applying an edit does to a guild table's records or readers. `records` is the table's live record count. */
+export type GuildTableEffect =
+  | { kind: "table_renamed"; from: string; to: string }
+  | { kind: "column_dropped"; column: string; records: number }
+  | { kind: "column_moved"; from: string; to: string; records: number }
+  | { kind: "required_column_added"; column: string; records: number }
+  | { kind: "column_retyped"; column: string }
+  | { kind: "column_made_required"; column: string }
+  | { kind: "column_made_unique"; column: string }
+  | { kind: "reached_outside_guild"; rows: AccessEntry[] };
+
+/**
+ * What applying `edit` does to a table of guild `guildId`, in order: a rename, then what the column
+ * change does to its records, then the rows of other guilds and their agents that reach the table,
+ * when its name or its columns change.
+ */
+export function guildTableEditEffects(table: GuildTableBefore, guildId: string, edit: GuildTableEdit): GuildTableEffect[] {
+  const renamed = edit.name !== table.name;
+  const outside = table.entries.filter((entry) => entry.type !== "org" && entry.guild_id !== guildId);
+  const effects: GuildTableEffect[] = renamed ? [{ kind: "table_renamed", from: table.name, to: edit.name }] : [];
+  if (edit.columns) {
+    effects.push(...columnChangeEffects(table, edit.columns));
+  }
+  if (outside.length && (renamed || edit.columns)) {
+    effects.push({ kind: "reached_outside_guild", rows: outside });
+  }
+  return effects;
+}
+
+/** What a column change does to a table's records: its dropped and moved columns, then each column it adds or keeps. */
+function columnChangeEffects(table: GuildTableBefore, change: ColumnChange): GuildTableEffect[] {
+  const records = table.count;
+  const before = new Map(table.columns.map((column) => [column.name, column]));
+  const fromOf = new Map(change.renamed.map((item) => [item.to, item.from]));
+  return [
+    ...change.removed.map((column): GuildTableEffect => ({ kind: "column_dropped", column, records })),
+    ...change.renamed.map((item): GuildTableEffect => ({ kind: "column_moved", from: item.from, to: item.to, records })),
+    ...change.columns.flatMap((column) => {
+      const previous = before.get(fromOf.get(column.name) ?? column.name);
+      return previous ? keptColumnEffects(previous, column, records) : addedColumnEffects(column, records);
+    }),
+  ];
+}
+
+/** A column the change adds reaches the stored records only when it is required. */
+function addedColumnEffects(column: CollectionColumn, records: number): GuildTableEffect[] {
+  return column.required && records ? [{ kind: "required_column_added", column: column.name, records }] : [];
+}
+
+/** What a kept column's new definition does to the stored records: a retype keeps their values; a new requirement or uniqueness checks them. */
+function keptColumnEffects(previous: CollectionColumn, column: CollectionColumn, records: number): GuildTableEffect[] {
+  const effects: GuildTableEffect[] = [];
+  if (isRetyped(previous, column)) {
+    effects.push({ kind: "column_retyped", column: column.name });
+  }
+  if (column.required && !previous.required && records) {
+    effects.push({ kind: "column_made_required", column: column.name });
+  }
+  if (column.unique && !previous.unique) {
+    effects.push({ kind: "column_made_unique", column: column.name });
+  }
+  return effects;
+}
+
+/** Whether a column's type or its allowed values change. */
+function isRetyped(previous: CollectionColumn, column: CollectionColumn): boolean {
+  return previous.type !== column.type || JSON.stringify(previous.values ?? null) !== JSON.stringify(column.values ?? null);
 }
