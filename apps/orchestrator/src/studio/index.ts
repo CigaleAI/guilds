@@ -9,7 +9,6 @@ import {
   coreModelCredentials,
   type ModelCredentialsProvider,
   ModelNotConnectedError,
-  modelProviderStore,
 } from "../llm/credentials.js";
 import { isMarketplaceModel } from "../llm/providers.js";
 import { newId } from "../lib/ids.js";
@@ -148,7 +147,7 @@ export class StudioService {
     this.drafts = new StudioDrafts(deps.db, deps.artifacts);
     this.admission = deps.admission ?? new AdmissionCoordinator();
     this.policy = deps.policy ?? OPEN_POLICY;
-    this.credentials = deps.credentials ?? coreModelCredentials(modelProviderStore(deps.db));
+    this.credentials = deps.credentials ?? coreModelCredentials(deps.db);
     this.runner = new StudioRunner({
       db: deps.db,
       admission: this.admission,

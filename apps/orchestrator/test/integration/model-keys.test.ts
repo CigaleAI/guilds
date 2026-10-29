@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
-import { coreModelCredentials, modelProviderStore } from "../../src/llm/credentials.js";
+import { coreModelCredentials } from "../../src/llm/credentials.js";
 import { modelsService } from "../../src/llm/models.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
@@ -43,7 +43,7 @@ test("an organisation connects providers, chooses models, and names a default", 
       headers: { "content-type": "application/json" },
     });
   }) as typeof fetch;
-  const credentials = coreModelCredentials(modelProviderStore(db), TEST_MASTER_KEY);
+  const credentials = coreModelCredentials(db, TEST_MASTER_KEY);
   const app = await buildApp(database, {
     db,
     notes,

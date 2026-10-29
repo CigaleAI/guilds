@@ -8,7 +8,6 @@ import {
   coreModelCredentials,
   decryptProviderRow,
   keyHint,
-  modelProviderStore,
   type ModelCredentialsProvider,
 } from "./credentials.js";
 import { defaultEntry, entryPayload, type CatalogEntry } from "./entries.js";
@@ -366,7 +365,7 @@ export class ModelsService {
 /** The organisation's model setup, read and written on `db` and run with `services`. */
 export function modelsService(db: Queryable, services: ModelsServices = {}): ModelsService {
   const credentials =
-    services.credentials ?? coreModelCredentials(modelProviderStore(db), services.masterKey);
+    services.credentials ?? coreModelCredentials(db, services.masterKey);
   return new ModelsService({ ...services, db: modelsDatabase(db), credentials });
 }
 

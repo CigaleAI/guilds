@@ -6,7 +6,7 @@ import type { OrgModelProviderRow } from "../../src/db/orgs.js";
 import {
   ModelNotConnectedError,
   assertModelConnected,
-  coreModelCredentials,
+  coreModelCredentialsThrough,
   keyHint,
   modelUsageOf,
   reportModelUsage,
@@ -41,7 +41,7 @@ test("core's credentials are the organisation's row: its key, and a local endpoi
     ["org_1/local", row({ api_key: "", base_url: "http://127.0.0.1:11434/v1" })],
     ["org_1/xai", row({ api_key: "" })],
   ]);
-  const credentials = coreModelCredentials(
+  const credentials = coreModelCredentialsThrough(
     { getOrgModelProvider: async (orgId, provider) => rows.get(`${orgId}/${provider}`) ?? null },
     TEST_MASTER_KEY,
   );

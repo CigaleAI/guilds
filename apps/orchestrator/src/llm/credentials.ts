@@ -58,7 +58,7 @@ export class ModelNotConnectedError extends Error {
 }
 
 /** The db/ function an organisation's provider rows are read through, on `db`. */
-export function modelProviderStore(db: Queryable) {
+function modelProviderStore(db: Queryable) {
   return {
     getOrgModelProvider: bindQuery(db, getOrgModelProvider),
   };
@@ -80,8 +80,16 @@ export function decryptProviderRow(
   return { apiKey, baseURL };
 }
 
-/** Core's default: the organisation's row for the provider, and no usage callback. */
-export function coreModelCredentials(store: ModelProviderStore, masterKey?: Buffer): ModelCredentialsProvider {
+/** Core's default: the organisation's row for the provider on `db`, and no usage callback. */
+export function coreModelCredentials(db: Queryable, masterKey?: Buffer): ModelCredentialsProvider {
+  return coreModelCredentialsThrough(modelProviderStore(db), masterKey);
+}
+
+/**
+ * Core's default: the organisation's row for the provider, read through `store`, the
+ * dependencies object a unit test fakes, and no usage callback.
+ */
+export function coreModelCredentialsThrough(store: ModelProviderStore, masterKey?: Buffer): ModelCredentialsProvider {
   return {
     async modelCredentials(orgId, provider) {
       const row = await store.getOrgModelProvider(orgId, provider);
