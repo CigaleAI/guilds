@@ -667,12 +667,12 @@ export class StudioService {
   /** The system message for this generation, from the roster rows the caller already read. */
   composeLiveSystem(
     session: StudioSessionRow,
-    rows: Array<Record<string, unknown>>,
+    rows: StudioInventoryRow[],
   ): { content: string; hash: string } {
     const config = session.config_snapshot;
     const members = rows.map((row) => hydrateStudioMember(row));
     return composeStudioSystemMessage({
-      mode: String(session.mode ?? "optimize"),
+      mode: session.mode,
       template: readStudioSystemTemplate({ guidelinesPath: this.deps.notesSystemPath }),
       sourceGuild: session.source_guild_id ? { ...session.source_guild_snapshot, id: session.source_guild_id } : null,
       members,
@@ -689,7 +689,7 @@ export class StudioService {
 
   async refreshSystemMessage(
     session: StudioSessionRow,
-    rows: Array<Record<string, unknown>>,
+    rows: StudioInventoryRow[],
     client?: pg.PoolClient,
   ): Promise<string> {
     const system = this.composeLiveSystem(session, rows);
