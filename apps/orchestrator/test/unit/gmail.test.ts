@@ -246,6 +246,29 @@ test("get_thread and get_message render bodies", async () => {
   assert.equal(message, "m1  Ada  Hi\nbody");
 });
 
+test("get_thread refuses a body that is not JSON or does not match its schema", async () => {
+  const answering = (result: { json?: unknown; text?: string }) => ({
+    accessToken: TOKEN,
+    client: mockFetch(() => ({ status: 200, ...result })),
+  });
+  await assert.rejects(
+    () =>
+      callTool(
+        "get_thread",
+        { thread_id: "t1" },
+        answering({ json: { id: "t1", messages: "none" } }),
+      ),
+    (error: unknown) =>
+      error instanceof GmailError &&
+      /^Gmail returned an unexpected response at \/messages: /.test(error.message),
+  );
+  await assert.rejects(
+    () => callTool("get_thread", { thread_id: "t1" }, answering({ text: "not json" })),
+    (error: unknown) =>
+      error instanceof GmailError && error.message === "Gmail returned a non-JSON body",
+  );
+});
+
 test("get_message lists attachments between the headers and the body", async () => {
   const message = await callTool("get_message", { message_id: "m1" }, { accessToken: TOKEN, client: attachmentsFetch() });
   assert.equal(
