@@ -159,6 +159,20 @@ test(
         payload: {},
       });
       assert.equal(unsaid.statusCode, 422);
+      assert.deepEqual(unsaid.json().detail[0].loc, ["body", "status"]);
+      const numbered = await app.inject({
+        method: "PATCH",
+        url: `${guild}/issues/${issue.id}`,
+        headers: JSON_OWNER,
+        payload: { status: 1 },
+      });
+      assert.equal(numbered.statusCode, 422);
+      const twice = await app.inject({
+        method: "GET",
+        url: `${guild}/issues?status=open&status=resolved`,
+        headers: OWNER,
+      });
+      assert.equal(twice.statusCode, 422);
       const missing = await app.inject({
         method: "PATCH",
         url: `${guild}/issues/iss_missing`,

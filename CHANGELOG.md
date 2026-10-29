@@ -8,6 +8,13 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** Setting an issue's status refuses a `status` that is
+not a string, and listing a guild's issues refuses a `status` given
+more than once, with a 422 that names it, before the request's user is
+identified. A missing `status` is a 422 with `Field required`. Before,
+a missing one was a 422 with `status is required`, and a `status` that
+was not a string was refused by the issue's own check.
+
 **No impact.** An organisation's connector routes take the same body
 as the instance admin's and refuse a field of the wrong type the same
 way, with a 422 that names it, before the request's user is

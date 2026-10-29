@@ -187,9 +187,9 @@ export class Issues {
     );
   }
 
-  async listForGuild(guildId: string, status?: unknown): Promise<IssueItem[]> {
+  async listForGuild(guildId: string, status?: string): Promise<IssueItem[]> {
     let filter: string | null = null;
-    if (status !== undefined && status !== null && status !== "" && status !== "all") {
+    if (status !== undefined && status !== "" && status !== "all") {
       filter = oneOf(status, ISSUE_STATUSES, "status");
     }
     const rows = await this.db.listIssuesForGuild(guildId, filter);
@@ -199,7 +199,7 @@ export class Issues {
   async setStatus(
     guildId: string,
     issueId: string,
-    status: unknown,
+    status: string,
     resolvedBy: string | null,
   ): Promise<IssueItem> {
     const token = (issueId || "").trim();
