@@ -128,6 +128,14 @@ test("the CLI, the admin routes, recipe import, and apply preview read the regis
         payload: { slug: "shady" },
       });
       assert.equal(refused.statusCode, 409);
+      const textVerified = await app.inject({
+        method: "POST",
+        url: "/api/admin/registry/connectors",
+        headers: AUTH,
+        payload: { slug: "shady", unverified: "yes" },
+      });
+      assert.equal(textVerified.statusCode, 422, textVerified.body);
+      assert.deepEqual(textVerified.json().detail[0].loc, ["body", "unverified"]);
 
       const outsider = await insertUser(db, { userId: "user_registry_other", name: "other", image: null, email: "other@example.com" }, new Date());
       await insertMember(
@@ -141,6 +149,13 @@ test("the CLI, the admin routes, recipe import, and apply preview read the regis
         headers: { "X-Guilds-User": "user_registry_other", "X-Guilds-Org": "org_home" },
       });
       assert.equal(hidden.statusCode, 404);
+      const hiddenInvalid = await app.inject({
+        method: "POST",
+        url: "/api/admin/registry/connectors",
+        headers: { "X-Guilds-User": "user_registry_other", "X-Guilds-Org": "org_home", "content-type": "application/json" },
+        payload: { unverified: "yes" },
+      });
+      assert.equal(hiddenInvalid.statusCode, 404, "an invalid body from a non-admin is the same 404");
 
       // A recipe from the registry lands in the organisation's library as a draft.
       const desk = linkedInNotionRecipe(operatorAuthor());

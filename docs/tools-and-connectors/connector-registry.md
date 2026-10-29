@@ -201,5 +201,8 @@ status, because a bundle carries its own copy of the class.
 | `DELETE /api/admin/registry/connectors/:slug` | Removes one connector. 204 |
 | `POST /api/admin/registry/reload` | Serves what the database now holds, after a CLI change |
 
-Every route needs an instance admin. While the box is offline, an
-install or update is a 409. A removal works offline.
+Every route needs an instance admin, and anyone else gets 404
+whatever they send. `slug` and `version` are strings, `unverified`
+and `experimental` booleans; another type is 422 naming the field.
+While the box is offline, an install or update is a 409. A removal
+works offline.
