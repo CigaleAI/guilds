@@ -19,7 +19,7 @@ import {
   type Integration,
   type IntegrationStatus,
 } from "../instance/integrations.js";
-import { InstanceKeyError, validateKeyValues } from "../instance/keys.js";
+import { validateKeyValues } from "../instance/keys.js";
 import { newState } from "../oauth/index.js";
 import { writeLog } from "../observability/log.js";
 import { cookieSecure, requestCookies } from "./cookies.js";
@@ -110,15 +110,7 @@ export async function registerAdminInstanceRoutes(app: FastifyInstance, deps: Ap
     const user = await requireInstanceAdmin(deps, request);
     const integration = integrationOf(request);
     const body = bodyOf(request);
-    let values: Record<string, string>;
-    try {
-      values = validateKeyValues(integration, body.values ?? {});
-    } catch (error) {
-      if (error instanceof InstanceKeyError) {
-        throw new HttpError(error.status, error.message);
-      }
-      throw error;
-    }
+    const values = validateKeyValues(integration, body.values ?? {});
     if (body.confirm_replace !== true) {
       await assertKeyChangeConfirmed(db, integration, keys.current(integration.id), values);
     }
