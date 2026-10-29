@@ -8,6 +8,15 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** Installing a registry connector refuses a request
+without a string `slug`, or with a `version` that is not a string, and
+installing or updating one refuses an `unverified` or `experimental`
+that is not a boolean, with a 422 that names the field, after the
+instance admin is identified. Whoever is not the instance admin gets
+the same 404 whatever they send. Before, a `slug` that was not a string
+was read as empty, and an `unverified` or `experimental` that was not
+`true` as false.
+
 **No impact.** The collection routes refuse, with a 422 that names the
 field and before the request's user is identified: a collection whose
 `name` or `purpose` is not a string or whose `guild_id` is neither a
