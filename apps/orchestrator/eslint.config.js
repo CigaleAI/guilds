@@ -43,6 +43,15 @@ export default tseslint.config(
     },
   },
   {
+    // Public functions have explicit types for inputs and outputs
+    // (docs/contributing/code-guidelines.md, Types and errors).
+    files: ["src/**/*.ts"],
+    ignores: ["**/*.test.ts", "**/*.test.tsx", "**/*.stories.tsx", "test/**", "scripts/**"],
+    rules: {
+      "@typescript-eslint/explicit-module-boundary-types": "error",
+    },
+  },
+  {
     // A domain module imports nothing from the HTTP framework (docs/contributing/code-guidelines.md,
     // Boundaries). The roots, the extension points and the observability hooks are the exceptions.
     files: ["src/**/*.ts"],

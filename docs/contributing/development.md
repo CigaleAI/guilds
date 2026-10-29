@@ -304,10 +304,12 @@ Every package also runs the limits of the
 tests and stories excepted, as `complexity`, `max-depth`,
 `max-lines`, `max-params` (a warning) and
 `@typescript-eslint/max-params`, and refuses every type assertion
-except `as const`. The orchestrator also refuses an import of
-`fastify` outside `http/`, the roots, the extension points and the
-observability hooks; a value import of `db/` from `http/`; an
-import from `db/` of anything outside `db/` and `lib/`; and an
+except `as const`. The orchestrator also requires explicit
+parameter and return types on what a module exports
+(`@typescript-eslint/explicit-module-boundary-types`). It refuses an
+import of `fastify` outside `http/`, the roots, the extension points
+and the observability hooks; a value import of `db/` from `http/`;
+an import from `db/` of anything outside `db/` and `lib/`; and an
 import from `lib/` of anything outside `lib/`. Errors that predate
 the rules are recorded in the package's `eslint-suppressions.json`
 (ESLint bulk suppressions). Lint fails on an error that is not in
