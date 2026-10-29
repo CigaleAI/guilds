@@ -279,7 +279,7 @@ export function groupChatUserMessage(args: {
 }
 
 /** The db/ functions a guild's group chat is read and written through, on `db`. */
-export function groupChatDatabase(db: Queryable) {
+function groupChatDatabase(db: Queryable) {
   return {
     getGroupChatState: bindQuery(db, getGroupChatState),
     updateGroupAgentMessageLimit: bindQuery(db, updateGroupAgentMessageLimit),
@@ -390,6 +390,9 @@ export function interruptTargets(activeAgentIds: string[], taggedAgentIds: strin
   return activeAgentIds.filter((agentId) => taggedAgentIds.includes(agentId));
 }
 
+/** What a group chat runs with beside its database: whether a guild is being deleted, and the recipient router. */
+export type GroupChatServices = { is_deleting: (guildId: string) => boolean; router: GroupRouter };
+
 export class GroupChat {
   db: GroupChatDatabase;
   _is_deleting: (guildId: string) => boolean;
@@ -410,10 +413,7 @@ export class GroupChat {
     tagged: Set<string>;
   } | null = null;
 
-  constructor(
-    db: GroupChatDatabase,
-    options: { is_deleting: (guildId: string) => boolean; router: GroupRouter },
-  ) {
+  constructor(db: GroupChatDatabase, options: GroupChatServices) {
     this.db = db;
     this._is_deleting = options.is_deleting;
     this._router = options.router;
@@ -998,4 +998,9 @@ export class GroupChat {
           : null,
     };
   }
+}
+
+/** The group chats of guilds, read and written on `db` and run with `services`. */
+export function guildGroupChat(db: Queryable, services: GroupChatServices): GroupChat {
+  return new GroupChat(groupChatDatabase(db), services);
 }

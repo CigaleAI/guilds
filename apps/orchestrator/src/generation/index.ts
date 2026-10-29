@@ -18,7 +18,7 @@ import {
   type RunRow,
 } from "../db/runs.js";
 import { runItem } from "../db/views.js";
-import { GroupChat, groupChatDatabase, type GroupDelivery, type GroupRunner } from "../groupchat/index.js";
+import { guildGroupChat, type GroupChat, type GroupDelivery, type GroupRunner } from "../groupchat/index.js";
 import type { GroupRouter } from "../groupchat/router.js";
 import { guildIssues, type Issues } from "../issues/index.js";
 import { sleep } from "../lib/event.js";
@@ -88,7 +88,6 @@ function loopDatabase(db: Queryable) {
 /** The db/ functions a generation loop and each of its parts read and write through, on `db`. */
 function generationDatabase(db: Queryable) {
   return {
-    ...groupChatDatabase(db),
     ...activeGenerationsDatabase(db),
     ...runEventsDatabase(db),
     ...agentMachinesDatabase(db),
@@ -135,6 +134,9 @@ export type GenerationLoopServices = {
  */
 export type GenerationLoopDeps = GenerationLoopServices & {
   db: GenerationDatabase;
+  /** The chat the loop delivers group runs from; it asks the loop whether a guild is being deleted. */
+  groupChat: GroupChat;
+  groupRouter: GroupRouter;
   issues: Issues;
   schedules: Schedules;
   scripts: Scripts;
@@ -183,11 +185,8 @@ export class GenerationLoop implements GroupRunner {
     this.events = new RunEvents(db);
     this.credentials = services.credentials ?? coreModelCredentials(db);
     this.machines = new AgentMachines({ db, sandboxes, workspaceRoot, generations: this.generations }, timings.idleTimeoutMs);
-    const groupRouter = services.groupRouter ?? defaultGroupRouter();
-    this.groupChat = new GroupChat(db, {
-      is_deleting: (guildId) => this.isDeletingGuild(guildId),
-      router: groupRouter,
-    });
+    const { groupRouter } = services;
+    this.groupChat = services.groupChat;
     this.groupChat.bind(this);
     this.issues = services.issues;
     this.schedules = services.schedules;
@@ -579,14 +578,23 @@ export function generationLoop(
   services: GenerationLoopServices,
   timings: GenerationLoopTimings = LOOP_TIMINGS,
 ): GenerationLoop {
-  return new GenerationLoop(
+  const groupRouter = services.groupRouter ?? defaultGroupRouter();
+  // The chat is called after the loop below is built, and asks it whether a guild is being deleted.
+  const groupChat = guildGroupChat(db, {
+    is_deleting: (guildId) => loop.isDeletingGuild(guildId),
+    router: groupRouter,
+  });
+  const loop = new GenerationLoop(
     {
       ...services,
       db: generationDatabase(db),
+      groupChat,
+      groupRouter,
       issues: guildIssues(db),
       schedules: agentSchedules(db),
       scripts: agentScripts(db),
     },
     timings,
   );
+  return loop;
 }
