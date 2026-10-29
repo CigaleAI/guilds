@@ -101,13 +101,6 @@ export function catalogServerItem(server: LoadedConnector): Record<string, unkno
   };
 }
 
-function requireString(value: unknown, field: string): string {
-  if (typeof value !== "string") {
-    throw new CatalogError(`${field} is required`);
-  }
-  return value;
-}
-
 export function validateSlug(raw: string): string {
   const slug = raw.trim();
   if (!SLUG_RE.test(slug)) {
@@ -268,13 +261,13 @@ export async function assertSlugFree(
 /** Installs a remote MCP server the instance admin adds by hand: a platform row with no folder, on at creation. */
 export async function createConnector(
   db: Queryable,
-  body: Record<string, unknown>,
+  body: ConnectorDraft,
   now = new Date(),
   ownerOrgId: string | null = null,
 ): Promise<LoadedConnector> {
-  const slug = validateSlug(requireString(body.slug, "slug"));
+  const slug = validateSlug(body.slug);
   await assertSlugFree(db, slug, ownerOrgId);
-  const auth = validateAuth(String(body.auth ?? "token"));
+  const auth = validateAuth(body.auth ?? "token");
   if (ownerOrgId !== null && auth === "oauth" && body.oauth_strategy === "configured") {
     throw new CatalogError("an organisation's server signs in with a dynamically registered client");
   }
@@ -303,7 +296,7 @@ export async function createConnector(
       source: "local",
       verified: false,
       publisher: "",
-      enabled: body.enabled === undefined ? true : body.enabled === true,
+      enabled: body.enabled ?? true,
     },
     now,
   );
@@ -318,25 +311,22 @@ export async function createConnector(
 export async function patchConnector(
   db: Queryable,
   server: LoadedConnector,
-  body: Record<string, unknown>,
+  body: ConnectorPatch,
   now = new Date(),
 ): Promise<LoadedConnector> {
   const patch: { slug?: string; manifest?: Manifest; overrides?: Overrides; enabled?: boolean } = {};
   if (body.enabled !== undefined) {
-    if (typeof body.enabled !== "boolean") {
-      throw new CatalogError("enabled must be a boolean");
-    }
     patch.enabled = body.enabled;
   }
   if (editsFields(server)) {
     const current = server.manifest;
-    const slug = body.slug !== undefined ? validateSlug(String(body.slug)) : current.slug;
+    const slug = body.slug !== undefined ? validateSlug(body.slug) : current.slug;
     const ownerOrgId = server.owner_org_id ? String(server.owner_org_id) : null;
     if (slug !== current.slug) {
       await assertSlugFree(db, slug, ownerOrgId, server.id);
       patch.slug = slug;
     }
-    const auth = body.auth !== undefined ? validateAuth(String(body.auth)) : current.auth.kind;
+    const auth = body.auth !== undefined ? validateAuth(body.auth) : current.auth.kind;
     if (ownerOrgId !== null && auth === "oauth" && body.oauth_strategy === "configured") {
       throw new CatalogError("an organisation's server signs in with a dynamically registered client");
     }
@@ -361,7 +351,7 @@ export async function patchConnector(
       tools: current.tools,
     });
   } else {
-    for (const field of ["slug", "url", "auth", "oauth_strategy"]) {
+    for (const field of ["slug", "url", "auth", "oauth_strategy"] as const) {
       if (body[field] !== undefined) {
         throw new CatalogError(`${field} comes from the connector's manifest`);
       }

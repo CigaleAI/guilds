@@ -8,6 +8,12 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** An organisation's connector routes take the same body
+as the instance admin's and refuse a field of the wrong type the same
+way, with a 422 that names it, before the request's user is
+identified. Before, a create read a non-boolean `enabled` as off, and a
+`slug` or `auth` that was not text was read as its text.
+
 **No impact.** The instance admin's connector routes refuse a body
 whose fields have the wrong type with a 422 that names the field,
 after the instance admin is identified: creating a connector without
