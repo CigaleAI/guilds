@@ -82,7 +82,10 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
     const body = bodyOf(request);
     const studio: StudioService = studioOf(deps);
     const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
-    return await studio.setConnectionGrant(session, param(request, "connection_id"), body.granted !== false);
+    const connectionId = param(request, "connection_id");
+    return body.granted === false
+      ? await studio.withdrawConnection(session, connectionId)
+      : await studio.grantConnection(session, connectionId);
   });
 
   app.post("/api/studio/sessions/:session_id/logins/:seq", async (request) => {
