@@ -175,6 +175,25 @@ test("search sends x-api-key", async () => {
   assert.equal(stored, `from:x ${SEARCH_WINDOW}  n=1\n1  @x  X  likes=-  rts=-  replies=-  quotes=-  hi`);
 });
 
+test("search refuses a body that is not JSON or does not match its schema", async () => {
+  const answering = (result: { json?: unknown; text?: string }) => ({
+    apiKey: "tok-test",
+    client: mockFetch(() => ({ status: 200, ...result })),
+  });
+  await assert.rejects(
+    () => searchTool({ query: "from:x" }, answering({ json: { tweets: "none" } })),
+    (error: unknown) =>
+      error instanceof TwitterApiIoError &&
+      /^TwitterAPI.io returned an unexpected response at \/tweets: /.test(error.message),
+  );
+  await assert.rejects(
+    () => searchTool({ query: "from:x" }, answering({ text: "not json" })),
+    (error: unknown) =>
+      error instanceof TwitterApiIoError &&
+      error.message === "TwitterAPI.io returned a non-JSON body",
+  );
+});
+
 test("posts resolves username then last tweets", async () => {
   let url = "";
   const stored = await postsTool(
