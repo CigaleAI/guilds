@@ -1,5 +1,5 @@
 import { existsSync, statSync } from "node:fs";
-import { accessDatabase, agentLogins, agentRuntime, type RuntimeAccess } from "../access/runtime.js";
+import { agentLogins, agentRuntime, type RuntimeAccess } from "../access/runtime.js";
 import { validateAgentConfig } from "../agents/config.js";
 import { AgentValidationError } from "../agents/validation.js";
 import { agentActor } from "../artifacts/actors.js";
@@ -53,7 +53,8 @@ export type GenerationArtifacts = ReturnType<typeof generationArtifacts>;
 /** The db/ functions a run is prepared through, on `db`. */
 export function runPreparationDatabase(db: Queryable) {
   return {
-    ...accessDatabase(db),
+    agentRuntime: bindQuery(db, agentRuntime),
+    agentLogins: bindQuery(db, agentLogins),
     ...codingRepositoriesDatabase(db),
     listAgents: bindQuery(db, listAgents),
     listGroupMessages: bindQuery(db, listGroupMessages),
@@ -163,7 +164,7 @@ export class RunPreparation {
   private async agentAccess(agent: AgentRow): Promise<{ config: AgentConfig; access: RuntimeAccess }> {
     try {
       const config = validateAgentConfig(agent.config);
-      const access = await agentRuntime(this.services.db, agent, { mcpPool: this.services.mcp });
+      const access = await this.services.db.agentRuntime(agent, this.services.mcp);
       return { config, access };
     } catch (error) {
       if (error instanceof AgentValidationError || error instanceof McpDisconnectedError) {
@@ -256,7 +257,7 @@ export class RunPreparation {
 
   private async connectorState(agent: AgentRow): Promise<Record<string, unknown>> {
     const { mcp, db } = this.services;
-    return mcp.state(await agentLogins(db, agent));
+    return mcp.state(await db.agentLogins(agent));
   }
 
   /** The guild's state as the run's system prompt shows it; a notes folder it cannot read is a 422. */

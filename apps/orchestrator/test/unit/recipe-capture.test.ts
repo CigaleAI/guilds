@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { TEST_MODEL } from "../helpers/models.js";
 import { CONFIG_KEYS, validateAgentConfig } from "../../src/agents/config.js";
+import { loadAccessViewThrough } from "../../src/access/view.js";
 import { isPlainRecord } from "../../src/db/json.js";
 import { captureGuild,
   portableRoleConfig,
@@ -113,8 +114,16 @@ function captureDeps(options: {
       config: { model: TEST_MODEL, browser: true },
     },
   ];
+  const accessReads = {
+    listBindingsCovering: async () => options.bindings ?? [],
+    listMcpConnections: async () => options.connections ?? [],
+    listServers: async () => options.servers ?? [],
+    connectionTools: async () => options.tools ?? [],
+  };
   return {
     db: {
+      loadAccessView: (view: Parameters<typeof loadAccessViewThrough>[1]) =>
+        loadAccessViewThrough(accessReads as never, view),
       listAgents: async () => agents.map((agent) => ({ ...agent, config: storedConfig(agent.config) })),
       getAgentTask: async (_orgId: string, agentId: string) =>
         agentId === "a_scout"
@@ -131,7 +140,6 @@ function captureDeps(options: {
               },
             ])
           : [],
-      listBindingsCovering: async () => options.bindings ?? [],
       listSecrets: async (_orgId: string, filter: { agentId?: string }) =>
         (options.secrets ?? []).filter(
           (secret) =>
@@ -140,10 +148,7 @@ function captureDeps(options: {
               (grant) => grant.guild_id === GUILD.id || grant.agent_id === filter.agentId,
             ),
         ),
-      listMcpConnections: async () => options.connections ?? [],
       listGuildRepositories: async () => options.repositories ?? [],
-      listServers: async () => options.servers ?? [],
-      connectionTools: async () => options.tools ?? [],
       listMcpCatalogTools: async () => options.tools ?? [],
     } as never,
     artifacts: {
