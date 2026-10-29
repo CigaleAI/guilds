@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { parseColumnChange, parseColumns } from "../../src/artifacts/columns.js";
 import {
   type GuildTableBefore,
+  type GuildTableEditRequest,
   type GuildTableLive,
   guildTableEditEffects,
   planGuildTableChange,
@@ -167,6 +168,22 @@ function live(guildId: string | null): GuildTableLive {
   };
 }
 
+function edit(
+  table: GuildTableLive,
+  fields: Partial<GuildTableEditRequest<GuildTableLive>>,
+): GuildTableEditRequest<GuildTableLive> {
+  return {
+    action: "edit",
+    guildId: "guild_own",
+    table,
+    changes: {},
+    access: NO_ROWS,
+    isNameTaken: false,
+    origin: { kind: "new", baseUpdatedAt: LIVE_AT },
+    ...fields,
+  };
+}
+
 test("planGuildTableChange creates a guild's table with its row at write and the proposed rows on top", () => {
   const plan = planGuildTableChange({
     action: "create",
@@ -209,7 +226,7 @@ test("planGuildTableChange starts an organisation table with the organisation's 
   assert.deepEqual(plan.step.access, [{ type: "guild", id: "guild_own", mode: "read" }]);
 });
 
-test("planGuildTableChange refuses a create of a name a table in the guild's reach holds", () => {
+test("planGuildTableChange refuses a create or a rename to a name a table in the guild's reach holds", () => {
   const taken = {
     name: "GuildTableNameTaken",
     status: 409,
@@ -227,6 +244,24 @@ test("planGuildTableChange refuses a create of a name a table in the guild's rea
       }),
     taken,
   );
+  assert.throws(
+    () =>
+      planGuildTableChange(
+        edit(
+          { ...live("guild_own"), name: "prospects" },
+          { changes: { name: "leads" }, isNameTaken: true },
+        ),
+      ),
+    taken,
+  );
+  const kept = planGuildTableChange(
+    edit(live("guild_own"), {
+      changes: { name: "leads", purpose: "Hot leads" },
+      isNameTaken: true,
+    }),
+  );
+  assert.ok(kept.action === "edit");
+  assert.deepEqual(kept.step.changes, { purpose: "Hot leads" });
 });
 
 test("planGuildTableChange refuses deleting an organisation table and deletes a guild's own", () => {
@@ -240,4 +275,108 @@ test("planGuildTableChange refuses deleting an organisation table and deletes a 
     action: "delete",
     id: "col_1",
   });
+});
+
+test("planGuildTableChange keeps an organisation table's name, purpose and columns, and adds new columns", () => {
+  const org = live(null);
+  const refused = (changes: GuildTableEditRequest<GuildTableLive>["changes"], refusal: unknown) =>
+    assert.throws(() => planGuildTableChange(edit(org, { changes })), {
+      name: "OrgTableChangeRefused",
+      status: 422,
+      refusal,
+    });
+  refused({ purpose: "Mine now" }, { kind: "rename_or_repurpose" });
+  refused({ name: "facts" }, { kind: "rename_or_repurpose" });
+  refused(
+    { columns: [COLUMNS[0], { ...COLUMNS[1], name: "stage", rename_from: "status" }] },
+    {
+      kind: "drop_columns",
+      columns: ["owner", "status"],
+    },
+  );
+  refused(
+    { columns: [COLUMNS[0], COLUMNS[2], COLUMNS[1]] },
+    { kind: "change_columns", columns: ["status", "owner"] },
+  );
+  refused(
+    { columns: [COLUMNS[0], { ...COLUMNS[1], values: ["new"] }, COLUMNS[2]] },
+    {
+      kind: "change_columns",
+      columns: ["status"],
+    },
+  );
+  const columns = [...COLUMNS, { name: "budget", type: "number", description: "budget" }];
+  const added = planGuildTableChange(edit(org, { changes: { columns } }));
+  assert.ok(added.action === "edit");
+  assert.deepEqual(added.step.changes, { columns });
+  assert.deepEqual(
+    added.shape.columns.map((column) => column.name),
+    ["project", "status", "owner", "budget"],
+  );
+});
+
+test("planGuildTableChange refuses a new edit not based on the live updated_at, and not a stored one", () => {
+  const table = live("guild_own");
+  const changes = { purpose: "Hot leads" };
+  assert.throws(
+    () =>
+      planGuildTableChange(edit(table, { changes, origin: { kind: "new", baseUpdatedAt: null } })),
+    {
+      name: "GuildTableBaseRefused",
+      status: 422,
+      base: null,
+    },
+  );
+  assert.throws(
+    () =>
+      planGuildTableChange(
+        edit(table, { changes, origin: { kind: "new", baseUpdatedAt: "1999-01-01T00:00:00Z" } }),
+      ),
+    {
+      name: "GuildTableBaseRefused",
+      status: 409,
+      base: "1999-01-01T00:00:00Z",
+      tableName: "leads",
+      updatedAt: LIVE_AT,
+    },
+  );
+  assert.equal(
+    planGuildTableChange(edit(table, { changes, origin: { kind: "stored" } })).action,
+    "edit",
+  );
+});
+
+test("planGuildTableChange refuses a new edit that changes nothing, and plans a stored one as no change", () => {
+  const table = live("guild_own");
+  assert.throws(
+    () => planGuildTableChange(edit(table, { changes: { name: "leads", columns: COLUMNS } })),
+    {
+      status: 422,
+      message: "the proposal matches the live table; nothing to change",
+    },
+  );
+  const stored = planGuildTableChange(edit(table, { origin: { kind: "stored" } }));
+  assert.ok(stored.action === "edit");
+  assert.deepEqual(stored.step, { action: "edit", id: "col_1", changes: null, access: [] });
+  const access = planGuildTableChange(edit(table, { access: { guild: "read", agents: [] } }));
+  assert.ok(access.action === "edit");
+  assert.deepEqual(access.step, {
+    action: "edit",
+    id: "col_1",
+    changes: null,
+    access: [{ type: "guild", id: "guild_own", mode: "read" }],
+  });
+});
+
+test("planGuildTableChange plans an edit's columns as requested, with the column change and the columns it moves", () => {
+  const columns = [COLUMNS[0], { ...COLUMNS[1], name: "stage", rename_from: "status" }];
+  const plan = planGuildTableChange(edit(live("guild_own"), { changes: { columns } }));
+  assert.ok(plan.action === "edit");
+  assert.deepEqual(plan.step.changes, { columns });
+  assert.deepEqual(plan.shape.renamed, [{ from: "status", to: "stage" }]);
+  assert.deepEqual(plan.columnChange?.removed, ["owner"]);
+  assert.deepEqual(
+    plan.shape.columns.map((column) => column.name),
+    ["project", "stage"],
+  );
 });

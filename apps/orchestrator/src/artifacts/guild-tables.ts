@@ -10,6 +10,7 @@ import {
   planGuildAccess,
 } from "./access-lists.js";
 import {
+  type CheckedCollectionChange,
   createCollection,
   deleteCollection,
   describeCollection,
@@ -17,6 +18,7 @@ import {
   listCollections,
   listCollectionsWithCounts,
   planCollection,
+  planCollectionChange,
   updateCollection,
   type CollectionChanges,
   type NewCollection,
@@ -134,6 +136,14 @@ export type GuildTableShape = {
 };
 
 /**
+ * Where a request stands. A new one is checked against the live table and names the `updated_at`
+ * it read the table at, null when it names none. A stored proposal under review was checked when
+ * it was made.
+ */
+export type GuildTableRequestOrigin =
+  { kind: "new"; baseUpdatedAt: string | null } | { kind: "stored" };
+
+/**
  * A request of guild `guildId` to create a table in organisation `orgId`: the table as defined, the
  * rows it proposes for the guild and its agents, and whether a table in the guild's reach already
  * holds the name it gives.
@@ -147,9 +157,24 @@ export type GuildTableCreateRequest = {
   isNameTaken: boolean;
 };
 
-/** A request to create a table or to delete one. */
+/**
+ * A request of guild `guildId` to change `table`: the definition change, the rows it proposes for
+ * the guild and its agents, whether a table in the guild's reach already holds the name it gives,
+ * and where it stands.
+ */
+export type GuildTableEditRequest<T extends GuildTableLive> = {
+  action: "edit";
+  guildId: string;
+  table: T;
+  changes: CollectionChanges;
+  access: GuildAccessProposal;
+  isNameTaken: boolean;
+  origin: GuildTableRequestOrigin;
+};
+
+/** A request to create a table, to change one, or to delete one. */
 export type GuildTableRequest<T extends GuildTableLive> =
-  GuildTableCreateRequest | { action: "delete"; table: T };
+  GuildTableCreateRequest | GuildTableEditRequest<T> | { action: "delete"; table: T };
 
 /** A create as planned: the table it makes, the display path it takes, and the step that writes it. */
 export type GuildTableCreatePlan = {
@@ -159,9 +184,19 @@ export type GuildTableCreatePlan = {
   step: Extract<CollectionStep, { action: "create" }>;
 };
 
+/** An edit of `table` as planned: the table it leaves, its column change, null when the columns stay, and the step that writes it. */
+export type GuildTableEditPlan<T extends GuildTableLive> = {
+  action: "edit";
+  table: T;
+  shape: GuildTableShape;
+  columnChange: ColumnChange | null;
+  step: Extract<CollectionStep, { action: "edit" }>;
+};
+
 /** A request as planned; a delete plans only the step that writes it. */
 export type GuildTablePlan<T extends GuildTableLive> =
   | GuildTableCreatePlan
+  | GuildTableEditPlan<T>
   | { action: "delete"; table: T; step: Extract<CollectionStep, { action: "delete" }> };
 
 /** A request refused because a table in the guild's reach already holds the name it gives. */
@@ -172,8 +207,38 @@ export class GuildTableNameTaken extends ArtifactError {
   }
 }
 
-/** What a request would do to an organisation table that a guild does not: delete it. */
-export type OrgTableRefusal = { kind: "delete" };
+/**
+ * A new edit request refused for the `updated_at` it is based on: 422 when it names none, 409
+ * when `base` is not the table's live `updatedAt`.
+ */
+export class GuildTableBaseRefused extends ArtifactError {
+  base: string | null;
+  tableName: string;
+  updatedAt: string;
+
+  constructor(table: Pick<GuildTableLive, "name" | "updatedAt">, base: string | null) {
+    super(
+      base === null
+        ? "an edit names the updated_at of the table it was built on"
+        : `${base} is stale; ${table.name} was updated at ${table.updatedAt}`,
+      base === null ? 422 : 409,
+    );
+    this.name = "GuildTableBaseRefused";
+    this.base = base;
+    this.tableName = table.name;
+    this.updatedAt = table.updatedAt;
+  }
+}
+
+/**
+ * What a request would do to an organisation table that a guild does not: delete it, change its
+ * name or purpose, drop or rename the columns `columns` names, or change or move them.
+ */
+export type OrgTableRefusal =
+  | { kind: "delete" }
+  | { kind: "rename_or_repurpose" }
+  | { kind: "drop_columns"; columns: string[] }
+  | { kind: "change_columns"; columns: string[] };
 
 /** A request refused because it changes organisation table `tableName` beyond adding columns and access rows. */
 export class OrgTableChangeRefused extends ArtifactError {
@@ -193,8 +258,10 @@ export class OrgTableChangeRefused extends ArtifactError {
 
 /**
  * Checks a guild's request against the table as it stands and plans it. A table's name is unique
- * among the tables in the guild's reach. An organisation table is not deleted from a guild.
- * ArtifactError on the first rule the request breaks.
+ * among the tables in the guild's reach. An organisation table is not deleted from a guild, and
+ * keeps its name, its purpose and every column it has, unchanged and in order; new columns may
+ * join. A new edit request is based on the table's live `updated_at` and changes its definition or
+ * one of its access rows. ArtifactError on the first rule the request breaks.
  */
 export function planGuildTableChange<T extends GuildTableLive>(
   request: GuildTableRequest<T>,
@@ -202,6 +269,8 @@ export function planGuildTableChange<T extends GuildTableLive>(
   switch (request.action) {
     case "create":
       return planGuildTableCreate(request);
+    case "edit":
+      return planGuildTableEdit(request);
     case "delete":
       if (request.table.guildId === null) {
         throw new OrgTableChangeRefused(request.table.name, { kind: "delete" });
@@ -232,6 +301,98 @@ function planGuildTableCreate(request: GuildTableCreateRequest): GuildTableCreat
     href,
     step: { action: "create", collection: { name, purpose, columns, guildId }, access: rowChanges },
   };
+}
+
+/** An edit checked in order: its base, its name, purpose and columns, what an organisation table keeps, its name, and that a new request changes something. */
+function planGuildTableEdit<T extends GuildTableLive>(
+  request: GuildTableEditRequest<T>,
+): GuildTableEditPlan<T> {
+  const { table } = request;
+  assertCurrentBase(table, request.origin);
+  const checked = planCollectionChange(table, request.changes);
+  assertOrgTableKept(table, checked);
+  if (checked.name !== table.name && request.isNameTaken) {
+    throw new GuildTableNameTaken(checked.name);
+  }
+  const { access, rowChanges } = planGuildAccess(table.access, request.guildId, request.access);
+  const change = checked.columns;
+  const columns = change ? change.columns : table.columns;
+  const columnChange = JSON.stringify(columns) !== JSON.stringify(table.columns) ? change : null;
+  const shape: GuildTableShape = {
+    name: checked.name,
+    purpose: checked.purpose,
+    guildId: table.guildId,
+    columns,
+    renamed: change?.renamed ?? [],
+    access,
+  };
+  const changes = definitionChanges(
+    table,
+    shape,
+    columnChange ? request.changes.columns : undefined,
+  );
+  if (request.origin.kind === "new" && !changes && !rowChanges.length) {
+    throw new ArtifactError("the proposal matches the live table; nothing to change", 422);
+  }
+  return {
+    action: "edit",
+    table,
+    shape,
+    columnChange,
+    step: { action: "edit", id: table.id, changes, access: rowChanges },
+  };
+}
+
+/** Refuses a new request that is not based on the table's live `updated_at`. */
+function assertCurrentBase(table: GuildTableLive, origin: GuildTableRequestOrigin): void {
+  if (origin.kind === "new" && origin.baseUpdatedAt !== table.updatedAt) {
+    throw new GuildTableBaseRefused(table, origin.baseUpdatedAt);
+  }
+}
+
+/** Refuses a change to an organisation table other than new columns: it keeps its name, its purpose, and every column it has, unchanged and in order. */
+function assertOrgTableKept(table: GuildTableLive, checked: CheckedCollectionChange): void {
+  if (table.guildId !== null) return;
+  if (checked.name !== table.name || checked.purpose !== table.purpose) {
+    throw new OrgTableChangeRefused(table.name, { kind: "rename_or_repurpose" });
+  }
+  const change = checked.columns;
+  if (!change) return;
+  if (change.removed.length || change.renamed.length) {
+    throw new OrgTableChangeRefused(table.name, {
+      kind: "drop_columns",
+      columns: [...change.removed, ...change.renamed.map((item) => item.from)],
+    });
+  }
+  const next = new Map(change.columns.map((column) => [column.name, column]));
+  const kept = change.columns.filter((column) =>
+    table.columns.some((previous) => previous.name === column.name),
+  );
+  const altered = table.columns.filter(
+    (previous, index) =>
+      JSON.stringify(next.get(previous.name)) !== JSON.stringify(previous) ||
+      kept[index]?.name !== previous.name,
+  );
+  if (altered.length) {
+    throw new OrgTableChangeRefused(table.name, {
+      kind: "change_columns",
+      columns: altered.map((column) => column.name),
+    });
+  }
+}
+
+/** What an edit writes to a table's definition: the name and purpose it changes, and `columns` when it changes them. Null when it changes none. */
+function definitionChanges(
+  table: GuildTableLive,
+  shape: GuildTableShape,
+  columns: unknown,
+): CollectionChanges | null {
+  const changes: CollectionChanges = {
+    ...(shape.name !== table.name ? { name: shape.name } : {}),
+    ...(shape.purpose !== table.purpose ? { purpose: shape.purpose } : {}),
+    ...(columns !== undefined ? { columns } : {}),
+  };
+  return Object.keys(changes).length ? changes : null;
 }
 
 /** A guild table as an edit finds it: its name, its columns, its live record count, and its access list. */
