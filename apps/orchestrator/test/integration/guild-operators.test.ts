@@ -118,6 +118,22 @@ test("guild admins manage operators, and private guilds show only to operators",
       payload: { about: "anyone who sees an org guild can still edit it" },
     });
     assert.equal(memberAbout.statusCode, 200);
+    const textCap = await app.inject({
+      method: "PUT",
+      url: `/api/guilds/${privateId}`,
+      headers: { ...OWNER, ...json },
+      payload: { max_agents: "3" },
+    });
+    assert.equal(textCap.statusCode, 422);
+    assert.deepEqual(textCap.json().detail[0].loc, ["body", "max_agents"]);
+    const numberedName = await app.inject({
+      method: "POST",
+      url: "/api/guilds",
+      headers: { ...OWNER, ...json },
+      payload: { name: 5 },
+    });
+    assert.equal(numberedName.statusCode, 422);
+    assert.deepEqual(numberedName.json().detail[0].loc, ["body", "name"]);
 
     const notMember = await app.inject({
       method: "PUT",
@@ -133,6 +149,14 @@ test("guild admins manage operators, and private guilds show only to operators",
       payload: { role: "owner" },
     });
     assert.equal(badRole.statusCode, 422);
+    const roleless = await app.inject({
+      method: "PUT",
+      url: `/api/guilds/${privateId}/operators/${String(teammate.id)}`,
+      headers: { ...OWNER, ...json },
+      payload: {},
+    });
+    assert.equal(roleless.statusCode, 422);
+    assert.deepEqual(roleless.json().detail[0].loc, ["body", "role"]);
 
     const invited = await app.inject({
       method: "PUT",

@@ -46,7 +46,12 @@ export type GuildServices = {
 };
 
 /** A new guild as it is asked for, before validation. */
-export type GuildRequest = { name: string; about: string; description: string; visibility: unknown };
+export type GuildRequest = {
+  name: string;
+  about: string;
+  description: string;
+  visibility: string | null | undefined;
+};
 
 /** A new guild as it is written: its row, and the slug of the organisation its notes folder goes under. */
 export type GuildDraft = { guild: NewGuild; orgSlug: string };
@@ -56,10 +61,10 @@ export type GuildSettingsPatch = {
   name?: string;
   about?: string;
   description?: string;
-  maxAgents?: unknown;
-  gitAuthorEmail?: unknown;
-  visibility?: unknown;
-  routinesEnabled?: unknown;
+  maxAgents?: number;
+  gitAuthorEmail?: string | null;
+  visibility?: string | null;
+  routinesEnabled?: boolean;
 };
 
 /** The organisation a guild is created in. */
