@@ -937,11 +937,6 @@
       "count": 2
     }
   },
-  "src/net/http.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 3
-    }
-  },
   "src/notes/store.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 3
