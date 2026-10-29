@@ -301,43 +301,58 @@ of an extension or a relative path that leaves this repository.
 
 Every package also runs the limits of the
 [code guidelines](code-guidelines.md#functions) on its source,
-tests and stories excepted: `complexity` at 11, `max-depth` at 3,
-`max-lines` at 800, a warning from `max-params` above 4 parameters
-and an error from `@typescript-eslint/max-params` above 5. It
-refuses every type assertion except `as const`. The orchestrator
-also refuses an import of `fastify` outside `http/`, the roots, the
-extension points and the observability hooks; a value import of
-`db/` from `http/`; an import from `db/` of anything outside `db/`
-and `lib/`; and an import from `lib/` of anything outside `lib/`.
-Errors that predate
+tests and stories excepted, as `complexity`, `max-depth`,
+`max-lines`, `max-params` (a warning) and
+`@typescript-eslint/max-params`, and refuses every type assertion
+except `as const`. The orchestrator also refuses an import of
+`fastify` outside `http/`, the roots, the extension points and the
+observability hooks; a value import of `db/` from `http/`; an
+import from `db/` of anything outside `db/` and `lib/`; and an
+import from `lib/` of anything outside `lib/`. Errors that predate
 the rules are recorded in the package's `eslint-suppressions.json`
-(ESLint bulk suppressions). Suppressions cover errors only, so a
-suppressed function with 6 or more parameters still shows the
-warning. Lint fails on an error that is not in the file, and on an
-entry that no longer matches an error, so a file can only improve.
-Warnings do not fail lint. After a fix,
+(ESLint bulk suppressions). Lint fails on an error that is not in
+the file, and on an entry that no longer matches an error, so the
+list only shrinks; after a fix,
 `pnpm exec eslint <lint args> --prune-suppressions` removes the
-cleared entries.
+cleared entries. Warnings do not fail lint.
 
 Prettier formats with semicolons, double quotes, trailing
 commas, and a width of 100 (`pnpm --filter <package> format`).
 
-The orchestrator also keeps its import graph from gaining a cycle
-(`pnpm --filter @guildsrun/orchestrator cycles`, the `import-cycles`
-step of the check). `scripts/import-cycles.ts` reads the value
-imports of `src/` (`import type` does not count), finds the files
-that import each other, directly or through others, and the domains
-(directories under `src/`) that do, and compares them with
-`import-cycles.json`. The check fails when a file or a domain is in a
-cycle and is not in that file. A file or a domain that leaves a cycle
-is reported, and `pnpm --filter @guildsrun/orchestrator cycles --write`
-rewrites the file from the tree as it is. Like
-`eslint-suppressions.json`, it only shrinks.
+The orchestrator's import graph gains no cycle:
+`pnpm --filter @guildsrun/orchestrator cycles`, the `import-cycles`
+step of the check, fails when a file or a domain (a directory under
+`src/`) sits in a cycle of value imports and `import-cycles.json`
+does not list it. `cycles --write` rewrites that file from the tree
+as it is, and like `eslint-suppressions.json` it only shrinks.
 
 ## Documentation
 
 The documentation is Markdown under `docs/`, published at
 [docs.guilds.run](https://docs.guilds.run). `docs/README.md` is the
-index and the one place the structure is kept. GitHub shows it on
+index and the one place the structure is kept; GitHub shows it on
 the repository page. `docs/philosophy.md` is the motivation and the
-principles.
+principles. Every page describes the current state only, in short,
+simple sentences, and a change to behaviour updates the page that
+describes it in the same commit.
+
+A page under `docs/getting-started/` is a tutorial for someone who
+has never seen the product: steps in the imperative, one action per
+sentence, each step ending with what the reader sees, every new
+word defined or linked before it is used, and no parentheses, file
+paths, or HTTP verbs. Depth lives on a concept page, reached by a
+link.
+
+A page under **Concepts** explains one concept. It opens with one
+or two plain paragraphs on what it is and how it relates to the
+concepts next to it, then **Why it exists** or **When you use it**,
+**How it works** (the mental model, with a diagram where a flow is
+easier seen than read), **In the app**, **Rules and limits** (a
+short table), and **Reference** (complete and exact: fields, keys,
+routes, storage, edge cases), in that order. A heading with nothing
+to say is left out, and everything above **Reference** reads on its
+own.
+
+Every other page is reference, `docs/operations/` included:
+complete and exact, in the same sentence style where it does not
+cost precision.

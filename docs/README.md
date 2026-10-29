@@ -62,7 +62,7 @@ These pages are also published at
 | Use it | [Get started](#get-started), then [Concepts](#concepts) |
 | Run it for other people | [Run the box](#run-the-box) |
 | Reach Gmail, Drive, or GitHub from an agent | [Tools and connectors](#tools-and-connectors) |
-| Ask for a feature | [Feature requests](CONTRIBUTING.md#feature-requests) |
+| Report a bug or ask for a feature | [Issues](CONTRIBUTING.md#issues) |
 | Change the code | [Architecture](#architecture), then [Contributing](#contributing) |
 
 ## Run the box
@@ -211,7 +211,7 @@ For the people who change the code.
 
 ## Contributing
 
-- [Contributing](CONTRIBUTING.md) — licence, feature requests,
+- [Contributing](CONTRIBUTING.md) — licence, issues,
   versions, pull requests
 - [Development](contributing/development.md) — the development
   stack, Make targets, tests, the check, CI
