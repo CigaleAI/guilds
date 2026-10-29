@@ -8,6 +8,12 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** Creating a script refuses a `name`, `description` or
+`source` that is not a string with a 422 that names the field, before
+the request's user is identified. Before, those were refused by the
+script catalog's own checks, and a body missing several of them named
+each of them.
+
 **No impact.** Creating or changing a routine refuses, with a 422 that
 names the field and before the request's user is identified: a
 `description` or `instruction` that is not a string, a `cron` that is

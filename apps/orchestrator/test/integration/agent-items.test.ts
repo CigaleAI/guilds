@@ -68,6 +68,14 @@ test(
         });
         assert.equal(created.statusCode, 201, created.body);
       }
+      const sourceless = await app.inject({
+        method: "POST",
+        url: `${agent}/scripts`,
+        headers: JSON_OWNER,
+        payload: { ...script, name: "lines", source: ["print(1)"] },
+      });
+      assert.equal(sourceless.statusCode, 422);
+      assert.deepEqual(sourceless.json().detail[0].loc, ["body", "source"]);
       const listed = await app.inject({ method: "GET", url: `${agent}/scripts`, headers: OWNER });
       assert.deepEqual(
         listed
