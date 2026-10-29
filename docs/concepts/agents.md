@@ -407,6 +407,11 @@ Choice.
 | `DELETE /api/agents/:id` | deletes the agent | 204 | 409 generating; 404 |
 | `GET /api/guilds/:id/embed-status` | each agent's `broken_embeds` | 200 | |
 
+`name`, `focus`, `wake_triggers`, `avatar_shape` and `avatar_color`
+are strings, and `machine_id` a string or null; a field of another
+type is 422 naming it. `config` is checked by the agent's config
+rules.
+
 `machine_id` on create or update places or moves the agent
 ([Machines](machines.md)). Placement refuses a full machine (409
 `machine <name> is full`) and a machine below what the agent needs
