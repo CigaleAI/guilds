@@ -119,6 +119,26 @@ test("the catalog fetches on the first read, again after an hour, and keeps the 
   assert.equal(calls.length, 3, "concurrent reads share one fetch");
 });
 
+test("a feed that is not the models.dev shape projects to empty providers, and a row with no id is dropped", () => {
+  assert.deepEqual(projectModelsDevFeed(["openai"], ["openai"]), { openai: { id: "openai", models: {} } });
+  assert.deepEqual(projectModelsDevFeed({ openai: "x" }, ["openai"]), { openai: { id: "openai", models: {} } });
+  assert.deepEqual(projectModelsDevFeed({ openai: { models: [] } }, ["openai"]), { openai: { id: "openai", models: {} } });
+  const projected = projectModelsDevFeed(
+    {
+      openai: {
+        models: {
+          bare: null,
+          listed: ["gpt-5"],
+          nameless: { id: "" },
+          loose: { id: "loose", name: 5, modalities: "text", limit: [], cost: { input: "1" } },
+        },
+      },
+    },
+    ["openai"],
+  );
+  assert.deepEqual(projected.openai?.models, { loose: { id: "loose", cost: {} } });
+});
+
 test("the bundled snapshot carries every models.dev provider of the table", () => {
   const snapshot = readBundledSnapshot();
   assert.match(snapshot.fetched_at, /^\d{4}-\d{2}-\d{2}$/);

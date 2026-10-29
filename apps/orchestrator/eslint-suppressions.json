@@ -767,9 +767,6 @@
     }
   },
   "src/llm/anthropic.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 6
-    },
     "complexity": {
       "count": 1
     },
@@ -810,9 +807,6 @@
     }
   },
   "src/llm/models-dev.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 2
-    },
     "complexity": {
       "count": 2
     }

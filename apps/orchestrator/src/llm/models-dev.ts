@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { hereDir } from "../lib/paths.js";
+import { isPlainObject } from "./payload.js";
 import { catalogModelId, type ProviderDef } from "./providers.js";
 import type { CatalogEntry } from "./entries.js";
 
@@ -34,10 +35,6 @@ export type ModelsDevSnapshot = { fetched_at: string; providers: ModelsDevFeed }
 
 const SNAPSHOT_FILE = "models-dev.snapshot.json";
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
-}
-
 function asStringList(value: unknown): string[] | undefined {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : undefined;
 }
@@ -48,13 +45,13 @@ function asNumber(value: unknown): number | undefined {
 
 /** One feed row reduced to the fields the catalog reads; null when it has no id. */
 export function projectModelsDevRow(raw: unknown): ModelsDevModel | null {
-  const row = asRecord(raw);
+  const row = isPlainObject(raw) ? raw : null;
   if (!row || typeof row.id !== "string" || !row.id) {
     return null;
   }
-  const modalities = asRecord(row.modalities);
-  const limit = asRecord(row.limit);
-  const cost = asRecord(row.cost);
+  const modalities = isPlainObject(row.modalities) ? row.modalities : null;
+  const limit = isPlainObject(row.limit) ? row.limit : null;
+  const cost = isPlainObject(row.cost) ? row.cost : null;
   const projected: ModelsDevModel = { id: row.id };
   if (typeof row.name === "string") projected.name = row.name;
   if (typeof row.attachment === "boolean") projected.attachment = row.attachment;
@@ -84,11 +81,11 @@ export function projectModelsDevRow(raw: unknown): ModelsDevModel | null {
 
 /** The feed reduced to the given providers and the fields the catalog reads. */
 export function projectModelsDevFeed(feed: unknown, providerIds: readonly string[]): ModelsDevFeed {
-  const root = asRecord(feed) ?? {};
+  const root = isPlainObject(feed) ? feed : {};
   const projected: ModelsDevFeed = {};
   for (const id of providerIds) {
-    const provider = asRecord(root[id]);
-    const models = asRecord(provider?.models) ?? {};
+    const provider = root[id];
+    const models = isPlainObject(provider) && isPlainObject(provider.models) ? provider.models : {};
     const rows: Record<string, ModelsDevModel> = {};
     for (const [key, raw] of Object.entries(models)) {
       const row = projectModelsDevRow(raw);
@@ -137,10 +134,10 @@ export function entryFromModelsDev(provider: ProviderDef, row: ModelsDevModel): 
 
 /** The snapshot shipped beside this module. */
 export function readBundledSnapshot(): ModelsDevSnapshot {
-  const raw = JSON.parse(readFileSync(path.join(hereDir(import.meta.url), SNAPSHOT_FILE), "utf8")) as unknown;
-  const root = asRecord(raw);
-  const fetchedAt = typeof root?.fetched_at === "string" ? root.fetched_at : "unknown";
-  const providers = asRecord(root?.providers) ?? {};
+  const raw: unknown = JSON.parse(readFileSync(path.join(hereDir(import.meta.url), SNAPSHOT_FILE), "utf8"));
+  const root = isPlainObject(raw) ? raw : {};
+  const fetchedAt = typeof root.fetched_at === "string" ? root.fetched_at : "unknown";
+  const providers = isPlainObject(root.providers) ? root.providers : {};
   return { fetched_at: fetchedAt, providers: projectModelsDevFeed(providers, Object.keys(providers)) };
 }
 
