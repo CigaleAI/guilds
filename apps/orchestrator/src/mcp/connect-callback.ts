@@ -13,7 +13,6 @@ import {
   ensureClient,
   exchangeCode,
   isGithubApp,
-  oauthDatabase,
   pendingOauth,
   pendingReplaces,
   tokenPayload,
@@ -278,7 +277,7 @@ async function completeBrowserCallback(
   }
   try {
     const [verifier, redirectUri] = pendingOauth(decrypt(services, row));
-    const [discovery, client] = await ensureClient(oauthDatabase(services.db), server, redirectUri);
+    const [discovery, client] = await ensureClient(services.db, server, redirectUri);
     const tokens = await exchangeCode(discovery, {
       code,
       codeVerifier: verifier,
