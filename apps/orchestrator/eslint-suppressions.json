@@ -608,11 +608,6 @@
       "count": 1
     }
   },
-  "src/studio/tables.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/studio/tool-usage.ts": {
     "complexity": {
       "count": 1

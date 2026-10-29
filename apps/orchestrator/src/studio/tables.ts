@@ -1,25 +1,35 @@
 import { createHash } from "node:crypto";
 import { loadOperatorActor } from "../artifacts/actors.js";
 import { ArtifactError } from "../artifacts/errors.js";
-import { columnCatalog, describeColumn, type ColumnChange } from "../artifacts/columns.js";
+import { columnCatalog, describeColumn } from "../artifacts/columns.js";
 import { listRecords } from "../artifacts/records.js";
 import {
   applyCollectionStep,
   type CollectionLookup,
   type CollectionStep,
   guildTable,
+  GuildTableBaseRefused,
+  type GuildTableCreatePlan,
+  type GuildTableCreateRequest,
   guildTableEditEffects,
+  type GuildTableEditPlan,
+  type GuildTableEditRequest,
   type GuildTableEffect,
+  GuildTableNameTaken,
+  type GuildTablePlan,
+  type GuildTableRequest,
+  type GuildTableShape,
   guildTables,
+  OrgTableChangeRefused,
+  type OrgTableRefusal,
+  planGuildTableChange,
 } from "../artifacts/guild-tables.js";
-import { planCollection, planCollectionChange } from "../artifacts/collections.js";
 import {
   effectiveAccess,
   type GuildAccess,
   type GuildAccessProposal,
   isAgentRowMode,
   isGuildRowMode,
-  planGuildAccess,
 } from "../artifacts/access-lists.js";
 import type { AccessEntry, ArtifactActor } from "../artifacts/types.js";
 import type { CollectionColumn } from "../db/schema/index.js";
@@ -71,17 +81,8 @@ type Table = {
   outside: string[];
 };
 
-/** A table as a proposal leaves it, or as it stands. */
-type Shape = {
-  name: string;
-  purpose: string;
-  guildId: string | null;
-  guildName: string | null;
-  columns: CollectionColumn[];
-  renamed: Array<{ from: string; to: string }>;
-  access: GuildAccess;
-  outside: string[];
-};
+/** A table as a proposal leaves it, or as it stands, with the owning guild's name and the rows outside the source guild. */
+type Shape = GuildTableShape & { guildName: string | null; outside: string[] };
 
 /**
  * A table proposal checked against the live organisation: what the operator
@@ -107,21 +108,28 @@ type TableContext = {
   members: Member[];
 };
 
+/** An artifacts refusal as Studio reports it to the coach. */
 function tableFailure(error: unknown): never {
+  if (error instanceof GuildTableBaseRefused) {
+    throw error.base === null
+      ? new StudioUnprocessableError(
+          "base_updated_at is required: the updated_at studio_get_collection returned",
+        )
+      : new StudioConflictError(
+          `base_updated_at ${error.base} is stale; ${error.tableName} was updated at ${error.updatedAt}. Read it again with studio_get_collection and rebuild the edit.`,
+        );
+  }
+  if (error instanceof OrgTableChangeRefused) {
+    throw new StudioUnprocessableError(
+      `${error.tableName} ${ORG_TABLE_LIMIT}${orgTableKept(error.refusal)}`,
+    );
+  }
   if (error instanceof ArtifactError) {
     throw error.status === 409
       ? new StudioConflictError(error.message)
       : new StudioUnprocessableError(error.message);
   }
   throw error;
-}
-
-function valid<T>(read: () => T): T {
-  try {
-    return read();
-  } catch (error) {
-    tableFailure(error);
-  }
 }
 
 function hashOf(value: unknown): string {
@@ -207,33 +215,16 @@ function reachOf(guildId: string | null): TableReach {
 const ORG_TABLE_LIMIT =
   "is an organisation table: Studio adds columns to it and changes this guild's access; other changes are made on the Tables page";
 
-/** An organisation table keeps its name, purpose, and every column as it is; new columns may join. */
-function assertOrgTableEdit(
-  table: Table,
-  name: string,
-  purpose: string,
-  change: ColumnChange | null,
-): void {
-  if (table.guildId !== null) return;
-  if (name !== table.name || purpose !== table.purpose) {
-    throw new StudioUnprocessableError(`${table.name} ${ORG_TABLE_LIMIT}`);
-  }
-  if (!change) return;
-  if (change.removed.length || change.renamed.length) {
-    throw new StudioUnprocessableError(
-      `${table.name} ${ORG_TABLE_LIMIT}; keep ${[...change.removed, ...change.renamed.map((item) => item.from)].join(", ")}`,
-    );
-  }
-  const next = new Map(change.columns.map((column) => [column.name, column]));
-  const kept = change.columns.filter((column) => table.columns.some((previous) => previous.name === column.name));
-  const altered = table.columns.filter(
-    (previous, index) =>
-      JSON.stringify(next.get(previous.name)) !== JSON.stringify(previous) || kept[index]?.name !== previous.name,
-  );
-  if (altered.length) {
-    throw new StudioUnprocessableError(
-      `${table.name} ${ORG_TABLE_LIMIT}; keep ${altered.map((column) => column.name).join(", ")} unchanged and in order`,
-    );
+/** What Studio tells the coach to keep on an organisation table, after what Studio may change on one. */
+function orgTableKept(refusal: OrgTableRefusal): string {
+  switch (refusal.kind) {
+    case "delete":
+    case "rename_or_repurpose":
+      return "";
+    case "drop_columns":
+      return `; keep ${refusal.columns.join(", ")}`;
+    case "change_columns":
+      return `; keep ${refusal.columns.join(", ")} unchanged and in order`;
   }
 }
 
@@ -400,11 +391,149 @@ function targetOf(id: string | null, name: string, guildId: string | null, displ
   };
 }
 
+/** A create read from its arguments: the table it defines for the source guild or the organisation, and the rows it proposes. */
+async function createRequest(
+  tc: TableContext,
+  args: Record<string, unknown>,
+): Promise<GuildTableCreateRequest> {
+  const scopeArg = args.scope ?? "guild";
+  if (scopeArg !== "guild" && scopeArg !== "org") {
+    throw new StudioUnprocessableError("scope must be guild or org");
+  }
+  const name = argString(args, "name");
+  return {
+    action: "create",
+    orgId: tc.scope.orgId,
+    guildId: tc.scope.sourceGuildId,
+    collection: {
+      name,
+      purpose: argString(args, "purpose"),
+      columns: args.columns,
+      guildId: scopeArg === "guild" ? tc.scope.sourceGuildId : null,
+    },
+    access: parseAccessProposal(tc, args.access),
+    isNameTaken: (await loadTable(tc, { name })) !== null,
+  };
+}
+
 /**
- * Checks what a table tool proposes against the live organisation. A request
- * (`recorded` null) names the table as the coach read it: an edit must carry
- * the `updated_at` it was built on and change something. A review finds the
- * table by the id its request recorded.
+ * An edit of `table` read from its arguments: the definition change, the rows it proposes, and
+ * where it stands. A request (`recorded` null) names the `updated_at` the coach read.
+ */
+async function editRequest(
+  tc: TableContext,
+  table: Table,
+  args: Record<string, unknown>,
+  recorded: Record<string, unknown> | null,
+): Promise<GuildTableEditRequest<Table>> {
+  return {
+    action: "edit",
+    guildId: tc.scope.sourceGuildId,
+    table,
+    changes: {
+      ...(args.name !== undefined ? { name: String(args.name) } : {}),
+      ...(args.purpose !== undefined ? { purpose: String(args.purpose) } : {}),
+      ...(args.columns !== undefined ? { columns: args.columns } : {}),
+    },
+    access: parseAccessProposal(tc, args.access),
+    isNameTaken:
+      args.name !== undefined && (await loadTable(tc, { name: String(args.name) })) !== null,
+    origin:
+      recorded === null
+        ? { kind: "new", baseUpdatedAt: argString(args, "base_updated_at").trim() || null }
+        : { kind: "stored" },
+  };
+}
+
+/**
+ * What a table tool asks, read from its arguments. A request (`recorded` null) names the table as
+ * the coach read it; a review finds it by the id its request recorded.
+ */
+async function tableRequest(
+  tc: TableContext,
+  action: TableAction,
+  args: Record<string, unknown>,
+  recorded: Record<string, unknown> | null,
+): Promise<GuildTableRequest<Table>> {
+  if (action === "create") {
+    return createRequest(tc, args);
+  }
+  const table =
+    recorded === null
+      ? await loadTable(tc, { name: argString(args, "collection").trim() })
+      : await loadTable(tc, { id: String(recorded.collection_id ?? "") });
+  if (!table) {
+    throw new StudioUnprocessableError(
+      recorded === null
+        ? `unknown table ${argString(args, "collection") || "(none named)"}; list the tables with studio_list_collections`
+        : "the table no longer exists",
+    );
+  }
+  return action === "delete" ? { action, table } : editRequest(tc, table, args, recorded);
+}
+
+function createReview(tc: TableContext, plan: GuildTableCreatePlan): TableReview {
+  const { name, guildId } = plan.shape;
+  const shape: Shape = { ...plan.shape, guildName: guildId ? tc.guildName : null, outside: [] };
+  return {
+    action: "create",
+    title: `Create table ${name}`,
+    target: targetOf(null, name, guildId, plan.href),
+    baseHash: hashOf(["absent", name]),
+    proposedHash: shapeHash(shape),
+    live: "",
+    proposed: render(tc, shape),
+    effects: [
+      guildId
+        ? `Creates ${name} as ${tc.guildName}'s own table, reached through the access listed.`
+        : `Creates ${name} as an organisation table that every agent of the organisation reads, reached further through the access listed.`,
+    ],
+    plan: plan.step,
+  };
+}
+
+function editReview(tc: TableContext, plan: GuildTableEditPlan<Table>): TableReview {
+  const { table } = plan;
+  const shape: Shape = { ...shapeOf(table), ...plan.shape };
+  return {
+    action: "edit",
+    title: `Edit table ${table.name}`,
+    target: targetOf(table.id, table.name, table.guildId, table.displayPath),
+    baseHash: tableHash(table),
+    proposedHash: shapeHash(shape),
+    live: render(tc, shapeOf(table)),
+    proposed: render(tc, shape),
+    effects: guildTableEditEffects(table, tc.scope.sourceGuildId, {
+      name: shape.name,
+      columns: plan.columnChange,
+    }).map(effectSentence),
+    plan: plan.step,
+  };
+}
+
+function deleteReview(tc: TableContext, table: Table, step: CollectionStep): TableReview {
+  return {
+    action: "delete",
+    title: `Delete table ${table.name}`,
+    target: targetOf(table.id, table.name, table.guildId, table.displayPath),
+    baseHash: tableHash(table),
+    proposedHash: hashOf(["delete", table.id]),
+    live: render(tc, shapeOf(table)),
+    proposed: "",
+    effects: [
+      `Deletes ${table.name} with its ${plural(table.count, "record")}; its access list goes with it and no agent reaches it again.`,
+      ...(table.outside.length
+        ? [`Reached outside this guild too: ${table.outside.join(", ")}.`]
+        : []),
+    ],
+    plan: step,
+  };
+}
+
+/**
+ * Checks what a table tool proposes against the live organisation with `planGuildTableChange`, and
+ * renders it for the operator. A request (`recorded` null) to create a table whose name is taken
+ * is pointed at an edit instead.
  */
 export async function reviewTable(
   scope: EditScope,
@@ -413,158 +542,26 @@ export async function reviewTable(
   recorded: Record<string, unknown> | null,
 ): Promise<TableReview> {
   const tc = await tableContext(scope);
-  const requesting = recorded === null;
-
-  if (action === "create") {
-    const scopeArg = args.scope ?? "guild";
-    if (scopeArg !== "guild" && scopeArg !== "org") {
-      throw new StudioUnprocessableError("scope must be guild or org");
-    }
-    const guildId = scopeArg === "guild" ? scope.sourceGuildId : null;
-    const proposal = parseAccessProposal(tc, args.access);
-    const checked = valid(() =>
-      planCollection(scope.orgId, {
-        name: argString(args, "name"),
-        purpose: argString(args, "purpose"),
-        columns: args.columns,
-      }),
-    );
-    const { name, purpose, columns } = checked;
-    if (await loadTable(tc, { name })) {
+  const request = await tableRequest(tc, action, args, recorded);
+  let plan: GuildTablePlan<Table>;
+  try {
+    plan = planGuildTableChange(request);
+  } catch (error) {
+    if (error instanceof GuildTableNameTaken && request.action === "create" && recorded === null) {
       throw new StudioConflictError(
-        `a table named ${name} already exists${requesting ? "; change it with studio_edit_collection action edit" : ""}`,
+        `${error.message}; change it with studio_edit_collection action edit`,
       );
     }
-    const { access, rowChanges } = planGuildAccess(
-      { guild: guildId ? "write" : null, org: guildId ? null : "read", agents: new Map() },
-      scope.sourceGuildId,
-      proposal,
-    );
-    const shape: Shape = {
-      name,
-      purpose,
-      guildId,
-      guildName: guildId ? tc.guildName : null,
-      columns,
-      renamed: [],
-      access,
-      outside: [],
-    };
-    return {
-      action,
-      title: `Create table ${name}`,
-      target: targetOf(null, name, guildId, checked.href),
-      baseHash: hashOf(["absent", name]),
-      proposedHash: shapeHash(shape),
-      live: "",
-      proposed: render(tc, shape),
-      effects: [
-        guildId
-          ? `Creates ${name} as ${tc.guildName}'s own table, reached through the access listed.`
-          : `Creates ${name} as an organisation table that every agent of the organisation reads, reached further through the access listed.`,
-      ],
-      plan: { action, collection: { name, purpose, columns, guildId }, access: rowChanges },
-    };
+    tableFailure(error);
   }
-
-  const table =
-    recorded === null
-      ? await loadTable(tc, { name: argString(args, "collection").trim() })
-      : await loadTable(tc, { id: String(recorded.collection_id ?? "") });
-  if (!table) {
-    throw new StudioUnprocessableError(
-      requesting
-        ? `unknown table ${argString(args, "collection") || "(none named)"}; list the tables with studio_list_collections`
-        : "the table no longer exists",
-    );
+  switch (plan.action) {
+    case "create":
+      return createReview(tc, plan);
+    case "edit":
+      return editReview(tc, plan);
+    case "delete":
+      return deleteReview(tc, plan.table, plan.step);
   }
-  const target = targetOf(table.id, table.name, table.guildId, table.displayPath);
-
-  if (action === "delete") {
-    if (table.guildId === null) {
-      throw new StudioUnprocessableError(`${table.name} ${ORG_TABLE_LIMIT}`);
-    }
-    return {
-      action,
-      title: `Delete table ${table.name}`,
-      target,
-      baseHash: tableHash(table),
-      proposedHash: hashOf(["delete", table.id]),
-      live: render(tc, shapeOf(table)),
-      proposed: "",
-      effects: [
-        `Deletes ${table.name} with its ${plural(table.count, "record")}; its access list goes with it and no agent reaches it again.`,
-        ...(table.outside.length
-          ? [`Reached outside this guild too: ${table.outside.join(", ")}.`]
-          : []),
-      ],
-      plan: { action, id: table.id },
-    };
-  }
-
-  const proposal = parseAccessProposal(tc, args.access);
-  if (requesting) {
-    const base = argString(args, "base_updated_at").trim();
-    if (!base) {
-      throw new StudioUnprocessableError(
-        "base_updated_at is required: the updated_at studio_get_collection returned",
-      );
-    }
-    if (base !== table.updatedAt) {
-      throw new StudioConflictError(
-        `base_updated_at ${base} is stale; ${table.name} was updated at ${table.updatedAt}. Read it again with studio_get_collection and rebuild the edit.`,
-      );
-    }
-  }
-  const { name, purpose, columns: change } = valid(() =>
-    planCollectionChange(table, {
-      ...(args.name !== undefined ? { name: String(args.name) } : {}),
-      ...(args.purpose !== undefined ? { purpose: String(args.purpose) } : {}),
-      ...(args.columns !== undefined ? { columns: args.columns } : {}),
-    }),
-  );
-  assertOrgTableEdit(table, name, purpose, change);
-  if (name !== table.name && (await loadTable(tc, { name }))) {
-    throw new StudioConflictError(`a table named ${name} already exists`);
-  }
-  const { access, rowChanges } = planGuildAccess(table.access, scope.sourceGuildId, proposal);
-  const shape: Shape = {
-    ...shapeOf(table),
-    name,
-    purpose,
-    columns: change ? change.columns : table.columns,
-    renamed: change?.renamed ?? [],
-    access,
-  };
-  const columnsChanged = JSON.stringify(shape.columns) !== JSON.stringify(table.columns);
-  const definitionChanged = name !== table.name || purpose !== table.purpose || columnsChanged;
-  if (requesting && !definitionChanged && !rowChanges.length) {
-    throw new StudioUnprocessableError("the proposal matches the live table; nothing to change");
-  }
-  return {
-    action,
-    title: `Edit table ${table.name}`,
-    target,
-    baseHash: tableHash(table),
-    proposedHash: shapeHash(shape),
-    live: render(tc, shapeOf(table)),
-    proposed: render(tc, shape),
-    effects: guildTableEditEffects(table, scope.sourceGuildId, { name, columns: columnsChanged ? change : null }).map(
-      effectSentence,
-    ),
-    plan: {
-      action,
-      id: table.id,
-      changes: definitionChanged
-        ? {
-            ...(name !== table.name ? { name } : {}),
-            ...(purpose !== table.purpose ? { purpose } : {}),
-            ...(columnsChanged ? { columns: args.columns } : {}),
-          }
-        : null,
-      access: rowChanges,
-    },
-  };
 }
 
 /** Writes a reviewed proposal as the operator: the table first, then each access row it changes. */

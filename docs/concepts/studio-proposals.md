@@ -386,9 +386,9 @@ resolution is in its metadata.
 |---|---|
 | `apps/orchestrator/src/studio/edits.ts` | Edit, note, and guild requests: review and apply |
 | `apps/orchestrator/src/studio/access.ts` | Access requests |
-| `apps/orchestrator/src/studio/tables.ts` | Collection requests and collection evidence |
+| `apps/orchestrator/src/studio/tables.ts` | Collection requests read from the coach's arguments, their review and its wording, and collection evidence |
+| `apps/orchestrator/src/artifacts/guild-tables.ts` | `planGuildTableChange`: the rules a collection request follows and what it writes; `guildTableEditEffects`: what a collection edit does to its records and readers |
 | `apps/orchestrator/src/artifacts/access-lists.ts` | `planGuildAccess`: the access rows a collection request changes |
-| `apps/orchestrator/src/artifacts/guild-tables.ts` | `guildTableEditEffects`: what a collection edit does to its records and readers |
 | `apps/orchestrator/src/studio/routines.ts` | Routine requests |
 | `apps/orchestrator/src/studio/connections.ts` | Connection grants and the read-only proxy |
 | `apps/orchestrator/src/connectors/servers.ts` | `isReadOnlyRemote` |
