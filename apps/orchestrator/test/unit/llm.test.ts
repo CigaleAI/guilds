@@ -26,6 +26,7 @@ import {
   type ModelEvent,
   type ReasoningDetail,
 } from "../../src/llm/index.js";
+import { parseCompletionChunk } from "../../src/llm/client.js";
 
 function provider(id: string) {
   const definition = providerById(id);
@@ -233,6 +234,83 @@ test("listProviderModels rejects a 401 and names the provider", async () => {
   await assert.rejects(
     () => listProviderModels(provider("openai"), { apiKey: " ", fetch: async () => new Response("[]") }),
     /api_key is required/,
+  );
+});
+
+test("listProviderModels reads a bare list of ids, and returns nothing for a body of another shape", async () => {
+  const listing = (body: string) => async () => new Response(body, { status: 200 });
+  assert.deepEqual(
+    await listProviderModels(provider("kimi"), { apiKey: "sk", fetch: listing(JSON.stringify([" k3 ", { id: "k2" }, 5, { id: 7 }, ""])) }),
+    ["k3", "k2"],
+  );
+  for (const body of ["not json", "null", JSON.stringify({ data: "k3" }), JSON.stringify({ models: [{ id: "k3" }] })]) {
+    assert.deepEqual(await listProviderModels(provider("kimi"), { apiKey: "sk", fetch: listing(body) }), [], body);
+  }
+});
+
+test("parseCompletionChunk reads a chunk's text, reasoning, tool call pieces, finish reason, and usage", () => {
+  assert.deepEqual(
+    parseCompletionChunk({
+      id: "chatcmpl-1",
+      model: "served-model",
+      choices: [
+        {
+          index: 0,
+          delta: {
+            content: "hi",
+            reasoning_content: "weigh",
+            reasoning_details: [{ type: "reasoning.text", text: "weigh", index: 0 }],
+            tool_calls: [{ index: 1, id: "call_1", type: "function", function: { name: "read", arguments: "{}" } }],
+          },
+          finish_reason: "tool_calls",
+        },
+      ],
+      usage: { prompt_tokens: 10, completion_tokens: 4, prompt_tokens_details: { cached_tokens: 2 }, cache_read_input_tokens: 2, cost: 0.5 },
+    }),
+    {
+      id: "chatcmpl-1",
+      model: "served-model",
+      text: "hi",
+      reasoning: "weigh",
+      reasoningDetails: [{ type: "reasoning.text", text: "weigh", index: 0 }],
+      toolCalls: [{ index: 1, id: "call_1", type: "function", name: "read", arguments: "{}" }],
+      finishReason: "tool_calls",
+      usage: { prompt_tokens: 10, completion_tokens: 4, cache_read_input_tokens: 2, prompt_tokens_details: { cached_tokens: 2 }, cost: 0.5 },
+    },
+  );
+  assert.equal(parseCompletionChunk({ choices: [{ delta: { reasoning_details: [{ summary: "brief" }] } }] }).reasoning, "brief");
+});
+
+test("parseCompletionChunk leaves empty every field a malformed chunk holds in another shape", () => {
+  const empty = { id: null, model: null, text: "", reasoning: "", reasoningDetails: [], toolCalls: [], finishReason: null, usage: null };
+  for (const chunk of [null, "data", [], { choices: "x" }, { choices: [null] }, { choices: [{ delta: [] }] }]) {
+    assert.deepEqual(parseCompletionChunk(chunk), empty, JSON.stringify(chunk));
+  }
+  assert.deepEqual(
+    parseCompletionChunk({
+      id: 5,
+      model: "",
+      choices: [
+        {
+          delta: {
+            content: 7,
+            reasoning: 3,
+            reasoning_details: [null, "x", { index: "0", text: "dropped" }],
+            tool_calls: [null, { function: "read" }, { id: 1, function: { name: 2, arguments: "{}" } }],
+          },
+          finish_reason: 1,
+        },
+      ],
+      usage: { prompt_tokens: "10", prompt_tokens_details: { cached_tokens: "2" }, cost: null },
+    }),
+    {
+      ...empty,
+      toolCalls: [
+        { index: 0, id: "", type: "", name: "", arguments: "" },
+        { index: 0, id: "", type: "", name: "", arguments: "{}" },
+      ],
+      usage: {},
+    },
   );
 });
 

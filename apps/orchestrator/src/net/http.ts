@@ -40,11 +40,7 @@ export async function httpRequest(
   try {
     if (proxyUrl) {
       const dispatcher = new ProxyAgent(proxyUrl);
-      return (await undiciFetch(url, {
-        ...init,
-        signal: controller.signal,
-        dispatcher,
-      } as never)) as unknown as Response;
+      return await undiciFetch(url, { ...init, signal: controller.signal, dispatcher });
     }
     return await fetch(url, { ...init, signal: controller.signal });
   } finally {

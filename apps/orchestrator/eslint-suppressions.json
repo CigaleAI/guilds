@@ -767,9 +767,6 @@
     }
   },
   "src/llm/anthropic.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 6
-    },
     "complexity": {
       "count": 1
     },
@@ -783,17 +780,11 @@
     }
   },
   "src/llm/client.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 15
-    },
     "complexity": {
-      "count": 5
-    },
-    "max-depth": {
-      "count": 2
+      "count": 3
     },
     "no-restricted-syntax": {
-      "count": 4
+      "count": 3
     }
   },
   "src/llm/completion.ts": {
@@ -801,7 +792,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 2
+      "count": 1
     }
   },
   "src/llm/index.ts": {
@@ -810,9 +801,6 @@
     }
   },
   "src/llm/models-dev.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 2
-    },
     "complexity": {
       "count": 2
     }
@@ -947,11 +935,6 @@
   "src/net/endpoints.ts": {
     "complexity": {
       "count": 2
-    }
-  },
-  "src/net/http.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 3
     }
   },
   "src/notes/store.ts": {

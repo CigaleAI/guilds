@@ -1,5 +1,6 @@
 import type { AssistantMessage, CompletionMetadata, ReasoningDetail, ToolCall } from "../db/schema/index.js";
 import { catalogCostUsd } from "./cost.js";
+import { optionalString } from "./payload.js";
 import { parseModelId, type ProviderDef } from "./providers.js";
 
 // What a model call is on every provider's wire: the provider and the reasoning effort a model id
@@ -27,6 +28,27 @@ export type Completion = {
 };
 
 export type ModelEvent = ["delta", string] | ["reasoning", string] | ["done", Completion];
+
+/** The token counts and the price a provider reports for one completion. */
+export type ProviderUsage = {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  cache_read_input_tokens?: number;
+  prompt_tokens_details?: { cached_tokens?: number };
+  cost?: number;
+};
+
+/** A completion as a provider's response assembled it, before it is priced. */
+export type AssembledCompletion = {
+  id?: string | null;
+  model?: string | null;
+  usage?: ProviderUsage;
+  finish_reason?: string | null;
+  provider_request_id?: string | null;
+  provider_cost?: number;
+  reasoning?: string;
+  reasoning_details?: ReasoningDetail[];
+};
 
 export const MODEL_USER_AGENT = "guilds.run";
 
@@ -67,32 +89,13 @@ export function reasoningEffortForModel(model: string, level: string): string | 
   return level;
 }
 
-function optionalString(value: unknown): string | null {
-  return typeof value === "string" && value ? value : null;
-}
-
 /** The assistant message a completion returns: its text, and its tool calls when it made any. */
 export function assistantPayload(content: string, toolCalls: ToolCall[]): AssistantMessage {
   return { role: "assistant", content, ...(toolCalls.length ? { tool_calls: toolCalls } : {}) };
 }
 
 export function assistantMetadata(
-  assembled: {
-    id?: unknown;
-    model?: unknown;
-    usage?: {
-      prompt_tokens?: number;
-      completion_tokens?: number;
-      cache_read_input_tokens?: number;
-      prompt_tokens_details?: { cached_tokens?: number };
-      cost?: number;
-    };
-    finish_reason?: unknown;
-    provider_request_id?: unknown;
-    provider_cost?: unknown;
-    reasoning?: string;
-    reasoning_details?: ReasoningDetail[];
-  },
+  assembled: AssembledCompletion,
   options: { latencyMs: number; model: string },
 ): CompletionMetadata {
   const usage = assembled.usage ?? {};
@@ -102,7 +105,7 @@ export function assistantMetadata(
     output_tokens: Number(usage.completion_tokens || 0),
     cache_read_tokens: Number(cacheRead || 0),
   };
-  const providerCost = typeof assembled.provider_cost === "number" ? assembled.provider_cost : usage.cost;
+  const providerCost = assembled.provider_cost ?? usage.cost;
   const cost =
     typeof providerCost === "number"
       ? { cost_usd: providerCost, cost_source: "provider" as const }

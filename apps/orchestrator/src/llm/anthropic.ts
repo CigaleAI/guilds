@@ -11,20 +11,46 @@ import {
   reasoningEffortForModel,
   type ModelEvent,
 } from "./completion.js";
+import { isPlainObject } from "./payload.js";
 import type { ProviderDef } from "./providers.js";
 
 // A provider on Anthropic's Messages API. The run speaks OpenAI-style messages; a request is
 // translated into a Messages API body, and the response comes back as the same events and the
 // same assembled assistant payload every other provider yields.
 
-type Row = Record<string, unknown>;
 type UserBlock = Anthropic.TextBlockParam | Anthropic.ImageBlockParam | Anthropic.ToolResultBlockParam;
 type Effort = NonNullable<Anthropic.OutputConfig["effort"]>;
+type ImageMediaType = Anthropic.Base64ImageSource["media_type"];
 
 const PROMPT_CACHE_CONTROL = { type: "ephemeral" } as const;
+const EMPTY_INPUT_SCHEMA: Anthropic.Tool.InputSchema = { type: "object", properties: {} };
 
-function asRow(value: unknown): Row | null {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Row) : null;
+// Keyed by every value the SDK names, so a value the SDK adds fails the typecheck until it is listed.
+const IMAGE_MEDIA_TYPES: Record<ImageMediaType, true> = {
+  "image/jpeg": true,
+  "image/png": true,
+  "image/gif": true,
+  "image/webp": true,
+};
+const EFFORTS: Record<Effort, true> = { low: true, medium: true, high: true, xhigh: true, max: true };
+
+function isImageMediaType(value: string): value is ImageMediaType {
+  return Object.hasOwn(IMAGE_MEDIA_TYPES, value);
+}
+
+function isEffort(value: string): value is Effort {
+  return Object.hasOwn(EFFORTS, value);
+}
+
+/** A tool's parameters as the Messages API takes them: an object schema whose required names are strings. */
+function isInputSchema(schema: Record<string, unknown>): schema is Anthropic.Tool.InputSchema {
+  const required = schema.required;
+  return (
+    schema.type === "object" &&
+    (required === undefined ||
+      required === null ||
+      (Array.isArray(required) && required.every((name) => typeof name === "string")))
+  );
 }
 
 /** A Messages API client for a key: no retries, no credentials read from the environment. */
@@ -40,18 +66,18 @@ function messagesClient(options: { apiKey: string; baseURL: string; timeoutMs: n
   });
 }
 
-/** An OpenAI `image_url`: a data URL becomes a base64 source, an http(s) URL a URL source. */
+/**
+ * An OpenAI `image_url`: a data URL becomes a base64 source, an http(s) URL a URL source. A data URL
+ * of a media type the API does not take fails the call.
+ */
 function imageBlock(url: string): Anthropic.ImageBlockParam | null {
   const inline = /^data:([^;,]+);base64,(.*)$/s.exec(url);
   if (inline) {
-    return {
-      type: "image",
-      source: {
-        type: "base64",
-        media_type: inline[1] as Anthropic.Base64ImageSource["media_type"],
-        data: inline[2] ?? "",
-      },
-    };
+    const mediaType = inline[1] ?? "";
+    if (!isImageMediaType(mediaType)) {
+      throw new LLMError(`the Messages API does not take ${mediaType} images`);
+    }
+    return { type: "image", source: { type: "base64", media_type: mediaType, data: inline[2] ?? "" } };
   }
   return /^https?:\/\//.test(url) ? { type: "image", source: { type: "url", url } } : null;
 }
@@ -64,17 +90,19 @@ function contentBlocks(content: unknown): Array<Anthropic.TextBlockParam | Anthr
   if (!Array.isArray(content)) {
     return [];
   }
-  return content.flatMap((raw): Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam> => {
-    const part = asRow(raw);
-    if (part?.type === "text" && typeof part.text === "string" && part.text) {
+  return content.flatMap((part: unknown): Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam> => {
+    if (!isPlainObject(part)) {
+      return [];
+    }
+    if (part.type === "text" && typeof part.text === "string" && part.text) {
       return [{ type: "text", text: part.text }];
     }
-    const url = asRow(part?.image_url)?.url;
-    if (part?.type === "image_url" && typeof url === "string") {
-      const image = imageBlock(url);
-      return image ? [image] : [];
+    const image = isPlainObject(part.image_url) ? part.image_url : null;
+    if (part.type !== "image_url" || typeof image?.url !== "string") {
+      return [];
     }
-    return [];
+    const block = imageBlock(image.url);
+    return block ? [block] : [];
   });
 }
 
@@ -83,21 +111,21 @@ function toolUseInput(args: unknown): Record<string, unknown> {
     return {};
   }
   try {
-    return asRow(JSON.parse(args)) ?? {};
+    const input: unknown = JSON.parse(args);
+    return isPlainObject(input) ? input : {};
   } catch {
     return {};
   }
 }
 
-function assistantBlocks(message: Row): Array<Anthropic.TextBlockParam | Anthropic.ToolUseBlockParam> {
+function assistantBlocks(message: Record<string, unknown>): Array<Anthropic.TextBlockParam | Anthropic.ToolUseBlockParam> {
   const blocks: Array<Anthropic.TextBlockParam | Anthropic.ToolUseBlockParam> = contentBlocks(message.content).filter(
     (block): block is Anthropic.TextBlockParam => block.type === "text",
   );
-  const calls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
-  for (const raw of calls) {
-    const call = asRow(raw);
-    const fn = asRow(call?.function);
-    if (typeof call?.id !== "string" || typeof fn?.name !== "string") {
+  const calls: unknown[] = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+  for (const call of calls) {
+    const fn = isPlainObject(call) && isPlainObject(call.function) ? call.function : null;
+    if (!isPlainObject(call) || typeof call.id !== "string" || typeof fn?.name !== "string") {
       continue;
     }
     blocks.push({ type: "tool_use", id: call.id, name: fn.name, input: toolUseInput(fn.arguments) });
@@ -105,7 +133,7 @@ function assistantBlocks(message: Row): Array<Anthropic.TextBlockParam | Anthrop
   return blocks;
 }
 
-function toolResultBlock(message: Row): Anthropic.ToolResultBlockParam {
+function toolResultBlock(message: Record<string, unknown>): Anthropic.ToolResultBlockParam {
   const content = contentBlocks(message.content);
   return {
     type: "tool_result",
@@ -132,10 +160,10 @@ export function messagesFromHistory(history: Array<Record<string, unknown>>): {
     }
     const last = messages[messages.length - 1];
     if (last && last.role === role && Array.isArray(last.content)) {
-      last.content.push(...(blocks as Anthropic.ContentBlockParam[]));
+      last.content.push(...blocks);
       return;
     }
-    messages.push({ role, content: [...blocks] as Anthropic.ContentBlockParam[] });
+    messages.push({ role, content: [...blocks] });
   };
   for (const message of history) {
     const role = message.role;
@@ -155,17 +183,23 @@ export function messagesFromHistory(history: Array<Record<string, unknown>>): {
   return { system, messages };
 }
 
-/** An OpenAI tool schema as a Messages API tool. */
+/**
+ * An OpenAI tool schema as a Messages API tool; null when it names no function. Parameters that are
+ * not an object take none; an object that is not an object schema fails the call.
+ */
 function messagesTool(raw: unknown): Anthropic.Tool | null {
-  const fn = asRow(asRow(raw)?.function);
+  const fn = isPlainObject(raw) && isPlainObject(raw.function) ? raw.function : null;
   if (typeof fn?.name !== "string") {
     return null;
   }
-  const parameters = asRow(fn.parameters) ?? { type: "object", properties: {} };
+  const parameters = isPlainObject(fn.parameters) ? fn.parameters : EMPTY_INPUT_SCHEMA;
+  if (!isInputSchema(parameters)) {
+    throw new LLMError(`tool ${fn.name} has parameters that are not an object schema`);
+  }
   return {
     name: fn.name,
     ...(typeof fn.description === "string" && fn.description ? { description: fn.description } : {}),
-    input_schema: parameters as Anthropic.Tool.InputSchema,
+    input_schema: parameters,
   };
 }
 
@@ -174,8 +208,20 @@ function messagesToolChoice(choice: unknown): Anthropic.ToolChoice | null {
   if (choice === "auto") return { type: "auto" };
   if (choice === "none") return { type: "none" };
   if (choice === "required") return { type: "any" };
-  const name = asRow(asRow(choice)?.function)?.name;
-  return typeof name === "string" ? { type: "tool", name } : null;
+  const fn = isPlainObject(choice) && isPlainObject(choice.function) ? choice.function : null;
+  return typeof fn?.name === "string" ? { type: "tool", name: fn.name } : null;
+}
+
+/** The Messages API effort a thinking level asks for; null for none. An effort the API does not take fails the call. */
+function messagesEffort(model: string, level: string): Effort | null {
+  const effort = reasoningEffortForModel(model, level);
+  if (!effort) {
+    return null;
+  }
+  if (!isEffort(effort)) {
+    throw new LLMError(`the Messages API does not take the ${effort} effort`);
+  }
+  return effort;
 }
 
 /**
@@ -203,10 +249,10 @@ export function messagesRequestBody(options: {
   if (system.length) {
     body.system = system;
   }
-  const effort = reasoningEffortForModel(options.model, options.thinking_level ?? "none");
+  const effort = messagesEffort(options.model, options.thinking_level ?? "none");
   if (effort) {
     body.thinking = { type: "adaptive", display: "summarized" };
-    body.output_config = { effort: effort as Effort };
+    body.output_config = { effort };
   } else if (modelCatalog.entry(options.model)?.temperature !== false) {
     body.temperature = options.temperature;
   }
