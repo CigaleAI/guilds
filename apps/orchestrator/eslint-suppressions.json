@@ -736,9 +736,6 @@
     "@typescript-eslint/consistent-type-assertions": {
       "count": 2
     },
-    "@typescript-eslint/explicit-module-boundary-types": {
-      "count": 1
-    },
     "no-restricted-syntax": {
       "count": 1
     }

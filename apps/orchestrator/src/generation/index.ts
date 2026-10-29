@@ -20,7 +20,7 @@ import {
 import { runItem } from "../db/views.js";
 import { GroupChat, groupChatDatabase, type GroupDelivery, type GroupRunner } from "../groupchat/index.js";
 import type { GroupRouter } from "../groupchat/router.js";
-import { Issues, issuesDatabase } from "../issues/index.js";
+import { guildIssues, type Issues } from "../issues/index.js";
 import { sleep } from "../lib/event.js";
 import { coreModelCredentials, type ModelCredentialsProvider } from "../llm/credentials.js";
 import type { NotesStore } from "../notes/store.js";
@@ -89,7 +89,6 @@ function loopDatabase(db: Queryable) {
 function generationDatabase(db: Queryable) {
   return {
     ...groupChatDatabase(db),
-    ...issuesDatabase(db),
     ...activeGenerationsDatabase(db),
     ...runEventsDatabase(db),
     ...agentMachinesDatabase(db),
@@ -136,6 +135,7 @@ export type GenerationLoopServices = {
  */
 export type GenerationLoopDeps = GenerationLoopServices & {
   db: GenerationDatabase;
+  issues: Issues;
   schedules: Schedules;
   scripts: Scripts;
 };
@@ -189,7 +189,7 @@ export class GenerationLoop implements GroupRunner {
       router: groupRouter,
     });
     this.groupChat.bind(this);
-    this.issues = new Issues(db);
+    this.issues = services.issues;
     this.schedules = services.schedules;
     this.scripts = services.scripts;
     this.preparation = new RunPreparation({
@@ -583,6 +583,7 @@ export function generationLoop(
     {
       ...services,
       db: generationDatabase(db),
+      issues: guildIssues(db),
       schedules: agentSchedules(db),
       scripts: agentScripts(db),
     },

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { requireVisibleGuild } from "../guilds/access.js";
-import { Issues, issuesDatabase } from "../issues/index.js";
+import { guildIssues } from "../issues/index.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
 import { currentUser } from "./identity.js";
@@ -15,7 +15,7 @@ function resolverOf(user: UserRow): string {
 /** A guild's issues: listed, resolved together, and set open or resolved one at a time. */
 export async function registerIssueRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { db } = deps;
-  const issues = new Issues(issuesDatabase(db));
+  const issues = guildIssues(db);
 
   app.get("/api/guilds/:guild_id/issues", async (request) => {
     const user = await currentUser(db, request, deps);
