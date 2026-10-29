@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { buildApp } from "./app.js";
 import { ArtifactFiles } from "./artifacts/files.js";
 import { artifactStore } from "./artifacts/store.js";
-import { AttachmentService } from "./attachments/index.js";
+import { attachmentService } from "./attachments/index.js";
 import { FileBlobStore, MemoryBlobStore } from "./lib/blob-store.js";
 import { BuilderService } from "./builder/index.js";
 import { CapabilityService } from "./capabilities/index.js";
@@ -39,7 +39,6 @@ import { InstanceKeys } from "./instance/keys.js";
 import { installHarnessesOff } from "./coding/harnesses.js";
 import { refreshConnectorIntegrations, syncInstanceLogins } from "./connectors/instance.js";
 import { listMachinePlacements } from "./db/machines.js";
-import { attachmentDatabase } from "./attachments/store.js";
 import { generationArtifacts } from "./generation/prepare.js";
 
 export type Server = {
@@ -126,7 +125,7 @@ export async function createServer(
   const blobs =
     extensionBlobStore(extensions, { config }) ??
     (config.attachmentsRoot ? new FileBlobStore(config.attachmentsRoot) : new MemoryBlobStore());
-  const attachments = new AttachmentService(attachmentDatabase(db), blobs);
+  const attachments = attachmentService(db, blobs);
   const files = new ArtifactFiles(artifacts, blobs);
   // Agent runs, Studio sessions and Builder sessions share one cap on the generations in progress.
   const admission = new AdmissionCoordinator(config.maxConcurrentGenerations);

@@ -9,7 +9,13 @@ export {
 export type { AttachmentRow } from "./types.js";
 export type { AttachmentKind, AttachmentRef } from "../db/schema/index.js";
 export { sniffImage, sanitizeFilename } from "./sniff.js";
-export { AttachmentService, attachmentPayload, attachmentDisposition, inlineDisposition } from "./store.js";
+export {
+  AttachmentService,
+  attachmentService,
+  attachmentPayload,
+  attachmentDisposition,
+  inlineDisposition,
+} from "./store.js";
 export type { AttachmentDatabase } from "./store.js";
 export {
   attachmentsOf,

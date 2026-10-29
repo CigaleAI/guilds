@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { AttachmentService } from "../../src/attachments/index.js";
+import { attachmentService } from "../../src/attachments/index.js";
 import { MemoryBlobStore } from "../../src/lib/blob-store.js";
 import { buildApp } from "../../src/app.js";
 import { artifactStore } from "../../src/artifacts/store.js";
@@ -16,7 +16,6 @@ import { templatesRoot } from "../helpers/fixtures.js";
 import { ExportSandboxes } from "../helpers/live.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { insertOrg } from "../../src/db/orgs.js";
-import { attachmentDatabase } from "../../src/attachments/store.js";
 import { generationArtifacts } from "../../src/generation/prepare.js";
 import { mcpPool } from "../../src/mcp/pool.js";
 
@@ -46,7 +45,7 @@ test("operators upload images, attach them to a run, and cannot read another org
   await connectModelProvider(db, "org_home", "deepinfra", {
     models: [TEST_MODEL, "deepinfra/Qwen/Qwen3.8-2.4T-A95B"],
   });
-  const attachments = new AttachmentService(attachmentDatabase(db), new MemoryBlobStore());
+  const attachments = attachmentService(db, new MemoryBlobStore());
   const artifacts = artifactStore(database.pool, notes.templates);
   const workspaceRoot = tempDir("guilds-attachments-workspaces-");
   const generation = generationLoop(db, {

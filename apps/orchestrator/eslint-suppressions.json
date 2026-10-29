@@ -137,9 +137,6 @@
     }
   },
   "src/attachments/store.ts": {
-    "@typescript-eslint/explicit-module-boundary-types": {
-      "count": 1
-    },
     "no-restricted-syntax": {
       "count": 2
     }
