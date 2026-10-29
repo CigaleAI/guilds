@@ -4,7 +4,7 @@ import { getAgent, type AgentRow } from "../db/agents.js";
 import { listBindingsCovering } from "../db/bindings.js";
 import { isPlainRecord } from "../db/json.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
-import { completeRun, getRun, listMessages, type MessageRow, type RunRow } from "../db/runs.js";
+import { completeRun, getRun, listMessages, mergeRunMetadata, type MessageRow, type RunRow } from "../db/runs.js";
 import { agentHome } from "../lib/agent-file.js";
 import { INPUT_TOKEN_LIMIT_MESSAGE } from "../llm/index.js";
 import { slotPorts } from "../machines/index.js";
@@ -13,7 +13,6 @@ import { agentSandbox, applyRunScripts, prepareBrowserWorkspace, prepareWorkspac
 import type { Scripts } from "../scripts/catalog.js";
 import type { RunConfigSnapshot, RunScriptSnapshot } from "../db/schema/index.js";
 import { harnessMissingError } from "../toolbox/harness.js";
-import { toolboxDatabase } from "../toolbox/services.js";
 import { createToolRun, type ToolHooks, type ToolRun } from "../toolbox/index.js";
 import { dynamicScriptTools, liveExtraForAgent } from "../toolbox/script.js";
 import type { ActiveGenerations } from "./active-generations.js";
@@ -96,7 +95,7 @@ export function runGeneratorDatabase(db: Queryable) {
     getAgent: bindQuery(db, getAgent),
     listMessages: bindQuery(db, listMessages),
     completeRun: bindQuery(db, completeRun),
-    ...toolboxDatabase(db),
+    mergeRunMetadata: bindQuery(db, mergeRunMetadata),
   };
 }
 
