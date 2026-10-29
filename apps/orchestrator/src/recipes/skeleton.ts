@@ -186,16 +186,13 @@ async function createAgent(skeleton: Skeleton, role: RecipeRole, recipe: RecipeD
 }
 
 /**
- * Writes the recipe's notes, the organisation's and guild's before the agents exist and each
- * agent note under its role's agent once they do, then raises each note's access.
+ * Writes the recipe's notes once its agents exist, the organisation's and guild's first, then each
+ * agent note under its role's agent, then raises each note's access.
  */
 async function writeNotes(skeleton: Skeleton, recipe: RecipeDocument): Promise<void> {
   const written: Array<{ note: RecipeNote; id: string }> = [];
   for (const note of recipe.notes.filter((item) => item.level !== "agent")) {
     written.push({ note, id: await writeRecipeNote(skeleton, note, skeleton.actor) });
-  }
-  for (const role of recipe.roles) {
-    await createAgent(skeleton, role, recipe);
   }
   for (const note of recipe.notes.filter((item) => item.level === "agent")) {
     const agentId = note.role ? skeleton.roleToAgent.get(note.role) : skeleton.created.agents[0];
@@ -368,6 +365,9 @@ async function build(skeleton: Skeleton, recipe: RecipeDocument, preview: ApplyP
   const { org, user, recipeRow } = skeleton.source;
   if (!choices.guild_id) {
     await createGuild(skeleton, recipe);
+  }
+  for (const role of recipe.roles) {
+    await createAgent(skeleton, role, recipe);
   }
   await writeNotes(skeleton, recipe);
   for (const role of recipe.roles) {

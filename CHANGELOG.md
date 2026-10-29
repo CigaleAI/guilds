@@ -8,6 +8,11 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** Applying a recipe creates its agents before it writes
+its seed notes. An apply whose agents cannot be created fails before
+any seed note is written, where the organisation's and guild's seed
+notes were written first and stayed.
+
 **No impact.** A Studio collection request with an unreadable `scope`
 or `access` is refused for it before the collection's name, purpose,
 columns and `base_updated_at` are checked. Before, a request wrong in
