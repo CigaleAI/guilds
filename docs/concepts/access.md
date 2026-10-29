@@ -566,8 +566,8 @@ list, `subjects[<index>]: `.
 
 | Case | Answer |
 | --- | --- |
-| No `subjects` field | 422 |
-| `subjects` is not a list | 422 `subjects must be a list` |
+| No `subjects` field | 422 `Field required` at `body.subjects` |
+| `subjects` is not a list, or an entry without a string `type`, `id` and `mode` | 422 naming the field, such as `body.subjects.0.mode` |
 | A `type` other than `org`, `guild`, or `agent` | 422 `type must be org, guild, or agent` |
 | An empty `id` | 422 `id is required` |
 | An `org` or `guild` row whose mode is not `read` or `write` | 422 `mode must be read or write` |

@@ -8,6 +8,15 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** Replacing a note's, a collection's or a file's access
+list refuses a `subjects` that is not a list, and an entry without a
+string `type`, `id` and `mode`, with a 422 that names the field, before
+the request's user is identified. Before, a `subjects` that was not a
+list was a 422 with `subjects must be a list`, and an entry was refused
+by the access list's own checks with its index, such as
+`subjects[0]: mode must be read or write`; those checks still refuse an
+unknown type or mode.
+
 **No impact.** Setting an issue's status refuses a `status` that is
 not a string, and listing a guild's issues refuses a `status` given
 more than once, with a 422 that names it, before the request's user is

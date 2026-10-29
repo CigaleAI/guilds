@@ -1,3 +1,4 @@
+import { Type, type Static } from "@sinclair/typebox";
 import { ArtifactError } from "./errors.js";
 import {
   isAccessMode,
@@ -60,11 +61,16 @@ export function subjectAt(index: number): string {
   return `subjects[${index}]: `;
 }
 
+/** An item's access list as the operator sends it: the full list, one entry per subject. */
+export const AccessListSchema = Type.Object({
+  subjects: Type.Array(Type.Object({ type: Type.String(), id: Type.String(), mode: Type.String() })),
+});
+
+/** One subject of an access list as the operator sends it, before its type and mode are checked. */
+export type SubjectEntry = Static<typeof AccessListSchema>["subjects"][number];
+
 /** The full list the operator sends, one row per subject. */
-export function parseGrants(value: unknown): AccessGrant[] {
-  if (!Array.isArray(value)) {
-    throw new ArtifactError("subjects must be a list", 422);
-  }
+export function parseGrants(value: SubjectEntry[]): AccessGrant[] {
   const grants = value.map((item, index) => parseGrant(item, subjectAt(index)));
   const seen = new Set<string>();
   grants.forEach((grant, index) => {

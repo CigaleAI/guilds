@@ -977,7 +977,6 @@ describe("artifact store", { concurrency: 1 }, () => {
     );
     assert.deepEqual(stamps.rows[0], { created_by_name: "north-agent", updated_by_name: "operator" });
     await grantAccess(store, operator, { kind: "note", id: plan.id }, { type: "guild", id: "guild_north", mode: "write" });
-    await assert.rejects(() => replaceAccess(store, operator, { kind: "note", id: own.id }, "all"), /subjects must be a list/);
     await assert.rejects(() => listAccess(store, operator, { kind: "note", id: "art_missing" }), /note not found/);
 
     // a subject in a guild the operator cannot see is neither listed nor dropped

@@ -137,6 +137,22 @@ test("operators upload, list, download, share, and delete files per level", { ti
       payload: { subjects: [{ type: "guild", id: guildId, mode: "write" }, { type: "org", id: "org_home", mode: "read" }] },
     });
     assert.equal(replaced.statusCode, 200, replaced.body);
+    const unlisted = await app.inject({
+      method: "PUT",
+      url: `/api/files/${file.id}/access`,
+      headers: { ...OWNER, ...JSON_BODY },
+      payload: { subjects: "all" },
+    });
+    assert.equal(unlisted.statusCode, 422);
+    assert.deepEqual(unlisted.json().detail[0].loc, ["body", "subjects"]);
+    const unmoded = await app.inject({
+      method: "PUT",
+      url: `/api/files/${file.id}/access`,
+      headers: { ...OWNER, ...JSON_BODY },
+      payload: { subjects: [{ type: "guild", id: guildId }] },
+    });
+    assert.equal(unmoded.statusCode, 422);
+    assert.deepEqual(unmoded.json().detail[0].loc, ["body", "subjects", "0", "mode"]);
 
     const replacedFile = await app.inject({
       method: "POST",
