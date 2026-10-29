@@ -16,14 +16,17 @@ commands for each effect are in
 `studio_list_file_changes`, `studio_get_script`,
 `studio_get_agent_access`, `studio_request_connection_access`,
 `studio_call_connection_tool`, `studio_create_task_draft`,
-`studio_list_guilds`, `studio_get_collection`, and
-`studio_edit_collection` refuse a call whose arguments do not match
-the parameters the tool declares, with the first mismatch, such as
-`/limit: Expected integer`. Before, a mistyped argument counted as left
-out, a numeric string was read as a `seq_start` or `seq_end`, a missing
-`run_id` or `agent_id` was refused with `run not found` or `agent
-handle required`, and a collection `access` that is not an object was
-refused with `access must be an object`. An optional argument sent as
+`studio_list_guilds`, `studio_get_collection`,
+`studio_edit_collection`, `studio_edit_memory`, `studio_edit_note`,
+`studio_edit_access`, and `studio_edit_guild` refuse a call whose
+arguments do not match the parameters the tool declares, with the first
+mismatch, such as `/limit: Expected integer`. Before, a mistyped
+argument counted as left out, a numeric string was read as a
+`seq_start` or `seq_end`, a missing `run_id` or `agent_id` was refused
+with `run not found` or `agent handle required`, a collection `access`
+that is not an object was refused with `access must be an object`, and
+a Memory edit without `base_version` was proposed without a check of
+the live version. An optional argument sent as
 `null` counts as left out, where a collection's `name` or `purpose`
 sent as `null` was read as the text `null`.
 

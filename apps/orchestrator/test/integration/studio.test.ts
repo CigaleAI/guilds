@@ -1242,6 +1242,11 @@ test("studio proposes memory, note, and guild edits that the operator applies or
       studioEditMemory.handler(await ctx(), { agent_id: "curator", content: "x", base_version: Number(memory?.version) - 1, reason: "r" }),
       /stale/,
     );
+    await assert.rejects(
+      studioEditMemory.handler(await ctx(), { agent_id: "curator", content: "x", base_version: String(memory?.version), reason: "r" }),
+      /\/base_version: Expected integer/,
+    );
+    await assert.rejects(studioEditGuild.handler(await ctx(), { about: "New about" }), /\/reason: Expected required property/);
     const memoryArgs = {
       agent_id: "curator",
       content: "- be brief\n- digest in notes/digest.md\n- nothing yet",
@@ -1882,6 +1887,10 @@ test("studio proposes notes to create and delete and narrows an agent's access",
     await assert.rejects(
       studioEditAccess.handler(await ctx(), { agent_id: "archivist", native_tools: { no_such_tool: "off" }, reason: "r" }),
       /unknown native tool/,
+    );
+    await assert.rejects(
+      studioEditAccess.handler(await ctx(), { agent_id: "archivist", native_tools: { note_get: false }, reason: "r" }),
+      /\/native_tools\/note_get: Expected string/,
     );
     await assert.rejects(
       studioEditAccess.handler(await ctx(), { agent_id: "archivist", connection_tools: { "other_tool": "off" }, reason: "r" }),
