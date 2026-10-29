@@ -2,7 +2,6 @@ import type { AttachmentRef, AttachmentService } from "../attachments/index.js";
 import type { ArtifactFiles } from "../artifacts/files.js";
 import { deleteAgent, getAgent, listAgents } from "../db/agents.js";
 import { deleteGuild, getGuild } from "../db/guilds.js";
-import { getOrgModelProvider } from "../db/orgs.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import {
   appendRunError,
@@ -81,7 +80,6 @@ function loopDatabase(db: Queryable) {
     completeGroupDelivery: bindQuery(db, completeGroupDelivery),
     deleteAgent: bindQuery(db, deleteAgent),
     deleteGuild: bindQuery(db, deleteGuild),
-    getOrgModelProvider: bindQuery(db, getOrgModelProvider),
   };
 }
 
@@ -134,6 +132,7 @@ export type GenerationLoopServices = {
  */
 export type GenerationLoopDeps = GenerationLoopServices & {
   db: GenerationDatabase;
+  credentials: ModelCredentialsProvider;
   /** The chat the loop delivers group runs from; it asks the loop whether a guild is being deleted. */
   groupChat: GroupChat;
   groupRouter: GroupRouter;
@@ -183,7 +182,7 @@ export class GenerationLoop implements GroupRunner {
     this.policy = services.policy ?? OPEN_POLICY;
     this.generations = new ActiveGenerations(db, services.admission ?? new AdmissionCoordinator(), this.policy);
     this.events = new RunEvents(db);
-    this.credentials = services.credentials ?? coreModelCredentials(db);
+    this.credentials = services.credentials;
     this.machines = new AgentMachines({ db, sandboxes, workspaceRoot, generations: this.generations }, timings.idleTimeoutMs);
     const { groupRouter } = services;
     this.groupChat = services.groupChat;
@@ -588,6 +587,7 @@ export function generationLoop(
     {
       ...services,
       db: generationDatabase(db),
+      credentials: services.credentials ?? coreModelCredentials(db),
       groupChat,
       groupRouter,
       issues: guildIssues(db),

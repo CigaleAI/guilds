@@ -13,7 +13,6 @@ import {
   coreModelCredentials,
   type ModelCredentialsProvider,
   ModelNotConnectedError,
-  modelProviderStore,
 } from "../llm/credentials.js";
 import { isMarketplaceModel } from "../llm/providers.js";
 import { newId } from "../lib/ids.js";
@@ -76,7 +75,7 @@ export class BuilderService {
   constructor(public deps: BuilderServiceDeps) {
     this.admission = deps.admission ?? new AdmissionCoordinator();
     this.policy = deps.policy ?? OPEN_POLICY;
-    this.credentials = deps.credentials ?? coreModelCredentials(modelProviderStore(deps.db));
+    this.credentials = deps.credentials ?? coreModelCredentials(deps.db);
     this.runner = new ConversationRunner({
       db: deps.db,
       kind: "builder",

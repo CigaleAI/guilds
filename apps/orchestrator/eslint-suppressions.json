@@ -807,11 +807,6 @@
       "count": 2
     }
   },
-  "src/llm/credentials.ts": {
-    "@typescript-eslint/explicit-module-boundary-types": {
-      "count": 1
-    }
-  },
   "src/llm/index.ts": {
     "boundary/no-reexport-modules": {
       "count": 1

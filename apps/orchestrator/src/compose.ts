@@ -20,7 +20,7 @@ import {
 } from "./extension.js";
 import { AdmissionCoordinator } from "./admission/coordinator.js";
 import { generationLoop } from "./generation/index.js";
-import { coreModelCredentials, modelProviderStore } from "./llm/credentials.js";
+import { coreModelCredentials } from "./llm/credentials.js";
 import { modelsService } from "./llm/models.js";
 import { layOutAgentHomes } from "./machines/layout.js";
 import { mcpDatabase } from "./mcp/database.js";
@@ -97,7 +97,7 @@ export async function createServer(
   const schedules = agentSchedules(db);
   // Core reads the key stored for each organisation. An extension can answer with its own.
   const modelCredentials =
-    extensionModelCredentials(extensions, { db }) ?? coreModelCredentials(modelProviderStore(db), masterKey);
+    extensionModelCredentials(extensions, { db }) ?? coreModelCredentials(db, masterKey);
   const models = modelsService(db, { credentials: modelCredentials, masterKey });
   // Tool lists stay cached for their ttl. Calls go through the forward proxy when one is set,
   // and the policy above caps the ones a platform login makes.

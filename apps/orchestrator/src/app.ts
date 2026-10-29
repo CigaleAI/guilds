@@ -26,7 +26,7 @@ import { registerWebApp } from "./http/web-app.js";
 import { installIntegrations } from "./instance/integrations.js";
 import { InstanceKeys } from "./instance/keys.js";
 import { repoRoot } from "./lib/paths.js";
-import { coreModelCredentials, modelProviderStore } from "./llm/credentials.js";
+import { coreModelCredentials } from "./llm/credentials.js";
 import { modelsService } from "./llm/models.js";
 import { registerClientErrorRoute } from "./observability/client-errors.js";
 import { fastifyRequestIdOptions, registerHttpObservability } from "./observability/http.js";
@@ -147,7 +147,7 @@ export async function buildApp(
     const modelCredentials =
       deps.modelCredentials ??
       extensionModelCredentials(extensions, deps) ??
-      coreModelCredentials(modelProviderStore(deps.db), deps.masterKey);
+      coreModelCredentials(deps.db, deps.masterKey);
     const models =
       deps.models ??
       modelsService(deps.db, { credentials: modelCredentials, masterKey: deps.masterKey });
