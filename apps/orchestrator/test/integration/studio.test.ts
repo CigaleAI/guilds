@@ -46,7 +46,8 @@ import {
   studioListRoutines,
   studioListRuns,
   studioRequestConnectionAccess,
-  type StudioToolContext,
+  type StudioToolCall,
+  type StudioToolDeps,
 } from "../../src/studio/tools.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import { newId } from "../../src/lib/ids.js";
@@ -293,17 +294,19 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
     const liveTask = await getAgentTask(db, "org_home", "a_studio");
     const createdDraft = await studioCreateTaskDraft.handler(
       {
-        session: (await getStudioSession(db, session.id))!,
-        user: userRow({ id: "user_operator", name: "operator" }),
-        orgId: "org_home",
-        sourceGuildId: "guild_studio",
-        generation: 1,
         artifacts,
         db,
         schedules,
         drafts: studio.drafts,
         preview: studio.previewDeps(),
         notesSystemPath: notes.systemPath(),
+      },
+      {
+        session: (await getStudioSession(db, session.id))!,
+        user: userRow({ id: "user_operator", name: "operator" }),
+        orgId: "org_home",
+        sourceGuildId: "guild_studio",
+        generation: 1,
       },
       {
         agent_id: "writer",
@@ -333,18 +336,13 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
     assert.equal(after?.content_text, "Write concise notes and stop when the artifact exists.\n");
 
     const second = await studio.drafts.createFromTool(
+      db,
       {
         session: (await getStudioSession(db, session.id))!,
         user: userRow({ id: "user_operator", name: "operator" }),
         orgId: "org_home",
         sourceGuildId: "guild_studio",
         generation: 1,
-        artifacts,
-        db,
-        schedules,
-        drafts: studio.drafts,
-        preview: studio.previewDeps(),
-        notesSystemPath: notes.systemPath(),
       },
       { agent_id: "writer", proposed_content: "Write notes.\n", rationale: "Shorter.", evidence_refs: [] },
     );
@@ -373,18 +371,13 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
     assert.deepEqual(otherSession.json(), { detail: "studio session not found" });
 
     const orphaned = await studio.drafts.createFromTool(
+      db,
       {
         session: (await getStudioSession(db, session.id))!,
         user: userRow({ id: "user_operator", name: "operator" }),
         orgId: "org_home",
         sourceGuildId: "guild_studio",
         generation: 1,
-        artifacts,
-        db,
-        schedules,
-        drafts: studio.drafts,
-        preview: studio.previewDeps(),
-        notesSystemPath: notes.systemPath(),
       },
       {
         agent_id: "writer",
@@ -536,12 +529,7 @@ test("studio reads agent access, script source, and granted connections", { time
     const session = created.json() as { id: string; granted_connection_ids: string[] };
     assert.deepEqual(session.granted_connection_ids, []);
 
-    const toolContext = async (): Promise<StudioToolContext> => ({
-      session: (await getStudioSession(db, session.id))!,
-      user: userRow({ id: "user_operator", name: "operator" }),
-      orgId: "org_home",
-      sourceGuildId: "guild_access",
-      generation: 1,
+    const toolDeps: StudioToolDeps = {
       artifacts,
       db,
       schedules,
@@ -549,9 +537,16 @@ test("studio reads agent access, script source, and granted connections", { time
       preview: studio.previewDeps(),
       notesSystemPath: notes.systemPath(),
       mcp,
+    };
+    const toolContext = async (): Promise<StudioToolCall> => ({
+      session: (await getStudioSession(db, session.id))!,
+      user: userRow({ id: "user_operator", name: "operator" }),
+      orgId: "org_home",
+      sourceGuildId: "guild_access",
+      generation: 1,
     });
 
-    const access = (await studioGetAgentAccess.handler(await toolContext(), { agent_id: "curator" })) as {
+    const access = (await studioGetAgentAccess.handler(toolDeps, await toolContext(), { agent_id: "curator" })) as {
       native_tools: string[];
       scripts: Array<{ name: string }>;
       connections: Array<{ id: string; studio_granted: boolean; studio_readable_tools: string[]; offered_tools: string[] }>;
@@ -564,16 +559,16 @@ test("studio reads agent access, script source, and granted connections", { time
     assert.deepEqual(seen?.studio_readable_tools, ["notion_notion-search"]);
     assert.ok(seen?.offered_tools.includes("notion_notion-search"));
 
-    const script = (await studioGetScript.handler(await toolContext(), { agent_id: "a_access", name: "tally" })) as {
+    const script = (await studioGetScript.handler(toolDeps, await toolContext(), { agent_id: "a_access", name: "tally" })) as {
       name: string;
       content: string;
     };
     assert.equal(script.name, "tally");
     assert.match(script.content, /source="script"/);
     assert.match(script.content, /print\('tally'\)/);
-    await assert.rejects(studioGetScript.handler(await toolContext(), { agent_id: "a_access" }), /\/name: Expected required property/);
+    await assert.rejects(studioGetScript.handler(toolDeps, await toolContext(), { agent_id: "a_access" }), /\/name: Expected required property/);
 
-    const blocked = (await studioCallConnectionTool.handler(await toolContext(), {
+    const blocked = (await studioCallConnectionTool.handler(toolDeps, await toolContext(), {
       connection_id: String(connection.id),
       tool: "notion-search",
       arguments: { query: "roadmap" },
@@ -581,17 +576,17 @@ test("studio reads agent access, script source, and granted connections", { time
     assert.equal(blocked.error, "access_required");
     assert.equal(calls.length, 0);
     await assert.rejects(
-      studioCallConnectionTool.handler(await toolContext(), { connection_id: String(connection.id), tool: "notion-search", arguments: ["roadmap"] }),
+      studioCallConnectionTool.handler(toolDeps, await toolContext(), { connection_id: String(connection.id), tool: "notion-search", arguments: ["roadmap"] }),
       /\/arguments: Expected object/,
     );
     await assert.rejects(
-      studioRequestConnectionAccess.handler(await toolContext(), { connection_id: String(connection.id) }),
+      studioRequestConnectionAccess.handler(toolDeps, await toolContext(), { connection_id: String(connection.id) }),
       /\/reason: Expected required property/,
     );
-    const byAlias = (await studioGetAgentAccess.handler(await toolContext(), { agent: "curator" })) as { agent_id: string };
+    const byAlias = (await studioGetAgentAccess.handler(toolDeps, await toolContext(), { agent: "curator" })) as { agent_id: string };
     assert.equal(byAlias.agent_id, "a_access");
 
-    const requested = (await studioRequestConnectionAccess.handler(await toolContext(), {
+    const requested = (await studioRequestConnectionAccess.handler(toolDeps, await toolContext(), {
       connection_id: String(connection.id),
       reason: "Check the roadmap database schema named in the task.",
     })) as { widget?: string; await_operator?: boolean; granted?: boolean };
@@ -628,14 +623,14 @@ test("studio reads agent access, script source, and granted connections", { time
     assert.equal(rows[0]?.granted, true);
     assert.deepEqual(rows[0]?.readable_tools, ["notion_notion-search"]);
 
-    const alreadyGranted = (await studioRequestConnectionAccess.handler(await toolContext(), {
+    const alreadyGranted = (await studioRequestConnectionAccess.handler(toolDeps, await toolContext(), {
       connection_id: String(connection.id),
       reason: "again",
     })) as { granted?: boolean; widget?: string };
     assert.equal(alreadyGranted.granted, true);
     assert.equal(alreadyGranted.widget, undefined);
 
-    const read = (await studioCallConnectionTool.handler(await toolContext(), {
+    const read = (await studioCallConnectionTool.handler(toolDeps, await toolContext(), {
       connection_id: String(connection.id),
       tool: "notion-search",
       arguments: { query: "roadmap" },
@@ -648,7 +643,7 @@ test("studio reads agent access, script source, and granted connections", { time
     assert.match(read.content, /\[REDACTED:mcp_/);
 
     await assert.rejects(
-      studioCallConnectionTool.handler(await toolContext(), {
+      studioCallConnectionTool.handler(toolDeps, await toolContext(), {
         connection_id: String(connection.id),
         tool: "notion-create-pages",
         arguments: {},
@@ -665,7 +660,7 @@ test("studio reads agent access, script source, and granted connections", { time
     });
     assert.equal(revoked.statusCode, 200, revoked.body);
     assert.deepEqual((revoked.json() as { granted_connection_ids: string[] }).granted_connection_ids, []);
-    const blockedAgain = (await studioCallConnectionTool.handler(await toolContext(), {
+    const blockedAgain = (await studioCallConnectionTool.handler(toolDeps, await toolContext(), {
       connection_id: String(connection.id),
       tool: "notion-search",
       arguments: {},
@@ -920,18 +915,20 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
 
     // Focus pins: each kind inserts an evidence row before the question; foreign ids are refused.
     const evidenceSession = (await getStudioSession(db, session.id))!;
-    const toolCtx = (): StudioToolContext => ({
-      session: evidenceSession,
-      user: userRow({ id: "user_operator", name: "operator" }),
-      orgId: "org_home",
-      sourceGuildId: "guild_ev",
-      generation: 1,
+    const toolDeps: StudioToolDeps = {
       artifacts,
       db,
       schedules,
       drafts: studio.drafts,
       preview: studio.previewDeps(),
       notesSystemPath: notes.systemPath(),
+    };
+    const toolCtx = (): StudioToolCall => ({
+      session: evidenceSession,
+      user: userRow({ id: "user_operator", name: "operator" }),
+      orgId: "org_home",
+      sourceGuildId: "guild_ev",
+      generation: 1,
     });
     const sessionRow = async () => (await getStudioSession(db, session.id))!;
     const issue = await insertIssue(db,
@@ -1064,72 +1061,72 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
     assert.equal(orphanParent.statusCode, 404);
 
     // Coach tools over the same evidence.
-    const listed = await studioListMemoryRevisions.handler(toolCtx(), { agent_id: "curator" });
+    const listed = await studioListMemoryRevisions.handler(toolDeps, toolCtx(), { agent_id: "curator" });
     const versions = listed.versions as Array<{ version_index: number; revision_id: string | null; run_id: string | null }>;
     assert.equal(versions.length, 3);
     assert.equal(versions[0]?.run_id, "r_ev_wake");
-    const version = await studioGetMemoryVersion.handler(toolCtx(), { agent_id: "curator", revision_id: middleRevision });
+    const version = await studioGetMemoryVersion.handler(toolDeps, toolCtx(), { agent_id: "curator", revision_id: middleRevision });
     assert.match(String(version.content), /nothing yet/);
     assert.match(String(version.diff_from_previous), /be brief \(operator\)/);
-    const liveVersion = await studioGetMemoryVersion.handler(toolCtx(), { agent_id: "curator" });
+    const liveVersion = await studioGetMemoryVersion.handler(toolDeps, toolCtx(), { agent_id: "curator" });
     assert.equal(liveVersion.live, true);
     assert.match(String(liveVersion.diff_from_previous), /\+ - send Monday/);
-    const runList = await studioListRuns.handler(toolCtx(), { agent_id: "curator", schedule_id: scheduleId });
+    const runList = await studioListRuns.handler(toolDeps, toolCtx(), { agent_id: "curator", schedule_id: scheduleId });
     assert.deepEqual((runList.runs as Array<{ id: string }>).map((row) => row.id), ["r_ev_wake"]);
-    const routineList = await studioListRoutines.handler(toolCtx(), { agent_id: "curator" });
+    const routineList = await studioListRoutines.handler(toolDeps, toolCtx(), { agent_id: "curator" });
     assert.equal((routineList.routines as Array<{ run_count: number }>)[0]?.run_count, 1);
-    const memoryCall = await studioGetRun.handler(toolCtx(), { run_id: "r_ev_wake", tool_name: "memory_write" });
+    const memoryCall = await studioGetRun.handler(toolDeps, toolCtx(), { run_id: "r_ev_wake", tool_name: "memory_write" });
     assert.equal(memoryCall.matched, 2);
-    const fileChanges = await studioListFileChanges.handler(toolCtx(), { display_path: memoryPath });
+    const fileChanges = await studioListFileChanges.handler(toolDeps, toolCtx(), { display_path: memoryPath });
     assert.equal((fileChanges.changes as Array<{ run: { id: string } | null }>)[0]?.run?.id, "r_ev_wake");
-    await assert.rejects(studioListFileChanges.handler(toolCtx(), { display_path: "org/org_home/agents/a_far/memory.md" }), /not in the source guild/);
-    const context = await studioGetAgentContext.handler(toolCtx(), { agent_id: "curator", sections: ["effective_prompt"] });
+    await assert.rejects(studioListFileChanges.handler(toolDeps, toolCtx(), { display_path: "org/org_home/agents/a_far/memory.md" }), /not in the source guild/);
+    const context = await studioGetAgentContext.handler(toolDeps, toolCtx(), { agent_id: "curator", sections: ["effective_prompt"] });
     assert.match(String((context.effective_prompt as { content: string }).content), /Always cite the source/);
 
     // Each tool decodes its arguments against its schema before it reads them.
-    const byName = await studioListRuns.handler(toolCtx(), { agent_name: "curator", schedule_id: scheduleId, cursor: null });
+    const byName = await studioListRuns.handler(toolDeps, toolCtx(), { agent_name: "curator", schedule_id: scheduleId, cursor: null });
     assert.deepEqual((byName.runs as Array<{ id: string }>).map((row) => row.id), ["r_ev_wake"]);
-    const window = await studioGetRun.handler(toolCtx(), { run_id: "r_ev_wake", seq_start: 0, seq_end: 1 });
+    const window = await studioGetRun.handler(toolDeps, toolCtx(), { run_id: "r_ev_wake", seq_start: 0, seq_end: 1 });
     assert.deepEqual((window.messages as Array<{ seq: number }>).map((row) => row.seq), [0, 1]);
-    const paused = await studioListRoutines.handler(toolCtx(), { paused: true });
+    const paused = await studioListRoutines.handler(toolDeps, toolCtx(), { paused: true });
     assert.deepEqual(paused.routines, []);
-    await assert.rejects(studioGetRun.handler(toolCtx(), { run_id: 5 }), /^StudioUnprocessableError: \/run_id: Expected string$/);
-    await assert.rejects(studioListRoutines.handler(toolCtx(), { limit: "5" }), /\/limit: Expected integer/);
-    await assert.rejects(studioGetAgentContext.handler(toolCtx(), { sections: ["task"] }), /\/agent_id: Expected required property/);
+    await assert.rejects(studioGetRun.handler(toolDeps, toolCtx(), { run_id: 5 }), /^StudioUnprocessableError: \/run_id: Expected string$/);
+    await assert.rejects(studioListRoutines.handler(toolDeps, toolCtx(), { limit: "5" }), /\/limit: Expected integer/);
+    await assert.rejects(studioGetAgentContext.handler(toolDeps, toolCtx(), { sections: ["task"] }), /\/agent_id: Expected required property/);
     await postUserGroupMessage(
       db,
       { guildId: "guild_ev", content: "Ship the digest on Monday.", taggedNames: [], taggedAgentIds: [], taggedUserIds: [], authorName: "operator", authorUserId: "user_operator" },
       now,
     );
-    const fromOperator = await studioListGroupMessages.handler(toolCtx(), { author_handle: "operator", limit: 5 });
+    const fromOperator = await studioListGroupMessages.handler(toolDeps, toolCtx(), { author_handle: "operator", limit: 5 });
     assert.match(String((fromOperator.messages as Array<{ content: string }>)[0]?.content), /Ship the digest on Monday/);
-    const fromAgents = await studioListGroupMessages.handler(toolCtx(), { author_type: "agent" });
+    const fromAgents = await studioListGroupMessages.handler(toolDeps, toolCtx(), { author_type: "agent" });
     assert.deepEqual(fromAgents.messages, []);
-    const taskRevisions = await studioListTaskRevisions.handler(toolCtx(), { agent: "curator", limit: 1 });
+    const taskRevisions = await studioListTaskRevisions.handler(toolDeps, toolCtx(), { agent: "curator", limit: 1 });
     assert.match(String((taskRevisions.revisions as Array<{ content: string }>)[0]?.content), /Keep the digest/);
-    const oldest = await studioGetMemoryVersion.handler(toolCtx(), { agent_id: "curator", version_index: versions[2]?.version_index });
+    const oldest = await studioGetMemoryVersion.handler(toolDeps, toolCtx(), { agent_id: "curator", version_index: versions[2]?.version_index });
     assert.equal(oldest.version_index, versions[2]?.version_index);
-    const firstPage = await studioListMemoryRevisions.handler(toolCtx(), { agent_id: "curator", limit: 1 });
+    const firstPage = await studioListMemoryRevisions.handler(toolDeps, toolCtx(), { agent_id: "curator", limit: 1 });
     assert.equal((firstPage.versions as unknown[]).length, 1);
     assert.equal(firstPage.next_cursor, "1");
-    await assert.rejects(studioGetMemoryVersion.handler(toolCtx(), { agent_id: "curator", version_index: "1" }), /\/version_index: Expected integer/);
-    await assert.rejects(studioListGroupMessages.handler(toolCtx(), { author_type: 3 }), /\/author_type: Expected string/);
-    const found = await studioFindArtifacts.handler(toolCtx(), { query: "cite", level: "guild", limit: 5 });
+    await assert.rejects(studioGetMemoryVersion.handler(toolDeps, toolCtx(), { agent_id: "curator", version_index: "1" }), /\/version_index: Expected integer/);
+    await assert.rejects(studioListGroupMessages.handler(toolDeps, toolCtx(), { author_type: 3 }), /\/author_type: Expected string/);
+    const found = await studioFindArtifacts.handler(toolDeps, toolCtx(), { query: "cite", level: "guild", limit: 5 });
     assert.deepEqual((found.artifacts as Array<{ display_path: string }>).map((item) => item.display_path), [sharedPath]);
-    const houseRules = await studioGetArtifact.handler(toolCtx(), { display_path: sharedPath, cursor: "0" });
+    const houseRules = await studioGetArtifact.handler(toolDeps, toolCtx(), { display_path: sharedPath, cursor: "0" });
     assert.match(String(houseRules.content), /Always cite the source/);
-    const firstChange = await studioListFileChanges.handler(toolCtx(), { display_path: memoryPath, limit: 1 });
+    const firstChange = await studioListFileChanges.handler(toolDeps, toolCtx(), { display_path: memoryPath, limit: 1 });
     assert.equal((firstChange.changes as unknown[]).length, 1);
-    await assert.rejects(studioFindArtifacts.handler(toolCtx(), { query: ["cite"] }), /\/query: Expected string/);
-    await assert.rejects(studioGetArtifact.handler(toolCtx(), {}), /\/display_path: Expected required property/);
-    const guidelines = await studioGetGuidelines.handler(toolCtx(), {});
+    await assert.rejects(studioFindArtifacts.handler(toolDeps, toolCtx(), { query: ["cite"] }), /\/query: Expected string/);
+    await assert.rejects(studioGetArtifact.handler(toolDeps, toolCtx(), {}), /\/display_path: Expected required property/);
+    const guidelines = await studioGetGuidelines.handler(toolDeps, toolCtx(), {});
     assert.equal(guidelines.editable, false);
     assert.match(String(guidelines.content), /source="guidelines"/);
     await assert.rejects(
-      studioCreateTaskDraft.handler(toolCtx(), { agent_id: "curator", proposed_content: "Curate.\n", rationale: "r", risks: "none" }),
+      studioCreateTaskDraft.handler(toolDeps, toolCtx(), { agent_id: "curator", proposed_content: "Curate.\n", rationale: "r", risks: "none" }),
       /\/risks: Expected array/,
     );
-    await assert.rejects(studioListGuilds.handler(toolCtx(), { cursor: 0 }), /\/cursor: Expected string/);
+    await assert.rejects(studioListGuilds.handler(toolDeps, toolCtx(), { cursor: 0 }), /\/cursor: Expected string/);
   } finally {
     await app.close();
     await database.close();
@@ -1195,18 +1192,20 @@ test("studio proposes memory, note, and guild edits that the operator applies or
     });
     assert.equal(created.statusCode, 200, created.body);
     const session = created.json() as { id: string };
-    const ctx = async (): Promise<StudioToolContext> => ({
-      session: (await getStudioSession(db, session.id))!,
-      user: userRow({ id: "user_operator", name: "operator" }),
-      orgId: "org_home",
-      sourceGuildId: "guild_ed",
-      generation: 1,
+    const toolDeps: StudioToolDeps = {
       artifacts,
       db,
       schedules,
       drafts: studio.drafts,
       preview: studio.previewDeps(),
       notesSystemPath: notes.systemPath(),
+    };
+    const ctx = async (): Promise<StudioToolCall> => ({
+      session: (await getStudioSession(db, session.id))!,
+      user: userRow({ id: "user_operator", name: "operator" }),
+      orgId: "org_home",
+      sourceGuildId: "guild_ed",
+      generation: 1,
     });
     // Store the call and its result the way the runner commits them.
     const commit = async (name: string, args: Record<string, unknown>, result: Record<string, unknown>): Promise<number> => {
@@ -1242,11 +1241,11 @@ test("studio proposes memory, note, and guild edits that the operator applies or
       app.inject({ method: "POST", url: `/api/studio/sessions/${session.id}/edits/${seq}`, headers: AUTH, payload: { decision } });
 
     // Guild: read the live text, propose, apply.
-    const guild = (await studioGetGuild.handler(await ctx(), {})) as { about: string; description: string };
+    const guild = (await studioGetGuild.handler(toolDeps, await ctx(), {})) as { about: string; description: string };
     assert.match(guild.about, /Old about/);
     assert.match(guild.description, /Old description/);
     const guildArgs = { description: "Coordinate the digest.", reason: "The description names no outcome." };
-    const guildEdit = (await studioEditGuild.handler(await ctx(), guildArgs)) as {
+    const guildEdit = (await studioEditGuild.handler(toolDeps, await ctx(), guildArgs)) as {
       widget: string;
       await_operator: boolean;
       edit: { fields: string[] };
@@ -1278,34 +1277,34 @@ test("studio proposes memory, note, and guild edits that the operator applies or
     // Memory: a stale base_version is refused; a current one pauses, and apply writes as the operator.
     const memory = await getMemoryRow(artifacts, operator, "a_ed");
     await assert.rejects(
-      studioEditMemory.handler(await ctx(), { agent_id: "curator", content: "x", base_version: Number(memory?.version) - 1, reason: "r" }),
+      studioEditMemory.handler(toolDeps, await ctx(), { agent_id: "curator", content: "x", base_version: Number(memory?.version) - 1, reason: "r" }),
       /stale/,
     );
     await assert.rejects(
-      studioEditMemory.handler(await ctx(), { agent_id: "curator", content: "x", base_version: String(memory?.version), reason: "r" }),
+      studioEditMemory.handler(toolDeps, await ctx(), { agent_id: "curator", content: "x", base_version: String(memory?.version), reason: "r" }),
       /\/base_version: Expected integer/,
     );
-    await assert.rejects(studioEditGuild.handler(await ctx(), { about: "New about" }), /\/reason: Expected required property/);
+    await assert.rejects(studioEditGuild.handler(toolDeps, await ctx(), { about: "New about" }), /\/reason: Expected required property/);
     const memoryArgs = {
       agent_id: "curator",
       content: "- be brief\n- digest in notes/digest.md\n- nothing yet",
       base_version: Number(memory?.version),
       reason: "Memory names the wrong digest path.",
     };
-    const memoryEdit = (await studioEditMemory.handler(await ctx(), memoryArgs)) as Record<string, unknown>;
+    const memoryEdit = (await studioEditMemory.handler(toolDeps, await ctx(), memoryArgs)) as Record<string, unknown>;
     const memorySeq = await commit("studio_edit_memory", memoryArgs, memoryEdit);
     const memoryApplied = await resolve(memorySeq, "apply");
     assert.equal(memoryApplied.statusCode, 200, memoryApplied.body);
     assert.equal((memoryApplied.json() as { applied_version: number }).applied_version, Number(memory?.version) + 1);
     assert.match((await getMemoryRow(artifacts, operator, "a_ed"))?.content_text ?? "", /notes\/digest\.md/);
     const memoryPath = displayPathFor({ orgId: "org_home", level: "agent", ownerId: "a_ed", kind: "memory", path: "", key: "memory.md" });
-    const memoryChanges = (await studioListFileChanges.handler(await ctx(), { display_path: memoryPath })) as {
+    const memoryChanges = (await studioListFileChanges.handler(toolDeps, await ctx(), { display_path: memoryPath })) as {
       changes: Array<{ actor: { type: string; name: string }; tool: { name: string } | null; studio: unknown }>;
     };
     assert.equal(memoryChanges.changes[0]?.actor.type, "user");
     assert.deepEqual(memoryChanges.changes[0]?.studio, { session_id: session.id, seq: memorySeq });
     assert.equal(memoryChanges.changes[0]?.tool?.name, "studio_edit_memory");
-    const revisions = (await studioListMemoryRevisions.handler(await ctx(), { agent_id: "a_ed" })) as { versions: unknown[] };
+    const revisions = (await studioListMemoryRevisions.handler(toolDeps, await ctx(), { agent_id: "a_ed" })) as { versions: unknown[] };
     assert.ok(revisions.versions.length >= 2);
 
     // Memory: an agent without a Memory row is edited from an empty Memory at version 0.
@@ -1317,7 +1316,7 @@ test("studio proposes memory, note, and guild edits that the operator applies or
     );
     await db.query("DELETE FROM artifacts WHERE agent_id = $1 AND kind = 'memory'", ["a_blank"]);
     const blankArgs = { agent_id: "blank", content: "- first entry", base_version: 0, reason: "Memory is empty." };
-    const blankEdit = (await studioEditMemory.handler(await ctx(), blankArgs)) as { edit: { base_version: number } };
+    const blankEdit = (await studioEditMemory.handler(toolDeps, await ctx(), blankArgs)) as { edit: { base_version: number } };
     assert.equal(blankEdit.edit.base_version, 0);
     const blankApplied = await resolve(await commit("studio_edit_memory", blankArgs, blankEdit), "apply");
     assert.equal(blankApplied.statusCode, 200, blankApplied.body);
@@ -1325,7 +1324,7 @@ test("studio proposes memory, note, and guild edits that the operator applies or
 
     // Note: a proposal goes stale when the note changes underneath it; declining leaves the note alone.
     const noteArgs = { action: "edit", display_path: notePath, content: "Always cite the source URL.\n", base_version: note.version, reason: "Rule is vague." };
-    const noteEdit = (await studioEditNote.handler(await ctx(), noteArgs)) as Record<string, unknown>;
+    const noteEdit = (await studioEditNote.handler(toolDeps, await ctx(), noteArgs)) as Record<string, unknown>;
     const noteSeq = await commit("studio_edit_note", noteArgs, noteEdit);
     await writeNote(
       artifacts,
@@ -1348,7 +1347,7 @@ test("studio proposes memory, note, and guild edits that the operator applies or
 
     // Note: a current proposal applies as the operator, at the next version, and keeps the note's title.
     const currentArgs = { ...noteArgs, base_version: liveNote.row?.version };
-    const currentEdit = (await studioEditNote.handler(await ctx(), currentArgs)) as Record<string, unknown>;
+    const currentEdit = (await studioEditNote.handler(toolDeps, await ctx(), currentArgs)) as Record<string, unknown>;
     const currentApplied = await resolve(await commit("studio_edit_note", currentArgs, currentEdit), "apply");
     assert.equal(currentApplied.statusCode, 200, currentApplied.body);
     assert.equal((currentApplied.json() as { applied_version: number }).applied_version, Number(liveNote.row?.version) + 1);
@@ -1358,7 +1357,7 @@ test("studio proposes memory, note, and guild edits that the operator applies or
 
     // Memory is not a note, and a tool message that is not an edit request cannot be resolved.
     await assert.rejects(
-      studioEditNote.handler(await ctx(), { action: "edit", display_path: memoryPath, content: "x", base_version: 1, reason: "r" }),
+      studioEditNote.handler(toolDeps, await ctx(), { action: "edit", display_path: memoryPath, content: "x", base_version: 1, reason: "r" }),
       /studio_edit_memory/,
     );
     assert.equal((await resolve(memorySeq - 1, "apply")).statusCode, 404);
@@ -1447,18 +1446,20 @@ test("studio proposes tables to create, change, and delete that the operator app
     });
     assert.equal(created.statusCode, 200, created.body);
     const session = created.json() as { id: string };
-    const ctx = async (): Promise<StudioToolContext> => ({
-      session: (await getStudioSession(db, session.id))!,
-      user: userRow({ id: "user_operator", name: "operator" }),
-      orgId: "org_home",
-      sourceGuildId: "guild_tb",
-      generation: 1,
+    const toolDeps: StudioToolDeps = {
       artifacts,
       db,
       schedules,
       drafts: studio.drafts,
       preview: studio.previewDeps(),
       notesSystemPath: notes.systemPath(),
+    };
+    const ctx = async (): Promise<StudioToolCall> => ({
+      session: (await getStudioSession(db, session.id))!,
+      user: userRow({ id: "user_operator", name: "operator" }),
+      orgId: "org_home",
+      sourceGuildId: "guild_tb",
+      generation: 1,
     });
     const commit = async (name: string, args: Record<string, unknown>, result: Record<string, unknown>): Promise<number> => {
       const seq = await nextConversationSeq(db, "studio", session.id);
@@ -1503,7 +1504,7 @@ test("studio proposes tables to create, change, and delete that the operator app
     type Widget = { widget: string; await_operator: boolean; edit: { kind: string; action: string; target: { collection_id: string | null }; effects: string[] } };
 
     // Other guilds: the ones the operator sees, with their about and description; a private guild they do not operate is left out.
-    const guilds = (await studioListGuilds.handler(await ctx(), {})) as {
+    const guilds = (await studioListGuilds.handler(toolDeps, await ctx(), {})) as {
       guilds: Array<{ guild_id: string; about: string; description: string }>;
     };
     assert.deepEqual(guilds.guilds.map((item) => item.guild_id), ["guild_nb"]);
@@ -1511,21 +1512,21 @@ test("studio proposes tables to create, change, and delete that the operator app
     assert.match(guilds.guilds[0]?.description ?? "", /trust="untrusted"[\s\S]*monthly report/);
 
     // The source guild's own tables and the organisation's are listed; another guild's own table is out of reach.
-    const listed = (await studioListCollections.handler(await ctx(), {})) as {
+    const listed = (await studioListCollections.handler(toolDeps, await ctx(), {})) as {
       collections: Array<{ name: string; studio_can: string; guild_access: string | null }>;
     };
     assert.deepEqual(
       listed.collections.map((item) => [item.name, item.studio_can]),
       [["shared", "add_columns_and_access"]],
     );
-    await assert.rejects(studioGetCollection.handler(await ctx(), { collection: "their-queue" }), /unknown table/);
-    await assert.rejects(studioGetCollection.handler(await ctx(), { collection: 7 }), /\/collection: Expected string/);
+    await assert.rejects(studioGetCollection.handler(toolDeps, await ctx(), { collection: "their-queue" }), /unknown table/);
+    await assert.rejects(studioGetCollection.handler(toolDeps, await ctx(), { collection: 7 }), /\/collection: Expected string/);
     await assert.rejects(
-      studioEditCollection.handler(await ctx(), { action: "create", name: "leads", purpose: "p", columns: "email", reason: "r" }),
+      studioEditCollection.handler(toolDeps, await ctx(), { action: "create", name: "leads", purpose: "p", columns: "email", reason: "r" }),
       /\/columns: Expected array/,
     );
     await assert.rejects(
-      studioEditCollection.handler(await ctx(), {
+      studioEditCollection.handler(toolDeps, await ctx(), {
         action: "edit",
         collection: "their-queue",
         base_updated_at: "x",
@@ -1534,12 +1535,12 @@ test("studio proposes tables to create, change, and delete that the operator app
       }),
       /unknown table/,
     );
-    await assert.rejects(studioEditCollection.handler(await ctx(), { action: "delete", collection: "their-queue", reason: "r" }), /unknown table/);
+    await assert.rejects(studioEditCollection.handler(toolDeps, await ctx(), { action: "delete", collection: "their-queue", reason: "r" }), /unknown table/);
     const theirPath = recordDisplayPath("org_home", "their-queue", String(theirRecord.record.id));
-    await assert.rejects(studioGetArtifact.handler(await ctx(), { display_path: theirPath }), /not in the source guild/);
-    await assert.rejects(studioListFileChanges.handler(await ctx(), { display_path: theirPath }), /not in the source guild/);
+    await assert.rejects(studioGetArtifact.handler(toolDeps, await ctx(), { display_path: theirPath }), /not in the source guild/);
+    await assert.rejects(studioListFileChanges.handler(toolDeps, await ctx(), { display_path: theirPath }), /not in the source guild/);
     await assert.rejects(
-      studioGetArtifact.handler(await ctx(), { display_path: String(shared.display_path) }),
+      studioGetArtifact.handler(toolDeps, await ctx(), { display_path: String(shared.display_path) }),
       /studio_get_collection/,
     );
 
@@ -1552,9 +1553,9 @@ test("studio proposes tables to create, change, and delete that the operator app
       access: { agents: [{ agent_id: "writer", mode: "read" }] },
       reason: "Leads are copied between Tasks as prose.",
     };
-    await assert.rejects(studioEditCollection.handler(await ctx(), { ...createArgs, name: "shared" }), /already exists/);
+    await assert.rejects(studioEditCollection.handler(toolDeps, await ctx(), { ...createArgs, name: "shared" }), /already exists/);
     await assert.rejects(
-      studioEditCollection.handler(await ctx(), {
+      studioEditCollection.handler(toolDeps, await ctx(), {
         ...createArgs,
         name: "Bad Name",
         scope: "everyone",
@@ -1562,14 +1563,14 @@ test("studio proposes tables to create, change, and delete that the operator app
       /scope must be guild or org/,
     );
     await assert.rejects(
-      studioEditCollection.handler(await ctx(), {
+      studioEditCollection.handler(toolDeps, await ctx(), {
         ...createArgs,
         name: "Bad Name",
         access: "everyone",
       }),
       /\/access: Expected object/,
     );
-    const createWidget = (await studioEditCollection.handler(await ctx(), createArgs)) as Widget;
+    const createWidget = (await studioEditCollection.handler(toolDeps, await ctx(), createArgs)) as Widget;
     assert.equal(createWidget.widget, "studio_edit_request");
     assert.equal(createWidget.await_operator, true);
     assert.equal(createWidget.edit.kind, "collection");
@@ -1600,7 +1601,7 @@ test("studio proposes tables to create, change, and delete that the operator app
     // Read: the definition, who reaches it, and the latest records.
     await addRecord(artifacts, operator, { collection: "leads", body: { email: "a@example.com", status: "new" } });
     await addRecord(artifacts, operator, { collection: "leads", body: { email: "b@example.com", status: "won" } });
-    const read = (await studioGetCollection.handler(await ctx(), { collection: "leads" })) as {
+    const read = (await studioGetCollection.handler(toolDeps, await ctx(), { collection: "leads" })) as {
       updated_at: string;
       records: number;
       access: { org: string | null; own_table: boolean; agents: Array<{ name: string; effective: string | null }> };
@@ -1621,11 +1622,11 @@ test("studio proposes tables to create, change, and delete that the operator app
 
     // Edit: a stale base is refused; a rename moves values, a dropped column says how many records lose it.
     await assert.rejects(
-      studioEditCollection.handler(await ctx(), { action: "edit", collection: "leads", base_updated_at: "1999-01-01T00:00:00Z", purpose: "x", reason: "r" }),
+      studioEditCollection.handler(toolDeps, await ctx(), { action: "edit", collection: "leads", base_updated_at: "1999-01-01T00:00:00Z", purpose: "x", reason: "r" }),
       /stale/,
     );
     await assert.rejects(
-      studioEditCollection.handler(await ctx(), {
+      studioEditCollection.handler(toolDeps, await ctx(), {
         action: "edit",
         collection: "leads",
         purpose: "x",
@@ -1635,7 +1636,7 @@ test("studio proposes tables to create, change, and delete that the operator app
       /access.guild must be read, write, or none/,
     );
     await assert.rejects(
-      studioEditCollection.handler(await ctx(), { action: "edit", collection: "leads", base_updated_at: read.updated_at, reason: "r" }),
+      studioEditCollection.handler(toolDeps, await ctx(), { action: "edit", collection: "leads", base_updated_at: read.updated_at, reason: "r" }),
       /nothing to change/,
     );
     const editArgs = {
@@ -1649,7 +1650,7 @@ test("studio proposes tables to create, change, and delete that the operator app
       access: { agents: [{ agent_id: "writer", mode: "inherit" }] },
       reason: "status is never read; score is.",
     };
-    const editWidget = (await studioEditCollection.handler(await ctx(), editArgs)) as Widget;
+    const editWidget = (await studioEditCollection.handler(toolDeps, await ctx(), editArgs)) as Widget;
     assert.ok(editWidget.edit.effects.includes("Drops status from 2 records."));
     assert.ok(editWidget.edit.effects.includes("Moves email to contact in 2 records."));
     const editSeq = await commit("studio_edit_collection", editArgs, editWidget as unknown as Record<string, unknown>);
@@ -1675,9 +1676,9 @@ test("studio proposes tables to create, change, and delete that the operator app
     assert.equal(afterEdit.find((row) => row.name === "writer"), undefined);
 
     // A proposal goes stale when the table changes underneath it, and declining leaves the table alone.
-    const current = (await studioGetCollection.handler(await ctx(), { collection: "leads" })) as { updated_at: string };
+    const current = (await studioGetCollection.handler(toolDeps, await ctx(), { collection: "leads" })) as { updated_at: string };
     const purposeArgs = { action: "edit", collection: "leads", base_updated_at: current.updated_at, purpose: "Leads worth a call.", reason: "Sharper." };
-    const purposeWidget = (await studioEditCollection.handler(await ctx(), purposeArgs)) as Record<string, unknown>;
+    const purposeWidget = (await studioEditCollection.handler(toolDeps, await ctx(), purposeArgs)) as Record<string, unknown>;
     const purposeSeq = await commit("studio_edit_collection", purposeArgs, purposeWidget);
     await updateCollection(artifacts, operator, String(leads?.id), { purpose: "Changed on the Tables page." });
     assert.equal((await view(purposeSeq)).stale, true);
@@ -1687,11 +1688,11 @@ test("studio proposes tables to create, change, and delete that the operator app
 
     // An organisation table: the guild's row changes; rows outside the guild are shown, never changed,
     // and a private guild the operator does not operate is left out of them.
-    const sharedRead = (await studioGetCollection.handler(await ctx(), { collection: "shared" })) as { updated_at: string; outside: string[]; studio_can: string };
+    const sharedRead = (await studioGetCollection.handler(toolDeps, await ctx(), { collection: "shared" })) as { updated_at: string; outside: string[]; studio_can: string };
     assert.deepEqual(sharedRead.outside, ["guild neighbour-guild read"]);
     assert.equal(sharedRead.studio_can, "add_columns_and_access");
     const grantArgs = { action: "edit", collection: "shared", base_updated_at: sharedRead.updated_at, access: { guild: "write" }, reason: "The scout records facts." };
-    const grantWidget = (await studioEditCollection.handler(await ctx(), grantArgs)) as Record<string, unknown>;
+    const grantWidget = (await studioEditCollection.handler(toolDeps, await ctx(), grantArgs)) as Record<string, unknown>;
     const grantSeq = await commit("studio_edit_collection", grantArgs, grantWidget);
     assert.equal((await resolve(grantSeq, "apply")).statusCode, 200);
     const sharedMode = async (guildId: string) =>
@@ -1700,27 +1701,27 @@ test("studio proposes tables to create, change, and delete that the operator app
     assert.equal(await sharedMode("guild_nb"), "read");
 
     // An organisation table takes new columns only: its name, purpose, and current columns stay, and it is not deleted here.
-    const sharedNow = (await studioGetCollection.handler(await ctx(), { collection: "shared" })) as { updated_at: string };
+    const sharedNow = (await studioGetCollection.handler(toolDeps, await ctx(), { collection: "shared" })) as { updated_at: string };
     const orgEdit = { action: "edit", collection: "shared", base_updated_at: sharedNow.updated_at, reason: "r" };
-    await assert.rejects(studioEditCollection.handler(await ctx(), { ...orgEdit, purpose: "Mine now." }), /organisation table/);
-    await assert.rejects(studioEditCollection.handler(await ctx(), { ...orgEdit, name: "facts" }), /organisation table/);
-    await assert.rejects(studioEditCollection.handler(await ctx(), { ...orgEdit, columns: [column("source", "text")] }), /keep fact/);
+    await assert.rejects(studioEditCollection.handler(toolDeps, await ctx(), { ...orgEdit, purpose: "Mine now." }), /organisation table/);
+    await assert.rejects(studioEditCollection.handler(toolDeps, await ctx(), { ...orgEdit, name: "facts" }), /organisation table/);
+    await assert.rejects(studioEditCollection.handler(toolDeps, await ctx(), { ...orgEdit, columns: [column("source", "text")] }), /keep fact/);
     await assert.rejects(
-      studioEditCollection.handler(await ctx(), { ...orgEdit, columns: [column("fact", "number")] }),
+      studioEditCollection.handler(toolDeps, await ctx(), { ...orgEdit, columns: [column("fact", "number")] }),
       /keep fact unchanged/,
     );
-    await assert.rejects(studioEditCollection.handler(await ctx(), { action: "delete", collection: "shared", reason: "r" }), /organisation table/);
+    await assert.rejects(studioEditCollection.handler(toolDeps, await ctx(), { action: "delete", collection: "shared", reason: "r" }), /organisation table/);
     const addArgs = { ...orgEdit, columns: [column("fact", "text"), column("source", "text")], reason: "The scout cites where a fact came from." };
-    const addWidget = (await studioEditCollection.handler(await ctx(), addArgs)) as Record<string, unknown>;
+    const addWidget = (await studioEditCollection.handler(toolDeps, await ctx(), addArgs)) as Record<string, unknown>;
     const addSeq = await commit("studio_edit_collection", addArgs, addWidget);
     assert.equal((await resolve(addSeq, "apply")).statusCode, 200);
     assert.deepEqual(
       (await describeCollection(artifacts, operator, "shared"))?.columns.map((item) => item.name),
       ["fact", "source"],
     );
-    const sharedAdded = (await studioGetCollection.handler(await ctx(), { collection: "shared" })) as { updated_at: string };
+    const sharedAdded = (await studioGetCollection.handler(toolDeps, await ctx(), { collection: "shared" })) as { updated_at: string };
     await assert.rejects(
-      studioEditCollection.handler(await ctx(), {
+      studioEditCollection.handler(toolDeps, await ctx(), {
         ...orgEdit,
         base_updated_at: sharedAdded.updated_at,
         columns: [column("source", "text"), column("fact", "text")],
@@ -1729,7 +1730,7 @@ test("studio proposes tables to create, change, and delete that the operator app
     );
 
     // Delete: the card names the records; apply removes the guild's own table.
-    const deleteWidget = (await studioEditCollection.handler(await ctx(), { action: "delete", collection: "leads", reason: "Replaced." })) as Widget;
+    const deleteWidget = (await studioEditCollection.handler(toolDeps, await ctx(), { action: "delete", collection: "leads", reason: "Replaced." })) as Widget;
     assert.equal(deleteWidget.edit.action, "delete");
     assert.match(deleteWidget.edit.effects.join(" "), /2 records/);
     const deleteSeq = await commit("studio_edit_collection", { action: "delete", collection: "leads", reason: "Replaced." }, deleteWidget as unknown as Record<string, unknown>);
@@ -1817,18 +1818,20 @@ test("studio proposes notes to create and delete and narrows an agent's access",
     });
     assert.equal(created.statusCode, 200, created.body);
     const session = created.json() as { id: string };
-    const ctx = async (): Promise<StudioToolContext> => ({
-      session: (await getStudioSession(db, session.id))!,
-      user: userRow({ id: "user_operator", name: "operator" }),
-      orgId: "org_home",
-      sourceGuildId: "guild_nw",
-      generation: 1,
+    const toolDeps: StudioToolDeps = {
       artifacts,
       db,
       schedules,
       drafts: studio.drafts,
       preview: studio.previewDeps(),
       notesSystemPath: notes.systemPath(),
+    };
+    const ctx = async (): Promise<StudioToolCall> => ({
+      session: (await getStudioSession(db, session.id))!,
+      user: userRow({ id: "user_operator", name: "operator" }),
+      orgId: "org_home",
+      sourceGuildId: "guild_nw",
+      generation: 1,
     });
     const commit = async (name: string, args: Record<string, unknown>, result: Record<string, unknown>): Promise<number> => {
       const seq = await nextConversationSeq(db, "studio", session.id);
@@ -1874,7 +1877,7 @@ test("studio proposes notes to create and delete and narrows an agent's access",
     // Create: the scout's own playbook, at its level, written once the operator applies.
     const playbookPath = `${ownerPrefix("org_home", "agent", "a_sc")}playbook.md`;
     await assert.rejects(
-      studioEditNote.handler(await ctx(), { action: "create", level: "agent", key: "playbook.md", content: "x", reason: "r" }),
+      studioEditNote.handler(toolDeps, await ctx(), { action: "create", level: "agent", key: "playbook.md", content: "x", reason: "r" }),
       /agent_id/,
     );
     const createArgs = {
@@ -1886,7 +1889,7 @@ test("studio proposes notes to create and delete and narrows an agent's access",
       content: "A real candidate names its source.\n",
       reason: "The shared roles note carries the scout's rules for every reader.",
     };
-    const createWidget = (await studioEditNote.handler(await ctx(), createArgs)) as {
+    const createWidget = (await studioEditNote.handler(toolDeps, await ctx(), createArgs)) as {
       widget: string;
       edit: { kind: string; action: string; target: { display_path: string; agent_id: string } };
     };
@@ -1905,12 +1908,12 @@ test("studio proposes notes to create and delete and narrows an agent's access",
     assert.equal(createApplied.statusCode, 200, createApplied.body);
     assert.equal((createApplied.json() as { applied_version: number }).applied_version, 1);
     assert.equal((await getByDisplayPath(artifacts, operator, playbookPath)).row?.content_text, "A real candidate names its source.\n");
-    await assert.rejects(studioEditNote.handler(await ctx(), createArgs), /already exists/);
+    await assert.rejects(studioEditNote.handler(toolDeps, await ctx(), createArgs), /already exists/);
 
     // Delete: refused while a Task embeds the note, applied once none does.
-    await assert.rejects(studioEditNote.handler(await ctx(), { action: "delete", display_path: rolesPath, base_version: 0, reason: "r" }), /stale/);
+    await assert.rejects(studioEditNote.handler(toolDeps, await ctx(), { action: "delete", display_path: rolesPath, base_version: 0, reason: "r" }), /stale/);
     const deleteArgs = { action: "delete", display_path: rolesPath, base_version: roles.version, reason: "Each role now has its own note." };
-    const deleteWidget = (await studioEditNote.handler(await ctx(), deleteArgs)) as { edit: { action: string; effects: string[] } };
+    const deleteWidget = (await studioEditNote.handler(toolDeps, await ctx(), deleteArgs)) as { edit: { action: string; effects: string[] } };
     assert.equal(deleteWidget.edit.action, "delete");
     assert.ok(deleteWidget.edit.effects.some((effect) => /scout embed it/.test(effect)), deleteWidget.edit.effects.join(" | "));
     const deleteSeq = await commit("studio_edit_note", deleteArgs, deleteWidget);
@@ -1924,19 +1927,19 @@ test("studio proposes notes to create and delete and narrows an agent's access",
 
     // Access: the archivist loses tools it never calls; the card shows what changes.
     await assert.rejects(
-      studioEditAccess.handler(await ctx(), { agent_id: "archivist", native_tools: { no_such_tool: "off" }, reason: "r" }),
+      studioEditAccess.handler(toolDeps, await ctx(), { agent_id: "archivist", native_tools: { no_such_tool: "off" }, reason: "r" }),
       /unknown native tool/,
     );
     await assert.rejects(
-      studioEditAccess.handler(await ctx(), { agent_id: "archivist", native_tools: { note_get: false }, reason: "r" }),
+      studioEditAccess.handler(toolDeps, await ctx(), { agent_id: "archivist", native_tools: { note_get: false }, reason: "r" }),
       /\/native_tools\/note_get: Expected string/,
     );
     await assert.rejects(
-      studioEditAccess.handler(await ctx(), { agent_id: "archivist", connection_tools: { "other_tool": "off" }, reason: "r" }),
+      studioEditAccess.handler(toolDeps, await ctx(), { agent_id: "archivist", connection_tools: { "other_tool": "off" }, reason: "r" }),
       /not a tool of archivist's connections/,
     );
     await assert.rejects(
-      studioEditAccess.handler(await ctx(), { agent_id: "archivist", native_tools: { note_get: "inherit" }, reason: "r" }),
+      studioEditAccess.handler(toolDeps, await ctx(), { agent_id: "archivist", native_tools: { note_get: "inherit" }, reason: "r" }),
       /nothing to change/,
     );
     const accessArgs = {
@@ -1945,7 +1948,7 @@ test("studio proposes notes to create and delete and narrows an agent's access",
       connection_tools: { "notion_notion-create-pages": "off" },
       reason: "The archivist's runs never call these.",
     };
-    const accessWidget = (await studioEditAccess.handler(await ctx(), accessArgs)) as {
+    const accessWidget = (await studioEditAccess.handler(toolDeps, await ctx(), accessArgs)) as {
       edit: {
         kind: string;
         target: { agent_id: string };
@@ -1976,7 +1979,7 @@ test("studio proposes notes to create and delete and narrows an agent's access",
     assert.equal(accessChange?.agent_id, "a_ar");
     assert.equal(accessChange?.summary, "Turned off tool note_delete");
     assert.deepEqual(accessChange?.studio, { session_id: session.id, seq: accessSeq });
-    const narrowed = (await studioGetAgentAccess.handler(await ctx(), { agent_id: "archivist" })) as {
+    const narrowed = (await studioGetAgentAccess.handler(toolDeps, await ctx(), { agent_id: "archivist" })) as {
       native_tools: string[];
       withheld_native_tools: string[];
       connections: Array<{ id: string; offered_tools: string[]; withheld_tools: string[] }>;
@@ -1986,12 +1989,12 @@ test("studio proposes notes to create and delete and narrows an agent's access",
     const notion = narrowed.connections.find((row) => row.id === String(connection.id));
     assert.deepEqual(notion?.offered_tools, ["notion_notion-search"]);
     assert.deepEqual(notion?.withheld_tools, ["notion_notion-create-pages"]);
-    const scout = (await studioGetAgentAccess.handler(await ctx(), { agent_id: "scout" })) as { native_tools: string[] };
+    const scout = (await studioGetAgentAccess.handler(toolDeps, await ctx(), { agent_id: "scout" })) as { native_tools: string[] };
     assert.ok(scout.native_tools.includes("note_delete"));
 
     // Giving a tool back that changes data says so; a binding moved since makes the request stale.
     const widenArgs = { agent_id: "archivist", connection_tools: { "notion_notion-create-pages": "inherit" }, reason: "It files pages after all." };
-    const widenWidget = (await studioEditAccess.handler(await ctx(), widenArgs)) as { edit: { effects: string[]; widens: boolean } };
+    const widenWidget = (await studioEditAccess.handler(toolDeps, await ctx(), widenArgs)) as { edit: { effects: string[]; widens: boolean } };
     assert.equal(widenWidget.edit.widens, true);
     assert.ok(
       widenWidget.edit.effects.some((effect) => /call notion_notion-create-pages, which can change data/.test(effect)),
@@ -2072,18 +2075,20 @@ test("studio proposes routines to create, change, and delete that the operator a
     });
     assert.equal(created.statusCode, 200, created.body);
     const session = created.json() as { id: string };
-    const ctx = async (): Promise<StudioToolContext> => ({
-      session: (await getStudioSession(db, session.id))!,
-      user: userRow({ id: "user_operator", name: "operator" }),
-      orgId: "org_home",
-      sourceGuildId: "guild_rt",
-      generation: 1,
+    const toolDeps: StudioToolDeps = {
       artifacts,
       db,
       schedules,
       drafts: studio.drafts,
       preview: studio.previewDeps(),
       notesSystemPath: notes.systemPath(),
+    };
+    const ctx = async (): Promise<StudioToolCall> => ({
+      session: (await getStudioSession(db, session.id))!,
+      user: userRow({ id: "user_operator", name: "operator" }),
+      orgId: "org_home",
+      sourceGuildId: "guild_rt",
+      generation: 1,
     });
     const commit = async (name: string, args: Record<string, unknown>, result: Record<string, unknown>): Promise<number> => {
       const seq = await nextConversationSeq(db, "studio", session.id);
@@ -2128,7 +2133,7 @@ test("studio proposes routines to create, change, and delete that the operator a
 
     // Create: refused without a timing or with a bad one; applied as the operator.
     await assert.rejects(
-      studioEditRoutine.handler(await ctx(), {
+      studioEditRoutine.handler(toolDeps, await ctx(), {
         action: "create",
         agent_id: "watcher",
         window: { timezone: "Europe/Paris", start: "09:00", end: "18:00" },
@@ -2139,19 +2144,19 @@ test("studio proposes routines to create, change, and delete that the operator a
       /\/window\/max_wakes: Expected required property/,
     );
     await assert.rejects(
-      studioEditRoutine.handler(await ctx(), { action: "create", agent_id: "watcher", description: "d", instruction: "i", reason: "r" }),
+      studioEditRoutine.handler(toolDeps, await ctx(), { action: "create", agent_id: "watcher", description: "d", instruction: "i", reason: "r" }),
       /exactly one of cron or window/,
     );
     await assert.rejects(
-      studioEditRoutine.handler(await ctx(), { action: "create", agent_id: "watcher", cron: "* * * * *", description: "d", instruction: "i", reason: "r" }),
+      studioEditRoutine.handler(toolDeps, await ctx(), { action: "create", agent_id: "watcher", cron: "* * * * *", description: "d", instruction: "i", reason: "r" }),
       /at least 5 minutes/,
     );
     await assert.rejects(
-      studioEditRoutine.handler(await ctx(), { action: "create", agent_id: "watcher", cron: "0 9 * * *", instruction: "i", reason: "r" }),
+      studioEditRoutine.handler(toolDeps, await ctx(), { action: "create", agent_id: "watcher", cron: "0 9 * * *", instruction: "i", reason: "r" }),
       /description must be a string/,
     );
     await assert.rejects(
-      studioEditRoutine.handler(await ctx(), { action: "create", agent_id: "nobody", cron: "0 9 * * *", description: "d", instruction: "i", reason: "r" }),
+      studioEditRoutine.handler(toolDeps, await ctx(), { action: "create", agent_id: "nobody", cron: "0 9 * * *", description: "d", instruction: "i", reason: "r" }),
       /not in the source guild/,
     );
     const createArgs = {
@@ -2162,7 +2167,7 @@ test("studio proposes routines to create, change, and delete that the operator a
       instruction: "Sweep the feed for new items.",
       reason: "The watcher only runs when tagged, so the feed goes stale.",
     };
-    const createWidget = (await studioEditRoutine.handler(await ctx(), createArgs)) as {
+    const createWidget = (await studioEditRoutine.handler(toolDeps, await ctx(), createArgs)) as {
       widget: string;
       edit: { kind: string; action: string; target: { agent_id: string; schedule_id: string | null }; effects: string[] };
     };
@@ -2195,12 +2200,12 @@ test("studio proposes routines to create, change, and delete that the operator a
 
     // Edit: nothing to change is refused; a routine changed since makes the request stale.
     await assert.rejects(
-      studioEditRoutine.handler(await ctx(), { action: "edit", schedule_id: scheduleId, cron: "0 9 * * 1", reason: "r" }),
+      studioEditRoutine.handler(toolDeps, await ctx(), { action: "edit", schedule_id: scheduleId, cron: "0 9 * * 1", reason: "r" }),
       /nothing to change/,
     );
-    await assert.rejects(studioEditRoutine.handler(await ctx(), { action: "edit", schedule_id: "sch_none", paused: true, reason: "r" }), /unknown routine/);
+    await assert.rejects(studioEditRoutine.handler(toolDeps, await ctx(), { action: "edit", schedule_id: "sch_none", paused: true, reason: "r" }), /unknown routine/);
     const staleArgs = { action: "edit", schedule_id: scheduleId, instruction: "Sweep and summarise.", reason: "Needs a summary." };
-    const staleSeq = await commit("studio_edit_routine", staleArgs, await studioEditRoutine.handler(await ctx(), staleArgs));
+    const staleSeq = await commit("studio_edit_routine", staleArgs, await studioEditRoutine.handler(toolDeps, await ctx(), staleArgs));
     await schedules.setPaused(TEST_ACTOR, "a_wt", scheduleId, true);
     assert.equal((await view(staleSeq)).stale, true);
     assert.equal((await resolve(staleSeq, "apply")).statusCode, 409);
@@ -2214,7 +2219,7 @@ test("studio proposes routines to create, change, and delete that the operator a
       paused: false,
       reason: "Fixed Monday sweeps miss midweek items.",
     };
-    const editWidget = (await studioEditRoutine.handler(await ctx(), editArgs)) as {
+    const editWidget = (await studioEditRoutine.handler(toolDeps, await ctx(), editArgs)) as {
       edit: { action: string; target: { schedule_id: string }; effects: string[] };
     };
     assert.equal(editWidget.edit.action, "edit");
@@ -2235,7 +2240,7 @@ test("studio proposes routines to create, change, and delete that the operator a
 
     // Delete: applied as the operator; the routine is gone.
     const deleteArgs = { action: "delete", schedule_id: scheduleId, reason: "The feed is now pushed to the watcher." };
-    const deleteWidget = (await studioEditRoutine.handler(await ctx(), deleteArgs)) as { edit: { action: string } };
+    const deleteWidget = (await studioEditRoutine.handler(toolDeps, await ctx(), deleteArgs)) as { edit: { action: string } };
     assert.equal(deleteWidget.edit.action, "delete");
     const deleteSeq = await commit("studio_edit_routine", deleteArgs, deleteWidget);
     assert.equal((await view(deleteSeq)).proposed, "");

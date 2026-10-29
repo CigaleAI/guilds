@@ -16,9 +16,9 @@ import {
   STUDIO_LARGE_DELETION_RATIO,
 } from "./constants.js";
 import { StudioConflictError, StudioError, StudioUnprocessableError } from "./errors.js";
-import { previewCurrentState, projectOfferedToolSchemas } from "./preview.js";
+import { previewCurrentState, projectOfferedToolSchemas, type PreviewDeps } from "./preview.js";
 import { withLockedSession } from "./session-lock.js";
-import type { StudioToolContext } from "./tools.js";
+import type { StudioToolCall } from "./tools.js";
 import { resolveSourceGuildAgent, sourceGuildAgents } from "./tools.js";
 import { studioAgentHandleFromArgs } from "./arguments.js";
 import { argString } from "../toolbox/schema.js";
@@ -33,7 +33,11 @@ import { EVIDENCE_REF_KINDS, type EvidenceRef, type EvidenceRefKind, type Eviden
 import type { UserRow } from "../db/users.js";
 
 export type StudioDraftService = {
-  createFromTool(ctx: StudioToolContext, args: Record<string, unknown>): Promise<Record<string, unknown>>;
+  createFromTool(
+    db: Queryable,
+    call: StudioToolCall,
+    args: Record<string, unknown>,
+  ): Promise<Record<string, unknown>>;
 };
 
 // A draft is decided like an edit: the tool returns this widget and the turn
@@ -55,11 +59,15 @@ export class StudioDrafts implements StudioDraftService {
     public artifacts: ArtifactStore,
   ) {}
 
-  async createFromTool(ctx: StudioToolContext, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  async createFromTool(
+    db: Queryable,
+    call: StudioToolCall,
+    args: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
     const handle = studioAgentHandleFromArgs(args);
-    const agent = await resolveSourceGuildAgent(sourceGuildAgents(ctx.db), ctx, handle);
+    const agent = await resolveSourceGuildAgent(sourceGuildAgents(db), call, handle);
     if (!agent) {
-      throw new StudioUnprocessableError(await missingDraftAgentMessage(ctx, handle));
+      throw new StudioUnprocessableError(await missingDraftAgentMessage(db, call, handle));
     }
     const targetId = agent.id;
     const proposed = argString(args, "proposed_content");
@@ -70,14 +78,14 @@ export class StudioDrafts implements StudioDraftService {
     if (Buffer.byteLength(proposed, "utf8") > WRITE_MAX_BYTES) {
       throw new StudioUnprocessableError("proposed_content exceeds the 256 KiB artifact write limit");
     }
-    const task = await getAgentTask(ctx.db, ctx.orgId, targetId);
+    const task = await getAgentTask(db, call.orgId, targetId);
     if (!task) {
       throw new StudioUnprocessableError("task.md not found");
     }
-    const messages = await listConversationMessages(ctx.db, "studio", String(ctx.session.id));
+    const messages = await listConversationMessages(db, "studio", String(call.session.id));
     const { refs, warnings } = resolveEvidenceRefs(args.evidence_refs, messages);
     const now = new Date();
-    return withLockedSession(this.db, String(ctx.session.id), async (client, session) => {
+    return withLockedSession(this.db, String(call.session.id), async (client, session) => {
       if (session.generation_state !== "generating" && session.generation_state !== "idle") {
         throw new StudioConflictError("session cannot accept a draft");
       }
@@ -94,8 +102,8 @@ export class StudioDrafts implements StudioDraftService {
         {
           id: newId("std"),
           session_id: session.id,
-          org_id: ctx.orgId,
-          source_guild_id: ctx.sourceGuildId,
+          org_id: call.orgId,
+          source_guild_id: call.sourceGuildId,
           target_agent_id: targetId,
           target_snapshot: {
             id: agent.id,
@@ -103,7 +111,7 @@ export class StudioDrafts implements StudioDraftService {
             focus: agent.focus,
           },
           source_artifact_id: null,
-          source_display_path: taskDisplayPath(ctx.orgId, targetId),
+          source_display_path: taskDisplayPath(call.orgId, targetId),
           base_version: task.version,
           base_hash: task.content_hash,
           base_content: task.content_text ?? "",
@@ -115,8 +123,8 @@ export class StudioDrafts implements StudioDraftService {
           status: "draft",
           draft_number: Number(previous?.draft_number ?? 0) + 1,
           supersedes_draft_id: previous ? previous.id : null,
-          created_generation: ctx.generation,
-          created_message_seq: ctx.nextMessageSeq ?? seq,
+          created_generation: call.generation,
+          created_message_seq: call.nextMessageSeq ?? seq,
         },
         now,
       );
@@ -201,8 +209,8 @@ export class StudioDrafts implements StudioDraftService {
     session: StudioSessionRow;
     user: UserRow;
     draftId: string;
-    db: StudioToolContext["db"];
-    preview: StudioToolContext["preview"];
+    db: Queryable;
+    preview: PreviewDeps;
     notesSystemPath: string;
     publishFilesChanged?: (guildId: string) => Promise<void>;
     orphan?: boolean;
@@ -285,8 +293,8 @@ export class StudioDrafts implements StudioDraftService {
   async preflight(args: {
     session: StudioSessionRow;
     draftId: string;
-    db: StudioToolContext["db"];
-    preview: StudioToolContext["preview"];
+    db: Queryable;
+    preview: PreviewDeps;
     notesSystemPath: string;
   }): Promise<Record<string, unknown>> {
     const draft = await getStudioDraft(this.db, args.draftId);
@@ -303,7 +311,7 @@ export class StudioDrafts implements StudioDraftService {
   private async runPreflight(
     agent: AgentRow,
     proposed: string,
-    args: { preview: StudioToolContext["preview"]; notesSystemPath: string },
+    args: { preview: PreviewDeps; notesSystemPath: string },
   ): Promise<Record<string, unknown>> {
     let expanded: string;
     try {
@@ -443,13 +451,14 @@ function resolveEvidenceRefs(
 }
 
 async function missingDraftAgentMessage(
-  ctx: StudioToolContext,
+  db: Queryable,
+  call: StudioToolCall,
   handle: string | null | undefined,
 ): Promise<string> {
   let known = "";
   try {
-    const members = await listAgents(ctx.db, ctx.sourceGuildId);
-    const live = members.filter((row) => String(row.guild_id) === String(ctx.sourceGuildId));
+    const members = await listAgents(db, call.sourceGuildId);
+    const live = members.filter((row) => String(row.guild_id) === String(call.sourceGuildId));
     if (live.length) {
       known = ` Known agents: ${live.map((row) => `${row.name} (${row.id})`).join(", ")}.`;
     }

@@ -39,7 +39,8 @@ import {
   loadGuildBase,
   loadMemoryBase,
   loadNoteBase,
-  noteEditRequest,
+  noteCreateRequest,
+  noteDeleteRequest,
   routineEditRequest,
   tableEditRequest,
   type EditScope,
@@ -60,13 +61,8 @@ import { artifactAt, findNotes, parseActorPath } from "../artifacts/notes.js";
 import { hashArtifactContent, type ArtifactStore } from "../artifacts/store.js";
 import { operatorActor } from "../artifacts/actors.js";
 
-export type StudioToolContext = {
-  session: StudioSessionRow;
-  user: UserRow;
-  orgId: string;
-  sourceGuildId: string;
-  generation: number;
-  nextMessageSeq?: number;
+/** The services every Studio tool reads and writes through, the same for every call. */
+export type StudioToolDeps = {
   artifacts: ArtifactStore;
   db: Queryable;
   schedules: Schedules;
@@ -76,10 +72,25 @@ export type StudioToolContext = {
   mcp?: StudioMcpClient | null;
 };
 
+/** A coach tool call: the session and operator it runs for, and its place in the transcript. */
+export type StudioToolCall = {
+  session: StudioSessionRow;
+  user: UserRow;
+  orgId: string;
+  sourceGuildId: string;
+  generation: number;
+  /** The seq the call's result takes in the session's messages. */
+  nextMessageSeq?: number;
+};
+
 export type StudioTool = {
   name: string;
   schema: Record<string, unknown>;
-  handler: (ctx: StudioToolContext, args: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  handler: (
+    deps: StudioToolDeps,
+    call: StudioToolCall,
+    args: Record<string, unknown>,
+  ) => Promise<Record<string, unknown>>;
 };
 
 function clampLimit(value: number | undefined, fallback: number, max: number): number {
@@ -94,8 +105,12 @@ function cursorOffset(cursor: string | null | undefined): number {
   return Number.isInteger(n) && n >= 0 ? n : 0;
 }
 
-async function resolveHandle(ctx: StudioToolContext, handle: string | undefined): Promise<AgentRow> {
-  const agent = await resolveSourceGuildAgent(sourceGuildAgents(ctx.db), ctx, handle);
+async function resolveHandle(
+  deps: StudioToolDeps,
+  call: StudioToolCall,
+  handle: string | undefined,
+): Promise<AgentRow> {
+  const agent = await resolveSourceGuildAgent(sourceGuildAgents(deps.db), call, handle);
   if (!agent) {
     throw new StudioUnprocessableError(handle ? "agent is not in the source guild" : "agent handle required");
   }
@@ -118,7 +133,7 @@ export type SourceGuildAgents = ReturnType<typeof sourceGuildAgents>;
 
 export async function resolveSourceGuildAgent(
   agents: SourceGuildAgents,
-  ctx: Pick<StudioToolContext, "sourceGuildId" | "orgId">,
+  call: Pick<StudioToolCall, "sourceGuildId" | "orgId">,
   handle: string | null | undefined,
 ): Promise<AgentRow | null> {
   const needle = String(handle ?? "").trim();
@@ -126,13 +141,13 @@ export async function resolveSourceGuildAgent(
     return null;
   }
   const byId = await agents.getAgent(needle);
-  if (byId && String(byId.guild_id) === String(ctx.sourceGuildId) && (!ctx.orgId || String(byId.org_id) === ctx.orgId)) {
+  if (byId && String(byId.guild_id) === String(call.sourceGuildId) && (!call.orgId || String(byId.org_id) === call.orgId)) {
     return byId;
   }
-  const members = await agents.listAgents(ctx.sourceGuildId);
+  const members = await agents.listAgents(call.sourceGuildId);
   const lower = needle.toLowerCase();
   const normalized = normalizeAgentHandle(needle);
-  const live = members.filter((row) => String(row.guild_id) === String(ctx.sourceGuildId));
+  const live = members.filter((row) => String(row.guild_id) === String(call.sourceGuildId));
   const match =
     live.find((row) => row.id === needle || String(row.name).toLowerCase() === lower) ??
     live.find((row) => normalizeAgentHandle(String(row.name)) === normalized) ??
@@ -217,9 +232,9 @@ function fitStudioPayload(payload: Record<string, unknown>): Record<string, unkn
 export const studioGetGuidelines: StudioTool = {
   name: "studio_get_guidelines",
   schema: studioFunctionSchema("studio_get_guidelines", "Inspect the shared read-only Guidelines source.", Type.Object({})),
-  async handler(ctx) {
+  async handler(deps) {
     const standing = hydrateStanding({
-      systemPath: ctx.notesSystemPath,
+      systemPath: deps.notesSystemPath,
       agentName: "studio",
       agentId: "studio",
     });
@@ -251,16 +266,16 @@ export const studioGetAgentContext: StudioTool = {
     "Inspect current prompt sources for one source-guild agent. The first 500 words of each standing task are already in the Studio system prompt. Use this tool for the remainder of a truncated task, the full task, memory, state, config, or effective_prompt (the exact opening system message the next run would receive, with task embeds inlined). Pass agent_id or name.",
     GetAgentContextArguments,
   ),
-  async handler(ctx, args) {
+  async handler(deps, call, args) {
     const input: GetAgentContextArguments = decodeStudioArguments(GetAgentContextArguments, args);
-    const agent = await resolveHandle(ctx, input.agent_id);
+    const agent = await resolveHandle(deps, call, input.agent_id);
     const want = new Set<string>(input.sections ?? STUDIO_DEFAULT_CONTEXT_SECTIONS);
     const cursor = input.cursor;
-    const task = await agentTask(ctx.artifacts, agent);
+    const task = await agentTask(deps.artifacts, agent);
     const memory = task.memory;
     // state and effective_prompt read the same projection; take it once.
     let statePreview: ReturnType<typeof previewCurrentState> | null = null;
-    const currentState = () => (statePreview ??= previewCurrentState(ctx.preview, agent));
+    const currentState = () => (statePreview ??= previewCurrentState(deps.preview, agent));
     const result: Record<string, unknown> = {
       agent_id: agent.id,
       name: agent.name,
@@ -309,13 +324,13 @@ export const studioGetAgentContext: StudioTool = {
     }
     if (want.has("effective_prompt")) {
       const standing = hydrateStanding({
-        systemPath: ctx.notesSystemPath,
+        systemPath: deps.notesSystemPath,
         agentName: agent.name,
         agentId: agent.id,
       });
       const effectiveTask = task.expanded.ok ? task.expanded.text : task.text;
       const preview = await currentState();
-      const tools = await projectOfferedToolSchemas(ctx.preview, agent);
+      const tools = await projectOfferedToolSchemas(deps.preview, agent);
       const memoryEnabled = agent.config.memory;
       const composed = composeAgentSystemPrompt(
         standing,
@@ -366,20 +381,20 @@ export const studioListRoutines: StudioTool = {
     "Inspect schedules and instructions for the source guild, or one agent when agent_id is set.",
     ListRoutinesArguments,
   ),
-  async handler(ctx, args) {
+  async handler(deps, call, args) {
     const input: ListRoutinesArguments = decodeStudioArguments(ListRoutinesArguments, args);
     const limit = clampLimit(input.limit, STUDIO_DEFAULT_LIMIT, 100);
     const offset = cursorOffset(input.cursor);
     let rows: AgentScheduleRow[];
     if (input.agent_id) {
-      const agent = await resolveHandle(ctx, input.agent_id);
-      rows = await listSchedules(ctx.db, agent.id);
+      const agent = await resolveHandle(deps, call, input.agent_id);
+      rows = await listSchedules(deps.db, agent.id);
     } else {
-      rows = await listSchedulesForGuild(ctx.db, ctx.sourceGuildId);
+      rows = await listSchedulesForGuild(deps.db, call.sourceGuildId);
     }
     const filtered = rows.filter((row) => input.paused === undefined || row.paused === input.paused);
     const slice = filtered.slice(offset, offset + limit);
-    const stats = await routineRunStats(ctx.db, slice.map((row) => row.id));
+    const stats = await routineRunStats(deps.db, slice.map((row) => row.id));
     const routines = [];
     for (const row of slice) {
       const mine = stats.get(row.id);
@@ -420,13 +435,13 @@ export const studioListRuns: StudioTool = {
     "Find behavioral evidence without loading transcripts. kind is direct, group, or schedule; schedule_id lists the runs one routine produced.",
     ListRunsArguments,
   ),
-  async handler(ctx, args) {
+  async handler(deps, call, args) {
     const input: ListRunsArguments = decodeStudioArguments(ListRunsArguments, args);
-    const agent = await resolveHandle(ctx, input.agent_id);
+    const agent = await resolveHandle(deps, call, input.agent_id);
     const limit = clampLimit(input.limit, STUDIO_DEFAULT_LIMIT, STUDIO_RUN_LIST_MAX);
     const offset = cursorOffset(input.cursor);
     // One row past the page says whether another page follows.
-    const rows = await listRunHeaders(ctx.db, agent.id, {
+    const rows = await listRunHeaders(deps.db, agent.id, {
       kind: input.kind,
       status: input.status,
       taskPromptHash: input.task_prompt_hash,
@@ -475,21 +490,21 @@ export const studioGetRun: StudioTool = {
     "Read exact historical evidence for a source-guild run. seq_start and seq_end bound the message window. tool_name keeps only the assistant turns that requested that tool and their tool results, for example memory_write or note_write.",
     GetRunArguments,
   ),
-  async handler(ctx, args) {
+  async handler(deps, call, args) {
     const input: GetRunArguments = decodeStudioArguments(GetRunArguments, args);
     const runId = input.run_id;
-    const run = await getRun(ctx.db, runId);
+    const run = await getRun(deps.db, runId);
     if (!run) {
       throw new StudioUnprocessableError("run not found");
     }
-    const agent = await getAgent(ctx.db, String(run.agent_id));
-    if (!agent || agent.guild_id !== ctx.sourceGuildId) {
+    const agent = await getAgent(deps.db, String(run.agent_id));
+    if (!agent || agent.guild_id !== call.sourceGuildId) {
       throw new StudioUnprocessableError("run is not in the source guild");
     }
     const seqStart = input.seq_start ?? 0;
     const seqEnd = input.seq_end ?? 10_000;
     const toolName = input.tool_name;
-    let messages = (await listMessages(ctx.db, runId)).filter((row) => row.seq >= seqStart && row.seq <= seqEnd);
+    let messages = (await listMessages(deps.db, runId)).filter((row) => row.seq >= seqStart && row.seq <= seqEnd);
     if (toolName) {
       messages = callsOfTool(messages, toolName);
     }
@@ -538,12 +553,12 @@ export const studioListGroupMessages: StudioTool = {
     "Inspect bounded public guild history.",
     ListGroupMessagesArguments,
   ),
-  async handler(ctx, args) {
+  async handler(deps, call, args) {
     const input: ListGroupMessagesArguments = decodeStudioArguments(ListGroupMessagesArguments, args);
     const limit = clampLimit(input.limit, STUDIO_DEFAULT_LIMIT, STUDIO_GROUP_LIST_MAX);
     const offset = cursorOffset(input.cursor);
     const { author_type: authorType, author_handle: authorHandle } = input;
-    let rows = await listGroupMessages(ctx.db, ctx.sourceGuildId);
+    let rows = await listGroupMessages(deps.db, call.sourceGuildId);
     if (authorType) {
       rows = rows.filter((row) => row.author_type === authorType);
     }
@@ -584,12 +599,12 @@ export const studioListTaskRevisions: StudioTool = {
     "Inspect prior operator task versions.",
     AgentHistoryArguments,
   ),
-  async handler(ctx, args) {
+  async handler(deps, call, args) {
     const input: AgentHistoryArguments = decodeStudioArguments(AgentHistoryArguments, args);
-    const agent = await resolveHandle(ctx, input.agent_id);
+    const agent = await resolveHandle(deps, call, input.agent_id);
     const limit = clampLimit(input.limit, STUDIO_DEFAULT_LIMIT, STUDIO_REVISION_LIST_MAX);
     const offset = cursorOffset(input.cursor);
-    const rows = await listAgentTaskRevisions(ctx.db, ctx.orgId, agent.id);
+    const rows = await listAgentTaskRevisions(deps.db, call.orgId, agent.id);
     const slice = rows.slice(offset, offset + limit);
     return {
       revisions: slice.map((row) => ({
@@ -608,15 +623,19 @@ export const studioListTaskRevisions: StudioTool = {
   },
 };
 
-async function memoryTimelineFor(ctx: StudioToolContext, agent: Pick<AgentRow, "id">): Promise<MemoryTimelineEntry[]> {
+async function memoryTimelineFor(
+  deps: StudioToolDeps,
+  call: StudioToolCall,
+  agent: Pick<AgentRow, "id">,
+): Promise<MemoryTimelineEntry[]> {
   const actor = operatorActor({
-    orgId: ctx.orgId,
-    actorId: String(ctx.user.id),
-    actorName: String(ctx.user.name ?? "operator"),
-    guildId: ctx.sourceGuildId,
+    orgId: call.orgId,
+    actorId: String(call.user.id),
+    actorName: String(call.user.name ?? "operator"),
+    guildId: call.sourceGuildId,
     agentId: agent.id,
   });
-  return (await memoryTimeline(ctx.artifacts, actor, agent.id)).entries;
+  return (await memoryTimeline(deps.artifacts, actor, agent.id)).entries;
 }
 
 function timelineHeader(entry: MemoryTimelineEntry): Record<string, unknown> {
@@ -640,12 +659,12 @@ export const studioListMemoryRevisions: StudioTool = {
     "List the versions an agent's Memory has held, newest first: who wrote each version (a run id, a user, or the agent), when, and line counts. Content is not included; read one version with studio_get_memory_version.",
     AgentHistoryArguments,
   ),
-  async handler(ctx, args) {
+  async handler(deps, call, args) {
     const input: AgentHistoryArguments = decodeStudioArguments(AgentHistoryArguments, args);
-    const agent = await resolveHandle(ctx, input.agent_id);
+    const agent = await resolveHandle(deps, call, input.agent_id);
     const limit = clampLimit(input.limit, STUDIO_DEFAULT_LIMIT, STUDIO_REVISION_LIST_MAX);
     const offset = cursorOffset(input.cursor);
-    const entries = await memoryTimelineFor(ctx, agent);
+    const entries = await memoryTimelineFor(deps, call, agent);
     const slice = entries.slice(offset, offset + limit);
     return {
       agent_id: agent.id,
@@ -672,10 +691,10 @@ export const studioGetMemoryVersion: StudioTool = {
     "Read one version of an agent's Memory by revision_id or version_index from studio_list_memory_revisions (omit both for the live version), with the line diff against the previous version.",
     GetMemoryVersionArguments,
   ),
-  async handler(ctx, args) {
+  async handler(deps, call, args) {
     const input: GetMemoryVersionArguments = decodeStudioArguments(GetMemoryVersionArguments, args);
-    const agent = await resolveHandle(ctx, input.agent_id);
-    const entries = await memoryTimelineFor(ctx, agent);
+    const agent = await resolveHandle(deps, call, input.agent_id);
+    const entries = await memoryTimelineFor(deps, call, agent);
     const { revision_id: revisionId, version_index: index } = input;
     const entry = revisionId
       ? entries.find((item) => item.revision_id === revisionId)
@@ -723,14 +742,14 @@ export const studioFindArtifacts: StudioTool = {
     "Search notes relevant to the source guild.",
     FindArtifactsArguments,
   ),
-  async handler(ctx, args) {
+  async handler(deps, call, args) {
     const input: FindArtifactsArguments = decodeStudioArguments(FindArtifactsArguments, args);
     const limit = clampLimit(input.limit, STUDIO_DEFAULT_LIMIT, STUDIO_ARTIFACT_LIST_MAX);
     const actor = operatorActor({
-      orgId: ctx.orgId,
-      actorId: String(ctx.user.id),
-      actorName: String(ctx.user.name ?? "operator"),
-      guildId: ctx.sourceGuildId,
+      orgId: call.orgId,
+      actorId: String(call.user.id),
+      actorName: String(call.user.name ?? "operator"),
+      guildId: call.sourceGuildId,
     });
     const findArgs: {
       query: string;
@@ -742,10 +761,10 @@ export const studioFindArtifacts: StudioTool = {
     };
     const level = input.level;
     if (level === "agent" || level === "guild" || level === "org") findArgs.level = level;
-    const found = await findNotes(ctx.artifacts, actor, findArgs);
+    const found = await findNotes(deps.artifacts, actor, findArgs);
     const allowed = [];
     for (const item of found.notes) {
-      if (await studioReachesPath(ctx, String(item.display_path ?? ""))) allowed.push(item);
+      if (await studioReachesPath(deps, call, String(item.display_path ?? ""))) allowed.push(item);
     }
     const offset = cursorOffset(input.cursor);
     const slice = allowed.slice(offset, offset + limit);
@@ -777,23 +796,23 @@ export const studioGetArtifact: StudioTool = {
     "Read one artifact by a display path returned from an authorized Studio result.",
     GetArtifactArguments,
   ),
-  async handler(ctx, args) {
+  async handler(deps, call, args) {
     const input: GetArtifactArguments = decodeStudioArguments(GetArtifactArguments, args);
     const displayPath = input.display_path;
     const actor = operatorActor({
-      orgId: ctx.orgId,
-      actorId: String(ctx.user.id),
-      actorName: String(ctx.user.name ?? "operator"),
-      guildId: ctx.sourceGuildId,
+      orgId: call.orgId,
+      actorId: String(call.user.id),
+      actorName: String(call.user.name ?? "operator"),
+      guildId: call.sourceGuildId,
     });
     const parsed = parseActorPath(actor, displayPath);
     if (parsed.kind === "collection") {
       throw new StudioUnprocessableError(`${parsed.collectionName} is a table; read it with studio_get_collection`);
     }
-    if (!(await studioReachesParsed(ctx, parsed))) {
+    if (!(await studioReachesParsed(deps, call, parsed))) {
       throw new StudioUnprocessableError("artifact is not in the source guild or the organisation's shared files");
     }
-    const view = await artifactAt(ctx.artifacts, actor, displayPath);
+    const view = await artifactAt(deps.artifacts, actor, displayPath);
     if (view.kind !== "row") {
       throw new StudioUnprocessableError("artifact not found");
     }
@@ -832,21 +851,21 @@ export const studioListFileChanges: StudioTool = {
     "List who changed one file and when, newest first: notes, objects, scripts, memory, and standing tasks by display path. A run-written change carries the run id and the tool call that wrote it; read that run with studio_get_run.",
     ListFileChangesArguments,
   ),
-  async handler(ctx, args) {
+  async handler(deps, call, args) {
     const input: ListFileChangesArguments = decodeStudioArguments(ListFileChangesArguments, args);
     const displayPath = input.display_path;
     const actor = operatorActor({
-      orgId: ctx.orgId,
-      actorId: String(ctx.user.id),
-      actorName: String(ctx.user.name ?? "operator"),
-      guildId: ctx.sourceGuildId,
+      orgId: call.orgId,
+      actorId: String(call.user.id),
+      actorName: String(call.user.name ?? "operator"),
+      guildId: call.sourceGuildId,
     });
-    if (!(await studioReachesParsed(ctx, parseActorPath(actor, displayPath)))) {
+    if (!(await studioReachesParsed(deps, call, parseActorPath(actor, displayPath)))) {
       throw new StudioUnprocessableError("path is not in the source guild or the organisation's shared files");
     }
     const limit = clampLimit(input.limit, STUDIO_DEFAULT_LIMIT, STUDIO_REVISION_LIST_MAX);
     const offset = cursorOffset(input.cursor);
-    const rows = await listFileChanges(ctx.db, ctx.orgId, displayPath);
+    const rows = await listFileChanges(deps.db, call.orgId, displayPath);
     const slice = rows.slice(offset, offset + limit);
     return {
       display_path: displayPath,
@@ -881,12 +900,12 @@ export const studioGetScript: StudioTool = {
     "Read the source of one script owned by a source-guild agent. Script names come from the State projection or studio_get_agent_access.",
     GetScriptArguments,
   ),
-  async handler(ctx, args) {
+  async handler(deps, call, args) {
     const input: GetScriptArguments = decodeStudioArguments(GetScriptArguments, args);
-    const agent = await resolveHandle(ctx, input.agent_id);
+    const agent = await resolveHandle(deps, call, input.agent_id);
     let script: Record<string, unknown>;
     try {
-      script = await ctx.preview.scripts.get(agent.id, input.name);
+      script = await deps.preview.scripts.get(agent.id, input.name);
     } catch (error) {
       if (error instanceof ScriptError) {
         throw new StudioUnprocessableError(error.message);
@@ -913,9 +932,12 @@ export const studioGetScript: StudioTool = {
   },
 };
 
-async function liveGrantedConnectionIds(ctx: StudioToolContext): Promise<Set<string>> {
-  const live = await getStudioSession(ctx.db, String(ctx.session.id));
-  return new Set(grantedConnectionIds(live ?? ctx.session));
+async function liveGrantedConnectionIds(
+  deps: StudioToolDeps,
+  call: StudioToolCall,
+): Promise<Set<string>> {
+  const live = await getStudioSession(deps.db, String(call.session.id));
+  return new Set(grantedConnectionIds(live ?? call.session));
 }
 
 const GetAgentAccessArguments = Type.Object({
@@ -930,11 +952,11 @@ export const studioGetAgentAccess: StudioTool = {
     "Inspect what one source-guild agent is offered at run start: native tools, scripts, secret names, and MCP connections with their listed tools. Withheld lists name what the agent could be offered but is not. Each connection says whether this Studio session may read through it (studio_granted).",
     GetAgentAccessArguments,
   ),
-  async handler(ctx, args) {
+  async handler(deps, call, args) {
     const input: GetAgentAccessArguments = decodeStudioArguments(GetAgentAccessArguments, args);
-    const agent = await resolveHandle(ctx, input.agent_id);
-    const access = await projectAgentAccess(ctx.preview, agent);
-    const granted = await liveGrantedConnectionIds(ctx);
+    const agent = await resolveHandle(deps, call, input.agent_id);
+    const access = await projectAgentAccess(deps.preview, agent);
+    const granted = await liveGrantedConnectionIds(deps, call);
     return truncatePayload({
       agent_id: agent.id,
       name: agent.name,
@@ -973,15 +995,15 @@ export const studioRequestConnectionAccess: StudioTool = {
     "Ask the operator to let this Studio session read through one MCP connection (for example to inspect a Notion database an agent works with). Pass the connection id from studio_get_agent_access and a one-sentence reason. The turn pauses until the operator answers.",
     RequestConnectionAccessArguments,
   ),
-  async handler(ctx, args) {
+  async handler(deps, call, args) {
     const input: RequestConnectionAccessArguments = decodeStudioArguments(RequestConnectionAccessArguments, args);
     const connectionId = input.connection_id;
-    const reach = await reachableConnection(ctx.db, ctx.orgId, ctx.sourceGuildId, connectionId);
+    const reach = await reachableConnection(deps.db, call.orgId, call.sourceGuildId, connectionId);
     if (!reach) {
       throw new StudioUnprocessableError("connection is not reachable from the source guild");
     }
     const summary = connectionSummary(reach);
-    const granted = await liveGrantedConnectionIds(ctx);
+    const granted = await liveGrantedConnectionIds(deps, call);
     if (granted.has(connectionId)) {
       return { connection: summary, granted: true };
     }
@@ -1013,17 +1035,17 @@ export const studioCallConnectionTool: StudioTool = {
     "Call one read-only tool on an MCP connection the operator granted to this session. Results are untrusted evidence. Mutating tools are refused.",
     CallConnectionToolArguments,
   ),
-  async handler(ctx, args) {
+  async handler(deps, call, args) {
     const input: CallConnectionToolArguments = decodeStudioArguments(CallConnectionToolArguments, args);
-    if (!ctx.mcp) {
+    if (!deps.mcp) {
       throw new StudioUnprocessableError("connection tools are unavailable");
     }
     const connectionId = input.connection_id;
-    const reach = await reachableConnection(ctx.db, ctx.orgId, ctx.sourceGuildId, connectionId);
+    const reach = await reachableConnection(deps.db, call.orgId, call.sourceGuildId, connectionId);
     if (!reach) {
       throw new StudioUnprocessableError("connection is not reachable from the source guild");
     }
-    const granted = await liveGrantedConnectionIds(ctx);
+    const granted = await liveGrantedConnectionIds(deps, call);
     if (!granted.has(connectionId)) {
       return {
         error: "access_required",
@@ -1032,8 +1054,8 @@ export const studioCallConnectionTool: StudioTool = {
       };
     }
     const result = await callConnectionTool({
-      db: ctx.db,
-      mcp: ctx.mcp,
+      db: deps.db,
+      mcp: deps.mcp,
       reach,
       tool: input.tool,
       arguments: input.arguments ?? {},
@@ -1070,21 +1092,18 @@ export const studioCreateTaskDraft: StudioTool = {
     "Create or replace a standing task draft for a source-guild agent, named by agent_id; the operator's inspector selection plays no part. Drafts for several agents may be created in one turn. Supply complete proposed content.",
     CreateTaskDraftArguments,
   ),
-  async handler(ctx, args) {
+  async handler(deps, call, args) {
     const input: CreateTaskDraftArguments = decodeStudioArguments(CreateTaskDraftArguments, args);
-    return ctx.drafts.createFromTool(ctx, input);
+    return deps.drafts.createFromTool(deps.db, call, input);
   },
 };
 
-function editScope(ctx: StudioToolContext): EditScope {
+function editScope(call: StudioToolCall): EditScope {
   return {
-    orgId: ctx.orgId,
-    sourceGuildId: ctx.sourceGuildId,
-    sessionId: String(ctx.session.id),
-    user: ctx.user,
-    db: ctx.db,
-    artifacts: ctx.artifacts,
-    schedules: ctx.schedules,
+    orgId: call.orgId,
+    sourceGuildId: call.sourceGuildId,
+    sessionId: String(call.session.id),
+    user: call.user,
   };
 }
 
@@ -1095,8 +1114,8 @@ export const studioGetGuild: StudioTool = {
     "Read the source guild's live about (short, one line) and description (long) in full. The system message holds the text from session start, capped; this tool returns the current text.",
     Type.Object({}),
   ),
-  async handler(ctx) {
-    const base = await loadGuildBase(editScope(ctx));
+  async handler(deps, call) {
+    const base = await loadGuildBase(deps, editScope(call));
     if (base.kind !== "guild") {
       throw new StudioUnprocessableError("source guild not found");
     }
@@ -1130,12 +1149,12 @@ export const studioListGuilds: StudioTool = {
     "Read the organisation's other guilds that the operator can see: each one's name, about (short), and description (long). Their agents, files, and tables stay out of reach; their shared output reaches this guild through organisation tables and notes.",
     ListGuildsArguments,
   ),
-  async handler(ctx, args) {
+  async handler(deps, call, args) {
     const input: ListGuildsArguments = decodeStudioArguments(ListGuildsArguments, args);
     const limit = clampLimit(input.limit, STUDIO_DEFAULT_LIMIT, STUDIO_GROUP_LIST_MAX);
     const offset = cursorOffset(input.cursor);
-    const others = (await listGuildsForUser(ctx.db, ctx.orgId, String(ctx.user.id))).filter(
-      (row) => row.id !== String(ctx.sourceGuildId),
+    const others = (await listGuildsForUser(deps.db, call.orgId, String(call.user.id))).filter(
+      (row) => row.id !== String(call.sourceGuildId),
     );
     // A page ends at the limit or where the next guild would pass the byte cap.
     const guilds: Array<Record<string, unknown>> = [];
@@ -1180,10 +1199,10 @@ export const studioEditMemory: StudioTool = {
     "Propose a complete replacement of one source-guild agent's Memory. Nothing is written: the turn pauses and the operator applies or declines. Read the live Memory first and pass its version as base_version.",
     EditMemoryArguments,
   ),
-  async handler(ctx, args) {
+  async handler(deps, call, args) {
     const input: EditMemoryArguments = decodeStudioArguments(EditMemoryArguments, args);
-    const agent = await resolveHandle(ctx, input.agent_id);
-    const base = await loadMemoryBase(editScope(ctx), agent);
+    const agent = await resolveHandle(deps, call, input.agent_id);
+    const base = await loadMemoryBase(deps, editScope(call), agent);
     return editRequest(base, input, input.base_version);
   },
 };
@@ -1214,11 +1233,15 @@ const EditNoteArguments = Type.Object({
 type EditNoteArguments = Static<typeof EditNoteArguments>;
 
 /** The agent a note created at level agent belongs to; null at another level or when none is named. */
-async function noteAgentId(ctx: StudioToolContext, input: EditNoteArguments): Promise<string | null> {
+async function noteAgentId(
+  deps: StudioToolDeps,
+  call: StudioToolCall,
+  input: EditNoteArguments,
+): Promise<string | null> {
   if (input.level !== "agent" || !input.agent_id) {
     return null;
   }
-  return (await resolveHandle(ctx, input.agent_id)).id;
+  return (await resolveHandle(deps, call, input.agent_id)).id;
 }
 
 export const studioEditNote: StudioTool = {
@@ -1228,15 +1251,17 @@ export const studioEditNote: StudioTool = {
     "Propose a change to one note of the source guild, one of its agents, or the organisation. Nothing is written: the turn pauses and the operator applies or declines. create: a new note at the narrowest level that holds every reader; search with studio_find_artifacts first and edit a note that fits instead; the result's target carries the display path to embed or name in a Task draft. edit: a complete replacement of an existing note's body. delete: applying fails while any Task embeds the note, so draft those Tasks first. edit and delete name the note by display_path and pass the version studio_get_artifact returned as base_version. Memory, Tasks, scripts, and records are not changed here.",
     EditNoteArguments,
   ),
-  async handler(ctx, args) {
+  async handler(deps, call, args) {
     const input: EditNoteArguments = decodeStudioArguments(EditNoteArguments, args);
     const action = editActionOf(input);
     if (action === "edit") {
-      const base = await loadNoteBase(editScope(ctx), input.display_path ?? "");
+      const base = await loadNoteBase(deps, editScope(call), input.display_path ?? "");
       return editRequest(base, input, input.base_version ?? null);
     }
-    const agentId = action === "create" ? await noteAgentId(ctx, input) : null;
-    return noteEditRequest(editScope(ctx), action, input, agentId);
+    if (action === "create") {
+      return noteCreateRequest(deps, editScope(call), input, await noteAgentId(deps, call, input));
+    }
+    return noteDeleteRequest(deps, editScope(call), input);
   },
 };
 
@@ -1282,10 +1307,10 @@ export const studioEditAccess: StudioTool = {
     "Propose what one source-guild agent is offered: native tools, whole connections, and single connection tools. Each entry sets the agent's own overlay: on, off, or inherit (drop the overlay and take the guild's setting). Entries left out stay as they are. Nothing is written: the turn pauses and the operator applies or declines. Read the agent with studio_get_agent_access first. The browser, coding, scripting, and memory switches are agent configuration, not access.",
     EditAccessArguments,
   ),
-  async handler(ctx, args) {
+  async handler(deps, call, args) {
     const input: EditAccessArguments = decodeStudioArguments(EditAccessArguments, args);
-    const agent = await resolveHandle(ctx, input.agent_id);
-    return accessEditRequest(editScope(ctx), agent.id, input);
+    const agent = await resolveHandle(deps, call, input.agent_id);
+    return accessEditRequest(deps, editScope(call), agent.id, input);
   },
 };
 
@@ -1303,9 +1328,9 @@ export const studioEditGuild: StudioTool = {
     `Propose new text for the source guild's about (short, at most ${ABOUT_MAX} characters), description (long, at most ${DESCRIPTION_MAX} characters), or both. A field left out keeps its live text. Nothing is written: the turn pauses and the operator applies or declines. Read the live text with studio_get_guild first.`,
     EditGuildArguments,
   ),
-  async handler(ctx, args) {
+  async handler(deps, call, args) {
     const input: EditGuildArguments = decodeStudioArguments(EditGuildArguments, args);
-    const base = await loadGuildBase(editScope(ctx));
+    const base = await loadGuildBase(deps, editScope(call));
     return editRequest(base, input, null);
   },
 };
@@ -1379,8 +1404,8 @@ export const studioListCollections: StudioTool = {
     "List the tables (collections) the source guild's agents can be given: the guild's own, then the organisation's. Each has owner, purpose, record count, column names, the source guild's access, and studio_can: edit_or_delete for the guild's own, add_columns_and_access for the organisation's.",
     Type.Object({}),
   ),
-  async handler(ctx) {
-    return { collections: await listTables(editScope(ctx)), trust: "untrusted" };
+  async handler(deps, call) {
+    return { collections: await listTables(deps, editScope(call)), trust: "untrusted" };
   },
 };
 
@@ -1396,9 +1421,9 @@ export const studioGetCollection: StudioTool = {
     "Read one table: purpose, full columns, record count, updated_at (pass it as base_updated_at to studio_edit_collection), the organisation's row, the source guild's row, each source-guild agent's row and resulting access, the rows of other guilds and their agents, and the latest records.",
     GetCollectionArguments,
   ),
-  async handler(ctx, args) {
+  async handler(deps, call, args) {
     const input: GetCollectionArguments = decodeStudioArguments(GetCollectionArguments, args);
-    return { ...(await readTable(editScope(ctx), input.collection)), trust: "untrusted" };
+    return { ...(await readTable(deps, editScope(call), input.collection)), trust: "untrusted" };
   },
 };
 
@@ -1434,9 +1459,9 @@ export const studioEditCollection: StudioTool = {
     "Propose a change to one table of the source guild or the organisation. Nothing is written: the turn pauses and the operator applies or declines. create: a new table agents read and write with the record tools; check studio_list_collections first and reuse a table that fits. edit: on the source guild's own table, a new name, purpose, column list, or member access; on an organisation table, new columns added to the unchanged current ones, or source-guild access. Fields left out stay as they are. delete: one of the source guild's own tables with every record in it and its access list. edit and delete name the table by collection; read it with studio_get_collection first.",
     EditCollectionArguments,
   ),
-  async handler(ctx, args) {
+  async handler(deps, call, args) {
     const input: EditCollectionArguments = decodeStudioArguments(EditCollectionArguments, args);
-    return tableEditRequest(editScope(ctx), input);
+    return tableEditRequest(deps, editScope(call), input);
   },
 };
 
@@ -1486,10 +1511,10 @@ export const studioEditRoutine: StudioTool = {
     "Propose a change to one routine of a source-guild agent. Nothing is written: the turn pauses and the operator applies or declines. create: a new routine that wakes one agent on a UTC cron or at random times inside a daily window; check studio_list_routines first and change a routine that fits instead. edit: a new timing, description, instruction, or paused state; fields left out stay as they are. delete: its past runs stay; propose pausing it instead when it may be needed again. edit and delete name the routine by schedule_id from studio_list_routines.",
     EditRoutineArguments,
   ),
-  async handler(ctx, args) {
+  async handler(deps, call, args) {
     const input: EditRoutineArguments = decodeStudioArguments(EditRoutineArguments, args);
-    const agentId = editActionOf(input) === "create" ? (await resolveHandle(ctx, input.agent_id)).id : null;
-    return routineEditRequest(editScope(ctx), { args: input, agentId });
+    const agentId = editActionOf(input) === "create" ? (await resolveHandle(deps, call, input.agent_id)).id : null;
+    return routineEditRequest(deps, editScope(call), { args: input, agentId });
   },
 };
 

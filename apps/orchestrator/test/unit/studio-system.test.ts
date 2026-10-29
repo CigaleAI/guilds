@@ -195,7 +195,7 @@ test("note, table, and routine tools each take a create, edit, or delete action"
   assert.throws(() => editActionOf({}), /action must be/);
   assert.equal(editActionOf({ action: "delete" }), "delete");
   await assert.rejects(
-    studioToolMap().get("studio_edit_routine")!.handler({} as never, { action: "rename", reason: "r" }),
+    studioToolMap().get("studio_edit_routine")!.handler({} as never, {} as never, { action: "rename", reason: "r" }),
     /action must be/,
   );
 });

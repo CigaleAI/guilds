@@ -364,7 +364,7 @@ async function loadFileForFocus(
     let agent: AgentRow | null = null;
     if (parsed.kind === "revision" || (parsed.kind === "artifact" && parsed.level === "agent")) {
       agent = await guildAgent(deps, parsed.kind === "revision" ? parsed.agentId : parsed.ownerId);
-    } else if (!(await studioReachesParsed(deps, parsed))) {
+    } else if (!(await studioReachesParsed(deps, deps, parsed))) {
       throw new StudioUnprocessableError(
         "focus file is not in the source guild or the organisation's shared files",
       );

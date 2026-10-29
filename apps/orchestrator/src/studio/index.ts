@@ -36,7 +36,7 @@ import {
   type RosterAgent,
   type StudioMemberHydration,
 } from "./system.js";
-import { studioToolSchemas } from "./tools.js";
+import { studioToolSchemas, type StudioToolDeps } from "./tools.js";
 import {
   previewCurrentState,
   previewDatabase,
@@ -54,7 +54,15 @@ import {
 import type { StudioFocus } from "../db/schema/index.js";
 import { resolveStudioFocus, STUDIO_FOCUS_SOURCE } from "./focus.js";
 import { isAccessTool } from "./access.js";
-import { applyEdit, editStatus, findEditRecord, markEdit, viewEdit, type EditScope } from "./edits.js";
+import {
+  applyEdit,
+  editStatus,
+  findEditRecord,
+  markEdit,
+  viewEdit,
+  type EditDeps,
+  type EditScope,
+} from "./edits.js";
 import type { RoutineChange } from "./routines.js";
 import { getGuild, type GuildRow } from "../db/guilds.js";
 import { getAgent } from "../db/agents.js";
@@ -815,18 +823,12 @@ export class StudioService {
       generation: started.generation,
       generationContext,
       systemContent: started.systemContent,
-      toolContext: {
+      toolDeps: this.toolDeps(),
+      toolCall: {
         session: started.session,
         user,
         orgId: started.session.org_id,
         sourceGuildId: session.source_guild_id,
-        artifacts: this.deps.artifacts,
-        db: this.deps.db,
-        schedules: this.deps.schedules,
-        drafts: this.drafts,
-        preview: this.previewDeps(),
-        notesSystemPath: this.deps.notesSystemPath,
-        mcp: this.deps.mcp ?? null,
       },
     });
     return this.viewSession(started.session);
@@ -961,15 +963,28 @@ export class StudioService {
     };
   }
 
+  private toolDeps(): StudioToolDeps {
+    return {
+      artifacts: this.deps.artifacts,
+      db: this.deps.db,
+      schedules: this.deps.schedules,
+      drafts: this.drafts,
+      preview: this.previewDeps(),
+      notesSystemPath: this.deps.notesSystemPath,
+      mcp: this.deps.mcp ?? null,
+    };
+  }
+
+  private editDeps(): EditDeps {
+    return { db: this.deps.db, artifacts: this.deps.artifacts, schedules: this.deps.schedules };
+  }
+
   private editScope(session: LiveStudioSession, user: UserRow): EditScope {
     return {
       orgId: session.org_id,
       sourceGuildId: session.source_guild_id,
       sessionId: session.id,
       user,
-      db: this.deps.db,
-      artifacts: this.deps.artifacts,
-      schedules: this.deps.schedules,
     };
   }
 
@@ -983,7 +998,8 @@ export class StudioService {
       throw new StudioUnprocessableError("source guild is gone");
     }
     const record = findEditRecord(await listConversationMessages(this.deps.db, "studio", session.id), seq);
-    return viewEdit(this.editScope({ ...session, source_guild_id: sourceGuildId }, user), record);
+    const scope = this.editScope({ ...session, source_guild_id: sourceGuildId }, user);
+    return viewEdit(this.editDeps(), scope, record);
   }
 
   // Apply or decline one edit request from the Studio log. The session lock
@@ -995,6 +1011,7 @@ export class StudioService {
     decision: "apply" | "decline",
   ): Promise<Record<string, unknown>> {
     this.assertLive(session);
+    const deps = this.editDeps();
     const scope = this.editScope(session, user);
     const userId = user.id;
     const outcome = await withLockedSession(this.deps.db, session.id, async () => {
@@ -1006,7 +1023,7 @@ export class StudioService {
         await markEdit(this.deps.db, session.id, record, { status: "declined", version: null, userId });
         return { record, applied: null };
       }
-      const applied = await applyEdit(scope, record);
+      const applied = await applyEdit(deps, scope, record);
       await markEdit(this.deps.db, session.id, record, {
         status: "applied",
         version: applied.version,
@@ -1027,7 +1044,7 @@ export class StudioService {
       await this.deps.publishFilesChanged(session.source_guild_id);
     }
     const record = findEditRecord(await listConversationMessages(this.deps.db, "studio", session.id), seq);
-    return viewEdit(scope, record);
+    return viewEdit(deps, scope, record);
   }
 
   assertLive(session: StudioSessionRow): asserts session is LiveStudioSession {
