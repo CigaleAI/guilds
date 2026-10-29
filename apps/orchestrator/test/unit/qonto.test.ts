@@ -103,6 +103,24 @@ test("list_bank_accounts maps fields and sends secret-key auth", async () => {
   assert.equal(stored, "acc-1  Main  FR76  EUR  active");
 });
 
+test("list_bank_accounts refuses a body that is not JSON or does not match its schema", async () => {
+  const answering = (result: { json?: unknown; text?: string }) => ({
+    ...CREDS,
+    client: mockFetch(() => ({ status: 200, ...result })),
+  });
+  await assert.rejects(
+    () => callTool("list_bank_accounts", {}, answering({ json: { organization: "none" } })),
+    (error: unknown) =>
+      error instanceof QontoError &&
+      /^Qonto returned an unexpected response at \/organization: /.test(error.message),
+  );
+  await assert.rejects(
+    () => callTool("list_bank_accounts", {}, answering({ text: "not json" })),
+    (error: unknown) =>
+      error instanceof QontoError && error.message === "Qonto returned a non-JSON body",
+  );
+});
+
 test("list_missing_invoices paginates, filters, and skips closed accounts", async () => {
   const seen: string[] = [];
   const stored = await callTool(
