@@ -1,3 +1,4 @@
+import { Type, type Static } from "@sinclair/typebox";
 import { encryptPayload } from "../credentials/crypto.js";
 import { newId } from "../lib/ids.js";
 import { PolicyError } from "../policy/index.js";
@@ -142,6 +143,20 @@ function requireProvider(id: string): ProviderDef {
   return provider;
 }
 
+/** A provider connected for an organisation: its key, a local endpoint, and the models chosen on it. */
+export const ProviderConnectionSchema = Type.Object({
+  api_key: Type.Optional(Type.String()),
+  base_url: Type.Optional(Type.String()),
+  models: Type.Optional(Type.Array(Type.String())),
+});
+
+export type ProviderConnection = Static<typeof ProviderConnectionSchema>;
+
+/** The organisation's default model; null or empty names none. */
+export const DefaultModelSchema = Type.Object({
+  model: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+});
+
 export class ModelsService {
   private readonly catalog: ModelCatalog;
 
@@ -253,14 +268,14 @@ export class ModelsService {
   async connect(
     orgId: string,
     providerId: string,
-    input: { api_key?: unknown; base_url?: unknown; models?: unknown },
+    input: ProviderConnection,
   ): Promise<ProviderItem> {
     const provider = requireProvider(providerId);
     const existing = await this.deps.db.getOrgModelProvider(orgId, provider.id);
     const stored = existing ? decryptProviderRow(existing, this.deps.masterKey) : null;
-    const givenKey = typeof input.api_key === "string" ? input.api_key.trim() : "";
+    const givenKey = input.api_key?.trim() ?? "";
     const apiKey = givenKey || stored?.apiKey || "";
-    const givenURL = typeof input.base_url === "string" ? input.base_url.trim() : "";
+    const givenURL = input.base_url?.trim() ?? "";
     const baseURL = provider.id === "local" ? givenURL || stored?.baseURL || "" : null;
     if (provider.id === "local") {
       if (!baseURL) {
@@ -311,14 +326,11 @@ export class ModelsService {
   }
 
   /** Names the organisation's default: one of its chosen models on a connected marketplace provider, or none. */
-  async setDefault(orgId: string, model: unknown): Promise<{ default: string | null }> {
+  async setDefault(orgId: string, model: string | null): Promise<{ default: string | null }> {
     const now = new Date();
-    if (model === null || model === undefined || model === "") {
+    if (model === null || model === "") {
       await this.deps.db.setOrgDefaultModel(orgId, null, now);
       return { default: null };
-    }
-    if (typeof model !== "string") {
-      throw new ModelsError(422, "model must be a string or null");
     }
     const id = model.trim();
     const parsed = parseModelId(id);

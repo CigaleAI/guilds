@@ -116,6 +116,12 @@ test("an organisation connects providers, chooses models, and names a default", 
     assert.equal((await put(OWNER, "/model-providers/openrouter", { api_key: "   " })).statusCode, 422);
     assert.equal((await put(OWNER, "/model-providers/openrouter", {})).statusCode, 422);
     assert.equal((await put(OWNER, "/model-providers/deepinfra", { models: ["openai/gpt-5"] })).statusCode, 422);
+    const listedAsText = await put(OWNER, "/model-providers/deepinfra", { models: "deepinfra/zai-org/GLM-5.3-Flash" });
+    assert.equal(listedAsText.statusCode, 422);
+    assert.deepEqual(listedAsText.json().detail[0].loc, ["body", "models"]);
+    const numberedDefault = await put(OWNER, "/default-model", { model: 5 });
+    assert.equal(numberedDefault.statusCode, 422);
+    assert.deepEqual(numberedDefault.json().detail[0].loc, ["body", "model"]);
 
     const wrongKind = await put(OWNER, "/default-model", { model: "kimi/k3" });
     assert.equal(wrongKind.statusCode, 422, wrongKind.body);

@@ -8,6 +8,14 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** Connecting a model provider refuses an `api_key` or
+`base_url` that is not a string and a `models` that is not a list of
+strings, and naming the default model refuses a `model` that is
+neither a string nor null, with a 422 that names the field, before the
+request's user is identified. Before, a key or URL that was not a
+string counted as left out, and a `model` that was not a string was a
+422 with `model must be a string or null`.
+
 **No impact.** The user directory refuses a create without a string
 `name`, or with an `email` that is neither a string nor null, and an
 email change without an `email` that is a string or null, with a 422
