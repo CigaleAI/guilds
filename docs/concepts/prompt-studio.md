@@ -566,15 +566,8 @@ that takes a display path, and for focus pins.
 | `studio_list_guilds` | The organisation's other guilds the operator can see, private guilds they do not operate left out: each one's id, name, about, and description as evidence. Paged with `cursor` and `limit`; a page also ends before its guilds pass half the 64 KiB result cap |
 | `studio_get_agent_access` | What one member is offered at run start, projected from bindings, the secrets that reach it, and the stored MCP catalog: native tools and the ones withheld, scripts, secret names and descriptions, and each MCP connection with its offered and withheld tools, whether the server is enabled for that agent, and whether this session may read through it. No remote list and no credential decryption |
 
-`studio_get_agent_context`, `studio_list_routines`, `studio_list_runs`,
-`studio_get_run`, `studio_list_group_messages`,
-`studio_list_task_revisions`, `studio_list_memory_revisions`,
-`studio_get_memory_version`, `studio_find_artifacts`,
-`studio_get_artifact`, `studio_list_file_changes`,
-`studio_get_script`, `studio_get_agent_access`,
-`studio_request_connection_access`, `studio_call_connection_tool`,
-`studio_create_task_draft`, and `studio_list_guilds` check their arguments against the
-parameters they declare before they read them
+Every Studio tool that takes arguments checks them against the
+parameters it declares before it reads them
 (`apps/orchestrator/src/studio/arguments.ts`):
 
 - An optional argument sent as `null` counts as left out.
@@ -584,6 +577,9 @@ parameters they declare before they read them
   mismatch, named by its JSON pointer, such as
   `/limit: Expected integer` or
   `/run_id: Expected required property`.
+- A value from a fixed list, such as an `action`, a `level`, or an
+  access setting, is checked by the tool itself, which names the
+  values it takes.
 
 ### Storage
 

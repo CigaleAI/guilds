@@ -8,20 +8,18 @@ commands for each effect are in
 
 ## Unreleased
 
-**No impact.** Studio's `studio_get_agent_context`,
-`studio_list_routines`, `studio_list_runs`, `studio_get_run`,
-`studio_list_group_messages`, `studio_list_task_revisions`,
-`studio_list_memory_revisions`, `studio_get_memory_version`,
-`studio_find_artifacts`, `studio_get_artifact`,
-`studio_list_file_changes`, `studio_get_script`,
-`studio_get_agent_access`, `studio_request_connection_access`,
-`studio_call_connection_tool`, `studio_create_task_draft`, and
-`studio_list_guilds` refuse a call whose arguments do not match the parameters the tool
-declares, with the first mismatch, such as `/limit: Expected integer`.
+**No impact.** Every Studio tool refuses a call whose arguments do not
+match the parameters the tool declares, with the first mismatch, such
+as `/limit: Expected integer` or `/action: Expected required property`.
 Before, a mistyped argument counted as left out, a numeric string was
-read as a `seq_start` or `seq_end`, and a missing `run_id` or
-`agent_id` was refused with `run not found` or `agent handle required`.
-An optional argument sent as `null` still counts as left out.
+read as a `seq_start` or `seq_end`, a missing `run_id`, `agent_id`, or
+`action` was refused with `run not found`, `agent handle required`, or
+`action must be create, edit, or delete`, a collection `access` that is
+not an object was refused with `access must be an object`, and a Memory
+edit without `base_version` was proposed without a check of the live
+version. An optional argument sent as `null` counts as left out, where
+a collection's `name` or `purpose` sent as `null` was read as the text
+`null`.
 
 **No impact.** The browser and terminal views of an agent's sandbox
 proxy a path only to the sandbox daemon. Before, a path written as a URL

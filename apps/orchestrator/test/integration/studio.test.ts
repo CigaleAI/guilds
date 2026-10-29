@@ -1242,6 +1242,11 @@ test("studio proposes memory, note, and guild edits that the operator applies or
       studioEditMemory.handler(await ctx(), { agent_id: "curator", content: "x", base_version: Number(memory?.version) - 1, reason: "r" }),
       /stale/,
     );
+    await assert.rejects(
+      studioEditMemory.handler(await ctx(), { agent_id: "curator", content: "x", base_version: String(memory?.version), reason: "r" }),
+      /\/base_version: Expected integer/,
+    );
+    await assert.rejects(studioEditGuild.handler(await ctx(), { about: "New about" }), /\/reason: Expected required property/);
     const memoryArgs = {
       agent_id: "curator",
       content: "- be brief\n- digest in notes/digest.md\n- nothing yet",
@@ -1475,6 +1480,11 @@ test("studio proposes tables to create, change, and delete that the operator app
       [["shared", "add_columns_and_access"]],
     );
     await assert.rejects(studioGetCollection.handler(await ctx(), { collection: "their-queue" }), /unknown table/);
+    await assert.rejects(studioGetCollection.handler(await ctx(), { collection: 7 }), /\/collection: Expected string/);
+    await assert.rejects(
+      studioEditCollection.handler(await ctx(), { action: "create", name: "leads", purpose: "p", columns: "email", reason: "r" }),
+      /\/columns: Expected array/,
+    );
     await assert.rejects(
       studioEditCollection.handler(await ctx(), {
         action: "edit",
@@ -1518,7 +1528,7 @@ test("studio proposes tables to create, change, and delete that the operator app
         name: "Bad Name",
         access: "everyone",
       }),
-      /access must be an object/,
+      /\/access: Expected object/,
     );
     const createWidget = (await studioEditCollection.handler(await ctx(), createArgs)) as Widget;
     assert.equal(createWidget.widget, "studio_edit_request");
@@ -1879,6 +1889,10 @@ test("studio proposes notes to create and delete and narrows an agent's access",
       /unknown native tool/,
     );
     await assert.rejects(
+      studioEditAccess.handler(await ctx(), { agent_id: "archivist", native_tools: { note_get: false }, reason: "r" }),
+      /\/native_tools\/note_get: Expected string/,
+    );
+    await assert.rejects(
       studioEditAccess.handler(await ctx(), { agent_id: "archivist", connection_tools: { "other_tool": "off" }, reason: "r" }),
       /not a tool of archivist's connections/,
     );
@@ -2074,6 +2088,17 @@ test("studio proposes routines to create, change, and delete that the operator a
       app.inject({ method: "POST", url: `/api/studio/sessions/${session.id}/edits/${seq}`, headers: AUTH, payload: { decision } });
 
     // Create: refused without a timing or with a bad one; applied as the operator.
+    await assert.rejects(
+      studioEditRoutine.handler(await ctx(), {
+        action: "create",
+        agent_id: "watcher",
+        window: { timezone: "Europe/Paris", start: "09:00", end: "18:00" },
+        description: "d",
+        instruction: "i",
+        reason: "r",
+      }),
+      /\/window\/max_wakes: Expected required property/,
+    );
     await assert.rejects(
       studioEditRoutine.handler(await ctx(), { action: "create", agent_id: "watcher", description: "d", instruction: "i", reason: "r" }),
       /exactly one of cron or window/,

@@ -3,14 +3,13 @@ import { agentTask } from "../artifacts/task.js";
 import { iso } from "../db/views.js";
 import { composeAgentSystemPrompt, hydrateStanding, promptHash, schemasOffer } from "../prompts/index.js";
 import { Type, type Static } from "@sinclair/typebox";
-import { argString, functionSchema } from "../toolbox/schema.js";
 import { scheduleItem } from "../schedules/item.js";
 import { capBytes } from "../lib/bytes.js";
 import type { AgentScheduleRow } from "../db/schedules.js";
 import type { Schedules } from "../schedules/service.js";
 import { previewCurrentState, projectAgentAccess, projectOfferedToolSchemas, type PreviewDeps } from "./preview.js";
 import { wrapEvidence } from "./system.js";
-import { decodeStudioArguments, studioAgentHandleFromArgs, studioFunctionSchema } from "./arguments.js";
+import { decodeStudioArguments, studioFunctionSchema } from "./arguments.js";
 import { StudioUnprocessableError } from "./errors.js";
 import { ScriptError } from "../scripts/validation.js";
 import { ABOUT_MAX, DESCRIPTION_MAX } from "../guilds/validation.js";
@@ -83,13 +82,12 @@ export type StudioTool = {
   handler: (ctx: StudioToolContext, args: Record<string, unknown>) => Promise<Record<string, unknown>>;
 };
 
-function clampLimit(value: unknown, fallback: number, max: number): number {
-  const n = typeof value === "number" && Number.isInteger(value) ? value : fallback;
-  return Math.min(Math.max(n, 1), max);
+function clampLimit(value: number | undefined, fallback: number, max: number): number {
+  return Math.min(Math.max(value ?? fallback, 1), max);
 }
 
-function cursorOffset(cursor: unknown): number {
-  if (typeof cursor !== "string" || !cursor) {
+function cursorOffset(cursor: string | null | undefined): number {
+  if (!cursor) {
     return 0;
   }
   const n = Number(cursor);
@@ -173,7 +171,7 @@ function truncatePayload(payload: Record<string, unknown>): Record<string, unkno
 
 export function sliceStudioBytes(
   text: string,
-  cursor: unknown,
+  cursor: string | null | undefined,
   maxBytes = STUDIO_TOOL_RESULT_MAX_BYTES,
 ): { text: string; next_cursor: string | null; truncated: boolean } {
   const offset = cursorOffset(cursor);
@@ -283,7 +281,7 @@ export const studioGetAgentContext: StudioTool = {
       };
     }
     if (want.has("memory") && memory) {
-      const sliced = sliceStudioBytes(memory.content_text ?? "", want.has("task") ? 0 : cursor);
+      const sliced = sliceStudioBytes(memory.content_text ?? "", want.has("task") ? undefined : cursor);
       result.memory = {
         version: memory.version,
         content_hash: memory.content_hash,
@@ -296,7 +294,7 @@ export const studioGetAgentContext: StudioTool = {
     }
     if (want.has("state")) {
       const preview = await currentState();
-      const sliced = sliceStudioBytes(JSON.stringify(preview.state, null, 2), want.has("task") || want.has("memory") ? 0 : cursor);
+      const sliced = sliceStudioBytes(JSON.stringify(preview.state, null, 2), want.has("task") || want.has("memory") ? undefined : cursor);
       result.state = {
         ownership: "derived",
         editable: false,
@@ -327,7 +325,7 @@ export const studioGetAgentContext: StudioTool = {
         memoryEnabled,
         memoryEnabled && schemasOffer(tools.schemas, "memory_write"),
       );
-      const sliced = sliceStudioBytes(composed, want.size === 1 ? cursor : 0);
+      const sliced = sliceStudioBytes(composed, want.size === 1 ? cursor : undefined);
       result.effective_prompt = {
         ownership: "derived",
         editable: false,
@@ -1090,10 +1088,6 @@ function editScope(ctx: StudioToolContext): EditScope {
   };
 }
 
-function baseVersionArg(args: Record<string, unknown>): number | null {
-  return typeof args.base_version === "number" && Number.isInteger(args.base_version) ? args.base_version : null;
-}
-
 export const studioGetGuild: StudioTool = {
   name: "studio_get_guild",
   schema: studioFunctionSchema(
@@ -1171,302 +1165,333 @@ export const studioListGuilds: StudioTool = {
   },
 };
 
+const EditMemoryArguments = Type.Object({
+  agent_id: Type.String({ description: "Source-guild agent id or name. Required." }),
+  content: Type.String({ description: "Complete proposed Memory, not a description of changes. Required." }),
+  base_version: Type.Integer({ description: "Memory version the proposal was built from. Required." }),
+  reason: Type.String({ description: "Why this edit, one or two sentences, citing evidence. Required." }),
+});
+type EditMemoryArguments = Static<typeof EditMemoryArguments>;
+
 export const studioEditMemory: StudioTool = {
   name: "studio_edit_memory",
-  schema: functionSchema(
+  schema: studioFunctionSchema(
     "studio_edit_memory",
     "Propose a complete replacement of one source-guild agent's Memory. Nothing is written: the turn pauses and the operator applies or declines. Read the live Memory first and pass its version as base_version.",
-    {
-      agent_id: { type: "string", description: "Source-guild agent id or name. Required." },
-      content: { type: "string", description: "Complete proposed Memory, not a description of changes. Required." },
-      base_version: { type: "integer", description: "Memory version the proposal was built from. Required." },
-      reason: { type: "string", description: "Why this edit, one or two sentences, citing evidence. Required." },
-    },
-    ["agent_id", "content", "base_version", "reason"],
+    EditMemoryArguments,
   ),
   async handler(ctx, args) {
-    const agent = await resolveHandle(ctx, studioAgentHandleFromArgs(args) || undefined);
+    const input: EditMemoryArguments = decodeStudioArguments(EditMemoryArguments, args);
+    const agent = await resolveHandle(ctx, input.agent_id);
     const base = await loadMemoryBase(editScope(ctx), agent);
-    return editRequest(base, args, baseVersionArg(args));
+    return editRequest(base, input, input.base_version);
   },
 };
 
-const NOTE_LEVEL = {
-  type: "string",
-  enum: ["agent", "guild", "org"],
-  description:
-    "create: agent is one agent's own file, guild is read by the source guild's agents, org is read across the organisation.",
-};
+const EditNoteArguments = Type.Object({
+  action: Type.String({ enum: ["create", "edit", "delete"], description: "Required." }),
+  display_path: Type.Optional(
+    Type.String({ description: "edit and delete: display path from studio_find_artifacts or studio_get_artifact." }),
+  ),
+  base_version: Type.Optional(
+    Type.Integer({ description: "edit and delete: the note version the proposal was built from." }),
+  ),
+  level: Type.Optional(
+    Type.String({
+      enum: ["agent", "guild", "org"],
+      description:
+        "create: agent is one agent's own file, guild is read by the source guild's agents, org is read across the organisation.",
+    }),
+  ),
+  agent_id: Type.Optional(Type.String({ description: "create at level agent: source-guild agent id or name." })),
+  key: Type.Optional(Type.String({ description: "create: file name ending in .md, no folders, for example playbook.md." })),
+  title: Type.Optional(Type.String({ description: "create: short title shown in Files." })),
+  content: Type.Optional(
+    Type.String({ description: "create and edit: the complete note body, not a description of changes." }),
+  ),
+  reason: Type.String({ description: "Why this change, one or two sentences, citing evidence. Required." }),
+});
+type EditNoteArguments = Static<typeof EditNoteArguments>;
 
-async function noteAgentId(ctx: StudioToolContext, args: Record<string, unknown>): Promise<string | null> {
-  const handle = studioAgentHandleFromArgs(args);
-  if (argString(args, "level") !== "agent" || !handle) {
+/** The agent a note created at level agent belongs to; null at another level or when none is named. */
+async function noteAgentId(ctx: StudioToolContext, input: EditNoteArguments): Promise<string | null> {
+  if (input.level !== "agent" || !input.agent_id) {
     return null;
   }
-  return String((await resolveHandle(ctx, handle)).id);
+  return (await resolveHandle(ctx, input.agent_id)).id;
 }
 
 export const studioEditNote: StudioTool = {
   name: "studio_edit_note",
-  schema: functionSchema(
+  schema: studioFunctionSchema(
     "studio_edit_note",
     "Propose a change to one note of the source guild, one of its agents, or the organisation. Nothing is written: the turn pauses and the operator applies or declines. create: a new note at the narrowest level that holds every reader; search with studio_find_artifacts first and edit a note that fits instead; the result's target carries the display path to embed or name in a Task draft. edit: a complete replacement of an existing note's body. delete: applying fails while any Task embeds the note, so draft those Tasks first. edit and delete name the note by display_path and pass the version studio_get_artifact returned as base_version. Memory, Tasks, scripts, and records are not changed here.",
-    {
-      action: { type: "string", enum: ["create", "edit", "delete"], description: "Required." },
-      display_path: { type: "string", description: "edit and delete: display path from studio_find_artifacts or studio_get_artifact." },
-      base_version: { type: "integer", description: "edit and delete: the note version the proposal was built from." },
-      level: NOTE_LEVEL,
-      agent_id: { type: "string", description: "create at level agent: source-guild agent id or name." },
-      key: { type: "string", description: "create: file name ending in .md, no folders, for example playbook.md." },
-      title: { type: "string", description: "create: short title shown in Files." },
-      content: { type: "string", description: "create and edit: the complete note body, not a description of changes." },
-      reason: { type: "string", description: "Why this change, one or two sentences, citing evidence. Required." },
-    },
-    ["action", "reason"],
+    EditNoteArguments,
   ),
   async handler(ctx, args) {
-    const action = editActionOf(args);
+    const input: EditNoteArguments = decodeStudioArguments(EditNoteArguments, args);
+    const action = editActionOf(input);
     if (action === "edit") {
-      const base = await loadNoteBase(editScope(ctx), argString(args, "display_path"));
-      return editRequest(base, args, baseVersionArg(args));
+      const base = await loadNoteBase(editScope(ctx), input.display_path ?? "");
+      return editRequest(base, input, input.base_version ?? null);
     }
-    const agentId = action === "create" ? await noteAgentId(ctx, args) : null;
-    return noteEditRequest(editScope(ctx), action, args, agentId);
+    const agentId = action === "create" ? await noteAgentId(ctx, input) : null;
+    return noteEditRequest(editScope(ctx), action, input, agentId);
   },
 };
 
-const ACCESS_SETTINGS = {
-  type: "object",
-  additionalProperties: { type: "string", enum: ["on", "off", "inherit"] },
-};
+const ACCESS_SETTING = Type.String({ enum: ["on", "off", "inherit"] });
+
+const EditAccessArguments = Type.Object({
+  agent_id: Type.String({ description: "Source-guild agent id or name. Required." }),
+  native_tools: Type.Optional(
+    Type.Object(
+      {},
+      {
+        additionalProperties: ACCESS_SETTING,
+        description: "Native tool name to setting, from native_tools or withheld_native_tools.",
+      },
+    ),
+  ),
+  connections: Type.Optional(
+    Type.Object(
+      {},
+      {
+        additionalProperties: ACCESS_SETTING,
+        description: "Connection id from studio_get_agent_access to setting: the whole connection for this agent.",
+      },
+    ),
+  ),
+  connection_tools: Type.Optional(
+    Type.Object(
+      {},
+      {
+        additionalProperties: ACCESS_SETTING,
+        description: "Connection tool name from offered_tools or withheld_tools to setting.",
+      },
+    ),
+  ),
+  reason: Type.String({ description: "Why this change, one or two sentences, citing evidence. Required." }),
+});
+type EditAccessArguments = Static<typeof EditAccessArguments>;
 
 export const studioEditAccess: StudioTool = {
   name: "studio_edit_access",
-  schema: functionSchema(
+  schema: studioFunctionSchema(
     "studio_edit_access",
     "Propose what one source-guild agent is offered: native tools, whole connections, and single connection tools. Each entry sets the agent's own overlay: on, off, or inherit (drop the overlay and take the guild's setting). Entries left out stay as they are. Nothing is written: the turn pauses and the operator applies or declines. Read the agent with studio_get_agent_access first. The browser, coding, scripting, and memory switches are agent configuration, not access.",
-    {
-      agent_id: { type: "string", description: "Source-guild agent id or name. Required." },
-      native_tools: {
-        ...ACCESS_SETTINGS,
-        description: "Native tool name to setting, from native_tools or withheld_native_tools.",
-      },
-      connections: {
-        ...ACCESS_SETTINGS,
-        description: "Connection id from studio_get_agent_access to setting: the whole connection for this agent.",
-      },
-      connection_tools: {
-        ...ACCESS_SETTINGS,
-        description: "Connection tool name from offered_tools or withheld_tools to setting.",
-      },
-      reason: { type: "string", description: "Why this change, one or two sentences, citing evidence. Required." },
-    },
-    ["agent_id", "reason"],
+    EditAccessArguments,
   ),
   async handler(ctx, args) {
-    const agent = await resolveHandle(ctx, studioAgentHandleFromArgs(args) || undefined);
-    return accessEditRequest(editScope(ctx), agent.id, args);
+    const input: EditAccessArguments = decodeStudioArguments(EditAccessArguments, args);
+    const agent = await resolveHandle(ctx, input.agent_id);
+    return accessEditRequest(editScope(ctx), agent.id, input);
   },
 };
+
+const EditGuildArguments = Type.Object({
+  about: Type.Optional(Type.String({ description: "Complete proposed about line." })),
+  description: Type.Optional(Type.String({ description: "Complete proposed description." })),
+  reason: Type.String({ description: "Why this edit, one or two sentences. Required." }),
+});
+type EditGuildArguments = Static<typeof EditGuildArguments>;
 
 export const studioEditGuild: StudioTool = {
   name: "studio_edit_guild",
-  schema: functionSchema(
+  schema: studioFunctionSchema(
     "studio_edit_guild",
     `Propose new text for the source guild's about (short, at most ${ABOUT_MAX} characters), description (long, at most ${DESCRIPTION_MAX} characters), or both. A field left out keeps its live text. Nothing is written: the turn pauses and the operator applies or declines. Read the live text with studio_get_guild first.`,
-    {
-      about: { type: "string", description: "Complete proposed about line." },
-      description: { type: "string", description: "Complete proposed description." },
-      reason: { type: "string", description: "Why this edit, one or two sentences. Required." },
-    },
-    ["reason"],
+    EditGuildArguments,
   ),
   async handler(ctx, args) {
+    const input: EditGuildArguments = decodeStudioArguments(EditGuildArguments, args);
     const base = await loadGuildBase(editScope(ctx));
-    return editRequest(base, args, null);
+    return editRequest(base, input, null);
   },
 };
 
-const COLUMN_PROPERTIES = {
-  name: { type: "string", description: "^[a-z][a-z0-9_]{0,63}$; id, created_at, updated_at, created_by, and updated_by are reserved." },
-  type: { type: "string", enum: ["text", "number", "boolean", "datetime", "array"] },
-  description: { type: "string", description: "What the value means and how agents should fill it. At most 1000 characters." },
-  required: { type: "boolean" },
-  unique: {
-    type: "boolean",
-    description: "Text or number only, at most one per table. A record_add that repeats the value merges into that record.",
-  },
-  values: {
-    type: "array",
-    items: { type: "string" },
-    description: "Text or array only: the closed list of accepted values, such as a queue's state.",
-  },
-};
-
-function columnsSchema(description: string): Record<string, unknown> {
-  return {
-    type: "array",
-    description,
-    items: {
-      type: "object",
-      properties: {
-        ...COLUMN_PROPERTIES,
-        rename_from: {
-          type: "string",
+const TABLE_COLUMNS = Type.Array(
+  Type.Object(
+    {
+      name: Type.String({
+        description: "^[a-z][a-z0-9_]{0,63}$; id, created_at, updated_at, created_by, and updated_by are reserved.",
+      }),
+      type: Type.String({ enum: ["text", "number", "boolean", "datetime", "array"] }),
+      description: Type.String({ description: "What the value means and how agents should fill it. At most 1000 characters." }),
+      required: Type.Optional(Type.Boolean()),
+      unique: Type.Optional(
+        Type.Boolean({
+          description: "Text or number only, at most one per table. A record_add that repeats the value merges into that record.",
+        }),
+      ),
+      values: Type.Optional(
+        Type.Array(Type.String(), {
+          description: "Text or array only: the closed list of accepted values, such as a queue's state.",
+        }),
+      ),
+      rename_from: Type.Optional(
+        Type.String({
           description: "The column's current name when this entry renames it; its values move to the new name.",
-        },
-      },
-      required: ["name", "type", "description"],
-      additionalProperties: false,
+        }),
+      ),
     },
-  };
-}
-
-const ACCESS_SCHEMA = {
-  type: "object",
-  description: "Who in the source guild reaches the table. Only the entries given change.",
-  properties: {
-    guild: {
-      type: "string",
-      enum: ["read", "write", "none"],
-      description: "The guild's row: the mode of every agent in the guild without a row of its own; none removes the guild's row.",
-    },
-    agents: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          agent_id: { type: "string", description: "Source-guild agent id or name." },
-          mode: {
-            type: "string",
-            enum: ["read", "write", "none", "inherit"],
-            description: "The agent's own row over the guild's: none keeps it out; inherit removes its own row.",
-          },
-        },
-        required: ["agent_id", "mode"],
-        additionalProperties: false,
-      },
-    },
+    { additionalProperties: false },
+  ),
+  {
+    description:
+      "create: the typed columns, in display order; every record write is validated against them. edit: the complete column list replacing the current one; keep every column you do not mean to change, since a column left out is dropped from every record.",
   },
-  additionalProperties: false,
-};
+);
 
-const TABLE_REASON = { type: "string", description: "Why this change, one or two sentences, citing evidence. Required." };
+const TABLE_ACCESS = Type.Object(
+  {
+    guild: Type.Optional(
+      Type.String({
+        enum: ["read", "write", "none"],
+        description: "The guild's row: the mode of every agent in the guild without a row of its own; none removes the guild's row.",
+      }),
+    ),
+    agents: Type.Optional(
+      Type.Array(
+        Type.Object(
+          {
+            agent_id: Type.String({ description: "Source-guild agent id or name." }),
+            mode: Type.String({
+              enum: ["read", "write", "none", "inherit"],
+              description: "The agent's own row over the guild's: none keeps it out; inherit removes its own row.",
+            }),
+          },
+          { additionalProperties: false },
+        ),
+      ),
+    ),
+  },
+  {
+    description: "Who in the source guild reaches the table. Only the entries given change.",
+    additionalProperties: false,
+  },
+);
 
 export const studioListCollections: StudioTool = {
   name: "studio_list_collections",
-  schema: functionSchema(
+  schema: studioFunctionSchema(
     "studio_list_collections",
     "List the tables (collections) the source guild's agents can be given: the guild's own, then the organisation's. Each has owner, purpose, record count, column names, the source guild's access, and studio_can: edit_or_delete for the guild's own, add_columns_and_access for the organisation's.",
-    {},
-    [],
+    Type.Object({}),
   ),
   async handler(ctx) {
     return { collections: await listTables(editScope(ctx)), trust: "untrusted" };
   },
 };
 
+const GetCollectionArguments = Type.Object({
+  collection: Type.String({ description: "Table name from studio_list_collections. Required." }),
+});
+type GetCollectionArguments = Static<typeof GetCollectionArguments>;
+
 export const studioGetCollection: StudioTool = {
   name: "studio_get_collection",
-  schema: functionSchema(
+  schema: studioFunctionSchema(
     "studio_get_collection",
     "Read one table: purpose, full columns, record count, updated_at (pass it as base_updated_at to studio_edit_collection), the organisation's row, the source guild's row, each source-guild agent's row and resulting access, the rows of other guilds and their agents, and the latest records.",
-    { collection: { type: "string", description: "Table name from studio_list_collections. Required." } },
-    ["collection"],
+    GetCollectionArguments,
   ),
   async handler(ctx, args) {
-    return { ...(await readTable(editScope(ctx), argString(args, "collection"))), trust: "untrusted" };
+    const input: GetCollectionArguments = decodeStudioArguments(GetCollectionArguments, args);
+    return { ...(await readTable(editScope(ctx), input.collection)), trust: "untrusted" };
   },
 };
+
+const EditCollectionArguments = Type.Object({
+  action: Type.String({ enum: ["create", "edit", "delete"], description: "Required." }),
+  collection: Type.Optional(Type.String({ description: "edit and delete: the table's current name." })),
+  base_updated_at: Type.Optional(Type.String({ description: "edit: the updated_at studio_get_collection returned." })),
+  name: Type.Optional(
+    Type.String({
+      description:
+        "create: ^[a-z][a-z0-9_-]{0,62}$, unique in the organisation. edit: the new name; Tasks, notes, and routines that name the old one must change too.",
+    }),
+  ),
+  purpose: Type.Optional(
+    Type.String({ description: "create and edit: one line, at most 400 characters: what one record is and who writes it." }),
+  ),
+  columns: Type.Optional(TABLE_COLUMNS),
+  scope: Type.Optional(
+    Type.String({
+      enum: ["guild", "org"],
+      description: "create: guild (default), the source guild owns the table and starts with the guild at write; org, an organisation table that starts with the organisation at read.",
+    }),
+  ),
+  access: Type.Optional(TABLE_ACCESS),
+  reason: Type.String({ description: "Why this change, one or two sentences, citing evidence. Required." }),
+});
+type EditCollectionArguments = Static<typeof EditCollectionArguments>;
 
 export const studioEditCollection: StudioTool = {
   name: "studio_edit_collection",
-  schema: functionSchema(
+  schema: studioFunctionSchema(
     "studio_edit_collection",
     "Propose a change to one table of the source guild or the organisation. Nothing is written: the turn pauses and the operator applies or declines. create: a new table agents read and write with the record tools; check studio_list_collections first and reuse a table that fits. edit: on the source guild's own table, a new name, purpose, column list, or member access; on an organisation table, new columns added to the unchanged current ones, or source-guild access. Fields left out stay as they are. delete: one of the source guild's own tables with every record in it and its access list. edit and delete name the table by collection; read it with studio_get_collection first.",
-    {
-      action: { type: "string", enum: ["create", "edit", "delete"], description: "Required." },
-      collection: { type: "string", description: "edit and delete: the table's current name." },
-      base_updated_at: { type: "string", description: "edit: the updated_at studio_get_collection returned." },
-      name: {
-        type: "string",
-        description:
-          "create: ^[a-z][a-z0-9_-]{0,62}$, unique in the organisation. edit: the new name; Tasks, notes, and routines that name the old one must change too.",
-      },
-      purpose: { type: "string", description: "create and edit: one line, at most 400 characters: what one record is and who writes it." },
-      columns: columnsSchema(
-        "create: the typed columns, in display order; every record write is validated against them. edit: the complete column list replacing the current one; keep every column you do not mean to change, since a column left out is dropped from every record.",
-      ),
-      scope: {
-        type: "string",
-        enum: ["guild", "org"],
-        description: "create: guild (default), the source guild owns the table and starts with the guild at write; org, an organisation table that starts with the organisation at read.",
-      },
-      access: ACCESS_SCHEMA,
-      reason: TABLE_REASON,
-    },
-    ["action", "reason"],
+    EditCollectionArguments,
   ),
   async handler(ctx, args) {
-    return tableEditRequest(editScope(ctx), args);
+    const input: EditCollectionArguments = decodeStudioArguments(EditCollectionArguments, args);
+    return tableEditRequest(editScope(ctx), input);
   },
 };
 
-const ROUTINE_TIMING = {
-  cron: {
-    type: "string",
-    description:
-      "5-field UTC expression (minute hour day month weekday), for example '0 9 * * 1'; wake-ups at least 5 minutes apart. Pass cron or window, not both.",
-  },
-  window: {
-    type: "object",
-    description: "Random wake-ups inside a daily local-time window. Pass cron or window, not both.",
-    properties: {
-      timezone: { type: "string", description: "IANA name, for example Europe/Paris." },
-      start: { type: "string", description: "HH:MM local time." },
-      end: { type: "string", description: "HH:MM local time; earlier than start spans midnight." },
-      max_wakes: { type: "integer", description: "Most wake-ups per window; gaps are at least 5 minutes." },
-    },
-    required: ["timezone", "start", "end", "max_wakes"],
-    additionalProperties: false,
-  },
-};
-
-const ROUTINE_TEXT = {
-  description: { type: "string", description: "One-line label shown in the Routine tab, at most 400 characters." },
-  instruction: {
-    type: "string",
-    description: "Short markdown the agent receives on each wake-up, at most 2000 characters: what this wake-up is for, not the agent's whole Task.",
-  },
-};
-
-const ROUTINE_REASON = { type: "string", description: "Why this change, one or two sentences, citing evidence. Required." };
+const EditRoutineArguments = Type.Object({
+  action: Type.String({ enum: ["create", "edit", "delete"], description: "Required." }),
+  agent_id: Type.Optional(Type.String({ description: "create: source-guild agent id or name." })),
+  schedule_id: Type.Optional(Type.String({ description: "edit and delete: the routine's id from studio_list_routines." })),
+  cron: Type.Optional(
+    Type.String({
+      description:
+        "5-field UTC expression (minute hour day month weekday), for example '0 9 * * 1'; wake-ups at least 5 minutes apart. Pass cron or window, not both.",
+    }),
+  ),
+  window: Type.Optional(
+    Type.Object(
+      {
+        timezone: Type.String({ description: "IANA name, for example Europe/Paris." }),
+        start: Type.String({ description: "HH:MM local time." }),
+        end: Type.String({ description: "HH:MM local time; earlier than start spans midnight." }),
+        max_wakes: Type.Integer({ description: "Most wake-ups per window; gaps are at least 5 minutes." }),
+      },
+      {
+        description: "Random wake-ups inside a daily local-time window. Pass cron or window, not both.",
+        additionalProperties: false,
+      },
+    ),
+  ),
+  description: Type.Optional(
+    Type.String({ description: "One-line label shown in the Routine tab, at most 400 characters." }),
+  ),
+  instruction: Type.Optional(
+    Type.String({
+      description: "Short markdown the agent receives on each wake-up, at most 2000 characters: what this wake-up is for, not the agent's whole Task.",
+    }),
+  ),
+  paused: Type.Optional(
+    Type.Boolean({ description: "create: true creates it paused. edit: true pauses it; false resumes it." }),
+  ),
+  reason: Type.String({ description: "Why this change, one or two sentences, citing evidence. Required." }),
+});
+type EditRoutineArguments = Static<typeof EditRoutineArguments>;
 
 export const studioEditRoutine: StudioTool = {
   name: "studio_edit_routine",
-  schema: functionSchema(
+  schema: studioFunctionSchema(
     "studio_edit_routine",
     "Propose a change to one routine of a source-guild agent. Nothing is written: the turn pauses and the operator applies or declines. create: a new routine that wakes one agent on a UTC cron or at random times inside a daily window; check studio_list_routines first and change a routine that fits instead. edit: a new timing, description, instruction, or paused state; fields left out stay as they are. delete: its past runs stay; propose pausing it instead when it may be needed again. edit and delete name the routine by schedule_id from studio_list_routines.",
-    {
-      action: { type: "string", enum: ["create", "edit", "delete"], description: "Required." },
-      agent_id: { type: "string", description: "create: source-guild agent id or name." },
-      schedule_id: { type: "string", description: "edit and delete: the routine's id from studio_list_routines." },
-      ...ROUTINE_TIMING,
-      ...ROUTINE_TEXT,
-      paused: { type: "boolean", description: "create: true creates it paused. edit: true pauses it; false resumes it." },
-      reason: ROUTINE_REASON,
-    },
-    ["action", "reason"],
+    EditRoutineArguments,
   ),
   async handler(ctx, args) {
-    const agentId = editActionOf(args) === "create" ? await routineAgentId(ctx, args) : null;
-    return routineEditRequest(editScope(ctx), { args, agentId });
+    const input: EditRoutineArguments = decodeStudioArguments(EditRoutineArguments, args);
+    const agentId = editActionOf(input) === "create" ? (await resolveHandle(ctx, input.agent_id)).id : null;
+    return routineEditRequest(editScope(ctx), { args: input, agentId });
   },
 };
-
-async function routineAgentId(ctx: StudioToolContext, args: Record<string, unknown>): Promise<string> {
-  return String((await resolveHandle(ctx, studioAgentHandleFromArgs(args) || undefined)).id);
-}
 
 export const STUDIO_TOOLS: StudioTool[] = [
   studioGetGuidelines,
