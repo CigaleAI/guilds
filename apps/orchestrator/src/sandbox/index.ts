@@ -159,18 +159,17 @@ export function agentRunDir(agentId: string): string {
   return `${AGENT_RUN_ROOT}/${agentId}`;
 }
 
-/** The agent's home with its scripts directory, and the browser profile when it has a browser. */
-export function prepareWorkspace(
-  workspaceRoot: string,
-  machineId: string,
-  agentId: string,
-  options: { browser?: boolean } = {},
-): string {
+/** The agent's home with its scripts directory. */
+export function prepareWorkspace(workspaceRoot: string, machineId: string, agentId: string): string {
   const workspace = agentDirectory(workspaceRoot, machineId, agentId);
-  if (options.browser) {
-    mkdirSync(path.join(workspace, BROWSER_PROFILE), { recursive: true });
-  }
   mkdirSync(path.join(workspace, SCRIPTS_DIR), { recursive: true });
+  return workspace;
+}
+
+/** The home of an agent with a browser: its scripts directory and its browser profile. */
+export function prepareBrowserWorkspace(workspaceRoot: string, machineId: string, agentId: string): string {
+  const workspace = prepareWorkspace(workspaceRoot, machineId, agentId);
+  mkdirSync(path.join(workspace, BROWSER_PROFILE), { recursive: true });
   return workspace;
 }
 

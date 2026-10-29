@@ -23,7 +23,7 @@ import {
   hydrateStanding,
   standingForCapabilities,
 } from "../prompts/index.js";
-import { prepareWorkspace } from "../sandbox/index.js";
+import { prepareBrowserWorkspace, prepareWorkspace } from "../sandbox/index.js";
 import type { Scripts } from "../scripts/catalog.js";
 import { collectRunState, type RunStateInputs } from "../state/index.js";
 import { SCRIPT_TOOLS } from "../toolbox/script.js";
@@ -235,7 +235,11 @@ export class RunPreparation {
   /** The agent's home on its machine, created when it is missing. */
   private async prepareHome(agent: AgentRow): Promise<void> {
     const root = await this.services.machines.workspaceRootFor(agent.machine_id);
-    prepareWorkspace(root, agent.machine_id, agent.id, { browser: Boolean(agent.config.browser) });
+    if (agent.config.browser) {
+      prepareBrowserWorkspace(root, agent.machine_id, agent.id);
+    } else {
+      prepareWorkspace(root, agent.machine_id, agent.id);
+    }
   }
 
   /** The collections the agent can read; none when the box keeps no artifacts or the store refuses. */

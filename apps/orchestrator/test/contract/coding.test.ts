@@ -8,6 +8,7 @@ import {
   RunSandboxes,
   agentSandbox,
   applyRunScripts,
+  prepareBrowserWorkspace,
   prepareWorkspace,
   seatEnvironment,
   type AgentSeat,
@@ -113,7 +114,7 @@ test("two agents on one machine each run their own Chrome, on their own ports an
   const right = { ...seat("a_contract_right", 1), browserLanguage: "fr-FR" };
   try {
     for (const agent of [left, right]) {
-      prepareWorkspace(server.workspaceRoot, MACHINE.id, agent.agentId, { browser: true });
+      prepareBrowserWorkspace(server.workspaceRoot, MACHINE.id, agent.agentId);
     }
     const machine = await sandboxes.ensure(MACHINE);
     await sandboxes.startBrowser(machine, left);

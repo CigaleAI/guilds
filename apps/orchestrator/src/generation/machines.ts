@@ -11,6 +11,7 @@ import { moveAgent } from "../machines/placement.js";
 import { errorMessage, errorName, writeLog } from "../observability/log.js";
 import {
   machineSpec,
+  prepareBrowserWorkspace,
   prepareWorkspace,
   SandboxError,
   type AgentSeat,
@@ -365,7 +366,12 @@ export class AgentMachines {
     const config = this.validConfig(agent);
     const machine = agentMachine(agent);
     try {
-      prepareWorkspace(await this.workspaceRootFor(machine.id), machine.id, agentId, { browser: config.browser });
+      const root = await this.workspaceRootFor(machine.id);
+      if (config.browser) {
+        prepareBrowserWorkspace(root, machine.id, agentId);
+      } else {
+        prepareWorkspace(root, machine.id, agentId);
+      }
     } catch (error) {
       throw new RunRequestError(503, errorMessage(error));
     }
