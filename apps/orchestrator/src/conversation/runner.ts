@@ -30,7 +30,7 @@ import {
   type ModelCredentials,
   type ModelCredentialsProvider,
 } from "../llm/credentials.js";
-import { AdmissionConflictError, AdmissionCoordinator } from "../generation/admission.js";
+import { AdmissionConflictError, AdmissionCoordinator } from "../admission/coordinator.js";
 import { promptHash } from "../prompts/index.js";
 import { ConversationConflictError, ConversationError } from "./errors.js";
 import {

@@ -28,7 +28,7 @@ import type { RunConfigSnapshot, RunScriptSnapshot } from "../db/schema/index.js
 import { harnessMissingError, shownProgressLines } from "../toolbox/harness.js";
 import { createToolContext, type ToolContext } from "../toolbox/index.js";
 import { dynamicScriptTools, liveExtraForAgent, SCRIPT_TOOLS } from "../toolbox/script.js";
-import type { ActiveGenerations } from "./admission.js";
+import type { ActiveGenerations } from "./active-generations.js";
 import { chainOf, completeIfActive, HANDOFF_FRACTION, type RunChains } from "./chain.js";
 import { codingRepositoriesDatabase, guildRepositories, type CodingRuns } from "./coding.js";
 import { completionRequest, historyTokens, type ModelCompletion } from "./completion.js";

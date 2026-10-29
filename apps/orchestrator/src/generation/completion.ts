@@ -22,7 +22,7 @@ import {
 import { LLMError, countInputTokens, streamCompletion, type Completion, type ModelEvent } from "../llm/index.js";
 import { PolicyError, type OrgPolicy } from "../policy/index.js";
 import type { CancelEvent } from "../toolbox/index.js";
-import type { ActiveGenerations } from "./admission.js";
+import type { ActiveGenerations } from "./active-generations.js";
 import { GenerationCancelled, RunLimitError } from "./errors.js";
 import type { RunEvents, RunGeneration } from "./events.js";
 

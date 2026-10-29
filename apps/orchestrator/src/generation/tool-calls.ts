@@ -16,7 +16,7 @@ import {
   toolResultMaxBytes,
   type ToolContext,
 } from "../toolbox/index.js";
-import type { ActiveGenerations } from "./admission.js";
+import type { ActiveGenerations } from "./active-generations.js";
 import type { CodingRuns } from "./coding.js";
 import { GenerationCancelled } from "./errors.js";
 import type { RunEvents, RunGeneration } from "./events.js";

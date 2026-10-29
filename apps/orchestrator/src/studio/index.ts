@@ -18,7 +18,7 @@ import { composeAgentSystemPrompt, hydrateStanding, promptHash, schemasOffer } f
 import { iso } from "../db/views.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { Schedules } from "../schedules/service.js";
-import { AdmissionCoordinator } from "../generation/admission.js";
+import { AdmissionCoordinator } from "../admission/coordinator.js";
 import { OPEN_POLICY, claimCoachRun, coachRunClaims, type OrgPolicy } from "../policy/index.js";
 import {
   STUDIO_DEFAULT_TEMPERATURE,

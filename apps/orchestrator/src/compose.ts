@@ -18,7 +18,7 @@ import {
   type SandboxProvider,
   type ServerExtension,
 } from "./extension.js";
-import { AdmissionCoordinator } from "./generation/admission.js";
+import { AdmissionCoordinator } from "./admission/coordinator.js";
 import { generationDatabase, GenerationLoop } from "./generation/index.js";
 import { coreModelCredentials, modelProviderStore } from "./llm/credentials.js";
 import { modelsDatabase, ModelsService } from "./llm/models.js";

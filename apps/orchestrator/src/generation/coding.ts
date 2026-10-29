@@ -28,7 +28,7 @@ import {
   type LostTurnEnd,
 } from "../toolbox/harness.js";
 import type { ToolContext } from "../toolbox/index.js";
-import type { ActiveGenerations } from "./admission.js";
+import type { ActiveGenerations } from "./active-generations.js";
 import { RunRequestError } from "./errors.js";
 import type { RunEvents, RunGeneration } from "./events.js";
 import type { AgentMachines } from "./machines.js";

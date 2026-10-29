@@ -27,7 +27,7 @@ import type { Scripts } from "../scripts/catalog.js";
 import { collectRunState, type RunStateInputs } from "../state/index.js";
 import { SCRIPT_TOOLS } from "../toolbox/script.js";
 import { serializeHistoryDecision, type GroupRouter } from "../typesafe/index.js";
-import type { ActiveGenerations } from "./admission.js";
+import type { ActiveGenerations } from "./active-generations.js";
 import { codingRepositoriesDatabase, guildRepositories } from "./coding.js";
 import { RunRequestError } from "./errors.js";
 import type { AgentMachines } from "./machines.js";

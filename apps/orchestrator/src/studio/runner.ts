@@ -1,5 +1,5 @@
 import { EventQueue } from "../lib/event.js";
-import { AdmissionCoordinator } from "../generation/admission.js";
+import { AdmissionCoordinator } from "../admission/coordinator.js";
 import type { OrgPolicy } from "../policy/index.js";
 import {
   ConversationRunner,

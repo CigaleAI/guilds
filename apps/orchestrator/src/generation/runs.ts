@@ -24,7 +24,7 @@ import { errorName, writeLog } from "../observability/log.js";
 import { instructionHash, scheduleWakeUserMessage } from "../schedules/item.js";
 import type { Schedules } from "../schedules/service.js";
 import { planAfterFire, rowTiming } from "../schedules/timing.js";
-import type { ActiveGenerations } from "./admission.js";
+import type { ActiveGenerations } from "./active-generations.js";
 import { continuationMessage, type ChainPosition } from "./chain.js";
 import { ConflictError, RunRequestError } from "./errors.js";
 import type { RunPreparation } from "./prepare.js";

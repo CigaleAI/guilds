@@ -17,7 +17,7 @@ import {
   type MachineSpec,
   type SandboxHandle,
 } from "../sandbox/index.js";
-import type { ActiveGenerations } from "./admission.js";
+import type { ActiveGenerations } from "./active-generations.js";
 import { RunRequestError } from "./errors.js";
 import { IdleTimers } from "./idle.js";
 

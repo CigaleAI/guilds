@@ -18,7 +18,7 @@ import {
 import { isMarketplaceModel } from "../llm/providers.js";
 import { newId } from "../lib/ids.js";
 import { EventQueue } from "../lib/event.js";
-import { AdmissionCoordinator } from "../generation/admission.js";
+import { AdmissionCoordinator } from "../admission/coordinator.js";
 import { OPEN_POLICY, claimCoachRun, coachRunClaims, type OrgPolicy } from "../policy/index.js";
 import { ConversationRunner } from "../conversation/runner.js";
 import type { CapabilityService } from "../capabilities/index.js";
