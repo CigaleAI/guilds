@@ -341,6 +341,9 @@ test(
       const platform = await bind({ ...tool, scope: "platform" });
       assert.equal(platform.statusCode, 400, platform.body);
       assert.equal((await bind({ ...tool, scope: "galaxy", scope_id: "x" })).statusCode, 422);
+      const mistyped = await bind({ ...tool, enabled: "no", scope: "agent", scope_id: "a_items" });
+      assert.equal(mistyped.statusCode, 422);
+      assert.deepEqual(mistyped.json().detail[0].loc, ["body", "enabled"]);
       const bound = await bind({ ...tool, scope: "agent", scope_id: "a_items" });
       assert.equal(bound.statusCode, 200, bound.body);
       assert.equal(bound.json().enabled, false);
@@ -350,6 +353,14 @@ test(
           url: `/api/bindings?catalog_kind=native_tool&catalog_id=script_list&${query}`,
           headers: OWNER,
         });
+      const unscoped = await unbind("scope_id=a_items");
+      assert.equal(unscoped.statusCode, 422);
+      assert.deepEqual(unscoped.json().detail[0], {
+        type: "missing",
+        loc: ["querystring", "scope"],
+        msg: "Field required",
+        input: { catalog_kind: "native_tool", catalog_id: "script_list", scope_id: "a_items" },
+      });
       assert.equal((await unbind("scope=agent&scope_id=a_items")).statusCode, 204);
       assert.equal(
         (await unbind("scope=agent&scope_id=a_items")).statusCode,
