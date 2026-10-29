@@ -247,6 +247,19 @@ CRUD writes PostgreSQL and returns JSON. Runs go through
 their own streams.
 
 A route reads the request, calls its domain, and writes the reply.
+A route declares a TypeBox schema for the body, query and params it
+reads, and Fastify checks the request against it before the handler
+runs. A route with a body schema takes a JSON object, and a request
+without one is refused. The check converts nothing: a value of the
+wrong JSON type is
+refused. A refused request is a 422 whose `detail` lists the problem
+as `{ type, loc, msg, input }`: a missing field is `type: "missing"`,
+`msg: "Field required"`, at `loc` `[part, ...path, field]`, with the
+object it is missing from as `input`; any other problem is the schema
+keyword it broke, at the value's path, with the value as `input`.
+`part` is `body`, `querystring`, `params` or `headers`
+(`validationHttp` in `http/errors.ts`).
+
 A domain refuses a request with a named error that carries the HTTP
 status it answers with, or with a validation error, which is a 422.
 `domainHttp` in `http/errors.ts` turns either into the reply.

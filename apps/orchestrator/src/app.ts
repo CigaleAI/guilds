@@ -19,6 +19,7 @@ import {
 } from "./extension.js";
 import type { AppDeps } from "./http/deps.js";
 import { registerErrorHandler } from "./http/error-handler.js";
+import { validationHttp } from "./http/errors.js";
 import { registerRequestOrigin } from "./http/origin.js";
 import { registerDomainRoutes } from "./http/routes.js";
 import { sandboxSubprotocol } from "./http/sandbox-proxy.js";
@@ -55,6 +56,10 @@ export async function buildApp(
     bodyLimit: 10 * 1024 * 1024 + 4096,
     // Keep an incoming X-Request-Id, or mint one. The response echoes it.
     ...fastifyRequestIdOptions(),
+    // A route's schema checks the request as sent: a value of the wrong type is refused, never
+    // converted. Each problem carries the value it found, for the 422 that names it.
+    ajv: { customOptions: { coerceTypes: false, verbose: true } },
+    schemaErrorFormatter: validationHttp,
   }).withTypeProvider<TypeBoxTypeProvider>();
   registerHttpObservability(app);
   registerErrorHandler(app);

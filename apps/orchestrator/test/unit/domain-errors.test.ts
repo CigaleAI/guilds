@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { HttpError, domainHttp } from "../../src/http/errors.js";
+import { HttpError, domainHttp, validationHttp } from "../../src/http/errors.js";
 import { numberOrNull } from "../../src/lib/numbers.js";
 import { ModelNotConnectedError } from "../../src/llm/credentials.js";
 import { MachineError } from "../../src/machines/index.js";
@@ -37,4 +37,41 @@ test("a nullable numeric column is a number, or null when null or absent", () =>
   assert.equal(numberOrNull(0), 0);
   assert.equal(numberOrNull("0"), 0);
   assert.equal(numberOrNull(7), 7);
+});
+
+test("a field a route's schema requires is missing at its path, with the object around it", () => {
+  // Ajv's verbose errors carry the value they found as `data`.
+  const missing = {
+    keyword: "required",
+    instancePath: "/config",
+    schemaPath: "#/properties/config/required",
+    params: { missingProperty: "model" },
+    message: "must have required property 'model'",
+    data: { name: "a" },
+  };
+  const http = validationHttp([missing], "body");
+  assert.equal(http.status, 422);
+  assert.deepEqual(http.detail, [
+    {
+      type: "missing",
+      loc: ["body", "config", "model"],
+      msg: "Field required",
+      input: { name: "a" },
+    },
+  ]);
+});
+
+test("a value of the wrong type is the keyword it broke at its path, with the value found", () => {
+  const mistyped = {
+    keyword: "type",
+    instancePath: "/subjects/0/a~1b",
+    schemaPath: "#/properties/subjects/items/properties/a~1b/type",
+    params: { type: "string" },
+    message: "must be string",
+    data: 5,
+  };
+  const http = validationHttp([mistyped], "querystring");
+  assert.deepEqual(http.detail, [
+    { type: "type", loc: ["querystring", "subjects", "0", "a/b"], msg: "must be string", input: 5 },
+  ]);
 });

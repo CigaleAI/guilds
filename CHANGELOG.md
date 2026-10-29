@@ -8,6 +8,16 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** A request that a route's TypeBox schema refuses, such
+as an avatar asked for with two `seed` values, or a request to an
+extension's route that declares a schema, answers 422 with a `detail`
+that lists the problem as `{ type, loc, msg, input }`. A value of the
+wrong JSON type is refused, never converted. Before, it answered 400
+with Fastify's message, and a number or a boolean sent where the
+schema asked for another scalar type was converted to it. A route
+that declares a body schema refuses a request whose body is not a JSON
+object the same way.
+
 **No impact.** Every Studio tool refuses a call whose arguments do not
 match the parameters the tool declares, with the first mismatch, such
 as `/limit: Expected integer` or `/action: Expected required property`.
