@@ -88,7 +88,7 @@ test("two agents share one machine: each runs in its own home, with its own secr
     const rightToken = await sandboxes.startCli(machine, right);
     assert.match(leftToken, /^[0-9a-f]{48}$/);
     assert.notEqual(leftToken, rightToken, "each agent has its own terminal");
-    await sandboxes.stopAgent(machine, left, { purge: true });
+    await sandboxes.purgeAgent(machine, left);
     const gone = await machine.commands.run(`test -e /run/guilds/${left.agentId} && echo there || echo gone`, {
       timeoutSeconds: 10,
     });

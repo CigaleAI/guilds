@@ -37,8 +37,8 @@ export type GenerationSandboxes = {
   /** Starts the agent's display, Chrome, and noVNC when they are not up, and waits until they answer. */
   startBrowser(sandbox: SandboxHandle, seat: AgentSeat): Promise<void>;
   stopBrowser(sandbox: SandboxHandle, seat: AgentSeat): Promise<void>;
-  /** Stops the agent's browser and terminal; with `purge`, also removes its runtime files. */
-  stopAgent(sandbox: SandboxHandle, seat: AgentSeat, options?: { purge?: boolean }): Promise<void>;
+  /** Stops the agent's browser and terminal and removes its runtime files. */
+  purgeAgent(sandbox: SandboxHandle, seat: AgentSeat): Promise<void>;
   novncTarget(sandbox: SandboxHandle, seat: AgentSeat): Promise<[string, Record<string, string>]>;
   startCli(sandbox: SandboxHandle, seat: AgentSeat): Promise<string>;
   cliTarget(sandbox: SandboxHandle, seat: AgentSeat, token: string): Promise<[string, Record<string, string>]>;
@@ -480,7 +480,7 @@ export class AgentMachines {
     const sandbox = await this.sandboxes.connectRunning(machineId);
     if (sandbox !== null) {
       try {
-        await this.sandboxes.stopAgent(sandbox, agentSeat(agent), { purge: true });
+        await this.sandboxes.purgeAgent(sandbox, agentSeat(agent));
       } catch (error) {
         writeLog(
           "error",
@@ -522,7 +522,7 @@ export class AgentMachines {
       this.cancelBrowserIdle(agentId);
       const sandbox = await this.sandboxes.connectRunning(from);
       if (sandbox !== null) {
-        await this.sandboxes.stopAgent(sandbox, agentSeat(agent), { purge: true });
+        await this.sandboxes.purgeAgent(sandbox, agentSeat(agent));
       }
       const homeMoved = existsSync(source);
       if (homeMoved) {

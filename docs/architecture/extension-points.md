@@ -132,7 +132,7 @@ and `trusted-header`. Paths below are under
   `connectRunning`, `destroy`, `listRunningMachineIds`, and an
   optional `harnessesOf(machineId)` (the harness CLIs the machine's
   container carries). On an agent's seat (agent id, machine id, slot,
-  browser language): `startBrowser`, `stopBrowser`, `stopAgent`,
+  browser language): `startBrowser`, `stopBrowser`, `purgeAgent`,
   `novncTarget`, `startCli`, and `cliTarget`. An optional
   `machineHost(machineId)` gives the host, workspace root, and proxy
   URL a machine runs with. `SandboxProvider` adds `start`, `close`,

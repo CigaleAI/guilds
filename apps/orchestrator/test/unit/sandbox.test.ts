@@ -488,7 +488,7 @@ test("each agent's browser starts and stops on its own slot", async () => {
   };
   await sandboxes.startBrowser(fake, SEAT);
   await sandboxes.stopBrowser(fake, SEAT);
-  await sandboxes.stopAgent(fake, SEAT, { purge: true });
+  await sandboxes.purgeAgent(fake, SEAT);
   const ports = slotPorts(2);
   assert.equal(
     commands[0],
@@ -518,7 +518,7 @@ test("stopping an agent whose processes outlive the stop fails", async () => {
       },
     },
   };
-  await assert.rejects(() => sandboxes.stopAgent(stuck, SEAT, { purge: true }), SandboxError);
+  await assert.rejects(() => sandboxes.purgeAgent(stuck, SEAT), SandboxError);
   await assert.rejects(() => sandboxes.stopBrowser(stuck, SEAT), SandboxError);
 });
 
