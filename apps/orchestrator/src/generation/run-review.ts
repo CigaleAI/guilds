@@ -1,4 +1,4 @@
-import { accessDatabase, agentSecretsThrough } from "../access/runtime.js";
+import { agentSecrets } from "../access/runtime.js";
 import type { AgentRow } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
 import { getToolResultMetadata, type RunRow } from "../db/runs.js";
@@ -85,7 +85,7 @@ function harnessView(
 export async function loadHarnessView(services: RunReviewServices, agent: AgentRow): Promise<Item> {
   const config = agent.config;
   const granted = new Set(
-    (await agentSecretsThrough(accessDatabase(services.db), agent)).map((secret) => secret.name),
+    (await agentSecrets(services.db, agent)).map((secret) => secret.name),
   );
   const aliases = config.secret_aliases;
   const logins = agent.harness_logins;

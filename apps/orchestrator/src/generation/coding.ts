@@ -1,5 +1,5 @@
 import { Type } from "@sinclair/typebox";
-import { accessDatabase, agentSecretsThrough, snapshotEnvValuesThrough } from "../access/runtime.js";
+import { agentSecrets, snapshotEnvValues } from "../access/runtime.js";
 import {
   agentGitIdentity,
   cloneFailures,
@@ -84,7 +84,8 @@ export async function guildRepositories(
 /** The db/ functions coding runs read and keep their repositories, logins and checkpoints through, and the retiring of a login, on `db`. */
 export function codingRunsDatabase(db: Queryable) {
   return {
-    ...accessDatabase(db),
+    agentSecrets: bindQuery(db, agentSecrets),
+    snapshotEnvValues: bindQuery(db, snapshotEnvValues),
     ...repositoryTokenDatabase(db),
     ...codingRepositoriesDatabase(db),
     /** Retires a login that stopped working, and `pool` forgets it when there is one (`retireLogin`). */
@@ -398,7 +399,7 @@ export class CodingRuns {
   private async secretValues(agent: AgentRow): Promise<Record<string, string>> {
     const { db } = this.services;
     try {
-      return await snapshotEnvValuesThrough(db, await agentSecretsThrough(db, agent));
+      return await db.snapshotEnvValues(await db.agentSecrets(agent));
     } catch (error) {
       throw new RunRequestError(503, `the agent's secrets cannot be read to redact this: ${errorMessage(error)}`);
     }

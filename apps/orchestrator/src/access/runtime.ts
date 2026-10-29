@@ -81,7 +81,10 @@ export function resolveMcpTool(
   return item;
 }
 
-/** The agent's environment as the run snapshot carries it: id, name, and description of each secret. */
+/**
+ * The agent's environment as the run snapshot carries it: id, name, and description of each
+ * secret, read through `db`, the dependencies object a unit test fakes.
+ */
 export async function agentSecretsThrough(db: AccessDatabase, agent: AgentPlaceRow): Promise<SecretRef[]> {
   const rows = await db.listAgentSecrets({
     orgId: agent.org_id,
@@ -89,6 +92,14 @@ export async function agentSecretsThrough(db: AccessDatabase, agent: AgentPlaceR
     agentId: agent.id,
   });
   return rows.map((row) => ({ id: row.id, name: row.name, description: row.description }));
+}
+
+/**
+ * The agent's environment as the run snapshot carries it: id, name, and description of each
+ * secret.
+ */
+export async function agentSecrets(db: Queryable, agent: AgentPlaceRow): Promise<SecretRef[]> {
+  return agentSecretsThrough(accessDatabase(db), agent);
 }
 
 type RuntimeScope = { orgId: string | null; guildId: string; agentId: string };
@@ -103,8 +114,9 @@ type Listing = ConnectorLogin & { listed: ConnectionTool[] };
 type LoginReads = Pick<AccessDatabase, "listBindingsCovering" | "listServers" | "listMcpConnections">;
 
 /**
- * The connected logins behind the MCP servers the agent has on, each with its server. A server
- * that is off for the agent, or whose login is missing or not connected, has none.
+ * The connected logins behind the MCP servers the agent has on, each with its server, read
+ * through `db`, the dependencies object a unit test fakes. A server that is off for the agent,
+ * or whose login is missing or not connected, has none.
  */
 export async function agentLoginsThrough(db: LoginReads, agent: AgentPlaceRow): Promise<ConnectorLogin[]> {
   const scope: RuntimeScope = { orgId: agent.org_id, guildId: agent.guild_id, agentId: agent.id };
@@ -118,6 +130,14 @@ export async function agentLoginsThrough(db: LoginReads, agent: AgentPlaceRow): 
     }
   }
   return logins;
+}
+
+/**
+ * The connected logins behind the MCP servers the agent has on, each with its server. A server
+ * that is off for the agent, or whose login is missing or not connected, has none.
+ */
+export async function agentLogins(db: Queryable, agent: AgentPlaceRow): Promise<ConnectorLogin[]> {
+  return agentLoginsThrough(accessDatabase(db), agent);
 }
 
 /**
@@ -211,6 +231,10 @@ async function loginsById(db: Pick<AccessDatabase, "listMcpConnections">, scope:
   return new Map(logins.map((connection) => [connection.id, connection]));
 }
 
+/**
+ * The tools, secrets, and connections the agent is granted, read through `db`, the dependencies
+ * object a unit test fakes; each login's tools are synced through `mcpPool` when there is one.
+ */
 export async function agentRuntimeThrough(
   db: AccessDatabase,
   agent: AgentPlaceRow,
@@ -243,6 +267,18 @@ export async function agentRuntimeThrough(
 }
 
 /**
+ * The tools, secrets, and connections the agent is granted; each login's tools are synced through
+ * `mcpPool` when there is one, else read as last stored.
+ */
+export async function agentRuntime(
+  db: Queryable,
+  agent: AgentPlaceRow,
+  mcpPool: ToolSync | null,
+): Promise<RuntimeAccess> {
+  return agentRuntimeThrough(accessDatabase(db), agent, { mcpPool });
+}
+
+/**
  * The environment with each alias set to the value of the secret it names, when that secret is in
  * it; an alias wins over a variable of its own name.
  */
@@ -259,6 +295,10 @@ export function applySecretAliases(
   return aliased;
 }
 
+/**
+ * The value of each secret, by name, read through `db`, the dependencies object a unit test
+ * fakes; a `MissingSecretError` names the first that is gone or cannot be decrypted.
+ */
 export async function snapshotEnvValuesThrough(
   db: AccessDatabase,
   secretRefs: SecretRef[],
@@ -278,4 +318,15 @@ export async function snapshotEnvValuesThrough(
     values[name] = value;
   }
   return values;
+}
+
+/**
+ * The value of each secret, by name; a `MissingSecretError` names the first that is gone or
+ * cannot be decrypted.
+ */
+export async function snapshotEnvValues(
+  db: Queryable,
+  secretRefs: SecretRef[],
+): Promise<Record<string, string>> {
+  return snapshotEnvValuesThrough(accessDatabase(db), secretRefs);
 }

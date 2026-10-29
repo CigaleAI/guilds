@@ -1,7 +1,7 @@
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { writeBinding } from "../access/bindings.js";
-import { accessViewDatabase, loadAccessViewThrough } from "../access/view.js";
+import { loadAccessView } from "../access/view.js";
 import { getMcpServerBySlug } from "../connectors/servers.js";
 import { listBindingsCovering } from "../db/bindings.js";
 import { listGuildRepositories } from "../db/guilds.js";
@@ -327,7 +327,7 @@ const AccessServers = Type.Array(
 
 /** The connection the guild reaches `slug` through, when it is connected. */
 async function guildConnection(apply: RecipeApply, row: RecipeApplyRow, slug: string): Promise<string | null> {
-  const access = await loadAccessViewThrough(accessViewDatabase(apply.db), {
+  const access = await loadAccessView(apply.db, {
     orgId: row.org_id,
     guildId: applyGuild(row),
     viewScope: "guild",

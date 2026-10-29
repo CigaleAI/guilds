@@ -1,8 +1,8 @@
-import { accessDatabase } from "../access/runtime.js";
 import { agentActor } from "../artifacts/actors.js";
 import type { ArtifactFiles } from "../artifacts/files.js";
 import { REPOSITORIES_MISSING, REPOSITORIES_MISSING_MESSAGE } from "../coding/harnesses.js";
 import { clearHarnessLogin, getAgent, markHarnessLogin, type AgentRow } from "../db/agents.js";
+import { listBindingsCovering } from "../db/bindings.js";
 import { isPlainRecord } from "../db/json.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import {
@@ -103,7 +103,7 @@ function groupTagsOf(rows: MessageRow[]): string[] {
 /** The db/ functions a generation reads its run and keeps its progress through, on `db`. */
 export function runGeneratorDatabase(db: Queryable) {
   return {
-    ...accessDatabase(db),
+    listBindingsCovering: bindQuery(db, listBindingsCovering),
     ...codingRepositoriesDatabase(db),
     getRun: bindQuery(db, getRun),
     getAgent: bindQuery(db, getAgent),

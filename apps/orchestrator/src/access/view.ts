@@ -1,5 +1,5 @@
 import { accessPayload, mcpToolView, resolvedMcp } from "./index.js";
-import { accessDatabase, agentSecretsThrough, resolveMcpTool } from "./runtime.js";
+import { agentSecrets, resolveMcpTool } from "./runtime.js";
 import { agentDetail } from "../agents/view.js";
 import { listServers, serverTools, type LoadedConnector } from "../connectors/servers.js";
 import type { AgentRow } from "../db/agents.js";
@@ -55,16 +55,25 @@ async function listConnectionTools(
   return rawListed;
 }
 
-/** The tools, connectors and bindings a scope sees, with each listed tool resolved for it. */
+/**
+ * The scope an access view is of, the level it is shown at, and the pool its tools are listed
+ * through.
+ */
+type AccessViewOptions = {
+  orgId?: string | null;
+  guildId?: string | null;
+  agentId?: string | null;
+  viewScope: string;
+  mcp?: ToolListing | null;
+};
+
+/**
+ * The tools, connectors and bindings a scope sees, with each listed tool resolved for it, read
+ * through `db`, the dependencies object a unit test fakes.
+ */
 export async function loadAccessViewThrough(
   db: AccessViewDatabase,
-  options: {
-    orgId?: string | null;
-    guildId?: string | null;
-    agentId?: string | null;
-    viewScope: string;
-    mcp?: ToolListing | null;
-  },
+  options: AccessViewOptions,
 ): Promise<Record<string, unknown>> {
   const scope = {
     orgId: options.orgId ?? null,
@@ -133,6 +142,14 @@ export async function loadAccessViewThrough(
   });
 }
 
+/** The tools, connectors and bindings a scope sees, with each listed tool resolved for it. */
+export async function loadAccessView(
+  db: Queryable,
+  options: AccessViewOptions,
+): Promise<Record<string, unknown>> {
+  return loadAccessViewThrough(accessViewDatabase(db), options);
+}
+
 /** An agent as its page shows it: its settings, whether it is generating, and its access with the secrets it reaches. */
 export async function loadAgentView(
   db: Queryable,
@@ -140,7 +157,7 @@ export async function loadAgentView(
   row: AgentRow,
   generating: boolean,
 ): Promise<Record<string, unknown>> {
-  const access = await loadAccessViewThrough(accessViewDatabase(db), {
+  const access = await loadAccessView(db, {
     orgId: row.org_id,
     guildId: row.guild_id,
     agentId: row.id,
@@ -149,6 +166,6 @@ export async function loadAgentView(
   });
   return {
     ...agentDetail(row, generating),
-    access: { ...access, secrets: await agentSecretsThrough(accessDatabase(db), row) },
+    access: { ...access, secrets: await agentSecrets(db, row) },
   };
 }

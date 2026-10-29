@@ -17,7 +17,7 @@ import { notesNamed } from "../artifacts/notes.js";
 import type { ArtifactActor } from "../artifacts/types.js";
 import type { ArtifactStore } from "../artifacts/store.js";
 import type { ArtifactRow } from "../db/artifacts.js";
-import { accessViewDatabase, loadAccessViewThrough } from "../access/view.js";
+import { loadAccessView } from "../access/view.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { Schedules } from "../schedules/service.js";
 import { rowTiming } from "../schedules/timing.js";
@@ -39,7 +39,7 @@ import { bindQuery, type Queryable } from "../db/pg.js";
 /** The db/ functions a guild is captured into a recipe through, and the access view it reads, on `db`. */
 export function captureDatabase(db: Queryable) {
   return {
-    ...accessViewDatabase(db),
+    loadAccessView: bindQuery(db, loadAccessView),
     listAgents: bindQuery(db, listAgents),
     getAgentTask: bindQuery(db, getAgentTask),
     listSchedules: bindQuery(db, listSchedules),
@@ -368,7 +368,7 @@ async function captureSecrets(capture: Capture, agent: GuildAgentRow): Promise<v
 
 /** An agent as a role, with the connections and secrets it reaches. */
 async function captureAgent(capture: Capture, agent: GuildAgentRow): Promise<void> {
-  const view = await loadAccessViewThrough(capture.deps.db, {
+  const view = await capture.deps.db.loadAccessView({
     orgId: capture.orgId,
     guildId: capture.guildId,
     agentId: agent.id,

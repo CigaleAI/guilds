@@ -1,6 +1,12 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { PLATFORM_SEED_TOOLS } from "../../src/access/runtime.js";
+import {
+  PLATFORM_SEED_TOOLS,
+  agentLoginsThrough,
+  agentRuntimeThrough,
+  agentSecretsThrough,
+  snapshotEnvValuesThrough,
+} from "../../src/access/runtime.js";
 import type { ArtifactActor } from "../../src/artifacts/types.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import { secretPayload } from "../../src/credentials/validate.js";
@@ -20,11 +26,11 @@ import { SandboxError, type AgentSeat, type MachineSpec } from "../../src/sandbo
 import { HEX_MASTER_KEY, tempDir } from "./env.js";
 import { templatesRoot } from "./fixtures.js";
 import { TEST_CREDENTIALS } from "./models.js";
-import type { AgentRow, AgentScriptRow, NewAgentScript } from "../../src/db/agents.js";
+import type { AgentPlaceRow, AgentRow, AgentScriptRow, NewAgentScript } from "../../src/db/agents.js";
 import type { ScriptDatabase } from "../../src/scripts/catalog.js";
 import type { NewDirectRun, NewGroupRun, NewMessage, NewScheduleRun } from "../../src/db/runs.js";
 import type { ScheduleRow, PlannedWake } from "../../src/db/schedules.js";
-import type { AgentConfig, CompletionMetadata, RunConfigSnapshot, ToolCall } from "../../src/db/schema/index.js";
+import type { AgentConfig, CompletionMetadata, RunConfigSnapshot, SecretRef, ToolCall } from "../../src/db/schema/index.js";
 import { validateAgentConfig } from "../../src/agents/config.js";
 
 export const AGENT_CONFIG: AgentConfig = {
@@ -379,6 +385,23 @@ export class FakeDB {
     return this.secrets.find((item) => item.id === secretId) ?? null;
   }
 
+  /** The agent's tools, secrets, and connections, as core resolves them over these rows. */
+  async agentRuntime(agent: AgentPlaceRow, mcpPool: Pick<McpPool, "syncTools"> | null) {
+    return agentRuntimeThrough(this as never, agent, { mcpPool });
+  }
+
+  async agentLogins(agent: AgentPlaceRow) {
+    return agentLoginsThrough(this as never, agent);
+  }
+
+  async agentSecrets(agent: AgentPlaceRow) {
+    return agentSecretsThrough(this as never, agent);
+  }
+
+  async snapshotEnvValues(secretRefs: SecretRef[]) {
+    return snapshotEnvValuesThrough(this as never, secretRefs);
+  }
+
   async listRuns(agentId: string) {
     return this.run.agent_id === agentId ? [this.run] : [];
   }
@@ -617,6 +640,23 @@ export class RecordingDB {
 
   async getSecret(secretId: string) {
     return this.secrets.find((item) => item.id === secretId) ?? null;
+  }
+
+  /** The agent's tools, secrets, and connections, as core resolves them over these rows. */
+  async agentRuntime(agent: AgentPlaceRow, mcpPool: Pick<McpPool, "syncTools"> | null) {
+    return agentRuntimeThrough(this as never, agent, { mcpPool });
+  }
+
+  async agentLogins(agent: AgentPlaceRow) {
+    return agentLoginsThrough(this as never, agent);
+  }
+
+  async agentSecrets(agent: AgentPlaceRow) {
+    return agentSecretsThrough(this as never, agent);
+  }
+
+  async snapshotEnvValues(secretRefs: SecretRef[]) {
+    return snapshotEnvValuesThrough(this as never, secretRefs);
   }
 
   async listServers() {
