@@ -523,11 +523,6 @@
       "count": 1
     }
   },
-  "src/generation/index.ts": {
-    "@typescript-eslint/explicit-module-boundary-types": {
-      "count": 1
-    }
-  },
   "src/generation/machines.ts": {
     "@typescript-eslint/explicit-module-boundary-types": {
       "count": 1

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
-import { generationDatabase, GenerationLoop } from "../../src/generation/index.js";
+import { generationLoop } from "../../src/generation/index.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
@@ -33,8 +33,7 @@ test("an operator post may ask to interrupt the runs it targets", { timeout: 60_
   await notes.ensureSystemPrompt();
   const db = database.pool;
   const workspaceRoot = tempDir("guilds-group-interrupt-workspaces-");
-  const generation = new GenerationLoop({
-    db: generationDatabase(db),
+  const generation = generationLoop(db, {
     mcp: new McpPool(mcpDatabase(db)),
     notes,
     workspaceRoot,
