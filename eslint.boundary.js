@@ -2,6 +2,9 @@
 // hosted code. A core package names the hosted packages, the repository its relative imports must
 // stay inside, the hosted paths still inside it, and the core files that still cross the boundary;
 // that last list only shrinks, and an entry a file no longer needs is an error.
+//
+// The same block fails a module made only of re-exports (docs/contributing/code-guidelines.md,
+// Boundaries). A core package names the indexes a tool requires, which are the exceptions.
 import path from "node:path";
 
 const EXTENSION = /\.(js|ts|tsx)$/;
@@ -108,13 +111,69 @@ const noHostedImports = {
   },
 };
 
+/** A statement that hands on another module's exports: `export * from` or `export { x } from`. */
+function isReexport(statement) {
+  return (
+    (statement.type === "ExportAllDeclaration" || statement.type === "ExportNamedDeclaration") &&
+    statement.source !== null
+  );
+}
+
+const noReexportModules = {
+  meta: {
+    type: "problem",
+    schema: [
+      {
+        type: "object",
+        properties: {
+          source: { type: "string" },
+          indexes: { type: "array", items: { type: "string" } },
+        },
+        required: ["source", "indexes"],
+        additionalProperties: false,
+      },
+    ],
+    messages: {
+      reexport:
+        "A module that only re-exports others does not exist. See docs/contributing/code-guidelines.md, Boundaries.",
+    },
+  },
+  create(context) {
+    const { source, indexes } = context.options[0];
+    const file = underSource(path.resolve(context.cwd, source), context.filename);
+    if (file === null || indexes.includes(file)) {
+      return {};
+    }
+    return {
+      Program(node) {
+        if (node.body.length > 0 && node.body.every(isReexport)) {
+          context.report({ node, messageId: "reexport" });
+        }
+      },
+    };
+  },
+};
+
 /** A flat-config block that holds `files` to the boundary. */
-export function boundary({ files, source, hosted = [], leaks = {}, packages = [], repository }) {
+export function boundary({
+  files,
+  source,
+  hosted = [],
+  leaks = {},
+  packages = [],
+  repository,
+  indexes = [],
+}) {
   return {
     files,
-    plugins: { boundary: { rules: { "no-hosted-imports": noHostedImports } } },
+    plugins: {
+      boundary: {
+        rules: { "no-hosted-imports": noHostedImports, "no-reexport-modules": noReexportModules },
+      },
+    },
     rules: {
       "boundary/no-hosted-imports": ["error", { source, hosted, leaks, packages, repository }],
+      "boundary/no-reexport-modules": ["error", { source, indexes }],
     },
   };
 }

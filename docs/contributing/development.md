@@ -297,7 +297,11 @@ recommended React Hooks rules.
 
 The orchestrator and the operator app also run the boundary rule
 (`eslint.boundary.js`). It fails any file that imports a package
-of an extension or a relative path that leaves this repository.
+of an extension or a relative path that leaves this repository. It
+also fails a module made only of re-exports (`export * from`,
+`export { x } from`), except an index a tool requires, which the
+package names: the orchestrator's `src/db/schema/index.ts`, which
+drizzle-kit reads.
 
 Every package also runs the limits of the
 [code guidelines](code-guidelines.md#functions) on its source,
@@ -308,7 +312,8 @@ except `as const`. The orchestrator also requires explicit
 parameter and return types on what a module exports
 (`@typescript-eslint/explicit-module-boundary-types`). It refuses an
 empty `catch`; a throw of a plain `Error` outside the commands in
-`cli/`; an import of `fastify` outside `http/`, the roots, the
+`cli/`; an object type written inline in a function's parameter; an
+import of `fastify` outside `http/`, the roots, the
 extension points and the observability hooks; a value import of
 `db/` from `http/`;
 an import from `db/` of anything outside `db/` and `lib/`; and an

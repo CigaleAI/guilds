@@ -6,8 +6,11 @@ import { boundary } from "../../eslint.boundary.js";
 // imports must stay inside (docs/architecture/extension-points.md).
 const HOSTED_PACKAGES = ["@guildsrun/hosted-server"];
 const REPOSITORY = "../..";
+// The re-export modules a tool requires: drizzle-kit reads the schema mirror from its index
+// (drizzle.config.ts).
+const INDEXES = ["src/db/schema/index.ts"];
 
-// Syntax docs/contributing/code-guidelines.md refuses, under Types and errors.
+// Syntax docs/contributing/code-guidelines.md refuses, under Types and errors and under Functions.
 const EMPTY_CATCH = {
   selector: "CatchClause[body.body.length=0]",
   message: "A catch throws a named error or returns a typed absence.",
@@ -15,6 +18,12 @@ const EMPTY_CATCH = {
 const BARE_ERROR = {
   selector: "ThrowStatement > NewExpression[callee.name='Error']",
   message: "A domain throws a named error class.",
+};
+// The outermost object type literal in a parameter's type, so one inline type is reported once.
+const INLINE_PARAMETER_TYPE = {
+  selector:
+    ":function > :matches(Identifier, ObjectPattern, ArrayPattern, AssignmentPattern, RestElement, TSParameterProperty) TSTypeLiteral:not(TSTypeLiteral TSTypeLiteral)",
+  message: "An object parameter's type is a named type.",
 };
 
 export default tseslint.config(
@@ -72,7 +81,7 @@ export default tseslint.config(
       "src/cli/**",
     ],
     rules: {
-      "no-restricted-syntax": ["error", EMPTY_CATCH, BARE_ERROR],
+      "no-restricted-syntax": ["error", EMPTY_CATCH, BARE_ERROR, INLINE_PARAMETER_TYPE],
     },
   },
   {
@@ -80,7 +89,7 @@ export default tseslint.config(
     files: ["src/cli/**/*.ts"],
     ignores: ["**/*.test.ts"],
     rules: {
-      "no-restricted-syntax": ["error", EMPTY_CATCH],
+      "no-restricted-syntax": ["error", EMPTY_CATCH, INLINE_PARAMETER_TYPE],
     },
   },
   {
@@ -155,5 +164,6 @@ export default tseslint.config(
     source: ".",
     packages: HOSTED_PACKAGES,
     repository: REPOSITORY,
+    indexes: INDEXES,
   }),
 );
