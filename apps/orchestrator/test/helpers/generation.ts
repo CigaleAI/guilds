@@ -32,6 +32,8 @@ import type { NewDirectRun, NewGroupRun, NewMessage, NewScheduleRun } from "../.
 import type { ScheduleRow, PlannedWake } from "../../src/db/schedules.js";
 import { Schedules, type ScheduleDatabase } from "../../src/schedules/service.js";
 import { Issues, type IssuesDatabase } from "../../src/issues/index.js";
+import { GroupChat, type GroupChatDatabase } from "../../src/groupchat/index.js";
+import { defaultGroupRouter } from "../../src/typesafe/index.js";
 import type { AgentConfig, CompletionMetadata, RunConfigSnapshot, SecretRef, ToolCall } from "../../src/db/schema/index.js";
 import { validateAgentConfig } from "../../src/agents/config.js";
 
@@ -1003,9 +1005,15 @@ export function makeLoop(
   options: LoopOptions = {},
 ): GenerationLoop {
   const { idleTimeoutMs = 0, schedulerTickMs = LOOP_TIMINGS.schedulerTickMs, ...services } = options;
-  return new GenerationLoop(
+  const groupRouter = services.groupRouter ?? defaultGroupRouter();
+  const loop: GenerationLoop = new GenerationLoop(
     {
       db: db as GenerationDatabase,
+      groupChat: new GroupChat(db as GroupChatDatabase, {
+        is_deleting: (guildId) => loop.isDeletingGuild(guildId),
+        router: groupRouter,
+      }),
+      groupRouter,
       issues: new Issues(db as IssuesDatabase),
       schedules: new Schedules(db as ScheduleDatabase),
       scripts: new Scripts(db as ScriptDatabase),
@@ -1019,6 +1027,7 @@ export function makeLoop(
     },
     { idleTimeoutMs, schedulerTickMs },
   );
+  return loop;
 }
 
 export async function seededLoop(

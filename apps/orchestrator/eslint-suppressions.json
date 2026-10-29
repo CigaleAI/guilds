@@ -604,9 +604,6 @@
     }
   },
   "src/groupchat/index.ts": {
-    "@typescript-eslint/explicit-module-boundary-types": {
-      "count": 1
-    },
     "complexity": {
       "count": 1
     },
@@ -614,7 +611,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 12
+      "count": 11
     }
   },
   "src/guilds/service.ts": {
