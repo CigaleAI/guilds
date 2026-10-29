@@ -1,49 +1,52 @@
-import type { FastifyInstance } from "fastify";
-import { removeBinding, setBinding, type BindingRequest } from "../access/operator.js";
-import type { AppDeps } from "./deps.js";
-import { missingBodyFields } from "./errors.js";
+import { Type } from "@sinclair/typebox";
+import { removeBinding, setBinding } from "../access/operator.js";
+import type { AppDeps, RouteApp } from "./deps.js";
 import { currentUser } from "./identity.js";
-import { bodyOf, queryOf } from "./request.js";
+
+/** A binding as a request names it: what it binds, and at which scope. */
+const BindingKeyQuery = Type.Object({
+  catalog_kind: Type.String(),
+  catalog_id: Type.String(),
+  scope: Type.String(),
+  scope_id: Type.Optional(Type.String()),
+});
+
+/** A binding to set: its key, whether it is on, and the login a connector uses there. */
+const BindingBody = Type.Object({
+  catalog_kind: Type.String(),
+  catalog_id: Type.String(),
+  scope: Type.String(),
+  scope_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  enabled: Type.Boolean(),
+  connection_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+});
 
 /** Bindings: a tool or connector turned on or off at a scope, with the login a connector uses there. */
-export async function registerBindingRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
+export async function registerBindingRoutes(app: RouteApp, deps: AppDeps): Promise<void> {
   const { db } = deps;
 
-  app.put("/api/bindings", async (request) => {
+  app.put("/api/bindings", { schema: { body: BindingBody } }, async (request) => {
     const user = await currentUser(db, request, deps);
-    const missing = missingBodyFields(request.body, [
-      "catalog_kind",
-      "catalog_id",
-      "scope",
-      "enabled",
-    ]);
-    if (missing) {
-      throw missing;
-    }
-    const body = bodyOf(request);
-    const optionalId = (value: unknown) =>
-      value === undefined || value === null ? null : String(value);
-    const binding: BindingRequest = {
-      catalogKind: String(body.catalog_kind ?? ""),
-      catalogId: String(body.catalog_id ?? ""),
-      scope: String(body.scope ?? ""),
-      scopeId: optionalId(body.scope_id),
-      enabled: Boolean(body.enabled),
-      ...("connection_id" in body ? { connectionId: optionalId(body.connection_id) } : {}),
-    };
-    return setBinding(db, user, binding);
+    const body = request.body;
+    return setBinding(db, user, {
+      catalogKind: body.catalog_kind,
+      catalogId: body.catalog_id,
+      scope: body.scope,
+      scopeId: body.scope_id ?? null,
+      enabled: body.enabled,
+      ...(body.connection_id !== undefined ? { connectionId: body.connection_id } : {}),
+    });
   });
 
-  app.delete("/api/bindings", async (request, reply) => {
+  app.delete("/api/bindings", { schema: { querystring: BindingKeyQuery } }, async (request, reply) => {
     const user = await currentUser(db, request, deps);
-    const query = queryOf(request);
-    const key = {
-      catalogKind: query.catalog_kind ?? "",
-      catalogId: query.catalog_id ?? "",
-      scope: query.scope ?? "",
+    const query = request.query;
+    await removeBinding(db, user, {
+      catalogKind: query.catalog_kind,
+      catalogId: query.catalog_id,
+      scope: query.scope,
       scopeId: query.scope_id ?? null,
-    };
-    await removeBinding(db, user, key);
+    });
     return reply.code(204).send();
   });
 }

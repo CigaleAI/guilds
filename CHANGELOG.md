@@ -8,6 +8,16 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** `PUT /api/bindings` refuses a `catalog_kind`,
+`catalog_id` or `scope` that is not a string, an `enabled` that is not
+a boolean, and a `scope_id` or `connection_id` that is neither a string
+nor null, and `DELETE /api/bindings` refuses a request without
+`catalog_kind`, `catalog_id` or `scope`. Each answers 422, before the
+request's user is identified, and names the first field at fault.
+Before, the values were read as text and `enabled` as a truth value,
+a missing query value was refused by the binding's own checks, and a
+body missing several fields named each of them.
+
 **No impact.** `GET /api/builder/capabilities/search` refuses a `q`
 given more than once with a 422, before the request's user is
 identified. Before, it searched for everything.
