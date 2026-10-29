@@ -53,6 +53,7 @@ import { newId } from "../../src/lib/ids.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { completionReply } from "../helpers/generation.js";
+import { toolInvocation } from "../helpers/toolbox.js";
 import {
   createIsolatedDatabase,
   dropIsolatedDatabase,
@@ -2242,20 +2243,19 @@ test("studio proposes routines to create, change, and delete that the operator a
       },
       now,
     );
-    const toolCtx = (callId: string) =>
-      createToolContext({
-        run_id: "r_wt",
-        agent_id: "a_wt",
-        guild_id: "guild_rt",
-        sandbox: null,
-        secrets: {},
-        schedules,
-        agent_name: "watcher",
-        tool_call_id: callId,
-      });
-    await scheduleCreateCron.handler(toolCtx("call_create"), { cron: "0 7 * * *", description: "Morning check", instruction: "Check." });
+    const toolCtx = createToolContext({
+      run_id: "r_wt",
+      agent_id: "a_wt",
+      guild_id: "guild_rt",
+      sandbox: null,
+      secrets: {},
+      schedules,
+      agent_name: "watcher",
+    });
+    const create = { cron: "0 7 * * *", description: "Morning check", instruction: "Check." };
+    await scheduleCreateCron.handler(toolCtx, toolInvocation("schedule_create_cron", create, "call_create"));
     const [own] = await listSchedules(db, "a_wt");
-    await schedulePause.handler(toolCtx("call_pause"), { schedule_id: String(own?.id) });
+    await schedulePause.handler(toolCtx, toolInvocation("schedule_pause", { schedule_id: String(own?.id) }, "call_pause"));
     const agentHistory = await listConfigChanges(db, "org_home", { kind: "routine", id: String(own?.id) });
     assert.deepEqual(
       agentHistory.map((change) => [change.operation, change.actor.type, change.actor.name, change.run_id, change.tool]),

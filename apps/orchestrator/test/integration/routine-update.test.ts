@@ -18,6 +18,7 @@ import { userActor } from "../../src/lib/change-actor.js";
 import { getSchedule } from "../../src/db/schedules.js";
 import { createRun } from "../../src/db/runs.js";
 import { runSnapshot } from "../helpers/generation.js";
+import { toolInvocation } from "../helpers/toolbox.js";
 
 const TEST_ACTOR = userActor({ id: "user_operator", name: "operator" });
 
@@ -133,13 +134,13 @@ test("an operator and an agent can change a routine in place", { timeout: 60_000
       secrets: {},
       schedules,
       agent_name: "editor",
-      tool_call_id: "call_edit",
     });
-    const output = await REGISTRY.schedule_update!.handler(ctx, {
-      schedule_id: scheduleId,
-      cron: "30 7 * * *",
-      instruction: "Write the morning digest.",
-    });
+    const call = toolInvocation(
+      "schedule_update",
+      { schedule_id: scheduleId, cron: "30 7 * * *", instruction: "Write the morning digest." },
+      "call_edit",
+    );
+    const output = await REGISTRY.schedule_update!.handler(ctx, call);
     assert.match(String(output), new RegExp(`^updated ${scheduleId} `));
     const updated = await getSchedule(db, agentId, scheduleId);
     assert.equal(updated?.cron, "30 7 * * *");

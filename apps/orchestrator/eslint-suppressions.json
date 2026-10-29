@@ -1383,7 +1383,7 @@
       "count": 3
     },
     "no-restricted-syntax": {
-      "count": 8
+      "count": 7
     }
   },
   "src/toolbox/group.ts": {
@@ -1423,11 +1423,6 @@
       "count": 1
     }
   },
-  "src/toolbox/schedule.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
   "src/toolbox/schema.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
@@ -1448,7 +1443,7 @@
       "count": 2
     },
     "no-restricted-syntax": {
-      "count": 5
+      "count": 3
     }
   },
   "src/typesafe/client.ts": {

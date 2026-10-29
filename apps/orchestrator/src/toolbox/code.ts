@@ -5,7 +5,7 @@ import { keepMatching } from "../lib/decode.js";
 import { executeCommand } from "./shell.js";
 import { functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
-import type { Tool, ToolContext } from "./types.js";
+import type { Tool, ToolContext, ToolInvocation } from "./types.js";
 
 /**
  * The tools a coding agent checks its harness's work with. Every call runs `guilds-code`
@@ -107,33 +107,46 @@ function reportedFields(meta: Record<string, unknown>): ReportedToolMetadata | n
   return keepMatching(ReportedFields, meta);
 }
 
+/** A request a sandbox helper reads: its op, the call it runs for when there is one, and the op's own fields. */
+export type HelperRequest = { op: string; call_id?: string; [field: string]: unknown };
+
+/** How a helper request runs: which helper, how long it may take, and how many bytes its text keeps. */
+export type HelperSettings = { timeoutSeconds?: number; maxBytes?: number; helper?: string };
+
 /**
  * Runs one op of a sandbox helper (`guilds-code` unless `helper` names another). The request
  * travels base64 on the command line, or through the sandbox file API when it is too large
- * for one argument. Throws with the helper's error text; otherwise records the helper's
- * metadata on the call.
+ * for one argument. Throws with the helper's error text.
  */
 export async function runCodeHelper(
   ctx: ToolContext,
-  op: string,
-  args: Record<string, unknown>,
-  options: { timeoutSeconds?: number; maxBytes?: number; helper?: string } = {},
+  request: HelperRequest,
+  options: HelperSettings = {},
 ): Promise<CodeResult> {
-  const request = {
-    ...args,
-    op,
+  const sent = {
+    ...request,
     run_id: ctx.run_id,
     agent_id: ctx.agent_id,
-    call_id: callSegment(ctx.tool_call_id || `${op}_${Date.now()}`),
+    call_id: callSegment(request.call_id || `${request.op}_${Date.now()}`),
     default_cwd: ctx.code_default_cwd,
     max_bytes: options.maxBytes ?? codeResultMaxBytes(),
   };
-  const command = await helperCommand(ctx, options.helper ?? CODE_HELPER, request);
+  const command = await helperCommand(ctx, options.helper ?? CODE_HELPER, sent);
   const execution = await executeCommand(ctx, command, {
     timeoutSeconds: options.timeoutSeconds ?? CODE_HELPER_TIMEOUT_SECONDS,
   });
-  const result = helperResult(execution);
-  ctx.tool_metadata = reportedFields(result.meta);
+  return helperResult(execution);
+}
+
+/** Runs a `guilds-code` request for `call` and keeps the helper's metadata on the call. */
+async function runCallHelper(
+  ctx: ToolContext,
+  call: ToolInvocation,
+  request: HelperRequest,
+  options: HelperSettings = {},
+): Promise<CodeResult> {
+  const result = await runCodeHelper(ctx, { ...request, call_id: call.id }, options);
+  call.metadata = reportedFields(result.meta);
   return result;
 }
 
@@ -142,7 +155,7 @@ function tool(
   description: string,
   properties: Record<string, unknown>,
   required: string[],
-  handler: (ctx: ToolContext, args: Record<string, unknown>) => Promise<string>,
+  handler: Tool["handler"],
 ): Tool {
   return {
     name,
@@ -175,17 +188,18 @@ export const shell = tool(
     background: { type: "boolean" },
   },
   ["command"],
-  async (ctx, args) => {
+  async (ctx, call) => {
+    const args = call.arguments;
     const timeout = shellTimeout(args);
     await ctx.before_command?.();
-    const result = await runCodeHelper(
+    const result = await runCallHelper(
       ctx,
-      "shell",
-      { command: args.command, timeout_seconds: timeout, background: args.background === true },
+      call,
+      { op: "shell", command: args.command, timeout_seconds: timeout, background: args.background === true },
       { timeoutSeconds: timeout + SHELL_TIMEOUT_MARGIN_SECONDS },
     );
     const code = result.meta.exit_code;
-    ctx.exit_code = typeof code === "number" ? code : null;
+    call.exit_code = typeof code === "number" ? code : null;
     return result.text;
   },
 );
@@ -197,8 +211,10 @@ export const shellStatus = tool(
     "Background commands also end when the sandbox stops after 5 idle minutes.",
   { id: { type: "string" }, stop: { type: "boolean" } },
   [],
-  async (ctx, args) => {
-    const result = await runCodeHelper(ctx, "shell_status", {
+  async (ctx, call) => {
+    const args = call.arguments;
+    const result = await runCallHelper(ctx, call, {
+      op: "shell_status",
       id: typeof args.id === "string" ? args.id : "",
       stop: args.stop === true,
     });
@@ -219,8 +235,10 @@ export const fileRead = tool(
     limit: { type: "integer", minimum: 1, maximum: 500 },
   },
   ["path"],
-  async (ctx, args) => {
-    const result = await runCodeHelper(ctx, "file_read", {
+  async (ctx, call) => {
+    const args = call.arguments;
+    const result = await runCallHelper(ctx, call, {
+      op: "file_read",
       path: args.path,
       offset: args.offset,
       limit: args.limit,
@@ -258,26 +276,28 @@ export const codeSearch = tool(
     limit: { type: "integer", minimum: 1 },
   },
   ["pattern"],
-  async (ctx, args) => {
+  async (ctx, call) => {
+    const args = call.arguments;
     const request = {
+      op: "code_search",
       pattern: args.pattern,
       ...optional(args, ["mode", "path", "glob", "context", "limit"]),
       fixed: args.fixed === true,
       ignore_case: args.ignore_case === true,
     };
-    const result = await runCodeHelper(ctx, "code_search", request);
+    const result = await runCallHelper(ctx, call, request);
     return result.text;
   },
 );
 
 /** The size of the agent's home in MiB, measured with `du` inside the sandbox. */
 export async function measureWorkspace(ctx: ToolContext): Promise<number> {
-  return measured(await runCodeHelper(ctx, "workspace_size", {}));
+  return measured(await runCodeHelper(ctx, { op: "workspace_size" }));
 }
 
 /** The size of the agent's machine's directory in MiB: every home on it. */
 export async function measureMachine(ctx: ToolContext): Promise<number> {
-  return measured(await runCodeHelper(ctx, "machine_size", {}));
+  return measured(await runCodeHelper(ctx, { op: "machine_size" }));
 }
 
 function measured(result: CodeResult): number {

@@ -119,7 +119,6 @@ export type ToolContext = {
   guild_id: string;
   sandbox: SandboxHandle | null;
   secrets: Record<string, string>;
-  exit_code: number | null;
   notes: NotesStore | null;
   artifacts: ToolArtifacts | null;
   artifact_actor: ArtifactActor | null;
@@ -148,10 +147,6 @@ export type ToolContext = {
   dynamic_tools: Record<string, Tool>;
   /** When set, only these names plus `dynamic_tools` may run. `null` skips the check. */
   offered_tools: Set<string> | null;
-  /** The provider id of the call being invoked. */
-  tool_call_id: string;
-  /** Fields a handler reports for the call's metadata row (exit code, path, line counts). */
-  tool_metadata: ReportedToolMetadata | null;
   /** The agent's home in its machine, where its commands run: `/home/<agent id>`. */
   agent_home: string;
   /** Chrome's DevTools port for the agent's browser, from its slot; null without one. */
@@ -183,7 +178,6 @@ export function createToolContext(
     Partial<ToolContext>,
 ): ToolContext {
   return {
-    exit_code: null,
     notes: null,
     artifacts: null,
     artifact_actor: null,
@@ -207,8 +201,6 @@ export function createToolContext(
     connection_tool_names: [],
     dynamic_tools: {},
     offered_tools: null,
-    tool_call_id: "",
-    tool_metadata: null,
     agent_home: agentHome(partial.agent_id),
     cdp_port: null,
     ensure_browser: null,
@@ -225,11 +217,28 @@ export function createToolContext(
   };
 }
 
+/** One call the model made to a tool: its id, its name, its arguments, and what its handler reports of it. */
+export type ToolInvocation = {
+  /** The provider id of the call. */
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+  /** The exit code of the command the call ran; null when it ran none. */
+  exit_code: number | null;
+  /** Fields the handler reports for the call's metadata row (exit code, path, line counts). */
+  metadata: ReportedToolMetadata | null;
+};
+
+/** The run's artifact actor as it makes `call`; null when the run has none. */
+export function callActor(actor: ArtifactActor | null, call: ToolInvocation): ArtifactActor | null {
+  return actor ? { ...actor, toolCall: { id: call.id, name: call.name } } : null;
+}
+
 export type Tool = {
   name: string;
   description: string;
   output_filter: (result: string) => string;
   filter_name: string;
-  handler: (ctx: ToolContext, args: Record<string, unknown>) => Promise<string>;
+  handler: (ctx: ToolContext, call: ToolInvocation) => Promise<string>;
   schema: Record<string, unknown>;
 };
