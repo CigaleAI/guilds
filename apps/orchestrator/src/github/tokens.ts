@@ -185,8 +185,7 @@ export async function mintRepositoryToken(
   for (const item of new Set([...identified, ...adoptCurrentNames(items, minted.repositories)])) {
     await db.recordGithubRepository(
       String(request.connection.id),
-      String(item.row.name),
-      { githubId: githubIdOf(item.row)!, url: String(item.row.url) },
+      { name: String(item.row.name), github_id: githubIdOf(item.row)!, url: String(item.row.url) },
       now,
     );
   }

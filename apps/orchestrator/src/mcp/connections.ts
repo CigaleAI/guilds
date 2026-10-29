@@ -243,10 +243,14 @@ export async function saveConnectionSettings(
   } catch (error) {
     connectFailure(error, server);
   }
-  const row = await updateMcpConnectionSettings(services.db, connection.id, valid, new Date(), {
-    connect: awaitingSettings(connection),
-    accountHint,
-  });
+  const row = await updateMcpConnectionSettings(
+    services.db,
+    connection.id,
+    awaitingSettings(connection)
+      ? { settings: valid, status: "connected", account_hint: accountHint }
+      : { settings: valid, account_hint: accountHint },
+    new Date(),
+  );
   if (row === null) {
     throw new ConnectionError(404, "connection not found");
   }

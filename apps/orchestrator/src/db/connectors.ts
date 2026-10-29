@@ -2,10 +2,22 @@ import type { InferSelectModel } from "drizzle-orm";
 import { tableColumns } from "./columns.js";
 import { RowMissing } from "./errors.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
-import { connectors, type Manifest, type OAuthClient, type Overrides } from "./schema/index.js";
+import {
+  connectorCalls,
+  connectors,
+  type Manifest,
+  type OAuthClient,
+  type Overrides,
+} from "./schema/index.js";
 
 /** A `connectors` row as stored: the manifest a folder, the registry, or the Admin form wrote. */
 export type ConnectorRow = InferSelectModel<typeof connectors>;
+
+/** An organisation's calls on one connector's platform login in one month (`YYYY-MM`). */
+export type ConnectorCallsKey = Pick<
+  InferSelectModel<typeof connectorCalls>,
+  "org_id" | "connector_id" | "month"
+>;
 
 export type NewConnector = {
   id: string;
@@ -122,11 +134,10 @@ export async function countConnectorCalls(
   return result.rows[0]?.calls ?? 0;
 }
 
+/** Counts one more call in the organisation's month on the connector. */
 export async function recordConnectorCall(
   pool: Queryable,
-  orgId: string,
-  connectorId: string,
-  month: string,
+  calls: ConnectorCallsKey,
   now: Date,
 ): Promise<void> {
   await pool.query(
@@ -134,7 +145,7 @@ export async function recordConnectorCall(
      VALUES ($1, $2, $3, 1, $4)
      ON CONFLICT (org_id, connector_id, month)
      DO UPDATE SET calls = connector_calls.calls + 1, updated_at = EXCLUDED.updated_at`,
-    [orgId, connectorId, month, stamp(now)],
+    [calls.org_id, calls.connector_id, calls.month, stamp(now)],
   );
 }
 

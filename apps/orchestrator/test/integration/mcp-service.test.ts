@@ -1,7 +1,16 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { getMcpServerBySlug } from "../../src/connectors/servers.js";
-import { connectMcp, getMcpConnection, replaceMcpTools, type McpConnectionRow } from "../../src/db/mcp.js";
+import { countConnectorCalls, recordConnectorCall } from "../../src/db/connectors.js";
+import { insertGuild, listGuildRepositories } from "../../src/db/guilds.js";
+import {
+  connectMcp,
+  getMcpConnection,
+  recordGithubRepository,
+  replaceConnectionGuildRepositories,
+  replaceMcpTools,
+  type McpConnectionRow,
+} from "../../src/db/mcp.js";
 import { insertOrg } from "../../src/db/orgs.js";
 import { connectionTools, retireLogin, type LoginFailure } from "../../src/mcp/service.js";
 import { connect } from "../../src/seed/connect.js";
@@ -89,4 +98,56 @@ test("retires_login_without_a_pool_on_a_box_that_calls_no_connector", { timeout:
   const connection = await notionLogin("org_alone");
   await retireLogin(null, db, connection, "unauthorised");
   assert.equal((await getMcpConnection(db, connection.id))?.status, "disconnected");
+});
+
+test("counts_an_organisations_calls_on_a_connector_per_month", { timeout: 60_000 }, async () => {
+  const db = (await opened).pool;
+  const connectorId = (await notionLogin("org_metered")).mcp_server_id;
+  const calls = { org_id: "org_metered", connector_id: connectorId, month: "2026-03" };
+  await recordConnectorCall(db, calls, new Date());
+  await recordConnectorCall(db, calls, new Date());
+  assert.equal(await countConnectorCalls(db, "org_metered", connectorId, "2026-03"), 2);
+  assert.equal(await countConnectorCalls(db, "org_metered", connectorId, "2026-04"), 0);
+});
+
+test("records_githubs_id_and_url_for_a_repository_a_guilds_login_lists", { timeout: 60_000 }, async () => {
+  const db = (await opened).pool;
+  const server = await getMcpServerBySlug(db, "github");
+  assert.ok(server);
+  const now = new Date();
+  await insertOrg(db, { orgId: "org_git", name: "org_git", slug: "org-git", userId: "user_operator" }, now);
+  await insertGuild(db, { guildId: "guild_git", name: "git", orgId: "org_git" }, now);
+  const listed = { name: "site", url: "https://github.com/acme/old-site", default_branch: "main" };
+  const login = await connectMcp(
+    db,
+    {
+      connectionId: "conn_git",
+      bindingId: "bind_git",
+      serverId: server.id,
+      ownerScope: "guild",
+      ownerId: "guild_git",
+      ciphertext: Buffer.from([1]),
+      nonce: Buffer.from([2]),
+      status: "connected",
+      accountHint: "acme",
+      settings: { repositories: [listed] },
+    },
+    now,
+  );
+  await replaceConnectionGuildRepositories(
+    db,
+    { connection_id: login.id, guild_id: "guild_git" },
+    [{ id: "repo_site", name: "site", url: listed.url, defaultBranch: "main", githubId: null }],
+    now,
+  );
+  const current = "https://github.com/acme/site";
+  await recordGithubRepository(db, login.id, { name: "site", github_id: 102, url: current }, now);
+  const repositories = await listGuildRepositories(db, "guild_git");
+  assert.deepEqual(
+    repositories.map((row) => [row.name, row.github_id, row.url, row.connection_id]),
+    [["site", 102, current, login.id]],
+  );
+  assert.deepEqual((await getMcpConnection(db, login.id))?.settings.repositories, [
+    { ...listed, github_id: 102, url: current },
+  ]);
 });
