@@ -15,7 +15,7 @@ import { advanceGroupCursor,
   postUserGroupMessage,
   updateGroupAgentMessageLimit, type GroupChatStateRow, type GroupMessageRow, type PendingGroupAgentRow } from "../db/group-chat.js";
 import { getGuild, listGuilds, type GuildOperatorRow } from "../db/guilds.js";
-import { getAgent, listAgents } from "../db/agents.js";
+import { getAgent, listAgents, type GuildAgentRow } from "../db/agents.js";
 import { getRun, type RunMessage } from "../db/runs.js";
 import type { RecipientRouting, UserMessage } from "../db/schema/index.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
@@ -145,21 +145,31 @@ export function storedTagAgentIds(row: Record<string, unknown>): string[] {
   return tagged.filter((item): item is string => typeof item === "string");
 }
 
+/** A public message as the recipient rules read it: where it sits, who wrote it, whom it tags. */
+export type RecipientMessage = Pick<
+  GroupMessageRow,
+  "seq" | "author_type" | "author_agent_id" | "tagged_agent_ids"
+>;
+
+/** A guild member as the recipient rules name it. */
+export type RecipientMember = Pick<GuildAgentRow, "id" | "name">;
+
+/** The members the messages after `deliveredThrough` tag, leaving out an agent's tag of itself. */
 export function taggedRecipientNamesAfter(
-  rows: Array<Record<string, unknown>>,
-  members: Array<Record<string, unknown>>,
+  rows: RecipientMessage[],
+  members: RecipientMember[],
   deliveredThrough: number,
 ): Set<string> {
   const membersById = new Map<string, string>();
   for (const member of members) {
-    membersById.set(String(member.id), String(member.name));
+    membersById.set(member.id, member.name);
   }
   const recipients = new Set<string>();
   for (const row of rows) {
-    if (Number(row.seq) <= deliveredThrough) {
+    if (row.seq <= deliveredThrough) {
       continue;
     }
-    const taggedAgentIds = new Set(storedTagAgentIds(row));
+    const taggedAgentIds = new Set(row.tagged_agent_ids);
     for (const agentId of taggedAgentIds) {
       if (row.author_type === "agent" && agentId === row.author_agent_id) {
         continue;

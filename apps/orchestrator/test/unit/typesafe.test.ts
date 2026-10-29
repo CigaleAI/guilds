@@ -509,7 +509,7 @@ test("replayRecipients re-runs the Choice for one message and reports the verdic
       focus: "fund retrospectives",
       task: "Keep the retrospect.",
     },
-    { id: "a_trader", name: "trader", focus: "entries and exits" },
+    { id: "a_trader", name: "trader", focus: "entries and exits", task: "" },
   ];
   const rows = [
     chatRow(1, "Plan the week."),
