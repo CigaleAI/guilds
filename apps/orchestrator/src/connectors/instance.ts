@@ -235,8 +235,8 @@ export async function syncInstanceLogins(
       await saveMcpConnection(db,
         login.id,
         {
-          ciphertext: login.ciphertext as Buffer,
-          nonce: login.nonce as Buffer,
+          ciphertext: login.ciphertext,
+          nonce: login.nonce,
           status,
           accountHint: login.account_hint ?? "",
           oauthState: null,
