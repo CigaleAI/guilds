@@ -388,8 +388,11 @@ export function isReadOnlyRemote(server: LoadedConnector, remoteName: string, re
   return !nameMutates(remoteName);
 }
 
+/** The JSON Schema of the settings a login of a server stores, as the server's manifest declares it. */
+export type SettingsSchema = NonNullable<Manifest["settings_schema"]>;
+
 /** The JSON Schema of the settings a login of this server stores: its installed connector's, or null when it takes none. */
-export function serverSettings(server: LoadedConnector): Record<string, unknown> | null {
+export function serverSettings(server: LoadedConnector): SettingsSchema | null {
   return installedConnectors().forServer(server)?.manifest.settings_schema ?? null;
 }
 
@@ -468,7 +471,7 @@ export function installedConnectorBySlug(slug: string): { id: string; display_na
 export type ConnectorFacts = {
   auth_fields: AuthField[];
   /** The JSON Schema of what a login stores beside its credentials, or null when it stores nothing. */
-  settings_schema: Record<string, unknown> | null;
+  settings_schema: SettingsSchema | null;
   source: ConnectorSource;
   verified: boolean;
   /** The registry's mark for a connector still being tried out. */
