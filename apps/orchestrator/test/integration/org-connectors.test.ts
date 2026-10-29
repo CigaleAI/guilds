@@ -39,7 +39,11 @@ test("an organisation adds remote servers of its own that no other organisation 
   await insertOrg(db, { orgId: "org_other", name: "other team", slug: "other-team", userId: String(other.id) }, new Date());
   const OTHER = { "X-Guilds-User": String(other.id), "X-Guilds-Org": "org_other" };
   const member = await insertUser(db, { userId: "user_member", name: "member", image: null, email: "member@example.com" }, new Date());
-  await insertMember(db, "org_home", String(member.id), "member", new Date());
+  await insertMember(
+    db,
+    { org_id: "org_home", user_id: String(member.id), role: "member" },
+    new Date(),
+  );
   const add = (headers: Record<string, string>, org: string, payload: Record<string, unknown>) =>
     app.inject({
       method: "POST",

@@ -263,7 +263,12 @@ test("a coding run near its input limit hands off and continues in a new run", {
     assert.equal(Number(cursor.rows[0]?.group_chat_delivered_through), Number(root.group_chat_through_seq));
 
     // A run without coding keeps the terminal cap.
-    await updateAgentConfig(db, agentId, agentConfig({ ...config, coding: false, harness: null }), new Date(), {});
+    await updateAgentConfig(
+      db,
+      agentId,
+      { config: agentConfig({ ...config, coding: false, harness: null }) },
+      new Date(),
+    );
     live.streamCompletion = script((messages) => shellCall(`c${messages.length}`));
     const plain = String((await loop.runs.createRun(agentId, "plain")).id);
     await loop.generations.task(plain);

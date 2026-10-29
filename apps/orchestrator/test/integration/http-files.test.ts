@@ -49,7 +49,11 @@ test("operators upload, list, download, share, and delete files per level", { ti
       image: null,
       email: "files@example.com",
     }, new Date());
-  await insertMember(db, "org_home", String(teammate.id), "member", new Date());
+  await insertMember(
+    db,
+    { org_id: "org_home", user_id: String(teammate.id), role: "member" },
+    new Date(),
+  );
   const TEAMMATE = { "X-Guilds-User": String(teammate.id), "X-Guilds-Org": "org_home" };
 
   try {

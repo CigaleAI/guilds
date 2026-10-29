@@ -328,7 +328,12 @@ export async function replaceLoginGuildRepositories(
     githubId: item.github_id ?? null,
   }));
   try {
-    await replaceConnectionGuildRepositories(db, connection.id, connection.owner_id, rows, now);
+    await replaceConnectionGuildRepositories(
+      db,
+      { connection_id: connection.id, guild_id: connection.owner_id },
+      rows,
+      now,
+    );
   } catch (error) {
     throw isUniqueViolation(error)
       ? new RepositoryValidationError("a guild repository already uses one of those names", 409)

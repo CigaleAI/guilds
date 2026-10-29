@@ -3,7 +3,13 @@ import { AgentMessageLimitReached, GroupChatCleared, RowMissing } from "./errors
 import { guildVisibleTo } from "./guilds.js";
 import { tableColumns } from "./columns.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
-import { agents, groupMessages, guilds, type GroupChatFailure } from "./schema/index.js";
+import {
+  agents,
+  groupChatReads,
+  groupMessages,
+  guilds,
+  type GroupChatFailure,
+} from "./schema/index.js";
 
 type Guild = InferSelectModel<typeof guilds>;
 
@@ -31,6 +37,22 @@ export type PendingGroupAgentRow = Pick<
 
 export type UnreadGroupChatRow = Pick<GroupMessageRow, "guild_id"> & {
   count: number;
+};
+
+/** How far a user has read a guild's chat. */
+export type GroupChatRead = Pick<
+  InferSelectModel<typeof groupChatReads>,
+  "guild_id" | "user_id" | "seen_through_seq"
+>;
+
+/**
+ * The messages an activity span shows: those posted inside [since, until], and the earlier
+ * ones after `afterSeq` when it is set.
+ */
+export type GroupMessageWindow = {
+  since: Date;
+  until: Date;
+  afterSeq: GroupMessageRow["seq"] | null;
 };
 
 export type NewUserGroupMessage = {
@@ -122,9 +144,7 @@ export async function listGroupMessages(
 export async function listGroupMessagesForActivity(
   pool: Queryable,
   guildId: string,
-  since: Date,
-  until: Date,
-  afterSeq: number | null,
+  window: GroupMessageWindow,
 ): Promise<ActivityGroupMessageRow[]> {
   const result = await pool.query<ActivityGroupMessageRow>(
     `SELECT id, seq, author_type, author_name, author_agent_id, author_user_id, source_run_id,
@@ -134,7 +154,7 @@ export async function listGroupMessagesForActivity(
        AND created_at <= $3
        AND (created_at >= $2 OR ($4::bigint IS NOT NULL AND seq > $4::bigint))
      ORDER BY seq`,
-    [guildId, stamp(since), stamp(until), afterSeq],
+    [guildId, stamp(window.since), stamp(window.until), window.afterSeq],
   );
   return result.rows;
 }
@@ -242,9 +262,7 @@ export async function getGroupChatSeenThrough(
 
 export async function markGroupChatSeen(
   pool: Queryable,
-  guildId: string,
-  userId: string,
-  seq: number,
+  read: GroupChatRead,
   now: Date,
 ): Promise<number> {
   const result = await pool.query<{ seen_through_seq: number }>(
@@ -254,7 +272,7 @@ export async function markGroupChatSeen(
        SET seen_through_seq = GREATEST(group_chat_reads.seen_through_seq, EXCLUDED.seen_through_seq),
            updated_at = EXCLUDED.updated_at
      RETURNING seen_through_seq`,
-    [guildId, userId, seq, stamp(now)],
+    [read.guild_id, read.user_id, read.seen_through_seq, stamp(now)],
   );
   return result.rows[0]?.seen_through_seq ?? 0;
 }

@@ -43,7 +43,11 @@ export async function markGroupChatRead(
   if (typeof seq !== "number" || !Number.isInteger(seq) || seq < 0) {
     throw new GroupChatError(422, "seen_through_seq must be a non-negative integer");
   }
-  const seen = await markGroupChatSeen(services.db, guildId, userId, seq, new Date());
+  const seen = await markGroupChatSeen(
+    services.db,
+    { guild_id: guildId, user_id: userId, seen_through_seq: seq },
+    new Date(),
+  );
   await services.inbox.ping([userId]);
   return { seen_through_seq: seen };
 }
@@ -63,7 +67,11 @@ export async function postOperatorMessage(
     message.interrupt === true
       ? await chat.postUserInterruption(guildId, message.content, author)
       : await chat.postUser(guildId, message.content, author);
-  await markGroupChatSeen(services.db, guildId, author.id, posted.seq, new Date());
+  await markGroupChatSeen(
+    services.db,
+    { guild_id: guildId, user_id: author.id, seen_through_seq: posted.seq },
+    new Date(),
+  );
   await services.inbox.ping([author.id]);
   return posted;
 }

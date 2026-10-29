@@ -52,7 +52,11 @@ test("admin catalog, overrides, seed preservation, listed tools, and leaks", { t
   });
 
   const outsider = await insertUser(db, { userId: "user_other", name: "other", image: null, email: "other@example.com" }, new Date());
-  await insertMember(db, "org_home", String(outsider.id), "member", new Date());
+  await insertMember(
+    db,
+    { org_id: "org_home", user_id: String(outsider.id), role: "member" },
+    new Date(),
+  );
 
   const denied = await app.inject({
     method: "GET",

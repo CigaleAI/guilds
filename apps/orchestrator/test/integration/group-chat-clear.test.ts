@@ -67,7 +67,11 @@ test(
         image: null,
         email: "teammate-clear@example.com",
       }, new Date());
-    await insertMember(db, "org_home", String(teammate.id), "member", new Date());
+    await insertMember(
+      db,
+      { org_id: "org_home", user_id: String(teammate.id), role: "member" },
+      new Date(),
+    );
     const TEAMMATE = {
       "X-Guilds-User": String(teammate.id),
       "X-Guilds-Org": "org_home",
@@ -119,7 +123,11 @@ test(
         { guildId, content: "third", taggedNames: [], taggedAgentIds: [], taggedUserIds: [] },
         started,
       );
-      await markGroupChatSeen(db, guildId, "user_operator", 2, started);
+      await markGroupChatSeen(
+        db,
+        { guild_id: guildId, user_id: "user_operator", seen_through_seq: 2 },
+        started,
+      );
 
       const denied = await app.inject({
         method: "DELETE",

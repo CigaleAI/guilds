@@ -26,10 +26,10 @@ import { SandboxError, type AgentSeat, type MachineSpec } from "../../src/sandbo
 import { HEX_MASTER_KEY, tempDir } from "./env.js";
 import { templatesRoot } from "./fixtures.js";
 import { TEST_CREDENTIALS } from "./models.js";
-import type { AgentPlaceRow, AgentRow, AgentScriptRow, NewAgentScript } from "../../src/db/agents.js";
+import type { AgentPlaceRow, AgentRow, AgentScriptRow, FoundHarnessLogin, NewAgentScript } from "../../src/db/agents.js";
 import { Scripts, type ScriptDatabase } from "../../src/scripts/catalog.js";
 import { RepositoryTokens } from "../../src/coding/git.js";
-import type { NewDirectRun, NewGroupRun, NewMessage, NewScheduleRun } from "../../src/db/runs.js";
+import type { GroupDelivery, NewDirectRun, NewGroupRun, NewMessage, NewScheduleRun } from "../../src/db/runs.js";
 import type { ScheduleRow, PlannedWake } from "../../src/db/schedules.js";
 import { Schedules, type ScheduleDatabase } from "../../src/schedules/service.js";
 import { Issues, type IssuesDatabase } from "../../src/issues/index.js";
@@ -353,7 +353,7 @@ export class FakeDB {
 
   async setMachineWorkspaceMib(_machineId: string, _mib: number): Promise<void> {}
 
-  async markHarnessLogin(_agentId: string, _harness: string, _now: Date, _account?: unknown): Promise<void> {}
+  async markHarnessLogin(_agentId: string, _login: FoundHarnessLogin, _now: Date): Promise<void> {}
 
   async clearHarnessLogin(_agentId: string, _harness: string): Promise<void> {}
 
@@ -539,7 +539,7 @@ export class FakeDB {
     this.run.updated_at = now;
   }
 
-  async completeGroupDelivery(_runId: string, _agentId: string, _throughSeq: number, _now: Date) {
+  async completeGroupDelivery(_delivery: GroupDelivery, _now: Date) {
     return undefined;
   }
 
@@ -600,7 +600,7 @@ export class RecordingDB {
 
   async setMachineWorkspaceMib(_machineId: string, _mib: number): Promise<void> {}
 
-  async markHarnessLogin(_agentId: string, _harness: string, _now: Date, _account?: unknown): Promise<void> {}
+  async markHarnessLogin(_agentId: string, _login: FoundHarnessLogin, _now: Date): Promise<void> {}
 
   async clearHarnessLogin(_agentId: string, _harness: string): Promise<void> {}
 
@@ -965,8 +965,8 @@ export class RecordingDB {
     this.run.updated_at = now;
   }
 
-  async completeGroupDelivery(runId: string, _agentId: string, _throughSeq: number, now: Date) {
-    await this.completeRun(runId, now);
+  async completeGroupDelivery(delivery: GroupDelivery, now: Date) {
+    await this.completeRun(delivery.id, now);
   }
 
   async listGuilds(_orgId?: string | null) {

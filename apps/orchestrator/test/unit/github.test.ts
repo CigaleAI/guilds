@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import type { McpConnectionRow } from "../../src/db/mcp.js";
+import type { IdentifiedGithubRepository, McpConnectionRow } from "../../src/db/mcp.js";
 import type { GithubRepositorySelection } from "../../src/db/schema/index.js";
 import { createVerify, generateKeyPairSync } from "node:crypto";
 import { test } from "node:test";
@@ -439,10 +439,9 @@ test("a repository stored without an id finds it by its path, and one GitHub ren
     getMcpConnection: async (id: string) => connection(id, "connected", 11),
     recordGithubRepository: async (
       connectionId: string,
-      name: string,
-      repository: { githubId: number; url: string },
+      repository: IdentifiedGithubRepository,
     ) => {
-      recorded.push([connectionId, name, repository.githubId, repository.url]);
+      recorded.push([connectionId, repository.name, repository.github_id, repository.url]);
     },
   };
   const scoped: number[][] = [];

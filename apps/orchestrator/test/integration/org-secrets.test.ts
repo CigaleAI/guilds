@@ -76,14 +76,18 @@ before(async () => {
       image: null,
       email: "secret-admin@example.com",
     }, now);
-  await insertMember(db, "org_home", "user_secret_admin", "admin", now);
+  await insertMember(db, { org_id: "org_home", user_id: "user_secret_admin", role: "admin" }, now);
   await insertUser(db, {
       userId: "user_secret_member",
       name: "secret-member",
       image: null,
       email: "secret-member@example.com",
     }, now);
-  await insertMember(db, "org_home", "user_secret_member", "member", now);
+  await insertMember(
+    db,
+    { org_id: "org_home", user_id: "user_secret_member", role: "member" },
+    now,
+  );
   await insertGuild(db, { guildId: "guild_open", name: "open-desk", orgId: "org_home" }, now);
   await insertGuild(db, { guildId: "guild_side", name: "side-desk", orgId: "org_home" }, now);
   await insertGuild(db,

@@ -11,6 +11,7 @@ import {
   getMembership,
   insertMember,
   insertOrg,
+  type NewOrgMember,
   updateMemberRole,
 } from "../../src/db/orgs.js";
 
@@ -28,7 +29,10 @@ after(async () => {
   await dropIsolatedDatabase(dbName);
 });
 
-async function orgWithMembers(tag: string, roles: string[]): Promise<{ orgId: string; userIds: string[] }> {
+async function orgWithMembers(
+  tag: string,
+  roles: NewOrgMember["role"][],
+): Promise<{ orgId: string; userIds: string[] }> {
   const now = new Date();
   const userIds: string[] = [];
   for (const [index] of roles.entries()) {
@@ -44,7 +48,7 @@ async function orgWithMembers(tag: string, roles: string[]): Promise<{ orgId: st
   await insertOrg(db, { orgId, name: tag, slug: tag, userId: userIds[0] ?? "" }, now);
   for (const [index, role] of roles.entries()) {
     if (index > 0) {
-      await insertMember(db, orgId, userIds[index] ?? "", role, now);
+      await insertMember(db, { org_id: orgId, user_id: userIds[index] ?? "", role }, now);
     }
   }
   return { orgId, userIds };

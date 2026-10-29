@@ -128,7 +128,11 @@ test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => 
         image: null,
         email: "teammate-b@example.com",
       }, now);
-    await insertMember(db, "org_home", String(teammate.id), "member", now);
+    await insertMember(
+      db,
+      { org_id: "org_home", user_id: String(teammate.id), role: "member" },
+      now,
+    );
     const denied = await app.inject({
       method: "GET",
       url: `/api/builder/sessions/${session.id}`,

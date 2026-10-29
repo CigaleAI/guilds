@@ -7,7 +7,7 @@ import { getMemoryRow } from "../../src/artifacts/memory.js";
 import { artifactStore } from "../../src/artifacts/store.js";
 import { taskDisplayPath } from "../../src/artifacts/task.js";
 import type { Database } from "../../src/db/client.js";
-import { getAgent } from "../../src/db/agents.js";
+import { getAgent, markHarnessLogin } from "../../src/db/agents.js";
 import { GuildNameTaken } from "../../src/db/errors.js";
 import { listFileChanges } from "../../src/db/file-changes.js";
 import { addGuild } from "../../src/guilds/service.js";
@@ -87,4 +87,16 @@ test("an agent may not take the name of one of its guild's operators", async () 
     GuildNameTaken,
   );
   assert.equal(await getAgent(db, "a_operator"), null);
+});
+
+test("a harness login found in an agent's home is recorded with when it was seen and whose it is", async () => {
+  const db = database.pool;
+  const actor = systemActor("org_home", { guildId: GUILD, agentId: "a_login" });
+  await addAgent({ db, notes, artifacts: null }, draftFor("a_login", "login", ""), actor, new Date());
+  const seen = new Date("2026-03-04T05:06:07.000Z");
+  await markHarnessLogin(db, "a_login", { harness: "claude-code", account: "dev@example.com" }, seen);
+  const agent = await getAgent(db, "a_login");
+  assert.deepEqual(agent?.harness_logins, {
+    "claude-code": { seen_at: seen.toISOString(), account: "dev@example.com" },
+  });
 });

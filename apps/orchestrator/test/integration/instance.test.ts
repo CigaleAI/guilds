@@ -39,7 +39,11 @@ test("the instance descriptor lists integrations and their state, never a key", 
   await notes.ensureSystemPrompt();
   const db = database.pool;
   const member = await insertUser(db, { userId: "user_member", name: "member", image: null, email: "member@example.com" }, new Date());
-  await insertMember(db, "org_home", String(member.id), "member", new Date());
+  await insertMember(
+    db,
+    { org_id: "org_home", user_id: String(member.id), role: "member" },
+    new Date(),
+  );
   const deps = { db, notes, scripts: agentScripts(db), schedules: agentSchedules(db) };
   const core = await buildApp(database, deps);
   const describe = async (headers: Record<string, string>) => {

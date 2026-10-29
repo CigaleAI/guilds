@@ -35,7 +35,11 @@ test("organisation-wide note, table, and change routes keep a private guild to i
       image: null,
       email: "vault@example.com",
     }, new Date());
-  await insertMember(db, "org_home", String(teammate.id), "member", new Date());
+  await insertMember(
+    db,
+    { org_id: "org_home", user_id: String(teammate.id), role: "member" },
+    new Date(),
+  );
   const TEAMMATE = { "X-Guilds-User": String(teammate.id), "X-Guilds-Org": "org_home" };
 
   try {

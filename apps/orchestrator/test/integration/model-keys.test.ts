@@ -30,7 +30,11 @@ test("an organisation connects providers, chooses models, and names a default", 
   await notes.ensureSystemPrompt();
   const db = database.pool;
   const member = await insertUser(db, { userId: "user_member", name: "member", image: null, email: "member@example.com" }, new Date());
-  await insertMember(db, "org_home", String(member.id), "member", new Date());
+  await insertMember(
+    db,
+    { org_id: "org_home", user_id: String(member.id), role: "member" },
+    new Date(),
+  );
   const probed: string[] = [];
   const fetchFn = (async (url: string | URL | Request, init?: RequestInit) => {
     const key = String((init?.headers as Record<string, string> | undefined)?.Authorization ?? "");

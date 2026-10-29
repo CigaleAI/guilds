@@ -278,7 +278,13 @@ describe("RowMissing", { concurrency: 1 }, () => {
       name: "a machine update that writes no row raises RowMissing",
       table: "machines",
       event: "UPDATE",
-      write: () => updateMachine(database.pool, "org_home", machineId, MACHINE_INPUT, new Date()),
+      write: () =>
+        updateMachine(
+          database.pool,
+          { org_id: "org_home", id: machineId },
+          MACHINE_INPUT,
+          new Date(),
+        ),
       message: "machine update failed",
     },
     {
@@ -607,8 +613,7 @@ describe("RowMissing", { concurrency: 1 }, () => {
     const resolvedAt = new Date();
     const row = await setIssueStatus(
       database.pool,
-      GUILD,
-      "iss_resolved",
+      { guild_id: GUILD, id: "iss_resolved" },
       { status: "resolved", resolvedAt, resolvedBy: "operator" },
       resolvedAt,
     );
@@ -623,8 +628,7 @@ describe("RowMissing", { concurrency: 1 }, () => {
     const now = new Date();
     const row = await setIssueStatus(
       database.pool,
-      GUILD,
-      "iss_missing",
+      { guild_id: GUILD, id: "iss_missing" },
       { status: "resolved", resolvedAt: now, resolvedBy: "operator" },
       now,
     );
@@ -638,8 +642,7 @@ describe("RowMissing", { concurrency: 1 }, () => {
       withDeletedAfterUpdate("guild_issues", () =>
         setIssueStatus(
           database.pool,
-          GUILD,
-          "iss_vanishing",
+          { guild_id: GUILD, id: "iss_vanishing" },
           { status: "resolved", resolvedAt: now, resolvedBy: "operator" },
           now,
         ),

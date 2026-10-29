@@ -438,7 +438,7 @@
   },
   "src/db/mcp.ts": {
     "no-restricted-syntax": {
-      "count": 3
+      "count": 1
     }
   },
   "src/db/migrations.ts": {

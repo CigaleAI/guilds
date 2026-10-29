@@ -49,6 +49,9 @@ export type MachineSpec = Pick<Machine, "name" | "box" | "memory_mib" | "max_wor
   cpu: number | null;
 };
 
+/** A machine, by its organisation and its id. */
+export type MachineKey = Pick<Machine, "org_id" | "id">;
+
 /** What an agent on a machine has on, as its config says. */
 export type HostedNeeds = { browser: boolean; coding: boolean };
 
@@ -244,8 +247,7 @@ export async function insertMachine(
 /** Writes a machine's name, tier, size, and disk cap. */
 export async function updateMachine(
   db: Queryable,
-  orgId: string,
-  machineId: string,
+  key: MachineKey,
   machine: MachineSpec,
   now: Date,
 ): Promise<MachineQueryRow> {
@@ -255,8 +257,8 @@ export async function updateMachine(
       WHERE org_id = $1 AND id = $2
       RETURNING ${MACHINE_COLUMNS}`,
     [
-      orgId,
-      machineId,
+      key.org_id,
+      key.id,
       machine.name,
       machine.box,
       machine.cpu,

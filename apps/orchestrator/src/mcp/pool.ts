@@ -480,7 +480,10 @@ export class McpPool {
         return await this.invokeCall(connection, server, { ...call, arguments: argumentsForCall });
       } finally {
         if (metered !== null) {
-          await this.database.recordConnectorCall(metered, server.id, utcMonth(), new Date());
+          await this.database.recordConnectorCall(
+            { org_id: metered, connector_id: server.id, month: utcMonth() },
+            new Date(),
+          );
         }
       }
     } catch (error) {

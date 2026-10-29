@@ -1,8 +1,10 @@
 import { SCOPES } from "../../src/access/index.js";
 import type { LoadedConnector } from "../../src/connectors/servers.js";
 import type { BindingRow, NewBinding } from "../../src/db/bindings.js";
+import type { ConnectorCallsKey } from "../../src/db/connectors.js";
 import type {
   DeletedMcpConnectionRow,
+  IdentifiedGithubRepository,
   McpConnectionLogin,
   McpConnectionRow,
   McpToolRow,
@@ -117,18 +119,17 @@ export class MemoryMcpDatabase implements McpDatabase {
     return this.calls.get(`${orgId}:${connectorId}:${month}`) ?? 0;
   }
 
-  async recordConnectorCall(orgId: string, connectorId: string, month: string, _now: Date): Promise<void> {
-    const key = `${orgId}:${connectorId}:${month}`;
+  async recordConnectorCall(calls: ConnectorCallsKey, _now: Date): Promise<void> {
+    const key = `${calls.org_id}:${calls.connector_id}:${calls.month}`;
     this.calls.set(key, (this.calls.get(key) ?? 0) + 1);
   }
 
   async recordGithubRepository(
     connectionId: string,
-    name: string,
-    _repository: { githubId: number; url: string },
+    repository: IdentifiedGithubRepository,
     _now: Date,
   ): Promise<void> {
-    this.repositories.push(`${connectionId}:${name}`);
+    this.repositories.push(`${connectionId}:${repository.name}`);
   }
 
   async saveOauthClient(serverId: string, _client: OAuthClient, _now: Date): Promise<LoadedConnector | null> {

@@ -69,7 +69,11 @@ before(async () => {
   await connectModelProvider(db, "org_home", "deepinfra");
   app = await buildApp(database, { db, notes, scripts: agentScripts(db), schedules: agentSchedules(db) });
   await insertUser(db, { userId: TEAMMATE["X-Guilds-User"], name: "teammate-capture", image: null, email: "capture@example.com" }, new Date());
-  await insertMember(db, "org_home", TEAMMATE["X-Guilds-User"], "member", new Date());
+  await insertMember(
+    db,
+    { org_id: "org_home", user_id: TEAMMATE["X-Guilds-User"], role: "member" },
+    new Date(),
+  );
 
   deskId = await createGuild("desk", "org");
   const agent = await app.inject({
