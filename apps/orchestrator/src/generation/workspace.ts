@@ -7,7 +7,7 @@ import { agentHome } from "../lib/agent-file.js";
 import { errorMessage, errorName, writeLog } from "../observability/log.js";
 import { agentSandbox, seatEnvironment, type SandboxHandle } from "../sandbox/index.js";
 import { measureMachine, measureWorkspace } from "../toolbox/code.js";
-import { createToolContext, type ToolContext } from "../toolbox/index.js";
+import { createToolContext, createToolHooks, type ToolContext } from "../toolbox/index.js";
 import type { RunEvents, RunGeneration } from "./events.js";
 import { agentSeat } from "./machines.js";
 
@@ -99,8 +99,8 @@ export class WorkspaceLimits {
   async recordSize(runId: string, agent: AgentRow, sandbox: SandboxHandle): Promise<void> {
     const ctx = maintenanceContext(runId, agent, sandbox);
     try {
-      await this.db.setAgentWorkspaceMib(agent.id, await measureWorkspace(ctx));
-      await this.db.setMachineWorkspaceMib(agent.machine_id, await measureMachine(ctx));
+      await this.db.setAgentWorkspaceMib(agent.id, await measureWorkspace(ctx, createToolHooks()));
+      await this.db.setMachineWorkspaceMib(agent.machine_id, await measureMachine(ctx, createToolHooks()));
     } catch (error) {
       writeLog(
         "warn",
@@ -115,14 +115,14 @@ export class WorkspaceLimits {
       {
         limit: agentWorkspaceMaxMib(agent.config),
         stored: agent.workspace_mib,
-        measure: () => measureWorkspace(ctx),
+        measure: () => measureWorkspace(ctx, createToolHooks()),
         store: (mib) => this.db.setAgentWorkspaceMib(agent.id, mib),
         what: "the agent's home",
       },
       {
         limit: agent.machine_max_workspace_mib ?? DEFAULT_MACHINE_MAX_WORKSPACE_MIB,
         stored: agent.machine_workspace_mib,
-        measure: () => measureMachine(ctx),
+        measure: () => measureMachine(ctx, createToolHooks()),
         store: (mib) => this.db.setMachineWorkspaceMib(agent.machine_id, mib),
         what: `machine ${agent.machine_name ?? agent.machine_id}`,
       },

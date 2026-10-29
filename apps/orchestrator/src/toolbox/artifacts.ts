@@ -2,6 +2,7 @@ import { ArtifactError } from "../artifacts/errors.js";
 import { isArtifactLevel, type ArtifactActor } from "../artifacts/types.js";
 import { argInteger, argRecord, argString, functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
+import type { ToolServices } from "./services.js";
 import { callActor, type Tool, type ToolContext, type ToolInvocation } from "./types.js";
 import {
   addRecord,
@@ -42,19 +43,22 @@ export function toolArtifacts(store: ArtifactStore) {
 
 export type ToolArtifacts = ReturnType<typeof toolArtifacts>;
 
-function store(ctx: ToolContext): ToolArtifacts {
-  if (!ctx.artifacts) {
+function store(services: ToolServices): ToolArtifacts {
+  if (!services.artifacts) {
     throw new ArtifactError("artifact store is not available", 500);
   }
-  return ctx.artifacts;
+  return services.artifacts;
+}
+
+function requiredActor(actor: ArtifactActor | null): ArtifactActor {
+  if (!actor) {
+    throw new ArtifactError("artifact store is not available", 500);
+  }
+  return actor;
 }
 
 function actor(ctx: ToolContext, call: ToolInvocation): ArtifactActor {
-  const made = callActor(ctx.artifact_actor, call);
-  if (!made) {
-    throw new ArtifactError("artifact store is not available", 500);
-  }
-  return made;
+  return requiredActor(callActor(ctx.artifact_actor, call));
 }
 
 async function publish(ctx: ToolContext, path: string): Promise<void> {
@@ -115,19 +119,19 @@ function viewedRow(view: ArtifactView): Extract<ArtifactView, { kind: "row" }> {
 }
 
 /**
- * A note's or a collection record's content as text, read with the agent's access, the
+ * A note's or a collection record's content as text, read with `reader`'s access, the
  * way `note_get` and the record tools read it. A record is its JSON view.
  */
 export async function readArtifactText(
-  ctx: ToolContext,
-  call: ToolInvocation,
+  services: ToolServices,
+  reader: ArtifactActor | null,
   path: string,
 ): Promise<{ path: string; text: string }> {
-  const parsed = parseActorPath(actor(ctx, call), path);
+  const parsed = parseActorPath(requiredActor(reader), path);
   if (parsed.kind === "collection") {
     throw new ArtifactError(`${path} is a collection; name one of its records`, 422);
   }
-  const view = viewedRow(await store(ctx).artifactAt(actor(ctx, call), path));
+  const view = viewedRow(await store(services).artifactAt(requiredActor(reader), path));
   if (view.deleted) {
     throw new ArtifactError("artifact not found", 404);
   }

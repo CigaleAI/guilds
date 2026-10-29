@@ -351,7 +351,7 @@ test("invoke still runs a first-class script when it is not in offered_tools", a
 });
 
 test("run_command cancel raises interrupted", async () => {
-  const { runCommand } = await import("../../src/toolbox/shell.js");
+  const { executeCommand } = await import("../../src/toolbox/shell.js");
   let started: () => void = () => undefined;
   const startedPromise = new Promise<void>((resolve) => {
     started = resolve;
@@ -384,7 +384,7 @@ test("run_command cancel raises interrupted", async () => {
       tracked.push(id);
     },
   });
-  const task = runCommand(ctx, toolInvocation("shell"), "sleep 30");
+  const task = executeCommand(ctx, ctx, "sleep 30");
   await startedPromise;
   assert.deepEqual(tracked, ["exec_1"]);
   cancelEvent.set();

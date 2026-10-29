@@ -223,6 +223,11 @@ export function callActor(actor: ArtifactActor | null, call: ToolInvocation): Ar
   return actor ? { ...actor, toolCall: { id: call.id, name: call.name } } : null;
 }
 
+/** Hooks that do nothing: the run's commands untracked, no browser to start, nothing run first, no secret store. */
+export function createToolHooks(partial: Partial<ToolHooks> = {}): ToolHooks {
+  return { track_command: null, ensure_browser: null, before_command: null, secret_store: null, ...partial };
+}
+
 export type Tool = {
   name: string;
   description: string;

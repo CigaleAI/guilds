@@ -5,7 +5,7 @@ import { keepMatching } from "../lib/decode.js";
 import { executeCommand } from "./shell.js";
 import { functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
-import type { Tool, ToolContext, ToolInvocation } from "./types.js";
+import type { Tool, ToolContext, ToolHooks, ToolInvocation, ToolRun } from "./types.js";
 
 /**
  * The tools a coding agent checks its harness's work with. Every call runs `guilds-code`
@@ -56,17 +56,17 @@ function stderrOf(execution: { logs?: { stderr?: Array<{ text?: string }> } }): 
 }
 
 /** The command that runs `helper` on `request`: inline, or through a request file when it is too large. */
-async function helperCommand(ctx: ToolContext, helper: string, request: Record<string, unknown>): Promise<string> {
+async function helperCommand(run: ToolRun, helper: string, request: Record<string, unknown>): Promise<string> {
   const json = JSON.stringify(request);
   const encoded = Buffer.from(json, "utf8").toString("base64");
   if (encoded.length <= INLINE_REQUEST_MAX) {
     return `python3 ${helper} ${encoded}`;
   }
-  const files = ctx.sandbox?.files;
+  const files = run.sandbox?.files;
   if (!files) {
     throw new Error("request is too large for this sandbox");
   }
-  const requestPath = `${CODE_REQUEST_DIR}/${ctx.run_id}-${String(request.call_id)}.json`;
+  const requestPath = `${CODE_REQUEST_DIR}/${run.run_id}-${String(request.call_id)}.json`;
   await files.writeFiles([{ path: requestPath, data: json }]);
   return `python3 ${helper} @${requestPath}`;
 }
@@ -119,20 +119,21 @@ export type HelperSettings = { timeoutSeconds?: number; maxBytes?: number; helpe
  * for one argument. Throws with the helper's error text.
  */
 export async function runCodeHelper(
-  ctx: ToolContext,
+  run: ToolRun,
+  hooks: ToolHooks,
   request: HelperRequest,
   options: HelperSettings = {},
 ): Promise<CodeResult> {
   const sent = {
     ...request,
-    run_id: ctx.run_id,
-    agent_id: ctx.agent_id,
+    run_id: run.run_id,
+    agent_id: run.agent_id,
     call_id: callSegment(request.call_id || `${request.op}_${Date.now()}`),
-    default_cwd: ctx.code_default_cwd,
+    default_cwd: run.code_default_cwd,
     max_bytes: options.maxBytes ?? codeResultMaxBytes(),
   };
-  const command = await helperCommand(ctx, options.helper ?? CODE_HELPER, sent);
-  const execution = await executeCommand(ctx, command, {
+  const command = await helperCommand(run, options.helper ?? CODE_HELPER, sent);
+  const execution = await executeCommand(run, hooks, command, {
     timeoutSeconds: options.timeoutSeconds ?? CODE_HELPER_TIMEOUT_SECONDS,
   });
   return helperResult(execution);
@@ -145,7 +146,7 @@ async function runCallHelper(
   request: HelperRequest,
   options: HelperSettings = {},
 ): Promise<CodeResult> {
-  const result = await runCodeHelper(ctx, { ...request, call_id: call.id }, options);
+  const result = await runCodeHelper(ctx, ctx, { ...request, call_id: call.id }, options);
   call.metadata = reportedFields(result.meta);
   return result;
 }
@@ -291,13 +292,13 @@ export const codeSearch = tool(
 );
 
 /** The size of the agent's home in MiB, measured with `du` inside the sandbox. */
-export async function measureWorkspace(ctx: ToolContext): Promise<number> {
-  return measured(await runCodeHelper(ctx, { op: "workspace_size" }));
+export async function measureWorkspace(run: ToolRun, hooks: ToolHooks): Promise<number> {
+  return measured(await runCodeHelper(run, hooks, { op: "workspace_size" }));
 }
 
 /** The size of the agent's machine's directory in MiB: every home on it. */
-export async function measureMachine(ctx: ToolContext): Promise<number> {
-  return measured(await runCodeHelper(ctx, { op: "machine_size" }));
+export async function measureMachine(run: ToolRun, hooks: ToolHooks): Promise<number> {
+  return measured(await runCodeHelper(run, hooks, { op: "machine_size" }));
 }
 
 function measured(result: CodeResult): number {

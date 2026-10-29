@@ -10,7 +10,7 @@ import {
 } from "../scripts/materialise.js";
 import { argString, functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
-import { runCommand } from "./shell.js";
+import { commandOutput, executeCommand } from "./shell.js";
 import { callActor, type Tool, type ToolContext, type ToolInvocation } from "./types.js";
 
 export const SCRIPT_TOOLS = [
@@ -220,15 +220,16 @@ export const scriptDelete: Tool = {
 };
 
 /** Runs a managed script through the launcher, which writes `args` as JSON to its stdin. */
-function runScript(
+async function runScript(
   ctx: ToolContext,
   call: ToolInvocation,
   name: string,
   args: Record<string, unknown>,
 ): Promise<string> {
-  return runCommand(ctx, call, launcherCommand(ctx.agent_home, name), {
+  const execution = await executeCommand(ctx, ctx, launcherCommand(ctx.agent_home, name), {
     envs: { [SCRIPT_ARGS_ENV]: JSON.stringify(args) },
   });
+  return commandOutput(call, execution);
 }
 
 function scriptArguments(raw: unknown): Record<string, unknown> {

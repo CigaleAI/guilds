@@ -34,7 +34,7 @@ import {
   type HarnessLog,
   type LostTurnEnd,
 } from "../toolbox/harness.js";
-import type { ToolContext } from "../toolbox/index.js";
+import { createToolHooks, type ToolContext } from "../toolbox/index.js";
 import type { ActiveGenerations } from "./active-generations.js";
 import { RunRequestError } from "./errors.js";
 import type { RunEvents, RunGeneration } from "./events.js";
@@ -132,7 +132,7 @@ export class CodingRuns {
   /** Whether the run's harness is installed and has a credential; a run that cannot delegate code work fails here. */
   async harnessReady(turn: RunGeneration, ctx: ToolContext): Promise<boolean> {
     try {
-      await assertHarnessReady(ctx);
+      await assertHarnessReady(ctx, ctx);
       return true;
     } catch (error) {
       await this.services.events.recordError(turn, error instanceof HarnessSetupError ? error.code : "harness.check", error);
@@ -185,6 +185,7 @@ export class CodingRuns {
       const guild = await db.getGuild(agent.guild_id);
       const setup = await runCodeHelper(
         maintenance,
+        createToolHooks(),
         {
           op: "git_setup",
           identity: agentGitIdentity(agent, { email: guild?.git_author_email ?? "" }),
@@ -243,7 +244,7 @@ export class CodingRuns {
     let result;
     try {
       const request = task === null ? { op: "diff", repository } : { op: "diff", repository, task: callSegment(task) };
-      result = await runCodeHelper(maintenanceContext(runId, agent, sandbox), request, {
+      result = await runCodeHelper(maintenanceContext(runId, agent, sandbox), createToolHooks(), request, {
         maxBytes: RUN_DIFF_MAX_BYTES,
       });
     } catch (error) {
@@ -363,7 +364,7 @@ export class CodingRuns {
    */
   private async checkpoint(ctx: ToolContext, which: "start" | "end", agent: AgentRow): Promise<RunRepositoryChange[]> {
     try {
-      const result = await runCodeHelper(ctx, { op: "checkpoint", which }, { timeoutSeconds: 300 });
+      const result = await runCodeHelper(ctx, createToolHooks(), { op: "checkpoint", which }, { timeoutSeconds: 300 });
       return which === "end"
         ? decode(Type.Array(RunRepositoryChangeSchema), result.meta.repositories, (problem) => new Error(`checkpoint ${problem}`))
         : [];

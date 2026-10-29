@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { runCommand } from "./shell.js";
+import { commandOutput, executeCommand } from "./shell.js";
 import { argString, functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
 import type { Tool, ToolContext, ToolInvocation } from "./types.js";
@@ -28,7 +28,7 @@ async function run(ctx: ToolContext, call: ToolInvocation, spec: Record<string, 
     await ctx.ensure_browser();
   }
   const request = ctx.cdp_port === null ? spec : { ...spec, cdp_port: ctx.cdp_port };
-  return runCommand(ctx, call, encodeSpec(request), { timeoutSeconds: BROWSER_TIMEOUT_SECONDS });
+  return commandOutput(call, await executeCommand(ctx, ctx, encodeSpec(request), { timeoutSeconds: BROWSER_TIMEOUT_SECONDS }));
 }
 
 function tool(

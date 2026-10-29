@@ -186,8 +186,8 @@ export {
   stampToolResult,
   withRemainingToolCalls,
 } from "./output.js";
-export { createToolContext, CancelEvent } from "./types.js";
+export { createToolContext, createToolHooks, CancelEvent } from "./types.js";
 export type { Tool, ToolContext } from "./types.js";
 export { encodeSpec, HELPER } from "./browser.js";
-export { formatExecution, runCommand } from "./shell.js";
+export { formatExecution } from "./shell.js";
 export { dynamicScriptTools, firstClassScriptSchemas } from "./script.js";
