@@ -46,7 +46,7 @@ export class ModelsError extends Error {
 }
 
 /** The db/ functions an organisation's providers and default model are read and written through, on `db`. */
-export function modelsDatabase(db: Queryable) {
+function modelsDatabase(db: Queryable) {
   return {
     listOrgModelProviders: bindQuery(db, listOrgModelProviders),
     getOrgModelProvider: bindQuery(db, getOrgModelProvider),
