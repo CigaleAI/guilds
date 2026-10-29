@@ -207,6 +207,9 @@ test(
         "ids that are not a list",
       );
       assert.equal((await start({ attachment_ids: [" "] })).statusCode, 422, "a blank id");
+      const numberedMessage = await start({ message: 7 });
+      assert.equal(numberedMessage.statusCode, 422, "a message that is not text");
+      assert.deepEqual(numberedMessage.json().detail[0].loc, ["body", "message"]);
       const images = await start({ attachment_ids: ["att_1"] });
       assert.equal(images.statusCode, 503, "a box without an image store takes no images");
       assert.match(String(images.json().detail), /attachments/);
@@ -237,7 +240,12 @@ test(
           headers: JSON_OWNER,
           payload,
         });
-      assert.equal((await say({})).statusCode, 422, "a message needs content or images");
+      const contentless = await say({});
+      assert.equal(contentless.statusCode, 422, "a message needs content or images");
+      assert.equal(contentless.json().detail, "content must not be empty");
+      const listedContent = await say({ content: ["more"] });
+      assert.equal(listedContent.statusCode, 422, "content that is not text");
+      assert.deepEqual(listedContent.json().detail[0].loc, ["body", "content"]);
       assert.equal((await say({ content: " " })).statusCode, 422, "blank content");
       assert.equal((await say({ content: "more" })).statusCode, 503);
       const messages = await app.inject({

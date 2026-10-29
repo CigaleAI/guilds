@@ -8,6 +8,16 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** Starting a run refuses a `message`, and posting to a run
+a `content`, that is neither a string nor null, and either refuses an
+`attachment_ids` that is neither a list of strings nor null, with a
+422 that names the field, before the request's user is identified. A
+message to a run with neither content nor images is a 422 with
+`content must not be empty`. Before, a `message` or `content` was read
+as its text, an `attachment_ids` that was not a list was a 422 with
+`attachment_ids must be an array`, and a message with neither was a
+422 with `Field required` at `body.content`.
+
 **No impact.** Creating a script refuses a `name`, `description` or
 `source` that is not a string with a 422 that names the field, before
 the request's user is identified. Before, those were refused by the
