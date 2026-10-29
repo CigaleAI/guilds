@@ -13,7 +13,7 @@ import { NotesStore } from "../../src/notes/store.js";
 import { addGuild } from "../../src/guilds/service.js";
 import { recipeApply } from "../../src/recipes/apply.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { completionReply } from "../helpers/generation.js";
@@ -69,7 +69,7 @@ test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => 
   await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = artifactStore(database.pool, templatesRoot());
   const scripts = agentScripts(db);
-  const schedules = new Schedules(scheduleDatabase(db));
+  const schedules = agentSchedules(db);
   const caps = { maxAgents: 25 };
   const policy = limitedPolicy(caps);
   const capabilities = new CapabilityService(db, policy);

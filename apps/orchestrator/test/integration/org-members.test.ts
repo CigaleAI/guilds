@@ -6,7 +6,7 @@ import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, r1DatabaseUrl, uniqueDbName } from "../helpers/postgres.js";
@@ -36,7 +36,7 @@ test(
       db,
       notes,
       scripts: agentScripts(db),
-      schedules: new Schedules(scheduleDatabase(db)),
+      schedules: agentSchedules(db),
     });
     const json = { ...OWNER, "content-type": "application/json" };
 
@@ -138,7 +138,7 @@ test(
       db,
       notes,
       scripts: agentScripts(db),
-      schedules: new Schedules(scheduleDatabase(db)),
+      schedules: agentSchedules(db),
     });
     const as = (userId: string) => ({ "X-Guilds-User": userId, "X-Guilds-Org": "org_home" });
     const call = (method: "POST" | "PATCH" | "DELETE" | "PUT", url: string, headers: Record<string, string>, payload?: object) =>
@@ -194,7 +194,7 @@ test("an organisation's slug is unique, and a new slug moves its notes folder", 
     db,
     notes,
     scripts: agentScripts(db),
-    schedules: new Schedules(scheduleDatabase(db)),
+    schedules: agentSchedules(db),
   });
   const json = { ...OWNER, "content-type": "application/json" };
 

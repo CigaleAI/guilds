@@ -11,7 +11,7 @@ import { seedSystem } from "../../src/seed/system.js";
 import { newId } from "../../src/lib/ids.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { limitedPolicy } from "../helpers/policy.js";
@@ -47,7 +47,7 @@ test("admin catalog, overrides, seed preservation, listed tools, and leaks", { t
     db,
     notes,
     scripts: agentScripts(db),
-    schedules: new Schedules(scheduleDatabase(db)),
+    schedules: agentSchedules(db),
     policy: limitedPolicy({ maxAgents: 25, maxBrowserAgents: 10, maxCodingAgents: 10 }),
   });
 

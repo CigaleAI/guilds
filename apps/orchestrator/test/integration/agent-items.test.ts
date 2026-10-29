@@ -13,7 +13,7 @@ import { StudioError } from "../../src/studio/errors.js";
 import { readGuildRun } from "../../src/studio/inspector.js";
 import { usageForOrg, usageForPlatform } from "../../src/usage/view.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
@@ -41,7 +41,7 @@ test(
       db,
       notes,
       scripts: agentScripts(db),
-      schedules: new Schedules(scheduleDatabase(db)),
+      schedules: agentSchedules(db),
     });
     await insertGuild(
       db,
@@ -305,7 +305,7 @@ test(
         headers: MEMBER,
       });
       assert.equal(orphans.statusCode, 403, "only an owner or admin sees drafts nobody holds");
-      const inspector = { db, schedules: new Schedules(scheduleDatabase(db)), generation: null };
+      const inspector = { db, schedules: agentSchedules(db), generation: null };
       const read = await readGuildRun(inspector, "guild_items", "run_items");
       assert.deepEqual(
         [read.run, read.messages].map((part) => typeof part),

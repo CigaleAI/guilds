@@ -26,7 +26,7 @@ import { coreModelCredentials, type ModelCredentialsProvider } from "../llm/cred
 import type { NotesStore } from "../notes/store.js";
 import { errorMessage, errorName, writeLog } from "../observability/log.js";
 import { OPEN_POLICY, type OrgPolicy } from "../policy/index.js";
-import { Schedules, scheduleDatabase } from "../schedules/service.js";
+import { agentSchedules, type Schedules } from "../schedules/service.js";
 import { agentScripts, type Scripts } from "../scripts/catalog.js";
 import { defaultGroupRouter } from "../typesafe/index.js";
 import { AdmissionCoordinator } from "../admission/coordinator.js";
@@ -90,7 +90,6 @@ function generationDatabase(db: Queryable) {
   return {
     ...groupChatDatabase(db),
     ...issuesDatabase(db),
-    ...scheduleDatabase(db),
     ...activeGenerationsDatabase(db),
     ...runEventsDatabase(db),
     ...agentMachinesDatabase(db),
@@ -137,6 +136,7 @@ export type GenerationLoopServices = {
  */
 export type GenerationLoopDeps = GenerationLoopServices & {
   db: GenerationDatabase;
+  schedules: Schedules;
   scripts: Scripts;
 };
 
@@ -190,7 +190,7 @@ export class GenerationLoop implements GroupRunner {
     });
     this.groupChat.bind(this);
     this.issues = new Issues(db);
-    this.schedules = new Schedules(db);
+    this.schedules = services.schedules;
     this.scripts = services.scripts;
     this.preparation = new RunPreparation({
       db,
@@ -580,7 +580,12 @@ export function generationLoop(
   timings: GenerationLoopTimings = LOOP_TIMINGS,
 ): GenerationLoop {
   return new GenerationLoop(
-    { ...services, db: generationDatabase(db), scripts: agentScripts(db) },
+    {
+      ...services,
+      db: generationDatabase(db),
+      schedules: agentSchedules(db),
+      scripts: agentScripts(db),
+    },
     timings,
   );
 }

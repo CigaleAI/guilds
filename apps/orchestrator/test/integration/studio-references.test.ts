@@ -6,7 +6,7 @@ import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { StudioService } from "../../src/studio/index.js";
 import type { GuildReferences } from "../../src/studio/references.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
@@ -37,7 +37,7 @@ test(
     await connectModelProvider(db, "org_home", "deepinfra");
     const artifacts = artifactStore(database.pool, templatesRoot());
     const scripts = agentScripts(db);
-    const schedules = new Schedules(scheduleDatabase(db));
+    const schedules = agentSchedules(db);
     const studio = new StudioService({
       db,
       artifacts,

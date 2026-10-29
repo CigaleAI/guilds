@@ -1214,9 +1214,6 @@
     }
   },
   "src/schedules/service.ts": {
-    "@typescript-eslint/explicit-module-boundary-types": {
-      "count": 1
-    },
     "@typescript-eslint/max-params": {
       "count": 1
     },

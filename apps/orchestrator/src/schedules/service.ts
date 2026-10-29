@@ -26,7 +26,7 @@ import {
 import { bindQuery, bindTransaction, type Queryable, type Transaction } from "../db/pg.js";
 
 /** The db/ functions routines are read and written through, on `db`. */
-export function scheduleQueries(db: Queryable) {
+function scheduleQueries(db: Queryable) {
   return {
     insertSchedule: bindQuery(db, insertSchedule),
     deleteSchedule: bindQuery(db, deleteSchedule),
@@ -47,7 +47,7 @@ export type ScheduleQueries = ReturnType<typeof scheduleQueries>;
 export type ScheduleDatabase = ScheduleQueries & { scheduleTransaction: Transaction<ScheduleQueries> };
 
 /** The routines' queries on `db`, and a transaction that runs them on one client. */
-export function scheduleDatabase(db: Queryable): ScheduleDatabase {
+function scheduleDatabase(db: Queryable): ScheduleDatabase {
   return { ...scheduleQueries(db), scheduleTransaction: bindTransaction(db, scheduleQueries) };
 }
 
@@ -236,6 +236,11 @@ export class Schedules {
       await this.db.setScheduleNextRun(row.id, planWake(rowTiming(row), now), now);
     }
   }
+}
+
+/** The routines of agents, read and written on `db`. */
+export function agentSchedules(db: Queryable): Schedules {
+  return new Schedules(scheduleDatabase(db));
 }
 
 /** What an update may change; a key left out keeps the routine's value. */

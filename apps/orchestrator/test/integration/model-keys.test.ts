@@ -6,7 +6,7 @@ import { coreModelCredentials, modelProviderStore } from "../../src/llm/credenti
 import { modelsService } from "../../src/llm/models.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { TEST_MASTER_KEY } from "../helpers/models.js";
@@ -48,7 +48,7 @@ test("an organisation connects providers, chooses models, and names a default", 
     db,
     notes,
     scripts: agentScripts(db),
-    schedules: new Schedules(scheduleDatabase(db)),
+    schedules: agentSchedules(db),
     masterKey: TEST_MASTER_KEY,
     modelCredentials: credentials,
     models: modelsService(db, { credentials, fetch: fetchFn, masterKey: TEST_MASTER_KEY }),
