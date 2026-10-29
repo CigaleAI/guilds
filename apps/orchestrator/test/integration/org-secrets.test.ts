@@ -173,6 +173,13 @@ test("a value is stored without the whitespace around it, and one of only whites
   assert.equal(blank.statusCode, 422);
   assert.match(blank.json().detail, /value must contain non-whitespace text/);
   assert.equal((await create(OWNER, { name: "BLANK_TOKEN", org_wide: true, value: "\n" })).statusCode, 422);
+  const numbered = await create(OWNER, { name: "NUMBERED_TOKEN", org_wide: true, value: 42 });
+  assert.equal(numbered.statusCode, 422);
+  assert.deepEqual(numbered.json().detail[0].loc, ["body", "value"]);
+  const textName = await call(OWNER, "PATCH", `/api/secrets/${id}`, { name: ["A", "B"] });
+  assert.equal(textName.statusCode, 422);
+  assert.deepEqual(textName.json().detail[0].loc, ["body", "name"]);
+  assert.equal((await call(OWNER, "GET", "/api/secrets?guild_id=a&guild_id=b")).statusCode, 422);
 });
 
 test("owners and admins write any secret; members write secrets local to their guilds", async () => {
@@ -324,6 +331,9 @@ test("access changes replace the set and refresh the agents they reach", async (
   assert.equal(refused.statusCode, 422);
   const unknown = await call(OWNER, "PUT", `/api/secrets/${id}/access`, { org_wide: false, guild_ids: ["guild_nope"] });
   assert.equal(unknown.statusCode, 422);
+  const listed = await call(OWNER, "PUT", `/api/secrets/${id}/access`, { org_wide: "yes" });
+  assert.equal(listed.statusCode, 422);
+  assert.deepEqual(listed.json().detail[0].loc, ["body", "org_wide"]);
 });
 
 test("a secret goes with the guild or agent that held its last grant", async () => {

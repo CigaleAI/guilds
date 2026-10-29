@@ -1,3 +1,4 @@
+import { Type, type Static } from "@sinclair/typebox";
 import { requireVisibleAgent } from "../agents/access.js";
 import { encryptPayload } from "../credentials/crypto.js";
 import {
@@ -28,9 +29,11 @@ import {
   canManageSecret,
   managesOrgSecrets,
   secretGrants,
+  SecretAccessSchema,
   secretMetadata,
   validateSecretAccess,
   type SecretAccess,
+  type SecretAccessRequest,
   type SecretViewer,
 } from "./access.js";
 
@@ -55,15 +58,21 @@ export type SecretServices = {
 };
 
 /** A new secret as it is asked for, before validation: the name, description and value, and who gets it. */
-export type SecretDraft = {
-  name: unknown;
-  description: unknown;
-  value: unknown;
-  access: Record<string, unknown>;
-};
+export const SecretDraftSchema = Type.Composite([
+  Type.Object({ name: Type.String(), description: Type.String(), value: Type.String() }),
+  SecretAccessSchema,
+]);
 
-/** The fields a secret change sets; an absent one stays as it is. */
-export type SecretChange = { name?: unknown; description?: unknown; value?: unknown };
+export type SecretDraft = Static<typeof SecretDraftSchema>;
+
+/** The fields a secret change sets; an absent or null one stays as it is. */
+export const SecretChangeSchema = Type.Object({
+  name: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  description: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  value: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+});
+
+export type SecretChange = Static<typeof SecretChangeSchema>;
 
 /** A secret of an organisation as one of its members holds it: the row, and what the member may see and do. */
 export type HeldSecret = {
@@ -160,7 +169,7 @@ export async function createSecret(
   const name = validateSecretName(draft.name);
   const description = validateSecretDescription(draft.description);
   const payload = secretPayload(draft.value);
-  const access = validateSecretAccess(draft.access);
+  const access = validateSecretAccess(draft);
   const viewer = await requireSecretViewer(db, orgId, userId);
   const agentGuilds = await grantTargets(db, orgId, access);
   if (!canCreateSecret(access, viewer, agentGuilds)) {
@@ -268,7 +277,7 @@ function keepUnseenGrants(held: HeldSecret, access: SecretAccess): SecretAccess 
 export async function replaceSecretAccess(
   services: SecretServices,
   held: HeldSecret,
-  requested: Record<string, unknown>,
+  requested: SecretAccessRequest,
 ): Promise<Metadata> {
   const { db } = services;
   if (!managesOrgSecrets(held.viewer.role)) {
