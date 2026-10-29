@@ -90,6 +90,14 @@ test("a login waits for its settings, looks them up, and connects once they are 
     });
     assert.equal(before.statusCode, 200, before.body);
     assert.equal(before.json().options[0].value.id, "solana");
+    const numberedQuery = await app.inject({
+      method: "POST",
+      url: "/api/mcp/servers/mcp_quotes/lookup",
+      headers: AUTH,
+      payload: { property: "symbols", q: 7, credentials: { token: "qk" } },
+    });
+    assert.equal(numberedQuery.statusCode, 422, numberedQuery.body);
+    assert.deepEqual(numberedQuery.json().detail[0].loc, ["body", "q"]);
 
     const found = await app.inject({
       method: "GET",
@@ -97,6 +105,20 @@ test("a login waits for its settings, looks them up, and connects once they are 
       headers: AUTH,
     });
     assert.equal(found.statusCode, 200, found.body);
+    const twice = await app.inject({
+      method: "GET",
+      url: `/api/mcp/connections/${id}/lookup?property=symbols&property=other`,
+      headers: AUTH,
+    });
+    assert.equal(twice.statusCode, 422, twice.body);
+    const numberedTool = await app.inject({
+      method: "POST",
+      url: `/api/mcp/connections/${id}/call`,
+      headers: AUTH,
+      payload: { tool: 7 },
+    });
+    assert.equal(numberedTool.statusCode, 422, numberedTool.body);
+    assert.deepEqual(numberedTool.json().detail[0].loc, ["body", "tool"]);
     const symbol = found.json().options[0].value;
 
     const invalid = await app.inject({
