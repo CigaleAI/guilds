@@ -20,15 +20,18 @@ import { StudioService } from "../../src/studio/index.js";
 import { generationLive } from "../../src/studio/runner.js";
 import {
   studioCallConnectionTool,
+  studioCreateTaskDraft,
   studioEditAccess,
   studioEditNote,
   studioEditCollection,
   studioEditGuild,
   studioEditMemory,
   studioEditRoutine,
+  studioFindArtifacts,
   studioGetAgentAccess,
   studioGetArtifact,
   studioGetCollection,
+  studioGetGuidelines,
   studioGetGuild,
   studioGetAgentContext,
   studioGetMemoryVersion,
@@ -287,7 +290,7 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
     assert.ok(rows.some((row) => row.payload.role === "assistant"));
 
     const liveTask = await getAgentTask(db, "org_home", "a_studio");
-    const createdDraft = await studio.drafts.createFromTool(
+    const createdDraft = await studioCreateTaskDraft.handler(
       {
         session: (await getStudioSession(db, session.id))!,
         user: userRow({ id: "user_operator", name: "operator" }),
@@ -531,6 +534,7 @@ test("studio reads agent access, script source, and granted connections", { time
     assert.equal(script.name, "tally");
     assert.match(script.content, /source="script"/);
     assert.match(script.content, /print\('tally'\)/);
+    await assert.rejects(studioGetScript.handler(await toolContext(), { agent_id: "a_access" }), /\/name: Expected required property/);
 
     const blocked = (await studioCallConnectionTool.handler(await toolContext(), {
       connection_id: String(connection.id),
@@ -539,6 +543,16 @@ test("studio reads agent access, script source, and granted connections", { time
     })) as { error?: string };
     assert.equal(blocked.error, "access_required");
     assert.equal(calls.length, 0);
+    await assert.rejects(
+      studioCallConnectionTool.handler(await toolContext(), { connection_id: String(connection.id), tool: "notion-search", arguments: ["roadmap"] }),
+      /\/arguments: Expected object/,
+    );
+    await assert.rejects(
+      studioRequestConnectionAccess.handler(await toolContext(), { connection_id: String(connection.id) }),
+      /\/reason: Expected required property/,
+    );
+    const byAlias = (await studioGetAgentAccess.handler(await toolContext(), { agent: "curator" })) as { agent_id: string };
+    assert.equal(byAlias.agent_id, "a_access");
 
     const requested = (await studioRequestConnectionAccess.handler(await toolContext(), {
       connection_id: String(connection.id),
@@ -1061,6 +1075,22 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
     assert.equal(firstPage.next_cursor, "1");
     await assert.rejects(studioGetMemoryVersion.handler(toolCtx(), { agent_id: "curator", version_index: "1" }), /\/version_index: Expected integer/);
     await assert.rejects(studioListGroupMessages.handler(toolCtx(), { author_type: 3 }), /\/author_type: Expected string/);
+    const found = await studioFindArtifacts.handler(toolCtx(), { query: "cite", level: "guild", limit: 5 });
+    assert.deepEqual((found.artifacts as Array<{ display_path: string }>).map((item) => item.display_path), [sharedPath]);
+    const houseRules = await studioGetArtifact.handler(toolCtx(), { display_path: sharedPath, cursor: "0" });
+    assert.match(String(houseRules.content), /Always cite the source/);
+    const firstChange = await studioListFileChanges.handler(toolCtx(), { display_path: memoryPath, limit: 1 });
+    assert.equal((firstChange.changes as unknown[]).length, 1);
+    await assert.rejects(studioFindArtifacts.handler(toolCtx(), { query: ["cite"] }), /\/query: Expected string/);
+    await assert.rejects(studioGetArtifact.handler(toolCtx(), {}), /\/display_path: Expected required property/);
+    const guidelines = await studioGetGuidelines.handler(toolCtx(), {});
+    assert.equal(guidelines.editable, false);
+    assert.match(String(guidelines.content), /source="guidelines"/);
+    await assert.rejects(
+      studioCreateTaskDraft.handler(toolCtx(), { agent_id: "curator", proposed_content: "Curate.\n", rationale: "r", risks: "none" }),
+      /\/risks: Expected array/,
+    );
+    await assert.rejects(studioListGuilds.handler(toolCtx(), { cursor: 0 }), /\/cursor: Expected string/);
   } finally {
     await app.close();
     await database.close();

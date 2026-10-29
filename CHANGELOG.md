@@ -11,8 +11,12 @@ commands for each effect are in
 **No impact.** Studio's `studio_get_agent_context`,
 `studio_list_routines`, `studio_list_runs`, `studio_get_run`,
 `studio_list_group_messages`, `studio_list_task_revisions`,
-`studio_list_memory_revisions`, and `studio_get_memory_version`
-refuse a call whose arguments do not match the parameters the tool
+`studio_list_memory_revisions`, `studio_get_memory_version`,
+`studio_find_artifacts`, `studio_get_artifact`,
+`studio_list_file_changes`, `studio_get_script`,
+`studio_get_agent_access`, `studio_request_connection_access`,
+`studio_call_connection_tool`, `studio_create_task_draft`, and
+`studio_list_guilds` refuse a call whose arguments do not match the parameters the tool
 declares, with the first mismatch, such as `/limit: Expected integer`.
 Before, a mistyped argument counted as left out, a numeric string was
 read as a `seq_start` or `seq_end`, and a missing `run_id` or
