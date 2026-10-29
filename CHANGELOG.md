@@ -8,6 +8,12 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** `PATCH /api/auth/me` refuses a `name` that is not a
+string, and a `timezone` or `color` that is neither a string nor null,
+with a 422 that names the field, before the request's user is
+identified. Before, a `name` was read as text, so `null` was refused as
+an invalid name and a number was checked as its digits.
+
 **No impact.** A request that a route's TypeBox schema refuses, such
 as an avatar asked for with two `seed` values, or a request to an
 extension's route that declares a schema, answers 422 with a `detail`

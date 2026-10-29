@@ -65,6 +65,11 @@ test("a person sets, keeps and clears their identity colour", { timeout: 60_000 
     }
     const empty = await patch({});
     assert.equal(empty.statusCode, 422);
+    const mistyped = await patch({ name: 5 });
+    assert.equal(mistyped.statusCode, 422);
+    assert.deepEqual(mistyped.json().detail, [
+      { type: "type", loc: ["body", "name"], msg: "must be string", input: 5 },
+    ]);
 
     const cleared = await patch({ color: null });
     assert.equal(cleared.json().color, null);
