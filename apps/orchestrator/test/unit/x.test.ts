@@ -151,6 +151,23 @@ test("search sends a bearer token", async () => {
   assert.equal(stored, "from:x  n=1\n1  @x  X  likes=-  rts=-  replies=-  quotes=-  hi");
 });
 
+test("search refuses a body that is not JSON or does not match its schema", async () => {
+  const answering = (result: { json?: unknown; text?: string }) => ({
+    apiKey: "tok-test",
+    client: mockFetch(() => ({ status: 200, ...result })),
+  });
+  await assert.rejects(
+    () => searchTool({ query: "from:x" }, answering({ json: { meta: "none" } })),
+    (error: unknown) =>
+      error instanceof XError &&
+      /^X returned an unexpected response at \/meta: /.test(error.message),
+  );
+  await assert.rejects(
+    () => searchTool({ query: "from:x" }, answering({ text: "not json" })),
+    (error: unknown) => error instanceof XError && error.message === "X returned a non-JSON body",
+  );
+});
+
 test("posts resolves username then timeline", async () => {
   const seen: string[] = [];
   const stored = await postsTool(
