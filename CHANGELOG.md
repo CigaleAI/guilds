@@ -231,7 +231,9 @@ connection, and the function that bound its queries is not exported:
 `agentScripts(db)` (`scripts/catalog.js`) builds `Scripts`, in place
 of `scriptDatabase`, and `agentSchedules(db)` (`schedules/service.js`)
 builds `Schedules`, in place of `scheduleDatabase` and
-`scheduleQueries`.
+`scheduleQueries`. `ensureClient` (`oauth/index.js`) takes the
+connection, a connector and a redirect URI, in place of
+`oauthDatabase(db)` and fetch options.
 
 **Breaking for extending repositories.** The Makefile variables
 `EDITION`, `EDITION_TEST_PACKAGES`, and `EDITION_COMPOSE_FILES` are

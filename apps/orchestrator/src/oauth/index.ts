@@ -594,7 +594,7 @@ export async function refreshTokens(
 }
 
 /** The db/ functions a login's OAuth client and tokens are saved through, on `db`. */
-export function oauthDatabase(db: Queryable) {
+function oauthDatabase(db: Queryable) {
   return {
     saveOauthClient: bindQuery(db, saveOauthClient),
     saveMcpConnection: bindQuery(db, saveMcpConnection),
@@ -603,7 +603,25 @@ export function oauthDatabase(db: Queryable) {
 
 export type OauthDatabase = ReturnType<typeof oauthDatabase>;
 
+/**
+ * The provider's discovery and the OAuth client a login to `server` signs in with at
+ * `redirectUri`: the stored, the provided, or the configured client, or one registered now and
+ * saved on `db`.
+ */
 export async function ensureClient(
+  db: Queryable,
+  server: LoadedConnector,
+  redirectUri: string,
+): Promise<[OAuthDiscovery, OAuthClientCredentials]> {
+  return ensureClientThrough(oauthDatabase(db), server, redirectUri);
+}
+
+/**
+ * The provider's discovery and the OAuth client a login to `server` signs in with at
+ * `redirectUri`, saved through `db`, the dependencies object a unit test fakes, and fetched
+ * with `options`.
+ */
+export async function ensureClientThrough(
   db: OauthDatabase,
   server: LoadedConnector,
   redirectUri: string,

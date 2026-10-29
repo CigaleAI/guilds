@@ -10,7 +10,7 @@ import {
   clientCoversRedirect,
   configuredClient,
   discover,
-  ensureClient,
+  ensureClientThrough,
   serverDiscovery,
   providerClient,
   exchangeCode,
@@ -456,7 +456,7 @@ test("ensureClient gmail uses the Google connectors keys and restricts scopes", 
       return null;
     },
   };
-  const [discovery, registered] = await ensureClient(
+  const [discovery, registered] = await ensureClientThrough(
     db,
     GMAIL_SERVER,
     "http://127.0.0.1:8080/api/mcp/oauth/callback",
@@ -490,7 +490,7 @@ test("ensureClient drive uses the Google connectors keys and restricts scopes", 
       return null;
     },
   };
-  const [discovery, registered] = await ensureClient(
+  const [discovery, registered] = await ensureClientThrough(
     db,
     DRIVE_SERVER,
     "http://127.0.0.1:8080/api/mcp/oauth/callback",
@@ -526,7 +526,7 @@ test("ensureClient gmail without the Google connectors keys fails", async () => 
   };
   await assert.rejects(
     () =>
-      ensureClient(db, GMAIL_SERVER, "http://127.0.0.1:8080/api/mcp/oauth/callback", {
+      ensureClientThrough(db, GMAIL_SERVER, "http://127.0.0.1:8080/api/mcp/oauth/callback", {
         sources: { keys: {} },
       }),
     (error: unknown) => error instanceof OAuthError && /OAuth client is not configured/.test(error.message),

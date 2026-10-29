@@ -14,7 +14,6 @@ import {
   ensureClient,
   isGithubApp,
   newState,
-  oauthDatabase,
   OAuthError,
   OAuthUnsupportedError,
   pendingOauthPayload,
@@ -131,7 +130,7 @@ async function browserSignIn(
   replaces: boolean,
 ): Promise<SignIn> {
   try {
-    const [discovery, client] = await ensureClient(oauthDatabase(services.db), server, redirectUri);
+    const [discovery, client] = await ensureClient(services.db, server, redirectUri);
     const [verifier, challenge] = pkcePair();
     const oauthState = newState();
     const authorize = authorizationUrl(discovery, {
