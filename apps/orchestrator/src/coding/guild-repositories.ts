@@ -1,3 +1,4 @@
+import { Type, type Static } from "@sinclair/typebox";
 import { getMcpServer } from "../connectors/servers.js";
 import type { GuildRow } from "../db/guilds.js";
 import {
@@ -61,6 +62,33 @@ export class RepositoryListingInstallationGoneError extends RepositoryValidation
 }
 
 type Item = Record<string, unknown>;
+
+/** A repository's fields as a request sends them, before validation: its name, URL and branch. */
+const RepositoryFields = {
+  name: Type.String(),
+  url: Type.String(),
+  default_branch: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+};
+
+/** A repository added to a guild, cloned with a GitHub login when `connection_id` names one. */
+export const RepositoryDraftSchema = Type.Object({
+  ...RepositoryFields,
+  connection_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+});
+
+export type RepositoryDraft = Static<typeof RepositoryDraftSchema>;
+
+/** The repositories a GitHub login's coding agents clone, each with GitHub's id when known. */
+export const GithubSelectionSchema = Type.Object({
+  repositories: Type.Array(
+    Type.Object({
+      ...RepositoryFields,
+      github_id: Type.Optional(Type.Union([Type.Number(), Type.String(), Type.Null()])),
+    }),
+  ),
+});
+
+export type GithubSelection = Static<typeof GithubSelectionSchema>["repositories"];
 
 function proxyUrl(): string {
   return process.env.ADAPTER_PROXY_URL ?? "";
@@ -195,7 +223,7 @@ export async function addGuildRepository(
   services: RepositoryServices,
   guild: GuildRow,
   userId: string,
-  body: Item,
+  body: RepositoryDraft,
 ): Promise<Item> {
   const { db } = services;
   const input = validateRepositoryInput(body);
@@ -293,17 +321,13 @@ function matchSelection(
 export async function selectGithubRepositories(
   services: RepositoryServices,
   connection: McpConnectionRow,
-  repositories: unknown,
+  repositories: GithubSelection,
   now: Date,
 ): Promise<GithubRepositorySelection[]> {
   const { db } = services;
   const validated = validateGithubRepositories(repositories);
   const reached = await reachableRepositories(services, connection);
-  const selected = matchSelection(
-    validated,
-    reached,
-    Array.isArray(repositories) ? repositories : [],
-  );
+  const selected = matchSelection(validated, reached, repositories);
   if ((await updateMcpConnectionGithubRepositories(db, connection.id, selected, now)) === null) {
     throw new RepositoryValidationError("connection not found", 404);
   }
