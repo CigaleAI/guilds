@@ -18,6 +18,7 @@ import {
   machineMetadata,
   machineResource,
   machineSpec,
+  prepareBrowserWorkspace,
   prepareWorkspace,
   seatEnvironment,
   splitRunning,
@@ -100,15 +101,20 @@ test("a container of another tier, size, or image is not the machine's", () => {
   assert.equal(machineMatches(null, STANDARD), false);
 });
 
-test("prepareWorkspace lays the agent's home out in its machine's directory", () => {
+test("prepareBrowserWorkspace lays the agent's home out in its machine's directory and keeps its profile", () => {
   const root = mkdtempSync(path.join(tmpdir(), "guilds-sandbox-"));
-  const home = prepareWorkspace(root, "mach_1", "a_1", { browser: true });
+  const home = prepareBrowserWorkspace(root, "mach_1", "a_1");
   assert.equal(home, path.join(root, "mach_1", "a_1"));
   assert.equal(home, agentDirectory(root, "mach_1", "a_1"));
   writeFileSync(path.join(home, ".browser", "cookies"), "keep");
-  assert.equal(prepareWorkspace(root, "mach_1", "a_1", { browser: true }), home);
+  assert.equal(prepareBrowserWorkspace(root, "mach_1", "a_1"), home);
   assert.equal(readFileSync(path.join(home, ".browser", "cookies"), "utf8"), "keep");
+});
+
+test("prepareWorkspace lays the agent's home out without a browser profile", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "guilds-sandbox-"));
   const plain = prepareWorkspace(root, "mach_1", "a_2");
+  assert.equal(plain, agentDirectory(root, "mach_1", "a_2"));
   assert.equal(existsSync(path.join(plain, "scripts")), true);
   assert.equal(existsSync(path.join(plain, ".browser")), false);
 });
@@ -482,7 +488,7 @@ test("each agent's browser starts and stops on its own slot", async () => {
   };
   await sandboxes.startBrowser(fake, SEAT);
   await sandboxes.stopBrowser(fake, SEAT);
-  await sandboxes.stopAgent(fake, SEAT, { purge: true });
+  await sandboxes.purgeAgent(fake, SEAT);
   const ports = slotPorts(2);
   assert.equal(
     commands[0],
@@ -512,7 +518,7 @@ test("stopping an agent whose processes outlive the stop fails", async () => {
       },
     },
   };
-  await assert.rejects(() => sandboxes.stopAgent(stuck, SEAT, { purge: true }), SandboxError);
+  await assert.rejects(() => sandboxes.purgeAgent(stuck, SEAT), SandboxError);
   await assert.rejects(() => sandboxes.stopBrowser(stuck, SEAT), SandboxError);
 });
 

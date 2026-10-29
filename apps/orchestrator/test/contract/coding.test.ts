@@ -8,6 +8,7 @@ import {
   RunSandboxes,
   agentSandbox,
   applyRunScripts,
+  prepareBrowserWorkspace,
   prepareWorkspace,
   seatEnvironment,
   type AgentSeat,
@@ -87,7 +88,7 @@ test("two agents share one machine: each runs in its own home, with its own secr
     const rightToken = await sandboxes.startCli(machine, right);
     assert.match(leftToken, /^[0-9a-f]{48}$/);
     assert.notEqual(leftToken, rightToken, "each agent has its own terminal");
-    await sandboxes.stopAgent(machine, left, { purge: true });
+    await sandboxes.purgeAgent(machine, left);
     const gone = await machine.commands.run(`test -e /run/guilds/${left.agentId} && echo there || echo gone`, {
       timeoutSeconds: 10,
     });
@@ -113,7 +114,7 @@ test("two agents on one machine each run their own Chrome, on their own ports an
   const right = { ...seat("a_contract_right", 1), browserLanguage: "fr-FR" };
   try {
     for (const agent of [left, right]) {
-      prepareWorkspace(server.workspaceRoot, MACHINE.id, agent.agentId, { browser: true });
+      prepareBrowserWorkspace(server.workspaceRoot, MACHINE.id, agent.agentId);
     }
     const machine = await sandboxes.ensure(MACHINE);
     await sandboxes.startBrowser(machine, left);

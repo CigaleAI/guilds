@@ -238,7 +238,7 @@ export class FakeSandboxes {
   /** Agents whose Chrome started, in order. */
   browser_starts: string[] = [];
   /** Agents whose processes stopped, with what stopped. */
-  stopped: Array<{ agentId: string; what: "browser" | "all" | "purge" }> = [];
+  stopped: Array<{ agentId: string; what: "browser" | "purge" }> = [];
   browser_failure: string | null = null;
 
   async ensure(machine: MachineSpec) {
@@ -262,8 +262,8 @@ export class FakeSandboxes {
     this.stopped.push({ agentId: seat.agentId, what: "browser" });
   }
 
-  async stopAgent(_sandbox: unknown, seat: AgentSeat, options: { purge?: boolean } = {}): Promise<void> {
-    this.stopped.push({ agentId: seat.agentId, what: options.purge ? "purge" : "all" });
+  async purgeAgent(_sandbox: unknown, seat: AgentSeat): Promise<void> {
+    this.stopped.push({ agentId: seat.agentId, what: "purge" });
   }
 
   async novncTarget(_sandbox: unknown, _seat: AgentSeat): Promise<[string, Record<string, string>]> {

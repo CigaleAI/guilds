@@ -21,7 +21,7 @@ import { INPUT_TOKEN_LIMIT_MESSAGE } from "../llm/index.js";
 import { slotPorts } from "../machines/index.js";
 import type { NotesStore } from "../notes/store.js";
 import { errorName, writeLog } from "../observability/log.js";
-import { agentSandbox, applyRunScripts, prepareWorkspace, seatEnvironment, type SandboxHandle } from "../sandbox/index.js";
+import { agentSandbox, applyRunScripts, prepareBrowserWorkspace, prepareWorkspace, seatEnvironment, type SandboxHandle } from "../sandbox/index.js";
 import type { Schedules } from "../schedules/service.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { RunConfigSnapshot, RunScriptSnapshot } from "../db/schema/index.js";
@@ -346,7 +346,11 @@ export class RunGenerator {
         gen.log.host_id = host.hostId;
         await db.mergeRunMetadata(gen.runId, { host_id: host.hostId }, new Date());
       }
-      prepareWorkspace(root, machineId, gen.agent.id, { browser: Boolean(gen.snapshot.browser) });
+      if (gen.snapshot.browser) {
+        prepareBrowserWorkspace(root, machineId, gen.agent.id);
+      } else {
+        prepareWorkspace(root, machineId, gen.agent.id);
+      }
       return true;
     } catch (error) {
       await events.recordError(gen, "workspace.create", error);

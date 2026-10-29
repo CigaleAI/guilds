@@ -159,18 +159,17 @@ export function agentRunDir(agentId: string): string {
   return `${AGENT_RUN_ROOT}/${agentId}`;
 }
 
-/** The agent's home with its scripts directory, and the browser profile when it has a browser. */
-export function prepareWorkspace(
-  workspaceRoot: string,
-  machineId: string,
-  agentId: string,
-  options: { browser?: boolean } = {},
-): string {
+/** The agent's home with its scripts directory. */
+export function prepareWorkspace(workspaceRoot: string, machineId: string, agentId: string): string {
   const workspace = agentDirectory(workspaceRoot, machineId, agentId);
-  if (options.browser) {
-    mkdirSync(path.join(workspace, BROWSER_PROFILE), { recursive: true });
-  }
   mkdirSync(path.join(workspace, SCRIPTS_DIR), { recursive: true });
+  return workspace;
+}
+
+/** The home of an agent with a browser: its scripts directory and its browser profile. */
+export function prepareBrowserWorkspace(workspaceRoot: string, machineId: string, agentId: string): string {
+  const workspace = prepareWorkspace(workspaceRoot, machineId, agentId);
+  mkdirSync(path.join(workspace, BROWSER_PROFILE), { recursive: true });
   return workspace;
 }
 
@@ -859,15 +858,15 @@ export class RunSandboxes {
   }
 
   /**
-   * Stops every process the agent has on its machine: its browser, its terminal, and its
-   * background commands. With `purge`, its runtime files under /run/guilds go too. Throws when a
-   * process outlives the stop, since it would still hold the slot's ports.
+   * Stops every process the agent has on its machine, its browser, its terminal, and its
+   * background commands, and removes its runtime files under /run/guilds. Throws when a process
+   * outlives the stop, since it would still hold the slot's ports.
    */
-  async stopAgent(sandbox: SandboxHandle, seat: AgentSeat, options: { purge?: boolean } = {}): Promise<void> {
-    await this.runStop(sandbox, seat, options.purge ? "purge" : "all");
+  async purgeAgent(sandbox: SandboxHandle, seat: AgentSeat): Promise<void> {
+    await this.runStop(sandbox, seat, "purge");
   }
 
-  private async runStop(sandbox: SandboxHandle, seat: AgentSeat, mode: "browser" | "all" | "purge"): Promise<void> {
+  private async runStop(sandbox: SandboxHandle, seat: AgentSeat, mode: "browser" | "purge"): Promise<void> {
     const result = await sandbox.commands.run(`${AGENT_STOP} ${seat.agentId} ${mode}`, { timeoutSeconds: 30 });
     const code = exitCode(result);
     if (code !== undefined && code !== 0) {

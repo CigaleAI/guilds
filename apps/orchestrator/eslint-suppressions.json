@@ -1141,7 +1141,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 10
+      "count": 8
     }
   },
   "src/sandbox/sweep.ts": {

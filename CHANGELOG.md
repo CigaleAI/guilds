@@ -247,6 +247,11 @@ builds `Schedules`, in place of `scheduleDatabase` and
 `scheduleQueries`. `ensureClient` (`oauth/index.js`) takes the
 connection, a connector and a redirect URI, in place of
 `oauthDatabase(db)` and fetch options.
+`prepareWorkspace` (`sandbox/index.js`) takes no options and makes no
+browser profile; `prepareBrowserWorkspace` makes the home of an agent
+with a browser, its profile included. A sandbox provider's
+`stopAgent(sandbox, seat, { purge })` is `purgeAgent(sandbox, seat)`,
+which stops the agent's processes and removes its runtime files.
 
 **Breaking for extending repositories.** The Makefile variables
 `EDITION`, `EDITION_TEST_PACKAGES`, and `EDITION_COMPOSE_FILES` are
