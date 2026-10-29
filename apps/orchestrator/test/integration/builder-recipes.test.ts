@@ -103,6 +103,14 @@ test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => 
     });
     assert.equal(modelless.statusCode, 422, modelless.body);
     assert.deepEqual(modelless.json(), { detail: "model is required" });
+    const textTemperature = await app.inject({
+      method: "POST",
+      url: "/api/builder/sessions",
+      headers: AUTH,
+      payload: { model: TEST_MODEL, temperature: "hot" },
+    });
+    assert.equal(textTemperature.statusCode, 422, textTemperature.body);
+    assert.deepEqual(textTemperature.json().detail[0].loc, ["body", "temperature"]);
     const created = await app.inject({
       method: "POST",
       url: "/api/builder/sessions",
@@ -147,6 +155,14 @@ test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => 
     assert.deepEqual(stale.json(), {
       detail: { message: "recipe body_version conflict", body_version: 1 },
     });
+    const unversioned = await app.inject({
+      method: "PUT",
+      url: `/api/builder/sessions/${session.id}/recipe`,
+      headers: { ...AUTH, "content-type": "application/json" },
+      payload: { recipe: linkedInNotionRecipe() },
+    });
+    assert.equal(unversioned.statusCode, 422, unversioned.body);
+    assert.deepEqual(unversioned.json().detail[0].loc, ["body", "expected_body_version"]);
 
     const written = await app.inject({
       method: "PUT",
@@ -231,6 +247,15 @@ test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => 
     });
     assert.equal(republished.statusCode, 200, republished.body);
     assert.equal(republished.json().status, "ready");
+
+    const textNames = await app.inject({
+      method: "POST",
+      url: `/api/builder/sessions/${session.id}/deploy`,
+      headers: { ...AUTH, "content-type": "application/json" },
+      payload: { names: "lead" },
+    });
+    assert.equal(textNames.statusCode, 422, textNames.body);
+    assert.deepEqual(textNames.json().detail[0].loc, ["body", "names"]);
 
     caps.maxAgents = 1;
     const blocked = await app.inject({
