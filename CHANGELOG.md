@@ -8,6 +8,15 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** The guild routes refuse, with a 422 that names the field
+and before the request's user is identified: a `name`, `about` or
+`description` that is not a string, a `max_agents` that is not a
+number, a `git_author_email` or `visibility` that is neither a string
+nor null, a `routines_enabled` that is not a boolean, and an operator
+change without a string `role`. Before, those were read as their text
+or number, so `max_agents: "3"` set three and a `name` of `null` was
+refused as an empty name.
+
 **No impact.** Starting a run refuses a `message`, and posting to a run
 a `content`, that is neither a string nor null, and either refuses an
 `attachment_ids` that is neither a list of strings nor null, with a

@@ -283,10 +283,13 @@ cannot see is 404.
 `PUT /api/guilds/:id` takes `name`, `about`, `description`,
 `max_agents`, `git_author_email`, `visibility`, and
 `routines_enabled`. A field left out keeps its value. It returns the
-guild.
+guild. `name`, `about` and `description` are strings, `max_agents` a
+number, `git_author_email` and `visibility` a string or null, and
+`routines_enabled` a boolean; a create takes the same types.
 
+- 422 for a field of another type, naming it.
 - 422 for an invalid value: `max_agents must be a positive integer`,
-  `routines_enabled must be a boolean`, `visibility must be org or
+  `visibility must be org or
   private`, `git_author_email must be a single email address`,
   `git_author_email must not use a .invalid domain`, and the name,
   about, description, and email length rules.
