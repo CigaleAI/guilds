@@ -170,7 +170,7 @@ Apply re-reads the live content and refuses with 409 when its hash no
 longer matches the base. Otherwise it writes as the operator under the
 session lock:
 
-- Memory and notes go through `writeMemory` / `writeNote` with the
+- Memory and notes go through `writeMemory` / `writeNoteAt` with the
   expected version, so they produce a memory revision and a
   `file_changes` row that carries the edit tool's call id and name.
 - The guild goes through `updateGuild` and refreshes the session's

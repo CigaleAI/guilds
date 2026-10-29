@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { ArtifactError } from "../artifacts/errors.js";
-import { displayPathFor, MEMORY_KEY, parseDisplayPath } from "../artifacts/paths.js";
+import { displayPathFor, MEMORY_KEY } from "../artifacts/paths.js";
 import { hashArtifactContent, type ArtifactStore } from "../artifacts/store.js";
 import { WRITE_MAX_BYTES } from "../artifacts/types.js";
 import { updateGuildText } from "../guilds/service.js";
@@ -27,6 +27,7 @@ import {
   type PlannedNote,
   planNote,
   writeNote,
+  writeNoteAt,
 } from "../artifacts/notes.js";
 import { writeMemory } from "../artifacts/memory.js";
 
@@ -821,10 +822,6 @@ export async function applyEdit(
     }
   }
   if (base.kind === "note") {
-    const parsed = parseDisplayPath(base.displayPath);
-    if (parsed.kind !== "artifact" || parsed.path) {
-      throw new StudioUnprocessableError("artifact not found");
-    }
     const actor = {
       ...editActor(scope, {
         guildId: base.guildId,
@@ -833,11 +830,8 @@ export async function applyEdit(
       toolCall,
     };
     try {
-      const written = await writeNote(scope.artifacts, actor, {
-        level: base.level,
-        key: parsed.key,
+      const written = await writeNoteAt(scope.artifacts, actor, base.displayPath, {
         content: proposed as string,
-        ...(base.title ? { title: base.title } : {}),
         expectedVersion: base.version,
       });
       return { version: written.row.version };

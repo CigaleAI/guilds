@@ -232,12 +232,23 @@ describe("artifact service", { concurrency: 1 }, () => {
   });
 
   test("writeNoteAt rewrites a live note and says where it sits, and refuses a path that holds no note", async () => {
-    const written = await writeNoteAt(store, operator, rulesPath, "Cite sources twice.\n");
+    const written = await writeNoteAt(store, operator, rulesPath, { content: "Cite sources twice.\n" });
     assert.equal(written.href, rulesPath);
     assert.equal(written.row.content_text, "Cite sources twice.\n");
-    await assert.rejects(writeNoteAt(store, operator, `org/${ORG}/collections/viewed`, "x"), { name: "ArtifactError", message: "artifact not found" });
-    await assert.rejects(writeNoteAt(store, operator, `org/${ORG}/absent.md`, "x"), { name: "ArtifactError", message: "artifact not found" });
-    await writeNoteAt(store, operator, rulesPath, "Cite sources.\n");
+    await assert.rejects(writeNoteAt(store, operator, `org/${ORG}/collections/viewed`, { content: "x" }), { name: "ArtifactError", message: "artifact not found" });
+    await assert.rejects(writeNoteAt(store, operator, `org/${ORG}/absent.md`, { content: "x" }), { name: "ArtifactError", message: "artifact not found" });
+    await writeNoteAt(store, operator, rulesPath, { content: "Cite sources.\n" });
+  });
+
+  test("writeNoteAt rewrites a note at the version it expects, keeping its title, and refuses one written since", async () => {
+    const live = await writeNoteAt(store, operator, rulesPath, { content: "Cite sources.\n" });
+    await assert.rejects(writeNoteAt(store, operator, rulesPath, { content: "x", expectedVersion: live.row.version - 1 }), {
+      name: "ArtifactError",
+      message: "version conflict",
+    });
+    const written = await writeNoteAt(store, operator, rulesPath, { content: "Cite sources.\n", expectedVersion: live.row.version });
+    assert.equal(written.row.version, live.row.version + 1);
+    assert.equal(written.row.title, live.row.title);
   });
 
   test("writeMemory says where the Memory sits", async () => {

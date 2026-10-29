@@ -1240,6 +1240,16 @@ test("studio proposes memory, note, and guild edits that the operator applies or
     const liveNote = await getByDisplayPath(artifacts, operator, notePath);
     assert.equal(liveNote.row?.content_text, "Always cite, twice.\n");
 
+    // Note: a current proposal applies as the operator, at the next version, and keeps the note's title.
+    const currentArgs = { ...noteArgs, base_version: liveNote.row?.version };
+    const currentEdit = (await studioEditNote.handler(await ctx(), currentArgs)) as Record<string, unknown>;
+    const currentApplied = await resolve(await commit("studio_edit_note", currentArgs, currentEdit), "apply");
+    assert.equal(currentApplied.statusCode, 200, currentApplied.body);
+    assert.equal((currentApplied.json() as { applied_version: number }).applied_version, Number(liveNote.row?.version) + 1);
+    const appliedNote = await getByDisplayPath(artifacts, operator, notePath);
+    assert.equal(appliedNote.row?.content_text, "Always cite the source URL.\n");
+    assert.equal(appliedNote.row?.title, "House rules");
+
     // Memory is not a note, and a tool message that is not an edit request cannot be resolved.
     await assert.rejects(
       studioEditNote.handler(await ctx(), { action: "edit", display_path: memoryPath, content: "x", base_version: 1, reason: "r" }),

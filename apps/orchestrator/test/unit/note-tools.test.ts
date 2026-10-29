@@ -4,6 +4,7 @@ import { agentActor } from "../../src/artifacts/actors.js";
 import type { ArtifactActor } from "../../src/artifacts/types.js";
 import { parseColumns } from "../../src/artifacts/columns.js";
 import { ArtifactError } from "../../src/artifacts/errors.js";
+import type { NoteRewrite } from "../../src/artifacts/notes.js";
 import type { CollectionColumn } from "../../src/db/schema/index.js";
 import { createToolContext, invokeTool } from "../../src/toolbox/index.js";
 import { noteRowAt } from "../helpers/artifacts.js";
@@ -63,7 +64,7 @@ class FakeStore {
     return { href: display, row: noteRowAt(display, args.content) };
   }
 
-  async writeNoteAt(actor: ArtifactActor, path: string, content: string) {
+  async writeNoteAt(actor: ArtifactActor, path: string, { content }: NoteRewrite) {
     this.calls.push({ method: "writeNoteAt", args: { path, content } });
     const row = this.rows.find((item) => item.display_path === path);
     if (!row || !this.readable(actor, row)) {

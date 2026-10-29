@@ -190,7 +190,7 @@ async function writeNoteArgs(ctx: ToolContext, args: Record<string, unknown>) {
   const content = argString(args, "content");
   const path = argString(args, "path").trim();
   if (path) {
-    return store(ctx).writeNoteAt(actor(ctx), path, content);
+    return store(ctx).writeNoteAt(actor(ctx), path, { content });
   }
   const levelRaw = argString(args, "level");
   if (!isArtifactLevel(levelRaw)) {

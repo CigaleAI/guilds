@@ -861,7 +861,7 @@ describe("artifact store", { concurrency: 1 }, () => {
     // shared with a second guild at read: found by its agents, refused on write
     await grantAccess(store, operator, { kind: "note", id: plan.id }, { type: "guild", id: "guild_south", mode: "read" });
     assert.deepEqual(await found(south, "plan"), [[planPath, "read"]]);
-    await assert.rejects(() => writeNoteAt(store, south, planPath, "overwritten"), /write not allowed/);
+    await assert.rejects(() => writeNoteAt(store, south, planPath, { content: "overwritten" }), /write not allowed/);
     await assert.rejects(() => deleteByDisplayPath(store, south, planPath), /write not allowed/);
     const [writeRefused] = await invokeTool(
       createToolContext({
@@ -881,7 +881,7 @@ describe("artifact store", { concurrency: 1 }, () => {
 
     // an agent row raises one agent to write, and `none` hides the note from that agent alone
     await grantAccess(store, operator, { kind: "note", id: plan.id }, { type: "agent", id: "a_south", mode: "write" });
-    await writeNoteAt(store, south, planPath, "south edit\n");
+    await writeNoteAt(store, south, planPath, { content: "south edit\n" });
     assert.equal((await getByDisplayPath(store, north, planPath)).row?.content_text, "south edit\n");
     await grantAccess(store, operator, { kind: "note", id: plan.id }, { type: "agent", id: "a_south", mode: "none" });
     assert.deepEqual(await found(south, "plan"), []);
@@ -891,7 +891,7 @@ describe("artifact store", { concurrency: 1 }, () => {
     // an agent shut out of a note of its own guild is refused the write, not told the note is missing
     await grantAccess(store, operator, { kind: "note", id: plan.id }, { type: "agent", id: "a_north_late", mode: "none" });
     await assert.rejects(() => writeNote(store, late, { level: "guild", key: "plan.md", content: "x" }), /write not allowed/);
-    await assert.rejects(() => writeNoteAt(store, late, planPath, "x"), /artifact not found/);
+    await assert.rejects(() => writeNoteAt(store, late, planPath, { content: "x" }), /artifact not found/);
     await grantAccess(store, operator, { kind: "note", id: plan.id }, { type: "agent", id: "a_north_late", mode: null });
 
     // org level: an agent creates no org note, and updates one only with write access

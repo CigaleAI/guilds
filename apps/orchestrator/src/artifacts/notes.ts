@@ -500,11 +500,15 @@ export async function writeNote(store: ArtifactStore, actor: ArtifactActor, note
   return { href: rowDisplayPath(row), row };
 }
 
+/** A live note's new text, and the version it replaces when the writer read one. */
+export type NoteRewrite = { content: string; expectedVersion?: number };
+
 /**
- * Rewrites the live note a display path names, with write access to it. ArtifactError when the
- * path names no live note of the actor's organisation that the actor reads.
+ * Rewrites the live note a display path names, with write access to it, keeping its title and
+ * search text. ArtifactError when the path names no live note of the actor's organisation that the
+ * actor reads, and a 409 when the note is no longer at the expected version.
  */
-export async function writeNoteAt(store: ArtifactStore, actor: ArtifactActor, href: string, content: string): Promise<NoteWrite> {
+export async function writeNoteAt(store: ArtifactStore, actor: ArtifactActor, href: string, rewrite: NoteRewrite): Promise<NoteWrite> {
   const parsed = parseDisplayPath(href);
   if (parsed.kind !== "artifact" || parsed.orgId !== actor.orgId) {
     throw new ArtifactError("artifact not found", 404);
@@ -514,15 +518,16 @@ export async function writeNoteAt(store: ArtifactStore, actor: ArtifactActor, hr
     throw new ArtifactError("artifact not found", 404);
   }
   await assertRead(store, actor, live);
-  assertBytes(content);
+  assertBytes(rewrite.content);
   const row = await upsertNote(store, actor, {
     level: live.level,
     owner: { orgId: live.org_id, ownerId: live.owner_id, guildId: live.guild_id, agentId: live.agent_id },
     path: live.path,
     key: live.key,
     title: live.title,
-    contentText: content,
+    contentText: rewrite.content,
     searchText: live.search_text,
+    ...(rewrite.expectedVersion !== undefined ? { expectedVersion: rewrite.expectedVersion } : {}),
   });
   return { href: rowDisplayPath(row), row };
 }

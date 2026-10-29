@@ -8,6 +8,13 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** Applying a Studio note edit rewrites the note where it
+sits, as an agent's `note_write` with a path does, still refusing a
+note written since the edit was read. The note keeps its title and
+search text as they are, and a note whose owner holds the limit of
+10 000 live artifacts is edited, where the edit was refused with
+`artifact limit reached`.
+
 **No impact.** The Studio References view leaves out a guild note
 only when the store refuses to read it, such as a note the operator
 cannot read or one deleted since it was listed. A failure to read the
