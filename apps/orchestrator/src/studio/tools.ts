@@ -525,28 +525,32 @@ export const studioGetRun: StudioTool = {
   },
 };
 
+const ListGroupMessagesArguments = Type.Object({
+  cursor: Type.Optional(Type.String()),
+  limit: Type.Optional(Type.Integer()),
+  author_type: Type.Optional(Type.String()),
+  author_handle: Type.Optional(Type.String()),
+});
+type ListGroupMessagesArguments = Static<typeof ListGroupMessagesArguments>;
+
 export const studioListGroupMessages: StudioTool = {
   name: "studio_list_group_messages",
-  schema: functionSchema(
+  schema: studioFunctionSchema(
     "studio_list_group_messages",
     "Inspect bounded public guild history.",
-    {
-      cursor: { type: "string" },
-      limit: { type: "integer" },
-      author_type: { type: "string" },
-      author_handle: { type: "string" },
-    },
-    [],
+    ListGroupMessagesArguments,
   ),
   async handler(ctx, args) {
-    const limit = clampLimit(args.limit, STUDIO_DEFAULT_LIMIT, STUDIO_GROUP_LIST_MAX);
-    const offset = cursorOffset(args.cursor);
+    const input: ListGroupMessagesArguments = decodeStudioArguments(ListGroupMessagesArguments, args);
+    const limit = clampLimit(input.limit, STUDIO_DEFAULT_LIMIT, STUDIO_GROUP_LIST_MAX);
+    const offset = cursorOffset(input.cursor);
+    const { author_type: authorType, author_handle: authorHandle } = input;
     let rows = await listGroupMessages(ctx.db, ctx.sourceGuildId);
-    if (argString(args, "author_type")) {
-      rows = rows.filter((row) => row.author_type === args.author_type);
+    if (authorType) {
+      rows = rows.filter((row) => row.author_type === authorType);
     }
-    if (argString(args, "author_handle")) {
-      rows = rows.filter((row) => row.author_agent_id === args.author_handle || row.author_name === args.author_handle);
+    if (authorHandle) {
+      rows = rows.filter((row) => row.author_agent_id === authorHandle || row.author_name === authorHandle);
     }
     const slice = rows.slice(offset, offset + limit);
     return {
@@ -567,18 +571,26 @@ export const studioListGroupMessages: StudioTool = {
   },
 };
 
+// The arguments of a tool that pages one agent's history.
+const AgentHistoryArguments = Type.Object({
+  agent_id: Type.Optional(Type.String()),
+  cursor: Type.Optional(Type.String()),
+  limit: Type.Optional(Type.Integer()),
+});
+type AgentHistoryArguments = Static<typeof AgentHistoryArguments>;
+
 export const studioListTaskRevisions: StudioTool = {
   name: "studio_list_task_revisions",
-  schema: functionSchema(
+  schema: studioFunctionSchema(
     "studio_list_task_revisions",
     "Inspect prior operator task versions.",
-    { agent_id: { type: "string" }, cursor: { type: "string" }, limit: { type: "integer" } },
-    [],
+    AgentHistoryArguments,
   ),
   async handler(ctx, args) {
-    const agent = await resolveHandle(ctx, studioAgentHandleFromArgs(args) || undefined);
-    const limit = clampLimit(args.limit, STUDIO_DEFAULT_LIMIT, STUDIO_REVISION_LIST_MAX);
-    const offset = cursorOffset(args.cursor);
+    const input: AgentHistoryArguments = decodeStudioArguments(AgentHistoryArguments, args);
+    const agent = await resolveHandle(ctx, input.agent_id);
+    const limit = clampLimit(input.limit, STUDIO_DEFAULT_LIMIT, STUDIO_REVISION_LIST_MAX);
+    const offset = cursorOffset(input.cursor);
     const rows = await listAgentTaskRevisions(ctx.db, ctx.orgId, agent.id);
     const slice = rows.slice(offset, offset + limit);
     return {
@@ -625,16 +637,16 @@ function timelineHeader(entry: MemoryTimelineEntry): Record<string, unknown> {
 
 export const studioListMemoryRevisions: StudioTool = {
   name: "studio_list_memory_revisions",
-  schema: functionSchema(
+  schema: studioFunctionSchema(
     "studio_list_memory_revisions",
     "List the versions an agent's Memory has held, newest first: who wrote each version (a run id, a user, or the agent), when, and line counts. Content is not included; read one version with studio_get_memory_version.",
-    { agent_id: { type: "string" }, cursor: { type: "string" }, limit: { type: "integer" } },
-    [],
+    AgentHistoryArguments,
   ),
   async handler(ctx, args) {
-    const agent = await resolveHandle(ctx, studioAgentHandleFromArgs(args) || undefined);
-    const limit = clampLimit(args.limit, STUDIO_DEFAULT_LIMIT, STUDIO_REVISION_LIST_MAX);
-    const offset = cursorOffset(args.cursor);
+    const input: AgentHistoryArguments = decodeStudioArguments(AgentHistoryArguments, args);
+    const agent = await resolveHandle(ctx, input.agent_id);
+    const limit = clampLimit(input.limit, STUDIO_DEFAULT_LIMIT, STUDIO_REVISION_LIST_MAX);
+    const offset = cursorOffset(input.cursor);
     const entries = await memoryTimelineFor(ctx, agent);
     const slice = entries.slice(offset, offset + limit);
     return {
@@ -645,33 +657,37 @@ export const studioListMemoryRevisions: StudioTool = {
   },
 };
 
+const GetMemoryVersionArguments = Type.Object({
+  agent_id: Type.String({ description: "Source-guild agent id or name. Required." }),
+  revision_id: Type.Optional(
+    Type.String({ description: "Revision id of the version to read. Omit for the live version." }),
+  ),
+  version_index: Type.Optional(Type.Integer({ description: "Version index from studio_list_memory_revisions." })),
+  cursor: Type.Optional(Type.String()),
+});
+type GetMemoryVersionArguments = Static<typeof GetMemoryVersionArguments>;
+
 export const studioGetMemoryVersion: StudioTool = {
   name: "studio_get_memory_version",
-  schema: functionSchema(
+  schema: studioFunctionSchema(
     "studio_get_memory_version",
     "Read one version of an agent's Memory by revision_id or version_index from studio_list_memory_revisions (omit both for the live version), with the line diff against the previous version.",
-    {
-      agent_id: { type: "string", description: "Source-guild agent id or name. Required." },
-      revision_id: { type: "string", description: "Revision id of the version to read. Omit for the live version." },
-      version_index: { type: "integer", description: "Version index from studio_list_memory_revisions." },
-      cursor: { type: "string" },
-    },
-    ["agent_id"],
+    GetMemoryVersionArguments,
   ),
   async handler(ctx, args) {
-    const agent = await resolveHandle(ctx, studioAgentHandleFromArgs(args) || undefined);
+    const input: GetMemoryVersionArguments = decodeStudioArguments(GetMemoryVersionArguments, args);
+    const agent = await resolveHandle(ctx, input.agent_id);
     const entries = await memoryTimelineFor(ctx, agent);
-    const revisionId = argString(args, "revision_id");
-    const index = typeof args.version_index === "number" ? args.version_index : null;
+    const { revision_id: revisionId, version_index: index } = input;
     const entry = revisionId
       ? entries.find((item) => item.revision_id === revisionId)
-      : index !== null
+      : index !== undefined
         ? entries.find((item) => item.index === index)
         : entries.find((item) => item.revision_id === null);
     if (!entry) {
       throw new StudioUnprocessableError("memory version not found");
     }
-    const sliced = sliceStudioBytes(entry.content, args.cursor);
+    const sliced = sliceStudioBytes(entry.content, input.cursor);
     const diff = entry.previous_content === null ? "" : memoryDiffText(entry.previous_content, entry.content);
     return {
       agent_id: agent.id,

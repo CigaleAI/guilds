@@ -9,7 +9,9 @@ commands for each effect are in
 ## Unreleased
 
 **No impact.** Studio's `studio_get_agent_context`,
-`studio_list_routines`, `studio_list_runs`, and `studio_get_run`
+`studio_list_routines`, `studio_list_runs`, `studio_get_run`,
+`studio_list_group_messages`, `studio_list_task_revisions`,
+`studio_list_memory_revisions`, and `studio_get_memory_version`
 refuse a call whose arguments do not match the parameters the tool
 declares, with the first mismatch, such as `/limit: Expected integer`.
 Before, a mistyped argument counted as left out, a numeric string was

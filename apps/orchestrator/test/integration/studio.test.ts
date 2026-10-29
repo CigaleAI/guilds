@@ -35,6 +35,8 @@ import {
   studioGetRun,
   studioGetScript,
   studioListCollections,
+  studioListGroupMessages,
+  studioListTaskRevisions,
   studioListFileChanges,
   studioListGuilds,
   studioListMemoryRevisions,
@@ -61,6 +63,7 @@ import { getGuild, insertGuild, updateGuild } from "../../src/db/guilds.js";
 import { insertUser } from "../../src/db/users.js";
 import { insertMember } from "../../src/db/orgs.js";
 import { getAgentTask } from "../../src/db/agents.js";
+import { postUserGroupMessage } from "../../src/db/group-chat.js";
 import { connectMcp, replaceMcpTools } from "../../src/db/mcp.js";
 import { createRun, createScheduleRun, getRun } from "../../src/db/runs.js";
 import { insertIssue } from "../../src/db/issues.js";
@@ -1040,6 +1043,24 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
     await assert.rejects(studioGetRun.handler(toolCtx(), { run_id: 5 }), /^StudioUnprocessableError: \/run_id: Expected string$/);
     await assert.rejects(studioListRoutines.handler(toolCtx(), { limit: "5" }), /\/limit: Expected integer/);
     await assert.rejects(studioGetAgentContext.handler(toolCtx(), { sections: ["task"] }), /\/agent_id: Expected required property/);
+    await postUserGroupMessage(
+      db,
+      { guildId: "guild_ev", content: "Ship the digest on Monday.", taggedNames: [], taggedAgentIds: [], taggedUserIds: [], authorName: "operator", authorUserId: "user_operator" },
+      now,
+    );
+    const fromOperator = await studioListGroupMessages.handler(toolCtx(), { author_handle: "operator", limit: 5 });
+    assert.match(String((fromOperator.messages as Array<{ content: string }>)[0]?.content), /Ship the digest on Monday/);
+    const fromAgents = await studioListGroupMessages.handler(toolCtx(), { author_type: "agent" });
+    assert.deepEqual(fromAgents.messages, []);
+    const taskRevisions = await studioListTaskRevisions.handler(toolCtx(), { agent: "curator", limit: 1 });
+    assert.match(String((taskRevisions.revisions as Array<{ content: string }>)[0]?.content), /Keep the digest/);
+    const oldest = await studioGetMemoryVersion.handler(toolCtx(), { agent_id: "curator", version_index: versions[2]?.version_index });
+    assert.equal(oldest.version_index, versions[2]?.version_index);
+    const firstPage = await studioListMemoryRevisions.handler(toolCtx(), { agent_id: "curator", limit: 1 });
+    assert.equal((firstPage.versions as unknown[]).length, 1);
+    assert.equal(firstPage.next_cursor, "1");
+    await assert.rejects(studioGetMemoryVersion.handler(toolCtx(), { agent_id: "curator", version_index: "1" }), /\/version_index: Expected integer/);
+    await assert.rejects(studioListGroupMessages.handler(toolCtx(), { author_type: 3 }), /\/author_type: Expected string/);
   } finally {
     await app.close();
     await database.close();
