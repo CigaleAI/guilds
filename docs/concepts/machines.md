@@ -290,6 +290,8 @@ the machine's `cpu` and `memory_mib` for `custom`. Its directory on the host is
 
 - Another organisation's id, or an unknown machine, is 404.
 - A write by a member who is neither owner nor admin is 403.
+- `name` and `box` are strings; `cpu`, `memory_mib` and
+  `max_workspace_mib` are numbers. A field of another type is 422.
 - A key other than `name`, `box`, `cpu`, `memory_mib`, and
   `max_workspace_mib` is 422. A create without `name` is 422. A
   create without `box` makes a `standard` machine.

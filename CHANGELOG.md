@@ -8,6 +8,13 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** Creating or changing a machine refuses a `name` or `box`
+that is not a string, and a `cpu`, `memory_mib` or `max_workspace_mib`
+that is not a number, with a 422 that names the field, before the
+request's user is identified, and a request without a JSON object body.
+Before, each was refused by the machine's own checks with its own
+message, and a request without a body was read as an empty one.
+
 **No impact.** `PUT /api/bindings` refuses a `catalog_kind`,
 `catalog_id` or `scope` that is not a string, an `enabled` that is not
 a boolean, and a `scope_id` or `connection_id` that is neither a string

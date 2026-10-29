@@ -129,6 +129,14 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
       payload: { name: "sized", box: "custom" },
     });
     assert.equal(unsized.statusCode, 422, unsized.body);
+    const textSize = await app.inject({
+      method: "POST",
+      url: "/api/orgs/org_home/machines",
+      headers: JSON_AUTH,
+      payload: { name: "sized", box: "custom", cpu: "2", memory_mib: 4096 },
+    });
+    assert.equal(textSize.statusCode, 422, textSize.body);
+    assert.deepEqual(textSize.json().detail[0].loc, ["body", "cpu"]);
 
     // With two machines, an agent names its machine.
     const unplaced = await createAgent("unplaced", {});
@@ -276,6 +284,14 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
     });
     assert.equal(downgrade.statusCode, 409, downgrade.body);
     assert.match(downgrade.json().detail, /this machine's agents need at least 2 CPUs and 4 GiB/);
+    const nullCap = await app.inject({
+      method: "PATCH",
+      url: `/api/orgs/org_home/machines/${codeId}`,
+      headers: JSON_AUTH,
+      payload: { max_workspace_mib: null },
+    });
+    assert.equal(nullCap.statusCode, 422, nullCap.body);
+    assert.deepEqual(nullCap.json().detail[0].loc, ["body", "max_workspace_mib"]);
 
     // A running machine resized gets a new container; its directory stays.
     const started = await app.inject({ method: "POST", url: `/api/agents/${coderId}/cli`, headers: AUTH });
