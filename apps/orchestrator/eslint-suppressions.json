@@ -977,11 +977,6 @@
       "count": 4
     }
   },
-  "src/notifications/index.ts": {
-    "@typescript-eslint/explicit-module-boundary-types": {
-      "count": 1
-    }
-  },
   "src/oauth/html.ts": {
     "no-restricted-syntax": {
       "count": 1

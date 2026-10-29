@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { Notifications, notificationsDatabase } from "../notifications/index.js";
+import { operatorNotifications } from "../notifications/index.js";
 import { registerAccessRoutes } from "./access-routes.js";
 import { registerAdminInstanceRoutes } from "./admin-instance-routes.js";
 import { registerAdminMcpRoutes } from "./admin-mcp-routes.js";
@@ -39,7 +39,7 @@ import { registerUserRoutes } from "./user-routes.js";
 
 /** Every route of the app's domains, each from the file of its own domain. */
 export async function registerDomainRoutes(app: FastifyInstance, deps: RouteDeps): Promise<void> {
-  const notifications = new Notifications(notificationsDatabase(deps.db));
+  const notifications = operatorNotifications(deps.db);
 
   deps.generation?.groupChat.observe((guildId, event, data) =>
     notifications.observe(guildId, event, data),
