@@ -8,6 +8,7 @@ import {
   grantKey,
   parseGrants,
   subjectAt,
+  type SubjectEntry,
 } from "./access.js";
 import { accessibleCollections, assertOperator, collectionView, loadCollectionById } from "./collections.js";
 import { ArtifactError } from "./errors.js";
@@ -78,7 +79,7 @@ export async function replaceAccess(
   store: ArtifactStore,
   actor: ArtifactActor,
   target: AccessTarget,
-  subjects: unknown,
+  subjects: SubjectEntry[],
 ): Promise<AccessList> {
   assertOperator(actor);
   const item = await requireTarget(store, actor, target);
