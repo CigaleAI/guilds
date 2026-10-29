@@ -109,6 +109,9 @@ export const GROUP_ROUTING = integration({
   ],
 });
 
+/** The `github` connector's server id: its connections are installations of the GitHub App. */
+export const GITHUB_SERVER_ID = "mcp_github";
+
 export const GITHUB_APP = integration({
   id: "github-app",
   label: "GitHub App",

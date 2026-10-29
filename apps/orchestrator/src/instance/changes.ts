@@ -1,5 +1,4 @@
-import { GITHUB_SERVER_ID } from "../github/index.js";
-import { GITHUB_APP, type Integration } from "./integrations.js";
+import { GITHUB_APP, GITHUB_SERVER_ID, type Integration } from "./integrations.js";
 import { InstanceKeyError } from "./keys.js";
 import { countServerConnections } from "../db/mcp.js";
 import type { Queryable } from "../db/pg.js";

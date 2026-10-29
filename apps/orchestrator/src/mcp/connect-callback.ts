@@ -6,12 +6,8 @@ import {
   saveMcpConnection,
   type McpConnectionRow,
 } from "../db/mcp.js";
-import {
-  GITHUB_SERVER_ID,
-  installUrl,
-  requireGithubApp,
-  userAuthorizationUrl,
-} from "../github/index.js";
+import { installUrl, requireGithubApp, userAuthorizationUrl } from "../github/index.js";
+import { GITHUB_SERVER_ID } from "../instance/integrations.js";
 import {
   accountHint,
   ensureClient,

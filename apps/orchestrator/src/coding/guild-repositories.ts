@@ -18,7 +18,6 @@ import { getMembership } from "../db/orgs.js";
 import { isUniqueViolation, type Queryable } from "../db/pg.js";
 import type { GithubRepositorySelection } from "../db/schema/index.js";
 import {
-  GITHUB_SERVER_ID,
   GITHUB_SLUG,
   GithubError,
   GithubInstallationGoneError,
@@ -30,6 +29,7 @@ import {
 import { githubRepositoriesOf } from "../github/repositories.js";
 import { installationIdOf, RepositoryAccessError } from "../github/tokens.js";
 import { canSeeGuild } from "../guilds/operators.js";
+import { GITHUB_SERVER_ID } from "../instance/integrations.js";
 import { newId } from "../lib/ids.js";
 import {
   DEFAULT_BRANCH,

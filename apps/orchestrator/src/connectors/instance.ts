@@ -1,10 +1,10 @@
 import { encryptPayload } from "../credentials/crypto.js";
 import type { AuthField, Manifest } from "../db/schema/index.js";
-import { GITHUB_SERVER_ID } from "../github/index.js";
 import { replacesGithubApp } from "../instance/changes.js";
 import {
   connectorIntegrationId,
   GITHUB_APP,
+  GITHUB_SERVER_ID,
   installedIntegrations,
   integrationState,
   integrationValue,

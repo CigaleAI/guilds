@@ -12,7 +12,6 @@ import { proxyFetch, readJson, type FetchFn } from "../net/http.js";
  * orchestrator mints installation tokens from it. The private key never leaves this process.
  */
 export const GITHUB_SLUG = "github";
-export const GITHUB_SERVER_ID = "mcp_github";
 export const GITHUB_API = "https://api.github.com";
 const GITHUB_WEB = "https://github.com";
 const API_VERSION = "2022-11-28";
