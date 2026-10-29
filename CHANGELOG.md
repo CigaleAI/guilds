@@ -258,7 +258,12 @@ and lists a guild's shared notes with `listSharedNotes(orgSlug,
 guildName, prefix)`, in place of `readNote`, `listNotes` and
 `writeNote`, which took a scope. A shared note is read and written
 with `readSharedFile` and `writeSharedFile` alone. `notesRoot` and
-`resolveScopePath` are gone.
+`resolveScopePath` are gone. The group chat,
+`GenerationLoop.groupChat`, names each method once, in camelCase:
+`postFromRun`, `postUser`, `listMessages`, `setLimit`, `resumeAll`,
+and `isDispatching`, in place of `post_from_run`, `post_user`,
+`list_messages`, `set_limit`, `resume_all`, and `is_dispatching`. A
+tool context's `group_chat` posts through `postFromRun` alone.
 
 **Breaking for extending repositories.** The Makefile variables
 `EDITION`, `EDITION_TEST_PACKAGES`, and `EDITION_COMPOSE_FILES` are

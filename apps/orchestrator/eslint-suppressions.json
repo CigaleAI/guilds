@@ -605,7 +605,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 11
+      "count": 10
     }
   },
   "src/guilds/service.ts": {

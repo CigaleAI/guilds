@@ -247,7 +247,7 @@ test("a coding run near its input limit hands off and continues in a new run", {
     const groupRuns = async () => (await listRuns(db, agentId)).filter((row) => row.kind === "group");
     for (let attempt = 0; attempt < 200; attempt += 1) {
       const runs = await groupRuns();
-      if (runs.length === 2 && runs.every((row) => row.status === "completed") && !loop.groupChat.is_dispatching(guildId)) {
+      if (runs.length === 2 && runs.every((row) => row.status === "completed") && !loop.groupChat.isDispatching(guildId)) {
         break;
       }
       await new Promise((resolve) => setTimeout(resolve, 50));
