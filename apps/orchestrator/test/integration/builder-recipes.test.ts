@@ -439,6 +439,14 @@ test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => 
       payload: { include_notes: ["capture-glossary.md"] },
     });
     assert.equal(captured.statusCode, 201, captured.body);
+    const namedAsText = await app.inject({
+      method: "POST",
+      url: "/api/guilds/guild_capture/recipes",
+      headers: { ...AUTH, "content-type": "application/json" },
+      payload: { include_notes: "capture-glossary.md" },
+    });
+    assert.equal(namedAsText.statusCode, 422, namedAsText.body);
+    assert.deepEqual(namedAsText.json().detail[0].loc, ["body", "include_notes"]);
     const captureBody = JSON.stringify(captured.json());
     assert.equal(captureBody.includes("ciphertext"), false);
     assert.equal(captureBody.includes("oauth_client"), false);
