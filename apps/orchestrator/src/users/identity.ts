@@ -1,7 +1,9 @@
-import { listOrgsForUser } from "../db/orgs.js";
+import { listOrgsForUser, type OrgMembershipRow } from "../db/orgs.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
-import { getUserByEmail } from "../db/users.js";
+import { getUserByEmail, type UserRow } from "../db/users.js";
+import { resolveOrg } from "../organisations/index.js";
 import { listUsersInSeedOrder } from "./directory.js";
+import { resolveUser, UserIdentityError } from "./index.js";
 
 /** The db/ functions core's sign-in modes resolve a request's user and organisation through, on `db`. */
 export function identityDatabase(db: Queryable) {
@@ -13,3 +15,26 @@ export function identityDatabase(db: Queryable) {
 }
 
 export type IdentityDatabase = ReturnType<typeof identityDatabase>;
+
+/** The user `token` names, or the only user when it names none; a `UserIdentityError` otherwise. */
+export async function resolveTokenUser(db: Queryable, token: string | null): Promise<UserRow> {
+  return resolveUser(await listUsersInSeedOrder(db), token);
+}
+
+/** The user an authenticating proxy vouched for by `email`; a 401 `UserIdentityError` when none has it. */
+export async function resolveEmailUser(db: Queryable, email: string): Promise<UserRow> {
+  const user = await getUserByEmail(db, email);
+  if (!user) {
+    throw new UserIdentityError(401, "user not found");
+  }
+  return user;
+}
+
+/** The membership of `userId` that `token` names, or its only one when it names none; an `OrgIdentityError` otherwise. */
+export async function resolveTokenOrg(
+  db: Queryable,
+  userId: string,
+  token: string | null,
+): Promise<OrgMembershipRow> {
+  return resolveOrg(await listOrgsForUser(db, userId), token);
+}
