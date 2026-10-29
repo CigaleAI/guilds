@@ -242,6 +242,35 @@ test("nft solana uses mint", async () => {
   assert.equal(stored, "Mad1111111111111111111111111111111111111111  MAD  Mad Lads #1  V1_NFT");
 });
 
+test("holdings and nft refuse a body that is not JSON or does not match its schema", async () => {
+  const answering = (result: { json?: unknown; text?: string }) => ({
+    apiKey: "alc-test",
+    client: mockFetch(() => ({ status: 200, ...result })),
+  });
+  const unexpectedAt = (path: string) => (error: unknown) =>
+    error instanceof AlchemyError &&
+    error.message.startsWith(`Alchemy returned an unexpected response at ${path}: `);
+  await assert.rejects(
+    () =>
+      holdingsTool({ owner: "0xd8da", chain: "base" }, answering({ json: { ownedNfts: "none" } })),
+    unexpectedAt("/ownedNfts"),
+  );
+  const mint = "Mad1111111111111111111111111111111111111111";
+  await assert.rejects(
+    () =>
+      nftTool(
+        { contract: mint, chain: "solana" },
+        answering({ json: { result: { id: mint, content: "none" } } }),
+      ),
+    unexpectedAt("/content"),
+  );
+  await assert.rejects(
+    () => holdingsTool({ owner: "0xd8da", chain: "base" }, answering({ text: "not json" })),
+    (error: unknown) =>
+      error instanceof AlchemyError && error.message === "Alchemy returned a non-JSON body",
+  );
+});
+
 test("ping rejects unauthorized", async () => {
   await assert.rejects(
     () => ping("bad", { client: mockFetch(() => ({ status: 401, json: { message: "Must be authenticated!" } })) }),
