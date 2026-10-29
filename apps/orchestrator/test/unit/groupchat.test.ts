@@ -29,11 +29,8 @@ import { AsyncEvent, sleep } from "../../src/lib/event.js";
 import { AsyncLock } from "../../src/lib/lock.js";
 import { orchestratorRoot } from "../../src/lib/paths.js";
 import { createToolContext, invokeTool } from "../../src/toolbox/index.js";
-import {
-  createGroupRouter,
-  createTypeSafeClient,
-  type GroupRouter,
-} from "../../src/typesafe/index.js";
+import type { GroupRouter } from "../../src/groupchat/router.js";
+import { createGroupRouter, createTypeSafeClient } from "../../src/typesafe/index.js";
 
 class MemoryGroupDB {
   private readonly lock = new AsyncLock();
@@ -292,14 +289,24 @@ class MemoryGroupDB {
   }
 }
 
+/** A router without a key, as a box without group routing has: the chat keeps to its tag rules. */
+const TAG_RULES_ROUTER: GroupRouter = {
+  configured: false,
+  recipients: async ({ ruleNames, taggedNames }) => ({
+    source: "tags",
+    names: new Set(ruleNames ?? taggedNames),
+  }),
+  history: async ({ rows }) => ({ source: "limit", rows }),
+};
+
 function chatFor(
   db: MemoryGroupDB,
   deleting: Set<string> = new Set(),
-  router?: GroupRouter,
+  router: GroupRouter = TAG_RULES_ROUTER,
 ): GroupChat {
   return new GroupChat(db as never, {
     is_deleting: (guildId) => deleting.has(guildId),
-    ...(router ? { router } : {}),
+    router,
   });
 }
 

@@ -19,10 +19,10 @@ import {
   retryAfterMs,
   selectGroupHistory,
   serializeHistoryDecision,
-  serializeRecipientDecision,
   type TypeSafeQuestion,
 } from "../../src/typesafe/index.js";
 import { formatRecipientReplay, replayRecipients } from "../../src/typesafe/replay.js";
+import { serializeRecipientDecision } from "../../src/groupchat/router.js";
 import { setInstanceKeys } from "../../src/instance/integrations.js";
 import { storeKeys } from "../helpers/env.js";
 

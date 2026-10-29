@@ -1,9 +1,6 @@
 import { recipientNamesAfter, taggedRecipientNamesAfter } from "../groupchat/index.js";
-import {
-  AGENT_TASK_PREVIEW_CHARS,
-  createGroupRouter,
-  serializeRecipientDecision,
-} from "./group.js";
+import { serializeRecipientDecision } from "../groupchat/router.js";
+import { AGENT_TASK_PREVIEW_CHARS, createGroupRouter } from "./group.js";
 import type { TypeSafeClient } from "./client.js";
 
 export type RecipientReplay = {

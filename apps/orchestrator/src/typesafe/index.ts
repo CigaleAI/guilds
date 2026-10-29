@@ -34,6 +34,4 @@ export {
   defaultGroupRouter,
   selectGroupHistory,
   serializeHistoryDecision,
-  serializeRecipientDecision,
 } from "./group.js";
-export type { GroupRouter, HistoryDecision, RecipientDecision } from "./group.js";

@@ -19,6 +19,7 @@ import {
 } from "../db/runs.js";
 import { runItem } from "../db/views.js";
 import { GroupChat, groupChatDatabase, type GroupDelivery, type GroupRunner } from "../groupchat/index.js";
+import type { GroupRouter } from "../groupchat/router.js";
 import { Issues, issuesDatabase } from "../issues/index.js";
 import { sleep } from "../lib/event.js";
 import { coreModelCredentials, type ModelCredentialsProvider } from "../llm/credentials.js";
@@ -27,7 +28,7 @@ import { errorMessage, errorName, writeLog } from "../observability/log.js";
 import { OPEN_POLICY, type OrgPolicy } from "../policy/index.js";
 import { Schedules, scheduleDatabase } from "../schedules/service.js";
 import { Scripts, scriptDatabase } from "../scripts/catalog.js";
-import { defaultGroupRouter, type GroupRouter } from "../typesafe/index.js";
+import { defaultGroupRouter } from "../typesafe/index.js";
 import { AdmissionCoordinator } from "../admission/coordinator.js";
 import { ActiveGenerations, activeGenerationsDatabase } from "./active-generations.js";
 import { continuedBy, RunChains, runChainsDatabase } from "./chain.js";

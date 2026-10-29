@@ -7,7 +7,8 @@ import {
 } from "../groupchat/history.js";
 import type { GroupMessageRow } from "../db/group-chat.js";
 import type { IntegrationSources } from "../instance/integrations.js";
-import type { HistoryRouting, RecipientRouting, TypeSafeUsage } from "../db/schema/index.js";
+import type { HistoryRouting, TypeSafeUsage } from "../db/schema/index.js";
+import type { GroupRouter, HistoryDecision, RecipientDecision } from "../groupchat/router.js";
 import { writeLog } from "../observability/log.js";
 import {
   TypeSafeError,
@@ -33,42 +34,6 @@ export const HISTORY_CONTENT_MAX_CHARS = 2_000;
 // Last public rows Jev sees when routing: the current message plus prior ones
 // as `context`. Small on purpose so an older topic cannot steal a new ask.
 export const RECIPIENT_WINDOW = 4;
-
-export type RecipientDecision = {
-  source: "tags" | "typesafe" | "low_confidence" | "fallback";
-  reason?: string;
-  names: Set<string>;
-  choice?: string;
-  confidence?: number;
-  probabilities?: Record<string, number>;
-  model?: string;
-  usage?: TypeSafeUsage;
-};
-
-export type HistoryDecision = {
-  source: "limit" | "typesafe" | "fallback";
-  reason?: string;
-  rows: GroupMessageRow[];
-  keep?: Record<string, number>;
-  model?: string;
-  usage?: TypeSafeUsage;
-};
-
-export type GroupRouter = {
-  configured: boolean;
-  recipients(args: {
-    rows: Array<Record<string, unknown>>;
-    members: Array<Record<string, unknown>>;
-    pending: Array<Record<string, unknown>>;
-    taggedNames?: Set<string>;
-    ruleNames?: Set<string>;
-  }): Promise<RecipientDecision>;
-  history(args: {
-    rows: GroupMessageRow[];
-    agentName: string;
-    agentFocus?: string;
-  }): Promise<HistoryDecision>;
-};
 
 function clip(value: string, max: number): string {
   const text = value.trim();
@@ -107,32 +72,6 @@ function agentOption(member: Record<string, unknown>, taskChars: number): TypeSa
     option.task = task;
   }
   return option;
-}
-
-export function serializeRecipientDecision(decision: RecipientDecision): RecipientRouting {
-  const payload: RecipientRouting = {
-    source: decision.source,
-    names: [...decision.names].sort(),
-  };
-  if (decision.reason) {
-    payload.reason = decision.reason;
-  }
-  if (decision.choice) {
-    payload.choice = decision.choice;
-  }
-  if (decision.confidence !== undefined) {
-    payload.confidence = decision.confidence;
-  }
-  if (decision.probabilities) {
-    payload.probabilities = decision.probabilities;
-  }
-  if (decision.model) {
-    payload.model = decision.model;
-  }
-  if (decision.usage) {
-    payload.usage = decision.usage;
-  }
-  return payload;
 }
 
 export function serializeHistoryDecision(decision: HistoryDecision): HistoryRouting {

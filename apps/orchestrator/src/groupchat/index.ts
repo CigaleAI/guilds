@@ -3,13 +3,8 @@ import { AgentMessageLimitReached, GroupChatCleared } from "../db/errors.js";
 import { groupMessageItem } from "../db/views.js";
 import { AsyncEvent, EventQueue } from "../lib/event.js";
 import { writeLog } from "../observability/log.js";
-import {
-  defaultGroupRouter,
-  serializeRecipientDecision,
-  type GroupRouter,
-  type RecipientDecision,
-} from "../typesafe/index.js";
 import { groupChatHistory, storedTags } from "./history.js";
+import { serializeRecipientDecision, type GroupRouter, type RecipientDecision } from "./router.js";
 import { advanceGroupCursor,
   appendGroupChatError,
   clearGroupMessages,
@@ -417,11 +412,11 @@ export class GroupChat {
 
   constructor(
     db: GroupChatDatabase,
-    options: { is_deleting: (guildId: string) => boolean; router?: GroupRouter },
+    options: { is_deleting: (guildId: string) => boolean; router: GroupRouter },
   ) {
     this.db = db;
     this._is_deleting = options.is_deleting;
-    this._router = options.router ?? defaultGroupRouter();
+    this._router = options.router;
   }
 
   bind(runner: GroupRunner): void {
