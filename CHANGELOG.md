@@ -8,6 +8,17 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** The organisation routes refuse, with a 422 that names
+the field and before the request's user is identified: a create
+without a string `name` and `slug`, a change whose `name` or `slug` is
+not a string, a member added without a string `name` or `user_id` or
+with a `role` that is not a string, and a role change without a string
+`role`. A member added with neither `name` nor `user_id` lists both,
+and the body. Whoever may not create organisations gets the same 404
+whatever they send. Before, those values were read as their text, a
+member added with neither was a 422 naming `user_id`, and a role
+change without `role` was refused as an invalid role.
+
 **No impact.** The guild routes refuse, with a 422 that names the field
 and before the request's user is identified: a `name`, `about` or
 `description` that is not a string, a `max_agents` that is not a

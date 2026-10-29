@@ -64,6 +64,19 @@ test(
         payload: { role: "member" },
       });
       assert.equal(neither.statusCode, 422);
+      assert.deepEqual(
+        neither.json().detail.map((problem: { loc: string[] }) => problem.loc),
+        [["body", "name"], ["body", "user_id"], ["body"]],
+        "a member is named by name or by id",
+      );
+      const numberedRole = await app.inject({
+        method: "PATCH",
+        url: `/api/orgs/org_home/members/${userId}`,
+        headers: json,
+        payload: { role: 2 },
+      });
+      assert.equal(numberedRole.statusCode, 422);
+      assert.deepEqual(numberedRole.json().detail[0].loc, ["body", "role"]);
 
       const added = await app.inject({
         method: "POST",
