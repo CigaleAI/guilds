@@ -36,7 +36,7 @@ import {
   type RosterAgent,
   type StudioMemberHydration,
 } from "./system.js";
-import { studioToolSchemas } from "./tools.js";
+import { studioToolSchemas, type StudioToolDeps } from "./tools.js";
 import {
   previewCurrentState,
   previewDatabase,
@@ -823,18 +823,12 @@ export class StudioService {
       generation: started.generation,
       generationContext,
       systemContent: started.systemContent,
-      toolContext: {
+      toolDeps: this.toolDeps(),
+      toolCall: {
         session: started.session,
         user,
         orgId: started.session.org_id,
         sourceGuildId: session.source_guild_id,
-        artifacts: this.deps.artifacts,
-        db: this.deps.db,
-        schedules: this.deps.schedules,
-        drafts: this.drafts,
-        preview: this.previewDeps(),
-        notesSystemPath: this.deps.notesSystemPath,
-        mcp: this.deps.mcp ?? null,
       },
     });
     return this.viewSession(started.session);
@@ -966,6 +960,18 @@ export class StudioService {
     return {
       ...result,
       target_generating: targetId ? Boolean(this.deps.isAgentBusy?.(targetId)) : false,
+    };
+  }
+
+  private toolDeps(): StudioToolDeps {
+    return {
+      artifacts: this.deps.artifacts,
+      db: this.deps.db,
+      schedules: this.deps.schedules,
+      drafts: this.drafts,
+      preview: this.previewDeps(),
+      notesSystemPath: this.deps.notesSystemPath,
+      mcp: this.deps.mcp ?? null,
     };
   }
 

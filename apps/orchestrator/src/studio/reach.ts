@@ -10,11 +10,16 @@ import { describeCollection } from "../artifacts/collections.js";
 // guild's agents can be given (its own and the organisation's). Another
 // guild's agents, notes, Memory, and tables stay out of reach.
 
+/** The stores a reach check reads through. */
+export type StudioReachDeps = {
+  db: Queryable;
+  artifacts: ArtifactStore;
+};
+
+/** The organisation and source guild a Studio session reaches from. */
 export type StudioReachScope = {
   orgId: string;
   sourceGuildId: string;
-  db: Queryable;
-  artifacts: ArtifactStore;
 };
 
 /** A table Studio reads: the source guild's own or the organisation's. */
@@ -23,13 +28,17 @@ export function studioReachesTable(sourceGuildId: string, tableGuildId: string |
 }
 
 /** Whether a parsed display path lies inside what the session reaches. */
-export async function studioReachesParsed(scope: StudioReachScope, parsed: ParsedDisplayPath): Promise<boolean> {
+export async function studioReachesParsed(
+  deps: StudioReachDeps,
+  scope: StudioReachScope,
+  parsed: ParsedDisplayPath,
+): Promise<boolean> {
   if (parsed.orgId !== scope.orgId) {
     return false;
   }
   if (parsed.kind === "collection" || parsed.kind === "record") {
     const table = await describeCollection(
-      scope.artifacts,
+      deps.artifacts,
       operatorActor({
         orgId: scope.orgId,
         actorId: "studio",
@@ -41,10 +50,10 @@ export async function studioReachesParsed(scope: StudioReachScope, parsed: Parse
     return Boolean(table) && studioReachesTable(scope.sourceGuildId, table?.guild_id);
   }
   if (parsed.kind === "revision") {
-    return (await sourceAgentIds(scope)).has(parsed.agentId);
+    return (await sourceAgentIds(deps, scope)).has(parsed.agentId);
   }
   if (parsed.level === "agent") {
-    return (await sourceAgentIds(scope)).has(parsed.ownerId);
+    return (await sourceAgentIds(deps, scope)).has(parsed.ownerId);
   }
   if (parsed.level === "guild") {
     return parsed.ownerId === scope.sourceGuildId;
@@ -53,17 +62,24 @@ export async function studioReachesParsed(scope: StudioReachScope, parsed: Parse
 }
 
 /** Whether a display path lies inside what the session reaches; a malformed path does not. */
-export async function studioReachesPath(scope: StudioReachScope, displayPath: string): Promise<boolean> {
+export async function studioReachesPath(
+  deps: StudioReachDeps,
+  scope: StudioReachScope,
+  displayPath: string,
+): Promise<boolean> {
   let parsed: ParsedDisplayPath;
   try {
     parsed = parseDisplayPath(displayPath);
   } catch {
     return false;
   }
-  return studioReachesParsed(scope, parsed);
+  return studioReachesParsed(deps, scope, parsed);
 }
 
-async function sourceAgentIds(scope: StudioReachScope): Promise<Set<string>> {
-  const agents = await listAgents(scope.db, scope.sourceGuildId);
+async function sourceAgentIds(
+  deps: StudioReachDeps,
+  scope: StudioReachScope,
+): Promise<Set<string>> {
+  const agents = await listAgents(deps.db, scope.sourceGuildId);
   return new Set(agents.map((row) => String(row.id)));
 }

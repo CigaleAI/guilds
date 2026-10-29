@@ -1309,7 +1309,7 @@
   },
   "src/studio/runner.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 2
+      "count": 1
     },
     "no-restricted-syntax": {
       "count": 1

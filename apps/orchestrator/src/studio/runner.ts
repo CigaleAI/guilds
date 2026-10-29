@@ -13,7 +13,12 @@ import {
 } from "./constants.js";
 import type { ModelCredentialsProvider } from "../llm/credentials.js";
 import type { Queryable } from "../db/pg.js";
-import { studioToolMap, type StudioTool, type StudioToolContext } from "./tools.js";
+import {
+  studioToolMap,
+  type StudioTool,
+  type StudioToolCall,
+  type StudioToolDeps,
+} from "./tools.js";
 import type { UserRow } from "../db/users.js";
 import type { StudioSessionRow } from "../db/studio.js";
 
@@ -26,14 +31,17 @@ export type StudioRunnerDeps = {
   policy?: OrgPolicy;
 };
 
-function conversationTools(tools: Map<string, StudioTool>): Map<string, ConversationTool> {
+function conversationTools(
+  tools: Map<string, StudioTool>,
+  deps: StudioToolDeps,
+): Map<string, ConversationTool> {
   return new Map(
     [...tools.entries()].map(([name, tool]) => [
       name,
       {
         name: tool.name,
         schema: tool.schema,
-        handler: (ctx, args) => tool.handler(ctx as StudioToolContext, args),
+        handler: (call, args) => tool.handler(deps, call as StudioToolCall, args),
       },
     ]),
   );
@@ -83,7 +91,8 @@ export class StudioRunner {
   start(args: {
     session: StudioSessionRow;
     user: UserRow;
-    toolContext: Omit<StudioToolContext, "generation">;
+    toolDeps: StudioToolDeps;
+    toolCall: Omit<StudioToolCall, "generation">;
     generation: number;
     generationContext: string;
     systemContent?: string;
@@ -95,14 +104,13 @@ export class StudioRunner {
       generation: args.generation,
       generationContext: args.generationContext,
       ...(args.systemContent ? { systemContent: args.systemContent } : {}),
-      tools: conversationTools(studioToolMap()),
-      toolContext: args.toolContext,
-      bindToolContext: (upcoming) =>
-        ({
-          ...args.toolContext,
-          generation: args.generation,
-          nextMessageSeq: upcoming,
-        }) as StudioToolContext,
+      tools: conversationTools(studioToolMap(), args.toolDeps),
+      toolContext: args.toolCall,
+      bindToolContext: (upcoming): StudioToolCall => ({
+        ...args.toolCall,
+        generation: args.generation,
+        nextMessageSeq: upcoming,
+      }),
       maxTokens: config.max_tokens,
       maxSteps: config.max_steps,
       maxToolCalls: config.max_tool_calls,
