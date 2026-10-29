@@ -213,7 +213,8 @@ On `trusted-header`:
 ### User directory
 
 - `GET /api/users`
-- `POST /api/users`: a `name` and an optional `email`. It creates the
+- `POST /api/users`: a string `name` and an optional `email`, a
+  string or `null`. It creates the
   user plus a personal organisation whose name and slug are the
   user's name, with its `default` machine. 201. An invalid name or
   email is 422. A name or email already taken is 409. A name that is
