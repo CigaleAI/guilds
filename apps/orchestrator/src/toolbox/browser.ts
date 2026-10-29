@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer";
 import { commandOutput, executeCommand } from "./shell.js";
 import { argString, functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
-import type { Tool, ToolContext, ToolInvocation } from "./types.js";
+import type { Tool, ToolHooks, ToolInvocation, ToolRun } from "./types.js";
 
 export const BROWSER_TOOLS = [
   "browser_navigate",
@@ -23,12 +23,17 @@ export function encodeSpec(spec: Record<string, unknown>): string {
 }
 
 /** Runs one helper op against the agent's own Chrome, which starts first when it is not up. */
-async function run(ctx: ToolContext, call: ToolInvocation, spec: Record<string, unknown>): Promise<string> {
-  if (ctx.ensure_browser) {
-    await ctx.ensure_browser();
+async function runBrowserOp(
+  run: ToolRun,
+  hooks: ToolHooks,
+  call: ToolInvocation,
+  spec: Record<string, unknown>,
+): Promise<string> {
+  if (hooks.ensure_browser) {
+    await hooks.ensure_browser();
   }
-  const request = ctx.cdp_port === null ? spec : { ...spec, cdp_port: ctx.cdp_port };
-  return commandOutput(call, await executeCommand(ctx, ctx, encodeSpec(request), { timeoutSeconds: BROWSER_TIMEOUT_SECONDS }));
+  const request = run.cdp_port === null ? spec : { ...spec, cdp_port: run.cdp_port };
+  return commandOutput(call, await executeCommand(run, hooks, encodeSpec(request), { timeoutSeconds: BROWSER_TIMEOUT_SECONDS }));
 }
 
 function tool(
@@ -54,7 +59,7 @@ export const browserNavigate = tool(
     "afterward to read the page and pick locators.",
   { url: { type: "string" } },
   ["url"],
-  (ctx, call) => run(ctx, call, { op: "navigate", url: argString(call.arguments, "url") }),
+  (_services, run, hooks, call) => runBrowserOp(run, hooks, call, { op: "navigate", url: argString(call.arguments, "url") }),
 );
 
 export const browserSnapshot = tool(
@@ -64,7 +69,7 @@ export const browserSnapshot = tool(
     "and browser_fill (CSS, role=..., or text=...).",
   {},
   [],
-  (ctx, call) => run(ctx, call, { op: "snapshot" }),
+  (_services, run, hooks, call) => runBrowserOp(run, hooks, call, { op: "snapshot" }),
 );
 
 export const browserClick = tool(
@@ -73,7 +78,7 @@ export const browserClick = tool(
     'role=button[name="Go"], or text=...).',
   { target: { type: "string" } },
   ["target"],
-  (ctx, call) => run(ctx, call, { op: "click", target: argString(call.arguments, "target") }),
+  (_services, run, hooks, call) => runBrowserOp(run, hooks, call, { op: "click", target: argString(call.arguments, "target") }),
 );
 
 export const browserType = tool(
@@ -82,8 +87,8 @@ export const browserType = tool(
     "(CSS, role=..., or text=...).",
   { target: { type: "string" }, text: { type: "string" } },
   ["target", "text"],
-  (ctx, call) =>
-    run(ctx, call, { op: "type", target: argString(call.arguments, "target"), text: argString(call.arguments, "text") }),
+  (_services, run, hooks, call) =>
+    runBrowserOp(run, hooks, call, { op: "type", target: argString(call.arguments, "target"), text: argString(call.arguments, "text") }),
 );
 
 export const browserFill = tool(
@@ -92,8 +97,8 @@ export const browserFill = tool(
     "replacing its current value (CSS, role=..., or text=...).",
   { target: { type: "string" }, value: { type: "string" } },
   ["target", "value"],
-  (ctx, call) =>
-    run(ctx, call, { op: "fill", target: argString(call.arguments, "target"), value: argString(call.arguments, "value") }),
+  (_services, run, hooks, call) =>
+    runBrowserOp(run, hooks, call, { op: "fill", target: argString(call.arguments, "target"), value: argString(call.arguments, "value") }),
 );
 
 export const browserScroll = tool(
@@ -107,13 +112,13 @@ export const browserScroll = tool(
     target: { type: "string" },
   },
   ["direction"],
-  (ctx, call) => {
+  (_services, run, hooks, call) => {
     const spec: Record<string, unknown> = { op: "scroll", direction: argString(call.arguments, "direction") };
     const target = argString(call.arguments, "target").trim();
     if (target) {
       spec.target = target;
     }
-    return run(ctx, call, spec);
+    return runBrowserOp(run, hooks, call, spec);
   },
 );
 
@@ -123,7 +128,7 @@ export const browserScreenshot = tool(
     "and return that path.",
   {},
   [],
-  (ctx, call) => run(ctx, call, { op: "screenshot" }),
+  (_services, run, hooks, call) => runBrowserOp(run, hooks, call, { op: "screenshot" }),
 );
 
 const EVAL_DESCRIPTION =
@@ -141,5 +146,5 @@ export const browserEval = tool(
   EVAL_DESCRIPTION,
   { expression: { type: "string" } },
   ["expression"],
-  (ctx, call) => run(ctx, call, { op: "evaluate", expression: argString(call.arguments, "expression") }),
+  (_services, run, hooks, call) => runBrowserOp(run, hooks, call, { op: "evaluate", expression: argString(call.arguments, "expression") }),
 );

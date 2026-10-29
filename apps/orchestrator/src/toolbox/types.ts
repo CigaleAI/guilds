@@ -233,6 +233,6 @@ export type Tool = {
   description: string;
   output_filter: (result: string) => string;
   filter_name: string;
-  handler: (ctx: ToolContext, call: ToolInvocation) => Promise<string>;
+  handler: (services: ToolServices, run: ToolRun, hooks: ToolHooks, call: ToolInvocation) => Promise<string>;
   schema: Record<string, unknown>;
 };

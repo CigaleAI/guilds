@@ -5,7 +5,7 @@ import { keepMatching } from "../lib/decode.js";
 import { executeCommand } from "./shell.js";
 import { functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
-import type { Tool, ToolContext, ToolHooks, ToolInvocation, ToolRun } from "./types.js";
+import type { Tool, ToolHooks, ToolRun } from "./types.js";
 
 /**
  * The tools a coding agent checks its harness's work with. Every call runs `guilds-code`
@@ -139,18 +139,6 @@ export async function runCodeHelper(
   return helperResult(execution);
 }
 
-/** Runs a `guilds-code` request for `call` and keeps the helper's metadata on the call. */
-async function runCallHelper(
-  ctx: ToolContext,
-  call: ToolInvocation,
-  request: HelperRequest,
-  options: HelperSettings = {},
-): Promise<CodeResult> {
-  const result = await runCodeHelper(ctx, ctx, { ...request, call_id: call.id }, options);
-  call.metadata = reportedFields(result.meta);
-  return result;
-}
-
 function tool(
   name: string,
   description: string,
@@ -189,16 +177,17 @@ export const shell = tool(
     background: { type: "boolean" },
   },
   ["command"],
-  async (ctx, call) => {
+  async (_services, run, hooks, call) => {
     const args = call.arguments;
     const timeout = shellTimeout(args);
-    await ctx.before_command?.();
-    const result = await runCallHelper(
-      ctx,
-      call,
-      { op: "shell", command: args.command, timeout_seconds: timeout, background: args.background === true },
+    await hooks.before_command?.();
+    const result = await runCodeHelper(
+      run,
+      hooks,
+      { op: "shell", call_id: call.id, command: args.command, timeout_seconds: timeout, background: args.background === true },
       { timeoutSeconds: timeout + SHELL_TIMEOUT_MARGIN_SECONDS },
     );
+    call.metadata = reportedFields(result.meta);
     const code = result.meta.exit_code;
     call.exit_code = typeof code === "number" ? code : null;
     return result.text;
@@ -212,13 +201,15 @@ export const shellStatus = tool(
     "Background commands also end when the sandbox stops after 5 idle minutes.",
   { id: { type: "string" }, stop: { type: "boolean" } },
   [],
-  async (ctx, call) => {
+  async (_services, run, hooks, call) => {
     const args = call.arguments;
-    const result = await runCallHelper(ctx, call, {
+    const result = await runCodeHelper(run, hooks, {
       op: "shell_status",
+      call_id: call.id,
       id: typeof args.id === "string" ? args.id : "",
       stop: args.stop === true,
     });
+    call.metadata = reportedFields(result.meta);
     return result.text;
   },
 );
@@ -236,14 +227,16 @@ export const fileRead = tool(
     limit: { type: "integer", minimum: 1, maximum: 500 },
   },
   ["path"],
-  async (ctx, call) => {
+  async (_services, run, hooks, call) => {
     const args = call.arguments;
-    const result = await runCallHelper(ctx, call, {
+    const result = await runCodeHelper(run, hooks, {
       op: "file_read",
+      call_id: call.id,
       path: args.path,
       offset: args.offset,
       limit: args.limit,
     });
+    call.metadata = reportedFields(result.meta);
     return result.text;
   },
 );
@@ -277,16 +270,18 @@ export const codeSearch = tool(
     limit: { type: "integer", minimum: 1 },
   },
   ["pattern"],
-  async (ctx, call) => {
+  async (_services, run, hooks, call) => {
     const args = call.arguments;
     const request = {
       op: "code_search",
+      call_id: call.id,
       pattern: args.pattern,
       ...optional(args, ["mode", "path", "glob", "context", "limit"]),
       fixed: args.fixed === true,
       ignore_case: args.ignore_case === true,
     };
-    const result = await runCallHelper(ctx, call, request);
+    const result = await runCodeHelper(run, hooks, request);
+    call.metadata = reportedFields(result.meta);
     return result.text;
   },
 );

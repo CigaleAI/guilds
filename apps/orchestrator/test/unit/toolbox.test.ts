@@ -424,7 +424,7 @@ test("browser_navigate runs helper", async () => {
     secrets: {},
   });
   const call = toolInvocation("browser_navigate", { url: "https://example.com" });
-  const result = await browserNavigate.handler(ctx, call);
+  const result = await browserNavigate.handler(ctx, ctx, ctx, call);
   assert.deepEqual(seen, [encodeSpec({ op: "navigate", url: "https://example.com" })]);
   assert.equal(result, "https://example.com\nExample");
   assert.equal(call.exit_code, 0);
@@ -451,10 +451,10 @@ test("browser_scroll runs helper", async () => {
     },
     secrets: {},
   });
-  const result = await browserScroll.handler(ctx, toolInvocation("browser_scroll", { direction: "down" }));
+  const result = await browserScroll.handler(ctx, ctx, ctx, toolInvocation("browser_scroll", { direction: "down" }));
   assert.deepEqual(seen, [encodeSpec({ op: "scroll", direction: "down" })]);
   assert.match(result, /scrolled down/);
-  const withTarget = await browserScroll.handler(ctx, toolInvocation("browser_scroll", { direction: "down", target: "div.list" }));
+  const withTarget = await browserScroll.handler(ctx, ctx, ctx, toolInvocation("browser_scroll", { direction: "down", target: "div.list" }));
   assert.deepEqual(seen[1], encodeSpec({ op: "scroll", direction: "down", target: "div.list" }));
   assert.match(withTarget, /scrolled down/);
 });
@@ -480,7 +480,7 @@ test("browser_eval runs helper", async () => {
     },
     secrets: {},
   });
-  const result = await browserEval.handler(ctx, toolInvocation("browser_eval", { expression: "return document.title;" }));
+  const result = await browserEval.handler(ctx, ctx, ctx, toolInvocation("browser_eval", { expression: "return document.title;" }));
   assert.deepEqual(seen, [encodeSpec({ op: "evaluate", expression: "return document.title;" })]);
   assert.equal(result, '"ok"');
 });

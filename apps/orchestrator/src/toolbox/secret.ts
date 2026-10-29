@@ -1,7 +1,7 @@
 import { CredentialError, SECRET_DESCRIPTION_MAX, validateSecretDescription, validateSecretName } from "../credentials/validate.js";
 import { argString, functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
-import type { Tool, ToolContext } from "./types.js";
+import type { Tool } from "./types.js";
 
 export const SECRET_REASON_MAX = 400;
 
@@ -53,8 +53,8 @@ export const secretStore: Tool = {
     },
     ["name", "description", "file"],
   ),
-  async handler(ctx: ToolContext, { arguments: args }) {
-    const store = ctx.secret_store;
+  async handler(_services, run, hooks, { arguments: args }) {
+    const store = hooks.secret_store;
     if (store === null) {
       throw new Error("secret storage is not available");
     }
@@ -63,7 +63,7 @@ export const secretStore: Tool = {
       description: args.description,
       file: argString(args, "file"),
     });
-    ctx.secrets[stored.name] = stored.value;
+    run.secrets[stored.name] = stored.value;
     return (
       `${JSON.stringify({ stored: stored.name, rotated: stored.rotated })}\n` +
       `${stored.name} is in your environment from the next generation.`
@@ -92,8 +92,8 @@ export const secretRequest: Tool = {
     },
     ["name", "description", "reason"],
   ),
-  async handler(ctx: ToolContext, { arguments: args }) {
-    if (ctx.run_kind !== "direct") {
+  async handler(_services, run, _hooks, { arguments: args }) {
+    if (run.run_kind !== "direct") {
       throw new Error("secret_request is only available in a direct chat; say what you need with group_post");
     }
     const name = checked(() => validateSecretName(args.name));
@@ -105,7 +105,7 @@ export const secretRequest: Tool = {
     if (reason.length > SECRET_REASON_MAX) {
       throw new Error(`reason must be at most ${SECRET_REASON_MAX} characters`);
     }
-    if (ctx.secret_names.includes(name)) {
+    if (run.secret_names.includes(name)) {
       return JSON.stringify({ status: "available" });
     }
     return (

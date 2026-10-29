@@ -2293,9 +2293,9 @@ test("studio proposes routines to create, change, and delete that the operator a
       agent_name: "watcher",
     });
     const create = { cron: "0 7 * * *", description: "Morning check", instruction: "Check." };
-    await scheduleCreateCron.handler(toolCtx, toolInvocation("schedule_create_cron", create, "call_create"));
+    await scheduleCreateCron.handler(toolCtx, toolCtx, toolCtx, toolInvocation("schedule_create_cron", create, "call_create"));
     const [own] = await listSchedules(db, "a_wt");
-    await schedulePause.handler(toolCtx, toolInvocation("schedule_pause", { schedule_id: String(own?.id) }, "call_pause"));
+    await schedulePause.handler(toolCtx, toolCtx, toolCtx, toolInvocation("schedule_pause", { schedule_id: String(own?.id) }, "call_pause"));
     const agentHistory = await listConfigChanges(db, "org_home", { kind: "routine", id: String(own?.id) });
     assert.deepEqual(
       agentHistory.map((change) => [change.operation, change.actor.type, change.actor.name, change.run_id, change.tool]),

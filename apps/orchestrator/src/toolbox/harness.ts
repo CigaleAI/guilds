@@ -15,7 +15,7 @@ import {
   createToolHooks,
   type CancelEvent,
   type Tool,
-  type ToolContext,
+  type ToolHooks,
   type ToolInvocation,
   type ToolRun,
 } from "./types.js";
@@ -416,22 +416,22 @@ function sessionIdOf(args: Record<string, unknown>): string | null {
 }
 
 /** Validates the call's arguments, checks its harness, and builds the brief. */
-async function checkedCall(ctx: ToolContext, call: ToolInvocation): Promise<CheckedCall> {
+async function checkedCall(services: ToolServices, run: ToolRun, call: ToolInvocation): Promise<CheckedCall> {
   const args = call.arguments;
-  const harness = requiredHarness(ctx);
+  const harness = requiredHarness(run);
   const brief = requiredBrief(args);
-  const repository = repositoryFor(ctx, args);
+  const repository = repositoryFor(run, args);
   const notes = notePaths(args);
   const callId = callSegment(call.id || `code_task_${Date.now()}`);
-  const version = await checkHarness(ctx, ctx, callId, harness);
-  const prompt = await buildBrief(ctx, callActor(ctx.artifact_actor, call), brief, notes);
-  return { harness, repository, prompt, version, ops: opsRun(ctx), call_id: callId };
+  const version = await checkHarness(services, run, callId, harness);
+  const prompt = await buildBrief(services, callActor(run.artifact_actor, call), brief, notes);
+  return { harness, repository, prompt, version, ops: opsRun(run), call_id: callId };
 }
 
 /** A checked call, with the task's start checkpoint taken and its clock started. */
-async function openHarnessTurn(ctx: ToolContext, call: ToolInvocation): Promise<HarnessTurn> {
+async function openHarnessTurn(services: ToolServices, run: ToolRun, call: ToolInvocation): Promise<HarnessTurn> {
   const args = call.arguments;
-  const checked = await checkedCall(ctx, call);
+  const checked = await checkedCall(services, run, call);
   const start = await checkpoint(checked.ops, checked.call_id, "start", checked.repository);
   const minutes = timeoutMinutes(args);
   const started = Date.now();
@@ -439,7 +439,7 @@ async function openHarnessTurn(ctx: ToolContext, call: ToolInvocation): Promise<
     ...checked,
     tool_call_id: call.id,
     minutes,
-    log_path: displayLogPath(ctx.run_id, checked.call_id),
+    log_path: displayLogPath(run.run_id, checked.call_id),
     start_sha: stringOrNull(start.start_sha),
     started,
     deadline: started + minutes * harnessTiming.minuteMs,
@@ -449,7 +449,7 @@ async function openHarnessTurn(ctx: ToolContext, call: ToolInvocation): Promise<
   };
 }
 
-async function rememberTurn(ctx: ToolContext, turn: HarnessTurn): Promise<void> {
+async function rememberTurn(services: ToolServices, run: ToolRun, turn: HarnessTurn): Promise<void> {
   const task = {
     call_id: turn.call_id,
     harness: turn.harness,
@@ -457,13 +457,13 @@ async function rememberTurn(ctx: ToolContext, turn: HarnessTurn): Promise<void> 
     session_id: turn.session,
     log_path: turn.log_path,
   };
-  await ctx.db?.mergeRunMetadata(ctx.run_id, { harness_task: task }, new Date());
+  await services.db?.mergeRunMetadata(run.run_id, { harness_task: task }, new Date());
 }
 
-async function startHarness(ctx: ToolContext, turn: HarnessTurn): Promise<void> {
+async function startHarness(services: ToolServices, run: ToolRun, hooks: ToolHooks, turn: HarnessTurn): Promise<void> {
   const resume = turn.session ? { session_id: turn.session } : {};
-  await ctx.before_command?.();
-  const launch = harnessLaunch(turn.harness, ctx.harness_model, ctx.harness_effort);
+  await hooks.before_command?.();
+  const launch = harnessLaunch(turn.harness, run.harness_model, run.harness_effort);
   const model = launch.model ? { model: launch.model } : {};
   const effort = launch.effort ? { effort: launch.effort } : {};
   await harnessOp(turn.ops, turn.call_id, "start", {
@@ -474,7 +474,7 @@ async function startHarness(ctx: ToolContext, turn: HarnessTurn): Promise<void> 
     ...model,
     ...effort,
   });
-  await rememberTurn(ctx, turn);
+  await rememberTurn(services, run, turn);
 }
 
 /** Waits `ms`, or until the run is cancelled. */
@@ -496,8 +496,8 @@ async function pause(ms: number, cancel: CancelEvent | null): Promise<void> {
   }
 }
 
-function interruption(ctx: ToolContext, turn: HarnessTurn): Settled | null {
-  if (ctx.cancel_event?.aborted) {
+function interruption(run: ToolRun, turn: HarnessTurn): Settled | null {
+  if (run.cancel_event?.aborted) {
     return "cancelled";
   }
   return Date.now() >= turn.deadline ? "timed_out" : null;
@@ -512,56 +512,61 @@ function countFailedPoll(turn: HarnessTurn, error: unknown): Settled | null {
   return "unresponsive";
 }
 
-async function noteSession(ctx: ToolContext, turn: HarnessTurn, seen: unknown): Promise<void> {
+async function noteSession(services: ToolServices, run: ToolRun, turn: HarnessTurn, seen: unknown): Promise<void> {
   if (typeof seen !== "string" || !seen || seen === turn.session) {
     return;
   }
   turn.session = seen;
-  await rememberTurn(ctx, turn);
+  await rememberTurn(services, run, turn);
 }
 
-async function publishLines(ctx: ToolContext, turn: HarnessTurn, lines: unknown): Promise<void> {
+async function publishLines(services: ToolServices, run: ToolRun, turn: HarnessTurn, lines: unknown): Promise<void> {
   if (!Array.isArray(lines) || !lines.length) {
     return;
   }
-  await ctx.events?.publish(ctx.run_id, "tool.progress", {
-    run_id: ctx.run_id,
+  await services.events?.publish(run.run_id, "tool.progress", {
+    run_id: run.run_id,
     tool_call_id: turn.tool_call_id,
-    lines: shownProgressLines(lines.map(String), ctx.secrets),
+    lines: shownProgressLines(lines.map(String), run.secrets),
     session_id: turn.session,
   });
 }
 
-async function applyPoll(ctx: ToolContext, turn: HarnessTurn, meta: Record<string, unknown>): Promise<Settled | null> {
+async function applyPoll(
+  services: ToolServices,
+  run: ToolRun,
+  turn: HarnessTurn,
+  meta: Record<string, unknown>,
+): Promise<Settled | null> {
   if (meta.missing === true) {
     return "missing";
   }
   turn.offset = typeof meta.offset === "number" ? meta.offset : turn.offset;
-  await noteSession(ctx, turn, meta.session_id);
-  await publishLines(ctx, turn, meta.lines);
+  await noteSession(services, run, turn, meta.session_id);
+  await publishLines(services, run, turn, meta.lines);
   return meta.exited === true ? "exited" : null;
 }
 
-async function pollOnce(ctx: ToolContext, turn: HarnessTurn): Promise<Settled | null> {
+async function pollOnce(services: ToolServices, run: ToolRun, hooks: ToolHooks, turn: HarnessTurn): Promise<Settled | null> {
   let poll: CodeResult;
   try {
-    await ctx.before_command?.();
+    await hooks.before_command?.();
     poll = await harnessOp(turn.ops, turn.call_id, "poll", { harness: turn.harness, offset: turn.offset });
   } catch (error) {
     return countFailedPoll(turn, error);
   }
   turn.failures = 0;
-  return applyPoll(ctx, turn, poll.meta);
+  return applyPoll(services, run, turn, poll.meta);
 }
 
 /** Polls the harness, publishing its progress, until it exits, is lost, or must be stopped. */
-async function pollUntilSettled(ctx: ToolContext, turn: HarnessTurn): Promise<Settled> {
+async function pollUntilSettled(services: ToolServices, run: ToolRun, hooks: ToolHooks, turn: HarnessTurn): Promise<Settled> {
   for (;;) {
-    const settled = interruption(ctx, turn) ?? (await pollOnce(ctx, turn));
+    const settled = interruption(run, turn) ?? (await pollOnce(services, run, hooks, turn));
     if (settled !== null) {
       return settled;
     }
-    await pause(Math.min(harnessTiming.pollMs, Math.max(0, turn.deadline - Date.now())), ctx.cancel_event);
+    await pause(Math.min(harnessTiming.pollMs, Math.max(0, turn.deadline - Date.now())), run.cancel_event);
   }
 }
 
@@ -594,11 +599,11 @@ async function endTurn(turn: HarnessTurn, settled: Settled): Promise<TurnEnding>
 }
 
 /** Starts the harness and polls it to the end; from `start` on, any way out but a clean exit or lost state stops it. */
-async function runHarnessTurn(ctx: ToolContext, turn: HarnessTurn): Promise<TurnEnding> {
+async function runHarnessTurn(services: ToolServices, run: ToolRun, hooks: ToolHooks, turn: HarnessTurn): Promise<TurnEnding> {
   let settled: Settled;
   try {
-    await startHarness(ctx, turn);
-    settled = await pollUntilSettled(ctx, turn);
+    await startHarness(services, run, hooks, turn);
+    settled = await pollUntilSettled(services, run, hooks, turn);
   } catch (error) {
     await stopHarness(turn.ops, turn.call_id, turn.harness);
     throw error;
@@ -846,9 +851,9 @@ export const codeTask: Tool = {
     },
     ["brief"],
   ),
-  async handler(ctx, call) {
-    const turn = await openHarnessTurn(ctx, call);
-    const ending = ctx.cancel_event?.aborted ? NOT_STARTED : await runHarnessTurn(ctx, turn);
+  async handler(services, run, hooks, call) {
+    const turn = await openHarnessTurn(services, run, call);
+    const ending = run.cancel_event?.aborted ? NOT_STARTED : await runHarnessTurn(services, run, hooks, turn);
     return finishHarnessTurn(call, turn, ending);
   },
 };

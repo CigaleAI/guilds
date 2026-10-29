@@ -140,7 +140,7 @@ test("an operator and an agent can change a routine in place", { timeout: 60_000
       { schedule_id: scheduleId, cron: "30 7 * * *", instruction: "Write the morning digest." },
       "call_edit",
     );
-    const output = await REGISTRY.schedule_update!.handler(ctx, call);
+    const output = await REGISTRY.schedule_update!.handler(ctx, ctx, ctx, call);
     assert.match(String(output), new RegExp(`^updated ${scheduleId} `));
     const updated = await getSchedule(db, agentId, scheduleId);
     assert.equal(updated?.cron, "30 7 * * *");

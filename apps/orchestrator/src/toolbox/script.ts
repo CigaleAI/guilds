@@ -11,7 +11,8 @@ import {
 import { argString, functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
 import { commandOutput, executeCommand } from "./shell.js";
-import { callActor, type Tool, type ToolContext, type ToolInvocation } from "./types.js";
+import type { ToolServices } from "./services.js";
+import { callActor, type CommandResult, type Tool, type ToolHooks, type ToolInvocation, type ToolRun } from "./types.js";
 
 export const SCRIPT_TOOLS = [
   "script_create",
@@ -21,15 +22,15 @@ export const SCRIPT_TOOLS = [
   "script_delete",
 ] as const;
 
-function scripts(ctx: ToolContext) {
-  if (ctx.scripts === null) {
+function scripts(services: ToolServices) {
+  if (services.scripts === null) {
     throw new ScriptError("scripts are not available");
   }
-  return ctx.scripts;
+  return services.scripts;
 }
 
-function scriptActor(ctx: ToolContext, call: ToolInvocation) {
-  const actor = callActor(ctx.artifact_actor, call);
+function scriptActor(run: ToolRun, call: ToolInvocation) {
+  const actor = callActor(run.artifact_actor, call);
   if (actor === null) {
     throw new ScriptError("script provenance is not available");
   }
@@ -37,13 +38,14 @@ function scriptActor(ctx: ToolContext, call: ToolInvocation) {
 }
 
 async function publish(
-  ctx: ToolContext,
+  services: ToolServices,
+  run: ToolRun,
   action: string,
   name: string,
 ): Promise<void> {
-  if (ctx.group_chat !== null && ctx.guild_id && ctx.group_chat.publish) {
-    await ctx.group_chat.publish(ctx.guild_id, "agent.scripts.changed", {
-      agent_id: ctx.agent_id,
+  if (services.group_chat !== null && run.guild_id && services.group_chat.publish) {
+    await services.group_chat.publish(run.guild_id, "agent.scripts.changed", {
+      agent_id: run.agent_id,
       action,
       name,
     });
@@ -89,29 +91,29 @@ export const scriptCreate: Tool = {
     },
     ["name", "description", "source"],
   ),
-  async handler(ctx, call) {
+  async handler(services, run, _hooks, call) {
     const args = call.arguments;
-    const row = await scripts(ctx).create(
-      scriptActor(ctx, call),
-      ctx.agent_id,
+    const row = await scripts(services).create(
+      scriptActor(run, call),
+      run.agent_id,
       args.name,
       args.description,
       args.source,
       args.parameters ?? null,
-      { reservedNames: ctx.connection_tool_names, maxScripts: ctx.max_scripts },
+      { reservedNames: run.connection_tool_names, maxScripts: run.max_scripts },
     );
-    if (ctx.sandbox?.files) {
+    if (run.sandbox?.files) {
       await writeThroughLiveExtra(
-        ctx.sandbox.files,
-        ctx.agent_home,
+        run.sandbox.files,
+        run.agent_home,
         String(row.name),
         String(row.source),
-        ctx.run_scripts,
+        run.run_scripts,
       );
     }
-    await publish(ctx, "create", String(row.name));
+    await publish(services, run, "create", String(row.name));
     const wrote = `wrote ${row.name}\n${row.description}`;
-    if (ctx.run_scripts.some((item) => item.name === row.name)) {
+    if (run.run_scripts.some((item) => item.name === row.name)) {
       return `${wrote}\nThis run keeps running the version it started with; the new version runs from the next run.`;
     }
     return wrote;
@@ -129,8 +131,8 @@ export const scriptList: Tool = {
     {},
     [],
   ),
-  async handler(ctx) {
-    return scripts(ctx).formatList(ctx.agent_id);
+  async handler(services, run) {
+    return scripts(services).formatList(run.agent_id);
   },
 };
 
@@ -147,9 +149,9 @@ export const scriptRead: Tool = {
     },
     ["name"],
   ),
-  async handler(ctx, call) {
+  async handler(services, run, _hooks, call) {
     const args = call.arguments;
-    const row = await scripts(ctx).get(ctx.agent_id, args.name);
+    const row = await scripts(services).get(run.agent_id, args.name);
     return `${row.name}\n${row.description}\n\n${row.source}`;
   },
 };
@@ -177,10 +179,10 @@ export const scriptRun: Tool = {
     },
     ["name"],
   ),
-  async handler(ctx, call) {
+  async handler(services, run, hooks, call) {
     const args = call.arguments;
-    const name = await resolveRunnableName(ctx, args.name);
-    return runScript(ctx, call, name, scriptArguments(args.arguments));
+    const name = await resolveRunnableName(services, run, args.name);
+    return commandOutput(call, await runScript(run, hooks, name, scriptArguments(args.arguments)));
   },
 };
 
@@ -200,36 +202,30 @@ export const scriptDelete: Tool = {
     },
     ["name"],
   ),
-  async handler(ctx, call) {
+  async handler(services, run, _hooks, call) {
     const args = call.arguments;
-    const row = await scripts(ctx).delete(scriptActor(ctx, call), ctx.agent_id, args.name);
+    const row = await scripts(services).delete(scriptActor(run, call), run.agent_id, args.name);
     const name = String(row.name);
-    const pinned = ctx.run_scripts.findIndex((item) => item.name === name);
+    const pinned = run.run_scripts.findIndex((item) => item.name === name);
     if (pinned >= 0) {
-      ctx.run_scripts.splice(pinned, 1);
+      run.run_scripts.splice(pinned, 1);
     }
-    delete ctx.dynamic_tools[name];
-    ctx.offered_tools?.delete(name);
-    await ctx.db?.updateRunScripts(ctx.run_id, ctx.run_scripts, new Date());
-    if (ctx.sandbox?.files) {
-      await removeManagedScript(ctx.sandbox.files, ctx.agent_home, name);
+    delete run.dynamic_tools[name];
+    run.offered_tools?.delete(name);
+    await services.db?.updateRunScripts(run.run_id, run.run_scripts, new Date());
+    if (run.sandbox?.files) {
+      await removeManagedScript(run.sandbox.files, run.agent_home, name);
     }
-    await publish(ctx, "delete", name);
+    await publish(services, run, "delete", name);
     return `deleted ${name}`;
   },
 };
 
 /** Runs a managed script through the launcher, which writes `args` as JSON to its stdin. */
-async function runScript(
-  ctx: ToolContext,
-  call: ToolInvocation,
-  name: string,
-  args: Record<string, unknown>,
-): Promise<string> {
-  const execution = await executeCommand(ctx, ctx, launcherCommand(ctx.agent_home, name), {
+function runScript(run: ToolRun, hooks: ToolHooks, name: string, args: Record<string, unknown>): Promise<CommandResult> {
+  return executeCommand(run, hooks, launcherCommand(run.agent_home, name), {
     envs: { [SCRIPT_ARGS_ENV]: JSON.stringify(args) },
   });
-  return commandOutput(call, execution);
 }
 
 function scriptArguments(raw: unknown): Record<string, unknown> {
@@ -250,13 +246,13 @@ function scriptArguments(raw: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-async function resolveRunnableName(ctx: ToolContext, raw: unknown): Promise<string> {
+async function resolveRunnableName(services: ToolServices, run: ToolRun, raw: unknown): Promise<string> {
   const token = argString({ name: typeof raw === "string" ? raw : "" }, "name") || String(raw ?? "");
-  const snap = ctx.run_scripts.find((row) => row.name === token);
+  const snap = run.run_scripts.find((row) => row.name === token);
   if (snap) {
     return snap.name;
   }
-  const row = await scripts(ctx).get(ctx.agent_id, raw);
+  const row = await scripts(services).get(run.agent_id, raw);
   return String(row.name);
 }
 
@@ -281,8 +277,8 @@ export function dynamicScriptTools(snapshot: RunScriptSnapshot[]): Record<string
       output_filter: identityOutput,
       filter_name: "identity",
       schema: functionSchema(row.name, row.description, properties, required),
-      async handler(ctx, call) {
-        return runScript(ctx, call, row.name, call.arguments);
+      async handler(_services, run, hooks, call) {
+        return commandOutput(call, await runScript(run, hooks, row.name, call.arguments));
       },
     };
   }

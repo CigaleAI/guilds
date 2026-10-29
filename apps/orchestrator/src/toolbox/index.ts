@@ -130,7 +130,7 @@ export async function invokeTool(
         metadata: null,
       };
       try {
-        raw = await registered.handler(ctx, invocation);
+        raw = await registered.handler(ctx, ctx, ctx, invocation);
       } finally {
         exitCode = invocation.exit_code;
         reported = invocation.metadata;
