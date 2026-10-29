@@ -5,8 +5,10 @@ import { modelCatalog, type ModelCatalog } from "./catalog.js";
 import { listProviderModels } from "./client.js";
 import { LLMError } from "./completion.js";
 import {
+  coreModelCredentials,
   decryptProviderRow,
   keyHint,
+  modelProviderStore,
   type ModelCredentialsProvider,
 } from "./credentials.js";
 import { defaultEntry, entryPayload, type CatalogEntry } from "./entries.js";
@@ -44,7 +46,7 @@ export class ModelsError extends Error {
 }
 
 /** The db/ functions an organisation's providers and default model are read and written through, on `db`. */
-export function modelsDatabase(db: Queryable) {
+function modelsDatabase(db: Queryable) {
   return {
     listOrgModelProviders: bindQuery(db, listOrgModelProviders),
     getOrgModelProvider: bindQuery(db, getOrgModelProvider),
@@ -60,6 +62,14 @@ export type ModelsDatabase = ReturnType<typeof modelsDatabase>;
 export type ModelsServiceDeps = {
   db: ModelsDatabase;
   credentials: ModelCredentialsProvider;
+  catalog?: ModelCatalog;
+  fetch?: typeof fetch;
+  masterKey?: Buffer | undefined;
+};
+
+/** What `modelsService` runs with beside `db`; credentials are core's over its rows when absent. */
+export type ModelsServices = {
+  credentials?: ModelCredentialsProvider | undefined;
   catalog?: ModelCatalog;
   fetch?: typeof fetch;
   masterKey?: Buffer | undefined;
@@ -351,6 +361,13 @@ export class ModelsService {
     }
     return true;
   }
+}
+
+/** The organisation's model setup, read and written on `db` and run with `services`. */
+export function modelsService(db: Queryable, services: ModelsServices = {}): ModelsService {
+  const credentials =
+    services.credentials ?? coreModelCredentials(modelProviderStore(db), services.masterKey);
+  return new ModelsService({ ...services, db: modelsDatabase(db), credentials });
 }
 
 export { catalogModelId };

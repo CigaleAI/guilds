@@ -1,5 +1,4 @@
-import { coreModelCredentials, modelProviderStore } from "../llm/credentials.js";
-import { modelsDatabase, ModelsService } from "../llm/models.js";
+import { modelsService, type ModelsService } from "../llm/models.js";
 import { isSearchable } from "../connectors/builder.js";
 import {
   connectorFacts,
@@ -115,7 +114,7 @@ export class CapabilityService {
     private policy: OrgPolicy = OPEN_POLICY,
     models?: ModelsService,
   ) {
-    this.models = models ?? new ModelsService({ db: modelsDatabase(db), credentials: coreModelCredentials(modelProviderStore(db)) });
+    this.models = models ?? modelsService(db);
   }
 
   /** The enabled servers the organisation may use, with its logins on each. */

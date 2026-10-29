@@ -59,8 +59,14 @@ export {
   resolveModelCredentials,
 } from "./credentials.js";
 export type { ModelCredentials, ModelCredentialsProvider, ModelUsage } from "./credentials.js";
-export { ModelsError, ModelsService, validateChosenModels } from "./models.js";
-export type { ModelsDatabase, ModelsServiceDeps, OrgModelsPayload, ProviderItem, ProviderSource } from "./models.js";
+export { ModelsError, modelsService, validateChosenModels } from "./models.js";
+export type {
+  ModelsService,
+  ModelsServices,
+  OrgModelsPayload,
+  ProviderItem,
+  ProviderSource,
+} from "./models.js";
 export {
   LLMError,
   MODEL_USER_AGENT,

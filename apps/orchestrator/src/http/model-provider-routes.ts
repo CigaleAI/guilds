@@ -1,6 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import { modelsDatabase, ModelsError, ModelsService } from "../llm/models.js";
-import { coreModelCredentials, modelProviderStore } from "../llm/credentials.js";
+import { ModelsError, modelsService, type ModelsService } from "../llm/models.js";
 import { isProvider } from "../llm/providers.js";
 import { requireMembership, requireOrgManager } from "../organisations/service.js";
 import type { AppDeps } from "./deps.js";
@@ -34,11 +33,7 @@ function providerParam(request: FastifyRequest): string {
 export function modelsOf(deps: AppDeps): ModelsService {
   return (
     deps.models ??
-    new ModelsService({
-      db: modelsDatabase(deps.db),
-      credentials: deps.modelCredentials ?? coreModelCredentials(modelProviderStore(deps.db), deps.masterKey),
-      masterKey: deps.masterKey,
-    })
+    modelsService(deps.db, { credentials: deps.modelCredentials, masterKey: deps.masterKey })
   );
 }
 

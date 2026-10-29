@@ -2,8 +2,7 @@ import type { ArtifactStore } from "../artifacts/store.js";
 import { listServers } from "../connectors/servers.js";
 import { countOrgAgents, countOrgBrowserAgents, countOrgCodingAgents } from "../db/orgs.js";
 import type { Queryable } from "../db/pg.js";
-import { coreModelCredentials, modelProviderStore } from "../llm/credentials.js";
-import { modelsDatabase, ModelsService } from "../llm/models.js";
+import { modelsService, type ModelsService } from "../llm/models.js";
 import type { NotesStore } from "../notes/store.js";
 import { OPEN_POLICY, remaining, type OrgPolicy } from "../policy/index.js";
 import { registryClient, type RegistryClient } from "../registry/client.js";
@@ -51,9 +50,7 @@ export function recipeApply(deps: ApplyDeps): RecipeApply {
     schedules: deps.schedules,
     policy: deps.policy ?? OPEN_POLICY,
     registry: deps.registry === undefined ? registryClient() : deps.registry,
-    models:
-      deps.models ??
-      new ModelsService({ db: modelsDatabase(deps.db), credentials: coreModelCredentials(modelProviderStore(deps.db)) }),
+    models: deps.models ?? modelsService(deps.db),
   };
 }
 
