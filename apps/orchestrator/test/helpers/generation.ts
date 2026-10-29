@@ -31,6 +31,7 @@ import { Scripts, type ScriptDatabase } from "../../src/scripts/catalog.js";
 import type { NewDirectRun, NewGroupRun, NewMessage, NewScheduleRun } from "../../src/db/runs.js";
 import type { ScheduleRow, PlannedWake } from "../../src/db/schedules.js";
 import { Schedules, type ScheduleDatabase } from "../../src/schedules/service.js";
+import { Issues, type IssuesDatabase } from "../../src/issues/index.js";
 import type { AgentConfig, CompletionMetadata, RunConfigSnapshot, SecretRef, ToolCall } from "../../src/db/schema/index.js";
 import { validateAgentConfig } from "../../src/agents/config.js";
 
@@ -1005,6 +1006,7 @@ export function makeLoop(
   return new GenerationLoop(
     {
       db: db as GenerationDatabase,
+      issues: new Issues(db as IssuesDatabase),
       schedules: new Schedules(db as ScheduleDatabase),
       scripts: new Scripts(db as ScriptDatabase),
       notes: notes as NotesStore,

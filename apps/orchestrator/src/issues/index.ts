@@ -36,7 +36,7 @@ export class IssueError extends Error {
 }
 
 /** The db/ functions a guild's issues are read and written through, on `db`. */
-export function issuesDatabase(db: Queryable) {
+function issuesDatabase(db: Queryable) {
   return {
     getGuild: bindQuery(db, getGuild),
     insertIssue: bindQuery(db, insertIssue),
@@ -232,4 +232,9 @@ export class Issues {
     const resolver = optionalText(resolvedBy ?? "", "resolved_by", 80) || "user";
     return this.db.resolveOpenIssues(guildId, now, resolver, now);
   }
+}
+
+/** The issues of guilds, read and written on `db`. */
+export function guildIssues(db: Queryable): Issues {
+  return new Issues(issuesDatabase(db));
 }
