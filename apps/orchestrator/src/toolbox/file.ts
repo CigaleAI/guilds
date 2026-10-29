@@ -5,40 +5,41 @@ import { ArtifactFiles, mimeForName } from "../artifacts/files.js";
 import { AgentFileError, agentDisplayPath, readAgentFile, writeAgentFile } from "../lib/agent-file.js";
 import { argInteger, argString, functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
-import { callActor, type Tool, type ToolContext, type ToolInvocation } from "./types.js";
+import type { ToolServices } from "./services.js";
+import { callActor, type Tool, type ToolInvocation, type ToolRun } from "./types.js";
 
 export const FILE_TOOLS = ["file_find", "file_fetch", "file_put", "file_delete"] as const;
 
 /** Where `file_fetch` lands a file when the agent names no destination: `shared/<name>` in its home. */
 export const FETCH_FOLDER = "shared";
 
-function files(ctx: ToolContext): ArtifactFiles {
-  if (!ctx.files) {
+function files(services: ToolServices): ArtifactFiles {
+  if (!services.files) {
     throw new ArtifactError("file store is not available", 500);
   }
-  return ctx.files;
+  return services.files;
 }
 
-function actor(ctx: ToolContext, call: ToolInvocation): ArtifactActor {
-  const made = callActor(ctx.artifact_actor, call);
+function actor(run: ToolRun, call: ToolInvocation): ArtifactActor {
+  const made = callActor(run.artifact_actor, call);
   if (!made) {
     throw new ArtifactError("file store is not available", 500);
   }
   return made;
 }
 
-function workspace(ctx: ToolContext): string {
-  if (!ctx.workspace_dir) {
+function workspace(run: ToolRun): string {
+  if (!run.workspace_dir) {
     throw new ArtifactError("the agent's home is not available", 500);
   }
-  return ctx.workspace_dir;
+  return run.workspace_dir;
 }
 
-async function publish(ctx: ToolContext, displayPath: string): Promise<void> {
-  if (ctx.group_chat !== null && ctx.guild_id && ctx.group_chat.publish) {
-    await ctx.group_chat.publish(ctx.guild_id, "guild.artifacts.changed", {
+async function publish(services: ToolServices, run: ToolRun, displayPath: string): Promise<void> {
+  if (services.group_chat !== null && run.guild_id && services.group_chat.publish) {
+    await services.group_chat.publish(run.guild_id, "guild.artifacts.changed", {
       path: displayPath,
-      agent_id: ctx.agent_id,
+      agent_id: run.agent_id,
     });
   }
 }
@@ -82,10 +83,10 @@ export const fileFind: Tool = {
     },
     [],
   ),
-  async handler(ctx, call) {
+  async handler(services, run, _hooks, call) {
     const args = call.arguments;
     const level = optionalLevel(args);
-    const found = await files(ctx).findFiles(actor(ctx, call), {
+    const found = await files(services).findFiles(actor(run, call), {
       query: argString(args, "query"),
       ...(level ? { level } : {}),
       limit: argInteger(args, "limit", 20),
@@ -111,13 +112,13 @@ export const fileFetch: Tool = {
     },
     ["path"],
   ),
-  async handler(ctx, call) {
+  async handler(services, run, _hooks, call) {
     const args = call.arguments;
-    const store = files(ctx);
-    const row = await store.loadFile(actor(ctx, call), argString(args, "path"));
+    const store = files(services);
+    const row = await store.loadFile(actor(run, call), argString(args, "path"));
     const bytes = await store.readBytes(row);
     const destination = argString(args, "home_path").trim() || `${FETCH_FOLDER}/${row.key}`;
-    const workspaceDir = workspace(ctx);
+    const workspaceDir = workspace(run);
     const resolved = await writeAgentFile(workspaceDir, destination, bytes).catch(homeFileError);
     return JSON.stringify({ home_path: agentDisplayPath(workspaceDir, resolved), ...store.view(row) });
   },
@@ -144,13 +145,13 @@ export const filePut: Tool = {
     },
     ["home_path", "level", "description"],
   ),
-  async handler(ctx, call) {
+  async handler(services, run, _hooks, call) {
     const args = call.arguments;
     const homePath = argString(args, "home_path");
-    const read = await readAgentFile(workspace(ctx), homePath, { maxBytes: FILE_MAX_BYTES }).catch(homeFileError);
+    const read = await readAgentFile(workspace(run), homePath, { maxBytes: FILE_MAX_BYTES }).catch(homeFileError);
     const name = argString(args, "name").trim() || path.basename(read.path);
-    const store = files(ctx);
-    const row = await store.putFile(actor(ctx, call), {
+    const store = files(services);
+    const row = await store.putFile(actor(run, call), {
       level: levelArg(args),
       name,
       description: argString(args, "description"),
@@ -158,7 +159,7 @@ export const filePut: Tool = {
       bytes: read.bytes,
     });
     const display = store.view(row).display_path;
-    await publish(ctx, display);
+    await publish(services, run, display);
     return display;
   },
 };
@@ -169,13 +170,13 @@ export const fileDelete: Tool = {
   output_filter: identityOutput,
   filter_name: "identity",
   schema: functionSchema("file_delete", "Delete a shared file by display path.", { path: { type: "string" } }, ["path"]),
-  async handler(ctx, call) {
+  async handler(services, run, _hooks, call) {
     const args = call.arguments;
-    const store = files(ctx);
+    const store = files(services);
     const displayPath = argString(args, "path");
-    const row = await store.loadFile(actor(ctx, call), displayPath);
-    await store.deleteFile(actor(ctx, call), row);
-    await publish(ctx, displayPath);
+    const row = await store.loadFile(actor(run, call), displayPath);
+    await store.deleteFile(actor(run, call), row);
+    await publish(services, run, displayPath);
     return displayPath;
   },
 };

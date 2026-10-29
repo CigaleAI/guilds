@@ -14,8 +14,10 @@ import {
   remainingAfter,
   stampToolResult,
   toolResultMaxBytes,
-  type ToolContext,
+  type ToolHooks,
+  type ToolRun,
 } from "../toolbox/index.js";
+import type { ToolServices } from "../toolbox/services.js";
 import type { ActiveGenerations } from "./active-generations.js";
 import type { CodingRuns } from "./coding.js";
 import { GenerationCancelled } from "./errors.js";
@@ -170,11 +172,13 @@ export function toolCallsDatabase(db: Queryable) {
 export type ToolCallsDatabase = ReturnType<typeof toolCallsDatabase>;
 
 /**
- * The tools a generation calls: their context, the schemas the model is offered, the values
- * their results are redacted with, the connection tools by name, and the run's tool budget.
+ * The tools a generation calls: their run record and hooks, the schemas the model is offered,
+ * the values their results are redacted with, the connection tools by name, and the run's tool
+ * budget.
  */
 export type GenerationTools = {
-  ctx: ToolContext;
+  run: ToolRun;
+  hooks: ToolHooks;
   schemas: unknown[];
   secrets: Record<string, string>;
   connections: Record<string, [string, string]>;
@@ -189,6 +193,7 @@ export type ToolCallsServices = {
   generations: ActiveGenerations;
   machines: AgentMachines;
   coding: CodingRuns;
+  tools: ToolServices;
 };
 
 /**
@@ -203,7 +208,7 @@ export class ToolCalls {
     const { db, events, generations } = this.services;
     const history = await db.listMessages(turn.runId);
     let executed = executedToolCalls(history);
-    const owner = await db.getAgent(tools.ctx.agent_id);
+    const owner = await db.getAgent(tools.run.agent_id);
     const reads = history
       .filter((row) => row.payload.role === "tool")
       .map((row) => ({ seq: row.seq, metadata: row.metadata }));
@@ -254,20 +259,24 @@ export class ToolCalls {
     owner: AgentRow | null,
     reads: ReadRow[],
   ): Promise<ToolRecord> {
-    const { ctx, connections, secrets } = tools;
+    const { run, hooks, connections, secrets } = tools;
     const name = call.function.name;
-    const offered = ctx.offered_tools === null || ctx.offered_tools.has(name) || name in ctx.dynamic_tools;
+    const offered = run.offered_tools === null || run.offered_tools.has(name) || name in run.dynamic_tools;
     const target = Object.hasOwn(connections, name) ? connections[name] : undefined;
     if (offered && target !== undefined) {
       return this.callConnectionTool(call, target, owner, secrets);
     }
-    const maxBytes = toolResultMaxBytes();
-    const [payload, metadata] = await invokeTool(ctx, call, secrets, maxBytes);
+    const [payload, metadata] = await invokeTool(this.services.tools, run, hooks, call);
     const step = repeatedReadStep(reads, metadata);
     if (step === null) {
       return [payload, metadata];
     }
-    const [content, pipeline] = processOutput(repeatedReadText(metadata, step), identityOutput, secrets, maxBytes);
+    const [content, pipeline] = processOutput(
+      repeatedReadText(metadata, step),
+      identityOutput,
+      secrets,
+      toolResultMaxBytes(),
+    );
     return [
       { ...payload, content },
       { ...metadata, ...pipeline, repeat_of: step },

@@ -41,6 +41,7 @@ import { RunPreparation, runPreparationDatabase, type ConnectorPool } from "./pr
 import { RunSecrets, runSecretsDatabase } from "./run-secrets.js";
 import { Runs, runsDatabase } from "./runs.js";
 import { ToolCalls, toolCallsDatabase } from "./tool-calls.js";
+import type { ToolServices } from "../toolbox/services.js";
 import { WorkspaceLimits, workspaceLimitsDatabase } from "./workspace.js";
 import type { GenerationArtifacts } from "./prepare.js";
 
@@ -209,7 +210,18 @@ export class GenerationLoop implements GroupRunner {
       attachments: this.attachments,
     });
     this.secrets = new RunSecrets(db, this.machines);
-    this.coding = new CodingRuns({ db, generations: this.generations, machines: this.machines, events: this.events });
+    const tools: ToolServices = {
+      notes,
+      artifacts: this.artifacts,
+      files: this.files,
+      group_chat: this.groupChat,
+      issues: this.issues,
+      schedules: this.schedules,
+      scripts: this.scripts,
+      db,
+      events: this.events,
+    };
+    this.coding = new CodingRuns({ db, generations: this.generations, machines: this.machines, events: this.events, tools });
     this.workspace = new WorkspaceLimits(db, this.events);
     this.toolCalls = new ToolCalls({
       db,
@@ -218,6 +230,7 @@ export class GenerationLoop implements GroupRunner {
       generations: this.generations,
       machines: this.machines,
       coding: this.coding,
+      tools,
     });
     this.runs = new Runs(
       {
@@ -232,12 +245,6 @@ export class GenerationLoop implements GroupRunner {
     this.chains = new RunChains({ db, events: this.events, completion: this.completion, runs: this.runs });
     this.generator = new RunGenerator({
       db,
-      notes,
-      artifacts: this.artifacts,
-      files: this.files,
-      groupChat: this.groupChat,
-      issues: this.issues,
-      schedules: this.schedules,
       scripts: this.scripts,
       events: this.events,
       generations: this.generations,

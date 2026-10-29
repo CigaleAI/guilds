@@ -29,9 +29,10 @@ import {
 import { AsyncEvent, sleep } from "../../src/lib/event.js";
 import { AsyncLock } from "../../src/lib/lock.js";
 import { orchestratorRoot } from "../../src/lib/paths.js";
-import { createToolContext, invokeTool } from "../../src/toolbox/index.js";
+import { invokeTool } from "../../src/toolbox/index.js";
 import type { GroupRouter } from "../../src/groupchat/router.js";
 import { createGroupRouter, createTypeSafeClient } from "../../src/typesafe/index.js";
+import { toolFixture } from "../helpers/toolbox.js";
 
 const OPERATOR: MessageAuthor = { id: "user_1", name: "user" };
 
@@ -716,7 +717,7 @@ describe("groupchat", { concurrency: 1 }, () => {
   test("group_post_tool_writes_public_message", async () => {
     const { chat } = seed();
     await chat.postUser("guild_1", "start", OPERATOR);
-    const ctx = createToolContext({
+    const ctx = toolFixture({
       run_id: "r_1",
       agent_id: "a_1",
       guild_id: "guild_1",
@@ -726,14 +727,12 @@ describe("groupchat", { concurrency: 1 }, () => {
       agent_name: "researcher",
     });
     const [payload, metadata] = await invokeTool(
-      ctx,
+      ctx.services, ctx.run, ctx.hooks,
       {
         id: "call_1",
         type: "function",
         function: { name: "group_post", arguments: '{"content":"shared finding"}' },
       },
-      {},
-      1024,
     );
     assert.equal(payload.content, "posted id=2 seq=2");
     assert.equal(metadata.error, null);
@@ -745,7 +744,7 @@ describe("groupchat", { concurrency: 1 }, () => {
     const { db, chat } = seed(1);
     await chat.postUser("guild_1", "start", OPERATOR);
     await chat.postFromRun("r_1", "a_1", "guild_1", "researcher", "one");
-    const ctx = createToolContext({
+    const ctx = toolFixture({
       run_id: "r_2",
       agent_id: "a_2",
       guild_id: "guild_1",
@@ -755,14 +754,12 @@ describe("groupchat", { concurrency: 1 }, () => {
       agent_name: "writer",
     });
     const [payload] = await invokeTool(
-      ctx,
+      ctx.services, ctx.run, ctx.hooks,
       {
         id: "call_2",
         type: "function",
         function: { name: "group_post", arguments: '{"content":"too many"}' },
       },
-      {},
-      1024,
     );
     assert.equal(payload.content, limitError(1));
     assert.deepEqual(

@@ -2,7 +2,8 @@ import { ArtifactError } from "../artifacts/errors.js";
 import { isArtifactLevel, type ArtifactActor } from "../artifacts/types.js";
 import { argInteger, argRecord, argString, functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
-import { callActor, type Tool, type ToolContext, type ToolInvocation } from "./types.js";
+import type { ToolServices } from "./services.js";
+import { callActor, type Tool, type ToolInvocation, type ToolRun } from "./types.js";
 import {
   addRecord,
   listRecordsWithHint,
@@ -42,26 +43,29 @@ export function toolArtifacts(store: ArtifactStore) {
 
 export type ToolArtifacts = ReturnType<typeof toolArtifacts>;
 
-function store(ctx: ToolContext): ToolArtifacts {
-  if (!ctx.artifacts) {
+function store(services: ToolServices): ToolArtifacts {
+  if (!services.artifacts) {
     throw new ArtifactError("artifact store is not available", 500);
   }
-  return ctx.artifacts;
+  return services.artifacts;
 }
 
-function actor(ctx: ToolContext, call: ToolInvocation): ArtifactActor {
-  const made = callActor(ctx.artifact_actor, call);
-  if (!made) {
+function requiredActor(actor: ArtifactActor | null): ArtifactActor {
+  if (!actor) {
     throw new ArtifactError("artifact store is not available", 500);
   }
-  return made;
+  return actor;
 }
 
-async function publish(ctx: ToolContext, path: string): Promise<void> {
-  if (ctx.group_chat !== null && ctx.guild_id && ctx.group_chat.publish) {
-    await ctx.group_chat.publish(ctx.guild_id, "guild.artifacts.changed", {
+function actor(run: ToolRun, call: ToolInvocation): ArtifactActor {
+  return requiredActor(callActor(run.artifact_actor, call));
+}
+
+async function publish(services: ToolServices, run: ToolRun, path: string): Promise<void> {
+  if (services.group_chat !== null && run.guild_id && services.group_chat.publish) {
+    await services.group_chat.publish(run.guild_id, "guild.artifacts.changed", {
       path,
-      agent_id: ctx.agent_id,
+      agent_id: run.agent_id,
     });
   }
 }
@@ -115,19 +119,19 @@ function viewedRow(view: ArtifactView): Extract<ArtifactView, { kind: "row" }> {
 }
 
 /**
- * A note's or a collection record's content as text, read with the agent's access, the
+ * A note's or a collection record's content as text, read with `reader`'s access, the
  * way `note_get` and the record tools read it. A record is its JSON view.
  */
 export async function readArtifactText(
-  ctx: ToolContext,
-  call: ToolInvocation,
+  services: ToolServices,
+  reader: ArtifactActor | null,
   path: string,
 ): Promise<{ path: string; text: string }> {
-  const parsed = parseActorPath(actor(ctx, call), path);
+  const parsed = parseActorPath(requiredActor(reader), path);
   if (parsed.kind === "collection") {
     throw new ArtifactError(`${path} is a collection; name one of its records`, 422);
   }
-  const view = viewedRow(await store(ctx).artifactAt(actor(ctx, call), path));
+  const view = viewedRow(await store(services).artifactAt(requiredActor(reader), path));
   if (view.deleted) {
     throw new ArtifactError("artifact not found", 404);
   }
@@ -154,9 +158,9 @@ export const noteFind: Tool = {
     },
     [],
   ),
-  async handler(ctx, call) {
+  async handler(services, run, _hooks, call) {
     const args = call.arguments;
-    const result = await store(ctx).findNotes(actor(ctx, call), findArgs(args));
+    const result = await store(services).findNotes(actor(run, call), findArgs(args));
     return JSON.stringify({ notes: result.notes });
   },
 };
@@ -172,14 +176,14 @@ export const noteGet: Tool = {
     { path: { type: "string" } },
     ["path"],
   ),
-  async handler(ctx, call) {
+  async handler(services, run, _hooks, call) {
     const args = call.arguments;
     const path = argString(args, "path");
-    const parsed = parseActorPath(actor(ctx, call), path);
+    const parsed = parseActorPath(actor(run, call), path);
     if (parsed.kind === "collection" || parsed.kind === "record") {
       throw new ArtifactError(RECORD_TOOLS_HINT, 422);
     }
-    const view = viewedRow(await store(ctx).artifactAt(actor(ctx, call), path));
+    const view = viewedRow(await store(services).artifactAt(actor(run, call), path));
     assertReadableNote(view.row);
     return view.deleted ? `${path}\n\ntombstone: this artifact was deleted` : `${view.href}\n\n${view.text}`;
   },
@@ -193,18 +197,18 @@ const NOTE_WRITE_DESCRIPTION =
   "Do not pass org, guild, or agent ids.";
 
 /** The note `note_write` names: an existing note by display path, or a level and key. */
-async function writeNoteArgs(ctx: ToolContext, call: ToolInvocation) {
+async function writeNoteArgs(services: ToolServices, run: ToolRun, call: ToolInvocation) {
   const args = call.arguments;
   const content = argString(args, "content");
   const path = argString(args, "path").trim();
   if (path) {
-    return store(ctx).writeNoteAt(actor(ctx, call), path, { content });
+    return store(services).writeNoteAt(actor(run, call), path, { content });
   }
   const levelRaw = argString(args, "level");
   if (!isArtifactLevel(levelRaw)) {
     throw new ArtifactError("level must be agent, guild, or org", 422);
   }
-  return store(ctx).writeNote(actor(ctx, call), { level: levelRaw, key: argString(args, "key"), content });
+  return store(services).writeNote(actor(run, call), { level: levelRaw, key: argString(args, "key"), content });
 }
 
 export const noteWrite: Tool = {
@@ -223,9 +227,9 @@ export const noteWrite: Tool = {
     },
     ["content"],
   ),
-  async handler(ctx, call) {
-    const { href } = await writeNoteArgs(ctx, call);
-    await publish(ctx, href);
+  async handler(services, run, _hooks, call) {
+    const { href } = await writeNoteArgs(services, run, call);
+    await publish(services, run, href);
     return href;
   },
 };
@@ -243,23 +247,23 @@ export const noteDelete: Tool = {
     { path: { type: "string" } },
     ["path"],
   ),
-  async handler(ctx, call) {
+  async handler(services, run, _hooks, call) {
     const args = call.arguments;
     const path = argString(args, "path");
-    const parsed = parseActorPath(actor(ctx, call), path);
+    const parsed = parseActorPath(actor(run, call), path);
     if (parsed.kind === "collection") {
       throw new ArtifactError("collections are managed by the operator", 422);
     }
     if (parsed.kind === "record") {
       throw new ArtifactError("use record_remove for collection records", 422);
     }
-    const artifacts = store(ctx);
-    const view = await artifacts.artifactAt(actor(ctx, call), path);
+    const artifacts = store(services);
+    const view = await artifacts.artifactAt(actor(run, call), path);
     if (view.kind === "row") {
       assertDeletableNote(view.row);
     }
-    await artifacts.deleteByDisplayPath(actor(ctx, call), path);
-    await publish(ctx, path);
+    await artifacts.deleteByDisplayPath(actor(run, call), path);
+    await publish(services, run, path);
     return path;
   },
 };
@@ -307,9 +311,9 @@ export const recordSearch: Tool = {
     },
     ["query"],
   ),
-  async handler(ctx, call) {
+  async handler(services, run, _hooks, call) {
     const args = call.arguments;
-    const result = await store(ctx).searchRecords(actor(ctx, call), {
+    const result = await store(services).searchRecords(actor(run, call), {
       ...(argString(args, "collection").trim() ? { collection: argString(args, "collection").trim() } : {}),
       query: argString(args, "query"),
       where: optional(argRecord(args, "where")),
@@ -349,9 +353,9 @@ export const recordList: Tool = {
     },
     ["collection"],
   ),
-  async handler(ctx, call) {
+  async handler(services, run, _hooks, call) {
     const args = call.arguments;
-    const result = await store(ctx).listRecordsWithHint(actor(ctx, call), {
+    const result = await store(services).listRecordsWithHint(actor(run, call), {
       collection: argString(args, "collection").trim(),
       where: optional(argRecord(args, "where")),
       since: argString(args, "since").trim() || undefined,
@@ -386,13 +390,13 @@ export const recordAdd: Tool = {
     },
     ["collection", "body"],
   ),
-  async handler(ctx, call) {
+  async handler(services, run, _hooks, call) {
     const args = call.arguments;
-    const result = await store(ctx).addRecord(actor(ctx, call), {
+    const result = await store(services).addRecord(actor(run, call), {
       collection: argString(args, "collection").trim(),
       body: bodyArg(args),
     });
-    await publish(ctx, `org/${actor(ctx, call).orgId}/collections/${String(result.record.collection)}`);
+    await publish(services, run, `org/${actor(run, call).orgId}/collections/${String(result.record.collection)}`);
     return JSON.stringify({
       record: result.record,
       ...(result.merged !== null ? { note: `merged into existing record ${result.merged}` } : {}),
@@ -419,14 +423,14 @@ export const recordUpdate: Tool = {
     },
     ["collection", "id", "body"],
   ),
-  async handler(ctx, call) {
+  async handler(services, run, _hooks, call) {
     const args = call.arguments;
-    const result = await store(ctx).updateRecord(actor(ctx, call), {
+    const result = await store(services).updateRecord(actor(run, call), {
       collection: argString(args, "collection").trim(),
       id: args.id,
       body: bodyArg(args),
     });
-    await publish(ctx, `org/${actor(ctx, call).orgId}/collections/${String(result.record.collection)}/${String(result.record.id)}`);
+    await publish(services, run, `org/${actor(run, call).orgId}/collections/${String(result.record.collection)}/${String(result.record.id)}`);
     return JSON.stringify({
       record: result.record,
       ...(result.warnings.length ? { warnings: result.warnings } : {}),
@@ -448,11 +452,11 @@ export const recordRemove: Tool = {
     },
     ["collection", "id"],
   ),
-  async handler(ctx, call) {
+  async handler(services, run, _hooks, call) {
     const args = call.arguments;
     const collection = argString(args, "collection").trim();
-    const removed = await store(ctx).removeRecord(actor(ctx, call), { collection, id: args.id });
-    await publish(ctx, `org/${actor(ctx, call).orgId}/collections/${collection}/${removed}`);
+    const removed = await store(services).removeRecord(actor(run, call), { collection, id: args.id });
+    await publish(services, run, `org/${actor(run, call).orgId}/collections/${collection}/${removed}`);
     return JSON.stringify({ removed });
   },
 };

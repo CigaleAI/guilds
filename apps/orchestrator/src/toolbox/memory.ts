@@ -2,45 +2,47 @@ import { ArtifactError } from "../artifacts/errors.js";
 import { validateMemory } from "../memory/index.js";
 import { argString, functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
-import { callActor, type Tool, type ToolContext, type ToolInvocation } from "./types.js";
+import type { ToolServices } from "./services.js";
+import { callActor, type Tool, type ToolInvocation, type ToolRun } from "./types.js";
 
-async function publishMemoryFileChanged(ctx: ToolContext): Promise<void> {
-  if (ctx.group_chat === null || !ctx.guild_id || !ctx.group_chat.publish) {
+async function publishMemoryFileChanged(services: ToolServices, run: ToolRun): Promise<void> {
+  if (services.group_chat === null || !run.guild_id || !services.group_chat.publish) {
     return;
   }
-  await ctx.group_chat.publish(ctx.guild_id, "guild.artifacts.changed", {
+  await services.group_chat.publish(run.guild_id, "guild.artifacts.changed", {
     scope: "agent",
     path: "memory.md",
-    agent_id: ctx.agent_id,
+    agent_id: run.agent_id,
   });
 }
 
+/** What a Memory write in `run` names as what replaced the previous Memory. */
+function replacedBy(run: ToolRun): string {
+  return run.memory_replaced_by || `run ${run.run_id} (${run.run_kind})`;
+}
+
 async function writeMemoryThroughArtifacts(
-  ctx: ToolContext,
+  services: ToolServices,
+  run: ToolRun,
   call: ToolInvocation,
   content: string,
-  detail: string,
 ): Promise<string | null> {
-  const actor = callActor(ctx.artifact_actor, call);
-  if (!ctx.artifacts || !actor) {
+  const actor = callActor(run.artifact_actor, call);
+  if (!services.artifacts || !actor) {
     return null;
   }
-  const { href } = await ctx.artifacts.writeMemory(actor, ctx.agent_id, { content, detail });
-  await publishMemoryFileChanged(ctx);
+  const { href } = await services.artifacts.writeMemory(actor, run.agent_id, { content, detail: replacedBy(run) });
+  await publishMemoryFileChanged(services, run);
   return href;
 }
 
-async function writeMemoryThroughNotes(
-  ctx: ToolContext,
-  content: string,
-  detail: string,
-): Promise<string> {
-  if (!ctx.notes) {
+async function writeMemoryThroughNotes(services: ToolServices, run: ToolRun, content: string): Promise<string> {
+  if (!services.notes) {
     throw new ArtifactError("artifact store is not available", 500);
   }
-  return ctx.notes.writeMemory(ctx.org_slug, ctx.guild_name, ctx.agent_name, content, {
-    source: ctx.run_id,
-    replacedBy: detail,
+  return services.notes.writeMemory(run.org_slug, run.guild_name, run.agent_name, content, {
+    source: run.run_id,
+    replacedBy: replacedBy(run),
   });
 }
 
@@ -57,13 +59,12 @@ export const memoryWrite: Tool = {
     },
     ["content"],
   ),
-  async handler(ctx: ToolContext, call) {
+  async handler(services, run, _hooks, call) {
     const content = argString(call.arguments, "content");
     validateMemory(content);
-    const detail = ctx.memory_replaced_by || `run ${ctx.run_id} (${ctx.run_kind})`;
     return (
-      (await writeMemoryThroughArtifacts(ctx, call, content, detail)) ??
-      (await writeMemoryThroughNotes(ctx, content, detail))
+      (await writeMemoryThroughArtifacts(services, run, call, content)) ??
+      (await writeMemoryThroughNotes(services, run, content))
     );
   },
 };

@@ -159,49 +159,33 @@ export type ToolHooks = {
   secret_store: AgentSecretStore | null;
 };
 
-/** What a tool reaches: the toolbox's services, its run, and the run's hooks. */
-export type ToolContext = ToolServices & ToolRun & ToolHooks;
-
-export function createToolContext(
-  partial: Pick<ToolContext, "run_id" | "agent_id" | "guild_id" | "sandbox" | "secrets"> &
-    Partial<ToolContext>,
-): ToolContext {
+/** The run record of `partial`, every field it leaves out at its default. */
+export function createToolRun(
+  partial: Pick<ToolRun, "run_id" | "agent_id" | "guild_id" | "sandbox" | "secrets"> & Partial<ToolRun>,
+): ToolRun {
   return {
-    notes: null,
-    artifacts: null,
-    artifact_actor: null,
-    files: null,
-    workspace_dir: null,
     guild_name: "",
     agent_name: "",
     org_slug: "",
-    cancel_event: null,
-    track_command: null,
-    group_chat: null,
-    issues: null,
-    schedules: null,
-    scripts: null,
     run_kind: "direct",
     secret_names: [],
-    secret_store: null,
+    secret_aliases: {},
+    artifact_actor: null,
+    workspace_dir: null,
+    agent_home: agentHome(partial.agent_id),
+    cdp_port: null,
+    cancel_event: null,
     memory_replaced_by: "",
     run_scripts: [],
     max_scripts: DEFAULT_MAX_SCRIPTS,
     connection_tool_names: [],
     dynamic_tools: {},
     offered_tools: null,
-    agent_home: agentHome(partial.agent_id),
-    cdp_port: null,
-    ensure_browser: null,
-    code_default_cwd: "",
-    before_command: null,
     harness: null,
     harness_model: null,
     harness_effort: null,
-    secret_aliases: {},
     code_repositories: [],
-    db: null,
-    events: null,
+    code_default_cwd: "",
     ...partial,
   };
 }
@@ -223,11 +207,16 @@ export function callActor(actor: ArtifactActor | null, call: ToolInvocation): Ar
   return actor ? { ...actor, toolCall: { id: call.id, name: call.name } } : null;
 }
 
+/** Hooks that do nothing: the run's commands untracked, no browser to start, nothing run first, no secret store. */
+export function createToolHooks(partial: Partial<ToolHooks> = {}): ToolHooks {
+  return { track_command: null, ensure_browser: null, before_command: null, secret_store: null, ...partial };
+}
+
 export type Tool = {
   name: string;
   description: string;
   output_filter: (result: string) => string;
   filter_name: string;
-  handler: (ctx: ToolContext, call: ToolInvocation) => Promise<string>;
+  handler: (services: ToolServices, run: ToolRun, hooks: ToolHooks, call: ToolInvocation) => Promise<string>;
   schema: Record<string, unknown>;
 };

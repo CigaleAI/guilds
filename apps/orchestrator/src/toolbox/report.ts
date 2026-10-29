@@ -1,7 +1,7 @@
 import { IssueError } from "../issues/index.js";
 import { argString, functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
-import type { Tool, ToolContext } from "./types.js";
+import type { Tool } from "./types.js";
 
 const DESCRIPTION =
   "Report a problem with this agent's tooling or platform to the operator. " +
@@ -46,29 +46,29 @@ export const reportIssue: Tool = {
     },
     ["summary", "detail", "kind"],
   ),
-  async handler(ctx: ToolContext, { arguments: args }) {
-    const issues = ctx.issues;
+  async handler(services, run, _hooks, { arguments: args }) {
+    const issues = services.issues;
     if (issues === null) {
       throw new Error("issue reporting is not available");
     }
     try {
       const row = await issues.create({
-        guildId: ctx.guild_id,
-        agentId: ctx.agent_id,
-        agentName: ctx.agent_name,
-        runId: ctx.run_id,
+        guildId: run.guild_id,
+        agentId: run.agent_id,
+        agentName: run.agent_name,
+        runId: run.run_id,
         kind: argString(args, "kind"),
         severity: args.severity,
         summary: argString(args, "summary"),
         detail: argString(args, "detail"),
         toolName: argString(args, "tool_name"),
       });
-      const chat = ctx.group_chat;
+      const chat = services.group_chat;
       if (chat?.publish) {
-        await chat.publish(ctx.guild_id, "guild.issues.changed", {
+        await chat.publish(run.guild_id, "guild.issues.changed", {
           action: "create",
           issue_id: row.id,
-          agent_id: ctx.agent_id,
+          agent_id: run.agent_id,
         });
       }
       const tool = row.tool_name ? ` tool=${row.tool_name}` : "";

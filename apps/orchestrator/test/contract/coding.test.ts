@@ -15,9 +15,10 @@ import {
   type MachineSpec,
   type SandboxHandle,
 } from "../../src/sandbox/index.js";
-import { createToolContext, invokeTool } from "../../src/toolbox/index.js";
+import { invokeTool } from "../../src/toolbox/index.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { gated, run, startOpenSandboxServer, stdoutOf } from "../helpers/opensandbox-server.js";
+import { toolFixture } from "../helpers/toolbox.js";
 
 const IMAGE = process.env.CONTRACT_RUNTIME_IMAGE ?? "agent-runtime:0.4";
 const imageMissing =
@@ -64,7 +65,7 @@ test("two agents share one machine: each runs in its own home, with its own secr
     const leftSecrets = { CONTRACT_TOKEN: "tok-left-1234" };
     const leftView = view(machine, left, leftSecrets);
     await applyRunScripts(leftView, agentHome(left.agentId), [script]);
-    const ctx = createToolContext({
+    const ctx = toolFixture({
       run_id: "r_contract_left",
       agent_id: left.agentId,
       guild_id: "g_1",
@@ -73,10 +74,8 @@ test("two agents share one machine: each runs in its own home, with its own secr
       run_scripts: [script],
     });
     const [payload] = await invokeTool(
-      ctx,
+      ctx.services, ctx.run, ctx.hooks,
       { id: "call_1", type: "function", function: { name: "script_run", arguments: JSON.stringify({ name: "greet", arguments: { who: "left" } }) } },
-      leftSecrets,
-      32768,
     );
     assert.equal(String(payload.content).split("\n")[0], `hello left ${agentHome(left.agentId)}`);
     const rightEnv = await view(machine, right, {}).commands.run("echo \"$HOME|$PORT|${CONTRACT_TOKEN:-none}\"", {
@@ -123,7 +122,7 @@ test("two agents on one machine each run their own Chrome, on their own ports an
       [left, "data:text/html,<title>left</title>"],
       [right, "data:text/html,<title>right</title>"],
     ] as const) {
-      const ctx = createToolContext({
+      const ctx = toolFixture({
         run_id: "r_contract_browser",
         agent_id: agent.agentId,
         guild_id: "g_1",
@@ -132,10 +131,8 @@ test("two agents on one machine each run their own Chrome, on their own ports an
         cdp_port: slotPorts(agent.slot).cdp,
       });
       const [payload] = await invokeTool(
-        ctx,
+        ctx.services, ctx.run, ctx.hooks,
         { id: "call_1", type: "function", function: { name: "browser_navigate", arguments: JSON.stringify({ url: page }) } },
-        {},
-        32768,
       );
       assert.doesNotMatch(String(payload.content), /error/i, String(payload.content));
     }
@@ -184,15 +181,13 @@ test("coding tools run through execd in the runtime image", { skip: imageMissing
     const machine = await sandboxes.ensure(MACHINE);
     const secrets = { CONTRACT_TOKEN: "tok-contract-1234" };
     const sandbox = view(machine, coder, secrets);
-    const ctx = createToolContext({ run_id: "r_contract", agent_id: agentId, guild_id: "g_1", sandbox, secrets });
+    const ctx = toolFixture({ run_id: "r_contract", agent_id: agentId, guild_id: "g_1", sandbox, secrets });
     let count = 0;
     const call = async (name: string, args: Record<string, unknown>) => {
       count += 1;
       const [payload, metadata] = await invokeTool(
-        ctx,
+        ctx.services, ctx.run, ctx.hooks,
         { id: `call_${count}`, type: "function", function: { name, arguments: JSON.stringify(args) } },
-        secrets,
-        32768,
       );
       return { text: String(payload.content), metadata };
     };

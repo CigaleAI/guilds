@@ -89,8 +89,20 @@ key is sent as is.
 
 ### Handlers
 
-A handler takes the tool context first and returns a string. A
-handler that throws becomes the result `ERROR: <message>`. The full
+A handler takes four parameters and returns a string:
+
+- the toolbox's services, built once by the generation loop: notes,
+  artifacts, files, group chat, issues, schedules, scripts, the
+  run-state database functions, and the run streams;
+- the run record: the run, its agent, guild, and organisation, its
+  sandbox, secrets, offered tools, pinned scripts, and harness;
+- the run's hooks, which the loop composes for each run: command
+  tracking for cancels, the browser start, the repository token
+  refresh before a command, and the secret store;
+- the call: its id, name, and arguments, and the exit code and
+  metadata the handler reports for it.
+
+A handler that throws becomes the result `ERROR: <message>`. The full
 error goes to the operational log.
 
 ### Results

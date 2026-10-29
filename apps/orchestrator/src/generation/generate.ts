@@ -1,26 +1,21 @@
 import { agentActor } from "../artifacts/actors.js";
-import type { ArtifactFiles } from "../artifacts/files.js";
 import { REPOSITORIES_MISSING, REPOSITORIES_MISSING_MESSAGE } from "../coding/harnesses.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
 import { listBindingsCovering } from "../db/bindings.js";
 import { isPlainRecord } from "../db/json.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import { completeRun, getRun, listMessages, type MessageRow, type RunRow } from "../db/runs.js";
-import type { GroupChat } from "../groupchat/index.js";
-import type { Issues } from "../issues/index.js";
 import { agentHome } from "../lib/agent-file.js";
 import { INPUT_TOKEN_LIMIT_MESSAGE } from "../llm/index.js";
 import { slotPorts } from "../machines/index.js";
-import type { NotesStore } from "../notes/store.js";
 import { errorName, writeLog } from "../observability/log.js";
 import { agentSandbox, applyRunScripts, prepareBrowserWorkspace, prepareWorkspace, seatEnvironment, type SandboxHandle } from "../sandbox/index.js";
-import type { Schedules } from "../schedules/service.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { RunConfigSnapshot, RunScriptSnapshot } from "../db/schema/index.js";
 import { harnessMissingError } from "../toolbox/harness.js";
 import { toolboxDatabase } from "../toolbox/services.js";
-import { createToolContext, type ToolContext } from "../toolbox/index.js";
-import { dynamicScriptTools, liveExtraForAgent, SCRIPT_TOOLS } from "../toolbox/script.js";
+import { createToolRun, type ToolHooks, type ToolRun } from "../toolbox/index.js";
+import { dynamicScriptTools, liveExtraForAgent } from "../toolbox/script.js";
 import type { ActiveGenerations } from "./active-generations.js";
 import { chainOf, completeIfActive, HANDOFF_FRACTION, type RunChains } from "./chain.js";
 import { codingRepositoriesDatabase, guildRepositories, type CodingRuns } from "./coding.js";
@@ -33,7 +28,6 @@ import type { GenerationSecrets, RunSecrets } from "./run-secrets.js";
 import type { GenerationStarter } from "./runs.js";
 import { executedToolCalls, toolCallsOf, type GenerationTools, type ToolCalls } from "./tool-calls.js";
 import type { WorkspaceLimits } from "./workspace.js";
-import type { GenerationArtifacts } from "./prepare.js";
 
 const TOOL_CALL_LIMIT_MESSAGE = "Tool call limit reached. Start a new run to continue.";
 const SCHEDULE_WAKE_PREFIX = "Schedule wake-up: ";
@@ -130,12 +124,6 @@ async function memoryReplacedBy(db: Pick<RunGeneratorDatabase, "listMessages">, 
 /** What generations run with, built once by the loop. */
 export type RunGeneratorServices = {
   db: RunGeneratorDatabase;
-  notes: NotesStore;
-  artifacts: GenerationArtifacts | null;
-  files: ArtifactFiles | null;
-  groupChat: GroupChat;
-  issues: Issues;
-  schedules: Schedules;
   scripts: Scripts;
   events: RunEvents;
   generations: ActiveGenerations;
@@ -387,7 +375,7 @@ export class RunGenerator {
     if (!gen.snapshot.coding) {
       return true;
     }
-    return (await coding.harnessReady(gen, tools.ctx)) && (await coding.prepareRepositories(gen, gen.agent, sandbox, tools));
+    return (await coding.harnessReady(gen, tools.run)) && (await coding.prepareRepositories(gen, gen.agent, sandbox, tools));
   }
 
   /** The tools the generation calls: those its snapshot froze that the agent's live bindings and settings still offer. */
@@ -403,7 +391,8 @@ export class RunGenerator {
       connections: mcpIndex(gen.snapshot.mcp),
     };
     return {
-      ctx: await this.toolContext(gen, sandboxes, secrets, offer),
+      run: await this.toolRun(gen, sandboxes, secrets, offer),
+      hooks: this.toolHooks(gen, sandboxes),
       schemas: withFirstClassScriptTools(
         frozen.filter((tool) => offer.names.has(toolSchemaName(tool))),
         offer.scripts,
@@ -431,25 +420,22 @@ export class RunGenerator {
     });
   }
 
-  private async toolContext(
+  /** The generation's run record: whose run it is, where its commands run, and what it offers. */
+  private async toolRun(
     gen: Generation,
     sandboxes: RunSandboxes,
     secrets: GenerationSecrets,
     offer: ToolOffer,
-  ): Promise<ToolContext> {
-    const { db, notes, artifacts, files, groupChat, issues, schedules, scripts, events, generations, machines } =
-      this.services;
+  ): Promise<ToolRun> {
+    const { db, generations, machines } = this.services;
     const { runId, agent, snapshot } = gen;
     const seat = agentSeat(agent);
-    return createToolContext({
+    return createToolRun({
       run_id: runId,
       agent_id: agent.id,
       guild_id: agent.guild_id,
       sandbox: sandboxes.agent,
       secrets: secrets.values,
-      notes,
-      artifacts,
-      files,
       workspace_dir: await machines.agentWorkspace(agent),
       artifact_actor: agent.org_id
         ? agentActor({ orgId: agent.org_id, guildId: agent.guild_id, agentId: agent.id, agentName: agent.name, runId })
@@ -458,17 +444,10 @@ export class RunGenerator {
       agent_name: agent.name,
       org_slug: agent.org_slug,
       cancel_event: generations.cancelEvent(runId),
-      track_command: (executionId) => generations.trackCommand(runId, sandboxes.agent, executionId),
       agent_home: agentHome(seat.agentId),
       cdp_port: snapshot.browser ? slotPorts(seat.slot).cdp : null,
-      ensure_browser: snapshot.browser ? () => machines.ensureRunBrowser(agent, sandboxes.machine) : null,
-      group_chat: groupChat,
-      issues,
-      schedules,
-      scripts: SCRIPT_TOOLS.some((name) => offer.names.has(name)) ? scripts : null,
       run_kind: gen.run.kind,
       secret_names: secrets.refs.map((ref) => ref.name),
-      secret_store: this.services.secrets.secretStore(agent),
       memory_replaced_by: await memoryReplacedBy(db, gen.run),
       run_scripts: offer.scripts,
       max_scripts: agent.config.max_scripts,
@@ -479,9 +458,23 @@ export class RunGenerator {
       harness_model: snapshot.harness_model,
       harness_effort: snapshot.harness_effort,
       secret_aliases: snapshot.secret_aliases,
-      db,
-      events,
     });
+  }
+
+  /**
+   * The hooks the generation's tools call, each bound to what its run record does not hold: the
+   * agent's container to track a command in, its machine to start Chrome on, and its row to store
+   * a secret for.
+   */
+  private toolHooks(gen: Generation, sandboxes: RunSandboxes): ToolHooks {
+    const { generations, machines, secrets } = this.services;
+    const { runId, agent, snapshot } = gen;
+    return {
+      track_command: (executionId) => generations.trackCommand(runId, sandboxes.agent, executionId),
+      ensure_browser: snapshot.browser ? () => machines.ensureRunBrowser(agent, sandboxes.machine) : null,
+      before_command: null,
+      secret_store: secrets.secretStore(agent),
+    };
   }
 
   /** Model steps until the model stops calling tools, or the step, tool-call, or input limit ends the run. */

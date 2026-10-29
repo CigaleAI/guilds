@@ -3,7 +3,6 @@ import { test } from "node:test";
 import { operatorActor } from "../../src/artifacts/actors.js";
 import {
   REGISTRY,
-  createToolContext,
   encodeSpec,
   formatExecution,
   invokeTool,
@@ -21,7 +20,7 @@ import { HELPER } from "../../src/toolbox/browser.js";
 import { Scripts } from "../../src/scripts/catalog.js";
 import { MemoryScriptDB } from "../helpers/generation.js";
 import { CancelEvent } from "../../src/toolbox/types.js";
-import { toolInvocation } from "../helpers/toolbox.js";
+import { toolInvocation, toolFixture } from "../helpers/toolbox.js";
 
 
 function schemaRequired(name: string): unknown {
@@ -230,7 +229,7 @@ test("invoke_script_run stores payload and exit_code", async () => {
     "print('hi')",
   );
   const commands: string[] = [];
-  const ctx = createToolContext({
+  const ctx = toolFixture({
     run_id: "r_1",
     agent_id: "a_1",
     guild_id: "guild_1",
@@ -250,10 +249,8 @@ test("invoke_script_run stores payload and exit_code", async () => {
     scripts,
   });
   const [payload, metadata] = await invokeTool(
-    ctx,
+    ctx.services, ctx.run, ctx.hooks,
     { id: "call_1", type: "function", function: { name: "script_run", arguments: '{"name":"hello"}' } },
-    {},
-    1024,
   );
   assert.deepEqual(payload, { role: "tool", tool_call_id: "call_1", content: "hi" });
   assert.equal(metadata.tool_name, "script_run");
@@ -266,7 +263,7 @@ test("invoke_script_run stores payload and exit_code", async () => {
 });
 
 test("invoke unknown tool is error message", async () => {
-  const ctx = createToolContext({
+  const ctx = toolFixture({
     run_id: "r_1",
     agent_id: "a_1",
     guild_id: "guild_1",
@@ -274,10 +271,8 @@ test("invoke unknown tool is error message", async () => {
     secrets: {},
   });
   const [payload, metadata] = await invokeTool(
-    ctx,
+    ctx.services, ctx.run, ctx.hooks,
     { id: "call_x", type: "function", function: { name: "nope", arguments: "{}" } },
-    {},
-    1024,
   );
   assert.equal(payload.content, "ERROR: unknown tool nope");
   assert.equal(metadata.tool_call_id, "call_x");
@@ -286,7 +281,7 @@ test("invoke unknown tool is error message", async () => {
 
 test("invoke refuses a native tool the run did not offer", async () => {
   const scripts = new Scripts(new MemoryScriptDB());
-  const ctx = createToolContext({
+  const ctx = toolFixture({
     run_id: "r_1",
     agent_id: "a_1",
     guild_id: "guild_1",
@@ -296,7 +291,7 @@ test("invoke refuses a native tool the run did not offer", async () => {
     offered_tools: new Set(["note_find"]),
   });
   const [payload, metadata] = await invokeTool(
-    ctx,
+    ctx.services, ctx.run, ctx.hooks,
     {
       id: "call_x",
       type: "function",
@@ -305,8 +300,6 @@ test("invoke refuses a native tool the run did not offer", async () => {
         arguments: '{"name":"scratch","description":"why","source":"print(1)"}',
       },
     },
-    {},
-    1024,
   );
   assert.equal(payload.content, "ERROR: tool script_create is not offered this run");
   assert.equal(metadata.error, "tool script_create is not offered this run");
@@ -314,7 +307,7 @@ test("invoke refuses a native tool the run did not offer", async () => {
 });
 
 test("invoke still runs a first-class script when it is not in offered_tools", async () => {
-  const ctx = createToolContext({
+  const ctx = toolFixture({
     run_id: "r_1",
     agent_id: "a_1",
     guild_id: "guild_1",
@@ -341,17 +334,15 @@ test("invoke still runs a first-class script when it is not in offered_tools", a
     },
   });
   const [payload, metadata] = await invokeTool(
-    ctx,
+    ctx.services, ctx.run, ctx.hooks,
     { id: "call_1", type: "function", function: { name: "priced", arguments: "{}" } },
-    {},
-    1024,
   );
   assert.equal(payload.content, "priced");
   assert.equal(metadata.error, null);
 });
 
 test("run_command cancel raises interrupted", async () => {
-  const { runCommand } = await import("../../src/toolbox/shell.js");
+  const { executeCommand } = await import("../../src/toolbox/shell.js");
   let started: () => void = () => undefined;
   const startedPromise = new Promise<void>((resolve) => {
     started = resolve;
@@ -359,7 +350,7 @@ test("run_command cancel raises interrupted", async () => {
   const interrupted: string[] = [];
   const cancelEvent = new CancelEvent();
   const tracked: Array<string | null> = [];
-  const ctx = createToolContext({
+  const ctx = toolFixture({
     run_id: "r_1",
     agent_id: "a_1",
     guild_id: "guild_1",
@@ -384,7 +375,7 @@ test("run_command cancel raises interrupted", async () => {
       tracked.push(id);
     },
   });
-  const task = runCommand(ctx, toolInvocation("shell"), "sleep 30");
+  const task = executeCommand(ctx.run, ctx.hooks, "sleep 30");
   await startedPromise;
   assert.deepEqual(tracked, ["exec_1"]);
   cancelEvent.set();
@@ -405,7 +396,7 @@ test("browser_encode_spec is helper command", () => {
 test("browser_navigate runs helper", async () => {
   const { browserNavigate } = await import("../../src/toolbox/browser.js");
   const seen: string[] = [];
-  const ctx = createToolContext({
+  const ctx = toolFixture({
     run_id: "r_1",
     agent_id: "a_1",
     guild_id: "guild_1",
@@ -424,7 +415,7 @@ test("browser_navigate runs helper", async () => {
     secrets: {},
   });
   const call = toolInvocation("browser_navigate", { url: "https://example.com" });
-  const result = await browserNavigate.handler(ctx, call);
+  const result = await browserNavigate.handler(ctx.services, ctx.run, ctx.hooks, call);
   assert.deepEqual(seen, [encodeSpec({ op: "navigate", url: "https://example.com" })]);
   assert.equal(result, "https://example.com\nExample");
   assert.equal(call.exit_code, 0);
@@ -433,7 +424,7 @@ test("browser_navigate runs helper", async () => {
 test("browser_scroll runs helper", async () => {
   const { browserScroll } = await import("../../src/toolbox/browser.js");
   const seen: string[] = [];
-  const ctx = createToolContext({
+  const ctx = toolFixture({
     run_id: "r_1",
     agent_id: "a_1",
     guild_id: "guild_1",
@@ -451,10 +442,10 @@ test("browser_scroll runs helper", async () => {
     },
     secrets: {},
   });
-  const result = await browserScroll.handler(ctx, toolInvocation("browser_scroll", { direction: "down" }));
+  const result = await browserScroll.handler(ctx.services, ctx.run, ctx.hooks, toolInvocation("browser_scroll", { direction: "down" }));
   assert.deepEqual(seen, [encodeSpec({ op: "scroll", direction: "down" })]);
   assert.match(result, /scrolled down/);
-  const withTarget = await browserScroll.handler(ctx, toolInvocation("browser_scroll", { direction: "down", target: "div.list" }));
+  const withTarget = await browserScroll.handler(ctx.services, ctx.run, ctx.hooks, toolInvocation("browser_scroll", { direction: "down", target: "div.list" }));
   assert.deepEqual(seen[1], encodeSpec({ op: "scroll", direction: "down", target: "div.list" }));
   assert.match(withTarget, /scrolled down/);
 });
@@ -462,7 +453,7 @@ test("browser_scroll runs helper", async () => {
 test("browser_eval runs helper", async () => {
   const { browserEval } = await import("../../src/toolbox/browser.js");
   const seen: string[] = [];
-  const ctx = createToolContext({
+  const ctx = toolFixture({
     run_id: "r_1",
     agent_id: "a_1",
     guild_id: "guild_1",
@@ -480,7 +471,7 @@ test("browser_eval runs helper", async () => {
     },
     secrets: {},
   });
-  const result = await browserEval.handler(ctx, toolInvocation("browser_eval", { expression: "return document.title;" }));
+  const result = await browserEval.handler(ctx.services, ctx.run, ctx.hooks, toolInvocation("browser_eval", { expression: "return document.title;" }));
   assert.deepEqual(seen, [encodeSpec({ op: "evaluate", expression: "return document.title;" })]);
   assert.equal(result, '"ok"');
 });

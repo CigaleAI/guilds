@@ -12,7 +12,7 @@ import { systemActor } from "../helpers/agents.js";
 import type { Database } from "../../src/db/client.js";
 import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { createToolContext, invokeTool } from "../../src/toolbox/index.js";
+import { invokeTool } from "../../src/toolbox/index.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { tempDir } from "../helpers/env.js";
 import { compareColumnTimestamps } from "../../src/db/codecs.js";
@@ -45,6 +45,7 @@ import { accessList, grantAccess, listAccess, reachOf, replaceAccess } from "../
 import { clearRecords, collectionCatalog, collectionFacts, createCollection, deleteCollection, describeCollection, getCollection, listCollectionsWithCounts, updateCollection } from "../../src/artifacts/collections.js";
 import { addRecord, exportRecords, getRecord, listRecords, removeRecord, searchRecords, updateRecord } from "../../src/artifacts/records.js";
 import { toolArtifacts } from "../../src/toolbox/artifacts.js";
+import { toolFixture } from "../helpers/toolbox.js";
 
 const dbName = uniqueDbName("agent_platform_artifacts");
 let database: Database;
@@ -866,7 +867,7 @@ describe("artifact store", { concurrency: 1 }, () => {
     await assert.rejects(() => writeNoteAt(store, south, planPath, { content: "overwritten" }), /write not allowed/);
     await assert.rejects(() => deleteByDisplayPath(store, south, planPath), /write not allowed/);
     const [writeRefused] = await invokeTool(
-      createToolContext({
+      toolFixture({
         run_id: "r_south",
         agent_id: "a_south",
         guild_id: "guild_south",
@@ -874,10 +875,24 @@ describe("artifact store", { concurrency: 1 }, () => {
         secrets: {},
         artifacts: toolArtifacts(store),
         artifact_actor: south,
-      }),
+      }).services, toolFixture({
+        run_id: "r_south",
+        agent_id: "a_south",
+        guild_id: "guild_south",
+        sandbox: null,
+        secrets: {},
+        artifacts: toolArtifacts(store),
+        artifact_actor: south,
+      }).run, toolFixture({
+        run_id: "r_south",
+        agent_id: "a_south",
+        guild_id: "guild_south",
+        sandbox: null,
+        secrets: {},
+        artifacts: toolArtifacts(store),
+        artifact_actor: south,
+      }).hooks,
       { id: "call_write", type: "function", function: { name: "note_write", arguments: JSON.stringify({ path: planPath, content: "overwritten" }) } },
-      {},
-      32_768,
     );
     assert.match(String(writeRefused.content), /write not allowed/);
 
@@ -1068,7 +1083,7 @@ describe("artifact store", { concurrency: 1 }, () => {
       },
       now,
     );
-    const ctx = createToolContext({
+    const ctx = toolFixture({
       run_id: "r_provenance",
       agent_id: "a_provenance",
       guild_id: "guild_provenance",
@@ -1084,7 +1099,7 @@ describe("artifact store", { concurrency: 1 }, () => {
       }),
     });
     const call = async (id: string, name: string, args: Record<string, unknown>) =>
-      invokeTool(ctx, { id, type: "function", function: { name, arguments: JSON.stringify(args) } }, {}, 32_768);
+      invokeTool(ctx.services, ctx.run, ctx.hooks, { id, type: "function", function: { name, arguments: JSON.stringify(args) } });
 
     const [, createdMetadata] = await call("call_create", "note_write", {
       level: "agent",
