@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import { inflateSync, gunzipSync } from "node:zlib";
 import { request as undiciRequest } from "undici";
 import WebSocket from "ws";
+import { HttpError } from "./errors.js";
 
 export const HOP_REQ = new Set([
   "host",
@@ -25,9 +26,18 @@ export const HOP_RESP = new Set([
   "content-length",
 ]);
 
+/**
+ * The daemon URL a proxied path names: `pathPart` under the daemon's `base`, on the daemon's host.
+ * The path only ever sets the pathname, so a path written as a URL (`http://host/…`, `\\host/…`)
+ * stays a path on the daemon; one that resolves outside the base's path is a 404.
+ */
 export function joinUpstream(base: string, pathPart: string, query: string): string {
-  const root = base.endsWith("/") ? base : `${base}/`;
-  const url = new URL(pathPart, root);
+  const root = new URL(base.endsWith("/") ? base : `${base}/`);
+  const url = new URL(root);
+  url.pathname = `${root.pathname}${pathPart}`;
+  if (!url.pathname.startsWith(root.pathname)) {
+    throw new HttpError(404, "Not Found");
+  }
   if (query) {
     url.search = query.startsWith("?") ? query : `?${query}`;
   }

@@ -8,6 +8,12 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** The browser and terminal views of an agent's sandbox
+proxy a path only to the sandbox daemon. Before, a path written as a URL
+made the orchestrator send the request to the host it named, with the
+sandbox's authorization header
+([SEC-52](docs/architecture/security-register.md#sec-52--the-sandbox-proxy-sent-a-request-to-any-host-a-proxied-path-named)).
+
 **No impact.** Applying a recipe gives each seed note its access list
 as it writes the note, and each collection it creates its access list
 in the same write. An apply that fails on a note's access list, such as

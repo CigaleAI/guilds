@@ -9,6 +9,7 @@ risk is kept by design), or **Fixed** with its date.
 
 | Id | Issue | Status |
 |---|---|---|
+| [SEC-52](#sec-52--the-sandbox-proxy-sent-a-request-to-any-host-a-proxied-path-named) | The sandbox proxy sent a request to any host a proxied path named | Fixed 2026-10-29 |
 | [SEC-51](#sec-51--a-recipe-capture-copies-the-notes-of-private-guilds-its-operator-does-not-operate) | A recipe capture copies the notes of private guilds its operator does not operate | Fixed 2026-10-28 |
 | [SEC-50](#sec-50--an-operators-read-of-a-memory-revision-path-is-not-limited-to-its-organisation) | An operator's read of a Memory revision path is not limited to its organisation | Fixed 2026-10-28 |
 | [SEC-49](#sec-49--a-runs-diff-and-a-code-tasks-log-were-served-unredacted-when-the-agents-secrets-could-not-be-read) | A run's diff and a code task's log were served unredacted when the agent's secrets could not be read | Fixed 2026-10-27 |
@@ -60,6 +61,40 @@ risk is kept by design), or **Fixed** with its date.
 | [SEC-3](#sec-3--check-then-open-race-on-agent-workspace-paths) | Check-then-open race on agent workspace paths | Open |
 | [SEC-2](#sec-2--any-organisation-member-could-write-organisation-wide-secrets) | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | [SEC-1](#sec-1--links-planted-in-an-agent-workspace-redirect-orchestrator-file-access) | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-52 — The sandbox proxy sent a request to any host a proxied path named
+
+**Status:** fixed 2026-10-29.
+
+**Found:** 2026-10-29, from a code-scanning alert (CWE-918) on the
+proxy's URL construction.
+
+**Where:** `joinUpstream` in `apps/orchestrator/src/http/sandbox-proxy.ts`,
+reached by `/api/agents/{id}/browser/vnc/*` and
+`/api/agents/{id}/cli/tty/*` over HTTP and WebSocket
+(`src/http/sandbox-routes.ts`).
+
+**Exposure:** the proxy resolved the requested path against the sandbox
+daemon's base URL with `new URL(path, base)`. A path that was itself a
+URL (`http://host/…`) or began with two backslashes replaced the base
+entirely, so the orchestrator sent the request to that host from its own
+network position, with the client's headers and the sandbox seat's
+authorization header, and returned the response to the client. Any user
+who could see an agent whose sandbox was running could reach any
+address the orchestrator can, internal services and the cloud metadata
+endpoint included. `..` segments were already refused by
+`filePathParam` (`src/http/request.ts`), and a path starting with `//`
+stayed on the daemon.
+
+**Fix:** `joinUpstream` keeps the daemon's origin and sets only the
+URL's pathname from the base path and the requested path, so a path
+written as a URL is a path on the daemon; a result that leaves the base
+path is a 404. `test/unit/sandbox-proxy.test.ts` pins the three forms
+against a second server, which receives nothing.
+
+**Residual risk:** none known. Every path under the daemon's base stays
+reachable to a user who can see the agent, as the browser and terminal
+views need.
 
 ## SEC-51 — A recipe capture copies the notes of private guilds its operator does not operate
 
