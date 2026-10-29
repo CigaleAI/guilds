@@ -1,6 +1,6 @@
 import { getGroupChatSeenThrough, markGroupChatSeen } from "../db/group-chat.js";
 import type { Queryable } from "../db/pg.js";
-import { GroupChatError, type GroupChat } from "./index.js";
+import { GroupChatError, type GroupChat, type MessageAuthor } from "./index.js";
 
 /** What an operator reads and posts a guild's group chat through, built once from the app's services. */
 export type GroupChatOperatorServices = {
@@ -13,9 +13,6 @@ export type GroupChatOperatorServices = {
 
 /** An operator's message to the group chat, before validation. */
 export type OperatorMessage = { content: string; interrupt: unknown };
-
-/** The operator posting: the user the message is written as. */
-export type MessageAuthor = { id: string; name: string };
 
 /** The guilds' group chat; a box without a generation loop has none (503). */
 export function groupChatOf(services: GroupChatOperatorServices): GroupChat {

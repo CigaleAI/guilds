@@ -102,6 +102,9 @@ export function taggableNames(
   return names;
 }
 
+/** The operator posting: the user the message is written as. */
+export type MessageAuthor = { id: string; name: string };
+
 export type GroupTags = { names: string[]; agentIds: string[]; userIds: string[] };
 
 /**
