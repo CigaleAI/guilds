@@ -614,5 +614,6 @@ required.
 
 Code: `apps/orchestrator/src/artifacts/access.ts`,
 `apps/orchestrator/src/artifacts/access-lists.ts`,
+`apps/orchestrator/src/artifacts/grants.ts`,
 `apps/orchestrator/src/db/artifact-access.ts`,
 `apps/orchestrator/src/http/artifact-access-routes.ts`.

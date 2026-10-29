@@ -2,7 +2,6 @@
 // access list, the rules a guild's request to change one follows, the steps the operator applies
 // to them, and what an edit does to their records and readers.
 import {
-  type AccessRowChange,
   grantAccess,
   type GuildAccess,
   type GuildAccessProposal,
@@ -25,6 +24,7 @@ import {
 } from "./collections.js";
 import type { ColumnChange } from "./columns.js";
 import { ArtifactError } from "./errors.js";
+import type { AccessRowChange } from "./grants.js";
 import type { ArtifactStore, CollectionView } from "./store.js";
 import type { AccessEntry, ArtifactActor } from "./types.js";
 import type { CollectionColumn } from "../db/schema/index.js";

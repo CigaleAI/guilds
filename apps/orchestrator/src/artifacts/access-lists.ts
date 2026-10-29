@@ -1,64 +1,38 @@
-import { getAccessSubject, listAccessEntries } from "../db/artifact-access.js";
 import { getLiveArtifact, listReachedNotes } from "../db/artifacts.js";
-import { recordConfigChange, type ConfigChange } from "../db/config-changes.js";
-import { type Queryable, withTransaction } from "../db/pg.js";
+import { recordConfigChange } from "../db/config-changes.js";
+import { withTransaction } from "../db/pg.js";
 import {
   type AccessRaise,
   accessRaises,
   diffGrants,
   grantKey,
-  grantSummary,
-  parseGrant,
   parseGrants,
   subjectAt,
 } from "./access.js";
 import { accessibleCollections, assertOperator, collectionView, loadCollectionById } from "./collections.js";
 import { ArtifactError } from "./errors.js";
-import { removeGrants, writeGrants } from "./grants.js";
+import {
+  accessChange,
+  type AccessItem,
+  type AccessRowChange,
+  assertNotOwner,
+  collectionAccessItem,
+  loadEntries,
+  removeGrants,
+  requireSubject,
+  setAccessRow,
+  subjectLabel,
+  writeGrants,
+} from "./grants.js";
 import { reachesOwner, type ArtifactStore, type ReachedNote, type ReachedTable, rowDisplayPath } from "./store.js";
 import type { AccessMode } from "../db/schema/index.js";
 import {
   type AccessEntry,
-  type AccessGrant,
   type AccessList,
-  type AccessSubject,
   type AccessTarget,
   type AgentAccessMode,
   type ArtifactActor,
 } from "./types.js";
-
-/** An item whose access list is being changed, as its change-log entries name it. */
-type AccessItem = {
-  target: AccessTarget;
-  orgId: string;
-  guildId: string | null;
-  /** The agent that owns an agent-level note, which always writes it. */
-  ownerAgentId: string | null;
-  label: string;
-};
-
-/** How a change-log line names a subject. */
-function subjectLabel(type: AccessSubject, name: string): string {
-  return type === "org" ? "the organisation" : `${type} ${name}`;
-}
-
-/** Refuses a row naming the agent that owns the item: it always writes its own note or file. */
-function assertNotOwner(item: AccessItem, grant: AccessGrant, where = ""): void {
-  if (grant.type === "agent" && grant.id === item.ownerAgentId) {
-    throw new ArtifactError(`${where}the agent that owns the ${item.target.kind} always writes it`, 422);
-  }
-}
-
-function accessChange(item: AccessItem, subject: string, mode: AgentAccessMode | null, existed: boolean): ConfigChange {
-  return {
-    orgId: item.orgId,
-    guildId: item.guildId,
-    targetKind: item.target.kind,
-    targetId: item.target.id,
-    operation: mode === null ? "delete" : existed ? "update" : "create",
-    summary: grantSummary(subject, item.label, mode),
-  };
-}
 
 /** The note, file, or live collection an access call names, or a 404. */
 async function requireTarget(store: ArtifactStore, actor: ArtifactActor, target: AccessTarget): Promise<AccessItem> {
@@ -67,13 +41,7 @@ async function requireTarget(store: ArtifactStore, actor: ArtifactActor, target:
     if (!collection) {
       throw new ArtifactError("unknown collection", 404);
     }
-    return {
-      target,
-      orgId: collection.org_id,
-      guildId: collection.guild_id,
-      ownerAgentId: null,
-      label: `the table ${collection.name}`,
-    };
+    return collectionAccessItem(collection);
   }
   const row = await getLiveArtifact(store.db, actor.orgId, { id: target.id, kind: target.kind });
   if (!row || !reachesOwner(actor, row.level, row.owner_id)) {
@@ -86,30 +54,6 @@ async function requireTarget(store: ArtifactStore, actor: ArtifactActor, target:
     ownerAgentId: row.level === "agent" ? row.owner_id : null,
     label: `the ${target.kind} ${rowDisplayPath(row)}`,
   };
-}
-
-/**
- * The name of the organisation, guild, or agent a grant names. A subject
- * that does not exist, is in another organisation, or is in a guild the
- * actor cannot see is a 422 prefixed by `where`.
- */
-async function requireSubject(
-  store: ArtifactStore,
-  actor: ArtifactActor,
-  subject: { type: AccessSubject; id: string },
-  where = "",
-): Promise<string> {
-  const row = await getAccessSubject(store.db, actor.orgId, subject);
-  if (!row || (row.guild_id !== null && actor.hidden.guildIds.includes(row.guild_id))) {
-    throw new ArtifactError(`${where}unknown ${subject.type}`, 422);
-  }
-  return row.name;
-}
-
-/** An item's access list, without the guilds, and their agents, the actor cannot see. */
-async function loadEntries(db: Queryable, actor: ArtifactActor, target: AccessTarget): Promise<AccessEntry[]> {
-  const entries = await listAccessEntries(db, target);
-  return entries.filter((entry) => !entry.guild_id || !actor.hidden.guildIds.includes(entry.guild_id));
 }
 
 /** An item's access list, without the subjects of guilds the actor cannot see. */
@@ -146,7 +90,10 @@ export async function replaceAccess(
     for (const grant of upserts) {
       const where = subjectAt(wanted.indexOf(grant));
       assertNotOwner(item, grant, where);
-      names.set(grantKey(grant), subjectLabel(grant.type, await requireSubject(store, actor, grant, where)));
+      names.set(
+        grantKey(grant),
+        subjectLabel(grant.type, await requireSubject(store.db, actor, grant, where)),
+      );
     }
     const known = new Set(before.map(grantKey));
     await writeGrants(client, actor, target, upserts);
@@ -162,13 +109,7 @@ export async function replaceAccess(
   });
 }
 
-/** One subject's row a change sets on an item's access list; a null mode removes the row. */
-export type AccessRowChange = { type: AccessSubject; id: string; mode: AgentAccessMode | null };
-
-/**
- * Sets one subject's row on an item, or removes it when the row's `mode` is null, and
- * logs the change. Only a subject whose row is written must exist.
- */
+/** Sets one subject's row on an item as the operator through `setAccessRow`, in a transaction of its own. */
 export async function grantAccess(
   store: ArtifactStore,
   actor: ArtifactActor,
@@ -177,23 +118,7 @@ export async function grantAccess(
 ): Promise<void> {
   assertOperator(actor);
   const item = await requireTarget(store, actor, target);
-  const mode = row.mode;
-  const grant = parseGrant({ type: row.type, id: row.id, mode: mode ?? "read" });
-  await withTransaction(store.db, async (client) => {
-    const before = (await loadEntries(client, actor, target)).find((entry) => grantKey(entry) === grantKey(grant));
-    if ((before?.mode ?? null) === mode) {
-      return;
-    }
-    let name = before?.name ?? grant.id;
-    if (mode === null) {
-      await removeGrants(client, target, [grant]);
-    } else {
-      assertNotOwner(item, grant);
-      name = await requireSubject(store, actor, grant);
-      await writeGrants(client, actor, target, [{ ...grant, mode }]);
-    }
-    await recordConfigChange(client, actor, accessChange(item, subjectLabel(grant.type, name), mode, before !== undefined));
-  });
+  await withTransaction(store.db, (client) => setAccessRow(client, actor, item, row));
 }
 
 /**
