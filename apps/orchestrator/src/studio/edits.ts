@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { ArtifactError } from "../artifacts/errors.js";
-import { parseDisplayPath } from "../artifacts/paths.js";
+import { displayPathFor, MEMORY_KEY, parseDisplayPath } from "../artifacts/paths.js";
 import { hashArtifactContent, type ArtifactStore } from "../artifacts/store.js";
 import { WRITE_MAX_BYTES } from "../artifacts/types.js";
 import { updateGuildText } from "../guilds/service.js";
@@ -28,7 +28,7 @@ import {
   planNote,
   writeNote,
 } from "../artifacts/notes.js";
-import { getMemoryRow, writeMemory } from "../artifacts/memory.js";
+import { writeMemory } from "../artifacts/memory.js";
 
 // An edit tool never writes. It returns this widget; the turn pauses until
 // the operator applies or declines the proposal from the Studio log.
@@ -113,17 +113,27 @@ async function sourceAgentIds(scope: EditScope): Promise<Set<string>> {
   return new Set(agents.map((row) => String(row.id)));
 }
 
+/** The agent's Memory as the operator reads it at its display path; an agent without one has an empty Memory at version 0. */
 export async function loadMemoryBase(scope: EditScope, agent: Pick<AgentRow, "id" | "name">): Promise<EditBase> {
   const agentId = agent.id;
-  const row = await getMemoryRow(scope.artifacts, editActor(scope, { agentId }), agentId);
-  return {
+  const href = displayPathFor({ orgId: scope.orgId, level: "agent", ownerId: agentId, kind: "memory", path: "", key: MEMORY_KEY });
+  const empty: Extract<EditBase, { kind: "memory" }> = {
     kind: "memory",
     agentId,
     agentName: agent.name,
     guildId: scope.sourceGuildId,
-    version: Number(row?.version ?? 0),
-    content: row?.content_text ?? "",
+    version: 0,
+    content: "",
   };
+  try {
+    const view = await artifactAt(scope.artifacts, editActor(scope, { agentId }), href);
+    return view.kind === "row" && !view.deleted ? { ...empty, version: view.row.version, content: view.text } : empty;
+  } catch (error) {
+    if (error instanceof ArtifactError && error.status === 404) {
+      return empty;
+    }
+    throw error;
+  }
 }
 
 export async function loadNoteBase(scope: EditScope, displayPath: string): Promise<EditBase> {

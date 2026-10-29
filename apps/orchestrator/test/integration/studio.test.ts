@@ -1202,6 +1202,21 @@ test("studio proposes memory, note, and guild edits that the operator applies or
     const revisions = (await studioListMemoryRevisions.handler(await ctx(), { agent_id: "a_ed" })) as { versions: unknown[] };
     assert.ok(revisions.versions.length >= 2);
 
+    // Memory: an agent without a Memory row is edited from an empty Memory at version 0.
+    await addAgent(
+      { db, notes, artifacts },
+      { agent: { agentId: "a_blank", guildId: "guild_ed", name: "blank", config: CONFIG, focus: "Start fresh" }, task: "Start fresh", placement: {} },
+      systemActor("org_home", { guildId: "guild_ed", agentId: "a_blank" }),
+      now,
+    );
+    await db.query("DELETE FROM artifacts WHERE agent_id = $1 AND kind = 'memory'", ["a_blank"]);
+    const blankArgs = { agent_id: "blank", content: "- first entry", base_version: 0, reason: "Memory is empty." };
+    const blankEdit = (await studioEditMemory.handler(await ctx(), blankArgs)) as { edit: { base_version: number } };
+    assert.equal(blankEdit.edit.base_version, 0);
+    const blankApplied = await resolve(await commit("studio_edit_memory", blankArgs, blankEdit), "apply");
+    assert.equal(blankApplied.statusCode, 200, blankApplied.body);
+    assert.equal((await getMemoryRow(artifacts, operator, "a_blank"))?.content_text, "- first entry");
+
     // Note: a proposal goes stale when the note changes underneath it; declining leaves the note alone.
     const noteArgs = { action: "edit", display_path: notePath, content: "Always cite the source URL.\n", base_version: note.version, reason: "Rule is vague." };
     const noteEdit = (await studioEditNote.handler(await ctx(), noteArgs)) as Record<string, unknown>;
