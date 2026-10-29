@@ -13,7 +13,7 @@ import { connectionTools, currentTools, type ConnectionTool } from "../mcp/servi
 type ToolListing = Pick<McpPool, "syncTools" | "database">;
 
 /** The db/ functions a scope's access view reads, and the stored tool listings it shows, on `db`. */
-export function accessViewDatabase(db: Queryable) {
+function accessViewDatabase(db: Queryable) {
   return {
     listBindingsCovering: bindQuery(db, listBindingsCovering),
     listServers: bindQuery(db, listServers),

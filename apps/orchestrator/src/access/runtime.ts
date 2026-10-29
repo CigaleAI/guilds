@@ -28,7 +28,7 @@ export type RuntimeAccess = {
 };
 
 /** The db/ functions an agent's runtime access is resolved through, and the stored tool listings it reads, on `db`. */
-export function accessDatabase(db: Queryable) {
+function accessDatabase(db: Queryable) {
   return {
     listBindingsCovering: bindQuery(db, listBindingsCovering),
     listAgentSecrets: bindQuery(db, listAgentSecrets),
