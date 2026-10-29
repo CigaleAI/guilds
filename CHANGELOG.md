@@ -8,6 +8,16 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** Creating or changing a routine refuses, with a 422 that
+names the field and before the request's user is identified: a
+`description` or `instruction` that is not a string, a `cron` that is
+neither a string nor null, a `window` that is neither null nor an
+object with a string `timezone`, `start` and `end` and a number
+`max_wakes`, and a `paused` that is not a boolean. Before, those were
+refused by the routine's own checks, a `paused` that was not a boolean
+was left out of the change, and a create missing both `description`
+and `instruction` named each of them.
+
 **No impact.** The secret routes refuse, with a 422 that names the
 field and before the request's user is identified: a create whose
 `name`, `description` or `value` is not a string, a change whose
