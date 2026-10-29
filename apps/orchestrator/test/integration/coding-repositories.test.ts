@@ -178,6 +178,9 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
     assert.equal(twice.statusCode, 409);
     const badName = await app.inject({ method: "POST", url: base, headers: JSON_HEADERS, payload: { name: "Docs", url: "https://x.dev/a" } });
     assert.equal(badName.statusCode, 422);
+    const urlless = await app.inject({ method: "POST", url: base, headers: JSON_HEADERS, payload: { name: "docs-two" } });
+    assert.equal(urlless.statusCode, 422);
+    assert.deepEqual(urlless.json().detail[0].loc, ["body", "url"]);
 
     const ownerless = await app.inject({
       method: "POST",
@@ -508,6 +511,14 @@ test("a second guild reuses the GitHub App and picks its own repositories", { ti
       account: "acme",
     });
 
+    const unlisted = await app.inject({
+      method: "PUT",
+      url: `/api/mcp/connections/${retryId}/github/selected`,
+      headers: JSON_HEADERS,
+      payload: { repositories: "site" },
+    });
+    assert.equal(unlisted.statusCode, 422, unlisted.body);
+    assert.deepEqual(unlisted.json().detail[0].loc, ["body", "repositories"]);
     const droppedBefore = dropped.length;
     const picked = await app.inject({
       method: "PUT",

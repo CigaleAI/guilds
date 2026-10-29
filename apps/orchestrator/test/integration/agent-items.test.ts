@@ -291,6 +291,14 @@ test(
         payload: { harness: "abacus" },
       });
       assert.equal(check.statusCode, 422);
+      const numberedHarness = await app.inject({
+        method: "POST",
+        url: `${agent}/harness/check`,
+        headers: JSON_OWNER,
+        payload: { harness: 3 },
+      });
+      assert.equal(numberedHarness.statusCode, 422);
+      assert.deepEqual(numberedHarness.json().detail[0].loc, ["body", "harness"]);
       assert.deepEqual(
         (
           await app.inject({ method: "GET", url: "/api/runs/run_items/changes", headers: OWNER })

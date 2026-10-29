@@ -190,6 +190,8 @@ A repository payload carries `id`, `guild_id`, `name`, `url`,
 `POST` takes `{ name, url, default_branch?, connection_id? }` and
 returns 201 with the repository.
 
+- `name` and `url` are strings, `default_branch` and `connection_id`
+  a string or null; another type is 422 naming the field.
 - A bad name, URL, or branch is 422. `default_branch` must be a valid
   branch name.
 - A name the guild already has is 409.

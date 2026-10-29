@@ -8,6 +8,15 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** The coding routes refuse, with a 422 that names the
+field and before the request's user is identified: a repository without
+a string `name` and `url`, or with a `default_branch` or
+`connection_id` that is neither a string nor null; a GitHub selection
+whose `repositories` is not a list of such repositories; and a harness
+check whose `harness` is not a string. Before, those were read as
+their text, and a selection that was not a list was a 422 with
+`repositories must be an array`.
+
 **No impact.** Installing a registry connector refuses a request
 without a string `slug`, or with a `version` that is not a string, and
 installing or updating one refuses an `unverified` or `experimental`
