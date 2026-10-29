@@ -421,6 +421,27 @@ test(
         payload: { body: { who: "Ada" } },
       });
       assert.equal(added.statusCode, 201, added.body);
+      const listedValues = await app.inject({
+        method: "POST",
+        url: records,
+        headers: JSON_OWNER,
+        payload: { body: ["Ada"] },
+      });
+      assert.equal(listedValues.statusCode, 422, listedValues.body);
+      assert.deepEqual(listedValues.json().detail[0].loc, ["body", "body"]);
+      const numberedPurpose = await app.inject({
+        method: "PATCH",
+        url: `/api/collections/${String(table.json().id)}`,
+        headers: JSON_OWNER,
+        payload: { purpose: 4 },
+      });
+      assert.equal(numberedPurpose.statusCode, 422, numberedPurpose.body);
+      assert.deepEqual(numberedPurpose.json().detail[0].loc, ["body", "purpose"]);
+      assert.equal(
+        (await app.inject({ method: "GET", url: `${records}?limit=1&limit=2`, headers: OWNER }))
+          .statusCode,
+        422,
+      );
       const recordId = String(added.json().record.id);
       const changed = await app.inject({
         method: "PATCH",
