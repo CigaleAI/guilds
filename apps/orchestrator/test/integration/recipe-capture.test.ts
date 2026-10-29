@@ -5,7 +5,7 @@ import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
@@ -67,7 +67,7 @@ before(async () => {
   await notes.ensureSystemPrompt();
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
-  app = await buildApp(database, { db, notes, scripts: agentScripts(db), schedules: new Schedules(scheduleDatabase(db)) });
+  app = await buildApp(database, { db, notes, scripts: agentScripts(db), schedules: agentSchedules(db) });
   await insertUser(db, { userId: TEAMMATE["X-Guilds-User"], name: "teammate-capture", image: null, email: "capture@example.com" }, new Date());
   await insertMember(db, "org_home", TEAMMATE["X-Guilds-User"], "member", new Date());
 

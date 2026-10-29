@@ -9,7 +9,7 @@ import { McpPool } from "../../src/mcp/pool.js";
 import { artifactStore } from "../../src/artifacts/store.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, testEnv } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
@@ -55,7 +55,7 @@ test("a code_task's diff and log are read from its own checkpoints and log, and 
     notes,
     artifacts: artifactStore(database.pool, notes.templates),
     scripts: agentScripts(db),
-    schedules: new Schedules(scheduleDatabase(db)),
+    schedules: agentSchedules(db),
     masterKey: decodeMasterKey(HEX_MASTER_KEY),
     mcp: new McpPool(mcpDatabase(db)),
     generation,

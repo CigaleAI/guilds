@@ -8,7 +8,7 @@ import { mcpDatabase } from "../../src/mcp/database.js";
 import { McpPool } from "../../src/mcp/pool.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { setInstanceKeys } from "../../src/instance/integrations.js";
 import { HEX_MASTER_KEY, storeKeys, tempDir } from "../helpers/env.js";
 import { connectModelProvider } from "../helpers/models.js";
@@ -117,7 +117,7 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
     db,
     notes,
     scripts: agentScripts(db),
-    schedules: new Schedules(scheduleDatabase(db)),
+    schedules: agentSchedules(db),
     masterKey: Buffer.from(HEX_MASTER_KEY, "hex"),
   });
   try {
@@ -400,7 +400,7 @@ test("a second guild reuses the GitHub App and picks its own repositories", { ti
     db,
     notes,
     scripts: agentScripts(db),
-    schedules: new Schedules(scheduleDatabase(db)),
+    schedules: agentSchedules(db),
     masterKey: Buffer.from(HEX_MASTER_KEY, "hex"),
     mcp,
   });
@@ -589,7 +589,7 @@ test("several GitHub installations open a picker so a guild can choose the accou
     db,
     notes,
     scripts: agentScripts(db),
-    schedules: new Schedules(scheduleDatabase(db)),
+    schedules: agentSchedules(db),
     masterKey: Buffer.from(HEX_MASTER_KEY, "hex"),
   });
   try {

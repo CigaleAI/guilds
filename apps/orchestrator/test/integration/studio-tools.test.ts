@@ -7,7 +7,7 @@ import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { resolveStudioFocus } from "../../src/studio/focus.js";
 import { StudioService } from "../../src/studio/index.js";
 import { TOOL_CALLS_PAGE } from "../../src/studio/tool-usage.js";
@@ -79,7 +79,7 @@ test("studio lists the guild's tools with who is offered each and how their call
   await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = artifactStore(database.pool, templatesRoot());
   const scripts = agentScripts(db);
-  const schedules = new Schedules(scheduleDatabase(db));
+  const schedules = agentSchedules(db);
   const studio = new StudioService({ db, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
   const app = await buildApp(database, { db, notes, artifacts, scripts, schedules, studio });
   try {

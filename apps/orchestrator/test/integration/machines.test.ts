@@ -12,7 +12,7 @@ import { McpPool } from "../../src/mcp/pool.js";
 import { artifactStore } from "../../src/artifacts/store.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, testEnv } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { ExportSandboxes } from "../helpers/live.js";
@@ -57,7 +57,7 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
     notes,
     artifacts,
     scripts: agentScripts(db),
-    schedules: new Schedules(scheduleDatabase(db)),
+    schedules: agentSchedules(db),
     masterKey: decodeMasterKey(HEX_MASTER_KEY),
     mcp: new McpPool(mcpDatabase(db)),
     generation,

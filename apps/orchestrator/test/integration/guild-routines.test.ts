@@ -5,7 +5,7 @@ import { connect } from "../../src/seed/connect.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import {
@@ -37,7 +37,7 @@ test("a guild can hold every routine without changing pause", { timeout: 60_000 
   await notes.ensureSystemPrompt();
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
-  const schedules = new Schedules(scheduleDatabase(db));
+  const schedules = agentSchedules(db);
   const app = await buildApp(database, {
     db,
     notes,

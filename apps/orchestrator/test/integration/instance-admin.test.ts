@@ -5,7 +5,7 @@ import { connect } from "../../src/seed/connect.js";
 import { setInstanceKeys } from "../../src/instance/integrations.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
@@ -29,7 +29,7 @@ test("the instance is administered by the seed organisation's owners, or by whom
   const db = database.pool;
   const member = await insertUser(db, { userId: "user_member", name: "member", image: null, email: "member@example.com" }, new Date());
   await insertMember(db, "org_home", String(member.id), "member", new Date());
-  const deps = { db, notes, scripts: agentScripts(db), schedules: new Schedules(scheduleDatabase(db)) };
+  const deps = { db, notes, scripts: agentScripts(db), schedules: agentSchedules(db) };
   const core = await buildApp(database, deps);
   const overridden = await buildApp(database, {
     ...deps,

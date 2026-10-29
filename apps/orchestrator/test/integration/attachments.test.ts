@@ -10,7 +10,7 @@ import { newId } from "../../src/lib/ids.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { ExportSandboxes } from "../helpers/live.js";
@@ -64,7 +64,7 @@ test("operators upload images, attach them to a run, and cannot read another org
     notes,
     artifacts,
     scripts: agentScripts(db),
-    schedules: new Schedules(scheduleDatabase(db)),
+    schedules: agentSchedules(db),
     attachments,
     generation,
   });

@@ -15,7 +15,7 @@ import { connect } from "../../src/seed/connect.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { StudioService } from "../../src/studio/index.js";
 import { generationLive } from "../../src/studio/runner.js";
 import {
@@ -122,7 +122,7 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
   await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = artifactStore(database.pool, templatesRoot());
   const scripts = agentScripts(db);
-  const schedules = new Schedules(scheduleDatabase(db));
+  const schedules = agentSchedules(db);
   const studio = new StudioService({
     db,
     artifacts,
@@ -379,7 +379,7 @@ test("studio reads agent access, script source, and granted connections", { time
   await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = artifactStore(database.pool, templatesRoot());
   const scripts = agentScripts(db);
-  const schedules = new Schedules(scheduleDatabase(db));
+  const schedules = agentSchedules(db);
   const calls: Array<{ remote: string; args: Record<string, unknown> }> = [];
   const mcp = {
     database: mcpDatabase(db),
@@ -669,7 +669,7 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
   await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = artifactStore(database.pool, templatesRoot());
   const scripts = agentScripts(db);
-  const schedules = new Schedules(scheduleDatabase(db));
+  const schedules = agentSchedules(db);
   const studio = new StudioService({
     db,
     artifacts,
@@ -1044,7 +1044,7 @@ test("studio proposes memory, note, and guild edits that the operator applies or
   await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = artifactStore(database.pool, templatesRoot());
   const scripts = agentScripts(db);
-  const schedules = new Schedules(scheduleDatabase(db));
+  const schedules = agentSchedules(db);
   const studio = new StudioService({ db, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
   const app = await buildApp(database, { db, notes, artifacts, scripts, schedules, studio });
 
@@ -1272,7 +1272,7 @@ test("studio proposes tables to create, change, and delete that the operator app
   await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = artifactStore(database.pool, templatesRoot());
   const scripts = agentScripts(db);
-  const schedules = new Schedules(scheduleDatabase(db));
+  const schedules = agentSchedules(db);
   const studio = new StudioService({ db, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
   const app = await buildApp(database, { db, notes, artifacts, scripts, schedules, studio });
 
@@ -1642,7 +1642,7 @@ test("studio proposes notes to create and delete and narrows an agent's access",
   await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = artifactStore(database.pool, templatesRoot());
   const scripts = agentScripts(db);
-  const schedules = new Schedules(scheduleDatabase(db));
+  const schedules = agentSchedules(db);
   const studio = new StudioService({ db, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
   const app = await buildApp(database, { db, notes, artifacts, scripts, schedules, studio });
 
@@ -1925,7 +1925,7 @@ test("studio proposes routines to create, change, and delete that the operator a
   await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = artifactStore(database.pool, templatesRoot());
   const scripts = agentScripts(db);
-  const schedules = new Schedules(scheduleDatabase(db));
+  const schedules = agentSchedules(db);
   const published: Array<{ guildId: string; action: string; scheduleId: string }> = [];
   const studio = new StudioService({
     db,

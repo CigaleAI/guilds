@@ -11,7 +11,7 @@ import { McpPool } from "../../src/mcp/pool.js";
 import { artifactStore } from "../../src/artifacts/store.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, clearInstanceKeys, testEnv } from "../helpers/env.js";
 import { connectModelProvider } from "../helpers/models.js";
 import { loadJsonFixture, loadTextFixture, templatesRoot } from "../helpers/fixtures.js";
@@ -88,7 +88,7 @@ test("R6 HTTP SSE and WS recordings replay over real HTTP", { timeout: 180_000 }
   await connectModelProvider(db, "org_home", "openrouter");
   const artifacts = artifactStore(database.pool, notes.templates);
   const scripts = agentScripts(db);
-  const schedules = new Schedules(scheduleDatabase(db));
+  const schedules = agentSchedules(db);
   const upstream = await startSandboxUpstream();
   const sandboxes = new ExportSandboxes(env.WORKSPACE_ROOT ?? "");
   sandboxes.novncBase = upstream.base;

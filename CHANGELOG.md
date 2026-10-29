@@ -229,7 +229,9 @@ not load `instrument.js` calls `startErrorReporting`, exported from
 `error-reporting.js`, first. A domain's service is built from the
 connection, and the function that bound its queries is not exported:
 `agentScripts(db)` (`scripts/catalog.js`) builds `Scripts`, in place
-of `scriptDatabase`.
+of `scriptDatabase`, and `agentSchedules(db)` (`schedules/service.js`)
+builds `Schedules`, in place of `scheduleDatabase` and
+`scheduleQueries`.
 
 **Breaking for extending repositories.** The Makefile variables
 `EDITION`, `EDITION_TEST_PACKAGES`, and `EDITION_COMPOSE_FILES` are

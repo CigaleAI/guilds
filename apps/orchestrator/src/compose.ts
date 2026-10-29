@@ -30,7 +30,7 @@ import { startRuntimeMetrics } from "./observability/runtime.js";
 import { OPEN_POLICY } from "./policy/index.js";
 import { recipeApply } from "./recipes/apply.js";
 import { RunSandboxes } from "./sandbox/index.js";
-import { scheduleDatabase, Schedules } from "./schedules/service.js";
+import { agentSchedules } from "./schedules/service.js";
 import { agentScripts } from "./scripts/catalog.js";
 import { StudioService } from "./studio/index.js";
 import { installConnectors } from "./connectors/index.js";
@@ -94,7 +94,7 @@ export async function createServer(
   const policy = extensionPolicy(extensions, { db }) ?? OPEN_POLICY;
   const artifacts = artifactStore(db, config.templatesRoot);
   const scripts = agentScripts(db);
-  const schedules = new Schedules(scheduleDatabase(db));
+  const schedules = agentSchedules(db);
   // Core reads the key stored for each organisation. An extension can answer with its own.
   const modelCredentials =
     extensionModelCredentials(extensions, { db }) ?? coreModelCredentials(modelProviderStore(db), masterKey);

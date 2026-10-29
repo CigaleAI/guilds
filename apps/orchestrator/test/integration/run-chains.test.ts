@@ -15,7 +15,7 @@ import { mcpDatabase } from "../../src/mcp/database.js";
 import { McpPool } from "../../src/mcp/pool.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { answerOps, HostCodeSandbox } from "../helpers/code-sandbox.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { connectModelProvider } from "../helpers/models.js";
@@ -102,7 +102,7 @@ test("a coding run near its input limit hands off and continues in a new run", {
     notes,
     artifacts,
     scripts: agentScripts(db),
-    schedules: new Schedules(scheduleDatabase(db)),
+    schedules: agentSchedules(db),
     generation: loop,
   });
   const headers = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home", "content-type": "application/json" };

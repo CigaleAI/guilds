@@ -7,7 +7,7 @@ import { mcpDatabase } from "../../src/mcp/database.js";
 import { McpPool } from "../../src/mcp/pool.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, clearInstanceKeys, testEnv } from "../helpers/env.js";
 import { connectModelProvider } from "../helpers/models.js";
 import { loadJsonFixture, templatesRoot } from "../helpers/fixtures.js";
@@ -69,7 +69,7 @@ test("R3 feature HTTP recordings replay against an isolated database", async () 
   const db = database.pool;
   await connectModelProvider(db, "org_home", "openrouter");
   const scripts = agentScripts(db);
-  const schedules = new Schedules(scheduleDatabase(db));
+  const schedules = agentSchedules(db);
   const app = await buildApp(database, {
     db,
     notes,

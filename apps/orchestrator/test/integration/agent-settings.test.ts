@@ -20,7 +20,7 @@ import { createGuild } from "../../src/guilds/service.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { OPEN_POLICY } from "../../src/policy/index.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { TEST_CREDENTIALS, TEST_MODEL } from "../helpers/models.js";
@@ -58,7 +58,7 @@ test(
     const notes = new NotesStore(tempDir("guilds-agent-settings-"), templatesRoot());
     await notes.ensureSystemPrompt();
     const db = database.pool;
-    const schedules = new Schedules(scheduleDatabase(db));
+    const schedules = agentSchedules(db);
     const app = await buildApp(database, {
       db,
       notes,
