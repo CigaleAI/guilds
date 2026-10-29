@@ -36,7 +36,15 @@ export class UserError extends Error {
 }
 
 /** A user as the directory receives it, before validation: a name, and an email or null. */
-export type UserDraft = { name: string; email: unknown };
+export const UserDraftSchema = Type.Object({
+  name: Type.String(),
+  email: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+});
+
+export type UserDraft = Static<typeof UserDraftSchema>;
+
+/** The email a user is identified by; null clears it. */
+export const UserEmailSchema = Type.Object({ email: Type.Union([Type.String(), Type.Null()]) });
 
 export type UserItem = ReturnType<typeof userItem>;
 
@@ -73,7 +81,7 @@ export async function createUser(
   orgCreated?: OrgCreatedHook,
 ): Promise<UserItem> {
   const name = validateUserName(draft.name);
-  const email = validateUserEmail(draft.email);
+  const email = validateUserEmail(draft.email ?? null);
   const user = { userId: newId("user"), name, image: null, email };
   try {
     return userItem(await insertUser(db, user, new Date(), orgCreated));
@@ -86,7 +94,7 @@ export async function createUser(
 export async function changeUserEmail(
   db: Queryable,
   userId: string,
-  email: unknown,
+  email: string | null,
 ): Promise<UserItem> {
   const address = validateUserEmail(email);
   let row;

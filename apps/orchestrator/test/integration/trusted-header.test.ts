@@ -103,6 +103,12 @@ test("behind an authenticating proxy, a user is whoever holds the email it sends
     assert.equal((await patch(ada, { email: "operator@example.com" })).statusCode, 409);
     assert.equal((await patch(ada, { email: "nope" })).statusCode, 422);
     assert.equal((await patch(ada, {})).statusCode, 422);
+    const numbered = await patch(ada, { email: 7 });
+    assert.equal(numbered.statusCode, 422);
+    assert.deepEqual(numbered.json().detail[0].loc, ["body", "email"]);
+    const unnamed = await post({ email: "grace@example.com" });
+    assert.equal(unnamed.statusCode, 422);
+    assert.deepEqual(unnamed.json().detail[0].loc, ["body", "name"]);
     assert.equal((await patch("user_missing", { email: null })).statusCode, 404);
     assert.equal((await patch(ada, { email: null })).json().email, null);
     assert.equal((await me(as("ada@new.example"))).statusCode, 401);

@@ -8,6 +8,13 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** The user directory refuses a create without a string
+`name`, or with an `email` that is neither a string nor null, and an
+email change without an `email` that is a string or null, with a 422
+that names the field. Whoever may not use the directory gets the same
+404 whatever they send. Before, a `name` was read as text, and a
+missing `email` on a change was a 422 with `email is required`.
+
 **No impact.** Replacing a note's, a collection's or a file's access
 list refuses a `subjects` that is not a list, and an entry without a
 string `type`, `id` and `mode`, with a 422 that names the field, before
