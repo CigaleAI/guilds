@@ -82,7 +82,7 @@ export function resolveMcpTool(
 }
 
 /** The agent's environment as the run snapshot carries it: id, name, and description of each secret. */
-export async function agentSecrets(db: AccessDatabase, agent: AgentPlaceRow): Promise<SecretRef[]> {
+export async function agentSecretsThrough(db: AccessDatabase, agent: AgentPlaceRow): Promise<SecretRef[]> {
   const rows = await db.listAgentSecrets({
     orgId: agent.org_id,
     guildId: agent.guild_id,
@@ -106,7 +106,7 @@ type LoginReads = Pick<AccessDatabase, "listBindingsCovering" | "listServers" | 
  * The connected logins behind the MCP servers the agent has on, each with its server. A server
  * that is off for the agent, or whose login is missing or not connected, has none.
  */
-export async function agentLogins(db: LoginReads, agent: AgentPlaceRow): Promise<ConnectorLogin[]> {
+export async function agentLoginsThrough(db: LoginReads, agent: AgentPlaceRow): Promise<ConnectorLogin[]> {
   const scope: RuntimeScope = { orgId: agent.org_id, guildId: agent.guild_id, agentId: agent.id };
   const rows = await db.listBindingsCovering(scope);
   const connections = await loginsById(db, scope);
@@ -131,7 +131,7 @@ export async function agentToolConnection(
   slug: string,
   remoteName: string,
 ): Promise<McpConnectionRow | null> {
-  const login = (await agentLogins(db, agent)).find((item) => item.server.slug === slug);
+  const login = (await agentLoginsThrough(db, agent)).find((item) => item.server.slug === slug);
   if (!login) {
     return null;
   }
@@ -211,7 +211,7 @@ async function loginsById(db: Pick<AccessDatabase, "listMcpConnections">, scope:
   return new Map(logins.map((connection) => [connection.id, connection]));
 }
 
-export async function agentRuntime(
+export async function agentRuntimeThrough(
   db: AccessDatabase,
   agent: AgentPlaceRow,
   options: { mcpPool?: ToolSync | null } = {},
@@ -223,7 +223,7 @@ export async function agentRuntime(
   };
   const rows = await db.listBindingsCovering(scope);
   const tools = enabledToolNames(resolvedTools(rows, scope));
-  const metas = await agentSecrets(db, agent);
+  const metas = await agentSecretsThrough(db, agent);
   const servers = await db.listServers({ owner: { visibleTo: scope.orgId } });
   const connections = await loginsById(db, scope);
   const listings: Listing[] = [];
@@ -259,7 +259,7 @@ export function applySecretAliases(
   return aliased;
 }
 
-export async function snapshotEnvValues(
+export async function snapshotEnvValuesThrough(
   db: AccessDatabase,
   secretRefs: SecretRef[],
 ): Promise<Record<string, string>> {

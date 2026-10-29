@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { agentRuntime } from "../../src/access/runtime.js";
+import { agentRuntimeThrough } from "../../src/access/runtime.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import { decodeMasterKey } from "../../src/config/index.js";
 import { NATIVE_TOOLS } from "../../src/seed/catalog.js";
@@ -206,6 +206,6 @@ test("a disconnected platform login is left out of a run, not an error", async (
       return [platform];
     },
   };
-  const runtime = await agentRuntime(db as never, { id: "a_1", guild_id: "guild_1", org_id: "org_1" });
+  const runtime = await agentRuntimeThrough(db as never, { id: "a_1", guild_id: "guild_1", org_id: "org_1" });
   assert.deepEqual(runtime.mcp, []);
 });

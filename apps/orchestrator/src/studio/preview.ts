@@ -1,7 +1,7 @@
 import { agentActor } from "../artifacts/actors.js";
 import type { ArtifactStore } from "../artifacts/store.js";
 import { enabledToolNames, resolvedMcp, resolvedTools } from "../access/index.js";
-import { accessDatabase, agentLogins, agentSecrets, resolveMcpTool } from "../access/runtime.js";
+import { accessDatabase, agentLoginsThrough, agentSecretsThrough, resolveMcpTool } from "../access/runtime.js";
 import { listAgents, type AgentPlaceRow, type AgentRow } from "../db/agents.js";
 import { listGroupMessages } from "../db/group-chat.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
@@ -37,7 +37,7 @@ export async function previewCurrentState(
   const orgId = agent.org_id;
   const guildId = agent.guild_id;
   const agentId = agent.id;
-  const secrets = await agentSecrets(deps.db, agent);
+  const secrets = await agentSecretsThrough(deps.db, agent);
   const members = await deps.db.listAgents(guildId);
   const historyRows = await deps.db.listGroupMessages(guildId);
   const actor = agentActor({ orgId, guildId, agentId, agentName: agent.name });
@@ -58,7 +58,7 @@ export async function previewCurrentState(
     secrets,
     scripts: await deps.scripts.catalog(agentId),
     maxToolCalls: Number(config.max_tool_calls ?? 50),
-    connectors: previewConnectorState(await agentLogins(deps.db, agent)),
+    connectors: previewConnectorState(await agentLoginsThrough(deps.db, agent)),
   });
   return { state, projected_at: projectedAt };
 }
@@ -150,7 +150,7 @@ export async function projectAgentAccess(
   const rows = await deps.db.listBindingsCovering({ orgId, guildId, agentId });
   const scope = { orgId, guildId, agentId };
   const nativeTools = enabledToolNames(resolvedTools(rows, scope));
-  const secrets = (await agentSecrets(deps.db, agent)).map((row) => ({
+  const secrets = (await agentSecretsThrough(deps.db, agent)).map((row) => ({
     name: row.name ?? "",
     description: row.description ?? "",
   }));

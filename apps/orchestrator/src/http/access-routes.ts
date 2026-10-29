@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { requireVisibleAgent } from "../agents/access.js";
-import { accessViewDatabase, loadAccessView } from "../access/view.js";
+import { accessViewDatabase, loadAccessViewThrough } from "../access/view.js";
 import { requireVisibleGuild } from "../guilds/access.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
@@ -19,19 +19,19 @@ export async function registerAccessRoutes(app: FastifyInstance, deps: AppDeps):
     if (!(await isInstanceAdmin(deps, user.id))) {
       throw new HttpError(404, "Not Found");
     }
-    return loadAccessView(accessView, { viewScope: "platform", mcp });
+    return loadAccessViewThrough(accessView, { viewScope: "platform", mcp });
   });
 
   app.get("/api/access", async (request) => {
     const user = await currentUser(db, request, deps);
     const org = await currentOrg(db, request, user);
-    return loadAccessView(accessView, { orgId: String(org.id), viewScope: "org", mcp });
+    return loadAccessViewThrough(accessView, { orgId: String(org.id), viewScope: "org", mcp });
   });
 
   app.get("/api/guilds/:guild_id/access", async (request) => {
     const user = await currentUser(db, request, deps);
     const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
-    return loadAccessView(accessView, {
+    return loadAccessViewThrough(accessView, {
       orgId: guild.org_id,
       guildId: guild.id,
       viewScope: "guild",
@@ -42,7 +42,7 @@ export async function registerAccessRoutes(app: FastifyInstance, deps: AppDeps):
   app.get("/api/agents/:agent_id/access", async (request) => {
     const user = await currentUser(db, request, deps);
     const agent = await requireVisibleAgent(db, param(request, "agent_id"), user.id);
-    return loadAccessView(accessView, {
+    return loadAccessViewThrough(accessView, {
       orgId: agent.org_id,
       guildId: agent.guild_id,
       agentId: agent.id,

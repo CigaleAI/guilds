@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { agentLogins } from "../../src/access/runtime.js";
+import { agentLoginsThrough } from "../../src/access/runtime.js";
 import { installConnectors } from "../../src/connectors/index.js";
 import type { BindingRow } from "../../src/db/bindings.js";
 import type { McpConnectionRow, ScopedMcpConnectionRow } from "../../src/db/mcp.js";
@@ -60,18 +60,18 @@ function quotesLogins(options: { serverOff?: boolean; status?: McpConnectionRow[
 
 test("agentLogins reads a login's settings, and leaves out a server that is off or a login disconnected", async () => {
   const agent = { id: "agent_1", guild_id: "guild_1", org_id: "org_1" };
-  const [found, ...rest] = await agentLogins(quotesLogins(), agent);
+  const [found, ...rest] = await agentLoginsThrough(quotesLogins(), agent);
   assert.equal(found?.connection.id, "conn_quotes");
   assert.equal(found?.server.slug, "quotes");
   assert.deepEqual(found?.connection.settings.symbols, PINNED);
   assert.deepEqual(rest, []);
-  assert.deepEqual(await agentLogins(quotesLogins({ serverOff: true }), agent), []);
-  assert.deepEqual(await agentLogins(quotesLogins({ status: "disconnected" }), agent), []);
+  assert.deepEqual(await agentLoginsThrough(quotesLogins({ serverOff: true }), agent), []);
+  assert.deepEqual(await agentLoginsThrough(quotesLogins({ status: "disconnected" }), agent), []);
 });
 
 test("previewConnectorState marks the key of each connector an agent's logins sign into as fetched at run start", async () => {
   const agent = { id: "agent_1", guild_id: "guild_1", org_id: "org_1" };
-  assert.deepEqual(previewConnectorState(await agentLogins(quotesLogins(), agent)), {
+  assert.deepEqual(previewConnectorState(await agentLoginsThrough(quotesLogins(), agent)), {
     [QUOTES.manifest.state!.key]: { unavailable: "fetched live at run start" },
   });
   assert.deepEqual(previewConnectorState([]), {});

@@ -17,7 +17,7 @@ import { notesNamed } from "../artifacts/notes.js";
 import type { ArtifactActor } from "../artifacts/types.js";
 import type { ArtifactStore } from "../artifacts/store.js";
 import type { ArtifactRow } from "../db/artifacts.js";
-import { accessViewDatabase, loadAccessView } from "../access/view.js";
+import { accessViewDatabase, loadAccessViewThrough } from "../access/view.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { Schedules } from "../schedules/service.js";
 import { rowTiming } from "../schedules/timing.js";
@@ -368,7 +368,7 @@ async function captureSecrets(capture: Capture, agent: GuildAgentRow): Promise<v
 
 /** An agent as a role, with the connections and secrets it reaches. */
 async function captureAgent(capture: Capture, agent: GuildAgentRow): Promise<void> {
-  const view = await loadAccessView(capture.deps.db, {
+  const view = await loadAccessViewThrough(capture.deps.db, {
     orgId: capture.orgId,
     guildId: capture.guildId,
     agentId: agent.id,

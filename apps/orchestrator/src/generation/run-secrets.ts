@@ -1,4 +1,4 @@
-import { accessDatabase, agentSecrets, applySecretAliases, snapshotEnvValues } from "../access/runtime.js";
+import { accessDatabase, agentSecretsThrough, applySecretAliases, snapshotEnvValuesThrough } from "../access/runtime.js";
 import { instanceRedactions } from "../connectors/instance.js";
 import { decryptPayload } from "../credentials/crypto.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
@@ -94,7 +94,7 @@ export class RunSecrets {
 
   /** Writes the agent's current secret references into each of its active runs that holds others. */
   async sync(agent: AgentRow): Promise<SecretRef[]> {
-    const refs = await agentSecrets(this.db, agent);
+    const refs = await agentSecretsThrough(this.db, agent);
     const now = new Date();
     for (const run of await this.db.listRuns(agent.id)) {
       if (run.status !== "active" || JSON.stringify(run.config_snapshot.secrets) === JSON.stringify(refs)) {
@@ -110,7 +110,7 @@ export class RunSecrets {
   async resolve(agent: AgentRow, snapshot: RunConfigSnapshot): Promise<GenerationSecrets> {
     const refs = await this.sync(agent);
     snapshot.secrets = refs;
-    const env = applySecretAliases(await snapshotEnvValues(this.db, refs), snapshot.secret_aliases);
+    const env = applySecretAliases(await snapshotEnvValuesThrough(this.db, refs), snapshot.secret_aliases);
     return { refs, env, values: { ...env, ...(await mcpRedactions(this.db, snapshot)), ...instanceRedactions() } };
   }
 

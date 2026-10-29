@@ -1,5 +1,5 @@
 import { Type } from "@sinclair/typebox";
-import { accessDatabase, agentSecrets, snapshotEnvValues } from "../access/runtime.js";
+import { accessDatabase, agentSecretsThrough, snapshotEnvValuesThrough } from "../access/runtime.js";
 import {
   agentGitIdentity,
   cloneFailures,
@@ -398,7 +398,7 @@ export class CodingRuns {
   private async secretValues(agent: AgentRow): Promise<Record<string, string>> {
     const { db } = this.services;
     try {
-      return await snapshotEnvValues(db, await agentSecrets(db, agent));
+      return await snapshotEnvValuesThrough(db, await agentSecretsThrough(db, agent));
     } catch (error) {
       throw new RunRequestError(503, `the agent's secrets cannot be read to redact this: ${errorMessage(error)}`);
     }

@@ -1,5 +1,5 @@
 import { accessPayload, mcpToolView, resolvedMcp } from "./index.js";
-import { accessDatabase, agentSecrets, resolveMcpTool } from "./runtime.js";
+import { accessDatabase, agentSecretsThrough, resolveMcpTool } from "./runtime.js";
 import { agentDetail } from "../agents/view.js";
 import { listServers, serverTools, type LoadedConnector } from "../connectors/servers.js";
 import type { AgentRow } from "../db/agents.js";
@@ -56,7 +56,7 @@ async function listConnectionTools(
 }
 
 /** The tools, connectors and bindings a scope sees, with each listed tool resolved for it. */
-export async function loadAccessView(
+export async function loadAccessViewThrough(
   db: AccessViewDatabase,
   options: {
     orgId?: string | null;
@@ -140,7 +140,7 @@ export async function loadAgentView(
   row: AgentRow,
   generating: boolean,
 ): Promise<Record<string, unknown>> {
-  const access = await loadAccessView(accessViewDatabase(db), {
+  const access = await loadAccessViewThrough(accessViewDatabase(db), {
     orgId: row.org_id,
     guildId: row.guild_id,
     agentId: row.id,
@@ -149,6 +149,6 @@ export async function loadAgentView(
   });
   return {
     ...agentDetail(row, generating),
-    access: { ...access, secrets: await agentSecrets(accessDatabase(db), row) },
+    access: { ...access, secrets: await agentSecretsThrough(accessDatabase(db), row) },
   };
 }
