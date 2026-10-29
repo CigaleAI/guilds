@@ -166,7 +166,12 @@ async function resizeMachine(
           `this machine's agents need at least ${sizeLabel(minimum)}; move them or turn their browser or coding off first`,
         );
       }
-      const after = await updateMachine(client, orgId, machineId, machine, new Date());
+      const after = await updateMachine(
+        client,
+        { org_id: orgId, id: machineId },
+        machine,
+        new Date(),
+      );
       return { before: machineFromRow(current), after: machineFromRow(after) };
     });
   } catch (error) {

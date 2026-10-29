@@ -278,7 +278,13 @@ describe("RowMissing", { concurrency: 1 }, () => {
       name: "a machine update that writes no row raises RowMissing",
       table: "machines",
       event: "UPDATE",
-      write: () => updateMachine(database.pool, "org_home", machineId, MACHINE_INPUT, new Date()),
+      write: () =>
+        updateMachine(
+          database.pool,
+          { org_id: "org_home", id: machineId },
+          MACHINE_INPUT,
+          new Date(),
+        ),
       message: "machine update failed",
     },
     {

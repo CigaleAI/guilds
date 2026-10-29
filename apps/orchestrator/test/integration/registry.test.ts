@@ -130,7 +130,11 @@ test("the CLI, the admin routes, recipe import, and apply preview read the regis
       assert.equal(refused.statusCode, 409);
 
       const outsider = await insertUser(db, { userId: "user_registry_other", name: "other", image: null, email: "other@example.com" }, new Date());
-      await insertMember(db, "org_home", String(outsider.id), "member", new Date());
+      await insertMember(
+        db,
+        { org_id: "org_home", user_id: String(outsider.id), role: "member" },
+        new Date(),
+      );
       const hidden = await app.inject({
         method: "GET",
         url: "/api/admin/registry",

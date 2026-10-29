@@ -135,7 +135,7 @@ test("guild settings change within the guild's state and roles", { timeout: 60_0
       { userId: "user_settings_member", name: "settings-member" },
       new Date(),
     );
-    await insertMember(db, "org_home", member.id, "member", new Date());
+    await insertMember(db, { org_id: "org_home", user_id: member.id, role: "member" }, new Date());
     const asMember = { id: member.id, name: member.name };
     await setOperatorRole(db, renamed, member.id, "operator");
     await assert.rejects(

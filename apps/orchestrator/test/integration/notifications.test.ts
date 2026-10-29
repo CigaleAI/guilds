@@ -54,14 +54,22 @@ test("an operator's inbox holds open issues and unread tags from the guilds they
       image: null,
       email: "teammate-inbox@example.com",
     }, new Date());
-  await insertMember(db, "org_home", String(teammate.id), "member", new Date());
+  await insertMember(
+    db,
+    { org_id: "org_home", user_id: String(teammate.id), role: "member" },
+    new Date(),
+  );
   const bystander = await insertUser(db, {
       userId: "user_bystander_inbox",
       name: "bystander-inbox",
       image: null,
       email: "bystander-inbox@example.com",
     }, new Date());
-  await insertMember(db, "org_home", String(bystander.id), "member", new Date());
+  await insertMember(
+    db,
+    { org_id: "org_home", user_id: String(bystander.id), role: "member" },
+    new Date(),
+  );
   const TEAMMATE = { "X-Guilds-User": String(teammate.id), "X-Guilds-Org": "org_home" };
   const BYSTANDER = { "X-Guilds-User": String(bystander.id), "X-Guilds-Org": "org_home" };
   const json = { "content-type": "application/json" };

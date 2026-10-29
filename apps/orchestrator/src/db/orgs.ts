@@ -47,6 +47,9 @@ export type NewOrg = {
   userId: string;
 };
 
+/** A user joining an organisation, with their role in it. */
+export type NewOrgMember = Pick<OrgMember, "org_id" | "user_id" | "role">;
+
 export type NewOrgModelProvider = {
   providerId: string;
   orgId: string;
@@ -193,16 +196,14 @@ export async function listMembers(pool: Queryable, orgId: string): Promise<OrgMe
 
 export async function insertMember(
   pool: Queryable,
-  orgId: string,
-  userId: string,
-  role: string,
+  member: NewOrgMember,
   now: Date,
 ): Promise<OrgMemberRecordRow | null> {
   const result = await pool.query<OrgMemberRecordRow>(
     `INSERT INTO org_members (org_id, user_id, role, created_at)
      VALUES ($1, $2, $3, $4)
      RETURNING org_id, user_id, role, created_at`,
-    [orgId, userId, role, stamp(now)],
+    [member.org_id, member.user_id, member.role, stamp(now)],
   );
   return result.rows[0] ?? null;
 }

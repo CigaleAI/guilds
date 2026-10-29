@@ -28,7 +28,11 @@ test("the instance is administered by the seed organisation's owners, or by whom
   await notes.ensureSystemPrompt();
   const db = database.pool;
   const member = await insertUser(db, { userId: "user_member", name: "member", image: null, email: "member@example.com" }, new Date());
-  await insertMember(db, "org_home", String(member.id), "member", new Date());
+  await insertMember(
+    db,
+    { org_id: "org_home", user_id: String(member.id), role: "member" },
+    new Date(),
+  );
   const deps = { db, notes, scripts: agentScripts(db), schedules: agentSchedules(db) };
   const core = await buildApp(database, deps);
   const overridden = await buildApp(database, {

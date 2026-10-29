@@ -174,7 +174,7 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
     now,
   );
   const teammate = await insertUser(db, { userId: "user_teammate", name: "teammate", image: null, email: "teammate@example.com" }, now);
-  await insertMember(db, "org_home", String(teammate.id), "member", now);
+  await insertMember(db, { org_id: "org_home", user_id: String(teammate.id), role: "member" }, now);
 
   generationLive.streamCompletion = async function* stream() {
     yield ["delta", "Looking at the standing task."];

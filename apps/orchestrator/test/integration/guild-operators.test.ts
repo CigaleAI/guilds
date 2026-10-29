@@ -48,7 +48,11 @@ test("guild admins manage operators, and private guilds show only to operators",
       image: null,
       email: "teammate-ops@example.com",
     }, new Date());
-  await insertMember(db, "org_home", String(teammate.id), "member", new Date());
+  await insertMember(
+    db,
+    { org_id: "org_home", user_id: String(teammate.id), role: "member" },
+    new Date(),
+  );
   const outsider = await insertUser(db, {
       userId: "user_outsider_ops",
       name: "outsider-ops",
@@ -204,7 +208,11 @@ test("guild admins manage operators, and private guilds show only to operators",
     });
     assert.equal(renamed.statusCode, 409, renamed.body);
     assert.equal(renamed.json().detail, "outsider-ops is already an agent in a guild you operate");
-    await insertMember(db, "org_home", String(outsider.id), "member", new Date());
+    await insertMember(
+      db,
+      { org_id: "org_home", user_id: String(outsider.id), role: "member" },
+      new Date(),
+    );
     const operatorClash = await app.inject({
       method: "PUT",
       url: `/api/guilds/${sharedId}/operators/${String(outsider.id)}`,

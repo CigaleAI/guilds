@@ -16,6 +16,7 @@ import { deleteGuildUsage } from "./usage.js";
 
 type Guild = InferSelectModel<typeof guilds>;
 type McpConnection = InferSelectModel<typeof mcpConnections>;
+type GuildOperator = InferSelectModel<typeof guildOperators>;
 
 export type GuildOperatorRow = Pick<InferSelectModel<typeof guildOperators>, "user_id" | "role"> &
   Pick<InferSelectModel<typeof users>, "name">;
@@ -83,6 +84,11 @@ export type NewGuildRepository = {
 };
 
 export type GuildTextRow = Pick<Guild, "about" | "description">;
+
+/** A user's operator role on a guild; a null role removes them as an operator. */
+export type GuildOperatorChange = Pick<GuildOperator, "guild_id" | "user_id"> & {
+  role: GuildOperator["role"] | null;
+};
 
 // Operators of guild `p`, oldest first: [{ user_id, name, role }].
 export function guildOperatorsColumn(alias: string): string {
@@ -294,11 +300,10 @@ export async function lockGuildText(db: Queryable, guildId: string): Promise<Gui
 // name stays distinct from its agents' names.
 export async function setGuildOperator(
   pool: Queryable,
-  guildId: string,
-  userId: string,
-  role: "admin" | "operator" | null,
+  change: GuildOperatorChange,
   now: Date,
 ): Promise<GuildRow | null> {
+  const { guild_id: guildId, user_id: userId, role } = change;
   const changed = await withTransaction(pool, async (client) => {
     const guild =
       (

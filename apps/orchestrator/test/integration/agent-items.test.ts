@@ -281,7 +281,11 @@ test(
         { userId: "user_items_member", name: "items-member" },
         new Date(),
       );
-      await insertMember(db, "org_home", member.id, "member", new Date());
+      await insertMember(
+        db,
+        { org_id: "org_home", user_id: member.id, role: "member" },
+        new Date(),
+      );
       const MEMBER = {
         "X-Guilds-User": member.id,
         "X-Guilds-Org": "org_home",

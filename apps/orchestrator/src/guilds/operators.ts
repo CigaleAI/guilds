@@ -43,7 +43,7 @@ async function writeOperator(
 ): Promise<GuildRow> {
   let row;
   try {
-    row = await setGuildOperator(db, guildId, userId, role, new Date());
+    row = await setGuildOperator(db, { guild_id: guildId, user_id: userId, role }, new Date());
   } catch (error) {
     const refused = error instanceof LastGuildAdmin || error instanceof GuildNameTaken;
     throw refused ? new GuildError(409, error.message) : error;
