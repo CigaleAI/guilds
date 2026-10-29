@@ -301,15 +301,17 @@ provider is 422.
   connected provider keeps the current list. Ids are trimmed and
   deduplicated, in the order given. The key is probed before the row
   is written; a rejected key answers 422. It returns the provider
-  item. Other 422s: `api_key is required`, `base_url is required`,
-  `base_url must start with http:// or https://`, `models must be a
-  list of model ids`, `models must be <provider>/{model} ids`, `at
-  most 500 models per provider`.
+  item. `api_key` and `base_url` are strings and `models` a list of
+  strings; another type is 422 naming the field. Other 422s:
+  `api_key is required`, `base_url is required`, `base_url must start
+  with http:// or https://`, `models must be <provider>/{model} ids`,
+  `at most 500 models per provider`.
 - `PUT /api/orgs/:id/default-model`, for owners and admins. The body
   takes `model`: one of the chosen models on a connected marketplace
   provider, or null (an empty string also clears). It returns
-  `{ default }`. 422 `model must be a string or null`. 422 `model
-  must be {provider}/{model}` when the id has no provider. 422 when
+  `{ default }`. A `model` that is neither a string nor null is 422
+  naming the field. 422 `model must be {provider}/{model}` when the
+  id has no provider. 422 when
   the provider is a coding one (`the default must be a marketplace
   model`), or when the model is not chosen (`choose <id>
   under <Provider> on Model keys first`).
