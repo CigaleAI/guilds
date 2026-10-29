@@ -1,9 +1,4 @@
 {
   "filesInCycles": [],
-  "domainsInCycles": [
-    "github",
-    "groupchat",
-    "instance",
-    "typesafe"
-  ]
+  "domainsInCycles": []
 }
