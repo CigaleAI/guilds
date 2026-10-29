@@ -1,15 +1,28 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { Type, type Static } from "@sinclair/typebox";
+import type { FastifyReply, FastifyRequest } from "fastify";
 import { loadOperatorActor } from "../artifacts/actors.js";
-import { ArtifactFiles } from "../artifacts/files.js";
+import { ArtifactFiles, type FileView } from "../artifacts/files.js";
 import { FILE_MAX_BYTES, type ArtifactActor, type ArtifactLevel } from "../artifacts/types.js";
 import { requireVisibleGuild } from "../guilds/access.js";
 import { requireVisibleAgent } from "../agents/access.js";
 import { attachmentDisposition } from "../attachments/index.js";
-import type { AppDeps } from "./deps.js";
+import type { AppDeps, RouteApp } from "./deps.js";
 import { HttpError } from "./errors.js";
 import { currentOrg, currentUser } from "./identity.js";
+import { AgentParams, GuildParams } from "./params.js";
 import { publishGroup } from "./publish.js";
-import { param } from "./request.js";
+
+/** An upload's headers: the file's name and description, URL-encoded, and its media type. */
+const UploadHeadersSchema = Type.Object({
+  "x-filename": Type.Optional(Type.String()),
+  "x-description": Type.Optional(Type.String()),
+  "x-mime": Type.Optional(Type.String()),
+});
+
+type UploadHeaders = Static<typeof UploadHeadersSchema>;
+
+/** The path of one file. */
+const FileParams = Type.Object({ file_id: Type.String() });
 
 // The operator's files API: one list and one upload route per level, and the file itself by id.
 // Bytes are served for download only, never inline, whatever their media type says.
@@ -21,30 +34,37 @@ function filesOf(deps: AppDeps): ArtifactFiles {
   return deps.files;
 }
 
-/** The uploaded file's name, description, and media type, from the request headers. */
-function uploadHeaders(request: FastifyRequest): { name: string; description: string; mime: string } {
-  const header = (key: string) => String(request.headers[key] ?? "").trim();
-  const name = header("x-filename");
-  const description = header("x-description");
+/** A file as an upload carries it: its name, description, and media type, and its bytes. */
+type FileUpload = { name: string; description: string; mime: string; bytes: Buffer };
+
+/** The uploaded file: its name, description, and media type from the headers, its bytes the body. */
+function fileUpload(headers: UploadHeaders, body: unknown): FileUpload {
+  if (!Buffer.isBuffer(body)) {
+    throw new HttpError(422, "body must be the file bytes");
+  }
+  const name = (headers["x-filename"] ?? "").trim();
+  const description = (headers["x-description"] ?? "").trim();
   if (!name || !description) {
     throw new HttpError(422, "X-Filename and X-Description are required");
   }
-  return { name: decodeURIComponent(name), description: decodeURIComponent(description), mime: header("x-mime") };
-}
-
-function uploadBytes(request: FastifyRequest): Buffer {
-  if (!Buffer.isBuffer(request.body)) {
-    throw new HttpError(422, "body must be the file bytes");
-  }
-  return request.body;
+  return {
+    name: decodeURIComponent(name),
+    description: decodeURIComponent(description),
+    mime: (headers["x-mime"] ?? "").trim(),
+    bytes: body,
+  };
 }
 
 /** The owner a list or upload route names: the level, its id, the guild to publish to, and the actor. */
 type FileOwner = { level: ArtifactLevel; ownerId: string; guildId: string | null; actor: ArtifactActor };
 
-async function agentOwner(deps: AppDeps, request: FastifyRequest): Promise<FileOwner> {
+async function agentOwner(
+  deps: AppDeps,
+  request: FastifyRequest,
+  agentId: string,
+): Promise<FileOwner> {
   const user = await currentUser(deps.db, request, deps);
-  const row = await requireVisibleAgent(deps.db, param(request, "agent_id"), user.id);
+  const row = await requireVisibleAgent(deps.db, agentId, user.id);
   const actor = await loadOperatorActor(deps.db, user, {
     orgId: String(row.org_id),
     guildId: String(row.guild_id),
@@ -53,9 +73,13 @@ async function agentOwner(deps: AppDeps, request: FastifyRequest): Promise<FileO
   return { level: "agent", ownerId: String(row.id), guildId: String(row.guild_id), actor };
 }
 
-async function guildOwner(deps: AppDeps, request: FastifyRequest): Promise<FileOwner> {
+async function guildOwner(
+  deps: AppDeps,
+  request: FastifyRequest,
+  guildId: string,
+): Promise<FileOwner> {
   const user = await currentUser(deps.db, request, deps);
-  const row = await requireVisibleGuild(deps.db, param(request, "guild_id"), user.id);
+  const row = await requireVisibleGuild(deps.db, guildId, user.id);
   const actor = await loadOperatorActor(deps.db, user, { orgId: String(row.org_id), guildId: String(row.id) });
   return { level: "guild", ownerId: String(row.id), guildId: String(row.id), actor };
 }
@@ -73,26 +97,23 @@ async function publishFileChanged(deps: AppDeps, guildId: string | null, display
   }
 }
 
-function registerOwnerRoutes(
-  app: FastifyInstance,
-  deps: AppDeps,
-  path: string,
-  owner: (deps: AppDeps, request: FastifyRequest) => Promise<FileOwner>,
-): void {
-  app.get(path, async (request) => {
-    const { level, ownerId, actor } = await owner(deps, request);
-    return await filesOf(deps).listOwnerFiles(actor, level, ownerId);
-  });
+/** The files an owner holds. */
+async function listFiles(deps: AppDeps, owner: FileOwner): Promise<FileView[]> {
+  return await filesOf(deps).listOwnerFiles(owner.actor, owner.level, owner.ownerId);
+}
 
-  app.post(path, { bodyLimit: FILE_MAX_BYTES + 4096 }, async (request, reply) => {
-    const { level, guildId, actor } = await owner(deps, request);
-    const files = filesOf(deps);
-    const bytes = uploadBytes(request);
-    const row = await files.putFile(actor, { level, ...uploadHeaders(request), bytes });
-    const view = files.view(row);
-    await publishFileChanged(deps, guildId, view.display_path);
-    return reply.code(201).send(view);
-  });
+/** Stores an upload as the owner's file, or a new version of the file of that name, and answers 201. */
+async function uploadFile(
+  deps: AppDeps,
+  reply: FastifyReply,
+  owner: FileOwner,
+  upload: FileUpload,
+): Promise<FastifyReply> {
+  const files = filesOf(deps);
+  const row = await files.putFile(owner.actor, { level: owner.level, ...upload });
+  const view = files.view(row);
+  await publishFileChanged(deps, owner.guildId, view.display_path);
+  return reply.code(201).send(view);
 }
 
 /** Sends a file's bytes for download: its media type, no sniffing, never shown inline. */
@@ -105,22 +126,54 @@ function sendBytes(reply: FastifyReply, file: { name: string; mime: string }, by
     .send(bytes);
 }
 
-export async function registerFileRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
-  registerOwnerRoutes(app, deps, "/api/agents/:agent_id/files", agentOwner);
-  registerOwnerRoutes(app, deps, "/api/guilds/:guild_id/files", guildOwner);
-  registerOwnerRoutes(app, deps, "/api/org/files", orgOwner);
+export async function registerFileRoutes(app: RouteApp, deps: AppDeps): Promise<void> {
+  const upload = { bodyLimit: FILE_MAX_BYTES + 4096 };
 
-  app.get("/api/files/:file_id", async (request, reply) => {
+  app.get("/api/agents/:agent_id/files", { schema: { params: AgentParams } }, async (request) =>
+    listFiles(deps, await agentOwner(deps, request, request.params.agent_id)),
+  );
+  app.post(
+    "/api/agents/:agent_id/files",
+    { ...upload, schema: { params: AgentParams, headers: UploadHeadersSchema } },
+    async (request, reply) => {
+      const owner = await agentOwner(deps, request, request.params.agent_id);
+      return uploadFile(deps, reply, owner, fileUpload(request.headers, request.body));
+    },
+  );
+
+  app.get("/api/guilds/:guild_id/files", { schema: { params: GuildParams } }, async (request) =>
+    listFiles(deps, await guildOwner(deps, request, request.params.guild_id)),
+  );
+  app.post(
+    "/api/guilds/:guild_id/files",
+    { ...upload, schema: { params: GuildParams, headers: UploadHeadersSchema } },
+    async (request, reply) => {
+      const owner = await guildOwner(deps, request, request.params.guild_id);
+      return uploadFile(deps, reply, owner, fileUpload(request.headers, request.body));
+    },
+  );
+
+  app.get("/api/org/files", async (request) => listFiles(deps, await orgOwner(deps, request)));
+  app.post(
+    "/api/org/files",
+    { ...upload, schema: { headers: UploadHeadersSchema } },
+    async (request, reply) => {
+      const owner = await orgOwner(deps, request);
+      return uploadFile(deps, reply, owner, fileUpload(request.headers, request.body));
+    },
+  );
+
+  app.get("/api/files/:file_id", { schema: { params: FileParams } }, async (request, reply) => {
     const { actor } = await orgOwner(deps, request);
     const files = filesOf(deps);
-    const row = await files.loadFileById(actor, param(request, "file_id"));
+    const row = await files.loadFileById(actor, request.params.file_id);
     return sendBytes(reply, files.view(row), await files.readBytes(row));
   });
 
-  app.delete("/api/files/:file_id", async (request, reply) => {
+  app.delete("/api/files/:file_id", { schema: { params: FileParams } }, async (request, reply) => {
     const { actor } = await orgOwner(deps, request);
     const files = filesOf(deps);
-    const row = await files.loadFileById(actor, param(request, "file_id"));
+    const row = await files.loadFileById(actor, request.params.file_id);
     await files.deleteFile(actor, row);
     await publishFileChanged(deps, row.guild_id, files.view(row).display_path);
     return reply.code(204).send();
