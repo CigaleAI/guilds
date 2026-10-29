@@ -3,8 +3,7 @@ import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { decodeMasterKey } from "../../src/config/index.js";
 import { connect } from "../../src/seed/connect.js";
-import { mcpDatabase } from "../../src/mcp/database.js";
-import { McpPool } from "../../src/mcp/pool.js";
+import { mcpPool } from "../../src/mcp/pool.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
 import { agentSchedules } from "../../src/schedules/service.js";
@@ -76,7 +75,7 @@ test("R3 feature HTTP recordings replay against an isolated database", async () 
     scripts,
     schedules,
     masterKey: decodeMasterKey(HEX_MASTER_KEY),
-    mcp: new McpPool(mcpDatabase(db)),
+    mcp: mcpPool(db),
   });
   const placeholders = new PlaceholderMap();
   const byName = new Map(recordings.cases.map((item) => [item.name, item]));

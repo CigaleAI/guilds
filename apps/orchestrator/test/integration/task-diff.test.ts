@@ -4,8 +4,7 @@ import { buildApp } from "../../src/app.js";
 import { decodeMasterKey } from "../../src/config/index.js";
 import { connect } from "../../src/seed/connect.js";
 import type { GenerationLoop } from "../../src/generation/index.js";
-import { mcpDatabase } from "../../src/mcp/database.js";
-import { McpPool } from "../../src/mcp/pool.js";
+import { mcpPool } from "../../src/mcp/pool.js";
 import { artifactStore } from "../../src/artifacts/store.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
@@ -57,7 +56,7 @@ test("a code_task's diff and log are read from its own checkpoints and log, and 
     scripts: agentScripts(db),
     schedules: agentSchedules(db),
     masterKey: decodeMasterKey(HEX_MASTER_KEY),
-    mcp: new McpPool(mcpDatabase(db)),
+    mcp: mcpPool(db),
     generation,
   });
   try {

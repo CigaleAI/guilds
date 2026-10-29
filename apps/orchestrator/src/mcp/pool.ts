@@ -20,6 +20,7 @@ import {
 } from "../connectors/types.js";
 import { jsonObj } from "../db/json.js";
 import type { McpConnectionRow, McpToolRow } from "../db/mcp.js";
+import type { Queryable } from "../db/pg.js";
 import { utcMonth } from "../db/usage.js";
 import { TOKEN_REFRESH_MS } from "../github/tokens.js";
 import { newId } from "../lib/ids.js";
@@ -31,7 +32,7 @@ import { redact } from "../secrets/index.js";
 import { McpDisconnectedError, McpError } from "./errors.js";
 import { ListedTool, listedFromRows, remoteConnectorTool } from "./tools.js";
 import { CALL_TOOL_TIMEOUT_MS, McpSession, publicOnly } from "./session.js";
-import type { McpDatabase } from "./database.js";
+import { mcpDatabase, type McpDatabase } from "./database.js";
 import {
   connectionCredentials,
   credentialToken,
@@ -581,4 +582,9 @@ export class McpPool {
     );
     return Object.fromEntries(values.filter((value): value is [string, unknown] => value !== null));
   }
+}
+
+/** The pool of connector sessions whose logins, tool listings and call counts are on `db`. */
+export function mcpPool(db: Queryable, toolsTtlMs = TOOLS_TTL_MS, proxyUrl = ""): McpPool {
+  return new McpPool(mcpDatabase(db), toolsTtlMs, proxyUrl);
 }

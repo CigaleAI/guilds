@@ -23,8 +23,7 @@ import { connectorFiles } from "../../scripts/build-connector.js";
 import { installedConnectors } from "../../src/connectors/index.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import { McpError } from "../../src/mcp/errors.js";
-import { mcpDatabase } from "../../src/mcp/database.js";
-import { McpPool, OPERATOR_CALLER } from "../../src/mcp/pool.js";
+import { mcpPool, OPERATOR_CALLER } from "../../src/mcp/pool.js";
 import { syncCodeConnectors } from "../../src/registry/code.js";
 import { updateConnector } from "../../src/db/connectors.js";
 import { insertUser } from "../../src/db/users.js";
@@ -248,7 +247,7 @@ test("code connectors install from a verified, signed index and swap in without 
     process.env.CONNECTORS_ROOT = root;
     const notes = new NotesStore(tempDir("guilds-registry-code-notes-"), templatesRoot());
     await notes.ensureSystemPrompt();
-    const pool = new McpPool(mcpDatabase(db));
+    const pool = mcpPool(db);
     const app = await buildApp(database, {
       db,
       notes,
