@@ -8,6 +8,18 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** The secret routes refuse, with a 422 that names the
+field and before the request's user is identified: a create whose
+`name`, `description` or `value` is not a string, a change whose
+`name`, `description` or `value` is neither a string nor null, an
+`org_wide` that is neither a boolean nor null, a `guild_ids` or
+`agent_ids` that is neither a list of strings nor null, and a listing
+whose `guild_id` or `agent_id` is given more than once. Before, a
+`value` that was not a string was refused with `value must contain
+non-whitespace text`, the others by the secret's own checks, and a
+body missing several of `name`, `description` and `value` named each
+of them.
+
 **No impact.** Connecting a model provider refuses an `api_key` or
 `base_url` that is not a string and a `models` that is not a list of
 strings, and naming the default model refuses a `model` that is

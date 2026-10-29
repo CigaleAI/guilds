@@ -326,7 +326,9 @@ DELETE /api/secrets/:id
   agents. `?agent_id=` keeps exactly that agent's environment.
 - `POST` takes
   `{ name, description, value, org_wide?, guild_ids?, agent_ids? }`
-  and returns 201 with the metadata. A taken name is 409
+  and returns 201 with the metadata. `name`, `description` and
+  `value` are strings, `org_wide` a boolean or null, and `guild_ids`
+  and `agent_ids` lists of ids or null. A taken name is 409
   `NAME already exists in this organisation`. An unknown guild or
   agent id, or an invalid field, is 422. A member asking for
   organisation-wide or unassigned access, or a grant outside the
