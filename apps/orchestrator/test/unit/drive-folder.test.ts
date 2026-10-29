@@ -5,6 +5,7 @@ import {
   DriveFolderError,
   assertPickedDriveFolder,
   constrainDriveTool,
+  driveJson,
   fileInDriveFolder,
   filterDriveToolResult,
   searchDriveFolders,
@@ -14,6 +15,7 @@ import {
   translateDriveSearchQuery,
 } from "../../src/connectors/drive/folder.js";
 import drive from "../../src/connectors/drive/adapter.js";
+import { DriveFile } from "../../src/connectors/drive/responses.js";
 import { ConnectorError } from "../../src/connectors/types.js";
 import { mockFetch } from "../helpers/http.js";
 
@@ -218,6 +220,29 @@ test("Drive 403 explains missing Drive scope and API not enabled", async () => {
     listed.map((folder) => folder.name),
     ["Agents", "Zed"],
   );
+});
+
+test("driveJson decodes a response against its schema and refuses one that does not match", async () => {
+  const request = { url: "https://www.googleapis.com/drive/v3/files/file_1", schema: DriveFile };
+  const answering = (result: { json?: unknown; text?: string }) => ({
+    client: mockFetch(() => ({ status: 200, ...result })),
+  });
+  const file = { id: "file_1", parents: ["folder_1"] };
+  assert.deepEqual(await driveJson("tok", request, answering({ json: file })), file);
+  await assert.rejects(
+    () => driveJson("tok", request, answering({ json: { id: "file_1", parents: [7] } })),
+    (error: unknown) =>
+      error instanceof DriveFolderError &&
+      /^Drive returned an unexpected response at \/parents\/0: /.test(error.message),
+  );
+  for (const text of ["[]", "not json"]) {
+    await assert.rejects(
+      () => driveJson("tok", request, answering({ text })),
+      (error: unknown) =>
+        error instanceof DriveFolderError &&
+        error.message === "Drive folder lookup returned a non-object",
+    );
+  }
 });
 
 test("translateDriveSearchQuery maps MCP terms", () => {
