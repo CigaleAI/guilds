@@ -1241,14 +1241,6 @@
       "count": 2
     }
   },
-  "src/secrets/agent.ts": {
-    "@typescript-eslint/explicit-module-boundary-types": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
   "src/seed/operator.ts": {
     "no-restricted-syntax": {
       "count": 1

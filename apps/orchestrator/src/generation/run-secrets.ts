@@ -8,7 +8,7 @@ import { listActiveRuns, listRuns, updateRunSecrets } from "../db/runs.js";
 import type { RunConfigSnapshot, SecretRef } from "../db/schema/index.js";
 import { listActiveRunAgentIdsForSecret } from "../db/secrets.js";
 import { tokenRedactions } from "../oauth/index.js";
-import { agentSecretsDatabase, readSecretFile, removeSecretFile, storeAgentSecret } from "../secrets/agent.js";
+import { readSecretFile, removeSecretFile, storeAgentSecret } from "../secrets/agent.js";
 import type { AgentSecretStore } from "../toolbox/types.js";
 import type { AgentMachines } from "./machines.js";
 
@@ -42,18 +42,18 @@ export async function mcpRedactions(
   return values;
 }
 
-/** The db/ functions a run's secrets are read, refreshed, and stored through, on `db`. */
+/** The db/ functions a run's secrets are read and refreshed through, and the store of an agent's secret, on `db`. */
 export function runSecretsDatabase(db: Queryable) {
   return {
     agentSecrets: bindQuery(db, agentSecrets),
     snapshotEnvValues: bindQuery(db, snapshotEnvValues),
-    ...agentSecretsDatabase(db),
     getAgent: bindQuery(db, getAgent),
     getMcpConnection: bindQuery(db, getMcpConnection),
     listRuns: bindQuery(db, listRuns),
     listActiveRuns: bindQuery(db, listActiveRuns),
     listActiveRunAgentIdsForSecret: bindQuery(db, listActiveRunAgentIdsForSecret),
     updateRunSecrets: bindQuery(db, updateRunSecrets),
+    storeAgentSecret: bindQuery(db, storeAgentSecret),
   };
 }
 
@@ -123,8 +123,7 @@ export class RunSecrets {
     return {
       store: async (input) => {
         const file = await readSecretFile(await this.machines.agentWorkspace(agent), input.file);
-        const stored = await storeAgentSecret(
-          this.db,
+        const stored = await this.db.storeAgentSecret(
           { id: agent.id, orgId: agent.org_id },
           { name: input.name, description: input.description, value: file.value },
         );
