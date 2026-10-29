@@ -3,7 +3,7 @@ import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
 import { coreModelCredentials, modelProviderStore } from "../../src/llm/credentials.js";
-import { ModelsService, modelsDatabase } from "../../src/llm/models.js";
+import { modelsService } from "../../src/llm/models.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
@@ -51,7 +51,7 @@ test("an organisation connects providers, chooses models, and names a default", 
     schedules: new Schedules(scheduleDatabase(db)),
     masterKey: TEST_MASTER_KEY,
     modelCredentials: credentials,
-    models: new ModelsService({ db: modelsDatabase(db), credentials, fetch: fetchFn, masterKey: TEST_MASTER_KEY }),
+    models: modelsService(db, { credentials, fetch: fetchFn, masterKey: TEST_MASTER_KEY }),
   });
   const base = "/api/orgs/org_home";
   const put = (headers: Record<string, string>, path: string, payload: Record<string, unknown>) =>
