@@ -253,6 +253,14 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
 
     const disconnectedId = await importReady(fixtureDeskRecipe());
     const disconnectedApply = await applyRecipe(disconnectedId, "fixture-husk-unconnected");
+    const twice = await app.inject({
+      method: "POST",
+      url: `/api/recipes/${disconnectedId}/apply`,
+      headers: { ...AUTH, "content-type": "application/json" },
+      payload: { guild_name: "fixture-husk-twice" },
+    });
+    assert.equal(twice.statusCode, 409, twice.body);
+    assert.match(String(twice.json().detail), /^agent names already exist: /);
     const verifyMail = await app.inject({
       method: "POST",
       url: `/api/applies/${disconnectedApply.id}/steps/${encodeURIComponent("conn:mail")}/verify`,

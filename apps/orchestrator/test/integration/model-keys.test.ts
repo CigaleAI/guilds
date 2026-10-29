@@ -12,7 +12,7 @@ import { templatesRoot } from "../helpers/fixtures.js";
 import { TEST_MASTER_KEY } from "../helpers/models.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { insertUser } from "../../src/db/users.js";
-import { insertMember } from "../../src/db/orgs.js";
+import { insertMember, upsertOrgModelProvider } from "../../src/db/orgs.js";
 
 const OWNER = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 const MEMBER = { "X-Guilds-User": "user_member", "X-Guilds-Org": "org_home" };
@@ -119,6 +119,7 @@ test("an organisation connects providers, chooses models, and names a default", 
 
     const wrongKind = await put(OWNER, "/default-model", { model: "kimi/k3" });
     assert.equal(wrongKind.statusCode, 422, wrongKind.body);
+    assert.deepEqual(wrongKind.json(), { detail: "the default must be a marketplace model" });
     const unchosen = await put(OWNER, "/default-model", { model: "deepinfra/zai-org/GLM-5.3" });
     assert.equal(unchosen.statusCode, 422, unchosen.body);
     const chosen = await put(OWNER, "/default-model", { model: "deepinfra/zai-org/GLM-5.3-Flash" });
@@ -131,6 +132,14 @@ test("an organisation connects providers, chooses models, and names a default", 
     assert.equal(retick.statusCode, 200, retick.body);
     assert.equal(retick.json().key_hint, "abcd", "the key is kept when the save carries none");
     assert.equal((await app.inject({ method: "GET", url: `${base}/models`, headers: OWNER })).json().default, null);
+
+    const unsaved = await app.inject({
+      method: "GET",
+      url: `${base}/model-providers/local/catalog`,
+      headers: OWNER,
+    });
+    assert.equal(unsaved.statusCode, 422, unsaved.body);
+    assert.deepEqual(unsaved.json(), { detail: "save the local endpoint's URL first" });
 
     const local = await put(OWNER, "/model-providers/local", { base_url: "http://127.0.0.1:11434/v1", models: ["local/k3"] });
     assert.equal(local.statusCode, 200, local.body);
@@ -151,6 +160,27 @@ test("an organisation connects providers, chooses models, and names a default", 
     const after = await app.inject({ method: "GET", url: `${base}/models`, headers: OWNER });
     assert.deepEqual(after.json().models.map((item: { id: string }) => item.id), ["local/k3"]);
     assert.equal(await credentials.modelCredentials("org_home", "deepinfra"), null);
+
+    await upsertOrgModelProvider(
+      db,
+      {
+        providerId: "mp_platform_openai",
+        orgId: "org_home",
+        provider: "openai",
+        ciphertext: null,
+        nonce: null,
+        keyHint: null,
+        models: [],
+      },
+      new Date(),
+    );
+    const platform = await app.inject({
+      method: "DELETE",
+      url: `${base}/model-providers/openai`,
+      headers: OWNER,
+    });
+    assert.equal(platform.statusCode, 409, platform.body);
+    assert.deepEqual(platform.json(), { detail: "OpenAI is provided by the platform" });
   } finally {
     await app.close();
     await database.close();

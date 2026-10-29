@@ -250,6 +250,7 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
       payload: { agent_id: "a_other" },
     });
     assert.equal(target.statusCode, 422);
+    assert.deepEqual(target.json(), { detail: "agent is not in the source guild" });
 
     const setTarget = await app.inject({
       method: "PUT",
@@ -369,6 +370,7 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
       headers: { "X-Guilds-User": String(teammate.id), "X-Guilds-Org": "org_home" },
     });
     assert.equal(otherSession.statusCode, 404);
+    assert.deepEqual(otherSession.json(), { detail: "studio session not found" });
   } finally {
     await app.close();
     await database.close();
@@ -661,7 +663,9 @@ test("studio reads agent access, script source, and granted connections", { time
     const declinedMeta = (await getConversationMessage(db, "studio", session.id, declineSeq))?.metadata as Record<string, unknown>;
     assert.equal(declinedMeta.access_status, "declined");
     assert.equal(declinedMeta.resolved_by_user_id, "user_operator");
-    assert.equal((await answer(declineSeq, "grant")).statusCode, 409);
+    const regranted = await answer(declineSeq, "grant");
+    assert.equal(regranted.statusCode, 409);
+    assert.deepEqual(regranted.json(), { detail: "login request is already declined" });
     const grantSeq = await logged(requested);
     assert.equal((await answer(grantSeq, "maybe")).statusCode, 422);
     const grantedByCard = await answer(grantSeq, "grant");

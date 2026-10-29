@@ -95,6 +95,14 @@ test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => 
   const guildsBefore = await listGuilds(db, "org_home");
 
   try {
+    const modelless = await app.inject({
+      method: "POST",
+      url: "/api/builder/sessions",
+      headers: AUTH,
+      payload: {},
+    });
+    assert.equal(modelless.statusCode, 422, modelless.body);
+    assert.deepEqual(modelless.json(), { detail: "model is required" });
     const created = await app.inject({
       method: "POST",
       url: "/api/builder/sessions",
@@ -127,6 +135,7 @@ test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => 
       headers: { "X-Guilds-User": String(teammate.id), "X-Guilds-Org": "org_home" },
     });
     assert.equal(denied.statusCode, 404);
+    assert.deepEqual(denied.json(), { detail: "builder session not found" });
 
     const stale = await app.inject({
       method: "PUT",
@@ -135,7 +144,9 @@ test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => 
       payload: { expected_body_version: 0, recipe: linkedInNotionRecipe() },
     });
     assert.equal(stale.statusCode, 409);
-    assert.equal((stale.json().detail as { body_version?: number }).body_version, 1);
+    assert.deepEqual(stale.json(), {
+      detail: { message: "recipe body_version conflict", body_version: 1 },
+    });
 
     const written = await app.inject({
       method: "PUT",
@@ -434,6 +445,20 @@ test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => 
       headers: AUTH,
     });
     assert.equal(draftExport.statusCode, 409);
+    assert.deepEqual(draftExport.json(), { detail: "export refused while draft" });
+    const staleLibrary = await app.inject({
+      method: "PUT",
+      url: `/api/recipes/${imported.json().id}`,
+      headers: { ...AUTH, "content-type": "application/json" },
+      payload: { expected_body_version: 0, recipe: linkedInNotionRecipe() },
+    });
+    assert.equal(staleLibrary.statusCode, 409, staleLibrary.body);
+    assert.deepEqual(staleLibrary.json(), {
+      detail: {
+        message: "recipe body_version conflict",
+        body_version: imported.json().body_version,
+      },
+    });
 
     const listed = await app.inject({ method: "GET", url: "/api/recipes", headers: AUTH });
     assert.ok((listed.json() as unknown[]).length >= 2);
