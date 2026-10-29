@@ -7,7 +7,6 @@ import { scriptItem, type AgentScript } from "../scripts/catalog.js";
 import type { AppDeps } from "./deps.js";
 import { missingBodyFields } from "./errors.js";
 import { currentUser } from "./identity.js";
-import { identityDatabase } from "../users/identity.js";
 import { publishGroup } from "./publish.js";
 import { bodyOf, param } from "./request.js";
 import type { UserRow } from "../db/users.js";
@@ -28,7 +27,6 @@ function listedScript(agent: AgentRow, script: AgentScript) {
 /** An agent's scripts: listed, read, written and deleted by its operators. */
 export async function registerScriptRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { db, scripts } = deps;
-  const identityDb = identityDatabase(db);
 
   async function scriptOperator(user: UserRow, agent: AgentRow) {
     return loadOperatorActor(db, user, {
@@ -39,13 +37,13 @@ export async function registerScriptRoutes(app: FastifyInstance, deps: AppDeps):
   }
 
   app.get("/api/agents/:agent_id/scripts", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const agent = await requireVisibleAgent(db, param(request, "agent_id"), user.id);
     return (await scripts.listForAgent(agent.id)).map((script) => listedScript(agent, script));
   });
 
   app.post("/api/agents/:agent_id/scripts", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const agent = await requireVisibleAgent(db, param(request, "agent_id"), user.id);
     const missing = missingBodyFields(request.body, ["name", "description", "source"]);
     if (missing) {
@@ -70,7 +68,7 @@ export async function registerScriptRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.delete("/api/agents/:agent_id/scripts", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const agent = await requireVisibleAgent(db, param(request, "agent_id"), user.id);
     await scripts.deleteAll(await scriptOperator(user, agent), agent.id);
     await publishGroup(deps, agent.guild_id, "agent.scripts.changed", {
@@ -81,13 +79,13 @@ export async function registerScriptRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/agents/:agent_id/scripts/:name", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const agent = await requireVisibleAgent(db, param(request, "agent_id"), user.id);
     return scriptItem(await scripts.get(agent.id, param(request, "name")));
   });
 
   app.delete("/api/agents/:agent_id/scripts/:name", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const agent = await requireVisibleAgent(db, param(request, "agent_id"), user.id);
     const name = param(request, "name");
     await scripts.delete(await scriptOperator(user, agent), agent.id, name);

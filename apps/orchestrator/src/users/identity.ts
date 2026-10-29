@@ -1,20 +1,9 @@
 import { listOrgsForUser, type OrgMembershipRow } from "../db/orgs.js";
-import { bindQuery, type Queryable } from "../db/pg.js";
+import type { Queryable } from "../db/pg.js";
 import { getUserByEmail, type UserRow } from "../db/users.js";
 import { resolveOrg } from "../organisations/index.js";
 import { listUsersInSeedOrder } from "./directory.js";
 import { resolveUser, UserIdentityError } from "./index.js";
-
-/** The db/ functions core's sign-in modes resolve a request's user and organisation through, on `db`. */
-export function identityDatabase(db: Queryable) {
-  return {
-    listUsers: bindQuery(db, listUsersInSeedOrder),
-    listOrgsForUser: bindQuery(db, listOrgsForUser),
-    getUserByEmail: bindQuery(db, getUserByEmail),
-  };
-}
-
-export type IdentityDatabase = ReturnType<typeof identityDatabase>;
 
 /** The user `token` names, or the only user when it names none; a `UserIdentityError` otherwise. */
 export async function resolveTokenUser(db: Queryable, token: string | null): Promise<UserRow> {

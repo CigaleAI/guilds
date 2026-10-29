@@ -11,7 +11,6 @@ import type { Notifications } from "../notifications/index.js";
 import type { AppDeps } from "./deps.js";
 import { missingBodyFields } from "./errors.js";
 import { currentUser } from "./identity.js";
-import { identityDatabase } from "../users/identity.js";
 import { bodyOf, param } from "./request.js";
 import { pipeSse } from "./sse.js";
 
@@ -22,7 +21,6 @@ export async function registerGroupChatRoutes(
   notifications: Notifications,
 ): Promise<void> {
   const { db } = deps;
-  const identityDb = identityDatabase(db);
   const services: GroupChatOperatorServices = {
     db,
     chat: deps.generation?.groupChat ?? null,
@@ -30,38 +28,38 @@ export async function registerGroupChatRoutes(
   };
 
   app.get("/api/guilds/:guild_id/group-chat", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
     return readGroupChat(services, guild.id, user.id);
   });
 
   app.put("/api/guilds/:guild_id/group-chat/read", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
     return markGroupChatRead(services, guild.id, user.id, bodyOf(request).seen_through_seq);
   });
 
   app.put("/api/guilds/:guild_id/group-chat", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
     const limit = Number(bodyOf(request).agent_message_limit);
     return groupChatOf(services).set_limit(guild.id, limit);
   });
 
   app.get("/api/guilds/:guild_id/group-chat/messages", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
     return groupChatOf(services).list_messages(guild.id);
   });
 
   app.delete("/api/guilds/:guild_id/group-chat/messages", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const guild = await requireAdministeredGuild(db, param(request, "guild_id"), user.id);
     return groupChatOf(services).clear(guild.id);
   });
 
   app.post("/api/guilds/:guild_id/group-chat/messages", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
     const missing = missingBodyFields(request.body, ["content"]);
     if (missing) {
@@ -74,7 +72,7 @@ export async function registerGroupChatRoutes(
   });
 
   app.get("/api/guilds/:guild_id/group-chat/stream", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
     const chat = groupChatOf(services);
     await pipeSse(

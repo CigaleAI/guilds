@@ -6,7 +6,6 @@ import { RecipeConflictError, RecipeError } from "../recipes/errors.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError, recipeConflictHttp } from "./errors.js";
 import { currentOrg, currentUser } from "./identity.js";
-import { identityDatabase } from "../users/identity.js";
 import { frameSse, SSE_HEADERS } from "./sse.js";
 import { bodyOf, param } from "./request.js";
 import { parseReviewAction } from "../recipes/review.js";
@@ -35,17 +34,16 @@ function mapError(error: unknown): never {
 
 export async function registerBuilderSessionRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { db } = deps;
-  const identityDb = identityDatabase(db);
 
   app.get("/api/builder/sessions", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
+    const user = await currentUser(db, request, deps);
+    const org = await currentOrg(db, request, user);
     return builderOf(deps).listSessions(String(org.id), user.id);
   });
 
   app.post("/api/builder/sessions", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
+    const user = await currentUser(db, request, deps);
+    const org = await currentOrg(db, request, user);
     const body = bodyOf(request);
     try {
       return await builderOf(deps).createSession({
@@ -60,8 +58,8 @@ export async function registerBuilderSessionRoutes(app: FastifyInstance, deps: A
   });
 
   app.get("/api/builder/sessions/:session_id", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
+    const user = await currentUser(db, request, deps);
+    const org = await currentOrg(db, request, user);
     try {
       const builder = builderOf(deps);
       const session = await builder.getOwnedSession(param(request, "session_id"), user, org);
@@ -73,8 +71,8 @@ export async function registerBuilderSessionRoutes(app: FastifyInstance, deps: A
   });
 
   app.get("/api/builder/sessions/:session_id/messages", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
+    const user = await currentUser(db, request, deps);
+    const org = await currentOrg(db, request, user);
     try {
       const builder = builderOf(deps);
       const session = await builder.getOwnedSession(param(request, "session_id"), user, org);
@@ -85,8 +83,8 @@ export async function registerBuilderSessionRoutes(app: FastifyInstance, deps: A
   });
 
   app.post("/api/builder/sessions/:session_id/messages", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
+    const user = await currentUser(db, request, deps);
+    const org = await currentOrg(db, request, user);
     try {
       const builder = builderOf(deps);
       const session = await builder.getOwnedSession(param(request, "session_id"), user, org);
@@ -97,8 +95,8 @@ export async function registerBuilderSessionRoutes(app: FastifyInstance, deps: A
   });
 
   app.post("/api/builder/sessions/:session_id/cancel", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
+    const user = await currentUser(db, request, deps);
+    const org = await currentOrg(db, request, user);
     try {
       const builder = builderOf(deps);
       const session = await builder.getOwnedSession(param(request, "session_id"), user, org);
@@ -109,8 +107,8 @@ export async function registerBuilderSessionRoutes(app: FastifyInstance, deps: A
   });
 
   app.put("/api/builder/sessions/:session_id/recipe", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
+    const user = await currentUser(db, request, deps);
+    const org = await currentOrg(db, request, user);
     const body = bodyOf(request);
     try {
       const builder = builderOf(deps);
@@ -122,8 +120,8 @@ export async function registerBuilderSessionRoutes(app: FastifyInstance, deps: A
   });
 
   app.post("/api/builder/sessions/:session_id/access", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
+    const user = await currentUser(db, request, deps);
+    const org = await currentOrg(db, request, user);
     const body = bodyOf(request);
     try {
       const builder = builderOf(deps);
@@ -135,8 +133,8 @@ export async function registerBuilderSessionRoutes(app: FastifyInstance, deps: A
   });
 
   app.post("/api/builder/sessions/:session_id/review", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
+    const user = await currentUser(db, request, deps);
+    const org = await currentOrg(db, request, user);
     const body = bodyOf(request);
     try {
       const builder = builderOf(deps);
@@ -148,8 +146,8 @@ export async function registerBuilderSessionRoutes(app: FastifyInstance, deps: A
   });
 
   app.post("/api/builder/sessions/:session_id/validate", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
+    const user = await currentUser(db, request, deps);
+    const org = await currentOrg(db, request, user);
     try {
       const builder = builderOf(deps);
       const session = await builder.getOwnedSession(param(request, "session_id"), user, org);
@@ -160,8 +158,8 @@ export async function registerBuilderSessionRoutes(app: FastifyInstance, deps: A
   });
 
   app.post("/api/builder/sessions/:session_id/publish", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
+    const user = await currentUser(db, request, deps);
+    const org = await currentOrg(db, request, user);
     try {
       const builder = builderOf(deps);
       const session = await builder.getOwnedSession(param(request, "session_id"), user, org);
@@ -172,8 +170,8 @@ export async function registerBuilderSessionRoutes(app: FastifyInstance, deps: A
   });
 
   app.post("/api/builder/sessions/:session_id/deploy", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
+    const user = await currentUser(db, request, deps);
+    const org = await currentOrg(db, request, user);
     try {
       const builder = builderOf(deps);
       const session = await builder.getOwnedSession(param(request, "session_id"), user, org);
@@ -184,8 +182,8 @@ export async function registerBuilderSessionRoutes(app: FastifyInstance, deps: A
   });
 
   app.get("/api/builder/sessions/:session_id/stream", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
+    const user = await currentUser(db, request, deps);
+    const org = await currentOrg(db, request, user);
     const builder = builderOf(deps);
     try {
       const session = await builder.getOwnedSession(param(request, "session_id"), user, org);

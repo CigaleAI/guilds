@@ -3,14 +3,12 @@ import { changeUserEmail, createUser, listDirectoryUsers, removeUser } from "../
 import type { AppDeps } from "./deps.js";
 import { HttpError, missingBodyFields } from "./errors.js";
 import { currentUser, type IdentityRequest } from "./identity.js";
-import { identityDatabase } from "../users/identity.js";
 import { isInstanceAdmin } from "./instance-admin.js";
 import { bodyOf, param } from "./request.js";
 
 /** The user directory: every user of the box, created and removed by whoever may manage it. */
 export async function registerUserRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { db } = deps;
-  const identityDb = identityDatabase(db);
 
   /**
    * On a compat-cookie box whoever reaches the directory may act as any user, so it is open; behind
@@ -22,7 +20,7 @@ export async function registerUserRoutes(app: FastifyInstance, deps: AppDeps): P
       return;
     }
     if (mode === "trusted-header" && !deps.identity) {
-      const user = await currentUser(identityDb, request, deps);
+      const user = await currentUser(db, request, deps);
       if (await isInstanceAdmin(deps, user.id)) {
         return;
       }

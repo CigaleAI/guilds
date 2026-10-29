@@ -3,16 +3,14 @@ import { removeBinding, setBinding, type BindingRequest } from "../access/operat
 import type { AppDeps } from "./deps.js";
 import { missingBodyFields } from "./errors.js";
 import { currentUser } from "./identity.js";
-import { identityDatabase } from "../users/identity.js";
 import { bodyOf, queryOf } from "./request.js";
 
 /** Bindings: a tool or connector turned on or off at a scope, with the login a connector uses there. */
 export async function registerBindingRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { db } = deps;
-  const identityDb = identityDatabase(db);
 
   app.put("/api/bindings", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const missing = missingBodyFields(request.body, [
       "catalog_kind",
       "catalog_id",
@@ -37,7 +35,7 @@ export async function registerBindingRoutes(app: FastifyInstance, deps: AppDeps)
   });
 
   app.delete("/api/bindings", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const query = queryOf(request);
     const key = {
       catalogKind: query.catalog_kind ?? "",

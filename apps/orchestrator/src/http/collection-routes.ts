@@ -18,7 +18,6 @@ import {
 import type { RouteDeps } from "./deps.js";
 import { missingBodyFields } from "./errors.js";
 import { currentOrg, currentUser } from "./identity.js";
-import { identityDatabase } from "../users/identity.js";
 import { bodyOf, param, queryOf } from "./request.js";
 
 /** Collections live at the organisation: the Tables page builds them and browses their records. */
@@ -27,11 +26,10 @@ export async function registerCollectionRoutes(
   deps: RouteDeps,
 ): Promise<void> {
   const { db, artifacts: store } = deps;
-  const identityDb = identityDatabase(db);
 
   async function orgActor(request: FastifyRequest): Promise<ArtifactActor> {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
+    const user = await currentUser(db, request, deps);
+    const org = await currentOrg(db, request, user);
     return loadOperatorActor(db, user, { orgId: String(org.id) });
   }
 

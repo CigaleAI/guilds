@@ -12,13 +12,11 @@ import {
 import type { AppDeps } from "./deps.js";
 import { missingBodyFields } from "./errors.js";
 import { currentOrg, currentUser } from "./identity.js";
-import { identityDatabase } from "../users/identity.js";
 import { bodyOf, param, queryOf } from "./request.js";
 
 /** An organisation's secrets: listed, created, changed, granted, and deleted by its members. */
 export async function registerSecretRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { db } = deps;
-  const identityDb = identityDatabase(db);
   const services: SecretServices = {
     db,
     masterKey: deps.masterKey,
@@ -26,16 +24,16 @@ export async function registerSecretRoutes(app: FastifyInstance, deps: AppDeps):
   };
 
   app.get("/api/secrets", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
+    const user = await currentUser(db, request, deps);
+    const org = await currentOrg(db, request, user);
     const query = queryOf(request);
     const scope = { guildId: query.guild_id || null, agentId: query.agent_id || null };
     return listOrgSecrets(db, String(org.id), user.id, scope);
   });
 
   app.post("/api/secrets", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
+    const user = await currentUser(db, request, deps);
+    const org = await currentOrg(db, request, user);
     const missing = missingBodyFields(request.body, ["name", "description", "value"]);
     if (missing) {
       throw missing;
@@ -53,14 +51,14 @@ export async function registerSecretRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/secrets/:secret_id", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     return viewHeldSecret(
       await requireMemberSecret(db, param(request, "secret_id"), user.id),
     );
   });
 
   app.patch("/api/secrets/:secret_id", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const held = await requireMemberSecret(db, param(request, "secret_id"), user.id);
     const body = bodyOf(request);
     return changeSecret(services, held, {
@@ -71,7 +69,7 @@ export async function registerSecretRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.put("/api/secrets/:secret_id/access", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const held = await requireMemberSecret(db, param(request, "secret_id"), user.id);
     const missing = missingBodyFields(request.body, ["org_wide"]);
     if (missing) {
@@ -81,7 +79,7 @@ export async function registerSecretRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.delete("/api/secrets/:secret_id", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const held = await requireMemberSecret(db, param(request, "secret_id"), user.id);
     await deleteOrgSecret(services, held);
     return reply.code(204).send();

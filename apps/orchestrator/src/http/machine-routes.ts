@@ -11,7 +11,6 @@ import { requireMembership } from "../organisations/service.js";
 import { OPEN_POLICY } from "../policy/index.js";
 import type { AppDeps } from "./deps.js";
 import { currentUser } from "./identity.js";
-import { identityDatabase } from "../users/identity.js";
 import { bodyOf, param } from "./request.js";
 
 /**
@@ -20,7 +19,6 @@ import { bodyOf, param } from "./request.js";
  */
 export async function registerMachineRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { db } = deps;
-  const identityDb = identityDatabase(db);
   const services: MachineServices = {
     db,
     policy: deps.policy ?? OPEN_POLICY,
@@ -28,7 +26,7 @@ export async function registerMachineRoutes(app: FastifyInstance, deps: AppDeps)
   };
 
   async function memberOf(request: FastifyRequest): Promise<MachineMember> {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const membership = await requireMembership(db, param(request, "org_id"), user.id);
     return { membership, userId: user.id };
   }

@@ -10,12 +10,10 @@ import {
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
 import { currentOrg, currentUser } from "./identity.js";
-import { identityDatabase } from "../users/identity.js";
 import { param } from "./request.js";
 
 /** Chat images: uploaded by an organisation's members and served back to them. */
 export async function registerAttachmentRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
-  const identityDb = identityDatabase(deps.db);
 
   function attachments(): AttachmentService {
     if (!deps.attachments) {
@@ -28,8 +26,8 @@ export async function registerAttachmentRoutes(app: FastifyInstance, deps: AppDe
     "/api/attachments",
     { bodyLimit: MAX_ATTACHMENT_BYTES + 4096 },
     async (request, reply) => {
-      const user = await currentUser(identityDb, request, deps);
-      const org = await currentOrg(identityDb, request, user);
+      const user = await currentUser(deps.db, request, deps);
+      const org = await currentOrg(deps.db, request, user);
       if (!Buffer.isBuffer(request.body)) {
         throw new HttpError(422, "body must be the file bytes");
       }
@@ -44,8 +42,8 @@ export async function registerAttachmentRoutes(app: FastifyInstance, deps: AppDe
   );
 
   app.get("/api/attachments/:attachment_id", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
+    const user = await currentUser(deps.db, request, deps);
+    const org = await currentOrg(deps.db, request, user);
     const { row, bytes } = await attachments().getForOrg(
       String(org.id),
       param(request, "attachment_id"),

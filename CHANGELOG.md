@@ -174,9 +174,9 @@ organisation's hook is `AppDeps.orgCreated`. `ModelsRepository` is
 ([Extension points](docs/architecture/extension-points.md)).
 The export `usage.js` is `usage/index.js`, and `http/usage-view.js` is
 `usage/view.js`: `usageForOrg` and `usageForPlatform` take
-`{ db, studio, builder }`, which `AppDeps` satisfies. `identityDatabase`,
-which `currentUser` and `currentOrg` take, is exported from
-`users/identity.js`. The seeds are under `seed/`: the exports
+`{ db, studio, builder }`, which `AppDeps` satisfies. `currentUser`
+and `currentOrg` (`http/identity.js`) take that connection as their
+first argument. The seeds are under `seed/`: the exports
 `db/seed/catalog.js` and `db/seed/mcp-manifests.js` are
 `seed/catalog.js` and `seed/mcp-manifests.js`, and `connect` and
 `DatabaseExtension` are exported from `seed/connect.js`.

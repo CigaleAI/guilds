@@ -7,7 +7,6 @@ import { scheduleChanges, type ScheduleChanges } from "../schedules/service.js";
 import type { AppDeps } from "./deps.js";
 import { missingBodyFields } from "./errors.js";
 import { currentUser } from "./identity.js";
-import { identityDatabase } from "../users/identity.js";
 import { publishGroup } from "./publish.js";
 import { bodyOf, param } from "./request.js";
 
@@ -23,22 +22,21 @@ function routineAction(changes: ScheduleChanges): string {
 /** An agent's routines, and a guild's across its agents. */
 export async function registerScheduleRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { db, schedules } = deps;
-  const identityDb = identityDatabase(db);
 
   app.get("/api/guilds/:guild_id/schedules", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
     return schedules.listForGuild(guild.id);
   });
 
   app.get("/api/agents/:agent_id/schedules", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const agent = await requireVisibleAgent(db, param(request, "agent_id"), user.id);
     return schedules.viewsForAgent(agent.id);
   });
 
   app.post("/api/agents/:agent_id/schedules", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const agent = await requireVisibleAgent(db, param(request, "agent_id"), user.id);
     const missing = missingBodyFields(request.body, ["description", "instruction"]);
     if (missing) {
@@ -62,7 +60,7 @@ export async function registerScheduleRoutes(app: FastifyInstance, deps: AppDeps
   });
 
   app.patch("/api/agents/:agent_id/schedules/:schedule_id", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const agent = await requireVisibleAgent(db, param(request, "agent_id"), user.id);
     const changes = scheduleChanges(bodyOf(request));
     const row = await schedules.update(
@@ -80,7 +78,7 @@ export async function registerScheduleRoutes(app: FastifyInstance, deps: AppDeps
   });
 
   app.delete("/api/agents/:agent_id/schedules/:schedule_id", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const agent = await requireVisibleAgent(db, param(request, "agent_id"), user.id);
     const scheduleId = param(request, "schedule_id");
     await schedules.delete(userActor(user), agent.id, scheduleId);

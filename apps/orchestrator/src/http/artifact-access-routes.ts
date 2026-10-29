@@ -5,7 +5,6 @@ import { requireVisibleGuild } from "../guilds/access.js";
 import type { RouteDeps } from "./deps.js";
 import { missingBodyFields } from "./errors.js";
 import { currentOrg, currentUser } from "./identity.js";
-import { identityDatabase } from "../users/identity.js";
 import { bodyOf, param } from "./request.js";
 import { accessList, reachOf, replaceAccess } from "../artifacts/access-lists.js";
 
@@ -22,11 +21,10 @@ export async function registerArtifactAccessRoutes(
   deps: RouteDeps,
 ): Promise<void> {
   const { db, artifacts: store } = deps;
-  const identityDb = identityDatabase(db);
 
   async function orgActor(request: FastifyRequest) {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
+    const user = await currentUser(db, request, deps);
+    const org = await currentOrg(db, request, user);
     return loadOperatorActor(db, user, { orgId: String(org.id) });
   }
 
@@ -48,14 +46,14 @@ export async function registerArtifactAccessRoutes(
   }
 
   app.get("/api/guilds/:guild_id/reach", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
     const actor = await loadOperatorActor(db, user, { orgId: guild.org_id });
     return reachOf(store, actor, { type: "guild", id: guild.id, guildId: guild.id });
   });
 
   app.get("/api/agents/:agent_id/reach", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const agent = await requireVisibleAgent(db, param(request, "agent_id"), user.id);
     const actor = await loadOperatorActor(db, user, { orgId: agent.org_id });
     return reachOf(store, actor, { type: "agent", id: agent.id, guildId: agent.guild_id });
