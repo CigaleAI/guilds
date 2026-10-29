@@ -1,5 +1,6 @@
 import { getGroupChatSeenThrough, markGroupChatSeen } from "../db/group-chat.js";
 import type { Queryable } from "../db/pg.js";
+import type { GroupMessageView } from "../db/views.js";
 import { GroupChatError, type GroupChat, type MessageAuthor } from "./index.js";
 
 /** What an operator reads and posts a guild's group chat through, built once from the app's services. */
@@ -53,16 +54,16 @@ export async function postOperatorMessage(
   guildId: string,
   author: MessageAuthor,
   message: OperatorMessage,
-): Promise<Record<string, unknown>> {
+): Promise<GroupMessageView> {
   if (message.interrupt !== undefined && typeof message.interrupt !== "boolean") {
     throw new GroupChatError(422, "interrupt must be a boolean");
   }
-  const posted = await groupChatOf(services).postUser(guildId, message.content, {
-    author_name: author.name,
-    author_user_id: author.id,
-    interrupt: message.interrupt === true,
-  });
-  await markGroupChatSeen(services.db, guildId, author.id, Number(posted.seq), new Date());
+  const chat = groupChatOf(services);
+  const posted =
+    message.interrupt === true
+      ? await chat.postUserInterruption(guildId, message.content, author)
+      : await chat.postUser(guildId, message.content, author);
+  await markGroupChatSeen(services.db, guildId, author.id, posted.seq, new Date());
   await services.inbox.ping([author.id]);
   return posted;
 }

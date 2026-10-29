@@ -264,6 +264,10 @@ with `readSharedFile` and `writeSharedFile` alone. `notesRoot` and
 and `isDispatching`, in place of `post_from_run`, `post_user`,
 `list_messages`, `set_limit`, `resume_all`, and `is_dispatching`. A
 tool context's `group_chat` posts through `postFromRun` alone.
+`postUser` takes the operator it posts as, `{ id, name }`, in place
+of the options `author_name`, `author_user_id`, and `interrupt`, and
+answers the posted message. `postUserInterruption` posts a message
+that stops the group runs it targets.
 
 **Breaking for extending repositories.** The Makefile variables
 `EDITION`, `EDITION_TEST_PACKAGES`, and `EDITION_COMPOSE_FILES` are

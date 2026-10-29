@@ -1,6 +1,6 @@
 import { jsonObj } from "../db/json.js";
 import { AgentMessageLimitReached, GroupChatCleared } from "../db/errors.js";
-import { groupMessageItem } from "../db/views.js";
+import { groupMessageItem, type GroupMessageView } from "../db/views.js";
 import { AsyncEvent, EventQueue } from "../lib/event.js";
 import { writeLog } from "../observability/log.js";
 import { groupChatHistory, storedTags } from "./history.js";
@@ -548,15 +548,12 @@ export class GroupChat {
     return (await this.db.listGroupMessages(guildId)).map((row) => groupMessageItem(row));
   }
 
-  /**
-   * Posts an operator message. With `interrupt`, it then stops the group runs the message
-   * targets, so they start again with it in view.
-   */
+  /** Posts an operator message as `author`. */
   async postUser(
     guildId: string,
     content: string,
-    options: { author_name?: string; author_user_id?: string; interrupt?: boolean } = {},
-  ): Promise<Record<string, unknown>> {
+    author: MessageAuthor,
+  ): Promise<GroupMessageView> {
     if (this._is_deleting(guildId)) {
       throw new GroupChatError(409, "guild is being deleted");
     }
@@ -569,8 +566,8 @@ export class GroupChat {
         taggedNames: tags.names,
         taggedAgentIds: tags.agentIds,
         taggedUserIds: tags.userIds,
-        authorName: options.author_name ?? "user",
-        authorUserId: options.author_user_id ?? null,
+        authorName: author.name,
+        authorUserId: author.id,
       },
       new Date(),
     );
@@ -579,9 +576,20 @@ export class GroupChat {
     }
     const message = groupMessageItem(row);
     await this._after_commit(guildId, message);
-    if (options.interrupt) {
-      await this._interrupt(guildId, tags.agentIds);
-    }
+    return message;
+  }
+
+  /**
+   * Posts an operator message as `author`, then stops the group runs the message targets, so
+   * they start again with it in view.
+   */
+  async postUserInterruption(
+    guildId: string,
+    content: string,
+    author: MessageAuthor,
+  ): Promise<GroupMessageView> {
+    const message = await this.postUser(guildId, content, author);
+    await this._interrupt(guildId, message.tagged_agent_ids);
     return message;
   }
 
