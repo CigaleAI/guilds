@@ -464,7 +464,9 @@ display name and description from the server's `initialize` reply
 | `GET /api/mcp/oauth/callback` | The OAuth callback, for every browser login |
 
 A lookup answers `{ options: [{ value, label, detail, image }] }`,
-where `value` is what the setting stores.
+where `value` is what the setting stores. `tool`, `property`, `q` and
+the query's ids are strings; another type, or a query value given
+more than once, is 422 naming it.
 
 `PUT .../settings` checks the document against the schema (422 naming
 the first problem), runs the adapter's `validate` with it, stores it,

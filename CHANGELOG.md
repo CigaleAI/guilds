@@ -8,6 +8,12 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** The login routes refuse, with a 422 that names the field
+and before the request's user is identified: a tool call whose `tool`
+is not a string, a lookup whose `property` or `q` is not a string or
+is given more than once, and a listing whose `guild_id` or `agent_id`
+is given more than once. Before, those were read as their text.
+
 **No impact.** The agent routes refuse, with a 422 that names the field
 and before the request's user is identified: a `name`, `focus`,
 `wake_triggers`, `avatar_shape` or `avatar_color` that is not a string,
