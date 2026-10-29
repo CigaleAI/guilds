@@ -1306,9 +1306,6 @@
     "@typescript-eslint/explicit-module-boundary-types": {
       "count": 1
     },
-    "complexity": {
-      "count": 1
-    },
     "no-restricted-syntax": {
       "count": 1
     }
