@@ -21,7 +21,6 @@ import { cookieSecure, requestCookies } from "./cookies.js";
 import type { AppDeps } from "./deps.js";
 import { missingBodyFields } from "./errors.js";
 import { currentUser } from "./identity.js";
-import { identityDatabase } from "../users/identity.js";
 import { bodyOf, queryOf } from "./request.js";
 
 function sendPage(reply: FastifyReply, page: CallbackPage): FastifyReply {
@@ -45,14 +44,13 @@ function appendSetCookie(reply: FastifyReply, value: string): void {
  */
 export async function registerOAuthRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { db } = deps;
-  const identityDb = identityDatabase(db);
   const services: ConnectFlowServices = { db, mcp: deps.mcp ?? null, masterKey: deps.masterKey };
   const secureCookie = () => cookieSecure(deps.config?.publicBaseUrl ?? "");
   const redirectUriOf = (request: FastifyRequest) =>
     oauthCallbackUrl(deps.config?.publicBaseUrl ?? "", request);
 
   app.post("/api/mcp/connections", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const missing = missingBodyFields(request.body, ["mcp_server_id", "owner_scope"]);
     if (missing) {
       throw missing;
@@ -84,7 +82,7 @@ export async function registerOAuthRoutes(app: FastifyInstance, deps: AppDeps): 
     };
     const signedInUserId = async () => {
       try {
-        return String((await currentUser(identityDb, request, deps)).id);
+        return String((await currentUser(db, request, deps)).id);
       } catch {
         return null;
       }

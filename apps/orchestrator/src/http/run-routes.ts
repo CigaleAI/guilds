@@ -11,14 +11,12 @@ import {
 import type { AppDeps } from "./deps.js";
 import { missingBodyFields } from "./errors.js";
 import { currentUser } from "./identity.js";
-import { identityDatabase } from "../users/identity.js";
 import { bodyOf, param } from "./request.js";
 import { pipeSse } from "./sse.js";
 
 /** An agent's runs: opened, read, talked to, resumed, cancelled, and streamed. */
 export async function registerRunRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { db } = deps;
-  const identityDb = identityDatabase(db);
   const services: RunOperatorServices = {
     db,
     loop: deps.generation ?? null,
@@ -27,13 +25,13 @@ export async function registerRunRoutes(app: FastifyInstance, deps: AppDeps): Pr
   const loop = () => generationLoopOf(services);
 
   app.get("/api/agents/:agent_id/runs", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const agent = await requireVisibleAgent(db, param(request, "agent_id"), user.id);
     return loop().listRunViews(agent.id);
   });
 
   app.post("/api/agents/:agent_id/runs", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const agent = await requireVisibleAgent(db, param(request, "agent_id"), user.id);
     const body = bodyOf(request);
     const start = {
@@ -45,14 +43,14 @@ export async function registerRunRoutes(app: FastifyInstance, deps: AppDeps): Pr
   });
 
   app.get("/api/runs/:run_id", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     return loop().runView(
       await requireVisibleRun(db, param(request, "run_id"), user.id),
     );
   });
 
   app.get("/api/runs/:run_id/messages", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     return listRunMessages(
       db,
       await requireVisibleRun(db, param(request, "run_id"), user.id),
@@ -60,13 +58,13 @@ export async function registerRunRoutes(app: FastifyInstance, deps: AppDeps): Pr
   });
 
   app.post("/api/runs/:run_id/resume", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const run = await requireVisibleRun(db, param(request, "run_id"), user.id);
     return loop().resumeRun(run.id);
   });
 
   app.post("/api/runs/:run_id/messages", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const run = await requireVisibleRun(db, param(request, "run_id"), user.id);
     const body = bodyOf(request);
     const attachmentIds = validateAttachmentIds(body.attachment_ids);
@@ -82,14 +80,14 @@ export async function registerRunRoutes(app: FastifyInstance, deps: AppDeps): Pr
   });
 
   app.post("/api/runs/:run_id/cancel", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const run = await requireVisibleRun(db, param(request, "run_id"), user.id);
     const cancelled = await loop().cancel(run.id);
     return cancelled === null ? reply.code(204).send() : reply.code(202).send(cancelled);
   });
 
   app.get("/api/runs/:run_id/stream", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const run = await requireVisibleRun(db, param(request, "run_id"), user.id);
     const generation = loop();
     await pipeSse(

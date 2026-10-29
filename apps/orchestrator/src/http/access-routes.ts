@@ -5,19 +5,17 @@ import { requireVisibleGuild } from "../guilds/access.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
 import { currentOrg, currentUser } from "./identity.js";
-import { identityDatabase } from "../users/identity.js";
 import { isInstanceAdmin } from "./instance-admin.js";
 import { param } from "./request.js";
 
 /** The access view at each level: the instance's, the organisation's, a guild's and an agent's. */
 export async function registerAccessRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { db } = deps;
-  const identityDb = identityDatabase(db);
   const accessView = accessViewDatabase(db);
   const mcp = deps.mcp ?? null;
 
   app.get("/api/platform", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     if (!(await isInstanceAdmin(deps, user.id))) {
       throw new HttpError(404, "Not Found");
     }
@@ -25,13 +23,13 @@ export async function registerAccessRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/access", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
+    const user = await currentUser(db, request, deps);
+    const org = await currentOrg(db, request, user);
     return loadAccessView(accessView, { orgId: String(org.id), viewScope: "org", mcp });
   });
 
   app.get("/api/guilds/:guild_id/access", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
     return loadAccessView(accessView, {
       orgId: guild.org_id,
@@ -42,7 +40,7 @@ export async function registerAccessRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/agents/:agent_id/access", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const agent = await requireVisibleAgent(db, param(request, "agent_id"), user.id);
     return loadAccessView(accessView, {
       orgId: agent.org_id,

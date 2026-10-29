@@ -4,7 +4,6 @@ import { Issues, issuesDatabase } from "../issues/index.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
 import { currentUser } from "./identity.js";
-import { identityDatabase } from "../users/identity.js";
 import { publishGroup } from "./publish.js";
 import { bodyOf, param, queryOf } from "./request.js";
 import type { UserRow } from "../db/users.js";
@@ -16,17 +15,16 @@ function resolverOf(user: UserRow): string {
 /** A guild's issues: listed, resolved together, and set open or resolved one at a time. */
 export async function registerIssueRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { db } = deps;
-  const identityDb = identityDatabase(db);
   const issues = new Issues(issuesDatabase(db));
 
   app.get("/api/guilds/:guild_id/issues", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
     return issues.listForGuild(guild.id, queryOf(request).status);
   });
 
   app.post("/api/guilds/:guild_id/issues/resolve", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
     const resolved = await issues.resolveOpen(guild.id, resolverOf(user));
     if (resolved > 0) {
@@ -36,7 +34,7 @@ export async function registerIssueRoutes(app: FastifyInstance, deps: AppDeps): 
   });
 
   app.patch("/api/guilds/:guild_id/issues/:issue_id", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
     const status = bodyOf(request).status;
     if (status === undefined) {

@@ -23,7 +23,6 @@ import {
 import { requireVisibleGuild } from "../guilds/access.js";
 import { requireVisibleGithubConnection } from "../mcp/connections.js";
 import { retireLogin } from "../mcp/service.js";
-import { identityDatabase } from "../users/identity.js";
 import type { AppDeps } from "./deps.js";
 import { currentUser } from "./identity.js";
 import { bodyOf, param } from "./request.js";
@@ -35,19 +34,18 @@ import { bodyOf, param } from "./request.js";
  */
 export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { db } = deps;
-  const identityDb = identityDatabase(db);
   const pool = deps.mcp ?? null;
   const repositories: RepositoryServices = { db, masterKey: deps.masterKey };
   const review: RunReviewServices = { db, coding: deps.generation?.coding ?? null };
 
   app.get("/api/guilds/:guild_id/repositories", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
     return listGuildRepositoryView(db, guild, user.id);
   });
 
   app.post("/api/guilds/:guild_id/repositories", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
     try {
       const added = await addGuildRepository(repositories, guild, user.id, bodyOf(request));
@@ -61,14 +59,14 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.delete("/api/guilds/:guild_id/repositories/:repository_id", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
     await removeGuildRepository(db, guild, param(request, "repository_id"));
     return reply.code(204).send();
   });
 
   app.get("/api/mcp/connections/:connection_id/github/repositories", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const connection = await requireVisibleGithubConnection(
       db,
       param(request, "connection_id"),
@@ -85,7 +83,7 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.put("/api/mcp/connections/:connection_id/github/selected", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const connection = await requireVisibleGithubConnection(
       db,
       param(request, "connection_id"),
@@ -112,12 +110,12 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/harnesses", async (request) => {
-    await currentUser(identityDb, request, deps);
+    await currentUser(db, request, deps);
     return { harnesses: harnessCatalog() };
   });
 
   app.get("/api/agents/:agent_id/harness", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     return loadHarnessView(
       review,
       await requireVisibleAgent(db, param(request, "agent_id"), user.id),
@@ -125,30 +123,30 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.post("/api/agents/:agent_id/harness/check", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const agent = await requireVisibleAgent(db, param(request, "agent_id"), user.id);
     return checkAgentHarness(review, agent, bodyOf(request).harness);
   });
 
   app.get("/api/runs/:run_id/changes", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     return listRunChanges(await requireVisibleRun(db, param(request, "run_id"), user.id));
   });
 
   app.get("/api/runs/:run_id/tasks/:call_id/diff", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const run = await requireVisibleRun(db, param(request, "run_id"), user.id);
     return taskDiff(review, run, param(request, "call_id"));
   });
 
   app.get("/api/runs/:run_id/tasks/:call_id/log", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const run = await requireVisibleRun(db, param(request, "run_id"), user.id);
     return taskLog(review, run, param(request, "call_id"));
   });
 
   app.get("/api/runs/:run_id/changes/:repository/diff", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const run = await requireVisibleRun(db, param(request, "run_id"), user.id);
     return repositoryDiff(review, run, param(request, "repository"));
   });

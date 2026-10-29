@@ -1,12 +1,13 @@
 import type { IncomingHttpHeaders } from "node:http";
-import { ORG_COOKIE, ORG_HEADER, resolveOrg } from "../organisations/index.js";
-import { USER_COOKIE, USER_HEADER, resolveUser } from "../users/index.js";
+import { ORG_COOKIE, ORG_HEADER } from "../organisations/index.js";
+import { USER_COOKIE, USER_HEADER } from "../users/index.js";
 import type { AppDeps } from "./deps.js";
 import { requestCookies } from "./cookies.js";
 import { HttpError } from "./errors.js";
 import type { OrgMembershipRow } from "../db/orgs.js";
+import type { Queryable } from "../db/pg.js";
 import type { UserRow } from "../db/users.js";
-import type { IdentityDatabase } from "../users/identity.js";
+import { resolveEmailUser, resolveTokenOrg, resolveTokenUser } from "../users/identity.js";
 
 export type IdentityRequest = {
   headers: IncomingHttpHeaders;
@@ -35,7 +36,7 @@ function headerOrCookie(request: IdentityRequest, headerName: string, cookieName
 }
 
 export async function currentUser(
-  db: IdentityDatabase,
+  db: Queryable,
   request: IdentityRequest,
   deps: Pick<AppDeps, "config" | "identity"> = {},
 ): Promise<UserRow> {
@@ -51,30 +52,28 @@ export async function currentUser(
     throw new HttpError(401, "not signed in");
   }
   const token = headerOrCookie(request, USER_HEADER, USER_COOKIE);
-  const users = await db.listUsers();
   try {
-    return resolveUser(users, token);
+    return await resolveTokenUser(db, token);
   } catch (error) {
     throw identityHttp(error);
   }
 }
 
 export async function currentOrg(
-  db: IdentityDatabase,
+  db: Queryable,
   request: IdentityRequest,
   user: UserRow,
 ): Promise<OrgMembershipRow> {
   const token = headerOrCookie(request, ORG_HEADER, ORG_COOKIE);
-  const memberships = await db.listOrgsForUser(user.id);
   try {
-    return resolveOrg(memberships, token);
+    return await resolveTokenOrg(db, user.id, token);
   } catch (error) {
     throw identityHttp(error);
   }
 }
 
 async function trustedHeaderUser(
-  db: IdentityDatabase,
+  db: Queryable,
   request: IdentityRequest,
   deps: Pick<AppDeps, "config">,
 ): Promise<UserRow> {
@@ -88,11 +87,11 @@ async function trustedHeaderUser(
   if (!email) {
     throw new HttpError(401, "missing trusted email");
   }
-  const user = await db.getUserByEmail(email);
-  if (!user) {
-    throw new HttpError(401, "user not found");
+  try {
+    return await resolveEmailUser(db, email);
+  } catch (error) {
+    throw identityHttp(error);
   }
-  return user;
 }
 
 function identityHttp(error: unknown): HttpError {

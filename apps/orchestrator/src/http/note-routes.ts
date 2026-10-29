@@ -19,7 +19,6 @@ import {
 import type { RouteDeps } from "./deps.js";
 import { notesRead, notesWrite } from "./errors.js";
 import { currentOrg, currentUser } from "./identity.js";
-import { identityDatabase } from "../users/identity.js";
 import { bodyOf, filePathParam, param, queryOf } from "./request.js";
 import type { UserRow } from "../db/users.js";
 
@@ -35,7 +34,6 @@ function pathsOf(raw: unknown): string[] {
  */
 export async function registerNoteRoutes(app: FastifyInstance, deps: RouteDeps): Promise<void> {
   const { db } = deps;
-  const identityDb = identityDatabase(db);
   const services: OperatorNotesServices = {
     db,
     artifacts: deps.artifacts,
@@ -78,32 +76,32 @@ export async function registerNoteRoutes(app: FastifyInstance, deps: RouteDeps):
   }
 
   registerOwnerNotes("/api/guilds/:guild_id/notes", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
     return { owner: { level: "guild", guild }, user };
   });
 
   registerOwnerNotes("/api/agents/:agent_id/notes", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const agent = await requireVisibleAgent(db, param(request, "agent_id"), user.id);
     return { owner: { level: "agent", agent }, user };
   });
 
   registerOwnerNotes("/api/org/notes", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
+    const user = await currentUser(db, request, deps);
+    const org = await currentOrg(db, request, user);
     return { owner: { level: "org", orgId: String(org.id) }, user };
   });
 
   app.get("/api/agents/:agent_id/memory", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const agent = await requireVisibleAgent(db, param(request, "agent_id"), user.id);
     return readMemoryHistory(services, agent, user);
   });
 
   async function orgActor(request: FastifyRequest) {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
+    const user = await currentUser(db, request, deps);
+    const org = await currentOrg(db, request, user);
     return loadOperatorActor(db, user, { orgId: String(org.id) });
   }
 

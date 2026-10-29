@@ -5,7 +5,6 @@ import { RunRequestError } from "../generation/index.js";
 import { generationLoopOf } from "../generation/operator.js";
 import type { AppDeps } from "./deps.js";
 import { currentUser } from "./identity.js";
-import { identityDatabase } from "../users/identity.js";
 import { filePathParam, param } from "./request.js";
 import { proxyHttp, startSandboxWsProxy } from "./sandbox-proxy.js";
 
@@ -18,11 +17,10 @@ type SandboxTarget = (agentId: string) => Promise<[string, Record<string, string
 /** An agent's browser and terminal: started on request, then proxied over HTTP and WebSocket. */
 export async function registerSandboxRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { db } = deps;
-  const identityDb = identityDatabase(db);
   const loop = () => generationLoopOf({ loop: deps.generation ?? null });
 
   async function visibleAgentId(request: FastifyRequest): Promise<string> {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     return (await requireVisibleAgent(db, param(request, "agent_id"), user.id)).id;
   }
 

@@ -15,30 +15,28 @@ import {
 import type { AppDeps } from "./deps.js";
 import { HttpError, missingBodyFields } from "./errors.js";
 import { currentUser } from "./identity.js";
-import { identityDatabase } from "../users/identity.js";
 import { isInstanceAdmin } from "./instance-admin.js";
 import { bodyOf, param } from "./request.js";
 
 /** The request's organisations, their settings, and their members. */
 export async function registerOrgRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { db, notes } = deps;
-  const identityDb = identityDatabase(db);
 
   /** The request's membership of the organisation the route names. */
   async function membershipOf(request: FastifyRequest) {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const membership = await requireMembership(db, param(request, "org_id"), user.id);
     return { user, membership };
   }
 
   app.get("/api/orgs", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     return listUserOrgs(db, user.id);
   });
 
   /** Behind an authenticating proxy only the instance administrator creates organisations. */
   app.post("/api/orgs", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
+    const user = await currentUser(db, request, deps);
     const compat = (deps.config?.authMode ?? "compat-cookie") === "compat-cookie";
     if (!compat && !(await isInstanceAdmin(deps, user.id))) {
       throw new HttpError(404, "Not Found");
