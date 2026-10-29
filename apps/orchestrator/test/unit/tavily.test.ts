@@ -109,6 +109,24 @@ test("search posts an advanced query with the key", async () => {
   assert.equal(stored, "Messi\nhttps://example.com/messi\nFootballer");
 });
 
+test("search refuses a body that is not JSON or does not match its schema", async () => {
+  const answering = (result: { json?: unknown; text?: string }) => ({
+    apiKey: "tvly-test",
+    client: mockFetch(() => ({ status: 200, ...result })),
+  });
+  await assert.rejects(
+    () => search("messi", answering({ json: { results: "none" } })),
+    (error: unknown) =>
+      error instanceof TavilyError &&
+      /^Tavily returned an unexpected response at \/results: /.test(error.message),
+  );
+  await assert.rejects(
+    () => search("messi", answering({ text: "not json" })),
+    (error: unknown) =>
+      error instanceof TavilyError && error.message === "Tavily returned a non-JSON body",
+  );
+});
+
 test("search HTTP error", async () => {
   await assert.rejects(
     () =>
