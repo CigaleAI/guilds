@@ -8,6 +8,18 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** The instance admin's key routes refuse, with a 422 that
+names the field and after the instance admin is identified, a key
+write whose `confirm_replace` is not a boolean, a key removal whose
+`confirm_replace` is given more than once, and a GitHub App manifest
+start whose `name`, `owner` or `return_to` is not a string. The App
+manifest callback refuses a `code` or `state` given more than once
+with a 422. Whoever is not the instance admin gets the same 404
+whatever they send. Before, a `confirm_replace` that was not `true`
+counted as unconfirmed, a `name` or `owner` that was not a string was
+left out, and a callback with a repeated value went back to the admin
+page with `setup_error=state`.
+
 **No impact.** The Builder's routes refuse, with a 422 that names the
 field and before the request's user is identified: a session whose
 `model` is not a string or whose `temperature` is not a number, a

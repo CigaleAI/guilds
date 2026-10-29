@@ -611,9 +611,6 @@
     }
   },
   "src/http/admin-instance-routes.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 2
-    },
     "complexity": {
       "count": 1
     },

@@ -165,6 +165,9 @@ test("instance keys switch platform logins and the GitHub connector; replacing t
       connections: 1,
     });
     assert.equal(await connectionStatus(seeded), "connected");
+    const textConfirm = await put("github-app", { values: { ...APP, app_id: "9999" }, confirm_replace: "yes" });
+    assert.equal(textConfirm.statusCode, 422, textConfirm.body);
+    assert.deepEqual(textConfirm.json().detail[0].loc, ["body", "confirm_replace"]);
     const confirmed = await put("github-app", { values: { ...APP, app_id: "9999" }, confirm_replace: true });
     assert.equal(confirmed.statusCode, 200, confirmed.body);
     assert.equal(confirmed.json().disconnected, 1);
@@ -250,6 +253,9 @@ test("the GitHub App registers from a manifest: the box posts it, GitHub calls b
     assert.equal((await start({ name: "x".repeat(35) })).statusCode, 400);
     assert.equal((await start({ name: "x".repeat(34) })).statusCode, 200);
     assert.equal((await start({ owner: "not a login" })).statusCode, 400);
+    const numberedOwner = await start({ owner: 7 });
+    assert.equal(numberedOwner.statusCode, 422, numberedOwner.body);
+    assert.deepEqual(numberedOwner.json().detail[0].loc, ["body", "owner"]);
     assert.equal((await start({ owner: "acme/org" })).statusCode, 400);
 
     // A callback whose cookie does not match its state is refused before GitHub is asked; the flow is spent.
