@@ -75,6 +75,14 @@ test("random-window routines persist, plan inside the window, and users keep a t
       payload: { window: { ...WINDOW, max_wakes: 500 }, description: "Crowded", instruction: "Look around." },
     });
     assert.equal(crowded.statusCode, 422);
+    const textWakes = await app.inject({
+      method: "POST",
+      url,
+      headers: json,
+      payload: { window: { ...WINDOW, max_wakes: "5" }, description: "Text", instruction: "Look around." },
+    });
+    assert.equal(textWakes.statusCode, 422);
+    assert.deepEqual(textWakes.json().detail[0].loc, ["body", "window", "max_wakes"]);
 
     const created = await app.inject({
       method: "POST",
@@ -103,6 +111,9 @@ test("random-window routines persist, plan inside the window, and users keep a t
 
     const paused = await app.inject({ method: "PATCH", url: `${url}/${item.id}`, headers: json, payload: { paused: true } });
     assert.equal(paused.json().paused, true);
+    const textPause = await app.inject({ method: "PATCH", url: `${url}/${item.id}`, headers: json, payload: { paused: "yes" } });
+    assert.equal(textPause.statusCode, 422);
+    assert.deepEqual(textPause.json().detail[0].loc, ["body", "paused"]);
     const resumed = await app.inject({ method: "PATCH", url: `${url}/${item.id}`, headers: json, payload: { paused: false } });
     assert.equal(resumed.json().paused, false);
     assert.notEqual(windowEndAt(WINDOW, new Date(resumed.json().next_run_at)), null);
