@@ -1,3 +1,5 @@
+// The artifact types, limits, and predicates (who acts, what an access list holds, how much a store
+// keeps), imported directly by other domains.
 import { ACCESS_MODES, type AccessMode } from "../db/schema/index.js";
 import type { ChangeActor } from "../lib/change-actor.js";
 

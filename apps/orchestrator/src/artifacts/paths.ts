@@ -1,3 +1,5 @@
+// The display-path grammar, by which a path names an artifact, a collection, a record, or a Memory
+// revision, built and parsed here and imported directly by other domains.
 import { isId } from "../lib/ids.js";
 import { ArtifactError } from "./errors.js";
 import type { ArtifactKind, ArtifactLevel } from "./types.js";
