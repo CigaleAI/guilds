@@ -25,12 +25,12 @@ import {
   planGuildTableChange,
 } from "../artifacts/guild-tables.js";
 import {
-  effectiveAccess,
   type GuildAccess,
   type GuildAccessProposal,
   isAgentRowMode,
   isGuildRowMode,
 } from "../artifacts/access-lists.js";
+import { effectiveAccess } from "../artifacts/access.js";
 import type { AccessEntry, ArtifactActor } from "../artifacts/types.js";
 import type { CollectionColumn } from "../db/schema/index.js";
 import { isPlainRecord } from "../db/json.js";

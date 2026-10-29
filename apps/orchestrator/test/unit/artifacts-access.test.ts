@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { accessRaises, effectiveAccess } from "../../src/artifacts/access.js";
 import {
-  accessRaises,
-  effectiveAccess,
   type GuildAccess,
   isAgentRowMode,
   isGuildRowMode,

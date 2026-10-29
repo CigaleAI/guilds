@@ -514,7 +514,7 @@ and no row both mean no access. Every note, file, and record tool,
 State, and every listing an agent gets apply it. An operator actor skips it
 and reaches every item except those of the private guilds it does
 not operate. The same rule over an item's listed rows
-(`effectiveAccess` in `apps/orchestrator/src/artifacts/access-lists.ts`)
+(`effectiveAccess` in `apps/orchestrator/src/artifacts/access.ts`)
 gives the modes Studio shows for a table and the access a recipe
 captures and raises.
 
