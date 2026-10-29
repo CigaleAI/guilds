@@ -39,7 +39,8 @@ import {
   loadGuildBase,
   loadMemoryBase,
   loadNoteBase,
-  noteEditRequest,
+  noteCreateRequest,
+  noteDeleteRequest,
   routineEditRequest,
   tableEditRequest,
   type EditScope,
@@ -1082,9 +1083,6 @@ function editScope(ctx: StudioToolContext): EditScope {
     sourceGuildId: ctx.sourceGuildId,
     sessionId: String(ctx.session.id),
     user: ctx.user,
-    db: ctx.db,
-    artifacts: ctx.artifacts,
-    schedules: ctx.schedules,
   };
 }
 
@@ -1096,7 +1094,7 @@ export const studioGetGuild: StudioTool = {
     Type.Object({}),
   ),
   async handler(ctx) {
-    const base = await loadGuildBase(editScope(ctx));
+    const base = await loadGuildBase(ctx, editScope(ctx));
     if (base.kind !== "guild") {
       throw new StudioUnprocessableError("source guild not found");
     }
@@ -1183,7 +1181,7 @@ export const studioEditMemory: StudioTool = {
   async handler(ctx, args) {
     const input: EditMemoryArguments = decodeStudioArguments(EditMemoryArguments, args);
     const agent = await resolveHandle(ctx, input.agent_id);
-    const base = await loadMemoryBase(editScope(ctx), agent);
+    const base = await loadMemoryBase(ctx, editScope(ctx), agent);
     return editRequest(base, input, input.base_version);
   },
 };
@@ -1232,11 +1230,13 @@ export const studioEditNote: StudioTool = {
     const input: EditNoteArguments = decodeStudioArguments(EditNoteArguments, args);
     const action = editActionOf(input);
     if (action === "edit") {
-      const base = await loadNoteBase(editScope(ctx), input.display_path ?? "");
+      const base = await loadNoteBase(ctx, editScope(ctx), input.display_path ?? "");
       return editRequest(base, input, input.base_version ?? null);
     }
-    const agentId = action === "create" ? await noteAgentId(ctx, input) : null;
-    return noteEditRequest(editScope(ctx), action, input, agentId);
+    if (action === "create") {
+      return noteCreateRequest(ctx, editScope(ctx), input, await noteAgentId(ctx, input));
+    }
+    return noteDeleteRequest(ctx, editScope(ctx), input);
   },
 };
 
@@ -1285,7 +1285,7 @@ export const studioEditAccess: StudioTool = {
   async handler(ctx, args) {
     const input: EditAccessArguments = decodeStudioArguments(EditAccessArguments, args);
     const agent = await resolveHandle(ctx, input.agent_id);
-    return accessEditRequest(editScope(ctx), agent.id, input);
+    return accessEditRequest(ctx, editScope(ctx), agent.id, input);
   },
 };
 
@@ -1305,7 +1305,7 @@ export const studioEditGuild: StudioTool = {
   ),
   async handler(ctx, args) {
     const input: EditGuildArguments = decodeStudioArguments(EditGuildArguments, args);
-    const base = await loadGuildBase(editScope(ctx));
+    const base = await loadGuildBase(ctx, editScope(ctx));
     return editRequest(base, input, null);
   },
 };
@@ -1380,7 +1380,7 @@ export const studioListCollections: StudioTool = {
     Type.Object({}),
   ),
   async handler(ctx) {
-    return { collections: await listTables(editScope(ctx)), trust: "untrusted" };
+    return { collections: await listTables(ctx, editScope(ctx)), trust: "untrusted" };
   },
 };
 
@@ -1398,7 +1398,7 @@ export const studioGetCollection: StudioTool = {
   ),
   async handler(ctx, args) {
     const input: GetCollectionArguments = decodeStudioArguments(GetCollectionArguments, args);
-    return { ...(await readTable(editScope(ctx), input.collection)), trust: "untrusted" };
+    return { ...(await readTable(ctx, editScope(ctx), input.collection)), trust: "untrusted" };
   },
 };
 
@@ -1436,7 +1436,7 @@ export const studioEditCollection: StudioTool = {
   ),
   async handler(ctx, args) {
     const input: EditCollectionArguments = decodeStudioArguments(EditCollectionArguments, args);
-    return tableEditRequest(editScope(ctx), input);
+    return tableEditRequest(ctx, editScope(ctx), input);
   },
 };
 
@@ -1489,7 +1489,7 @@ export const studioEditRoutine: StudioTool = {
   async handler(ctx, args) {
     const input: EditRoutineArguments = decodeStudioArguments(EditRoutineArguments, args);
     const agentId = editActionOf(input) === "create" ? (await resolveHandle(ctx, input.agent_id)).id : null;
-    return routineEditRequest(editScope(ctx), { args: input, agentId });
+    return routineEditRequest(ctx, editScope(ctx), { args: input, agentId });
   },
 };
 

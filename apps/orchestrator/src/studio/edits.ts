@@ -69,6 +69,14 @@ type EditBase =
     }
   | { kind: "guild"; guildId: string; guildName: string; text: GuildText };
 
+/** The stores a Studio edit reads and writes through. */
+export type EditDeps = {
+  db: Queryable;
+  artifacts: ArtifactStore;
+  schedules: Schedules;
+};
+
+/** The Studio session an edit belongs to, and the operator who proposes or applies it. */
 export type EditScope = {
   orgId: string;
   sourceGuildId: string;
@@ -77,9 +85,6 @@ export type EditScope = {
   /** The coach message being applied; set by `applyEdit` so every write links to it. */
   origin?: StudioOrigin;
   user: UserRow;
-  db: Queryable;
-  artifacts: ArtifactStore;
-  schedules: Schedules;
 };
 
 export function guildTextHash(text: GuildText): string {
@@ -108,18 +113,19 @@ function artifactFailure(error: unknown): never {
   throw error;
 }
 
-async function sourceAgentIds(scope: EditScope): Promise<Set<string>> {
-  const agents = await listAgents(scope.db, scope.sourceGuildId);
+async function sourceAgentIds(deps: EditDeps, scope: EditScope): Promise<Set<string>> {
+  const agents = await listAgents(deps.db, scope.sourceGuildId);
   return new Set(agents.map((row) => String(row.id)));
 }
 
 /** The agent's Memory as the operator reads it; an agent without one has an empty Memory at version 0. */
 export async function loadMemoryBase(
+  deps: EditDeps,
   scope: EditScope,
   agent: Pick<AgentRow, "id" | "name">,
 ): Promise<EditBase> {
   const memory = await readMemoryVersion(
-    scope.artifacts,
+    deps.artifacts,
     editActor(scope, { agentId: agent.id }),
     agent.id,
   );
@@ -133,20 +139,24 @@ export async function loadMemoryBase(
   };
 }
 
-export async function loadNoteBase(scope: EditScope, displayPath: string): Promise<EditBase> {
+export async function loadNoteBase(
+  deps: EditDeps,
+  scope: EditScope,
+  displayPath: string,
+): Promise<EditBase> {
   const actor = editActor(scope);
   try {
     const parsed = parseActorPath(actor, displayPath);
     if (parsed.kind !== "artifact") {
       throw new StudioUnprocessableError("only notes can be edited here; records and memory revisions are not notes");
     }
-    if (parsed.level === "agent" && !(await sourceAgentIds(scope)).has(parsed.ownerId)) {
+    if (parsed.level === "agent" && !(await sourceAgentIds(deps, scope)).has(parsed.ownerId)) {
       throw new StudioUnprocessableError("artifact is not in the source guild");
     }
     if (parsed.level === "guild" && parsed.ownerId !== scope.sourceGuildId) {
       throw new StudioUnprocessableError("artifact is not in the source guild");
     }
-    const view = await artifactAt(scope.artifacts, actor, displayPath);
+    const view = await artifactAt(deps.artifacts, actor, displayPath);
     if (view.kind !== "row" || view.deleted) {
       throw new StudioUnprocessableError("artifact not found");
     }
@@ -172,8 +182,8 @@ export async function loadNoteBase(scope: EditScope, displayPath: string): Promi
   }
 }
 
-export async function loadGuildBase(scope: EditScope): Promise<EditBase> {
-  const guild = await getGuild(scope.db, scope.sourceGuildId);
+export async function loadGuildBase(deps: EditDeps, scope: EditScope): Promise<EditBase> {
+  const guild = await getGuild(deps.db, scope.sourceGuildId);
   if (!guild || String(guild.org_id) !== scope.orgId) {
     throw new StudioUnprocessableError("source guild not found");
   }
@@ -306,11 +316,12 @@ export function editRequest(
 // A table tool's widget: the table it creates, changes, or deletes, and what
 // applying does to its records and readers.
 export async function tableEditRequest(
+  deps: EditDeps,
   scope: EditScope,
   args: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
   const reason = requireReason(args);
-  const review = await reviewTable(scope, editActionOf(args), args, null);
+  const review = await reviewTable(deps, scope, args, null);
   return awaitOperator(review.title, reason, {
     kind: "collection",
     action: review.action,
@@ -325,11 +336,12 @@ export async function tableEditRequest(
 // A routine tool's widget: the routine it creates, changes, or deletes, and
 // when the agent wakes after applying.
 export async function routineEditRequest(
+  deps: EditDeps,
   scope: EditScope,
   call: { args: Record<string, unknown>; agentId: string | null },
 ): Promise<Record<string, unknown>> {
   const reason = requireReason(call.args);
-  const review = await reviewRoutine(scope, editActionOf(call.args), call);
+  const review = await reviewRoutine(deps, scope, editActionOf(call.args), call);
   return awaitOperator(review.title, reason, {
     kind: "routine",
     action: review.action,
@@ -374,9 +386,13 @@ function names(rows: Array<Record<string, unknown>>): string {
 }
 
 /** A note at a display path, or null when none is live there. */
-async function liveNoteAt(scope: EditScope, displayPath: string): Promise<{ version: number } | null> {
+async function liveNoteAt(
+  deps: EditDeps,
+  scope: EditScope,
+  displayPath: string,
+): Promise<{ version: number } | null> {
   try {
-    const view = await artifactAt(scope.artifacts, editActor(scope), displayPath);
+    const view = await artifactAt(deps.artifacts, editActor(scope), displayPath);
     return view.kind === "row" && !view.deleted ? { version: Number(view.row.version) } : null;
   } catch (error) {
     if (error instanceof ArtifactError && error.status === 404) return null;
@@ -385,6 +401,7 @@ async function liveNoteAt(scope: EditScope, displayPath: string): Promise<{ vers
 }
 
 async function reviewNoteCreate(
+  deps: EditDeps,
   scope: EditScope,
   args: Record<string, unknown>,
   agentId: string | null,
@@ -409,20 +426,20 @@ async function reviewNoteCreate(
   assertContent(content);
   let reader: string;
   if (level === "agent") {
-    const agents = await listAgents(scope.db, scope.sourceGuildId);
+    const agents = await listAgents(deps.db, scope.sourceGuildId);
     const agent = agents.find((row) => String(row.id) === agentId);
     if (!agent) {
       throw new StudioUnprocessableError("an agent note needs agent_id: a live agent of the source guild");
     }
     reader = `Only ${agent.name} reads it.`;
   } else if (level === "guild") {
-    const guild = await getGuild(scope.db, scope.sourceGuildId);
+    const guild = await getGuild(deps.db, scope.sourceGuildId);
     reader = `Every agent of ${guild?.name ?? "the guild"} that reads guild notes reaches it.`;
   } else {
     reader = "Every agent in the organisation that reads organisation notes reaches it.";
   }
   const { href: displayPath, key } = planned;
-  const live = await liveNoteAt(scope, displayPath);
+  const live = await liveNoteAt(deps, scope, displayPath);
   if (live) {
     throw new StudioConflictError(`a note already exists at ${displayPath}; change it with studio_edit_note action edit`);
   }
@@ -443,12 +460,16 @@ async function reviewNoteCreate(
   };
 }
 
-async function reviewNoteDelete(scope: EditScope, displayPath: string): Promise<NoteReview> {
-  const base = await loadNoteBase(scope, displayPath);
+async function reviewNoteDelete(
+  deps: EditDeps,
+  scope: EditScope,
+  displayPath: string,
+): Promise<NoteReview> {
+  const base = await loadNoteBase(deps, scope, displayPath);
   if (base.kind !== "note") {
     throw new StudioUnprocessableError("only notes can be deleted here");
   }
-  const members = await listAgents(scope.db, scope.sourceGuildId);
+  const members = await listAgents(deps.db, scope.sourceGuildId);
   const embedding = members.filter((row) => String(row.task ?? "").includes(`![[${base.displayPath}]]`));
   const naming = members.filter(
     (row) => !embedding.includes(row) && String(row.task ?? "").includes(base.displayPath),
@@ -479,32 +500,28 @@ async function reviewNoteDelete(scope: EditScope, displayPath: string): Promise<
   };
 }
 
-/**
- * Checks a note create or delete. A request (`recorded` null) carries the coach's
- * arguments, with the agent its handle named; a review finds the note by the
- * target its request recorded.
- */
-async function reviewNote(
+/** Checks a requested note create or delete again, finding the note by the target its request recorded. */
+async function reviewRecordedNote(
+  deps: EditDeps,
   scope: EditScope,
   action: NoteAction,
   args: Record<string, unknown>,
-  recorded: Record<string, unknown> | null,
-  agentId: string | null = null,
+  recorded: Record<string, unknown>,
 ): Promise<NoteReview> {
   if (action === "create") {
-    return reviewNoteCreate(scope, args, recorded ? String(recorded.agent_id ?? "") || null : agentId);
+    return reviewNoteCreate(deps, scope, args, String(recorded.agent_id ?? "") || null);
   }
-  return reviewNoteDelete(scope, recorded ? String(recorded.display_path ?? "") : argString(args, "display_path"));
+  return reviewNoteDelete(deps, scope, String(recorded.display_path ?? ""));
 }
 
-async function applyNote(scope: EditScope, plan: NotePlan): Promise<number | null> {
+async function applyNote(deps: EditDeps, scope: EditScope, plan: NotePlan): Promise<number | null> {
   const toolActor = editActor(scope, {
     ...(plan.action === "delete" ? { guildId: plan.guildId } : {}),
     ...(plan.agentId ? { agentId: plan.agentId } : {}),
   });
   try {
     if (plan.action === "create") {
-      const written = await writeNote(scope.artifacts, toolActor, {
+      const written = await writeNote(deps.artifacts, toolActor, {
         level: plan.level,
         key: plan.key,
         content: plan.content,
@@ -514,33 +531,45 @@ async function applyNote(scope: EditScope, plan: NotePlan): Promise<number | nul
       });
       return written.row.version;
     }
-    await deleteByDisplayPath(scope.artifacts, toolActor, plan.displayPath);
+    await deleteByDisplayPath(deps.artifacts, toolActor, plan.displayPath);
     return null;
   } catch (error) {
     artifactFailure(error);
   }
 }
 
-// A note create or delete widget: the note it creates or deletes, and what applying does.
-export async function noteEditRequest(
+// A note create widget: the note it creates for the agent its handle named, and what applying does.
+export async function noteCreateRequest(
+  deps: EditDeps,
   scope: EditScope,
-  action: NoteAction,
   args: Record<string, unknown>,
   agentId: string | null,
 ): Promise<Record<string, unknown>> {
   const reason = requireReason(args);
-  const review = await reviewNote(scope, action, args, null, agentId);
+  return noteWidget(await reviewNoteCreate(deps, scope, args, agentId), reason);
+}
+
+// A note delete widget: the note at `display_path`, at the version the coach read, and what applying does.
+export async function noteDeleteRequest(
+  deps: EditDeps,
+  scope: EditScope,
+  args: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const reason = requireReason(args);
+  const review = await reviewNoteDelete(deps, scope, argString(args, "display_path"));
   const expected = typeof args.base_version === "number" ? args.base_version : null;
-  if (review.action === "delete") {
-    if (expected === null) {
-      throw new StudioUnprocessableError("base_version is required: the note version studio_get_artifact returned");
-    }
-    if (expected !== review.baseVersion) {
-      throw new StudioConflictError(
-        `base_version ${expected} is stale; the live version is ${review.baseVersion}. Read it again and rebuild the request.`,
-      );
-    }
+  if (expected === null) {
+    throw new StudioUnprocessableError("base_version is required: the note version studio_get_artifact returned");
   }
+  if (expected !== review.baseVersion) {
+    throw new StudioConflictError(
+      `base_version ${expected} is stale; the live version is ${review.baseVersion}. Read it again and rebuild the request.`,
+    );
+  }
+  return noteWidget(review, reason);
+}
+
+function noteWidget(review: NoteReview, reason: string): Record<string, unknown> {
   return awaitOperator(review.title, reason, {
     kind: "note",
     action: review.action,
@@ -555,12 +584,13 @@ export async function noteEditRequest(
 
 // An access tool's widget: the agent's access before and after, and what applying does.
 export async function accessEditRequest(
+  deps: EditDeps,
   scope: EditScope,
   agentId: string,
   args: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
   const reason = requireReason(args);
-  const review = await reviewAccessRequest(scope, agentId, args);
+  const review = await reviewAccessRequest(deps, scope, agentId, args);
   return awaitOperator(review.title, reason, {
     kind: "access",
     target: review.target,
@@ -630,21 +660,25 @@ export function editStatus(record: EditRecord): StudioEditStatus {
   return record.metadata.edit_status ?? "pending";
 }
 
-async function loadBaseFor(scope: EditScope, record: EditRecord): Promise<EditBase> {
+async function loadBaseFor(
+  deps: EditDeps,
+  scope: EditScope,
+  record: EditRecord,
+): Promise<EditBase> {
   const edit = (record.widget.edit ?? {}) as Record<string, unknown>;
   const target = (edit.target ?? {}) as Record<string, unknown>;
   if (record.toolName === "studio_edit_memory") {
-    const agent = await getAgent(scope.db, String(target.agent_id ?? ""));
+    const agent = await getAgent(deps.db, String(target.agent_id ?? ""));
     if (!agent || agent.guild_id !== scope.sourceGuildId) {
       throw new StudioUnprocessableError("agent is not in the source guild");
     }
-    return loadMemoryBase(scope, agent);
+    return loadMemoryBase(deps, scope, agent);
   }
   if (record.toolName === STUDIO_NOTE_TOOL) {
-    return loadNoteBase(scope, String(target.display_path ?? ""));
+    return loadNoteBase(deps, scope, String(target.display_path ?? ""));
   }
   if (record.toolName === "studio_edit_guild") {
-    return loadGuildBase(scope);
+    return loadGuildBase(deps, scope);
   }
   throw new StudioError(404, "edit request not found");
 }
@@ -664,34 +698,47 @@ function liveContent(base: EditBase): string | GuildText {
 
 // What the operator reviews: the live content, the proposal, and whether the
 // live content still matches the base the proposal was built on.
-export async function viewEdit(scope: EditScope, record: EditRecord): Promise<Record<string, unknown>> {
+export async function viewEdit(
+  deps: EditDeps,
+  scope: EditScope,
+  record: EditRecord,
+): Promise<Record<string, unknown>> {
   const edit = (record.widget.edit ?? {}) as Record<string, unknown>;
   const status = editStatus(record);
   if (isTableTool(record.toolName)) {
     return viewReviewedEdit(record, edit, status, () =>
-      reviewTable(scope, editActionOf(record.args), record.args, (edit.target ?? {}) as Record<string, unknown>),
+      reviewTable(deps, scope, record.args, (edit.target ?? {}) as Record<string, unknown>),
     );
   }
   const noteAction = noteActionOf(record);
   if (noteAction) {
     return viewReviewedEdit(record, edit, status, () =>
-      reviewNote(scope, noteAction, record.args, (edit.target ?? {}) as Record<string, unknown>),
+      reviewRecordedNote(
+        deps,
+        scope,
+        noteAction,
+        record.args,
+        (edit.target ?? {}) as Record<string, unknown>,
+      ),
     );
   }
   if (isRoutineTool(record.toolName)) {
     return viewReviewedEdit(record, edit, status, () =>
-      reviewRoutine(scope, editActionOf(record.args), { args: record.args, agentId: recordedAgentId(edit) }),
+      reviewRoutine(deps, scope, editActionOf(record.args), {
+        args: record.args,
+        agentId: recordedAgentId(edit),
+      }),
     );
   }
   if (isAccessTool(record.toolName)) {
     return viewReviewedEdit(record, edit, status, () =>
-      reviewAccess(scope, recordedAgentId(edit), record.args),
+      reviewAccess(deps, scope, recordedAgentId(edit), record.args),
     );
   }
   let live: EditBase | null = null;
   let error: string | null = null;
   try {
-    live = await loadBaseFor(scope, record);
+    live = await loadBaseFor(deps, scope, record);
   } catch (caught) {
     if (!(caught instanceof StudioError)) throw caught;
     error = caught.message;
@@ -768,6 +815,7 @@ function assertBound(review: { baseHash: string; proposedHash: string }, edit: R
 // proposed it. The live content must still hash to the base the proposal was
 // built on; anything else is a conflict.
 export async function applyEdit(
+  deps: EditDeps,
   live: EditScope,
   record: EditRecord,
 ): Promise<{ version: number | null; guild?: GuildRow; routine?: RoutineChange }> {
@@ -775,31 +823,32 @@ export async function applyEdit(
   const edit = (record.widget.edit ?? {}) as Record<string, unknown>;
   if (isRoutineTool(record.toolName)) {
     const call = { args: record.args, agentId: recordedAgentId(edit) };
-    const review = await reviewRoutine(scope, editActionOf(record.args), call);
+    const review = await reviewRoutine(deps, scope, editActionOf(record.args), call);
     assertBound(review, edit, "routine");
-    return { version: null, routine: await applyRoutine(scope, review.plan) };
+    return { version: null, routine: await applyRoutine(deps, scope, review.plan) };
   }
   if (isTableTool(record.toolName)) {
-    const action = editActionOf(record.args);
-    const review = await reviewTable(scope, action, record.args, (edit.target ?? {}) as Record<string, unknown>);
+    const target = (edit.target ?? {}) as Record<string, unknown>;
+    const review = await reviewTable(deps, scope, record.args, target);
     assertBound(review, edit, "table");
-    await applyTable(scope, review.plan);
+    await applyTable(deps, scope, review.plan);
     return { version: null };
   }
   const noteAction = noteActionOf(record);
   if (noteAction) {
-    const review = await reviewNote(scope, noteAction, record.args, (edit.target ?? {}) as Record<string, unknown>);
+    const target = (edit.target ?? {}) as Record<string, unknown>;
+    const review = await reviewRecordedNote(deps, scope, noteAction, record.args, target);
     assertBound(review, edit, "note");
-    return { version: await applyNote(scope, review.plan) };
+    return { version: await applyNote(deps, scope, review.plan) };
   }
   if (isAccessTool(record.toolName)) {
     const agentId = recordedAgentId(edit);
-    const review = await reviewAccess(scope, agentId, record.args);
+    const review = await reviewAccess(deps, scope, agentId, record.args);
     assertBound(review, edit, "access");
-    await applyAccess(scope, agentId, review);
+    await applyAccess(deps, scope, agentId, review);
     return { version: null };
   }
-  const base = await loadBaseFor(scope, record);
+  const base = await loadBaseFor(deps, scope, record);
   if (baseHash(base) !== String(edit.base_hash ?? "")) {
     throw new StudioConflictError("the live content changed since this edit was proposed");
   }
@@ -811,7 +860,7 @@ export async function applyEdit(
   if (base.kind === "memory") {
     const actor = { ...editActor(scope, { agentId: base.agentId }), toolCall };
     try {
-      const { row } = await writeMemory(scope.artifacts, actor, base.agentId, { content: proposed as string, detail: record.toolName, ...(base.version > 0 ? { expectedVersion: base.version } : {}) });
+      const { row } = await writeMemory(deps.artifacts, actor, base.agentId, { content: proposed as string, detail: record.toolName, ...(base.version > 0 ? { expectedVersion: base.version } : {}) });
       return { version: row.version };
     } catch (error) {
       artifactFailure(error);
@@ -826,7 +875,7 @@ export async function applyEdit(
       toolCall,
     };
     try {
-      const written = await writeNoteAt(scope.artifacts, actor, base.displayPath, {
+      const written = await writeNoteAt(deps.artifacts, actor, base.displayPath, {
         content: proposed as string,
         expectedVersion: base.version,
       });
@@ -835,7 +884,7 @@ export async function applyEdit(
       artifactFailure(error);
     }
   }
-  const row = await updateGuildText(scope.db, base.guildId, guildTextPatch(record.args), editActor(scope));
+  const row = await updateGuildText(deps.db, base.guildId, guildTextPatch(record.args), editActor(scope));
   if (!row) {
     throw new StudioUnprocessableError("source guild not found");
   }

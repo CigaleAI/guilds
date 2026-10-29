@@ -5,7 +5,7 @@ import { timingText } from "../schedules/item.js";
 import { changedFields, scheduleChanges, type ScheduleChanges } from "../schedules/service.js";
 import { argString } from "../toolbox/schema.js";
 import type { EditAction } from "./actions.js";
-import type { EditScope } from "./edits.js";
+import type { EditDeps, EditScope } from "./edits.js";
 import { editActor } from "./actor.js";
 import { StudioUnprocessableError } from "./errors.js";
 import { getGuild } from "../db/guilds.js";
@@ -36,6 +36,7 @@ type Member = { id: string; name: string };
 type Routine = { id: string; agent: Member; definition: Definition };
 
 type RoutineContext = {
+  deps: EditDeps;
   scope: EditScope;
   guildName: string;
   routinesEnabled: boolean;
@@ -89,10 +90,11 @@ function valid<T>(read: () => T): T {
   }
 }
 
-async function routineContext(scope: EditScope): Promise<RoutineContext> {
-  const guild = await getGuild(scope.db, scope.sourceGuildId);
-  const agents = await listAgents(scope.db, scope.sourceGuildId);
+async function routineContext(deps: EditDeps, scope: EditScope): Promise<RoutineContext> {
+  const guild = await getGuild(deps.db, scope.sourceGuildId);
+  const agents = await listAgents(deps.db, scope.sourceGuildId);
   return {
+    deps,
     scope,
     guildName: String(guild?.name ?? "this guild"),
     routinesEnabled: guild?.routines_enabled !== false,
@@ -109,7 +111,7 @@ function requireMember(rc: RoutineContext, agentId: string | null): Member {
 }
 
 async function loadRoutine(rc: RoutineContext, scheduleId: string): Promise<Routine> {
-  const rows = await listSchedulesForGuild(rc.scope.db, rc.scope.sourceGuildId);
+  const rows = await listSchedulesForGuild(rc.deps.db, rc.scope.sourceGuildId);
   const row = rows.find((item) => String(item.id) === scheduleId);
   if (!row) {
     throw new StudioUnprocessableError(
@@ -251,11 +253,12 @@ function reviewDelete(routine: Routine): RoutineReview {
  * `schedule_id`, which stays the same from request to apply.
  */
 export async function reviewRoutine(
+  deps: EditDeps,
   scope: EditScope,
   action: RoutineAction,
   call: RoutineCall,
 ): Promise<RoutineReview> {
-  const rc = await routineContext(scope);
+  const rc = await routineContext(deps, scope);
   if (action === "create") {
     return reviewCreate(rc, call);
   }
@@ -264,27 +267,35 @@ export async function reviewRoutine(
 }
 
 /** Writes a reviewed proposal as the operator. */
-export async function applyRoutine(scope: EditScope, plan: RoutinePlan): Promise<RoutineChange> {
+export async function applyRoutine(
+  deps: EditDeps,
+  scope: EditScope,
+  plan: RoutinePlan,
+): Promise<RoutineChange> {
   try {
-    return await writeRoutine(scope, plan);
+    return await writeRoutine(deps, scope, plan);
   } catch (error) {
     scheduleFailure(error);
   }
 }
 
-async function writeRoutine(scope: EditScope, plan: RoutinePlan): Promise<RoutineChange> {
+async function writeRoutine(
+  deps: EditDeps,
+  scope: EditScope,
+  plan: RoutinePlan,
+): Promise<RoutineChange> {
   if (plan.action === "create") {
     const { timing, description, instruction, paused } = plan.definition;
     const when = { cron: timing.cron, window: timing.window };
-    const row = await scope.schedules.create(editActor(scope), plan.agentId, when, description, instruction, {
+    const row = await deps.schedules.create(editActor(scope), plan.agentId, when, description, instruction, {
       paused,
     });
     return { agentId: plan.agentId, action: "create", scheduleId: String(row.id) };
   }
   if (plan.action === "edit") {
-    await scope.schedules.update(editActor(scope), plan.agentId, plan.scheduleId, plan.changes);
+    await deps.schedules.update(editActor(scope), plan.agentId, plan.scheduleId, plan.changes);
   } else {
-    await scope.schedules.delete(editActor(scope), plan.agentId, plan.scheduleId);
+    await deps.schedules.delete(editActor(scope), plan.agentId, plan.scheduleId);
   }
   return { agentId: plan.agentId, action: plan.action, scheduleId: plan.scheduleId };
 }

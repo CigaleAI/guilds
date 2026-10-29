@@ -36,8 +36,8 @@ import type { CollectionColumn } from "../db/schema/index.js";
 import { isPlainRecord } from "../db/json.js";
 import { argString } from "../toolbox/schema.js";
 import { STUDIO_TOOL_RESULT_MAX_BYTES } from "./constants.js";
-import type { EditAction } from "./actions.js";
-import type { EditScope } from "./edits.js";
+import { editActionOf, type EditAction } from "./actions.js";
+import type { EditDeps, EditScope } from "./edits.js";
 import { editActor } from "./actor.js";
 import { StudioConflictError, StudioUnprocessableError } from "./errors.js";
 import { excerptBytes, wrapEvidence } from "./system.js";
@@ -102,6 +102,7 @@ export type TableReview = {
 };
 
 type TableContext = {
+  deps: EditDeps;
   scope: EditScope;
   actor: ArtifactActor;
   guildName: string;
@@ -141,16 +142,20 @@ function plural(count: number, noun: string): string {
 }
 
 /** The operator reading tables, without the private guilds they do not operate. */
-async function tableActor(scope: EditScope): Promise<ArtifactActor> {
-  return loadOperatorActor(scope.db, scope.user, { orgId: scope.orgId, guildId: scope.sourceGuildId });
+async function tableActor(deps: EditDeps, scope: EditScope): Promise<ArtifactActor> {
+  return loadOperatorActor(deps.db, scope.user, {
+    orgId: scope.orgId,
+    guildId: scope.sourceGuildId,
+  });
 }
 
-async function tableContext(scope: EditScope): Promise<TableContext> {
-  const guild = await getGuild(scope.db, scope.sourceGuildId);
-  const agents = await listAgents(scope.db, scope.sourceGuildId);
+async function tableContext(deps: EditDeps, scope: EditScope): Promise<TableContext> {
+  const guild = await getGuild(deps.db, scope.sourceGuildId);
+  const agents = await listAgents(deps.db, scope.sourceGuildId);
   return {
+    deps,
     scope,
-    actor: await tableActor(scope),
+    actor: await tableActor(deps, scope),
     guildName: String(guild?.name ?? "this guild"),
     members: agents.map((row) => ({ id: String(row.id), name: String(row.name) })),
   };
@@ -158,7 +163,7 @@ async function tableContext(scope: EditScope): Promise<TableContext> {
 
 /** A table Studio reaches, the source guild's own or the organisation's, with the rows that reach the source guild. */
 async function loadTable(tc: TableContext, lookup: CollectionLookup): Promise<Table | null> {
-  const found = await guildTable(tc.scope.artifacts, tc.actor, tc.scope.sourceGuildId, lookup);
+  const found = await guildTable(tc.deps.artifacts, tc.actor, tc.scope.sourceGuildId, lookup);
   if (!found) {
     return null;
   }
@@ -531,17 +536,18 @@ function deleteReview(tc: TableContext, table: Table, step: CollectionStep): Tab
 }
 
 /**
- * Checks what a table tool proposes against the live organisation with `planGuildTableChange`, and
- * renders it for the operator. A request (`recorded` null) to create a table whose name is taken
+ * Checks the change a table tool's `action` proposes against the live organisation with
+ * `planGuildTableChange`, and renders it for the operator. A request (`recorded` null) to create a table whose name is taken
  * is pointed at an edit instead.
  */
 export async function reviewTable(
+  deps: EditDeps,
   scope: EditScope,
-  action: TableAction,
   args: Record<string, unknown>,
   recorded: Record<string, unknown> | null,
 ): Promise<TableReview> {
-  const tc = await tableContext(scope);
+  const action = editActionOf(args);
+  const tc = await tableContext(deps, scope);
   const request = await tableRequest(tc, action, args, recorded);
   let plan: GuildTablePlan<Table>;
   try {
@@ -565,18 +571,25 @@ export async function reviewTable(
 }
 
 /** Writes a reviewed proposal as the operator: the table first, then each access row it changes. */
-export async function applyTable(scope: EditScope, plan: CollectionStep): Promise<void> {
+export async function applyTable(
+  deps: EditDeps,
+  scope: EditScope,
+  plan: CollectionStep,
+): Promise<void> {
   try {
-    await applyCollectionStep(scope.artifacts, editActor(scope), plan);
+    await applyCollectionStep(deps.artifacts, editActor(scope), plan);
   } catch (error) {
     tableFailure(error);
   }
 }
 
 /** The tables Studio reaches: the source guild's own first, then the organisation's. */
-export async function listTables(scope: EditScope): Promise<Array<Record<string, unknown>>> {
-  const actor = await tableActor(scope);
-  const tables = await guildTables(scope.artifacts, actor, scope.sourceGuildId);
+export async function listTables(
+  deps: EditDeps,
+  scope: EditScope,
+): Promise<Array<Record<string, unknown>>> {
+  const actor = await tableActor(deps, scope);
+  const tables = await guildTables(deps.artifacts, actor, scope.sourceGuildId);
   return tables
     .sort((a, b) => Number(!a.collection.guild) - Number(!b.collection.guild) || a.collection.name.localeCompare(b.collection.name))
     .map(({ collection: view, access }) => ({
@@ -592,15 +605,19 @@ export async function listTables(scope: EditScope): Promise<Array<Record<string,
 }
 
 /** One table in full: columns, who in the source guild reaches it, and its latest records as evidence. */
-export async function readTable(scope: EditScope, name: string): Promise<Record<string, unknown>> {
-  const tc = await tableContext(scope);
+export async function readTable(
+  deps: EditDeps,
+  scope: EditScope,
+  name: string,
+): Promise<Record<string, unknown>> {
+  const tc = await tableContext(deps, scope);
   const table = await loadTable(tc, { name: name.trim() });
   if (!table) {
     throw new StudioUnprocessableError(
       `unknown table ${name || "(none named)"}; list the tables with studio_list_collections`,
     );
   }
-  const recent = await listRecords(scope.artifacts, tc.actor, {
+  const recent = await listRecords(deps.artifacts, tc.actor, {
     collection: table.name,
     order: { column: "updated_at", direction: "desc" },
     limit: RECENT_RECORDS,

@@ -10,7 +10,7 @@ import {
 import { resolveMcpTool } from "../access/runtime.js";
 import { newId } from "../lib/ids.js";
 import { connectionTools } from "../mcp/service.js";
-import type { EditScope } from "./edits.js";
+import type { EditDeps, EditScope } from "./edits.js";
 import { editActor } from "./actor.js";
 import { StudioConflictError, StudioUnprocessableError } from "./errors.js";
 import { getAgent } from "../db/agents.js";
@@ -85,20 +85,20 @@ function hashOf(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value), "utf8").digest("hex");
 }
 
-async function loadSnapshot(scope: EditScope, agentId: string): Promise<Snapshot> {
-  const agent = await getAgent(scope.db, agentId);
+async function loadSnapshot(deps: EditDeps, scope: EditScope, agentId: string): Promise<Snapshot> {
+  const agent = await getAgent(deps.db, agentId);
   if (!agent || agent.guild_id !== scope.sourceGuildId || agent.org_id !== scope.orgId) {
     throw new StudioUnprocessableError("agent is not in the source guild");
   }
   const resolveScope = { orgId: scope.orgId, guildId: scope.sourceGuildId, agentId };
-  const rows = await listBindingsCovering(scope.db, resolveScope);
-  const servers = await listServers(scope.db, { owner: { visibleTo: scope.orgId } });
+  const rows = await listBindingsCovering(deps.db, resolveScope);
+  const servers = await listServers(deps.db, { owner: { visibleTo: scope.orgId } });
   const serverById = new Map(servers.map((server) => [server.id, server]));
   const connections = new Map<string, AgentConnection>();
-  for (const connection of await listMcpConnections(scope.db, resolveScope)) {
+  for (const connection of await listMcpConnections(deps.db, resolveScope)) {
     const server = serverById.get(connection.mcp_server_id);
     if (!server) continue;
-    const listed = await connectionTools(scope.db, connection, server);
+    const listed = await connectionTools(deps.db, connection, server);
     const name = server.display_name || server.slug;
     const account = connection.account_hint;
     connections.set(connection.id, {
@@ -315,8 +315,8 @@ function widensAccess(snapshot: Snapshot, after: ResolvableBinding[]): boolean {
  * Reviews a new access request against the live bindings. The request must
  * change something, or it is rejected as unprocessable.
  */
-export async function reviewAccessRequest(scope: EditScope, agentId: string, args: Record<string, unknown>): Promise<AccessReview> {
-  const review = await reviewAccess(scope, agentId, args);
+export async function reviewAccessRequest(deps: EditDeps, scope: EditScope, agentId: string, args: Record<string, unknown>): Promise<AccessReview> {
+  const review = await reviewAccess(deps, scope, agentId, args);
   if (!review.changes.length) {
     throw new StudioUnprocessableError(`the proposal matches ${review.target.agent_name}'s live access; nothing to change`);
   }
@@ -327,8 +327,8 @@ export async function reviewAccessRequest(scope: EditScope, agentId: string, arg
  * Recomputes what an access proposal asks for against the live bindings, so a
  * binding that moved since the proposal shows as a changed base.
  */
-export async function reviewAccess(scope: EditScope, agentId: string, args: Record<string, unknown>): Promise<AccessReview> {
-  const snapshot = await loadSnapshot(scope, agentId);
+export async function reviewAccess(deps: EditDeps, scope: EditScope, agentId: string, args: Record<string, unknown>): Promise<AccessReview> {
+  const snapshot = await loadSnapshot(deps, scope, agentId);
   const changes = parseChanges(snapshot, args);
   const after = rowsAfter(snapshot, changes);
   const live = render(snapshot, snapshot.rows);
@@ -347,7 +347,7 @@ export async function reviewAccess(scope: EditScope, agentId: string, args: Reco
 }
 
 /** Writes a reviewed proposal as agent-level overlays. */
-export async function applyAccess(scope: EditScope, agentId: string, review: AccessReview): Promise<void> {
+export async function applyAccess(deps: EditDeps, scope: EditScope, agentId: string, review: AccessReview): Promise<void> {
   if (!review.changes.length) {
     throw new StudioConflictError("the agent's access already matches this proposal");
   }
@@ -355,20 +355,20 @@ export async function applyAccess(scope: EditScope, agentId: string, review: Acc
   const actor = editActor(scope, { agentId });
   for (const change of review.changes) {
     if (change.setting === "inherit") {
-      await resetBinding(scope.db,
+      await resetBinding(deps.db,
         { catalogKind: change.kind, catalogId: change.id, scope: "agent", scopeId: agentId },
         actor,
       );
       continue;
     }
-    const existing = await getBinding(scope.db, {
+    const existing = await getBinding(deps.db, {
       catalogKind: change.kind,
       catalogId: change.id,
       scope: "agent",
       scopeId: agentId,
     });
     const connectionId = change.kind === "mcp" ? (existing?.connection_id ?? null) : null;
-    await writeBinding(scope.db,
+    await writeBinding(deps.db,
       {
         bindingId: newId("bind"),
         catalogKind: change.kind,

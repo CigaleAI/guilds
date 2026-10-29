@@ -1,13 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type pg from "pg";
 import { bindingChange } from "../../src/access/changes.js";
 import {
   collectionCleared,
   collectionColumnsChanged,
   collectionDeleted,
 } from "../../src/artifacts/collection-changes.js";
-import { artifactStore } from "../../src/artifacts/store.js";
 import { actorColumns, studioLink } from "../../src/db/config-changes.js";
 import { runActor, userActor } from "../../src/lib/change-actor.js";
 import type { ScheduleRow } from "../../src/db/schedules.js";
@@ -15,6 +13,7 @@ import { guildTextChange } from "../../src/guilds/service.js";
 import { routineChange, routineUpdateSummary } from "../../src/schedules/changes.js";
 import { editActor } from "../../src/studio/actor.js";
 import type { EditScope } from "../../src/studio/edits.js";
+import { userRow } from "../helpers/users.js";
 
 const ROUTINE = {
   id: "sch_1",
@@ -204,13 +203,12 @@ test("a stored change links to its coach message only when it has both session a
 });
 
 test("a Studio edit writes as the operator, linked to the coach message being applied", () => {
-  const scope = {
+  const scope: EditScope = {
     orgId: "org_1",
     sourceGuildId: "g_1",
     sessionId: "ss_1",
-    user: { id: "user_ada", name: "ada" },
-    artifacts: artifactStore({} as pg.Pool),
-  } as unknown as EditScope;
+    user: userRow({ id: "user_ada", name: "ada" }),
+  };
   const reading = editActor(scope, { agentId: "a_1" });
   assert.equal(reading.studio, undefined);
   assert.equal(reading.guildId, "g_1");
