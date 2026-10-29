@@ -3,7 +3,7 @@ import type { McpConnectionRow } from "../../src/db/mcp.js";
 import type { GithubRepositorySelection } from "../../src/db/schema/index.js";
 import { createVerify, generateKeyPairSync } from "node:crypto";
 import { test } from "node:test";
-import { RepositoryTokens } from "../../src/coding/git.js";
+import { RepositoryTokenInstallationGoneError, RepositoryTokens } from "../../src/coding/git.js";
 import { mintLoginToken, RepositoryAccessError, TOKEN_REFRESH_MS } from "../../src/github/tokens.js";
 import {
   codingRepositories,
@@ -528,8 +528,7 @@ test("a repository the App no longer reaches is named, whether it has an id or n
   );
 });
 
-test("a disconnected connection is refused; GitHub refusing the installation retires it as installation_gone", async () => {
-  const retired: string[] = [];
+test("a disconnected connection is refused; GitHub refusing the installation names the login it was minted for", async () => {
   const offline = new RepositoryTokens(
     { getMcpConnection: async (id: string) => connection(id, "disconnected", 11) } as never,
     [{ name: "shop", url: "https://github.com/acme/shop", connection_id: "conn_a" }],
@@ -537,17 +536,19 @@ test("a disconnected connection is refused; GitHub refusing the installation ret
   );
   await assert.rejects(offline.mint(), (error: unknown) => error instanceof RepositoryAccessError && /disconnected/.test(error.message));
   const gone = new RepositoryTokens(
-    {
-      getMcpConnection: async (id: string) => connection(id, "connected", 11),
-      retireLogin: async (_pool: unknown, login: { id: string }, failure: string) => {
-        retired.push(`${login.id}:${failure}`);
-      },
-    } as never,
+    { getMcpConnection: async (id: string) => connection(id, "connected", 11) } as never,
     [{ name: "shop", url: "https://github.com/acme/shop", connection_id: "conn_a", github_id: 101 }],
     { app: APP, masterKey: MASTER, fetch: fakeFetch(() => json(403, { message: "suspended" })).fetch },
   );
-  await assert.rejects(gone.mint(), /now disconnected/);
-  assert.deepEqual(retired, ["conn_a:installation_gone"]);
+  await assert.rejects(
+    gone.mint(),
+    (error: unknown) =>
+      error instanceof RepositoryTokenInstallationGoneError &&
+      error instanceof RepositoryAccessError &&
+      error.name === "RepositoryAccessError" &&
+      error.connection.id === "conn_a" &&
+      error.message === "GitHub refused the installation for acme; the connection is now disconnected",
+  );
 });
 
 test("a login token reaches the repositories the login picked with every permission the installation grants; a login with none picked gets none", async () => {

@@ -295,6 +295,12 @@ identity, clone errors), `apps/orchestrator/src/github/tokens.ts`
 (minting a login's installation token),
 `apps/orchestrator/src/coding/guild-repositories.ts` (a guild's
 repositories and the GitHub logins they use),
-`apps/orchestrator/src/http/coding-routes.ts` (routes),
+`apps/orchestrator/src/generation/coding.ts` (a coding run's tokens,
+and the retiring of a login whose installation GitHub refused),
+`apps/orchestrator/src/mcp/connections.ts` (the GitHub login an
+operator sees),
+`apps/orchestrator/src/http/coding-routes.ts` (routes, and the retiring
+of a login whose installation GitHub refused while its repositories
+were listed),
 `apps/web/src/features/guild/pages/GuildRepositories.tsx`, and
 `apps/web/src/features/agent/CodingRepositories.tsx`.

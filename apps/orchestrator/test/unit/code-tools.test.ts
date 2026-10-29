@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import type { MessageMetadata, ToolCall } from "../../src/db/schema/index.js";
 import { execFileSync } from "node:child_process";
+import { generateKeyPairSync } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, describe, test } from "node:test";
@@ -22,11 +23,23 @@ import {
 import { REGISTRY } from "../../src/toolbox/index.js";
 import type { MachineSpec } from "../../src/sandbox/index.js";
 import { answerOps, HostCodeSandbox } from "../helpers/code-sandbox.js";
-import { tempDir } from "../helpers/env.js";
+import { HEX_MASTER_KEY, storeKeys, tempDir } from "../helpers/env.js";
 import type { AgentConfig, RunConfigSnapshot } from "../../src/db/schema/index.js";
 import { AGENT_CONFIG, FakeDB, FakeSandboxes, liveSecret, makeLoop } from "../helpers/generation.js";
+import { connectionRow } from "../helpers/servers.js";
+import { encryptPayload } from "../../src/credentials/crypto.js";
+import type { McpConnectionRow } from "../../src/db/mcp.js";
+import { setInstanceKeys } from "../../src/instance/integrations.js";
 
 const live = generationLive;
+/** The box's GitHub App, as the instance admin stored it. */
+const GITHUB_APP_KEYS = {
+  app_id: "4242",
+  slug: "guilds-run-test",
+  private_key: generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+  client_id: "Iv1.client",
+  client_secret: "client-secret",
+};
 /** A coding agent's config: coding on, with a harness. */
 const CODER: AgentConfig = { ...AGENT_CONFIG, coding: true, harness: "claude-code" };
 const originalStream = live.streamCompletion;
@@ -710,5 +723,37 @@ describe("repositories in a coding generation", () => {
     const errors = db.run.errors as Array<Record<string, unknown>>;
     assert.equal(errors.at(-1)?.operation, "repository.clone");
     assert.match(String(errors.at(-1)?.message), /^clone failed: shop: /);
+  });
+
+  test("a repository whose GitHub installation is gone fails the generation at start and retires its login", async () => {
+    process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
+    setInstanceKeys(storeKeys({ "github-app": GITHUB_APP_KEYS }));
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify({ message: "suspended" }), { status: 403, headers: { "Content-Type": "application/json" } });
+    const { db, loop } = setup("https://github.com/acme/shop");
+    const [ciphertext, nonce] = encryptPayload({ installation_id: 77, account: "acme" });
+    db.mcp_connection = connectionRow({ id: "conn_gh", mcp_server_id: "mcp_github", account_hint: "acme", ciphertext, nonce });
+    db.listGuildRepositories = async () => [
+      { id: "repo_1", guild_id: "guild_1", name: "shop", url: "https://github.com/acme/shop", default_branch: "main", connection_id: "conn_gh", github_id: 101 },
+    ];
+    const retired: string[] = [];
+    Object.assign(db, {
+      retireLogin: async (pool: unknown, login: McpConnectionRow, failure: string) => {
+        retired.push(`${login.id}:${failure}:${pool === null ? "no pool" : "pool"}`);
+      },
+    });
+    try {
+      await loop.generator.generate("r_1", 1);
+    } finally {
+      globalThis.fetch = realFetch;
+      setInstanceKeys({});
+    }
+    assert.equal(db.llm_histories.length, 0);
+    assert.deepEqual(retired, ["conn_gh:installation_gone:no pool"]);
+    const errors = Array.isArray(db.run.errors) ? db.run.errors : [];
+    assert.equal(errors.at(-1)?.operation, "repository.token");
+    assert.equal(errors.at(-1)?.error_type, "RepositoryAccessError");
+    assert.equal(errors.at(-1)?.message, "GitHub refused the installation for acme; the connection is now disconnected");
   });
 });

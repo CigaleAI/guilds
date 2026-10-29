@@ -20,6 +20,7 @@ import {
   type McpConnectionRow,
 } from "../db/mcp.js";
 import type { Queryable } from "../db/pg.js";
+import { GITHUB_SLUG } from "../github/index.js";
 import { requireVisibleGuild } from "../guilds/access.js";
 import type { McpPool } from "./pool.js";
 import { awaitingSettings } from "../connectors/login.js";
@@ -120,6 +121,26 @@ export async function requireVisibleConnection(
     throw new ConnectionError(404, "connection not found");
   }
   return row;
+}
+
+/** A GitHub login the user sees and that is not the platform's; any other is a 404. */
+export async function requireVisibleGithubConnection(
+  db: Queryable,
+  connectionId: string,
+  userId: string,
+): Promise<McpConnectionRow> {
+  const connection = await getMcpConnection(db, connectionId);
+  if (connection === null) {
+    throw new ConnectionError(404, "connection not found");
+  }
+  const server = await getMcpServer(db, connection.mcp_server_id);
+  if (server?.slug !== GITHUB_SLUG) {
+    throw new ConnectionError(422, "connection is not a GitHub connection");
+  }
+  if (connection.owner_scope === "platform" || !(await seesConnection(db, connection, userId))) {
+    throw new ConnectionError(404, "connection not found");
+  }
+  return connection;
 }
 
 /** A login with the bindings that use it. */

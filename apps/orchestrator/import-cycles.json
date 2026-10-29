@@ -1,22 +1,9 @@
 {
   "filesInCycles": [],
   "domainsInCycles": [
-    "access",
-    "agents",
-    "coding",
-    "conversation",
-    "directories",
-    "generation",
     "github",
     "groupchat",
     "instance",
-    "machines",
-    "mcp",
-    "sandbox",
-    "scripts",
-    "secrets",
-    "state",
-    "toolbox",
     "typesafe"
   ]
 }

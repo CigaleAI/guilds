@@ -43,6 +43,8 @@ function reply(status: number, body: unknown): Response {
 
 /** The `redirect_uri` of each code GitHub was asked to trade, in order. */
 const exchangedRedirects: Array<string | undefined> = [];
+/** Whether GitHub refuses installation 77, as it does once the App is removed or suspended. */
+let installationGone = false;
 
 /**
  * GitHub as the App sees it: one user who installed the App on `acme` (installation 77), and one
@@ -83,6 +85,9 @@ function github(url: string, init: RequestInit = {}): Response {
       : reply(404, { message: "Not Found" });
   }
   if (parsed.pathname === "/app/installations/77/access_tokens") {
+    if (installationGone) {
+      return reply(404, { message: "Not Found" });
+    }
     return reply(201, { token: "ghs_install", expires_at: "2099-01-01T00:00:00Z" });
   }
   if (parsed.pathname === "/installation/repositories") {
@@ -281,6 +286,18 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
       afterConnect.json().github_connections.map((row: { id: string; account_hint: string }) => [row.id, row.account_hint]),
       [[githubId, "acme"]],
     );
+
+    // GitHub refusing the installation while the picker lists it disconnects the login.
+    installationGone = true;
+    const refused = await app.inject({
+      method: "GET",
+      url: `/api/mcp/connections/${githubId}/github/repositories`,
+      headers: OWNER,
+    });
+    installationGone = false;
+    assert.equal(refused.statusCode, 422, refused.body);
+    assert.equal(refused.json().detail, "GitHub refused the installation; the connection is now disconnected");
+    assert.equal((await getMcpConnection(db, githubId))?.status, "disconnected");
 
     // Deleting the connection removes the repositories added through it, and leaves the anonymous one.
     assert.equal(

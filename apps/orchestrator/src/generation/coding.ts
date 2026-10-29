@@ -1,6 +1,12 @@
 import { Type } from "@sinclair/typebox";
 import { accessDatabase, agentSecrets, snapshotEnvValues } from "../access/runtime.js";
-import { agentGitIdentity, cloneFailures, repositoryTokenDatabase, RepositoryTokens } from "../coding/git.js";
+import {
+  agentGitIdentity,
+  cloneFailures,
+  repositoryTokenDatabase,
+  RepositoryTokenInstallationGoneError,
+  RepositoryTokens,
+} from "../coding/git.js";
 import { codingRepositories } from "../coding/repositories.js";
 import { clearHarnessLogin, getAgent, markHarnessLogin, type AgentRow } from "../db/agents.js";
 import { getGuild, listGuildRepositories } from "../db/guilds.js";
@@ -12,6 +18,8 @@ import { RunRepositoryChangeSchema, type Harness, type RunRepositoryChange, type
 import { decode } from "../lib/decode.js";
 import { GITHUB_SERVER_ID } from "../github/index.js";
 import { RepositoryAccessError } from "../github/tokens.js";
+import type { McpPool } from "../mcp/pool.js";
+import { retireLogin, type LoginFailure } from "../mcp/service.js";
 import { errorMessage, errorName, writeLog } from "../observability/log.js";
 import { agentRunDir, type SandboxHandle } from "../sandbox/index.js";
 import { redact } from "../secrets/index.js";
@@ -73,12 +81,15 @@ export async function guildRepositories(
   return codingRepositories(await db.listGuildRepositories(agent.guild_id), await githubConnectionOf(db, agent));
 }
 
-/** The db/ functions coding runs read and keep their repositories, logins and checkpoints through, on `db`. */
+/** The db/ functions coding runs read and keep their repositories, logins and checkpoints through, and the retiring of a login, on `db`. */
 export function codingRunsDatabase(db: Queryable) {
   return {
     ...accessDatabase(db),
     ...repositoryTokenDatabase(db),
     ...codingRepositoriesDatabase(db),
+    /** Retires a login that stopped working, and `pool` forgets it when there is one (`retireLogin`). */
+    retireLogin: (pool: Pick<McpPool, "forget"> | null, connection: McpConnectionRow, failure: LoginFailure) =>
+      retireLogin(pool, db, connection, failure),
     getAgent: bindQuery(db, getAgent),
     getGuild: bindQuery(db, getGuild),
     getRun: bindQuery(db, getRun),
@@ -131,7 +142,8 @@ export class CodingRuns {
 
   /**
    * A coding generation's repositories: installation tokens for those with a GitHub
-   * connection (written under /run/guilds and added to the run's redaction values), the
+   * connection (written under /run/guilds and added to the run's redaction values; a login
+   * whose installation GitHub refuses is retired as `installation_gone`), the
    * agent's git identity, a clone of each one missing from the workspace, and the run's start
    * checkpoint. The working directory starts in the repository when there is one.
    */
@@ -145,7 +157,14 @@ export class CodingRuns {
     const repositories = await guildRepositories(db, agent);
     const tokens = new RepositoryTokens(db, repositories);
     const mint = async () => {
-      await tokens.mint();
+      try {
+        await tokens.mint();
+      } catch (error) {
+        if (error instanceof RepositoryTokenInstallationGoneError) {
+          await db.retireLogin(null, error.connection, "installation_gone");
+        }
+        throw error;
+      }
       tokens.values.forEach((value, index) => {
         tools.secrets[`GITHUB_TOKEN_${index + 1}`] = value;
       });
