@@ -52,6 +52,21 @@ export default tseslint.config(
     },
   },
   {
+    // Syntax docs/contributing/code-guidelines.md refuses.
+    files: ["src/**/*.ts"],
+    ignores: ["**/*.test.ts", "**/*.test.tsx", "**/*.stories.tsx", "test/**", "scripts/**"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          // Types and errors.
+          selector: "CatchClause[body.body.length=0]",
+          message: "A catch throws a named error or returns a typed absence.",
+        },
+      ],
+    },
+  },
+  {
     // A domain module imports nothing from the HTTP framework (docs/contributing/code-guidelines.md,
     // Boundaries). The roots, the extension points and the observability hooks are the exceptions.
     files: ["src/**/*.ts"],

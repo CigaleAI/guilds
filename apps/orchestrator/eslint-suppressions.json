@@ -321,6 +321,11 @@
       "count": 1
     }
   },
+  "src/http/builder-routes.ts": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
   "src/http/error-handler.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 2
@@ -339,6 +344,9 @@
   "src/http/request.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 2
+    },
+    "no-restricted-syntax": {
+      "count": 1
     }
   },
   "src/http/sandbox-proxy.ts": {
@@ -347,10 +355,16 @@
     },
     "@typescript-eslint/max-params": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 6
     }
   },
   "src/http/sse.ts": {
     "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    },
+    "no-restricted-syntax": {
       "count": 1
     }
   },
@@ -375,6 +389,11 @@
       "count": 1
     },
     "max-depth": {
+      "count": 1
+    }
+  },
+  "src/instrument.ts": {
+    "no-restricted-syntax": {
       "count": 1
     }
   },
@@ -459,11 +478,26 @@
       "count": 2
     }
   },
+  "src/mcp/connect-callback.ts": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/mcp/connect-flow.ts": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
   "src/mcp/connect-token.ts": {
     "@typescript-eslint/explicit-module-boundary-types": {
       "count": 1
     },
     "complexity": {
+      "count": 1
+    }
+  },
+  "src/mcp/connections.ts": {
+    "no-restricted-syntax": {
       "count": 1
     }
   },
@@ -556,6 +590,9 @@
     },
     "complexity": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 2
     }
   },
   "src/observability/http.ts": {
@@ -569,6 +606,14 @@
     },
     "complexity": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/observability/sentry.ts": {
+    "no-restricted-syntax": {
+      "count": 3
     }
   },
   "src/organisations/index.ts": {
@@ -624,6 +669,9 @@
     },
     "max-lines": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 2
     }
   },
   "src/sandbox/sweep.ts": {
@@ -660,6 +708,9 @@
   },
   "src/scripts/materialise.ts": {
     "complexity": {
+      "count": 1
+    },
+    "no-restricted-syntax": {
       "count": 1
     }
   },
@@ -747,6 +798,9 @@
       "count": 1
     },
     "complexity": {
+      "count": 1
+    },
+    "no-restricted-syntax": {
       "count": 1
     }
   },

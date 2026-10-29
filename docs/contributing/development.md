@@ -307,8 +307,9 @@ tests and stories excepted, as `complexity`, `max-depth`,
 except `as const`. The orchestrator also requires explicit
 parameter and return types on what a module exports
 (`@typescript-eslint/explicit-module-boundary-types`). It refuses an
-import of `fastify` outside `http/`, the roots, the extension points
-and the observability hooks; a value import of `db/` from `http/`;
+empty `catch`; an import of `fastify` outside `http/`, the roots,
+the extension points and the observability hooks; a value import of
+`db/` from `http/`;
 an import from `db/` of anything outside `db/` and `lib/`; and an
 import from `lib/` of anything outside `lib/`. Errors that predate
 the rules are recorded in the package's `eslint-suppressions.json`
