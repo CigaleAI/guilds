@@ -2,14 +2,8 @@ import { DEFAULT_MAX_SCRIPTS } from "../agents/config.js";
 import type { Harness, Effort, ReportedToolMetadata } from "../db/schema/index.js";
 import { agentHome } from "../lib/agent-file.js";
 import type { ArtifactActor } from "../artifacts/types.js";
-import type { ArtifactFiles } from "../artifacts/files.js";
-import type { NotesStore } from "../notes/store.js";
-import type { Issues } from "../issues/index.js";
-import type { Schedules } from "../schedules/service.js";
-import type { Scripts } from "../scripts/catalog.js";
 import type { RunScriptSnapshot } from "../db/schema/index.js";
-import type { ToolArtifacts } from "./artifacts.js";
-import type { ToolboxDatabase, ToolEvents } from "./services.js";
+import type { ToolServices } from "./services.js";
 
 export type GroupChat = {
   publish?(guildId: string, event: string, data: Record<string, unknown>): Promise<void>;
@@ -113,32 +107,33 @@ export type AgentSecretStore = {
   }>;
 };
 
-export type ToolContext = {
+/** What a run's tools work with, the same for every call: whose run it is, where its commands run, and what it offers. */
+export type ToolRun = {
   run_id: string;
   agent_id: string;
   guild_id: string;
-  sandbox: SandboxHandle | null;
-  secrets: Record<string, string>;
-  notes: NotesStore | null;
-  artifacts: ToolArtifacts | null;
-  artifact_actor: ArtifactActor | null;
-  /** The shared files, reached with `artifact_actor`. */
-  files: ArtifactFiles | null;
-  /** The agent's home on the orchestrator's host, where the file tools read and write. */
-  workspace_dir: string | null;
   guild_name: string;
   agent_name: string;
   org_slug: string;
-  cancel_event: CancelEvent | null;
-  track_command: ((executionId: string | null) => void) | null;
-  group_chat: GroupChat | null;
-  issues: Issues | null;
-  schedules: Schedules | null;
-  scripts: Scripts | null;
   run_kind: string;
+  /** The agent's container on its machine, with the run's environment; null without one. */
+  sandbox: SandboxHandle | null;
+  /** The values of the run's secrets, which its tool results are redacted with. */
+  secrets: Record<string, string>;
   /** Names of the secrets in this generation's environment. */
   secret_names: string[];
-  secret_store: AgentSecretStore | null;
+  /** The run's secret aliases, from its snapshot: which secret each aliased variable reads. */
+  secret_aliases: Record<string, string>;
+  /** Who the run is in the artifact store; null when its agent has no organisation. */
+  artifact_actor: ArtifactActor | null;
+  /** The agent's home on the orchestrator's host, where the file tools read and write. */
+  workspace_dir: string | null;
+  /** The agent's home in its machine, where its commands run: `/home/<agent id>`. */
+  agent_home: string;
+  /** Chrome's DevTools port for the agent's browser, from its slot; null without one. */
+  cdp_port: number | null;
+  /** What a cancel of the run sets; null when nothing cancels the work. */
+  cancel_event: CancelEvent | null;
   memory_replaced_by: string;
   run_scripts: RunScriptSnapshot[];
   /** How many scripts this agent may keep; `script_create` of a new name is refused past it. */
@@ -147,31 +142,32 @@ export type ToolContext = {
   dynamic_tools: Record<string, Tool>;
   /** When set, only these names plus `dynamic_tools` may run. `null` skips the check. */
   offered_tools: Set<string> | null;
-  /** The agent's home in its machine, where its commands run: `/home/<agent id>`. */
-  agent_home: string;
-  /** Chrome's DevTools port for the agent's browser, from its slot; null without one. */
-  cdp_port: number | null;
-  /** Starts the agent's Chrome when it is not up and keeps it from its idle stop; null without a browser. */
-  ensure_browser: (() => Promise<void>) | null;
-  /** Where a coding run's working directory starts, relative to the agent's home; empty for its root. */
-  code_default_cwd: string;
-  /** Runs before each `shell` command and harness poll: replaces repository tokens close to expiry. */
-  before_command: (() => Promise<void>) | null;
   /** The run's coding harness, from its snapshot; null without one. */
   harness: Harness | null;
   /** The model the run's harness runs, from its snapshot; null for its subscription's default. */
   harness_model: string | null;
   /** The effort the run's harness runs its model at, from its snapshot; null for the harness's default. */
   harness_effort: Effort | null;
-  /** The run's secret aliases, from its snapshot: which secret each aliased variable reads. */
-  secret_aliases: Record<string, string>;
   /** The guild repositories a coding run works on, by their folder under `repos/`. */
   code_repositories: string[];
-  /** Where the tools keep the run's state: its pinned scripts, its harness task, and the agent's harness logins. */
-  db: ToolboxDatabase | null;
-  /** The run's stream, where a running tool call publishes its progress. */
-  events: ToolEvents | null;
+  /** Where a coding run's working directory starts, relative to the agent's home; empty for its root. */
+  code_default_cwd: string;
 };
+
+/** The hooks the loop composes for one run, each bound to what the run record does not hold. */
+export type ToolHooks = {
+  /** Keeps the command the run waits on, so a cancel interrupts it; null when the run's commands are not tracked. */
+  track_command: ((executionId: string | null) => void) | null;
+  /** Starts the agent's Chrome when it is not up and keeps it from its idle stop; null without a browser. */
+  ensure_browser: (() => Promise<void>) | null;
+  /** Runs before each `shell` command and harness poll: replaces repository tokens close to expiry. */
+  before_command: (() => Promise<void>) | null;
+  /** Saves values the agent produced as secrets of its organisation; null where the run cannot. */
+  secret_store: AgentSecretStore | null;
+};
+
+/** What a tool reaches: the toolbox's services, its run, and the run's hooks. */
+export type ToolContext = ToolServices & ToolRun & ToolHooks;
 
 export function createToolContext(
   partial: Pick<ToolContext, "run_id" | "agent_id" | "guild_id" | "sandbox" | "secrets"> &
