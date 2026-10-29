@@ -227,7 +227,11 @@ async function assertCredential(
   meta: Record<string, unknown>,
 ): Promise<void> {
   if (meta.credential === "login") {
-    await services.db?.markHarnessLogin(run.agent_id, harness, new Date(), stringOrNull(meta.account));
+    await services.db?.markHarnessLogin(
+      run.agent_id,
+      { harness, account: stringOrNull(meta.account) },
+      new Date(),
+    );
   } else if (meta.credential !== "secret") {
     await services.db?.clearHarnessLogin(run.agent_id, harness);
     throw new HarnessSetupError(

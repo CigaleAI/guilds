@@ -584,7 +584,7 @@ export async function loadGuildActivity(
     listRunFileChanges(db, runIds),
     listRunActivitySteps(db, runIds, since),
     listRunOpenings(db, directRunIds, since),
-    listGroupMessagesForActivity(db, guildId, since, until, afterSeq),
+    listGroupMessagesForActivity(db, guildId, { since, until, afterSeq }),
   ]);
   return projectActivity({
     guildId,

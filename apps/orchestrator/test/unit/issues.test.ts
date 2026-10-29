@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { GuildIssueRow, IssueStatusChange, NewIssue } from "../../src/db/issues.js";
+import type { GuildIssueRow, IssueKey, IssueStatusChange, NewIssue } from "../../src/db/issues.js";
 import { Issues, IssueError, ISSUE_OPEN_CAP, issueItem } from "../../src/issues/index.js";
 import { invokeTool } from "../../src/toolbox/index.js";
 import { validateCatalog, BindingError } from "../../src/access/index.js";
@@ -65,9 +65,9 @@ class MemoryIssuesDB {
     return this.rows.find((row) => row.guild_id === guildId && row.id === issueId) ?? null;
   }
 
-  async setIssueStatus(guildId: string, issueId: string, change: IssueStatusChange, now: Date) {
+  async setIssueStatus(issue: IssueKey, change: IssueStatusChange, now: Date) {
     const { status, resolvedAt, resolvedBy } = change;
-    const row = await this.getIssue(guildId, issueId);
+    const row = await this.getIssue(issue.guild_id, issue.id);
     if (!row) {
       return null;
     }
@@ -78,14 +78,14 @@ class MemoryIssuesDB {
     return row;
   }
 
-  async resolveOpenIssues(guildId: string, resolvedAt: Date, resolvedBy: string, now: Date) {
+  async resolveOpenIssues(guildId: string, resolvedBy: string, now: Date) {
     let resolved = 0;
     for (const row of this.rows) {
       if (row.guild_id !== guildId || row.status !== "open") {
         continue;
       }
       row.status = "resolved";
-      row.resolved_at = resolvedAt.toISOString();
+      row.resolved_at = now.toISOString();
       row.resolved_by = resolvedBy;
       row.updated_at = now.toISOString();
       resolved += 1;

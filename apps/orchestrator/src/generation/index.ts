@@ -517,7 +517,10 @@ export class GenerationLoop implements GroupRunner {
       await this.db.appendRunError(run.id, entry, now);
       if (run.kind === "group") {
         const through = run.group_chat_through_seq;
-        await this.db.completeGroupDelivery(run.id, run.agent_id, through || 0, now);
+        await this.db.completeGroupDelivery(
+          { id: run.id, agent_id: run.agent_id, group_chat_through_seq: through || 0 },
+          now,
+        );
       } else {
         await this.db.completeRun(run.id, now);
       }

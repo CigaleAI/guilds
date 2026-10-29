@@ -175,7 +175,10 @@ export class Runs {
       ),
     );
     await this.generations.task(runId);
-    await this.db.completeGroupDelivery(runId, agentId, throughSeq, new Date());
+    await this.db.completeGroupDelivery(
+      { id: runId, agent_id: agentId, group_chat_through_seq: throughSeq },
+      new Date(),
+    );
   }
 
   /** Creates and starts the run a due schedule wakes its agent with. */

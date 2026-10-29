@@ -119,7 +119,11 @@ test(
         { guildId, content: "third", taggedNames: [], taggedAgentIds: [], taggedUserIds: [] },
         started,
       );
-      await markGroupChatSeen(db, guildId, "user_operator", 2, started);
+      await markGroupChatSeen(
+        db,
+        { guild_id: guildId, user_id: "user_operator", seen_through_seq: 2 },
+        started,
+      );
 
       const denied = await app.inject({
         method: "DELETE",

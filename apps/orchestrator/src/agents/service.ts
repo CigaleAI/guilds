@@ -319,7 +319,12 @@ async function writeAgentSettings(
   }
   let row;
   try {
-    row = await updateAgentConfig(services.db, agent.id, change.config, new Date(), change.profile);
+    row = await updateAgentConfig(
+      services.db,
+      agent.id,
+      { config: change.config, ...change.profile },
+      new Date(),
+    );
   } catch (error) {
     if (moves) {
       const previous = agent.config;
@@ -344,7 +349,7 @@ async function moveAgentNotes(
   try {
     await services.notes.renameAgent(agent.org_slug, agent.guild_name, agent.name, name);
   } catch (error) {
-    await updateAgentConfig(services.db, agent.id, config, new Date(), { name: agent.name });
+    await updateAgentConfig(services.db, agent.id, { config, name: agent.name }, new Date());
     throw error;
   }
 }

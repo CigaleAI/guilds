@@ -297,7 +297,7 @@ export class CodingRuns {
       throw new RunRequestError(503, errorMessage(error));
     }
     if (check.credential === "login") {
-      await db.markHarnessLogin(agentId, harness, new Date(), check.account);
+      await db.markHarnessLogin(agentId, { harness, account: check.account }, new Date());
     } else if (check.installed) {
       await db.clearHarnessLogin(agentId, harness);
     }

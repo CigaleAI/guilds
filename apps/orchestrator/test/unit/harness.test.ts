@@ -322,8 +322,8 @@ describe("code_task with the Claude Code driver", () => {
     const overrides = {
       secrets: {},
       db: fakeToolboxDatabase({
-        markHarnessLogin: async (_agentId, harness, _now, account) =>
-          void events.push(`seen ${harness} as ${account ?? "unknown"}`),
+        markHarnessLogin: async (_agentId, login) =>
+          void events.push(`seen ${login.harness} as ${login.account ?? "unknown"}`),
         clearHarnessLogin: async (_agentId, harness) => void events.push(`lost ${harness}`),
       }),
     };
@@ -473,8 +473,8 @@ describe("code_task with the Codex driver", () => {
       harness: "codex",
       secrets: {},
       db: fakeToolboxDatabase({
-        markHarnessLogin: async (_agentId, harness) => {
-          seen.push(harness);
+        markHarnessLogin: async (_agentId, login) => {
+          seen.push(login.harness);
         },
       }),
     });

@@ -215,8 +215,7 @@ export class Issues {
     const resolvedAt = next === "resolved" ? now : null;
     const resolver = next === "resolved" ? optionalText(resolvedBy ?? "", "resolved_by", 80) || "user" : null;
     const updated = await this.db.setIssueStatus(
-      guildId,
-      token,
+      { guild_id: guildId, id: token },
       { status: next, resolvedAt, resolvedBy: resolver },
       now,
     );
@@ -230,7 +229,7 @@ export class Issues {
   async resolveOpen(guildId: string, resolvedBy: string | null): Promise<number> {
     const now = new Date();
     const resolver = optionalText(resolvedBy ?? "", "resolved_by", 80) || "user";
-    return this.db.resolveOpenIssues(guildId, now, resolver, now);
+    return this.db.resolveOpenIssues(guildId, resolver, now);
   }
 }
 

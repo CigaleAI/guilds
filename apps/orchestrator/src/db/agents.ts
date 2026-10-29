@@ -4,7 +4,7 @@ import { newId } from "../lib/ids.js";
 import { GuildNameTaken, RowMissing } from "./errors.js";
 import { guildOperatorsColumn, type GuildOperatorRow } from "./guilds.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
-import { agents, guilds, machines, orgs, taskRevisions, type Harness, type ToolInputSchema } from "./schema/index.js";
+import { agents, guilds, machines, orgs, taskRevisions, type Harness, type HarnessLogin, type ToolInputSchema } from "./schema/index.js";
 
 type Agent = InferSelectModel<typeof agents>;
 type Machine = InferSelectModel<typeof machines>;
@@ -61,6 +61,12 @@ export type AgentConfigPatch = {
   focus?: string | null | undefined;
   wakeTriggers?: string | null | undefined;
 };
+
+/** An agent's new config and the profile fields written with it; a null field keeps its value. */
+export type AgentConfigUpdate = Pick<Agent, "config"> & AgentConfigPatch;
+
+/** A login a check found in an agent's home: its harness, and whose it is when known. */
+export type FoundHarnessLogin = Pick<HarnessLogin, "account"> & { harness: Harness };
 
 /** An agent's standing task as its file reads: `task.md`'s text, version, and hash. */
 export type AgentTaskRow = {
@@ -287,16 +293,15 @@ export async function getAgent(pool: Queryable, agentId: string): Promise<AgentR
 export async function markHarnessLogin(
   pool: Queryable,
   agentId: string,
-  harness: Harness,
+  login: FoundHarnessLogin,
   now: Date,
-  account: string | null,
 ): Promise<void> {
   await pool.query(
     `UPDATE agents
      SET harness_logins = harness_logins
        || jsonb_build_object($2::text, jsonb_build_object('seen_at', $3::text, 'account', $4::text))
      WHERE id = $1`,
-    [agentId, harness, now.toISOString(), account],
+    [agentId, login.harness, now.toISOString(), login.account],
   );
 }
 
@@ -431,12 +436,11 @@ export async function listAgentTaskRevisions(
 export async function updateAgentConfig(
   pool: Queryable,
   agentId: string,
-  config: Agent["config"],
+  update: AgentConfigUpdate,
   now: Date,
-  options: AgentConfigPatch = {},
 ): Promise<AgentConfigRow | null> {
   const writeConfigPatch = async (client: Queryable): Promise<AgentConfigRow | null> => {
-    if (options.name) {
+    if (update.name) {
       const agent =
         (
           await client.query<{ guild_id: string }>(
@@ -450,10 +454,10 @@ export async function updateAgentConfig(
       const clash = await client.query(
         `SELECT 1 FROM guild_operators go JOIN users u ON u.id = go.user_id
          WHERE go.guild_id = $1 AND u.name = $2`,
-        [agent.guild_id, options.name],
+        [agent.guild_id, update.name],
       );
       if (clash.rowCount) {
-        throw new GuildNameTaken(options.name, "operator");
+        throw new GuildNameTaken(update.name, "operator");
       }
     }
     const result = await client.query<AgentConfigRow>(
@@ -469,18 +473,18 @@ export async function updateAgentConfig(
        RETURNING id, guild_id, name, config, created_at, updated_at`,
       [
         agentId,
-        JSON.stringify(config),
+        JSON.stringify(update.config),
         stamp(now),
-        options.avatarShape ?? null,
-        options.avatarColor ?? null,
-        options.focus ?? null,
-        options.wakeTriggers ?? null,
-        options.name ?? null,
+        update.avatarShape ?? null,
+        update.avatarColor ?? null,
+        update.focus ?? null,
+        update.wakeTriggers ?? null,
+        update.name ?? null,
       ],
     );
     return result.rows[0] ?? null;
   };
-  return options.name ? withTransaction(pool, writeConfigPatch) : writeConfigPatch(pool);
+  return update.name ? withTransaction(pool, writeConfigPatch) : writeConfigPatch(pool);
 }
 
 /** Writes an agent's script, reviving a deleted one of the same name. */
