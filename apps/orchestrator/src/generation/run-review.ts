@@ -2,10 +2,14 @@ import { accessDatabase, agentSecrets } from "../access/runtime.js";
 import type { AgentRow } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
 import { getToolResultMetadata, type RunRow } from "../db/runs.js";
-import { HARNESSES, type Harness, type HarnessLogins, type MessageMetadata, type RunRepositoryChange } from "../db/schema/index.js";
-import type { CodingRuns } from "../generation/coding.js";
-import { RunRequestError } from "../generation/errors.js";
-import { harnessEffortOf } from "./harness-models.js";
+import {
+  HARNESSES,
+  type Harness,
+  type HarnessLogins,
+  type MessageMetadata,
+  type RunRepositoryChange,
+} from "../db/schema/index.js";
+import { harnessEffortOf } from "../coding/harness-models.js";
 import {
   HARNESS_INFO,
   harnessLoginOf,
@@ -13,7 +17,9 @@ import {
   harnessOf,
   harnessSecretSource,
   isHarness,
-} from "./harnesses.js";
+} from "../coding/harnesses.js";
+import type { CodingRuns } from "./coding.js";
+import { RunRequestError } from "./errors.js";
 
 /** What a coding agent's harness and a coding run's changes are read through, built once from the app's services. */
 export type RunReviewServices = {

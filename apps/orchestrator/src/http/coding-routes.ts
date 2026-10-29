@@ -18,7 +18,7 @@ import {
   taskDiff,
   taskLog,
   type RunReviewServices,
-} from "../coding/run-review.js";
+} from "../generation/run-review.js";
 import { requireVisibleGuild } from "../guilds/access.js";
 import { identityDatabase } from "../users/identity.js";
 import type { AppDeps } from "./deps.js";
