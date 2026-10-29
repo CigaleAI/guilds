@@ -258,7 +258,11 @@ as `{ type, loc, msg, input }`: a missing field is `type: "missing"`,
 object it is missing from as `input`; any other problem is the schema
 keyword it broke, at the value's path, with the value as `input`.
 `part` is `body`, `querystring`, `params` or `headers`
-(`validationHttp` in `http/errors.ts`).
+(`validationHttp` in `http/errors.ts`). A route that answers 404 to
+whoever may not use it, such as the instance admin's, refuses them in
+a `preValidation` hook (`instanceAdminOnly` in
+`http/instance-admin.ts`), so the check comes before the schema's and
+a refused caller gets the same 404 whatever they send.
 
 A domain refuses a request with a named error that carries the HTTP
 status it answers with, or with a validation error, which is a 422.

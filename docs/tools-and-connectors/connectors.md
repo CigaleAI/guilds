@@ -405,6 +405,11 @@ up**, with a **Set up** link to Platform keys.
   `local` row on public HTTPS, `auth` `none`, `token`, or `oauth`
   (`dynamic` or `configured`), its tool prefix generated from the
   slug.
+- In these bodies `slug`, `url` and `auth` are strings;
+  `display_name`, `oauth_strategy`, `description`, `limitations`,
+  `setup_hint` and a tool's `description` are a string or `null`;
+  `enabled` is a boolean and a tool's `default` a boolean or `null`.
+  A create needs `slug` and `url`. A field of another type is 422.
 
 A disabled connector is out of the builder and refuses Connect (422).
 Its existing logins keep showing.

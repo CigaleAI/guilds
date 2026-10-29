@@ -32,3 +32,16 @@ export async function requireInstanceAdmin(
   }
   return user;
 }
+
+/**
+ * A route's `preValidation` hook that refuses whoever is not the instance admin, as
+ * `requireInstanceAdmin` does, before the route's schema checks the request: a refused caller
+ * gets the same 404 whatever they send.
+ */
+export function instanceAdminOnly(
+  deps: Pick<AppDeps, "db" | "instanceAdmin" | "config" | "identity">,
+): (request: IdentityRequest) => Promise<void> {
+  return async (request) => {
+    await requireInstanceAdmin(deps, request);
+  };
+}

@@ -1,3 +1,4 @@
+import { Type, type Static } from "@sinclair/typebox";
 import { loadManifest, ManifestError, SLUG_RE } from "../connectors/manifest.js";
 import {
   connectorFacts,
@@ -34,6 +35,35 @@ export class CatalogError extends Error {
     this.status = status;
   }
 }
+
+/** A hand-made connector as its create request sends it: the slug and endpoint, and its copy. */
+export const ConnectorDraftSchema = Type.Object({
+  slug: Type.String(),
+  url: Type.String(),
+  display_name: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  auth: Type.Optional(Type.String()),
+  oauth_strategy: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  description: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  limitations: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  setup_hint: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  enabled: Type.Optional(Type.Boolean()),
+});
+
+export type ConnectorDraft = Static<typeof ConnectorDraftSchema>;
+
+/** A change to a connector: the draft's fields it changes, each left out kept. */
+export const ConnectorPatchSchema = Type.Partial(ConnectorDraftSchema);
+
+export type ConnectorPatch = Static<typeof ConnectorPatchSchema>;
+
+/** A change to one of a connector's tools; null clears that edit, and a field left out keeps it. */
+export const ToolEditSchema = Type.Object({
+  description: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  input_schema: Type.Optional(Type.Unknown()),
+  default: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
+});
+
+export type ToolEdit = Static<typeof ToolEditSchema>;
 
 /** Whether the admin edits the connector's own fields (a server made on this box) or overrides its manifest. */
 function editsFields(server: LoadedConnector): boolean {
@@ -350,7 +380,7 @@ export async function patchConnectorTool(
   db: Queryable,
   server: LoadedConnector,
   name: string,
-  body: Record<string, unknown>,
+  body: ToolEdit,
   now = new Date(),
 ): Promise<LoadedConnector> {
   const toolName = name.trim();
@@ -377,10 +407,8 @@ export async function patchConnectorTool(
   if (body.default !== undefined) {
     if (body.default === null) {
       delete edit.default;
-    } else if (typeof body.default === "boolean") {
-      edit.default = body.default;
     } else {
-      throw new CatalogError("default must be a boolean or null");
+      edit.default = body.default;
     }
   }
   if (Object.keys(edit).length) {

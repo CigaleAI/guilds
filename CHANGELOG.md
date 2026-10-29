@@ -8,6 +8,18 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** The instance admin's connector routes refuse a body
+whose fields have the wrong type with a 422 that names the field,
+after the instance admin is identified: creating a connector without
+a string `slug` or `url`, an `auth` that is not a string, a
+`display_name`, `oauth_strategy`, `description`, `limitations` or
+`setup_hint` that is neither a string nor null, an `enabled` that is
+not a boolean, and a tool edit whose `description` is neither a string
+nor null or whose `default` is neither a boolean nor null. Whoever is
+not the instance admin gets the same 404 whatever they send. Before, a
+create read a non-boolean `enabled` as off, a `display_name` that is
+not text as its text, and a `description` that is not text as empty.
+
 **No impact.** Creating or changing a machine refuses a `name` or `box`
 that is not a string, and a `cpu`, `memory_mib` or `max_workspace_mib`
 that is not a number, with a 422 that names the field, before the

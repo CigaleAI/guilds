@@ -64,6 +64,13 @@ test("admin catalog, overrides, seed preservation, listed tools, and leaks", { t
     headers: { "X-Guilds-User": String(outsider.id), "X-Guilds-Org": "org_home" },
   });
   assert.equal(denied.statusCode, 404);
+  const deniedInvalid = await app.inject({
+    method: "POST",
+    url: "/api/admin/mcp/servers",
+    headers: { "X-Guilds-User": String(outsider.id), "X-Guilds-Org": "org_home", "content-type": "application/json" },
+    payload: {},
+  });
+  assert.equal(deniedInvalid.statusCode, 404, "an invalid body from a non-admin is the same 404");
 
   const listed = await app.inject({ method: "GET", url: "/api/admin/mcp/servers", headers: AUTH });
   assert.equal(listed.statusCode, 200);
@@ -95,6 +102,14 @@ test("admin catalog, overrides, seed preservation, listed tools, and leaks", { t
     payload: { url: "https://example.com/mcp" },
   });
   assert.equal(endpoint.statusCode, 422);
+  const mistyped = await app.inject({
+    method: "PATCH",
+    url: `/api/admin/mcp/servers/${notion.id}`,
+    headers: { ...AUTH, "content-type": "application/json" },
+    payload: { enabled: "no" },
+  });
+  assert.equal(mistyped.statusCode, 422);
+  assert.deepEqual(mistyped.json().detail[0].loc, ["body", "enabled"]);
 
   await saveOauthClient(db, String(notion.id), { client_id: "keep-me", client_secret: null, redirect_uris: [] }, new Date());
   await seedSystem(database.pool);
@@ -148,6 +163,14 @@ test("admin catalog, overrides, seed preservation, listed tools, and leaks", { t
     },
   });
   assert.equal(rejected.statusCode, 422);
+  const unnamed = await app.inject({
+    method: "POST",
+    url: "/api/admin/mcp/servers",
+    headers: { ...AUTH, "content-type": "application/json" },
+    payload: { display_name: "Nameless", url: "https://example.com/mcp" },
+  });
+  assert.equal(unnamed.statusCode, 422);
+  assert.deepEqual(unnamed.json().detail[0].loc, ["body", "slug"]);
 
   const reserved = await app.inject({
     method: "POST",
@@ -169,6 +192,14 @@ test("admin catalog, overrides, seed preservation, listed tools, and leaks", { t
     payload: { default: true, description: "List Linear issues." },
   });
   assert.equal(tool.statusCode, 200, tool.body);
+  const textDefault = await app.inject({
+    method: "PATCH",
+    url: `/api/admin/mcp/servers/${created.json().id}/tools/list_issues`,
+    headers: { ...AUTH, "content-type": "application/json" },
+    payload: { default: "on" },
+  });
+  assert.equal(textDefault.statusCode, 422);
+  assert.deepEqual(textDefault.json().detail[0].loc, ["body", "default"]);
   const issues = (tool.json().tools as Array<Record<string, unknown>>).find((row) => row.remote_name === "list_issues");
   assert.equal(issues?.namespaced_name, "linear_list_issues");
   assert.equal(issues?.default_enabled, true);
