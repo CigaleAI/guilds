@@ -111,6 +111,11 @@ at runtime cannot do that
 | `DELETE /api/admin/instance/keys/:integration` | Instance admin | Clears a `store` integration; an `env` one is a 400 |
 | `POST /api/admin/instance/keys/github-app/manifest` | Instance admin | Starts creating the GitHub App ([Manifest flow](github.md#manifest-flow)) |
 
+A route for the instance admin is 404 to anyone else, whatever they
+send. `PUT` takes a boolean `confirm_replace`, and the manifest start
+string `name`, `owner` and `return_to`; another type is 422 naming the
+field.
+
 `PUT` and `DELETE` answer `{ integration, disconnected }`.
 `disconnected` counts the GitHub logins a replaced or removed App
 disconnected ([Replacing the App](github.md#replacing-the-app)).

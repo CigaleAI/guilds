@@ -1,4 +1,5 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { Type } from "@sinclair/typebox";
+import type { FastifyReply, FastifyRequest } from "fastify";
 import {
   APP_NAME_MAX,
   clearGithubManifestStateCookie,
@@ -24,10 +25,10 @@ import { newState } from "../oauth/index.js";
 import { writeLog } from "../observability/log.js";
 import { cookieSecure, requestCookies } from "./cookies.js";
 import type { InstanceKeys } from "../instance/keys.js";
-import type { AppDeps } from "./deps.js";
+import type { AppDeps, RouteApp } from "./deps.js";
 import { HttpError } from "./errors.js";
-import { requireInstanceAdmin } from "./instance-admin.js";
-import { bodyOf } from "./request.js";
+import { currentUser } from "./identity.js";
+import { instanceAdminOnly } from "./instance-admin.js";
 
 /** How long a started manifest flow waits for GitHub's redirect. */
 const PENDING_MS = 20 * 60 * 1000;
@@ -35,10 +36,30 @@ const OWNER_PATTERN = /^[A-Za-z0-9-]{1,39}$/;
 
 type PendingManifest = { userId: string; returnTo: string | null; expiresAt: number };
 
-function queryOf(request: FastifyRequest): Record<string, unknown> {
-  const query = request.query;
-  return query && typeof query === "object" ? (query as Record<string, unknown>) : {};
-}
+/** The path of one integration's keys. */
+const IntegrationParams = Type.Object({ integration: Type.String() });
+
+/** An integration's values to store, which its own fields check, and whether a change in use is confirmed. */
+const KeyWriteSchema = Type.Object({
+  values: Type.Optional(Type.Unknown()),
+  confirm_replace: Type.Optional(Type.Boolean()),
+});
+
+/** Whether removing values in use is confirmed: `1` or `true`. */
+const KeyRemoveQuery = Type.Object({ confirm_replace: Type.Optional(Type.String()) });
+
+/** A GitHub App to register from a manifest: its name, the organisation it belongs to, and where to come back to. */
+const ManifestStartSchema = Type.Object({
+  name: Type.Optional(Type.String()),
+  owner: Type.Optional(Type.String()),
+  return_to: Type.Optional(Type.String()),
+});
+
+/** What GitHub sends the browser back with once the admin confirmed the App. */
+const ManifestCallbackQuery = Type.Object({
+  code: Type.Optional(Type.String()),
+  state: Type.Optional(Type.String()),
+});
 
 /** A path on this app the callback may send the admin back to; never another origin. */
 export function sameOriginPath(value: unknown): string | null {
@@ -73,16 +94,16 @@ function keysOf(deps: AppDeps): InstanceKeys {
   return deps.instanceKeys;
 }
 
-export async function registerAdminInstanceRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
+export async function registerAdminInstanceRoutes(app: RouteApp, deps: AppDeps): Promise<void> {
   const { db } = deps;
   const keys = keysOf(deps);
   const pending = new Map<string, PendingManifest>();
   const integrations = () => deps.integrations ?? installedIntegrations();
   const secure = () => cookieSecure(deps.config?.publicBaseUrl ?? "");
   const adminPage = `/admin?tab=instance&integration=${GITHUB_APP.id}`;
+  const preValidation = instanceAdminOnly(deps);
 
-  function integrationOf(request: FastifyRequest): Integration {
-    const id = (request.params as Record<string, string>).integration;
+  function integrationOf(id: string): Integration {
     const integration = integrations().find((item) => item.id === id);
     if (!integration) {
       throw new HttpError(404, "Not Found");
@@ -106,82 +127,92 @@ export async function registerAdminInstanceRoutes(app: FastifyInstance, deps: Ap
     return { base: configured || origin, origin };
   }
 
-  app.put("/api/admin/instance/keys/:integration", async (request) => {
-    const user = await requireInstanceAdmin(deps, request);
-    const integration = integrationOf(request);
-    const body = bodyOf(request);
-    const values = validateKeyValues(integration, body.values ?? {});
-    if (body.confirm_replace !== true) {
-      await assertKeyChangeConfirmed(db, integration, keys.current(integration.id), values);
-    }
-    const { previous } = await keys.put(integration, values, user.id);
-    const { disconnected } = await applyKeyChange(
-      { db, masterKey: deps.masterKey, mcp: deps.mcp },
-      integration.id,
-      previous,
-      values,
-    );
-    return { integration: statusOf(integration.id), disconnected };
-  });
+  app.put(
+    "/api/admin/instance/keys/:integration",
+    { preValidation, schema: { params: IntegrationParams, body: KeyWriteSchema } },
+    async (request) => {
+      const user = await currentUser(db, request, deps);
+      const integration = integrationOf(request.params.integration);
+      const body = request.body;
+      const values = validateKeyValues(integration, body.values ?? {});
+      if (body.confirm_replace !== true) {
+        await assertKeyChangeConfirmed(db, integration, keys.current(integration.id), values);
+      }
+      const { previous } = await keys.put(integration, values, user.id);
+      const { disconnected } = await applyKeyChange(
+        { db, masterKey: deps.masterKey, mcp: deps.mcp },
+        integration.id,
+        previous,
+        values,
+      );
+      return { integration: statusOf(integration.id), disconnected };
+    },
+  );
 
-  app.delete("/api/admin/instance/keys/:integration", async (request) => {
-    await requireInstanceAdmin(deps, request);
-    const integration = integrationOf(request);
-    if (integration.source !== "store") {
-      throw new HttpError(400, `${integration.label} is read from the environment`);
-    }
-    const confirm = queryOf(request).confirm_replace;
-    if (confirm !== "1" && confirm !== "true") {
-      await assertKeyChangeConfirmed(db, integration, keys.current(integration.id), null);
-    }
-    const { previous } = await keys.remove(integration.id);
-    const { disconnected } = await applyKeyChange(
-      { db, masterKey: deps.masterKey, mcp: deps.mcp },
-      integration.id,
-      previous,
-      null,
-    );
-    return { integration: statusOf(integration.id), disconnected };
-  });
+  app.delete(
+    "/api/admin/instance/keys/:integration",
+    { preValidation, schema: { params: IntegrationParams, querystring: KeyRemoveQuery } },
+    async (request) => {
+      const integration = integrationOf(request.params.integration);
+      if (integration.source !== "store") {
+        throw new HttpError(400, `${integration.label} is read from the environment`);
+      }
+      const confirm = request.query.confirm_replace;
+      if (confirm !== "1" && confirm !== "true") {
+        await assertKeyChangeConfirmed(db, integration, keys.current(integration.id), null);
+      }
+      const { previous } = await keys.remove(integration.id);
+      const { disconnected } = await applyKeyChange(
+        { db, masterKey: deps.masterKey, mcp: deps.mcp },
+        integration.id,
+        previous,
+        null,
+      );
+      return { integration: statusOf(integration.id), disconnected };
+    },
+  );
 
   /** Starts the manifest flow: what the browser posts to GitHub, and the state that ties the redirect back to this admin. */
-  app.post("/api/admin/instance/keys/github-app/manifest", async (request, reply) => {
-    const user = await requireInstanceAdmin(deps, request);
-    const body = bodyOf(request);
-    const name = typeof body.name === "string" ? body.name.trim() : "";
-    if (name.length > APP_NAME_MAX) {
-      throw new HttpError(400, `the App name is at most ${APP_NAME_MAX} characters`);
-    }
-    const owner = typeof body.owner === "string" ? body.owner.trim() : "";
-    if (owner && !OWNER_PATTERN.test(owner)) {
-      throw new HttpError(400, "owner must be a GitHub organisation login");
-    }
-    const returnTo = sameOriginPath(body.return_to);
-    const { base, origin } = addresses(request);
-    const now = Date.now();
-    for (const [key, entry] of pending) {
-      if (entry.expiresAt <= now) {
-        pending.delete(key);
+  app.post(
+    "/api/admin/instance/keys/github-app/manifest",
+    { preValidation, schema: { body: ManifestStartSchema } },
+    async (request, reply) => {
+      const user = await currentUser(db, request, deps);
+      const body = request.body;
+      const name = (body.name ?? "").trim();
+      if (name.length > APP_NAME_MAX) {
+        throw new HttpError(400, `the App name is at most ${APP_NAME_MAX} characters`);
       }
-    }
-    const state = newState();
-    pending.set(state, { userId: user.id, returnTo, expiresAt: now + PENDING_MS });
-    appendSetCookie(reply, githubManifestStateCookie(state, secure()));
-    return {
-      action: manifestAction(owner || null, state),
-      manifest: githubAppManifest({ baseUrl: base, requestOrigin: origin, ...(name ? { name } : {}) }),
-      state,
-    };
-  });
+      const owner = (body.owner ?? "").trim();
+      if (owner && !OWNER_PATTERN.test(owner)) {
+        throw new HttpError(400, "owner must be a GitHub organisation login");
+      }
+      const returnTo = sameOriginPath(body.return_to);
+      const { base, origin } = addresses(request);
+      const now = Date.now();
+      for (const [key, entry] of pending) {
+        if (entry.expiresAt <= now) {
+          pending.delete(key);
+        }
+      }
+      const state = newState();
+      pending.set(state, { userId: user.id, returnTo, expiresAt: now + PENDING_MS });
+      appendSetCookie(reply, githubManifestStateCookie(state, secure()));
+      return {
+        action: manifestAction(owner || null, state),
+        manifest: githubAppManifest({ baseUrl: base, requestOrigin: origin, ...(name ? { name } : {}) }),
+        state,
+      };
+    },
+  );
 
   /**
    * GitHub's redirect after the admin confirmed the App. The state proves this browser started
    * the flow here; the code is traded for the App and stored for the admin who started it.
    */
-  app.get(MANIFEST_CALLBACK_PATH, async (request, reply) => {
-    const query = queryOf(request);
-    const code = typeof query.code === "string" ? query.code : "";
-    const state = typeof query.state === "string" ? query.state : "";
+  app.get(MANIFEST_CALLBACK_PATH, { schema: { querystring: ManifestCallbackQuery } }, async (request, reply) => {
+    const code = request.query.code ?? "";
+    const state = request.query.state ?? "";
     const cookie = requestCookies(request)[GITHUB_MANIFEST_STATE_COOKIE] ?? "";
     appendSetCookie(reply, clearGithubManifestStateCookie(secure()));
     const fail = (reason: "state" | "conversion" | "store") => reply.redirect(`${adminPage}&setup_error=${reason}`);
