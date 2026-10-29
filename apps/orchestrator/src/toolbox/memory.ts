@@ -2,7 +2,7 @@ import { ArtifactError } from "../artifacts/errors.js";
 import { validateMemory } from "../memory/index.js";
 import { argString, functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
-import type { Tool, ToolContext } from "./types.js";
+import { callActor, type Tool, type ToolContext, type ToolInvocation } from "./types.js";
 
 async function publishMemoryFileChanged(ctx: ToolContext): Promise<void> {
   if (ctx.group_chat === null || !ctx.guild_id || !ctx.group_chat.publish) {
@@ -17,13 +17,15 @@ async function publishMemoryFileChanged(ctx: ToolContext): Promise<void> {
 
 async function writeMemoryThroughArtifacts(
   ctx: ToolContext,
+  call: ToolInvocation,
   content: string,
   detail: string,
 ): Promise<string | null> {
-  if (!ctx.artifacts || !ctx.artifact_actor) {
+  const actor = callActor(ctx.artifact_actor, call);
+  if (!ctx.artifacts || !actor) {
     return null;
   }
-  const { href } = await ctx.artifacts.writeMemory(ctx.artifact_actor, ctx.agent_id, { content, detail });
+  const { href } = await ctx.artifacts.writeMemory(actor, ctx.agent_id, { content, detail });
   await publishMemoryFileChanged(ctx);
   return href;
 }
@@ -55,12 +57,12 @@ export const memoryWrite: Tool = {
     },
     ["content"],
   ),
-  async handler(ctx: ToolContext, args) {
-    const content = argString(args, "content");
+  async handler(ctx: ToolContext, call) {
+    const content = argString(call.arguments, "content");
     validateMemory(content);
     const detail = ctx.memory_replaced_by || `run ${ctx.run_id} (${ctx.run_kind})`;
     return (
-      (await writeMemoryThroughArtifacts(ctx, content, detail)) ??
+      (await writeMemoryThroughArtifacts(ctx, call, content, detail)) ??
       (await writeMemoryThroughNotes(ctx, content, detail))
     );
   },

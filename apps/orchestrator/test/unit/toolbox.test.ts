@@ -21,6 +21,7 @@ import { HELPER } from "../../src/toolbox/browser.js";
 import { Scripts } from "../../src/scripts/catalog.js";
 import { MemoryScriptDB } from "../helpers/generation.js";
 import { CancelEvent } from "../../src/toolbox/types.js";
+import { toolInvocation } from "../helpers/toolbox.js";
 
 
 function schemaRequired(name: string): unknown {
@@ -383,7 +384,7 @@ test("run_command cancel raises interrupted", async () => {
       tracked.push(id);
     },
   });
-  const task = runCommand(ctx, "sleep 30");
+  const task = runCommand(ctx, toolInvocation("shell"), "sleep 30");
   await startedPromise;
   assert.deepEqual(tracked, ["exec_1"]);
   cancelEvent.set();
@@ -422,10 +423,11 @@ test("browser_navigate runs helper", async () => {
     },
     secrets: {},
   });
-  const result = await browserNavigate.handler(ctx, { url: "https://example.com" });
+  const call = toolInvocation("browser_navigate", { url: "https://example.com" });
+  const result = await browserNavigate.handler(ctx, call);
   assert.deepEqual(seen, [encodeSpec({ op: "navigate", url: "https://example.com" })]);
   assert.equal(result, "https://example.com\nExample");
-  assert.equal(ctx.exit_code, 0);
+  assert.equal(call.exit_code, 0);
 });
 
 test("browser_scroll runs helper", async () => {
@@ -449,10 +451,10 @@ test("browser_scroll runs helper", async () => {
     },
     secrets: {},
   });
-  const result = await browserScroll.handler(ctx, { direction: "down" });
+  const result = await browserScroll.handler(ctx, toolInvocation("browser_scroll", { direction: "down" }));
   assert.deepEqual(seen, [encodeSpec({ op: "scroll", direction: "down" })]);
   assert.match(result, /scrolled down/);
-  const withTarget = await browserScroll.handler(ctx, { direction: "down", target: "div.list" });
+  const withTarget = await browserScroll.handler(ctx, toolInvocation("browser_scroll", { direction: "down", target: "div.list" }));
   assert.deepEqual(seen[1], encodeSpec({ op: "scroll", direction: "down", target: "div.list" }));
   assert.match(withTarget, /scrolled down/);
 });
@@ -478,7 +480,7 @@ test("browser_eval runs helper", async () => {
     },
     secrets: {},
   });
-  const result = await browserEval.handler(ctx, { expression: "return document.title;" });
+  const result = await browserEval.handler(ctx, toolInvocation("browser_eval", { expression: "return document.title;" }));
   assert.deepEqual(seen, [encodeSpec({ op: "evaluate", expression: "return document.title;" })]);
   assert.equal(result, '"ok"');
 });

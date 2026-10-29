@@ -23,7 +23,7 @@ import { reportIssue } from "./report.js";
 import { scheduleCreateCron, scheduleCreateWindow, scheduleDelete, scheduleList, schedulePause, scheduleResume, scheduleUpdate } from "./schedule.js";
 import { scriptCreate, scriptDelete, scriptList, scriptRead, scriptRun } from "./script.js";
 import { secretRequest, secretStore } from "./secret.js";
-import type { Tool, ToolContext } from "./types.js";
+import type { Tool, ToolContext, ToolInvocation } from "./types.js";
 
 export const REGISTRY: Record<string, Tool> = {};
 
@@ -102,10 +102,10 @@ export async function invokeTool(
   const name = call.function.name;
   const callId = call.id;
   const started = performance.now();
-  ctx.exit_code = null;
   let error: string | null = null;
   const registered = REGISTRY[name] ?? ctx.dynamic_tools[name];
   let reported: ReportedToolMetadata | null = null;
+  let exitCode: number | null = null;
   let raw: string;
   let outputFilter = identityOutput;
   let filterName = "identity";
@@ -122,20 +122,18 @@ export async function invokeTool(
     outputFilter = registered.output_filter;
     filterName = registered.filter_name;
     try {
-      const arguments_ = parseArguments(call);
-      const invocationCtx: ToolContext = {
-        ...ctx,
-        tool_call_id: callId,
-        tool_metadata: null,
-        artifact_actor: ctx.artifact_actor
-          ? { ...ctx.artifact_actor, toolCall: { id: callId, name } }
-          : null,
+      const invocation: ToolInvocation = {
+        id: callId,
+        name,
+        arguments: parseArguments(call),
+        exit_code: null,
+        metadata: null,
       };
       try {
-        raw = await registered.handler(invocationCtx, arguments_);
+        raw = await registered.handler(ctx, invocation);
       } finally {
-        ctx.exit_code = invocationCtx.exit_code;
-        reported = invocationCtx.tool_metadata;
+        exitCode = invocation.exit_code;
+        reported = invocation.metadata;
       }
       if (typeof raw !== "string") {
         throw new TypeError("tool must return str");
@@ -170,7 +168,7 @@ export async function invokeTool(
     error,
   };
   if (name === "script_run") {
-    metadata.exit_code = ctx.exit_code;
+    metadata.exit_code = exitCode;
   }
   return [payload, metadata];
 }

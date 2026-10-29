@@ -38,6 +38,7 @@ import { applySecretAliases } from "../../src/access/runtime.js";
 import { answerOps, HostCodeSandbox } from "../helpers/code-sandbox.js";
 import { tempDir } from "../helpers/env.js";
 import { noteRowAt } from "../helpers/artifacts.js";
+import { fakeToolboxDatabase, fakeToolEvents, toolInvocation } from "../helpers/toolbox.js";
 import { agentActor } from "../../src/artifacts/actors.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -121,12 +122,16 @@ function context(sandbox: HostCodeSandbox, overrides: Partial<ToolContext> = {})
     secrets: { CLAUDE_CODE_OAUTH_TOKEN: TOKEN },
     harness: "claude-code",
     code_repositories: ["app"],
-    publish_progress: async (_id, update) => {
-      progress.push(...update.lines);
-    },
-    remember_harness_task: async (task) => {
-      remembered.push(task);
-    },
+    events: fakeToolEvents((_event, data) => {
+      progress.push(...(Array.isArray(data.lines) ? data.lines.map(String) : []));
+    }),
+    db: fakeToolboxDatabase({
+      mergeRunMetadata: async (_runId, extra) => {
+        if (extra.harness_task) {
+          remembered.push(extra.harness_task);
+        }
+      },
+    }),
     ...overrides,
   });
   return { ctx, progress, remembered };
@@ -211,7 +216,7 @@ describe("code_task with the Claude Code driver", () => {
       "refs/guild/runs/r_harness/tasks/call_task/end",
       "refs/guild/runs/r_harness/tasks/call_task/start",
     ]);
-    const diff = await runCodeHelper(ctx, "diff", { repository: "app", task: "call_task" });
+    const diff = await runCodeHelper(ctx, { op: "diff", repository: "app", task: "call_task" });
     assert.match(diff.text, /\+print\('hello, guild'\)/);
     assert.ok(existsSync(path.join(sandbox.home, ".runs/r_harness/call_task.harness.jsonl")), "the raw log stays");
     assert.ok(!existsSync(path.join(sandbox.home, ".runs/r_harness/call_task.prompt.md")), "the prompt file goes");
@@ -277,12 +282,15 @@ describe("code_task with the Claude Code driver", () => {
       artifacts: fakeStore as unknown as ToolContext["artifacts"],
       artifact_actor: agentActor({ orgId: "org_1", guildId: "guild_1", agentId: "a_1", agentName: "researcher" }),
     });
-    const brief = await buildBrief(ctx, "Tidy greet.py.", Object.keys(notes));
+    const brief = await buildBrief(ctx, toolInvocation("code_task"), "Tidy greet.py.", Object.keys(notes));
     assert.ok(brief.startsWith(BRIEF_PREAMBLE));
     assert.ok(brief.includes("# Task\n\nTidy greet.py."));
     assert.ok(brief.includes("# org/org_1/guilds/guild_1/conventions.md\n\nUse tabs."));
     assert.ok(brief.includes("Not included, past the 64 KiB cap for notes: org/org_1/guilds/guild_1/large.md"));
-    await assert.rejects(() => buildBrief(ctx, "x", ["org/org_1/guilds/guild_1/missing.md"]), /notes: .*missing\.md/);
+    await assert.rejects(
+      () => buildBrief(ctx, toolInvocation("code_task"), "x", ["org/org_1/guilds/guild_1/missing.md"]),
+      /notes: .*missing\.md/,
+    );
   });
 
   test("without a credential the call fails, naming the secret to grant and the login to run", async () => {
@@ -314,9 +322,11 @@ describe("code_task with the Claude Code driver", () => {
     const events: string[] = [];
     const overrides = {
       secrets: {},
-      harness_login_seen: async (harness: string, account: string | null) =>
-        void events.push(`seen ${harness} as ${account ?? "unknown"}`),
-      harness_login_lost: async (harness: string) => void events.push(`lost ${harness}`),
+      db: fakeToolboxDatabase({
+        markHarnessLogin: async (_agentId, harness, _now, account) =>
+          void events.push(`seen ${harness} as ${account ?? "unknown"}`),
+        clearHarnessLogin: async (_agentId, harness) => void events.push(`lost ${harness}`),
+      }),
     };
     await assert.rejects(() => assertHarnessReady(context(sandbox, overrides).ctx), (error: unknown) => {
       assert.ok(error instanceof HarnessSetupError);
@@ -427,12 +437,12 @@ describe("code_task with the Claude Code driver", () => {
     });
     let lost = false;
     const { ctx } = context(sandbox, {
-      publish_progress: async () => {
+      events: fakeToolEvents(() => {
         if (!lost) {
           lost = true;
           restartMachine(sandbox);
         }
-      },
+      }),
     });
     const { text, metadata } = await codeTask(ctx, { brief: "Anything." });
     assert.equal(metadata.status, "interrupted");
@@ -461,9 +471,11 @@ describe("code_task with the Codex driver", () => {
     const { ctx, progress } = context(sandbox, {
       harness: "codex",
       secrets: {},
-      harness_login_seen: async (harness) => {
-        seen.push(harness);
-      },
+      db: fakeToolboxDatabase({
+        markHarnessLogin: async (_agentId, harness) => {
+          seen.push(harness);
+        },
+      }),
     });
     const { text, metadata } = await codeTask(ctx, { brief: "Make the greeting name the guild." });
     assert.match(text, new RegExp(`^completed · codex · app · session ${THREAD} · `));
@@ -624,9 +636,11 @@ describe("code_task with the Cursor driver", () => {
   test("the helper refuses an effort apart from Cursor's model name, and never starts the harness", async () => {
     const { sandbox, calls } = harnessSandbox("agent", () => recorded("cursor"), { CURSOR_API_KEY: "cursor-key" });
     const ctx = createToolContext({ run_id: "r_harness", agent_id: "a_1", guild_id: "g_1", sandbox, secrets: {} });
-    ctx.tool_call_id = "call_effort";
     const start = { harness: "cursor", repository: "app", prompt: "x", model: "grok-4.7-high", effort: "high" };
-    await assert.rejects(runCodeHelper(ctx, "start", start, { helper: HARNESS_HELPER }), /cursor takes its effort in the model name/);
+    await assert.rejects(
+      runCodeHelper(ctx, { op: "start", call_id: "call_effort", ...start }, { helper: HARNESS_HELPER }),
+      /cursor takes its effort in the model name/,
+    );
     assert.equal(calls().length, 0);
   });
 
@@ -710,9 +724,8 @@ test("a supervisor outlives the call that started it, and stop ends the harness'
   const lines = recorded("claude-code").slice(0, 2);
   const { sandbox } = harnessSandbox("claude", () => [...lines, JSON.stringify({ stub: "hang" })]);
   const ctx = createToolContext({ run_id: "r_detached", agent_id: "a_1", guild_id: "g_1", sandbox, secrets: {} });
-  ctx.tool_call_id = "call_detached";
   const op = (name: string, args: Record<string, unknown> = {}) =>
-    runCodeHelper(ctx, name, { harness: "claude-code", ...args }, { helper: HARNESS_HELPER });
+    runCodeHelper(ctx, { op: name, call_id: "call_detached", harness: "claude-code", ...args }, { helper: HARNESS_HELPER });
   const started = await op("start", { repository: "app", prompt: "Anything." });
   assert.equal(typeof started.meta.pid, "number");
   await new Promise((resolve) => setTimeout(resolve, 400));
@@ -779,9 +792,11 @@ describe("code_task ends every harness it started", () => {
   test("a throw after start stops the harness and clears its state", async () => {
     const { sandbox } = hangingSandbox();
     const { ctx } = context(sandbox, {
-      remember_harness_task: async () => {
-        throw new Error("the database is down");
-      },
+      db: fakeToolboxDatabase({
+        mergeRunMetadata: async () => {
+          throw new Error("the database is down");
+        },
+      }),
     });
     const { text } = await codeTask(ctx, { brief: "Anything." });
     assert.match(text, /^ERROR: the database is down/);
@@ -970,9 +985,8 @@ test("a failed turn names the most telling reason it has", () => {
 test("stop kills a harness that ignores SIGTERM once the grace period is over", async () => {
   const { sandbox } = hangingSandbox({ stub: "hang", ignore_term: true });
   const ctx = createToolContext({ run_id: "r_term", agent_id: "a_1", guild_id: "g_1", sandbox, secrets: {} });
-  ctx.tool_call_id = "call_term";
   const op = (name: string, args: Record<string, unknown> = {}) =>
-    runCodeHelper(ctx, name, { harness: "claude-code", ...args }, { helper: HARNESS_HELPER });
+    runCodeHelper(ctx, { op: name, call_id: "call_term", harness: "claude-code", ...args }, { helper: HARNESS_HELPER });
   await op("start", { repository: "app", prompt: "Anything." });
   await new Promise((resolve) => setTimeout(resolve, 400));
   const began = Date.now();

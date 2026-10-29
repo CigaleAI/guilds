@@ -29,7 +29,8 @@ test("the clone step clones what is missing and points a clone at its repository
   execFileSync("git", ["-C", path.join(repos, "fork"), "remote", "add", "origin", "https://git.example.com/fork.git"]);
 
   const ctx = createToolContext({ run_id: "r_setup", agent_id: "a_1", guild_id: "g_1", sandbox, secrets: {} });
-  const result = await runCodeHelper(ctx, "git_setup", {
+  const result = await runCodeHelper(ctx, {
+    op: "git_setup",
     identity: { name: "coder", email: "coder@agents.guilds.invalid" },
     repositories: [
       { name: "shop", url: `file://${renamed}` },

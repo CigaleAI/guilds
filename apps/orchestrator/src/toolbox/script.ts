@@ -11,7 +11,7 @@ import {
 import { argString, functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
 import { runCommand } from "./shell.js";
-import type { Tool, ToolContext } from "./types.js";
+import { callActor, type Tool, type ToolContext, type ToolInvocation } from "./types.js";
 
 export const SCRIPT_TOOLS = [
   "script_create",
@@ -28,11 +28,12 @@ function scripts(ctx: ToolContext) {
   return ctx.scripts;
 }
 
-function scriptActor(ctx: ToolContext) {
-  if (ctx.artifact_actor === null) {
+function scriptActor(ctx: ToolContext, call: ToolInvocation) {
+  const actor = callActor(ctx.artifact_actor, call);
+  if (actor === null) {
     throw new ScriptError("script provenance is not available");
   }
-  return ctx.artifact_actor;
+  return actor;
 }
 
 async function publish(
@@ -88,9 +89,10 @@ export const scriptCreate: Tool = {
     },
     ["name", "description", "source"],
   ),
-  async handler(ctx, args) {
+  async handler(ctx, call) {
+    const args = call.arguments;
     const row = await scripts(ctx).create(
-      scriptActor(ctx),
+      scriptActor(ctx, call),
       ctx.agent_id,
       args.name,
       args.description,
@@ -145,7 +147,8 @@ export const scriptRead: Tool = {
     },
     ["name"],
   ),
-  async handler(ctx, args) {
+  async handler(ctx, call) {
+    const args = call.arguments;
     const row = await scripts(ctx).get(ctx.agent_id, args.name);
     return `${row.name}\n${row.description}\n\n${row.source}`;
   },
@@ -174,9 +177,10 @@ export const scriptRun: Tool = {
     },
     ["name"],
   ),
-  async handler(ctx, args) {
+  async handler(ctx, call) {
+    const args = call.arguments;
     const name = await resolveRunnableName(ctx, args.name);
-    return runScript(ctx, name, scriptArguments(args.arguments));
+    return runScript(ctx, call, name, scriptArguments(args.arguments));
   },
 };
 
@@ -196,8 +200,9 @@ export const scriptDelete: Tool = {
     },
     ["name"],
   ),
-  async handler(ctx, args) {
-    const row = await scripts(ctx).delete(scriptActor(ctx), ctx.agent_id, args.name);
+  async handler(ctx, call) {
+    const args = call.arguments;
+    const row = await scripts(ctx).delete(scriptActor(ctx, call), ctx.agent_id, args.name);
     const name = String(row.name);
     const pinned = ctx.run_scripts.findIndex((item) => item.name === name);
     if (pinned >= 0) {
@@ -205,9 +210,7 @@ export const scriptDelete: Tool = {
     }
     delete ctx.dynamic_tools[name];
     ctx.offered_tools?.delete(name);
-    if (ctx.persist_run_scripts) {
-      await ctx.persist_run_scripts(ctx.run_scripts);
-    }
+    await ctx.db?.updateRunScripts(ctx.run_id, ctx.run_scripts, new Date());
     if (ctx.sandbox?.files) {
       await removeManagedScript(ctx.sandbox.files, ctx.agent_home, name);
     }
@@ -217,8 +220,13 @@ export const scriptDelete: Tool = {
 };
 
 /** Runs a managed script through the launcher, which writes `args` as JSON to its stdin. */
-function runScript(ctx: ToolContext, name: string, args: Record<string, unknown>): Promise<string> {
-  return runCommand(ctx, launcherCommand(ctx.agent_home, name), {
+function runScript(
+  ctx: ToolContext,
+  call: ToolInvocation,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<string> {
+  return runCommand(ctx, call, launcherCommand(ctx.agent_home, name), {
     envs: { [SCRIPT_ARGS_ENV]: JSON.stringify(args) },
   });
 }
@@ -272,8 +280,8 @@ export function dynamicScriptTools(snapshot: RunScriptSnapshot[]): Record<string
       output_filter: identityOutput,
       filter_name: "identity",
       schema: functionSchema(row.name, row.description, properties, required),
-      async handler(ctx, args) {
-        return runScript(ctx, row.name, args);
+      async handler(ctx, call) {
+        return runScript(ctx, call, row.name, call.arguments);
       },
     };
   }

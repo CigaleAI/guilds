@@ -9,6 +9,7 @@ import { scriptSourceHash } from "../../src/scripts/validation.js";
 import { createToolContext, dynamicScriptTools, invokeTool } from "../../src/toolbox/index.js";
 import { tempDir } from "../helpers/env.js";
 import { MemoryScriptDB } from "../helpers/generation.js";
+import { fakeToolboxDatabase } from "../helpers/toolbox.js";
 
 
 class MemoryFiles {
@@ -192,9 +193,11 @@ test("script delete drops the name from this run so script_run stops", async () 
   const files = new MemoryFiles();
   let persisted: unknown[] | null = null;
   const ctx = toolCtx(scripts, { files });
-  ctx.persist_run_scripts = async (rows) => {
-    persisted = rows;
-  };
+  ctx.db = fakeToolboxDatabase({
+    updateRunScripts: async (_runId, rows) => {
+      persisted = rows;
+    },
+  });
   await invoke(ctx, "script_create", {
     name: "send_usdc",
     description: "Sign and send USDC",

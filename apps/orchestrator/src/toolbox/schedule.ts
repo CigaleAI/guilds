@@ -5,7 +5,7 @@ import { scheduleChanges } from "../schedules/service.js";
 import { rowTiming } from "../schedules/timing.js";
 import { argString, functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
-import type { Tool, ToolContext } from "./types.js";
+import type { Tool, ToolContext, ToolInvocation } from "./types.js";
 
 export const SCHEDULE_TOOLS = [
   "schedule_create_cron",
@@ -28,9 +28,12 @@ function schedules(ctx: ToolContext) {
 }
 
 /** The run making the call, as the routine's change log names it. */
-function callActor(ctx: ToolContext, toolName: string): ChangeActor {
-  return runActor({ runId: ctx.run_id, agentName: ctx.agent_name }, { id: ctx.tool_call_id, name: toolName });
+function routineActor(ctx: ToolContext, call: ToolInvocation): ChangeActor {
+  return runActor({ runId: ctx.run_id, agentName: ctx.agent_name }, { id: call.id, name: call.name });
 }
+
+/** What a new routine wakes on: a fixed UTC clock, or random times inside a daily window. */
+type RoutineTiming = { cron?: unknown; window?: unknown };
 
 async function publish(ctx: ToolContext, action: string, scheduleId: string): Promise<void> {
   if (ctx.group_chat !== null && ctx.guild_id && ctx.group_chat.publish) {
@@ -42,15 +45,12 @@ async function publish(ctx: ToolContext, action: string, scheduleId: string): Pr
   }
 }
 
-async function createAndPublish(
-  ctx: ToolContext,
-  call: { tool: string; when: { cron?: unknown; window?: unknown } },
-  args: Record<string, unknown>,
-): Promise<string> {
+async function createAndPublish(ctx: ToolContext, call: ToolInvocation, when: RoutineTiming): Promise<string> {
+  const args = call.arguments;
   const row = await schedules(ctx).create(
-    callActor(ctx, call.tool),
+    routineActor(ctx, call),
     ctx.agent_id,
-    call.when,
+    when,
     argString(args, "description"),
     argString(args, "instruction"),
   );
@@ -99,8 +99,8 @@ export const scheduleCreateCron: Tool = {
     },
     ["cron", "description", "instruction"],
   ),
-  async handler(ctx, args) {
-    return createAndPublish(ctx, { tool: "schedule_create_cron", when: { cron: args.cron } }, args);
+  async handler(ctx, call) {
+    return createAndPublish(ctx, call, { cron: call.arguments.cron });
   },
 };
 
@@ -131,22 +131,16 @@ export const scheduleCreateWindow: Tool = {
     },
     ["timezone", "start", "end", "max_wakes", "description", "instruction"],
   ),
-  async handler(ctx, args) {
-    return createAndPublish(
-      ctx,
-      {
-        tool: "schedule_create_window",
-        when: {
-          window: {
-            timezone: args.timezone,
-            start: args.start,
-            end: args.end,
-            max_wakes: args.max_wakes,
-          },
-        },
+  async handler(ctx, call) {
+    const args = call.arguments;
+    return createAndPublish(ctx, call, {
+      window: {
+        timezone: args.timezone,
+        start: args.start,
+        end: args.end,
+        max_wakes: args.max_wakes,
       },
-      args,
-    );
+    });
   },
 };
 
@@ -213,10 +207,11 @@ export const scheduleUpdate: Tool = {
     },
     ["schedule_id"],
   ),
-  async handler(ctx, args) {
+  async handler(ctx, call) {
+    const args = call.arguments;
     const { cron, window, description, instruction } = args;
     const row = await schedules(ctx).update(
-      callActor(ctx, "schedule_update"),
+      routineActor(ctx, call),
       ctx.agent_id,
       argString(args, "schedule_id"),
       scheduleChanges({ cron, window, description, instruction }),
@@ -240,9 +235,10 @@ export const schedulePause: Tool = {
     },
     ["schedule_id"],
   ),
-  async handler(ctx, args) {
+  async handler(ctx, call) {
+    const args = call.arguments;
     const row = await schedules(ctx).setPaused(
-      callActor(ctx, "schedule_pause"),
+      routineActor(ctx, call),
       ctx.agent_id,
       argString(args, "schedule_id"),
       true,
@@ -265,9 +261,10 @@ export const scheduleResume: Tool = {
     },
     ["schedule_id"],
   ),
-  async handler(ctx, args) {
+  async handler(ctx, call) {
+    const args = call.arguments;
     const row = await schedules(ctx).setPaused(
-      callActor(ctx, "schedule_resume"),
+      routineActor(ctx, call),
       ctx.agent_id,
       argString(args, "schedule_id"),
       false,
@@ -290,9 +287,10 @@ export const scheduleDelete: Tool = {
     },
     ["schedule_id"],
   ),
-  async handler(ctx, args) {
+  async handler(ctx, call) {
+    const args = call.arguments;
     const row = await schedules(ctx).delete(
-      callActor(ctx, "schedule_delete"),
+      routineActor(ctx, call),
       ctx.agent_id,
       argString(args, "schedule_id"),
     );

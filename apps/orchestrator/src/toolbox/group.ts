@@ -24,7 +24,7 @@ export const groupPost: Tool = {
     },
     ["content"],
   ),
-  async handler(ctx: ToolContext, args) {
+  async handler(ctx: ToolContext, { arguments: args }) {
     const chat = ctx.group_chat;
     if (chat === null) {
       throw new Error("group chat is not available");

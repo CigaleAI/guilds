@@ -46,7 +46,7 @@ export const reportIssue: Tool = {
     },
     ["summary", "detail", "kind"],
   ),
-  async handler(ctx: ToolContext, args) {
+  async handler(ctx: ToolContext, { arguments: args }) {
     const issues = ctx.issues;
     if (issues === null) {
       throw new Error("issue reporting is not available");

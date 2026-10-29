@@ -1,4 +1,4 @@
-import type { CommandResult, ToolContext } from "./types.js";
+import type { CommandResult, ToolContext, ToolInvocation } from "./types.js";
 
 export const COMMAND_TIMEOUT_SECONDS = 120;
 
@@ -15,20 +15,27 @@ export function formatExecution(execution: CommandResult): string {
   return text;
 }
 
-export async function runCommand(ctx: ToolContext, command: string, options: {
-  timeoutSeconds?: number;
-  envs?: Record<string, string>;
-} = {}): Promise<string> {
+/** How a sandbox command runs: how long it may take, and the variables its environment gains. */
+export type CommandSettings = { timeoutSeconds?: number; envs?: Record<string, string> };
+
+/** Runs one sandbox command for `call`, keeps its exit code on the call, and returns its output as text. */
+export async function runCommand(
+  ctx: ToolContext,
+  call: ToolInvocation,
+  command: string,
+  options: CommandSettings = {},
+): Promise<string> {
   const execution = await executeCommand(ctx, command, options);
-  ctx.exit_code = execution.exit_code ?? execution.exitCode ?? null;
+  call.exit_code = execution.exit_code ?? execution.exitCode ?? null;
   return formatExecution(execution);
 }
 
 /** Runs one sandbox command, interruptible by the run's cancel event, and returns it unformatted. */
-export async function executeCommand(ctx: ToolContext, command: string, options: {
-  timeoutSeconds?: number;
-  envs?: Record<string, string>;
-} = {}): Promise<CommandResult> {
+export async function executeCommand(
+  ctx: ToolContext,
+  command: string,
+  options: CommandSettings = {},
+): Promise<CommandResult> {
   if (!ctx.sandbox) {
     throw new Error("sandbox is not available");
   }

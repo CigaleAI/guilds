@@ -185,8 +185,8 @@ export class CodingRuns {
       const guild = await db.getGuild(agent.guild_id);
       const setup = await runCodeHelper(
         maintenance,
-        "git_setup",
         {
+          op: "git_setup",
           identity: agentGitIdentity(agent, { email: guild?.git_author_email ?? "" }),
           repositories: repositories.map((row) => ({ name: row.name, url: row.url })),
         },
@@ -242,8 +242,8 @@ export class CodingRuns {
     const { agent, sandbox } = await this.runAgent(runId);
     let result;
     try {
-      const args = task === null ? { repository } : { repository, task: callSegment(task) };
-      result = await runCodeHelper(maintenanceContext(runId, agent, sandbox), "diff", args, {
+      const request = task === null ? { op: "diff", repository } : { op: "diff", repository, task: callSegment(task) };
+      result = await runCodeHelper(maintenanceContext(runId, agent, sandbox), request, {
         maxBytes: RUN_DIFF_MAX_BYTES,
       });
     } catch (error) {
@@ -345,9 +345,7 @@ export class CodingRuns {
       if (agent === null || sandbox === null) {
         return { stopped: true, session_id: null, start_sha: null, end_sha: null };
       }
-      const ctx = maintenanceContext(task.run_id, agent, sandbox);
-      ctx.tool_call_id = task.call_id;
-      return await endLostTurn(ctx, task.harness, task.repository);
+      return await endLostTurn(maintenanceContext(task.run_id, agent, sandbox), task.call_id, task.harness, task.repository);
     } catch (error) {
       writeLog("warn", errorMessage(error), {
         run_id: task.run_id,
@@ -365,7 +363,7 @@ export class CodingRuns {
    */
   private async checkpoint(ctx: ToolContext, which: "start" | "end", agent: AgentRow): Promise<RunRepositoryChange[]> {
     try {
-      const result = await runCodeHelper(ctx, "checkpoint", { which }, { timeoutSeconds: 300 });
+      const result = await runCodeHelper(ctx, { op: "checkpoint", which }, { timeoutSeconds: 300 });
       return which === "end"
         ? decode(Type.Array(RunRepositoryChangeSchema), result.meta.repositories, (problem) => new Error(`checkpoint ${problem}`))
         : [];

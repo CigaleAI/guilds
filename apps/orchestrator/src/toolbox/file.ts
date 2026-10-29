@@ -5,7 +5,7 @@ import { ArtifactFiles, mimeForName } from "../artifacts/files.js";
 import { AgentFileError, agentDisplayPath, readAgentFile, writeAgentFile } from "../lib/agent-file.js";
 import { argInteger, argString, functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
-import type { Tool, ToolContext } from "./types.js";
+import { callActor, type Tool, type ToolContext, type ToolInvocation } from "./types.js";
 
 export const FILE_TOOLS = ["file_find", "file_fetch", "file_put", "file_delete"] as const;
 
@@ -19,11 +19,12 @@ function files(ctx: ToolContext): ArtifactFiles {
   return ctx.files;
 }
 
-function actor(ctx: ToolContext): ArtifactActor {
-  if (!ctx.artifact_actor) {
+function actor(ctx: ToolContext, call: ToolInvocation): ArtifactActor {
+  const made = callActor(ctx.artifact_actor, call);
+  if (!made) {
     throw new ArtifactError("file store is not available", 500);
   }
-  return ctx.artifact_actor;
+  return made;
 }
 
 function workspace(ctx: ToolContext): string {
@@ -81,9 +82,10 @@ export const fileFind: Tool = {
     },
     [],
   ),
-  async handler(ctx, args) {
+  async handler(ctx, call) {
+    const args = call.arguments;
     const level = optionalLevel(args);
-    const found = await files(ctx).findFiles(actor(ctx), {
+    const found = await files(ctx).findFiles(actor(ctx, call), {
       query: argString(args, "query"),
       ...(level ? { level } : {}),
       limit: argInteger(args, "limit", 20),
@@ -109,9 +111,10 @@ export const fileFetch: Tool = {
     },
     ["path"],
   ),
-  async handler(ctx, args) {
+  async handler(ctx, call) {
+    const args = call.arguments;
     const store = files(ctx);
-    const row = await store.loadFile(actor(ctx), argString(args, "path"));
+    const row = await store.loadFile(actor(ctx, call), argString(args, "path"));
     const bytes = await store.readBytes(row);
     const destination = argString(args, "home_path").trim() || `${FETCH_FOLDER}/${row.key}`;
     const workspaceDir = workspace(ctx);
@@ -141,12 +144,13 @@ export const filePut: Tool = {
     },
     ["home_path", "level", "description"],
   ),
-  async handler(ctx, args) {
+  async handler(ctx, call) {
+    const args = call.arguments;
     const homePath = argString(args, "home_path");
     const read = await readAgentFile(workspace(ctx), homePath, { maxBytes: FILE_MAX_BYTES }).catch(homeFileError);
     const name = argString(args, "name").trim() || path.basename(read.path);
     const store = files(ctx);
-    const row = await store.putFile(actor(ctx), {
+    const row = await store.putFile(actor(ctx, call), {
       level: levelArg(args),
       name,
       description: argString(args, "description"),
@@ -165,11 +169,12 @@ export const fileDelete: Tool = {
   output_filter: identityOutput,
   filter_name: "identity",
   schema: functionSchema("file_delete", "Delete a shared file by display path.", { path: { type: "string" } }, ["path"]),
-  async handler(ctx, args) {
+  async handler(ctx, call) {
+    const args = call.arguments;
     const store = files(ctx);
     const displayPath = argString(args, "path");
-    const row = await store.loadFile(actor(ctx), displayPath);
-    await store.deleteFile(actor(ctx), row);
+    const row = await store.loadFile(actor(ctx, call), displayPath);
+    await store.deleteFile(actor(ctx, call), row);
     await publish(ctx, displayPath);
     return displayPath;
   },

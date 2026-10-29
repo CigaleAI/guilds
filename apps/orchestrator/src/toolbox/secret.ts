@@ -53,7 +53,7 @@ export const secretStore: Tool = {
     },
     ["name", "description", "file"],
   ),
-  async handler(ctx: ToolContext, args) {
+  async handler(ctx: ToolContext, { arguments: args }) {
     const store = ctx.secret_store;
     if (store === null) {
       throw new Error("secret storage is not available");
@@ -92,7 +92,7 @@ export const secretRequest: Tool = {
     },
     ["name", "description", "reason"],
   ),
-  async handler(ctx: ToolContext, args) {
+  async handler(ctx: ToolContext, { arguments: args }) {
     if (ctx.run_kind !== "direct") {
       throw new Error("secret_request is only available in a direct chat; say what you need with group_post");
     }
