@@ -205,9 +205,7 @@ export const scriptDelete: Tool = {
     }
     delete ctx.dynamic_tools[name];
     ctx.offered_tools?.delete(name);
-    if (ctx.persist_run_scripts) {
-      await ctx.persist_run_scripts(ctx.run_scripts);
-    }
+    await ctx.db?.updateRunScripts(ctx.run_id, ctx.run_scripts, new Date());
     if (ctx.sandbox?.files) {
       await removeManagedScript(ctx.sandbox.files, ctx.agent_home, name);
     }

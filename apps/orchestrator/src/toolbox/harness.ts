@@ -202,9 +202,9 @@ function assertInstalled(harness: Harness, meta: Record<string, unknown>): void 
 
 async function assertCredential(ctx: ToolContext, harness: Harness, meta: Record<string, unknown>): Promise<void> {
   if (meta.credential === "login") {
-    await ctx.harness_login_seen?.(harness, stringOrNull(meta.account));
+    await ctx.db?.markHarnessLogin(ctx.agent_id, harness, new Date(), stringOrNull(meta.account));
   } else if (meta.credential !== "secret") {
-    await ctx.harness_login_lost?.(harness);
+    await ctx.db?.clearHarnessLogin(ctx.agent_id, harness);
     throw new HarnessSetupError(
       "harness.credential",
       `${HARNESS_INFO[harness].label} has no credential: ${credentialFix(harness, ctx.secret_aliases)}`,
@@ -412,13 +412,14 @@ async function openHarnessTurn(ctx: ToolContext, args: Record<string, unknown>):
 }
 
 async function rememberTurn(ctx: ToolContext, turn: HarnessTurn): Promise<void> {
-  await ctx.remember_harness_task?.({
+  const task = {
     call_id: turn.ops.tool_call_id,
     harness: turn.harness,
     repository: turn.repository,
     session_id: turn.session,
     log_path: turn.log_path,
-  });
+  };
+  await ctx.db?.mergeRunMetadata(ctx.run_id, { harness_task: task }, new Date());
 }
 
 async function startHarness(ctx: ToolContext, turn: HarnessTurn): Promise<void> {
@@ -485,7 +486,12 @@ async function publishLines(ctx: ToolContext, turn: HarnessTurn, lines: unknown)
   if (!Array.isArray(lines) || !lines.length) {
     return;
   }
-  await ctx.publish_progress?.(ctx.tool_call_id, { lines: lines.map(String), session_id: turn.session });
+  await ctx.events?.publish(ctx.run_id, "tool.progress", {
+    run_id: ctx.run_id,
+    tool_call_id: ctx.tool_call_id,
+    lines: shownProgressLines(lines.map(String), ctx.secrets),
+    session_id: turn.session,
+  });
 }
 
 async function applyPoll(ctx: ToolContext, turn: HarnessTurn, meta: Record<string, unknown>): Promise<Settled | null> {

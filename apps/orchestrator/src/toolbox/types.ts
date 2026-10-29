@@ -1,5 +1,5 @@
 import { DEFAULT_MAX_SCRIPTS } from "../agents/config.js";
-import type { Harness, Effort, ReportedToolMetadata, RunHarnessTask } from "../db/schema/index.js";
+import type { Harness, Effort, ReportedToolMetadata } from "../db/schema/index.js";
 import { agentHome } from "../lib/agent-file.js";
 import type { ArtifactActor } from "../artifacts/types.js";
 import type { ArtifactFiles } from "../artifacts/files.js";
@@ -9,6 +9,7 @@ import type { Schedules } from "../schedules/service.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { RunScriptSnapshot } from "../db/schema/index.js";
 import type { ToolArtifacts } from "./artifacts.js";
+import type { ToolboxDatabase, ToolEvents } from "./services.js";
 
 export type GroupChat = {
   publish?(guildId: string, event: string, data: Record<string, unknown>): Promise<void>;
@@ -141,8 +142,6 @@ export type ToolContext = {
   secret_store: AgentSecretStore | null;
   memory_replaced_by: string;
   run_scripts: RunScriptSnapshot[];
-  /** Writes `run_scripts` onto this run's config snapshot so later generations keep the drop. */
-  persist_run_scripts: ((scripts: RunScriptSnapshot[]) => Promise<void>) | null;
   /** How many scripts this agent may keep; `script_create` of a new name is refused past it. */
   max_scripts: number;
   connection_tool_names: string[];
@@ -173,16 +172,10 @@ export type ToolContext = {
   secret_aliases: Record<string, string>;
   /** The guild repositories a coding run works on, by their folder under `repos/`. */
   code_repositories: string[];
-  /** Publishes a running tool call's progress on the run's stream. */
-  publish_progress:
-    | ((toolCallId: string, update: { lines: string[]; session_id: string | null }) => Promise<void>)
-    | null;
-  /** Keeps the running harness call with its run, so a restart can stop it and name its session. */
-  remember_harness_task: ((task: RunHarnessTask) => Promise<void>) | null;
-  /** Records that the harness found a login in the agent's home, and whose it is when known. */
-  harness_login_seen: ((harness: Harness, account: string | null) => Promise<void>) | null;
-  /** Records that the harness found no credential at all, so no login is left in the agent's home. */
-  harness_login_lost: ((harness: Harness) => Promise<void>) | null;
+  /** Where the tools keep the run's state: its pinned scripts, its harness task, and the agent's harness logins. */
+  db: ToolboxDatabase | null;
+  /** The run's stream, where a running tool call publishes its progress. */
+  events: ToolEvents | null;
 };
 
 export function createToolContext(
@@ -210,7 +203,6 @@ export function createToolContext(
     secret_store: null,
     memory_replaced_by: "",
     run_scripts: [],
-    persist_run_scripts: null,
     max_scripts: DEFAULT_MAX_SCRIPTS,
     connection_tool_names: [],
     dynamic_tools: {},
@@ -227,10 +219,8 @@ export function createToolContext(
     harness_effort: null,
     secret_aliases: {},
     code_repositories: [],
-    publish_progress: null,
-    remember_harness_task: null,
-    harness_login_seen: null,
-    harness_login_lost: null,
+    db: null,
+    events: null,
     ...partial,
   };
 }

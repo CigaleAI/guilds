@@ -38,6 +38,7 @@ import { applySecretAliases } from "../../src/access/runtime.js";
 import { answerOps, HostCodeSandbox } from "../helpers/code-sandbox.js";
 import { tempDir } from "../helpers/env.js";
 import { noteRowAt } from "../helpers/artifacts.js";
+import { fakeToolboxDatabase, fakeToolEvents } from "../helpers/toolbox.js";
 import { agentActor } from "../../src/artifacts/actors.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -121,12 +122,16 @@ function context(sandbox: HostCodeSandbox, overrides: Partial<ToolContext> = {})
     secrets: { CLAUDE_CODE_OAUTH_TOKEN: TOKEN },
     harness: "claude-code",
     code_repositories: ["app"],
-    publish_progress: async (_id, update) => {
-      progress.push(...update.lines);
-    },
-    remember_harness_task: async (task) => {
-      remembered.push(task);
-    },
+    events: fakeToolEvents((_event, data) => {
+      progress.push(...(Array.isArray(data.lines) ? data.lines.map(String) : []));
+    }),
+    db: fakeToolboxDatabase({
+      mergeRunMetadata: async (_runId, extra) => {
+        if (extra.harness_task) {
+          remembered.push(extra.harness_task);
+        }
+      },
+    }),
     ...overrides,
   });
   return { ctx, progress, remembered };
@@ -314,9 +319,11 @@ describe("code_task with the Claude Code driver", () => {
     const events: string[] = [];
     const overrides = {
       secrets: {},
-      harness_login_seen: async (harness: string, account: string | null) =>
-        void events.push(`seen ${harness} as ${account ?? "unknown"}`),
-      harness_login_lost: async (harness: string) => void events.push(`lost ${harness}`),
+      db: fakeToolboxDatabase({
+        markHarnessLogin: async (_agentId, harness, _now, account) =>
+          void events.push(`seen ${harness} as ${account ?? "unknown"}`),
+        clearHarnessLogin: async (_agentId, harness) => void events.push(`lost ${harness}`),
+      }),
     };
     await assert.rejects(() => assertHarnessReady(context(sandbox, overrides).ctx), (error: unknown) => {
       assert.ok(error instanceof HarnessSetupError);
@@ -427,12 +434,12 @@ describe("code_task with the Claude Code driver", () => {
     });
     let lost = false;
     const { ctx } = context(sandbox, {
-      publish_progress: async () => {
+      events: fakeToolEvents(() => {
         if (!lost) {
           lost = true;
           restartMachine(sandbox);
         }
-      },
+      }),
     });
     const { text, metadata } = await codeTask(ctx, { brief: "Anything." });
     assert.equal(metadata.status, "interrupted");
@@ -461,9 +468,11 @@ describe("code_task with the Codex driver", () => {
     const { ctx, progress } = context(sandbox, {
       harness: "codex",
       secrets: {},
-      harness_login_seen: async (harness) => {
-        seen.push(harness);
-      },
+      db: fakeToolboxDatabase({
+        markHarnessLogin: async (_agentId, harness) => {
+          seen.push(harness);
+        },
+      }),
     });
     const { text, metadata } = await codeTask(ctx, { brief: "Make the greeting name the guild." });
     assert.match(text, new RegExp(`^completed · codex · app · session ${THREAD} · `));
@@ -779,9 +788,11 @@ describe("code_task ends every harness it started", () => {
   test("a throw after start stops the harness and clears its state", async () => {
     const { sandbox } = hangingSandbox();
     const { ctx } = context(sandbox, {
-      remember_harness_task: async () => {
-        throw new Error("the database is down");
-      },
+      db: fakeToolboxDatabase({
+        mergeRunMetadata: async () => {
+          throw new Error("the database is down");
+        },
+      }),
     });
     const { text } = await codeTask(ctx, { brief: "Anything." });
     assert.match(text, /^ERROR: the database is down/);

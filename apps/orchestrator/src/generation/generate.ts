@@ -1,19 +1,11 @@
 import { agentActor } from "../artifacts/actors.js";
 import type { ArtifactFiles } from "../artifacts/files.js";
 import { REPOSITORIES_MISSING, REPOSITORIES_MISSING_MESSAGE } from "../coding/harnesses.js";
-import { clearHarnessLogin, getAgent, markHarnessLogin, type AgentRow } from "../db/agents.js";
+import { getAgent, type AgentRow } from "../db/agents.js";
 import { listBindingsCovering } from "../db/bindings.js";
 import { isPlainRecord } from "../db/json.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
-import {
-  completeRun,
-  getRun,
-  listMessages,
-  mergeRunMetadata,
-  updateRunScripts,
-  type MessageRow,
-  type RunRow,
-} from "../db/runs.js";
+import { completeRun, getRun, listMessages, type MessageRow, type RunRow } from "../db/runs.js";
 import type { GroupChat } from "../groupchat/index.js";
 import type { Issues } from "../issues/index.js";
 import { agentHome } from "../lib/agent-file.js";
@@ -25,7 +17,8 @@ import { agentSandbox, applyRunScripts, prepareBrowserWorkspace, prepareWorkspac
 import type { Schedules } from "../schedules/service.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { RunConfigSnapshot, RunScriptSnapshot } from "../db/schema/index.js";
-import { harnessMissingError, shownProgressLines } from "../toolbox/harness.js";
+import { harnessMissingError } from "../toolbox/harness.js";
+import { toolboxDatabase } from "../toolbox/services.js";
 import { createToolContext, type ToolContext } from "../toolbox/index.js";
 import { dynamicScriptTools, liveExtraForAgent, SCRIPT_TOOLS } from "../toolbox/script.js";
 import type { ActiveGenerations } from "./active-generations.js";
@@ -109,10 +102,7 @@ export function runGeneratorDatabase(db: Queryable) {
     getAgent: bindQuery(db, getAgent),
     listMessages: bindQuery(db, listMessages),
     completeRun: bindQuery(db, completeRun),
-    mergeRunMetadata: bindQuery(db, mergeRunMetadata),
-    updateRunScripts: bindQuery(db, updateRunScripts),
-    markHarnessLogin: bindQuery(db, markHarnessLogin),
-    clearHarnessLogin: bindQuery(db, clearHarnessLogin),
+    ...toolboxDatabase(db),
   };
 }
 
@@ -481,9 +471,6 @@ export class RunGenerator {
       secret_store: this.services.secrets.secretStore(agent),
       memory_replaced_by: await memoryReplacedBy(db, gen.run),
       run_scripts: offer.scripts,
-      persist_run_scripts: async (runScripts) => {
-        await db.updateRunScripts(runId, runScripts, new Date());
-      },
       max_scripts: agent.config.max_scripts,
       dynamic_tools: offer.names.has("script_run") ? dynamicScriptTools(offer.scripts) : {},
       connection_tool_names: Object.keys(offer.connections),
@@ -492,24 +479,8 @@ export class RunGenerator {
       harness_model: snapshot.harness_model,
       harness_effort: snapshot.harness_effort,
       secret_aliases: snapshot.secret_aliases,
-      // `secrets.values` holds the run's values and, once minted, its GitHub tokens.
-      publish_progress: async (toolCallId, update) => {
-        await events.publish(runId, "tool.progress", {
-          run_id: runId,
-          tool_call_id: toolCallId,
-          lines: shownProgressLines(update.lines, secrets.values),
-          session_id: update.session_id,
-        });
-      },
-      remember_harness_task: async (task) => {
-        await db.mergeRunMetadata(runId, { harness_task: task }, new Date());
-      },
-      harness_login_seen: async (harness, account) => {
-        await db.markHarnessLogin(agent.id, harness, new Date(), account);
-      },
-      harness_login_lost: async (harness) => {
-        await db.clearHarnessLogin(agent.id, harness);
-      },
+      db,
+      events,
     });
   }
 
