@@ -126,6 +126,11 @@
       "count": 1
     }
   },
+  "src/attachments/index.ts": {
+    "boundary/no-reexport-modules": {
+      "count": 1
+    }
+  },
   "src/attachments/sniff.ts": {
     "complexity": {
       "count": 1
@@ -168,6 +173,11 @@
       "count": 2
     },
     "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/builder/errors.ts": {
+    "boundary/no-reexport-modules": {
       "count": 1
     }
   },
@@ -813,6 +823,11 @@
   },
   "src/llm/credentials.ts": {
     "@typescript-eslint/explicit-module-boundary-types": {
+      "count": 1
+    }
+  },
+  "src/llm/index.ts": {
+    "boundary/no-reexport-modules": {
       "count": 1
     }
   },
@@ -1517,6 +1532,11 @@
     },
     "no-restricted-syntax": {
       "count": 3
+    }
+  },
+  "src/typesafe/index.ts": {
+    "boundary/no-reexport-modules": {
+      "count": 1
     }
   },
   "src/typesafe/replay.ts": {

@@ -6,6 +6,9 @@ import { boundary } from "../../eslint.boundary.js";
 // imports must stay inside (docs/architecture/extension-points.md).
 const HOSTED_PACKAGES = ["@guildsrun/hosted-server"];
 const REPOSITORY = "../..";
+// The re-export modules a tool requires: drizzle-kit reads the schema mirror from its index
+// (drizzle.config.ts).
+const INDEXES = ["src/db/schema/index.ts"];
 
 // Syntax docs/contributing/code-guidelines.md refuses, under Types and errors and under Functions.
 const EMPTY_CATCH = {
@@ -161,5 +164,6 @@ export default tseslint.config(
     source: ".",
     packages: HOSTED_PACKAGES,
     repository: REPOSITORY,
+    indexes: INDEXES,
   }),
 );
