@@ -710,21 +710,24 @@ export const studioGetMemoryVersion: StudioTool = {
   },
 };
 
+const FindArtifactsArguments = Type.Object({
+  query: Type.Optional(Type.String({ description: "words to find in note titles and bodies" })),
+  level: Type.Optional(Type.String()),
+  cursor: Type.Optional(Type.String()),
+  limit: Type.Optional(Type.Integer()),
+});
+type FindArtifactsArguments = Static<typeof FindArtifactsArguments>;
+
 export const studioFindArtifacts: StudioTool = {
   name: "studio_find_artifacts",
-  schema: functionSchema(
+  schema: studioFunctionSchema(
     "studio_find_artifacts",
     "Search notes relevant to the source guild.",
-    {
-      query: { type: "string", description: "words to find in note titles and bodies" },
-      level: { type: "string" },
-      cursor: { type: "string" },
-      limit: { type: "integer" },
-    },
-    [],
+    FindArtifactsArguments,
   ),
   async handler(ctx, args) {
-    const limit = clampLimit(args.limit, STUDIO_DEFAULT_LIMIT, STUDIO_ARTIFACT_LIST_MAX);
+    const input: FindArtifactsArguments = decodeStudioArguments(FindArtifactsArguments, args);
+    const limit = clampLimit(input.limit, STUDIO_DEFAULT_LIMIT, STUDIO_ARTIFACT_LIST_MAX);
     const actor = operatorActor({
       orgId: ctx.orgId,
       actorId: String(ctx.user.id),
@@ -736,17 +739,17 @@ export const studioFindArtifacts: StudioTool = {
       level?: "agent" | "guild" | "org";
       limit: number;
     } = {
-      query: argString(args, "query"),
+      query: input.query ?? "",
       limit: STUDIO_ARTIFACT_LIST_MAX,
     };
-    const level = argString(args, "level");
+    const level = input.level;
     if (level === "agent" || level === "guild" || level === "org") findArgs.level = level;
     const found = await findNotes(ctx.artifacts, actor, findArgs);
     const allowed = [];
     for (const item of found.notes) {
       if (await studioReachesPath(ctx, String(item.display_path ?? ""))) allowed.push(item);
     }
-    const offset = cursorOffset(args.cursor);
+    const offset = cursorOffset(input.cursor);
     const slice = allowed.slice(offset, offset + limit);
     return {
       artifacts: slice.map((item) => ({
@@ -763,16 +766,22 @@ export const studioFindArtifacts: StudioTool = {
   },
 };
 
+const GetArtifactArguments = Type.Object({
+  display_path: Type.String(),
+  cursor: Type.Optional(Type.String()),
+});
+type GetArtifactArguments = Static<typeof GetArtifactArguments>;
+
 export const studioGetArtifact: StudioTool = {
   name: "studio_get_artifact",
-  schema: functionSchema(
+  schema: studioFunctionSchema(
     "studio_get_artifact",
     "Read one artifact by a display path returned from an authorized Studio result.",
-    { display_path: { type: "string" }, cursor: { type: "string" } },
-    ["display_path"],
+    GetArtifactArguments,
   ),
   async handler(ctx, args) {
-    const displayPath = argString(args, "display_path");
+    const input: GetArtifactArguments = decodeStudioArguments(GetArtifactArguments, args);
+    const displayPath = input.display_path;
     const actor = operatorActor({
       orgId: ctx.orgId,
       actorId: String(ctx.user.id),
@@ -792,7 +801,7 @@ export const studioGetArtifact: StudioTool = {
     }
     const row = view.row;
     const text = row.content_text ?? JSON.stringify(row.content_json ?? {});
-    const offset = cursorOffset(args.cursor);
+    const offset = cursorOffset(input.cursor);
     const encoded = Buffer.from(text, "utf8");
     const slice = encoded.subarray(offset, offset + STUDIO_TOOL_RESULT_MAX_BYTES).toString("utf8");
     return {
@@ -811,20 +820,23 @@ export const studioGetArtifact: StudioTool = {
   },
 };
 
+const ListFileChangesArguments = Type.Object({
+  display_path: Type.String({ description: "Display path from an authorized Studio result. Required." }),
+  cursor: Type.Optional(Type.String()),
+  limit: Type.Optional(Type.Integer()),
+});
+type ListFileChangesArguments = Static<typeof ListFileChangesArguments>;
+
 export const studioListFileChanges: StudioTool = {
   name: "studio_list_file_changes",
-  schema: functionSchema(
+  schema: studioFunctionSchema(
     "studio_list_file_changes",
     "List who changed one file and when, newest first: notes, objects, scripts, memory, and standing tasks by display path. A run-written change carries the run id and the tool call that wrote it; read that run with studio_get_run.",
-    {
-      display_path: { type: "string", description: "Display path from an authorized Studio result. Required." },
-      cursor: { type: "string" },
-      limit: { type: "integer" },
-    },
-    ["display_path"],
+    ListFileChangesArguments,
   ),
   async handler(ctx, args) {
-    const displayPath = argString(args, "display_path");
+    const input: ListFileChangesArguments = decodeStudioArguments(ListFileChangesArguments, args);
+    const displayPath = input.display_path;
     const actor = operatorActor({
       orgId: ctx.orgId,
       actorId: String(ctx.user.id),
@@ -834,8 +846,8 @@ export const studioListFileChanges: StudioTool = {
     if (!(await studioReachesParsed(ctx, parseActorPath(actor, displayPath)))) {
       throw new StudioUnprocessableError("path is not in the source guild or the organisation's shared files");
     }
-    const limit = clampLimit(args.limit, STUDIO_DEFAULT_LIMIT, STUDIO_REVISION_LIST_MAX);
-    const offset = cursorOffset(args.cursor);
+    const limit = clampLimit(input.limit, STUDIO_DEFAULT_LIMIT, STUDIO_REVISION_LIST_MAX);
+    const offset = cursorOffset(input.cursor);
     const rows = await listFileChanges(ctx.db, ctx.orgId, displayPath);
     const slice = rows.slice(offset, offset + limit);
     return {
@@ -857,30 +869,33 @@ export const studioListFileChanges: StudioTool = {
   },
 };
 
+const GetScriptArguments = Type.Object({
+  agent_id: Type.String({ description: "Source-guild agent id or name. Required." }),
+  name: Type.String({ description: "Script name. Required." }),
+  cursor: Type.Optional(Type.String()),
+});
+type GetScriptArguments = Static<typeof GetScriptArguments>;
+
 export const studioGetScript: StudioTool = {
   name: "studio_get_script",
-  schema: functionSchema(
+  schema: studioFunctionSchema(
     "studio_get_script",
     "Read the source of one script owned by a source-guild agent. Script names come from the State projection or studio_get_agent_access.",
-    {
-      agent_id: { type: "string", description: "Source-guild agent id or name. Required." },
-      name: { type: "string", description: "Script name. Required." },
-      cursor: { type: "string" },
-    },
-    ["agent_id", "name"],
+    GetScriptArguments,
   ),
   async handler(ctx, args) {
-    const agent = await resolveHandle(ctx, studioAgentHandleFromArgs(args) || undefined);
+    const input: GetScriptArguments = decodeStudioArguments(GetScriptArguments, args);
+    const agent = await resolveHandle(ctx, input.agent_id);
     let script: Record<string, unknown>;
     try {
-      script = await ctx.preview.scripts.get(agent.id, argString(args, "name"));
+      script = await ctx.preview.scripts.get(agent.id, input.name);
     } catch (error) {
       if (error instanceof ScriptError) {
         throw new StudioUnprocessableError(error.message);
       }
       throw error;
     }
-    const sliced = sliceStudioBytes(String(script.source ?? ""), args.cursor);
+    const sliced = sliceStudioBytes(String(script.source ?? ""), input.cursor);
     return {
       agent_id: agent.id,
       name: script.name,

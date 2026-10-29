@@ -26,6 +26,7 @@ import {
   studioEditGuild,
   studioEditMemory,
   studioEditRoutine,
+  studioFindArtifacts,
   studioGetAgentAccess,
   studioGetArtifact,
   studioGetCollection,
@@ -531,6 +532,7 @@ test("studio reads agent access, script source, and granted connections", { time
     assert.equal(script.name, "tally");
     assert.match(script.content, /source="script"/);
     assert.match(script.content, /print\('tally'\)/);
+    await assert.rejects(studioGetScript.handler(await toolContext(), { agent_id: "a_access" }), /\/name: Expected required property/);
 
     const blocked = (await studioCallConnectionTool.handler(await toolContext(), {
       connection_id: String(connection.id),
@@ -1061,6 +1063,14 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
     assert.equal(firstPage.next_cursor, "1");
     await assert.rejects(studioGetMemoryVersion.handler(toolCtx(), { agent_id: "curator", version_index: "1" }), /\/version_index: Expected integer/);
     await assert.rejects(studioListGroupMessages.handler(toolCtx(), { author_type: 3 }), /\/author_type: Expected string/);
+    const found = await studioFindArtifacts.handler(toolCtx(), { query: "cite", level: "guild", limit: 5 });
+    assert.deepEqual((found.artifacts as Array<{ display_path: string }>).map((item) => item.display_path), [sharedPath]);
+    const houseRules = await studioGetArtifact.handler(toolCtx(), { display_path: sharedPath, cursor: "0" });
+    assert.match(String(houseRules.content), /Always cite the source/);
+    const firstChange = await studioListFileChanges.handler(toolCtx(), { display_path: memoryPath, limit: 1 });
+    assert.equal((firstChange.changes as unknown[]).length, 1);
+    await assert.rejects(studioFindArtifacts.handler(toolCtx(), { query: ["cite"] }), /\/query: Expected string/);
+    await assert.rejects(studioGetArtifact.handler(toolCtx(), {}), /\/display_path: Expected required property/);
   } finally {
     await app.close();
     await database.close();
