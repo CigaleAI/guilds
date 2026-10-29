@@ -5,6 +5,7 @@ import { ConnectError } from "../mcp/connect-token.js";
 import { SettingsError } from "../connectors/settings.js";
 import { CredentialError } from "../credentials/validate.js";
 import { AgentError } from "../agents/errors.js";
+import { BuilderError } from "../builder/errors.js";
 import { AgentValidationError } from "../agents/validation.js";
 import { BindingError } from "../access/index.js";
 import { RunRequestError } from "../generation/index.js";
@@ -13,6 +14,7 @@ import { GuildAgentLimitError, GuildError } from "../guilds/errors.js";
 import { GuildValidationError } from "../guilds/validation.js";
 import { IssueError } from "../issues/index.js";
 import { ModelNotConnectedError } from "../llm/credentials.js";
+import { ModelsError } from "../llm/models.js";
 import { InstanceKeyError } from "../instance/keys.js";
 import { MachineError } from "../machines/index.js";
 import { CatalogError } from "../mcp/catalog.js";
@@ -22,11 +24,13 @@ import { NotesError } from "../notes/store.js";
 import { OrgValidationError } from "../organisations/index.js";
 import { OrgError } from "../organisations/service.js";
 import { PolicyError } from "../policy/index.js";
-import { RecipeConflictError } from "../recipes/errors.js";
+import { RecipeConflictError, RecipeError } from "../recipes/errors.js";
+import { RegistryError } from "../registry/index.js";
 import { ScheduleError } from "../schedules/cron.js";
 import { ScriptError } from "../scripts/validation.js";
 import { SecretAccessError } from "../secrets/access.js";
 import { SecretError } from "../secrets/service.js";
+import { StudioError } from "../studio/errors.js";
 import { UserError } from "../users/directory.js";
 import { UserValidationError } from "../users/index.js";
 
@@ -138,6 +142,11 @@ const REFUSALS = [
   CatalogError,
   InstanceKeyError,
   RepositoryValidationError,
+  StudioError,
+  BuilderError,
+  RecipeError,
+  ModelsError,
+  RegistryError,
 ] as const;
 
 /** Domain errors for a value a validator refused, each a 422. */
@@ -152,10 +161,14 @@ const INVALID = [
 ] as const;
 
 /**
- * The HTTP answer for a refusal a domain module raises: one with its own status, answered with its
- * detail when it carries one, or a value its validator refused. Any other error is null.
+ * The HTTP answer for a refusal a domain module raises: a recipe conflict with the version it met,
+ * one with its own status, answered with its detail when it carries one, or a value its validator
+ * refused. Any other error is null.
  */
 export function domainHttp(error: unknown): HttpError | null {
+  if (error instanceof RecipeConflictError) {
+    return recipeConflictHttp(error);
+  }
   for (const kind of REFUSALS) {
     if (error instanceof kind) {
       const detail = "detail" in error && error.detail !== undefined ? error.detail : error.message;

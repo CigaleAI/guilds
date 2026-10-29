@@ -107,6 +107,20 @@ test("the CLI, the admin routes, recipe import, and apply preview read the regis
       assert.equal(created.json().slug, "crm");
       const removed = await app.inject({ method: "DELETE", url: "/api/admin/registry/connectors/crm", headers: AUTH });
       assert.equal(removed.statusCode, 204);
+      const absent = await app.inject({
+        method: "DELETE",
+        url: "/api/admin/registry/connectors/crm",
+        headers: AUTH,
+      });
+      assert.equal(absent.statusCode, 404);
+      assert.deepEqual(absent.json(), { detail: "connector crm is not installed" });
+      const core = await app.inject({
+        method: "DELETE",
+        url: "/api/admin/registry/connectors/tavily",
+        headers: AUTH,
+      });
+      assert.equal(core.statusCode, 409);
+      assert.deepEqual(core.json(), { detail: "connector tavily is core, not a registry install" });
       const refused = await app.inject({
         method: "POST",
         url: "/api/admin/registry/connectors",
@@ -141,6 +155,14 @@ test("the CLI, the admin routes, recipe import, and apply preview read the regis
       assert.equal(imported.statusCode, 201);
       assert.equal(imported.json().status, "draft");
       assert.equal(imported.json().name, desk.meta.name);
+      const unknown = await app.inject({
+        method: "POST",
+        url: "/api/recipes/registry/import",
+        headers: AUTH,
+        payload: { name: "no-such-desk" },
+      });
+      assert.equal(unknown.statusCode, 404);
+      assert.deepEqual(unknown.json(), { detail: "the registry has no recipe no-such-desk" });
 
       // Apply preview lists what the box lacks: a registry connector, or a server the recipe carries.
       registry.connector("notion_crm", "1.0.0", { "connector.json": JSON.stringify(endpointManifest("notion_crm")) });
@@ -198,6 +220,14 @@ test("the CLI, the admin routes, recipe import, and apply preview read the regis
         headers: AUTH,
       });
       assert.deepEqual(coached.findings, validated.json().findings);
+
+      // A malformed index is the registry's failure, answered as a bad gateway.
+      registry.index.generated_at = "";
+      for (const url of ["/api/admin/registry", "/api/recipes/registry"]) {
+        const broken = await app.inject({ method: "GET", url, headers: AUTH });
+        assert.equal(broken.statusCode, 502, url);
+        assert.match(String(broken.json().detail), /^registry index \/generated_at: /);
+      }
     } finally {
       await app.close();
     }
