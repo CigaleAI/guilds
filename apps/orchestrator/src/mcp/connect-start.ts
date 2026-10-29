@@ -35,7 +35,7 @@ import {
 export type ConnectionStart = {
   serverId: string;
   ownerScope: string;
-  ownerId: unknown;
+  ownerId: string | null | undefined;
   form: Record<string, unknown>;
   redirectUri: string;
 };

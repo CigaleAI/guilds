@@ -179,6 +179,20 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
     const badName = await app.inject({ method: "POST", url: base, headers: JSON_HEADERS, payload: { name: "Docs", url: "https://x.dev/a" } });
     assert.equal(badName.statusCode, 422);
 
+    const ownerless = await app.inject({
+      method: "POST",
+      url: "/api/mcp/connections",
+      headers: JSON_HEADERS,
+      payload: { mcp_server_id: "mcp_github", owner_scope: "org", owner_id: 5 },
+    });
+    assert.equal(ownerless.statusCode, 422, ownerless.body);
+    assert.deepEqual(ownerless.json().detail[0].loc, ["body", "owner_id"]);
+    const twoCodes = await app.inject({
+      method: "GET",
+      url: "/api/mcp/oauth/callback?code=a&code=b&state=x",
+    });
+    assert.equal(twoCodes.statusCode, 422, twoCodes.body);
+
     // Connect sends the operator to user authorization; the login waits, with no binding.
     const connectRes = await app.inject({
       method: "POST",
