@@ -5,7 +5,7 @@ import { buildApp } from "../../src/app.js";
 import type { AppConfig } from "../../src/config/index.js";
 import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
@@ -23,7 +23,7 @@ test("with no sign-in, the server still refuses another host and another origin"
   const notes = new NotesStore(tempDir("guilds-origin-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const db = database.pool;
-  const deps = { db, notes, scripts: new Scripts(scriptDatabase(db)), schedules: new Schedules(scheduleDatabase(db)) };
+  const deps = { db, notes, scripts: agentScripts(db), schedules: new Schedules(scheduleDatabase(db)) };
   const local = await buildApp(database, deps);
   const proxied = await buildApp(database, {
     ...deps,

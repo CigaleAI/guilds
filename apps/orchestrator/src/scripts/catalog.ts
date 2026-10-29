@@ -117,7 +117,7 @@ export async function removeAgentScript(
 }
 
 /** The db/ functions an agent's scripts are read and written through, on `db`. */
-export function scriptDatabase(db: Queryable) {
+function scriptDatabase(db: Queryable) {
   return {
     getAgentScript: bindQuery(db, getAgentScript),
     writeAgentScript: bindQuery(db, writeAgentScript),
@@ -231,4 +231,9 @@ export class Scripts {
     }
     return rows.map((row) => `${row.name}  ${row.description}`).join("\n");
   }
+}
+
+/** The scripts of agents, read and written on `db`. */
+export function agentScripts(db: Queryable): Scripts {
+  return new Scripts(scriptDatabase(db));
 }

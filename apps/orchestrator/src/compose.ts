@@ -31,7 +31,7 @@ import { OPEN_POLICY } from "./policy/index.js";
 import { recipeApply } from "./recipes/apply.js";
 import { RunSandboxes } from "./sandbox/index.js";
 import { scheduleDatabase, Schedules } from "./schedules/service.js";
-import { scriptDatabase, Scripts } from "./scripts/catalog.js";
+import { agentScripts } from "./scripts/catalog.js";
 import { StudioService } from "./studio/index.js";
 import { installConnectors } from "./connectors/index.js";
 import { syncCodeConnectors } from "./registry/code.js";
@@ -93,7 +93,7 @@ export async function createServer(
   // Core caps nothing. An extension supplies the policy that does.
   const policy = extensionPolicy(extensions, { db }) ?? OPEN_POLICY;
   const artifacts = artifactStore(db, config.templatesRoot);
-  const scripts = new Scripts(scriptDatabase(db));
+  const scripts = agentScripts(db);
   const schedules = new Schedules(scheduleDatabase(db));
   // Core reads the key stored for each organisation. An extension can answer with its own.
   const modelCredentials =

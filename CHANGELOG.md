@@ -226,7 +226,10 @@ gone: an agent row's `config` holds every setting, read by name.
 The export `observability/instrument.js` is `instrument.js`. Loading
 `observability/log.js` no longer starts Sentry: a process that does
 not load `instrument.js` calls `startErrorReporting`, exported from
-`error-reporting.js`, first.
+`error-reporting.js`, first. A domain's service is built from the
+connection, and the function that bound its queries is not exported:
+`agentScripts(db)` (`scripts/catalog.js`) builds `Scripts`, in place
+of `scriptDatabase`.
 
 **Breaking for extending repositories.** The Makefile variables
 `EDITION`, `EDITION_TEST_PACKAGES`, and `EDITION_COMPOSE_FILES` are

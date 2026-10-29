@@ -8,7 +8,7 @@ import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import type { ActivityView } from "../../src/studio/activity.js";
 import { StudioService } from "../../src/studio/index.js";
@@ -62,7 +62,7 @@ test("studio activity lists each wake with what started it and what it produced"
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = artifactStore(database.pool, templatesRoot());
-  const scripts = new Scripts(scriptDatabase(db));
+  const scripts = agentScripts(db);
   const schedules = new Schedules(scheduleDatabase(db));
   const studio = new StudioService({ db, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
   const app = await buildApp(database, { db, notes, artifacts, scripts, schedules, studio });

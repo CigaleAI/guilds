@@ -3,7 +3,7 @@ import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
@@ -30,7 +30,7 @@ test("a person sets, keeps and clears their identity colour", { timeout: 60_000 
   const app = await buildApp(database, {
     db,
     notes,
-    scripts: new Scripts(scriptDatabase(db)),
+    scripts: agentScripts(db),
     schedules: new Schedules(scheduleDatabase(db)),
   });
   const json = { ...OWNER, "content-type": "application/json" };

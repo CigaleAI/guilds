@@ -14,7 +14,7 @@ import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { StudioService } from "../../src/studio/index.js";
 import { generationLive } from "../../src/studio/runner.js";
@@ -121,7 +121,7 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = artifactStore(database.pool, templatesRoot());
-  const scripts = new Scripts(scriptDatabase(db));
+  const scripts = agentScripts(db);
   const schedules = new Schedules(scheduleDatabase(db));
   const studio = new StudioService({
     db,
@@ -378,7 +378,7 @@ test("studio reads agent access, script source, and granted connections", { time
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = artifactStore(database.pool, templatesRoot());
-  const scripts = new Scripts(scriptDatabase(db));
+  const scripts = agentScripts(db);
   const schedules = new Schedules(scheduleDatabase(db));
   const calls: Array<{ remote: string; args: Record<string, unknown> }> = [];
   const mcp = {
@@ -668,7 +668,7 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = artifactStore(database.pool, templatesRoot());
-  const scripts = new Scripts(scriptDatabase(db));
+  const scripts = agentScripts(db);
   const schedules = new Schedules(scheduleDatabase(db));
   const studio = new StudioService({
     db,
@@ -1043,7 +1043,7 @@ test("studio proposes memory, note, and guild edits that the operator applies or
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = artifactStore(database.pool, templatesRoot());
-  const scripts = new Scripts(scriptDatabase(db));
+  const scripts = agentScripts(db);
   const schedules = new Schedules(scheduleDatabase(db));
   const studio = new StudioService({ db, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
   const app = await buildApp(database, { db, notes, artifacts, scripts, schedules, studio });
@@ -1271,7 +1271,7 @@ test("studio proposes tables to create, change, and delete that the operator app
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = artifactStore(database.pool, templatesRoot());
-  const scripts = new Scripts(scriptDatabase(db));
+  const scripts = agentScripts(db);
   const schedules = new Schedules(scheduleDatabase(db));
   const studio = new StudioService({ db, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
   const app = await buildApp(database, { db, notes, artifacts, scripts, schedules, studio });
@@ -1641,7 +1641,7 @@ test("studio proposes notes to create and delete and narrows an agent's access",
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = artifactStore(database.pool, templatesRoot());
-  const scripts = new Scripts(scriptDatabase(db));
+  const scripts = agentScripts(db);
   const schedules = new Schedules(scheduleDatabase(db));
   const studio = new StudioService({ db, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
   const app = await buildApp(database, { db, notes, artifacts, scripts, schedules, studio });
@@ -1924,7 +1924,7 @@ test("studio proposes routines to create, change, and delete that the operator a
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = artifactStore(database.pool, templatesRoot());
-  const scripts = new Scripts(scriptDatabase(db));
+  const scripts = agentScripts(db);
   const schedules = new Schedules(scheduleDatabase(db));
   const published: Array<{ guildId: string; action: string; scheduleId: string }> = [];
   const studio = new StudioService({

@@ -3,7 +3,7 @@ import { after, before, describe, test } from "node:test";
 import { writeAgentTask } from "../../src/artifacts/task.js";
 import type { Database } from "../../src/db/client.js";
 import { connect } from "../../src/seed/connect.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
 import { newId } from "../../src/lib/ids.js";
 import { listFileChanges } from "../../src/db/file-changes.js";
 import { operatorActor } from "../../src/artifacts/actors.js";
@@ -75,7 +75,7 @@ describe("repositories", { concurrency: 1 }, () => {
       },
       new Date(),
     );
-    const scripts = new Scripts(scriptDatabase(db));
+    const scripts = agentScripts(db);
     const actor = operatorActor({
       orgId: "org_home",
       actorId: "user_operator",

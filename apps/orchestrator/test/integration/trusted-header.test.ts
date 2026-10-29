@@ -5,7 +5,7 @@ import type { AppConfig } from "../../src/config/index.js";
 import { connect } from "../../src/seed/connect.js";
 import { setOperatorEmail } from "../../src/seed/operator.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
@@ -23,7 +23,7 @@ test("behind an authenticating proxy, a user is whoever holds the email it sends
   const notes = new NotesStore(tempDir("guilds-trusted-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const db = database.pool;
-  const deps = { db, notes, scripts: new Scripts(scriptDatabase(db)), schedules: new Schedules(scheduleDatabase(db)) };
+  const deps = { db, notes, scripts: agentScripts(db), schedules: new Schedules(scheduleDatabase(db)) };
   const config = {
     authMode: "trusted-header",
     publicBaseUrl: "https://box.tailnet.test",

@@ -11,7 +11,7 @@ import { mcpDatabase } from "../../src/mcp/database.js";
 import { McpPool } from "../../src/mcp/pool.js";
 import { artifactStore } from "../../src/artifacts/store.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, testEnv } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
@@ -56,7 +56,7 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
     db,
     notes,
     artifacts,
-    scripts: new Scripts(scriptDatabase(db)),
+    scripts: agentScripts(db),
     schedules: new Schedules(scheduleDatabase(db)),
     masterKey: decodeMasterKey(HEX_MASTER_KEY),
     mcp: new McpPool(mcpDatabase(db)),

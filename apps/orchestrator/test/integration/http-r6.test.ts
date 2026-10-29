@@ -10,7 +10,7 @@ import { mcpDatabase } from "../../src/mcp/database.js";
 import { McpPool } from "../../src/mcp/pool.js";
 import { artifactStore } from "../../src/artifacts/store.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, clearInstanceKeys, testEnv } from "../helpers/env.js";
 import { connectModelProvider } from "../helpers/models.js";
@@ -87,7 +87,7 @@ test("R6 HTTP SSE and WS recordings replay over real HTTP", { timeout: 180_000 }
   const db = database.pool;
   await connectModelProvider(db, "org_home", "openrouter");
   const artifacts = artifactStore(database.pool, notes.templates);
-  const scripts = new Scripts(scriptDatabase(db));
+  const scripts = agentScripts(db);
   const schedules = new Schedules(scheduleDatabase(db));
   const upstream = await startSandboxUpstream();
   const sandboxes = new ExportSandboxes(env.WORKSPACE_ROOT ?? "");

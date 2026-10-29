@@ -5,7 +5,7 @@ import { unreachableMarker } from "../../src/artifacts/embeds.js";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { StudioService } from "../../src/studio/index.js";
 import type { GuildReferences } from "../../src/studio/references.js";
@@ -36,7 +36,7 @@ test(
     const db = database.pool;
     await connectModelProvider(db, "org_home", "deepinfra");
     const artifacts = artifactStore(database.pool, templatesRoot());
-    const scripts = new Scripts(scriptDatabase(db));
+    const scripts = agentScripts(db);
     const schedules = new Schedules(scheduleDatabase(db));
     const studio = new StudioService({
       db,

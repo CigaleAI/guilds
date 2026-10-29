@@ -7,7 +7,7 @@ import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
@@ -27,7 +27,7 @@ test("an extension's build of the operator app is served in place of core's", { 
   const notes = new NotesStore(tempDir("guilds-web-app-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const db = database.pool;
-  const deps = { db, notes, scripts: new Scripts(scriptDatabase(db)), schedules: new Schedules(scheduleDatabase(db)) };
+  const deps = { db, notes, scripts: agentScripts(db), schedules: new Schedules(scheduleDatabase(db)) };
   const app = await buildApp(database, deps, [{ name: "extension", webApp: dist }]);
   try {
     for (const url of ["/", "/settings", "/login"]) {

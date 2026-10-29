@@ -5,7 +5,7 @@ import { connect } from "../../src/seed/connect.js";
 import { coreModelCredentials, modelProviderStore } from "../../src/llm/credentials.js";
 import { modelsService } from "../../src/llm/models.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
@@ -47,7 +47,7 @@ test("an organisation connects providers, chooses models, and names a default", 
   const app = await buildApp(database, {
     db,
     notes,
-    scripts: new Scripts(scriptDatabase(db)),
+    scripts: agentScripts(db),
     schedules: new Schedules(scheduleDatabase(db)),
     masterKey: TEST_MASTER_KEY,
     modelCredentials: credentials,

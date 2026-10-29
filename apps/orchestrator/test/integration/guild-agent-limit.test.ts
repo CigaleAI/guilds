@@ -3,7 +3,7 @@ import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
@@ -25,7 +25,7 @@ test("creating an agent in a guild at its agent limit answers 409 with the limit
   await notes.ensureSystemPrompt();
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
-  const app = await buildApp(database, { db, notes, scripts: new Scripts(scriptDatabase(db)), schedules: new Schedules(scheduleDatabase(db)) });
+  const app = await buildApp(database, { db, notes, scripts: agentScripts(db), schedules: new Schedules(scheduleDatabase(db)) });
 
   try {
     const guild = await app.inject({ method: "POST", url: "/api/guilds", headers: OWNER, payload: { name: "desk" } });

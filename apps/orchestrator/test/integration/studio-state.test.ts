@@ -7,7 +7,7 @@ import { ownerPrefix } from "../../src/artifacts/paths.js";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { StudioService } from "../../src/studio/index.js";
 import { tempDir } from "../helpers/env.js";
@@ -73,7 +73,7 @@ test("studio's State lists the guild's items with who changed and read each one"
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = artifactStore(database.pool, templatesRoot());
-  const scripts = new Scripts(scriptDatabase(db));
+  const scripts = agentScripts(db);
   const schedules = new Schedules(scheduleDatabase(db));
   const studio = new StudioService({ db, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
   const app = await buildApp(database, { db, notes, artifacts, scripts, schedules, studio });

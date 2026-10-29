@@ -4,7 +4,7 @@ import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { createToolContext, REGISTRY } from "../../src/toolbox/index.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
@@ -44,7 +44,7 @@ test("an operator and an agent can change a routine in place", { timeout: 60_000
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
   const schedules = new Schedules(scheduleDatabase(db));
-  const app = await buildApp(database, { db, notes, scripts: new Scripts(scriptDatabase(db)), schedules });
+  const app = await buildApp(database, { db, notes, scripts: agentScripts(db), schedules });
 
   try {
     const guild = await app.inject({

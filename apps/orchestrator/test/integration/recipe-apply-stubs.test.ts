@@ -11,7 +11,7 @@ import { proxyFetch } from "../../src/net/http.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { recipeApply } from "../../src/recipes/apply.js";
 import { operatorAuthor } from "../../src/recipes/schema.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { connectModelProvider } from "../helpers/models.js";
@@ -65,7 +65,7 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = artifactStore(database.pool, templatesRoot());
-  const scripts = new Scripts(scriptDatabase(db));
+  const scripts = agentScripts(db);
   const schedules = new Schedules(scheduleDatabase(db));
   const apply = recipeApply({ db, artifacts, notes, scripts, schedules, registry: null });
   const mcp = new McpPool(mcpDatabase(db));

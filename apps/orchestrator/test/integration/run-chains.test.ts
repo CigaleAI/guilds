@@ -14,7 +14,7 @@ import type { AssistantMessage } from "../../src/db/schema/index.js";
 import { mcpDatabase } from "../../src/mcp/database.js";
 import { McpPool } from "../../src/mcp/pool.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { answerOps, HostCodeSandbox } from "../helpers/code-sandbox.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
@@ -101,7 +101,7 @@ test("a coding run near its input limit hands off and continues in a new run", {
     db,
     notes,
     artifacts,
-    scripts: new Scripts(scriptDatabase(db)),
+    scripts: agentScripts(db),
     schedules: new Schedules(scheduleDatabase(db)),
     generation: loop,
   });
