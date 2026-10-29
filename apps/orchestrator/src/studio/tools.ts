@@ -218,7 +218,7 @@ function fitStudioPayload(payload: Record<string, unknown>): Record<string, unkn
 
 export const studioGetGuidelines: StudioTool = {
   name: "studio_get_guidelines",
-  schema: functionSchema("studio_get_guidelines", "Inspect the shared read-only Guidelines source.", {}, []),
+  schema: studioFunctionSchema("studio_get_guidelines", "Inspect the shared read-only Guidelines source.", Type.Object({})),
   async handler(ctx) {
     const standing = hydrateStanding({
       systemPath: ctx.notesSystemPath,
@@ -1053,26 +1053,28 @@ export const studioCallConnectionTool: StudioTool = {
   },
 };
 
+const CreateTaskDraftArguments = Type.Object({
+  agent_id: Type.String({ description: "Source-guild agent id or name from the roster. Required." }),
+  proposed_content: Type.String({
+    description:
+      "Complete standing task in the Task shape: an opening line, then Inputs, Work, Outputs, and Files as headings with bullets. Shared files that must enter every run use ![[display-path]] from studio_find_artifacts / studio_get_artifact. A bare filename does not inline.",
+  }),
+  rationale: Type.String(),
+  evidence_refs: Type.Optional(Type.Array(Type.Unknown())),
+  risks: Type.Optional(Type.Array(Type.String())),
+});
+type CreateTaskDraftArguments = Static<typeof CreateTaskDraftArguments>;
+
 export const studioCreateTaskDraft: StudioTool = {
   name: "studio_create_task_draft",
-  schema: functionSchema(
+  schema: studioFunctionSchema(
     "studio_create_task_draft",
     "Create or replace a standing task draft for a source-guild agent, named by agent_id; the operator's inspector selection plays no part. Drafts for several agents may be created in one turn. Supply complete proposed content.",
-    {
-      agent_id: { type: "string", description: "Source-guild agent id or name from the roster. Required." },
-      proposed_content: {
-        type: "string",
-        description:
-          "Complete standing task in the Task shape: an opening line, then Inputs, Work, Outputs, and Files as headings with bullets. Shared files that must enter every run use ![[display-path]] from studio_find_artifacts / studio_get_artifact. A bare filename does not inline.",
-      },
-      rationale: { type: "string" },
-      evidence_refs: { type: "array" },
-      risks: { type: "array", items: { type: "string" } },
-    },
-    ["agent_id", "proposed_content", "rationale"],
+    CreateTaskDraftArguments,
   ),
   async handler(ctx, args) {
-    return ctx.drafts.createFromTool(ctx, args);
+    const input: CreateTaskDraftArguments = decodeStudioArguments(CreateTaskDraftArguments, args);
+    return ctx.drafts.createFromTool(ctx, input);
   },
 };
 
@@ -1094,11 +1096,10 @@ function baseVersionArg(args: Record<string, unknown>): number | null {
 
 export const studioGetGuild: StudioTool = {
   name: "studio_get_guild",
-  schema: functionSchema(
+  schema: studioFunctionSchema(
     "studio_get_guild",
     "Read the source guild's live about (short, one line) and description (long) in full. The system message holds the text from session start, capped; this tool returns the current text.",
-    {},
-    [],
+    Type.Object({}),
   ),
   async handler(ctx) {
     const base = await loadGuildBase(editScope(ctx));
@@ -1122,17 +1123,23 @@ export const studioGetGuild: StudioTool = {
   },
 };
 
+const ListGuildsArguments = Type.Object({
+  cursor: Type.Optional(Type.String()),
+  limit: Type.Optional(Type.Integer()),
+});
+type ListGuildsArguments = Static<typeof ListGuildsArguments>;
+
 export const studioListGuilds: StudioTool = {
   name: "studio_list_guilds",
-  schema: functionSchema(
+  schema: studioFunctionSchema(
     "studio_list_guilds",
     "Read the organisation's other guilds that the operator can see: each one's name, about (short), and description (long). Their agents, files, and tables stay out of reach; their shared output reaches this guild through organisation tables and notes.",
-    { cursor: { type: "string" }, limit: { type: "integer" } },
-    [],
+    ListGuildsArguments,
   ),
   async handler(ctx, args) {
-    const limit = clampLimit(args.limit, STUDIO_DEFAULT_LIMIT, STUDIO_GROUP_LIST_MAX);
-    const offset = cursorOffset(args.cursor);
+    const input: ListGuildsArguments = decodeStudioArguments(ListGuildsArguments, args);
+    const limit = clampLimit(input.limit, STUDIO_DEFAULT_LIMIT, STUDIO_GROUP_LIST_MAX);
+    const offset = cursorOffset(input.cursor);
     const others = (await listGuildsForUser(ctx.db, ctx.orgId, String(ctx.user.id))).filter(
       (row) => row.id !== String(ctx.sourceGuildId),
     );

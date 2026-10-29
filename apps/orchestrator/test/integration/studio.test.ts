@@ -20,6 +20,7 @@ import { StudioService } from "../../src/studio/index.js";
 import { generationLive } from "../../src/studio/runner.js";
 import {
   studioCallConnectionTool,
+  studioCreateTaskDraft,
   studioEditAccess,
   studioEditNote,
   studioEditCollection,
@@ -30,6 +31,7 @@ import {
   studioGetAgentAccess,
   studioGetArtifact,
   studioGetCollection,
+  studioGetGuidelines,
   studioGetGuild,
   studioGetAgentContext,
   studioGetMemoryVersion,
@@ -288,7 +290,7 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
     assert.ok(rows.some((row) => row.payload.role === "assistant"));
 
     const liveTask = await getAgentTask(db, "org_home", "a_studio");
-    const createdDraft = await studio.drafts.createFromTool(
+    const createdDraft = await studioCreateTaskDraft.handler(
       {
         session: (await getStudioSession(db, session.id))!,
         user: userRow({ id: "user_operator", name: "operator" }),
@@ -1081,6 +1083,14 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
     assert.equal((firstChange.changes as unknown[]).length, 1);
     await assert.rejects(studioFindArtifacts.handler(toolCtx(), { query: ["cite"] }), /\/query: Expected string/);
     await assert.rejects(studioGetArtifact.handler(toolCtx(), {}), /\/display_path: Expected required property/);
+    const guidelines = await studioGetGuidelines.handler(toolCtx(), {});
+    assert.equal(guidelines.editable, false);
+    assert.match(String(guidelines.content), /source="guidelines"/);
+    await assert.rejects(
+      studioCreateTaskDraft.handler(toolCtx(), { agent_id: "curator", proposed_content: "Curate.\n", rationale: "r", risks: "none" }),
+      /\/risks: Expected array/,
+    );
+    await assert.rejects(studioListGuilds.handler(toolCtx(), { cursor: 0 }), /\/cursor: Expected string/);
   } finally {
     await app.close();
     await database.close();
