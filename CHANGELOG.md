@@ -8,6 +8,10 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** `GET /api/builder/capabilities/search` refuses a `q`
+given more than once with a 422, before the request's user is
+identified. Before, it searched for everything.
+
 **No impact.** `PATCH /api/auth/me` refuses a `name` that is not a
 string, and a `timezone` or `color` that is neither a string nor null,
 with a 422 that names the field, before the request's user is
