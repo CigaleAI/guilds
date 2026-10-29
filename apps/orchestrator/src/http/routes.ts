@@ -1,4 +1,3 @@
-import type { FastifyInstance } from "fastify";
 import { operatorNotifications } from "../notifications/index.js";
 import { registerAccessRoutes } from "./access-routes.js";
 import { registerAdminInstanceRoutes } from "./admin-instance-routes.js";
@@ -13,7 +12,7 @@ import { registerBuilderSessionRoutes } from "./builder-routes.js";
 import { registerCodingRoutes } from "./coding-routes.js";
 import { registerCollectionRoutes } from "./collection-routes.js";
 import { registerConnectionRoutes } from "./connection-routes.js";
-import type { RouteDeps } from "./deps.js";
+import type { RouteApp, RouteDeps } from "./deps.js";
 import { registerFileRoutes } from "./file-routes.js";
 import { registerGroupChatRoutes } from "./group-chat-routes.js";
 import { registerGuildRoutes } from "./guild-routes.js";
@@ -38,7 +37,7 @@ import { registerUsageRoutes } from "./usage-routes.js";
 import { registerUserRoutes } from "./user-routes.js";
 
 /** Every route of the app's domains, each from the file of its own domain. */
-export async function registerDomainRoutes(app: FastifyInstance, deps: RouteDeps): Promise<void> {
+export async function registerDomainRoutes(app: RouteApp, deps: RouteDeps): Promise<void> {
   const notifications = operatorNotifications(deps.db);
 
   deps.generation?.groupChat.observe((guildId, event, data) =>

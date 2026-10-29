@@ -1,17 +1,18 @@
-import type { FastifyInstance } from "fastify";
-import { changeOwnProfile } from "../users/directory.js";
+import { ProfileChangeSchema, changeOwnProfile, type UserItem } from "../users/directory.js";
 import { userItem } from "../users/index.js";
-import type { AppDeps } from "./deps.js";
+import type { AppDeps, RouteApp } from "./deps.js";
 import { currentUser } from "./identity.js";
 import { isInstanceAdmin } from "./instance-admin.js";
-import { bodyOf } from "./request.js";
 import type { UserRow } from "../db/users.js";
 
+/** The request's own user, and whether they administer the instance. */
+type Me = UserItem & { platform_admin: boolean };
+
 /** How this server identifies a request, and the request's own user. */
-export async function registerMeRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
+export async function registerMeRoutes(app: RouteApp, deps: AppDeps): Promise<void> {
   const { db } = deps;
 
-  async function me(user: UserRow): Promise<Record<string, unknown>> {
+  async function me(user: UserRow): Promise<Me> {
     return {
       ...userItem(user),
       platform_admin: await isInstanceAdmin(deps, user.id),
@@ -30,15 +31,9 @@ export async function registerMeRoutes(app: FastifyInstance, deps: AppDeps): Pro
     return me(user);
   });
 
-  app.patch("/api/auth/me", async (request) => {
+  app.patch("/api/auth/me", { schema: { body: ProfileChangeSchema } }, async (request) => {
     const user = await currentUser(db, request, deps);
-    const body = bodyOf(request);
-    const change = {
-      ...("name" in body ? { name: body.name } : {}),
-      ...("timezone" in body ? { timezone: body.timezone } : {}),
-      ...("color" in body ? { color: body.color } : {}),
-    };
-    return me(await changeOwnProfile(db, user.id, change));
+    return me(await changeOwnProfile(db, user.id, request.body));
   });
 
 }

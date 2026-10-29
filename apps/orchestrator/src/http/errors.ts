@@ -1,3 +1,4 @@
+import type { FastifySchemaValidationError } from "fastify";
 import { ArtifactError } from "../artifacts/errors.js";
 import { AttachmentError } from "../attachments/index.js";
 import { RepositoryValidationError } from "../coding/repositories.js";
@@ -46,6 +47,43 @@ export class HttpError extends Error {
     this.statusCode = status;
     this.detail = detail;
   }
+}
+
+/** One problem a route's schema found in a request: its kind, where it sits, and the value there. */
+export type ValidationProblem = {
+  type: string;
+  loc: string[];
+  msg: string;
+  input: unknown;
+};
+
+/**
+ * The 422 for a request its route's schema refused. A missing field is `missing` at the field's
+ * path, with the object it is missing from as its input; any other problem is the schema keyword
+ * it broke, at the value's path. `part` is the part of the request refused: `body`, `querystring`,
+ * `params` or `headers`.
+ */
+export function validationHttp(errors: FastifySchemaValidationError[], part: string): HttpError {
+  return new HttpError(
+    422,
+    errors.map((error): ValidationProblem => {
+      const path = error.instancePath
+        .split("/")
+        .slice(1)
+        .map((segment) => segment.replaceAll("~1", "/").replaceAll("~0", "~"));
+      const input = "data" in error ? error.data : undefined;
+      const missing = error.params.missingProperty;
+      if (error.keyword === "required" && typeof missing === "string") {
+        return { type: "missing", loc: [part, ...path, missing], msg: "Field required", input };
+      }
+      return {
+        type: error.keyword,
+        loc: [part, ...path],
+        msg: error.message ?? "is invalid",
+        input,
+      };
+    }),
+  );
 }
 
 export function missingBodyFields(body: unknown, fields: string[]): HttpError | null {

@@ -1,3 +1,11 @@
+import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
+import type {
+  FastifyBaseLogger,
+  FastifyInstance,
+  RawReplyDefaultExpression,
+  RawRequestDefaultExpression,
+  RawServerDefault,
+} from "fastify";
 import type { ArtifactFiles } from "../artifacts/files.js";
 import type { ArtifactStore } from "../artifacts/store.js";
 import type { Database } from "../db/client.js";
@@ -23,6 +31,15 @@ import type { InstanceAdmin } from "./instance-admin.js";
 import type { OrgPolicy } from "../policy/index.js";
 import type { RegistryClient } from "../registry/client.js";
 import type { Queryable } from "../db/pg.js";
+
+/** The server the routes register on. A route's TypeBox schemas type its request's body, query and params. */
+export type RouteApp = FastifyInstance<
+  RawServerDefault,
+  RawRequestDefaultExpression,
+  RawReplyDefaultExpression,
+  FastifyBaseLogger,
+  TypeBoxTypeProvider
+>;
 
 /** The services the routes run with: the app's, with the ones `buildApp` fills in when its caller leaves them out. */
 export type RouteDeps = AppDeps & {

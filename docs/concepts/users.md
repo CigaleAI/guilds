@@ -168,7 +168,8 @@ Code: `apps/orchestrator/src/users/index.ts`.
 - `GET /api/auth/me` returns the user with `platform_admin`, true
   for the instance admin. The app shows **Admin** from it.
 - `PATCH /api/auth/me` takes `name`, `timezone`, `color`, or any of
-  them. `timezone` and `color` may be `null`. A field left out keeps
+  them. `name` is a string; `timezone` and `color` are a string or
+  `null`. A field of another type is 422. A field left out keeps
   its value. A body with none of the three is 422. An invalid name,
   colour, or timezone is 422. A name another user holds is 409. The
   name is trimmed. The colour is stored in lower case. A new name is

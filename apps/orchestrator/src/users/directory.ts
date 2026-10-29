@@ -1,3 +1,4 @@
+import { Type, type Static } from "@sinclair/typebox";
 import { GuildNameTaken, LastOrgOwner } from "../db/errors.js";
 import type { OrgCreatedHook } from "../db/orgs.js";
 import { isUniqueViolation, type Queryable } from "../db/pg.js";
@@ -123,15 +124,21 @@ export async function removeUser(db: Queryable, userId: string): Promise<void> {
   }
 }
 
-/** A user's change to their own profile, before validation; an absent field stays as it is. */
-export type ProfileChange = { name?: unknown; timezone?: unknown; color?: unknown };
+/** A user's change to their own profile; an absent field stays, and null clears a timezone or color. */
+export const ProfileChangeSchema = Type.Object({
+  name: Type.Optional(Type.String()),
+  timezone: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  color: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+});
+
+export type ProfileChange = Static<typeof ProfileChangeSchema>;
 
 /** The profile patch a change asks for, each present field validated; a null timezone or color clears it. */
 function validateProfile(change: ProfileChange): UserProfilePatch {
   return {
-    ...("name" in change ? { name: validateUserName(String(change.name ?? "").trim()) } : {}),
-    ...("color" in change ? { color: validateUserColor(change.color) } : {}),
-    ...("timezone" in change
+    ...(change.name !== undefined ? { name: validateUserName(change.name.trim()) } : {}),
+    ...(change.color !== undefined ? { color: validateUserColor(change.color) } : {}),
+    ...(change.timezone !== undefined
       ? { timezone: change.timezone === null ? null : validateTimezone(change.timezone) }
       : {}),
   };
@@ -142,7 +149,7 @@ function validateProfile(change: ProfileChange): UserProfilePatch {
  * guild the user operates.
  */
 export async function changeOwnProfile(db: Queryable, userId: string, change: ProfileChange): Promise<UserRow> {
-  if (!("name" in change) && !("timezone" in change) && !("color" in change)) {
+  if (change.name === undefined && change.timezone === undefined && change.color === undefined) {
     throw new UserError(422, "name, timezone, or color is required");
   }
   const profile = validateProfile(change);
