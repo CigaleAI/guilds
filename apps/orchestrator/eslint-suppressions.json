@@ -942,10 +942,10 @@
       "count": 3
     },
     "@typescript-eslint/max-params": {
-      "count": 5
+      "count": 1
     },
     "complexity": {
-      "count": 2
+      "count": 1
     },
     "max-depth": {
       "count": 2
@@ -954,7 +954,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 4
+      "count": 3
     }
   },
   "src/oauth/html.ts": {

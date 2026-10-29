@@ -139,56 +139,60 @@ export class NotesStore {
     return resolved(path.join(this.templates, SYSTEM_PROMPT));
   }
 
-  notesRoot(scope: string, orgSlug: string, guildName: string, agentName: string): string {
-    if (scope === "private") {
-      return resolved(path.join(this.agentDir(orgSlug, guildName, agentName), "notes"));
-    }
-    if (scope === "shared") {
-      return this.sharedDir(orgSlug, guildName);
-    }
-    throw new NotesError("scope must be private or shared");
+  private privateNotesRoot(orgSlug: string, guildName: string, agentName: string): string {
+    return resolved(path.join(this.agentDir(orgSlug, guildName, agentName), "notes"));
   }
 
   repoPath(filePath: string): string {
     return posixRel(resolved(this.root), resolved(filePath));
   }
 
-  resolveScopePath(
-    scope: string,
-    orgSlug: string,
-    guildName: string,
-    agentName: string,
-    relative: string,
-    options: { markdown: boolean; allowEmpty?: boolean },
-  ): string {
-    const root = this.notesRoot(scope, orgSlug, guildName, agentName);
-    const posix = this.scopeRel(relative, options.allowEmpty ?? false);
+  /**
+   * A path in the agent's private notes, from a checked posix path (`""` is the notes root): a
+   * repository path under `orgs/` or `guilds/`, else one in its notes, its routines, or its
+   * Memory archive. Throws when it leaves them.
+   */
+  private resolvePrivatePath(orgSlug: string, guildName: string, agentName: string, posix: string): string {
+    const agent = this.agentDir(orgSlug, guildName, agentName);
+    const root = this.privateNotesRoot(orgSlug, guildName, agentName);
     let resolvedPath: string;
     if (posix === "") {
       resolvedPath = root;
-    } else if (options.markdown && !posix.endsWith(".md")) {
-      throw new NotesError("path must end in .md");
     } else if (posix.startsWith("orgs/")) {
       resolvedPath = resolved(path.join(this.root, posix));
     } else if (posix.startsWith("guilds/")) {
       resolvedPath = resolved(path.join(this.root, "orgs", orgSlug, posix));
-    } else if (scope === "private") {
+    } else {
       const mapped = this.mapHostRel(posix);
       const first = mapped.split("/", 1)[0];
       if (first === ROUTINES_DIR || first === MEMORY_DIR || first === LEGACY_MEMORY_DIR) {
-        resolvedPath = resolved(path.join(this.agentDir(orgSlug, guildName, agentName), mapped));
+        resolvedPath = resolved(path.join(agent, mapped));
       } else {
         resolvedPath = resolved(path.join(root, mapped));
       }
+    }
+    resolvedPath = this.rewriteLegacyPrivate(resolvedPath, agent);
+    if (!this.isPrivateAllowed(resolvedPath, agent, root)) {
+      throw new NotesError("invalid path");
+    }
+    return resolvedPath;
+  }
+
+  /**
+   * A path in the guild's shared notes, from a checked posix path (`""` is the shared folder): a
+   * repository path under `orgs/` or `guilds/`, else one in the folder. Throws when it leaves it.
+   */
+  private resolveSharedPath(orgSlug: string, guildName: string, posix: string): string {
+    const root = this.sharedDir(orgSlug, guildName);
+    let resolvedPath: string;
+    if (posix === "") {
+      resolvedPath = root;
+    } else if (posix.startsWith("orgs/")) {
+      resolvedPath = resolved(path.join(this.root, posix));
+    } else if (posix.startsWith("guilds/")) {
+      resolvedPath = resolved(path.join(this.root, "orgs", orgSlug, posix));
     } else {
       resolvedPath = resolved(path.join(root, posix));
-    }
-    if (scope === "private") {
-      resolvedPath = this.rewriteLegacyPrivate(resolvedPath, this.agentDir(orgSlug, guildName, agentName));
-      if (!this.isPrivateAllowed(resolvedPath, this.agentDir(orgSlug, guildName, agentName), root)) {
-        throw new NotesError("invalid path");
-      }
-      return resolvedPath;
     }
     if (!isRelativeTo(resolvedPath, root)) {
       throw new NotesError("invalid path");
@@ -243,8 +247,8 @@ export class NotesStore {
     if (!parts.length || parts.some((part) => part === "" || part === "." || part === "..")) {
       return null;
     }
-    const privateRoot = this.notesRoot("private", orgSlug, guildName, agentName);
-    const shared = this.notesRoot("shared", orgSlug, guildName, agentName);
+    const privateRoot = this.privateNotesRoot(orgSlug, guildName, agentName);
+    const shared = this.sharedDir(orgSlug, guildName);
     let candidate = resolved(path.join(this.root, `${value}.md`));
     if (!statIfFile(candidate) && value.startsWith("guilds/")) {
       candidate = resolved(path.join(this.root, "orgs", orgSlug, `${value}.md`));
@@ -276,33 +280,22 @@ export class NotesStore {
     return this.repoPath(matches[0]!).replace(/\.md$/, "");
   }
 
-  readNote(
-    scope: string,
-    orgSlug: string,
-    guildName: string,
-    agentName: string,
-    relative: string,
-  ): [string, string] {
-    const filePath = this.resolveScopePath(scope, orgSlug, guildName, agentName, relative, {
-      markdown: true,
-    });
+  /** A note of the agent's private notes: its repository path and its text. */
+  readPrivateNote(orgSlug: string, guildName: string, agentName: string, relative: string): [string, string] {
+    const filePath = this.resolvePrivatePath(orgSlug, guildName, agentName, this.notePosix(relative));
     if (!statIfFile(filePath)) {
       throw new NotesError("file not found");
     }
     return [this.repoPath(filePath), readFileSync(filePath, "utf8")];
   }
 
-  listNotes(
-    scope: string,
-    orgSlug: string,
-    guildName: string,
-    agentName: string,
-    prefix: string,
-  ): string[] {
-    const base = this.resolveScopePath(scope, orgSlug, guildName, agentName, prefix, {
-      markdown: false,
-      allowEmpty: true,
-    });
+  /**
+   * The repository paths of the agent's private notes under a prefix, folders ending in `/`. At
+   * the root, its routines and Memory archive are listed too.
+   */
+  listPrivateNotes(orgSlug: string, guildName: string, agentName: string, prefix: string): string[] {
+    const posix = this.prefixPosix(prefix);
+    const base = this.resolvePrivatePath(orgSlug, guildName, agentName, posix);
     if (statIfFile(base)) {
       if (path.extname(base) !== ".md") {
         throw new NotesError("invalid path");
@@ -310,7 +303,7 @@ export class NotesStore {
       return [this.repoPath(base)];
     }
     const items = this.collectTree(base);
-    if (scope === "private" && this.scopeRel(prefix, true) === "") {
+    if (posix === "") {
       const agent = this.agentDir(orgSlug, guildName, agentName);
       for (const name of [ROUTINES_DIR, MEMORY_DIR, LEGACY_MEMORY_DIR]) {
         const special = path.join(agent, name);
@@ -325,17 +318,43 @@ export class NotesStore {
     return items;
   }
 
-  async writeNote(
-    scope: string,
+  /** The repository paths of the guild's shared notes under a prefix, folders ending in `/`. */
+  listSharedNotes(orgSlug: string, guildName: string, prefix: string): string[] {
+    const base = this.resolveSharedPath(orgSlug, guildName, this.prefixPosix(prefix));
+    if (statIfFile(base)) {
+      if (path.extname(base) !== ".md") {
+        throw new NotesError("invalid path");
+      }
+      return [this.repoPath(base)];
+    }
+    return this.collectTree(base);
+  }
+
+  /**
+   * Writes a note of the agent's private notes and answers its repository path. Its routines and
+   * its Memory archive are refused.
+   */
+  async writePrivateNote(
     orgSlug: string,
     guildName: string,
     agentName: string,
     relative: string,
     content: string,
   ): Promise<string> {
-    return this.lock.run(() =>
-      this.writeNoteUnlocked(scope, orgSlug, guildName, agentName, relative, content),
-    );
+    return this.lock.run(() => {
+      const filePath = this.resolvePrivatePath(orgSlug, guildName, agentName, this.notePosix(relative));
+      if (existsSync(filePath) && !statIfFile(filePath)) {
+        throw new NotesError("invalid path");
+      }
+      const agent = this.agentDir(orgSlug, guildName, agentName);
+      if (this.isInAgentFolder(agent, ROUTINES_DIR, filePath)) {
+        throw new NotesError("routine notes cannot be overwritten");
+      }
+      if ([MEMORY_DIR, LEGACY_MEMORY_DIR].some((name) => this.isInAgentFolder(agent, name, filePath))) {
+        throw new NotesError("memory archive notes cannot be overwritten");
+      }
+      return this.writeFile(filePath, content);
+    });
   }
 
   async writeAgentFile(
@@ -628,29 +647,6 @@ export class NotesStore {
     renameSync(source, dest);
   }
 
-  private writeNoteUnlocked(
-    scope: string,
-    orgSlug: string,
-    guildName: string,
-    agentName: string,
-    relative: string,
-    content: string,
-  ): string {
-    const filePath = this.resolveScopePath(scope, orgSlug, guildName, agentName, relative, {
-      markdown: true,
-    });
-    if (existsSync(filePath) && !statIfFile(filePath)) {
-      throw new NotesError("invalid path");
-    }
-    if (this.isRoutineNote(scope, orgSlug, guildName, agentName, filePath)) {
-      throw new NotesError("routine notes cannot be overwritten");
-    }
-    if (this.isMemoryArchiveNote(scope, orgSlug, guildName, agentName, filePath)) {
-      throw new NotesError("memory archive notes cannot be overwritten");
-    }
-    return this.writeFile(filePath, content);
-  }
-
   private writeFile(filePath: string, content: string): string {
     const repo = this.repoPath(filePath);
     const previous = statIfFile(filePath) ? readFileSync(filePath, "utf8") : null;
@@ -669,12 +665,25 @@ export class NotesStore {
     }
   }
 
-  private scopeRel(relative: string, allowEmpty: boolean): string {
+  /** A note's relative path as posix: not empty, inside its root, ending in `.md`. */
+  private notePosix(relative: string): string {
     if (relative.startsWith("/") || path.isAbsolute(relative)) {
       throw new NotesError("invalid path");
     }
-    const trimmed = relative.replace(/\/+$/, "");
-    if (allowEmpty && (trimmed === "" || trimmed === ".")) {
+    const posix = this.relativePosix(relative.replace(/\/+$/, ""));
+    if (!posix.endsWith(".md")) {
+      throw new NotesError("path must end in .md");
+    }
+    return posix;
+  }
+
+  /** A listing prefix as posix: `""` for the root, else a folder or a note inside it. */
+  private prefixPosix(prefix: string): string {
+    if (prefix.startsWith("/") || path.isAbsolute(prefix)) {
+      throw new NotesError("invalid path");
+    }
+    const trimmed = prefix.replace(/\/+$/, "");
+    if (trimmed === "" || trimmed === ".") {
       return "";
     }
     return this.relativePosix(trimmed);
@@ -730,40 +739,8 @@ export class NotesStore {
     }
   }
 
-  private isRoutineNote(
-    scope: string,
-    orgSlug: string,
-    guildName: string,
-    agentName: string,
-    filePath: string,
-  ): boolean {
-    return this.isPrivatePrefix(scope, orgSlug, guildName, agentName, filePath, ROUTINES_DIR);
-  }
-
-  private isMemoryArchiveNote(
-    scope: string,
-    orgSlug: string,
-    guildName: string,
-    agentName: string,
-    filePath: string,
-  ): boolean {
-    return [MEMORY_DIR, LEGACY_MEMORY_DIR].some((name) =>
-      this.isPrivatePrefix(scope, orgSlug, guildName, agentName, filePath, name),
-    );
-  }
-
-  private isPrivatePrefix(
-    scope: string,
-    orgSlug: string,
-    guildName: string,
-    agentName: string,
-    filePath: string,
-    prefix: string,
-  ): boolean {
-    if (scope !== "private") {
-      return false;
-    }
-    const root = resolved(path.join(this.agentDir(orgSlug, guildName, agentName), prefix));
+  private isInAgentFolder(agentDir: string, folder: string, filePath: string): boolean {
+    const root = resolved(path.join(agentDir, folder));
     const value = resolved(filePath);
     return value === root || isRelativeTo(value, root);
   }
