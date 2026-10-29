@@ -4,7 +4,7 @@ import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
 import { setInstanceKeys } from "../../src/instance/integrations.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
@@ -40,7 +40,7 @@ test("the instance descriptor lists integrations and their state, never a key", 
   const db = database.pool;
   const member = await insertUser(db, { userId: "user_member", name: "member", image: null, email: "member@example.com" }, new Date());
   await insertMember(db, "org_home", String(member.id), "member", new Date());
-  const deps = { db, notes, scripts: new Scripts(scriptDatabase(db)), schedules: new Schedules(scheduleDatabase(db)) };
+  const deps = { db, notes, scripts: agentScripts(db), schedules: new Schedules(scheduleDatabase(db)) };
   const core = await buildApp(database, deps);
   const describe = async (headers: Record<string, string>) => {
     const response = await core.inject({ method: "GET", url: "/api/instance", headers });

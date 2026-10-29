@@ -9,7 +9,7 @@ import { getMcpServerBySlug } from "../../src/connectors/servers.js";
 import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { recipeApply } from "../../src/recipes/apply.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
@@ -86,7 +86,7 @@ test("the CLI, the admin routes, recipe import, and apply preview read the regis
     const notes = new NotesStore(tempDir("guilds-registry-notes-"), templatesRoot());
     await notes.ensureSystemPrompt();
     const artifacts = artifactStore(database.pool, templatesRoot());
-    const scripts = new Scripts(scriptDatabase(db));
+    const scripts = agentScripts(db);
     const schedules = new Schedules(scheduleDatabase(db));
     const apply = recipeApply({ db, artifacts, notes, scripts, schedules, registry: registry.client });
     const app = await buildApp(database, { db, notes, artifacts, scripts, schedules, apply, registry: registry.client });
@@ -252,7 +252,7 @@ test("code connectors install from a verified, signed index and swap in without 
     const app = await buildApp(database, {
       db,
       notes,
-      scripts: new Scripts(scriptDatabase(db)),
+      scripts: agentScripts(db),
       schedules: new Schedules(scheduleDatabase(db)),
       registry: signed.client,
       mcp: pool,

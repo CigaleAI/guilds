@@ -7,7 +7,7 @@ import { connect } from "../../src/seed/connect.js";
 import { mcpDatabase } from "../../src/mcp/database.js";
 import { McpPool } from "../../src/mcp/pool.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { setInstanceKeys } from "../../src/instance/integrations.js";
 import { HEX_MASTER_KEY, storeKeys, tempDir } from "../helpers/env.js";
@@ -116,7 +116,7 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
   const app = await buildApp(database, {
     db,
     notes,
-    scripts: new Scripts(scriptDatabase(db)),
+    scripts: agentScripts(db),
     schedules: new Schedules(scheduleDatabase(db)),
     masterKey: Buffer.from(HEX_MASTER_KEY, "hex"),
   });
@@ -399,7 +399,7 @@ test("a second guild reuses the GitHub App and picks its own repositories", { ti
   const app = await buildApp(database, {
     db,
     notes,
-    scripts: new Scripts(scriptDatabase(db)),
+    scripts: agentScripts(db),
     schedules: new Schedules(scheduleDatabase(db)),
     masterKey: Buffer.from(HEX_MASTER_KEY, "hex"),
     mcp,
@@ -588,7 +588,7 @@ test("several GitHub installations open a picker so a guild can choose the accou
   const app = await buildApp(database, {
     db,
     notes,
-    scripts: new Scripts(scriptDatabase(db)),
+    scripts: agentScripts(db),
     schedules: new Schedules(scheduleDatabase(db)),
     masterKey: Buffer.from(HEX_MASTER_KEY, "hex"),
   });

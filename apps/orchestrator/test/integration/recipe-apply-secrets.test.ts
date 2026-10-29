@@ -6,7 +6,7 @@ import { decodeMasterKey } from "../../src/config/index.js";
 import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { recipeApply } from "../../src/recipes/apply.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { connectModelProvider } from "../helpers/models.js";
@@ -32,7 +32,7 @@ test("apply reuses a secret by granting it to the new guild and waits for the on
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = artifactStore(database.pool, templatesRoot());
-  const scripts = new Scripts(scriptDatabase(db));
+  const scripts = agentScripts(db);
   const schedules = new Schedules(scheduleDatabase(db));
   const app = await buildApp(database, {
     db,

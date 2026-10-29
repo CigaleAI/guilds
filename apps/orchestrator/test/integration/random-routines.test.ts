@@ -4,7 +4,7 @@ import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
 import { planAfterFire } from "../../src/schedules/timing.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { windowEndAt } from "../../src/schedules/window.js";
@@ -35,7 +35,7 @@ test("random-window routines persist, plan inside the window, and users keep a t
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
   const schedules = new Schedules(scheduleDatabase(db));
-  const app = await buildApp(database, { db, notes, scripts: new Scripts(scriptDatabase(db)), schedules });
+  const app = await buildApp(database, { db, notes, scripts: agentScripts(db), schedules });
   const json = { ...OWNER, "content-type": "application/json" };
 
   try {

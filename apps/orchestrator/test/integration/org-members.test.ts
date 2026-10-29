@@ -5,7 +5,7 @@ import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
@@ -35,7 +35,7 @@ test(
     const app = await buildApp(database, {
       db,
       notes,
-      scripts: new Scripts(scriptDatabase(db)),
+      scripts: agentScripts(db),
       schedules: new Schedules(scheduleDatabase(db)),
     });
     const json = { ...OWNER, "content-type": "application/json" };
@@ -137,7 +137,7 @@ test(
     const app = await buildApp(database, {
       db,
       notes,
-      scripts: new Scripts(scriptDatabase(db)),
+      scripts: agentScripts(db),
       schedules: new Schedules(scheduleDatabase(db)),
     });
     const as = (userId: string) => ({ "X-Guilds-User": userId, "X-Guilds-Org": "org_home" });
@@ -193,7 +193,7 @@ test("an organisation's slug is unique, and a new slug moves its notes folder", 
   const app = await buildApp(database, {
     db,
     notes,
-    scripts: new Scripts(scriptDatabase(db)),
+    scripts: agentScripts(db),
     schedules: new Schedules(scheduleDatabase(db)),
   });
   const json = { ...OWNER, "content-type": "application/json" };

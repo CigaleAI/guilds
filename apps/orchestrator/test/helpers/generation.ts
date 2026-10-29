@@ -27,7 +27,7 @@ import { HEX_MASTER_KEY, tempDir } from "./env.js";
 import { templatesRoot } from "./fixtures.js";
 import { TEST_CREDENTIALS } from "./models.js";
 import type { AgentPlaceRow, AgentRow, AgentScriptRow, NewAgentScript } from "../../src/db/agents.js";
-import type { ScriptDatabase } from "../../src/scripts/catalog.js";
+import { Scripts, type ScriptDatabase } from "../../src/scripts/catalog.js";
 import type { NewDirectRun, NewGroupRun, NewMessage, NewScheduleRun } from "../../src/db/runs.js";
 import type { ScheduleRow, PlannedWake } from "../../src/db/schedules.js";
 import type { AgentConfig, CompletionMetadata, RunConfigSnapshot, SecretRef, ToolCall } from "../../src/db/schema/index.js";
@@ -1004,6 +1004,7 @@ export function makeLoop(
   return new GenerationLoop(
     {
       db: db as GenerationDatabase,
+      scripts: new Scripts(db as ScriptDatabase),
       notes: notes as NotesStore,
       workspaceRoot,
       sandboxes: sandboxes as GenerationSandboxes,

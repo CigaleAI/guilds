@@ -27,7 +27,7 @@ import type { NotesStore } from "../notes/store.js";
 import { errorMessage, errorName, writeLog } from "../observability/log.js";
 import { OPEN_POLICY, type OrgPolicy } from "../policy/index.js";
 import { Schedules, scheduleDatabase } from "../schedules/service.js";
-import { Scripts, scriptDatabase } from "../scripts/catalog.js";
+import { agentScripts, type Scripts } from "../scripts/catalog.js";
 import { defaultGroupRouter } from "../typesafe/index.js";
 import { AdmissionCoordinator } from "../admission/coordinator.js";
 import { ActiveGenerations, activeGenerationsDatabase } from "./active-generations.js";
@@ -91,7 +91,6 @@ function generationDatabase(db: Queryable) {
     ...groupChatDatabase(db),
     ...issuesDatabase(db),
     ...scheduleDatabase(db),
-    ...scriptDatabase(db),
     ...activeGenerationsDatabase(db),
     ...runEventsDatabase(db),
     ...agentMachinesDatabase(db),
@@ -132,8 +131,14 @@ export type GenerationLoopServices = {
   groupRouter?: GroupRouter;
 };
 
-/** What a generation loop is built from: its services, and the db/ functions it and its parts go through. */
-export type GenerationLoopDeps = GenerationLoopServices & { db: GenerationDatabase };
+/**
+ * What a generation loop is built from: its services, the db/ functions it and its parts go
+ * through, and the other domains its runs read and write through.
+ */
+export type GenerationLoopDeps = GenerationLoopServices & {
+  db: GenerationDatabase;
+  scripts: Scripts;
+};
 
 /**
  * The generation loop: runs are created, generated, cancelled, resumed, and reconciled after
@@ -186,7 +191,7 @@ export class GenerationLoop implements GroupRunner {
     this.groupChat.bind(this);
     this.issues = new Issues(db);
     this.schedules = new Schedules(db);
-    this.scripts = new Scripts(db);
+    this.scripts = services.scripts;
     this.preparation = new RunPreparation({
       db,
       notes,
@@ -574,5 +579,8 @@ export function generationLoop(
   services: GenerationLoopServices,
   timings: GenerationLoopTimings = LOOP_TIMINGS,
 ): GenerationLoop {
-  return new GenerationLoop({ ...services, db: generationDatabase(db) }, timings);
+  return new GenerationLoop(
+    { ...services, db: generationDatabase(db), scripts: agentScripts(db) },
+    timings,
+  );
 }
