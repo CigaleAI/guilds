@@ -198,6 +198,24 @@ test("search uses the pro key header", async () => {
   assert.equal(stored, "coins\nbitcoin  btc  Bitcoin");
 });
 
+test("search refuses a body that is not JSON or does not match its schema", async () => {
+  const answering = (result: { json?: unknown; text?: string }) => ({
+    apiKey: "cg-test",
+    client: mockFetch(() => ({ status: 200, ...result })),
+  });
+  await assert.rejects(
+    () => searchTool({ query: "bitcoin" }, answering({ json: { coins: "none" } })),
+    (error: unknown) =>
+      error instanceof CoinGeckoError &&
+      /^CoinGecko returned an unexpected response at \/coins: /.test(error.message),
+  );
+  await assert.rejects(
+    () => searchTool({ query: "bitcoin" }, answering({ text: "not json" })),
+    (error: unknown) =>
+      error instanceof CoinGeckoError && error.message === "CoinGecko returned a non-JSON body",
+  );
+});
+
 test("ping rejects unauthorized", async () => {
   await assert.rejects(
     () => ping("bad", { client: mockFetch(() => ({ status: 401, json: { error: "invalid key" } })) }),
