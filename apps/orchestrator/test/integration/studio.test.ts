@@ -1029,6 +1029,17 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
     await assert.rejects(studioListFileChanges.handler(toolCtx(), { display_path: "org/org_home/agents/a_far/memory.md" }), /not in the source guild/);
     const context = await studioGetAgentContext.handler(toolCtx(), { agent_id: "curator", sections: ["effective_prompt"] });
     assert.match(String((context.effective_prompt as { content: string }).content), /Always cite the source/);
+
+    // Each tool decodes its arguments against its schema before it reads them.
+    const byName = await studioListRuns.handler(toolCtx(), { agent_name: "curator", schedule_id: scheduleId, cursor: null });
+    assert.deepEqual((byName.runs as Array<{ id: string }>).map((row) => row.id), ["r_ev_wake"]);
+    const window = await studioGetRun.handler(toolCtx(), { run_id: "r_ev_wake", seq_start: 0, seq_end: 1 });
+    assert.deepEqual((window.messages as Array<{ seq: number }>).map((row) => row.seq), [0, 1]);
+    const paused = await studioListRoutines.handler(toolCtx(), { paused: true });
+    assert.deepEqual(paused.routines, []);
+    await assert.rejects(studioGetRun.handler(toolCtx(), { run_id: 5 }), /^StudioUnprocessableError: \/run_id: Expected string$/);
+    await assert.rejects(studioListRoutines.handler(toolCtx(), { limit: "5" }), /\/limit: Expected integer/);
+    await assert.rejects(studioGetAgentContext.handler(toolCtx(), { sections: ["task"] }), /\/agent_id: Expected required property/);
   } finally {
     await app.close();
     await database.close();

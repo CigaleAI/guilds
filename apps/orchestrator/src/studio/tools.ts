@@ -2,14 +2,15 @@ import { memoryDiffText, memoryTimeline, type MemoryTimelineEntry } from "../art
 import { agentTask } from "../artifacts/task.js";
 import { iso } from "../db/views.js";
 import { composeAgentSystemPrompt, hydrateStanding, promptHash, schemasOffer } from "../prompts/index.js";
-import { argInteger, argString, functionSchema } from "../toolbox/schema.js";
+import { Type, type Static } from "@sinclair/typebox";
+import { argString, functionSchema } from "../toolbox/schema.js";
 import { scheduleItem } from "../schedules/item.js";
 import { capBytes } from "../lib/bytes.js";
 import type { AgentScheduleRow } from "../db/schedules.js";
 import type { Schedules } from "../schedules/service.js";
 import { previewCurrentState, projectAgentAccess, projectOfferedToolSchemas, type PreviewDeps } from "./preview.js";
 import { wrapEvidence } from "./system.js";
-import { studioAgentHandleFromArgs } from "./arguments.js";
+import { decodeStudioArguments, studioAgentHandleFromArgs, studioFunctionSchema } from "./arguments.js";
 import { StudioUnprocessableError } from "./errors.js";
 import { ScriptError } from "../scripts/validation.js";
 import { ABOUT_MAX, DESCRIPTION_MAX } from "../guilds/validation.js";
@@ -234,29 +235,29 @@ export const studioGetGuidelines: StudioTool = {
   },
 };
 
+const GetAgentContextArguments = Type.Object({
+  agent_id: Type.String({ description: "Source-guild agent id or name. Required." }),
+  sections: Type.Optional(
+    Type.Array(Type.String(), {
+      description: "Any of task, memory, state, config, effective_prompt, effective_prompt_headers. Defaults to task.",
+    }),
+  ),
+  cursor: Type.Optional(Type.String()),
+});
+type GetAgentContextArguments = Static<typeof GetAgentContextArguments>;
+
 export const studioGetAgentContext: StudioTool = {
   name: "studio_get_agent_context",
-  schema: functionSchema(
+  schema: studioFunctionSchema(
     "studio_get_agent_context",
     "Inspect current prompt sources for one source-guild agent. The first 500 words of each standing task are already in the Studio system prompt. Use this tool for the remainder of a truncated task, the full task, memory, state, config, or effective_prompt (the exact opening system message the next run would receive, with task embeds inlined). Pass agent_id or name.",
-    {
-      agent_id: { type: "string", description: "Source-guild agent id or name. Required." },
-      sections: {
-        type: "array",
-        items: { type: "string" },
-        description: "Any of task, memory, state, config, effective_prompt, effective_prompt_headers. Defaults to task.",
-      },
-      cursor: { type: "string" },
-    },
-    ["agent_id"],
+    GetAgentContextArguments,
   ),
   async handler(ctx, args) {
-    const agent = await resolveHandle(ctx, studioAgentHandleFromArgs(args) || undefined);
-    const requested = Array.isArray(args.sections)
-      ? args.sections.map((item) => String(item))
-      : [...STUDIO_DEFAULT_CONTEXT_SECTIONS];
-    const want = new Set(requested);
-    const cursor = args.cursor;
+    const input: GetAgentContextArguments = decodeStudioArguments(GetAgentContextArguments, args);
+    const agent = await resolveHandle(ctx, input.agent_id);
+    const want = new Set<string>(input.sections ?? STUDIO_DEFAULT_CONTEXT_SECTIONS);
+    const cursor = input.cursor;
     const task = await agentTask(ctx.artifacts, agent);
     const memory = task.memory;
     // state and effective_prompt read the same projection; take it once.
@@ -352,33 +353,33 @@ export const studioGetAgentContext: StudioTool = {
   },
 };
 
+const ListRoutinesArguments = Type.Object({
+  agent_id: Type.Optional(Type.String()),
+  paused: Type.Optional(Type.Boolean()),
+  cursor: Type.Optional(Type.String()),
+  limit: Type.Optional(Type.Integer()),
+});
+type ListRoutinesArguments = Static<typeof ListRoutinesArguments>;
+
 export const studioListRoutines: StudioTool = {
   name: "studio_list_routines",
-  schema: functionSchema(
+  schema: studioFunctionSchema(
     "studio_list_routines",
     "Inspect schedules and instructions for the source guild, or one agent when agent_id is set.",
-    {
-      agent_id: { type: "string" },
-      paused: { type: "boolean" },
-      cursor: { type: "string" },
-      limit: { type: "integer" },
-    },
-    [],
+    ListRoutinesArguments,
   ),
   async handler(ctx, args) {
-    const limit = clampLimit(args.limit, STUDIO_DEFAULT_LIMIT, 100);
-    const offset = cursorOffset(args.cursor);
+    const input: ListRoutinesArguments = decodeStudioArguments(ListRoutinesArguments, args);
+    const limit = clampLimit(input.limit, STUDIO_DEFAULT_LIMIT, 100);
+    const offset = cursorOffset(input.cursor);
     let rows: AgentScheduleRow[];
-    if (studioAgentHandleFromArgs(args)) {
-      const agent = await resolveHandle(ctx, studioAgentHandleFromArgs(args) || undefined);
+    if (input.agent_id) {
+      const agent = await resolveHandle(ctx, input.agent_id);
       rows = await listSchedules(ctx.db, agent.id);
     } else {
       rows = await listSchedulesForGuild(ctx.db, ctx.sourceGuildId);
     }
-    const filtered = rows.filter((row) => {
-      if (args.paused === undefined) return true;
-      return Boolean(row.paused) === Boolean(args.paused);
-    });
+    const filtered = rows.filter((row) => input.paused === undefined || row.paused === input.paused);
     const slice = filtered.slice(offset, offset + limit);
     const stats = await routineRunStats(ctx.db, slice.map((row) => row.id));
     const routines = [];
@@ -402,34 +403,37 @@ export const studioListRoutines: StudioTool = {
   },
 };
 
+const ListRunsArguments = Type.Object({
+  agent_id: Type.Optional(Type.String()),
+  kind: Type.Optional(Type.String()),
+  status: Type.Optional(Type.String()),
+  error_only: Type.Optional(Type.Boolean()),
+  task_prompt_hash: Type.Optional(Type.String()),
+  schedule_id: Type.Optional(Type.String({ description: "Only runs woken by this routine." })),
+  cursor: Type.Optional(Type.String()),
+  limit: Type.Optional(Type.Integer()),
+});
+type ListRunsArguments = Static<typeof ListRunsArguments>;
+
 export const studioListRuns: StudioTool = {
   name: "studio_list_runs",
-  schema: functionSchema(
+  schema: studioFunctionSchema(
     "studio_list_runs",
     "Find behavioral evidence without loading transcripts. kind is direct, group, or schedule; schedule_id lists the runs one routine produced.",
-    {
-      agent_id: { type: "string" },
-      kind: { type: "string" },
-      status: { type: "string" },
-      error_only: { type: "boolean" },
-      task_prompt_hash: { type: "string" },
-      schedule_id: { type: "string", description: "Only runs woken by this routine." },
-      cursor: { type: "string" },
-      limit: { type: "integer" },
-    },
-    [],
+    ListRunsArguments,
   ),
   async handler(ctx, args) {
-    const agent = await resolveHandle(ctx, studioAgentHandleFromArgs(args) || undefined);
-    const limit = clampLimit(args.limit, STUDIO_DEFAULT_LIMIT, STUDIO_RUN_LIST_MAX);
-    const offset = cursorOffset(args.cursor);
+    const input: ListRunsArguments = decodeStudioArguments(ListRunsArguments, args);
+    const agent = await resolveHandle(ctx, input.agent_id);
+    const limit = clampLimit(input.limit, STUDIO_DEFAULT_LIMIT, STUDIO_RUN_LIST_MAX);
+    const offset = cursorOffset(input.cursor);
     // One row past the page says whether another page follows.
     const rows = await listRunHeaders(ctx.db, agent.id, {
-      kind: argString(args, "kind"),
-      status: argString(args, "status"),
-      taskPromptHash: argString(args, "task_prompt_hash"),
-      scheduleId: argString(args, "schedule_id"),
-      errorOnly: args.error_only === true,
+      kind: input.kind,
+      status: input.status,
+      taskPromptHash: input.task_prompt_hash,
+      scheduleId: input.schedule_id,
+      errorOnly: input.error_only === true,
       limit: limit + 1,
       offset,
     });
@@ -458,21 +462,24 @@ function callsOfTool(messages: MessageRow[], toolName: string): MessageRow[] {
   });
 }
 
+const GetRunArguments = Type.Object({
+  run_id: Type.String(),
+  seq_start: Type.Optional(Type.Integer()),
+  seq_end: Type.Optional(Type.Integer()),
+  tool_name: Type.Optional(Type.String({ description: "Only the turns that called this tool, and their results." })),
+});
+type GetRunArguments = Static<typeof GetRunArguments>;
+
 export const studioGetRun: StudioTool = {
   name: "studio_get_run",
-  schema: functionSchema(
+  schema: studioFunctionSchema(
     "studio_get_run",
     "Read exact historical evidence for a source-guild run. seq_start and seq_end bound the message window. tool_name keeps only the assistant turns that requested that tool and their tool results, for example memory_write or note_write.",
-    {
-      run_id: { type: "string" },
-      seq_start: { type: "integer" },
-      seq_end: { type: "integer" },
-      tool_name: { type: "string", description: "Only the turns that called this tool, and their results." },
-    },
-    ["run_id"],
+    GetRunArguments,
   ),
   async handler(ctx, args) {
-    const runId = argString(args, "run_id");
+    const input: GetRunArguments = decodeStudioArguments(GetRunArguments, args);
+    const runId = input.run_id;
     const run = await getRun(ctx.db, runId);
     if (!run) {
       throw new StudioUnprocessableError("run not found");
@@ -481,9 +488,9 @@ export const studioGetRun: StudioTool = {
     if (!agent || agent.guild_id !== ctx.sourceGuildId) {
       throw new StudioUnprocessableError("run is not in the source guild");
     }
-    const seqStart = argInteger(args, "seq_start", 0);
-    const seqEnd = argInteger(args, "seq_end", 10_000);
-    const toolName = argString(args, "tool_name");
+    const seqStart = input.seq_start ?? 0;
+    const seqEnd = input.seq_end ?? 10_000;
+    const toolName = input.tool_name;
     let messages = (await listMessages(ctx.db, runId)).filter((row) => row.seq >= seqStart && row.seq <= seqEnd);
     if (toolName) {
       messages = callsOfTool(messages, toolName);

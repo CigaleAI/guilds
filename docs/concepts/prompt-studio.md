@@ -566,6 +566,19 @@ that takes a display path, and for focus pins.
 | `studio_list_guilds` | The organisation's other guilds the operator can see, private guilds they do not operate left out: each one's id, name, about, and description as evidence. Paged with `cursor` and `limit`; a page also ends before its guilds pass half the 64 KiB result cap |
 | `studio_get_agent_access` | What one member is offered at run start, projected from bindings, the secrets that reach it, and the stored MCP catalog: native tools and the ones withheld, scripts, secret names and descriptions, and each MCP connection with its offered and withheld tools, whether the server is enabled for that agent, and whether this session may read through it. No remote list and no credential decryption |
 
+`studio_get_agent_context`, `studio_list_routines`, `studio_list_runs`,
+and `studio_get_run` check their arguments against the parameters they
+declare before they read them
+(`apps/orchestrator/src/studio/arguments.ts`):
+
+- An optional argument sent as `null` counts as left out.
+- For a tool that takes `agent_id`, the agent is the first non-blank
+  of `agent_id`, `agent`, and `agent_name`.
+- A call whose arguments do not match is refused with the first
+  mismatch, named by its JSON pointer, such as
+  `/limit: Expected integer` or
+  `/run_id: Expected required property`.
+
 ### Storage
 
 `studio_sessions`, `studio_messages`, `studio_drafts`.
