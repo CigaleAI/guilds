@@ -392,12 +392,12 @@ export class StudioService {
     }));
   }
 
-  async setConnectionGrant(
+  /** Lets the coach use one login of the source guild in this session. */
+  async grantConnection(
     session: StudioSessionRow,
     connectionId: string,
-    granted: boolean,
   ): Promise<Record<string, unknown>> {
-    const next = await this.grantedAfter(session, connectionId, granted);
+    const next = await this.grantedWith(session, connectionId);
     const updated = await updateStudioSession(
       this.deps.db,
       session.id,
@@ -407,23 +407,37 @@ export class StudioService {
     return this.viewSession(updated ?? { ...session, granted_connection_ids: next });
   }
 
-  // The session's granted logins once one is granted or withdrawn. A grant
-  // must name a connected login the source guild can reach.
-  private async grantedAfter(
+  /** Takes one login back from the coach in this session. */
+  async withdrawConnection(
     session: StudioSessionRow,
     connectionId: string,
-    granted: boolean,
-  ): Promise<string[]> {
+  ): Promise<Record<string, unknown>> {
+    this.assertTakesGrants(session);
+    const next = grantedConnectionIds(session).filter((id) => id !== connectionId);
+    const updated = await updateStudioSession(
+      this.deps.db,
+      session.id,
+      { granted_connection_ids: next },
+      new Date(),
+    );
+    return this.viewSession(updated ?? { ...session, granted_connection_ids: next });
+  }
+
+  /** A session takes grants while it is active and its source guild is there. */
+  private assertTakesGrants(session: StudioSessionRow): asserts session is LiveStudioSession {
     if (session.status !== "active") {
       throw new StudioConflictError("session is not active");
     }
     if (!session.source_guild_id) {
       throw new StudioUnprocessableError("source guild is gone");
     }
+  }
+
+  // The session's granted logins with one more. A grant must name a
+  // connected login the source guild can reach.
+  private async grantedWith(session: StudioSessionRow, connectionId: string): Promise<string[]> {
+    this.assertTakesGrants(session);
     const current = grantedConnectionIds(session);
-    if (!granted) {
-      return current.filter((id) => id !== connectionId);
-    }
     const reach = await reachableConnection(
       this.deps.db,
       session.org_id,
@@ -470,7 +484,7 @@ export class StudioService {
       if (decision === "decline") {
         return locked;
       }
-      const next = await this.grantedAfter(locked, record.connectionId, true);
+      const next = await this.grantedWith(locked, record.connectionId);
       return (await updateStudioSession(client, sessionId, { granted_connection_ids: next }, now)) ?? locked;
     });
     return this.viewSession(updated);
@@ -896,11 +910,11 @@ export class StudioService {
     });
   }
 
+  /** Publishes a draft of the session to its target agent's task. */
   async publishDraft(
     session: StudioSessionRow,
     user: UserRow,
     draftId: string,
-    options: { orphan?: boolean } = {},
   ): Promise<Record<string, unknown>> {
     const result = await this.drafts.publish({
       session,
@@ -909,8 +923,34 @@ export class StudioService {
       db: this.deps.db,
       preview: this.previewDeps(),
       notesSystemPath: this.deps.notesSystemPath,
-      ...(options.orphan ? { orphan: true } : {}),
     });
+    return this.announcePublish(session, result);
+  }
+
+  /** Publishes a draft of a session whose operator is gone, for an organisation manager. */
+  async publishOrphanDraft(
+    session: StudioSessionRow,
+    user: UserRow,
+    draftId: string,
+  ): Promise<Record<string, unknown>> {
+    const result = await this.drafts.publish({
+      session,
+      user,
+      draftId,
+      db: this.deps.db,
+      preview: this.previewDeps(),
+      notesSystemPath: this.deps.notesSystemPath,
+      orphan: true,
+    });
+    return this.announcePublish(session, result);
+  }
+
+  // Tells the source guild its files changed when the draft was published,
+  // and adds whether the target agent is generating to the outcome.
+  private async announcePublish(
+    session: StudioSessionRow,
+    result: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
     if (result.outcome === "published" && this.deps.publishFilesChanged && session.source_guild_id) {
       await this.deps.publishFilesChanged(session.source_guild_id);
     }

@@ -371,6 +371,41 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
     });
     assert.equal(otherSession.statusCode, 404);
     assert.deepEqual(otherSession.json(), { detail: "studio session not found" });
+
+    const orphaned = await studio.drafts.createFromTool(
+      {
+        session: (await getStudioSession(db, session.id))!,
+        user: userRow({ id: "user_operator", name: "operator" }),
+        orgId: "org_home",
+        sourceGuildId: "guild_studio",
+        generation: 1,
+        artifacts,
+        db,
+        schedules,
+        drafts: studio.drafts,
+        preview: studio.previewDeps(),
+        notesSystemPath: notes.systemPath(),
+      },
+      {
+        agent_id: "writer",
+        proposed_content: "Write notes and name the artifact.\n",
+        rationale: "Names the output.",
+        evidence_refs: [],
+      },
+    );
+    await db.query("UPDATE studio_sessions SET created_by_user_id = NULL WHERE id = $1", [session.id]);
+    const recovered = await app.inject({
+      method: "POST",
+      url: `/api/studio/drafts/${String(orphaned.draft_id)}/publish`,
+      headers: AUTH,
+    });
+    assert.equal(recovered.statusCode, 200, recovered.body);
+    assert.equal((recovered.json() as { outcome: string }).outcome, "published");
+    assert.equal(
+      (await getAgentTask(db, "org_home", "a_studio"))?.content_text,
+      "Write notes and name the artifact.\n",
+      "an organisation manager publishes a draft whose session's operator is gone",
+    );
   } finally {
     await app.close();
     await database.close();
