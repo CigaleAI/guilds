@@ -394,5 +394,8 @@ POST   /api/recipes/registry/import   { name, version? }
 | `POST /api/recipes/registry/import` | 201 with the imported draft; 404 when the registry has no such recipe; 409 while offline |
 
 A document that does not parse is 422 with the parser's message (see
-[Recipe format](recipe-format.md#parsing)). The apply routes are in
+[Recipe format](recipe-format.md#parsing)). A request field of the
+wrong JSON type, such as a `name` that is not a string or an
+`include_notes` that is not a list of strings, is 422 naming the
+field. The apply routes are in
 [Applying recipes](applying-recipes.md#apply-http).

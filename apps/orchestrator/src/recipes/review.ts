@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type, type Static } from "@sinclair/typebox";
 import { RecipeError } from "./errors.js";
 import { roleBrowses } from "./prepare.js";
 import type { FieldAuthor, RecipeDocument, RecipeRole } from "../db/schema/index.js";
@@ -212,11 +212,13 @@ export const ReviewSchema = Type.Object({
   value: Type.Optional(Type.String()),
 });
 
-export function parseReviewAction(body: Record<string, unknown>): ReviewAction {
+export type ReviewRequest = Static<typeof ReviewSchema>;
+
+export function parseReviewAction(body: ReviewRequest): ReviewAction {
   if (body.action !== "edit") {
     return { action: "confirm" };
   }
-  return { action: "edit", value: typeof body.value === "string" ? body.value : undefined };
+  return { action: "edit", value: body.value };
 }
 
 export function applyReview(recipe: RecipeDocument, path: string, review: ReviewAction): void {

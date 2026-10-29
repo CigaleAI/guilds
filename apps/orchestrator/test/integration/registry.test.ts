@@ -178,6 +178,14 @@ test("the CLI, the admin routes, recipe import, and apply preview read the regis
       });
       assert.equal(unknown.statusCode, 404);
       assert.deepEqual(unknown.json(), { detail: "the registry has no recipe no-such-desk" });
+      const numberedName = await app.inject({
+        method: "POST",
+        url: "/api/recipes/registry/import",
+        headers: AUTH,
+        payload: { name: 5 },
+      });
+      assert.equal(numberedName.statusCode, 422, numberedName.body);
+      assert.deepEqual(numberedName.json().detail[0].loc, ["body", "name"]);
 
       // Apply preview lists what the box lacks: a registry connector, or a server the recipe carries.
       registry.connector("notion_crm", "1.0.0", { "connector.json": JSON.stringify(endpointManifest("notion_crm")) });

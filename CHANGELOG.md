@@ -8,6 +8,20 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** The recipe and apply routes refuse, with a 422 that
+names the field and before the request's user is identified: an import
+whose body is not an object, a registry import whose `name` or
+`version` is not a string, a capture whose `include_notes` is not a
+list of strings, a recipe change whose `expected_body_version` is not
+a number or whose `name` or `description` is not a string, an access
+edit without `edits`, a review whose `path`, `action` or `value` is
+not a string, a preview or an apply whose choices do not have the
+apply preview's shape, an overlay whose `server` or `connection_id`
+is not a string, and a step confirmation whose `skip` or `later` is
+not a boolean. Before, those were read as their text, number or truth
+value, left out, or taken as sent, and a review `value` that was not a
+string was left out.
+
 **No impact.** The instance admin's key routes refuse, with a 422 that
 names the field and after the instance admin is identified, a key
 write whose `confirm_replace` is not a boolean, a key removal whose
