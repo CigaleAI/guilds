@@ -204,6 +204,24 @@ test("searchTool sends the raw Authorization header", async () => {
   assert.equal(stored, "tokens\nsolana  sol  SOL  Solana  p=100");
 });
 
+test("searchTool refuses a body that is not JSON or does not match its schema", async () => {
+  const answering = (result: { json?: unknown; text?: string }) => ({
+    apiKey: "api_test",
+    client: mockFetch(() => ({ status: 200, ...result })),
+  });
+  await assert.rejects(
+    () => searchTool({ query: "sol" }, answering({ json: { tokens: "none" } })),
+    (error: unknown) =>
+      error instanceof DexPaprikaError &&
+      /^DexPaprika returned an unexpected response at \/tokens: /.test(error.message),
+  );
+  await assert.rejects(
+    () => searchTool({ query: "sol" }, answering({ text: "not json" })),
+    (error: unknown) =>
+      error instanceof DexPaprikaError && error.message === "DexPaprika returned a non-JSON body",
+  );
+});
+
 test("ping rejects keyless and unauthorized", async () => {
   await assert.rejects(
     () => ping("bad", { client: mockFetch(() => ({ status: 200, json: { plan: "keyless" } })) }),
