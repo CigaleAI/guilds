@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { parseColumnChange, parseColumns } from "../../src/artifacts/columns.js";
-import { type GuildTableBefore, guildTableEditEffects } from "../../src/artifacts/guild-tables.js";
+import {
+  type GuildTableBefore,
+  type GuildTableLive,
+  guildTableEditEffects,
+  planGuildTableChange,
+} from "../../src/artifacts/guild-tables.js";
 import type { AccessEntry } from "../../src/artifacts/types.js";
 
 const COLUMNS = [
@@ -145,4 +150,94 @@ test("guildTableEditEffects names the rows outside the guild after a column chan
     { kind: "column_dropped", column: "owner", records: 0 },
     { kind: "reached_outside_guild", rows: [OUTSIDE] },
   ]);
+});
+
+const LIVE_AT = "2026-10-01T00:00:00.000Z";
+const NO_ROWS = { guild: null, agents: [] };
+
+function live(guildId: string | null): GuildTableLive {
+  return {
+    id: "col_1",
+    name: "leads",
+    purpose: "Leads",
+    guildId,
+    columns: parseColumns(COLUMNS),
+    updatedAt: LIVE_AT,
+    access: { guild: guildId ? "write" : null, org: guildId ? null : "read", agents: new Map() },
+  };
+}
+
+test("planGuildTableChange creates a guild's table with its row at write and the proposed rows on top", () => {
+  const plan = planGuildTableChange({
+    action: "create",
+    orgId: "org_1",
+    guildId: "guild_own",
+    collection: { name: " leads ", purpose: "Leads", columns: COLUMNS, guildId: "guild_own" },
+    access: { guild: null, agents: [{ id: "agent_1", mode: "read" }] },
+    isNameTaken: false,
+  });
+  assert.ok(plan.action === "create");
+  assert.equal(plan.href, "org/org_1/collections/leads");
+  assert.deepEqual(plan.shape.access, {
+    guild: "write",
+    org: null,
+    agents: new Map([["agent_1", "read"]]),
+  });
+  assert.deepEqual(plan.step, {
+    action: "create",
+    collection: {
+      name: "leads",
+      purpose: "Leads",
+      columns: parseColumns(COLUMNS),
+      guildId: "guild_own",
+    },
+    access: [{ type: "agent", id: "agent_1", mode: "read" }],
+  });
+});
+
+test("planGuildTableChange starts an organisation table with the organisation's row at read", () => {
+  const plan = planGuildTableChange({
+    action: "create",
+    orgId: "org_1",
+    guildId: "guild_own",
+    collection: { name: "leads", purpose: "Leads", columns: COLUMNS, guildId: null },
+    access: { guild: "read", agents: [] },
+    isNameTaken: false,
+  });
+  assert.ok(plan.action === "create");
+  assert.deepEqual(plan.shape.access, { guild: "read", org: "read", agents: new Map() });
+  assert.deepEqual(plan.step.access, [{ type: "guild", id: "guild_own", mode: "read" }]);
+});
+
+test("planGuildTableChange refuses a create of a name a table in the guild's reach holds", () => {
+  const taken = {
+    name: "GuildTableNameTaken",
+    status: 409,
+    message: "a table named leads already exists",
+  };
+  assert.throws(
+    () =>
+      planGuildTableChange({
+        action: "create",
+        orgId: "org_1",
+        guildId: "guild_own",
+        collection: { name: "leads", purpose: "Leads", columns: COLUMNS, guildId: "guild_own" },
+        access: NO_ROWS,
+        isNameTaken: true,
+      }),
+    taken,
+  );
+});
+
+test("planGuildTableChange refuses deleting an organisation table and deletes a guild's own", () => {
+  assert.throws(() => planGuildTableChange({ action: "delete", table: live(null) }), {
+    name: "OrgTableChangeRefused",
+    status: 422,
+    tableName: "leads",
+    refusal: { kind: "delete" },
+  });
+  assert.deepEqual(planGuildTableChange({ action: "delete", table: live("guild_own") }).step, {
+    action: "delete",
+    id: "col_1",
+  });
 });

@@ -1,7 +1,14 @@
 // The tables a guild's agents are given, the guild's own and the organisation's, each with its
-// access list, the steps the operator applies to them, and what an edit does to their records
-// and readers.
-import { type AccessRowChange, grantAccess, listAccess } from "./access-lists.js";
+// access list, the rules a guild's request to change one follows, the steps the operator applies
+// to them, and what an edit does to their records and readers.
+import {
+  type AccessRowChange,
+  grantAccess,
+  type GuildAccess,
+  type GuildAccessProposal,
+  listAccess,
+  planGuildAccess,
+} from "./access-lists.js";
 import {
   createCollection,
   deleteCollection,
@@ -9,6 +16,7 @@ import {
   getCollection,
   listCollections,
   listCollectionsWithCounts,
+  planCollection,
   updateCollection,
   type CollectionChanges,
   type NewCollection,
@@ -98,6 +106,132 @@ export async function applyCollectionStep(store: ArtifactStore, actor: ArtifactA
   for (const row of step.access) {
     await grantAccess(store, actor, { kind: "collection", id }, row);
   }
+}
+
+/**
+ * A guild's own table or the organisation's as a guild's request finds it: its id and definition,
+ * its live `updated_at`, and the rows of its access list that reach the guild. `guildId` is the
+ * guild that owns it, null for an organisation table.
+ */
+export type GuildTableLive = {
+  id: string;
+  name: string;
+  purpose: string;
+  guildId: string | null;
+  columns: CollectionColumn[];
+  updatedAt: string;
+  access: GuildAccess;
+};
+
+/** A table as a request leaves it: its definition, the columns it moves, and the rows of its access list that reach the guild. */
+export type GuildTableShape = {
+  name: string;
+  purpose: string;
+  guildId: string | null;
+  columns: CollectionColumn[];
+  renamed: ColumnChange["renamed"];
+  access: GuildAccess;
+};
+
+/**
+ * A request of guild `guildId` to create a table in organisation `orgId`: the table as defined, the
+ * rows it proposes for the guild and its agents, and whether a table in the guild's reach already
+ * holds the name it gives.
+ */
+export type GuildTableCreateRequest = {
+  action: "create";
+  orgId: string;
+  guildId: string;
+  collection: Required<NewCollection>;
+  access: GuildAccessProposal;
+  isNameTaken: boolean;
+};
+
+/** A request to create a table or to delete one. */
+export type GuildTableRequest<T extends GuildTableLive> =
+  GuildTableCreateRequest | { action: "delete"; table: T };
+
+/** A create as planned: the table it makes, the display path it takes, and the step that writes it. */
+export type GuildTableCreatePlan = {
+  action: "create";
+  shape: GuildTableShape;
+  href: string;
+  step: Extract<CollectionStep, { action: "create" }>;
+};
+
+/** A request as planned; a delete plans only the step that writes it. */
+export type GuildTablePlan<T extends GuildTableLive> =
+  | GuildTableCreatePlan
+  | { action: "delete"; table: T; step: Extract<CollectionStep, { action: "delete" }> };
+
+/** A request refused because a table in the guild's reach already holds the name it gives. */
+export class GuildTableNameTaken extends ArtifactError {
+  constructor(name: string) {
+    super(`a table named ${name} already exists`, 409);
+    this.name = "GuildTableNameTaken";
+  }
+}
+
+/** What a request would do to an organisation table that a guild does not: delete it. */
+export type OrgTableRefusal = { kind: "delete" };
+
+/** A request refused because it changes organisation table `tableName` beyond adding columns and access rows. */
+export class OrgTableChangeRefused extends ArtifactError {
+  tableName: string;
+  refusal: OrgTableRefusal;
+
+  constructor(tableName: string, refusal: OrgTableRefusal) {
+    super(
+      `${tableName} is an organisation table: a guild adds columns to it and changes its own access`,
+      422,
+    );
+    this.name = "OrgTableChangeRefused";
+    this.tableName = tableName;
+    this.refusal = refusal;
+  }
+}
+
+/**
+ * Checks a guild's request against the table as it stands and plans it. A table's name is unique
+ * among the tables in the guild's reach. An organisation table is not deleted from a guild.
+ * ArtifactError on the first rule the request breaks.
+ */
+export function planGuildTableChange<T extends GuildTableLive>(
+  request: GuildTableRequest<T>,
+): GuildTablePlan<T> {
+  switch (request.action) {
+    case "create":
+      return planGuildTableCreate(request);
+    case "delete":
+      if (request.table.guildId === null) {
+        throw new OrgTableChangeRefused(request.table.name, { kind: "delete" });
+      }
+      return {
+        action: "delete",
+        table: request.table,
+        step: { action: "delete", id: request.table.id },
+      };
+  }
+}
+
+/** A create's name, purpose and columns checked, then its name, then the rows it starts with: the owning guild's at write, else the organisation's at read, with the proposal's on top. */
+function planGuildTableCreate(request: GuildTableCreateRequest): GuildTableCreatePlan {
+  const { name, purpose, columns, href } = planCollection(request.orgId, request.collection);
+  if (request.isNameTaken) {
+    throw new GuildTableNameTaken(name);
+  }
+  const guildId = request.collection.guildId;
+  const { access, rowChanges } = planGuildAccess(
+    { guild: guildId ? "write" : null, org: guildId ? null : "read", agents: new Map() },
+    request.guildId,
+    request.access,
+  );
+  return {
+    action: "create",
+    shape: { name, purpose, guildId, columns, renamed: [], access },
+    href,
+    step: { action: "create", collection: { name, purpose, columns, guildId }, access: rowChanges },
+  };
 }
 
 /** A guild table as an edit finds it: its name, its columns, its live record count, and its access list. */
