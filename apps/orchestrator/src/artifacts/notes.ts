@@ -20,12 +20,12 @@ import {
 import { getRecordOrTombstone } from "../db/collections.js";
 import { recordFileChange } from "../db/file-changes.js";
 import { isUniqueViolation, withTransaction } from "../db/pg.js";
-import { createsWritable, defaultGrants } from "./access.js";
+import { type AccessRaise, createsWritable, defaultGrants } from "./access.js";
 import { deleteCollection, describeCollection, loadCollectionByName, requireReadable } from "./collections.js";
 import { ArtifactError } from "./errors.js";
 import { writeGrants } from "./grants.js";
 import { listRevisions } from "./memory.js";
-import { listAccess } from "./access-lists.js";
+import { listAccess, raiseAccess } from "./access-lists.js";
 import {
   assertNoteKeyFree,
   displayPathFor,
@@ -446,13 +446,17 @@ export async function artifactAt(store: ArtifactStore, actor: ArtifactActor, hre
   };
 }
 
-/** A note as a write sets it: its file name at a level, its title and text, and the version it replaces when the writer read one. */
+/**
+ * A note as a write sets it: its file name at a level, its title and text, the version it replaces
+ * when the writer read one, and the access list it is raised to, when one is given.
+ */
 export type NoteDraft = {
   level: ArtifactLevel;
   key: string;
   title?: string;
   content: string;
   expectedVersion?: number;
+  access?: AccessRaise;
 };
 
 /** A note as written: its display path and its row. */
@@ -478,7 +482,8 @@ export function planNote(owner: Pick<ArtifactOwnerRef, "orgId" | "ownerId">, not
 /**
  * Writes a note directly under the owner its level names for the actor. An existing note is
  * written with write access to it, and is otherwise refused as not writable; a new one only where
- * its starting access lets the writer write it.
+ * its starting access lets the writer write it. With `access`, the note's access list is then
+ * raised to it as the operator through `raiseAccess`.
  */
 export async function writeNote(store: ArtifactStore, actor: ArtifactActor, note: NoteDraft): Promise<NoteWrite> {
   const key = normalizeNoteKey(note.key);
@@ -497,6 +502,9 @@ export async function writeNote(store: ArtifactStore, actor: ArtifactActor, note
     searchText,
     ...(note.expectedVersion !== undefined ? { expectedVersion: note.expectedVersion } : {}),
   });
+  if (note.access) {
+    await raiseAccess(store, actor, { kind: "note", id: row.id }, note.access);
+  }
   return { href: rowDisplayPath(row), row };
 }
 

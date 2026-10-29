@@ -389,9 +389,9 @@ broken:
 3. create the agents on the chosen machine, each with empty Memory and
    a first Task whose `@{role}` tags already name the new agents
 4. create guild- and org-level seed notes, then agent-level seed notes
-   (a note without a role goes to the first agent), then raise each
-   seed note's access list to the recipe's `guild` and `writers` (see
-   [Access](#access))
+   (a note without a role goes to the first agent). Each seed note's
+   access list is raised to the recipe's `guild` and `writers` as it is
+   written (see [Access](#access))
 5. for each role in turn:
    - rewrite the Task's note links
      ([embeds and note paths](recipe-format.md#embeds-and-tags)) to
@@ -408,9 +408,9 @@ broken:
    conflict: preview again (409). A `scope: "guild"` collection is
    created for the new guild, with the guild at `write` as its
    starting row. A created `org` collection starts with the
-   organisation at `read`. Every created or reused collection's access
-   list is then raised to the recipe's `guild` and `writers` (see
-   [Access](#access))
+   organisation at `read`. A created collection's access list is
+   raised to the recipe's `guild` and `writers` as it is created, and a
+   reused collection's then (see [Access](#access))
 7. write the tool overlays of each reused login
 8. save the apply row with its checklist
 

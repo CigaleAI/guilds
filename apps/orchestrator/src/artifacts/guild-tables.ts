@@ -152,7 +152,7 @@ export type GuildTableCreateRequest = {
   action: "create";
   orgId: string;
   guildId: string;
-  collection: Required<NewCollection>;
+  collection: Required<Omit<NewCollection, "access">>;
   access: GuildAccessProposal;
   isNameTaken: boolean;
 };

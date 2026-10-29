@@ -8,6 +8,13 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** Applying a recipe gives each seed note its access list
+as it writes the note, and each collection it creates its access list
+in the same write. An apply that fails on a note's access list, such as
+an agent note that names its own role among its writers, fails before
+the notes after it are written, where every note was written first. A
+created collection whose access list cannot be given is not created.
+
 **No impact.** Applying a recipe creates its agents before it writes
 its seed notes. An apply whose agents cannot be created fails before
 any seed note is written, where the organisation's and guild's seed

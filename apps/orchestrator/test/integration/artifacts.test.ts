@@ -40,6 +40,7 @@ import {
   readMemoryVersion,
   writeMemory,
 } from "../../src/artifacts/memory.js";
+import type { AccessRaise } from "../../src/artifacts/access.js";
 import { accessList, grantAccess, listAccess, reachOf, replaceAccess } from "../../src/artifacts/access-lists.js";
 import { clearRecords, collectionCatalog, collectionFacts, createCollection, deleteCollection, describeCollection, getCollection, listCollectionsWithCounts, updateCollection } from "../../src/artifacts/collections.js";
 import { addRecord, exportRecords, getRecord, listRecords, removeRecord, searchRecords, updateRecord } from "../../src/artifacts/records.js";
@@ -1141,6 +1142,69 @@ describe("artifact store", { concurrency: 1 }, () => {
         ["update", "call_patch"],
         ["create", "call_add"],
       ],
+    );
+  });
+
+  test("a note and a collection are created with the access list they are raised to, and a note written again is raised", async () => {
+    await insertGuild(
+      db,
+      { guildId: "guild_raise", name: "raise", orgId: "org_home", about: "" },
+      new Date(),
+    );
+    await seedAgent("a_raise", "guild_raise", "raiser", "art-raise");
+    const operator = operatorActor({
+      orgId: "org_home",
+      actorId: "user_operator",
+      actorName: "operator",
+      guildId: "guild_raise",
+    });
+    const rows = async (target: { kind: "note" | "collection"; id: string }) =>
+      (await listAccess(store, operator, target))
+        .map((entry) => `${entry.type} ${entry.id} ${entry.mode}`)
+        .sort();
+    const reads: AccessRaise = { guildId: "guild_raise", mode: "read", writerIds: ["a_raise"] };
+    const writes: AccessRaise = { guildId: "guild_raise", mode: "write", writerIds: ["a_raise"] };
+
+    const { row: note } = await writeNote(store, operator, {
+      level: "org",
+      key: "raised.md",
+      content: "first\n",
+      access: reads,
+    });
+    assert.deepEqual(await rows({ kind: "note", id: note.id }), [
+      "agent a_raise write",
+      "org org_home read",
+    ]);
+    await writeNote(store, operator, {
+      level: "org",
+      key: "raised.md",
+      content: "second\n",
+      access: writes,
+    });
+    assert.deepEqual(await rows({ kind: "note", id: note.id }), [
+      "agent a_raise write",
+      "guild guild_raise write",
+      "org org_home read",
+    ]);
+    const noteLog = await listConfigChanges(db, "org_home", { kind: "note", id: note.id });
+    assert.deepEqual(noteLog.map((change) => change.summary).sort(), [
+      "Gave agent raiser read and write on the note org/org_home/raised.md",
+      "Gave guild raise read and write on the note org/org_home/raised.md",
+    ]);
+
+    const table = await createCollection(store, operator, {
+      name: "raised-table",
+      purpose: "Raised as it is created",
+      access: writes,
+    });
+    assert.deepEqual(await rows({ kind: "collection", id: table.id }), [
+      "guild guild_raise write",
+      "org org_home read",
+    ]);
+    const tableLog = await listConfigChanges(db, "org_home", { kind: "collection", id: table.id });
+    assert.deepEqual(
+      tableLog.map((change) => change.summary),
+      ["Gave guild raise read and write on the table raised-table"],
     );
   });
 

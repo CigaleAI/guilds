@@ -27,7 +27,7 @@ import { recordChangeIfAny, recordConfigChange } from "../db/config-changes.js";
 import { getGuild } from "../db/guilds.js";
 import { isUniqueViolation, type Queryable, withTransaction } from "../db/pg.js";
 import type { CollectionColumn, AccessMode } from "../db/schema/index.js";
-import { defaultGrants, reachedMode } from "./access.js";
+import { type AccessRaise, accessRaises, defaultGrants, reachedMode } from "./access.js";
 import {
   collectionCleared,
   collectionColumnsChanged,
@@ -36,7 +36,7 @@ import {
 } from "./collection-changes.js";
 import { columnCatalog, normalizeIdentity, parseColumnChange, parseColumns, uniqueColumn, type ColumnChange } from "./columns.js";
 import { ArtifactError } from "./errors.js";
-import { writeGrants } from "./grants.js";
+import { collectionAccessItem, setAccessRow, writeGrants } from "./grants.js";
 import { collectionDisplayPath } from "./paths.js";
 import type { ArtifactStore, CollectionDescription, CollectionView } from "./store.js";
 import {
@@ -51,8 +51,18 @@ import {
 /** What a collection's update may change; a field left out keeps its value. */
 export type CollectionChanges = { name?: string; purpose?: string; columns?: unknown; guildId?: string | null };
 
-/** A collection as the operator defines it: its name, purpose and columns, and the guild that owns it, none for an organisation table. */
-export type NewCollection = { name: string; purpose: string; columns?: unknown; guildId?: string | null };
+/**
+ * A collection as the operator defines it: its name, purpose and columns, the guild that owns it,
+ * none for an organisation table, and the access list it is raised to as it is created, when one
+ * is given.
+ */
+export type NewCollection = {
+  name: string;
+  purpose: string;
+  columns?: unknown;
+  guildId?: string | null;
+  access?: AccessRaise;
+};
 
 export function validateCollectionName(name: string): string {
   const text = (name || "").trim();
@@ -179,6 +189,9 @@ export async function createCollection(
       );
       const grants = guildId ? defaultGrants("guild", guildId) : defaultGrants("org", actor.orgId);
       await writeGrants(client, actor, { kind: "collection", id: created.id }, grants);
+      for (const row of args.access ? accessRaises(grants, args.access) : []) {
+        await setAccessRow(client, actor, collectionAccessItem(created), row);
+      }
       return collectionView(created, "write", 0);
     });
   } catch (error) {

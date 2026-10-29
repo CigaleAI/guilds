@@ -7,6 +7,7 @@ import { createCollection, deleteCollection } from "../artifacts/collections.js"
 import { ArtifactError } from "../artifacts/errors.js";
 import type { ArtifactActor } from "../artifacts/types.js";
 import type { CollectionView } from "../artifacts/store.js";
+import type { AccessRaise } from "../artifacts/access.js";
 import { raiseAccess } from "../artifacts/access-lists.js";
 import { writeNote } from "../artifacts/notes.js";
 import { deleteAgent } from "../db/agents.js";
@@ -132,16 +133,32 @@ function rememberNoteHref(skeleton: Skeleton, note: RecipeNote, displayPath: str
   skeleton.noteHref.set(recipeNotePath(note), displayPath);
 }
 
-/** Writes one recipe note at its level as `actor`, remembering where it went; returns its id. */
-async function writeRecipeNote(skeleton: Skeleton, note: RecipeNote, actor: ArtifactActor): Promise<string> {
+/** The access list the recipe gives a note or a collection: the new guild at its `guild` mode, and its writers' agents at write. */
+function appliedAccess(
+  skeleton: Skeleton,
+  item: Pick<RecipeNote, "guild" | "writers">,
+): AccessRaise {
+  return {
+    guildId: skeleton.guildId,
+    mode: item.guild ?? null,
+    writerIds: agentsOfRoles(item.writers, skeleton.roleToAgent),
+  };
+}
+
+/** Writes one recipe note at its level as `actor`, with the access list the recipe gives it, remembering where it went. */
+async function writeRecipeNote(
+  skeleton: Skeleton,
+  note: RecipeNote,
+  actor: ArtifactActor,
+): Promise<void> {
   const written = await writeNote(skeleton.apply.artifacts, actor, {
     level: note.level,
     key: note.key,
     content: note.body,
     title: note.key,
+    access: appliedAccess(skeleton, note),
   });
   rememberNoteHref(skeleton, note, written.href);
-  return written.row.id;
 }
 
 async function createGuild(skeleton: Skeleton, recipe: RecipeDocument): Promise<void> {
@@ -186,26 +203,18 @@ async function createAgent(skeleton: Skeleton, role: RecipeRole, recipe: RecipeD
 }
 
 /**
- * Writes the recipe's notes once its agents exist, the organisation's and guild's first, then each
- * agent note under its role's agent, then raises each note's access.
+ * Writes the recipe's notes once its agents exist, each with its access list: the organisation's
+ * and guild's first, then each agent note under its role's agent.
  */
 async function writeNotes(skeleton: Skeleton, recipe: RecipeDocument): Promise<void> {
-  const written: Array<{ note: RecipeNote; id: string }> = [];
   for (const note of recipe.notes.filter((item) => item.level !== "agent")) {
-    written.push({ note, id: await writeRecipeNote(skeleton, note, skeleton.actor) });
+    await writeRecipeNote(skeleton, note, skeleton.actor);
   }
   for (const note of recipe.notes.filter((item) => item.level === "agent")) {
     const agentId = note.role ? skeleton.roleToAgent.get(note.role) : skeleton.created.agents[0];
     if (agentId) {
-      written.push({ note, id: await writeRecipeNote(skeleton, note, agentOperator(skeleton, agentId)) });
+      await writeRecipeNote(skeleton, note, agentOperator(skeleton, agentId));
     }
-  }
-  for (const { note, id } of written) {
-    await raiseAccess(skeleton.apply.artifacts, skeleton.actor, { kind: "note", id }, {
-      guildId: skeleton.guildId,
-      mode: note.guild ?? null,
-      writerIds: agentsOfRoles(note.writers, skeleton.roleToAgent),
-    });
   }
 }
 
@@ -288,7 +297,7 @@ async function fillAgent(skeleton: Skeleton, role: RecipeRole, recipe: RecipeDoc
   await writeNativeAccess(skeleton, role, agentId);
 }
 
-/** Creates a collection the plan creates; returns its id. */
+/** Creates a collection the plan creates, with the access list the recipe gives it; returns its id. */
 async function createPlannedCollection(skeleton: Skeleton, item: CollectionPlan): Promise<string> {
   let created: CollectionView;
   try {
@@ -297,6 +306,7 @@ async function createPlannedCollection(skeleton: Skeleton, item: CollectionPlan)
       purpose: item.purpose,
       columns: item.columns,
       ...(item.scope === "guild" ? { guildId: skeleton.guildId } : {}),
+      access: appliedAccess(skeleton, item),
     });
   } catch (error) {
     if (error instanceof ArtifactError && error.status === 409) {
@@ -308,17 +318,21 @@ async function createPlannedCollection(skeleton: Skeleton, item: CollectionPlan)
   return created.id;
 }
 
-/** Creates or reuses each planned collection and raises its access; returns them as the plan keeps them. */
+/**
+ * Creates each planned collection with its access list, or reuses it and raises its access list;
+ * returns them as the plan keeps them.
+ */
 async function settleCollections(skeleton: Skeleton, planned: CollectionPlan[]): Promise<PlannedCollection[]> {
   const settled: PlannedCollection[] = [];
   for (const item of planned) {
     const collectionId = item.action === "create" ? await createPlannedCollection(skeleton, item) : item.collection_id;
-    if (collectionId) {
-      await raiseAccess(skeleton.apply.artifacts, skeleton.actor, { kind: "collection", id: collectionId }, {
-        guildId: skeleton.guildId,
-        mode: item.guild ?? null,
-        writerIds: agentsOfRoles(item.writers, skeleton.roleToAgent),
-      });
+    if (item.action !== "create" && collectionId) {
+      await raiseAccess(
+        skeleton.apply.artifacts,
+        skeleton.actor,
+        { kind: "collection", id: collectionId },
+        appliedAccess(skeleton, item),
+      );
     }
     settled.push({ name: item.name, action: item.action, collection_id: collectionId, guild: item.guild, writers: item.writers });
   }
