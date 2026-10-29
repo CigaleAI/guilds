@@ -18,8 +18,12 @@ class FakeNotes {
     public shared: string[],
   ) {}
 
-  listNotes(scope: string, _orgSlug: string, _guildName: string, _agentName: string, _prefix: string): string[] {
-    return scope === "private" ? this.privateNotes : this.shared;
+  listPrivateNotes(_orgSlug: string, _guildName: string, _agentName: string, _prefix: string): string[] {
+    return this.privateNotes;
+  }
+
+  listSharedNotes(_orgSlug: string, _guildName: string, _prefix: string): string[] {
+    return this.shared;
   }
 }
 

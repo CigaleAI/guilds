@@ -1367,7 +1367,7 @@ describe("generation", { concurrency: 1 }, () => {
     const created = await loop.runs.createRun("a_1", "hello");
     const opening = parsedState(String(db.create_args?.system_content));
     loop.endGeneration(String(created.id));
-    await notes.writeNote("private", "acme", "research", "researcher", "hello.md", "note");
+    await notes.writePrivateNote("acme", "research", "researcher", "hello.md", "note");
     await loop.addMessage(String(created.id), "again");
     assert.deepEqual(
       db.messages.map((row) => (row.metadata as Record<string, unknown>).source),

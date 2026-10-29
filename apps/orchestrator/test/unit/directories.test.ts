@@ -12,8 +12,11 @@ test("directory listing omits memory archive and includes scripts", () => {
       "orgs/acme/guilds/research/agents/researcher/notes/memory-archive/2026-09-13T09-00-12Z-r_ab12cd.md",
     ],
     shared: [] as string[],
-    listNotes(scope: "private" | "shared") {
-      return scope === "private" ? this.private : this.shared;
+    listPrivateNotes() {
+      return this.private;
+    },
+    listSharedNotes() {
+      return this.shared;
     },
   };
   const listing = collectDirectoryListing(notes, "acme", "research", "researcher", {

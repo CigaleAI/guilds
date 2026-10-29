@@ -252,6 +252,13 @@ browser profile; `prepareBrowserWorkspace` makes the home of an agent
 with a browser, its profile included. A sandbox provider's
 `stopAgent(sandbox, seat, { purge })` is `purgeAgent(sandbox, seat)`,
 which stops the agent's processes and removes its runtime files.
+`NotesStore` (`notes/store.js`) reads, lists and writes an agent's
+notes with `readPrivateNote`, `listPrivateNotes` and `writePrivateNote`,
+and lists a guild's shared notes with `listSharedNotes(orgSlug,
+guildName, prefix)`, in place of `readNote`, `listNotes` and
+`writeNote`, which took a scope. A shared note is read and written
+with `readSharedFile` and `writeSharedFile` alone. `notesRoot` and
+`resolveScopePath` are gone.
 
 **Breaking for extending repositories.** The Makefile variables
 `EDITION`, `EDITION_TEST_PACKAGES`, and `EDITION_COMPOSE_FILES` are

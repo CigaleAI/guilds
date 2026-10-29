@@ -156,10 +156,10 @@ test("write_memory archives and is a noop when unchanged", async () => {
   const agent = path.join(notes.root, "orgs", "acme", "guilds", "research", "agents", "researcher");
   assert.equal(readFileSync(path.join(agent, "memory.md"), "utf8"), "inbox\nread mail\nmornings are quiet");
   const archives = notes
-    .listNotes("private", "acme", "research", "researcher", "history-archive/")
+    .listPrivateNotes("acme", "research", "researcher", "history-archive/")
     .filter((item) => item.endsWith(".md"));
   assert.equal(archives.length, 1);
-  const stored = notes.readNote("private", "acme", "research", "researcher", archives[0] ?? "")[1];
+  const stored = notes.readPrivateNote("acme", "research", "researcher", archives[0] ?? "")[1];
   assert.ok(stored.startsWith("Current: "));
   assert.ok(stored.includes('Replaced by: run r_ab12cd (schedule wake-up: "check inbox")'));
   const again = await notes.writeMemory(
@@ -172,7 +172,7 @@ test("write_memory archives and is a noop when unchanged", async () => {
   assert.equal(again, "memory.md unchanged");
   assert.equal(
     notes
-      .listNotes("private", "acme", "research", "researcher", "history-archive/")
+      .listPrivateNotes("acme", "research", "researcher", "history-archive/")
       .filter((item) => item.endsWith(".md")).length,
     1,
   );
@@ -186,11 +186,11 @@ test("note_write refuses the memory archive", async () => {
     source: "r_1",
     replacedBy: "run r_1 (direct)",
   });
-  const listed = notes.listNotes("private", "acme", "research", "researcher", "history-archive/");
+  const listed = notes.listPrivateNotes("acme", "research", "researcher", "history-archive/");
   const archive = listed.find((item) => item.endsWith(".md"));
   assert.ok(archive);
   await assert.rejects(
-    () => notes.writeNote("private", "acme", "research", "researcher", archive ?? "", "nope"),
+    () => notes.writePrivateNote("acme", "research", "researcher", archive ?? "", "nope"),
     (error: Error) =>
       error instanceof NotesError && error.message.includes("memory archive notes cannot be overwritten"),
   );
@@ -215,10 +215,10 @@ test("files pane save archives with the user", async () => {
   );
   assert.ok(result.startsWith("memory.md written; previous archived as history-archive/"));
   const listed = notes
-    .listNotes("private", "acme", "research", "researcher", "history-archive/")
+    .listPrivateNotes("acme", "research", "researcher", "history-archive/")
     .filter((item) => item.endsWith(".md"));
   assert.ok(listed.some((item) => item.includes("-manu.md")));
-  const stored = notes.readNote("private", "acme", "research", "researcher", listed[0] ?? "")[1];
+  const stored = notes.readPrivateNote("acme", "research", "researcher", listed[0] ?? "")[1];
   assert.ok(stored.includes("Replaced by: user manu (Files pane)"));
 });
 
@@ -233,7 +233,7 @@ test("memory archive keeps the newest fifty", async () => {
     });
   }
   const listed = notes
-    .listNotes("private", "acme", "research", "researcher", "history-archive/")
+    .listPrivateNotes("acme", "research", "researcher", "history-archive/")
     .filter((item) => item.endsWith(".md"));
   assert.equal(listed.length, MEMORY_ARCHIVE_KEEP);
 });
