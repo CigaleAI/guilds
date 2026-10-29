@@ -204,15 +204,12 @@ export async function listGithubInstallations(
 export async function chooseGithubInstallation(
   services: ConnectFlowServices,
   state: string | undefined,
-  installationId: unknown,
+  installationId: string | number | undefined,
 ): Promise<{ ok: true; account: string }> {
   const session = await requirePickerSession(services, state);
-  const picked =
-    typeof installationId === "string" || typeof installationId === "number"
-      ? installationId
-      : undefined;
   try {
-    const choice = await resolveGithubInstallation(requireGithubApp(), session.userToken, picked, {
+    const app = requireGithubApp();
+    const choice = await resolveGithubInstallation(app, session.userToken, installationId, {
       proxyUrl: process.env.ADAPTER_PROXY_URL ?? "",
     });
     if (choice.action !== "use") {

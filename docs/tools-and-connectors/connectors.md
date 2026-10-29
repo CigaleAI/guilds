@@ -465,8 +465,9 @@ display name and description from the server's `initialize` reply
 
 A lookup answers `{ options: [{ value, label, detail, image }] }`,
 where `value` is what the setting stores. `tool`, `property`, `q` and
-the query's ids are strings; another type, or a query value given
-more than once, is 422 naming it.
+the query's ids are strings, as are Connect's `mcp_server_id` and
+`owner_scope`; its `owner_id` is a string or null. Another type, or a
+query value given more than once, is 422 naming it.
 
 `PUT .../settings` checks the document against the schema (422 naming
 the first problem), runs the adapter's `validate` with it, stores it,

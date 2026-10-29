@@ -8,6 +8,16 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** Connect refuses, with a 422 that names the field and
+before the request's user is identified, a request without a string
+`mcp_server_id` and `owner_scope` or with an `owner_id` that is neither
+a string nor null. The OAuth callback and the GitHub installation
+picker refuse a query value given more than once, and a picked
+installation whose `state` is neither a string nor null or whose `installation_id`
+is neither a string nor a number, with a 422. Before, those were read
+as their text or left out, and a Connect missing both fields named
+each of them.
+
 **No impact.** The login routes refuse, with a 422 that names the field
 and before the request's user is identified: a tool call whose `tool`
 is not a string, a lookup whose `property` or `q` is not a string or
