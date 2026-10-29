@@ -541,6 +541,16 @@ test("studio reads agent access, script source, and granted connections", { time
     })) as { error?: string };
     assert.equal(blocked.error, "access_required");
     assert.equal(calls.length, 0);
+    await assert.rejects(
+      studioCallConnectionTool.handler(await toolContext(), { connection_id: String(connection.id), tool: "notion-search", arguments: ["roadmap"] }),
+      /\/arguments: Expected object/,
+    );
+    await assert.rejects(
+      studioRequestConnectionAccess.handler(await toolContext(), { connection_id: String(connection.id) }),
+      /\/reason: Expected required property/,
+    );
+    const byAlias = (await studioGetAgentAccess.handler(await toolContext(), { agent: "curator" })) as { agent_id: string };
+    assert.equal(byAlias.agent_id, "a_access");
 
     const requested = (await studioRequestConnectionAccess.handler(await toolContext(), {
       connection_id: String(connection.id),

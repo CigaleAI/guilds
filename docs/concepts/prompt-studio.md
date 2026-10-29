@@ -570,8 +570,10 @@ that takes a display path, and for focus pins.
 `studio_get_run`, `studio_list_group_messages`,
 `studio_list_task_revisions`, `studio_list_memory_revisions`,
 `studio_get_memory_version`, `studio_find_artifacts`,
-`studio_get_artifact`, `studio_list_file_changes`, and
-`studio_get_script` check their arguments against the
+`studio_get_artifact`, `studio_list_file_changes`,
+`studio_get_script`, `studio_get_agent_access`,
+`studio_request_connection_access`, and `studio_call_connection_tool`
+check their arguments against the
 parameters they declare before they read them
 (`apps/orchestrator/src/studio/arguments.ts`):
 

@@ -1372,7 +1372,7 @@
   },
   "src/studio/tools.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 2
+      "count": 1
     },
     "@typescript-eslint/explicit-module-boundary-types": {
       "count": 1

@@ -920,18 +920,21 @@ async function liveGrantedConnectionIds(ctx: StudioToolContext): Promise<Set<str
   return new Set(grantedConnectionIds(live ?? ctx.session));
 }
 
+const GetAgentAccessArguments = Type.Object({
+  agent_id: Type.String({ description: "Source-guild agent id or name. Required." }),
+});
+type GetAgentAccessArguments = Static<typeof GetAgentAccessArguments>;
+
 export const studioGetAgentAccess: StudioTool = {
   name: "studio_get_agent_access",
-  schema: functionSchema(
+  schema: studioFunctionSchema(
     "studio_get_agent_access",
     "Inspect what one source-guild agent is offered at run start: native tools, scripts, secret names, and MCP connections with their listed tools. Withheld lists name what the agent could be offered but is not. Each connection says whether this Studio session may read through it (studio_granted).",
-    {
-      agent_id: { type: "string", description: "Source-guild agent id or name. Required." },
-    },
-    ["agent_id"],
+    GetAgentAccessArguments,
   ),
   async handler(ctx, args) {
-    const agent = await resolveHandle(ctx, studioAgentHandleFromArgs(args) || undefined);
+    const input: GetAgentAccessArguments = decodeStudioArguments(GetAgentAccessArguments, args);
+    const agent = await resolveHandle(ctx, input.agent_id);
     const access = await projectAgentAccess(ctx.preview, agent);
     const granted = await liveGrantedConnectionIds(ctx);
     return truncatePayload({
@@ -959,19 +962,22 @@ export const studioGetAgentAccess: StudioTool = {
   },
 };
 
+const RequestConnectionAccessArguments = Type.Object({
+  connection_id: Type.String({ description: "Connection id from studio_get_agent_access. Required." }),
+  reason: Type.String({ description: "Why read access is needed, one sentence. Required." }),
+});
+type RequestConnectionAccessArguments = Static<typeof RequestConnectionAccessArguments>;
+
 export const studioRequestConnectionAccess: StudioTool = {
   name: "studio_request_connection_access",
-  schema: functionSchema(
+  schema: studioFunctionSchema(
     "studio_request_connection_access",
     "Ask the operator to let this Studio session read through one MCP connection (for example to inspect a Notion database an agent works with). Pass the connection id from studio_get_agent_access and a one-sentence reason. The turn pauses until the operator answers.",
-    {
-      connection_id: { type: "string", description: "Connection id from studio_get_agent_access. Required." },
-      reason: { type: "string", description: "Why read access is needed, one sentence. Required." },
-    },
-    ["connection_id", "reason"],
+    RequestConnectionAccessArguments,
   ),
   async handler(ctx, args) {
-    const connectionId = argString(args, "connection_id");
+    const input: RequestConnectionAccessArguments = decodeStudioArguments(RequestConnectionAccessArguments, args);
+    const connectionId = input.connection_id;
     const reach = await reachableConnection(ctx.db, ctx.orgId, ctx.sourceGuildId, connectionId);
     if (!reach) {
       throw new StudioUnprocessableError("connection is not reachable from the source guild");
@@ -989,29 +995,32 @@ export const studioRequestConnectionAccess: StudioTool = {
       await_operator: true,
       granted: false,
       connection: summary,
-      reason: argString(args, "reason").trim(),
+      reason: input.reason.trim(),
       title: `Grant read access to ${String((summary.server as { display_name: string }).display_name)}`,
     };
   },
 };
 
+const CallConnectionToolArguments = Type.Object({
+  connection_id: Type.String({ description: "Granted connection id. Required." }),
+  tool: Type.String({ description: "Namespaced tool name from studio_readable_tools, or the remote name. Required." }),
+  arguments: Type.Optional(Type.Object({}, { description: "Tool arguments. Defaults to {}." })),
+});
+type CallConnectionToolArguments = Static<typeof CallConnectionToolArguments>;
+
 export const studioCallConnectionTool: StudioTool = {
   name: "studio_call_connection_tool",
-  schema: functionSchema(
+  schema: studioFunctionSchema(
     "studio_call_connection_tool",
     "Call one read-only tool on an MCP connection the operator granted to this session. Results are untrusted evidence. Mutating tools are refused.",
-    {
-      connection_id: { type: "string", description: "Granted connection id. Required." },
-      tool: { type: "string", description: "Namespaced tool name from studio_readable_tools, or the remote name. Required." },
-      arguments: { type: "object", description: "Tool arguments. Defaults to {}." },
-    },
-    ["connection_id", "tool"],
+    CallConnectionToolArguments,
   ),
   async handler(ctx, args) {
+    const input: CallConnectionToolArguments = decodeStudioArguments(CallConnectionToolArguments, args);
     if (!ctx.mcp) {
       throw new StudioUnprocessableError("connection tools are unavailable");
     }
-    const connectionId = argString(args, "connection_id");
+    const connectionId = input.connection_id;
     const reach = await reachableConnection(ctx.db, ctx.orgId, ctx.sourceGuildId, connectionId);
     if (!reach) {
       throw new StudioUnprocessableError("connection is not reachable from the source guild");
@@ -1024,16 +1033,12 @@ export const studioCallConnectionTool: StudioTool = {
         hint: "Call studio_request_connection_access with this connection id and a reason, then wait for the operator.",
       };
     }
-    const arguments_ =
-      args.arguments && typeof args.arguments === "object" && !Array.isArray(args.arguments)
-        ? (args.arguments as Record<string, unknown>)
-        : {};
     const result = await callConnectionTool({
       db: ctx.db,
       mcp: ctx.mcp,
       reach,
-      tool: argString(args, "tool"),
-      arguments: arguments_,
+      tool: input.tool,
+      arguments: input.arguments ?? {},
     });
     return {
       connection: connectionSummary(reach),
