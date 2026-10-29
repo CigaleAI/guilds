@@ -8,6 +8,15 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** The collection routes refuse, with a 422 that names the
+field and before the request's user is identified: a collection whose
+`name` or `purpose` is not a string or whose `guild_id` is neither a
+string nor null, a record whose `body` is not an object, and a record
+listing whose query values are given more than once. Before, a `name`
+or `purpose` was read as its text, a `body` that was not an object was
+a 422 with `body must be an object of column: value`, and a collection
+missing both `name` and `purpose` named each of them.
+
 **No impact.** Connect refuses, with a 422 that names the field and
 before the request's user is identified, a request without a string
 `mcp_server_id` and `owner_scope` or with an `owner_id` that is neither

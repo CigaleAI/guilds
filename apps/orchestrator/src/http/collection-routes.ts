@@ -1,9 +1,12 @@
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import { Type } from "@sinclair/typebox";
+import type { FastifyRequest } from "fastify";
 import { loadOperatorActor } from "../artifacts/actors.js";
 import type { ArtifactActor } from "../artifacts/types.js";
 import {
   addRecord,
   clearRecords,
+  CollectionDraftSchema,
+  CollectionPatchSchema,
   createCollection,
   deleteCollection,
   exportCollection,
@@ -11,20 +14,23 @@ import {
   getRecord,
   listCollections,
   listRecords,
+  RecordListQuerySchema,
+  RecordValuesSchema,
   removeRecord,
   updateCollection,
   updateRecord,
 } from "../artifacts/collection-views.js";
-import type { RouteDeps } from "./deps.js";
-import { missingBodyFields } from "./errors.js";
+import type { RouteApp, RouteDeps } from "./deps.js";
 import { currentOrg, currentUser } from "./identity.js";
-import { bodyOf, param, queryOf } from "./request.js";
+
+/** The path of one collection. */
+const CollectionParams = Type.Object({ collection_id: Type.String() });
+
+/** The path of one record of a collection. */
+const RecordParams = Type.Object({ collection_id: Type.String(), record_id: Type.String() });
 
 /** Collections live at the organisation: the Tables page builds them and browses their records. */
-export async function registerCollectionRoutes(
-  app: FastifyInstance,
-  deps: RouteDeps,
-): Promise<void> {
+export async function registerCollectionRoutes(app: RouteApp, deps: RouteDeps): Promise<void> {
   const { db, artifacts: store } = deps;
 
   async function orgActor(request: FastifyRequest): Promise<ArtifactActor> {
@@ -33,94 +39,120 @@ export async function registerCollectionRoutes(
     return loadOperatorActor(db, user, { orgId: String(org.id) });
   }
 
-  function requireBody(request: FastifyRequest, fields: string[]): void {
-    const missing = missingBodyFields(request.body, fields);
-    if (missing) {
-      throw missing;
-    }
-  }
-
   app.get("/api/collections", async (request) => listCollections(store, await orgActor(request)));
 
-  app.post("/api/collections", async (request, reply) => {
-    const actor = await orgActor(request);
-    requireBody(request, ["name", "purpose"]);
-    return reply.code(201).send(await createCollection(store, actor, bodyOf(request)));
-  });
-
-  app.get("/api/collections/:collection_id", async (request) =>
-    getCollection(store, await orgActor(request), param(request, "collection_id")),
+  app.post(
+    "/api/collections",
+    { schema: { body: CollectionDraftSchema } },
+    async (request, reply) => {
+      const actor = await orgActor(request);
+      return reply.code(201).send(await createCollection(store, actor, request.body));
+    },
   );
 
-  app.patch("/api/collections/:collection_id", async (request) =>
-    updateCollection(
-      store,
-      await orgActor(request),
-      param(request, "collection_id"),
-      bodyOf(request),
-    ),
+  app.get(
+    "/api/collections/:collection_id",
+    { schema: { params: CollectionParams } },
+    async (request) =>
+      getCollection(store, await orgActor(request), request.params.collection_id),
   );
 
-  app.delete("/api/collections/:collection_id", async (request, reply) => {
-    await deleteCollection(store, await orgActor(request), param(request, "collection_id"));
-    return reply.code(204).send();
-  });
-
-  app.get("/api/collections/:collection_id/export", async (request, reply) => {
-    const exported = await exportCollection(
-      store,
-      await orgActor(request),
-      param(request, "collection_id"),
-    );
-    return reply
-      .header("content-disposition", `attachment; filename="${exported.name}.jsonl"`)
-      .type("application/jsonl")
-      .send(exported.body);
-  });
-
-  app.get("/api/collections/:collection_id/records", async (request) =>
-    listRecords(store, await orgActor(request), param(request, "collection_id"), queryOf(request)),
+  app.patch(
+    "/api/collections/:collection_id",
+    { schema: { params: CollectionParams, body: CollectionPatchSchema } },
+    async (request) =>
+      updateCollection(
+        store,
+        await orgActor(request),
+        request.params.collection_id,
+        request.body,
+      ),
   );
 
-  app.post("/api/collections/:collection_id/records", async (request, reply) => {
-    const actor = await orgActor(request);
-    requireBody(request, ["body"]);
-    const added = await addRecord(
-      store,
-      actor,
-      param(request, "collection_id"),
-      bodyOf(request).body,
-    );
-    return reply.code(201).send(added);
-  });
-
-  app.delete("/api/collections/:collection_id/records", async (request, reply) => {
-    await clearRecords(store, await orgActor(request), param(request, "collection_id"));
-    return reply.code(204).send();
-  });
-
-  app.get("/api/collections/:collection_id/records/:record_id", async (request) =>
-    getRecord(
-      store,
-      await orgActor(request),
-      param(request, "collection_id"),
-      param(request, "record_id"),
-    ),
+  app.delete(
+    "/api/collections/:collection_id",
+    { schema: { params: CollectionParams } },
+    async (request, reply) => {
+      await deleteCollection(store, await orgActor(request), request.params.collection_id);
+      return reply.code(204).send();
+    },
   );
 
-  app.patch("/api/collections/:collection_id/records/:record_id", async (request) => {
-    const actor = await orgActor(request);
-    requireBody(request, ["body"]);
-    const record = {
-      collectionId: param(request, "collection_id"),
-      recordId: param(request, "record_id"),
-    };
-    return updateRecord(store, actor, record, bodyOf(request).body);
-  });
+  app.get(
+    "/api/collections/:collection_id/export",
+    { schema: { params: CollectionParams } },
+    async (request, reply) => {
+      const exported = await exportCollection(
+        store,
+        await orgActor(request),
+        request.params.collection_id,
+      );
+      return reply
+        .header("content-disposition", `attachment; filename="${exported.name}.jsonl"`)
+        .type("application/jsonl")
+        .send(exported.body);
+    },
+  );
 
-  app.delete("/api/collections/:collection_id/records/:record_id", async (request, reply) => {
-    const actor = await orgActor(request);
-    await removeRecord(store, actor, param(request, "collection_id"), param(request, "record_id"));
-    return reply.code(204).send();
-  });
+  app.get(
+    "/api/collections/:collection_id/records",
+    { schema: { params: CollectionParams, querystring: RecordListQuerySchema } },
+    async (request) =>
+      listRecords(store, await orgActor(request), request.params.collection_id, request.query),
+  );
+
+  app.post(
+    "/api/collections/:collection_id/records",
+    { schema: { params: CollectionParams, body: RecordValuesSchema } },
+    async (request, reply) => {
+      const actor = await orgActor(request);
+      const collectionId = request.params.collection_id;
+      return reply.code(201).send(await addRecord(store, actor, collectionId, request.body.body));
+    },
+  );
+
+  app.delete(
+    "/api/collections/:collection_id/records",
+    { schema: { params: CollectionParams } },
+    async (request, reply) => {
+      await clearRecords(store, await orgActor(request), request.params.collection_id);
+      return reply.code(204).send();
+    },
+  );
+
+  app.get(
+    "/api/collections/:collection_id/records/:record_id",
+    { schema: { params: RecordParams } },
+    async (request) =>
+      getRecord(
+        store,
+        await orgActor(request),
+        request.params.collection_id,
+        request.params.record_id,
+      ),
+  );
+
+  app.patch(
+    "/api/collections/:collection_id/records/:record_id",
+    { schema: { params: RecordParams, body: RecordValuesSchema } },
+    async (request) => {
+      const actor = await orgActor(request);
+      const record = {
+        collectionId: request.params.collection_id,
+        recordId: request.params.record_id,
+      };
+      return updateRecord(store, actor, record, request.body.body);
+    },
+  );
+
+  app.delete(
+    "/api/collections/:collection_id/records/:record_id",
+    { schema: { params: RecordParams } },
+    async (request, reply) => {
+      const actor = await orgActor(request);
+      const { collection_id: collectionId, record_id: recordId } = request.params;
+      await removeRecord(store, actor, collectionId, recordId);
+      return reply.code(204).send();
+    },
+  );
 }
