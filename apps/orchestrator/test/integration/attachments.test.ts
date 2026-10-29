@@ -5,7 +5,7 @@ import { MemoryBlobStore } from "../../src/lib/blob-store.js";
 import { buildApp } from "../../src/app.js";
 import { artifactStore } from "../../src/artifacts/store.js";
 import { connect } from "../../src/seed/connect.js";
-import { generationDatabase, GenerationLoop } from "../../src/generation/index.js";
+import { generationLoop } from "../../src/generation/index.js";
 import { newId } from "../../src/lib/ids.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
@@ -50,8 +50,7 @@ test("operators upload images, attach them to a run, and cannot read another org
   const attachments = new AttachmentService(attachmentDatabase(db), new MemoryBlobStore());
   const artifacts = artifactStore(database.pool, notes.templates);
   const workspaceRoot = tempDir("guilds-attachments-workspaces-");
-  const generation = new GenerationLoop({
-    db: generationDatabase(db),
+  const generation = generationLoop(db, {
     mcp: new McpPool(mcpDatabase(db)),
     notes,
     workspaceRoot,

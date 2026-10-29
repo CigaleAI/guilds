@@ -6,7 +6,7 @@ import { buildApp } from "../../src/app.js";
 import { artifactStore } from "../../src/artifacts/store.js";
 import { connect } from "../../src/seed/connect.js";
 import { HANDOFF_REQUEST, HANDOFF_TOOL_REFUSED } from "../../src/generation/chain.js";
-import { generationDatabase, GenerationLoop, LOOP_TIMINGS, RunRequestError } from "../../src/generation/index.js";
+import { generationLoop, LOOP_TIMINGS, RunRequestError } from "../../src/generation/index.js";
 import { generationLive } from "../../src/generation/completion.js";
 import { type GenerationSandboxes } from "../../src/generation/machines.js";
 import type { Completion } from "../../src/llm/index.js";
@@ -83,9 +83,9 @@ test("a coding run near its input limit hands off and continues in a new run", {
     sandboxes.running.add(agentId);
     return sandbox;
   }) as unknown as FakeSandboxes["ensure"];
-  const loop = new GenerationLoop(
+  const loop = generationLoop(
+    db,
     {
-      db: generationDatabase(db),
       notes,
       workspaceRoot: tempDir("guilds-chain-ws-"),
       sandboxes: sandboxes as unknown as GenerationSandboxes,

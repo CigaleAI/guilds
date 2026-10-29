@@ -4,7 +4,7 @@ import { buildApp } from "../../src/app.js";
 import { decodeMasterKey } from "../../src/config/index.js";
 import { connect } from "../../src/seed/connect.js";
 import { generationLive } from "../../src/generation/completion.js";
-import { generationDatabase, GenerationLoop } from "../../src/generation/index.js";
+import { generationLoop } from "../../src/generation/index.js";
 import { AsyncEvent, sleep } from "../../src/lib/event.js";
 import { mcpDatabase } from "../../src/mcp/database.js";
 import { McpPool } from "../../src/mcp/pool.js";
@@ -96,8 +96,7 @@ test("R6 HTTP SSE and WS recordings replay over real HTTP", { timeout: 180_000 }
   const stream = new StreamScript();
   live.streamCompletion = ((options: Parameters<typeof originalStream>[0]) =>
     stream.run(options)) as typeof live.streamCompletion;
-  const generation = new GenerationLoop({
-    db: generationDatabase(db),
+  const generation = generationLoop(db, {
     notes,
     workspaceRoot: env.WORKSPACE_ROOT ?? "",
     sandboxes,

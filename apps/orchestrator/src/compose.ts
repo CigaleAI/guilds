@@ -19,7 +19,7 @@ import {
   type ServerExtension,
 } from "./extension.js";
 import { AdmissionCoordinator } from "./admission/coordinator.js";
-import { generationDatabase, GenerationLoop } from "./generation/index.js";
+import { generationLoop } from "./generation/index.js";
 import { coreModelCredentials, modelProviderStore } from "./llm/credentials.js";
 import { modelsService } from "./llm/models.js";
 import { layOutAgentHomes } from "./machines/layout.js";
@@ -131,8 +131,7 @@ export async function createServer(
   const files = new ArtifactFiles(artifacts, blobs);
   // Agent runs, Studio sessions and Builder sessions share one cap on the generations in progress.
   const admission = new AdmissionCoordinator(config.maxConcurrentGenerations);
-  const generation = new GenerationLoop({
-    db: generationDatabase(db),
+  const generation = generationLoop(db, {
     notes,
     workspaceRoot: config.workspaceRoot,
     sandboxes,

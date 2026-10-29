@@ -3,7 +3,7 @@ import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { decodeMasterKey } from "../../src/config/index.js";
 import { connect } from "../../src/seed/connect.js";
-import { generationDatabase, GenerationLoop, LOOP_TIMINGS } from "../../src/generation/index.js";
+import { generationLoop, LOOP_TIMINGS } from "../../src/generation/index.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { mcpDatabase } from "../../src/mcp/database.js";
 import { McpPool } from "../../src/mcp/pool.js";
@@ -47,9 +47,9 @@ test(
     const upstream = await startSandboxUpstream({ subprotocol: "tty" });
     sandboxes.cliBase = upstream.base;
     const secret = `/t/${sandboxes.cliToken}`;
-    const generation = new GenerationLoop(
+    const generation = generationLoop(
+      db,
       {
-        db: generationDatabase(db),
         notes,
         workspaceRoot: env.WORKSPACE_ROOT ?? "",
         sandboxes,

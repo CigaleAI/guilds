@@ -86,7 +86,7 @@ function loopDatabase(db: Queryable) {
 }
 
 /** The db/ functions a generation loop and each of its parts read and write through, on `db`. */
-export function generationDatabase(db: Queryable) {
+function generationDatabase(db: Queryable) {
   return {
     ...groupChatDatabase(db),
     ...issuesDatabase(db),
@@ -111,11 +111,10 @@ export function generationDatabase(db: Queryable) {
 export type GenerationDatabase = ReturnType<typeof generationDatabase>;
 
 /**
- * What a generation loop runs with, built once at composition: its database, notes, and
- * machines, and the services its runs call. A service left out takes core's own.
+ * What a generation loop runs with beside its database, built once at composition: its notes
+ * and machines, and the services its runs call. A service left out takes core's own.
  */
 export type GenerationLoopServices = {
-  db: GenerationDatabase;
   notes: NotesStore;
   /** Where machine directories are kept when the provider names no host for a machine. */
   workspaceRoot: string;
@@ -132,6 +131,9 @@ export type GenerationLoopServices = {
   credentials?: ModelCredentialsProvider;
   groupRouter?: GroupRouter;
 };
+
+/** What a generation loop is built from: its services, and the db/ functions it and its parts go through. */
+export type GenerationLoopDeps = GenerationLoopServices & { db: GenerationDatabase };
 
 /**
  * The generation loop: runs are created, generated, cancelled, resumed, and reconciled after
@@ -163,7 +165,7 @@ export class GenerationLoop implements GroupRunner {
   chains: RunChains;
   generator: RunGenerator;
   runs: Runs;
-  constructor(services: GenerationLoopServices, timings: GenerationLoopTimings = LOOP_TIMINGS) {
+  constructor(services: GenerationLoopDeps, timings: GenerationLoopTimings = LOOP_TIMINGS) {
     const { db, notes, workspaceRoot, sandboxes } = services;
     this.db = db;
     this.notes = notes;
@@ -564,4 +566,13 @@ export class GenerationLoop implements GroupRunner {
     );
   };
 
+}
+
+/** The generation loop of the runs on `db`, run with `services` and `timings`. */
+export function generationLoop(
+  db: Queryable,
+  services: GenerationLoopServices,
+  timings: GenerationLoopTimings = LOOP_TIMINGS,
+): GenerationLoop {
+  return new GenerationLoop({ ...services, db: generationDatabase(db) }, timings);
 }
