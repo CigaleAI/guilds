@@ -7,6 +7,16 @@ import { boundary } from "../../eslint.boundary.js";
 const HOSTED_PACKAGES = ["@guildsrun/hosted-server"];
 const REPOSITORY = "../..";
 
+// Syntax docs/contributing/code-guidelines.md refuses, under Types and errors.
+const EMPTY_CATCH = {
+  selector: "CatchClause[body.body.length=0]",
+  message: "A catch throws a named error or returns a typed absence.",
+};
+const BARE_ERROR = {
+  selector: "ThrowStatement > NewExpression[callee.name='Error']",
+  message: "A domain throws a named error class.",
+};
+
 export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
@@ -40,6 +50,37 @@ export default tseslint.config(
     ignores: ["**/*.test.ts", "**/*.test.tsx", "**/*.stories.tsx", "test/**", "scripts/**"],
     rules: {
       "@typescript-eslint/consistent-type-assertions": ["error", { assertionStyle: "never" }],
+    },
+  },
+  {
+    // Public functions have explicit types for inputs and outputs
+    // (docs/contributing/code-guidelines.md, Types and errors).
+    files: ["src/**/*.ts"],
+    ignores: ["**/*.test.ts", "**/*.test.tsx", "**/*.stories.tsx", "test/**", "scripts/**"],
+    rules: {
+      "@typescript-eslint/explicit-module-boundary-types": "error",
+    },
+  },
+  {
+    files: ["src/**/*.ts"],
+    ignores: [
+      "**/*.test.ts",
+      "**/*.test.tsx",
+      "**/*.stories.tsx",
+      "test/**",
+      "scripts/**",
+      "src/cli/**",
+    ],
+    rules: {
+      "no-restricted-syntax": ["error", EMPTY_CATCH, BARE_ERROR],
+    },
+  },
+  {
+    // A command in cli/ is no domain: its Error reaches the person who ran it, not an HTTP mapping.
+    files: ["src/cli/**/*.ts"],
+    ignores: ["**/*.test.ts"],
+    rules: {
+      "no-restricted-syntax": ["error", EMPTY_CATCH],
     },
   },
   {
