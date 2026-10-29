@@ -17,7 +17,9 @@ import {
   type GenerationLoopServices,
   type GenerationLoopTimings,
 } from "../../src/generation/index.js";
+import { RunEvents, type RunEventsDatabase } from "../../src/generation/events.js";
 import { type GenerationSandboxes } from "../../src/generation/machines.js";
+import type { ToolboxDatabase, ToolServices } from "../../src/toolbox/services.js";
 import type { Completion } from "../../src/llm/index.js";
 import { McpPool } from "../../src/mcp/pool.js";
 import { NotesStore } from "../../src/notes/store.js";
@@ -1017,17 +1019,35 @@ export function makeLoop(
 ): GenerationLoop {
   const { idleTimeoutMs = 0, schedulerTickMs = LOOP_TIMINGS.schedulerTickMs, ...services } = options;
   const groupRouter = services.groupRouter ?? defaultGroupRouter();
+  const groupChat = new GroupChat(db as GroupChatDatabase, {
+    is_deleting: (guildId) => loop.isDeletingGuild(guildId),
+    router: groupRouter,
+  });
+  const issues = new Issues(db as IssuesDatabase);
+  const schedules = new Schedules(db as ScheduleDatabase);
+  const scripts = new Scripts(db as ScriptDatabase);
+  const events = new RunEvents(db as RunEventsDatabase);
+  const tools: ToolServices = {
+    notes: notes as NotesStore,
+    artifacts: services.artifacts ?? null,
+    files: services.files ?? null,
+    group_chat: groupChat,
+    issues,
+    schedules,
+    scripts,
+    db: db as ToolboxDatabase,
+    events,
+  };
   const loop: GenerationLoop = new GenerationLoop(
     {
       db: db as GenerationDatabase,
-      groupChat: new GroupChat(db as GroupChatDatabase, {
-        is_deleting: (guildId) => loop.isDeletingGuild(guildId),
-        router: groupRouter,
-      }),
+      groupChat,
       groupRouter,
-      issues: new Issues(db as IssuesDatabase),
-      schedules: new Schedules(db as ScheduleDatabase),
-      scripts: new Scripts(db as ScriptDatabase),
+      issues,
+      schedules,
+      scripts,
+      events,
+      tools,
       notes: notes as NotesStore,
       workspaceRoot,
       sandboxes: sandboxes as GenerationSandboxes,

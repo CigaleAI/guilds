@@ -37,13 +37,21 @@ export type ToolboxDatabase = {
 type BoundQuery<F> = F extends (db: Queryable, ...args: infer A) => infer R ? (...args: A) => R : never;
 
 /** The toolbox's db/ functions on `db`. */
-export function toolboxDatabase(db: Queryable): ToolboxDatabase {
+function toolboxDatabase(db: Queryable): ToolboxDatabase {
   return {
     updateRunScripts: bindQuery(db, updateRunScripts),
     mergeRunMetadata: bindQuery(db, mergeRunMetadata),
     markHarnessLogin: bindQuery(db, markHarnessLogin),
     clearHarnessLogin: bindQuery(db, clearHarnessLogin),
   };
+}
+
+/** What the tools call beside their database. */
+export type ToolServicesBesideDatabase = Omit<ToolServices, "db">;
+
+/** The tools' services: `services`, with the toolbox's db/ functions on `db` as their database. */
+export function toolServices(db: Queryable, services: ToolServicesBesideDatabase): ToolServices {
+  return { ...services, db: toolboxDatabase(db) };
 }
 
 /** The stream a run's subscribers read, which a running tool call publishes its progress on. */

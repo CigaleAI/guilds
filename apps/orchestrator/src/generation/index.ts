@@ -41,7 +41,7 @@ import { RunPreparation, runPreparationDatabase, type ConnectorPool } from "./pr
 import { RunSecrets, runSecretsDatabase } from "./run-secrets.js";
 import { Runs, runsDatabase } from "./runs.js";
 import { ToolCalls, toolCallsDatabase } from "./tool-calls.js";
-import type { ToolServices } from "../toolbox/services.js";
+import { toolServices, type ToolServices } from "../toolbox/services.js";
 import { WorkspaceLimits, workspaceLimitsDatabase } from "./workspace.js";
 import type { GenerationArtifacts } from "./prepare.js";
 
@@ -140,6 +140,10 @@ export type GenerationLoopDeps = GenerationLoopServices & {
   issues: Issues;
   schedules: Schedules;
   scripts: Scripts;
+  /** The runs' streams, which the tools publish on too. */
+  events: RunEvents;
+  /** What the runs' tools call. */
+  tools: ToolServices;
 };
 
 /**
@@ -182,7 +186,7 @@ export class GenerationLoop implements GroupRunner {
     this.attachments = services.attachments ?? null;
     this.policy = services.policy ?? OPEN_POLICY;
     this.generations = new ActiveGenerations(db, services.admission ?? new AdmissionCoordinator(), this.policy);
-    this.events = new RunEvents(db);
+    this.events = services.events;
     this.credentials = services.credentials;
     this.machines = new AgentMachines({ db, sandboxes, workspaceRoot, generations: this.generations }, timings.idleTimeoutMs);
     const { groupRouter } = services;
@@ -210,17 +214,7 @@ export class GenerationLoop implements GroupRunner {
       attachments: this.attachments,
     });
     this.secrets = new RunSecrets(db, this.machines);
-    const tools: ToolServices = {
-      notes,
-      artifacts: this.artifacts,
-      files: this.files,
-      group_chat: this.groupChat,
-      issues: this.issues,
-      schedules: this.schedules,
-      scripts: this.scripts,
-      db,
-      events: this.events,
-    };
+    const { tools } = services;
     this.coding = new CodingRuns({ db, generations: this.generations, machines: this.machines, events: this.events, tools });
     this.workspace = new WorkspaceLimits(db, this.events);
     this.toolCalls = new ToolCalls({
@@ -593,16 +587,33 @@ export function generationLoop(
     is_deleting: (guildId) => loop.isDeletingGuild(guildId),
     router: groupRouter,
   });
+  const database = generationDatabase(db);
+  const events = new RunEvents(database);
+  const issues = guildIssues(db);
+  const schedules = agentSchedules(db);
+  const scripts = agentScripts(db);
+  const tools = toolServices(db, {
+    notes: services.notes,
+    artifacts: services.artifacts ?? null,
+    files: services.files ?? null,
+    group_chat: groupChat,
+    issues,
+    schedules,
+    scripts,
+    events,
+  });
   const loop = new GenerationLoop(
     {
       ...services,
-      db: generationDatabase(db),
+      db: database,
       credentials: services.credentials ?? coreModelCredentials(db),
       groupChat,
       groupRouter,
-      issues: guildIssues(db),
-      schedules: agentSchedules(db),
-      scripts: agentScripts(db),
+      issues,
+      schedules,
+      scripts,
+      events,
+      tools,
     },
     timings,
   );
