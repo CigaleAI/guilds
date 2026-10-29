@@ -424,10 +424,6 @@ export class GroupChat {
   }
 
   isDispatching(guildId: string): boolean {
-    return this.is_dispatching(guildId);
-  }
-
-  is_dispatching(guildId: string): boolean {
     const task = this._dispatch_tasks.get(guildId);
     return task !== undefined && !task.done();
   }
@@ -476,7 +472,7 @@ export class GroupChat {
     if (this._runner === null || this._is_deleting(guildId)) {
       return;
     }
-    if (this.is_dispatching(guildId)) {
+    if (this.isDispatching(guildId)) {
       this._kick(guildId).set();
       return;
     }
@@ -487,17 +483,13 @@ export class GroupChat {
     this._ensure_dispatch(guildId);
   }
 
-  async resume_all(): Promise<void> {
+  async resumeAll(): Promise<void> {
     if (this._runner === null || !this.db.listGuilds) {
       return;
     }
     for (const guild of await this.db.listGuilds()) {
       await this.wake(String(guild.id));
     }
-  }
-
-  async resumeAll(): Promise<void> {
-    await this.resume_all();
   }
 
   async stopDispatchers(): Promise<void> {
@@ -514,7 +506,7 @@ export class GroupChat {
     return this._state_view(row);
   }
 
-  async set_limit(guildId: string, limit: number): Promise<Record<string, unknown>> {
+  async setLimit(guildId: string, limit: number): Promise<Record<string, unknown>> {
     if (this._is_deleting(guildId)) {
       throw new GroupChatError(409, "guild is being deleted");
     }
@@ -526,10 +518,6 @@ export class GroupChat {
       throw new GroupChatError(404, "guild not found");
     }
     return this._state_view(row);
-  }
-
-  async setLimit(guildId: string, limit: number): Promise<Record<string, unknown>> {
-    return this.set_limit(guildId, limit);
   }
 
   /** Deletes the guild's public messages for everyone and tells open chats. */
@@ -549,7 +537,7 @@ export class GroupChat {
     return state;
   }
 
-  async list_messages(guildId: string): Promise<Array<Record<string, unknown>>> {
+  async listMessages(guildId: string): Promise<Array<Record<string, unknown>>> {
     const guild = await this.db.getGuild(guildId);
     if (guild === null) {
       throw new GroupChatError(404, "guild not found");
@@ -557,15 +545,11 @@ export class GroupChat {
     return (await this.db.listGroupMessages(guildId)).map((row) => groupMessageItem(row));
   }
 
-  async listMessages(guildId: string): Promise<Array<Record<string, unknown>>> {
-    return this.list_messages(guildId);
-  }
-
   /**
    * Posts an operator message. With `interrupt`, it then stops the group runs the message
    * targets, so they start again with it in view.
    */
-  async post_user(
+  async postUser(
     guildId: string,
     content: string,
     options: { author_name?: string; author_user_id?: string; interrupt?: boolean } = {},
@@ -598,15 +582,7 @@ export class GroupChat {
     return message;
   }
 
-  async postUser(
-    guildId: string,
-    content: string,
-    options: { author_name?: string; author_user_id?: string; interrupt?: boolean } = {},
-  ): Promise<Record<string, unknown>> {
-    return this.post_user(guildId, content, options);
-  }
-
-  async post_from_run(
+  async postFromRun(
     runId: string,
     agentId: string,
     guildId: string,
@@ -659,16 +635,6 @@ export class GroupChat {
     const message = groupMessageItem(row);
     await this._after_commit(guildId, message);
     return `posted id=${message.id} seq=${message.seq}`;
-  }
-
-  async postFromRun(
-    runId: string,
-    agentId: string,
-    guildId: string,
-    agentName: string,
-    content: string,
-  ): Promise<string> {
-    return this.post_from_run(runId, agentId, guildId, agentName, content);
   }
 
   async _interrupt(guildId: string, taggedAgentIds: string[]): Promise<void> {
@@ -984,7 +950,7 @@ export class GroupChat {
       chat_seq: row.chat_seq,
       agent_message_count: count,
       agent_message_limit: limit,
-      dispatching: this.is_dispatching(guildId),
+      dispatching: this.isDispatching(guildId),
       pending_agent_count: row.pending_agent_count,
       active_agents: active.map((delivery) => ({ id: delivery.id, name: delivery.name })),
       limit_reached: count >= limit,

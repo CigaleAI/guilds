@@ -19,13 +19,6 @@ export type GroupChat = {
     agentName: string,
     content: string,
   ): Promise<string>;
-  post_from_run?(
-    runId: string,
-    agentId: string,
-    guildId: string,
-    agentName: string,
-    content: string,
-  ): Promise<string>;
 };
 
 export class CancelEvent {

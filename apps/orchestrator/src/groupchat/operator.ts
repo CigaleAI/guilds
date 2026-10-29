@@ -60,7 +60,7 @@ export async function postOperatorMessage(
   if (message.interrupt !== undefined && typeof message.interrupt !== "boolean") {
     throw new GroupChatError(422, "interrupt must be a boolean");
   }
-  const posted = await groupChatOf(services).post_user(guildId, message.content, {
+  const posted = await groupChatOf(services).postUser(guildId, message.content, {
     author_name: author.name,
     author_user_id: author.id,
     interrupt: message.interrupt === true,

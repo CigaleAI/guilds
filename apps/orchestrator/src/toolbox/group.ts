@@ -32,9 +32,6 @@ export const groupPost: Tool = {
     if (chat.postFromRun) {
       return chat.postFromRun(ctx.run_id, ctx.agent_id, ctx.guild_id, ctx.agent_name, argString(args, "content"));
     }
-    if (chat.post_from_run) {
-      return chat.post_from_run(ctx.run_id, ctx.agent_id, ctx.guild_id, ctx.agent_name, argString(args, "content"));
-    }
     throw new Error("group chat is not available");
   },
 };

@@ -359,7 +359,7 @@ export class GenerationLoop implements GroupRunner {
     if (this.generations.isDeletingGuild(guildId)) {
       throw new RunRequestError(409, "guild is already being deleted");
     }
-    if (this.groupChat.is_dispatching(guildId)) {
+    if (this.groupChat.isDispatching(guildId)) {
       throw new RunRequestError(409, "guild group chat is delivering");
     }
     const agentIds = (await this.db.listAgents(guildId)).map((row) => row.id);
@@ -515,7 +515,7 @@ export class GenerationLoop implements GroupRunner {
         await this.db.completeRun(run.id, now);
       }
     }
-    await this.groupChat.resume_all();
+    await this.groupChat.resumeAll();
     await this.machines.armIdleForRunning();
   }
 

@@ -448,7 +448,7 @@ function chatRow(seq: number, content: string, author = "user"): GroupMessageRow
 describe("groupchat", { concurrency: 1 }, () => {
   test("user_post_makes_every_agent_pending", async () => {
     const { chat } = seed();
-    const message = await chat.post_user("guild_1", "Plan the release.");
+    const message = await chat.postUser("guild_1", "Plan the release.");
     assert.equal(message.seq, 1);
     assert.equal(message.author_type, "user");
     assert.equal(message.author_name, "user");
@@ -461,15 +461,15 @@ describe("groupchat", { concurrency: 1 }, () => {
 
   test("user_post_snapshots_author_name", async () => {
     const { chat } = seed();
-    const message = await chat.post_user("guild_1", "From ada.", { author_name: "ada" });
+    const message = await chat.postUser("guild_1", "From ada.", { author_name: "ada" });
     assert.equal(message.author_type, "user");
     assert.equal(message.author_name, "ada");
   });
 
   test("posting_agent_advances_own_cursor", async () => {
     const { db, chat } = seed();
-    await chat.post_user("guild_1", "Plan the release.");
-    const ack = await chat.post_from_run(
+    await chat.postUser("guild_1", "Plan the release.");
+    const ack = await chat.postFromRun(
       "r_1",
       "a_1",
       "guild_1",
@@ -482,7 +482,7 @@ describe("groupchat", { concurrency: 1 }, () => {
     const state = await chat.state("guild_1");
     assert.equal(state.pending_agent_count, 1);
     assert.equal(state.agent_message_count, 1);
-    const listed = await chat.list_messages("guild_1");
+    const listed = await chat.listMessages("guild_1");
     assert.deepEqual(
       listed.map((item) => item.author_type),
       ["user", "agent"],
@@ -493,9 +493,9 @@ describe("groupchat", { concurrency: 1 }, () => {
 
   test("user_post_resets_agent_message_count", async () => {
     const { chat } = seed();
-    await chat.post_user("guild_1", "start");
-    await chat.post_from_run("r_1", "a_1", "guild_1", "researcher", "one");
-    await chat.post_user("guild_1", "continue");
+    await chat.postUser("guild_1", "start");
+    await chat.postFromRun("r_1", "a_1", "guild_1", "researcher", "one");
+    await chat.postUser("guild_1", "continue");
     const state = await chat.state("guild_1");
     assert.equal(state.agent_message_count, 0);
     assert.equal(state.chat_seq, 3);
@@ -503,12 +503,12 @@ describe("groupchat", { concurrency: 1 }, () => {
 
   test("nth_agent_message_commits_and_next_is_rejected", async () => {
     const { chat } = seed(2);
-    await chat.post_user("guild_1", "start");
-    await chat.post_from_run("r_1", "a_1", "guild_1", "researcher", "one");
-    await chat.post_from_run("r_2", "a_2", "guild_1", "writer", "two");
-    const rejected = await chat.post_from_run("r_1", "a_1", "guild_1", "researcher", "three");
+    await chat.postUser("guild_1", "start");
+    await chat.postFromRun("r_1", "a_1", "guild_1", "researcher", "one");
+    await chat.postFromRun("r_2", "a_2", "guild_1", "writer", "two");
+    const rejected = await chat.postFromRun("r_1", "a_1", "guild_1", "researcher", "three");
     assert.equal(rejected, limitError(2));
-    const listed = await chat.list_messages("guild_1");
+    const listed = await chat.listMessages("guild_1");
     assert.deepEqual(
       listed.map((item) => item.seq),
       [1, 2, 3],
@@ -521,9 +521,9 @@ describe("groupchat", { concurrency: 1 }, () => {
   test("concurrent_user_posts_get_unique_sequences", async () => {
     const { chat } = seed();
     const results = await Promise.all([
-      chat.post_user("guild_1", "one"),
-      chat.post_user("guild_1", "two"),
-      chat.post_user("guild_1", "three"),
+      chat.postUser("guild_1", "one"),
+      chat.postUser("guild_1", "two"),
+      chat.postUser("guild_1", "three"),
     ]);
     assert.deepEqual(
       results.map((item) => Number(item.seq)).sort((a, b) => a - b),
@@ -537,7 +537,7 @@ describe("groupchat", { concurrency: 1 }, () => {
     db.addGuild("guild_1");
     const chat = chatFor(db);
     const queue = chat.subscribe("guild_1");
-    await chat.post_user("guild_1", "hello");
+    await chat.postUser("guild_1", "hello");
     const events: Array<[string, Record<string, unknown>]> = [];
     while (!queue.empty()) {
       events.push(await queue.get());
@@ -551,8 +551,8 @@ describe("groupchat", { concurrency: 1 }, () => {
   test("limit_reached_publishes_notice", async () => {
     const { chat } = seed(1);
     const queue = chat.subscribe("guild_1");
-    await chat.post_user("guild_1", "start");
-    await chat.post_from_run("r_1", "a_1", "guild_1", "researcher", "one");
+    await chat.postUser("guild_1", "start");
+    await chat.postFromRun("r_1", "a_1", "guild_1", "researcher", "one");
     const events: Array<[string, Record<string, unknown>]> = [];
     while (!queue.empty()) {
       events.push(await queue.get());
@@ -565,7 +565,7 @@ describe("groupchat", { concurrency: 1 }, () => {
     const { db } = seed();
     const chat = chatFor(db, new Set(["guild_1"]));
     await assert.rejects(
-      () => chat.post_user("guild_1", "nope"),
+      () => chat.postUser("guild_1", "nope"),
       (error: unknown) => {
         assert.ok(error instanceof GroupChatError);
         assert.equal(error.status, 409);
@@ -577,7 +577,7 @@ describe("groupchat", { concurrency: 1 }, () => {
   test("blank_content_is_rejected", async () => {
     const { chat } = seed();
     await assert.rejects(
-      () => chat.post_user("guild_1", "   "),
+      () => chat.postUser("guild_1", "   "),
       (error: unknown) => {
         assert.ok(error instanceof GroupChatError);
         assert.equal(error.status, 422);
@@ -589,36 +589,36 @@ describe("groupchat", { concurrency: 1 }, () => {
   test("set_limit_requires_positive_integer", async () => {
     const { chat } = seed();
     await assert.rejects(
-      () => chat.set_limit("guild_1", 0),
+      () => chat.setLimit("guild_1", 0),
       (error: unknown) => {
         assert.ok(error instanceof GroupChatError);
         assert.equal(error.status, 422);
         return true;
       },
     );
-    const state = await chat.set_limit("guild_1", 5);
+    const state = await chat.setLimit("guild_1", 5);
     assert.equal(state.agent_message_limit, 5);
   });
 
   test("clear_deletes_messages_and_keeps_the_sequence", async () => {
     const { chat } = seed();
-    await chat.post_user("guild_1", "first");
-    await chat.post_user("guild_1", "second");
+    await chat.postUser("guild_1", "first");
+    await chat.postUser("guild_1", "second");
     const state = await chat.clear("guild_1");
     assert.equal(state.chat_seq, 2);
-    assert.deepEqual(await chat.list_messages("guild_1"), []);
-    const next = await chat.post_user("guild_1", "after the clear");
+    assert.deepEqual(await chat.listMessages("guild_1"), []);
+    const next = await chat.postUser("guild_1", "after the clear");
     assert.equal(next.seq, 3);
     assert.deepEqual(
-      (await chat.list_messages("guild_1")).map((item) => item.content),
+      (await chat.listMessages("guild_1")).map((item) => item.content),
       ["after the clear"],
     );
   });
 
   test("clear_catches_up_members_and_resets_the_agent_budget", async () => {
     const { db, chat } = seed(1);
-    await chat.post_user("guild_1", "start");
-    await chat.post_from_run("r_1", "a_1", "guild_1", "researcher", "one");
+    await chat.postUser("guild_1", "start");
+    await chat.postFromRun("r_1", "a_1", "guild_1", "researcher", "one");
     await db.appendGroupChatError("guild_1", { message: "boom" }, new Date());
     const state = await chat.clear("guild_1");
     assert.equal(state.pending_agent_count, 0);
@@ -630,7 +630,7 @@ describe("groupchat", { concurrency: 1 }, () => {
 
   test("clear_publishes_cleared_with_the_state", async () => {
     const { chat } = seed();
-    await chat.post_user("guild_1", "start");
+    await chat.postUser("guild_1", "start");
     const queue = chat.subscribe("guild_1");
     await chat.clear("guild_1");
     const [name, data] = await queue.get();
@@ -651,24 +651,24 @@ describe("groupchat", { concurrency: 1 }, () => {
 
   test("run_started_before_clear_cannot_post", async () => {
     const { chat } = seed();
-    await chat.post_user("guild_1", "start");
+    await chat.postUser("guild_1", "start");
     await chat.clear("guild_1");
-    const refused = await chat.post_from_run("r_1", "a_1", "guild_1", "researcher", "stale reply");
+    const refused = await chat.postFromRun("r_1", "a_1", "guild_1", "researcher", "stale reply");
     assert.equal(refused, CLEARED_ERROR);
-    assert.deepEqual(await chat.list_messages("guild_1"), []);
+    assert.deepEqual(await chat.listMessages("guild_1"), []);
   });
 
   test("run_started_after_clear_posts", async () => {
     const { db, chat } = seed();
     await chat.clear("guild_1");
     db.addRun("r_3", "a_1", new Date(Date.now() + 1000));
-    const ack = await chat.post_from_run("r_3", "a_1", "guild_1", "researcher", "fresh start");
+    const ack = await chat.postFromRun("r_3", "a_1", "guild_1", "researcher", "fresh start");
     assert.equal(ack, "posted id=1 seq=1");
   });
 
   test("new_agent_cursor_starts_at_current_seq", async () => {
     const { db, chat } = seed();
-    await chat.post_user("guild_1", "already happened");
+    await chat.postUser("guild_1", "already happened");
     db.addAgent("a_3", "guild_1", "latecomer");
     const state = await chat.state("guild_1");
     assert.equal(db.agents.a_3?.group_chat_delivered_through, 1);
@@ -677,12 +677,12 @@ describe("groupchat", { concurrency: 1 }, () => {
 
   test("recognized_tags_survive_membership_changes", async () => {
     const { db, chat } = seed();
-    const message = await chat.post_user("guild_1", "@writer handle this.");
+    const message = await chat.postUser("guild_1", "@writer handle this.");
     assert.deepEqual(message.tagged, ["writer"]);
     assert.deepEqual(message.tagged_agent_ids, ["a_2"]);
     delete db.agents.a_2;
     db.addAgent("a_3", "guild_1", "writer", { deliveredThrough: 0 });
-    const listed = await chat.list_messages("guild_1");
+    const listed = await chat.listMessages("guild_1");
     assert.deepEqual(listed[0]?.tagged, ["writer"]);
     assert.deepEqual(listed[0]?.tagged_agent_ids, ["a_2"]);
     const runner = new FakeRunner();
@@ -701,8 +701,8 @@ describe("groupchat", { concurrency: 1 }, () => {
       observed.push([event, data]);
     });
     db.addRun("r_1", "a_1");
-    await chat.post_from_run("r_1", "a_1", "guild_1", "researcher", "@ada the digest is ready");
-    const [stored] = await chat.list_messages("guild_1");
+    await chat.postFromRun("r_1", "a_1", "guild_1", "researcher", "@ada the digest is ready");
+    const [stored] = await chat.listMessages("guild_1");
     assert.deepEqual(stored?.tagged, ["ada"]);
     assert.deepEqual(stored?.tagged_agent_ids, []);
     assert.deepEqual(stored?.tagged_user_ids, ["user_ada"]);
@@ -712,7 +712,7 @@ describe("groupchat", { concurrency: 1 }, () => {
 
   test("group_post_tool_writes_public_message", async () => {
     const { chat } = seed();
-    await chat.post_user("guild_1", "start");
+    await chat.postUser("guild_1", "start");
     const ctx = createToolContext({
       run_id: "r_1",
       agent_id: "a_1",
@@ -734,14 +734,14 @@ describe("groupchat", { concurrency: 1 }, () => {
     );
     assert.equal(payload.content, "posted id=2 seq=2");
     assert.equal(metadata.error, null);
-    const listed = await chat.list_messages("guild_1");
+    const listed = await chat.listMessages("guild_1");
     assert.equal(listed[listed.length - 1]?.content, "shared finding");
   });
 
   test("group_post_tool_returns_waiting_error_at_limit", async () => {
     const { db, chat } = seed(1);
-    await chat.post_user("guild_1", "start");
-    await chat.post_from_run("r_1", "a_1", "guild_1", "researcher", "one");
+    await chat.postUser("guild_1", "start");
+    await chat.postFromRun("r_1", "a_1", "guild_1", "researcher", "one");
     const ctx = createToolContext({
       run_id: "r_2",
       agent_id: "a_2",
@@ -968,7 +968,7 @@ describe("groupchat", { concurrency: 1 }, () => {
     const { db, chat } = seed();
     const runner = new FakeRunner();
     chat.bind(runner);
-    await chat.post_user("guild_1", "Plan the release.");
+    await chat.postUser("guild_1", "Plan the release.");
     await waitDispatch(chat);
     assert.deepEqual(runner.deliveries, [
       ["a_1", 1],
@@ -986,7 +986,7 @@ describe("groupchat", { concurrency: 1 }, () => {
     const runner = new FakeRunner();
     runner.busy.add("a_1");
     chat.bind(runner);
-    await chat.post_user("guild_1", "Plan the release.");
+    await chat.postUser("guild_1", "Plan the release.");
     await sleep(50);
     assert.deepEqual(runner.deliveries, [["a_2", 1]]);
     assert.equal(db.agents.a_1?.group_chat_delivered_through, 0);
@@ -1004,14 +1004,14 @@ describe("groupchat", { concurrency: 1 }, () => {
     const runner = new FakeRunner();
     runner.gate = new AsyncEvent();
     chat.bind(runner);
-    await chat.post_user("guild_1", "first");
+    await chat.postUser("guild_1", "first");
     for (let attempt = 0; attempt < 50; attempt += 1) {
-      if (chat.is_dispatching("guild_1")) {
+      if (chat.isDispatching("guild_1")) {
         break;
       }
       await sleep(10);
     }
-    await chat.post_user("guild_1", "second");
+    await chat.postUser("guild_1", "second");
     runner.gate.set();
     await waitDispatch(chat);
     assert.equal(db.agents.a_1?.group_chat_delivered_through, 2);
@@ -1025,7 +1025,7 @@ describe("groupchat", { concurrency: 1 }, () => {
     const runner = new FakeRunner();
     runner.fail_agents.add("a_1");
     chat.bind(runner);
-    await chat.post_user("guild_1", "Plan the release.");
+    await chat.postUser("guild_1", "Plan the release.");
     await waitDispatch(chat);
     assert.deepEqual(runner.deliveries, [["a_2", 1]]);
     assert.equal(db.agents.a_1?.group_chat_delivered_through, 1);
@@ -1039,10 +1039,10 @@ describe("groupchat", { concurrency: 1 }, () => {
     const { db, chat } = seed();
     const runner = new FakeRunner();
     chat.bind(runner);
-    await chat.post_user("guild_1", "Plan the release.");
+    await chat.postUser("guild_1", "Plan the release.");
     await waitDispatch(chat);
     runner.deliveries = [];
-    await chat.post_from_run("r_1", "a_1", "guild_1", "researcher", "Status only, no tag.");
+    await chat.postFromRun("r_1", "a_1", "guild_1", "researcher", "Status only, no tag.");
     await waitDispatch(chat);
     assert.deepEqual(runner.deliveries, []);
     assert.equal(db.agents.a_2?.group_chat_delivered_through, 2);
@@ -1050,8 +1050,8 @@ describe("groupchat", { concurrency: 1 }, () => {
 
   test("earlier_user_post_still_wakes_peer_after_untagged_agent_post", async () => {
     const { db, chat } = seed();
-    await chat.post_user("guild_1", "Plan the release.");
-    await chat.post_from_run("r_1", "a_1", "guild_1", "researcher", "Status only, no tag.");
+    await chat.postUser("guild_1", "Plan the release.");
+    await chat.postFromRun("r_1", "a_1", "guild_1", "researcher", "Status only, no tag.");
     const runner = new FakeRunner();
     chat.bind(runner);
     await chat.wake("guild_1");
@@ -1065,10 +1065,10 @@ describe("groupchat", { concurrency: 1 }, () => {
     const { db, chat } = seed();
     const runner = new FakeRunner();
     chat.bind(runner);
-    await chat.post_user("guild_1", "Plan the release.");
+    await chat.postUser("guild_1", "Plan the release.");
     await waitDispatch(chat);
     runner.deliveries = [];
-    await chat.post_from_run("r_1", "a_1", "guild_1", "researcher", "@writer please check this.");
+    await chat.postFromRun("r_1", "a_1", "guild_1", "researcher", "@writer please check this.");
     await waitDispatch(chat);
     assert.deepEqual(runner.deliveries, [["a_2", 2]]);
     assert.equal(db.agents.a_2?.group_chat_delivered_through, 2);
@@ -1078,7 +1078,7 @@ describe("groupchat", { concurrency: 1 }, () => {
     const { db, chat } = seed();
     const runner = new FakeRunner();
     chat.bind(runner);
-    await chat.post_user("guild_1", "@writer handle this.");
+    await chat.postUser("guild_1", "@writer handle this.");
     await waitDispatch(chat);
     assert.deepEqual(runner.deliveries, [["a_2", 1]]);
     assert.equal(db.agents.a_1?.group_chat_delivered_through, 1);
@@ -1089,10 +1089,10 @@ describe("groupchat", { concurrency: 1 }, () => {
     const { db, chat } = seed();
     const runner = new FakeRunner();
     chat.bind(runner);
-    await chat.post_user("guild_1", "Plan the release.");
+    await chat.postUser("guild_1", "Plan the release.");
     await waitDispatch(chat);
     runner.deliveries = [];
-    await chat.post_from_run("r_1", "a_1", "guild_1", "researcher", "Done @user");
+    await chat.postFromRun("r_1", "a_1", "guild_1", "researcher", "Done @user");
     await waitDispatch(chat);
     assert.deepEqual(runner.deliveries, []);
     assert.equal(db.agents.a_2?.group_chat_delivered_through, 2);
@@ -1102,7 +1102,7 @@ describe("groupchat", { concurrency: 1 }, () => {
     const { db, chat } = seedWithRouter(choiceEvaluate("writer"));
     const runner = new FakeRunner();
     chat.bind(runner);
-    await chat.post_user("guild_1", "Write the release note.");
+    await chat.postUser("guild_1", "Write the release note.");
     await waitDispatch(chat);
     assert.deepEqual(runner.deliveries, [["a_2", 1]]);
     assert.equal(db.agents.a_1?.group_chat_delivered_through, 1);
@@ -1124,7 +1124,7 @@ describe("groupchat", { concurrency: 1 }, () => {
     const { db, chat } = seedWithRouter(choiceEvaluate("none"));
     const runner = new FakeRunner();
     chat.bind(runner);
-    await chat.post_user("guild_1", "@writer handle this.");
+    await chat.postUser("guild_1", "@writer handle this.");
     await waitDispatch(chat);
     assert.deepEqual(runner.deliveries, [["a_2", 1]]);
     assert.equal(db.agents.a_1?.group_chat_delivered_through, 1);
@@ -1134,7 +1134,7 @@ describe("groupchat", { concurrency: 1 }, () => {
     const { db, chat } = seedWithRouter(choiceEvaluate("writer", { confidence: 0.3 }));
     const runner = new FakeRunner();
     chat.bind(runner);
-    await chat.post_user("guild_1", "Hmm, what do we do next?");
+    await chat.postUser("guild_1", "Hmm, what do we do next?");
     await waitDispatch(chat);
     assert.deepEqual(runner.deliveries, [
       ["a_1", 1],
@@ -1152,11 +1152,11 @@ describe("groupchat", { concurrency: 1 }, () => {
     );
     const runner = new FakeRunner();
     chat.bind(runner);
-    await chat.post_user("guild_1", "Plan the release.");
+    await chat.postUser("guild_1", "Plan the release.");
     await waitDispatch(chat);
     runner.deliveries = [];
     seen.length = 0;
-    await chat.post_from_run(
+    await chat.postFromRun(
       "r_1",
       "a_1",
       "guild_1",
@@ -1183,7 +1183,7 @@ describe("groupchat", { concurrency: 1 }, () => {
     );
     const runner = new FakeRunner();
     chat.bind(runner);
-    await chat.post_user("guild_1", "@writer handle this.");
+    await chat.postUser("guild_1", "@writer handle this.");
     await waitDispatch(chat);
     // The tagged writer goes first; the researcher, picked without a tag, runs after it.
     assert.deepEqual(runner.deliveries, [
@@ -1197,9 +1197,9 @@ describe("groupchat", { concurrency: 1 }, () => {
     const runner = new FakeRunner();
     runner.gates.set("a_1", new AsyncEvent());
     chat.bind(runner);
-    await chat.post_user("guild_1", "@researcher dig into this.");
+    await chat.postUser("guild_1", "@researcher dig into this.");
     await waitStarted(runner, 1);
-    await chat.post_user("guild_1", "@writer draft the intro.");
+    await chat.postUser("guild_1", "@writer draft the intro.");
     await waitStarted(runner, 2);
     assert.deepEqual(runner.started, ["a_1", "a_2"]);
     const state = await chat.state("guild_1");
@@ -1217,7 +1217,7 @@ describe("groupchat", { concurrency: 1 }, () => {
     const runner = new FakeRunner();
     runner.gates.set("a_1", new AsyncEvent());
     chat.bind(runner);
-    await chat.post_user("guild_1", "Plan the release.");
+    await chat.postUser("guild_1", "Plan the release.");
     await waitStarted(runner, 1);
     await sleep(30);
     assert.deepEqual(runner.started, ["a_1"]);
@@ -1231,9 +1231,9 @@ describe("groupchat", { concurrency: 1 }, () => {
     const runner = new FakeRunner();
     runner.gates.set("a_1", new AsyncEvent());
     chat.bind(runner);
-    await chat.post_user("guild_1", "@researcher dig into this.");
+    await chat.postUser("guild_1", "@researcher dig into this.");
     await waitStarted(runner, 1);
-    await chat.post_user("guild_1", "Anyone free?");
+    await chat.postUser("guild_1", "Anyone free?");
     await sleep(30);
     assert.deepEqual(runner.started, ["a_1"]);
     runner.gates.get("a_1")?.set();
@@ -1250,9 +1250,9 @@ describe("groupchat", { concurrency: 1 }, () => {
     const runner = new FakeRunner();
     runner.gates.set("a_1", new AsyncEvent());
     chat.bind(runner);
-    await chat.post_user("guild_1", "@researcher dig into this.");
+    await chat.postUser("guild_1", "@researcher dig into this.");
     await waitStarted(runner, 1);
-    await chat.post_user("guild_1", "@researcher also check the dates.");
+    await chat.postUser("guild_1", "@researcher also check the dates.");
     await sleep(30);
     assert.deepEqual(runner.started, ["a_1"]);
     runner.gates.get("a_1")?.set();
@@ -1269,9 +1269,9 @@ describe("groupchat", { concurrency: 1 }, () => {
     const runner = new FakeRunner();
     runner.gates.set("a_1", new AsyncEvent());
     chat.bind(runner);
-    await chat.post_user("guild_1", "@researcher dig into this.");
+    await chat.postUser("guild_1", "@researcher dig into this.");
     await waitStarted(runner, 1);
-    await chat.post_user("guild_1", "@researcher stop, use the new brief.", { interrupt: true });
+    await chat.postUser("guild_1", "@researcher stop, use the new brief.", { interrupt: true });
     await waitDispatch(chat);
     assert.deepEqual(runner.cancelled, ["a_1"]);
     assert.deepEqual(runner.deliveries.at(-1), ["a_1", 2]);
@@ -1282,9 +1282,9 @@ describe("groupchat", { concurrency: 1 }, () => {
     const runner = new FakeRunner();
     runner.gates.set("a_1", new AsyncEvent());
     chat.bind(runner);
-    await chat.post_user("guild_1", "@researcher dig into this.");
+    await chat.postUser("guild_1", "@researcher dig into this.");
     await waitStarted(runner, 1);
-    await chat.post_user("guild_1", "@researcher one more thing.");
+    await chat.postUser("guild_1", "@researcher one more thing.");
     runner.gates.get("a_1")?.set();
     await waitDispatch(chat);
     assert.deepEqual(runner.cancelled, []);

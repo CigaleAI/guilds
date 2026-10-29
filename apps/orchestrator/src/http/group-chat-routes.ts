@@ -43,13 +43,13 @@ export async function registerGroupChatRoutes(
     const user = await currentUser(db, request, deps);
     const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
     const limit = Number(bodyOf(request).agent_message_limit);
-    return groupChatOf(services).set_limit(guild.id, limit);
+    return groupChatOf(services).setLimit(guild.id, limit);
   });
 
   app.get("/api/guilds/:guild_id/group-chat/messages", async (request) => {
     const user = await currentUser(db, request, deps);
     const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
-    return groupChatOf(services).list_messages(guild.id);
+    return groupChatOf(services).listMessages(guild.id);
   });
 
   app.delete("/api/guilds/:guild_id/group-chat/messages", async (request) => {
