@@ -506,10 +506,10 @@ results.
 | Route | Does | Success | Refusals |
 | --- | --- | --- | --- |
 | `GET /api/agents/:id/runs` | the agent's runs | 200 | |
-| `POST /api/agents/:id/runs` | creates a direct run, with optional `message` and attachment ids | 201 idle, 202 generating | 422 empty message; 409 agent generating, guild being deleted |
+| `POST /api/agents/:id/runs` | creates a direct run, with optional `message` and attachment ids | 201 idle, 202 generating | 422 empty message, a `message` that is neither a string nor null, or `attachment_ids` that are neither a list of strings nor null; 409 agent generating, guild being deleted |
 | `GET /api/runs/:id` | the run | 200 | 404 |
 | `GET /api/runs/:id/messages` | its rows in order | 200 | 404 |
-| `POST /api/runs/:id/messages` | appends `content`, with optional attachment ids, and starts a generation | 202 | 422 empty; 409 one-shot not resumed, continued, ended, or generating |
+| `POST /api/runs/:id/messages` | appends `content`, with optional attachment ids, and starts a generation | 202 | 422 empty, a `content` that is neither a string nor null, or `attachment_ids` that are neither a list of strings nor null; 409 one-shot not resumed, continued, ended, or generating |
 | `POST /api/runs/:id/resume` | reopens a completed run | 200 | 409 continued or capped |
 | `POST /api/runs/:id/cancel` | cancels the current generation | 202, or 204 with nothing to cancel | |
 | `GET /api/runs/:id/stream` | the run's SSE stream | 200 | |
