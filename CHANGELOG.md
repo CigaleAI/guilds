@@ -8,6 +8,11 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** A Studio collection request with an unreadable `scope`
+or `access` is refused for it before the collection's name, purpose,
+columns and `base_updated_at` are checked. Before, a request wrong in
+both ways was refused for the collection first.
+
 **No impact.** Applying a Studio note edit rewrites the note where it
 sits, as an agent's `note_write` with a path does, still refusing a
 note written since the edit was read. The note keeps its title and

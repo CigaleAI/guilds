@@ -264,6 +264,8 @@ with `kind: "collection"` and that `action`:
   row). Those subjects are the source guild and its live members. The
   organisation's row and the rows of other guilds and their agents
   are shown and never changed.
+- `scope` and `access` are read before anything else the request
+  names is checked.
 - An edit must carry the `updated_at` the coach read and change
   something. A name already taken is refused.
 - On an organisation collection, an edit keeps the name, the purpose,

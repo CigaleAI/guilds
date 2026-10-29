@@ -1442,6 +1442,22 @@ test("studio proposes tables to create, change, and delete that the operator app
       reason: "Leads are copied between Tasks as prose.",
     };
     await assert.rejects(studioEditCollection.handler(await ctx(), { ...createArgs, name: "shared" }), /already exists/);
+    await assert.rejects(
+      studioEditCollection.handler(await ctx(), {
+        ...createArgs,
+        name: "Bad Name",
+        scope: "everyone",
+      }),
+      /scope must be guild or org/,
+    );
+    await assert.rejects(
+      studioEditCollection.handler(await ctx(), {
+        ...createArgs,
+        name: "Bad Name",
+        access: "everyone",
+      }),
+      /access must be an object/,
+    );
     const createWidget = (await studioEditCollection.handler(await ctx(), createArgs)) as Widget;
     assert.equal(createWidget.widget, "studio_edit_request");
     assert.equal(createWidget.await_operator, true);
@@ -1496,6 +1512,16 @@ test("studio proposes tables to create, change, and delete that the operator app
     await assert.rejects(
       studioEditCollection.handler(await ctx(), { action: "edit", collection: "leads", base_updated_at: "1999-01-01T00:00:00Z", purpose: "x", reason: "r" }),
       /stale/,
+    );
+    await assert.rejects(
+      studioEditCollection.handler(await ctx(), {
+        action: "edit",
+        collection: "leads",
+        purpose: "x",
+        access: { guild: "admin" },
+        reason: "r",
+      }),
+      /access.guild must be read, write, or none/,
     );
     await assert.rejects(
       studioEditCollection.handler(await ctx(), { action: "edit", collection: "leads", base_updated_at: read.updated_at, reason: "r" }),

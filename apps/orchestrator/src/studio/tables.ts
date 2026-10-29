@@ -416,15 +416,20 @@ export async function reviewTable(
   const requesting = recorded === null;
 
   if (action === "create") {
-    const checked = valid(() =>
-      planCollection(scope.orgId, { name: argString(args, "name"), purpose: argString(args, "purpose"), columns: args.columns }),
-    );
-    const { name, purpose, columns } = checked;
     const scopeArg = args.scope ?? "guild";
     if (scopeArg !== "guild" && scopeArg !== "org") {
       throw new StudioUnprocessableError("scope must be guild or org");
     }
     const guildId = scopeArg === "guild" ? scope.sourceGuildId : null;
+    const proposal = parseAccessProposal(tc, args.access);
+    const checked = valid(() =>
+      planCollection(scope.orgId, {
+        name: argString(args, "name"),
+        purpose: argString(args, "purpose"),
+        columns: args.columns,
+      }),
+    );
+    const { name, purpose, columns } = checked;
     if (await loadTable(tc, { name })) {
       throw new StudioConflictError(
         `a table named ${name} already exists${requesting ? "; change it with studio_edit_collection action edit" : ""}`,
@@ -433,7 +438,7 @@ export async function reviewTable(
     const { access, rowChanges } = planGuildAccess(
       { guild: guildId ? "write" : null, org: guildId ? null : "read", agents: new Map() },
       scope.sourceGuildId,
-      parseAccessProposal(tc, args.access),
+      proposal,
     );
     const shape: Shape = {
       name,
@@ -497,6 +502,7 @@ export async function reviewTable(
     };
   }
 
+  const proposal = parseAccessProposal(tc, args.access);
   if (requesting) {
     const base = argString(args, "base_updated_at").trim();
     if (!base) {
@@ -521,7 +527,7 @@ export async function reviewTable(
   if (name !== table.name && (await loadTable(tc, { name }))) {
     throw new StudioConflictError(`a table named ${name} already exists`);
   }
-  const { access, rowChanges } = planGuildAccess(table.access, scope.sourceGuildId, parseAccessProposal(tc, args.access));
+  const { access, rowChanges } = planGuildAccess(table.access, scope.sourceGuildId, proposal);
   const shape: Shape = {
     ...shapeOf(table),
     name,
