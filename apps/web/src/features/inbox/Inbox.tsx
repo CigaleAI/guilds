@@ -27,7 +27,9 @@ type Entry =
   | { kind: "tag"; at: string; notice: MentionNotice }
   | { kind: "issue"; at: string; issue: Issue & { guild_name: string } };
 
-function MentionCard({ notice }: { notice: MentionNotice }) {
+type MentionCardProps = { notice: MentionNotice };
+
+function MentionCard({ notice }: MentionCardProps) {
   const look = notice.agent ? agentLook(notice.agent) : null;
   return (
     <article className="flex flex-col gap-2 rounded-xl bg-surface p-4">
