@@ -25,7 +25,7 @@ import {
   Tooltip,
 } from "@guildsrun/ui";
 import type { RecipePlan } from "./planModel";
-import { agentCard, type AgentCapability, type PlanAgent } from "./planAgents";
+import { agentCard, type AgentCapability, type AgentMetrics, type PlanAgent } from "./planAgents";
 import type { PlanHooks } from "./PlanView";
 import { ReviewerTag } from "./ReviewerTag";
 
@@ -64,32 +64,6 @@ type AgentCardViewProps = {
 
 export function AgentCardView({ agent, plan, findings, hooks }: AgentCardViewProps) {
   const card = agentCard(agent, plan, findings);
-  const { metrics } = card;
-  const [metric, setMetric] = useState<"connectors" | "routines" | "tools" | null>(null);
-  const pills = [
-    {
-      id: "connectors" as const,
-      icon: Plug,
-      label: metrics.connectors.label,
-      empty: metrics.connectors.empty,
-      warning: null,
-    },
-    {
-      id: "routines" as const,
-      icon: Repeat,
-      label: metrics.routines.label,
-      empty: metrics.routines.empty,
-      warning: metrics.routines.warning,
-    },
-    {
-      id: "tools" as const,
-      icon: Wrench,
-      label: metrics.tools.label,
-      empty: metrics.tools.empty,
-      warning: null,
-    },
-  ];
-
   return (
     <article className="flex min-w-0 flex-col gap-3 rounded-xl bg-surface p-4">
       <header className="flex items-start gap-3">
@@ -108,68 +82,7 @@ export function AgentCardView({ agent, plan, findings, hooks }: AgentCardViewPro
         </div>
       </header>
 
-      <div className="flex flex-wrap gap-1.5">
-        {pills.map((pill) => {
-          const button = (
-            <button
-              key={pill.id}
-              type="button"
-              aria-pressed={metric === pill.id}
-              onClick={() => setMetric(metric === pill.id ? null : pill.id)}
-              className={cn(
-                "flex cursor-pointer items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium",
-                "bg-paper hover:bg-paper-hi selected:bg-ink-fill selected:text-on-ink",
-                pill.empty && "text-muted",
-              )}
-            >
-              <Icon icon={pill.icon} size={14} />
-              {pill.label}
-              {pill.warning ? (
-                <Icon icon={TriangleAlert} size={14} className="text-t-ochre-fg" />
-              ) : null}
-            </button>
-          );
-          return pill.warning ? (
-            <Tooltip key={pill.id} label={pill.warning}>
-              {button}
-            </Tooltip>
-          ) : (
-            button
-          );
-        })}
-      </div>
-      {metric === "connectors" ? (
-        <ul className="flex flex-col gap-1 rounded-lg bg-paper px-3 py-2 text-xs">
-          {metrics.connectors.entries.map((entry) => (
-            <li key={entry.server}>
-              <span className="font-mono font-medium">{entry.server}</span>{" "}
-              <span className="text-muted">{entry.detail}</span>
-            </li>
-          ))}
-          {metrics.connectors.empty ? <li className="text-muted">No connectors.</li> : null}
-        </ul>
-      ) : metric === "routines" ? (
-        <ul className="flex flex-col gap-1 rounded-lg bg-paper px-3 py-2 text-xs">
-          {metrics.routines.entries.map((entry) => (
-            <li key={entry.key}>
-              <span className="font-medium">{entry.cadence}</span>
-              {entry.description ? (
-                <span className="text-muted"> · {entry.description}</span>
-              ) : null}
-            </li>
-          ))}
-          {metrics.routines.empty ? <li className="text-muted">No routines.</li> : null}
-        </ul>
-      ) : metric === "tools" ? (
-        <div className="flex flex-wrap gap-1 rounded-lg bg-paper px-3 py-2">
-          {metrics.tools.nativeTools.map((tool) => (
-            <Tag key={tool} tone="term">
-              {tool}
-            </Tag>
-          ))}
-          {metrics.tools.empty ? <span className="text-xs text-muted">No tools.</span> : null}
-        </div>
-      ) : null}
+      <AgentMetricPills metrics={card.metrics} />
 
       {card.capabilities.length ? <CapabilityList capabilities={card.capabilities} /> : null}
       {card.findings.notices.map((notice, index) => (
@@ -207,6 +120,117 @@ export function AgentCardView({ agent, plan, findings, hooks }: AgentCardViewPro
       ))}
     </article>
   );
+}
+
+type AgentMetricPillsProps = { metrics: AgentMetrics };
+
+/** An agent's metric pills: its connectors, routines, and tools; pressing one lists what it counts. */
+function AgentMetricPills({ metrics }: AgentMetricPillsProps) {
+  const [metric, setMetric] = useState<keyof AgentMetrics | null>(null);
+  const pills = [
+    {
+      id: "connectors" as const,
+      icon: Plug,
+      label: metrics.connectors.label,
+      empty: metrics.connectors.empty,
+      warning: null,
+    },
+    {
+      id: "routines" as const,
+      icon: Repeat,
+      label: metrics.routines.label,
+      empty: metrics.routines.empty,
+      warning: metrics.routines.warning,
+    },
+    {
+      id: "tools" as const,
+      icon: Wrench,
+      label: metrics.tools.label,
+      empty: metrics.tools.empty,
+      warning: null,
+    },
+  ];
+
+  return (
+    <>
+      <div className="flex flex-wrap gap-1.5">
+        {pills.map((pill) => {
+          const button = (
+            <button
+              key={pill.id}
+              type="button"
+              aria-pressed={metric === pill.id}
+              onClick={() => setMetric(metric === pill.id ? null : pill.id)}
+              className={cn(
+                "flex cursor-pointer items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium",
+                "bg-paper hover:bg-paper-hi selected:bg-ink-fill selected:text-on-ink",
+                pill.empty && "text-muted",
+              )}
+            >
+              <Icon icon={pill.icon} size={14} />
+              {pill.label}
+              {pill.warning ? (
+                <Icon icon={TriangleAlert} size={14} className="text-t-ochre-fg" />
+              ) : null}
+            </button>
+          );
+          return pill.warning ? (
+            <Tooltip key={pill.id} label={pill.warning}>
+              {button}
+            </Tooltip>
+          ) : (
+            button
+          );
+        })}
+      </div>
+      {metric ? <MetricEntries metric={metric} metrics={metrics} /> : null}
+    </>
+  );
+}
+
+type MetricEntriesProps = { metric: keyof AgentMetrics; metrics: AgentMetrics };
+
+/** What one metric pill counts: the agent's connectors, its routines, or its tools. */
+function MetricEntries({ metric, metrics }: MetricEntriesProps) {
+  switch (metric) {
+    case "connectors":
+      return (
+        <ul className="flex flex-col gap-1 rounded-lg bg-paper px-3 py-2 text-xs">
+          {metrics.connectors.entries.map((entry) => (
+            <li key={entry.server}>
+              <span className="font-mono font-medium">{entry.server}</span>{" "}
+              <span className="text-muted">{entry.detail}</span>
+            </li>
+          ))}
+          {metrics.connectors.empty ? <li className="text-muted">No connectors.</li> : null}
+        </ul>
+      );
+    case "routines":
+      return (
+        <ul className="flex flex-col gap-1 rounded-lg bg-paper px-3 py-2 text-xs">
+          {metrics.routines.entries.map((entry) => (
+            <li key={entry.key}>
+              <span className="font-medium">{entry.cadence}</span>
+              {entry.description ? (
+                <span className="text-muted"> · {entry.description}</span>
+              ) : null}
+            </li>
+          ))}
+          {metrics.routines.empty ? <li className="text-muted">No routines.</li> : null}
+        </ul>
+      );
+    case "tools":
+      return (
+        <div className="flex flex-wrap gap-1 rounded-lg bg-paper px-3 py-2">
+          {metrics.tools.nativeTools.map((tool) => (
+            <Tag key={tool} tone="term">
+              {tool}
+            </Tag>
+          ))}
+          {metrics.tools.empty ? <span className="text-xs text-muted">No tools.</span> : null}
+        </div>
+      );
+  }
 }
 
 const capabilityIcon: Record<AgentCapability["id"], LucideIcon> = {
