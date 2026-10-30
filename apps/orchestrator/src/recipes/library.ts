@@ -18,7 +18,7 @@ import {
 import type { RecipeFinding, RecipeDocument } from "../db/schema/index.js";
 import { newId } from "../lib/ids.js";
 import type { RegistryClient } from "../registry/client.js";
-import { pickEntry, RegistryError } from "../registry/index.js";
+import { latestEntries, pickEntry, RegistryError, type RegistryRecipeEntry } from "../registry/index.js";
 import type { Schedules } from "../schedules/service.js";
 import type { Scripts } from "../scripts/catalog.js";
 import { applyAccessEdits, operatorAccessCuts, type AccessCut, type AccessEdit } from "./access-edits.js";
@@ -161,6 +161,26 @@ export async function importRecipe(db: Queryable, document: unknown, owner: Reci
     },
     new Date(),
   );
+}
+
+/** What a registry offers to import: each recipe's newest entry with every version; empty while the box is offline. */
+export type RegistryRecipes = {
+  offline: boolean;
+  url: string | null;
+  recipes: Array<RegistryRecipeEntry & { versions: string[] }>;
+};
+
+/** The recipes the box's registry offers, by name; null is the box offline. */
+export async function registryRecipes(registry: RegistryClient | null): Promise<RegistryRecipes> {
+  if (registry === null) {
+    return { offline: true, url: null, recipes: [] };
+  }
+  const index = await registry.index();
+  return {
+    offline: false,
+    url: registry.baseUrl,
+    recipes: latestEntries(index.recipes, (entry) => entry.name),
+  };
 }
 
 /**

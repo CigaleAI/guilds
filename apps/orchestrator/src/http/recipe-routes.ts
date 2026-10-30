@@ -11,6 +11,7 @@ import {
   orgRecipe,
   orgRecipes,
   publishRecipe,
+  registryRecipes,
   reviewRecipe,
   validateLibraryRecipe,
 } from "../recipes/library.js";
@@ -21,7 +22,6 @@ import { parseReviewAction, ReviewSchema } from "../recipes/review.js";
 import { ApplyChoicesSchema } from "../recipes/apply.js";
 import type { AppDeps, RouteApp } from "./deps.js";
 import { registryOf } from "./admin-registry-routes.js";
-import { latestEntries } from "../registry/index.js";
 import { HttpError } from "./errors.js";
 import { currentOrg, currentUser } from "./identity.js";
 import { GuildParams } from "./params.js";
@@ -122,12 +122,7 @@ export async function registerRecipeRoutes(app: RouteApp, deps: AppDeps): Promis
 
   app.get("/api/recipes/registry", async (request) => {
     await currentUser(db, request, deps);
-    const client = registryOf(deps);
-    if (client === null) {
-      return { offline: true, url: null, recipes: [] };
-    }
-    const index = await client.index();
-    return { offline: false, url: client.baseUrl, recipes: latestEntries(index.recipes, (entry) => entry.name) };
+    return registryRecipes(registryOf(deps));
   });
 
   app.post(
