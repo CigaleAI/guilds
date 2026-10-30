@@ -636,34 +636,6 @@
   "src/features/machines/MachineDialog.tsx": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
-  "src/features/machines/MachineMeters.tsx": {
-    "no-restricted-syntax": {
-      "count": 5
-    }
-  },
-  "src/features/machines/MachineNotes.tsx": {
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
-  "src/features/machines/MachinePicker.tsx": {
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
-  "src/features/machines/MachinesTab.tsx": {
-    "no-restricted-syntax": {
-      "count": 4
-    }
-  },
-  "src/features/machines/machines.ts": {
-    "no-restricted-syntax": {
-      "count": 2
     }
   },
   "src/features/models/ConnectProviderGuide.tsx": {

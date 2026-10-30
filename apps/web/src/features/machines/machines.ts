@@ -1,5 +1,6 @@
 import type { OrgRole } from "../../api/types/org";
 import type { Machine, MachineBox, MachineInput } from "../../api/types/agents";
+import type { AgentToPlace } from "./types";
 
 /**
  * The size of each fixed tier, for the tier picker before a machine exists; it mirrors the
@@ -142,7 +143,7 @@ export type LoadShare = { planned: number; adds: number; capacity: number; over:
 
 /** What adding `adds` to a machine's planned load does, CPUs and memory each. */
 export function loadShares(
-  machine: MachineSize & { planned_cpu: number; planned_mib: number },
+  machine: Pick<Machine, "cpu" | "memory_mib" | "planned_cpu" | "planned_mib">,
   adds: MachineSize = { cpu: 0, memory_mib: 0 },
 ): { cpu: LoadShare; memory: LoadShare } {
   const capacity = machineCapacity(machine);
@@ -165,7 +166,7 @@ export function loadShares(
  */
 export function placementBudget(
   machine: Pick<Machine, "cpu" | "memory_mib" | "planned_cpu" | "planned_mib" | "agents">,
-  agent: { id?: string | undefined } & AgentNeeds,
+  agent: AgentToPlace,
 ): { fits: boolean; minimum: MachineSize; planned: MachineSize; adds: MachineSize } {
   const current = machine.agents.find((item) => item.id === agent.id);
   const own = current ? agentMinimum(current) : { cpu: 0, memory_mib: 0 };

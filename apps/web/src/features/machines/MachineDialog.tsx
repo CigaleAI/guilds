@@ -90,14 +90,13 @@ function useMachineSubmit(machine: Machine | null, onClose: () => void) {
   };
 }
 
-/** Adds a machine, or renames, resizes and re-caps one; a new tier or size restarts it once idle. */
-export function MachineDialog({
-  machine,
-  onClose,
-}: {
+type MachineDialogProps = {
   machine: Machine | null;
   onClose: () => void;
-}) {
+};
+
+/** Adds a machine, or renames, resizes and re-caps one; a new tier or size restarts it once idle. */
+export function MachineDialog({ machine, onClose }: MachineDialogProps) {
   const { org } = useIdentity();
   const { form, set, errors, submit, pending, blocked, failure } = useMachineSubmit(
     machine,
@@ -158,7 +157,9 @@ export function MachineDialog({
   );
 }
 
-function NameField({ form, errors, onChange, autoFocus }: FieldsProps & { autoFocus: boolean }) {
+type NameFieldProps = FieldsProps & { autoFocus: boolean };
+
+function NameField({ form, errors, onChange, autoFocus }: NameFieldProps) {
   return (
     <TextField
       tone="surface"

@@ -92,13 +92,12 @@ export function MachinesTab() {
   );
 }
 
-function DeleteMachineDialog({
-  machine,
-  onClose,
-}: {
+type DeleteMachineDialogProps = {
   machine: Machine | null;
   onClose: () => void;
-}) {
+};
+
+function DeleteMachineDialog({ machine, onClose }: DeleteMachineDialogProps) {
   const { org } = useIdentity();
   const remove = useDeleteMachine(org.id);
   return (
@@ -131,20 +130,16 @@ function deleteBlocker(machine: Machine, last: boolean): string | null {
   return last ? "The organisation keeps at least one machine" : null;
 }
 
-function MachineCard({
-  machine,
-  manager,
-  last,
-  onEdit,
-  onDelete,
-}: {
+type MachineCardProps = {
   machine: Machine;
   manager: boolean;
   /** The organisation's only machine, which it keeps. */
   last: boolean;
   onEdit: () => void;
   onDelete: () => void;
-}) {
+};
+
+function MachineCard({ machine, manager, last, onEdit, onDelete }: MachineCardProps) {
   const blocker = deleteBlocker(machine, last);
   return (
     <article aria-label={machine.name} className="flex flex-col gap-4 rounded-xl bg-surface p-4">
@@ -196,8 +191,10 @@ function MachineCard({
   );
 }
 
+type MachineAgentsProps = { machine: Machine };
+
 /** The agents on a machine the viewer can see, then how many sit in guilds they cannot. */
-function MachineAgents({ machine }: { machine: Machine }) {
+function MachineAgents({ machine }: MachineAgentsProps) {
   const hidden = machine.hidden_agents;
   return (
     <section aria-label="Agents" className="flex flex-col gap-1.5">
@@ -221,7 +218,9 @@ function MachineAgents({ machine }: { machine: Machine }) {
   );
 }
 
-function MachineAgentRow({ agent }: { agent: MachineAgent }) {
+type MachineAgentRowProps = { agent: MachineAgent };
+
+function MachineAgentRow({ agent }: MachineAgentRowProps) {
   return (
     <li className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2 last:border-b-0">
       <Link
