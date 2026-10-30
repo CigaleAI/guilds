@@ -29,6 +29,26 @@ export default tseslint.config(
     },
   },
   limits({ files: ["src/**/*.ts", "src/**/*.tsx"] }),
+  {
+    // A shared directory never imports from a feature (docs/contributing/code-guidelines.md, Shared
+    // code): api/ and app/ import nothing under features/. The router is the composition root that
+    // mounts the features, and the exception.
+    files: ["src/api/**", "src/app/**"],
+    ignores: ["src/app/router.tsx"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              regex: "^(\\.\\./)+features(/|$)",
+              message: "A shared directory never imports from a feature.",
+            },
+          ],
+        },
+      ],
+    },
+  },
   boundary({
     files: ["**/*.{ts,tsx}"],
     source: ".",
