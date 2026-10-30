@@ -656,17 +656,9 @@
       "count": 3
     }
   },
-  "src/features/recipes/ApplyMachinePicker.tsx": {
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
   "src/features/recipes/ApplyPage.tsx": {
     "complexity": {
       "count": 2
-    },
-    "no-restricted-syntax": {
-      "count": 3
     }
   },
   "src/features/recipes/ApplyPreviewPage.tsx": {
@@ -676,11 +668,6 @@
     "complexity": {
       "count": 1
     },
-    "no-restricted-syntax": {
-      "count": 10
-    }
-  },
-  "src/features/recipes/OpenApplyStrip.tsx": {
     "no-restricted-syntax": {
       "count": 1
     }
@@ -692,15 +679,12 @@
   },
   "src/features/recipes/RecipesPage.tsx": {
     "no-restricted-syntax": {
-      "count": 4
+      "count": 1
     }
   },
   "src/features/recipes/plan/PlanView.tsx": {
     "complexity": {
       "count": 3
-    },
-    "no-restricted-syntax": {
-      "count": 9
     }
   },
   "src/features/recipes/plan/planModel.ts": {
@@ -712,9 +696,6 @@
     },
     "limits/file-lines": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 2
     }
   },
   "src/features/settings/MembersTab.tsx": {

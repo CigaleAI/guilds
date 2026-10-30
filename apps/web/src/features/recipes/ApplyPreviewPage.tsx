@@ -45,14 +45,21 @@ function defaultLogin(connection: PlannedConnection): string {
     : connectLater;
 }
 
-/** What keeps the guild from being created, first thing first; null when nothing does. */
-function blockingReason(checks: {
+/**
+ * What apply checks before it creates the guild: whether the recipe is approved, whether no model
+ * provider is connected, whether an agent lacks a model or a coding agent a harness, and the
+ * preview with its machine and errors.
+ */
+type ApplyChecks = {
   approved: boolean;
   noProvider: boolean;
   missingModel: boolean;
   missingHarness: boolean;
   preview: ApplyPreview;
-}): string | null {
+};
+
+/** What keeps the guild from being created, first thing first; null when nothing does. */
+function blockingReason(checks: ApplyChecks): string | null {
   const reasons: Array<[boolean, string]> = [
     [!checks.approved, "Approve this recipe before applying it."],
     [checks.noProvider, "Connect a model provider on Model keys before applying."],
@@ -266,8 +273,10 @@ export function ApplyPreviewPage() {
   );
 }
 
+type ReadinessProps = { blockedBy: string | null };
+
 /** What keeps the guild from being created, or that it is ready. */
-function Readiness({ blockedBy }: { blockedBy: string | null }) {
+function Readiness({ blockedBy }: ReadinessProps) {
   if (blockedBy) {
     return (
       <Banner tone="error" title="Not ready to apply">
@@ -285,6 +294,22 @@ function Readiness({ blockedBy }: { blockedBy: string | null }) {
   );
 }
 
+type AgentChoicesProps = {
+  name: string;
+  onName: (name: string) => void;
+  collides: boolean;
+  /** Null hides the model picker. */
+  model: string | null;
+  onModel: (model: string) => void;
+  recommended: string | null;
+  coding: boolean;
+  orgModels: OrgModels | undefined;
+  /** Null hides the harness picker: the agent does not code. */
+  harness: Harness | "" | null;
+  onHarness: (harness: Harness) => void;
+  recommendedHarness: Harness | null;
+};
+
 /**
  * An agent's name and model before apply, and a coding agent's harness; no model picker while no
  * provider is connected.
@@ -301,21 +326,7 @@ function AgentChoices({
   harness,
   onHarness,
   recommendedHarness,
-}: {
-  name: string;
-  onName: (name: string) => void;
-  collides: boolean;
-  /** Null hides the model picker. */
-  model: string | null;
-  onModel: (model: string) => void;
-  recommended: string | null;
-  coding: boolean;
-  orgModels: OrgModels | undefined;
-  /** Null hides the harness picker: the agent does not code. */
-  harness: Harness | "" | null;
-  onHarness: (harness: Harness) => void;
-  recommendedHarness: Harness | null;
-}) {
+}: AgentChoicesProps) {
   return (
     <div className="grid gap-3 md:grid-cols-2">
       <TextField
@@ -359,16 +370,14 @@ function AgentChoices({
   );
 }
 
-/** The login apply gives a connector: a live one to reuse, or one to connect afterwards. */
-function LoginSelect({
-  connection,
-  value,
-  onChange,
-}: {
+type LoginSelectProps = {
   connection: PlannedConnection;
   value: string;
   onChange: (login: string) => void;
-}) {
+};
+
+/** The login apply gives a connector: a live one to reuse, or one to connect afterwards. */
+function LoginSelect({ connection, value, onChange }: LoginSelectProps) {
   return (
     <Select
       tone="paper"
@@ -386,17 +395,22 @@ function LoginSelect({
   );
 }
 
+/** A connector the recipe names that apply installs from the registry. */
+type RegistryConnectorInstall = Extract<ApplyInstall, { from: "registry" }>;
+
+/** A connector the recipe declares itself, which apply adds to the organisation. */
+type RecipeConnectorInstall = Extract<ApplyInstall, { from: "recipe" }>;
+
+type InstallsProps = {
+  installs: ApplyInstall[];
+  onInstalled: () => void;
+};
+
 /**
  * The connectors the recipe names that the box lacks. An instance admin installs a registry one;
  * an owner or admin adds the recipe's own remote server as the organisation's server.
  */
-function Installs({
-  installs,
-  onInstalled,
-}: {
-  installs: ApplyInstall[];
-  onInstalled: () => void;
-}) {
+function Installs({ installs, onInstalled }: InstallsProps) {
   const { user, org } = useIdentity();
   const install = useInstallRegistryConnector();
   const addServer = useAddOrgServer(org.id);
@@ -416,7 +430,7 @@ function Installs({
       },
     );
 
-  const fromRecipe = (item: Extract<ApplyInstall, { from: "recipe" }>) =>
+  const fromRecipe = (item: RecipeConnectorInstall) =>
     addServer.mutate(
       {
         slug: item.server,
@@ -480,18 +494,15 @@ function Installs({
   );
 }
 
-/** A registry connector to install; an instance admin installs it. */
-function RegistryInstall({
-  item,
-  canInstall,
-  busy,
-  onInstall,
-}: {
-  item: Extract<ApplyInstall, { from: "registry" }>;
+type RegistryInstallProps = {
+  item: RegistryConnectorInstall;
   canInstall: boolean;
   busy: boolean;
   onInstall: () => void;
-}) {
+};
+
+/** A registry connector to install; an instance admin installs it. */
+function RegistryInstall({ item, canInstall, busy, onInstall }: RegistryInstallProps) {
   return (
     <>
       <span className="min-w-0 flex-1 text-fg-2">
@@ -515,18 +526,15 @@ function RegistryInstall({
   );
 }
 
-/** The recipe's own remote server, to add as the organisation's; an owner or admin adds it. */
-function RecipeInstall({
-  item,
-  canAdd,
-  busy,
-  onAdd,
-}: {
-  item: Extract<ApplyInstall, { from: "recipe" }>;
+type RecipeInstallProps = {
+  item: RecipeConnectorInstall;
   canAdd: boolean;
   busy: boolean;
   onAdd: () => void;
-}) {
+};
+
+/** The recipe's own remote server, to add as the organisation's; an owner or admin adds it. */
+function RecipeInstall({ item, canAdd, busy, onAdd }: RecipeInstallProps) {
   return (
     <>
       <span className="flex min-w-0 flex-1 flex-col">
@@ -547,11 +555,13 @@ function RecipeInstall({
   );
 }
 
+type SetupsProps = { setups: ApplySetup[] };
+
 /**
  * The connectors the recipe needs that the box has but no platform admin has set up. The guild
  * cannot connect them until one enters the platform key under Admin → Platform keys.
  */
-function Setups({ setups }: { setups: ApplySetup[] }) {
+function Setups({ setups }: SetupsProps) {
   const { user } = useIdentity();
   const location = useLocation();
   return (

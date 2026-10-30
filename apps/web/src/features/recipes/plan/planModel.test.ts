@@ -177,10 +177,10 @@ test("cadenceLabel describes cron expressions without the UTC suffix", () => {
 test("scheduleCadence prefers the wake window over the cron", () => {
   const window = { timezone: "Europe/Paris", start: "09:00", end: "17:00", max_wakes: 2 };
   assert.equal(
-    scheduleCadence({ window, cron: "0 * * * *" }),
+    scheduleCadence(window, "0 * * * *"),
     "Up to 2 random wake-ups between 09:00 and 17:00 every day (Europe/Paris)",
   );
-  assert.equal(scheduleCadence({ window: null, cron: "0 * * * *" }), "Every hour");
+  assert.equal(scheduleCadence(null, "0 * * * *"), "Every hour");
 });
 
 test("planFromRecipe shapes agents with defaults, enabled tools, and routines", () => {
@@ -896,7 +896,7 @@ test("planTally, planSections, accessSection, and guildHero summarise the plan",
     ],
   );
   assert.deepEqual(
-    planSections(empty, { hideEmpty: true }).map((section) => section.id),
+    planSections(empty, true).map((section) => section.id),
     ["agents"],
   );
 
@@ -1009,7 +1009,7 @@ test("a recipe's repositories become a section and steps to connect GitHub and a
       .map((action) => action.title),
     ["Connect GitHub", "Add the api repository"],
   );
-  const sections = planSections(plan, { hideEmpty: true }).map((section) => section.id);
+  const sections = planSections(plan, true).map((section) => section.id);
   assert.ok(sections.includes("repositories"));
 });
 

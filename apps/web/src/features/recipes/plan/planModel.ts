@@ -335,11 +335,11 @@ export function cadenceLabel(cron: string | null | undefined): string {
 }
 
 /** A routine's timing in words: its random wake window when it has one, its cron otherwise. */
-export function scheduleCadence(item: {
-  window?: WakeWindow | null | undefined;
-  cron?: string | null | undefined;
-}): string {
-  return item.window ? describeWindow(item.window) : cadenceLabel(item.cron);
+export function scheduleCadence(
+  window: WakeWindow | null | undefined,
+  cron: string | null | undefined,
+): string {
+  return window ? describeWindow(window) : cadenceLabel(cron);
 }
 
 function isFiveFieldCron(value: unknown): boolean {
@@ -992,10 +992,7 @@ export type PlanSection = {
  * notes show when they have entries or when `hideEmpty` is off; repositories, handoffs, and
  * external setup show only with entries.
  */
-export function planSections(
-  plan: RecipePlan,
-  { hideEmpty = false }: { hideEmpty?: boolean } = {},
-): PlanSection[] {
+export function planSections(plan: RecipePlan, hideEmpty = false): PlanSection[] {
   const sections: PlanSection[] = [
     {
       id: "agents",
@@ -1242,7 +1239,7 @@ export function agentMetrics(
       warning: routineFinding ? routineFinding.message : null,
       entries: agent.routines.map((item) => ({
         key: item.key,
-        cadence: scheduleCadence(item),
+        cadence: scheduleCadence(item.window, item.cron),
         description: item.description,
       })),
     },
@@ -1272,7 +1269,7 @@ export function routineView(item: PlanRoutine): RoutineView {
     role: item.role,
     key: item.key,
     cron: item.cron || null,
-    cadence: scheduleCadence(item),
+    cadence: scheduleCadence(item.window, item.cron),
     description: (item.description || item.instruction || "").trim(),
     status: item.source === "design" ? "from design" : "paused at create",
     reviewer: reviewLabel(item.author),

@@ -118,7 +118,7 @@ export function PlanView({
   const hero = guildHero(plan);
   const blocking = blockingSummary(findings);
   const issues = planIssues(findings);
-  const sections = planSections(plan, { hideEmpty });
+  const sections = planSections(plan, hideEmpty);
   const minimum = planMachineMinimum(plan);
   const [open, setOpen] = useState<ReadonlySet<PlanSectionId>>(
     () => new Set(sections.filter((section) => section.open).map((section) => section.id)),
@@ -205,19 +205,15 @@ export function PlanView({
   );
 }
 
-function PlanSectionBlock({
-  id,
-  section,
-  open,
-  onToggle,
-  children,
-}: {
+type PlanSectionBlockProps = {
   id: string;
   section: PlanSection;
   open: boolean;
   onToggle: () => void;
   children: ReactNode;
-}) {
+};
+
+function PlanSectionBlock({ id, section, open, onToggle, children }: PlanSectionBlockProps) {
   return (
     <section id={id} className="flex scroll-mt-4 flex-col gap-3">
       <button
@@ -240,19 +236,15 @@ function PlanSectionBlock({
   );
 }
 
-function SectionBody({
-  id,
-  plan,
-  findings,
-  catalog,
-  hooks,
-}: {
+type SectionBodyProps = {
   id: PlanSectionId;
   plan: RecipePlan;
   findings: readonly RecipeFinding[] | undefined;
   catalog: readonly CatalogEntry[] | undefined;
   hooks: PlanHooks;
-}) {
+};
+
+function SectionBody({ id, plan, findings, catalog, hooks }: SectionBodyProps) {
   switch (id) {
     case "agents":
       return (
@@ -459,7 +451,9 @@ function SectionBody({
   }
 }
 
-function ReviewerTag({ by }: { by: string }) {
+type ReviewerTagProps = { by: string };
+
+function ReviewerTag({ by }: ReviewerTagProps) {
   return (
     <Tag tone="tide" font="sans" title={`Last written by the ${by}`}>
       {by} edit
@@ -467,18 +461,15 @@ function ReviewerTag({ by }: { by: string }) {
   );
 }
 
-/** A folded block inside a card: its title, a badge, and its body when opened. */
-function Fold({
-  title,
-  badge,
-  reviewer,
-  children,
-}: {
+type FoldProps = {
   title: ReactNode;
   badge?: string;
   reviewer?: string | null;
   children: ReactNode;
-}) {
+};
+
+/** A folded block inside a card: its title, a badge, and its body when opened. */
+function Fold({ title, badge, reviewer, children }: FoldProps) {
   return (
     <details className="group rounded-lg bg-paper px-3 py-2">
       <summary className="flex cursor-pointer list-none items-center gap-2 text-sm">
@@ -496,17 +487,14 @@ function Fold({
   );
 }
 
-function AgentCardView({
-  agent,
-  plan,
-  findings,
-  hooks,
-}: {
+type AgentCardViewProps = {
   agent: PlanAgent;
   plan: RecipePlan;
   findings: readonly RecipeFinding[] | undefined;
   hooks: PlanHooks;
-}) {
+};
+
+function AgentCardView({ agent, plan, findings, hooks }: AgentCardViewProps) {
   const card = agentCard(agent, plan, findings);
   const { metrics } = card;
   const [metric, setMetric] = useState<"connectors" | "routines" | "tools" | null>(null);
@@ -658,8 +646,10 @@ const capabilityIcon: Record<AgentCapability["id"], LucideIcon> = {
   coding: Code2,
 };
 
+type CapabilityListProps = { capabilities: readonly AgentCapability[] };
+
 /** An agent's capabilities as chips; hovering one shows what apply needs for it. */
-function CapabilityList({ capabilities }: { capabilities: readonly AgentCapability[] }) {
+function CapabilityList({ capabilities }: CapabilityListProps) {
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <span className="type-label mr-1 text-muted">Capabilities</span>
@@ -695,15 +685,13 @@ function CapabilityList({ capabilities }: { capabilities: readonly AgentCapabili
   );
 }
 
-function ConnectorsBody({
-  plan,
-  catalog,
-  hooks,
-}: {
+type ConnectorsBodyProps = {
   plan: RecipePlan;
   catalog: readonly CatalogEntry[] | undefined;
   hooks: PlanHooks;
-}) {
+};
+
+function ConnectorsBody({ plan, catalog, hooks }: ConnectorsBodyProps) {
   const { access } = hooks;
   const { systems } = accessSection(plan);
   return (
@@ -831,20 +819,16 @@ function ConnectorsBody({
   );
 }
 
-/** An agent's Task, folded; the operator can rewrite it when the page allows. */
-function TaskBlock({
-  role,
-  text,
-  badge,
-  reviewer,
-  onSave,
-}: {
+type TaskBlockProps = {
   role: string;
   text: string;
   badge: string;
   reviewer: string | null;
   onSave: ((role: string, text: string) => Promise<unknown>) | undefined;
-}) {
+};
+
+/** An agent's Task, folded; the operator can rewrite it when the page allows. */
+function TaskBlock({ role, text, badge, reviewer, onSave }: TaskBlockProps) {
   const [draft, setDraft] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   return (
@@ -906,8 +890,10 @@ function TaskBlock({
 
 const issuesShown = 5;
 
+type IssuesListProps = { title: string; items: PlanIssue[] };
+
 /** The findings no card shows, most blocking first; long lists fold after a few. */
-function IssuesList({ title, items }: { title: string; items: PlanIssue[] }) {
+function IssuesList({ title, items }: IssuesListProps) {
   const [all, setAll] = useState(false);
   const sorted = [...items].sort((a, b) => Number(b.blocking) - Number(a.blocking));
   const shown = all ? sorted : sorted.slice(0, issuesShown);

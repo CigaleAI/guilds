@@ -73,7 +73,9 @@ export function ApplyPage() {
   return <Checklist apply={apply.data} />;
 }
 
-function Checklist({ apply }: { apply: ApplyRow }) {
+type ChecklistProps = { apply: ApplyRow };
+
+function Checklist({ apply }: ChecklistProps) {
   const navigate = useNavigate();
   const owner = { scope: "guild" as const, id: apply.guild_id };
   const access = useAccess(owner);
@@ -364,7 +366,9 @@ function Checklist({ apply }: { apply: ApplyRow }) {
   );
 }
 
-function Milestone({ title, detail }: { title: string; detail: string }) {
+type MilestoneProps = { title: string; detail: string };
+
+function Milestone({ title, detail }: MilestoneProps) {
   return (
     <li className="flex items-start gap-3 rounded-xl bg-surface p-4">
       <Icon icon={CircleCheck} size={20} className="shrink-0 text-tide-t" />
@@ -377,7 +381,9 @@ function Milestone({ title, detail }: { title: string; detail: string }) {
   );
 }
 
-function StepMark({ step }: { step: ApplyStep }) {
+type StepMarkProps = { step: ApplyStep };
+
+function StepMark({ step }: StepMarkProps) {
   if (step.status === "skipped") {
     return <Icon icon={CircleSlash} size={20} className="shrink-0 text-muted" />;
   }

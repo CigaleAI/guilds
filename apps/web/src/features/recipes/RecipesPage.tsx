@@ -156,13 +156,12 @@ export function RecipesPage() {
   );
 }
 
-function CaptureDialog({
-  open,
-  onOpenChange,
-}: {
+type CaptureDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-}) {
+};
+
+function CaptureDialog({ open, onOpenChange }: CaptureDialogProps) {
   const guilds = useGuilds();
   const capture = useCaptureRecipe();
   const openRecipe = useOpenRecipe();
@@ -209,13 +208,12 @@ function CaptureDialog({
   );
 }
 
-function RegistryDialog({
-  open,
-  onOpenChange,
-}: {
+type RegistryDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-}) {
+};
+
+function RegistryDialog({ open, onOpenChange }: RegistryDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="md">
@@ -229,7 +227,9 @@ function RegistryDialog({
   );
 }
 
-function RegistryRecipes({ onDone }: { onDone: () => void }) {
+type RegistryRecipesProps = { onDone: () => void };
+
+function RegistryRecipes({ onDone }: RegistryRecipesProps) {
   const registry = useRecipeRegistry();
   const importRecipe = useImportRegistryRecipe();
   const openRecipe = useOpenRecipe();
