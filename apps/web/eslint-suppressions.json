@@ -22,11 +22,6 @@
       "count": 1
     }
   },
-  "src/api/session.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
   "src/api/streams.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 12

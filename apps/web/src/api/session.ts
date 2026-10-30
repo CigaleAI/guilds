@@ -23,13 +23,20 @@ function read(key: string): string | null {
   }
 }
 
-function write(key: string, cookie: string, value: string | null): void {
+/** Keeps a choice in localStorage, or forgets it for null; false when storage is unavailable. */
+function writeStorage(key: string, value: string | null): boolean {
   try {
     if (value) localStorage.setItem(key, value);
     else localStorage.removeItem(key);
+    return true;
   } catch {
-    // Storage can be unavailable; the cookie still carries the choice.
+    return false;
   }
+}
+
+/** Keeps a choice in localStorage and in its cookie; without storage the cookie still carries it. */
+function write(key: string, cookie: string, value: string | null): void {
+  writeStorage(key, value);
   document.cookie = value
     ? `${cookie}=${encodeURIComponent(value)}; Path=/; SameSite=Lax`
     : `${cookie}=; Path=/; Max-Age=0; SameSite=Lax`;
