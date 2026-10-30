@@ -7,14 +7,6 @@
       "count": 1
     }
   },
-  "src/api/streams.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 2
-    },
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/app/identity.tsx": {
     "no-restricted-syntax": {
       "count": 1

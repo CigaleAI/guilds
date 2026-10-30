@@ -1,12 +1,14 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import {
+  builderEventGuards,
   dispatchLiveEvent,
   guildEventGuards,
   inboxEventGuards,
   parseFrameData,
   runEventGuards,
   studioEventGuards,
+  type BuilderEvents,
   type GuildEvents,
   type InboxEvents,
   type LiveEventHandlers,
@@ -309,15 +311,7 @@ export function useStudioStream(sessionId: string): LiveTurn | null {
   return live;
 }
 
-const builderEvents = [
-  "generation.started",
-  "assistant.delta",
-  "assistant.reasoning.delta",
-  "message.committed",
-  "recipe.changed",
-  "generation.finished",
-  "session.error",
-] as const;
+const builderEvents = Object.keys(builderEventGuards);
 
 /**
  * Follows a Builder session: the coach's reply as it is written, committed rows into the cached
@@ -339,47 +333,41 @@ export function useBuilderStream(
     void client.invalidateQueries({ queryKey: recipeKeys.recipes });
   };
 
+  const handlers: LiveEventHandlers<BuilderEvents> = {
+    "generation.started": () =>
+      client.setQueryData<BuilderSession>(builderKeys.builder(sessionId), (session) =>
+        session ? { ...session, generation_state: "generating" } : session,
+      ),
+    "assistant.delta": (delta) => setLive((turn) => applyLiveDelta(turn, "assistant.delta", delta)),
+    "assistant.reasoning.delta": (delta) =>
+      setLive((turn) => applyLiveDelta(turn, "assistant.reasoning.delta", delta)),
+    "message.committed": ({ message }) => {
+      client.setQueryData<StudioMessage[]>(builderKeys.builderMessages(sessionId), (messages) =>
+        messages && !messages.some((known) => known.seq === message.seq)
+          ? [...messages, message].sort((a, b) => a.seq - b.seq)
+          : messages,
+      );
+      if (message.payload.role === "assistant") setLive(null);
+    },
+    "recipe.changed": refresh,
+    "generation.finished": () => {
+      setLive(null);
+      client.setQueryData<BuilderSession>(builderKeys.builder(sessionId), (session) =>
+        session ? { ...session, generation_state: "idle" } : session,
+      );
+      refresh();
+    },
+    "session.error": (failure) => {
+      onError(failure.detail);
+      setLive(null);
+      refresh();
+    },
+  };
+
   useEventStream(`/api/builder/sessions/${encodeURIComponent(sessionId)}/stream`, {
     events: builderEvents,
     onOpen: refresh,
-    onEvent: (name, data) => {
-      if (name === "assistant.reasoning.delta" || name === "assistant.delta") {
-        setLive((turn) => applyLiveDelta(turn, name, data));
-        return;
-      }
-      if (name === "generation.started") {
-        client.setQueryData<BuilderSession>(builderKeys.builder(sessionId), (session) =>
-          session ? { ...session, generation_state: "generating" } : session,
-        );
-        return;
-      }
-      if (name === "message.committed") {
-        const message = (data as { message?: StudioMessage } | null)?.message;
-        if (!message) return;
-        client.setQueryData<StudioMessage[]>(builderKeys.builderMessages(sessionId), (messages) =>
-          messages && !messages.some((known) => known.seq === message.seq)
-            ? [...messages, message].sort((a, b) => a.seq - b.seq)
-            : messages,
-        );
-        if (message.payload.role === "assistant") setLive(null);
-        return;
-      }
-      if (name === "recipe.changed") {
-        refresh();
-        return;
-      }
-      if (name === "session.error") {
-        const detail = (data as { detail?: unknown } | null)?.detail;
-        if (typeof detail === "string") onError(detail);
-      }
-      setLive(null);
-      if (name === "generation.finished") {
-        client.setQueryData<BuilderSession>(builderKeys.builder(sessionId), (session) =>
-          session ? { ...session, generation_state: "idle" } : session,
-        );
-      }
-      refresh();
-    },
+    onEvent: (name, data) => dispatchLiveEvent(builderEventGuards, handlers, name, data),
   });
   return live;
 }
