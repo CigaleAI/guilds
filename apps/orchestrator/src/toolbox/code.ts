@@ -7,6 +7,7 @@ import { executeCommand } from "./shell.js";
 import { functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
 import type { Tool, ToolHooks, ToolRun } from "./types.js";
+import { SandboxCommandError, ToolLimitError } from "./errors.js";
 
 /**
  * The tools a coding agent checks its harness's work with. Every call runs `guilds-code`
@@ -43,7 +44,7 @@ export function decodeEnvelope(stdout: string): { ok: boolean; text?: string; me
   const compact = stdout.replace(/\s+/g, "");
   const decoded = JSON.parse(Buffer.from(compact, "base64").toString("utf8")) as unknown;
   if (!decoded || typeof decoded !== "object" || Array.isArray(decoded)) {
-    throw new Error("code helper returned a non-object");
+    throw new SandboxCommandError("code helper returned a non-object");
   }
   return decoded as { ok: boolean; text?: string; meta?: unknown; error?: string };
 }
@@ -57,7 +58,7 @@ async function helperCommand(run: ToolRun, helper: string, request: Record<strin
   }
   const files = run.sandbox?.files;
   if (!files) {
-    throw new Error("request is too large for this sandbox");
+    throw new ToolLimitError("request is too large for this sandbox");
   }
   const requestPath = `${CODE_REQUEST_DIR}/${run.run_id}-${String(request.call_id)}.json`;
   await files.writeFiles([{ path: requestPath, data: json }]);
@@ -71,10 +72,10 @@ function helperResult(execution: CommandResult): CodeResult {
     envelope = decodeEnvelope(stdoutOf(execution));
   } catch {
     const detail = stderrOf(execution).split("\n").slice(-5).join("\n");
-    throw new Error(`code helper failed${detail ? `: ${detail}` : ""}`);
+    throw new SandboxCommandError(`code helper failed${detail ? `: ${detail}` : ""}`);
   }
   if (!envelope.ok) {
-    throw new Error(envelope.error || "code helper failed");
+    throw new SandboxCommandError(envelope.error || "code helper failed");
   }
   const meta = envelope.meta && typeof envelope.meta === "object" && !Array.isArray(envelope.meta) ? envelope.meta : {};
   return { text: typeof envelope.text === "string" ? envelope.text : "", meta: meta as Record<string, unknown> };
@@ -292,7 +293,7 @@ export async function measureMachine(run: ToolRun, hooks: ToolHooks): Promise<nu
 function measured(result: CodeResult): number {
   const mib = Number(result.meta.mib);
   if (!Number.isFinite(mib)) {
-    throw new Error("workspace size is unavailable");
+    throw new SandboxCommandError("workspace size is unavailable");
   }
   return mib;
 }

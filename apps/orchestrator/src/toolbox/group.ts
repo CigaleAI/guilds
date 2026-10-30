@@ -1,6 +1,7 @@
 import { argString, functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
 import type { Tool } from "./types.js";
+import { ToolUnavailableError } from "./errors.js";
 
 export const groupPost: Tool = {
   name: "group_post",
@@ -27,11 +28,11 @@ export const groupPost: Tool = {
   async handler(services, run, _hooks, { arguments: args }) {
     const chat = services.group_chat;
     if (chat === null) {
-      throw new Error("group chat is not available");
+      throw new ToolUnavailableError("group chat is not available");
     }
     if (chat.postFromRun) {
       return chat.postFromRun(run.run_id, run.agent_id, run.guild_id, run.agent_name, argString(args, "content"));
     }
-    throw new Error("group chat is not available");
+    throw new ToolUnavailableError("group chat is not available");
   },
 };

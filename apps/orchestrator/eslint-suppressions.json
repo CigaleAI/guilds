@@ -1282,19 +1282,6 @@
     },
     "max-params": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 5
-    }
-  },
-  "src/toolbox/group.ts": {
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
-  "src/toolbox/harness-brief.ts": {
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/toolbox/harness-ops.ts": {
@@ -1310,20 +1297,11 @@
   "src/toolbox/harness.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 2
-    },
-    "no-restricted-syntax": {
-      "count": 5
     }
   },
   "src/toolbox/index.ts": {
     "boundary/no-reexport-modules": {
       "count": 1
-    },
-    "complexity": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 2
     }
   },
   "src/toolbox/offered.ts": {
@@ -1332,16 +1310,6 @@
     },
     "no-restricted-syntax": {
       "count": 4
-    }
-  },
-  "src/toolbox/output.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/toolbox/report.ts": {
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/toolbox/schema.ts": {
@@ -1354,17 +1322,12 @@
       "count": 2
     }
   },
-  "src/toolbox/secret.ts": {
-    "no-restricted-syntax": {
-      "count": 5
-    }
-  },
   "src/toolbox/shell.ts": {
     "max-depth": {
       "count": 2
     },
     "no-restricted-syntax": {
-      "count": 3
+      "count": 1
     }
   },
   "src/typesafe/client.ts": {

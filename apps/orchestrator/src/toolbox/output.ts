@@ -15,6 +15,19 @@ export function identityOutput(result: string): string {
 /** How a tool's output was kept: whether it was cut, its size before and after, and why the filter failed. */
 export type OutputRecord = Pick<ToolResultMetadata, "truncated" | "original_bytes" | "stored_bytes" | "error">;
 
+/** What an output filter made of a tool's output: its text, or what it threw or returned in place of one. */
+type FilteredOutput = { text: string } | { failure: unknown };
+
+function filterOutput(raw: string, outputFilter: (result: string) => string): FilteredOutput {
+  let filtered: unknown;
+  try {
+    filtered = outputFilter(raw);
+  } catch (caught) {
+    return { failure: caught };
+  }
+  return typeof filtered === "string" ? { text: filtered } : { failure: new TypeError("output_filter must return str") };
+}
+
 export function processOutput(
   raw: string,
   outputFilter: (result: string) => string,
@@ -23,12 +36,11 @@ export function processOutput(
 ): [string, OutputRecord] {
   let error: string | null = null;
   let filtered: string;
-  try {
-    filtered = outputFilter(raw);
-    if (typeof filtered !== "string") {
-      throw new TypeError("output_filter must return str");
-    }
-  } catch (caught) {
+  const output = filterOutput(raw, outputFilter);
+  if ("text" in output) {
+    filtered = output.text;
+  } else {
+    const caught = output.failure;
     writeLog("error", caught instanceof Error ? caught.message : String(caught), {
       operation: "tool.output_filter",
       error_type: caught instanceof Error ? caught.name : "Error",

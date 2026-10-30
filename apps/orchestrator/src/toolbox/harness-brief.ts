@@ -3,6 +3,7 @@ import type { ArtifactActor } from "../artifacts/types.js";
 import { errorMessage } from "../observability/log.js";
 import { readArtifactText } from "./artifacts.js";
 import type { ToolServices } from "./services.js";
+import { ToolArgumentError } from "./errors.js";
 
 /** The content of `notes` appended to a brief, at most. */
 export const BRIEF_NOTES_MAX_BYTES = 64 * 1024;
@@ -23,7 +24,7 @@ async function loadNote(services: ToolServices, actor: ArtifactActor | null, pat
     const loaded = await readArtifactText(services, actor, path);
     return { path: loaded.path, section: `# ${loaded.path}\n\n${loaded.text.trim()}` };
   } catch (error) {
-    throw new Error(`notes: ${path}: ${errorMessage(error)}`, { cause: error });
+    throw new ToolArgumentError(`notes: ${path}: ${errorMessage(error)}`, { cause: error });
   }
 }
 

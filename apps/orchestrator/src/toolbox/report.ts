@@ -2,6 +2,7 @@ import { IssueError } from "../issues/index.js";
 import { argString, functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
 import type { Tool } from "./types.js";
+import { ToolUnavailableError } from "./errors.js";
 
 const DESCRIPTION =
   "Report a problem with this agent's tooling or platform to the operator. " +
@@ -49,7 +50,7 @@ export const reportIssue: Tool = {
   async handler(services, run, _hooks, { arguments: args }) {
     const issues = services.issues;
     if (issues === null) {
-      throw new Error("issue reporting is not available");
+      throw new ToolUnavailableError("issue reporting is not available");
     }
     try {
       const row = await issues.create({

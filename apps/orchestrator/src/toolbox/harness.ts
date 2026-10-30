@@ -17,6 +17,7 @@ import {
   type ToolInvocation,
   type ToolRun,
 } from "./types.js";
+import { ToolArgumentError, ToolUnavailableError } from "./errors.js";
 
 export const HARNESS_TOOLS = ["code_task"] as const;
 export const CODE_TASK_DEFAULT_MINUTES = 30;
@@ -31,7 +32,7 @@ const POLL_FAILURES_MAX = 3;
 function repositoryFor(run: ToolRun, args: Record<string, unknown>): string {
   const names = run.code_repositories;
   if (!names.length) {
-    throw new Error("this guild has no repositories; the operator adds them in the guild's Repositories");
+    throw new ToolUnavailableError("this guild has no repositories; the operator adds them in the guild's Repositories");
   }
   const named = typeof args.repo === "string" ? args.repo.trim() : "";
   if (named) {
@@ -40,12 +41,12 @@ function repositoryFor(run: ToolRun, args: Record<string, unknown>): string {
   if (names.length === 1) {
     return names[0]!;
   }
-  throw new Error(`repo is required: the guild's repositories are ${names.join(", ")}`);
+  throw new ToolArgumentError(`repo is required: the guild's repositories are ${names.join(", ")}`);
 }
 
 function knownRepository(names: string[], named: string): string {
   if (!names.includes(named)) {
-    throw new Error(`unknown repository ${named}; the guild's repositories are ${names.join(", ")}`);
+    throw new ToolArgumentError(`unknown repository ${named}; the guild's repositories are ${names.join(", ")}`);
   }
   return named;
 }
@@ -64,7 +65,7 @@ export function notePaths(args: Record<string, unknown>): string[] {
     return [];
   }
   if (!Array.isArray(raw) || raw.some((item) => typeof item !== "string")) {
-    throw new Error("notes must be a list of display paths");
+    throw new ToolArgumentError("notes must be a list of display paths");
   }
   return [...new Set((raw as string[]).map((item) => item.trim()).filter(Boolean))];
 }
@@ -72,7 +73,7 @@ export function notePaths(args: Record<string, unknown>): string[] {
 function requiredBrief(args: Record<string, unknown>): string {
   const brief = typeof args.brief === "string" ? args.brief : "";
   if (!brief.trim()) {
-    throw new Error("brief is required");
+    throw new ToolArgumentError("brief is required");
   }
   return brief;
 }

@@ -1,5 +1,6 @@
 import { exitCodeOf, type CommandResult } from "../sandbox/sdk.js";
 import type { ToolHooks, ToolInvocation, ToolRun } from "./types.js";
+import { SandboxCommandError, ToolUnavailableError } from "./errors.js";
 
 export const COMMAND_TIMEOUT_SECONDS = 120;
 
@@ -36,7 +37,7 @@ export async function executeCommand(
   options: CommandSettings = {},
 ): Promise<CommandResult> {
   if (!run.sandbox) {
-    throw new Error("sandbox is not available");
+    throw new ToolUnavailableError("sandbox is not available");
   }
   const timeoutSeconds = options.timeoutSeconds ?? COMMAND_TIMEOUT_SECONDS;
   const opts: Record<string, unknown> = {
@@ -77,7 +78,7 @@ export async function executeCommand(
         ]);
         if (winner.kind === "cancel") {
           void runPromise.catch(() => undefined);
-          throw new Error("execution interrupted");
+          throw new SandboxCommandError("execution interrupted");
         }
         if (winner.kind === "wait-aborted") {
           execution = await runPromise;
