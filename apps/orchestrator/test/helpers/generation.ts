@@ -14,6 +14,7 @@ import {
   GenerationLoop,
   LOOP_TIMINGS,
   type GenerationDatabase,
+  type GenerationLoopDeps,
   type GenerationLoopServices,
   type GenerationLoopTimings,
 } from "../../src/generation/index.js";
@@ -1008,7 +1009,10 @@ export function parsedState(system: string): Record<string, unknown> {
 }
 
 /** The services and timings a test loop is built with besides its database, notes, root, and sandboxes. */
-export type LoopOptions = Partial<Omit<GenerationLoopServices, "db" | "notes" | "workspaceRoot" | "sandboxes">> &
+export type LoopOptions = Partial<
+  Omit<GenerationLoopServices, "notes" | "workspaceRoot" | "sandboxes" | "artifacts">
+> &
+  Partial<Pick<GenerationLoopDeps, "artifacts">> &
   Partial<GenerationLoopTimings>;
 
 export function makeLoop(
@@ -1018,7 +1022,12 @@ export function makeLoop(
   sandboxes: object,
   options: LoopOptions = {},
 ): GenerationLoop {
-  const { idleTimeoutMs = 0, schedulerTickMs = LOOP_TIMINGS.schedulerTickMs, ...services } = options;
+  const {
+    idleTimeoutMs = 0,
+    schedulerTickMs = LOOP_TIMINGS.schedulerTickMs,
+    artifacts = null,
+    ...services
+  } = options;
   const groupRouter = services.groupRouter ?? defaultGroupRouter();
   const groupChat = new GroupChat(db as GroupChatDatabase, {
     is_deleting: (guildId) => loop.isDeletingGuild(guildId),
@@ -1030,7 +1039,7 @@ export function makeLoop(
   const events = new RunEvents(db as RunEventsDatabase);
   const tools: ToolServices = {
     notes: notes as NotesStore,
-    artifacts: services.artifacts ?? null,
+    artifacts,
     files: services.files ?? null,
     group_chat: groupChat,
     issues,
@@ -1042,6 +1051,7 @@ export function makeLoop(
   const loop: GenerationLoop = new GenerationLoop(
     {
       db: db as GenerationDatabase,
+      artifacts,
       groupChat,
       groupRouter,
       issues,

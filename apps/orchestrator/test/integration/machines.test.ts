@@ -16,7 +16,6 @@ import { HEX_MASTER_KEY, testEnv } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { ExportSandboxes } from "../helpers/live.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
-import { generationArtifacts } from "../../src/generation/prepare.js";
 
 const AUTH = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 const JSON_AUTH = { ...AUTH, "content-type": "application/json" };
@@ -47,7 +46,7 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
       workspaceRoot,
       sandboxes,
       mcp: mcpPool(db),
-      artifacts: generationArtifacts(artifacts),
+      artifacts,
     },
     { ...LOOP_TIMINGS, idleTimeoutMs: 5 * 60 * 1000 },
   );

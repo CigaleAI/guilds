@@ -25,7 +25,6 @@ import { codeDefaultMachine } from "../helpers/machines.js";
 import { getRun, listMessages, listRuns, mergeRunMetadata } from "../../src/db/runs.js";
 import { updateAgentConfig } from "../../src/db/agents.js";
 import { agentConfig } from "../helpers/generation.js";
-import { generationArtifacts } from "../../src/generation/prepare.js";
 
 const live = generationLive;
 const originalStream = live.streamCompletion;
@@ -89,7 +88,7 @@ test("a coding run near its input limit hands off and continues in a new run", {
       workspaceRoot: tempDir("guilds-chain-ws-"),
       sandboxes: sandboxes as unknown as GenerationSandboxes,
       mcp: mcpPool(db),
-      artifacts: generationArtifacts(artifacts),
+      artifacts,
     },
     { ...LOOP_TIMINGS, idleTimeoutMs: 0 },
   );

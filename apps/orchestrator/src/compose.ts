@@ -39,7 +39,6 @@ import { InstanceKeys } from "./instance/keys.js";
 import { installHarnessesOff } from "./coding/harnesses.js";
 import { refreshConnectorIntegrations, syncInstanceLogins } from "./connectors/instance.js";
 import { listMachinePlacements } from "./db/machines.js";
-import { generationArtifacts } from "./generation/prepare.js";
 
 export type Server = {
   app: FastifyInstance;
@@ -134,7 +133,7 @@ export async function createServer(
     workspaceRoot: config.workspaceRoot,
     sandboxes,
     mcp,
-    artifacts: generationArtifacts(artifacts),
+    artifacts,
     files,
     attachments,
     admission,
