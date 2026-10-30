@@ -790,7 +790,7 @@
   },
   "src/mcp/operator-call.ts": {
     "no-restricted-syntax": {
-      "count": 2
+      "count": 1
     }
   },
   "src/mcp/pool.ts": {

@@ -13,6 +13,7 @@ import { mcpRedactions } from "../../src/generation/run-secrets.js";
 import { workspaceMaxMib } from "../../src/generation/workspace.js";
 import { offeredToolNames } from "../../src/toolbox/offered.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
+import { connectionRow } from "../helpers/servers.js";
 import { AGENT_CONFIG, runSnapshot, toolCall } from "../helpers/generation.js";
 
 test("workspaceMaxMib uses a positive integer env value and otherwise the default", () => {
@@ -132,9 +133,9 @@ test("mcpRedactions skips missing connections and decrypt failures", async () =>
           return null;
         }
         if (connectionId === "broken") {
-          return { ciphertext: Buffer.from("nope"), nonce: Buffer.alloc(12) };
+          return connectionRow({ id: connectionId, ciphertext: Buffer.from("nope"), nonce: Buffer.alloc(12) });
         }
-        return { ciphertext, nonce };
+        return connectionRow({ id: connectionId, ciphertext, nonce });
       },
     },
     { ...runSnapshot(), mcp: [connection("missing"), connection("broken"), connection("live")] },

@@ -1,11 +1,10 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { getMcpServer, type LoadedConnector } from "../connectors/servers.js";
-import { decryptPayload } from "../credentials/crypto.js";
 import { McpError } from "../mcp/errors.js";
 import { OPERATOR_CALLER, type McpPool } from "../mcp/pool.js";
 import { callTool, connectionTools } from "../mcp/service.js";
-import { tokenRedactions } from "../oauth/index.js";
+import { storedTokenRedactions } from "../oauth/index.js";
 import { redact } from "../secrets/index.js";
 import { capBytes } from "../lib/bytes.js";
 import { STUDIO_TOOL_RESULT_MAX_BYTES } from "./constants.js";
@@ -133,15 +132,6 @@ export function connectionSummary(reach: ReachableConnection): Record<string, un
   };
 }
 
-/** The tokens a connection stores, as redaction values; a payload that cannot be read holds none a call can use. */
-function storedRedactions(connection: McpConnectionRow): Record<string, string> {
-  try {
-    return tokenRedactions(decryptPayload(connection.ciphertext, connection.nonce), connection.id);
-  } catch {
-    return {};
-  }
-}
-
 // Proxies one read-only tool on an operator-granted connection. The result is
 // redacted against that connection's stored credentials and byte-capped.
 export async function callConnectionTool(args: {
@@ -166,7 +156,7 @@ export async function callConnectionTool(args: {
   if (!listed.read_only) {
     throw new StudioUnprocessableError(`tool ${listed.namespaced_name} is not read-only; Studio proxies read-only tools`);
   }
-  const redactions = storedRedactions(connection);
+  const redactions = storedTokenRedactions(connection);
   let raw: string;
   try {
     raw = await callTool(args.mcp, {

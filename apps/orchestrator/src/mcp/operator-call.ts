@@ -1,6 +1,5 @@
-import { asBuffer, decryptPayload } from "../credentials/crypto.js";
 import { capBytes } from "../lib/bytes.js";
-import { tokenRedactions } from "../oauth/index.js";
+import { storedTokenRedactions } from "../oauth/index.js";
 import { redact } from "../secrets/index.js";
 import { McpDisconnectedError, McpError } from "./errors.js";
 import { OPERATOR_CALLER, type McpPool } from "./pool.js";
@@ -43,15 +42,7 @@ export async function callOwnedConnectionTool(args: {
   if (!listed) {
     throw new OperatorCallError(422, `tool ${wanted} is not listed on this connection`);
   }
-  let redactions: Record<string, string>;
-  try {
-    redactions = tokenRedactions(
-      decryptPayload(asBuffer(connection.ciphertext), asBuffer(connection.nonce), args.masterKey),
-      connection.id,
-    );
-  } catch {
-    redactions = {};
-  }
+  const redactions = storedTokenRedactions(connection, args.masterKey);
   let raw: string;
   try {
     raw = await args.mcp.call(connection, server, {
