@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { HttpError } from "../../src/http/errors.js";
-import { filePathParam } from "../../src/http/request.js";
+import { filePathParam } from "../../src/http/params.js";
 
 /** A server whose notes route answers the file path it names, or the status that path is refused with. */
 function notesServer(): FastifyInstance {
