@@ -62,6 +62,38 @@ test("filters become the server's where", () => {
   assert.deepEqual(whereOf({ score: { from: "5", to: "5" } }, columns), { score: 5 });
 });
 
+test("a range with one end set matches from it or up to it", () => {
+  const columns = [column("score", "number"), column("seen", "datetime")];
+  assert.deepEqual(
+    whereOf({ score: { from: "3" }, seen: { to: "2026-01-02T00:00:00Z" } }, columns),
+    { score: { gte: 3 }, seen: { lte: "2026-01-02T00:00:00.000Z" } },
+  );
+});
+
+test("unset filters and unknown columns put no condition in the where", () => {
+  const columns = [column("score", "number"), column("status", "text")];
+  assert.deepEqual(
+    whereOf(
+      {
+        id: { value: " " },
+        score: { from: " ", value: "4" },
+        status: { value: "" },
+        gone: { value: "x" },
+      },
+      columns,
+    ),
+    {},
+  );
+  assert.deepEqual(whereOf({ status: { value: "open" } }, columns), { status: "open" });
+});
+
+test("a time fits a datetime column and a boolean a boolean column", () => {
+  assert.equal(fits("2026-01-02T00:00:00Z", column("seen", "datetime")), true);
+  assert.equal(fits("someday", column("seen", "datetime")), false);
+  assert.equal(fits(false, column("done", "boolean")), true);
+  assert.equal(fits(["a", 1], column("tags", "array")), false);
+});
+
 test("columns for save drop empty values and values on the wrong type", () => {
   assert.deepEqual(
     columnsForSave([
