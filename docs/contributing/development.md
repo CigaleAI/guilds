@@ -156,7 +156,7 @@ log.
 | Lane | Steps |
 | --- | --- |
 | orchestrator | `typecheck`, `lint`, `import-cycles`, `compat-verify`, `test-orchestrator` |
-| web | `test-ui`, `test-web`, `build-web`, `build-storybook` |
+| web | `test-ui`, `test-web`, `import-cycles-web`, `build-web`, `build-storybook` |
 | core stack | `smoke-core-stack`: `./setup.sh` and `docker compose up` on a copy of the checkout, under its own Compose project, port, image tag, and state directory. It checks that the box is healthy, serves the app on loopback alone, holds one operator, and refuses a request from another web origin |
 
 `scripts/check.sh <commit>` (or `make check COMMIT=<rev>`)
@@ -340,12 +340,15 @@ cleared entries. Warnings do not fail lint.
 Prettier formats with semicolons, double quotes, trailing
 commas, and a width of 100 (`pnpm --filter <package> format`).
 
-The orchestrator's import graph gains no cycle:
-`pnpm --filter @guildsrun/orchestrator cycles`, the `import-cycles`
-step of the check, fails when a file or a domain (a directory under
-`src/`) sits in a cycle of value imports and `import-cycles.json`
-does not list it. `cycles --write` rewrites that file from the tree
-as it is, and like `eslint-suppressions.json` it only shrinks.
+The import graphs of the orchestrator and the operator app gain no
+cycle: `pnpm --filter <package> cycles`, the `import-cycles` and
+`import-cycles-web` steps of the check, fails when a file or a
+domain sits in a cycle of value imports and the package's
+`import-cycles.json` does not list it. A domain is a directory under
+`src/`, and in the operator app each directory under `src/features/`
+is a domain of its own. Tests and stories are not scanned.
+`cycles --write` rewrites that file from the tree as it is, and like
+`eslint-suppressions.json` it only shrinks.
 
 ## Documentation
 
