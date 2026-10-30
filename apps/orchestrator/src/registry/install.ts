@@ -37,7 +37,19 @@ function entriesFor(index: RegistryIndex, slug: string): RegistryConnectorEntry[
 }
 
 /** What an install accepts beyond a verified, stable entry. */
-export type Acceptance = { unverified?: boolean; experimental?: boolean };
+export type Acceptance = { unverified?: boolean | undefined; experimental?: boolean | undefined };
+
+/** A registry connector an install asks for: its slug, a version (the newest when left out), and what it accepts. */
+export type ConnectorPick = Acceptance & { slug: string; version?: string | undefined };
+
+/** The registry connectors an update moves, `slug` alone or every one when it is left out, and what it accepts. */
+export type ConnectorUpdate = Acceptance & { slug?: string | undefined };
+
+/**
+ * Where the box keeps connector code: the code tier's root, where a package carrying code is
+ * written, null while the tier is off; and the root code connectors live in.
+ */
+export type CodeRoots = { codeTier: string | null; connectors: string | null };
 
 function chosenEntry(index: RegistryIndex, slug: string, version: string | undefined, accept: Acceptance): RegistryConnectorEntry {
   const entry = pickEntry(entriesFor(index, slug), version);
@@ -88,26 +100,21 @@ async function placeCode(
   return true;
 }
 
-export type InstallOptions = Acceptance & {
-  version?: string;
-  now?: Date;
-  /** The code tier's root while it is on: a package carrying code installs there. */
-  codeRoot?: string | null;
-};
-
 /**
- * Installs a connector from the registry as a platform row: `registry` source, on at install,
- * its tool prefix generated against every prefix on the box. A slug any server holds is refused.
- * A package carrying code is written under the code tier's root; `code` says so, and the process
- * serves it once `syncCodeConnectors` runs.
+ * Installs the connector `pick` names from the registry as a platform row: `registry` source, on
+ * at install, its tool prefix generated against every prefix on the box. A slug any server holds
+ * is refused. A package carrying code is written under `codeRoot`, the code tier's root, and
+ * refused while it is null; `code` says so, and the process serves it once `syncCodeConnectors`
+ * runs.
  */
 export async function installConnector(
   db: Queryable,
   client: RegistryClient,
-  slug: string,
-  options: InstallOptions = {},
+  pick: ConnectorPick,
+  codeRoot: string | null,
 ): Promise<{ row: LoadedConnector; code: boolean }> {
-  const entry = chosenEntry(await client.index(), slug, options.version, options);
+  const slug = pick.slug;
+  const entry = chosenEntry(await client.index(), slug, pick.version, pick);
   try {
     await assertSlugFree(db, slug, null);
   } catch (error) {
@@ -121,7 +128,7 @@ export async function installConnector(
   if (isReservedToolPrefix(toolPrefix)) {
     throw new RegistryError(`the tool prefix for ${slug} is reserved`);
   }
-  const code = await placeCode(client, entry, pkg, options.codeRoot);
+  const code = await placeCode(client, entry, pkg, codeRoot);
   try {
     const row = await insertConnector(db,
       {
@@ -137,12 +144,12 @@ export async function installConnector(
         publisher: entry.publisher,
         enabled: true,
       },
-      options.now ?? new Date(),
+      new Date(),
     );
     return { row: loadConnector(row), code };
   } catch (error) {
-    if (code && options.codeRoot) {
-      removeCodePackage(options.codeRoot, slug);
+    if (code && codeRoot) {
+      removeCodePackage(codeRoot, slug);
     }
     throw error;
   }
@@ -159,33 +166,25 @@ async function registryRow(db: Queryable, slug: string): Promise<Record<string, 
   return row;
 }
 
-export type UpdateOptions = Acceptance & {
-  /** The one connector to move; every registry connector when unset. */
-  slug?: string;
-  now?: Date;
-  /** The code tier's root while it is on: a package carrying code is written there. */
-  codeRoot?: string | null;
-  /** Where code connectors live, so a connector that moves keeps only its new version's folder. */
-  connectorsRoot?: string | null;
-};
-
 /** A registry connector moved from one version to another; `code` says the new version carries code. */
 export type ConnectorMove = { slug: string; from: string; to: string; code: boolean };
 
 /**
- * Moves registry connectors to the newest version the index offers, or `slug` alone. The row keeps
- * its switch, its OAuth client, the admin's overrides, its logins, and its bindings; its tools are
- * listed again on each login's next use. A connector with code keeps only the new version's folder,
- * served once `syncCodeConnectors` runs. Returns what moved.
+ * Moves the registry connectors `update` names to the newest version the index offers. The row
+ * keeps its switch, its OAuth client, the admin's overrides, its logins, and its bindings; its
+ * tools are listed again on each login's next use. A package carrying code is written under the
+ * code tier's root, and a connector with code keeps only the new version's folder, served once
+ * `syncCodeConnectors` runs. Returns what moved.
  */
 export async function updateConnectors(
   db: Queryable,
   client: RegistryClient,
-  options: UpdateOptions = {},
+  update: ConnectorUpdate,
+  roots: CodeRoots,
 ): Promise<ConnectorMove[]> {
   const index = await client.index();
-  const rows = options.slug
-    ? [await registryRow(db, options.slug)]
+  const rows = update.slug
+    ? [await registryRow(db, update.slug)]
     : await listServers(db, { owner: "platform", source: "registry" });
   const moved: ConnectorMove[] = [];
   for (const row of rows) {
@@ -195,9 +194,9 @@ export async function updateConnectors(
     if (latest === null || (current && compareVersions(latest.version, current) <= 0)) {
       continue;
     }
-    const entry = chosenEntry(index, slug, latest.version, options);
+    const entry = chosenEntry(index, slug, latest.version, update);
     const pkg = await client.connectorPackage(entry);
-    const code = await placeCode(client, entry, pkg, options.codeRoot);
+    const code = await placeCode(client, entry, pkg, roots.codeTier);
     await updateConnector(db,
       String(row.id),
       {
@@ -207,11 +206,11 @@ export async function updateConnectors(
         experimental: entry.experimental === true,
         publisher: entry.publisher,
       },
-      options.now ?? new Date(),
+      new Date(),
     );
     await expireMcpTools(db, String(row.id));
-    if (options.connectorsRoot) {
-      removeCodePackage(options.connectorsRoot, slug, code ? entry.version : null);
+    if (roots.connectors) {
+      removeCodePackage(roots.connectors, slug, code ? entry.version : null);
     }
     moved.push({ slug, from: current, to: entry.version, code });
   }

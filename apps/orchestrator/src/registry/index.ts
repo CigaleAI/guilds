@@ -94,7 +94,7 @@ export class RegistryPackageError extends RegistryError {
   }
 }
 
-/** A connector, or a version of one, that the registry does not offer or the box has not installed. */
+/** A connector or a recipe, or a version of one, that the registry does not offer, or a connector the box has not installed. */
 export class RegistryNotFoundError extends RegistryError {
   constructor(message: string) {
     super(message, 404);

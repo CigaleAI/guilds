@@ -7,7 +7,13 @@ import { listPlatformServers, reloadServer } from "../mcp/servers.js";
 import { onlineRegistry, type RegistryClient } from "./client.js";
 import { codeTierRoot, connectorsRoot, syncCodeConnectors, type CodeSync } from "./code.js";
 import { latestEntries, type RegistryConnectorEntry } from "./index.js";
-import { installConnector, removeConnector, updateConnectors, type Acceptance } from "./install.js";
+import {
+  installConnector,
+  removeConnector,
+  updateConnectors,
+  type Acceptance,
+  type ConnectorPick,
+} from "./install.js";
 
 /** What serving a connector change in this process reloads: the instance keys, the logins' key, and the pool. */
 export type ConnectorServeServices = {
@@ -18,9 +24,6 @@ export type ConnectorServeServices = {
 
 /** The services the instance admin's registry changes run with: the box's registry client, null while offline. */
 export type RegistryAdminServices = ConnectorServeServices & { registry: RegistryClient | null };
-
-/** A registry connector the admin installs: its slug, a version (the newest when left out), and what they accept. */
-export type ConnectorPick = Acceptance & { slug: string; version?: string | undefined };
 
 /** A connector the index offers: its newest entry, every version, and the box's row when it holds one. */
 export type RegistryCatalogEntry = RegistryConnectorEntry & {
@@ -87,12 +90,7 @@ export async function installRegistryConnector(
   services: RegistryAdminServices,
   pick: ConnectorPick,
 ): Promise<LoadedConnector> {
-  const { row } = await installConnector(db, onlineRegistry(services.registry), pick.slug, {
-    ...(pick.version ? { version: pick.version } : {}),
-    unverified: pick.unverified === true,
-    experimental: pick.experimental === true,
-    codeRoot: codeTierRoot(),
-  });
+  const { row } = await installConnector(db, onlineRegistry(services.registry), pick, codeTierRoot());
   await serveInstalledConnectors(db, services);
   return reloadServer(db, row);
 }
@@ -104,13 +102,12 @@ export async function updateRegistryConnector(
   slug: string,
   accept: Acceptance,
 ): Promise<ConnectorMove[]> {
-  const moved = await updateConnectors(db, onlineRegistry(services.registry), {
-    slug,
-    unverified: accept.unverified === true,
-    experimental: accept.experimental === true,
-    codeRoot: codeTierRoot(),
-    connectorsRoot: connectorsRoot(),
-  });
+  const moved = await updateConnectors(
+    db,
+    onlineRegistry(services.registry),
+    { ...accept, slug },
+    { codeTier: codeTierRoot(), connectors: connectorsRoot() },
+  );
   await serveInstalledConnectors(db, services);
   return moved;
 }
