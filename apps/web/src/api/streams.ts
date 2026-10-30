@@ -1,5 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
+import { parseFrameData } from "./liveEvents";
 import { applyLiveDelta, type LiveTurn } from "./liveTurn";
 import { agentKeys } from "./queries/agents";
 import { builderKeys } from "./queries/builder";
@@ -49,13 +50,8 @@ export function useEventStream(url: string | null, options: StreamOptions): void
       source.onopen = () => latest.current.onOpen?.();
       for (const name of eventList.split(",")) {
         source.addEventListener(name, (event) => {
-          let data: unknown = null;
-          try {
-            data = JSON.parse((event as MessageEvent<string>).data);
-          } catch {
-            // A malformed frame carries nothing to apply.
-          }
-          latest.current.onEvent(name, data);
+          if (!(event instanceof MessageEvent) || typeof event.data !== "string") return;
+          latest.current.onEvent(name, parseFrameData(event.data));
         });
       }
       source.onerror = () => {

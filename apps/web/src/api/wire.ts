@@ -1,5 +1,9 @@
 /** Checks that narrow what the server sends before the app reads it as one of its types. */
 
+/** A value as JSON writes it. */
+export type JsonValue =
+  string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+
 /** A JSON object, whose fields can be read by name. */
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

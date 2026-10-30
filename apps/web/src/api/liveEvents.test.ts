@@ -11,10 +11,21 @@ import {
   isRunMessage,
   isSessionFailure,
   isStudioMessageCommit,
+  parseFrameData,
   runEventGuards,
   type LiveEventHandlers,
   type RunEvents,
 } from "./liveEvents";
+
+test("parseFrameData reads a frame's JSON", () => {
+  assert.deepEqual(parseFrameData('{"run_id":"r2"}'), { run_id: "r2" });
+  assert.equal(parseFrameData("null"), null);
+});
+
+test("parseFrameData is undefined for a frame that is not JSON", () => {
+  assert.equal(parseFrameData("{oops"), undefined);
+  assert.equal(parseFrameData(""), undefined);
+});
 
 const groupMessage = {
   id: 1,
