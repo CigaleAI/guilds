@@ -1,5 +1,13 @@
 import type { OrgRole } from "../../api/types/org";
 
+/** Every role a member holds in an organisation, highest first. */
+export const orgRoles = ["owner", "admin", "member"] as const satisfies readonly OrgRole[];
+
+/** The role a picked value names, or null when it names none. */
+export function parseOrgRole(value: string): OrgRole | null {
+  return orgRoles.find((role) => role === value) ?? null;
+}
+
 /** Owners and admins invite, change roles, and remove members. */
 export function canManageMembers(role: OrgRole): boolean {
   return role === "owner" || role === "admin";

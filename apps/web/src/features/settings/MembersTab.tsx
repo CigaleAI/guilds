@@ -22,7 +22,13 @@ import {
   personTone,
   Tag,
 } from "@guildsrun/ui";
-import { assignableRoles, canChangeMember, canManageMembers, roleLabel } from "./members";
+import {
+  assignableRoles,
+  canChangeMember,
+  canManageMembers,
+  parseOrgRole,
+  roleLabel,
+} from "./members";
 
 /** The organisation's members with their roles, adding people by name, and what an extension adds under them. */
 export function MembersTab() {
@@ -85,12 +91,14 @@ export function MembersTab() {
                           aria-label={`${member.name}'s role`}
                           className="w-36"
                           value={member.role}
-                          onValueChange={(next) =>
+                          onValueChange={(next) => {
+                            const picked = parseOrgRole(next);
+                            if (!picked) return;
                             setRole.mutate(
-                              { userId: member.user_id, role: next as OrgRole },
+                              { userId: member.user_id, role: picked },
                               { onError: failed(`Couldn't change ${member.name}'s role`) },
-                            )
-                          }
+                            );
+                          }}
                           options={roles.map((value) => ({ value, label: roleLabel[value] }))}
                         />
                         <IconButton
@@ -186,7 +194,10 @@ function AddMember() {
         label="Role"
         className="w-40"
         value={role}
-        onValueChange={(next) => setRole(next as OrgRole)}
+        onValueChange={(next) => {
+          const picked = parseOrgRole(next);
+          if (picked) setRole(picked);
+        }}
         options={roles.map((value) => ({ value, label: roleLabel[value] }))}
       />
       <Button type="submit" variant="outline" size="xl" disabled={!handle || add.isPending}>

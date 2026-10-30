@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { assignableRoles, canChangeMember, canManageMembers } from "./members";
+import { assignableRoles, canChangeMember, canManageMembers, parseOrgRole } from "./members";
 
 test("owners and admins manage members", () => {
   assert.equal(canManageMembers("owner"), true);
@@ -20,4 +20,11 @@ test("admins cannot hand out or touch the owner role", () => {
 test("nobody changes their own membership from the list", () => {
   assert.equal(canChangeMember("owner", "owner", true), false);
   assert.equal(canChangeMember("admin", "member", true), false);
+});
+
+test("a picked value is a role only when it names one", () => {
+  assert.equal(parseOrgRole("admin"), "admin");
+  assert.equal(parseOrgRole("member"), "member");
+  assert.equal(parseOrgRole("Admin"), null);
+  assert.equal(parseOrgRole("superuser"), null);
 });
