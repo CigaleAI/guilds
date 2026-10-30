@@ -8,7 +8,6 @@ import { completeRun, getRun, listMessages, mergeRunMetadata, type MessageRow, t
 import { agentHome } from "../lib/agent-file.js";
 import { INPUT_TOKEN_LIMIT_MESSAGE } from "../llm/index.js";
 import { slotPorts } from "../machines/index.js";
-import { errorName, writeLog } from "../observability/log.js";
 import { agentSandbox, applyRunScripts, prepareBrowserWorkspace, prepareWorkspace, seatEnvironment } from "../sandbox/index.js";
 import type { SandboxHandle } from "../sandbox/sdk.js";
 import type { Scripts } from "../scripts/catalog.js";
@@ -20,7 +19,7 @@ import type { ActiveGenerations } from "./active-generations.js";
 import { chainOf, completeIfActive, HANDOFF_FRACTION, type RunChains } from "./chain.js";
 import { codingRepositoriesDatabase, guildRepositories, type CodingRepositoriesDatabase, type CodingRuns } from "./coding.js";
 import { completionRequest, historyTokens, type ModelCompletion } from "./completion.js";
-import { GenerationCancelled, RunLimitError } from "./errors.js";
+import { GenerationCancelled, logOperationFailure, RunLimitError, type OperationFailure } from "./errors.js";
 import type { RunEvents, RunGeneration } from "./events.js";
 import { agentSeat, type AgentMachines } from "./machines.js";
 import {
@@ -223,7 +222,7 @@ export class RunGenerator {
   private async finish(turn: RunGeneration, cancelled: boolean): Promise<void> {
     const { db, events } = this.services;
     if (cancelled) {
-      await this.settleCancel(turn);
+      logOperationFailure(await this.settleCancel(turn));
     }
     await events.publish(turn.runId, "generation.finished", { generation: turn.generation });
     const finished = await db.getRun(turn.runId);
@@ -232,17 +231,20 @@ export class RunGenerator {
     }
   }
 
-  /** Records the cancel once, however many times it is settled; a settlement that fails is logged. */
-  private async settleCancel(turn: RunGeneration): Promise<void> {
+  /**
+   * Records the cancel once, however many times it is settled; returns the failure of a
+   * settlement that did not go through, after which the generation still finishes.
+   */
+  private async settleCancel(turn: RunGeneration): Promise<OperationFailure | null> {
     try {
       await this.services.generations.settlement(turn.runId, () => this.recordCancel(turn));
+      return null;
     } catch (error) {
-      writeLog(
-        "error",
-        "cancel settlement failed",
-        { ...turn.log, operation: "generation.cancelled", error_type: errorName(error) },
+      return {
+        message: "cancel settlement failed",
+        fields: { ...turn.log, operation: "generation.cancelled" },
         error,
-      );
+      };
     }
   }
 
@@ -284,7 +286,7 @@ export class RunGenerator {
         await coding.recordCheckpoints(gen.runId, gen.agent, ready.sandbox);
       }
       if (!generations.isCancelled(gen.runId)) {
-        await workspace.recordSize(gen.runId, gen.agent, ready.sandbox);
+        logOperationFailure(await workspace.recordSize(gen.runId, gen.agent, ready.sandbox), "warn");
       }
     }
   }

@@ -4,11 +4,12 @@ import { setMachineWorkspaceMib } from "../db/machines.js";
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import { DEFAULT_MACHINE_MAX_WORKSPACE_MIB, type AgentConfig } from "../db/schema/index.js";
 import { agentHome } from "../lib/agent-file.js";
-import { errorMessage, errorName, writeLog } from "../observability/log.js";
+import { errorMessage } from "../observability/log.js";
 import { agentSandbox, seatEnvironment } from "../sandbox/index.js";
 import type { SandboxHandle } from "../sandbox/sdk.js";
 import { measureMachine, measureWorkspace } from "../toolbox/code.js";
 import { createToolHooks, createToolRun, type ToolRun } from "../toolbox/index.js";
+import type { OperationFailure } from "./errors.js";
 import type { RunEvents, RunGeneration } from "./events.js";
 import { agentSeat } from "./machines.js";
 
@@ -100,18 +101,22 @@ export class WorkspaceLimits {
     return true;
   }
 
-  /** Measures the agent's home and its machine's directory and stores both sizes; a failure is logged. */
-  async recordSize(runId: string, agent: AgentRow, sandbox: SandboxHandle): Promise<void> {
+  /**
+   * Measures the agent's home and its machine's directory and stores both sizes; returns the
+   * failure of a measure that did not go through, which leaves the sizes stored before.
+   */
+  async recordSize(runId: string, agent: AgentRow, sandbox: SandboxHandle): Promise<OperationFailure | null> {
     const run = maintenanceRun(runId, agent, sandbox);
     try {
       await this.db.setAgentWorkspaceMib(agent.id, await measureWorkspace(run, createToolHooks()));
       await this.db.setMachineWorkspaceMib(agent.machine_id, await measureMachine(run, createToolHooks()));
+      return null;
     } catch (error) {
-      writeLog(
-        "warn",
-        errorMessage(error),
-        { run_id: runId, agent_id: agent.id, operation: "workspace.measure", error_type: errorName(error) },
-      );
+      return {
+        message: errorMessage(error),
+        fields: { run_id: runId, agent_id: agent.id, operation: "workspace.measure" },
+        error,
+      };
     }
   }
 

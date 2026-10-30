@@ -402,38 +402,8 @@
       "count": 5
     }
   },
-  "src/generation/generate.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/generation/index.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/generation/machines.ts": {
-    "no-restricted-syntax": {
-      "count": 5
-    }
-  },
   "src/generation/run-secrets.ts": {
     "@typescript-eslint/explicit-module-boundary-types": {
-      "count": 1
-    }
-  },
-  "src/generation/runs.ts": {
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
-  "src/generation/tool-calls.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/generation/workspace.ts": {
-    "no-restricted-syntax": {
       "count": 1
     }
   },

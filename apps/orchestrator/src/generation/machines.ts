@@ -18,7 +18,7 @@ import {
 } from "../sandbox/index.js";
 import { SandboxError, type SandboxHandle } from "../sandbox/sdk.js";
 import type { ActiveGenerations } from "./active-generations.js";
-import { AgentGoneError, RunRequestError } from "./errors.js";
+import { AgentGoneError, logOperationFailure, RunRequestError, type OperationFailure } from "./errors.js";
 import { IdleTimers } from "./idle.js";
 
 /**
@@ -196,28 +196,25 @@ export class AgentMachines {
 
   /** Arms a machine's idle stop: its container goes after the idle timeout without work or input. */
   armIdle(machineId: string): void {
-    this.idle.arm(machineId, () => this.stopIdleMachine(machineId));
+    this.idle.arm(machineId, async () => {
+      if (!this.generations.isMachineBusy(machineId)) {
+        logOperationFailure(await this.destroyContainer(machineId, "sandbox.idle.stop"));
+      }
+    });
   }
 
-  private async stopIdleMachine(machineId: string): Promise<void> {
+  /**
+   * Destroys the machine's container, which then no longer runs at a stale size; returns the
+   * failure of a destroy that did not go through, logged as `operation`.
+   */
+  private async destroyContainer(machineId: string, operation: string): Promise<OperationFailure | null> {
     try {
-      if (this.generations.isMachineBusy(machineId)) {
-        return;
-      }
       await this.sandboxes.destroy(machineId);
-      this.stale.delete(machineId);
     } catch (error) {
-      writeLog(
-        "error",
-        "idle sandbox stop failed",
-        {
-          machine_id: machineId,
-          operation: "sandbox.idle.stop",
-          error_type: errorName(error),
-        },
-        error,
-      );
+      return { message: "sandbox destroy failed", fields: { machine_id: machineId, operation }, error };
     }
+    this.stale.delete(machineId);
+    return null;
   }
 
   cancelBrowserIdle(agentId: string): void {
@@ -226,34 +223,34 @@ export class AgentMachines {
 
   /** Arms an agent's Chrome idle stop: it stops after the idle timeout without a browser call or input. */
   armBrowserIdle(agentId: string): void {
-    this.browserIdle.arm(agentId, () => this.stopAgentBrowser(agentId));
+    this.browserIdle.arm(agentId, async () => logOperationFailure(await this.stopAgentBrowser(agentId)));
   }
 
-  /** Stops the agent's Chrome when its machine runs. Its profile and logins stay in its home. */
-  async stopAgentBrowser(agentId: string): Promise<void> {
+  /**
+   * Stops the agent's Chrome when its machine runs. Its profile and logins stay in its home.
+   * Returns the failure of a stop that did not go through.
+   */
+  async stopAgentBrowser(agentId: string): Promise<OperationFailure | null> {
     this.cancelBrowserIdle(agentId);
     const agent = await this.db.getAgent(agentId);
     if (agent === null) {
-      return;
+      return null;
     }
     try {
       const sandbox = await this.sandboxes.connectRunning(agent.machine_id);
       if (sandbox !== null) {
         await this.sandboxes.stopBrowser(sandbox, agentSeat(agent));
       }
+      return null;
     } catch (error) {
-      writeLog(
-        "error",
-        "browser stop failed",
-        { agent_id: agentId, operation: "browser.stop", error_type: errorName(error) },
-        error,
-      );
+      return { message: "browser stop failed", fields: { agent_id: agentId, operation: "browser.stop" }, error };
     }
   }
 
   /**
    * A machine's tier or size changed: an idle container goes now, a busy one once the last
-   * generation on it ends. The next work on the machine starts a container of the new size.
+   * generation on it ends. The next work on the machine starts a container of the new size. A
+   * container that fails to go is logged and replaced when the machine is next ensured.
    */
   async machineChanged(machineId: string): Promise<void> {
     this.stale.add(machineId);
@@ -261,35 +258,19 @@ export class AgentMachines {
       return;
     }
     this.cancelIdle(machineId);
-    try {
-      await this.sandboxes.destroy(machineId);
-      this.stale.delete(machineId);
-    } catch (error) {
-      writeLog(
-        "error",
-        "sandbox refresh failed",
-        { machine_id: machineId, operation: "sandbox.refresh", error_type: errorName(error) },
-        error,
-      );
-    }
+    logOperationFailure(await this.destroyContainer(machineId, "sandbox.refresh"));
   }
 
   /**
    * A deleted machine: its container goes, and its directory with it. A container that fails to
-   * go is retried by the machine's idle stop.
+   * go is logged and retried by the machine's idle stop.
    */
   async deleteMachine(machineId: string): Promise<void> {
     this.cancelIdle(machineId);
     this.stale.delete(machineId);
-    try {
-      await this.sandboxes.destroy(machineId);
-    } catch (error) {
-      writeLog(
-        "error",
-        "deleted machine sandbox stop failed",
-        { machine_id: machineId, operation: "machine.delete", error_type: errorName(error) },
-        error,
-      );
+    const failure = await this.destroyContainer(machineId, "machine.delete");
+    if (failure !== null) {
+      logOperationFailure(failure);
       this.armIdle(machineId);
     }
     const directory = machineDirectory(await this.workspaceRootFor(machineId), machineId);
@@ -303,7 +284,7 @@ export class AgentMachines {
    * tab starts it again with them. Other agents on the machine keep theirs.
    */
   async agentBrowserChanged(agentId: string): Promise<void> {
-    await this.stopAgentBrowser(agentId);
+    logOperationFailure(await this.stopAgentBrowser(agentId));
   }
 
   /** The agent's Chrome for the Browser tab: its machine woken, its display and noVNC up. */
@@ -480,29 +461,40 @@ export class AgentMachines {
 
   /**
    * Stops the agent's processes on its machine when it runs, and removes its runtime files and
-   * its home. The machine's container stays up for the other agents on it.
+   * its home. The machine's container stays up for the other agents on it. Returns the failure
+   * of a stop that did not go through; the home goes either way.
    */
-  async removeAgent(agent: AgentRow): Promise<void> {
+  async removeAgent(agent: AgentRow): Promise<OperationFailure | null> {
     const agentId = agent.id;
     const machineId = agent.machine_id;
     this.cancelBrowserIdle(agentId);
     this.touched.delete(agentId);
-    const sandbox = await this.sandboxes.connectRunning(machineId);
-    if (sandbox !== null) {
-      try {
-        await this.sandboxes.purgeAgent(sandbox, agentSeat(agent));
-      } catch (error) {
-        writeLog(
-          "error",
-          "agent stop failed",
-          { agent_id: agentId, machine_id: machineId, operation: "agent.stop", error_type: errorName(error) },
-          error,
-        );
-      }
-    }
+    const failure = await this.purgeAgentProcesses(agent);
     const workspace = agentDirectory(await this.workspaceRootFor(machineId), machineId, agentId);
     if (existsSync(workspace)) {
       rmSync(workspace, { recursive: true, force: true });
+    }
+    return failure;
+  }
+
+  /**
+   * Stops the agent's processes and removes its runtime files on its machine when it runs;
+   * returns the failure of a stop that did not go through.
+   */
+  private async purgeAgentProcesses(agent: AgentRow): Promise<OperationFailure | null> {
+    const sandbox = await this.sandboxes.connectRunning(agent.machine_id);
+    if (sandbox === null) {
+      return null;
+    }
+    try {
+      await this.sandboxes.purgeAgent(sandbox, agentSeat(agent));
+      return null;
+    } catch (error) {
+      return {
+        message: "agent stop failed",
+        fields: { agent_id: agent.id, machine_id: agent.machine_id, operation: "agent.stop" },
+        error,
+      };
     }
   }
 
