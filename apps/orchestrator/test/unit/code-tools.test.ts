@@ -738,8 +738,8 @@ describe("repositories in a coding generation", () => {
     ];
     const retired: string[] = [];
     Object.assign(db, {
-      retireLogin: async (pool: unknown, login: McpConnectionRow, failure: string) => {
-        retired.push(`${login.id}:${failure}:${pool === null ? "no pool" : "pool"}`);
+      retireLogin: async (login: McpConnectionRow, failure: string) => {
+        retired.push(`${login.id}:${failure}`);
       },
     });
     try {
@@ -749,7 +749,7 @@ describe("repositories in a coding generation", () => {
       setInstanceKeys({});
     }
     assert.equal(db.llm_histories.length, 0);
-    assert.deepEqual(retired, ["conn_gh:installation_gone:no pool"]);
+    assert.deepEqual(retired, ["conn_gh:installation_gone"]);
     const errors = Array.isArray(db.run.errors) ? db.run.errors : [];
     assert.equal(errors.at(-1)?.operation, "repository.token");
     assert.equal(errors.at(-1)?.error_type, "RepositoryAccessError");

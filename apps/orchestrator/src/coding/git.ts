@@ -44,7 +44,7 @@ export type RepositoryTokenDb = ReturnType<typeof repositoryTokenDatabase>;
 
 /**
  * GitHub refused the installation behind `connection` while a run's repository token was minted.
- * Its caller retires the login, as the message tells the run. The error keeps the name
+ * Its caller retires the login with `retireInstallationGone`, as the message tells the run. The error keeps the name
  * `RepositoryAccessError`, the type a run's error record shows for every token failure.
  */
 export class RepositoryTokenInstallationGoneError extends RepositoryAccessError {
