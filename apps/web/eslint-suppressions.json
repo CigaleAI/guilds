@@ -169,9 +169,6 @@
     }
   },
   "src/features/builder/BuilderWidgets.tsx": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
     "complexity": {
       "count": 1
     }
@@ -182,9 +179,6 @@
     }
   },
   "src/features/builder/widgets.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 5
-    },
     "complexity": {
       "count": 1
     }

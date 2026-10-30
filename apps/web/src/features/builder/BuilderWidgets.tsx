@@ -7,6 +7,7 @@ import {
   answeredAll,
   answerMessage,
   connectReplies,
+  isConnectScope,
   type Answer,
   type ConnectScope,
   type ConnectWidget,
@@ -113,7 +114,9 @@ export function ConnectCard({ widget, answered, live, onReply }: ConnectCardProp
             className="min-w-48"
             value={scope}
             disabled={widget.allowedScopes.length < 2}
-            onValueChange={(value) => setScope(value as ConnectScope)}
+            onValueChange={(value) => {
+              if (isConnectScope(value)) setScope(value);
+            }}
             options={widget.allowedScopes.map((value) => ({ value, label: scopeLabel[value] }))}
           />
         </div>

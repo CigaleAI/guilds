@@ -8,7 +8,13 @@ import { pendingDesignQuestions } from "../recipes/plan/planModel";
  * plan for, or questions to answer. Each answer goes back to the coach as the operator's message.
  */
 
-export type ConnectScope = "org" | "guild" | "agent";
+const connectScopes = ["org", "guild", "agent"] as const;
+
+export type ConnectScope = (typeof connectScopes)[number];
+
+export function isConnectScope(value: unknown): value is ConnectScope {
+  return connectScopes.some((scope) => scope === value);
+}
 
 type OauthSetupState = McpServerAccess["oauth_setup_state"];
 
@@ -62,19 +68,25 @@ export type QuestionWidget = { kind: "question"; title: string; questions: Quest
 
 export type BuilderWidget = ConnectWidget | QuestionWidget;
 
-const scopes: readonly ConnectScope[] = ["org", "guild", "agent"];
-
-function record(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 const text = (value: unknown, fallback = "") => (typeof value === "string" ? value : fallback);
 
-function serverOf(value: unknown): WidgetServer | null {
-  const row = record(value);
-  if (!row || typeof row.id !== "string") return null;
+function isConnectorAuthField(value: unknown): value is ConnectorAuthField {
+  return (
+    isObjectRecord(value) &&
+    typeof value.name === "string" &&
+    typeof value.label === "string" &&
+    (value.secret === undefined || typeof value.secret === "boolean") &&
+    (value.optional === undefined || typeof value.optional === "boolean") &&
+    (value.placeholder === undefined || typeof value.placeholder === "string")
+  );
+}
+
+function serverOf(row: unknown): WidgetServer | null {
+  if (!isObjectRecord(row) || typeof row.id !== "string") return null;
   const auth = row.auth === "token" || row.auth === "none" ? row.auth : "oauth";
   const setup = setupStates.find((state) => state === row.oauth_setup_state);
   return {
@@ -84,7 +96,7 @@ function serverOf(value: unknown): WidgetServer | null {
     auth,
     setup_hint: typeof row.setup_hint === "string" ? row.setup_hint : null,
     ...(Array.isArray(row.auth_fields)
-      ? { auth_fields: row.auth_fields as ConnectorAuthField[] }
+      ? { auth_fields: row.auth_fields.filter(isConnectorAuthField) }
       : {}),
     ...(row.connection_state === "connected" || row.connection_state === "registered_not_connected"
       ? { connection_state: row.connection_state }
@@ -93,16 +105,10 @@ function serverOf(value: unknown): WidgetServer | null {
   };
 }
 
-function scopeOf(value: unknown, fallback: ConnectScope): ConnectScope {
-  return scopes.includes(value as ConnectScope) ? (value as ConnectScope) : fallback;
-}
-
-function questionOf(value: unknown, index: number): Question | null {
-  const row = record(value);
-  if (!row || !text(row.question).trim()) return null;
-  const options = (Array.isArray(row.options) ? row.options : []).flatMap((item, position) => {
-    const option = record(item);
-    if (!option || !text(option.label).trim()) return [];
+function questionOf(row: unknown, index: number): Question | null {
+  if (!isObjectRecord(row) || !text(row.question).trim()) return null;
+  const options = (Array.isArray(row.options) ? row.options : []).flatMap((option, position) => {
+    if (!isObjectRecord(option) || !text(option.label).trim()) return [];
     return [
       {
         id: text(option.id) || `opt-${position + 1}`,
@@ -130,9 +136,9 @@ function widgetFrom(body: Record<string, unknown>): BuilderWidget | null {
       : null;
   }
   if (body.widget === "connect") {
-    const recommended = scopeOf(body.recommended_scope, "org");
+    const recommended = isConnectScope(body.recommended_scope) ? body.recommended_scope : "org";
     const allowed = (Array.isArray(body.allowed_scopes) ? body.allowed_scopes : []).filter(
-      (scope): scope is ConnectScope => scopes.includes(scope as ConnectScope),
+      isConnectScope,
     );
     return {
       kind: "connect",
@@ -162,7 +168,8 @@ export function widgetOf(
   const parse = (value: unknown): Record<string, unknown> | null => {
     if (typeof value !== "string") return null;
     try {
-      return record(JSON.parse(value));
+      const parsed: unknown = JSON.parse(value);
+      return isObjectRecord(parsed) ? parsed : null;
     } catch {
       return null;
     }
