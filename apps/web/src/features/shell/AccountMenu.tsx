@@ -30,11 +30,13 @@ function personInitials(name: string): string {
     : initialsOf(name);
 }
 
+type AccountMenuProps = { compact?: boolean };
+
 /**
  * The signed-in operator: organisation, theme, desktop notifications, settings and sign-out.
  * `compact` shows only the avatar.
  */
-export function AccountMenu({ compact = false }: { compact?: boolean }) {
+export function AccountMenu({ compact = false }: AccountMenuProps) {
   const { user, org, orgs } = useIdentity();
   const { signOut } = useSlots();
   const navigate = useNavigate();

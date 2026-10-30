@@ -31,8 +31,10 @@ function readCollapsed(): Record<string, boolean> {
   }
 }
 
+type GuildSidebarProps = { onRetract: () => void };
+
 /** The full sidebar: guilds with their agents, then the workspace tools and the account. */
-export function GuildSidebar({ onRetract }: { onRetract: () => void }) {
+export function GuildSidebar({ onRetract }: GuildSidebarProps) {
   const navigate = useNavigate();
   const { guildId, agentId } = useParams({ strict: false });
   const guilds = useGuilds();
