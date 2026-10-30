@@ -89,29 +89,31 @@ test("builder_search_connected asks for an org widget when Notion is missing", a
 });
 
 test("builder_search_connected returns databases from the org workspace", async () => {
-  const result = await searchConnectedWorkspace({
-    db: repoStub({
-      connections: [
-        {
-          id: "conn_1",
-          mcp_server_id: "mcp_notion",
-          owner_scope: "org",
-          status: "connected",
+  const result = await searchConnectedWorkspace(
+    {
+      db: repoStub({
+        connections: [
+          {
+            id: "conn_1",
+            mcp_server_id: "mcp_notion",
+            owner_scope: "org",
+            status: "connected",
+          },
+        ],
+      }) as never,
+      mcp: {
+        database: notionLogin(),
+        async call() {
+          return JSON.stringify({
+            results: [{ id: "db1", title: "Projects", object: "database" }],
+          });
         },
-      ],
-    }) as never,
-    mcp: {
-      database: notionLogin(),
-      async call() {
-        return JSON.stringify({
-          results: [{ id: "db1", title: "Projects", object: "database" }],
-        });
       },
     },
-    orgId: "org_1",
-    serverRef: "notion",
-    query: "projects",
-  });
+    "org_1",
+    "notion",
+    "projects",
+  );
   assert.equal(result.connected, true);
   assert.equal(result.databases.length, 1);
   assert.equal(result.databases[0]?.title, "Projects");

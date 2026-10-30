@@ -49,12 +49,7 @@ export async function registerBuilderSessionRoutes(app: RouteApp, deps: AppDeps)
     const user = await currentUser(db, request, deps);
     const org = await currentOrg(db, request, user);
     const { model, temperature } = request.body;
-    return await builderOf(deps).createSession({
-      user,
-      org,
-      model: model ?? "",
-      ...(temperature !== undefined ? { temperature } : {}),
-    });
+    return await builderOf(deps).createSession(user, org, model ?? "", temperature);
   });
 
   app.get(

@@ -1,3 +1,4 @@
+import type { ConversationTool } from "../conversation/runner.js";
 import type { RecipeApply } from "../recipes/apply.js";
 import { parseRecipe } from "../recipes/parse.js";
 import { RECIPE_WRITE_HINT } from "./constants.js";
@@ -5,6 +6,7 @@ import {
   searchConnectedWorkspace,
   type BuilderMcpClient,
   type ConnectedDatabase,
+  type ConnectedSearchResult,
 } from "./connected.js";
 import {
   buildAnyConnectWidget,
@@ -17,8 +19,8 @@ import type { CapabilityService } from "../capabilities/index.js";
 import type { RecipeDocument } from "../db/schema/index.js";
 import { RecipeConflictError, RecipeError } from "../recipes/errors.js";
 import type { Queryable } from "../db/pg.js";
-import { getRecipe } from "../db/recipes.js";
-import { validateLibraryRecipe, writeBuilderRecipe } from "../recipes/library.js";
+import { getRecipe, type RecipeRow } from "../db/recipes.js";
+import { validateLibraryRecipe, writeBuilderRecipe, type RecipeValidation } from "../recipes/library.js";
 
 export type BuilderCapabilityContext = {
   orgId: string;
@@ -39,6 +41,15 @@ export type BuilderToolContext = BuilderCapabilityContext & {
   onRecipeChanged?: (recipe: Record<string, unknown>) => Promise<void>;
 };
 
+/** What a Builder tool returns when it refuses the call: why, and for a version conflict the version the recipe is at. */
+export type BuilderToolRefusal = { error: string; code?: "conflict"; body_version?: number | undefined };
+
+/** What a recipe write returns to the coach: the version written and the roster, not the body. */
+export type BuilderWriteReceipt = { ok: true; body_version: number; name: string; roles: string[] };
+
+/** What the coach's validate tool returns: the findings and access cuts at the version validated. */
+export type BuilderValidation = Pick<RecipeValidation, "findings" | "access_cuts" | "body_version">;
+
 export const builderListCapabilities = {
   name: "builder_list_capabilities",
   description:
@@ -49,7 +60,7 @@ export const builderListCapabilities = {
     {},
     [],
   ),
-  async handler(ctx: BuilderCapabilityContext) {
+  async handler(ctx: BuilderCapabilityContext): Promise<Record<string, unknown>> {
     return ctx.capabilities.listCapabilities({ orgId: ctx.orgId });
   },
 };
@@ -66,7 +77,7 @@ export const builderSearchCapabilities = {
     },
     ["query"],
   ),
-  async handler(ctx: BuilderCapabilityContext, args: Record<string, unknown>) {
+  async handler(ctx: BuilderCapabilityContext, args: Record<string, unknown>): Promise<Record<string, unknown>> {
     return ctx.capabilities.searchCapabilities({ orgId: ctx.orgId }, argString(args, "query"));
   },
 };
@@ -83,7 +94,7 @@ export const builderDescribeServer = {
     },
     ["server_ref"],
   ),
-  async handler(ctx: BuilderCapabilityContext, args: Record<string, unknown>) {
+  async handler(ctx: BuilderCapabilityContext, args: Record<string, unknown>): Promise<Record<string, unknown>> {
     const record = await ctx.capabilities.describeServer(
       { orgId: ctx.orgId },
       argString(args, "server_ref"),
@@ -403,9 +414,9 @@ const recipeDocumentParameter = {
 };
 
 export function builderWriteToolResult(
-  written: { body_version?: unknown },
+  written: Pick<RecipeRow, "body_version">,
   recipe: RecipeDocument,
-): Record<string, unknown> {
+): BuilderWriteReceipt {
   return {
     ok: true,
     body_version: written.body_version,
@@ -428,7 +439,7 @@ export const builderWriteRecipe = {
     },
     ["expected_body_version", "recipe"],
   ),
-  async handler(ctx: BuilderToolContext, args: Record<string, unknown>) {
+  async handler(ctx: BuilderToolContext, args: Record<string, unknown>): Promise<BuilderWriteReceipt | BuilderToolRefusal> {
     if (args.recipe == null || typeof args.recipe !== "object" || Array.isArray(args.recipe)) {
       return {
         error:
@@ -502,7 +513,7 @@ export const builderValidateRecipe = {
     {},
     [],
   ),
-  async handler(ctx: BuilderToolContext) {
+  async handler(ctx: BuilderToolContext): Promise<BuilderValidation | BuilderToolRefusal> {
     const row = await getRecipe(ctx.connection, ctx.recipeId);
     if (!row) {
       return { error: "recipe not found" };
@@ -531,17 +542,16 @@ export const builderSearchConnected = {
     },
     [],
   ),
-  async handler(ctx: BuilderCapabilityContext, args: Record<string, unknown>) {
+  async handler(ctx: BuilderCapabilityContext, args: Record<string, unknown>): Promise<ConnectedSearchResult | BuilderToolRefusal> {
     if (!ctx.db) {
       return { error: "workspace search is unavailable" };
     }
-    return searchConnectedWorkspace({
-      db: ctx.db,
-      mcp: ctx.mcp ?? null,
-      orgId: ctx.orgId,
-      serverRef: argString(args, "server_ref"),
-      query: argString(args, "query"),
-    });
+    return searchConnectedWorkspace(
+      { db: ctx.db, mcp: ctx.mcp ?? null },
+      ctx.orgId,
+      argString(args, "server_ref"),
+      argString(args, "query"),
+    );
   },
 };
 
@@ -564,16 +574,11 @@ export const builderAskOrgConnection = {
     },
     ["server_ref", "reason"],
   ),
-  async handler(ctx: BuilderCapabilityContext, args: Record<string, unknown>) {
+  async handler(ctx: BuilderCapabilityContext, args: Record<string, unknown>): Promise<Record<string, unknown>> {
     if (!ctx.db) {
       return { error: "connection widgets are unavailable" };
     }
-    return buildOrgConnectWidget({
-      db: ctx.db,
-      orgId: ctx.orgId,
-      serverRef: argString(args, "server_ref"),
-      reason: argString(args, "reason"),
-    });
+    return buildOrgConnectWidget(ctx.db, ctx.orgId, argString(args, "server_ref"), argString(args, "reason"));
   },
 };
 
@@ -606,14 +611,11 @@ export const builderAskConnection = {
     },
     ["reason"],
   ),
-  async handler(ctx: BuilderCapabilityContext, args: Record<string, unknown>) {
+  async handler(ctx: BuilderCapabilityContext, args: Record<string, unknown>): Promise<Record<string, unknown>> {
     if (!ctx.db) {
       return { error: "connection widgets are unavailable" };
     }
-    return buildAnyConnectWidget({
-      db: ctx.db,
-      capabilities: ctx.capabilities,
-      orgId: ctx.orgId,
+    return buildAnyConnectWidget(ctx.db, ctx.orgId, {
       serverRef: argString(args, "server_ref") || undefined,
       recommendedScope: normalizeConnectScope(argString(args, "recommended_scope", "org"), "org"),
       allowScopeChange: args.allow_scope_change === false ? false : true,
@@ -672,7 +674,7 @@ export const builderAskQuestion = {
     },
     [],
   ),
-  async handler(_ctx: BuilderCapabilityContext, args: Record<string, unknown>) {
+  async handler(_ctx: BuilderCapabilityContext, args: Record<string, unknown>): Promise<Record<string, unknown>> {
     return buildQuestionWidget(args);
   },
 };
@@ -693,14 +695,7 @@ export const BUILDER_SESSION_TOOLS = [
   builderValidateRecipe,
 ];
 
-export function builderConversationTools(): Map<
-  string,
-  {
-    name: string;
-    schema: Record<string, unknown>;
-    handler: (ctx: unknown, args: Record<string, unknown>) => Promise<Record<string, unknown>>;
-  }
-> {
+export function builderConversationTools(): Map<string, ConversationTool> {
   return new Map(
     BUILDER_SESSION_TOOLS.map((tool) => [
       tool.name,

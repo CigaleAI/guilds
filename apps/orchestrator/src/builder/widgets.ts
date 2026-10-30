@@ -1,6 +1,5 @@
 import { isSystemOfRecord, storageHint } from "../connectors/builder.js";
 import { connectorFacts, type LoadedConnector } from "../connectors/servers.js";
-import type { CapabilityService } from "../capabilities/index.js";
 import { oauthSetupState } from "../oauth/index.js";
 import {
   findReusableOrgConnection,
@@ -17,6 +16,14 @@ export const CONNECT_SCOPES = ["org", "guild", "agent"] as const;
 export type ConnectWidgetScope = (typeof CONNECT_SCOPES)[number];
 
 export type ConnectWidgetMode = "org" | "any";
+
+/** What the coach asks the operator to connect: the server (the operator picks when undefined), the owner it recommends, whether the operator may pick another owner, and why. */
+export type ConnectRequest = {
+  serverRef: string | undefined;
+  recommendedScope: ConnectWidgetScope;
+  allowScopeChange: boolean;
+  reason: string;
+};
 
 function compactServer(row: LoadedConnector, extras: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -35,17 +42,18 @@ export function normalizeConnectScope(value: string, fallback: ConnectWidgetScop
   return CONNECT_SCOPES.includes(value as ConnectWidgetScope) ? (value as ConnectWidgetScope) : fallback;
 }
 
-export async function buildOrgConnectWidget(args: {
-  db: ConnectedDatabase;
-  orgId: string;
-  serverRef: string;
-  reason: string;
-}): Promise<Record<string, unknown>> {
-  const server = await resolvePublishedServer(args.db, args.serverRef, args.orgId);
+/** The widget that asks the operator to connect `serverRef` to organisation `orgId` now, for `reason`. */
+export async function buildOrgConnectWidget(
+  db: ConnectedDatabase,
+  orgId: string,
+  serverRef: string,
+  reason: string,
+): Promise<Record<string, unknown>> {
+  const server = await resolvePublishedServer(db, serverRef, orgId);
   if (!server) {
     return { error: "unknown or unpublished connector" };
   }
-  const connection = await findReusableOrgConnection(args.db, args.orgId, server);
+  const connection = await findReusableOrgConnection(db, orgId, server);
   const slug = server.slug;
   return {
     widget: CONNECT_WIDGET,
@@ -59,7 +67,7 @@ export async function buildOrgConnectWidget(args: {
     already_connected: Boolean(connection),
     await_operator: !connection,
     apply_later: false,
-    reason: args.reason.trim(),
+    reason: reason.trim(),
     title: connection
       ? `${server.display_name || slug} is already connected to this organisation`
       : `Connect ${server.display_name || slug} to this organisation`,
@@ -67,18 +75,14 @@ export async function buildOrgConnectWidget(args: {
   };
 }
 
-export async function buildAnyConnectWidget(args: {
-  db: ConnectedDatabase;
-  capabilities: CapabilityService;
-  orgId: string;
-  serverRef?: string | undefined;
-  recommendedScope: ConnectWidgetScope;
-  allowScopeChange: boolean;
-  reason: string;
-}): Promise<Record<string, unknown>> {
-  void args.capabilities;
-  const published = await args.db.listServers({ owner: { visibleTo: args.orgId }, enabled: true });
-  const connections = await args.db.listMcpConnections({ orgId: args.orgId });
+/** The widget that lets the operator of organisation `orgId` connect any published connector at the scope `request` allows. */
+export async function buildAnyConnectWidget(
+  db: ConnectedDatabase,
+  orgId: string,
+  request: ConnectRequest,
+): Promise<Record<string, unknown>> {
+  const published = await db.listServers({ owner: { visibleTo: orgId }, enabled: true });
+  const connections = await db.listMcpConnections({ orgId });
   const connectedIds = new Set(
     connections
       .filter(
@@ -95,19 +99,19 @@ export async function buildAnyConnectWidget(args: {
         : "registered_not_connected",
     }),
   );
-  const allowed: ConnectWidgetScope[] = args.allowScopeChange
+  const allowed: ConnectWidgetScope[] = request.allowScopeChange
     ? [...CONNECT_SCOPES]
-    : [args.recommendedScope];
-  const selected = args.serverRef?.trim()
-    ? await resolvePublishedServer(args.db, args.serverRef, args.orgId)
+    : [request.recommendedScope];
+  const selected = request.serverRef?.trim()
+    ? await resolvePublishedServer(db, request.serverRef, orgId)
     : null;
-  if (args.serverRef?.trim() && !selected) {
+  if (request.serverRef?.trim() && !selected) {
     return { error: "unknown or unpublished connector" };
   }
   const orgConnected = selected
-    ? Boolean(await findReusableOrgConnection(args.db, args.orgId, selected))
+    ? Boolean(await findReusableOrgConnection(db, orgId, selected))
     : false;
-  const connectNow = args.recommendedScope === "org" && !orgConnected;
+  const connectNow = request.recommendedScope === "org" && !orgConnected;
   return {
     widget: CONNECT_WIDGET,
     mode: "any" as ConnectWidgetMode,
@@ -117,13 +121,13 @@ export async function buildAnyConnectWidget(args: {
         })
       : null,
     servers,
-    recommended_scope: args.recommendedScope,
+    recommended_scope: request.recommendedScope,
     allowed_scopes: allowed,
     connect_now: connectNow,
-    already_connected: orgConnected && args.recommendedScope === "org",
-    await_operator: !(orgConnected && args.recommendedScope === "org"),
-    apply_later: args.recommendedScope !== "org",
-    reason: args.reason.trim(),
+    already_connected: orgConnected && request.recommendedScope === "org",
+    await_operator: !(orgConnected && request.recommendedScope === "org"),
+    apply_later: request.recommendedScope !== "org",
+    reason: request.reason.trim(),
     title: selected
       ? `Connect ${selected.display_name || selected.slug}`
       : "Connect a service",

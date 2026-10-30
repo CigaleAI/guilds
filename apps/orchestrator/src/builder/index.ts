@@ -37,6 +37,7 @@ import {
 } from "../recipes/library.js";
 import { getRecipe, type RecipeRow } from "../db/recipes.js";
 import type { ApplyChoices, RecipeApply } from "../recipes/apply.js";
+import type { RecipeApplyRow } from "../db/recipe-applies.js";
 import type { ReviewAction } from "../recipes/review.js";
 import { createSkeleton } from "../recipes/skeleton.js";
 import {
@@ -47,7 +48,7 @@ import {
 import { BuilderConflictError, BuilderError } from "./errors.js";
 import { builderConversationTools, builderToolSchemas, type BuilderToolContext } from "./tools.js";
 import type { BuilderMcpClient } from "./connected.js";
-import { composeBuilderGenerationContext, composeBuilderSystemMessage } from "./system.js";
+import { composeBuilderGenerationContext, composeBuilderSystemMessage, type CoachSettings } from "./system.js";
 import { connectedDatabase } from "./connected.js";
 import { type Queryable, withTransaction } from "../db/pg.js";
 import type { UserRow } from "../db/users.js";
@@ -161,15 +162,15 @@ export class BuilderService {
     return id;
   }
 
-  async createSession(args: {
-    user: UserRow;
-    org: OrgMembershipRow;
-    model: string;
-    temperature?: number;
-  }): Promise<Record<string, unknown>> {
-    const model = await this.validateModel(String(args.org.id), args.model);
-    const temperature =
-      typeof args.temperature === "number" ? args.temperature : BUILDER_DEFAULT_TEMPERATURE;
+  /** A session on a new draft recipe, coached by `model` at `temperature` (the Builder default when undefined). */
+  async createSession(
+    user: UserRow,
+    org: OrgMembershipRow,
+    modelRef: string,
+    temperature: number | undefined,
+  ): Promise<Record<string, unknown>> {
+    const model = await this.validateModel(String(org.id), modelRef);
+    const coachTemperature = typeof temperature === "number" ? temperature : BUILDER_DEFAULT_TEMPERATURE;
     const now = new Date();
     const recipeId = newId("rcp");
     const sessionId = newId("bld");
@@ -177,27 +178,26 @@ export class BuilderService {
       source: { kind: "builder", session_id: sessionId },
       now,
     });
-    const limits = (await this.policy.standing(String(args.org.id))).limits.coach.builder;
-    const coachConfig = {
+    const limits = (await this.policy.standing(String(org.id))).limits.coach.builder;
+    const coachConfig: CoachSettings = {
       model,
-      temperature,
+      temperature: coachTemperature,
       max_steps: BUILDER_MAX_STEPS,
       ...limits,
     };
-    const system = composeBuilderSystemMessage({
-      config: coachConfig,
-      recipe: recipeBody,
-      expectedBodyVersion: 1,
-      guidelinesPath: this.deps.guidelinesPath,
+    const system = composeBuilderSystemMessage(
+      coachConfig,
+      { body: recipeBody, body_version: 1 },
+      this.deps.guidelinesPath,
       now,
-    });
+    );
     const session = await withTransaction(this.deps.db, async (client) => {
       await addRecipeDraft(
         client,
         {
           recipeId,
-          orgId: String(args.org.id),
-          createdByUserId: String(args.user.id),
+          orgId: String(org.id),
+          createdByUserId: String(user.id),
           name: recipeBody.meta.name,
           description: "",
           body: recipeBody,
@@ -209,9 +209,9 @@ export class BuilderService {
         client,
         {
           sessionId,
-          orgId: String(args.org.id),
-          createdByUserId: String(args.user.id),
-          createdByName: typeof args.user.name === "string" ? args.user.name : "operator",
+          orgId: String(org.id),
+          createdByUserId: String(user.id),
+          createdByName: typeof user.name === "string" ? user.name : "operator",
           recipeId,
           configSnapshot: {
             ...coachConfig,
@@ -292,13 +292,7 @@ export class BuilderService {
         throw new BuilderError(404, "recipe not found");
       }
       const expectedBodyVersion = recipe.body_version;
-      const config = locked.config_snapshot;
-      const system = composeBuilderSystemMessage({
-        config,
-        recipe: recipe.body,
-        expectedBodyVersion,
-        guidelinesPath: this.deps.guidelinesPath,
-      });
+      const system = composeBuilderSystemMessage(locked.config_snapshot, recipe, this.deps.guidelinesPath);
       await updateConversationMessage(client, "builder", {
         session_id: locked.id,
         seq: 0,
@@ -431,7 +425,7 @@ export class BuilderService {
     org: OrgMembershipRow,
     user: UserRow,
     choices: ApplyChoices = {},
-  ) {
+  ): Promise<RecipeApplyRow> {
     const recipe = await this.recipeFor(session);
     return createSkeleton(this.deps.apply, { org, user, recipeRow: recipe }, choices);
   }

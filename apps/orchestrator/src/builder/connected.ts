@@ -3,9 +3,8 @@ import { getMcpServer, getMcpServerBySlug, listServers, type LoadedConnector } f
 import { McpError } from "../mcp/errors.js";
 import { OPERATOR_CALLER, type McpPool } from "../mcp/pool.js";
 import { callTool } from "../mcp/service.js";
-import { listMcpConnections, listMcpTools, type McpConnectionRow } from "../db/mcp.js";
-import { bindQuery, type Queryable } from "../db/pg.js";
-
+import { listMcpConnections, listMcpTools, type McpConnectionRow, type McpToolRow } from "../db/mcp.js";
+import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 
 const SEARCH_REMOTES = ["search", "notion-search", "Search"];
 const MAX_HITS = 20;
@@ -15,8 +14,24 @@ const MAX_RAW = 4_000;
 /** The pool the Builder searches a connected workspace through. */
 export type BuilderMcpClient = Pick<McpPool, "call" | "database">;
 
+/** The db/ functions the Builder's connected-workspace tools read through. */
+export type ConnectedDatabase = {
+  getMcpServer: BoundQuery<typeof getMcpServer>;
+  getMcpServerBySlug: BoundQuery<typeof getMcpServerBySlug>;
+  listServers: BoundQuery<typeof listServers>;
+  listMcpConnections: BoundQuery<typeof listMcpConnections>;
+  listMcpTools: BoundQuery<typeof listMcpTools>;
+};
+
+/** The services a connected-workspace search reads and calls through. */
+export type ConnectedWorkspaceDeps = {
+  db: ConnectedDatabase;
+  /** The pool the search tool is called through; the search is unavailable when null. */
+  mcp: BuilderMcpClient | null;
+};
+
 /** The db/ functions the Builder's connected-workspace tools read through, on `db`. */
-export function connectedDatabase(db: Queryable) {
+export function connectedDatabase(db: Queryable): ConnectedDatabase {
   return {
     getMcpServer: bindQuery(db, getMcpServer),
     getMcpServerBySlug: bindQuery(db, getMcpServerBySlug),
@@ -25,8 +40,6 @@ export function connectedDatabase(db: Queryable) {
     listMcpTools: bindQuery(db, listMcpTools),
   };
 }
-
-export type ConnectedDatabase = ReturnType<typeof connectedDatabase>;
 
 export type WorkspaceHit = {
   kind: "database" | "page" | "other";
@@ -84,8 +97,8 @@ export async function findReusableOrgConnection(
   );
 }
 
-export function pickSearchRemote(tools: Array<Record<string, unknown>>): string {
-  const names = tools.map((tool) => String(tool.remote_name || ""));
+export function pickSearchRemote(tools: Array<Pick<McpToolRow, "remote_name">>): string {
+  const names = tools.map((tool) => tool.remote_name);
   for (const candidate of SEARCH_REMOTES) {
     if (names.includes(candidate)) {
       return candidate;
@@ -238,7 +251,10 @@ function collectCandidateArrays(value: unknown): unknown[] {
   return [];
 }
 
-export function parseWorkspaceHits(raw: string): { hits: WorkspaceHit[]; raw_excerpt?: string } {
+/** The hits a search tool's result names, or an excerpt of the result when it names none. */
+export type WorkspaceHits = { hits: WorkspaceHit[]; raw_excerpt?: string };
+
+export function parseWorkspaceHits(raw: string): WorkspaceHits {
   const payload = unwrapMcpPayload(raw);
   const hits: WorkspaceHit[] = [];
   const seen = new Set<string>();
@@ -263,23 +279,23 @@ export function parseWorkspaceHits(raw: string): { hits: WorkspaceHit[]; raw_exc
   };
 }
 
-export async function searchConnectedWorkspace(args: {
-  db: ConnectedDatabase;
-  mcp?: BuilderMcpClient | null | undefined;
-  orgId: string;
-  serverRef: string;
-  query: string;
-}): Promise<ConnectedSearchResult> {
-  const serverRef = args.serverRef.trim() || defaultSearchServer();
-  const query = args.query.trim();
-  const hint = isSearchable(serverRef)
+/** Searches `orgId`'s connected workspace `serverRef` (the default searchable one when blank) for `phrase`. */
+export async function searchConnectedWorkspace(
+  deps: ConnectedWorkspaceDeps,
+  orgId: string,
+  serverRef: string,
+  phrase: string,
+): Promise<ConnectedSearchResult> {
+  const ref = serverRef.trim() || defaultSearchServer();
+  const query = phrase.trim();
+  const hint = isSearchable(ref)
     ? storageHint()
     : "Prefer local notes and collections unless this connector is the operator's durable system of record.";
-  const server = await resolvePublishedServer(args.db, serverRef, args.orgId);
+  const server = await resolvePublishedServer(deps.db, ref, orgId);
   if (!server) {
     return {
-      server: serverRef,
-      display_name: serverRef,
+      server: ref,
+      display_name: ref,
       connected: false,
       query,
       hits: [],
@@ -290,7 +306,7 @@ export async function searchConnectedWorkspace(args: {
   }
   const slug = server.slug;
   const displayName = String(server.display_name || slug);
-  const connection = await findReusableOrgConnection(args.db, args.orgId, server);
+  const connection = await findReusableOrgConnection(deps.db, orgId, server);
   if (!connection) {
     return {
       server: slug,
@@ -304,7 +320,7 @@ export async function searchConnectedWorkspace(args: {
       recommended_widget: "builder_ask_org_connection",
     };
   }
-  if (!args.mcp) {
+  if (!deps.mcp) {
     return {
       server: slug,
       display_name: displayName,
@@ -317,10 +333,10 @@ export async function searchConnectedWorkspace(args: {
       error: "connected workspace search is unavailable",
     };
   }
-  const tools = await args.db.listMcpTools(connection.id);
+  const tools = await deps.db.listMcpTools(connection.id);
   const remoteName = pickSearchRemote(tools);
   try {
-    const raw = await callTool(args.mcp, {
+    const raw = await callTool(deps.mcp, {
       connectionId: connection.id,
       tool: remoteName,
       arguments: query ? { query } : {},

@@ -75,17 +75,11 @@
     "@typescript-eslint/consistent-type-assertions": {
       "count": 5
     },
-    "@typescript-eslint/explicit-module-boundary-types": {
-      "count": 1
-    },
     "complexity": {
       "count": 2
     },
     "max-depth": {
       "count": 2
-    },
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/builder/errors.ts": {
@@ -93,30 +87,11 @@
       "count": 1
     }
   },
-  "src/builder/index.ts": {
-    "@typescript-eslint/explicit-module-boundary-types": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/builder/system.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
   "src/builder/tools.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     },
-    "@typescript-eslint/explicit-module-boundary-types": {
-      "count": 9
-    },
     "complexity": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
       "count": 1
     }
   },
@@ -125,9 +100,6 @@
       "count": 5
     },
     "complexity": {
-      "count": 2
-    },
-    "no-restricted-syntax": {
       "count": 2
     }
   },
