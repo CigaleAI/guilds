@@ -22,8 +22,12 @@ export type Approvals = {
   busy: boolean;
   /** Applies, grants or publishes one request; or declines or discards it. */
   decide: (proposal: Proposal, accept: boolean) => Promise<void>;
-  /** Applies every open request that may go with others; returns how many it left. */
+  /**
+   * Applies every open request that may go with others; returns how many it left, and rejects at
+   * the first one refused.
+   */
   applyAll: () => Promise<number>;
+  /** Declines every open request; rejects at the first one refused. */
   declineAll: () => Promise<void>;
   /** The reply that would carry on the coach, once every request is answered. */
   reply: string | null;
@@ -80,12 +84,6 @@ export function useApprovals(
     setSettling(true);
     try {
       for (const proposal of targets) await decide(proposal, accept);
-    } catch (error) {
-      toast({
-        kind: "error",
-        title: "Couldn't record the decision",
-        description: (error as Error).message,
-      });
     } finally {
       setSettling(false);
     }

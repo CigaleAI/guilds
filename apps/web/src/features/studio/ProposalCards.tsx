@@ -63,16 +63,22 @@ export function SettleAll({ open, disabled }: SettleAllProps) {
       });
     }
   };
+  const refused = (error: Error) =>
+    toast({ kind: "error", title: "Couldn't record the decision", description: error.message });
   return (
     <>
-      <Button size="sm" disabled={disabled || !together} onClick={() => void applyAll()}>
+      <Button
+        size="sm"
+        disabled={disabled || !together}
+        onClick={() => void applyAll().catch(refused)}
+      >
         Apply all {together}
       </Button>
       <Button
         variant="ghost"
         size="sm"
         disabled={disabled}
-        onClick={() => void approvals.declineAll()}
+        onClick={() => void approvals.declineAll().catch(refused)}
       >
         Decline all
       </Button>
