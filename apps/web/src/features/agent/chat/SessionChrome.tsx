@@ -10,7 +10,8 @@ import { IconButton, StatusBadge, Tooltip } from "@guildsrun/ui";
 import { runState, runTitle } from "../runState";
 import { heldChatRun, holdChatRun, useHeldChatRun } from "./chatLinger";
 
-type ChatSearch = {
+/** What the Chat search names: the run open, the call or message it opens at, and the history drawer. */
+export type ChatSearch = {
   run?: string;
   call?: string;
   seq?: number;
