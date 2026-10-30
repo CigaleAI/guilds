@@ -240,6 +240,18 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
     });
     assert.equal(wordedTemperature.statusCode, 422, wordedTemperature.body);
     assert.deepEqual(wordedTemperature.json().detail[0].loc, ["body", "coach_config", "temperature"]);
+    const unconnectedModel = await app.inject({
+      method: "POST",
+      url: "/api/studio/sessions",
+      headers: AUTH,
+      payload: {
+        mode: "optimize",
+        source_guild_id: "guild_studio",
+        coach_config: { model: "xai/grok-4", temperature: 0.2 },
+      },
+    });
+    assert.equal(unconnectedModel.statusCode, 422, unconnectedModel.body);
+    assert.match(unconnectedModel.json().detail, /xai/i);
 
     const inventory = await app.inject({
       method: "GET",

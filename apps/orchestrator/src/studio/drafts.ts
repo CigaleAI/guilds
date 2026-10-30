@@ -455,16 +455,9 @@ async function missingDraftAgentMessage(
   call: StudioToolCall,
   handle: string | null | undefined,
 ): Promise<string> {
-  let known = "";
-  try {
-    const members = await listAgents(db, call.sourceGuildId);
-    const live = members.filter((row) => String(row.guild_id) === String(call.sourceGuildId));
-    if (live.length) {
-      known = ` Known agents: ${live.map((row) => `${row.name} (${row.id})`).join(", ")}.`;
-    }
-  } catch {
-    known = "";
-  }
+  const members = await listAgents(db, call.sourceGuildId);
+  const live = members.filter((row) => String(row.guild_id) === String(call.sourceGuildId));
+  const known = live.length ? ` Known agents: ${live.map((row) => `${row.name} (${row.id})`).join(", ")}.` : "";
   const needle = String(handle ?? "").trim();
   if (needle) {
     return `studio_create_task_draft agent ${needle} is not a source-guild member.${known}`;

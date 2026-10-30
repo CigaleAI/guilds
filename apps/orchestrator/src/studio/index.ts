@@ -6,7 +6,6 @@ import {
   assertModelConnected,
   coreModelCredentials,
   type ModelCredentialsProvider,
-  ModelNotConnectedError,
 } from "../llm/credentials.js";
 import { isMarketplaceModel } from "../llm/providers.js";
 import { newId } from "../lib/ids.js";
@@ -258,14 +257,7 @@ export class StudioService {
     if (!isMarketplaceModel(id)) {
       throw new StudioUnprocessableError("the coach needs a marketplace model");
     }
-    try {
-      await assertModelConnected(this.credentials, orgId, id);
-    } catch (error) {
-      if (error instanceof ModelNotConnectedError) {
-        throw new StudioUnprocessableError(error.message);
-      }
-      throw error;
-    }
+    await assertModelConnected(this.credentials, orgId, id);
     return id;
   }
 

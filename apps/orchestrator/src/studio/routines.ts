@@ -74,18 +74,16 @@ function hashOf(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value), "utf8").digest("hex");
 }
 
-function scheduleFailure(error: unknown): never {
-  if (error instanceof ScheduleError) {
-    throw new StudioUnprocessableError(error.message);
-  }
-  throw error;
+/** A schedules refusal as a value Studio cannot use; any other error as it is. */
+function scheduleRefusal(error: unknown): unknown {
+  return error instanceof ScheduleError ? new StudioUnprocessableError(error.message) : error;
 }
 
 function valid<T>(read: () => T): T {
   try {
     return read();
   } catch (error) {
-    scheduleFailure(error);
+    throw scheduleRefusal(error);
   }
 }
 
@@ -274,7 +272,7 @@ export async function applyRoutine(
   try {
     return await writeRoutine(deps, scope, plan);
   } catch (error) {
-    scheduleFailure(error);
+    throw scheduleRefusal(error);
   }
 }
 

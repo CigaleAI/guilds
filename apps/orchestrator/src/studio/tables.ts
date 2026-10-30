@@ -109,10 +109,10 @@ type TableContext = {
   members: Member[];
 };
 
-/** An artifacts refusal as Studio reports it to the coach. */
-function tableFailure(error: unknown): never {
+/** An artifacts refusal as Studio reports it to the coach; any other error as it is. */
+function tableRefusal(error: unknown): unknown {
   if (error instanceof GuildTableBaseRefused) {
-    throw error.base === null
+    return error.base === null
       ? new StudioUnprocessableError(
           "base_updated_at is required: the updated_at studio_get_collection returned",
         )
@@ -121,16 +121,16 @@ function tableFailure(error: unknown): never {
         );
   }
   if (error instanceof OrgTableChangeRefused) {
-    throw new StudioUnprocessableError(
+    return new StudioUnprocessableError(
       `${error.tableName} ${ORG_TABLE_LIMIT}${orgTableKept(error.refusal)}`,
     );
   }
   if (error instanceof ArtifactError) {
-    throw error.status === 409
+    return error.status === 409
       ? new StudioConflictError(error.message)
       : new StudioUnprocessableError(error.message);
   }
-  throw error;
+  return error;
 }
 
 function hashOf(value: unknown): string {
@@ -558,7 +558,7 @@ export async function reviewTable(
         `${error.message}; change it with studio_edit_collection action edit`,
       );
     }
-    tableFailure(error);
+    throw tableRefusal(error);
   }
   switch (plan.action) {
     case "create":
@@ -579,7 +579,7 @@ export async function applyTable(
   try {
     await applyCollectionStep(deps.artifacts, editActor(scope), plan);
   } catch (error) {
-    tableFailure(error);
+    throw tableRefusal(error);
   }
 }
 
