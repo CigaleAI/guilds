@@ -29,11 +29,12 @@ export function StateItemDetail({
   const { session, search, go } = useStudio();
   const [op, setOp] = useState<Operation>("all");
   const [editing, setEditing] = useState(false);
-  const detail = useStudioStateItem(session.id, {
-    path: row.display_path,
+  const detail = useStudioStateItem(
+    session.id,
+    row.display_path,
     hours,
-    op: op === "all" ? null : op,
-  });
+    op === "all" ? null : op,
+  );
   const first = detail.data?.pages[0];
   const history = detail.data?.pages.flatMap((page) => page.history) ?? [];
   return (

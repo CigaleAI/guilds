@@ -1398,6 +1398,33 @@ export type StudioSession = {
   archived_at: string | null;
 };
 
+/** A coach session to start on a guild, with its coach's model; `parent` continues an earlier one. */
+export type NewStudioSession = {
+  guildId: string;
+  model: string;
+  temperature: number;
+  parent?: string;
+};
+
+/** The operator's message to the coach, pinned to what `focus` names when given. */
+export type StudioMessageInput = { content: string; focus?: unknown };
+
+/** What the operator does with a Task draft; `content` is the revised text of a revision. */
+export type StudioDraftAction = {
+  draftId: string;
+  action: "publish" | "discard" | "revise";
+  content?: string;
+};
+
+/** The operator's answer to one coach edit, by the seq of the message that asked. */
+export type StudioEditDecision = { seq: number; decision: "apply" | "decline" };
+
+/** The operator's answer to a login the coach asked for, by the seq of the message that asked. */
+export type StudioLoginDecision = { seq: number; decision: "grant" | "decline" };
+
+/** A login the coach may, or may no longer, read through. */
+export type StudioConnectionGrant = { connectionId: string; granted: boolean };
+
 /** How one agent is offered a tool, and how its calls went in the window. */
 export type StudioToolUsage = {
   agent_id: string;
@@ -1435,6 +1462,9 @@ export type StudioToolCall = {
   error: string | null;
   duration_ms: number | null;
 };
+
+/** One page of a tool's calls, newest first; `next_cursor` reads the page after it. */
+export type StudioToolCallsPage = { calls: StudioToolCall[]; next_cursor: string | null };
 
 /** Who acted on a State item: a person, one of the guild's agents, or an agent of another guild. */
 export type StateActor = { kind: "person" | "agent" | "other_guild"; id: string; name: string };

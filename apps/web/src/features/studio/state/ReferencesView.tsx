@@ -121,7 +121,7 @@ function Standouts({
   onSelect: (id: string) => void;
 }) {
   const { session } = useStudio();
-  const state = useStudioState(session.id, { hours: storedStateHours(), agent: null, kind: null });
+  const state = useStudioState(session.id, storedStateHours(), null, null);
   const read = new Set(
     (state.data ?? []).filter((row) => row.reads > 0).map((row) => row.display_path),
   );

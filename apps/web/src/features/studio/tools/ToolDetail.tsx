@@ -157,8 +157,8 @@ function ToolCalls({
 }) {
   const { session } = useStudio();
   const [errorsOnly, setErrorsOnly] = useState(false);
-  const calls = useStudioToolCalls(session.id, { name: tool.name, hours, errorsOnly });
-  const failures = useStudioToolCalls(session.id, { name: tool.name, hours, errorsOnly: true });
+  const calls = useStudioToolCalls(session.id, tool.name, hours, errorsOnly);
+  const failures = useStudioToolCalls(session.id, tool.name, hours, true);
   const rows = calls.data?.pages.flatMap((page) => page.calls) ?? [];
   const groups = errorGroups(failures.data?.pages.flatMap((page) => page.calls) ?? []);
   return (

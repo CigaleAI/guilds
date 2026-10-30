@@ -88,7 +88,6 @@ import type {
   StateItemDetail,
   StateItemRow,
   StudioTool,
-  StudioToolCall,
   Script,
   ScheduleInput,
   TaskFile,
@@ -153,6 +152,13 @@ import type {
   RecipeFieldReview,
   ApplyStepConfirmation,
   NewBuilderSession,
+  StudioMessageInput,
+  NewStudioSession,
+  StudioDraftAction,
+  StudioEditDecision,
+  StudioLoginDecision,
+  StudioConnectionGrant,
+  StudioToolCallsPage,
 } from "./types";
 
 /** Query keys. Identity is fixed for the page's life, so keys carry no user or org. */
@@ -2051,7 +2057,7 @@ export function useStudioSession(id: string) {
 export function useAskInNewSession(parent: StudioSession) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: async ({ content, focus }: { content: string; focus: unknown }) => {
+    mutationFn: async ({ content, focus }: StudioMessageInput) => {
       const session = await api<StudioSession>("/api/studio/sessions", {
         method: "POST",
         body: {
@@ -2075,7 +2081,7 @@ export function useAskInNewSession(parent: StudioSession) {
 export function useCreateStudioSession() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (input: { guildId: string; model: string; temperature: number; parent?: string }) =>
+    mutationFn: (input: NewStudioSession) =>
       api<StudioSession>("/api/studio/sessions", {
         method: "POST",
         body: {
@@ -2106,7 +2112,7 @@ function useStudioRefresh(id: string) {
 export function usePostStudioMessage(id: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (input: { content: string; focus?: unknown }) =>
+    mutationFn: (input: StudioMessageInput) =>
       api<StudioSession>(`${studioPath(id)}/messages`, { method: "POST", body: input }),
     onMutate: async () => {
       await client.cancelQueries({ queryKey: keys.studio(id) });
@@ -2195,15 +2201,7 @@ const draftPath = (id: string) => `/api/studio/drafts/${encodeURIComponent(id)}`
 export function useDraftAction(sessionId: string) {
   const refresh = useStudioRefresh(sessionId);
   return useMutation({
-    mutationFn: ({
-      draftId,
-      action,
-      content,
-    }: {
-      draftId: string;
-      action: "publish" | "discard" | "revise";
-      content?: string;
-    }) =>
+    mutationFn: ({ draftId, action, content }: StudioDraftAction) =>
       api(`${draftPath(draftId)}/${action}`, {
         method: "POST",
         body: action === "revise" ? { proposed_content: content, expected_head_id: draftId } : {},
@@ -2227,7 +2225,7 @@ export function useDecideEdit(id: string) {
   const client = useQueryClient();
   const refresh = useStudioRefresh(id);
   return useMutation({
-    mutationFn: ({ seq, decision }: { seq: number; decision: "apply" | "decline" }) =>
+    mutationFn: ({ seq, decision }: StudioEditDecision) =>
       api(`${studioPath(id)}/edits/${seq}`, { method: "POST", body: { decision } }),
     onSuccess: () => {
       refresh();
@@ -2251,7 +2249,7 @@ export function useStudioConnections(id: string) {
 export function useResolveStudioLogin(id: string) {
   const refresh = useStudioRefresh(id);
   return useMutation({
-    mutationFn: ({ seq, decision }: { seq: number; decision: "grant" | "decline" }) =>
+    mutationFn: ({ seq, decision }: StudioLoginDecision) =>
       api<StudioSession>(`${studioPath(id)}/logins/${seq}`, { method: "POST", body: { decision } }),
     onSuccess: refresh,
   });
@@ -2260,7 +2258,7 @@ export function useResolveStudioLogin(id: string) {
 export function useGrantStudioConnection(id: string) {
   const refresh = useStudioRefresh(id);
   return useMutation({
-    mutationFn: ({ connectionId, granted }: { connectionId: string; granted: boolean }) =>
+    mutationFn: ({ connectionId, granted }: StudioConnectionGrant) =>
       api(`${studioPath(id)}/connections/${encodeURIComponent(connectionId)}`, {
         method: "PUT",
         body: { granted },
@@ -2316,12 +2314,14 @@ export function useStudioActivity(id: string, hours: number) {
 /** The guild's notes, tables, scripts and Memory with their changes and reads in the window. */
 export function useStudioState(
   id: string,
-  filter: { hours: number; agent: string | null; kind: string | null },
+  hours: number,
+  agent: string | null,
+  kind: string | null,
 ) {
   const query: Record<string, string> = {
-    hours: String(filter.hours),
-    ...(filter.agent ? { agent: filter.agent } : {}),
-    ...(filter.kind ? { kind: filter.kind } : {}),
+    hours: String(hours),
+    ...(agent ? { agent } : {}),
+    ...(kind ? { kind } : {}),
   };
   return useQuery({
     queryKey: keys.studioState(id, query),
@@ -2334,17 +2334,17 @@ export function useStudioState(
 }
 
 /** One State item: who changes and reads it, and its history a page at a time. */
-export function useStudioStateItem(id: string, item: { path: string; hours: number; op: string | null }) {
+export function useStudioStateItem(id: string, path: string, hours: number, op: string | null) {
   return useInfiniteQuery({
-    queryKey: keys.studioStateItem(id, item.path, item.hours, item.op ?? ""),
+    queryKey: keys.studioStateItem(id, path, hours, op ?? ""),
     queryFn: ({ pageParam }) => {
-      const query = new URLSearchParams({ path: item.path, hours: String(item.hours) });
-      if (item.op) query.set("op", item.op);
+      const query = new URLSearchParams({ path, hours: String(hours) });
+      if (op) query.set("op", op);
       if (pageParam) query.set("cursor", pageParam);
       return api<StateItemDetail>(`${studioPath(id)}/state/item?${query}`);
     },
-    initialPageParam: null as string | null,
-    getNextPageParam: (page) => page.next_cursor,
+    initialPageParam: null,
+    getNextPageParam: (page: StateItemDetail): string | null => page.next_cursor,
   });
 }
 
@@ -2359,22 +2359,19 @@ export function useStudioTools(id: string, hours: number) {
 }
 
 /** One tool's calls in the window, newest first, a page at a time. */
-export function useStudioToolCalls(
-  id: string,
-  tool: { name: string; hours: number; errorsOnly: boolean },
-) {
+export function useStudioToolCalls(id: string, name: string, hours: number, errorsOnly: boolean) {
   return useInfiniteQuery({
-    queryKey: keys.studioToolCalls(id, tool.name, tool.hours, tool.errorsOnly),
+    queryKey: keys.studioToolCalls(id, name, hours, errorsOnly),
     queryFn: ({ pageParam }) => {
-      const query = new URLSearchParams({ hours: String(tool.hours) });
-      if (tool.errorsOnly) query.set("errors", "true");
+      const query = new URLSearchParams({ hours: String(hours) });
+      if (errorsOnly) query.set("errors", "true");
       if (pageParam) query.set("cursor", pageParam);
-      return api<{ calls: StudioToolCall[]; next_cursor: string | null }>(
-        `${studioPath(id)}/tools/${encodeURIComponent(tool.name)}/calls?${query}`,
+      return api<StudioToolCallsPage>(
+        `${studioPath(id)}/tools/${encodeURIComponent(name)}/calls?${query}`,
       );
     },
-    initialPageParam: null as string | null,
-    getNextPageParam: (page) => page.next_cursor,
+    initialPageParam: null,
+    getNextPageParam: (page: StudioToolCallsPage): string | null => page.next_cursor,
   });
 }
 

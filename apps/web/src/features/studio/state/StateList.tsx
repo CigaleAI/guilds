@@ -56,11 +56,7 @@ function storeHours(hours: number) {
 export function StateList() {
   const { session, search, approvals } = useStudio();
   const [hours, setHours] = useState(storedStateHours);
-  const rows = useStudioState(session.id, {
-    hours,
-    agent: search.agent ?? null,
-    kind: search.kind ?? null,
-  });
+  const rows = useStudioState(session.id, hours, search.agent ?? null, search.kind ?? null);
   const waiting = itemsAwaitingApproval(approvals.proposals);
   if (rows.isError) {
     return (
