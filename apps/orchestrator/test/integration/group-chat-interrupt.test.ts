@@ -63,6 +63,15 @@ test("an operator post may ask to interrupt the runs it targets", { timeout: 60_
       payload: { content: "stop", interrupt: "yes" },
     });
     assert.equal(refused.statusCode, 422);
+    assert.deepEqual(refused.json().detail[0].loc, ["body", "interrupt"]);
+    const numbered = await app.inject({
+      method: "POST",
+      url: `${base}/messages`,
+      headers: OWNER,
+      payload: { content: 5 },
+    });
+    assert.equal(numbered.statusCode, 422);
+    assert.deepEqual(numbered.json().detail[0].loc, ["body", "content"]);
 
     const posted = await app.inject({
       method: "POST",

@@ -87,6 +87,14 @@ test(
       assert.equal(created.statusCode, 201);
       const guildId = String(created.json().id);
       const base = `/api/guilds/${guildId}/group-chat`;
+      const textLimit = await app.inject({
+        method: "PUT",
+        url: base,
+        headers: { ...OWNER, "content-type": "application/json" },
+        payload: { agent_message_limit: "8" },
+      });
+      assert.equal(textLimit.statusCode, 422);
+      assert.deepEqual(textLimit.json().detail[0].loc, ["body", "agent_message_limit"]);
 
       const started = new Date(Date.now() - 60_000);
       await addTestAgent(db, "org_home", { agentId: "a_clear", guildId, name: "scout", config: agentConfig({}) }, started);
