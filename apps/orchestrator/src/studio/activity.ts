@@ -1,3 +1,4 @@
+import { Type, type Static } from "@sinclair/typebox";
 import type { ScheduleRow } from "../db/schedules.js";
 import { jsonObj } from "../db/json.js";
 import { iso } from "../db/views.js";
@@ -171,8 +172,16 @@ export type ActivityInput = {
   generating: (runId: string) => boolean;
 };
 
+/** The window a Studio query asks for: how many hours back, and until when, both as query text. */
+export const ActivityWindowQuerySchema = Type.Object({
+  hours: Type.Optional(Type.String()),
+  until: Type.Optional(Type.String()),
+});
+
+export type ActivityWindowQuery = Static<typeof ActivityWindowQuerySchema>;
+
 // `hours` back from `until` (default now, never later than now).
-export function activityWindow(query: { hours?: unknown; until?: unknown }, now: Date): ActivityWindow {
+export function activityWindow(query: ActivityWindowQuery, now: Date): ActivityWindow {
   const rawHours = query.hours === undefined || query.hours === "" ? ACTIVITY_DEFAULT_HOURS : Number(query.hours);
   if (!Number.isFinite(rawHours) || rawHours <= 0) {
     throw new StudioUnprocessableError("hours must be a positive number");
@@ -180,13 +189,18 @@ export function activityWindow(query: { hours?: unknown; until?: unknown }, now:
   const hours = Math.min(rawHours, ACTIVITY_MAX_HOURS);
   let until = now;
   if (query.until !== undefined && query.until !== "") {
-    const parsed = new Date(String(query.until));
+    const parsed = new Date(query.until);
     if (Number.isNaN(parsed.getTime())) {
       throw new StudioUnprocessableError("until must be an ISO timestamp");
     }
     until = parsed.getTime() > now.getTime() ? now : parsed;
   }
   return { since: new Date(until.getTime() - hours * 3_600_000), until };
+}
+
+/** The `hours` up to now, as a query names them; the default window when it names none. */
+export function hoursWindow(hours: string | undefined, now: Date): ActivityWindow {
+  return activityWindow(hours === undefined ? {} : { hours }, now);
 }
 
 function ms(value: unknown): number | null {

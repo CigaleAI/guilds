@@ -8,6 +8,29 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** The Studio routes refuse, with a 422 that names the
+field and before the request's user is identified: a session whose
+`mode`, `source_guild_id`, `model` or `coach_config.model` is not a
+string, whose `coach_config.temperature` is not a number, or whose
+`parent_session_id` is neither a string nor null; a connection grant
+whose `granted` is not a boolean; a login answer without a `decision`
+of `grant` or `decline`, and an edit answer without one of `apply` or
+`decline`; a target whose `agent_id` is neither a string nor null; a
+message whose `content` is not a string, or whose `focus` is neither
+null nor an object with a string `kind`, ids and paths that are
+strings or null, and a `seq` and `version_index` that are numbers,
+digits or null; a revision whose `proposed_content` or
+`expected_head_id` is not a string; a body that is not a JSON object;
+and a query value given more than once. Before, those were read as
+their text, a `temperature` that was not a number and a
+`parent_session_id` that was not a string were left out, a `granted` that was not `false` and a request without a body
+granted the connection, a `focus` that was not an object was a 422
+with `focus must be an object`, a focus id that was not a string was
+read as empty, a focus without a `kind` was refused with the list of
+kinds, and an answer without a known `decision` was a 422 with
+`decision must be grant or decline` or `decision must be apply or
+decline`.
+
 **No impact.** The recipe and apply routes refuse, with a 422 that
 names the field and before the request's user is identified: an import
 whose body is not an object, a registry import whose `name` or

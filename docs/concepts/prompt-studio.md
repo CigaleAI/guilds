@@ -676,6 +676,11 @@ The connection, edit, and login routes are described in
 [Studio proposals](studio-proposals.md#http), and the activity route
 in [Studio activity](studio-activity.md#http).
 
+Every query value is a string. A body field or a query value of
+another JSON type, a query value given more than once, and a body
+that is not a JSON object are 422 naming the field, before the
+request's user is identified.
+
 `GET …/state?hours=&agent=&kind=` returns `{ since, until, items }`.
 `hours` follows the tools route. `kind` is `note`, `table`, `script`, or
 `memory` (another value is 422); `agent` keeps the items that agent
@@ -728,7 +733,9 @@ characters, `status` (`ok` or `error`), `error`, and `duration_ms`.
 `cursor` for the next page; another value is 422.
 
 Create body: `{ "mode": "optimize", "source_guild_id", "coach_config":
-{ model, temperature }, "parent_session_id"? }`. `model` is required:
+{ model, temperature }, "parent_session_id"? }`. `mode`,
+`source_guild_id` and `model` are strings, `temperature` a number, and
+`parent_session_id` a string or null. `model` is required:
 a marketplace model whose provider the organisation has connected,
 else 422.
 
@@ -748,10 +755,16 @@ such a draft through the draft routes, but not discard it (403
 `orphan recovery cannot discard`). The web app does not call this
 route.
 
-Message body: `{ "content", "focus"? }` where `focus` is `{ kind: run |
-memory_version | routine | file | issue, agent_id?, run_id?, seq?,
-call_id?, revision_id?, version_index?, schedule_id?, display_path?,
-change_id?, issue_id? }`.
+Message body: `{ "content", "focus"? }` where `content` is a string and
+`focus` is null or `{ kind: run | memory_version | routine | file |
+issue | tool, agent_id?, run_id?, seq?, call_id?, revision_id?,
+version_index?, schedule_id?, display_path?, change_id?, issue_id?,
+tool_name? }`. `kind` is a string, each id and path a string or null,
+and `seq` and `version_index` a number, its digits, or null.
+
+Revise body: `{ "proposed_content", "expected_head_id"? }`, both
+strings; `expected_head_id` is the draft itself when left out. Target
+body: `{ "agent_id" }`, a string, or null for none.
 
 `POST …/continue` creates a new session from one blocked at its
 input-token limit.

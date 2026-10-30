@@ -171,7 +171,8 @@ active in the window.
 larger value than 168 is capped at 168) and `until` (ISO, default now;
 a later value is capped at now). It returns `{ guild_id, since, until,
 agents, routines, messages, wakes }`. A non-positive or non-numeric
-`hours`, or an `until` that is not a timestamp, is 422.
+`hours`, an `until` that is not a timestamp, or either given more than
+once, is 422.
 
 - A routine carries `label` (its timing in words) and `instruction`.
 - A message carries `author_user_id`, the person who posted an

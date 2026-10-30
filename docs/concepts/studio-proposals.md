@@ -372,8 +372,11 @@ PUT    /api/studio/sessions/:id/connections/:connection_id   { granted: true | f
   not a login request is 404; an answered request is 409.
 - `GET …/connections` lists every login reachable from the source
   guild: platform, organisation, guild, and live-member scope.
-- `PUT …/connections/:connection_id` grants or revokes one. The
-  connection must be reachable from the source guild and `connected`.
+- `PUT …/connections/:connection_id` grants or revokes one: `granted`
+  is a boolean, and left out grants. The connection must be reachable
+  from the source guild and `connected`.
+- A body that is not a JSON object, or a field of another type, is 422
+  naming the field, before the request's user is identified.
 
 ### Storage
 

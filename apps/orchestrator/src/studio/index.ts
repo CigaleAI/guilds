@@ -52,7 +52,7 @@ import {
   type StudioMcpClient,
 } from "./connections.js";
 import type { StudioFocus } from "../db/schema/index.js";
-import { resolveStudioFocus, STUDIO_FOCUS_SOURCE } from "./focus.js";
+import { resolveStudioFocus, STUDIO_FOCUS_SOURCE, type StudioFocusRequest } from "./focus.js";
 import { isAccessTool } from "./access.js";
 import {
   applyEdit,
@@ -731,7 +731,7 @@ export class StudioService {
     session: StudioSessionRow,
     user: UserRow,
     content: string,
-    focusInput?: unknown,
+    focusInput?: StudioFocusRequest | null,
   ): Promise<Record<string, unknown>> {
     this.assertLive(session);
     if (!content.trim()) {

@@ -17,6 +17,7 @@ import { NotesStore } from "../../src/notes/store.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
 import { agentSchedules } from "../../src/schedules/service.js";
 import { StudioService } from "../../src/studio/index.js";
+import type { StudioFocusRequest } from "../../src/studio/focus.js";
 import { generationLive } from "../../src/studio/runner.js";
 import {
   studioCallConnectionTool,
@@ -233,6 +234,18 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
       },
     });
     assert.ok([401, 403, 404].includes(denied.statusCode));
+    const wordedTemperature = await app.inject({
+      method: "POST",
+      url: "/api/studio/sessions",
+      headers: AUTH,
+      payload: {
+        mode: "optimize",
+        source_guild_id: "guild_studio",
+        coach_config: { model: TEST_MODEL, temperature: "warm" },
+      },
+    });
+    assert.equal(wordedTemperature.statusCode, 422, wordedTemperature.body);
+    assert.deepEqual(wordedTemperature.json().detail[0].loc, ["body", "coach_config", "temperature"]);
 
     const inventory = await app.inject({
       method: "GET",
@@ -260,6 +273,14 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
       payload: { agent_id: "a_studio" },
     });
     assert.equal(setTarget.statusCode, 200);
+    const numberedTarget = await app.inject({
+      method: "PUT",
+      url: `/api/studio/sessions/${session.id}/target`,
+      headers: AUTH,
+      payload: { agent_id: 5 },
+    });
+    assert.equal(numberedTarget.statusCode, 422);
+    assert.deepEqual(numberedTarget.json().detail[0].loc, ["body", "agent_id"]);
 
     const inspector = await app.inject({
       method: "GET",
@@ -278,6 +299,14 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
       payload: { content: "What should change in the standing task?" },
     });
     assert.equal(posted.statusCode, 200);
+    const numberedContent = await app.inject({
+      method: "POST",
+      url: `/api/studio/sessions/${session.id}/messages`,
+      headers: AUTH,
+      payload: { content: 5 },
+    });
+    assert.equal(numberedContent.statusCode, 422);
+    assert.deepEqual(numberedContent.json().detail[0].loc, ["body", "content"]);
     await studio.runner.wait(session.id);
 
     const messages = await app.inject({
@@ -322,6 +351,15 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
     assert.equal(createdDraft.draft_id, draft.id);
     assert.deepEqual(createdDraft.agent, { id: "a_studio", name: "writer" });
     assert.equal(draft.base_version, liveTask?.version);
+
+    const numberedRevision = await app.inject({
+      method: "POST",
+      url: `/api/studio/drafts/${String(draft.id)}/revise`,
+      headers: AUTH,
+      payload: { proposed_content: 5 },
+    });
+    assert.equal(numberedRevision.statusCode, 422);
+    assert.deepEqual(numberedRevision.json().detail[0].loc, ["body", "proposed_content"]);
 
     const published = await app.inject({
       method: "POST",
@@ -601,6 +639,14 @@ test("studio reads agent access, script source, and granted connections", { time
       payload: { granted: true },
     });
     assert.equal(unreachable.statusCode, 422, unreachable.body);
+    const wordedGrant = await app.inject({
+      method: "PUT",
+      url: `/api/studio/sessions/${session.id}/connections/${String(connection.id)}`,
+      headers: AUTH,
+      payload: { granted: "no" },
+    });
+    assert.equal(wordedGrant.statusCode, 422);
+    assert.deepEqual(wordedGrant.json().detail[0].loc, ["body", "granted"]);
 
     const granted = await app.inject({
       method: "PUT",
@@ -698,6 +744,14 @@ test("studio reads agent access, script source, and granted connections", { time
     assert.deepEqual(regranted.json(), { detail: "login request is already declined" });
     const grantSeq = await logged(requested);
     assert.equal((await answer(grantSeq, "maybe")).statusCode, 422);
+    const undecided = await app.inject({
+      method: "POST",
+      url: `/api/studio/sessions/${session.id}/logins/${grantSeq}`,
+      headers: AUTH,
+      payload: {},
+    });
+    assert.equal(undecided.statusCode, 422);
+    assert.deepEqual(undecided.json().detail[0].loc, ["body", "decision"]);
     const grantedByCard = await answer(grantSeq, "grant");
     assert.equal(grantedByCard.statusCode, 200, grantedByCard.body);
     assert.deepEqual((grantedByCard.json() as { granted_connection_ids: string[] }).granted_connection_ids, [String(connection.id)]);
@@ -947,7 +1001,7 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
       },
       now,
     );
-    const pins: Array<Record<string, unknown>> = [
+    const pins: StudioFocusRequest[] = [
       { kind: "run", run_id: "r_ev_wake", call_id: "call_mem" },
       { kind: "memory_version", agent_id: "a_ev", revision_id: middleRevision },
       { kind: "routine", agent_id: "a_ev", schedule_id: scheduleId },
@@ -1362,6 +1416,14 @@ test("studio proposes memory, note, and guild edits that the operator applies or
     );
     assert.equal((await resolve(memorySeq - 1, "apply")).statusCode, 404);
     assert.equal((await resolve(memorySeq, "maybe")).statusCode, 422);
+    const undecided = await app.inject({
+      method: "POST",
+      url: `/api/studio/sessions/${session.id}/edits/${memorySeq}`,
+      headers: AUTH,
+      payload: {},
+    });
+    assert.equal(undecided.statusCode, 422);
+    assert.deepEqual(undecided.json().detail[0].loc, ["body", "decision"]);
   } finally {
     await app.close();
     await database.close();
