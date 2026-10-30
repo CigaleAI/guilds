@@ -17,18 +17,14 @@ import {
 import { CreateAgentDialog } from "../agent/CreateAgentDialog";
 import { CreateGuildDialog } from "../guild/CreateGuildDialog";
 import { AccountMenu } from "./AccountMenu";
+import { parseFoldedGuilds } from "./foldedGuilds";
 import { useInboxCount, useUnreadByGuild } from "./inbox";
 
 /** Guild ids the operator folded in the sidebar. */
 const collapsedKey = "guilds-guilds-collapsed";
 
 function readCollapsed(): Record<string, boolean> {
-  try {
-    const parsed: unknown = JSON.parse(readStored(collapsedKey) ?? "{}");
-    return parsed && typeof parsed === "object" ? (parsed as Record<string, boolean>) : {};
-  } catch {
-    return {};
-  }
+  return parseFoldedGuilds(readStored(collapsedKey) ?? "{}") ?? {};
 }
 
 type GuildSidebarProps = { onRetract: () => void };
