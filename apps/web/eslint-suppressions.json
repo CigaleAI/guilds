@@ -651,9 +651,6 @@
   "src/features/studio/tabs/TaskTabs.tsx": {
     "complexity": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/features/studio/tabs/VersionsTab.tsx": {

@@ -142,28 +142,24 @@ function DraftReview({ session, draft, generating }: DraftReviewProps) {
   const reviewable = openDraft(draft) && session.status === "active";
   const name = draft.target_snapshot?.name ?? "the agent";
 
-  const run = (action: "publish" | "discard" | "revise", content?: string) =>
+  const update = (action: "publish" | "discard" | "revise", content?: string) =>
     act
       .mutateAsync({ draftId: draft.id, action, ...(content !== undefined ? { content } : {}) })
-      .then(
-        () => {
-          toast({
-            kind: "success",
-            title:
-              action === "publish"
-                ? `Published ${name}'s Task`
-                : action === "discard"
-                  ? "Draft discarded"
-                  : "Draft revised",
-          });
-          setConfirm(null);
-          setEditing(false);
-        },
-        (error: Error) => {
-          toast({ kind: "error", title: "Couldn't update the draft", description: error.message });
-          throw error;
-        },
-      );
+      .then(() => {
+        toast({
+          kind: "success",
+          title:
+            action === "publish"
+              ? `Published ${name}'s Task`
+              : action === "discard"
+                ? "Draft discarded"
+                : "Draft revised",
+        });
+        setConfirm(null);
+        setEditing(false);
+      });
+  const refused = (error: Error) =>
+    toast({ kind: "error", title: "Couldn't update the draft", description: error.message });
 
   return (
     <div className="flex flex-col gap-4">
@@ -215,7 +211,14 @@ function DraftReview({ session, draft, generating }: DraftReviewProps) {
             : "The proposal is dropped; the live Task stays as it is."
         }
         confirmLabel={confirm === "publish" ? "Publish" : "Discard"}
-        onConfirm={() => (confirm ? run(confirm) : undefined)}
+        onConfirm={() =>
+          confirm
+            ? update(confirm).catch((error: Error) => {
+                refused(error);
+                throw error;
+              })
+            : undefined
+        }
       />
       <Dialog open={editing} onOpenChange={setEditing}>
         <DialogContent size="lg">
@@ -239,7 +242,7 @@ function DraftReview({ session, draft, generating }: DraftReviewProps) {
             </DialogClose>
             <Button
               disabled={act.isPending || text === draft.proposed_content}
-              onClick={() => void run("revise", text).catch(() => undefined)}
+              onClick={() => void update("revise", text).catch(refused)}
             >
               Save draft
             </Button>
