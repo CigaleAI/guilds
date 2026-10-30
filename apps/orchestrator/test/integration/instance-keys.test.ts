@@ -6,7 +6,8 @@ import { buildApp } from "../../src/app.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import { connect } from "../../src/seed/connect.js";
 import { GITHUB_MANIFEST_STATE_COOKIE, MANIFEST_CALLBACK_PATH } from "../../src/github/manifest.js";
-import { GITHUB_SERVER_ID, setInstanceKeys } from "../../src/instance/integrations.js";
+import { GITHUB_SERVER_ID, instanceKeys, setInstanceKeys } from "../../src/instance/integrations.js";
+import { InstanceKeys } from "../../src/instance/keys.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
 import { agentSchedules } from "../../src/schedules/service.js";
@@ -27,10 +28,12 @@ const APP = { app_id: "4242", slug: "guilds-run-test", private_key: PEM, client_
 
 const keysDb = uniqueDbName("agent_platform_instance_keys");
 const manifestDb = uniqueDbName("agent_platform_instance_manifest");
+const loadDb = uniqueDbName("agent_platform_instance_load");
 
 after(async () => {
   await dropIsolatedDatabase(keysDb);
   await dropIsolatedDatabase(manifestDb);
+  await dropIsolatedDatabase(loadDb);
 });
 
 type App = Awaited<ReturnType<typeof buildApp>>;
@@ -321,6 +324,32 @@ test("the GitHub App registers from a manifest: the box posts it, GitHub calls b
     globalThis.fetch = realFetch;
     setInstanceKeys({});
     await app.close();
+    await database.close();
+  }
+});
+
+test("loading the keys skips one that does not decrypt under the master key and keeps the others", async () => {
+  setInstanceKeys({});
+  const database = await connect(await createIsolatedDatabase(loadDb));
+  const db = database.pool;
+  const insert = async (integration: string, values: Record<string, string>, key: Buffer) => {
+    const [ciphertext, nonce] = encryptPayload(values, key);
+    await db.query(
+      `INSERT INTO instance_keys (integration, ciphertext, nonce, set_by_user_id, created_at, updated_at)
+       VALUES ($1, $2, $3, NULL, $4, $4)`,
+      [integration, ciphertext, nonce, "2026-10-09T08:00:00.000Z"],
+    );
+  };
+  try {
+    await insert("web-search", { api_key: " tvly-key " }, MASTER);
+    await insert("group-routing", { api_key: "routing-key" }, Buffer.alloc(32, 7));
+    const snapshot = await new InstanceKeys(db, MASTER).load();
+    assert.deepEqual(snapshot, {
+      "web-search": { values: { api_key: "tvly-key" }, updated_at: "2026-10-09T08:00:00.000Z", set_by: null },
+    });
+    assert.deepEqual(instanceKeys(), snapshot);
+  } finally {
+    setInstanceKeys({});
     await database.close();
   }
 });

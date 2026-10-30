@@ -70,23 +70,12 @@ export type IntegrationSources = { env?: NodeJS.ProcessEnv; keys?: InstanceKeySn
 
 type FieldName<I extends Integration> = I["fields"][number]["name"];
 
-function integration<const F extends readonly IntegrationField[]>(definition: {
-  id: string;
-  label: string;
-  enables: string;
-  source: IntegrationSource;
-  fields: F;
-  provides?: IntegrationProvides;
-  setup?: IntegrationSetup;
-}): {
-  id: string;
-  label: string;
-  enables: string;
-  source: IntegrationSource;
-  fields: F;
-  provides?: IntegrationProvides;
-  setup?: IntegrationSetup;
-} {
+/** An integration as it is declared: its fields keep the names they are written with, so readers are typed by them. */
+type IntegrationDefinition<F extends readonly IntegrationField[]> = Omit<Integration, "fields"> & { fields: F };
+
+function integration<const F extends readonly IntegrationField[]>(
+  definition: IntegrationDefinition<F>,
+): IntegrationDefinition<F> {
   return definition;
 }
 
@@ -261,6 +250,14 @@ export function integrationState(integration: Integration, sources?: Integration
   return missing.length === required.length ? "off" : "incomplete";
 }
 
+/** Whether `values` holds a value under the name of every field of the integration. */
+function holdsEveryField<const I extends Integration>(
+  integration: I,
+  values: Record<string, string>,
+): values is Record<FieldName<I>, string> {
+  return integration.fields.every((field) => typeof values[field.name] === "string");
+}
+
 /** Every field's trimmed value while the integration is on, else null. */
 export function integrationValues<const I extends Integration>(
   integration: I,
@@ -269,13 +266,32 @@ export function integrationValues<const I extends Integration>(
   if (integrationState(integration, sources) !== "on") {
     return null;
   }
-  return Object.fromEntries(
+  const values: Record<string, string> = Object.fromEntries(
     integration.fields.map((field) => [field.name, fieldValue(integration, field, sources)]),
-  ) as Record<FieldName<I>, string>;
+  );
+  return holdsEveryField(integration, values) ? values : null;
 }
 
 /** The parts of a connector's manifest that name its integration: its slug, what it requires, and how it signs in. */
 export type ConnectorRequirements = Pick<Manifest, "slug" | "requires" | "auth">;
+
+/**
+ * The id of the integration a connector's manifest requires, takes its platform key from, or
+ * declares of its own (a key, or an OAuth client with no provider), when it names one.
+ */
+function integrationIdForConnector(manifest: ConnectorRequirements): string | null {
+  const { instance, oauth } = manifest.auth;
+  if (manifest.requires?.integration) {
+    return manifest.requires.integration;
+  }
+  if (instance) {
+    return "integration" in instance ? instance.integration : connectorIntegrationId(manifest.slug);
+  }
+  if (manifest.auth.kind === "oauth" && oauth?.strategy === "configured" && !oauth.provider) {
+    return connectorIntegrationId(manifest.slug);
+  }
+  return null;
+}
 
 /**
  * The integration a connector's manifest requires, takes its platform key from, or declares of
@@ -285,16 +301,11 @@ export function integrationForConnector(
   manifest: ConnectorRequirements,
   integrations: readonly Integration[] = installedIntegrations(),
 ): Integration | null {
-  const instance = manifest.auth.instance;
-  const oauth = manifest.auth.oauth;
-  let id = manifest.requires?.integration ?? null;
-  if (!id && instance) {
-    id = "integration" in instance ? instance.integration : connectorIntegrationId(manifest.slug);
+  const id = integrationIdForConnector(manifest);
+  if (!id) {
+    return null;
   }
-  if (!id && manifest.auth.kind === "oauth" && oauth?.strategy === "configured" && !oauth.provider) {
-    id = connectorIntegrationId(manifest.slug);
-  }
-  return id ? (integrations.find((item) => item.id === id) ?? null) : null;
+  return integrations.find((item) => item.id === id) ?? null;
 }
 
 /**
