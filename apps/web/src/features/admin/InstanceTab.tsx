@@ -31,7 +31,6 @@ import type {
   IntegrationState,
 } from "../../api/types/admin";
 import { DocsLink } from "../../app/docs";
-import type { TabSearch } from "../../app/router";
 import { safeReturnTo } from "../instance/instance";
 import { submitManifestForm } from "./githubManifest";
 import { asksToConfirmReplace } from "./instanceKeys";
@@ -74,7 +73,7 @@ function fieldTag(
  * only shows which of its variables are set.
  */
 export function InstanceTab() {
-  const search = useSearch({ strict: false }) as TabSearch;
+  const search = useSearch({ from: "/admin" });
   const navigate = useNavigate();
   const instance = useInstance();
   const returnTo = safeReturnTo(search.return_to);

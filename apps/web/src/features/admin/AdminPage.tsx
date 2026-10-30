@@ -24,7 +24,6 @@ import type {
   CatalogServerInput,
   CatalogTool,
 } from "../../api/types/admin";
-import type { TabSearch } from "../../app/router";
 import { useIdentity } from "../../app/identity";
 import { chosenTab, placeTabs, useSlots } from "../../app/slots";
 import {
@@ -51,7 +50,9 @@ import {
   Tag,
 } from "@guildsrun/ui";
 import { connectorLogo } from "../access/connectorLogo";
+import { isRemoteServerAuth, REMOTE_SERVER_AUTHS } from "../access/remoteServer";
 import { integrationFor, setupSearch } from "../instance/instance";
+import { isOAuthStrategy, isToolStart, type ToolStart } from "./catalogEdits";
 import { InstanceTab } from "./InstanceTab";
 import { RegistryDialog } from "./RegistryDialog";
 import { parseInputSchema } from "./toolSchema";
@@ -77,7 +78,7 @@ function Scroll({ children }: ScrollProps) {
 
 /** Platform administration: the connector catalog, the platform's keys, the users, and the tabs an extension adds. */
 export function AdminPage() {
-  const search = useSearch({ strict: false }) as TabSearch;
+  const search = useSearch({ from: "/admin" });
   const navigate = useNavigate();
   const catalog = useAdminCatalog();
   const { adminTabs = [] } = useSlots();
@@ -416,8 +417,8 @@ function NewServerForm({ server, onClose }: NewServerFormProps) {
     slug: server?.slug ?? "",
     display_name: server?.display_name ?? "",
     url: server?.url ?? "",
-    auth: server?.auth ?? ("token" as CatalogServer["auth"]),
-    oauth_strategy: server?.oauth_strategy ?? ("none" as CatalogServer["oauth_strategy"]),
+    auth: server?.auth ?? "token",
+    oauth_strategy: server?.oauth_strategy ?? "none",
     description: server?.description ?? "",
     limitations: server?.limitations ?? "",
     setup_hint: server?.setup_hint ?? "",
@@ -479,22 +480,20 @@ function NewServerForm({ server, onClose }: NewServerFormProps) {
             tone="surface"
             label="Auth"
             value={form.auth}
-            onValueChange={(value) =>
-              set({
-                auth: value as CatalogServer["auth"],
-                oauth_strategy: value === "oauth" ? "dynamic" : "none",
-              })
-            }
-            options={["none", "token", "oauth"].map((value) => ({ value, label: value }))}
+            onValueChange={(value) => {
+              if (!isRemoteServerAuth(value)) return;
+              set({ auth: value, oauth_strategy: value === "oauth" ? "dynamic" : "none" });
+            }}
+            options={REMOTE_SERVER_AUTHS.map((value) => ({ value, label: value }))}
           />
           <Select
             tone="surface"
             label="OAuth strategy"
             value={form.oauth_strategy}
             disabled={form.auth !== "oauth"}
-            onValueChange={(value) =>
-              set({ oauth_strategy: value as CatalogServer["oauth_strategy"] })
-            }
+            onValueChange={(value) => {
+              if (isOAuthStrategy(value)) set({ oauth_strategy: value });
+            }}
             options={(form.auth === "oauth" ? ["dynamic", "configured"] : ["none"]).map(
               (value) => ({
                 value,
@@ -662,7 +661,7 @@ type ToolFormProps = {
 function ToolForm({ server, tool, onClose }: ToolFormProps) {
   const save = useSaveCatalogTool();
   const [description, setDescription] = useState(tool.description);
-  const [start, setStart] = useState<"manifest" | "on" | "off">(
+  const [start, setStart] = useState<ToolStart>(
     tool.default_override === null ? "manifest" : tool.default_override ? "on" : "off",
   );
   const [schema, setSchema] = useState(JSON.stringify(tool.input_schema, null, 2));
@@ -725,7 +724,9 @@ function ToolForm({ server, tool, onClose }: ToolFormProps) {
           tone="surface"
           label="A new login starts it"
           value={start}
-          onValueChange={(value) => setStart(value as "manifest" | "on" | "off")}
+          onValueChange={(value) => {
+            if (isToolStart(value)) setStart(value);
+          }}
           options={[
             { value: "manifest", label: "As the connector says" },
             { value: "on", label: "On" },
