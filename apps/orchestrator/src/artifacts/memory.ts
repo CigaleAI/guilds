@@ -218,7 +218,7 @@ function revisionActorType(value: string): MemoryRevisionView["replaced_by"]["ty
 /** The archive file name of a revision: its UTC stamp and who replaced it. */
 export function archiveStamp(replacedAt: string, source: string): string {
   const date = new Date(replacedAt);
-  const stampName = date.toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z").replace("T", "T");
+  const stampName = date.toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
   const token = source.trim().replaceAll("/", "-").replaceAll(":", "-") || "unknown";
   return `${stampName}-${token}.md`;
 }

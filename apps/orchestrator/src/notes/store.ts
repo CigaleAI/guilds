@@ -201,7 +201,7 @@ export class NotesStore {
   }
 
   expandWikilinks(text: string, orgSlug: string, guildName: string, agentName: string): string {
-    return text.replace(/\[\[([^\]]+)\]\]/g, (whole, inner: string) => {
+    return text.replace(/\[\[([^[\]]+)\]\]/g, (whole, inner: string) => {
       let target = inner;
       let alias: string | undefined;
       if (target.includes("|")) {

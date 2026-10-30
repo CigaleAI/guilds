@@ -21,7 +21,7 @@ export function wrapEvidence(evidence: Evidence): string {
     }
     parts.push(`${key}="${escapeXml(String(value))}"`);
   }
-  return `<evidence ${parts.join(" ")}>\n${evidence.body.replace(/\s+$/, "")}\n</evidence>`;
+  return `<evidence ${parts.join(" ")}>\n${evidence.body.trimEnd()}\n</evidence>`;
 }
 
 export function wrapUntrustedText(label: string, value: string): string {

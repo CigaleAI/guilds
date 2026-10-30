@@ -80,11 +80,11 @@ export function stripTags(html: string): string {
     .replace(/<\/p>/gi, "\n")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&")
     .replace(/[ \t]+\n/g, "\n")
     .replace(/[ \t]+/g, " ")
     .trim();

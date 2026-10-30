@@ -70,7 +70,7 @@ export function redactText(
 }
 
 function formatTimestamp(date: Date): string {
-  return date.toISOString().replace(/Z$/, "Z");
+  return date.toISOString();
 }
 
 function extraValue(value: string | number | null | undefined): string | number | null {
