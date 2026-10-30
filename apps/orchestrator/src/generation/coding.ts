@@ -24,17 +24,10 @@ import { agentRunDir } from "../sandbox/index.js";
 import type { SandboxHandle } from "../sandbox/sdk.js";
 import { redact } from "../secrets/index.js";
 import { callSegment, runCodeHelper } from "../toolbox/code.js";
-import {
-  assertHarnessReady,
-  checkHarnessOn,
-  endLostTurn,
-  HarnessSetupError,
-  interruptedText,
-  readHarnessLog,
-  type HarnessCheck,
-  type HarnessLog,
-  type LostTurnEnd,
-} from "../toolbox/harness.js";
+import { endLostTurn, type LostTurnEnd } from "../toolbox/harness.js";
+import { readHarnessLog, type HarnessLog } from "../toolbox/harness-ops.js";
+import { interruptedText } from "../toolbox/harness-result.js";
+import { assertHarnessReady, checkHarnessOn, HarnessSetupError, type HarnessCheck } from "../toolbox/harness-setup.js";
 import { createToolHooks, type ToolRun } from "../toolbox/index.js";
 import type { ToolServices } from "../toolbox/services.js";
 import type { ActiveGenerations } from "./active-generations.js";

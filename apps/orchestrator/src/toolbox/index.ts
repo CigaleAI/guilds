@@ -10,7 +10,7 @@ import {
   recordUpdate,
 } from "./artifacts.js";
 import { isPlainRecord } from "../db/json.js";
-import type { ReportedToolMetadata, ToolCall, ToolMessage, ToolResultMetadata } from "../db/schema/index.js";
+import type { ToolCall, ToolMessage, ToolResultMetadata } from "../db/schema/index.js";
 import { writeLog } from "../observability/log.js";
 import { identityOutput, processOutput } from "./output.js";
 import { browserClick, browserEval, browserFill, browserNavigate, browserScreenshot, browserScroll, browserSnapshot, browserType } from "./browser.js";
@@ -25,6 +25,7 @@ import { scriptCreate, scriptDelete, scriptList, scriptRead, scriptRun } from ".
 import { secretRequest, secretStore } from "./secret.js";
 import type { ToolServices } from "./services.js";
 import type { Tool, ToolHooks, ToolInvocation, ToolRun } from "./types.js";
+import { ToolArgumentError } from "./errors.js";
 
 export const REGISTRY: Record<string, Tool> = {};
 
@@ -89,7 +90,7 @@ export function parseArguments(call: ToolCall): Record<string, unknown> {
   }
   const loaded: unknown = JSON.parse(call.function.arguments);
   if (!isPlainRecord(loaded)) {
-    throw new Error("tool arguments must be a JSON object");
+    throw new ToolArgumentError("tool arguments must be a JSON object");
   }
   return loaded;
 }
@@ -105,15 +106,8 @@ export async function invokeTool(
   call: ToolCall,
 ): Promise<[ToolMessage, ToolResultMetadata]> {
   const name = call.function.name;
-  const callId = call.id;
   const started = performance.now();
-  let error: string | null = null;
   const registered = REGISTRY[name] ?? run.dynamic_tools[name];
-  let reported: ReportedToolMetadata | null = null;
-  let exitCode: number | null = null;
-  let raw: string;
-  let outputFilter = identityOutput;
-  let filterName = "identity";
   const offered = run.offered_tools;
   const blocked =
     offered !== null && !offered.has(name) && !(name in run.dynamic_tools);
@@ -121,59 +115,63 @@ export async function invokeTool(
     const message = blocked
       ? `tool ${name} is not offered this run`
       : `unknown tool ${name}`;
-    raw = `ERROR: ${message}`;
-    error = message;
-  } else {
-    outputFilter = registered.output_filter;
-    filterName = registered.filter_name;
-    try {
-      const invocation: ToolInvocation = {
-        id: callId,
-        name,
-        arguments: parseArguments(call),
-        exit_code: null,
-        metadata: null,
-      };
-      try {
-        raw = await registered.handler(services, run, hooks, invocation);
-      } finally {
-        exitCode = invocation.exit_code;
-        reported = invocation.metadata;
-      }
-      if (typeof raw !== "string") {
-        throw new TypeError("tool must return str");
-      }
-    } catch (caught) {
-      const message = caught instanceof Error ? caught.message : String(caught);
-      writeLog("warn", message, {
-        run_id: run.run_id,
-        agent_id: run.agent_id,
-        guild_id: run.guild_id,
-        operation: `tool.${name}`,
-        error_type: caught instanceof Error ? caught.name : "Error",
-      });
-      raw = `ERROR: ${message}`;
-      error = message;
+    return toolResult(run, call, started, { raw: `ERROR: ${message}`, error: message, tool: null, invocation: null });
+  }
+  const invocation: ToolInvocation = { id: call.id, name, arguments: {}, exit_code: null, metadata: null };
+  try {
+    invocation.arguments = parseArguments(call);
+    const raw: unknown = await registered.handler(services, run, hooks, invocation);
+    if (typeof raw !== "string") {
+      throw new TypeError("tool must return str");
     }
+    return toolResult(run, call, started, { raw, error: null, tool: registered, invocation });
+  } catch (caught) {
+    const message = caught instanceof Error ? caught.message : String(caught);
+    writeLog("warn", message, {
+      run_id: run.run_id,
+      agent_id: run.agent_id,
+      guild_id: run.guild_id,
+      operation: `tool.${name}`,
+      error_type: caught instanceof Error ? caught.name : "Error",
+    });
+    return toolResult(run, call, started, { raw: `ERROR: ${message}`, error: message, tool: registered, invocation });
   }
-  const [content, pipeline] = processOutput(raw, outputFilter, run.secrets, toolResultMaxBytes());
-  if (pipeline.error) {
-    error = pipeline.error;
-  }
-  const payload: ToolMessage = { role: "tool", tool_call_id: callId, content };
+}
+
+/**
+ * How a tool call ended before its output is kept: the text, why it failed, the tool that ran it
+ * (null when the call named none this run may use), and the invocation the handler reported on.
+ */
+type CallOutcome = {
+  raw: string;
+  error: string | null;
+  tool: Tool | null;
+  invocation: ToolInvocation | null;
+};
+
+/** The call's result as the model reads it, with its metadata; `started` is when the call began, from `performance.now()`. */
+function toolResult(
+  run: ToolRun,
+  call: ToolCall,
+  started: number,
+  outcome: CallOutcome,
+): [ToolMessage, ToolResultMetadata] {
+  const outputFilter = outcome.tool?.output_filter ?? identityOutput;
+  const [content, pipeline] = processOutput(outcome.raw, outputFilter, run.secrets, toolResultMaxBytes());
+  const payload: ToolMessage = { role: "tool", tool_call_id: call.id, content };
   const metadata: ToolResultMetadata = {
-    ...(reported ?? {}),
-    tool_name: name,
-    tool_call_id: callId,
+    ...(outcome.invocation?.metadata ?? {}),
+    tool_name: call.function.name,
+    tool_call_id: call.id,
     duration_ms: Math.trunc(performance.now() - started),
-    output_filter: filterName,
+    output_filter: outcome.tool?.filter_name ?? "identity",
     truncated: pipeline.truncated,
     original_bytes: pipeline.original_bytes,
     stored_bytes: pipeline.stored_bytes,
-    error,
+    error: pipeline.error ?? outcome.error,
   };
-  if (name === "script_run") {
-    metadata.exit_code = exitCode;
+  if (call.function.name === "script_run") {
+    metadata.exit_code = outcome.invocation?.exit_code ?? null;
   }
   return [payload, metadata];
 }

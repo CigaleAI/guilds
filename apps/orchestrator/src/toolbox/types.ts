@@ -3,6 +3,7 @@ import type { Harness, Effort, ReportedToolMetadata } from "../db/schema/index.j
 import { agentHome } from "../lib/agent-file.js";
 import type { ArtifactActor } from "../artifacts/types.js";
 import type { RunScriptSnapshot } from "../db/schema/index.js";
+import type { CommandResult } from "../sandbox/sdk.js";
 import type { ToolServices } from "./services.js";
 
 export type GroupChat = {
@@ -58,21 +59,14 @@ export class CancelEvent {
   }
 }
 
-export type CommandResult = {
-  id?: string;
-  exit_code?: number | null;
-  exitCode?: number | null;
-  logs?: {
-    stdout?: Array<{ text?: string }>;
-    stderr?: Array<{ text?: string }>;
-  };
-};
+/** What a sandbox command reports once it starts: its execution id, which interrupts it. */
+export type CommandInit = { id?: string };
 
 export type SandboxCommands = {
   run(
     command: string,
     opts?: Record<string, unknown>,
-    handlers?: { onInit?: (init: { id?: string }) => Promise<void> | void; on_init?: (init: { id?: string }) => Promise<void> | void },
+    handlers?: { onInit?: (init: CommandInit) => Promise<void> | void; on_init?: (init: CommandInit) => Promise<void> | void },
   ): Promise<CommandResult>;
   interrupt?(executionId: string): Promise<void>;
 };

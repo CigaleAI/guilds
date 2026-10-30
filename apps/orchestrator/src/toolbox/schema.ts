@@ -1,3 +1,4 @@
+import { isPlainRecord } from "../db/json.js";
 import { llmToolParameters } from "../lib/tool-schema.js";
 
 export function functionSchema(
@@ -27,9 +28,7 @@ export function argString(args: Record<string, unknown>, name: string, fallback 
 
 export function argRecord(args: Record<string, unknown>, name: string): Record<string, unknown> | undefined {
   const value = args[name];
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
+  return isPlainRecord(value) ? value : undefined;
 }
 
 export function argInteger(args: Record<string, unknown>, name: string, fallback: number): number {

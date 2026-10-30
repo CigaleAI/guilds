@@ -1,11 +1,14 @@
 import { Buffer } from "node:buffer";
 import { Type } from "@sinclair/typebox";
+import { isPlainRecord } from "../db/json.js";
 import type { MessageMetadata, ReportedToolMetadata } from "../db/schema/index.js";
 import { keepMatching } from "../lib/decode.js";
+import { stderrOf, stdoutOf, type CommandResult } from "../sandbox/sdk.js";
 import { executeCommand } from "./shell.js";
 import { functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
 import type { Tool, ToolHooks, ToolRun } from "./types.js";
+import { SandboxCommandError, ToolLimitError } from "./errors.js";
 
 /**
  * The tools a coding agent checks its harness's work with. Every call runs `guilds-code`
@@ -38,21 +41,22 @@ export function callSegment(callId: string): string {
   return cleaned && cleaned !== "." && cleaned !== ".." ? cleaned : `call_${Date.now()}`;
 }
 
-export function decodeEnvelope(stdout: string): { ok: boolean; text?: string; meta?: unknown; error?: string } {
+/** What a sandbox helper prints: whether its op succeeded, its text and meta, and its error text when it says one. */
+export type HelperEnvelope = { ok: boolean; text: string; meta: Record<string, unknown>; error: string | null };
+
+/** The envelope a helper printed as base64 JSON; throws when it is not a JSON object. */
+export function decodeEnvelope(stdout: string): HelperEnvelope {
   const compact = stdout.replace(/\s+/g, "");
-  const decoded = JSON.parse(Buffer.from(compact, "base64").toString("utf8")) as unknown;
-  if (!decoded || typeof decoded !== "object" || Array.isArray(decoded)) {
-    throw new Error("code helper returned a non-object");
+  const decoded: unknown = JSON.parse(Buffer.from(compact, "base64").toString("utf8"));
+  if (!isPlainRecord(decoded)) {
+    throw new SandboxCommandError("code helper returned a non-object");
   }
-  return decoded as { ok: boolean; text?: string; meta?: unknown; error?: string };
-}
-
-function stdoutOf(execution: { logs?: { stdout?: Array<{ text?: string }> } }): string {
-  return (execution.logs?.stdout ?? []).map((message) => message.text ?? "").join("");
-}
-
-function stderrOf(execution: { logs?: { stderr?: Array<{ text?: string }> } }): string {
-  return (execution.logs?.stderr ?? []).map((message) => message.text ?? "").join("\n").trim();
+  return {
+    ok: Boolean(decoded.ok),
+    text: typeof decoded.text === "string" ? decoded.text : "",
+    meta: isPlainRecord(decoded.meta) ? decoded.meta : {},
+    error: typeof decoded.error === "string" && decoded.error ? decoded.error : null,
+  };
 }
 
 /** The command that runs `helper` on `request`: inline, or through a request file when it is too large. */
@@ -64,7 +68,7 @@ async function helperCommand(run: ToolRun, helper: string, request: Record<strin
   }
   const files = run.sandbox?.files;
   if (!files) {
-    throw new Error("request is too large for this sandbox");
+    throw new ToolLimitError("request is too large for this sandbox");
   }
   const requestPath = `${CODE_REQUEST_DIR}/${run.run_id}-${String(request.call_id)}.json`;
   await files.writeFiles([{ path: requestPath, data: json }]);
@@ -72,19 +76,18 @@ async function helperCommand(run: ToolRun, helper: string, request: Record<strin
 }
 
 /** The helper's result from its envelope; throws with its error text, or with stderr when it printed no envelope. */
-function helperResult(execution: Parameters<typeof stdoutOf>[0] & Parameters<typeof stderrOf>[0]): CodeResult {
-  let envelope: ReturnType<typeof decodeEnvelope>;
+function helperResult(execution: CommandResult): CodeResult {
+  let envelope: HelperEnvelope;
   try {
     envelope = decodeEnvelope(stdoutOf(execution));
   } catch {
     const detail = stderrOf(execution).split("\n").slice(-5).join("\n");
-    throw new Error(`code helper failed${detail ? `: ${detail}` : ""}`);
+    throw new SandboxCommandError(`code helper failed${detail ? `: ${detail}` : ""}`);
   }
   if (!envelope.ok) {
-    throw new Error(envelope.error || "code helper failed");
+    throw new SandboxCommandError(envelope.error ?? "code helper failed");
   }
-  const meta = envelope.meta && typeof envelope.meta === "object" && !Array.isArray(envelope.meta) ? envelope.meta : {};
-  return { text: typeof envelope.text === "string" ? envelope.text : "", meta: meta as Record<string, unknown> };
+  return { text: envelope.text, meta: envelope.meta };
 }
 
 const ReportedFields = Type.Object({
@@ -299,7 +302,7 @@ export async function measureMachine(run: ToolRun, hooks: ToolHooks): Promise<nu
 function measured(result: CodeResult): number {
   const mib = Number(result.meta.mib);
   if (!Number.isFinite(mib)) {
-    throw new Error("workspace size is unavailable");
+    throw new SandboxCommandError("workspace size is unavailable");
   }
   return mib;
 }

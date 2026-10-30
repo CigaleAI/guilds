@@ -20,6 +20,7 @@ import { HELPER } from "../../src/toolbox/browser.js";
 import { Scripts } from "../../src/scripts/catalog.js";
 import { MemoryScriptDB } from "../helpers/generation.js";
 import { CancelEvent } from "../../src/toolbox/types.js";
+import { ToolArgumentError } from "../../src/toolbox/errors.js";
 import { toolInvocation, toolFixture } from "../helpers/toolbox.js";
 
 
@@ -196,6 +197,13 @@ test("filter failure becomes error result", () => {
     {},
     1024,
   );
+  assert.equal(stored, "ERROR: tool output filter failed");
+  assert.equal(meta.error, "tool output filter failed");
+});
+
+test("a filter that returns no string becomes an error result", () => {
+  const notText: unknown = 3;
+  const [stored, meta] = processOutput("hi", () => notText as string, {}, 1024);
   assert.equal(stored, "ERROR: tool output filter failed");
   assert.equal(meta.error, "tool output filter failed");
 });
@@ -484,8 +492,16 @@ test("parseArguments reads a JSON object string, and none as empty", () => {
 });
 
 test("parseArguments throws when JSON is not an object", () => {
-  assert.throws(() => parseArguments(withArguments("[]")), /JSON object/);
+  assert.throws(() => parseArguments(withArguments("[]")), (error) => error instanceof ToolArgumentError && /JSON object/.test(error.message));
   assert.throws(() => parseArguments(withArguments("3")), /JSON object/);
+});
+
+test("invoke answers arguments that are not a JSON object with an error result", async () => {
+  const ctx = toolFixture({ run_id: "r_1", agent_id: "a_1", guild_id: "guild_1", sandbox: null, secrets: {} });
+  const [payload, metadata] = await invokeTool(ctx.services, ctx.run, ctx.hooks, withArguments("[]"));
+  assert.equal(payload.content, "ERROR: tool arguments must be a JSON object");
+  assert.equal(metadata.error, "tool arguments must be a JSON object");
+  assert.equal(metadata.tool_name, "note_get");
 });
 
 test("remaining tool calls stamp", () => {

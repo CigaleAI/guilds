@@ -1,3 +1,4 @@
+import { isPlainRecord } from "../db/json.js";
 import { ScriptError } from "../scripts/validation.js";
 import type { AgentScript } from "../scripts/catalog.js";
 import type { RunScriptSnapshot } from "../db/schema/index.js";
@@ -12,7 +13,8 @@ import { argString, functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
 import { commandOutput, executeCommand } from "./shell.js";
 import type { ToolServices } from "./services.js";
-import { callActor, type CommandResult, type Tool, type ToolHooks, type ToolInvocation, type ToolRun } from "./types.js";
+import type { CommandResult } from "../sandbox/sdk.js";
+import { callActor, type Tool, type ToolHooks, type ToolInvocation, type ToolRun } from "./types.js";
 
 export const SCRIPT_TOOLS = [
   "script_create",
@@ -240,10 +242,10 @@ function scriptArguments(raw: unknown): Record<string, unknown> {
       throw new ScriptError("arguments must be a JSON object");
     }
   }
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!isPlainRecord(value)) {
     throw new ScriptError("arguments must be a JSON object");
   }
-  return value as Record<string, unknown>;
+  return value;
 }
 
 async function resolveRunnableName(services: ToolServices, run: ToolRun, raw: unknown): Promise<string> {
@@ -264,10 +266,7 @@ export function dynamicScriptTools(snapshot: RunScriptSnapshot[]): Record<string
   const tools: Record<string, Tool> = {};
   for (const row of firstClassSnapshots(snapshot)) {
     const parameters = row.parameters ?? { type: "object" };
-    const properties =
-      parameters.properties && typeof parameters.properties === "object" && !Array.isArray(parameters.properties)
-        ? (parameters.properties as Record<string, unknown>)
-        : {};
+    const properties = isPlainRecord(parameters.properties) ? parameters.properties : {};
     const required = Array.isArray(parameters.required)
       ? parameters.required.filter((item): item is string => typeof item === "string" && item in properties)
       : [];

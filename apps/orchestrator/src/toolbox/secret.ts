@@ -2,6 +2,7 @@ import { CredentialError, SECRET_DESCRIPTION_MAX, validateSecretDescription, val
 import { argString, functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
 import type { Tool } from "./types.js";
+import { ToolArgumentError, ToolUnavailableError } from "./errors.js";
 
 export const SECRET_REASON_MAX = 400;
 
@@ -29,7 +30,7 @@ function checked<T>(fn: () => T): T {
     return fn();
   } catch (error) {
     if (error instanceof CredentialError) {
-      throw new Error(error.message, { cause: error });
+      throw new ToolArgumentError(error.message, { cause: error });
     }
     throw error;
   }
@@ -56,7 +57,7 @@ export const secretStore: Tool = {
   async handler(_services, run, hooks, { arguments: args }) {
     const store = hooks.secret_store;
     if (store === null) {
-      throw new Error("secret storage is not available");
+      throw new ToolUnavailableError("secret storage is not available");
     }
     const stored = await store.store({
       name: args.name,
@@ -94,16 +95,16 @@ export const secretRequest: Tool = {
   ),
   async handler(_services, run, _hooks, { arguments: args }) {
     if (run.run_kind !== "direct") {
-      throw new Error("secret_request is only available in a direct chat; say what you need with group_post");
+      throw new ToolUnavailableError("secret_request is only available in a direct chat; say what you need with group_post");
     }
     const name = checked(() => validateSecretName(args.name));
     checked(() => validateSecretDescription(args.description));
     const reason = argString(args, "reason").trim();
     if (!reason) {
-      throw new Error("reason must contain non-whitespace text");
+      throw new ToolArgumentError("reason must contain non-whitespace text");
     }
     if (reason.length > SECRET_REASON_MAX) {
-      throw new Error(`reason must be at most ${SECRET_REASON_MAX} characters`);
+      throw new ToolArgumentError(`reason must be at most ${SECRET_REASON_MAX} characters`);
     }
     if (run.secret_names.includes(name)) {
       return JSON.stringify({ status: "available" });

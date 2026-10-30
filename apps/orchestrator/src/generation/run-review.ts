@@ -18,7 +18,8 @@ import {
   harnessSecretSource,
   isHarness,
 } from "../coding/harnesses.js";
-import type { HarnessCheck, HarnessLog } from "../toolbox/harness.js";
+import type { HarnessLog } from "../toolbox/harness-ops.js";
+import type { HarnessCheck } from "../toolbox/harness-setup.js";
 import type { CodingRuns } from "./coding.js";
 import { RunRequestError } from "./errors.js";
 
