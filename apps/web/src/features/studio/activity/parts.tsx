@@ -32,16 +32,14 @@ export function nodeName(index: ActivityIndex, id: string): string {
   return index.agents.get(id)?.name ?? "agent";
 }
 
-/** An agent's mascot or initial on its identity colour, at inline size. */
-export function AgentMark({
-  agent,
-  size = 16,
-  className,
-}: {
+type AgentMarkProps = {
   agent: ActivityAgent | undefined;
   size?: 14 | 16 | 20;
   className?: string;
-}) {
+};
+
+/** An agent's mascot or initial on its identity colour, at inline size. */
+export function AgentMark({ agent, size = 16, className }: AgentMarkProps) {
   const look = agent ? agentLook(agent) : { tone: "dusk" as const };
   return (
     <span
@@ -62,14 +60,13 @@ export function AgentMark({
   );
 }
 
-/** An agent's handle in its identity colour. */
-export function AgentName({
-  agent,
-  className,
-}: {
+type AgentNameProps = {
   agent: ActivityAgent | undefined;
   className?: string;
-}) {
+};
+
+/** An agent's handle in its identity colour. */
+export function AgentName({ agent, className }: AgentNameProps) {
   const tone = agent ? agentLook(agent).tone : "dusk";
   return (
     <span className={cn("truncate font-mono", identityText[tone], className)}>
@@ -78,16 +75,14 @@ export function AgentName({
   );
 }
 
-/** What a map node looks like inline: an agent's mark, or the icon of a routine, the operator or a chat. */
-export function NodeMark({
-  index,
-  id,
-  kind,
-}: {
+type NodeMarkProps = {
   index: ActivityIndex;
   id: string;
   kind: MapNodeKind;
-}) {
+};
+
+/** What a map node looks like inline: an agent's mark, or the icon of a routine, the operator or a chat. */
+export function NodeMark({ index, id, kind }: NodeMarkProps) {
   if (kind === "agent") return <AgentMark agent={index.agents.get(id)} />;
   return <Icon icon={sourceIcon[kind]} size={16} className="text-muted" />;
 }

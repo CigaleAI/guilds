@@ -930,23 +930,28 @@ export function windowLabel(hours: number): string {
   return hours < 24 || hours % 24 !== 0 || hours === 24 ? `${hours}h` : `${hours / 24}d`;
 }
 
-/** A time as the viewer's clock, with seconds or the day when asked. */
-export function clock(
-  value: TimeValue,
-  options: { seconds?: boolean; day?: boolean } = {},
-): string {
+const CLOCK_TIME = { hour: "2-digit", minute: "2-digit", hourCycle: "h23" } as const;
+
+/** A time as the viewer's clock, in hours and minutes; `—` when unreadable. */
+export function clock(value: TimeValue): string {
+  const ms = toMs(value);
+  return ms === null ? "—" : new Date(ms).toLocaleTimeString([], CLOCK_TIME);
+}
+
+/** A time as the viewer's clock, to the second; `—` when unreadable. */
+export function clockWithSeconds(value: TimeValue): string {
+  const ms = toMs(value);
+  return ms === null
+    ? "—"
+    : new Date(ms).toLocaleTimeString([], { ...CLOCK_TIME, second: "2-digit" });
+}
+
+/** A time as the viewer's clock after its month and day; `—` when unreadable. */
+export function clockWithDay(value: TimeValue): string {
   const ms = toMs(value);
   if (ms === null) return "—";
   const date = new Date(ms);
-  const time = date.toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-    ...(options.seconds ? { second: "2-digit" } : {}),
-  });
-  return options.day
-    ? `${date.toLocaleDateString([], { month: "short", day: "numeric" })} ${time}`
-    : time;
+  return `${date.toLocaleDateString([], { month: "short", day: "numeric" })} ${date.toLocaleTimeString([], CLOCK_TIME)}`;
 }
 
 /** A day as the viewer's calendar: weekday, month and day. */

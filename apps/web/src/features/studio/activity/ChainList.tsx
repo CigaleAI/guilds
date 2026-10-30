@@ -33,6 +33,8 @@ import {
   chainLines,
   chainMatches,
   clock,
+  clockWithDay,
+  clockWithSeconds,
   dayLabel,
   formatActivityDuration,
   formatUsd,
@@ -56,20 +58,18 @@ const PAGE = 40;
 /** What a chain row has opened: its trigger, or one of its wakes by run id. */
 type Opened = { chain: string; target: "start" | string };
 
+type ChainListProps = {
+  data: ActivityData;
+  selection: MapSelection | null;
+  onClear: () => void;
+};
+
 /**
  * Every chain of the window, or those the map selection passes through, newest first: one row per
  * chain from what started it through each agent it woke. Clicking the trigger or an agent opens
  * what it carried or did under the row.
  */
-export function ChainList({
-  data,
-  selection,
-  onClear,
-}: {
-  data: ActivityData;
-  selection: MapSelection | null;
-  onClear: () => void;
-}) {
+export function ChainList({ data, selection, onClear }: ChainListProps) {
   const [hideQuiet, setHideQuiet] = useState(!selection);
   const [shown, setShown] = useState(PAGE);
   const [opened, setOpened] = useState<Opened | null>(null);
@@ -172,23 +172,19 @@ export function ChainList({
   );
 }
 
-function ChainRow({
-  data,
-  chain,
-  selection,
-  opened,
-  onOpen,
-}: {
+type ChainRowProps = {
   data: ActivityData;
   chain: Chain;
   selection: MapSelection | null;
   opened: string | null;
   onOpen: (target: string) => void;
-}) {
+};
+
+function ChainRow({ data, chain, selection, opened, onOpen }: ChainRowProps) {
   const lines = chainLines(chain);
   const time = (
     <Tooltip
-      label={`${clock(chain.start.at, { day: true })} · ${plural(chain.wakes, "wake")} · ${formatActivityDuration(chain.end - chain.start.at)} · ${formatUsd(chain.cost)}`}
+      label={`${clockWithDay(chain.start.at)} · ${plural(chain.wakes, "wake")} · ${formatActivityDuration(chain.end - chain.start.at)} · ${formatUsd(chain.cost)}`}
     >
       <span
         tabIndex={0}
@@ -248,15 +244,13 @@ function ChainRow({
   );
 }
 
-function Connector({
-  label,
-  posted,
-  matched,
-}: {
+type ConnectorProps = {
   label: string | null;
   posted: boolean;
   matched: boolean;
-}) {
+};
+
+function Connector({ label, posted, matched }: ConnectorProps) {
   const color = matched ? "bg-signal-t" : posted ? "bg-outcome-posted" : "bg-rule";
   return (
     <span aria-hidden className="relative flex h-6.5 w-10 shrink-0 items-center">
@@ -283,17 +277,14 @@ const chipClass = (selected: boolean, matched = false) =>
     selected && "ring-2 ring-signal-t",
   );
 
-function TriggerChip({
-  data,
-  chain,
-  selected,
-  onOpen,
-}: {
+type TriggerChipProps = {
   data: ActivityData;
   chain: Chain;
   selected: boolean;
   onOpen: () => void;
-}) {
+};
+
+function TriggerChip({ data, chain, selected, onOpen }: TriggerChipProps) {
   const { start } = chain;
   const { index } = data;
   let label: string;
@@ -335,19 +326,15 @@ function TriggerChip({
   );
 }
 
-function AgentBox({
-  data,
-  step,
-  selected,
-  matched,
-  onOpen,
-}: {
+type AgentBoxProps = {
   data: ActivityData;
   step: ChainStep;
   selected: boolean;
   matched: boolean;
   onOpen: () => void;
-}) {
+};
+
+function AgentBox({ data, step, selected, matched, onOpen }: AgentBoxProps) {
   const { wake } = step;
   const agent = data.index.agents.get(wake.agent_id);
   const bucket = wakeBucket(wake);
@@ -355,7 +342,7 @@ function AgentBox({
   const took = formatActivityDuration((toMs(wake.ended_at) ?? start) - start);
   return (
     <Tooltip
-      label={`${agent?.name ?? "agent"} · ${wakeOutcomeLabel[bucket]} · ${clock(start, { seconds: true })} · ${took} · ${formatUsd(wake.cost_usd)}`}
+      label={`${agent?.name ?? "agent"} · ${wakeOutcomeLabel[bucket]} · ${clockWithSeconds(start)} · ${took} · ${formatUsd(wake.cost_usd)}`}
     >
       <button
         type="button"
@@ -372,9 +359,11 @@ function AgentBox({
   );
 }
 
+type DetailHeadProps = { children: ReactNode; onClose: () => void };
+
 /* ---------- Details ---------- */
 
-function DetailHead({ children, onClose }: { children: ReactNode; onClose: () => void }) {
+function DetailHead({ children, onClose }: DetailHeadProps) {
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2">
       {children}
@@ -390,15 +379,13 @@ function DetailHead({ children, onClose }: { children: ReactNode; onClose: () =>
   );
 }
 
-function Section({
-  title,
-  highlighted,
-  children,
-}: {
+type SectionProps = {
   title: string;
   highlighted?: boolean;
   children: ReactNode;
-}) {
+};
+
+function Section({ title, highlighted, children }: SectionProps) {
   return (
     <section
       className={cn(
@@ -412,7 +399,9 @@ function Section({
   );
 }
 
-function Quoted({ children }: { children: string }) {
+type QuotedProps = { children: string };
+
+function Quoted({ children }: QuotedProps) {
   return (
     <p className="max-h-56 overflow-y-auto rounded-md bg-surface px-3 py-2 font-mono text-xs whitespace-pre-wrap text-fg-2 [overflow-wrap:anywhere]">
       {children}
@@ -420,15 +409,13 @@ function Quoted({ children }: { children: string }) {
   );
 }
 
-function TriggerDetail({
-  data,
-  chain,
-  onClose,
-}: {
+type TriggerDetailProps = {
   data: ActivityData;
   chain: Chain;
   onClose: () => void;
-}) {
+};
+
+function TriggerDetail({ data, chain, onClose }: TriggerDetailProps) {
   const { go, openStep, session } = useStudio();
   const { start } = chain;
   const { index } = data;
@@ -443,9 +430,7 @@ function TriggerDetail({
             {routine?.description || "A routine no longer listed"}
           </span>
           <span className="text-xs text-muted">
-            {[routine?.label, `fired ${clock(start.at, { day: true })}`]
-              .filter(Boolean)
-              .join(" · ")}
+            {[routine?.label, `fired ${clockWithDay(start.at)}`].filter(Boolean).join(" · ")}
           </span>
           {routine ? (
             <Button
@@ -482,7 +467,7 @@ function TriggerDetail({
             <Icon icon={sourceIcon.direct} size={16} className="text-muted" />
             Direct chat with {nodeName(index, first?.agent_id ?? "")}
           </span>
-          <span className="text-xs text-muted">{clock(start.at, { day: true })}</span>
+          <span className="text-xs text-muted">{clockWithDay(start.at)}</span>
           {first ? (
             <Button
               variant="outline"
@@ -522,7 +507,7 @@ function TriggerDetail({
         </span>
         <span className="text-xs text-muted">
           {[
-            clock(start.at, { day: true }),
+            clockWithDay(start.at),
             message?.tagged.length
               ? `tagged ${message.tagged.map((name) => `@${name}`).join(" ")}`
               : null,
@@ -595,17 +580,14 @@ function writeLine(group: WriteGroup, label: string) {
   );
 }
 
-function StepDetail({
-  data,
-  chain,
-  runId,
-  onClose,
-}: {
+type StepDetailProps = {
   data: ActivityData;
   chain: Chain;
   runId: string;
   onClose: () => void;
-}) {
+};
+
+function StepDetail({ data, chain, runId, onClose }: StepDetailProps) {
   const { openStep, ask } = useStudio();
   const { user } = useIdentity();
   const [section, setSection] = useState<SectionKey | null>(null);
@@ -724,8 +706,8 @@ function StepDetail({
           {wakeOutcomeLabel[bucket]}
         </span>
         <span className="font-mono text-2xs text-muted">
-          {clock(start, { seconds: true })}–{clock(end, { seconds: true })} ·{" "}
-          {formatActivityDuration(end - start)} · {formatUsd(wake.cost_usd)}
+          {clockWithSeconds(start)}–{clockWithSeconds(end)} · {formatActivityDuration(end - start)}{" "}
+          · {formatUsd(wake.cost_usd)}
         </span>
         <span className="text-xs text-muted">{wokenBy}</span>
         <span className="flex gap-2">
@@ -741,7 +723,7 @@ function StepDetail({
                 kind: "run",
                 agent_id: wake.agent_id,
                 run_id: wake.run_id,
-                label: `${agent?.name ?? "agent"} · ${clock(start, { day: true })}`,
+                label: `${agent?.name ?? "agent"} · ${clockWithDay(start)}`,
               })
             }
           >

@@ -10,6 +10,9 @@ import {
   buildChains,
   chainLines,
   chainMatches,
+  clock,
+  clockWithDay,
+  clockWithSeconds,
   formatActivityDuration,
   formatUsd,
   groupWrites,
@@ -198,6 +201,20 @@ const agentsOf = (chain: Chain | undefined) =>
 
 test("windowLabel uses hours below a day and days at full-day multiples except 24h", () => {
   assert.deepEqual([1, 6, 24, 72, 168].map(windowLabel), ["1h", "6h", "24h", "3d", "7d"]);
+});
+
+test("a clock reads hours and minutes, to the second or after the day when named, and a dash when unreadable", () => {
+  const at = new Date(2026, 0, 5, 9, 7, 3).getTime();
+  assert.match(clock(at), /^09\D07$/);
+  assert.match(clockWithSeconds(at), /^09\D07\D03$/);
+  assert.ok(clockWithDay(at).endsWith(` ${clock(at)}`));
+  assert.match(clockWithDay(at), /5/);
+  for (const unreadable of [null, "", "not a time"]) {
+    assert.deepEqual(
+      [clock(unreadable), clockWithSeconds(unreadable), clockWithDay(unreadable)],
+      ["—", "—", "—"],
+    );
+  }
 });
 
 test("toMs reads epoch numbers and ISO strings and rejects empty or unreadable values", () => {

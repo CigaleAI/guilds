@@ -24,17 +24,16 @@ import {
 import { reasonLabel } from "./activityModel";
 import { AgentMark, AgentName, NodeMark, nodeName, type ActivityData } from "./parts";
 
+type AgentActivityListProps = {
+  data: ActivityData;
+  onShowChains: (selection: MapSelection) => void;
+};
+
 /**
  * Each agent over the window: every way it was woken and what those wakes produced (inputs), and
  * everything it did (outputs). Clicking an input lists its chains in Flow.
  */
-export function AgentActivityList({
-  data,
-  onShowChains,
-}: {
-  data: ActivityData;
-  onShowChains: (selection: MapSelection) => void;
-}) {
+export function AgentActivityList({ data, onShowChains }: AgentActivityListProps) {
   const { go } = useStudio();
   const agents = useMemo(() => agentActivity(data.view, data.chains, data.map), [data]);
   if (!agents.length)
@@ -168,17 +167,14 @@ export function AgentActivityList({
   );
 }
 
-function InputRow({
-  data,
-  input,
-  share,
-  onShow,
-}: {
+type InputRowProps = {
   data: ActivityData;
   input: AgentInput;
   share: number;
   onShow: () => void;
-}) {
+};
+
+function InputRow({ data, input, share, onShow }: InputRowProps) {
   const { index } = data;
   const routine = input.kind === "routine" ? index.routines.get(input.id.slice(8)) : undefined;
   const reasons = Object.entries(input.reasons)
@@ -237,19 +233,15 @@ function InputRow({
   );
 }
 
-function OutputRow({
-  icon,
-  label,
-  count,
-  tone,
-  children,
-}: {
+type OutputRowProps = {
   icon: LucideIcon;
   label: string;
   count: number;
   tone?: "error";
   children?: ReactNode;
-}) {
+};
+
+function OutputRow({ icon, label, count, tone, children }: OutputRowProps) {
   return (
     <div className="grid grid-cols-[1rem_minmax(0,1fr)_2.5rem] items-start gap-x-2 gap-y-1 border-t border-line py-1.5">
       <Icon
@@ -268,7 +260,9 @@ function OutputRow({
   );
 }
 
-function TallyRow({ icon, label, items }: { icon: LucideIcon; label: string; items: Tally[] }) {
+type TallyRowProps = { icon: LucideIcon; label: string; items: Tally[] };
+
+function TallyRow({ icon, label, items }: TallyRowProps) {
   if (!items.length) return null;
   return (
     <OutputRow icon={icon} label={label} count={items.reduce((sum, item) => sum + item.count, 0)}>
@@ -281,7 +275,9 @@ function TallyRow({ icon, label, items }: { icon: LucideIcon; label: string; ite
   );
 }
 
-function Chip({ count, children }: { count: number; children: ReactNode }) {
+type ChipProps = { count: number; children: ReactNode };
+
+function Chip({ count, children }: ChipProps) {
   return (
     <span className="flex items-center gap-1 rounded-sm bg-surface px-1.5 py-0.5 text-fg-2">
       {children}

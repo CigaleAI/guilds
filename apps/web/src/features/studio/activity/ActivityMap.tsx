@@ -20,20 +20,18 @@ function outcomeText(counts: OutcomeCounts): string {
     .join(", ");
 }
 
+type ActivityMapProps = {
+  data: ActivityData;
+  selection: MapSelection | null;
+  onSelect: (selection: MapSelection) => void;
+};
+
 /**
  * Who woke whom over the window: routines, the operator's messages and direct chats on the left,
  * agents in columns to the right, and a line for each "A woke B", thicker the more often it
  * happened. Hovering reads out its counts; clicking selects it.
  */
-export function ActivityMap({
-  data,
-  selection,
-  onSelect,
-}: {
-  data: ActivityData;
-  selection: MapSelection | null;
-  onSelect: (selection: MapSelection) => void;
-}) {
+export function ActivityMap({ data, selection, onSelect }: ActivityMapProps) {
   const [measure, width] = useWidth();
   const [hover, setHover] = useState<MapSelection | null>(null);
   const markers = useId();
@@ -227,21 +225,16 @@ export function ActivityMap({
   );
 }
 
-function MapBox({
-  data,
-  node,
-  selected,
-  faded,
-  onHover,
-  onSelect,
-}: {
+type MapBoxProps = {
   data: ActivityData;
   node: PlacedMapNode;
   selected: boolean;
   faded: boolean;
   onHover: (on: boolean) => void;
   onSelect: () => void;
-}) {
+};
+
+function MapBox({ data, node, selected, faded, onHover, onSelect }: MapBoxProps) {
   const { index } = data;
   const idle = node.count === 0;
   const common = {

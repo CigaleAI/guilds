@@ -613,9 +613,6 @@
   "src/features/studio/activity/ActivityMap.tsx": {
     "complexity": {
       "count": 2
-    },
-    "no-restricted-syntax": {
-      "count": 2
     }
   },
   "src/features/studio/activity/AgentActivity.tsx": {
@@ -624,17 +621,11 @@
     },
     "complexity": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 5
     }
   },
   "src/features/studio/activity/ChainList.tsx": {
     "complexity": {
       "count": 3
-    },
-    "no-restricted-syntax": {
-      "count": 10
     }
   },
   "src/features/studio/activity/activityModel.ts": {
@@ -646,14 +637,6 @@
     },
     "max-params": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/features/studio/activity/parts.tsx": {
-    "no-restricted-syntax": {
-      "count": 3
     }
   },
   "src/features/studio/approvals.ts": {
