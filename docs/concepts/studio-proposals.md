@@ -383,12 +383,22 @@ PUT    /api/studio/sessions/:id/connections/:connection_id   { granted: true | f
 An edit or login request is a `studio_messages` tool row whose
 resolution is in its metadata.
 
+Reading an edit request back checks the row's content once against
+the widget's schema: one shape per `edit.kind` (`memory`, `note`,
+`guild`, `collection`, `routine`, `access`), and for `note` one for a
+body edit and one for a create or delete, which carries `action`. A
+row whose content does not match is not an edit request (404). Viewing
+and applying read the target, hashes, and action from the parsed
+request. A login request is read back the same way: its content is a
+`studio_connection_access` widget whose `connection` carries a string
+`id`, or the row is not a login request (404).
+
 ### Code paths
 
 | Path | What it holds |
 |---|---|
 | `apps/orchestrator/src/studio/edits.ts` | Memory, note body, and guild requests, and reading and applying every edit request |
-| `apps/orchestrator/src/studio/edit-request.ts` | The request an edit tool returns instead of writing: its reason, content limit, line counts, and widget |
+| `apps/orchestrator/src/studio/edit-request.ts` | The request an edit tool returns instead of writing: its reason, content limit, line counts, and widget, with the widget's schema keyed on `edit.kind` and its parse from a tool row |
 | `apps/orchestrator/src/studio/note-edits.ts` | Note requests: the note a body edit replaces, and notes created or deleted |
 | `apps/orchestrator/src/studio/access.ts` | Access requests |
 | `apps/orchestrator/src/studio/tables.ts` | Collection requests read from the coach's arguments, their review and its wording, and collection evidence |

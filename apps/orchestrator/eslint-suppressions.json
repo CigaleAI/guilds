@@ -1161,9 +1161,6 @@
   "src/studio/activity.ts": {
     "complexity": {
       "count": 2
-    },
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/studio/actor.ts": {
@@ -1177,9 +1174,6 @@
     }
   },
   "src/studio/connections.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 2
-    },
     "complexity": {
       "count": 1
     },
@@ -1199,22 +1193,13 @@
     }
   },
   "src/studio/edits.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 16
-    },
     "complexity": {
-      "count": 4
-    },
-    "no-restricted-syntax": {
       "count": 3
     }
   },
   "src/studio/focus.ts": {
     "complexity": {
-      "count": 5
-    },
-    "no-restricted-syntax": {
-      "count": 1
+      "count": 4
     }
   },
   "src/studio/index.ts": {
@@ -1262,22 +1247,6 @@
   "src/studio/source-guild.ts": {
     "@typescript-eslint/explicit-module-boundary-types": {
       "count": 1
-    }
-  },
-  "src/studio/state-data.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 4
-    }
-  },
-  "src/studio/state-list.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 2
     }
   },
   "src/studio/system.ts": {

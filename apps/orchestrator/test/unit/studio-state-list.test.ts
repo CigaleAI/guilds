@@ -14,6 +14,7 @@ import {
   type StateEvent,
   type StateItem,
 } from "../../src/studio/state-list.js";
+import type { ConfigChangeEventRow, FileChangeEventRow, ReadCallRow } from "../../src/db/state.js";
 
 const agents = new Map([
   ["a_1", "scout"],
@@ -48,19 +49,66 @@ const event = (overrides: Partial<StateEvent>): StateEvent => ({
   ...overrides,
 });
 
+/** A file change a person made, as the window query returns it, with `overrides`. */
+const fileChange = (overrides: Partial<FileChangeEventRow>): FileChangeEventRow => ({
+  display_path: "p",
+  operation: "update",
+  actor_type: "user",
+  actor_id: "u",
+  actor_name: "u",
+  run_id: null,
+  tool_call_id: null,
+  studio_session_id: null,
+  studio_seq: null,
+  created_at: at,
+  id: "fc_1",
+  run_agent_id: null,
+  ...overrides,
+});
+
+/** A config change a person made, as the window query returns it, with `overrides`. */
+const configChange = (overrides: Partial<ConfigChangeEventRow>): ConfigChangeEventRow => ({
+  target_kind: "collection",
+  target_id: "col_1",
+  operation: "update",
+  actor_type: "user",
+  actor_id: "u",
+  actor_name: "u",
+  run_id: null,
+  tool_call_id: null,
+  studio_session_id: null,
+  studio_seq: null,
+  created_at: at,
+  id: "cc_1",
+  summary: "changed",
+  run_agent_id: null,
+  ...overrides,
+});
+
+/** A call of `toolName` with `args`, by agent a_1 in run r_1 unless overridden. */
+const readCall = (toolName: string, args: string, overrides: Partial<ReadCallRow> = {}): ReadCallRow => ({
+  run_id: "r_1",
+  agent_id: "a_1",
+  created_at: at,
+  tool_name: toolName,
+  call_id: null,
+  arguments: args,
+  ...overrides,
+});
+
 test("a change's actor is the run's agent, an agent of another guild without its name, or a person", () => {
-  assert.deepEqual(changeActor({ run_agent_id: "a_1", actor_type: "run" }, agents), {
+  assert.deepEqual(changeActor(fileChange({ run_agent_id: "a_1", actor_type: "run" }), agents), {
     kind: "agent",
     id: "a_1",
     name: "scout",
   });
-  assert.deepEqual(changeActor({ actor_type: "agent", actor_id: "a_9" }, agents), {
+  assert.deepEqual(changeActor(fileChange({ actor_type: "agent", actor_id: "a_9" }), agents), {
     kind: "other_guild",
     id: "",
     name: "another guild",
   });
-  assert.equal(changeActor({ actor_type: "run", actor_id: "r_gone" }, agents).kind, "other_guild");
-  assert.deepEqual(changeActor({ actor_type: "user", actor_id: "u_1", actor_name: "sam" }, agents), {
+  assert.equal(changeActor(fileChange({ actor_type: "run", actor_id: "r_gone" }), agents).kind, "other_guild");
+  assert.deepEqual(changeActor(fileChange({ actor_type: "user", actor_id: "u_1", actor_name: "sam" }), agents), {
     kind: "person",
     id: "u_1",
     name: "sam",
@@ -68,18 +116,18 @@ test("a change's actor is the run's agent, an agent of another guild without its
 });
 
 test("a change links to the coach message it was applied from, else its run step", () => {
-  assert.deepEqual(changeLink({ studio_session_id: "stu_1", studio_seq: 4, run_id: "r_1" }), {
+  assert.deepEqual(changeLink(fileChange({ studio_session_id: "stu_1", studio_seq: 4, run_id: "r_1" })), {
     kind: "coach",
     session_id: "stu_1",
     seq: 4,
   });
-  assert.deepEqual(changeLink({ run_id: "r_1", run_agent_id: "a_1", tool_call_id: "c_1" }), {
+  assert.deepEqual(changeLink(fileChange({ run_id: "r_1", run_agent_id: "a_1", tool_call_id: "c_1" })), {
     kind: "run",
     run_id: "r_1",
     agent_id: "a_1",
     call_id: "c_1",
   });
-  assert.equal(changeLink({ studio_session_id: "stu_1", studio_seq: null }), null);
+  assert.equal(changeLink(fileChange({ studio_session_id: "stu_1", studio_seq: null })), null);
 });
 
 test("a record's path names its table", () => {
@@ -95,15 +143,15 @@ test("changes land on their item, records on their table, and config changes on 
   ];
   const events = changeEvents(
     [
-      { display_path: "org/o/guilds/g/rules.md", operation: "update", actor_type: "user", actor_id: "u", actor_name: "u", created_at: at },
-      { display_path: "org/o/collections/leads/3", operation: "delete", run_agent_id: "a_2", created_at: at },
-      { display_path: "org/o/guilds/g/other.md", operation: "update", actor_type: "user", actor_id: "u", actor_name: "u", created_at: at },
+      fileChange({ display_path: "org/o/guilds/g/rules.md" }),
+      fileChange({ display_path: "org/o/collections/leads/3", operation: "delete", actor_type: "run", run_agent_id: "a_2" }),
+      fileChange({ display_path: "org/o/guilds/g/other.md" }),
     ],
     [
-      { target_kind: "collection", target_id: "col_1", operation: "update", actor_type: "user", actor_id: "u", actor_name: "u", created_at: at },
-      { target_kind: "collection", target_id: "col_gone", operation: "delete", actor_type: "user", actor_id: "u", actor_name: "u", created_at: at },
-      { target_kind: "note", target_id: "art_1", operation: "create", actor_type: "user", actor_id: "u", actor_name: "u", created_at: at },
-      { target_kind: "note", target_id: "col_1", operation: "delete", actor_type: "user", actor_id: "u", actor_name: "u", created_at: at },
+      configChange({ target_kind: "collection", target_id: "col_1" }),
+      configChange({ target_kind: "collection", target_id: "col_gone", operation: "delete" }),
+      configChange({ target_kind: "note", target_id: "art_1", operation: "create" }),
+      configChange({ target_kind: "note", target_id: "col_1", operation: "delete" }),
     ],
     { items, agents },
   );
@@ -143,12 +191,12 @@ test("reads come from what a run inlined, its Memory, and the tool calls that na
       { id: "r_2", run_id: "r_2", agent_id: "a_2", created_at: at, task_source: null },
     ],
     [
-      { run_id: "r_1", agent_id: "a_1", created_at: at, tool_name: "note_get", arguments: '{"path":"org/o/guilds/g/rules.md"}' },
-      { run_id: "r_1", agent_id: "a_1", created_at: at, tool_name: "record_search", arguments: '{"collection":"leads"}' },
-      { run_id: "r_1", agent_id: "a_1", created_at: at, tool_name: "script_run", arguments: '{"name":"tally"}' },
-      { run_id: "r_1", agent_id: "a_1", created_at: at, tool_name: "tally", arguments: "not json" },
-      { run_id: "r_1", agent_id: "a_1", created_at: at, tool_name: "note_get", arguments: '["not", "an object"]' },
-      { run_id: "r_2", agent_id: "a_2", created_at: at, tool_name: "tally", arguments: "{}" },
+      readCall("note_get", '{"path":"org/o/guilds/g/rules.md"}'),
+      readCall("record_search", '{"collection":"leads"}'),
+      readCall("script_run", '{"name":"tally"}'),
+      readCall("tally", "not json"),
+      readCall("note_get", '["not", "an object"]'),
+      readCall("tally", "{}", { run_id: "r_2", agent_id: "a_2" }),
     ],
     { items, agents },
   );

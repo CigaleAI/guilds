@@ -37,6 +37,7 @@ import { isPlainRecord } from "../db/json.js";
 import { argString } from "../toolbox/schema.js";
 import { STUDIO_TOOL_RESULT_MAX_BYTES } from "./constants.js";
 import { editActionOf, type EditAction } from "./actions.js";
+import type { CollectionTarget } from "./edit-request.js";
 import type { EditDeps, EditScope } from "./edits.js";
 import { editActor } from "./actor.js";
 import { StudioConflictError, StudioUnprocessableError } from "./errors.js";
@@ -92,7 +93,7 @@ type Shape = GuildTableShape & { guildName: string | null; outside: string[] };
 export type TableReview = {
   action: TableAction;
   title: string;
-  target: Record<string, unknown>;
+  target: CollectionTarget;
   baseHash: string;
   proposedHash: string;
   live: string;
@@ -387,7 +388,7 @@ function effectSentence(effect: GuildTableEffect): string {
   }
 }
 
-function targetOf(id: string | null, name: string, guildId: string | null, displayPath: string): Record<string, unknown> {
+function targetOf(id: string | null, name: string, guildId: string | null, displayPath: string): CollectionTarget {
   return {
     collection_id: id,
     name,
@@ -429,7 +430,7 @@ async function editRequest(
   tc: TableContext,
   table: Table,
   args: Record<string, unknown>,
-  recorded: Record<string, unknown> | null,
+  recorded: CollectionTarget | null,
 ): Promise<GuildTableEditRequest<Table>> {
   return {
     action: "edit",
@@ -458,7 +459,7 @@ async function tableRequest(
   tc: TableContext,
   action: TableAction,
   args: Record<string, unknown>,
-  recorded: Record<string, unknown> | null,
+  recorded: CollectionTarget | null,
 ): Promise<GuildTableRequest<Table>> {
   if (action === "create") {
     return createRequest(tc, args);
@@ -466,7 +467,7 @@ async function tableRequest(
   const table =
     recorded === null
       ? await loadTable(tc, { name: argString(args, "collection").trim() })
-      : await loadTable(tc, { id: String(recorded.collection_id ?? "") });
+      : await loadTable(tc, { id: recorded.collection_id ?? "" });
   if (!table) {
     throw new StudioUnprocessableError(
       recorded === null
@@ -544,7 +545,7 @@ export async function reviewTable(
   deps: EditDeps,
   scope: EditScope,
   args: Record<string, unknown>,
-  recorded: Record<string, unknown> | null,
+  recorded: CollectionTarget | null,
 ): Promise<TableReview> {
   const action = editActionOf(args);
   const tc = await tableContext(deps, scope);

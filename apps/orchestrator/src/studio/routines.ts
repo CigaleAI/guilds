@@ -6,6 +6,7 @@ import type { RoutineChange } from "../schedules/operator.js";
 import { changedFields, scheduleChanges, type ScheduleChanges } from "../schedules/service.js";
 import { argString } from "../toolbox/schema.js";
 import type { EditAction } from "./actions.js";
+import type { RoutineTarget } from "./edit-request.js";
 import type { EditDeps, EditScope } from "./edits.js";
 import { editActor } from "./actor.js";
 import { StudioUnprocessableError } from "./errors.js";
@@ -57,7 +58,7 @@ export type RoutinePlan =
 export type RoutineReview = {
   action: RoutineAction;
   title: string;
-  target: Record<string, unknown>;
+  target: RoutineTarget;
   baseHash: string;
   proposedHash: string;
   live: string;
@@ -147,7 +148,7 @@ function targetOf(
   agent: Member,
   scheduleId: string | null,
   description: string,
-): Record<string, unknown> {
+): RoutineTarget {
   return { agent_id: agent.id, agent_name: agent.name, schedule_id: scheduleId, description };
 }
 

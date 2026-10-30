@@ -1,6 +1,7 @@
+import { Type, type Static } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
 import { getMcpServer, type LoadedConnector } from "../connectors/servers.js";
 import { decryptPayload } from "../credentials/crypto.js";
-import { jsonObj } from "../db/json.js";
 import { McpError } from "../mcp/errors.js";
 import { OPERATOR_CALLER, type McpPool } from "../mcp/pool.js";
 import { callTool, connectionTools } from "../mcp/service.js";
@@ -36,29 +37,34 @@ export type LoginRecord = {
   metadata: ConversationMessageMetadata;
 };
 
-function widgetOf(payload: MessagePayload): Record<string, unknown> | null {
+/** What answering a login request reads from its widget: the connection it asks to read through. */
+const LoginRequestWidgetSchema = Type.Object({
+  widget: Type.Literal(STUDIO_CONNECTION_ACCESS_WIDGET),
+  connection: Type.Object({ id: Type.String() }),
+});
+
+type LoginRequestWidget = Static<typeof LoginRequestWidgetSchema>;
+
+/** The login request a message holds, or null when it holds none. */
+function parseLoginWidget(payload: MessagePayload): LoginRequestWidget | null {
   if (payload.role !== "tool") return null;
+  let parsed: unknown;
   try {
-    return jsonObj(JSON.parse(payload.content)) as Record<string, unknown> | null;
+    parsed = JSON.parse(payload.content);
   } catch {
     return null;
   }
+  return Value.Check(LoginRequestWidgetSchema, parsed) ? parsed : null;
 }
 
 /** The login request at a tool message seq; anything else there is not found. */
 export function findLoginRecord(message: ConversationMessageRow | null, seq: number): LoginRecord {
   const payload = message?.payload;
-  const widget = payload ? widgetOf(payload) : null;
-  const connection = (jsonObj(widget?.connection) as Record<string, unknown> | null) ?? {};
-  if (
-    !message ||
-    payload?.role !== "tool" ||
-    widget?.widget !== STUDIO_CONNECTION_ACCESS_WIDGET ||
-    typeof connection.id !== "string"
-  ) {
+  const widget = payload ? parseLoginWidget(payload) : null;
+  if (!message || payload?.role !== "tool" || !widget) {
     throw new StudioNotFoundError("login request not found");
   }
-  return { seq, connectionId: connection.id, payload, metadata: message.metadata };
+  return { seq, connectionId: widget.connection.id, payload, metadata: message.metadata };
 }
 
 export function loginStatus(record: LoginRecord): StudioLoginStatus {
