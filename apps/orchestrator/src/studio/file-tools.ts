@@ -5,8 +5,9 @@ import { Type, type Static } from "@sinclair/typebox";
 import { operatorActor } from "../artifacts/actors.js";
 import { artifactAt, findNotes, parseActorPath } from "../artifacts/notes.js";
 import { listFileChanges } from "../db/file-changes.js";
-import { editActionOf } from "./actions.js";
-import { decodeStudioArguments, studioFunctionSchema } from "./arguments.js";
+import { ARTIFACT_LEVELS } from "../artifacts/types.js";
+import { studioChoice, studioTool } from "./arguments.js";
+import { EditNoteArguments } from "./edit-arguments.js";
 import {
   STUDIO_ARTIFACT_LIST_MAX,
   STUDIO_DEFAULT_LIMIT,
@@ -24,21 +25,17 @@ import type { StudioTool, StudioToolCall, StudioToolDeps } from "./tools.js";
 
 const FindArtifactsArguments = Type.Object({
   query: Type.Optional(Type.String({ description: "words to find in note titles and bodies" })),
-  level: Type.Optional(Type.String()),
+  level: Type.Optional(studioChoice(ARTIFACT_LEVELS)),
   cursor: Type.Optional(Type.String()),
   limit: Type.Optional(Type.Integer()),
 });
 type FindArtifactsArguments = Static<typeof FindArtifactsArguments>;
 
-export const studioFindArtifacts: StudioTool = {
+export const studioFindArtifacts: StudioTool = studioTool({
   name: "studio_find_artifacts",
-  schema: studioFunctionSchema(
-    "studio_find_artifacts",
-    "Search notes relevant to the source guild.",
-    FindArtifactsArguments,
-  ),
-  async handler(deps, call, args) {
-    const input: FindArtifactsArguments = decodeStudioArguments(FindArtifactsArguments, args);
+  description: "Search notes relevant to the source guild.",
+  parameters: FindArtifactsArguments,
+  async run(deps, call, input: FindArtifactsArguments) {
     const limit = clampLimit(input.limit, STUDIO_DEFAULT_LIMIT, STUDIO_ARTIFACT_LIST_MAX);
     const actor = operatorActor({
       orgId: call.orgId,
@@ -46,17 +43,11 @@ export const studioFindArtifacts: StudioTool = {
       actorName: String(call.user.name ?? "operator"),
       guildId: call.sourceGuildId,
     });
-    const findArgs: {
-      query: string;
-      level?: "agent" | "guild" | "org";
-      limit: number;
-    } = {
+    const found = await findNotes(deps.artifacts, actor, {
       query: input.query ?? "",
+      ...(input.level !== undefined ? { level: input.level } : {}),
       limit: STUDIO_ARTIFACT_LIST_MAX,
-    };
-    const level = input.level;
-    if (level === "agent" || level === "guild" || level === "org") findArgs.level = level;
-    const found = await findNotes(deps.artifacts, actor, findArgs);
+    });
     const allowed = [];
     for (const item of found.notes) {
       if (await studioReachesPath(deps, call, String(item.display_path ?? ""))) allowed.push(item);
@@ -76,7 +67,7 @@ export const studioFindArtifacts: StudioTool = {
       next_cursor: offset + slice.length < allowed.length ? String(offset + slice.length) : null,
     };
   },
-};
+});
 
 const GetArtifactArguments = Type.Object({
   display_path: Type.String(),
@@ -84,15 +75,11 @@ const GetArtifactArguments = Type.Object({
 });
 type GetArtifactArguments = Static<typeof GetArtifactArguments>;
 
-export const studioGetArtifact: StudioTool = {
+export const studioGetArtifact: StudioTool = studioTool({
   name: "studio_get_artifact",
-  schema: studioFunctionSchema(
-    "studio_get_artifact",
-    "Read one artifact by a display path returned from an authorized Studio result.",
-    GetArtifactArguments,
-  ),
-  async handler(deps, call, args) {
-    const input: GetArtifactArguments = decodeStudioArguments(GetArtifactArguments, args);
+  description: "Read one artifact by a display path returned from an authorized Studio result.",
+  parameters: GetArtifactArguments,
+  async run(deps, call, input: GetArtifactArguments) {
     const displayPath = input.display_path;
     const actor = operatorActor({
       orgId: call.orgId,
@@ -130,7 +117,7 @@ export const studioGetArtifact: StudioTool = {
       next_cursor: offset + STUDIO_TOOL_RESULT_MAX_BYTES < encoded.length ? String(offset + STUDIO_TOOL_RESULT_MAX_BYTES) : null,
     };
   },
-};
+});
 
 const ListFileChangesArguments = Type.Object({
   display_path: Type.String({ description: "Display path from an authorized Studio result. Required." }),
@@ -139,15 +126,12 @@ const ListFileChangesArguments = Type.Object({
 });
 type ListFileChangesArguments = Static<typeof ListFileChangesArguments>;
 
-export const studioListFileChanges: StudioTool = {
+export const studioListFileChanges: StudioTool = studioTool({
   name: "studio_list_file_changes",
-  schema: studioFunctionSchema(
-    "studio_list_file_changes",
+  description:
     "List who changed one file and when, newest first: notes, objects, scripts, memory, and standing tasks by display path. A run-written change carries the run id and the tool call that wrote it; read that run with studio_get_run.",
-    ListFileChangesArguments,
-  ),
-  async handler(deps, call, args) {
-    const input: ListFileChangesArguments = decodeStudioArguments(ListFileChangesArguments, args);
+  parameters: ListFileChangesArguments,
+  async run(deps, call, input: ListFileChangesArguments) {
     const displayPath = input.display_path;
     const actor = operatorActor({
       orgId: call.orgId,
@@ -179,32 +163,7 @@ export const studioListFileChanges: StudioTool = {
       next_cursor: offset + slice.length < rows.length ? String(offset + slice.length) : null,
     };
   },
-};
-
-const EditNoteArguments = Type.Object({
-  action: Type.String({ enum: ["create", "edit", "delete"], description: "Required." }),
-  display_path: Type.Optional(
-    Type.String({ description: "edit and delete: display path from studio_find_artifacts or studio_get_artifact." }),
-  ),
-  base_version: Type.Optional(
-    Type.Integer({ description: "edit and delete: the note version the proposal was built from." }),
-  ),
-  level: Type.Optional(
-    Type.String({
-      enum: ["agent", "guild", "org"],
-      description:
-        "create: agent is one agent's own file, guild is read by the source guild's agents, org is read across the organisation.",
-    }),
-  ),
-  agent_id: Type.Optional(Type.String({ description: "create at level agent: source-guild agent id or name." })),
-  key: Type.Optional(Type.String({ description: "create: file name ending in .md, no folders, for example playbook.md." })),
-  title: Type.Optional(Type.String({ description: "create: short title shown in Files." })),
-  content: Type.Optional(
-    Type.String({ description: "create and edit: the complete note body, not a description of changes." }),
-  ),
-  reason: Type.String({ description: "Why this change, one or two sentences, citing evidence. Required." }),
 });
-type EditNoteArguments = Static<typeof EditNoteArguments>;
 
 /** The agent a note created at level agent belongs to; null at another level or when none is named. */
 async function noteAgentId(
@@ -218,16 +177,13 @@ async function noteAgentId(
   return (await resolveHandle(deps, call, input.agent_id)).id;
 }
 
-export const studioEditNote: StudioTool = {
+export const studioEditNote: StudioTool = studioTool({
   name: "studio_edit_note",
-  schema: studioFunctionSchema(
-    "studio_edit_note",
+  description:
     "Propose a change to one note of the source guild, one of its agents, or the organisation. Nothing is written: the turn pauses and the operator applies or declines. create: a new note at the narrowest level that holds every reader; search with studio_find_artifacts first and edit a note that fits instead; the result's target carries the display path to embed or name in a Task draft. edit: a complete replacement of an existing note's body. delete: applying fails while any Task embeds the note, so draft those Tasks first. edit and delete name the note by display_path and pass the version studio_get_artifact returned as base_version. Memory, Tasks, scripts, and records are not changed here.",
-    EditNoteArguments,
-  ),
-  async handler(deps, call, args) {
-    const input: EditNoteArguments = decodeStudioArguments(EditNoteArguments, args);
-    const action = editActionOf(input);
+  parameters: EditNoteArguments,
+  async run(deps, call, input: EditNoteArguments) {
+    const { action } = input;
     if (action === "edit") {
       const base = await loadNoteBase(deps, editScope(call), input.display_path ?? "");
       return editRequest(base, input, input.base_version ?? null);
@@ -237,4 +193,4 @@ export const studioEditNote: StudioTool = {
     }
     return noteDeleteRequest(deps, editScope(call), input);
   },
-};
+});

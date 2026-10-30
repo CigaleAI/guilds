@@ -567,19 +567,26 @@ that takes a display path, and for focus pins.
 | `studio_get_agent_access` | What one member is offered at run start, projected from bindings, the secrets that reach it, and the stored MCP catalog: native tools and the ones withheld, scripts, secret names and descriptions, and each MCP connection with its offered and withheld tools, whether the server is enabled for that agent, and whether this session may read through it. No remote list and no credential decryption |
 
 Every Studio tool that takes arguments checks them against the
-parameters it declares before it reads them
+parameters it declares before it does any work
 (`apps/orchestrator/src/studio/arguments.ts`):
 
 - An optional argument sent as `null` counts as left out.
 - For a tool that takes `agent_id`, the agent is the first non-blank
   of `agent_id`, `agent`, and `agent_name`.
+- A value from a fixed list, such as an `action`, a `level`, a
+  section of `studio_get_agent_context`, a column type, or an access
+  setting or mode, is offered to the model as an enum and checked
+  with the rest.
 - A call whose arguments do not match is refused with the first
   mismatch, named by its JSON pointer, such as
-  `/limit: Expected integer` or
-  `/run_id: Expected required property`.
-- A value from a fixed list, such as an `action`, a `level`, or an
-  access setting, is checked by the tool itself, which names the
-  values it takes.
+  `/limit: Expected integer`,
+  `/run_id: Expected required property`, or
+  `/action: Expected string to match '^(?:create|edit|delete)$'`.
+
+The edit tools' parameters live in
+`apps/orchestrator/src/studio/edit-arguments.ts`. When the operator
+opens, applies, or declines an edit request, the recorded call's
+arguments go through the same check before the edit is reviewed.
 
 ### Storage
 
@@ -833,6 +840,7 @@ app also re-reads the session and its messages every 2.5 s
 | `apps/orchestrator/src/studio/constants.ts` | Core's run limits and caps |
 | `apps/orchestrator/src/studio/tools.ts` | The coach's tool list, and the call each tool runs for |
 | `apps/orchestrator/src/studio/*-tools.ts` | The coach's tools, one file per sub-domain: prompt, task, memory, run, routine, guild, file, collection, access, and connection |
+| `apps/orchestrator/src/studio/arguments.ts`, `edit-arguments.ts` | A tool's arguments: the schema the model is offered and the decode of a call against it; the edit tools' parameters, which a recorded call is read by again |
 | `apps/orchestrator/src/studio/paging.ts`, `source-guild.ts` | What the tools share: paging and byte caps, and the source-guild agent a handle names |
 | `apps/orchestrator/src/studio/focus.ts` | Focus pin resolution |
 | `apps/orchestrator/src/studio/tool-usage.ts` | The Tools list and a tool's calls |

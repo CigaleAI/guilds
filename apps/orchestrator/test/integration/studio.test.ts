@@ -1628,7 +1628,7 @@ test("studio proposes tables to create, change, and delete that the operator app
         name: "Bad Name",
         scope: "everyone",
       }),
-      /scope must be guild or org/,
+      /\/scope: Expected string to match/,
     );
     await assert.rejects(
       studioEditCollection.handler(toolDeps, await ctx(), {
@@ -1701,7 +1701,7 @@ test("studio proposes tables to create, change, and delete that the operator app
         access: { guild: "admin" },
         reason: "r",
       }),
-      /access.guild must be read, write, or none/,
+      /\/access\/guild: Expected string to match/,
     );
     await assert.rejects(
       studioEditCollection.handler(toolDeps, await ctx(), { action: "edit", collection: "leads", base_updated_at: read.updated_at, reason: "r" }),

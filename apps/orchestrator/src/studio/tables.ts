@@ -27,16 +27,13 @@ import {
 import {
   type GuildAccess,
   type GuildAccessProposal,
-  isAgentRowMode,
-  isGuildRowMode,
 } from "../artifacts/access-lists.js";
 import { effectiveAccess } from "../artifacts/access.js";
 import type { AccessEntry, ArtifactActor } from "../artifacts/types.js";
 import type { CollectionColumn } from "../db/schema/index.js";
-import { isPlainRecord } from "../db/json.js";
-import { argString } from "../toolbox/schema.js";
 import { STUDIO_TOOL_RESULT_MAX_BYTES } from "./constants.js";
-import { editActionOf, type EditAction } from "./actions.js";
+import type { EditAction } from "./actions.js";
+import type { EditCollectionArguments, TableAccessArguments } from "./edit-arguments.js";
 import type { CollectionTarget } from "./edit-request.js";
 import type { EditDeps, EditScope } from "./edits.js";
 import { editActor } from "./actor.js";
@@ -57,10 +54,6 @@ export const STUDIO_TABLE_TOOL = "studio_edit_collection";
 export type TableAction = EditAction;
 
 const RECENT_RECORDS = 5;
-
-export function isTableTool(name: string): boolean {
-  return name === STUDIO_TABLE_TOOL;
-}
 
 type Member = { id: string; name: string };
 
@@ -245,57 +238,23 @@ function memberNamed(members: Member[], handle: string): Member | null {
 }
 
 /** The access rows a request names, each agent resolved to a live member of the source guild; no `access` names none. */
-function parseAccessProposal(tc: TableContext, raw: unknown): GuildAccessProposal {
-  if (raw === undefined || raw === null) {
-    return { guild: null, agents: [] };
-  }
-  if (!isPlainRecord(raw)) {
-    throw new StudioUnprocessableError("access must be an object with guild, agents, or both");
-  }
-  const unknownField = Object.keys(raw).find((key) => key !== "guild" && key !== "agents");
-  if (unknownField !== undefined) {
-    throw new StudioUnprocessableError(`access: unknown field "${unknownField}"`);
-  }
-  return { guild: parseGuildRow(raw.guild), agents: parseAgentRows(tc, raw.agents) };
-}
-
-/** The mode `access.guild` names for the source guild's row, or null when it is left out. */
-function parseGuildRow(value: unknown): GuildAccessProposal["guild"] {
-  if (value === undefined) {
-    return null;
-  }
-  if (!isGuildRowMode(value)) {
-    throw new StudioUnprocessableError("access.guild must be read, write, or none");
-  }
-  return value;
+function accessProposal(tc: TableContext, access: TableAccessArguments | undefined): GuildAccessProposal {
+  return { guild: access?.guild ?? null, agents: agentRows(tc, access?.agents ?? []) };
 }
 
 /** The rows `access.agents` names, each for a live member of the source guild named once. */
-function parseAgentRows(tc: TableContext, value: unknown): GuildAccessProposal["agents"] {
-  if (value === undefined) {
-    return [];
-  }
-  if (!Array.isArray(value)) {
-    throw new StudioUnprocessableError("access.agents must be a list of { agent_id, mode }");
-  }
+function agentRows(tc: TableContext, rows: NonNullable<TableAccessArguments["agents"]>): GuildAccessProposal["agents"] {
   const seen = new Set<string>();
-  return value.map((item: unknown) => {
-    if (!isPlainRecord(item)) {
-      throw new StudioUnprocessableError("access.agents must be a list of { agent_id, mode }");
-    }
-    const handle = String(item.agent_id ?? "");
-    const member = memberNamed(tc.members, handle);
+  return rows.map((row) => {
+    const member = memberNamed(tc.members, row.agent_id);
     if (!member) {
-      throw new StudioUnprocessableError(`access.agents: ${handle || "agent_id"} is not a live agent of ${tc.guildName}`);
+      throw new StudioUnprocessableError(`access.agents: ${row.agent_id || "agent_id"} is not a live agent of ${tc.guildName}`);
     }
     if (seen.has(member.id)) {
       throw new StudioUnprocessableError(`access.agents: ${member.name} is listed twice`);
     }
     seen.add(member.id);
-    if (!isAgentRowMode(item.mode)) {
-      throw new StudioUnprocessableError(`access.agents: ${member.name}: mode must be read, write, none, or inherit`);
-    }
-    return { id: member.id, mode: item.mode };
+    return { id: member.id, mode: row.mode };
   });
 }
 
@@ -400,24 +359,20 @@ function targetOf(id: string | null, name: string, guildId: string | null, displ
 /** A create read from its arguments: the table it defines for the source guild or the organisation, and the rows it proposes. */
 async function createRequest(
   tc: TableContext,
-  args: Record<string, unknown>,
+  args: EditCollectionArguments,
 ): Promise<GuildTableCreateRequest> {
-  const scopeArg = args.scope ?? "guild";
-  if (scopeArg !== "guild" && scopeArg !== "org") {
-    throw new StudioUnprocessableError("scope must be guild or org");
-  }
-  const name = argString(args, "name");
+  const name = args.name ?? "";
   return {
     action: "create",
     orgId: tc.scope.orgId,
     guildId: tc.scope.sourceGuildId,
     collection: {
       name,
-      purpose: argString(args, "purpose"),
+      purpose: args.purpose ?? "",
       columns: args.columns,
-      guildId: scopeArg === "guild" ? tc.scope.sourceGuildId : null,
+      guildId: (args.scope ?? "guild") === "guild" ? tc.scope.sourceGuildId : null,
     },
-    access: parseAccessProposal(tc, args.access),
+    access: accessProposal(tc, args.access),
     isNameTaken: (await loadTable(tc, { name })) !== null,
   };
 }
@@ -429,24 +384,24 @@ async function createRequest(
 async function editRequest(
   tc: TableContext,
   table: Table,
-  args: Record<string, unknown>,
+  args: EditCollectionArguments,
   recorded: CollectionTarget | null,
 ): Promise<GuildTableEditRequest<Table>> {
+  const { name, purpose, columns } = args;
   return {
     action: "edit",
     guildId: tc.scope.sourceGuildId,
     table,
     changes: {
-      ...(args.name !== undefined ? { name: String(args.name) } : {}),
-      ...(args.purpose !== undefined ? { purpose: String(args.purpose) } : {}),
-      ...(args.columns !== undefined ? { columns: args.columns } : {}),
+      ...(name !== undefined ? { name } : {}),
+      ...(purpose !== undefined ? { purpose } : {}),
+      ...(columns !== undefined ? { columns } : {}),
     },
-    access: parseAccessProposal(tc, args.access),
-    isNameTaken:
-      args.name !== undefined && (await loadTable(tc, { name: String(args.name) })) !== null,
+    access: accessProposal(tc, args.access),
+    isNameTaken: name !== undefined && (await loadTable(tc, { name })) !== null,
     origin:
       recorded === null
-        ? { kind: "new", baseUpdatedAt: argString(args, "base_updated_at").trim() || null }
+        ? { kind: "new", baseUpdatedAt: (args.base_updated_at ?? "").trim() || null }
         : { kind: "stored" },
   };
 }
@@ -457,21 +412,22 @@ async function editRequest(
  */
 async function tableRequest(
   tc: TableContext,
-  action: TableAction,
-  args: Record<string, unknown>,
+  args: EditCollectionArguments,
   recorded: CollectionTarget | null,
 ): Promise<GuildTableRequest<Table>> {
+  const { action } = args;
   if (action === "create") {
     return createRequest(tc, args);
   }
+  const named = args.collection ?? "";
   const table =
     recorded === null
-      ? await loadTable(tc, { name: argString(args, "collection").trim() })
+      ? await loadTable(tc, { name: named.trim() })
       : await loadTable(tc, { id: recorded.collection_id ?? "" });
   if (!table) {
     throw new StudioUnprocessableError(
       recorded === null
-        ? `unknown table ${argString(args, "collection") || "(none named)"}; list the tables with studio_list_collections`
+        ? `unknown table ${named || "(none named)"}; list the tables with studio_list_collections`
         : "the table no longer exists",
     );
   }
@@ -544,12 +500,11 @@ function deleteReview(tc: TableContext, table: Table, step: CollectionStep): Tab
 export async function reviewTable(
   deps: EditDeps,
   scope: EditScope,
-  args: Record<string, unknown>,
+  args: EditCollectionArguments,
   recorded: CollectionTarget | null,
 ): Promise<TableReview> {
-  const action = editActionOf(args);
   const tc = await tableContext(deps, scope);
-  const request = await tableRequest(tc, action, args, recorded);
+  const request = await tableRequest(tc, args, recorded);
   let plan: GuildTablePlan<Table>;
   try {
     plan = planGuildTableChange(request);

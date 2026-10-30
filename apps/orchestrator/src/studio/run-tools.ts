@@ -5,7 +5,7 @@ import { getAgent } from "../db/agents.js";
 import { getRun, listMessages, listRunHeaders, type MessageRow, type RunHeaderRow } from "../db/runs.js";
 import { iso } from "../db/views.js";
 import { capBytes } from "../lib/bytes.js";
-import { decodeStudioArguments, studioFunctionSchema } from "./arguments.js";
+import { studioTool } from "./arguments.js";
 import { STUDIO_DEFAULT_LIMIT, STUDIO_RUN_LIST_MAX, STUDIO_TOOL_RESULT_MAX_BYTES } from "./constants.js";
 import { StudioUnprocessableError } from "./errors.js";
 import { clampLimit, cursorOffset } from "./paging.js";
@@ -41,15 +41,12 @@ const ListRunsArguments = Type.Object({
 });
 type ListRunsArguments = Static<typeof ListRunsArguments>;
 
-export const studioListRuns: StudioTool = {
+export const studioListRuns: StudioTool = studioTool({
   name: "studio_list_runs",
-  schema: studioFunctionSchema(
-    "studio_list_runs",
+  description:
     "Find behavioral evidence without loading transcripts. kind is direct, group, or schedule; schedule_id lists the runs one routine produced.",
-    ListRunsArguments,
-  ),
-  async handler(deps, call, args) {
-    const input: ListRunsArguments = decodeStudioArguments(ListRunsArguments, args);
+  parameters: ListRunsArguments,
+  async run(deps, call, input: ListRunsArguments) {
     const agent = await resolveHandle(deps, call, input.agent_id);
     const limit = clampLimit(input.limit, STUDIO_DEFAULT_LIMIT, STUDIO_RUN_LIST_MAX);
     const offset = cursorOffset(input.cursor);
@@ -73,7 +70,7 @@ export const studioListRuns: StudioTool = {
       next_cursor: rows.length > limit ? String(offset + limit) : null,
     };
   },
-};
+});
 
 /** The assistant messages of `messages` that called `toolName`, and those calls' results. */
 function callsOfTool(messages: MessageRow[], toolName: string): MessageRow[] {
@@ -96,15 +93,12 @@ const GetRunArguments = Type.Object({
 });
 type GetRunArguments = Static<typeof GetRunArguments>;
 
-export const studioGetRun: StudioTool = {
+export const studioGetRun: StudioTool = studioTool({
   name: "studio_get_run",
-  schema: studioFunctionSchema(
-    "studio_get_run",
+  description:
     "Read exact historical evidence for a source-guild run. seq_start and seq_end bound the message window. tool_name keeps only the assistant turns that requested that tool and their tool results, for example memory_write or note_write.",
-    GetRunArguments,
-  ),
-  async handler(deps, call, args) {
-    const input: GetRunArguments = decodeStudioArguments(GetRunArguments, args);
+  parameters: GetRunArguments,
+  async run(deps, call, input: GetRunArguments) {
     const runId = input.run_id;
     const run = await getRun(deps.db, runId);
     if (!run) {
@@ -149,4 +143,4 @@ export const studioGetRun: StudioTool = {
       })),
     };
   },
-};
+});

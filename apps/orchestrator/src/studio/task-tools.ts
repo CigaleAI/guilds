@@ -4,22 +4,18 @@ import { Type, type Static } from "@sinclair/typebox";
 import { hashArtifactContent } from "../artifacts/store.js";
 import { listAgentTaskRevisions } from "../db/agents.js";
 import { capBytes } from "../lib/bytes.js";
-import { decodeStudioArguments, studioFunctionSchema } from "./arguments.js";
+import { studioTool } from "./arguments.js";
 import { STUDIO_DEFAULT_LIMIT, STUDIO_REVISION_LIST_MAX, STUDIO_TOOL_RESULT_MAX_BYTES } from "./constants.js";
 import { AgentHistoryArguments, clampLimit, cursorOffset } from "./paging.js";
 import { resolveHandle } from "./source-guild.js";
 import { wrapEvidence } from "./system.js";
 import type { StudioTool } from "./tools.js";
 
-export const studioListTaskRevisions: StudioTool = {
+export const studioListTaskRevisions: StudioTool = studioTool({
   name: "studio_list_task_revisions",
-  schema: studioFunctionSchema(
-    "studio_list_task_revisions",
-    "Inspect prior operator task versions.",
-    AgentHistoryArguments,
-  ),
-  async handler(deps, call, args) {
-    const input: AgentHistoryArguments = decodeStudioArguments(AgentHistoryArguments, args);
+  description: "Inspect prior operator task versions.",
+  parameters: AgentHistoryArguments,
+  async run(deps, call, input: AgentHistoryArguments) {
     const agent = await resolveHandle(deps, call, input.agent_id);
     const limit = clampLimit(input.limit, STUDIO_DEFAULT_LIMIT, STUDIO_REVISION_LIST_MAX);
     const offset = cursorOffset(input.cursor);
@@ -40,7 +36,7 @@ export const studioListTaskRevisions: StudioTool = {
       next_cursor: offset + slice.length < rows.length ? String(offset + slice.length) : null,
     };
   },
-};
+});
 
 const CreateTaskDraftArguments = Type.Object({
   agent_id: Type.String({ description: "Source-guild agent id or name from the roster. Required." }),
@@ -52,17 +48,14 @@ const CreateTaskDraftArguments = Type.Object({
   evidence_refs: Type.Optional(Type.Array(Type.Unknown())),
   risks: Type.Optional(Type.Array(Type.String())),
 });
-type CreateTaskDraftArguments = Static<typeof CreateTaskDraftArguments>;
+export type CreateTaskDraftArguments = Static<typeof CreateTaskDraftArguments>;
 
-export const studioCreateTaskDraft: StudioTool = {
+export const studioCreateTaskDraft: StudioTool = studioTool({
   name: "studio_create_task_draft",
-  schema: studioFunctionSchema(
-    "studio_create_task_draft",
+  description:
     "Create or replace a standing task draft for a source-guild agent, named by agent_id; the operator's inspector selection plays no part. Drafts for several agents may be created in one turn. Supply complete proposed content.",
-    CreateTaskDraftArguments,
-  ),
-  async handler(deps, call, args) {
-    const input: CreateTaskDraftArguments = decodeStudioArguments(CreateTaskDraftArguments, args);
+  parameters: CreateTaskDraftArguments,
+  async run(deps, call, input: CreateTaskDraftArguments) {
     return deps.drafts.createFromTool(deps.db, call, input);
   },
-};
+});

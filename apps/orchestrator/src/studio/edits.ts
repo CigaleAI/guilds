@@ -7,7 +7,15 @@ import { STUDIO_ACCESS_TOOLS, applyAccess, reviewAccess, reviewAccessRequest } f
 import { StudioConflictError, StudioError, StudioNotFoundError, StudioUnprocessableError, artifactRefusal } from "./errors.js";
 import type { StudioOrigin } from "../lib/change-actor.js";
 import { editActor } from "./actor.js";
-import { editActionOf } from "./actions.js";
+import { decodeStudioArguments } from "./arguments.js";
+import {
+  EditAccessArguments,
+  EditCollectionArguments,
+  EditGuildArguments,
+  EditMemoryArguments,
+  EditNoteArguments,
+  EditRoutineArguments,
+} from "./edit-arguments.js";
 import {
   assertContent,
   awaitOperator,
@@ -117,11 +125,22 @@ export async function loadGuildBase(deps: EditDeps, scope: EditScope): Promise<E
   };
 }
 
-/** The guild text a studio_edit_guild call sets: each of about and description it gives as a string. */
-function guildTextPatch(args: Record<string, unknown>): GuildTextPatch {
+/**
+ * What a Memory, note, or guild edit proposes, and why: the complete text, or the guild's about
+ * and description it sets.
+ */
+export type TextEditArguments = {
+  content?: string;
+  about?: string;
+  description?: string;
+  reason: string;
+};
+
+/** The guild text a studio_edit_guild call sets: each of about and description it gives. */
+function guildTextPatch(args: TextEditArguments): GuildTextPatch {
   return {
-    ...(typeof args.about === "string" ? { about: args.about } : {}),
-    ...(typeof args.description === "string" ? { description: args.description } : {}),
+    ...(args.about !== undefined ? { about: args.about } : {}),
+    ...(args.description !== undefined ? { description: args.description } : {}),
   };
 }
 
@@ -130,7 +149,7 @@ type GuildBase = Extract<EditBase, { kind: "guild" }>;
 const GUILD_TEXT_FIELDS = ["about", "description"] as const;
 
 /** The guild text a studio_edit_guild call asks for, validated and laid over the live text. */
-function proposedGuildText(base: GuildBase, args: Record<string, unknown>): GuildText {
+function proposedGuildText(base: GuildBase, args: TextEditArguments): GuildText {
   const patch = guildTextPatch(args);
   if (patch.about === undefined && patch.description === undefined) {
     throw new StudioUnprocessableError("studio_edit_guild requires about, description, or both");
@@ -139,8 +158,8 @@ function proposedGuildText(base: GuildBase, args: Record<string, unknown>): Guil
 }
 
 /** The complete replacement text a Memory or note edit asks for. */
-function proposedContent(args: Record<string, unknown>): string {
-  if (typeof args.content !== "string") {
+function proposedContent(args: TextEditArguments): string {
+  if (args.content === undefined) {
     throw new StudioUnprocessableError("content is required: the complete replacement text");
   }
   assertContent(args.content);
@@ -148,7 +167,7 @@ function proposedContent(args: Record<string, unknown>): string {
 }
 
 // The complete replacement a tool call asks for, validated against its base.
-export function proposedFor(base: EditBase, args: Record<string, unknown>): string | GuildText {
+export function proposedFor(base: EditBase, args: TextEditArguments): string | GuildText {
   return base.kind === "guild" ? proposedGuildText(base, args) : proposedContent(args);
 }
 
@@ -174,10 +193,10 @@ function editHashes(fromHash: string, toHash: string): EditHashes {
 }
 
 /** What an edit of `base` to the proposal `args` asks for changes. */
-function bodyEdit(base: EditBase, args: Record<string, unknown>): { edit: StudioEdit; reason: string } {
+function bodyEdit(base: EditBase, args: TextEditArguments): { edit: StudioEdit; reason: string } {
   if (base.kind === "guild") {
     const proposed = proposedGuildText(base, args);
-    const reason = requireReason(args);
+    const reason = requireReason(args.reason);
     const hashes = editHashes(guildTextHash(base.text), guildTextHash(proposed));
     return {
       reason,
@@ -191,7 +210,7 @@ function bodyEdit(base: EditBase, args: Record<string, unknown>): { edit: Studio
     };
   }
   const proposed = proposedContent(args);
-  const reason = requireReason(args);
+  const reason = requireReason(args.reason);
   const bound = {
     base_version: base.version,
     ...editHashes(hashArtifactContent(base.content), hashArtifactContent(proposed)),
@@ -210,7 +229,7 @@ function bodyEdit(base: EditBase, args: Record<string, unknown>): { edit: Studio
 // content: the proposal stays in the tool call arguments.
 export function editRequest(
   base: EditBase,
-  args: Record<string, unknown>,
+  args: TextEditArguments,
   expectedVersion: number | null,
 ): StudioEditWidget {
   if (base.kind !== "guild" && expectedVersion !== null && expectedVersion !== base.version) {
@@ -227,9 +246,9 @@ export function editRequest(
 export async function tableEditRequest(
   deps: EditDeps,
   scope: EditScope,
-  args: Record<string, unknown>,
+  args: EditCollectionArguments,
 ): Promise<StudioEditWidget> {
-  const reason = requireReason(args);
+  const reason = requireReason(args.reason);
   const review = await reviewTable(deps, scope, args, null);
   return awaitOperator(review.title, reason, {
     kind: "collection",
@@ -249,8 +268,8 @@ export async function routineEditRequest(
   scope: EditScope,
   call: RoutineCall,
 ): Promise<StudioEditWidget> {
-  const reason = requireReason(call.args);
-  const review = await reviewRoutine(deps, scope, editActionOf(call.args), call);
+  const reason = requireReason(call.args.reason);
+  const review = await reviewRoutine(deps, scope, call);
   return awaitOperator(review.title, reason, {
     kind: "routine",
     action: review.action,
@@ -267,9 +286,9 @@ export async function accessEditRequest(
   deps: EditDeps,
   scope: EditScope,
   agentId: string,
-  args: Record<string, unknown>,
+  args: EditAccessArguments,
 ): Promise<StudioEditWidget> {
-  const reason = requireReason(args);
+  const reason = requireReason(args.reason);
   const review = await reviewAccessRequest(deps, scope, agentId, args);
   return awaitOperator(review.title, reason, {
     kind: "access",
@@ -286,14 +305,46 @@ export async function accessEditRequest(
 // ---------------------------------------------------------------------------
 // Operator side: read and resolve one edit request by its tool message seq.
 
-export type EditRecord = {
+/** The arguments of the tool that proposes each kind of edit, decoded against its parameters. */
+type EditArgumentsOf = {
+  memory: EditMemoryArguments;
+  note: EditNoteArguments;
+  guild: EditGuildArguments;
+  collection: EditCollectionArguments;
+  routine: EditRoutineArguments;
+  access: EditAccessArguments;
+};
+
+/** An edit as its widget recorded it, beside the call that proposed it, both keyed on the edit's kind. */
+export type RecordedEdit = {
+  [K in StudioEdit["kind"]]: { kind: K; edit: Extract<StudioEdit, { kind: K }>; args: EditArgumentsOf[K] };
+}[StudioEdit["kind"]];
+
+export type EditRecord = RecordedEdit & {
   seq: number;
   toolName: StudioEditTool;
   toolCallId: string;
   widget: StudioEditWidget;
-  args: Record<string, unknown>;
   metadata: ConversationMessageMetadata;
 };
+
+/** `edit` beside the recorded call `args` that proposed it, decoded as its tool decodes them. */
+function recordedEdit(edit: StudioEdit, args: Record<string, unknown>): RecordedEdit {
+  switch (edit.kind) {
+    case "memory":
+      return { kind: edit.kind, edit, args: decodeStudioArguments(EditMemoryArguments, args) };
+    case "note":
+      return { kind: edit.kind, edit, args: decodeStudioArguments(EditNoteArguments, args) };
+    case "guild":
+      return { kind: edit.kind, edit, args: decodeStudioArguments(EditGuildArguments, args) };
+    case "collection":
+      return { kind: edit.kind, edit, args: decodeStudioArguments(EditCollectionArguments, args) };
+    case "routine":
+      return { kind: edit.kind, edit, args: decodeStudioArguments(EditRoutineArguments, args) };
+    case "access":
+      return { kind: edit.kind, edit, args: decodeStudioArguments(EditAccessArguments, args) };
+  }
+}
 
 /** A tool call's arguments as an object, or null when they are not one. */
 function parseArguments(text: string): Record<string, unknown> | null {
@@ -333,7 +384,14 @@ export function findEditRecord(messages: ConversationMessageRow[], seq: number):
   if (!call || !args || !isEditTool(call.function.name)) {
     throw new StudioNotFoundError("edit request not found");
   }
-  return { seq, toolName: call.function.name, toolCallId, widget, args, metadata: message.metadata };
+  return {
+    ...recordedEdit(widget.edit, args),
+    seq,
+    toolName: call.function.name,
+    toolCallId,
+    widget,
+    metadata: message.metadata,
+  };
 }
 
 export function editStatus(record: EditRecord): StudioEditStatus {
@@ -370,18 +428,24 @@ type ReviewedEdit = { live: string; proposed: string; effects: string[]; baseHas
  * The review of a table, routine, access, or note create or delete edit, run against the live
  * target; null for an edit that replaces a Memory, a note body, or the guild's text.
  */
-function reviewerOf(deps: EditDeps, scope: EditScope, record: EditRecord): (() => Promise<ReviewedEdit>) | null {
-  const { edit } = record.widget;
-  switch (edit.kind) {
-    case "collection":
-      return () => reviewTable(deps, scope, record.args, edit.target);
-    case "routine":
-      return () =>
-        reviewRoutine(deps, scope, editActionOf(record.args), { args: record.args, agentId: edit.target.agent_id });
-    case "access":
-      return () => reviewAccess(deps, scope, edit.target.agent_id, record.args);
-    case "note":
-      return "action" in edit ? () => reviewRecordedNote(deps, scope, edit.action, record.args, edit.target) : null;
+function reviewerOf(deps: EditDeps, scope: EditScope, recorded: RecordedEdit): (() => Promise<ReviewedEdit>) | null {
+  switch (recorded.kind) {
+    case "collection": {
+      const { edit, args } = recorded;
+      return () => reviewTable(deps, scope, args, edit.target);
+    }
+    case "routine": {
+      const { edit, args } = recorded;
+      return () => reviewRoutine(deps, scope, { args, agentId: edit.target.agent_id });
+    }
+    case "access": {
+      const { edit, args } = recorded;
+      return () => reviewAccess(deps, scope, edit.target.agent_id, args);
+    }
+    case "note": {
+      const { edit, args } = recorded;
+      return "action" in edit ? () => reviewRecordedNote(deps, scope, edit.action, args, edit.target) : null;
+    }
     default:
       return null;
   }
@@ -479,30 +543,32 @@ function assertBound(review: ReviewHashes, edit: StudioEdit, what: string): void
 export type AppliedEdit = { version: number | null; guild?: GuildRow; routine?: RoutineChange };
 
 /** Applies a table, routine, access, or note create or delete edit; null for an edit that replaces content. */
-async function applyReviewed(deps: EditDeps, scope: EditScope, record: EditRecord): Promise<AppliedEdit | null> {
-  const { edit } = record.widget;
-  switch (edit.kind) {
+async function applyReviewed(deps: EditDeps, scope: EditScope, recorded: RecordedEdit): Promise<AppliedEdit | null> {
+  switch (recorded.kind) {
     case "routine": {
-      const call = { args: record.args, agentId: edit.target.agent_id };
-      const review = await reviewRoutine(deps, scope, editActionOf(record.args), call);
+      const { edit, args } = recorded;
+      const review = await reviewRoutine(deps, scope, { args, agentId: edit.target.agent_id });
       assertBound(review, edit, "routine");
       return { version: null, routine: await applyRoutine(deps, scope, review.plan) };
     }
     case "collection": {
-      const review = await reviewTable(deps, scope, record.args, edit.target);
+      const { edit, args } = recorded;
+      const review = await reviewTable(deps, scope, args, edit.target);
       assertBound(review, edit, "table");
       await applyTable(deps, scope, review.plan);
       return { version: null };
     }
     case "access": {
-      const review = await reviewAccess(deps, scope, edit.target.agent_id, record.args);
+      const { edit, args } = recorded;
+      const review = await reviewAccess(deps, scope, edit.target.agent_id, args);
       assertBound(review, edit, "access");
       await applyAccess(deps, scope, edit.target.agent_id, review);
       return { version: null };
     }
     case "note": {
+      const { edit, args } = recorded;
       if (!("action" in edit)) return null;
-      const review = await reviewRecordedNote(deps, scope, edit.action, record.args, edit.target);
+      const review = await reviewRecordedNote(deps, scope, edit.action, args, edit.target);
       assertBound(review, edit, "note");
       return { version: await applyNote(deps, scope, review.plan) };
     }

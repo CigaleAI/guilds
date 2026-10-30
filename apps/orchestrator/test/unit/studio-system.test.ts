@@ -12,10 +12,8 @@ import {
 import { sliceStudioBytes } from "../../src/studio/paging.js";
 import { resolveSourceGuildAgent } from "../../src/studio/source-guild.js";
 import { STUDIO_TOOLS, studioToolMap } from "../../src/studio/tools.js";
-import { studioAgentHandleFromArgs } from "../../src/studio/arguments.js";
 import { STUDIO_DEFAULT_TEMPERATURE, STUDIO_TASK_EXCERPT_WORDS } from "../../src/studio/constants.js";
 import { STUDIO_EDIT_TOOLS } from "../../src/studio/edits.js";
-import { editActionOf } from "../../src/studio/actions.js";
 import { TEST_MODEL } from "../helpers/models.js";
 
 test("studio system template tells the coach to use the session UTC clock", () => {
@@ -192,14 +190,12 @@ test("note, table, and routine tools each take a create, edit, or delete action"
     };
     assert.deepEqual(schema.function?.parameters?.properties?.action?.enum, ["create", "edit", "delete"], name);
     assert.deepEqual(schema.function?.parameters?.required, ["action", "reason"], name);
+    await assert.rejects(
+      studioToolMap().get(name)!.handler({} as never, {} as never, { action: "rename", reason: "r" }),
+      /^StudioUnprocessableError: \/action: Expected string to match/,
+      name,
+    );
   }
-  assert.throws(() => editActionOf({ action: "rename" }), /action must be create, edit, or delete/);
-  assert.throws(() => editActionOf({}), /action must be/);
-  assert.equal(editActionOf({ action: "delete" }), "delete");
-  await assert.rejects(
-    studioToolMap().get("studio_edit_routine")!.handler({} as never, {} as never, { action: "rename", reason: "r" }),
-    /action must be/,
-  );
 });
 
 test("studio system prompt teaches the routine and table actions", () => {
@@ -254,9 +250,12 @@ test("studio_create_task_draft takes an explicit agent id or name and does not n
   const draftParams = schema.function?.parameters as { properties?: { proposed_content?: { description?: string } } };
   assert.match(String(draftParams?.properties?.proposed_content?.description ?? ""), /!\[\[display-path\]\]/);
   assert.deepEqual(schema.function?.parameters?.required, ["agent_id", "proposed_content", "rationale"]);
-  assert.equal(studioAgentHandleFromArgs({ agent_id: "a_1" }), "a_1");
-  assert.equal(studioAgentHandleFromArgs({ target_agent_id: "a_1" }), "");
-  assert.equal(studioAgentHandleFromArgs({ agent_name: "mr-manager" }), "mr-manager");
+  await assert.rejects(
+    studioToolMap()
+      .get("studio_create_task_draft")!
+      .handler({} as never, {} as never, { target_agent_id: "a_1", proposed_content: "x", rationale: "r" }),
+    /\/agent_id: Expected required property/,
+  );
   const researcher = { id: "a_1", name: "researcher", guild_id: "guild_1", org_id: "org_1" };
   const scout = { id: "a_2", name: "scout", guild_id: "guild_1", org_id: "org_1" };
   const manager = { id: "a_4", name: "mr-manager", guild_id: "guild_1", org_id: "org_1" };

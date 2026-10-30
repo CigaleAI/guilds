@@ -4,8 +4,8 @@ import { ScheduleError } from "../schedules/cron.js";
 import { timingText } from "../schedules/item.js";
 import type { RoutineChange } from "../schedules/operator.js";
 import { changedFields, scheduleChanges, type ScheduleChanges } from "../schedules/service.js";
-import { argString } from "../toolbox/schema.js";
 import type { EditAction } from "./actions.js";
+import type { EditRoutineArguments } from "./edit-arguments.js";
 import type { RoutineTarget } from "./edit-request.js";
 import type { EditDeps, EditScope } from "./edits.js";
 import { editActor } from "./actor.js";
@@ -20,10 +20,6 @@ import { listSchedulesForGuild } from "../db/schedules.js";
 
 export const STUDIO_ROUTINE_TOOL = "studio_edit_routine";
 export type RoutineAction = EditAction;
-
-export function isRoutineTool(name: string): boolean {
-  return name === STUDIO_ROUTINE_TOOL;
-}
 
 /** What a routine is: when it wakes, its label, what it tells the agent, and whether it fires. */
 type Definition = {
@@ -68,7 +64,7 @@ export type RoutineReview = {
 };
 
 /** The tool call under review, and the agent a create names: its handle resolved, or its request's record. */
-export type RoutineCall = { args: Record<string, unknown>; agentId: string | null };
+export type RoutineCall = { args: EditRoutineArguments; agentId: string | null };
 
 
 function hashOf(value: unknown): string {
@@ -246,21 +242,21 @@ function reviewDelete(routine: Routine): RoutineReview {
 }
 
 /**
- * Checks what a routine proposal does against the live guild. A create names
- * its agent through `call.agentId`; an edit or delete names the routine by
+ * Checks what a routine proposal's action does against the live guild. A create
+ * names its agent through `call.agentId`; an edit or delete names the routine by
  * `schedule_id`, which stays the same from request to apply.
  */
 export async function reviewRoutine(
   deps: EditDeps,
   scope: EditScope,
-  action: RoutineAction,
   call: RoutineCall,
 ): Promise<RoutineReview> {
   const rc = await routineContext(deps, scope);
+  const { action } = call.args;
   if (action === "create") {
     return reviewCreate(rc, call);
   }
-  const routine = await loadRoutine(rc, argString(call.args, "schedule_id").trim());
+  const routine = await loadRoutine(rc, (call.args.schedule_id ?? "").trim());
   return action === "edit" ? reviewEdit(rc, routine, call) : reviewDelete(routine);
 }
 

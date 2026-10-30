@@ -4,8 +4,8 @@ import { Type, type Static } from "@sinclair/typebox";
 import { routineRunStats } from "../db/runs.js";
 import { listSchedules, listSchedulesForGuild, type AgentScheduleRow } from "../db/schedules.js";
 import { scheduleItem } from "../schedules/item.js";
-import { editActionOf } from "./actions.js";
-import { decodeStudioArguments, studioFunctionSchema } from "./arguments.js";
+import { studioTool } from "./arguments.js";
+import { EditRoutineArguments } from "./edit-arguments.js";
 import { STUDIO_DEFAULT_LIMIT } from "./constants.js";
 import { routineEditRequest } from "./edits.js";
 import { clampLimit, cursorOffset } from "./paging.js";
@@ -22,15 +22,11 @@ const ListRoutinesArguments = Type.Object({
 });
 type ListRoutinesArguments = Static<typeof ListRoutinesArguments>;
 
-export const studioListRoutines: StudioTool = {
+export const studioListRoutines: StudioTool = studioTool({
   name: "studio_list_routines",
-  schema: studioFunctionSchema(
-    "studio_list_routines",
-    "Inspect schedules and instructions for the source guild, or one agent when agent_id is set.",
-    ListRoutinesArguments,
-  ),
-  async handler(deps, call, args) {
-    const input: ListRoutinesArguments = decodeStudioArguments(ListRoutinesArguments, args);
+  description: "Inspect schedules and instructions for the source guild, or one agent when agent_id is set.",
+  parameters: ListRoutinesArguments,
+  async run(deps, call, input: ListRoutinesArguments) {
     const limit = clampLimit(input.limit, STUDIO_DEFAULT_LIMIT, 100);
     const offset = cursorOffset(input.cursor);
     let rows: AgentScheduleRow[];
@@ -62,57 +58,15 @@ export const studioListRoutines: StudioTool = {
       next_cursor: offset + slice.length < filtered.length ? String(offset + slice.length) : null,
     };
   },
-};
-
-const EditRoutineArguments = Type.Object({
-  action: Type.String({ enum: ["create", "edit", "delete"], description: "Required." }),
-  agent_id: Type.Optional(Type.String({ description: "create: source-guild agent id or name." })),
-  schedule_id: Type.Optional(Type.String({ description: "edit and delete: the routine's id from studio_list_routines." })),
-  cron: Type.Optional(
-    Type.String({
-      description:
-        "5-field UTC expression (minute hour day month weekday), for example '0 9 * * 1'; wake-ups at least 5 minutes apart. Pass cron or window, not both.",
-    }),
-  ),
-  window: Type.Optional(
-    Type.Object(
-      {
-        timezone: Type.String({ description: "IANA name, for example Europe/Paris." }),
-        start: Type.String({ description: "HH:MM local time." }),
-        end: Type.String({ description: "HH:MM local time; earlier than start spans midnight." }),
-        max_wakes: Type.Integer({ description: "Most wake-ups per window; gaps are at least 5 minutes." }),
-      },
-      {
-        description: "Random wake-ups inside a daily local-time window. Pass cron or window, not both.",
-        additionalProperties: false,
-      },
-    ),
-  ),
-  description: Type.Optional(
-    Type.String({ description: "One-line label shown in the Routine tab, at most 400 characters." }),
-  ),
-  instruction: Type.Optional(
-    Type.String({
-      description: "Short markdown the agent receives on each wake-up, at most 2000 characters: what this wake-up is for, not the agent's whole Task.",
-    }),
-  ),
-  paused: Type.Optional(
-    Type.Boolean({ description: "create: true creates it paused. edit: true pauses it; false resumes it." }),
-  ),
-  reason: Type.String({ description: "Why this change, one or two sentences, citing evidence. Required." }),
 });
-type EditRoutineArguments = Static<typeof EditRoutineArguments>;
 
-export const studioEditRoutine: StudioTool = {
+export const studioEditRoutine: StudioTool = studioTool({
   name: "studio_edit_routine",
-  schema: studioFunctionSchema(
-    "studio_edit_routine",
+  description:
     "Propose a change to one routine of a source-guild agent. Nothing is written: the turn pauses and the operator applies or declines. create: a new routine that wakes one agent on a UTC cron or at random times inside a daily window; check studio_list_routines first and change a routine that fits instead. edit: a new timing, description, instruction, or paused state; fields left out stay as they are. delete: its past runs stay; propose pausing it instead when it may be needed again. edit and delete name the routine by schedule_id from studio_list_routines.",
-    EditRoutineArguments,
-  ),
-  async handler(deps, call, args) {
-    const input: EditRoutineArguments = decodeStudioArguments(EditRoutineArguments, args);
-    const agentId = editActionOf(input) === "create" ? (await resolveHandle(deps, call, input.agent_id)).id : null;
+  parameters: EditRoutineArguments,
+  async run(deps, call, input: EditRoutineArguments) {
+    const agentId = input.action === "create" ? (await resolveHandle(deps, call, input.agent_id)).id : null;
     return routineEditRequest(deps, editScope(call), { args: input, agentId });
   },
-};
+});

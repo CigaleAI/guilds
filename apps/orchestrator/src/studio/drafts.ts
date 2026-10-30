@@ -20,8 +20,7 @@ import { previewCurrentState, projectOfferedToolSchemas, type PreviewDeps } from
 import { withLockedSession } from "./session-lock.js";
 import type { StudioToolCall } from "./tools.js";
 import { resolveSourceGuildAgent, sourceGuildAgents } from "./source-guild.js";
-import { studioAgentHandleFromArgs } from "./arguments.js";
-import { argString } from "../toolbox/schema.js";
+import type { CreateTaskDraftArguments } from "./task-tools.js";
 import { excerptBytes } from "./system.js";
 import { getAgent, getAgentTask, listAgents, type AgentRow } from "../db/agents.js";
 import { nextConversationSeq } from "../db/conversations.js";
@@ -36,18 +35,13 @@ export type StudioDraftService = {
   createFromTool(
     db: Queryable,
     call: StudioToolCall,
-    args: Record<string, unknown>,
+    args: CreateTaskDraftArguments,
   ): Promise<Record<string, unknown>>;
 };
 
 // A draft is decided like an edit: the tool returns this widget and the turn
 // pauses until the operator publishes or discards it.
 export const STUDIO_TASK_DRAFT_WIDGET = "studio_task_draft";
-
-/** The risks the coach lists for a draft: its text entries. */
-function risksOf(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
-}
 
 function userIdOf(user: UserRow): string | null {
   return typeof user.id === "string" ? user.id : null;
@@ -62,16 +56,15 @@ export class StudioDrafts implements StudioDraftService {
   async createFromTool(
     db: Queryable,
     call: StudioToolCall,
-    args: Record<string, unknown>,
+    args: CreateTaskDraftArguments,
   ): Promise<Record<string, unknown>> {
-    const handle = studioAgentHandleFromArgs(args);
+    const handle = args.agent_id;
     const agent = await resolveSourceGuildAgent(sourceGuildAgents(db), call, handle);
     if (!agent) {
       throw new StudioUnprocessableError(await missingDraftAgentMessage(db, call, handle));
     }
     const targetId = agent.id;
-    const proposed = argString(args, "proposed_content");
-    const rationale = argString(args, "rationale");
+    const { proposed_content: proposed, rationale } = args;
     if (!proposed.trim() || !rationale.trim()) {
       throw new StudioUnprocessableError("studio_create_task_draft requires complete proposed_content and rationale");
     }
@@ -119,7 +112,7 @@ export class StudioDrafts implements StudioDraftService {
           rationale,
           evidence_refs: refs,
           evidence_warnings: warnings,
-          risks: risksOf(args.risks),
+          risks: args.risks ?? [],
           status: "draft",
           draft_number: Number(previous?.draft_number ?? 0) + 1,
           supersedes_draft_id: previous ? previous.id : null,
@@ -430,16 +423,13 @@ function resolveEvidenceRef(item: unknown, bySeq: Map<number, ConversationMessag
 }
 
 function resolveEvidenceRefs(
-  raw: unknown,
+  raw: unknown[] | undefined,
   messages: ConversationMessageRow[],
 ): { refs: EvidenceRef[]; warnings: EvidenceWarning[] } {
   const refs: EvidenceRef[] = [];
   const warnings: EvidenceWarning[] = [];
-  if (!Array.isArray(raw)) {
-    return { refs, warnings };
-  }
   const bySeq = new Map(messages.map((message) => [message.seq, message]));
-  for (const item of raw.slice(0, STUDIO_EVIDENCE_REF_MAX)) {
+  for (const item of (raw ?? []).slice(0, STUDIO_EVIDENCE_REF_MAX)) {
     const checked = resolveEvidenceRef(item, bySeq);
     if ("ref" in checked) {
       refs.push(checked.ref);

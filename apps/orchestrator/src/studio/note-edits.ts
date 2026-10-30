@@ -14,8 +14,8 @@ import {
 import { hashArtifactContent } from "../artifacts/store.js";
 import { listAgents } from "../db/agents.js";
 import { getGuild } from "../db/guilds.js";
-import { argString } from "../toolbox/schema.js";
 import { editActor } from "./actor.js";
+import type { EditNoteArguments } from "./edit-arguments.js";
 import {
   assertContent,
   awaitOperator,
@@ -130,20 +130,19 @@ async function liveNoteAt(
 async function reviewNoteCreate(
   deps: EditDeps,
   scope: EditScope,
-  args: Record<string, unknown>,
+  args: EditNoteArguments,
   agentId: string | null,
 ): Promise<NoteReview> {
-  const level = argString(args, "level");
-  if (level !== "agent" && level !== "guild" && level !== "org") {
+  const { level, content = "" } = args;
+  if (level === undefined) {
     throw new StudioUnprocessableError("level must be agent, guild, or org");
   }
-  const content = typeof args.content === "string" ? args.content : "";
-  const title = argString(args, "title").trim() || null;
+  const title = (args.title ?? "").trim() || null;
   // An agent note's owner is the agent the handle names; whether that agent is in the guild is checked below.
   const ownerId = { agent: agentId ?? "", guild: scope.sourceGuildId, org: scope.orgId }[level];
   let planned: PlannedNote;
   try {
-    planned = planNote({ orgId: scope.orgId, ownerId }, { level, key: argString(args, "key"), content, ...(title ? { title } : {}) });
+    planned = planNote({ orgId: scope.orgId, ownerId }, { level, key: args.key ?? "", content, ...(title ? { title } : {}) });
   } catch (error) {
     throw artifactRefusal(error);
   }
@@ -232,7 +231,7 @@ export async function reviewRecordedNote(
   deps: EditDeps,
   scope: EditScope,
   action: NoteAction,
-  args: Record<string, unknown>,
+  args: EditNoteArguments,
   recorded: NoteLifecycleTarget,
 ): Promise<NoteReview> {
   if (action === "create") {
@@ -269,10 +268,10 @@ export async function applyNote(deps: EditDeps, scope: EditScope, plan: NotePlan
 export async function noteCreateRequest(
   deps: EditDeps,
   scope: EditScope,
-  args: Record<string, unknown>,
+  args: EditNoteArguments,
   agentId: string | null,
 ): Promise<StudioEditWidget> {
-  const reason = requireReason(args);
+  const reason = requireReason(args.reason);
   return noteWidget(await reviewNoteCreate(deps, scope, args, agentId), reason);
 }
 
@@ -280,12 +279,12 @@ export async function noteCreateRequest(
 export async function noteDeleteRequest(
   deps: EditDeps,
   scope: EditScope,
-  args: Record<string, unknown>,
+  args: EditNoteArguments,
 ): Promise<StudioEditWidget> {
-  const reason = requireReason(args);
-  const review = await reviewNoteDelete(deps, scope, argString(args, "display_path"));
-  const expected = typeof args.base_version === "number" ? args.base_version : null;
-  if (expected === null) {
+  const reason = requireReason(args.reason);
+  const review = await reviewNoteDelete(deps, scope, args.display_path ?? "");
+  const expected = args.base_version;
+  if (expected === undefined) {
     throw new StudioUnprocessableError("base_version is required: the note version studio_get_artifact returned");
   }
   if (expected !== review.baseVersion) {
