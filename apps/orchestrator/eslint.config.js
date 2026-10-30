@@ -12,8 +12,8 @@ const REPOSITORY = "../..";
 const INDEXES = ["src/db/schema/index.ts"];
 
 // Syntax docs/contributing/code-guidelines.md refuses, under Types and errors and under Functions.
-const EMPTY_CATCH = {
-  selector: "CatchClause[body.body.length=0]",
+const SILENT_CATCH = {
+  selector: "CatchClause:not(:has(ThrowStatement, ReturnStatement))",
   message: "A catch throws a named error or returns a typed absence.",
 };
 const BARE_ERROR = {
@@ -62,7 +62,7 @@ export default tseslint.config(
       "src/cli/**",
     ],
     rules: {
-      "no-restricted-syntax": ["error", EMPTY_CATCH, BARE_ERROR, INLINE_PARAMETER_TYPE],
+      "no-restricted-syntax": ["error", SILENT_CATCH, BARE_ERROR, INLINE_PARAMETER_TYPE],
     },
   },
   {
@@ -70,7 +70,7 @@ export default tseslint.config(
     files: ["src/cli/**/*.ts"],
     ignores: ["**/*.test.ts"],
     rules: {
-      "no-restricted-syntax": ["error", EMPTY_CATCH, INLINE_PARAMETER_TYPE],
+      "no-restricted-syntax": ["error", SILENT_CATCH, INLINE_PARAMETER_TYPE],
     },
   },
   {

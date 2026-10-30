@@ -310,8 +310,8 @@ tests and stories excepted (`eslint.limits.js`): `complexity`,
 warning past 800 lines and an error past 1,000, and a refusal of
 every type assertion except `as const`. The orchestrator also requires explicit
 parameter and return types on what a module exports
-(`@typescript-eslint/explicit-module-boundary-types`). It refuses an
-empty `catch`; a throw of a plain `Error` outside the commands in
+(`@typescript-eslint/explicit-module-boundary-types`). It refuses a
+`catch` that neither throws nor returns; a throw of a plain `Error` outside the commands in
 `cli/`; an object type written inline in a function's parameter; an
 import of `fastify` outside `http/`, the roots, the
 extension points and the observability hooks; a value import of

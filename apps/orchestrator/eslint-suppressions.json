@@ -237,7 +237,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 1
+      "count": 2
     }
   },
   "src/coding/git.ts": {
@@ -381,7 +381,7 @@
       "count": 6
     },
     "no-restricted-syntax": {
-      "count": 5
+      "count": 9
     }
   },
   "src/conversation/templates.ts": {
@@ -523,6 +523,14 @@
   "src/generation/generate.ts": {
     "@typescript-eslint/explicit-module-boundary-types": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/generation/index.ts": {
+    "no-restricted-syntax": {
+      "count": 1
     }
   },
   "src/generation/machines.ts": {
@@ -530,7 +538,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 2
+      "count": 7
     }
   },
   "src/generation/offered-tools.ts": {
@@ -561,15 +569,24 @@
   "src/generation/runs.ts": {
     "@typescript-eslint/explicit-module-boundary-types": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 2
     }
   },
   "src/generation/tool-calls.ts": {
     "@typescript-eslint/explicit-module-boundary-types": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 1
     }
   },
   "src/generation/workspace.ts": {
     "@typescript-eslint/explicit-module-boundary-types": {
+      "count": 1
+    },
+    "no-restricted-syntax": {
       "count": 1
     }
   },
@@ -581,7 +598,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 5
+      "count": 6
     }
   },
   "src/github/manifest.ts": {
@@ -616,7 +633,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 9
+      "count": 12
     }
   },
   "src/guilds/service.ts": {
@@ -634,7 +651,7 @@
   },
   "src/http/builder-routes.ts": {
     "no-restricted-syntax": {
-      "count": 2
+      "count": 3
     }
   },
   "src/http/cookies.ts": {
@@ -645,6 +662,9 @@
   "src/http/error-handler.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 2
+    },
+    "no-restricted-syntax": {
+      "count": 1
     }
   },
   "src/http/file-routes.ts": {
@@ -665,7 +685,7 @@
       "count": 3
     },
     "no-restricted-syntax": {
-      "count": 7
+      "count": 8
     }
   },
   "src/http/sse.ts": {
@@ -695,6 +715,9 @@
       "count": 1
     },
     "max-depth": {
+      "count": 1
+    },
+    "no-restricted-syntax": {
       "count": 1
     }
   },
@@ -756,7 +779,7 @@
   },
   "src/llm/catalog.ts": {
     "no-restricted-syntax": {
-      "count": 1
+      "count": 2
     }
   },
   "src/llm/client.ts": {
@@ -764,13 +787,18 @@
       "count": 3
     },
     "no-restricted-syntax": {
-      "count": 3
+      "count": 4
     }
   },
   "src/llm/completion.ts": {
     "complexity": {
       "count": 1
     },
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/llm/credentials.ts": {
     "no-restricted-syntax": {
       "count": 1
     }
@@ -835,7 +863,7 @@
   },
   "src/mcp/connect-flow.ts": {
     "no-restricted-syntax": {
-      "count": 1
+      "count": 2
     }
   },
   "src/mcp/connect-token.ts": {
@@ -849,12 +877,12 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 1
+      "count": 2
     }
   },
   "src/mcp/connections.ts": {
     "no-restricted-syntax": {
-      "count": 1
+      "count": 4
     }
   },
   "src/mcp/database.ts": {
@@ -869,7 +897,7 @@
   },
   "src/mcp/operator-call.ts": {
     "no-restricted-syntax": {
-      "count": 1
+      "count": 2
     }
   },
   "src/mcp/pool.ts": {
@@ -883,7 +911,7 @@
       "count": 3
     },
     "no-restricted-syntax": {
-      "count": 2
+      "count": 3
     }
   },
   "src/mcp/session.ts": {
@@ -953,7 +981,7 @@
       "count": 2
     },
     "no-restricted-syntax": {
-      "count": 12
+      "count": 13
     }
   },
   "src/observability/client-errors.ts": {
@@ -979,6 +1007,11 @@
     "complexity": {
       "count": 1
     },
+    "no-restricted-syntax": {
+      "count": 3
+    }
+  },
+  "src/observability/runtime.ts": {
     "no-restricted-syntax": {
       "count": 1
     }
@@ -1087,7 +1120,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 3
+      "count": 4
     }
   },
   "src/registry/index.ts": {
@@ -1127,7 +1160,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 8
+      "count": 10
     }
   },
   "src/sandbox/sweep.ts": {
@@ -1204,6 +1237,11 @@
       "count": 1
     }
   },
+  "src/seed/system.ts": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
   "src/state/index.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 2
@@ -1249,7 +1287,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 1
+      "count": 2
     }
   },
   "src/studio/drafts.ts": {
@@ -1260,7 +1298,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 3
+      "count": 4
     }
   },
   "src/studio/edits.ts": {
@@ -1274,7 +1312,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 3
+      "count": 8
     }
   },
   "src/studio/focus.ts": {
@@ -1307,6 +1345,11 @@
       "count": 1
     }
   },
+  "src/studio/routines.ts": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
   "src/studio/runner.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
@@ -1337,6 +1380,11 @@
     },
     "no-restricted-syntax": {
       "count": 3
+    }
+  },
+  "src/studio/tables.ts": {
+    "no-restricted-syntax": {
+      "count": 1
     }
   },
   "src/studio/tool-usage.ts": {
@@ -1406,7 +1454,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 1
+      "count": 2
     }
   },
   "src/toolbox/offered.ts": {
@@ -1415,6 +1463,11 @@
     },
     "no-restricted-syntax": {
       "count": 4
+    }
+  },
+  "src/toolbox/output.ts": {
+    "no-restricted-syntax": {
+      "count": 1
     }
   },
   "src/toolbox/report.ts": {
