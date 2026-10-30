@@ -29,11 +29,6 @@
       "count": 1
     }
   },
-  "src/features/agent/chat/SecretRequestCard.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/features/agent/prompt/AgentPrompt.tsx": {
     "complexity": {
       "count": 1
