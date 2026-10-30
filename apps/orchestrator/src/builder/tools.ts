@@ -13,6 +13,10 @@ import {
   buildOrgConnectWidget,
   buildQuestionWidget,
   normalizeConnectScope,
+  type AnyConnectWidget,
+  type OrgConnectWidget,
+  type QuestionWidget,
+  type WidgetRefusal,
 } from "./widgets.js";
 import { argInteger, argString, functionSchema } from "../toolbox/schema.js";
 import type { CapabilityService } from "../capabilities/index.js";
@@ -574,7 +578,7 @@ export const builderAskOrgConnection = {
     },
     ["server_ref", "reason"],
   ),
-  async handler(ctx: BuilderCapabilityContext, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  async handler(ctx: BuilderCapabilityContext, args: Record<string, unknown>): Promise<OrgConnectWidget | WidgetRefusal> {
     if (!ctx.db) {
       return { error: "connection widgets are unavailable" };
     }
@@ -611,7 +615,7 @@ export const builderAskConnection = {
     },
     ["reason"],
   ),
-  async handler(ctx: BuilderCapabilityContext, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  async handler(ctx: BuilderCapabilityContext, args: Record<string, unknown>): Promise<AnyConnectWidget | WidgetRefusal> {
     if (!ctx.db) {
       return { error: "connection widgets are unavailable" };
     }
@@ -674,7 +678,7 @@ export const builderAskQuestion = {
     },
     [],
   ),
-  async handler(_ctx: BuilderCapabilityContext, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  async handler(_ctx: BuilderCapabilityContext, args: Record<string, unknown>): Promise<QuestionWidget | WidgetRefusal> {
     return buildQuestionWidget(args);
   },
 };
@@ -695,14 +699,15 @@ export const BUILDER_SESSION_TOOLS = [
   builderValidateRecipe,
 ];
 
-export function builderConversationTools(): Map<string, ConversationTool> {
+/** The session tools as the conversation runner calls them, each bound to the session's `context`. */
+export function builderConversationTools(context: BuilderToolContext): Map<string, ConversationTool> {
   return new Map(
     BUILDER_SESSION_TOOLS.map((tool) => [
       tool.name,
       {
         name: tool.name,
         schema: tool.schema,
-        handler: (ctx, args) => tool.handler(ctx as BuilderToolContext, args ?? {}),
+        handler: (_runnerContext, args) => tool.handler(context, args),
       },
     ]),
   );

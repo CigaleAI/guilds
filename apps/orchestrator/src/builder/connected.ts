@@ -4,6 +4,7 @@ import { McpError } from "../mcp/errors.js";
 import { OPERATOR_CALLER, type McpPool } from "../mcp/pool.js";
 import { callTool } from "../mcp/service.js";
 import { listMcpConnections, listMcpTools, type McpConnectionRow, type McpToolRow } from "../db/mcp.js";
+import { isPlainRecord } from "../db/json.js";
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 
 const SEARCH_REMOTES = ["search", "notion-search", "Search"];
@@ -108,9 +109,7 @@ export function pickSearchRemote(tools: Array<Pick<McpToolRow, "remote_name">>):
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
+  return isPlainRecord(value) ? value : null;
 }
 
 function firstString(...values: unknown[]): string {
@@ -184,13 +183,30 @@ export function hitFromUnknown(value: unknown): WorkspaceHit | null {
   };
 }
 
+/** What the text parts of a tool result carry: a single part's JSON (or its text), the parts joined, or `fallback` when there are none. */
+function payloadOfTexts(texts: string[], fallback: unknown): unknown {
+  const [only, ...rest] = texts;
+  if (only === undefined) {
+    return fallback;
+  }
+  if (rest.length) {
+    return texts.join("\n");
+  }
+  try {
+    const parsed: unknown = JSON.parse(only);
+    return parsed;
+  } catch {
+    return only;
+  }
+}
+
 function unwrapMcpPayload(raw: string): unknown {
   const trimmed = raw.trim();
   if (!trimmed) {
     return "";
   }
   try {
-    const parsed = JSON.parse(trimmed) as unknown;
+    const parsed: unknown = JSON.parse(trimmed);
     if (Array.isArray(parsed)) {
       const texts = parsed
         .map((part) => {
@@ -198,17 +214,7 @@ function unwrapMcpPayload(raw: string): unknown {
           return row && row.type === "text" ? firstString(row.text) : "";
         })
         .filter(Boolean);
-      if (texts.length === 1) {
-        try {
-          return JSON.parse(texts[0] as string);
-        } catch {
-          return texts[0];
-        }
-      }
-      if (texts.length) {
-        return texts.join("\n");
-      }
-      return parsed;
+      return payloadOfTexts(texts, parsed);
     }
     const record = asRecord(parsed);
     if (record && Array.isArray(record.content)) {
@@ -218,16 +224,7 @@ function unwrapMcpPayload(raw: string): unknown {
           return row ? firstString(row.text) : "";
         })
         .filter(Boolean);
-      if (texts.length === 1) {
-        try {
-          return JSON.parse(texts[0] as string);
-        } catch {
-          return texts[0];
-        }
-      }
-      if (texts.length) {
-        return texts.join("\n");
-      }
+      return payloadOfTexts(texts, parsed);
     }
     return parsed;
   } catch {
@@ -244,8 +241,9 @@ function collectCandidateArrays(value: unknown): unknown[] {
     return [];
   }
   for (const key of ["results", "hits", "databases", "pages", "items"]) {
-    if (Array.isArray(record[key])) {
-      return record[key] as unknown[];
+    const candidates = record[key];
+    if (Array.isArray(candidates)) {
+      return candidates;
     }
   }
   return [];

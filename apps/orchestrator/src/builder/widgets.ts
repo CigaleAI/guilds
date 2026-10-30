@@ -1,5 +1,7 @@
+import { Type, type Static } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
 import { isSystemOfRecord, storageHint } from "../connectors/builder.js";
-import { connectorFacts, type LoadedConnector } from "../connectors/servers.js";
+import { connectorFacts, type ConnectorFacts, type LoadedConnector } from "../connectors/servers.js";
 import { oauthSetupState } from "../oauth/index.js";
 import {
   findReusableOrgConnection,
@@ -25,7 +27,99 @@ export type ConnectRequest = {
   reason: string;
 };
 
-function compactServer(row: LoadedConnector, extras: Record<string, unknown> = {}): Record<string, unknown> {
+/** Whether the organisation has a login to a connector it may reuse. */
+export type ConnectionState = "connected" | "registered_not_connected";
+
+/** A connector as a connect widget shows it; a token connector names the fields its login asks for. */
+export type ConnectServer = {
+  id: string;
+  slug: string;
+  display_name: string;
+  auth: LoadedConnector["auth"];
+  oauth_setup_state: ReturnType<typeof oauthSetupState>;
+  setup_hint: string | null;
+  auth_fields?: ConnectorFacts["auth_fields"];
+  connection_state: ConnectionState;
+};
+
+/** What a connect widget shows in either mode: the owners offered, what the operator does now, and why. */
+type ConnectWidgetFields = {
+  widget: typeof CONNECT_WIDGET;
+  recommended_scope: ConnectWidgetScope;
+  allowed_scopes: ConnectWidgetScope[];
+  connect_now: boolean;
+  already_connected: boolean;
+  await_operator: boolean;
+  apply_later: boolean;
+  reason: string;
+  title: string;
+  storage_hint: string | null;
+};
+
+/** The widget that asks the operator to connect one connector to the organisation now. */
+export type OrgConnectWidget = { mode: "org"; server: ConnectServer } & ConnectWidgetFields;
+
+/** The widget that lets the operator connect any published connector, the one the coach named first when it named one. */
+export type AnyConnectWidget = {
+  mode: "any";
+  server: ConnectServer | null;
+  servers: ConnectServer[];
+} & ConnectWidgetFields;
+
+/** One choice of a question card. */
+export type QuestionOption = { id: string; label: string; description: string };
+
+/** One question of a question card: its choices, and whether the operator may type another answer or pick several. */
+export type Question = {
+  id: string;
+  header: string;
+  question: string;
+  options: QuestionOption[];
+  allow_other: boolean;
+  multi_select: boolean;
+};
+
+/** The card that pauses the turn until the operator answers its questions. */
+export type QuestionWidget = {
+  widget: typeof QUESTION_WIDGET;
+  await_operator: true;
+  title: string;
+  questions: Question[];
+};
+
+/** A widget a Builder tool pauses the turn on. */
+export type BuilderWidget = OrgConnectWidget | AnyConnectWidget | QuestionWidget;
+
+/** Why a widget cannot be shown. */
+export type WidgetRefusal = { error: string };
+
+/** An option as the model writes it: its label alone, or its fields. Other fields are read only when they are strings. */
+const OptionInput = Type.Union([
+  Type.String(),
+  Type.Object({
+    label: Type.String(),
+    id: Type.Optional(Type.Unknown()),
+    description: Type.Optional(Type.Unknown()),
+  }),
+]);
+
+/** A question as the model writes it: the question alone, or its fields. Other fields are read only when they have their type. */
+const QuestionInput = Type.Union([
+  Type.String(),
+  Type.Object({
+    question: Type.String(),
+    id: Type.Optional(Type.Unknown()),
+    header: Type.Optional(Type.Unknown()),
+    options: Type.Optional(Type.Unknown()),
+    allow_other: Type.Optional(Type.Unknown()),
+    multi_select: Type.Optional(Type.Unknown()),
+  }),
+]);
+
+export type OptionInput = Static<typeof OptionInput>;
+export type QuestionInput = Static<typeof QuestionInput>;
+
+function compactServer(row: LoadedConnector, state: ConnectionState): ConnectServer {
   return {
     id: row.id,
     slug: row.slug,
@@ -34,12 +128,16 @@ function compactServer(row: LoadedConnector, extras: Record<string, unknown> = {
     oauth_setup_state: oauthSetupState(row),
     setup_hint: row.setup_hint ?? null,
     ...(row.auth === "token" ? { auth_fields: connectorFacts(row).auth_fields } : {}),
-    ...extras,
+    connection_state: state,
   };
 }
 
+function isConnectScope(value: string): value is ConnectWidgetScope {
+  return CONNECT_SCOPES.some((scope) => scope === value);
+}
+
 export function normalizeConnectScope(value: string, fallback: ConnectWidgetScope = "org"): ConnectWidgetScope {
-  return CONNECT_SCOPES.includes(value as ConnectWidgetScope) ? (value as ConnectWidgetScope) : fallback;
+  return isConnectScope(value) ? value : fallback;
 }
 
 /** The widget that asks the operator to connect `serverRef` to organisation `orgId` now, for `reason`. */
@@ -48,7 +146,7 @@ export async function buildOrgConnectWidget(
   orgId: string,
   serverRef: string,
   reason: string,
-): Promise<Record<string, unknown>> {
+): Promise<OrgConnectWidget | WidgetRefusal> {
   const server = await resolvePublishedServer(db, serverRef, orgId);
   if (!server) {
     return { error: "unknown or unpublished connector" };
@@ -57,10 +155,8 @@ export async function buildOrgConnectWidget(
   const slug = server.slug;
   return {
     widget: CONNECT_WIDGET,
-    mode: "org" as ConnectWidgetMode,
-    server: compactServer(server, {
-      connection_state: connection ? "connected" : "registered_not_connected",
-    }),
+    mode: "org",
+    server: compactServer(server, connection ? "connected" : "registered_not_connected"),
     recommended_scope: "org",
     allowed_scopes: ["org"],
     connect_now: !connection,
@@ -80,7 +176,7 @@ export async function buildAnyConnectWidget(
   db: ConnectedDatabase,
   orgId: string,
   request: ConnectRequest,
-): Promise<Record<string, unknown>> {
+): Promise<AnyConnectWidget | WidgetRefusal> {
   const published = await db.listServers({ owner: { visibleTo: orgId }, enabled: true });
   const connections = await db.listMcpConnections({ orgId });
   const connectedIds = new Set(
@@ -93,11 +189,7 @@ export async function buildAnyConnectWidget(
       .map((row) => String(row.mcp_server_id)),
   );
   const servers = published.map((row) =>
-    compactServer(row, {
-      connection_state: connectedIds.has(String(row.id))
-        ? "connected"
-        : "registered_not_connected",
-    }),
+    compactServer(row, connectedIds.has(String(row.id)) ? "connected" : "registered_not_connected"),
   );
   const allowed: ConnectWidgetScope[] = request.allowScopeChange
     ? [...CONNECT_SCOPES]
@@ -114,12 +206,8 @@ export async function buildAnyConnectWidget(
   const connectNow = request.recommendedScope === "org" && !orgConnected;
   return {
     widget: CONNECT_WIDGET,
-    mode: "any" as ConnectWidgetMode,
-    server: selected
-      ? compactServer(selected, {
-          connection_state: orgConnected ? "connected" : "registered_not_connected",
-        })
-      : null,
+    mode: "any",
+    server: selected ? compactServer(selected, orgConnected ? "connected" : "registered_not_connected") : null,
     servers,
     recommended_scope: request.recommendedScope,
     allowed_scopes: allowed,
@@ -135,64 +223,56 @@ export async function buildAnyConnectWidget(
   };
 }
 
-function asObject(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
+/** `value` trimmed when it is a string; empty otherwise. */
+function trimmedString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
 }
 
-function optionFromUnknown(value: unknown, index: number): { id: string; label: string; description: string } | null {
-  if (typeof value === "string" && value.trim()) {
-    return { id: `opt-${index + 1}`, label: value.trim(), description: "" };
+function optionOf(input: OptionInput, index: number): QuestionOption | null {
+  const fallbackId = `opt-${index + 1}`;
+  if (typeof input === "string") {
+    const label = input.trim();
+    return label ? { id: fallbackId, label, description: "" } : null;
   }
-  const row = asObject(value);
-  if (!row) return null;
-  const label = typeof row.label === "string" ? row.label.trim() : "";
+  const label = input.label.trim();
   if (!label) return null;
-  const id = typeof row.id === "string" && row.id.trim() ? row.id.trim() : `opt-${index + 1}`;
-  const description = typeof row.description === "string" ? row.description.trim() : "";
-  return { id, label, description };
+  return { id: trimmedString(input.id) || fallbackId, label, description: trimmedString(input.description) };
 }
 
-function questionFromUnknown(value: unknown, index: number): Record<string, unknown> | null {
-  if (typeof value === "string" && value.trim()) {
-    return {
-      id: `q-${index + 1}`,
-      header: "Question",
-      question: value.trim(),
-      options: [],
-      allow_other: true,
-      multi_select: false,
-    };
+function questionOf(input: QuestionInput, index: number): Question | null {
+  const fallbackId = `q-${index + 1}`;
+  if (typeof input === "string") {
+    const question = input.trim();
+    return question
+      ? { id: fallbackId, header: "Question", question, options: [], allow_other: true, multi_select: false }
+      : null;
   }
-  const row = asObject(value);
-  if (!row) return null;
-  const question = typeof row.question === "string" ? row.question.trim() : "";
+  const question = input.question.trim();
   if (!question) return null;
-  const rawOptions = Array.isArray(row.options) ? row.options : [];
-  const options = rawOptions
-    .map((item, optionIndex) => optionFromUnknown(item, optionIndex))
-    .filter((item): item is { id: string; label: string; description: string } => Boolean(item))
+  const options = (Array.isArray(input.options) ? input.options : [])
+    .map((item, optionIndex) => (Value.Check(OptionInput, item) ? optionOf(item, optionIndex) : null))
+    .filter((item): item is QuestionOption => item !== null)
     .slice(0, QUESTION_OPTIONS_MAX);
   return {
-    id: typeof row.id === "string" && row.id.trim() ? row.id.trim() : `q-${index + 1}`,
-    header: typeof row.header === "string" && row.header.trim() ? row.header.trim() : "Question",
+    id: trimmedString(input.id) || fallbackId,
+    header: trimmedString(input.header) || "Question",
     question,
     options,
-    allow_other: options.length === 0 ? true : row.allow_other !== false,
-    multi_select: row.multi_select === true,
+    allow_other: options.length === 0 ? true : input.allow_other !== false,
+    multi_select: input.multi_select === true,
   };
 }
 
-export function buildQuestionWidget(args: Record<string, unknown>): Record<string, unknown> {
+/** The question card for the questions in `args`: `questions[]`, or `args` itself as one question. */
+export function buildQuestionWidget(args: Record<string, unknown>): QuestionWidget | WidgetRefusal {
   const raw = Array.isArray(args.questions)
     ? args.questions
     : args.question
       ? [args]
       : [];
   const questions = raw
-    .map((item, index) => questionFromUnknown(item, index))
-    .filter((item): item is Record<string, unknown> => Boolean(item))
+    .map((item, index) => (Value.Check(QuestionInput, item) ? questionOf(item, index) : null))
+    .filter((item): item is Question => item !== null)
     .slice(0, QUESTION_MAX);
   if (!questions.length) {
     return { error: "at least one question is required" };
@@ -200,7 +280,7 @@ export function buildQuestionWidget(args: Record<string, unknown>): Record<strin
   return {
     widget: QUESTION_WIDGET,
     await_operator: true,
-    title: questions.length === 1 ? String(questions[0]?.header || "Question") : `${questions.length} questions`,
+    title: questions.length === 1 ? questions[0]?.header || "Question" : `${questions.length} questions`,
     questions,
   };
 }

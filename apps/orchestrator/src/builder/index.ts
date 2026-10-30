@@ -338,6 +338,7 @@ export class BuilderService {
     });
     const limits = (await this.policy.standing(started.session.org_id)).limits.coach
       .builder;
+    const toolContext = this.toolContext(started.session);
     this.runner.start({
       session: started.session,
       user,
@@ -347,8 +348,8 @@ export class BuilderService {
         started.expectedBodyVersion,
       ),
       systemContent: started.system.content,
-      tools: builderConversationTools(),
-      toolContext: this.toolContext(started.session),
+      tools: builderConversationTools(toolContext),
+      toolContext,
       maxTokens: limits.max_tokens,
       maxSteps: BUILDER_MAX_STEPS,
       maxToolCalls: limits.max_tool_calls,

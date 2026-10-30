@@ -72,14 +72,8 @@
     }
   },
   "src/builder/connected.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 5
-    },
     "complexity": {
-      "count": 2
-    },
-    "max-depth": {
-      "count": 2
+      "count": 1
     }
   },
   "src/builder/errors.ts": {
@@ -88,19 +82,13 @@
     }
   },
   "src/builder/tools.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
     "complexity": {
       "count": 1
     }
   },
   "src/builder/widgets.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 5
-    },
     "complexity": {
-      "count": 2
+      "count": 1
     }
   },
   "src/capabilities/index.ts": {
