@@ -1,24 +1,20 @@
 import { Value } from "@sinclair/typebox/value";
 import type { ConnectorTool } from "../connectors/types.js";
-import { jsonObj } from "../db/json.js";
+import { isPlainRecord, jsonObj } from "../db/json.js";
 import type { McpToolRow } from "../db/mcp.js";
 import { ToolInputSchema } from "../db/schema/index.js";
 import { llmToolParameters } from "../lib/tool-schema.js";
 import { McpError } from "./errors.js";
 import { namespacedName } from "../connectors/naming.js";
 
-export class ListedTool {
-  constructor(
-    public remote_name: string,
-    public namespaced_name: string,
-    public description: string,
-    public input_schema: ToolInputSchema,
-    /** The listing's `readOnlyHint`, null when it gave none. */
-    public read_only_hint: boolean | null = null,
-    /** The listing's `destructiveHint`, null when it gave none. */
-    public destructive_hint: boolean | null = null,
-  ) {}
-}
+/**
+ * A tool a login's listing offers: its name on the remote and here, its copy and input schema,
+ * and the listing's `readOnlyHint` and `destructiveHint`, each null when it gave none.
+ */
+export type ListedTool = Pick<
+  McpToolRow,
+  "remote_name" | "namespaced_name" | "description" | "input_schema" | "read_only_hint" | "destructive_hint"
+>;
 
 export function mcpSchema(tool: Pick<ListedTool, "namespaced_name" | "description" | "input_schema">): Record<string, unknown> {
   const parameters = Object.keys(tool.input_schema).length ? tool.input_schema : { type: "object" };
@@ -50,7 +46,7 @@ function pythonOr(...values: unknown[]): unknown {
     if (value === null || value === undefined || value === false || value === 0 || value === "") {
       continue;
     }
-    if (typeof value === "object" && !Array.isArray(value) && Object.keys(value as object).length === 0) {
+    if (isPlainRecord(value) && Object.keys(value).length === 0) {
       continue;
     }
     return value;
@@ -65,26 +61,25 @@ export function fromRemote(slug: string, tool: Record<string, unknown>): ListedT
   }
   const remote = remoteName.trim();
   const description = tool.description;
-  return new ListedTool(
-    remote,
-    namespacedName(slug, remote),
-    typeof description === "string" ? description : "",
-    remoteSchema(tool),
-  );
+  return {
+    remote_name: remote,
+    namespaced_name: namespacedName(slug, remote),
+    description: typeof description === "string" ? description : "",
+    input_schema: remoteSchema(tool),
+    read_only_hint: null,
+    destructive_hint: null,
+  };
 }
 
 export function listedFromRows(rows: McpToolRow[]): ListedTool[] {
-  return rows.map(
-    (row) =>
-      new ListedTool(
-        row.remote_name,
-        row.namespaced_name,
-        row.description,
-        row.input_schema,
-        row.read_only_hint,
-        row.destructive_hint,
-      ),
-  );
+  return rows.map((row) => ({
+    remote_name: row.remote_name,
+    namespaced_name: row.namespaced_name,
+    description: row.description,
+    input_schema: row.input_schema,
+    read_only_hint: row.read_only_hint,
+    destructive_hint: row.destructive_hint,
+  }));
 }
 
 /** A tool from a remote `tools/list`, with its annotations, null when absent. */
@@ -92,9 +87,7 @@ export function remoteConnectorTool(tool: Record<string, unknown>): ConnectorToo
   const listed = fromRemote("", tool);
   const annotations = jsonObj(tool.annotations);
   const hint = (name: string): boolean | null => {
-    const value = annotations && typeof annotations === "object" && !Array.isArray(annotations)
-      ? (annotations as Record<string, unknown>)[name]
-      : undefined;
+    const value = isPlainRecord(annotations) ? annotations[name] : undefined;
     return typeof value === "boolean" ? value : null;
   };
   return {

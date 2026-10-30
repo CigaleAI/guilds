@@ -16,6 +16,29 @@ by its JSON pointer, such as `/max_wakes: Expected number` from
 routine's validator refused it with a message of its own, such as
 `window.max_wakes must be a positive integer`.
 
+**Breaking for extensions.** `connect` (`mcp/connect-token.js`) takes
+a `ConnectServices`, `{ mcp, masterKey }`, as its second argument in
+place of the pool, and has no options argument:
+`connect(db, { mcp, masterKey }, input, now)`. `McpPool.lookup`
+(`mcp/pool.js`) takes the property and the text searched for as one
+`SettingsLookup`, `{ property, q }`, which `mcp/pool.js` exports:
+`lookup(server, { property, q }, credentials, settings)`. The tools
+`McpPool.syncTools` answers are plain `ListedTool` records, not
+instances of a class. `connectFailure` (`mcp/connect-token.js`) is
+`translateConnectFailure`, which answers the error to throw:
+`throw translateConnectFailure(error, server)`.
+
+**No impact.** A connector tool call, from an agent's run or through
+`POST /api/mcp/connections/:connection_id/call`, fails with the
+database's error when the login's stored tool listing cannot be read,
+and calls nothing. Before, the call went out with its arguments as
+sent. Connecting a login to an organisation's server whose name or
+description is blank fails when writing what its endpoint says about
+itself fails: `POST /api/mcp/connections` answers 500 for a token
+login, which stays stored, and `GET /api/mcp/oauth/callback` shows
+**Authorization Failed** and ends the sign-in. Before, the server kept
+its name and description and the failure was dropped.
+
 **No impact.** A Studio tool call that gives a value outside an
 argument's fixed list is refused before the tool does any work, with
 the first mismatch named by its JSON pointer, such as

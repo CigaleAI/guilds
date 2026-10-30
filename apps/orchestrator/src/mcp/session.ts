@@ -1,4 +1,5 @@
 import type { RemoteInfo } from "../connectors/types.js";
+import { isPlainRecord } from "../db/json.js";
 import { assertPublicHost, EndpointError, type HostLookup } from "../net/endpoints.js";
 import { proxyFetch, type FetchFn } from "../net/http.js";
 import { McpError, McpSessionGoneError } from "./errors.js";
@@ -9,15 +10,19 @@ export const CALL_TOOL_TIMEOUT_MS = 90_000;
 export const LIST_TOOLS_MAX_BYTES = 1_000_000;
 export const LIST_TOOLS_MAX = 200;
 
+/** A reply from an MCP endpoint: its status, its headers when known, and its body as text. */
+export type RpcResponse = { status: number; headers?: Headers | Record<string, string>; body: string };
+
+/** How long a request may take and how large its reply may be; each one left out is unbounded. */
+type RequestLimits = { timeoutMs?: number; maxBytes?: number };
+
 function parseBody(contentType: string, text: string): unknown {
   if (contentType.includes("text/event-stream")) {
     let data: unknown = null;
     for (const line of text.split(/\r?\n/)) {
-      if (line.startsWith("data:")) {
-        const raw = line.slice(5).trim();
-        if (raw) {
-          data = JSON.parse(raw);
-        }
+      const raw = line.startsWith("data:") ? line.slice(5).trim() : "";
+      if (raw) {
+        data = JSON.parse(raw);
       }
     }
     return data;
@@ -29,7 +34,7 @@ function parseBody(contentType: string, text: string): unknown {
 }
 
 /** The body as JSON-RPC, or an `McpError` with the status and the start of the body when it is not JSON. */
-function parsedPayload(contentType: string, response: { status: number; body: string }): unknown {
+function parsedPayload(contentType: string, response: RpcResponse): unknown {
   try {
     return parseBody(contentType, response.body);
   } catch {
@@ -38,7 +43,7 @@ function parsedPayload(contentType: string, response: { status: number; body: st
   }
 }
 
-export function rpcPayload(response: { status: number; headers?: Headers | Record<string, string>; body: string }): unknown {
+export function rpcPayload(response: RpcResponse): unknown {
   const headerValue =
     response.headers instanceof Headers
       ? response.headers.get("content-type") ?? ""
@@ -47,16 +52,20 @@ export function rpcPayload(response: { status: number; headers?: Headers | Recor
   if (response.status < 400) {
     return payload;
   }
-  if (
-    payload
-    && typeof payload === "object"
-    && !Array.isArray(payload)
-    && "result" in payload
-    && !(payload as { error?: unknown }).error
-  ) {
+  if (isPlainRecord(payload) && "result" in payload && !payload.error) {
     return payload;
   }
   throw new McpError(`mcp ${response.status}`, response.status);
+}
+
+/** The text of each part of a tool result's content: a part's `text`, or the part itself when it is a string. */
+function textParts(content: unknown[]): string[] {
+  return content.flatMap((item) => {
+    if (typeof item === "string") {
+      return [item];
+    }
+    return isPlainRecord(item) && typeof item.text === "string" ? [item.text] : [];
+  });
 }
 
 function callText(result: unknown): string {
@@ -66,26 +75,16 @@ function callText(result: unknown): string {
   if (typeof result === "string") {
     return result;
   }
-  if (!result || typeof result !== "object" || Array.isArray(result)) {
+  if (!isPlainRecord(result)) {
     return JSON.stringify(result);
   }
-  const body = result as Record<string, unknown>;
-  const content = body.content;
+  const content = result.content;
   if (typeof content === "string") {
     return content;
   }
-  if (Array.isArray(content)) {
-    const parts: string[] = [];
-    for (const item of content) {
-      if (item && typeof item === "object" && !Array.isArray(item) && typeof (item as { text?: unknown }).text === "string") {
-        parts.push((item as { text: string }).text);
-      } else if (typeof item === "string") {
-        parts.push(item);
-      }
-    }
-    if (parts.length) {
-      return parts.join("\n");
-    }
+  const parts = Array.isArray(content) ? textParts(content) : [];
+  if (parts.length) {
+    return parts.join("\n");
   }
   return JSON.stringify(result);
 }
@@ -147,8 +146,8 @@ export class McpSession {
     });
     await this.notify("notifications/initialized");
     this.initialized = true;
-    const body = result && typeof result === "object" && !Array.isArray(result) ? (result as Record<string, unknown>) : {};
-    const info = body.serverInfo && typeof body.serverInfo === "object" ? (body.serverInfo as Record<string, unknown>) : {};
+    const body = isPlainRecord(result) ? result : {};
+    const info = isPlainRecord(body.serverInfo) ? body.serverInfo : {};
     return {
       name: typeof info.title === "string" && info.title.trim() ? info.title.trim() : typeof info.name === "string" ? info.name.trim() : "",
       instructions: typeof body.instructions === "string" ? body.instructions.trim() : "",
@@ -180,9 +179,7 @@ export class McpSession {
         maxBytes: LIST_TOOLS_MAX_BYTES,
       }),
     );
-    const tools = result && typeof result === "object" && !Array.isArray(result)
-      ? (result as { tools?: unknown }).tools
-      : undefined;
+    const tools = isPlainRecord(result) ? result.tools : undefined;
     if (!Array.isArray(tools)) {
       return [];
     }
@@ -212,44 +209,25 @@ export class McpSession {
   private async rpc(
     method: string,
     params: Record<string, unknown>,
-    options: { timeoutMs?: number; maxBytes?: number } = {},
+    options: RequestLimits = {},
   ): Promise<unknown> {
     this.rpcId += 1;
     const payload = await this.post({ jsonrpc: "2.0", id: this.rpcId, method, params }, options);
-    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    if (!isPlainRecord(payload)) {
       throw new McpError(`${method} returned a non-object`);
     }
-    if ((payload as { error?: unknown }).error) {
-      throw new McpError(String((payload as { error: unknown }).error));
+    if (payload.error) {
+      throw new McpError(String(payload.error));
     }
-    return (payload as { result?: unknown }).result;
+    return payload.result;
   }
 
-  private async post(
-    body: Record<string, unknown>,
-    options: { timeoutMs?: number; maxBytes?: number } = {},
-  ): Promise<unknown> {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      Accept: "application/json, text/event-stream",
-      ...this.headers,
-    };
-    const carried = this.sessionId;
-    if (carried) {
-      headers["Mcp-Session-Id"] = carried;
-    }
-    const controller = options.timeoutMs ? new AbortController() : null;
-    const timer = controller && options.timeoutMs
-      ? setTimeout(() => controller.abort(), options.timeoutMs)
-      : null;
-    let response: Response;
+  /** Sends `init` to the endpoint, aborted once `timeoutMs` passes, when given; an abort is an `McpError`. */
+  private async send(init: RequestInit, timeoutMs: number | undefined): Promise<Response> {
+    const controller = timeoutMs ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
     try {
-      response = await this.fetchFn(this.url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
-        ...(controller ? { signal: controller.signal } : {}),
-      });
+      return await this.fetchFn(this.url, controller ? { ...init, signal: controller.signal } : init);
     } catch (error) {
       if (controller?.signal.aborted) {
         throw new McpError("mcp tools/list timed out");
@@ -260,6 +238,22 @@ export class McpSession {
         clearTimeout(timer);
       }
     }
+  }
+
+  private async post(
+    body: Record<string, unknown>,
+    options: RequestLimits = {},
+  ): Promise<unknown> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Accept: "application/json, text/event-stream",
+      ...this.headers,
+    };
+    const carried = this.sessionId;
+    if (carried) {
+      headers["Mcp-Session-Id"] = carried;
+    }
+    const response = await this.send({ method: "POST", headers, body: JSON.stringify(body) }, options.timeoutMs);
     const session = response.headers.get("mcp-session-id");
     if (session) {
       this.sessionId = session;

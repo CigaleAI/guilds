@@ -20,7 +20,6 @@ import {
   searchTool,
 } from "../../src/connectors/twitterapiio/client.js";
 import { McpError } from "../../src/mcp/errors.js";
-import { ListedTool } from "../../src/mcp/tools.js";
 import { McpPool, OPERATOR_CALLER } from "../../src/mcp/pool.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { ConnectorError } from "../../src/connectors/types.js";
@@ -247,7 +246,7 @@ test("sync TwitterAPI.io writes the curated catalog", async () => {
   assert.equal(pinged, 1);
   assert.deepEqual(first.map((tool) => tool.namespaced_name), TOOLS.map((spec) => `twitterapiio_${spec.name}`));
   assert.deepEqual(first, second);
-  assert.deepEqual(first[0], new ListedTool("search", "twitterapiio_search", TOOLS[0]!.description, TOOLS[0]!.input_schema));
+  assert.deepEqual(first[0], { remote_name: "search", namespaced_name: "twitterapiio_search", description: TOOLS[0]!.description, input_schema: TOOLS[0]!.input_schema, read_only_hint: null, destructive_hint: null });
   assert.ok(!("sort" in (TOOLS[0]!.input_schema.properties as Record<string, unknown>)));
 });
 

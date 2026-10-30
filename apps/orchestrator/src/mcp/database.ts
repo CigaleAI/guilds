@@ -10,10 +10,27 @@ import {
   type McpConnectionRow,
 } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
-import { githubRepositoryRecorder } from "../github/tokens.js";
+import { githubRepositoryRecorder, type GithubRepositoryRecorder } from "../github/tokens.js";
 
-/** The db/ functions MCP reads logins and their tools, meters calls, and refreshes and retires logins through, on `db`. */
-export function mcpDatabase(db: Queryable) {
+/** A db/ function with its connection bound. */
+type BoundQuery<F> = F extends (db: Queryable, ...args: infer A) => infer R ? (...args: A) => R : never;
+
+/** The db/ functions MCP reads logins and their tools, meters calls, and refreshes and retires logins through. */
+export type McpDatabase = GithubRepositoryRecorder & {
+  getMcpConnection: BoundQuery<typeof getMcpConnection>;
+  getMcpServer: BoundQuery<typeof getMcpServer>;
+  listMcpTools: BoundQuery<typeof listMcpTools>;
+  countConnectorCalls: BoundQuery<typeof countConnectorCalls>;
+  recordConnectorCall: BoundQuery<typeof recordConnectorCall>;
+  replaceMcpTools: BoundQuery<typeof replaceMcpTools>;
+  insertBindingIfAbsent: BoundQuery<typeof insertBindingIfAbsent>;
+  saveMcpConnection: BoundQuery<typeof saveMcpConnection>;
+  deleteMcpConnection: BoundQuery<typeof deleteMcpConnection>;
+  saveOauthClient: BoundQuery<typeof saveOauthClient>;
+};
+
+/** MCP's db/ functions on `db`. */
+export function mcpDatabase(db: Queryable): McpDatabase {
   return {
     ...githubRepositoryRecorder(db),
     getMcpConnection: bindQuery(db, getMcpConnection),
@@ -28,8 +45,6 @@ export function mcpDatabase(db: Queryable) {
     saveOauthClient: bindQuery(db, saveOauthClient),
   };
 }
-
-export type McpDatabase = ReturnType<typeof mcpDatabase>;
 
 export async function markDisconnected(db: Pick<McpDatabase, "saveMcpConnection">, connection: McpConnectionRow): Promise<void> {
   await db.saveMcpConnection(

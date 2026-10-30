@@ -18,7 +18,7 @@ import {
   type RemoteInfo,
   type RemoteSession,
 } from "../connectors/types.js";
-import { jsonObj } from "../db/json.js";
+import { isPlainRecord, jsonObj } from "../db/json.js";
 import type { McpConnectionRow, McpToolRow } from "../db/mcp.js";
 import type { Queryable } from "../db/pg.js";
 import { utcMonth } from "../db/usage.js";
@@ -30,7 +30,7 @@ import { writeLog } from "../observability/log.js";
 import type { OrgPolicy } from "../policy/index.js";
 import { redact } from "../secrets/index.js";
 import { McpDisconnectedError, McpError } from "./errors.js";
-import { ListedTool, listedFromRows, remoteConnectorTool } from "./tools.js";
+import { listedFromRows, remoteConnectorTool, type ListedTool } from "./tools.js";
 import { CALL_TOOL_TIMEOUT_MS, McpSession, publicOnly } from "./session.js";
 import { mcpDatabase, type McpDatabase } from "./database.js";
 import {
@@ -65,9 +65,7 @@ function latestListedAt(rows: McpToolRow[]): number | null {
 
 function serverUrl(server: LoadedConnector): string {
   const config = jsonObj(server.config);
-  const url = config && typeof config === "object" && !Array.isArray(config)
-    ? (config as { url?: unknown }).url
-    : undefined;
+  const url = isPlainRecord(config) ? config.url : undefined;
   if (typeof url !== "string" || !url.trim()) {
     throw new McpError("mcp server is missing a url");
   }
@@ -89,6 +87,15 @@ export const OPERATOR_CALLER: McpCaller = { orgId: null, workspaceDir: null };
 /** A call of one of a login's remote tools: its name on the remote, its arguments, and who calls it. */
 export type RemoteCall = { tool: string; arguments: Record<string, unknown>; caller: McpCaller };
 
+/**
+ * How a login's tools are listed: `force` lists them again however fresh the stored listing is,
+ * and `validate` runs the connector's check first, by default when forced.
+ */
+export type ToolListing = { force?: boolean; validate?: boolean };
+
+/** A search for a settings property's values: the property marked `x-lookup`, and the text searched for. */
+export type SettingsLookup = { property: string; q: string };
+
 /** A pooled session and when the credential it sends expires. */
 type PooledSession = { session: McpSession; expiresAt: number | null };
 
@@ -108,12 +115,29 @@ async function withTimeout<T>(work: Promise<T>, ms: number, message: string): Pr
     return await Promise.race([
       work,
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(message)), ms);
+        timer = setTimeout(() => reject(new McpError(message)), ms);
       }),
     ]);
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** Logs a failed tool call: a warning for a login that is not connected or a refusal below 500, an error otherwise. */
+function logCallFailure(error: unknown): void {
+  const status = error instanceof McpError ? error.status : null;
+  const level =
+    error instanceof McpDisconnectedError || (typeof status === "number" && status < 500) ? "warn" : "error";
+  writeLog(
+    level,
+    error instanceof Error ? error.message : String(error),
+    {
+      source: "backend",
+      operation: "mcp.call",
+      error_type: error instanceof Error ? error.name : "Error",
+    },
+    error,
+  );
 }
 
 /** Studio's stand-in for `McpPool.state`: each key the connectors of an agent's logins fill, without calling them. */
@@ -196,11 +220,8 @@ export class McpPool {
   /** Writes an Off overlay at the login's owner for each listed tool that starts Off, unless one is there. */
   private async writeDefaultOff(connection: McpConnectionRow, offered: ListedServerTool[], now: Date): Promise<void> {
     const ownerScope = connection.owner_scope;
-    if (typeof ownerScope !== "string" || !ownerScope) {
-      return;
-    }
-    const ownerId = connection.owner_id;
-    if (ownerScope !== "platform" && typeof ownerId !== "string") {
+    const scopeId = ownerScope === "platform" ? null : connection.owner_id;
+    if (ownerScope !== "platform" && scopeId === null) {
       return;
     }
     const off = new Set(offered.filter((tool) => !tool.default_enabled).map((tool) => tool.namespaced_name));
@@ -211,7 +232,7 @@ export class McpPool {
           catalogKind: "mcp_tool",
           catalogId: namespacedName,
           scope: ownerScope,
-          scopeId: ownerScope === "platform" ? null : (ownerId as string),
+          scopeId,
           enabled: false,
         },
         now,
@@ -259,14 +280,12 @@ export class McpPool {
     resolved: ConnectorCode,
     connectionId: string,
     settings: Record<string, unknown>,
-    workspaceDir?: string,
   ): ConnectorContext {
     return {
       http: this.fetchFn,
       remote: resolved.endpoint ? remote : NO_REMOTE,
       connection_id: connectionId,
       settings,
-      ...(workspaceDir ? { workspace_dir: workspaceDir } : {}),
     };
   }
 
@@ -279,17 +298,9 @@ export class McpPool {
     server: LoadedConnector,
     resolved: ConnectorCode,
     work: (credentials: Credentials, ctx: ConnectorContext) => Promise<T>,
-    workspaceDir?: string,
-    settings?: Record<string, unknown>,
   ): Promise<T> {
     const attempt = () => {
-      const ctx = this.context(
-        this.remoteFor(login, server),
-        resolved,
-        login.connection.id,
-        settings ?? login.connection.settings,
-        workspaceDir,
-      );
+      const ctx = this.context(this.remoteFor(login, server), resolved, login.connection.id, login.connection.settings);
       const manifest = serverManifest(server);
       const instance = login.connection.owner_scope === "platform" && manifest.auth.instance;
       return work(instance ? instanceCredentials(manifest) : connectionCredentials(login.connection), ctx);
@@ -362,8 +373,7 @@ export class McpPool {
   /** Values for a settings property marked `x-lookup`. */
   async lookup(
     server: LoadedConnector,
-    property: string,
-    query: string,
+    search: SettingsLookup,
     credentials: Credentials,
     settings: Record<string, unknown> = {},
   ): Promise<LookupOption[]> {
@@ -371,7 +381,7 @@ export class McpPool {
       if (!resolved.adapter.lookup) {
         throw new ConnectorError(`${server.slug} has no lookup`, 404);
       }
-      return resolved.adapter.lookup(property, query, credentials, ctx);
+      return resolved.adapter.lookup(search.property, search.q, credentials, ctx);
     });
   }
 
@@ -382,13 +392,8 @@ export class McpPool {
     settings: Record<string, unknown>,
   ): Promise<string> {
     const resolved = connectorCode(server);
-    return this.onLogin(
-      { connection },
-      server,
-      resolved,
-      (credentials, ctx) => this.validateWith(resolved, credentials, ctx),
-      undefined,
-      settings,
+    return this.onLogin({ connection }, server, resolved, (credentials, ctx) =>
+      this.validateWith(resolved, credentials, { ...ctx, settings }),
     );
   }
 
@@ -417,7 +422,7 @@ export class McpPool {
   async syncTools(
     connection: McpConnectionRow,
     server: LoadedConnector,
-    options: { force?: boolean; validate?: boolean } = {},
+    options: ToolListing = {},
   ): Promise<ListedTool[]> {
     const force = options.force ?? false;
     const validate = options.validate ?? force;
@@ -438,17 +443,14 @@ export class McpPool {
       const effective = effectiveTool(server, tool);
       return effective === null ? [] : [effective];
     });
-    const listed = offered.map(
-      (tool) =>
-        new ListedTool(
-          tool.remote_name,
-          tool.namespaced_name,
-          tool.description,
-          tool.input_schema,
-          tool.read_only_hint,
-          tool.destructive_hint,
-        ),
-    );
+    const listed = offered.map((tool) => ({
+      remote_name: tool.remote_name,
+      namespaced_name: tool.namespaced_name,
+      description: tool.description,
+      input_schema: tool.input_schema,
+      read_only_hint: tool.read_only_hint,
+      destructive_hint: tool.destructive_hint,
+    }));
     await this.database.replaceMcpTools(login.connection.id, listed, now);
     await this.writeDefaultOff(login.connection, offered, now);
     this.syncedAt.set(login.connection.id, now.getTime());
@@ -468,14 +470,9 @@ export class McpPool {
       }
     }
     try {
-      let argumentsForCall = call.arguments;
-      try {
-        const listed = listedFromRows(await this.database.listMcpTools(connection.id));
-        const tool = listed.find((item) => item.remote_name === call.tool);
-        argumentsForCall = omitEmptyOptionalStrings(call.arguments, tool?.input_schema);
-      } catch {
-        argumentsForCall = call.arguments;
-      }
+      const listed = listedFromRows(await this.database.listMcpTools(connection.id));
+      const tool = listed.find((item) => item.remote_name === call.tool);
+      const argumentsForCall = omitEmptyOptionalStrings(call.arguments, tool?.input_schema);
       try {
         return await this.invokeCall(connection, server, { ...call, arguments: argumentsForCall });
       } finally {
@@ -487,21 +484,7 @@ export class McpPool {
         }
       }
     } catch (error) {
-      const status = error instanceof McpError ? error.status : null;
-      const level =
-        error instanceof McpDisconnectedError || (typeof status === "number" && status < 500)
-          ? "warn"
-          : "error";
-      writeLog(
-        level,
-        error instanceof Error ? error.message : String(error),
-        {
-          source: "backend",
-          operation: "mcp.call",
-          error_type: error instanceof Error ? error.name : "Error",
-        },
-        error,
-      );
+      logCallFailure(error);
       throw error;
     }
   }
@@ -529,16 +512,13 @@ export class McpPool {
       throw new McpDisconnectedError("connection is not connected");
     }
     const resolved = connectorCode(server);
-    return this.onLogin(
-      { connection },
-      server,
-      resolved,
-      (credentials, ctx) =>
-        resolved.adapter.call
-          ? resolved.adapter.call(call.tool, call.arguments, credentials, ctx)
-          : ctx.remote.call(call.tool, call.arguments),
-      call.caller.workspaceDir ?? undefined,
-    );
+    const workspaceDir = call.caller.workspaceDir;
+    return this.onLogin({ connection }, server, resolved, (credentials, ctx) => {
+      const called = workspaceDir ? { ...ctx, workspace_dir: workspaceDir } : ctx;
+      return resolved.adapter.call
+        ? resolved.adapter.call(call.tool, call.arguments, credentials, called)
+        : called.remote.call(call.tool, call.arguments);
+    });
   }
 
   /**
@@ -570,7 +550,7 @@ export class McpPool {
           }
           const text = redact(JSON.stringify(value), secrets);
           if (Buffer.byteLength(text, "utf8") > STATE_MAX_BYTES) {
-            throw new Error(`value exceeds ${STATE_MAX_BYTES} bytes`);
+            throw new McpError(`value exceeds ${STATE_MAX_BYTES} bytes`);
           }
           return [key, JSON.parse(text)];
         } catch (error) {
@@ -584,6 +564,23 @@ export class McpPool {
       }),
     );
     return Object.fromEntries(values.filter((value): value is [string, unknown] => value !== null));
+  }
+}
+
+/**
+ * Lists a login's tools again once it connects or its settings change; null when the listing
+ * fails, and the login's tools list on its next sync.
+ */
+export async function relistTools(
+  pool: Pick<McpPool, "syncTools">,
+  connection: McpConnectionRow,
+  server: LoadedConnector,
+  listing: ToolListing,
+): Promise<ListedTool[] | null> {
+  try {
+    return await pool.syncTools(connection, server, listing);
+  } catch {
+    return null;
   }
 }
 

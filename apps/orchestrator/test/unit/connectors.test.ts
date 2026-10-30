@@ -330,10 +330,10 @@ test("lookup runs the adapter's search with the form's credentials", async () =>
     assert.equal((init?.headers as Record<string, string>).Authorization, "Bearer qk");
     return { status: 200, json: { results: [{ id: "ethereum", name: "Ethereum" }] } };
   });
-  const options = await pool.lookup(serverRow("quotes", { id: "mcp_quotes" }), "symbols", "eth", { token: "qk" });
+  const options = await pool.lookup(serverRow("quotes", { id: "mcp_quotes" }), { property: "symbols", q: "eth" }, { token: "qk" });
   assert.deepEqual(options, [{ value: { id: "ethereum", name: "Ethereum" }, label: "Ethereum" }]);
   await assert.rejects(
-    () => pool.lookup(serverRow("qonto", { id: "mcp_qonto" }), "symbols", "eth", {}),
+    () => pool.lookup(serverRow("qonto", { id: "mcp_qonto" }), { property: "symbols", q: "eth" }, {}),
     (error: unknown) => error instanceof McpError && error.status === 404,
   );
 });

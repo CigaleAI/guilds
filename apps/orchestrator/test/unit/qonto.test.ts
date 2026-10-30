@@ -12,7 +12,6 @@ import {
   ping,
   readInvoiceFile,
 } from "../../src/connectors/qonto/client.js";
-import { ListedTool } from "../../src/mcp/tools.js";
 import { McpPool } from "../../src/mcp/pool.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
@@ -319,7 +318,7 @@ test("sync Qonto writes the curated catalog", async () => {
   assert.equal(pinged, 1);
   assert.deepEqual(first.map((tool) => tool.namespaced_name), TOOLS.map((spec) => `qonto_${spec.name}`));
   assert.deepEqual(first, second);
-  assert.deepEqual(first[0], new ListedTool("list_bank_accounts", "qonto_list_bank_accounts", TOOLS[0]!.description, TOOLS[0]!.input_schema));
+  assert.deepEqual(first[0], { remote_name: "list_bank_accounts", namespaced_name: "qonto_list_bank_accounts", description: TOOLS[0]!.description, input_schema: TOOLS[0]!.input_schema, read_only_hint: null, destructive_hint: null });
 });
 
 test("call Qonto dispatches with stored login and secret", async () => {
