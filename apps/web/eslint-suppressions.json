@@ -12,11 +12,6 @@
       "count": 1
     }
   },
-  "src/api/clientLog.ts": {
-    "no-restricted-syntax": {
-      "count": 3
-    }
-  },
   "src/api/files.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
