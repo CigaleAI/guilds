@@ -63,11 +63,11 @@ export type PlanSection = {
 };
 
 /**
- * The plan page's sections in order. Agents always show; routines, connectors, collections, and
- * notes show when they have entries or when `hideEmpty` is off; repositories, handoffs, and
- * external setup show only with entries.
+ * The plan page's sections in order. Agents, routines, connectors, collections, and notes always
+ * show, empty or not; repositories, handoffs, and external setup show only with entries.
  */
-export function planSections(plan: RecipePlan, hideEmpty = false): PlanSection[] {
+export function planSections(plan: RecipePlan): PlanSection[] {
+  const access = accessSection(plan);
   const sections: PlanSection[] = [
     {
       id: "agents",
@@ -76,34 +76,21 @@ export function planSections(plan: RecipePlan, hideEmpty = false): PlanSection[]
       empty: !plan.agents.length,
       open: true,
     },
-  ];
-  if (plan.routines.length || !hideEmpty) {
-    sections.push({
+    {
       id: "routines",
       title: "Routines",
       count: plan.routines.length,
       empty: !plan.routines.length,
       open: false,
-    });
-  }
-  const access = accessSection(plan);
-  if (!access.empty) {
-    sections.push({
+    },
+    {
       id: "connectors",
       title: "Connectors & Integrations",
-      count: access.count,
-      empty: false,
+      count: access.empty ? null : access.count,
+      empty: access.empty,
       open: false,
-    });
-  } else if (!hideEmpty) {
-    sections.push({
-      id: "connectors",
-      title: "Connectors & Integrations",
-      count: null,
-      empty: true,
-      open: false,
-    });
-  }
+    },
+  ];
   if (plan.repositories.length) {
     sections.push({
       id: "repositories",
@@ -113,24 +100,22 @@ export function planSections(plan: RecipePlan, hideEmpty = false): PlanSection[]
       open: true,
     });
   }
-  if (plan.collections.length || !hideEmpty) {
-    sections.push({
+  sections.push(
+    {
       id: "collections",
       title: "Tables",
       count: plan.collections.length ? plan.collections.length : null,
       empty: !plan.collections.length,
       open: false,
-    });
-  }
-  if (plan.notes.length || !hideEmpty) {
-    sections.push({
+    },
+    {
       id: "notes",
       title: "Notes",
       count: plan.notes.length ? plan.notes.length : null,
       empty: !plan.notes.length,
       open: Boolean(plan.notes.length),
-    });
-  }
+    },
+  );
   if (plan.handoffs.length) {
     sections.push({
       id: "handoffs",
@@ -150,4 +135,9 @@ export function planSections(plan: RecipePlan, hideEmpty = false): PlanSection[]
     });
   }
   return sections;
+}
+
+/** The plan page's sections that have entries, in order; the agents section shows even without. */
+export function filledPlanSections(plan: RecipePlan): PlanSection[] {
+  return planSections(plan).filter((section) => section.id === "agents" || !section.empty);
 }

@@ -36,6 +36,7 @@ import { ApplyMachinePicker } from "./ApplyMachinePicker";
 import { isRecipeApproved } from "./plan/recipeDraft";
 import { planFromRecipe } from "./plan/planModel";
 import { PlanView } from "./plan/PlanView";
+import { filledPlanSections } from "./plan/planSections";
 
 const connectLater = "create";
 
@@ -235,7 +236,7 @@ export function ApplyPreviewPage() {
         <PlanView
           plan={plan}
           findings={data.findings.filter((finding) => !authoringFindings.has(finding.code))}
-          hideEmpty
+          sections={filledPlanSections(plan)}
           hideName
           agentExtras={(agent) => (
             <AgentChoices

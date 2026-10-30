@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { externalCard } from "./planActions";
 import { planFromRecipe } from "./planModel";
-import { planSections } from "./planSections";
+import { filledPlanSections } from "./planSections";
 import { secretCard } from "./planConnectors";
 import { deskRecipe } from "./planFixtures";
 
@@ -60,6 +60,6 @@ test("a recipe's repositories become a section and steps to connect GitHub and a
       .map((action) => action.title),
     ["Connect GitHub", "Add the api repository"],
   );
-  const sections = planSections(plan, true).map((section) => section.id);
+  const sections = filledPlanSections(plan).map((section) => section.id);
   assert.ok(sections.includes("repositories"));
 });

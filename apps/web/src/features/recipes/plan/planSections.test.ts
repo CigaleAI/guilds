@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { accessSection } from "./planConnectors";
-import { guildHero, planMachineMinimum, planSections, planTally } from "./planSections";
+import {
+  filledPlanSections,
+  guildHero,
+  planMachineMinimum,
+  planSections,
+  planTally,
+} from "./planSections";
 import { planFromRecipe } from "./planModel";
 import { deskRecipe } from "./planFixtures";
 
@@ -47,8 +53,16 @@ test("planTally, planSections, accessSection, and guildHero summarise the plan",
     ],
   );
   assert.deepEqual(
-    planSections(empty, true).map((section) => section.id),
+    filledPlanSections(empty).map((section) => section.id),
     ["agents"],
+  );
+  assert.deepEqual(filledPlanSections(plan), planSections(plan));
+  const routinesOnly = planFromRecipe({
+    roles: [{ role: "solo", schedules: [{ key: "tick", cron: "0 * * * *" }] }],
+  });
+  assert.deepEqual(
+    filledPlanSections(routinesOnly).map((section) => section.id),
+    ["agents", "routines"],
   );
 
   assert.equal(guildHero(plan).goal, "Draft replies");

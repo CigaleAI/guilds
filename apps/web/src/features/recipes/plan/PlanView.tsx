@@ -56,8 +56,8 @@ type PlanViewProps = {
   agentExtras?: ((agent: PlanAgent) => ReactNode) | undefined;
   /** More to show inside a connector's card, such as which login apply uses. */
   connectionExtras?: ((server: string) => ReactNode) | undefined;
-  /** Leaves out sections with nothing in them. */
-  hideEmpty?: boolean;
+  /** The sections to show, in order; every section of the plan when omitted. */
+  sections?: readonly PlanSection[] | undefined;
   /** Leaves the guild's name out of the header, for a page whose own title already names it. */
   hideName?: boolean;
 };
@@ -88,7 +88,7 @@ export function PlanView({
   plan,
   findings,
   catalog,
-  hideEmpty = false,
+  sections = planSections(plan),
   hideName = false,
   ...hooks
 }: PlanViewProps) {
@@ -96,7 +96,6 @@ export function PlanView({
   const hero = guildHero(plan);
   const blocking = blockingSummary(findings);
   const issues = planIssues(findings);
-  const sections = planSections(plan, hideEmpty);
   const minimum = planMachineMinimum(plan);
   const [open, setOpen] = useState<ReadonlySet<PlanSectionId>>(
     () => new Set(sections.filter((section) => section.open).map((section) => section.id)),
