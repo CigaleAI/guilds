@@ -163,4 +163,5 @@ A guild the caller cannot see is 404.
 Each change publishes `guild.issues.changed` on the guild's stream.
 
 Code: `apps/orchestrator/src/issues/index.ts`,
+`apps/orchestrator/src/issues/operator.ts`,
 `apps/orchestrator/src/toolbox/report.ts`.

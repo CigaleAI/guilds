@@ -1,10 +1,10 @@
 import { Type } from "@sinclair/typebox";
 import { requireVisibleGuild } from "../guilds/access.js";
 import { guildIssues } from "../issues/index.js";
+import { changeIssueStatus, resolveGuildIssues, type IssueWriteDeps } from "../issues/operator.js";
 import type { AppDeps, RouteApp } from "./deps.js";
 import { currentUser } from "./identity.js";
 import { GuildParams } from "./params.js";
-import { publishGroup } from "./publish.js";
 import type { UserRow } from "../db/users.js";
 
 /** Which of a guild's issues to list: `open`, `resolved`, or every one when left out or `all`. */
@@ -24,6 +24,7 @@ function resolverOf(user: UserRow): string {
 export async function registerIssueRoutes(app: RouteApp, deps: AppDeps): Promise<void> {
   const { db } = deps;
   const issues = guildIssues(db);
+  const writes: IssueWriteDeps = { ...deps, issues };
 
   app.get(
     "/api/guilds/:guild_id/issues",
@@ -41,11 +42,7 @@ export async function registerIssueRoutes(app: RouteApp, deps: AppDeps): Promise
     async (request) => {
       const user = await currentUser(db, request, deps);
       const guild = await requireVisibleGuild(db, request.params.guild_id, user.id);
-      const resolved = await issues.resolveOpen(guild.id, resolverOf(user));
-      if (resolved > 0) {
-        await publishGroup(deps, guild.id, "guild.issues.changed", { action: "resolved" });
-      }
-      return { resolved };
+      return { resolved: await resolveGuildIssues(writes, guild.id, resolverOf(user)) };
     },
   );
 
@@ -55,14 +52,8 @@ export async function registerIssueRoutes(app: RouteApp, deps: AppDeps): Promise
     async (request) => {
       const user = await currentUser(db, request, deps);
       const guild = await requireVisibleGuild(db, request.params.guild_id, user.id);
-      const { status } = request.body;
-      const issueId = request.params.issue_id;
-      const row = await issues.setStatus(guild.id, issueId, status, resolverOf(user));
-      await publishGroup(deps, guild.id, "guild.issues.changed", {
-        action: status,
-        issue_id: row.id,
-      });
-      return row;
+      const issue = { guildId: guild.id, issueId: request.params.issue_id };
+      return changeIssueStatus(writes, issue, request.body.status, resolverOf(user));
     },
   );
 }

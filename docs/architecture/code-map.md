@@ -57,7 +57,7 @@ A repository that extends core holds this one as a submodule
 
 | Directory | What it holds |
 | --- | --- |
-| `http/` | One `*-routes.ts` file per domain, registered in `routes.ts`; the `AUTH_MODE` seam (`identity.ts`), the host and origin check (`origin.ts`), the mapping of domain errors to HTTP (`errors.ts`), SSE, the sandbox proxies (`sandbox-proxy.ts`), the group-stream publisher (`publish.ts`), and the web build (`web-app.ts`) |
+| `http/` | One `*-routes.ts` file per domain, registered in `routes.ts`; the `AUTH_MODE` seam (`identity.ts`), the host and origin check (`origin.ts`), the mapping of domain errors to HTTP (`errors.ts`), SSE, the sandbox proxies (`sandbox-proxy.ts`), and the web build (`web-app.ts`) |
 | `generation/` | `GenerationLoop`, a run's config snapshot and the prepared run it is created from (`snapshot.ts`), the tools a generation offers (`offered-tools.ts`), the tool calls of a run, run in order and resolved when a generation stops without their results (`tool-calls.ts`), its named errors (`errors.ts`), a run's event stream (`events.ts`), the machines' containers with their idle stops and each agent's Chrome and terminal (`machines.ts`), the preparation of a run's prompts and State (`prepare.ts`), the model calls with their history projection and cancel (`completion.ts`), the steps of a coding run and the diffs, logs, and harness checks read outside one (`coding.ts`), a coding agent's harness view and a run's changes as an operator reviews them (`run-review.ts`), the disk limits of an agent's home and its machine (`workspace.ts`), the secrets of the runs under way and the values their output is redacted with (`run-secrets.ts`), the creation of direct, group, schedule, and continuation runs and the scheduler (`runs.ts`), a generation from its setup through its model steps to its end (`generate.ts`), run chains and their hand-off (`chain.ts`), the generations in progress (`active-generations.ts`), idle stops (`idle.ts`), and the runs an operator opens and talks to (`operator.ts`) ([Generation](orchestrator.md#generation)) |
 | `toolbox/` | Native tools, the sandbox command runner (`shell.ts`), and the result pipeline (`output.ts`) ([Native tools](../tools-and-connectors/native.md)) |
 | `connectors/` | One folder per connector, the manifest schema, the adapter contract, the connector registry, the servers configured from them and the tools each offers (`servers.ts`), the naming of their tools (`naming.ts`), and the platform logins and integrations they bring (`instance.ts`) ([Connectors](../tools-and-connectors/connectors.md)) |
@@ -72,7 +72,7 @@ A repository that extends core holds this one as a submodule
 | `secrets/` | Who reaches and manages a secret, `secret_store`, redaction, and an organisation's secrets as its members manage them (`service.ts`) ([Secrets](../concepts/secrets.md)) |
 | `db/` | Pool, codecs, Drizzle schema, one query module per table family (`users.ts`, `agents.ts`, `runs.ts`, …), seeds, and the migration check |
 | `attachments/` | Chat images: sniffing, upload, and hydration |
-| `artifacts/` | One module per sub-domain over the artifact store (`store.ts`): notes (`notes.ts`), Memory (`memory.ts`), collections (`collections.ts`), records (`records.ts`), and access lists (`access-lists.ts`), with `ArtifactFiles` (`files.ts`) for shared files; their queries are `db/artifacts.ts`, `db/collections.ts`, and `db/artifact-access.ts`; the files an operator's pages read and write at each level (`host-files.ts`) and the collection views (`collection-views.ts`) ([Artifacts](../concepts/artifacts.md), [Access](../concepts/access.md)) |
+| `artifacts/` | One module per sub-domain over the artifact store (`store.ts`): notes (`notes.ts`), Memory (`memory.ts`), collections (`collections.ts`), records (`records.ts`), and access lists (`access-lists.ts`), with `ArtifactFiles` (`files.ts`) for shared files and the uploads and deletes an operator makes of them, each announced to the file's guild (`operator-files.ts`); their queries are `db/artifacts.ts`, `db/collections.ts`, and `db/artifact-access.ts`; the files an operator's pages read and write at each level (`host-files.ts`) and the collection views (`collection-views.ts`) ([Artifacts](../concepts/artifacts.md), [Access](../concepts/access.md)) |
 | `notes/` | `NotesStore`: `system.md` and the routine shadow files; the store the generation unit tests use; and an operator's notes on a guild, agent or organisation page (`operator.ts`) |
 | `directories/` | State listing over `NotesStore` for those tests |
 | `memory/` | Hydration, the cap, the archive, and the version history ([Memory](../concepts/memory.md)) |
@@ -80,13 +80,13 @@ A repository that extends core holds this one as a submodule
 | `state/` | The State JSON a run sees |
 | `groupchat/` | Group history, tags, the dispatcher, and what an operator reads and posts (`operator.ts`) ([Group chat](../concepts/group-chat.md)) |
 | `typesafe/` | The group routing client |
-| `schedules/` | Routine timing and the `Schedules` service ([Routines](../concepts/routines.md)) |
-| `scripts/` | The agent `script` catalog and its materialisation ([Scripts](../concepts/scripts.md)) |
+| `schedules/` | Routine timing, the `Schedules` service, and the routine writes an operator makes, each announced to the agent's guild (`operator.ts`) ([Routines](../concepts/routines.md)) |
+| `scripts/` | The agent `script` catalog, its materialisation, and the script writes an operator makes, each announced to the agent's guild (`operator.ts`) ([Scripts](../concepts/scripts.md)) |
 | `sandbox/` | `RunSandboxes`, core's sandbox provider (`index.ts`), the OpenSandbox SDK adapter: its shapes, its loading, and the wrappers over its JS signatures (`sdk.ts`), and the orphan sweep (`sweep.ts`) |
 | `llm/` | Providers, the models.dev catalog, credentials, the model client, tokens, and cost ([Model client](orchestrator.md#model-client)) |
 | `policy/` | `OrgPolicy` and the checks core runs against it |
 | `avatars/` | [DiceBear](https://www.dicebear.com/) SVGs in seven styles (critters, cameo, pixelbot, bottts-neutral, clay, cutouts, voxel-bot); `looks.ts` assigns a guild family and a variant per builder role |
-| `issues/` | Guild issues from `report_issue` |
+| `issues/` | Guild issues from `report_issue`, and the statuses an operator sets, each announced to the guild (`operator.ts`) |
 | `notifications/` | The inbox view and its per-user stream |
 | `usage/` | Usage counter keys, deltas, and tree (`index.ts`), and the organisation, guild, and agent listings (`view.ts`) |
 | `studio/` | Prompt Studio: sessions, tools, drafts, edit, table, and routine requests, focus pins, the activity ledger, and the runs and routines the inspector reads (`inspector.ts`) ([Prompt Studio](../concepts/prompt-studio.md)) |

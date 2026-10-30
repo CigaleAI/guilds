@@ -111,6 +111,20 @@ test("R6 HTTP SSE and WS recordings replay over real HTTP", { timeout: 180_000 }
     masterKey: decodeMasterKey(HEX_MASTER_KEY),
     mcp: mcpPool(db),
     generation,
+    publishRoutinesChanged: async (guildId, change) => {
+      await generation.groupChat.publish(guildId, "agent.routines.changed", {
+        agent_id: change.agentId,
+        action: change.action,
+        schedule_id: change.scheduleId,
+      });
+    },
+    publishScriptsChanged: async (guildId, change) => {
+      await generation.groupChat.publish(guildId, "agent.scripts.changed", {
+        agent_id: change.agentId,
+        action: change.action,
+        ...(change.name === null ? {} : { name: change.name }),
+      });
+    },
   });
   await app.listen({ host: "127.0.0.1", port: 0 });
   const address = app.server.address();

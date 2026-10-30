@@ -201,6 +201,7 @@ version's object after. A delete removes the live version's object
 after the row is marked deleted.
 
 Code: `apps/orchestrator/src/artifacts/files.ts`,
+`apps/orchestrator/src/artifacts/operator-files.ts`,
 `apps/orchestrator/src/toolbox/file.ts`,
 `apps/orchestrator/src/http/file-routes.ts`,
 `apps/orchestrator/src/lib/blob-store.ts`.

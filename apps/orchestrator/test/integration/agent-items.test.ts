@@ -5,6 +5,7 @@ import { connect } from "../../src/seed/connect.js";
 import { addTestAgent } from "../helpers/agents.js";
 import { insertGuild } from "../../src/db/guilds.js";
 import { insertIssue } from "../../src/db/issues.js";
+import type { IssueChange } from "../../src/issues/operator.js";
 import { insertMember } from "../../src/db/orgs.js";
 import { insertRun } from "../../src/db/runs.js";
 import { insertUser } from "../../src/db/users.js";
@@ -13,6 +14,7 @@ import { StudioError } from "../../src/studio/errors.js";
 import { readGuildRun } from "../../src/studio/inspector.js";
 import { usageForOrg, usageForPlatform } from "../../src/usage/view.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
+import type { ScriptChange } from "../../src/scripts/operator.js";
 import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
@@ -37,11 +39,19 @@ test(
     const notes = new NotesStore(tempDir("guilds-agent-items-"), templatesRoot());
     await notes.ensureSystemPrompt();
     const db = database.pool;
+    const issuesChanged: Array<[string, IssueChange]> = [];
+    const scriptsChanged: Array<[string, ScriptChange]> = [];
     const app = await buildApp(database, {
       db,
       notes,
       scripts: agentScripts(db),
       schedules: agentSchedules(db),
+      publishScriptsChanged: async (guildId, change) => {
+        scriptsChanged.push([guildId, change]);
+      },
+      publishIssuesChanged: async (guildId, change) => {
+        issuesChanged.push([guildId, change]);
+      },
     });
     await insertGuild(
       db,
@@ -112,6 +122,16 @@ test(
       assert.deepEqual(
         (await app.inject({ method: "GET", url: `${agent}/scripts`, headers: OWNER })).json(),
         [],
+      );
+      assert.deepEqual(
+        scriptsChanged,
+        [
+          ["guild_items", { agentId: "a_items", action: "create", name: "tally" }],
+          ["guild_items", { agentId: "a_items", action: "create", name: "sum" }],
+          ["guild_items", { agentId: "a_items", action: "delete", name: "tally" }],
+          ["guild_items", { agentId: "a_items", action: "clear", name: null }],
+        ],
+        "each script write an operator makes is announced once; a refused one is not",
       );
 
       const patched = await app.inject({
@@ -196,6 +216,26 @@ test(
       });
       assert.equal(resolved.statusCode, 200, resolved.body);
       assert.equal(resolved.json().status, "resolved");
+      const reopened = await app.inject({
+        method: "PATCH",
+        url: `${guild}/issues/${issue.id}`,
+        headers: JSON_OWNER,
+        payload: { status: "open" },
+      });
+      assert.equal(reopened.statusCode, 200, reopened.body);
+      assert.deepEqual(
+        (await app.inject({ method: "POST", url: `${guild}/issues/resolve`, headers: OWNER })).json(),
+        { resolved: 1 },
+      );
+      assert.deepEqual(
+        issuesChanged,
+        [
+          ["guild_items", { action: "resolved", issueId: "iss_items" }],
+          ["guild_items", { action: "open", issueId: "iss_items" }],
+          ["guild_items", { action: "resolved", issueId: null }],
+        ],
+        "each status an operator sets is announced once; a refused one, or resolving none, is not",
+      );
 
       const runs = `${agent}/runs`;
       const start = (payload: object) =>

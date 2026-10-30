@@ -7,11 +7,15 @@ import type {
   RawServerDefault,
 } from "fastify";
 import type { ArtifactFiles } from "../artifacts/files.js";
+import type { SharedFileChange } from "../artifacts/operator-files.js";
 import type { ArtifactStore } from "../artifacts/store.js";
 import type { Database } from "../db/client.js";
 import type { OrgCreatedHook } from "../db/orgs.js";
 import type { NotesStore } from "../notes/store.js";
 import type { Scripts } from "../scripts/catalog.js";
+import type { IssueChange } from "../issues/operator.js";
+import type { RoutineChange } from "../schedules/operator.js";
+import type { ScriptChange } from "../scripts/operator.js";
 import type { Schedules } from "../schedules/service.js";
 import type { AppConfig } from "../config/index.js";
 import type { McpPool } from "../mcp/pool.js";
@@ -56,8 +60,16 @@ export type AppDeps = {
   artifacts?: ArtifactStore;
   /** The shared files over `artifacts` and the blob store. */
   files?: ArtifactFiles;
+  /** Tells a guild that one of its shared files changed; file writes announce nothing when absent. */
+  publishSharedFileChanged?: (guildId: string, change: SharedFileChange) => Promise<void>;
   scripts: Scripts;
   schedules: Schedules;
+  /** Tells a guild that one of its agents' routines changed; routine writes announce nothing when absent. */
+  publishRoutinesChanged?: (guildId: string, change: RoutineChange) => Promise<void>;
+  /** Tells a guild that one of its agents' scripts changed; script writes announce nothing when absent. */
+  publishScriptsChanged?: (guildId: string, change: ScriptChange) => Promise<void>;
+  /** Tells a guild that its issues changed; issue writes announce nothing when absent. */
+  publishIssuesChanged?: (guildId: string, change: IssueChange) => Promise<void>;
   config?: AppConfig;
   masterKey?: Buffer;
   mcp?: McpPool;
