@@ -14,8 +14,10 @@ type TaskVersion = {
   replaced?: { at: string; by: string | null };
 };
 
+type VersionsTabProps = { agent: StudioAgent };
+
 /** The agent's Task versions, live first, each compared with the one it replaced. */
-export function VersionsTab({ agent }: { agent: StudioAgent }) {
+export function VersionsTab({ agent }: VersionsTabProps) {
   const { session, search, go } = useStudio();
   const task = useAgentTask(agent.id);
 

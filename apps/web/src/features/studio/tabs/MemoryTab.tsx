@@ -18,11 +18,13 @@ import { useStudio } from "../StudioContext";
 
 const any = "all";
 
+type MemoryTabProps = { agent: StudioAgent };
+
 /**
  * Every version of the agent's memory, newest first, filtered by author: who wrote each,
  * what it changed against the one before, and the run step that wrote it.
  */
-export function MemoryTab({ agent }: { agent: StudioAgent }) {
+export function MemoryTab({ agent }: MemoryTabProps) {
   const { session, search, go } = useStudio();
   const timeline = useMemoryTimeline(session.id, agent.id);
   const [author, setAuthor] = useState<string>(any);
@@ -100,8 +102,10 @@ export function MemoryTab({ agent }: { agent: StudioAgent }) {
   );
 }
 
+type MemoryDetailProps = { agent: StudioAgent; entry: MemoryVersion };
+
 /** One version with Studio's actions: open the step that wrote it, or ask the coach about it. */
-function MemoryDetail({ agent, entry }: { agent: StudioAgent; entry: MemoryVersion }) {
+function MemoryDetail({ agent, entry }: MemoryDetailProps) {
   const { ask, openStep } = useStudio();
   return (
     <MemoryVersionView

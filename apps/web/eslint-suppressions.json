@@ -719,39 +719,11 @@
       "count": 3
     }
   },
-  "src/features/studio/tabs/ChangeBar.tsx": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
   "src/features/studio/tabs/HistoryTab.tsx": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     },
     "complexity": {
-      "count": 2
-    },
-    "no-restricted-syntax": {
-      "count": 5
-    }
-  },
-  "src/features/studio/tabs/MemoryTab.tsx": {
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
-  "src/features/studio/tabs/OverviewTab.tsx": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/features/studio/tabs/RoutinesTab.tsx": {
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
-  "src/features/studio/tabs/ScriptsTab.tsx": {
-    "no-restricted-syntax": {
       "count": 2
     }
   },
@@ -760,14 +732,11 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 4
+      "count": 1
     }
   },
   "src/features/studio/tabs/VersionsTab.tsx": {
     "complexity": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
       "count": 1
     }
   },

@@ -30,8 +30,10 @@ import { useStudio } from "../StudioContext";
 export const openDraft = (draft: Pick<StudioDraft, "status">) =>
   draft.status === "draft" || draft.status === "conflicted";
 
+type PromptTabProps = { agent: StudioAgent };
+
 /** The agent's live Task, and the whole prompt a run receives. */
-export function PromptTab({ agent }: { agent: StudioAgent }) {
+export function PromptTab({ agent }: PromptTabProps) {
   const { session, go } = useStudio();
   const inspector = useStudioInspector(session.id, agent.id);
 
@@ -101,8 +103,10 @@ export function PromptTab({ agent }: { agent: StudioAgent }) {
   );
 }
 
+type DraftTabProps = { agent: StudioAgent; drafts: StudioDraft[] };
+
 /** The Task change the coach proposed for the agent, to publish, edit or discard. */
-export function DraftTab({ agent, drafts }: { agent: StudioAgent; drafts: StudioDraft[] }) {
+export function DraftTab({ agent, drafts }: DraftTabProps) {
   const { session } = useStudio();
   const inspector = useStudioInspector(session.id, agent.id);
   const current = drafts.find(openDraft) ?? drafts[0];
@@ -124,15 +128,13 @@ export function DraftTab({ agent, drafts }: { agent: StudioAgent; drafts: Studio
   );
 }
 
-function DraftReview({
-  session,
-  draft,
-  generating,
-}: {
+type DraftReviewProps = {
   session: StudioSession;
   draft: StudioDraft;
   generating: boolean;
-}) {
+};
+
+function DraftReview({ session, draft, generating }: DraftReviewProps) {
   const act = useDraftAction(session.id);
   const [confirm, setConfirm] = useState<"publish" | "discard" | null>(null);
   const [editing, setEditing] = useState(false);

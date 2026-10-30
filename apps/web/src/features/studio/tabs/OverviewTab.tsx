@@ -5,8 +5,10 @@ import { Button, Markdown, Avatar } from "@guildsrun/ui";
 import { useStudio } from "../StudioContext";
 import { warningLabel } from "../warnings";
 
+type OverviewTabProps = { pending: StudioDraft[] };
+
 /** The guild at a glance: its description, drafts waiting on the operator, and its agents. */
-export function OverviewTab({ pending }: { pending: StudioDraft[] }) {
+export function OverviewTab({ pending }: OverviewTabProps) {
   const { session, agents, go } = useStudio();
   const about = session.source_guild?.about;
   const objective = session.source_guild?.objective?.trim();

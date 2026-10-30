@@ -50,7 +50,9 @@ function runNotes(run: StudioRun, currentTask: string | undefined): string {
   return notes.map((note) => ` · ${note}`).join("");
 }
 
-function RunState({ run, selected }: { run: StudioRun; selected: boolean }) {
+type RunStateProps = { run: StudioRun; selected: boolean };
+
+function RunState({ run, selected }: RunStateProps) {
   if (run.generating) {
     return (
       <Tag tone={selected ? "on-plum" : "signal"} font="sans">
@@ -70,6 +72,17 @@ function RunState({ run, selected }: { run: StudioRun; selected: boolean }) {
   );
 }
 
+type RunRowProps = {
+  run: StudioRun;
+  routines: StudioRoutine[] | undefined;
+  currentTask: string | undefined;
+  selected: boolean;
+  title?: string;
+  /** Appended to the row's notes, such as "older instruction". */
+  note?: string;
+  onSelect: () => void;
+};
+
 /** One row of a run list: what it was, when, and what went wrong. */
 export function RunRow({
   run,
@@ -79,16 +92,7 @@ export function RunRow({
   title,
   note,
   onSelect,
-}: {
-  run: StudioRun;
-  routines: StudioRoutine[] | undefined;
-  currentTask: string | undefined;
-  selected: boolean;
-  title?: string;
-  /** Appended to the row's notes, such as "older instruction". */
-  note?: string;
-  onSelect: () => void;
-}) {
+}: RunRowProps) {
   return (
     <Row
       asChild
@@ -109,11 +113,13 @@ export function RunRow({
   );
 }
 
+type HistoryTabProps = { agent: StudioAgent };
+
 /**
  * The agent's runs, newest first, with filters for kind, errors and runs on the current Task;
  * the selected run's transcript opens beside them, at a step when one is named.
  */
-export function HistoryTab({ agent }: { agent: StudioAgent }) {
+export function HistoryTab({ agent }: HistoryTabProps) {
   const { session, search, go } = useStudio();
   const runs = useStudioRuns(session.id, agent.id);
   const routines = useStudioRoutines(session.id, agent.id);
@@ -238,11 +244,11 @@ export function HistoryTab({ agent }: { agent: StudioAgent }) {
   );
 }
 
+/** The hashes of the prompts an agent runs on now, each present once it is known. */
+type PromptHashes = { guidelines?: string; task?: string; memory?: string };
+
 /** Whether the run used what the agent runs on now: its guidelines, Task and memory. */
-function sameAsNow(
-  header: StudioRun | undefined,
-  now: { guidelines?: string; task?: string; memory?: string },
-): string[] {
+function sameAsNow(header: StudioRun | undefined, now: PromptHashes): string[] {
   if (!header) return [];
   const notes: string[] = [];
   if (now.task && header.task_prompt_hash)
@@ -256,21 +262,16 @@ function sameAsNow(
   return notes;
 }
 
-function RunDetail({
-  agent,
-  runId,
-  header,
-  title,
-  reveal,
-  back,
-}: {
+type RunDetailProps = {
   agent: StudioAgent;
   runId: string;
   header: StudioRun | undefined;
   title: string | undefined;
   reveal: { call?: string; seq?: number };
   back: { label: string; onBack: () => void } | undefined;
-}) {
+};
+
+function RunDetail({ agent, runId, header, title, reveal, back }: RunDetailProps) {
   const { session, ask } = useStudio();
   const detail = useAgent(agent.id);
   const run = useRun(runId);

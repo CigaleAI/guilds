@@ -19,8 +19,10 @@ function nextWake(routine: StudioRoutine): string {
   return routine.next_run_at ? `next ${upcomingTime(routine.next_run_at)}` : "not scheduled";
 }
 
+type RoutinesTabProps = { agent: StudioAgent };
+
 /** The agent's routines: each one's instruction, when it wakes next, and the runs it started. */
-export function RoutinesTab({ agent }: { agent: StudioAgent }) {
+export function RoutinesTab({ agent }: RoutinesTabProps) {
   const { session, search, go } = useStudio();
   const routines = useStudioRoutines(session.id, agent.id);
 
@@ -97,7 +99,9 @@ export function RoutinesTab({ agent }: { agent: StudioAgent }) {
   );
 }
 
-function RoutineDetail({ agent, routine }: { agent: StudioAgent; routine: StudioRoutine }) {
+type RoutineDetailProps = { agent: StudioAgent; routine: StudioRoutine };
+
+function RoutineDetail({ agent, routine }: RoutineDetailProps) {
   const { session, go, ask } = useStudio();
   const runs = useStudioRuns(session.id, agent.id);
   const inspector = useStudioInspector(session.id, agent.id);

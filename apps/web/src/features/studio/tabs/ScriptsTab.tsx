@@ -8,8 +8,10 @@ import { DetailHeader, Empty, MasterDetail } from "../MasterDetail";
 import { useStudio } from "../StudioContext";
 import { ChangeBar } from "./ChangeBar";
 
+type ScriptsTabProps = { agent: StudioAgent };
+
 /** The agent's scripts: what each does, its tool parameters, its source and who changed it last. */
-export function ScriptsTab({ agent }: { agent: StudioAgent }) {
+export function ScriptsTab({ agent }: ScriptsTabProps) {
   const { search, go } = useStudio();
   const scripts = useAgentScripts(agent.id);
 
@@ -84,7 +86,9 @@ export function ScriptsTab({ agent }: { agent: StudioAgent }) {
   );
 }
 
-function ScriptDetail({ agent, script }: { agent: StudioAgent; script: Script }) {
+type ScriptDetailProps = { agent: StudioAgent; script: Script };
+
+function ScriptDetail({ agent, script }: ScriptDetailProps) {
   const { session, ask } = useStudio();
   return (
     <>
