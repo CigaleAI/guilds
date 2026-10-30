@@ -13,7 +13,7 @@ import {
 } from "../../src/attachments/index.js";
 import type { NewAttachment } from "../../src/db/attachments.js";
 import { MemoryBlobStore, type BlobStore } from "../../src/lib/blob-store.js";
-import { countInputTokens } from "../../src/llm/index.js";
+import { countInputTokens } from "../../src/llm/tokens.js";
 
 const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",

@@ -10,7 +10,7 @@ import { agentWorkspaceMaxMib } from "../../src/generation/workspace.js";
 import { generationLive } from "../../src/generation/completion.js";
 import { configSnapshot } from "../../src/generation/snapshot.js";
 import { offeredToolNames } from "../../src/toolbox/offered.js";
-import type { Completion } from "../../src/llm/index.js";
+import type { Completion } from "../../src/llm/completion.js";
 import { invokeTool } from "../../src/toolbox/index.js";
 import {
   callSegment,

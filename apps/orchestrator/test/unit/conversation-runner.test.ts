@@ -12,7 +12,7 @@ import {
 } from "../../src/conversation/runner.js";
 import type { Queryable } from "../../src/db/pg.js";
 import type { ToolCall } from "../../src/db/schema/index.js";
-import type { ModelEvent } from "../../src/llm/index.js";
+import type { ModelEvent } from "../../src/llm/completion.js";
 
 const live = { ...generationLive };
 

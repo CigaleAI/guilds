@@ -11,7 +11,7 @@ import {
   type ModelsDevFeed,
   type ModelsDevSnapshot,
 } from "./models-dev.js";
-import { PROVIDERS, parseModelId, providerById, type ProviderId } from "./providers.js";
+import { PROVIDERS, parseModelId, type ProviderId } from "./providers.js";
 
 export type ModelCatalogOptions = {
   fetch?: typeof fetch;
@@ -26,6 +26,29 @@ export type ModelCatalogOptions = {
 };
 
 const MODELS_DEV_PROVIDER_IDS = PROVIDERS.flatMap((provider) => (provider.modelsDev ? [provider.modelsDev] : []));
+
+/** Raised when models.dev answers the feed's fetch with a status other than success. */
+export class ModelsDevFeedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ModelsDevFeedError";
+  }
+}
+
+/** A refresh that did not load the feed: what its fetch threw. The catalog keeps what it had. */
+export type CatalogRefreshFailure = { error: unknown };
+
+function logRefreshFailure(failure: CatalogRefreshFailure | null): void {
+  if (failure === null) {
+    return;
+  }
+  writeLog(
+    "warn",
+    "model catalog refresh failed; keeping the last catalog",
+    { source: "backend", operation: "models.catalog_refresh" },
+    failure.error,
+  );
+}
 
 /**
  * The model catalog: models.dev, fetched on the first read and again on a read once the cache is
@@ -111,42 +134,50 @@ export class ModelCatalog {
     return [...(this.byProvider.get(provider) ?? [])];
   }
 
-  /** Fetches the feed when the cache is stale; a failure keeps the cache. */
+  /** Fetches the feed when the cache is stale; a failure is logged and keeps the cache. */
   async ensureFresh(): Promise<void> {
     if (!this.stale()) {
       return;
     }
     if (!this.inflight) {
-      this.inflight = this.refresh().finally(() => {
-        this.inflight = null;
-      });
+      this.inflight = this.refresh()
+        .then(logRefreshFailure)
+        .finally(() => {
+          this.inflight = null;
+        });
     }
     await this.inflight;
   }
 
-  async refresh(): Promise<void> {
+  /**
+   * Fetches the feed and serves it from now on; the failure when the fetch did not go through,
+   * which keeps the cache and is retried after a while.
+   */
+  async refresh(): Promise<CatalogRefreshFailure | null> {
+    let feed: ModelsDevFeed;
     try {
-      const response = await this.fetchFn(this.url, {
-        headers: { Accept: "application/json", "User-Agent": "guilds.run" },
-        signal: AbortSignal.timeout(this.timeoutMs),
-      });
-      if (!response.ok) {
-        throw new Error(`models.dev answered ${response.status}`);
-      }
-      const feed = projectModelsDevFeed(await response.json(), MODELS_DEV_PROVIDER_IDS);
-      this.load(feed);
-      this.feedDate = new Date(this.now()).toISOString().slice(0, 10);
-      this.fetchedAtMs = this.now();
-      this.failedAtMs = null;
+      feed = await this.fetchFeed();
     } catch (error) {
       this.failedAtMs = this.now();
-      writeLog(
-        "warn",
-        "model catalog refresh failed; keeping the last catalog",
-        { source: "backend", operation: "models.catalog_refresh" },
-        error,
-      );
+      return { error };
     }
+    this.load(feed);
+    this.feedDate = new Date(this.now()).toISOString().slice(0, 10);
+    this.fetchedAtMs = this.now();
+    this.failedAtMs = null;
+    return null;
+  }
+
+  /** The feed, reduced to the providers core lists; a status other than success throws `ModelsDevFeedError`. */
+  private async fetchFeed(): Promise<ModelsDevFeed> {
+    const response = await this.fetchFn(this.url, {
+      headers: { Accept: "application/json", "User-Agent": "guilds.run" },
+      signal: AbortSignal.timeout(this.timeoutMs),
+    });
+    if (!response.ok) {
+      throw new ModelsDevFeedError(`models.dev answered ${response.status}`);
+    }
+    return projectModelsDevFeed(await response.json(), MODELS_DEV_PROVIDER_IDS);
   }
 }
 
@@ -168,4 +199,3 @@ export function providerPrefixes(): string {
   return PROVIDERS.map((provider) => `${provider.id}/`).join(", ");
 }
 
-export { providerById };

@@ -1,32 +1,20 @@
 import assert from "node:assert/strict";
 import http from "node:http";
 import { test } from "node:test";
+import { modelAcceptsAttachments, modelCatalog } from "../../src/llm/catalog.js";
 import {
-  GenerationLimitError,
-  INPUT_TOKEN_LIMIT_MESSAGE,
-  LLMError,
-  MODEL_USER_AGENT,
   applyPromptCacheControl,
-  modelAcceptsAttachments,
-  modelCatalog,
-  modelNeedsInlineImages,
-  listProviderModels,
-  providerById,
-  reasoningEffortForModel,
   applyReasoningDetailDelta,
-  assistantMetadata,
-  assistantPayload,
   completionRequestBody,
-  completionTimeoutMs,
-  catalogCostUsd,
-  countInputTokens,
-  enforceInputTokenLimit,
-  redactApiKey,
+  listProviderModels,
+  parseCompletionChunk,
   streamCompletion,
-  type ModelEvent,
-  type ReasoningDetail,
-} from "../../src/llm/index.js";
-import { parseCompletionChunk } from "../../src/llm/client.js";
+} from "../../src/llm/client.js";
+import { LLMError, MODEL_USER_AGENT, reasoningEffortForModel, assistantMetadata, assistantPayload, completionTimeoutMs, redactApiKey, type ModelEvent } from "../../src/llm/completion.js";
+import { catalogCostUsd } from "../../src/llm/cost.js";
+import { modelNeedsInlineImages, providerById } from "../../src/llm/providers.js";
+import { GenerationLimitError, INPUT_TOKEN_LIMIT_MESSAGE, countInputTokens, enforceInputTokenLimit } from "../../src/llm/tokens.js";
+import type { ReasoningDetail } from "../../src/db/schema/index.js";
 
 function provider(id: string) {
   const definition = providerById(id);
@@ -98,7 +86,8 @@ test("assistant metadata catalog cost treats cached tokens as part of input", ()
         prompt_tokens_details: { cached_tokens: 800 },
       },
     },
-    { latencyMs: 1, model: "deepinfra/zai-org/GLM-5.3-Flash" },
+    "deepinfra/zai-org/GLM-5.3-Flash",
+    1,
   );
   assert.deepEqual(metadata.usage, { input_tokens: 1_000, output_tokens: 10, cache_read_tokens: 800 });
   assert.equal(metadata.cost_source, "catalog");
@@ -114,7 +103,8 @@ test("assistant metadata keeps Python keys and optional cost source", () => {
       finish_reason: "stop",
       provider_cost: 0.001,
     },
-    { latencyMs: 12, model: "openrouter/openai/gpt-5.6-luna" },
+    "openrouter/openai/gpt-5.6-luna",
+    12,
   );
   for (const key of ["usage", "latency_ms", "finish_reason", "model", "response_id", "provider_request_id", "cost_usd"]) {
     assert.ok(key in metadata);
@@ -129,12 +119,12 @@ test("assistant metadata keeps Python keys and optional cost source", () => {
 });
 
 test("assistant metadata carries reasoning only when the model streamed some", () => {
-  const options = { latencyMs: 1, model: "openrouter/openai/gpt-5.6-luna" };
-  const silent = assistantMetadata({ usage: {}, reasoning: "", reasoning_details: [] }, options);
+  const model = "openrouter/openai/gpt-5.6-luna";
+  const silent = assistantMetadata({ usage: {}, reasoning: "", reasoning_details: [] }, model, 1);
   assert.equal("reasoning" in silent, false);
   assert.equal("reasoning_details" in silent, false);
   const details: ReasoningDetail[] = [{ type: "reasoning.text", text: "weigh options", index: 0 }];
-  const thoughtful = assistantMetadata({ usage: {}, reasoning: "weigh options", reasoning_details: details }, options);
+  const thoughtful = assistantMetadata({ usage: {}, reasoning: "weigh options", reasoning_details: details }, model, 1);
   assert.equal(thoughtful.reasoning, "weigh options");
   assert.deepEqual(thoughtful.reasoning_details, details);
 });
@@ -207,15 +197,18 @@ test("listProviderModels accepts a 200 and returns the listed ids", async () => 
   const address = server.address();
   assert.ok(address && typeof address === "object");
   try {
-    const ids = await listProviderModels(provider("kimi"), {
-      apiKey: "sk-test",
-      fetch: async (url: string | URL | Request, init?: RequestInit) => {
-        assert.equal(String(url), "https://api.kimi.ai/coding/v1/models");
-        assert.equal((init?.headers as Record<string, string>)["User-Agent"], MODEL_USER_AGENT);
-        assert.equal((init?.headers as Record<string, string>).Authorization, "Bearer sk-test");
-        return fetch(`http://127.0.0.1:${address.port}/models`, init);
+    const ids = await listProviderModels(
+      provider("kimi"),
+      { apiKey: "sk-test" },
+      {
+        fetch: async (url: string | URL | Request, init?: RequestInit) => {
+          assert.equal(String(url), "https://api.kimi.ai/coding/v1/models");
+          assert.equal((init?.headers as Record<string, string>)["User-Agent"], MODEL_USER_AGENT);
+          assert.equal((init?.headers as Record<string, string>).Authorization, "Bearer sk-test");
+          return fetch(`http://127.0.0.1:${address.port}/models`, init);
+        },
       },
-    });
+    );
     assert.deepEqual(ids, ["kimi-for-coding"]);
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
@@ -225,14 +218,11 @@ test("listProviderModels accepts a 200 and returns the listed ids", async () => 
 test("listProviderModels rejects a 401 and names the provider", async () => {
   await assert.rejects(
     () =>
-      listProviderModels(provider("kimi"), {
-        apiKey: "bad",
-        fetch: async () => new Response("no", { status: 401 }),
-      }),
+      listProviderModels(provider("kimi"), { apiKey: "bad" }, { fetch: async () => new Response("no", { status: 401 }) }),
     /Kimi Code rejected the key/,
   );
   await assert.rejects(
-    () => listProviderModels(provider("openai"), { apiKey: " ", fetch: async () => new Response("[]") }),
+    () => listProviderModels(provider("openai"), { apiKey: " " }, { fetch: async () => new Response("[]") }),
     /api_key is required/,
   );
 });
@@ -240,12 +230,17 @@ test("listProviderModels rejects a 401 and names the provider", async () => {
 test("listProviderModels reads a bare list of ids, and returns nothing for a body of another shape", async () => {
   const listing = (body: string) => async () => new Response(body, { status: 200 });
   assert.deepEqual(
-    await listProviderModels(provider("kimi"), { apiKey: "sk", fetch: listing(JSON.stringify([" k3 ", { id: "k2" }, 5, { id: 7 }, ""])) }),
+    await listProviderModels(provider("kimi"), { apiKey: "sk" }, { fetch: listing(JSON.stringify([" k3 ", { id: "k2" }, 5, { id: 7 }, ""])) }),
     ["k3", "k2"],
   );
-  for (const body of ["not json", "null", JSON.stringify({ data: "k3" }), JSON.stringify({ models: [{ id: "k3" }] })]) {
-    assert.deepEqual(await listProviderModels(provider("kimi"), { apiKey: "sk", fetch: listing(body) }), [], body);
+  for (const body of ["null", JSON.stringify({ data: "k3" }), JSON.stringify({ models: [{ id: "k3" }] })]) {
+    assert.deepEqual(await listProviderModels(provider("kimi"), { apiKey: "sk" }, { fetch: listing(body) }), [], body);
   }
+});
+
+test("listProviderModels answers no models for a listing whose body is not JSON", async () => {
+  const fetchFn = async () => new Response("not json", { status: 200 });
+  assert.deepEqual(await listProviderModels(provider("kimi"), { apiKey: "sk" }, { fetch: fetchFn }), []);
 });
 
 test("parseCompletionChunk reads a chunk's text, reasoning, tool call pieces, finish reason, and usage", () => {
@@ -316,17 +311,19 @@ test("parseCompletionChunk leaves empty every field a malformed chunk holds in a
 
 test("listProviderModels reaches a local endpoint at its saved URL, with no key when none is set", async () => {
   const seen: Array<{ url: string; auth: string | undefined }> = [];
-  const ids = await listProviderModels(provider("local"), {
-    apiKey: "",
-    baseURL: "http://127.0.0.1:11434/v1/",
-    fetch: async (url: string | URL | Request, init?: RequestInit) => {
-      seen.push({ url: String(url), auth: (init?.headers as Record<string, string>).Authorization });
-      return new Response(JSON.stringify({ data: [{ id: "qwen3:8b" }, { id: "llama" }] }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      });
+  const ids = await listProviderModels(
+    provider("local"),
+    { apiKey: "", baseURL: "http://127.0.0.1:11434/v1/" },
+    {
+      fetch: async (url: string | URL | Request, init?: RequestInit) => {
+        seen.push({ url: String(url), auth: (init?.headers as Record<string, string>).Authorization });
+        return new Response(JSON.stringify({ data: [{ id: "qwen3:8b" }, { id: "llama" }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
     },
-  });
+  );
   assert.deepEqual(ids, ["qwen3:8b", "llama"]);
   assert.deepEqual(seen, [{ url: "http://127.0.0.1:11434/v1/models", auth: undefined }]);
   await assert.rejects(() => listProviderModels(provider("local"), { apiKey: "" }), /needs a base URL/);
@@ -461,14 +458,15 @@ test("streamCompletion yields deltas then a done completion against a fake serve
   const baseURL = `http://127.0.0.1:${address.port}/v1`;
   try {
     const events: ModelEvent[] = [];
-    for await (const event of streamCompletion({
-      model: "openrouter/openai/gpt-5.6-luna",
-      messages: [{ role: "user", content: "hi" }],
-      temperature: 0,
-      max_tokens: 8,
-      apiKey: "test",
-      baseURL,
-    })) {
+    for await (const event of streamCompletion(
+      {
+        model: "openrouter/openai/gpt-5.6-luna",
+        messages: [{ role: "user", content: "hi" }],
+        temperature: 0,
+        max_tokens: 8,
+      },
+      { apiKey: "test", baseURL },
+    )) {
       events.push(event);
     }
     assert.deepEqual(events[0], ["reasoning", "thinking "]);
@@ -523,14 +521,15 @@ test("streamCompletion omits cache_control on DeepInfra", async () => {
   assert.ok(address && typeof address === "object");
   const baseURL = `http://127.0.0.1:${address.port}/v1`;
   try {
-    for await (const event of streamCompletion({
-      model: "deepinfra/zai-org/GLM-5.3-Flash",
-      messages: [{ role: "user", content: "hi" }],
-      temperature: 0,
-      max_tokens: 8,
-      apiKey: "test",
-      baseURL,
-    })) {
+    for await (const event of streamCompletion(
+      {
+        model: "deepinfra/zai-org/GLM-5.3-Flash",
+        messages: [{ role: "user", content: "hi" }],
+        temperature: 0,
+        max_tokens: 8,
+      },
+      { apiKey: "test", baseURL },
+    )) {
       if (event[0] === "done") {
         assert.equal(event[1].metadata.cost_source, "catalog");
       }
@@ -543,14 +542,15 @@ test("streamCompletion omits cache_control on DeepInfra", async () => {
 test("streamCompletion throws when the provider returns no chunks", async () => {
   await assert.rejects(
     async () => {
-      for await (const _event of streamCompletion({
-        model: "openrouter/x",
-        messages: [],
-        temperature: 0,
-        max_tokens: 1,
-        apiKey: "test",
-        baseURL: "http://127.0.0.1:1/v1",
-      })) {
+      for await (const _event of streamCompletion(
+        {
+          model: "openrouter/x",
+          messages: [],
+          temperature: 0,
+          max_tokens: 1,
+        },
+        { apiKey: "test", baseURL: "http://127.0.0.1:1/v1" },
+      )) {
         // consume
       }
     },

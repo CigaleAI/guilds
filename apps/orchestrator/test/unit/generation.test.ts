@@ -11,7 +11,7 @@ import { generationLive } from "../../src/generation/completion.js";
 import { PolicyError } from "../../src/policy/index.js";
 import { ConflictError, RunLimitError, RunRequestError } from "../../src/generation/errors.js";
 import { pendingToolCalls } from "../../src/generation/tool-calls.js";
-import { LLMError } from "../../src/llm/index.js";
+import { LLMError, type ModelEndpoint, type ModelRequest } from "../../src/llm/completion.js";
 import { sleep } from "../../src/lib/event.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { nextRunAt } from "../../src/schedules/cron.js";
@@ -1433,9 +1433,9 @@ describe("generation", { concurrency: 1 }, () => {
     restoreBindings();
     const { loop, db } = await seededLoop();
     const started = deferred();
-    live.streamCompletion = async function* hang(options: { signal?: AbortSignal }) {
+    live.streamCompletion = async function* hang(_request: ModelRequest, _endpoint: ModelEndpoint, signal?: AbortSignal) {
       started.resolve();
-      await hangForever(options.signal);
+      await hangForever(signal);
       yield ["done", completionReply("nope")];
     };
     const created = await loop.runs.createRun("a_1", "hello");
@@ -2340,8 +2340,8 @@ describe("generation", { concurrency: 1 }, () => {
     const db = new FakeDB({});
     const heard: Array<Record<string, unknown>> = [];
     const seen: Array<Record<string, unknown>> = [];
-    live.streamCompletion = async function* stream(options: { apiKey?: string; baseURL?: string }) {
-      seen.push({ apiKey: options.apiKey, baseURL: options.baseURL });
+    live.streamCompletion = async function* stream(_request: ModelRequest, endpoint: ModelEndpoint) {
+      seen.push({ apiKey: endpoint.apiKey, baseURL: endpoint.baseURL });
       yield ["delta", "hi"];
       yield ["done", completionReply("hi")];
     };

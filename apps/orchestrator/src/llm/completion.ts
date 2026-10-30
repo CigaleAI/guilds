@@ -1,4 +1,4 @@
-import type { AssistantMessage, CompletionMetadata, ReasoningDetail, ToolCall } from "../db/schema/index.js";
+import type { AssistantMessage, CompletionMetadata, ReasoningDetail, TokenUsage, ToolCall } from "../db/schema/index.js";
 import { catalogCostUsd } from "./cost.js";
 import { optionalString } from "./payload.js";
 import { parseModelId, type ProviderDef } from "./providers.js";
@@ -28,6 +28,34 @@ export type Completion = {
 };
 
 export type ModelEvent = ["delta", string] | ["reasoning", string] | ["done", Completion];
+
+/**
+ * A completion asked of a model: the stored model id, the OpenAI-style messages and tools, the
+ * sampling settings, and the thinking level.
+ */
+export type ModelRequest = {
+  model: string;
+  messages: Array<Record<string, unknown>>;
+  temperature: number;
+  max_tokens: number;
+  tools?: unknown[] | null;
+  tool_choice?: unknown;
+  thinking_level?: string;
+};
+
+/** The key a provider is called with, and the base URL it is called at: the provider's own when absent. */
+export type ModelEndpoint = {
+  apiKey: string;
+  baseURL?: string | null;
+};
+
+/** What a provider's model listing is fetched through, and how long it may take; a ten-second timeout when absent. */
+export type ModelListingServices = {
+  fetch?: typeof fetch;
+  timeoutMs?: number;
+};
+
+export const LISTING_TIMEOUT_MS = 10_000;
 
 /** The token counts and the price a provider reports for one completion. */
 export type ProviderUsage = {
@@ -94,25 +122,31 @@ export function assistantPayload(content: string, toolCalls: ToolCall[]): Assist
   return { role: "assistant", content, ...(toolCalls.length ? { tool_calls: toolCalls } : {}) };
 }
 
-export function assistantMetadata(
-  assembled: AssembledCompletion,
-  options: { latencyMs: number; model: string },
-): CompletionMetadata {
-  const usage = assembled.usage ?? {};
+/**
+ * The token counts a provider's usage reports, a count it leaves out being zero. The cache read is
+ * the provider's own field, else OpenAI's cached prompt tokens.
+ */
+function tokenUsageOf(usage: ProviderUsage): TokenUsage {
   const cacheRead = usage.cache_read_input_tokens ?? usage.prompt_tokens_details?.cached_tokens ?? 0;
-  const tokenUsage = {
+  return {
     input_tokens: Number(usage.prompt_tokens || 0),
     output_tokens: Number(usage.completion_tokens || 0),
     cache_read_tokens: Number(cacheRead || 0),
   };
+}
+
+/** What a completion records: its usage, its cost on the stored model id `model`, and how long it took. */
+export function assistantMetadata(assembled: AssembledCompletion, model: string, latencyMs: number): CompletionMetadata {
+  const usage = assembled.usage ?? {};
+  const tokenUsage = tokenUsageOf(usage);
   const providerCost = assembled.provider_cost ?? usage.cost;
   const cost =
     typeof providerCost === "number"
       ? { cost_usd: providerCost, cost_source: "provider" as const }
-      : catalogCostUsd(options.model, tokenUsage);
+      : catalogCostUsd(model, tokenUsage);
   return {
     usage: tokenUsage,
-    latency_ms: options.latencyMs,
+    latency_ms: latencyMs,
     finish_reason: optionalString(assembled.finish_reason) ?? "stop",
     model: optionalString(assembled.model) ?? "",
     response_id: optionalString(assembled.id),

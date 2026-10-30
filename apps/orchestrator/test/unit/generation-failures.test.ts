@@ -27,6 +27,7 @@ import {
 } from "../helpers/generation.js";
 import { MemoryMcpDatabase } from "../helpers/mcp-database.js";
 import { connectionRow, serverRow } from "../helpers/servers.js";
+import type { ModelEndpoint, ModelRequest } from "../../src/llm/completion.js";
 
 const live = generationLive;
 const originalStream = live.streamCompletion;
@@ -128,9 +129,9 @@ describe("generation failures carried on past", { concurrency: 1 }, () => {
     restoreLive();
     const { loop } = await seededLoop();
     const started = deferred();
-    live.streamCompletion = async function* hang(options: { signal?: AbortSignal }) {
+    live.streamCompletion = async function* hang(_request: ModelRequest, _endpoint: ModelEndpoint, signal?: AbortSignal) {
       started.resolve();
-      await hangForever(options.signal);
+      await hangForever(signal);
       yield ["done", completionReply("nope")];
     };
     loop.generator.recordCancel = async () => {

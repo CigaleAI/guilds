@@ -7,6 +7,7 @@ import {
   ModelNotConnectedError,
   assertModelConnected,
   coreModelCredentialsThrough,
+  deliverModelUsage,
   keyHint,
   modelUsageOf,
   reportModelUsage,
@@ -106,4 +107,23 @@ test("usage is read from a completion's metadata and the callback's failure is s
   );
   assert.deepEqual(heard, ["r_1"]);
   await reportModelUsage({ apiKey: "k" }, usage);
+});
+
+test("delivering usage answers what the callback threw, and null when it took the usage or there is none", async () => {
+  const usage = modelUsageOf("r_1", "openai/gpt-5", completionMetadata());
+  const down = new Error("accounting is down");
+  const failure = await deliverModelUsage(
+    {
+      apiKey: "k",
+      onUsage: async () => {
+        throw down;
+      },
+    },
+    usage,
+  );
+  assert.equal(failure?.error, down);
+  const heard: string[] = [];
+  assert.equal(await deliverModelUsage({ apiKey: "k", onUsage: async (item) => void heard.push(item.run_id) }, usage), null);
+  assert.deepEqual(heard, ["r_1"]);
+  assert.equal(await deliverModelUsage({ apiKey: "k" }, usage), null);
 });
