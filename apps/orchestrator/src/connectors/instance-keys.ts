@@ -7,21 +7,16 @@ import {
   type IntegrationStatus,
 } from "../instance/integrations.js";
 import { InstanceKeyError, validateKeyValues, type InstanceKeys } from "../instance/keys.js";
-import { applyKeyChange } from "./instance.js";
+import { applyKeyChange, type PlatformLoginServices } from "./instance.js";
 import { installedManifests } from "./servers.js";
-
-/** The pool whose tool listings an instance key change makes stale. */
-export type ToolListings = { forgetListings(): void };
 
 /**
  * The services an instance key write runs with: the encrypted store, the integrations the box may
  * switch on (the installed ones when absent), the key platform logins are sealed with, and the pool.
  */
-export type InstanceKeyServices = {
+export type InstanceKeyServices = PlatformLoginServices & {
   keys: InstanceKeys;
   integrations?: readonly Integration[] | undefined;
-  masterKey?: Buffer | undefined;
-  mcp?: ToolListings | undefined;
 };
 
 /** A store integration's values as the instance admin sends them, and whether they confirmed stranding logins. */
@@ -70,8 +65,7 @@ export async function storeInstanceKey(
   userId: string,
 ): Promise<{ disconnected: number }> {
   const { previous } = await services.keys.put(key.integration, key.values, userId);
-  const ctx = { db, masterKey: services.masterKey, mcp: services.mcp };
-  return applyKeyChange(ctx, key.integration.id, previous, key.values);
+  return applyKeyChange(db, services, { integrationId: key.integration.id, previous, next: key.values });
 }
 
 /**
@@ -110,7 +104,6 @@ export async function removeInstanceKey(
     await assertKeyChangeConfirmed(db, integration, services.keys.current(integration.id), null);
   }
   const { previous } = await services.keys.remove(integration.id);
-  const ctx = { db, masterKey: services.masterKey, mcp: services.mcp };
-  const { disconnected } = await applyKeyChange(ctx, integration.id, previous, null);
+  const { disconnected } = await applyKeyChange(db, services, { integrationId: integration.id, previous, next: null });
   return { integration: auditedStatus(services, integration.id), disconnected };
 }

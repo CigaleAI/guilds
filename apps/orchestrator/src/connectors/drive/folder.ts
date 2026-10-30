@@ -28,8 +28,11 @@ export class DriveFolderError extends Error {
 
 export type DriveClientOptions = { client?: FetchFn | undefined; proxyUrl?: string | undefined };
 
+/** The client options with the access token of the login that makes the calls. */
+export type DriveLogin = DriveClientOptions & { accessToken: string };
+
 /** The client options of a call scoped to the connected folder, with the login that makes it. */
-export type ScopedDrive = DriveClientOptions & { accessToken: string; folderId: string };
+export type ScopedDrive = DriveLogin & { folderId: string };
 
 export type DriveFolder = { id: string; name: string };
 
@@ -357,33 +360,37 @@ async function readableParents(accessToken: string, fileId: string, options: Dri
   }
 }
 
-export async function fileInDriveFolder(
-  accessToken: string,
-  fileId: string,
-  folderId: string,
-  options: DriveClientOptions & { seen?: Set<string> } = {},
-): Promise<boolean> {
-  if (!fileId || !folderId) {
-    return false;
-  }
-  if (fileId === folderId) {
+/** Whether `fileId` is the scoped folder or below it, walking readable parents not already in `seen`. */
+async function reachesFolder(scoped: ScopedDrive, fileId: string, seen: Set<string>): Promise<boolean> {
+  if (fileId === scoped.folderId) {
     return true;
   }
-  const seen = options.seen ?? new Set<string>();
   if (seen.has(fileId)) {
     return false;
   }
   seen.add(fileId);
-  const parents = await readableParents(accessToken, fileId, options);
-  if (parents.includes(folderId)) {
+  const parents = await readableParents(scoped.accessToken, fileId, scoped);
+  if (parents.includes(scoped.folderId)) {
     return true;
   }
   for (const parent of parents.filter((id) => id !== DRIVE_MY_DRIVE)) {
-    if (await fileInDriveFolder(accessToken, parent, folderId, { ...options, seen })) {
+    if (await reachesFolder(scoped, parent, seen)) {
       return true;
     }
   }
   return false;
+}
+
+export async function fileInDriveFolder(
+  accessToken: string,
+  fileId: string,
+  folderId: string,
+  options: DriveClientOptions = {},
+): Promise<boolean> {
+  if (!fileId || !folderId) {
+    return false;
+  }
+  return reachesFolder({ ...options, accessToken, folderId }, fileId, new Set<string>());
 }
 
 const DRIVE_LIST_FIELDS = "nextPageToken,files(id,name,mimeType,parents,webViewLink,modifiedTime)";
@@ -465,7 +472,7 @@ function mcpFileFromDrive(row: DriveFile): McpFile | null {
 }
 
 /** Whether a listed file is the connected folder, directly in it, or below it. */
-async function inScopedFolder(scoped: ScopedDrive, file: { id: string; parentId: string }): Promise<boolean> {
+async function inScopedFolder(scoped: ScopedDrive, file: Pick<McpFile, "id" | "parentId">): Promise<boolean> {
   if (file.id === scoped.folderId || file.parentId === scoped.folderId) {
     return true;
   }
@@ -483,23 +490,21 @@ async function keepDriveSearchHits(scoped: ScopedDrive, rows: DriveFile[]): Prom
   return kept;
 }
 
-async function listScopedDriveFiles(
-  scoped: ScopedDrive,
-  arguments_: Record<string, unknown>,
-  extra: { q: string; orderBy?: string; pageSize: number },
-): Promise<string> {
+/** A Drive files listing: the `q` filter, its order, the page size, and the page to read; an empty token reads the first. */
+type DriveListQuery = { q: string; orderBy?: string; pageSize: number; pageToken: string };
+
+async function listScopedDriveFiles(scoped: ScopedDrive, query: DriveListQuery): Promise<string> {
   const corpus = await driveSearchCorpus(scoped);
   const params = new URLSearchParams({
-    q: extra.q,
+    q: query.q,
     fields: DRIVE_LIST_FIELDS,
-    pageSize: String(extra.pageSize),
+    pageSize: String(query.pageSize),
   });
-  if (extra.orderBy) {
-    params.set("orderBy", extra.orderBy);
+  if (query.orderBy) {
+    params.set("orderBy", query.orderBy);
   }
-  const pageToken = drivePageToken(arguments_);
-  if (pageToken) {
-    params.set("pageToken", pageToken);
+  if (query.pageToken) {
+    params.set("pageToken", query.pageToken);
   }
   setCorpus(params, corpus);
   const url = `https://www.googleapis.com/drive/v3/files?${params.toString()}`;
@@ -516,9 +521,10 @@ export async function searchDriveFolder(
   options: DriveClientOptions = {},
 ): Promise<string> {
   const translated = translateDriveSearchQuery(typeof arguments_.query === "string" ? arguments_.query : "");
-  return listScopedDriveFiles({ ...options, accessToken, folderId }, arguments_, {
+  return listScopedDriveFiles({ ...options, accessToken, folderId }, {
     q: translated ? `${translated} and trashed = false` : "trashed = false",
     pageSize: drivePageSize(arguments_, 10),
+    pageToken: drivePageToken(arguments_),
   });
 }
 
@@ -529,10 +535,11 @@ export async function listRecentDriveFiles(
   options: DriveClientOptions = {},
 ): Promise<string> {
   const order = typeof arguments_.orderBy === "string" ? arguments_.orderBy : typeof arguments_.order_by === "string" ? arguments_.order_by : "";
-  return listScopedDriveFiles({ ...options, accessToken, folderId }, arguments_, {
+  return listScopedDriveFiles({ ...options, accessToken, folderId }, {
     q: "trashed = false",
     orderBy: order === "lastModifiedByMe" ? "modifiedByMeTime desc" : "modifiedTime desc",
     pageSize: drivePageSize(arguments_, 10),
+    pageToken: drivePageToken(arguments_),
   });
 }
 

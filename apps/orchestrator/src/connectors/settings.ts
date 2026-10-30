@@ -19,7 +19,7 @@ export class SettingsError extends Error {
 type Schema = Record<string, unknown>;
 
 function schemaOf(value: unknown): Schema {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Schema) : {};
+  return isPlainRecord(value) ? value : {};
 }
 
 function typeMatches(type: unknown, value: unknown): boolean {
@@ -69,15 +69,14 @@ function check(schema: Schema, value: unknown, path: string): void {
     const items = schemaOf(schema.items);
     value.forEach((item, index) => check(items, item, `${path}[${index}]`));
   }
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    const record = value as Record<string, unknown>;
+  if (isPlainRecord(value)) {
     const properties = schemaOf(schema.properties);
     for (const name of Array.isArray(schema.required) ? schema.required : []) {
-      if (record[String(name)] === undefined) {
+      if (value[String(name)] === undefined) {
         throw new SettingsError(`${path}.${String(name)} is required`);
       }
     }
-    for (const [name, item] of Object.entries(record)) {
+    for (const [name, item] of Object.entries(value)) {
       if (name in properties) {
         check(schemaOf(properties[name]), item, `${path}.${name}`);
       } else if (schema.additionalProperties === false) {

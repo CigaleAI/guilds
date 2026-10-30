@@ -46,7 +46,7 @@ test("formatSearch is compact TSV", () => {
     },
     meta: { result_count: 1, next_token: "page-2" },
   };
-  const stored = formatSearch(payload, { query: "from:elonmusk" });
+  const stored = formatSearch(payload, "from:elonmusk");
   assert.equal(
     stored,
     "from:elonmusk  n=1\n"
@@ -67,7 +67,7 @@ test("formatPosts caps rows and clips text", () => {
     })),
     includes: { users: [{ id: "1", username: "x", name: "X" }] },
   };
-  const stored = formatPosts(payload, { limit: 3 });
+  const stored = formatPosts(payload, 3);
   const lines = stored.split("\n");
   assert.equal(lines.length, 4);
   assert.equal(lines.at(-1), "+17 more");

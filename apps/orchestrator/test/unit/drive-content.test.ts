@@ -43,7 +43,6 @@ test("downloadDriveFileContent writes the file under the workspace", async () =>
     "tok",
     { fileId: "file_1" },
     {
-      workspaceDir: workspace,
       client: mockFetch((url) => {
         const parsed = new URL(url);
         assert.equal(parsed.searchParams.get("supportsAllDrives"), "true");
@@ -56,6 +55,7 @@ test("downloadDriveFileContent writes the file under the workspace", async () =>
         };
       }),
     },
+    workspace,
   );
   assert.deepEqual(JSON.parse(text), {
     id: "file_1",
@@ -82,7 +82,7 @@ test("downloadDriveFileContent never writes through a link the agent planted", a
     return { status: 200, json: { id: "file_1", name: "notes.txt", mimeType: "text/plain" } };
   });
   await assert.rejects(
-    () => downloadDriveFileContent("tok", { fileId: "file_1" }, { workspaceDir: workspace, client }),
+    () => downloadDriveFileContent("tok", { fileId: "file_1" }, { client }, workspace),
     /regular file, not a link/,
   );
   await assert.rejects(
@@ -90,7 +90,8 @@ test("downloadDriveFileContent never writes through a link the agent planted", a
       downloadDriveFileContent(
         "tok",
         { fileId: "file_1", file_path: "downloads/config.json" },
-        { workspaceDir: workspace, client },
+        { client },
+        workspace,
       ),
     /through folders, not links/,
   );
@@ -103,7 +104,6 @@ test("downloadDriveFileContent exports a Google Doc to a workspace path", async 
     "tok",
     { fileId: "doc_1" },
     {
-      workspaceDir: workspace,
       client: mockFetch((url) => {
         const parsed = new URL(url);
         if (parsed.pathname.endsWith("/export")) {
@@ -122,6 +122,7 @@ test("downloadDriveFileContent exports a Google Doc to a workspace path", async 
         };
       }),
     },
+    workspace,
   );
   const parsed = JSON.parse(text);
   assert.equal(parsed.file_path, "/home/a_1/Brief.txt");

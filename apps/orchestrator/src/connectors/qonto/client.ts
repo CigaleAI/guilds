@@ -98,7 +98,10 @@ function settledRange(arguments_: Record<string, unknown>, now: Date): { from: s
   };
 }
 
-function qontoUrl(pathName: string, params: Record<string, string | boolean | number | undefined> = {}): string {
+/** A Qonto query: each value sent as text, an undefined one left out. */
+type QontoQuery = Record<string, string | boolean | number | undefined>;
+
+function qontoUrl(pathName: string, params: QontoQuery = {}): string {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
     if (value === undefined) {
@@ -196,24 +199,30 @@ async function sendWithRetry(
   }
 }
 
+/** One Qonto API call: `method` on `path` with its query, body and headers beside the login's, the JSON body decoded with `schema`. */
+type QontoRequest<T extends TSchema> = {
+  method: string;
+  path: string;
+  schema: T;
+  params?: QontoQuery;
+  body?: RequestInit["body"];
+  headers?: Record<string, string>;
+};
+
+/** What a Qonto call sends with: the HTTP client, and the sleep a retry waits with. */
+type QontoTransport = Pick<QontoOptions, "client" | "proxyUrl" | "sleep">;
+
 /** The response of `method` on `path`, as `schema` describes it; an empty body reads as `{}`. */
 async function qontoRequest<T extends TSchema>(
-  request: { method: string; path: string; schema: T },
+  request: QontoRequest<T>,
   creds: QontoCreds,
-  options: {
-    client?: FetchFn;
-    proxyUrl?: string;
-    params?: Record<string, string | boolean | number | undefined>;
-    body?: RequestInit["body"];
-    extraHeaders?: Record<string, string>;
-    sleep?: (ms: number) => Promise<void>;
-  } = {},
+  transport: QontoTransport = {},
 ): Promise<Static<T>> {
-  const fetchFn = options.client ?? proxyFetch(options.proxyUrl ?? "");
-  const url = qontoUrl(request.path, options.params);
-  const headers: Record<string, string> = { ...authHeaders(creds), ...options.extraHeaders };
-  const init = { method: request.method, headers, body: options.body ?? null };
-  const last = await sendWithRetry(() => fetchFn(url, init), options.sleep);
+  const fetchFn = transport.client ?? proxyFetch(transport.proxyUrl ?? "");
+  const url = qontoUrl(request.path, request.params);
+  const headers: Record<string, string> = { ...authHeaders(creds), ...request.headers };
+  const init = { method: request.method, headers, body: request.body ?? null };
+  const last = await sendWithRetry(() => fetchFn(url, init), transport.sleep);
   if (last.status >= 400) {
     const detail = await errorDetail(last);
     throw new QontoError(messageForStatus(last.status, detail, request.path), last.status);
@@ -271,14 +280,11 @@ async function activeAccountIds(options: QontoOptions): Promise<string[]> {
 
 const TRANSACTIONS = { method: "GET", path: "/v2/transactions", schema: TransactionsResponse };
 
-async function listAccountTransactions(
-  options: QontoOptions,
-  query: Record<string, string | boolean | number | undefined>,
-): Promise<Transaction[]> {
+async function listAccountTransactions(options: QontoOptions, query: QontoQuery): Promise<Transaction[]> {
   const collected: Transaction[] = [];
   let page: string | number | undefined = 1;
   while (page !== undefined && page !== "") {
-    const payload: TransactionsResponse = await qontoRequest(TRANSACTIONS, options, { ...options, params: { ...query, page } });
+    const payload: TransactionsResponse = await qontoRequest({ ...TRANSACTIONS, params: { ...query, page } }, options, options);
     collected.push(...(payload.transactions ?? []));
     page = payload.meta?.next_page ?? undefined;
   }
@@ -286,7 +292,7 @@ async function listAccountTransactions(
 }
 
 type MissingQuery = {
-  query: Record<string, string | boolean | number | undefined>;
+  query: QontoQuery;
   minAmount: number | null;
   limit: number;
 };
@@ -300,7 +306,7 @@ function missingQuery(arguments_: Record<string, unknown>, now: Date): MissingQu
   }
   const minRaw = arguments_.min_amount;
   const limitRaw = arguments_.limit;
-  const query: Record<string, string | boolean | number | undefined> = {
+  const query: QontoQuery = {
     "status[]": "completed",
     settled_at_from: range.from,
     settled_at_to: range.to,
@@ -322,10 +328,10 @@ function missingQuery(arguments_: Record<string, unknown>, now: Date): MissingQu
 }
 
 /** The account's transactions that miss their invoice, at or over the amount floor. */
-async function accountMissing(options: QontoOptions, request: MissingQuery & { accountId: string }): Promise<Transaction[]> {
-  const rows = await listAccountTransactions(options, { ...request.query, bank_account_id: request.accountId });
+async function accountMissing(options: QontoOptions, request: MissingQuery, accountId: string): Promise<Transaction[]> {
+  const rows = await listAccountTransactions(options, { ...request.query, bank_account_id: accountId });
   return rows
-    .map((row) => (row.bank_account_id ? row : { ...row, bank_account_id: request.accountId }))
+    .map((row) => (row.bank_account_id ? row : { ...row, bank_account_id: accountId }))
     .filter((row) => isMissingInvoice(row))
     .filter((row) => request.minAmount === null || asAmount(row.amount) >= request.minAmount);
 }
@@ -336,7 +342,7 @@ async function listMissingInvoices(arguments_: Record<string, unknown>, options:
   const accountIds = accountArg ? [accountArg] : await activeAccountIds(options);
   const missing: Transaction[] = [];
   for (const accountId of accountIds) {
-    missing.push(...(await accountMissing(options, { ...request, accountId })));
+    missing.push(...(await accountMissing(options, request, accountId)));
   }
   missing.sort((left, right) => String(right.settled_at ?? "").localeCompare(String(left.settled_at ?? "")));
   const total = missing.reduce((sum, row) => sum + asAmount(row.amount), 0);
@@ -445,12 +451,14 @@ async function uploadInvoice(arguments_: Record<string, unknown>, options: Qonto
   }
   const form = new FormData();
   form.append("file", new Blob([new Uint8Array(file.content)], { type: file.mime }), file.name);
-  const upload = { method: "POST", path: `/v2/transactions/${transactionId}/attachments`, schema: UploadResponse };
-  await qontoRequest(upload, options, {
-    ...options,
+  const upload = {
+    method: "POST",
+    path: `/v2/transactions/${transactionId}/attachments`,
+    schema: UploadResponse,
     body: form,
-    extraHeaders: { "X-Qonto-Idempotency-Key": idempotencyKey(transactionId, file.path) },
-  });
+    headers: { "X-Qonto-Idempotency-Key": idempotencyKey(transactionId, file.path) },
+  };
+  await qontoRequest(upload, options, options);
   const ids = await pollAttachments(transactionId, options);
   if (ids.length) {
     return joinParts("status=uploaded", `tx=${transactionId}`, `attachments=${ids.join(",")}`);

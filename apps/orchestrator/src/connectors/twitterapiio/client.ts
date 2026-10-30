@@ -153,19 +153,18 @@ export function formatUser(payload: TwitterBody): string {
   return [head, bio].filter(Boolean).join("\n") || "no results";
 }
 
-export function formatPosts(payload: TwitterBody, options: { limit?: number } = {}): string {
-  const limit = options.limit ?? LIST_DEFAULT;
+export function formatPosts(payload: TwitterBody, limit = LIST_DEFAULT): string {
   const rows = listed(payload, "tweets").map(postRow).filter(Boolean);
   return withPage(clipRows(rows, limit), payload);
 }
 
-export function formatSearch(payload: TwitterBody, options: { query: string; limit?: number }): string {
-  const body = options.limit === undefined ? formatPosts(payload) : formatPosts(payload, { limit: options.limit });
+export function formatSearch(payload: TwitterBody, query: string, limit = LIST_DEFAULT): string {
+  const body = formatPosts(payload, limit);
   if (body === "no results") {
     return body;
   }
   const count = listed(payload, "tweets").length;
-  return [joinParts(options.query, `n=${fmtNum(count)}`), body].join("\n");
+  return [joinParts(query, `n=${fmtNum(count)}`), body].join("\n");
 }
 
 export function formatPost(payload: TwitterBody): string {
@@ -186,18 +185,12 @@ export function formatPost(payload: TwitterBody): string {
   return [row, extra].filter(Boolean).join("\n") || "no results";
 }
 
-export function formatUsers(
-  payload: TwitterBody,
-  key: "followers" | "followings",
-  options: { limit?: number } = {},
-): string {
-  const limit = options.limit ?? LIST_DEFAULT;
+export function formatUsers(payload: TwitterBody, key: "followers" | "followings", limit = LIST_DEFAULT): string {
   const rows = listed(payload, key).map(userRow).filter(Boolean);
   return withPage(clipRows(rows, limit), payload);
 }
 
-export function formatTrends(payload: TwitterBody, options: { limit?: number } = {}): string {
-  const limit = options.limit ?? LIST_DEFAULT;
+export function formatTrends(payload: TwitterBody, limit = LIST_DEFAULT): string {
   const rows = listed(payload, "trends").map((item) =>
     joinParts(pick(item, "name"), `tweets=${fmtNum(pick(item, "tweetCount", "tweet_volume", "tweet_count"))}`),
   ).filter(Boolean);
@@ -327,7 +320,7 @@ export async function searchTool(arguments_: Record<string, unknown>, options: T
     options.apiKey,
     options,
   );
-  return formatSearch(payload, { query, limit });
+  return formatSearch(payload, query, limit);
 }
 
 export async function userTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
@@ -353,7 +346,7 @@ export async function postsTool(arguments_: Record<string, unknown>, options: To
     options.apiKey,
     options,
   );
-  return formatPosts(payload, { limit });
+  return formatPosts(payload, limit);
 }
 
 export async function postTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
@@ -370,7 +363,7 @@ export async function followersTool(arguments_: Record<string, unknown>, options
     options.apiKey,
     options,
   );
-  return formatUsers(payload, "followers", { limit });
+  return formatUsers(payload, "followers", limit);
 }
 
 export async function followingTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
@@ -381,7 +374,7 @@ export async function followingTool(arguments_: Record<string, unknown>, options
     options.apiKey,
     options,
   );
-  return formatUsers(payload, "followings", { limit });
+  return formatUsers(payload, "followings", limit);
 }
 
 export async function mentionsTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
@@ -392,7 +385,7 @@ export async function mentionsTool(arguments_: Record<string, unknown>, options:
     options.apiKey,
     options,
   );
-  return formatPosts(payload, { limit });
+  return formatPosts(payload, limit);
 }
 
 export async function repliesTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
@@ -403,7 +396,7 @@ export async function repliesTool(arguments_: Record<string, unknown>, options: 
     options.apiKey,
     options,
   );
-  return formatPosts(payload, { limit });
+  return formatPosts(payload, limit);
 }
 
 export async function quotesTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
@@ -414,7 +407,7 @@ export async function quotesTool(arguments_: Record<string, unknown>, options: T
     options.apiKey,
     options,
   );
-  return formatPosts(payload, { limit });
+  return formatPosts(payload, limit);
 }
 
 export async function trendsTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
@@ -424,7 +417,7 @@ export async function trendsTool(arguments_: Record<string, unknown>, options: T
     throw new TwitterApiIoError("woeid must be digits");
   }
   const payload = await getJson("/twitter/trends", { woeid, count: String(limit) }, options.apiKey, options);
-  return formatTrends(payload, { limit });
+  return formatTrends(payload, limit);
 }
 
 const HANDLERS: Record<string, (arguments_: Record<string, unknown>, options: ToolOptions) => Promise<string>> = {
