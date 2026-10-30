@@ -9,11 +9,6 @@
       "count": 1
     }
   },
-  "src/features/admin/AdminPage.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/features/admin/InstanceTab.tsx": {
     "complexity": {
       "count": 1

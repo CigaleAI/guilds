@@ -53,10 +53,17 @@ import {
 import { connectorLogo } from "../access/connectorLogo";
 import { isRemoteServerAuth, REMOTE_SERVER_AUTHS } from "../access/remoteServer";
 import { integrationFor, setupSearch } from "../instance/instance";
-import { isOAuthStrategy, isToolStart, type ToolStart } from "./catalogEdits";
+import {
+  emptyRemoteServerDraft,
+  isOAuthStrategy,
+  isToolStart,
+  remoteServerDraft,
+  type ToolStart,
+} from "./catalogEdits";
 import { InstanceTab } from "./InstanceTab";
 import { RegistryDialog } from "./RegistryDialog";
 import { parseInputSchema } from "./toolSchema";
+import type { RemoteServerDraft } from "./types";
 import { UsersTab } from "./UsersTab";
 
 const coreTabs = [
@@ -476,17 +483,10 @@ type NewServerFormProps = { server?: CatalogServer; onClose: () => void };
 /** A remote MCP server added on this box: its own fields. */
 function NewServerForm({ server, onClose }: NewServerFormProps) {
   const save = useSaveCatalogServer();
-  const [form, setForm] = useState({
-    slug: server?.slug ?? "",
-    display_name: server?.display_name ?? "",
-    url: server?.url ?? "",
-    auth: server?.auth ?? "token",
-    oauth_strategy: server?.oauth_strategy ?? "none",
-    description: server?.description ?? "",
-    limitations: server?.limitations ?? "",
-    setup_hint: server?.setup_hint ?? "",
-  });
-  const set = (patch: Partial<typeof form>) => setForm({ ...form, ...patch });
+  const [form, setForm] = useState(() =>
+    server ? remoteServerDraft(server) : emptyRemoteServerDraft,
+  );
+  const set = (patch: Partial<RemoteServerDraft>) => setForm({ ...form, ...patch });
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
