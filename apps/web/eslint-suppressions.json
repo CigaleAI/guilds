@@ -2,6 +2,9 @@
   "src/api/attachments.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 2
+    },
+    "no-restricted-syntax": {
+      "count": 1
     }
   },
   "src/api/client.ts": {
@@ -10,10 +13,26 @@
     },
     "complexity": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/api/clientLog.ts": {
+    "no-restricted-syntax": {
+      "count": 2
     }
   },
   "src/api/files.ts": {
     "@typescript-eslint/consistent-type-assertions": {
+      "count": 2
+    },
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/api/identity.ts": {
+    "no-restricted-syntax": {
       "count": 2
     }
   },
@@ -28,6 +47,14 @@
     },
     "limits/file-lines": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 54
+    }
+  },
+  "src/api/session.ts": {
+    "no-restricted-syntax": {
+      "count": 1
     }
   },
   "src/api/streams.ts": {
@@ -36,6 +63,9 @@
     },
     "complexity": {
       "count": 3
+    },
+    "no-restricted-syntax": {
+      "count": 1
     }
   },
   "src/api/toolProgress.ts": {
@@ -45,6 +75,26 @@
   },
   "src/api/types.ts": {
     "limits/file-lines": {
+      "count": 1
+    }
+  },
+  "src/app/App.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/app/ReturnButton.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/app/docs.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/app/identity.tsx": {
+    "no-restricted-syntax": {
       "count": 1
     }
   },
@@ -66,13 +116,39 @@
       "count": 1
     }
   },
+  "src/app/storage.ts": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/app/theme.ts": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/features/access/AccessListPanel.tsx": {
+    "no-restricted-syntax": {
+      "count": 3
+    }
+  },
+  "src/features/access/AccessSecrets.tsx": {
+    "no-restricted-syntax": {
+      "count": 6
+    }
+  },
   "src/features/access/AccessTools.tsx": {
     "complexity": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 4
     }
   },
   "src/features/access/ConnectDialogs.tsx": {
     "complexity": {
+      "count": 2
+    },
+    "no-restricted-syntax": {
       "count": 2
     }
   },
@@ -82,15 +158,39 @@
     },
     "complexity": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 1
     }
   },
   "src/features/access/OrgServerDialog.tsx": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/features/access/ReachList.tsx": {
+    "no-restricted-syntax": {
+      "count": 6
+    }
+  },
+  "src/features/access/SecretAccessPicker.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/features/access/SecretValueField.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
     }
   },
   "src/features/access/ServerCard.tsx": {
     "complexity": {
+      "count": 1
+    },
+    "no-restricted-syntax": {
       "count": 1
     }
   },
@@ -100,11 +200,17 @@
     },
     "complexity": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 4
     }
   },
   "src/features/access/TestConnectionDialog.tsx": {
     "complexity": {
       "count": 2
+    },
+    "no-restricted-syntax": {
+      "count": 4
     }
   },
   "src/features/access/access.ts": {
@@ -112,6 +218,9 @@
       "count": 4
     },
     "complexity": {
+      "count": 1
+    },
+    "no-restricted-syntax": {
       "count": 1
     }
   },
@@ -137,6 +246,9 @@
     },
     "complexity": {
       "count": 2
+    },
+    "no-restricted-syntax": {
+      "count": 8
     }
   },
   "src/features/admin/InstanceTab.tsx": {
@@ -145,15 +257,24 @@
     },
     "complexity": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 5
     }
   },
   "src/features/admin/RegistryDialog.tsx": {
     "complexity": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 1
     }
   },
   "src/features/admin/UsersTab.tsx": {
     "complexity": {
+      "count": 1
+    },
+    "no-restricted-syntax": {
       "count": 1
     }
   },
@@ -162,16 +283,62 @@
       "count": 1
     }
   },
+  "src/features/agent/AgentSteps.tsx": {
+    "no-restricted-syntax": {
+      "count": 3
+    }
+  },
+  "src/features/agent/BrowserLoginStrip.tsx": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/features/agent/CodingReadiness.tsx": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
   "src/features/agent/CodingRepositories.tsx": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     },
     "complexity": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/features/agent/CodingStrip.tsx": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/features/agent/CreateAgentDialog.tsx": {
+    "no-restricted-syntax": {
+      "count": 2
     }
   },
   "src/features/agent/CreateCodingAgent.tsx": {
     "complexity": {
+      "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 6
+    }
+  },
+  "src/features/agent/CreateStandardAgent.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/features/agent/HarnessLogo.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/features/agent/IdentityFields.tsx": {
+    "no-restricted-syntax": {
       "count": 1
     }
   },
@@ -181,11 +348,19 @@
     },
     "complexity": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 2
     }
   },
   "src/features/agent/chat/AgentChat.tsx": {
     "complexity": {
       "count": 1
+    }
+  },
+  "src/features/agent/chat/ChangesPanel.tsx": {
+    "no-restricted-syntax": {
+      "count": 3
     }
   },
   "src/features/agent/chat/FlowView.tsx": {
@@ -194,11 +369,32 @@
     },
     "complexity": {
       "count": 5
+    },
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/features/agent/chat/Reasoning.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
     }
   },
   "src/features/agent/chat/SecretRequestCard.tsx": {
     "complexity": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/features/agent/chat/SessionChrome.tsx": {
+    "no-restricted-syntax": {
+      "count": 3
+    }
+  },
+  "src/features/agent/chat/ToolCallDetail.tsx": {
+    "no-restricted-syntax": {
+      "count": 13
     }
   },
   "src/features/agent/chat/Transcript.tsx": {
@@ -207,11 +403,19 @@
     },
     "complexity": {
       "count": 3
+    },
+    "no-restricted-syntax": {
+      "count": 3
     }
   },
   "src/features/agent/chat/callDetail.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
+    }
+  },
+  "src/features/agent/chat/chatLinger.ts": {
+    "no-restricted-syntax": {
+      "count": 2
     }
   },
   "src/features/agent/chat/runContext.ts": {
@@ -222,10 +426,21 @@
   "src/features/agent/harness.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/features/agent/memory/memoryVersions.tsx": {
+    "no-restricted-syntax": {
+      "count": 2
     }
   },
   "src/features/agent/prompt/AgentPrompt.tsx": {
     "complexity": {
+      "count": 1
+    },
+    "no-restricted-syntax": {
       "count": 1
     }
   },
@@ -237,15 +452,24 @@
   "src/features/agent/prompt/InsertPicker.tsx": {
     "complexity": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 4
     }
   },
   "src/features/agent/prompt/taskContext.ts": {
     "complexity": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 2
     }
   },
   "src/features/agent/routine/AgentRoutines.tsx": {
     "complexity": {
+      "count": 1
+    },
+    "no-restricted-syntax": {
       "count": 1
     }
   },
@@ -263,6 +487,9 @@
     },
     "max-params": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 6
     }
   },
   "src/features/agent/runs/runFlowModel.ts": {
@@ -278,6 +505,9 @@
       "count": 6
     },
     "complexity": {
+      "count": 1
+    },
+    "no-restricted-syntax": {
       "count": 1
     }
   },
@@ -295,11 +525,27 @@
     },
     "complexity": {
       "count": 2
+    },
+    "no-restricted-syntax": {
+      "count": 5
     }
   },
   "src/features/agent/settings/AgentSettings.tsx": {
     "complexity": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/features/agent/settings/Group.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/features/agent/settings/HarnessReadiness.tsx": {
+    "no-restricted-syntax": {
+      "count": 5
     }
   },
   "src/features/agent/settings/configForm.tsx": {
@@ -308,6 +554,9 @@
     },
     "complexity": {
       "count": 2
+    },
+    "no-restricted-syntax": {
+      "count": 8
     }
   },
   "src/features/builder/BuilderWidgets.tsx": {
@@ -316,10 +565,16 @@
     },
     "complexity": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 3
     }
   },
   "src/features/builder/BuilderWorkspace.tsx": {
     "complexity": {
+      "count": 1
+    },
+    "no-restricted-syntax": {
       "count": 1
     }
   },
@@ -336,11 +591,29 @@
       "count": 1
     }
   },
+  "src/features/coach/Splitter.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
   "src/features/files/FilesBrowser.tsx": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     },
     "complexity": {
+      "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 3
+    }
+  },
+  "src/features/files/fileList.ts": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/features/guild/CreateGuildDialog.tsx": {
+    "no-restricted-syntax": {
       "count": 1
     }
   },
@@ -354,13 +627,26 @@
       "count": 1
     }
   },
+  "src/features/guild/MessageBudget.tsx": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
   "src/features/guild/pages/GuildIssues.tsx": {
     "complexity": {
       "count": 1
     }
   },
+  "src/features/guild/pages/GuildPage.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
   "src/features/guild/pages/GuildRepositories.tsx": {
     "complexity": {
+      "count": 1
+    },
+    "no-restricted-syntax": {
       "count": 1
     }
   },
@@ -375,31 +661,109 @@
     },
     "complexity": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 4
+    }
+  },
+  "src/features/guild/repositories.ts": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/features/home/GuildEmptyState.tsx": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/features/inbox/Inbox.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
     }
   },
   "src/features/machines/MachineDialog.tsx": {
     "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/features/machines/MachineMeters.tsx": {
+    "no-restricted-syntax": {
+      "count": 5
+    }
+  },
+  "src/features/machines/MachineNotes.tsx": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/features/machines/MachinePicker.tsx": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/features/machines/MachinesTab.tsx": {
+    "no-restricted-syntax": {
+      "count": 4
+    }
+  },
+  "src/features/machines/machines.ts": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/features/models/ConnectProviderGuide.tsx": {
+    "no-restricted-syntax": {
       "count": 1
     }
   },
   "src/features/models/ModelProviders.tsx": {
     "complexity": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 6
     }
   },
   "src/features/models/ModelSetupGate.tsx": {
     "complexity": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 4
+    }
+  },
+  "src/features/models/ProviderLogo.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/features/models/models.ts": {
+    "no-restricted-syntax": {
+      "count": 2
     }
   },
   "src/features/notes/NotesBrowser.tsx": {
     "complexity": {
+      "count": 2
+    },
+    "no-restricted-syntax": {
+      "count": 3
+    }
+  },
+  "src/features/recipes/ApplyMachinePicker.tsx": {
+    "no-restricted-syntax": {
       "count": 2
     }
   },
   "src/features/recipes/ApplyPage.tsx": {
     "complexity": {
       "count": 2
+    },
+    "no-restricted-syntax": {
+      "count": 3
     }
   },
   "src/features/recipes/ApplyPreviewPage.tsx": {
@@ -408,6 +772,14 @@
     },
     "complexity": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 9
+    }
+  },
+  "src/features/recipes/OpenApplyStrip.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
     }
   },
   "src/features/recipes/RecipePage.tsx": {
@@ -415,9 +787,17 @@
       "count": 1
     }
   },
+  "src/features/recipes/RecipesPage.tsx": {
+    "no-restricted-syntax": {
+      "count": 4
+    }
+  },
   "src/features/recipes/plan/PlanView.tsx": {
     "complexity": {
       "count": 3
+    },
+    "no-restricted-syntax": {
+      "count": 9
     }
   },
   "src/features/recipes/plan/planModel.ts": {
@@ -429,6 +809,9 @@
     },
     "limits/file-lines": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 2
     }
   },
   "src/features/settings/MembersTab.tsx": {
@@ -442,31 +825,74 @@
     },
     "complexity": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 3
     }
   },
   "src/features/shell/AccountMenu.tsx": {
     "complexity": {
+      "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/features/shell/GuildRail.tsx": {
+    "no-restricted-syntax": {
       "count": 1
     }
   },
   "src/features/shell/GuildSidebar.tsx": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 1
     }
   },
   "src/features/studio/AgentsSection.tsx": {
     "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 5
+    }
+  },
+  "src/features/studio/ApprovalTray.tsx": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/features/studio/LoginsPopover.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/features/studio/MasterDetail.tsx": {
+    "no-restricted-syntax": {
       "count": 1
     }
   },
   "src/features/studio/ProposalCards.tsx": {
     "complexity": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 9
     }
   },
   "src/features/studio/StudioChat.tsx": {
     "complexity": {
       "count": 2
+    },
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/features/studio/StudioContext.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
     }
   },
   "src/features/studio/StudioLanding.tsx": {
@@ -480,15 +906,24 @@
   "src/features/studio/StudioWorkspace.tsx": {
     "complexity": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 3
     }
   },
   "src/features/studio/activity/ActivityLedger.tsx": {
     "complexity": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 1
     }
   },
   "src/features/studio/activity/ActivityMap.tsx": {
     "complexity": {
+      "count": 2
+    },
+    "no-restricted-syntax": {
       "count": 2
     }
   },
@@ -498,11 +933,17 @@
     },
     "complexity": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 5
     }
   },
   "src/features/studio/activity/ChainList.tsx": {
     "complexity": {
       "count": 3
+    },
+    "no-restricted-syntax": {
+      "count": 10
     }
   },
   "src/features/studio/activity/activityModel.ts": {
@@ -514,11 +955,22 @@
     },
     "max-params": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/features/studio/activity/parts.tsx": {
+    "no-restricted-syntax": {
+      "count": 3
     }
   },
   "src/features/studio/approvals.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 3
     }
   },
   "src/features/studio/chatModel.ts": {
@@ -532,6 +984,9 @@
   "src/features/studio/investigate.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 2
     }
   },
   "src/features/studio/location.ts": {
@@ -539,13 +994,59 @@
       "count": 1
     }
   },
+  "src/features/studio/pendingModel.ts": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/features/studio/state/ReferenceDetail.tsx": {
+    "no-restricted-syntax": {
+      "count": 6
+    }
+  },
   "src/features/studio/state/ReferencesMap.tsx": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/features/studio/state/ReferencesView.tsx": {
+    "no-restricted-syntax": {
+      "count": 3
+    }
+  },
+  "src/features/studio/state/StateEditors.tsx": {
+    "no-restricted-syntax": {
+      "count": 2
     }
   },
   "src/features/studio/state/StateItemDetail.tsx": {
     "complexity": {
+      "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 6
+    }
+  },
+  "src/features/studio/state/StateList.tsx": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/features/studio/state/referenceParts.tsx": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/features/studio/state/stateModel.ts": {
+    "no-restricted-syntax": {
+      "count": 3
+    }
+  },
+  "src/features/studio/tabs/ChangeBar.tsx": {
+    "no-restricted-syntax": {
       "count": 1
     }
   },
@@ -555,35 +1056,96 @@
     },
     "complexity": {
       "count": 2
+    },
+    "no-restricted-syntax": {
+      "count": 5
+    }
+  },
+  "src/features/studio/tabs/MemoryTab.tsx": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/features/studio/tabs/OverviewTab.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/features/studio/tabs/RoutinesTab.tsx": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/features/studio/tabs/ScriptsTab.tsx": {
+    "no-restricted-syntax": {
+      "count": 2
     }
   },
   "src/features/studio/tabs/TaskTabs.tsx": {
     "complexity": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 3
     }
   },
   "src/features/studio/tabs/VersionsTab.tsx": {
     "complexity": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/features/studio/tools/OfferedAgents.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/features/studio/tools/ToolDetail.tsx": {
+    "no-restricted-syntax": {
+      "count": 5
+    }
+  },
+  "src/features/studio/tools/ToolsSection.tsx": {
+    "no-restricted-syntax": {
+      "count": 3
     }
   },
   "src/features/tables/ColumnsEditor.tsx": {
     "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    },
+    "no-restricted-syntax": {
       "count": 1
     }
   },
   "src/features/tables/CreateTableDialog.tsx": {
     "complexity": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 1
     }
   },
   "src/features/tables/RecordDialog.tsx": {
     "complexity": {
       "count": 2
+    },
+    "no-restricted-syntax": {
+      "count": 2
     }
   },
   "src/features/tables/RecordsPanel.tsx": {
     "complexity": {
+      "count": 2
+    },
+    "no-restricted-syntax": {
+      "count": 3
+    }
+  },
+  "src/features/tables/StateTablesTab.tsx": {
+    "no-restricted-syntax": {
       "count": 2
     }
   },
@@ -593,11 +1155,19 @@
     },
     "complexity": {
       "count": 3
+    },
+    "no-restricted-syntax": {
+      "count": 3
     }
   },
   "src/features/tables/values.ts": {
     "complexity": {
       "count": 3
+    }
+  },
+  "src/mount.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
     }
   }
 }
