@@ -134,19 +134,16 @@ export function InstanceTab() {
   );
 }
 
-/** One integration: its state and what it enables, with its keys form or its variables behind a toggle. */
-function IntegrationBlock({
-  integration,
-  focused,
-  returnTo,
-  onSaved,
-}: {
+type IntegrationBlockProps = {
   integration: InstanceIntegration;
   /** Named in the page's search: opened and scrolled to on arrival. */
   focused: boolean;
   returnTo: string | null;
   onSaved: () => void;
-}) {
+};
+
+/** One integration: its state and what it enables, with its keys form or its variables behind a toggle. */
+function IntegrationBlock({ integration, focused, returnTo, onSaved }: IntegrationBlockProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(focused);
   useEffect(() => {
@@ -195,8 +192,10 @@ function IntegrationBlock({
   );
 }
 
+type EnvFieldsProps = { integration: InstanceIntegration };
+
 /** An environment integration's variables and whether each is set; a value is never shown. */
-function EnvFields({ integration }: { integration: InstanceIntegration }) {
+function EnvFields({ integration }: EnvFieldsProps) {
   return (
     <>
       <p className="text-xs text-muted">
@@ -223,19 +222,17 @@ function disconnectedNote(disconnected: number): { description?: string } {
     : {};
 }
 
+type KeysFormProps = {
+  integration: InstanceIntegration;
+  returnTo: string | null;
+  onSaved: () => void;
+};
+
 /**
  * A store integration's keys: one input per field, entered afresh each time since the server
  * never returns a value. Replacing the GitHub App while logins exist asks first.
  */
-function KeysForm({
-  integration,
-  returnTo,
-  onSaved,
-}: {
-  integration: InstanceIntegration;
-  returnTo: string | null;
-  onSaved: () => void;
-}) {
+function KeysForm({ integration, returnTo, onSaved }: KeysFormProps) {
   const save = useSaveInstanceKeys();
   const remove = useRemoveInstanceKeys();
   const [values, setValues] = useState<Record<string, string>>({});
@@ -398,18 +395,15 @@ function KeysForm({
   );
 }
 
-/** One key's input: a password field for a secret, a mono text area for a multiline value, plain text otherwise. */
-function KeyInput({
-  field,
-  value,
-  disabled,
-  onChange,
-}: {
+type KeyInputProps = {
   field: IntegrationField;
   value: string;
   disabled: boolean;
   onChange: (value: string) => void;
-}) {
+};
+
+/** One key's input: a password field for a secret, a mono text area for a multiline value, plain text otherwise. */
+function KeyInput({ field, value, disabled, onChange }: KeyInputProps) {
   const aside = [field.optional ? "Optional" : null, field.set ? "Set" : null]
     .filter(Boolean)
     .join(" · ");
@@ -442,21 +436,18 @@ function KeyInput({
   );
 }
 
-/**
- * Starts creating the GitHub App from a manifest: the name and owner to create it under, then
- * GitHub's confirmation page, which brings the admin back here with the App stored.
- */
-function CreateAppDialog({
-  integration,
-  returnTo,
-  open,
-  onClose,
-}: {
+type CreateAppDialogProps = {
   integration: InstanceIntegration;
   returnTo: string | null;
   open: boolean;
   onClose: () => void;
-}) {
+};
+
+/**
+ * Starts creating the GitHub App from a manifest: the name and owner to create it under, then
+ * GitHub's confirmation page, which brings the admin back here with the App stored.
+ */
+function CreateAppDialog({ integration, returnTo, open, onClose }: CreateAppDialogProps) {
   const start = useStartGithubAppManifest();
   const [name, setName] = useState("");
   const [owner, setOwner] = useState("");

@@ -92,8 +92,10 @@ export function UsersTab() {
   );
 }
 
+type UserDialogProps = { user: User | null; onClose: () => void };
+
 /** Creates a user with a name and an optional email, or changes an existing user's email. */
-function UserDialog({ user, onClose }: { user: User | null; onClose: () => void }) {
+function UserDialog({ user, onClose }: UserDialogProps) {
   const create = useCreateUser();
   const setEmail = useSetUserEmail();
   const [name, setName] = useState("");

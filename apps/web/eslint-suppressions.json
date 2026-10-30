@@ -192,7 +192,7 @@
       "count": 2
     },
     "no-restricted-syntax": {
-      "count": 8
+      "count": 1
     }
   },
   "src/features/admin/InstanceTab.tsx": {
@@ -203,7 +203,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 6
+      "count": 1
     }
   },
   "src/features/admin/RegistryDialog.tsx": {
@@ -211,14 +211,11 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 2
+      "count": 1
     }
   },
   "src/features/admin/UsersTab.tsx": {
     "complexity": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
       "count": 1
     }
   },

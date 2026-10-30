@@ -50,8 +50,10 @@ function installLabel(entry: RegistryConnector | undefined): string {
   return entry && needsAcceptance(entry) ? `Install ${acceptanceWords(entry)}` : "Install";
 }
 
+type RegistryDialogProps = { open: boolean; onClose: () => void };
+
 /** What the registry offers, beside what the box has: install, update, or remove a registry connector. */
-export function RegistryDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function RegistryDialog({ open, onClose }: RegistryDialogProps) {
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogContent size="lg">{open ? <RegistryList /> : null}</DialogContent>

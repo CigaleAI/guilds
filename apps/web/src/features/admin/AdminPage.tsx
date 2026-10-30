@@ -64,7 +64,9 @@ const coreTabs = [
 /** The user directory's tab, on the modes whose server serves one. */
 const usersTab = { value: "users", label: "Users" };
 
-function Scroll({ children }: { children: ReactNode }) {
+type ScrollProps = { children: ReactNode };
+
+function Scroll({ children }: ScrollProps) {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6 md:px-10">
       <div className="mx-auto flex max-w-240 flex-col gap-6">{children}</div>
@@ -126,7 +128,9 @@ export function AdminPage() {
   );
 }
 
-function Catalog({ servers }: { servers: CatalogServer[] | undefined }) {
+type CatalogProps = { servers: CatalogServer[] | undefined };
+
+function Catalog({ servers }: CatalogProps) {
   const save = useSaveCatalogServer();
   const [query, setQuery] = useState("");
   const [editingServer, setEditingServer] = useState<CatalogServer | "new" | null>(null);
@@ -380,13 +384,12 @@ function Catalog({ servers }: { servers: CatalogServer[] | undefined }) {
   );
 }
 
-function ServerDialog({
-  server,
-  onClose,
-}: {
+type ServerDialogProps = {
   server: CatalogServer | "new" | null;
   onClose: () => void;
-}) {
+};
+
+function ServerDialog({ server, onClose }: ServerDialogProps) {
   return (
     <Dialog open={server !== null} onOpenChange={(open) => !open && onClose()}>
       <DialogContent size="lg">
@@ -403,8 +406,10 @@ function ServerDialog({
   );
 }
 
+type NewServerFormProps = { server?: CatalogServer; onClose: () => void };
+
 /** A remote MCP server added on this box: its own fields. */
-function NewServerForm({ server, onClose }: { server?: CatalogServer; onClose: () => void }) {
+function NewServerForm({ server, onClose }: NewServerFormProps) {
   const save = useSaveCatalogServer();
   const [form, setForm] = useState({
     slug: server?.slug ?? "",
@@ -544,8 +549,10 @@ const COPY_FIELDS: Array<{ field: CatalogCopyField; label: string; rows: number 
   { field: "setup_hint", label: "Setup hint", rows: 1 },
 ];
 
+type CopyFormProps = { server: CatalogServer; onClose: () => void };
+
 /** The copy of a connector the box did not write: each field overrides its manifest, beside the upstream value. */
-function CopyForm({ server, onClose }: { server: CatalogServer; onClose: () => void }) {
+function CopyForm({ server, onClose }: CopyFormProps) {
   const save = useSaveCatalogServer();
   const [values, setValues] = useState<Record<CatalogCopyField, string>>({
     display_name: server.display_name,
@@ -622,13 +629,12 @@ function CopyForm({ server, onClose }: { server: CatalogServer; onClose: () => v
   );
 }
 
-function ToolDialog({
-  editing,
-  onClose,
-}: {
+type ToolDialogProps = {
   editing: { server: CatalogServer; tool: CatalogTool } | null;
   onClose: () => void;
-}) {
+};
+
+function ToolDialog({ editing, onClose }: ToolDialogProps) {
   return (
     <Dialog open={editing !== null} onOpenChange={(open) => !open && onClose()}>
       <DialogContent size="lg">
@@ -645,16 +651,14 @@ function ToolDialog({
   );
 }
 
-/** One tool's edit: its description, its schema, and whether a new login starts it On. */
-function ToolForm({
-  server,
-  tool,
-  onClose,
-}: {
+type ToolFormProps = {
   server: CatalogServer;
   tool: CatalogTool;
   onClose: () => void;
-}) {
+};
+
+/** One tool's edit: its description, its schema, and whether a new login starts it On. */
+function ToolForm({ server, tool, onClose }: ToolFormProps) {
   const save = useSaveCatalogTool();
   const [description, setDescription] = useState(tool.description);
   const [start, setStart] = useState<"manifest" | "on" | "off">(
