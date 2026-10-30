@@ -60,7 +60,11 @@ export function recordDisplayPath(orgId: string, collectionName: string, recordI
   return `${collectionDisplayPath(orgId, collectionName)}/${recordId}`;
 }
 
-export function displayPathFor(args: {
+/**
+ * Where an artifact sits, as its display path is built from it: its organisation, level and owner,
+ * its kind, the collection a record or collection names, its folder, and its file name or record id.
+ */
+export type ArtifactLocation = {
   orgId: string;
   level: ArtifactLevel;
   ownerId: string;
@@ -68,7 +72,9 @@ export function displayPathFor(args: {
   collectionName?: string | null;
   path: string;
   key: string;
-}): string {
+};
+
+export function displayPathFor(args: ArtifactLocation): string {
   if (args.kind === "object" || args.kind === "collection") {
     const collectionName = (args.collectionName ?? "").trim();
     if (!collectionName) {
@@ -127,34 +133,50 @@ export function isDisplayPath(raw: string): boolean {
 export function parseDisplayPath(raw: string): ParsedDisplayPath {
   const text = (raw || "").trim().replace(/^\/+/, "");
   const parts = text.split("/").filter(Boolean);
-  if (parts[0] !== "org" || !parts[1] || !isScopedId(parts[1], "org")) {
-    throw new ArtifactError("unknown artifact path", 404);
-  }
   const orgId = parts[1];
-  let level: ArtifactLevel = "org";
-  let ownerId = orgId;
-  let rest = parts.slice(2);
-  if (rest[0] === COLLECTIONS_SEGMENT) {
-    const collectionName = rest[1];
-    if (!collectionName || rest.length > 3) {
-      throw new ArtifactError("unknown artifact path", 404);
-    }
-    if (rest.length === 2) {
-      return { kind: "collection", orgId, collectionName };
-    }
-    return { kind: "record", orgId, collectionName, recordId: rest[2] ?? "" };
-  }
-  if (rest[0] === "agents" && rest[1] && isScopedId(rest[1], "a")) {
-    level = "agent";
-    ownerId = rest[1];
-    rest = rest.slice(2);
-  } else if (rest[0] === "guilds" && rest[1] && isScopedId(rest[1], "guild")) {
-    level = "guild";
-    ownerId = rest[1];
-    rest = rest.slice(2);
-  } else if (rest[0] === "agents" || rest[0] === "guilds") {
+  if (parts[0] !== "org" || !orgId || !isScopedId(orgId, "org")) {
     throw new ArtifactError("unknown artifact path", 404);
   }
+  const rest = parts.slice(2);
+  if (rest[0] === COLLECTIONS_SEGMENT) {
+    return parseCollectionPath(orgId, rest);
+  }
+  return parseOwnedPath(orgId, parseOwnerSegments(orgId, rest));
+}
+
+/** The segments under `collections/`: a collection by name, or one of its records by id. */
+function parseCollectionPath(orgId: string, segments: string[]): ParsedDisplayPath {
+  const collectionName = segments[1];
+  if (!collectionName || segments.length > 3) {
+    throw new ArtifactError("unknown artifact path", 404);
+  }
+  if (segments.length === 2) {
+    return { kind: "collection", orgId, collectionName };
+  }
+  return { kind: "record", orgId, collectionName, recordId: segments[2] ?? "" };
+}
+
+/** The owner a display path's segments after its organisation name, and the segments under that owner. */
+type OwnerSegments = { level: ArtifactLevel; ownerId: string; rest: string[] };
+
+/** The owner the segments name: an agent, a guild, or else the organisation itself. */
+function parseOwnerSegments(orgId: string, segments: string[]): OwnerSegments {
+  const [head, id] = segments;
+  if (head === "agents" && id && isScopedId(id, "a")) {
+    return { level: "agent", ownerId: id, rest: segments.slice(2) };
+  }
+  if (head === "guilds" && id && isScopedId(id, "guild")) {
+    return { level: "guild", ownerId: id, rest: segments.slice(2) };
+  }
+  if (head === "agents" || head === "guilds") {
+    throw new ArtifactError("unknown artifact path", 404);
+  }
+  return { level: "org", ownerId: orgId, rest: segments };
+}
+
+/** What an owner's segments name: a Memory revision in an agent's archive, or an artifact by folder and file name. */
+function parseOwnedPath(orgId: string, owner: OwnerSegments): ParsedDisplayPath {
+  const { level, ownerId, rest } = owner;
   if (level === "agent" && rest[0] === HISTORY_ARCHIVE_SEGMENT) {
     const stamp = rest.slice(1).join("/");
     if (!stamp) {

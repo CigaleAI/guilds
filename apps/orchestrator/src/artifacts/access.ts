@@ -1,11 +1,12 @@
 import { Type, type Static } from "@sinclair/typebox";
+import { isPlainRecord } from "../db/json.js";
 import { ArtifactError } from "./errors.js";
 import {
   isAccessMode,
   isAccessSubject,
   isAgentAccessMode,
   type AccessGrant,
-  type AccessSubject,
+  type AccessSubjectRef,
   type AgentAccessMode,
   type ArtifactLevel,
 } from "./types.js";
@@ -41,7 +42,7 @@ export function createsWritable(level: ArtifactLevel): boolean {
  * `where` prefixes each error, naming the grant's place in a list.
  */
 export function parseGrant(value: unknown, where = ""): AccessGrant {
-  const item = value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  const item: Record<string, unknown> = isPlainRecord(value) ? value : {};
   if (!isAccessSubject(item.type)) {
     throw new ArtifactError(`${where}type must be org, guild, or agent`, 422);
   }
@@ -49,11 +50,12 @@ export function parseGrant(value: unknown, where = ""): AccessGrant {
   if (!id) {
     throw new ArtifactError(`${where}id is required`, 422);
   }
-  if (item.type === "agent" ? !isAgentAccessMode(item.mode) : !isAccessMode(item.mode)) {
+  const mode = item.mode;
+  if (!isAgentAccessMode(mode) || (item.type !== "agent" && !isAccessMode(mode))) {
     const modes = item.type === "agent" ? "none, read, or write" : "read or write";
     throw new ArtifactError(`${where}mode must be ${modes}`, 422);
   }
-  return { type: item.type, id, mode: item.mode as AgentAccessMode };
+  return { type: item.type, id, mode };
 }
 
 /** The error prefix naming the grant at `index` of the list the operator sends. */
@@ -82,7 +84,7 @@ export function parseGrants(value: SubjectEntry[]): AccessGrant[] {
   return grants;
 }
 
-export function grantKey(grant: { type: AccessSubject; id: string }): string {
+export function grantKey(grant: AccessSubjectRef): string {
   return `${grant.type}:${grant.id}`;
 }
 

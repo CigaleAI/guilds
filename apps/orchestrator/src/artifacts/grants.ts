@@ -15,6 +15,7 @@ import type {
   AccessEntry,
   AccessGrant,
   AccessSubject,
+  AccessSubjectRef,
   AccessTarget,
   AgentAccessMode,
   ArtifactActor,
@@ -102,7 +103,7 @@ export function collectionAccessItem(
 export async function requireSubject(
   db: Queryable,
   actor: ArtifactActor,
-  subject: { type: AccessSubject; id: string },
+  subject: AccessSubjectRef,
   where = "",
 ): Promise<string> {
   const row = await getAccessSubject(db, actor.orgId, subject);

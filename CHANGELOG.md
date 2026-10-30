@@ -14,6 +14,13 @@ commands for each effect are in
 daemon names. Before, that body was passed on undecoded, without its
 `content-encoding`, as the daemon's status.
 
+**No impact.** Creating an agent with no focus, through
+`POST /api/guilds/:guild_id/agents` or a recipe apply whose role has
+no Task text, answers 500 with the file system's message when
+`task.md` exists in `TEMPLATES_ROOT` but cannot be read. Before, the
+agent was created with the one-line default Task. A missing `task.md`
+still gives the default Task.
+
 **No impact.** The note routes of a guild, an agent and the
 organisation refuse a write whose `content` is not a string or whose
 `expected_version` is neither a number nor null, and a write whose

@@ -50,11 +50,10 @@ export async function ensureAgentArtifacts(
   actor: ArtifactActor,
   agent: Pick<AgentRow, "id" | "guild_id" | "org_id">,
 ): Promise<void> {
-  await ensureAgentRows(store, {
+  await ensureAgentRows(store, actor, {
     orgId: agent.org_id,
     guildId: agent.guild_id,
     agentId: agent.id,
-    actor,
   });
 }
 
