@@ -4,8 +4,10 @@ import { Icon } from "@guildsrun/ui";
 
 const DOCS_ORIGIN = "https://docs.guilds.run";
 
+type DocsLinkProps = { path: string; children: ReactNode };
+
 /** A page of the public documentation, in a new tab; `path` is the page's path on the docs site. */
-export function DocsLink({ path, children }: { path: string; children: ReactNode }) {
+export function DocsLink({ path, children }: DocsLinkProps) {
   return (
     <a
       href={`${DOCS_ORIGIN}${path}`}

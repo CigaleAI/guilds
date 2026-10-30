@@ -3,11 +3,13 @@ import { ArrowLeft } from "lucide-react";
 import { IconButton, Tooltip, cn } from "@guildsrun/ui";
 import { useReturnPoint } from "./returnTrail";
 
+type ReturnButtonProps = { className?: string };
+
 /**
  * Back to where a content link was followed from, such as the chat a call's memory chip left: a
  * round arrow floating over the top left of the body it is placed before, taking no room.
  */
-export function ReturnButton({ className }: { className?: string }) {
+export function ReturnButton({ className }: ReturnButtonProps) {
   const router = useRouter();
   const back = useReturnPoint();
   if (!back) return null;

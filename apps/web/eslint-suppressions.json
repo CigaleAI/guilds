@@ -65,21 +65,6 @@
       "count": 1
     }
   },
-  "src/app/App.tsx": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/app/ReturnButton.tsx": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/app/docs.tsx": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
   "src/app/identity.tsx": {
     "no-restricted-syntax": {
       "count": 1
