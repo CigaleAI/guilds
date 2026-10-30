@@ -1,6 +1,23 @@
 import type { Column, ColumnInput, ColumnType } from "../../api/types/tables";
 
-export const columnTypes: ColumnType[] = ["text", "number", "boolean", "datetime", "array"];
+export const columnTypes = [
+  "text",
+  "number",
+  "boolean",
+  "datetime",
+  "array",
+] as const satisfies readonly ColumnType[];
+
+export function isColumnType(value: unknown): value is ColumnType {
+  return columnTypes.some((type) => type === value);
+}
+
+/** The views of an open table. */
+export const tableTabs = ["records", "columns", "access"] as const;
+
+export function isTableTab(value: unknown): value is (typeof tableTabs)[number] {
+  return tableTabs.some((tab) => tab === value);
+}
 
 /** Fields every record has, which no column may be named. */
 const reservedColumns = ["id", "created_at", "updated_at", "created_by", "updated_by"];

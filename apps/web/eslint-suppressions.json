@@ -214,9 +214,6 @@
     }
   },
   "src/features/guild/pages/GuildSettings.tsx": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 2
-    },
     "complexity": {
       "count": 1
     }
@@ -371,11 +368,6 @@
       "count": 1
     }
   },
-  "src/features/tables/ColumnsEditor.tsx": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    }
-  },
   "src/features/tables/CreateTableDialog.tsx": {
     "complexity": {
       "count": 1
@@ -392,9 +384,6 @@
     }
   },
   "src/features/tables/TablesPage.tsx": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
     "complexity": {
       "count": 3
     }

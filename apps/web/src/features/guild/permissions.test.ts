@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isGuildAdmin } from "./permissions";
+import { isGuildAdmin, isOperatorRole } from "./permissions";
+
+test("an operator role is admin or operator", () => {
+  assert.equal(isOperatorRole("admin"), true);
+  assert.equal(isOperatorRole("operator"), true);
+  assert.equal(isOperatorRole("owner"), false);
+});
 
 test("only an admin operator of the guild is its admin", () => {
   const guild = {

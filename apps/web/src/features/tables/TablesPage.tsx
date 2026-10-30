@@ -40,9 +40,16 @@ import { AccessListPanel } from "../access/AccessListPanel";
 import { ColumnsEditor } from "./ColumnsEditor";
 import { CreateTableDialog } from "./CreateTableDialog";
 import { RecordsPanel } from "./RecordsPanel";
-import { columnErrors, columnsForSave, tableName, describeChanges } from "./values";
+import {
+  columnErrors,
+  columnsForSave,
+  describeChanges,
+  isTableTab,
+  tableName,
+  tableTabs,
+} from "./values";
 
-export type TableTab = "records" | "columns" | "access";
+export type TableTab = (typeof tableTabs)[number];
 
 function scopeLabel(collection: Collection): string {
   return collection.guild ? `Guild · ${collection.guild.name}` : "Organisation";
@@ -127,7 +134,7 @@ export function TablesPage() {
           <TableDetail
             key={selectedId}
             id={selectedId}
-            tab={(search as { tab?: TableTab }).tab ?? "records"}
+            tab={isTableTab(search.tab) ? search.tab : "records"}
             onTab={(tab) =>
               void navigate({
                 to: "/tables/$collectionId",

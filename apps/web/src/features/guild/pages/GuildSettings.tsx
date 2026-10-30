@@ -32,7 +32,7 @@ import {
   Tag,
 } from "@guildsrun/ui";
 import { handleError, handleHint } from "../../names";
-import { isGuildAdmin } from "../permissions";
+import { isGuildAdmin, isOperatorRole } from "../permissions";
 import { GuildPage } from "./GuildPage";
 import { GuildRepositories } from "./GuildRepositories";
 
@@ -353,12 +353,13 @@ function Operators({ guild, admin }: OperatorsProps) {
                   aria-label={`${operator.name}'s role`}
                   className="w-36"
                   value={operator.role}
-                  onValueChange={(next) =>
+                  onValueChange={(next) => {
+                    if (!isOperatorRole(next)) return;
                     setOperator.mutate(
-                      { userId: operator.user_id, role: next as GuildOperator["role"] },
+                      { userId: operator.user_id, role: next },
                       { onError: failed(`Couldn't change ${operator.name}'s role`) },
-                    )
-                  }
+                    );
+                  }}
                   options={[
                     { value: "admin", label: "Admin" },
                     { value: "operator", label: "Operator" },
@@ -403,7 +404,9 @@ function Operators({ guild, admin }: OperatorsProps) {
             label="Role"
             className="w-40"
             value={role}
-            onValueChange={(next) => setRole(next as GuildOperator["role"])}
+            onValueChange={(next) => {
+              if (isOperatorRole(next)) setRole(next);
+            }}
             options={[
               { value: "operator", label: "Operator" },
               { value: "admin", label: "Admin" },

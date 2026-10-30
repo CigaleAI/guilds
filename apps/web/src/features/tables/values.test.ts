@@ -7,6 +7,8 @@ import {
   describeChanges,
   fieldText,
   fits,
+  isColumnType,
+  isTableTab,
   parseField,
   whereOf,
 } from "./values";
@@ -14,6 +16,17 @@ import {
 function column(name: string, type: Column["type"], extra: Partial<Column> = {}): Column {
   return { name, type, description: "d", required: false, unique: false, ...extra };
 }
+
+test("a column type is one the server stores", () => {
+  assert.equal(isColumnType("datetime"), true);
+  assert.equal(isColumnType("date"), false);
+});
+
+test("a table tab is records, columns or access", () => {
+  assert.equal(isTableTab("columns"), true);
+  assert.equal(isTableTab("settings"), false);
+  assert.equal(isTableTab(undefined), false);
+});
 
 test("values fit their column, including allowed values", () => {
   assert.equal(fits("watch", column("status", "text", { values: ["watch", "ignore"] })), true);
@@ -68,7 +81,14 @@ test("columns for save drop empty values and values on the wrong type", () => {
         unique: false,
         values: ["open", "closed"],
       },
-      { name: "note", type: "text", description: "free", required: false, unique: false, values: [] },
+      {
+        name: "note",
+        type: "text",
+        description: "free",
+        required: false,
+        unique: false,
+        values: [],
+      },
     ]),
     [
       { name: "date", type: "datetime", description: "when", required: false, unique: false },
@@ -117,7 +137,10 @@ test("a columns edit is described change by change", () => {
 
 test("a description-only edit is a change", () => {
   assert.deepEqual(
-    describeChanges([column("status", "text")], [column("status", "text", { description: "state" })]),
+    describeChanges(
+      [column("status", "text")],
+      [column("status", "text", { description: "state" })],
+    ),
     ["Change the description of status"],
   );
 });

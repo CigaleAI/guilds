@@ -1,6 +1,6 @@
 import { ArrowDown, ArrowUp, Plus, X } from "lucide-react";
 import { useId, useRef, useState, type KeyboardEvent } from "react";
-import type { ColumnInput, ColumnType } from "../../api/types/tables";
+import type { ColumnInput } from "../../api/types/tables";
 import {
   Button,
   IconButton,
@@ -14,7 +14,7 @@ import {
   Icon,
   Tag,
 } from "@guildsrun/ui";
-import { columnTypes, maxColumnDescription, maxValues } from "./values";
+import { columnTypes, isColumnType, maxColumnDescription, maxValues } from "./values";
 
 export function blankColumn(): ColumnInput {
   return { name: "", type: "text", description: "", required: false, unique: false };
@@ -59,8 +59,8 @@ export function ColumnsEditor({ columns, onChange, errors }: ColumnsEditorProps)
                 label="Type"
                 className="w-36"
                 value={column.type}
-                onValueChange={(value) => {
-                  const type = value as ColumnType;
+                onValueChange={(type) => {
+                  if (!isColumnType(type)) return;
                   const next: ColumnInput = {
                     ...column,
                     type,
