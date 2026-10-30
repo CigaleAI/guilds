@@ -124,6 +124,7 @@ orchestrator_lane() {
 web_lane() {
   step test-ui pnpm --filter @guildsrun/ui test &&
     step test-web pnpm --filter @guildsrun/web test &&
+    step import-cycles-web pnpm --filter @guildsrun/web cycles &&
     step build-web pnpm --filter @guildsrun/web build &&
     step build-storybook pnpm --filter @guildsrun/ui build-storybook &&
     extension_steps web

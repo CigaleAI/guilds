@@ -1,13 +1,23 @@
-// Fails when the import graph of src/ gains a cycle. Value imports only; `import type` is ignored.
+// Fails when the import graph of a package's src/ gains a cycle. Value imports only; `import type`
+// is ignored. Tests and stories are not scanned.
 //
-//   tsx scripts/import-cycles.ts            compares src/ with import-cycles.json
-//   tsx scripts/import-cycles.ts --write    rewrites import-cycles.json from src/ as it is
+//   tsx scripts/import-cycles.ts [package]           compares src/ with import-cycles.json
+//   tsx scripts/import-cycles.ts [package] --write   rewrites import-cycles.json from src/ as it is
 //
-// import-cycles.json lists the files that sit in a cycle today and the domains (directories under
-// src/) that sit in a domain-level cycle. Like eslint-suppressions.json, it only shrinks: a file or
-// a domain that enters a cycle fails the check, one that leaves it is reported so the list can be
-// rewritten.
-import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+// [package] is the package directory that holds src/ and import-cycles.json, the script's parent
+// when omitted.
+//
+// import-cycles.json lists the files that sit in a cycle today and the domains that sit in a
+// domain-level cycle. A file's domain is its first directory under src/, or features/<name> for a
+// file under src/features/<name>/, so each feature of the operator app is a domain of its own.
+// Like eslint-suppressions.json, the lists only shrink: a file or a domain that enters a cycle
+// fails the check, one that leaves it is reported so the lists can be rewritten.
+//
+// import-cycles.json also names the package's composition roots (compositionRoots, src-relative
+// paths, empty when absent). A composition root imports every module it assembles, so its own
+// imports are left out of the graph; it stays a node, and an import of it is still an edge. --write
+// keeps the list as it is. A listed root that is not a source file fails the check.
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -17,14 +27,25 @@ const PACKAGE = given ? resolve(given) : resolve(dirname(fileURLToPath(import.me
 const SRC = join(PACKAGE, "src");
 const BASELINE = join(PACKAGE, "import-cycles.json");
 
-type Baseline = { filesInCycles: string[]; domainsInCycles: string[] };
+type Baseline = { filesInCycles: string[]; domainsInCycles: string[]; compositionRoots: string[] };
+
+const stored: Partial<Baseline> = existsSync(BASELINE)
+  ? JSON.parse(readFileSync(BASELINE, "utf8"))
+  : {};
+const baseline: Baseline = {
+  filesInCycles: stored.filesInCycles ?? [],
+  domainsInCycles: stored.domainsInCycles ?? [],
+  compositionRoots: stored.compositionRoots ?? [],
+};
+
+const SOURCE = /\.tsx?$/;
+const EXCLUDED = /\.(?:d|test|stories)\.tsx?$/;
 
 function sourceFiles(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
     const path = join(dir, name);
     if (statSync(path).isDirectory()) sourceFiles(path, out);
-    else if (name.endsWith(".ts") && !name.endsWith(".d.ts") && !name.endsWith(".test.ts"))
-      out.push(path);
+    else if (SOURCE.test(name) && !EXCLUDED.test(name)) out.push(path);
   }
   return out.sort();
 }
@@ -33,8 +54,9 @@ const files = sourceFiles(SRC);
 const known = new Set(files);
 const id = (path: string): string => relative(SRC, path).split(sep).join("/");
 const domainOf = (path: string): string => {
-  const [first, ...rest] = id(path).split("/");
-  return rest.length === 0 || first === undefined ? "(root)" : first;
+  const [first, second] = id(path).split("/").slice(0, -1);
+  if (first === undefined) return "(root)";
+  return first === "features" && second !== undefined ? `${first}/${second}` : first;
 };
 
 function resolveSpecifier(from: string, specifier: string): string | null {
@@ -42,9 +64,12 @@ function resolveSpecifier(from: string, specifier: string): string | null {
   const base = resolve(dirname(from), specifier);
   for (const candidate of [
     base.replace(/\.js$/, ".ts"),
+    base.replace(/\.js$/, ".tsx"),
     base,
     `${base}.ts`,
+    `${base}.tsx`,
     join(base, "index.ts"),
+    join(base, "index.tsx"),
   ]) {
     if (known.has(candidate)) return candidate;
   }
@@ -115,7 +140,11 @@ function stronglyConnected(nodes: string[], edges: Map<string, Set<string>>): st
   return components.filter((component) => component.length > 1);
 }
 
-const fileEdges = new Map(files.map((file) => [file, valueImports(file)]));
+const roots = new Set(baseline.compositionRoots);
+const missingRoots = baseline.compositionRoots.filter((root) => !known.has(join(SRC, root)));
+const fileEdges = new Map(
+  files.map((file) => [file, roots.has(id(file)) ? new Set<string>() : valueImports(file)]),
+);
 const domainEdges = new Map<string, Set<string>>();
 for (const [from, targets] of fileEdges) {
   const domain = domainOf(from);
@@ -131,7 +160,12 @@ const current: Baseline = {
   domainsInCycles: stronglyConnected([...new Set(files.map(domainOf))], domainEdges)
     .flat()
     .sort(),
+  compositionRoots: baseline.compositionRoots,
 };
+
+for (const root of missingRoots)
+  console.log(`  ✗ ${root} is listed as a composition root but is not a source file`);
+if (missingRoots.length > 0) process.exit(1);
 
 if (process.argv.includes("--write")) {
   writeFileSync(BASELINE, `${JSON.stringify(current, null, 2)}\n`);
@@ -141,7 +175,6 @@ if (process.argv.includes("--write")) {
   process.exit(0);
 }
 
-const baseline: Baseline = JSON.parse(readFileSync(BASELINE, "utf8"));
 const entered = {
   files: current.filesInCycles.filter((file) => !baseline.filesInCycles.includes(file)),
   domains: current.domainsInCycles.filter((domain) => !baseline.domainsInCycles.includes(domain)),
