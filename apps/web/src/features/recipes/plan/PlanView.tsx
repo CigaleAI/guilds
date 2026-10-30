@@ -93,10 +93,8 @@ export function PlanView({
   ...hooks
 }: PlanViewProps) {
   const prefix = useId();
-  const hero = guildHero(plan);
   const blocking = blockingSummary(findings);
   const issues = planIssues(findings);
-  const minimum = planMachineMinimum(plan);
   const [open, setOpen] = useState<ReadonlySet<PlanSectionId>>(
     () => new Set(sections.filter((section) => section.open).map((section) => section.id)),
   );
@@ -110,49 +108,16 @@ export function PlanView({
 
   return (
     <div className="flex min-w-0 flex-col gap-5">
-      <header className="flex flex-col gap-3">
-        {!hideName || hero.about || hero.goal ? (
-          <div className="flex flex-col gap-1">
-            {hideName ? null : <h2 className="font-mono text-xl font-semibold">{hero.name}</h2>}
-            {hero.about ? <p className="text-md text-fg-2">{hero.about}</p> : null}
-            {hero.goal ? <p className="text-sm text-muted">{hero.goal}</p> : null}
-          </div>
-        ) : null}
-        <div className="flex flex-wrap gap-2">
-          {planTally(plan).map((item) => (
-            <button
-              key={item.label}
-              type="button"
-              onClick={() => {
-                toggle(item.section, true);
-                document
-                  .getElementById(`${prefix}-${item.section}`)
-                  ?.scrollIntoView({ block: "start", behavior: "smooth" });
-              }}
-              className="flex cursor-pointer items-baseline gap-1.5 rounded-full bg-surface px-3 py-1.5 text-sm hover:bg-paper"
-            >
-              <span className="font-semibold">{item.count}</span>
-              <span className="text-fg-2">{item.label}</span>
-            </button>
-          ))}
-          {minimum ? (
-            <Tooltip label={sizingNote}>
-              <span
-                tabIndex={0}
-                className="flex cursor-help items-center gap-1.5 rounded-full px-3 py-1.5 text-sm text-muted"
-              >
-                <Icon icon={Server} size={14} />
-                Needs a machine of at least {minimum}
-              </span>
-            </Tooltip>
-          ) : null}
-          {hero.groupLimit ? (
-            <span className="flex items-baseline gap-1.5 rounded-full px-3 py-1.5 text-sm text-muted">
-              {hero.groupLimit} group messages per agent
-            </span>
-          ) : null}
-        </div>
-      </header>
+      <PlanHeader
+        plan={plan}
+        hideName={hideName}
+        onOpenSection={(section) => {
+          toggle(section, true);
+          document
+            .getElementById(`${prefix}-${section}`)
+            ?.scrollIntoView({ block: "start", behavior: "smooth" });
+        }}
+      />
 
       {blocking ? (
         <Banner tone="error" title={blocking.label}>
@@ -179,6 +144,63 @@ export function PlanView({
       ))}
       {issues ? <IssuesList title={issues.title} items={issues.items} /> : null}
     </div>
+  );
+}
+
+type PlanHeaderProps = {
+  plan: RecipePlan;
+  /** Leaves the guild's name out, for a page whose own title already names it. */
+  hideName: boolean;
+  /** Opens a section and brings it into view, from its count tile. */
+  onOpenSection: (section: PlanSectionId) => void;
+};
+
+/**
+ * The plan's header: the guild's name, about text and goal, a count tile per kind that opens its
+ * section, the smallest machine the agents need, and the group message cap.
+ */
+function PlanHeader({ plan, hideName, onOpenSection }: PlanHeaderProps) {
+  const hero = guildHero(plan);
+  const minimum = planMachineMinimum(plan);
+  return (
+    <header className="flex flex-col gap-3">
+      {!hideName || hero.about || hero.goal ? (
+        <div className="flex flex-col gap-1">
+          {hideName ? null : <h2 className="font-mono text-xl font-semibold">{hero.name}</h2>}
+          {hero.about ? <p className="text-md text-fg-2">{hero.about}</p> : null}
+          {hero.goal ? <p className="text-sm text-muted">{hero.goal}</p> : null}
+        </div>
+      ) : null}
+      <div className="flex flex-wrap gap-2">
+        {planTally(plan).map((item) => (
+          <button
+            key={item.label}
+            type="button"
+            onClick={() => onOpenSection(item.section)}
+            className="flex cursor-pointer items-baseline gap-1.5 rounded-full bg-surface px-3 py-1.5 text-sm hover:bg-paper"
+          >
+            <span className="font-semibold">{item.count}</span>
+            <span className="text-fg-2">{item.label}</span>
+          </button>
+        ))}
+        {minimum ? (
+          <Tooltip label={sizingNote}>
+            <span
+              tabIndex={0}
+              className="flex cursor-help items-center gap-1.5 rounded-full px-3 py-1.5 text-sm text-muted"
+            >
+              <Icon icon={Server} size={14} />
+              Needs a machine of at least {minimum}
+            </span>
+          </Tooltip>
+        ) : null}
+        {hero.groupLimit ? (
+          <span className="flex items-baseline gap-1.5 rounded-full px-3 py-1.5 text-sm text-muted">
+            {hero.groupLimit} group messages per agent
+          </span>
+        ) : null}
+      </div>
+    </header>
   );
 }
 
