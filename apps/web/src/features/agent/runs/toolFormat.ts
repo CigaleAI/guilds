@@ -15,11 +15,90 @@ export type ToolCallRequest = {
   function?: { name?: unknown; arguments?: unknown };
 };
 
+/** A value JSON carries: a string, number, boolean or null, or an array or object of them. */
+export type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject;
+
+/**
+ * A JSON object: the shape a call's arguments and a result's metadata take on the wire. A field
+ * held as `undefined` is one JSON leaves out.
+ */
+export type JsonObject = { [key: string]: JsonValue | undefined };
+
+/**
+ * A tool call's arguments: the parameters the app reads by name, and the rest of the tool's own
+ * schema, which differs from tool to tool.
+ */
+export type ToolArguments = {
+  action?: JsonValue;
+  agent_id?: JsonValue;
+  agent_name?: JsonValue;
+  background?: JsonValue;
+  brief?: JsonValue;
+  collection?: JsonValue;
+  command?: JsonValue;
+  direction?: JsonValue;
+  home_path?: JsonValue;
+  id?: JsonValue;
+  key?: JsonValue;
+  mode?: JsonValue;
+  name?: JsonValue;
+  offset?: JsonValue;
+  path?: JsonValue;
+  path_prefix?: JsonValue;
+  pattern?: JsonValue;
+  query?: JsonValue;
+  repo?: JsonValue;
+  scope?: JsonValue;
+  server_ref?: JsonValue;
+  session_id?: JsonValue;
+  start?: JsonValue;
+  stop?: JsonValue;
+  summary?: JsonValue;
+  target_agent_id?: JsonValue;
+  tool?: JsonValue;
+  url?: JsonValue;
+  user?: JsonValue;
+  [parameter: string]: JsonValue | undefined;
+};
+
+/**
+ * What the orchestrator records about a tool result: the facts the app reads by name, and the
+ * rest a tool adds of its own.
+ */
+export type ToolResultMetadata = {
+  browser_usage?: JsonValue;
+  cwd?: JsonValue;
+  deletions?: JsonValue;
+  duration_ms?: JsonValue;
+  end_sha?: JsonValue;
+  error?: JsonValue;
+  exit_code?: JsonValue;
+  files_changed?: JsonValue;
+  harness?: JsonValue;
+  insertions?: JsonValue;
+  log_path?: JsonValue;
+  original_bytes?: JsonValue;
+  output_filter?: JsonValue;
+  path?: JsonValue;
+  range?: JsonValue;
+  remaining_tool_calls?: JsonValue;
+  repeat_of?: JsonValue;
+  repository?: JsonValue;
+  session_id?: JsonValue;
+  start_sha?: JsonValue;
+  status?: JsonValue;
+  stored_bytes?: JsonValue;
+  timed_out?: JsonValue;
+  tool_name?: JsonValue;
+  truncated?: JsonValue;
+  [fact: string]: JsonValue | undefined;
+};
+
 /** A call's arguments ready to show: pretty JSON, the raw text, or an empty notice. */
 export type ToolArgsInfo = {
   isEmpty: boolean;
   text: string;
-  parsed: Record<string, unknown> | null;
+  parsed: JsonValue | null;
 };
 
 /** A call's result ready to show: pretty JSON when the body parses, the raw text otherwise. */
@@ -27,52 +106,54 @@ export type ReturnedDataInfo = { isJson: boolean; isEmpty: boolean; text: string
 
 const REMAINING_TOOL_CALLS_RE = /\n\nremaining_tool_calls: \d+\s*$/;
 
+const JSON_SCALARS: readonly string[] = ["string", "number", "boolean"];
+
+/** Whether a value is one JSON carries, every element and field of it included. */
+export function isJsonValue(value: unknown): value is JsonValue {
+  if (value === null || JSON_SCALARS.includes(typeof value)) return true;
+  if (Array.isArray(value)) return value.every(isJsonValue);
+  return isJsonObject(value);
+}
+
+/** Whether a value is a JSON object: a plain object, every field of it a JSON value or left out. */
+export function isJsonObject(value: unknown): value is JsonObject {
+  if (typeof value !== "object" || value === null) return false;
+  const prototype: unknown = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return false;
+  return Object.values(value).every((field) => field === undefined || isJsonValue(field));
+}
+
 function parseJson(text: string): unknown {
   try {
-    return JSON.parse(text) as unknown;
+    return JSON.parse(text);
   } catch {
     return undefined;
   }
 }
 
 /** Removes the tool-budget stamp the orchestrator appends to the end of a tool result. */
-export function stripRemainingToolCalls(content: string): string;
-export function stripRemainingToolCalls<T>(content: T): T;
-export function stripRemainingToolCalls(content: unknown): unknown {
-  if (typeof content !== "string") return content;
+export function stripRemainingToolCalls(content: string): string {
   return content.replace(REMAINING_TOOL_CALLS_RE, "");
 }
 
 /** Reads a call's arguments, given as a JSON string or an object, as an object; empty when unreadable. */
-export function parseToolArgs(raw: unknown): Record<string, unknown> {
-  if (!raw) return {};
-  if (typeof raw === "object" && !Array.isArray(raw)) return raw as Record<string, unknown>;
-  if (typeof raw !== "string") return {};
-  const parsed = parseJson(raw);
-  return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-    ? (parsed as Record<string, unknown>)
-    : {};
+export function parseToolArgs(raw: unknown): ToolArguments {
+  const value = typeof raw === "string" && raw ? parseJson(raw) : raw;
+  return isJsonObject(value) ? value : {};
 }
 
 /** Formats a call's arguments for display, noting when there are none. */
 export function formatToolArgs(raw: unknown): ToolArgsInfo {
   if (!raw) return { isEmpty: true, text: "No arguments provided.", parsed: null };
-  if (typeof raw === "object") {
-    const object = raw as Record<string, unknown>;
-    if (Object.keys(object).length === 0) {
-      return { isEmpty: true, text: "No arguments provided.", parsed: object };
-    }
-    return { isEmpty: false, text: JSON.stringify(object, null, 2), parsed: object };
+  const value = typeof raw === "object" ? raw : parseJson(String(raw));
+  if (!value || typeof value !== "object") {
+    return { isEmpty: false, text: String(raw), parsed: null };
   }
-  const parsed = parseJson(String(raw));
-  if (parsed && typeof parsed === "object") {
-    const object = parsed as Record<string, unknown>;
-    if (Object.keys(object).length === 0) {
-      return { isEmpty: true, text: "No arguments provided.", parsed: object };
-    }
-    return { isEmpty: false, text: JSON.stringify(object, null, 2), parsed: object };
+  const parsed = isJsonValue(value) ? value : null;
+  if (Object.keys(value).length === 0) {
+    return { isEmpty: true, text: "No arguments provided.", parsed };
   }
-  return { isEmpty: false, text: String(raw), parsed: null };
+  return { isEmpty: false, text: JSON.stringify(value, null, 2), parsed };
 }
 
 /** Formats a call's result for display, pretty-printing bodies that are JSON objects or arrays. */
@@ -110,7 +191,7 @@ export function messageContentText(payload: RunMessage["payload"] | null | undef
       .map((part: unknown) => {
         if (typeof part === "string") return part;
         const text: unknown =
-          part !== null && typeof part === "object" ? (part as { text?: unknown }).text : undefined;
+          part !== null && typeof part === "object" && "text" in part ? part.text : undefined;
         return text || "";
       })
       .join("");
@@ -123,23 +204,23 @@ export function toolResultError(resultMsg: RunMessage | null | undefined): strin
   if (!resultMsg) return null;
   const metadata = resultMsg.metadata || {};
   if (typeof metadata.error === "string" && metadata.error) return metadata.error;
-  const content = stripRemainingToolCalls(resultMsg.payload?.content);
-  if (typeof content === "string" && content.trim().startsWith("ERROR:")) {
-    const firstLine = content.trim().slice("ERROR:".length).trim().split("\n")[0];
+  const content = resultMsg.payload?.content;
+  if (typeof content !== "string") return null;
+  const body = stripRemainingToolCalls(content).trim();
+  if (body.startsWith("ERROR:")) {
+    const firstLine = body.slice("ERROR:".length).trim().split("\n")[0];
     return firstLine || "error";
   }
   return null;
 }
 
-type ToolArgs = Record<string, unknown>;
-
-function friendlyNoteChange(args: ToolArgs): string {
+function friendlyNoteChange(args: ToolArguments): string {
   if (args.action === "create") return args.key ? `Propose note ${args.key}` : "Propose note";
   if (args.action === "delete") return "Propose deleting a note";
   return "Propose note edit";
 }
 
-function friendlyTableChange(args: ToolArgs): string {
+function friendlyTableChange(args: ToolArguments): string {
   if (args.action === "create") return args.name ? `Propose table ${args.name}` : "Propose table";
   if (args.action === "delete") {
     return args.collection ? `Propose deleting ${args.collection}` : "Propose deleting a table";
@@ -147,7 +228,7 @@ function friendlyTableChange(args: ToolArgs): string {
   return args.collection ? `Propose changes to ${args.collection}` : "Propose table changes";
 }
 
-function friendlyRoutineChange(args: ToolArgs): string {
+function friendlyRoutineChange(args: ToolArguments): string {
   const handle = args.agent_id || args.agent_name;
   if (args.action === "create") return handle ? `Propose routine for ${handle}` : "Propose routine";
   if (args.action === "delete") return "Propose deleting a routine";

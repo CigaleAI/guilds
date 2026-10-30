@@ -8,10 +8,12 @@ import {
   formatDuration,
   formatReturnedData,
   formatToolArgs,
+  isJsonObject,
   stripRemainingToolCalls,
   type ReturnedDataInfo,
   type RunMessage,
   type ToolArgsInfo,
+  type ToolResultMetadata,
 } from "../runs/toolFormat";
 
 /** The views of an opened tool call. */
@@ -19,12 +21,6 @@ export type DetailView = "arguments" | "result" | "metadata" | "diff" | "log";
 
 /** A label and its value in a call's Metadata view. */
 export type CallFact = [label: string, value: string];
-
-function record(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
 
 function text(value: unknown): string {
   return typeof value === "string" ? value : "";
@@ -40,13 +36,14 @@ function shortSha(value: unknown): string {
 }
 
 /** A call's result metadata; empty before its result is committed. */
-export function callMetadata(call: FlowCall): Record<string, unknown> {
-  return record(call.result?.metadata);
+export function callMetadata(call: FlowCall): ToolResultMetadata {
+  const metadata = call.result?.metadata;
+  return isJsonObject(metadata) ? metadata : {};
 }
 
 /** The arguments the agent called the tool with. */
 export function callArguments(call: FlowCall): ToolArgsInfo {
-  return formatToolArgs(record(record(call.call).function).arguments);
+  return formatToolArgs(call.call?.function?.arguments);
 }
 
 /** A code task result's closing `log: <path>` line; the Metadata view names the log instead. */
@@ -57,11 +54,11 @@ const TASK_LOG_LINE_RE = /\n*log: [^\n]*\s*$/;
  * code task's log line.
  */
 export function returnedData(result: RunMessage): ReturnedDataInfo {
-  const content = stripRemainingToolCalls(record(result.payload).content);
-  const task = record(result.metadata).tool_name === "code_task";
-  return formatReturnedData(
-    task && typeof content === "string" ? content.replace(TASK_LOG_LINE_RE, "") : content,
-  );
+  const content = result.payload?.content;
+  if (typeof content !== "string") return formatReturnedData(content);
+  const returned = stripRemainingToolCalls(content);
+  const task = result.metadata?.tool_name === "code_task";
+  return formatReturnedData(task ? returned.replace(TASK_LOG_LINE_RE, "") : returned);
 }
 
 /**
@@ -97,14 +94,14 @@ export function hasTaskLog(call: FlowCall, runId: string | undefined): boolean {
 }
 
 /** A code task's checkpoints, start → end, as short shas; empty without both. */
-function checkpointRange(meta: Record<string, unknown>): string {
+function checkpointRange(meta: ToolResultMetadata): string {
   return meta.start_sha && meta.end_sha
     ? `${shortSha(meta.start_sha)} → ${shortSha(meta.end_sha)}`
     : "";
 }
 
 /** A code task's own facts; its session falls back to the one its progress reported. */
-function codeTaskFacts(meta: Record<string, unknown>, sessionId: string | null): CallFact[] {
+function codeTaskFacts(meta: ToolResultMetadata, sessionId: string | null): CallFact[] {
   return [
     ["Status", codeTaskStatus(meta.status)],
     ["Harness", harnessLabel(meta.harness)],
@@ -120,7 +117,7 @@ function lineRange(range: unknown): string {
 }
 
 /** How much the output pipeline stored of a result, "original → stored stored"; empty if untouched. */
-function storedBytes(meta: Record<string, unknown>): string {
+function storedBytes(meta: ToolResultMetadata): string {
   return meta.original_bytes === undefined
     ? ""
     : `${String(meta.original_bytes)} → ${valueText(meta.stored_bytes)} stored`;

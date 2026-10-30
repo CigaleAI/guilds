@@ -14,6 +14,13 @@ as one module per domain, `api/types/<domain>` (`access`, `admin`,
 `notes`, `org`, `recipes`, `runs`, `schedules`, `scripts`, `secrets`,
 `studio`, `tables`), in place of `api/types`.
 
+**Breaking for extensions.** In `@guildsrun/web`'s
+`features/agent/runs/toolFormat`, `stripRemainingToolCalls` takes and
+returns a string, `parseToolArgs` returns a `ToolArguments`, and the
+`parsed` of what `formatToolArgs` returns is a `JsonValue`. The module
+exports `JsonValue`, `JsonObject`, `ToolArguments`,
+`ToolResultMetadata`, `isJsonValue` and `isJsonObject`.
+
 **Rebuild.** The runtime image gains gost, and
 `agent-browser-start` takes the slot's DevTools relay port after the
 DevTools port: `agent-browser-start <agent id> <display> <vnc port>
