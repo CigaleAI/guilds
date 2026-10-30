@@ -41,6 +41,7 @@ import {
   formatDuration,
   formatTokens,
   friendlyToolCall,
+  isJsonObject,
   messageContentText,
   parseToolArgs,
   previewText,
@@ -58,7 +59,7 @@ import type { ToolProgress } from "../../../api/toolProgress";
 import type { Harness } from "../../../api/types/agents";
 import { harnessLabels } from "../harness";
 import { HarnessLogo } from "../HarnessLogo";
-import { callHarness } from "./callDetail";
+import { callHarness, callMetadata } from "./callDetail";
 import { ProgressLines, ToolCallDetail } from "./ToolCallDetail";
 
 const CallLink = createLink(ToolCallLink);
@@ -112,9 +113,7 @@ function isCodeTask(call: FlowCall): boolean {
 /** How a code task's status reads on its block: "Running…", "Done", "Failed", or how it ended. */
 function taskStatusLabel(call: FlowCall, status: ToolCallStatus): string {
   if (status === "running") return "Running…";
-  const word = codeTaskStatus(
-    (call.result?.metadata as Record<string, unknown> | undefined)?.status,
-  );
+  const word = codeTaskStatus(callMetadata(call).status);
   if (word && word !== "completed") return word.charAt(0).toUpperCase() + word.slice(1);
   return status === "failed" ? "Failed" : "Done";
 }
@@ -124,11 +123,11 @@ function totalDuration(calls: readonly FlowCall[]): number {
 }
 
 function callDuration(call: FlowCall): number {
-  return numberOf((call.result?.metadata as Record<string, unknown> | undefined)?.duration_ms);
+  return numberOf(callMetadata(call).duration_ms);
 }
 
 function turnMeta(step: FlowStep): Record<string, unknown> {
-  return (step.turn?.metadata as Record<string, unknown> | undefined) ?? {};
+  return step.turn?.metadata ?? {};
 }
 
 /** A line of markdown as plain text: no heading marks, emphasis or code ticks. */
@@ -160,7 +159,7 @@ function plainText(text: string): string {
 function stepCues(steps: readonly FlowStep[], generating: boolean): FlowStepCues {
   const calls = steps.flatMap((step) => step.calls);
   const metas = steps.map(turnMeta);
-  const usages = metas.map((meta) => (meta.usage as Record<string, unknown> | undefined) ?? {});
+  const usages = metas.map((meta) => (isJsonObject(meta.usage) ? meta.usage : {}));
   const sum = (values: unknown[]) =>
     values.reduce<number>((total, value) => total + numberOf(value), 0);
   const modelMs = sum(metas.map((meta) => meta.latency_ms));
@@ -480,7 +479,7 @@ export function FlowView({
   /** A code task as its own block: the harness, the prompt it was given, and how it went. */
   const taskCard = (call: FlowCall): ReactNode => {
     const status = callStatus(call, generating);
-    const meta = (call.result?.metadata as Record<string, unknown> | undefined) ?? {};
+    const meta = callMetadata(call);
     const args = parseToolArgs(call.call?.function?.arguments);
     const runsOn = callHarness(call, harness);
     const reported = status === "running" ? progress?.[call.id] : undefined;

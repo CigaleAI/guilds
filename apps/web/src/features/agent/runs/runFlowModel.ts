@@ -1,5 +1,5 @@
 import type { ToolKind } from "@guildsrun/ui";
-import { messageContentText, toolResultError } from "./toolFormat";
+import { isJsonObject, messageContentText, toolResultError } from "./toolFormat";
 import type { RunMessage, ToolCallRequest } from "./toolFormat";
 import { classifyToolCall, kindBreakdown } from "./toolKinds";
 import type { RunWithTools, ToolCallInfo } from "./toolKinds";
@@ -69,18 +69,12 @@ export type FlowStats = {
 /** One bar of a flow's timeline: a step's model latency or one tool's run time. */
 export type TimelineSegment = { kind: ToolKind | "model"; ms: number; label: string };
 
-function recordOf(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
 function metaOf(msg: RunMessage | null | undefined): Record<string, unknown> {
-  return recordOf(msg?.metadata);
+  return msg?.metadata ?? {};
 }
 
 function payloadOf(msg: RunMessage | null | undefined): Record<string, unknown> {
-  return recordOf(msg?.payload);
+  return msg?.payload ?? {};
 }
 
 function generationOf(msg: RunMessage): number | null {
@@ -224,7 +218,7 @@ export function flowStats(flow: FlowSegment): FlowStats {
   for (const step of flow.steps) {
     if (step.turn) {
       const meta = metaOf(step.turn);
-      const usage = recordOf(meta.usage);
+      const usage = isJsonObject(meta.usage) ? meta.usage : {};
       modelMs += Number(meta.latency_ms) || 0;
       inputTokens += Number(usage.input_tokens) || 0;
       outputTokens += Number(usage.output_tokens) || 0;

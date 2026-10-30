@@ -1,6 +1,18 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { attachmentImageUrl } from "./Transcript";
+import { attachmentImageUrl, messageAttachments } from "./Transcript";
+
+test("a user message's attachments are the references it stores", () => {
+  const image = { id: "att_1", filename: "a.png", mime: "image/png", kind: "image" };
+  assert.deepEqual(messageAttachments({ attachments: [{ ...image, size: 3 }] }), [image]);
+});
+
+test("a malformed attachment reference is left out", () => {
+  const file = { id: "att_2", filename: "a.pdf", mime: "application/pdf", kind: "file" };
+  const attachments = [{ ...file, kind: "video" }, { ...file, id: "" }, "att_3", null, file];
+  assert.deepEqual(messageAttachments({ attachments }), [file]);
+  assert.deepEqual(messageAttachments({ attachments: "att_1" }), []);
+});
 
 const realFetch = globalThis.fetch;
 

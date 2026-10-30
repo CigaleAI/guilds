@@ -41,9 +41,6 @@
     }
   },
   "src/features/agent/chat/FlowView.tsx": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 5
-    },
     "complexity": {
       "count": 5
     }
@@ -54,11 +51,8 @@
     }
   },
   "src/features/agent/chat/Transcript.tsx": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 2
-    },
     "complexity": {
-      "count": 3
+      "count": 2
     }
   },
   "src/features/agent/chat/runContext.ts": {
@@ -113,9 +107,6 @@
     }
   },
   "src/features/agent/runs/runFlowModel.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
     "boundary/no-reexport-modules": {
       "count": 1
     },

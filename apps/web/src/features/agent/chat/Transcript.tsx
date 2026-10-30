@@ -32,6 +32,7 @@ import {
   type FlowCall,
   type FlowSegment,
 } from "../runs/runFlowModel";
+import { isJsonObject } from "../runs/toolFormat";
 import { FlowView, type RevealStep } from "./FlowView";
 import { Reasoning } from "./Reasoning";
 import { offeredToolGroups, promptSectionsOf } from "./runContext";
@@ -50,27 +51,35 @@ type TranscriptProps = {
   onAskCall?: ((call: FlowCall) => void) | undefined;
 };
 
-function record(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
+const ATTACHMENT_KINDS = ["image", "file"] as const;
+
+function isAttachmentKind(value: unknown): value is MessageAttachment["kind"] {
+  const kinds: readonly unknown[] = ATTACHMENT_KINDS;
+  return kinds.includes(value);
 }
 
-function messageAttachments(meta: Record<string, unknown>): MessageAttachment[] {
+/** Whether a value is an attachment reference a user message stores, its id, filename and MIME type filled. */
+function isMessageAttachment(value: unknown): value is MessageAttachment {
+  if (!isJsonObject(value)) return false;
+  const { id, filename, mime, kind } = value;
+  return (
+    typeof id === "string" &&
+    id !== "" &&
+    typeof filename === "string" &&
+    filename !== "" &&
+    typeof mime === "string" &&
+    mime !== "" &&
+    isAttachmentKind(kind)
+  );
+}
+
+/** The attachments a user message's metadata references; a malformed reference is left out. */
+export function messageAttachments(meta: Record<string, unknown>): MessageAttachment[] {
   const raw = meta.attachments;
   if (!Array.isArray(raw)) return [];
-  const out: MessageAttachment[] = [];
-  for (const item of raw) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
-    const row = item as Record<string, unknown>;
-    const id = typeof row.id === "string" ? row.id : "";
-    const filename = typeof row.filename === "string" ? row.filename : "";
-    const mime = typeof row.mime === "string" ? row.mime : "";
-    const kind = row.kind === "file" || row.kind === "image" ? row.kind : null;
-    if (!id || !filename || !mime || !kind) continue;
-    out.push({ id, filename, mime, kind });
-  }
-  return out;
+  return raw
+    .filter(isMessageAttachment)
+    .map(({ id, filename, mime, kind }) => ({ id, filename, mime, kind }));
 }
 
 /** An attached image as a blob URL, or `null` when it cannot be fetched and its filename shows instead. */
@@ -223,8 +232,8 @@ export function Transcript({
             );
           }
           const message = segment.msg;
-          const payload = record(message.payload);
-          const meta = record(message.metadata);
+          const payload = message.payload;
+          const meta = message.metadata;
           const seq = Number(message.seq);
           const createdAt = typeof message.created_at === "string" ? message.created_at : "";
           if (payload.role === "system") {
