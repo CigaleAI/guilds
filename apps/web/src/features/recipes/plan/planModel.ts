@@ -9,18 +9,25 @@ import {
   type ExternalDraft,
   type HandoffDraft,
   type NoteDraft,
+  type RecipeDraft,
   type RecipeSource,
   type RepositoryDraft,
-  type RoleDraft,
   type SecretDraft,
   type SystemDraft,
 } from "./recipeDraft";
-import { planAgent, rolesFromCreatedAgents, type PlanAgent, type PlanScript } from "./planAgents";
+import { planAgent, planRoles, type PlanAgent, type PlanScript } from "./planAgents";
 import { scheduledRoutine, type PlanRoutine } from "./planRoutines";
 import { connectionsFromRecipe } from "./planConnectors";
 import { collectionsFromRecipe, type PlanCollection } from "./planCollections";
 import { notesFromRecipe } from "./planNotes";
-import type { PlanAction } from "./planActions";
+import {
+  browserActions,
+  connectionAction,
+  externalActions,
+  repositoryActions,
+  secretAction,
+  type PlanAction,
+} from "./planActions";
 
 /**
  * What the apply preview adds on top of the recipe: its inventory, and planned connectors and
@@ -68,6 +75,31 @@ export type RecipePlan = {
 /** The group messages per agent a guild allows when its recipe names no limit, as the orchestrator applies it. */
 const DEFAULT_GROUP_LIMIT = 200;
 
+/** The guild the plan creates: the recipe's name and texts, falling back on the apply plan's guild. */
+function planGuild(doc: RecipeDraft, creates: CreatesDraft): PlanGuild {
+  const guild = asObject(doc.guild);
+  const meta = asObject(doc.meta);
+  const created = asObject(creates.guild);
+  return {
+    name: meta.name || guild.name_suggestion || created.name || "Untitled guild",
+    about: guild.about || created.about || meta.description || "",
+    objective: guild.objective || created.objective || "",
+    groupLimit: guild.group_agent_message_limit ?? DEFAULT_GROUP_LIMIT,
+  };
+}
+
+/** The apply plan's connectors: its inventory's when it lists any, the preview's planned ones otherwise. */
+function overlayConnections(overlay: PlanOverlay): readonly ConnectionDraft[] {
+  const creates = asObject(overlay.creates);
+  return asArray(creates.connections?.length ? creates.connections : overlay.connections);
+}
+
+/** The apply plan's secrets: its inventory's when it lists any, the preview's planned ones otherwise. */
+function overlaySecrets(overlay: PlanOverlay): readonly SecretDraft[] {
+  const creates = asObject(overlay.creates);
+  return asArray(creates.secrets?.length ? creates.secrets : overlay.secrets);
+}
+
 /**
  * Everything a recipe creates and needs, ready to show: the guild, its agents with their routines,
  * collections, notes, scripts, connectors, secrets, external setup, design systems, handoffs, and
@@ -77,27 +109,15 @@ const DEFAULT_GROUP_LIMIT = 200;
  */
 export function planFromRecipe(recipe: RecipeSource, overlay: PlanOverlay = {}): RecipePlan {
   const doc = recipeBody(recipe);
-  const guild = asObject(doc.guild);
-  const meta = asObject(doc.meta);
   const design = asObject(doc.design);
   const creates = asObject(overlay.creates);
   const overlayRoutines = asArray(creates.routines);
-  const overlayConnections = asArray<ConnectionDraft>(
-    creates.connections?.length ? creates.connections : overlay.connections,
-  );
-  const overlaySecrets = asArray<SecretDraft>(
-    creates.secrets?.length ? creates.secrets : overlay.secrets,
-  );
-  let roles: readonly RoleDraft[] = asArray(doc.roles);
-  const createdAgents = asArray(creates.agents);
-  if (!roles.length && createdAgents.length) {
-    roles = rolesFromCreatedAgents(createdAgents, overlayRoutines);
-  }
+  const roles = planRoles(doc, asArray(creates.agents), overlayRoutines);
   const agents = roles.map((role) => planAgent(role, doc, overlayRoutines));
   const routines = overlayRoutines.length
     ? overlayRoutines.map((item) => scheduledRoutine(item, item.role ?? "", "apply"))
     : agents.flatMap((agent) => agent.routines);
-  const connections = connectionsFromRecipe(doc, overlayConnections);
+  const connections = connectionsFromRecipe(doc, overlayConnections(overlay));
   const collections = collectionsFromRecipe(
     asArray<CollectionDraft>(doc.collections),
     asArray(creates.collections),
@@ -112,94 +132,15 @@ export function planFromRecipe(recipe: RecipeSource, overlay: PlanOverlay = {}):
       source: item.source || "",
     })),
   );
-  const secrets = overlaySecrets.length ? overlaySecrets : asArray<SecretDraft>(doc.secrets);
+  const planned = overlaySecrets(overlay);
+  const secrets = planned.length ? planned : asArray<SecretDraft>(doc.secrets);
   const external = asArray(doc.external);
   const repositories = asArray(doc.repositories).length
     ? asArray(doc.repositories)
     : asArray<RepositoryDraft>(creates.repositories);
-  const systems = asArray(design.systems);
-  const handoffs = asArray(design.handoffs);
   const browserSites = asArray(design.browser);
-  const actions: PlanAction[] = [];
-  for (const connection of connections) {
-    const reused = Boolean(connection.action === "reuse" && connection.connection_id);
-    actions.push({
-      kind: reused ? "reuse" : "connect",
-      title: reused ? `Reuse ${connection.server}` : `Connect ${connection.server}`,
-      detail:
-        connection.setup ||
-        connection.hint ||
-        `${connection.auth || "oauth"} · ${connection.recommended_scope || "guild"}`,
-      path: `connections.${connection.server}.setup`,
-      author: connection.author || null,
-      required: !reused,
-      server: connection.server ?? "",
-    });
-  }
-  for (const secret of secrets) {
-    actions.push({
-      kind: "secret",
-      title: `Provide ${secret.dest_name || secret.name}`,
-      detail: secret.description || secret.recommended_scope || "",
-      path: `secrets.${secret.name}`,
-      author: null,
-      required: secret.action !== "reuse" && secret.action !== "skip",
-    });
-  }
-  if (repositories.length && !connections.some((connection) => connection.server === "github")) {
-    actions.push({
-      kind: "connect",
-      title: "Connect GitHub",
-      detail:
-        "Install the GitHub App on the account that owns the repositories, or reuse an existing install. Pick this login's repositories on the GitHub card in Tools.",
-      path: "repositories",
-      author: null,
-      required: false,
-      server: "github",
-    });
-  }
-  for (const repository of repositories) {
-    actions.push({
-      kind: "repository",
-      title: `Add the ${repository.name ?? ""} repository`,
-      detail: repository.purpose || "Add it in the guild's Settings under Repositories.",
-      path: `repositories.${repository.name ?? ""}`,
-      author: null,
-      required: true,
-    });
-  }
-  for (const agent of agents) {
-    if (!agent.browser) continue;
-    const site = browserSites.find((item) => item.role === agent.role)?.site;
-    actions.push({
-      kind: "browser",
-      title: `Take control and log ${agent.name} into ${site || "the web page"}`,
-      detail:
-        agent.browserInstructions ||
-        "No native connector. After apply, open this agent and log in from the Browser tab.",
-      path: `roles.${agent.role}.browser`,
-      author: agent.browserAuthor,
-      required: true,
-      role: agent.role,
-    });
-  }
-  for (const [index, card] of external.entries()) {
-    actions.push({
-      kind: "external",
-      title: card.title || card.kind || "External setup",
-      detail: card.setup || "",
-      path: `external[${index}]`,
-      author: card.author || null,
-      required: true,
-    });
-  }
   return {
-    guild: {
-      name: meta.name || guild.name_suggestion || creates.guild?.name || "Untitled guild",
-      about: guild.about || creates.guild?.about || meta.description || "",
-      objective: guild.objective || creates.guild?.objective || "",
-      groupLimit: guild.group_agent_message_limit ?? DEFAULT_GROUP_LIMIT,
-    },
+    guild: planGuild(doc, creates),
     agents,
     collections,
     notes,
@@ -209,10 +150,16 @@ export function planFromRecipe(recipe: RecipeSource, overlay: PlanOverlay = {}):
     secrets,
     external,
     repositories,
-    systems,
-    handoffs,
+    systems: asArray(design.systems),
+    handoffs: asArray(design.handoffs),
     browserSites,
-    actions,
+    actions: [
+      ...connections.map(connectionAction),
+      ...secrets.map(secretAction),
+      ...repositoryActions(repositories, connections),
+      ...browserActions(agents, browserSites),
+      ...externalActions(external),
+    ],
     counts: {
       agents: agents.length,
       collections: collections.length,

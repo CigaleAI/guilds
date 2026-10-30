@@ -63,3 +63,17 @@ test("a recipe's repositories become a section and steps to connect GitHub and a
   const sections = filledPlanSections(plan).map((section) => section.id);
   assert.ok(sections.includes("repositories"));
 });
+
+test("a recipe that connects GitHub itself gets no separate GitHub step", () => {
+  const plan = planFromRecipe({
+    connections: [{ server: "github", setup: "Install the app" }],
+    repositories: [{ name: "api" }],
+  });
+  assert.deepEqual(
+    plan.actions.map((action) => [action.kind, action.title]),
+    [
+      ["connect", "Connect github"],
+      ["repository", "Add the api repository"],
+    ],
+  );
+});

@@ -69,7 +69,7 @@ function taskAuthor(role: RoleDraft): AuthorDraft | null {
   return task && typeof task === "object" ? task.author || null : null;
 }
 
-export function rolesFromCreatedAgents(
+function rolesFromCreatedAgents(
   agents: readonly CreatedAgentDraft[],
   overlayRoutines: readonly OverlayRoutine[],
 ): RoleDraft[] {
@@ -84,6 +84,17 @@ export function rolesFromCreatedAgents(
     schedules: overlayRoutines.filter((item) => item.role === agent.role),
     browser: { required: Boolean(agent.browser), instructions: "", author: null },
   }));
+}
+
+/** The roles the plan shows: the recipe's, or the apply plan's agents when the recipe has none. */
+export function planRoles(
+  doc: RecipeDraft,
+  createdAgents: readonly CreatedAgentDraft[],
+  overlayRoutines: readonly OverlayRoutine[],
+): readonly RoleDraft[] {
+  const roles = asArray(doc.roles);
+  if (roles.length || !createdAgents.length) return roles;
+  return rolesFromCreatedAgents(createdAgents, overlayRoutines);
 }
 
 /** The harness a coding role runs; null when the role does not code or names no known harness. */

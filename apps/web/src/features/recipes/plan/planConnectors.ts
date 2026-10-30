@@ -154,7 +154,7 @@ export type ConnectionCard = {
 };
 
 /** True when apply reuses a live login for a connector: its plan says reuse and names the login. */
-function reusesLogin(connection: ConnectionDraft): boolean {
+export function reusesLogin(connection: ConnectionDraft): boolean {
   return Boolean(connection.action === "reuse" && connection.connection_id);
 }
 
