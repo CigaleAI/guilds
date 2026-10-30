@@ -45,7 +45,9 @@ const coreTabs = [
 const count = new Intl.NumberFormat();
 const timezones = ["UTC", ...Intl.supportedValuesOf("timeZone").filter((zone) => zone !== "UTC")];
 
-function Scroll({ children }: { children: ReactNode }) {
+type ScrollProps = { children: ReactNode };
+
+function Scroll({ children }: ScrollProps) {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6 md:px-10">
       <div className="mx-auto flex max-w-240 flex-col gap-7">{children}</div>
@@ -53,7 +55,9 @@ function Scroll({ children }: { children: ReactNode }) {
   );
 }
 
-function Group({ title, children }: { title: string; children: ReactNode }) {
+type GroupProps = { title: string; children: ReactNode };
+
+function Group({ title, children }: GroupProps) {
   return (
     <section aria-label={title} className="flex flex-col gap-3">
       <h2 className="type-label text-muted">{title}</h2>
@@ -330,7 +334,10 @@ function ModelKeys() {
   }
   return (
     <Scroll>
-      <ModelProviders models={models.data} canManage={org.role === "owner" || org.role === "admin"} />
+      <ModelProviders
+        models={models.data}
+        canManage={org.role === "owner" || org.role === "admin"}
+      />
     </Scroll>
   );
 }
@@ -354,15 +361,13 @@ function usageStats(totals: UsageTotals) {
   ];
 }
 
-function UsageLine({
-  name,
-  totals,
-  lead,
-}: {
+type UsageLineProps = {
   name: ReactNode;
   totals: UsageTotals;
   lead?: ReactNode;
-}) {
+};
+
+function UsageLine({ name, totals, lead }: UsageLineProps) {
   return (
     <div className="flex items-center gap-3 border-b border-line px-4 py-2.5 last:border-b-0">
       {lead}
@@ -444,9 +449,7 @@ function Usage() {
           {organisation.studio ? (
             <UsageLine name="Studio coach" totals={organisation.studio} />
           ) : null}
-          {organisation.builder ? (
-            <UsageLine name="Builder" totals={organisation.builder} />
-          ) : null}
+          {organisation.builder ? <UsageLine name="Builder" totals={organisation.builder} /> : null}
           {organisation.archived ? (
             <UsageLine name="Deleted guilds and agents" totals={organisation.archived} />
           ) : null}
