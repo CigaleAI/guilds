@@ -42,8 +42,8 @@ two functions.
   body with many early returns is fine; the limit exists to keep one
   function from holding several contracts.
 - Nesting goes at most **3 levels** deep. A `try` block counts as
-  a level in review; ESLint does not count it. Use early returns to
-  stay flat. Nesting is what makes a body hard to read, so this
+  a level, and ESLint counts it with the others. Use early returns
+  to stay flat. Nesting is what makes a body hard to read, so this
   limit is the strict one.
 - Parameters are typed for what they are. A function does not take
   `Record<string, unknown>` or `unknown` when the caller has a type.
