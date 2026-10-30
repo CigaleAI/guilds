@@ -34,7 +34,7 @@ export function ActivityMap({ data, selection, onSelect }: ActivityMapProps) {
   const [hover, setHover] = useState<MapSelection | null>(null);
   const markers = useId();
   const layout = useMemo(
-    () => layoutActivityMap(data.map, { width: Math.max(MIN_WIDTH, width) }),
+    () => layoutActivityMap(data.map, Math.max(MIN_WIDTH, width)),
     [data.map, width],
   );
   const { index, map } = data;

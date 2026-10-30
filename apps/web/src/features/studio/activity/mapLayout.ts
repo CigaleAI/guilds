@@ -33,17 +33,16 @@ export function agentColumns(map: ActivityMap): Map<string, number> {
   return column;
 }
 
-export type MapLayoutOptions = {
-  /** The width to fill; the map grows past it only to keep its minimum gaps. */
-  width: number;
-  sourceWidth?: number;
-  sourceHeight?: number;
-  agentWidth?: number;
-  agentHeight?: number;
-  sourceRow?: number;
-  agentRow?: number;
-  minGap?: number;
-};
+/** The map's box sizes, the rows the boxes sit in, and the narrowest gap between columns. */
+const MAP_BOXES = {
+  sourceWidth: 208,
+  sourceHeight: 44,
+  agentWidth: 168,
+  agentHeight: 50,
+  sourceRow: 54,
+  agentRow: 86,
+  minGap: 72,
+} as const;
 
 /** A box with its top-left corner and size. */
 export type PlacedMapNode = MapNode & { x: number; y: number; w: number; h: number };
@@ -72,35 +71,44 @@ type DrawnLink = { link: MapLink; from: PlacedMapNode; to: PlacedMapNode };
 
 type Point = { x: number; y: number };
 
-function cubicAt(p0: Point, p1: Point, p2: Point, p3: Point, t: number): Point {
+/** A cubic Bézier curve: where it starts and ends, and the two control points it bends toward. */
+type CubicCurve = { start: Point; startControl: Point; endControl: Point; end: Point };
+
+/** The point a fraction `t` of the way along a curve. */
+function cubicAt(curve: CubicCurve, t: number): Point {
+  const { start, startControl, endControl, end } = curve;
   const u = 1 - t;
   return {
-    x: u * u * u * p0.x + 3 * u * u * t * p1.x + 3 * u * t * t * p2.x + t * t * t * p3.x,
-    y: u * u * u * p0.y + 3 * u * u * t * p1.y + 3 * u * t * t * p2.y + t * t * t * p3.y,
+    x:
+      u * u * u * start.x +
+      3 * u * u * t * startControl.x +
+      3 * u * t * t * endControl.x +
+      t * t * t * end.x,
+    y:
+      u * u * u * start.y +
+      3 * u * u * t * startControl.y +
+      3 * u * t * t * endControl.y +
+      t * t * t * end.y,
   };
 }
 
 const round = (value: number) => Math.round(value * 10) / 10;
 
+/** A curve as an SVG path, to a tenth of a pixel. */
+function curvePath({ start, startControl, endControl, end }: CubicCurve): string {
+  return `M${round(start.x)},${round(start.y)} C${round(startControl.x)},${round(startControl.y)} ${round(endControl.x)},${round(endControl.y)} ${round(end.x)},${round(end.y)}`;
+}
+
 /**
  * Sources in a column on the left, each beside the agent it wakes most; agents in columns to the
- * right. Links run left to right between the side ports of their boxes, spread along each side;
- * links back to an earlier or the same column loop under the boxes, the shortest innermost. A link
- * is 1.5 to 9 px wide by how often it happened.
+ * right, filling `width` and growing past it only to keep the narrowest gap. Links run left to
+ * right between the side ports of their boxes, spread along each side; links back to an earlier or
+ * the same column loop under the boxes, the shortest innermost. A link is 1.5 to 9 px wide by how
+ * often it happened.
  */
-export function layoutActivityMap(
-  map: ActivityMap,
-  {
-    width,
-    sourceWidth = 208,
-    sourceHeight = 44,
-    agentWidth = 168,
-    agentHeight = 50,
-    sourceRow = 54,
-    agentRow = 86,
-    minGap = 72,
-  }: MapLayoutOptions,
-): MapLayout {
+export function layoutActivityMap(map: ActivityMap, width: number): MapLayout {
+  const { sourceWidth, sourceHeight, agentWidth, agentHeight, sourceRow, agentRow, minGap } =
+    MAP_BOXES;
   const column = agentColumns(map);
   const columns = Math.max(1, ...column.values());
   const gap = Math.max(
@@ -190,15 +198,19 @@ export function layoutActivityMap(
 
   const links: PlacedMapLink[] = [];
   for (const { link, from, to } of forward) {
-    const p0 = { x: from.x + from.w, y: outPort.get(link.id) ?? from.y + from.h / 2 };
-    const p3 = { x: to.x - 2, y: inPort.get(link.id) ?? to.y + to.h / 2 };
-    const bend = (p3.x - p0.x) / 2;
-    const p1 = { x: p0.x + bend, y: p0.y };
-    const p2 = { x: p3.x - bend, y: p3.y };
-    const label = cubicAt(p0, p1, p2, p3, 0.5);
+    const start = { x: from.x + from.w, y: outPort.get(link.id) ?? from.y + from.h / 2 };
+    const end = { x: to.x - 2, y: inPort.get(link.id) ?? to.y + to.h / 2 };
+    const bend = (end.x - start.x) / 2;
+    const curve = {
+      start,
+      startControl: { x: start.x + bend, y: start.y },
+      endControl: { x: end.x - bend, y: end.y },
+      end,
+    };
+    const label = cubicAt(curve, 0.5);
     links.push({
       ...link,
-      path: `M${round(p0.x)},${round(p0.y)} C${round(p1.x)},${round(p1.y)} ${round(p2.x)},${round(p2.y)} ${round(p3.x)},${round(p3.y)}`,
+      path: curvePath(curve),
       width: strokeOf(link.count),
       label: { x: round(label.x), y: round(label.y) },
       loop: false,
@@ -207,14 +219,18 @@ export function layoutActivityMap(
   }
   loops.forEach(({ link, from, to }, position) => {
     const depth = loopBase + 18 + position * 20;
-    const p0 = { x: from.x + from.w * 0.62, y: from.y + from.h };
-    const p3 = { x: to.x + to.w * 0.38, y: to.y + to.h + 2 };
-    const p1 = { x: p0.x, y: depth };
-    const p2 = { x: p3.x, y: depth };
-    const label = cubicAt(p0, p1, p2, p3, 0.5);
+    const start = { x: from.x + from.w * 0.62, y: from.y + from.h };
+    const end = { x: to.x + to.w * 0.38, y: to.y + to.h + 2 };
+    const curve = {
+      start,
+      startControl: { x: start.x, y: depth },
+      endControl: { x: end.x, y: depth },
+      end,
+    };
+    const label = cubicAt(curve, 0.5);
     links.push({
       ...link,
-      path: `M${round(p0.x)},${round(p0.y)} C${round(p1.x)},${round(p1.y)} ${round(p2.x)},${round(p2.y)} ${round(p3.x)},${round(p3.y)}`,
+      path: curvePath(curve),
       width: strokeOf(link.count),
       label: { x: round(label.x), y: round(label.y) },
       loop: true,

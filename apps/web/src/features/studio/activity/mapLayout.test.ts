@@ -92,7 +92,7 @@ test("the map layout runs links left to right, loops links back under the boxes,
       cost: 0,
     })),
   };
-  const layout = layoutActivityMap(map, { width: 800 });
+  const layout = layoutActivityMap(map, 800);
   const node = (id: string) => layout.nodes.find((item) => item.id === id);
   const link = (id: string) => layout.links.find((item) => item.id === id);
   assert.equal(node("routine:x")?.x, 0);

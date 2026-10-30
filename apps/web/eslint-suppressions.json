@@ -228,14 +228,6 @@
       "count": 3
     }
   },
-  "src/features/studio/activity/mapLayout.ts": {
-    "complexity": {
-      "count": 1
-    },
-    "max-params": {
-      "count": 1
-    }
-  },
   "src/features/studio/chatModel.ts": {
     "complexity": {
       "count": 1
