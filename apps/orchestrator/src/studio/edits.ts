@@ -1,43 +1,25 @@
 import { createHash } from "node:crypto";
-import { ArtifactError } from "../artifacts/errors.js";
 import { hashArtifactContent, type ArtifactStore } from "../artifacts/store.js";
-import { WRITE_MAX_BYTES } from "../artifacts/types.js";
 import { updateGuildText } from "../guilds/service.js";
 import type { Schedules } from "../schedules/service.js";
 import { GuildValidationError, validateGuildTextPatch, type GuildTextPatch } from "../guilds/validation.js";
-import { argString } from "../toolbox/schema.js";
 import { STUDIO_ACCESS_TOOLS, applyAccess, isAccessTool, reviewAccess, reviewAccessRequest } from "./access.js";
-import { StudioConflictError, StudioError, StudioUnprocessableError } from "./errors.js";
+import { StudioConflictError, StudioError, StudioUnprocessableError, artifactFailure } from "./errors.js";
 import type { StudioOrigin } from "../lib/change-actor.js";
 import { editActor } from "./actor.js";
 import { editActionOf } from "./actions.js";
+import { STUDIO_EDIT_WIDGET, assertContent, awaitOperator, lineDelta, requireReason } from "./edit-request.js";
+import { STUDIO_NOTE_TOOL, applyNote, loadNoteBase, reviewRecordedNote, type NoteAction } from "./note-edits.js";
 import { STUDIO_TABLE_TOOL, applyTable, isTableTool, reviewTable } from "./tables.js";
 import { STUDIO_ROUTINE_TOOL, applyRoutine, isRoutineTool, reviewRoutine, type RoutineChange } from "./routines.js";
-import { getAgent, listAgents, type AgentRow } from "../db/agents.js";
+import { getAgent, type AgentRow } from "../db/agents.js";
 import { getGuild, type GuildRow } from "../db/guilds.js";
 import type { Queryable } from "../db/pg.js";
 import { getConversationMessage, updateConversationMessage, type ConversationMessageRow } from "../db/conversations.js";
 import type { ConversationMessageMetadata, ToolCall } from "../db/schema/index.js";
 import type { UserRow } from "../db/users.js";
-import {
-  artifactAt,
-  deleteByDisplayPath,
-  parseActorPath,
-  type PlannedNote,
-  planNote,
-  writeNote,
-  writeNoteAt,
-} from "../artifacts/notes.js";
+import { writeNoteAt } from "../artifacts/notes.js";
 import { readMemoryVersion, writeMemory } from "../artifacts/memory.js";
-
-// An edit tool never writes. It returns this widget; the turn pauses until
-// the operator applies or declines the proposal from the Studio log.
-export const STUDIO_EDIT_WIDGET = "studio_edit_request";
-
-// One tool creates, edits, or deletes a note. An edit replaces an existing
-// note's body like a Memory edit; a create or delete is reviewed as a plan.
-export const STUDIO_NOTE_TOOL = "studio_edit_note";
-type NoteAction = "create" | "delete";
 
 export const STUDIO_EDIT_TOOLS = [
   "studio_edit_memory",
@@ -55,7 +37,7 @@ export type StudioEditStatus = "pending" | "applied" | "declined";
 export type GuildText = { about: string; description: string };
 
 // The live content a proposal replaces, in the shape its kind compares.
-type EditBase =
+export type EditBase =
   | { kind: "memory"; agentId: string; agentName: string; guildId: string; version: number; content: string }
   | {
       kind: "note";
@@ -91,33 +73,6 @@ export function guildTextHash(text: GuildText): string {
   return createHash("sha256").update(JSON.stringify([text.about, text.description]), "utf8").digest("hex");
 }
 
-function lineDelta(before: string, after: string): { added: number; removed: number } {
-  const count = (lines: string[]) => {
-    const map = new Map<string, number>();
-    for (const line of lines) map.set(line, (map.get(line) ?? 0) + 1);
-    return map;
-  };
-  const a = count(before ? before.split("\n") : []);
-  const b = count(after ? after.split("\n") : []);
-  let removed = 0;
-  let added = 0;
-  for (const [line, n] of a) removed += Math.max(0, n - (b.get(line) ?? 0));
-  for (const [line, n] of b) added += Math.max(0, n - (a.get(line) ?? 0));
-  return { added, removed };
-}
-
-function artifactFailure(error: unknown): never {
-  if (error instanceof ArtifactError) {
-    throw error.status === 409 ? new StudioConflictError(error.message) : new StudioUnprocessableError(error.message);
-  }
-  throw error;
-}
-
-async function sourceAgentIds(deps: EditDeps, scope: EditScope): Promise<Set<string>> {
-  const agents = await listAgents(deps.db, scope.sourceGuildId);
-  return new Set(agents.map((row) => String(row.id)));
-}
-
 /** The agent's Memory as the operator reads it; an agent without one has an empty Memory at version 0. */
 export async function loadMemoryBase(
   deps: EditDeps,
@@ -139,49 +94,6 @@ export async function loadMemoryBase(
   };
 }
 
-export async function loadNoteBase(
-  deps: EditDeps,
-  scope: EditScope,
-  displayPath: string,
-): Promise<EditBase> {
-  const actor = editActor(scope);
-  try {
-    const parsed = parseActorPath(actor, displayPath);
-    if (parsed.kind !== "artifact") {
-      throw new StudioUnprocessableError("only notes can be edited here; records and memory revisions are not notes");
-    }
-    if (parsed.level === "agent" && !(await sourceAgentIds(deps, scope)).has(parsed.ownerId)) {
-      throw new StudioUnprocessableError("artifact is not in the source guild");
-    }
-    if (parsed.level === "guild" && parsed.ownerId !== scope.sourceGuildId) {
-      throw new StudioUnprocessableError("artifact is not in the source guild");
-    }
-    const view = await artifactAt(deps.artifacts, actor, displayPath);
-    if (view.kind !== "row" || view.deleted) {
-      throw new StudioUnprocessableError("artifact not found");
-    }
-    const row = view.row;
-    if (row.kind === "memory") {
-      throw new StudioUnprocessableError("memory is edited with studio_edit_memory");
-    }
-    if (row.kind !== "note") {
-      throw new StudioUnprocessableError(`${row.kind} artifacts cannot be edited here; only notes`);
-    }
-    return {
-      kind: "note",
-      displayPath: view.href,
-      level: row.level,
-      ownerId: row.owner_id,
-      title: row.title,
-      guildId: String(row.guild_id ?? scope.sourceGuildId),
-      version: Number(row.version),
-      content: row.content_text ?? "",
-    };
-  } catch (error) {
-    artifactFailure(error);
-  }
-}
-
 export async function loadGuildBase(deps: EditDeps, scope: EditScope): Promise<EditBase> {
   const guild = await getGuild(deps.db, scope.sourceGuildId);
   if (!guild || String(guild.org_id) !== scope.orgId) {
@@ -193,12 +105,6 @@ export async function loadGuildBase(deps: EditDeps, scope: EditScope): Promise<E
     guildName: String(guild.name),
     text: { about: String(guild.about ?? ""), description: String(guild.description ?? "") },
   };
-}
-
-function assertContent(content: string): void {
-  if (Buffer.byteLength(content, "utf8") > WRITE_MAX_BYTES) {
-    throw new StudioUnprocessableError("content exceeds the 256 KiB artifact write limit");
-  }
 }
 
 /** The guild text a studio_edit_guild call sets: each of about and description it gives as a string. */
@@ -254,26 +160,6 @@ function titleOf(base: EditBase): string {
   if (base.kind === "memory") return `Edit ${base.agentName}'s Memory`;
   if (base.kind === "note") return `Edit ${base.title || base.displayPath.split("/").pop() || "note"}`;
   return `Edit ${base.guildName} description`;
-}
-
-function requireReason(args: Record<string, unknown>): string {
-  const reason = argString(args, "reason").trim();
-  if (!reason) {
-    throw new StudioUnprocessableError("reason is required");
-  }
-  return reason;
-}
-
-function awaitOperator(title: string, reason: string, edit: Record<string, unknown>): Record<string, unknown> {
-  return {
-    widget: STUDIO_EDIT_WIDGET,
-    await_operator: true,
-    status: "awaiting_operator",
-    title,
-    reason,
-    edit,
-    hint: "Nothing is written yet. The operator applies or declines this edit; their reply says which.",
-  };
 }
 
 // The widget an edit tool returns. It carries hashes and line counts, not the
@@ -346,235 +232,6 @@ export async function routineEditRequest(
     kind: "routine",
     action: review.action,
     target: review.target,
-    base_hash: review.baseHash,
-    proposed_hash: review.proposedHash,
-    lines: lineDelta(review.live, review.proposed),
-    effects: review.effects,
-  });
-}
-
-type NotePlan =
-  | {
-      action: "create";
-      level: "agent" | "guild" | "org";
-      key: string;
-      title: string | null;
-      content: string;
-      agentId: string | null;
-    }
-  | { action: "delete"; displayPath: string; guildId: string; agentId: string | null };
-
-/**
- * A note proposed into or out of existence, checked against the live files: the
- * note before and after, what applying does, the hashes that bind it, and the write.
- */
-type NoteReview = {
-  action: "create" | "delete";
-  title: string;
-  target: Record<string, unknown>;
-  baseVersion: number | null;
-  baseHash: string;
-  proposedHash: string;
-  live: string;
-  proposed: string;
-  effects: string[];
-  plan: NotePlan;
-};
-
-function names(rows: Array<Record<string, unknown>>): string {
-  return rows.map((row) => String(row.name)).join(", ");
-}
-
-/** A note at a display path, or null when none is live there. */
-async function liveNoteAt(
-  deps: EditDeps,
-  scope: EditScope,
-  displayPath: string,
-): Promise<{ version: number } | null> {
-  try {
-    const view = await artifactAt(deps.artifacts, editActor(scope), displayPath);
-    return view.kind === "row" && !view.deleted ? { version: Number(view.row.version) } : null;
-  } catch (error) {
-    if (error instanceof ArtifactError && error.status === 404) return null;
-    artifactFailure(error);
-  }
-}
-
-async function reviewNoteCreate(
-  deps: EditDeps,
-  scope: EditScope,
-  args: Record<string, unknown>,
-  agentId: string | null,
-): Promise<NoteReview> {
-  const level = argString(args, "level");
-  if (level !== "agent" && level !== "guild" && level !== "org") {
-    throw new StudioUnprocessableError("level must be agent, guild, or org");
-  }
-  const content = typeof args.content === "string" ? args.content : "";
-  const title = argString(args, "title").trim() || null;
-  // An agent note's owner is the agent the handle names; whether that agent is in the guild is checked below.
-  const ownerId = { agent: agentId ?? "", guild: scope.sourceGuildId, org: scope.orgId }[level];
-  let planned: PlannedNote;
-  try {
-    planned = planNote({ orgId: scope.orgId, ownerId }, { level, key: argString(args, "key"), content, ...(title ? { title } : {}) });
-  } catch (error) {
-    artifactFailure(error);
-  }
-  if (!content.trim()) {
-    throw new StudioUnprocessableError("content is required: the complete note body");
-  }
-  assertContent(content);
-  let reader: string;
-  if (level === "agent") {
-    const agents = await listAgents(deps.db, scope.sourceGuildId);
-    const agent = agents.find((row) => String(row.id) === agentId);
-    if (!agent) {
-      throw new StudioUnprocessableError("an agent note needs agent_id: a live agent of the source guild");
-    }
-    reader = `Only ${agent.name} reads it.`;
-  } else if (level === "guild") {
-    const guild = await getGuild(deps.db, scope.sourceGuildId);
-    reader = `Every agent of ${guild?.name ?? "the guild"} that reads guild notes reaches it.`;
-  } else {
-    reader = "Every agent in the organisation that reads organisation notes reaches it.";
-  }
-  const { href: displayPath, key } = planned;
-  const live = await liveNoteAt(deps, scope, displayPath);
-  if (live) {
-    throw new StudioConflictError(`a note already exists at ${displayPath}; change it with studio_edit_note action edit`);
-  }
-  return {
-    action: "create",
-    title: `Create ${title || key}`,
-    target: { display_path: displayPath, title, level, ...(level === "agent" ? { agent_id: ownerId } : {}) },
-    baseVersion: null,
-    baseHash: createHash("sha256").update(JSON.stringify(["absent", displayPath]), "utf8").digest("hex"),
-    proposedHash: planned.hash,
-    live: "",
-    proposed: content,
-    effects: [
-      `Creates ${displayPath}. ${reader}`,
-      "An agent reads it once its Task embeds it or names it for note_get.",
-    ],
-    plan: { action: "create", level, key, title, content, agentId: level === "agent" ? ownerId : null },
-  };
-}
-
-async function reviewNoteDelete(
-  deps: EditDeps,
-  scope: EditScope,
-  displayPath: string,
-): Promise<NoteReview> {
-  const base = await loadNoteBase(deps, scope, displayPath);
-  if (base.kind !== "note") {
-    throw new StudioUnprocessableError("only notes can be deleted here");
-  }
-  const members = await listAgents(deps.db, scope.sourceGuildId);
-  const embedding = members.filter((row) => String(row.task ?? "").includes(`![[${base.displayPath}]]`));
-  const naming = members.filter(
-    (row) => !embedding.includes(row) && String(row.task ?? "").includes(base.displayPath),
-  );
-  const effects = [`Deletes ${base.displayPath} from Files; its change history stays.`];
-  if (embedding.length) {
-    effects.push(`${names(embedding)} embed it in their Task; applying fails until no Task embeds it.`);
-  }
-  if (naming.length) {
-    effects.push(`${names(naming)} name it in their Task and can no longer read it.`);
-  }
-  return {
-    action: "delete",
-    title: `Delete ${base.title || base.displayPath.split("/").pop() || "note"}`,
-    target: { display_path: base.displayPath, title: base.title, level: base.level },
-    baseVersion: base.version,
-    baseHash: hashArtifactContent(base.content),
-    proposedHash: createHash("sha256").update(JSON.stringify(["delete", base.displayPath]), "utf8").digest("hex"),
-    live: base.content,
-    proposed: "",
-    effects,
-    plan: {
-      action: "delete",
-      displayPath: base.displayPath,
-      guildId: base.guildId,
-      agentId: base.level === "agent" ? base.ownerId : null,
-    },
-  };
-}
-
-/** Checks a requested note create or delete again, finding the note by the target its request recorded. */
-async function reviewRecordedNote(
-  deps: EditDeps,
-  scope: EditScope,
-  action: NoteAction,
-  args: Record<string, unknown>,
-  recorded: Record<string, unknown>,
-): Promise<NoteReview> {
-  if (action === "create") {
-    return reviewNoteCreate(deps, scope, args, String(recorded.agent_id ?? "") || null);
-  }
-  return reviewNoteDelete(deps, scope, String(recorded.display_path ?? ""));
-}
-
-async function applyNote(deps: EditDeps, scope: EditScope, plan: NotePlan): Promise<number | null> {
-  const toolActor = editActor(scope, {
-    ...(plan.action === "delete" ? { guildId: plan.guildId } : {}),
-    ...(plan.agentId ? { agentId: plan.agentId } : {}),
-  });
-  try {
-    if (plan.action === "create") {
-      const written = await writeNote(deps.artifacts, toolActor, {
-        level: plan.level,
-        key: plan.key,
-        content: plan.content,
-        ...(plan.title ? { title: plan.title } : {}),
-        // No live note has version 0, so a note written meanwhile is a conflict, not overwritten.
-        expectedVersion: 0,
-      });
-      return written.row.version;
-    }
-    await deleteByDisplayPath(deps.artifacts, toolActor, plan.displayPath);
-    return null;
-  } catch (error) {
-    artifactFailure(error);
-  }
-}
-
-// A note create widget: the note it creates for the agent its handle named, and what applying does.
-export async function noteCreateRequest(
-  deps: EditDeps,
-  scope: EditScope,
-  args: Record<string, unknown>,
-  agentId: string | null,
-): Promise<Record<string, unknown>> {
-  const reason = requireReason(args);
-  return noteWidget(await reviewNoteCreate(deps, scope, args, agentId), reason);
-}
-
-// A note delete widget: the note at `display_path`, at the version the coach read, and what applying does.
-export async function noteDeleteRequest(
-  deps: EditDeps,
-  scope: EditScope,
-  args: Record<string, unknown>,
-): Promise<Record<string, unknown>> {
-  const reason = requireReason(args);
-  const review = await reviewNoteDelete(deps, scope, argString(args, "display_path"));
-  const expected = typeof args.base_version === "number" ? args.base_version : null;
-  if (expected === null) {
-    throw new StudioUnprocessableError("base_version is required: the note version studio_get_artifact returned");
-  }
-  if (expected !== review.baseVersion) {
-    throw new StudioConflictError(
-      `base_version ${expected} is stale; the live version is ${review.baseVersion}. Read it again and rebuild the request.`,
-    );
-  }
-  return noteWidget(review, reason);
-}
-
-function noteWidget(review: NoteReview, reason: string): Record<string, unknown> {
-  return awaitOperator(review.title, reason, {
-    kind: "note",
-    action: review.action,
-    target: review.target,
-    ...(review.baseVersion !== null ? { base_version: review.baseVersion } : {}),
     base_hash: review.baseHash,
     proposed_hash: review.proposedHash,
     lines: lineDelta(review.live, review.proposed),

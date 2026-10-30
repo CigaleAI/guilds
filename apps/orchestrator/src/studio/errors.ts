@@ -1,3 +1,5 @@
+import { ArtifactError } from "../artifacts/errors.js";
+
 export class StudioError extends Error {
   status: number;
 
@@ -20,4 +22,11 @@ export class StudioUnprocessableError extends StudioError {
     super(422, message);
     this.name = "StudioUnprocessableError";
   }
+}
+
+export function artifactFailure(error: unknown): never {
+  if (error instanceof ArtifactError) {
+    throw error.status === 409 ? new StudioConflictError(error.message) : new StudioUnprocessableError(error.message);
+  }
+  throw error;
 }

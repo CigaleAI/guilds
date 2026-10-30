@@ -8,13 +8,21 @@ import { tokenRedactions } from "../oauth/index.js";
 import { redact } from "../secrets/index.js";
 import { capBytes } from "../lib/bytes.js";
 import { STUDIO_TOOL_RESULT_MAX_BYTES } from "./constants.js";
-import { StudioError, StudioUnprocessableError } from "./errors.js";
+import { StudioConflictError, StudioError, StudioUnprocessableError } from "./errors.js";
+import { projectGuildConnections, type PreviewDeps } from "./preview.js";
+import { withLockedSession } from "./session-lock.js";
+import type { LiveStudioSession } from "./index.js";
 import { getMcpConnection, type McpConnectionRow } from "../db/mcp.js";
 import { getAgent } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
-import type { ConversationMessageRow } from "../db/conversations.js";
+import {
+  getConversationMessage,
+  updateConversationMessage,
+  type ConversationMessageRow,
+} from "../db/conversations.js";
 import type { ConversationMessageMetadata, MessagePayload, ToolMessage } from "../db/schema/index.js";
-import type { StudioSessionRow } from "../db/studio.js";
+import { updateStudioSession, type StudioSessionRow } from "../db/studio.js";
+import type { UserRow } from "../db/users.js";
 
 export const STUDIO_CONNECTION_ACCESS_WIDGET = "studio_connection_access";
 
@@ -168,4 +176,139 @@ export async function callConnectionTool(args: {
   }
   const [content, truncated] = capBytes(redact(raw, redactions), STUDIO_TOOL_RESULT_MAX_BYTES);
   return { remote_name: listed.remote_name, name: listed.namespaced_name, content, truncated };
+}
+
+/** The source guild's logins, each with whether the session's coach holds a grant on it. */
+export async function listSessionConnections(
+  preview: PreviewDeps,
+  session: StudioSessionRow,
+): Promise<Array<Record<string, unknown>>> {
+  if (!session.source_guild_id) {
+    return [];
+  }
+  const granted = new Set(grantedConnectionIds(session));
+  const projected = await projectGuildConnections(
+    preview,
+    session.org_id,
+    session.source_guild_id,
+  );
+  return projected.map((connection) => ({
+    id: connection.id,
+    server: connection.server,
+    owner_scope: connection.owner_scope,
+    owner_id: connection.owner_id,
+    account_hint: connection.account_hint,
+    status: connection.status,
+    granted: granted.has(connection.id),
+    readable_tools: connection.tools.filter((tool) => tool.read_only).map((tool) => tool.name),
+    tool_count: connection.tools.length,
+  }));
+}
+
+/** Lets the coach use one login of the source guild in this session; the session row as it stands after. */
+export async function grantSessionConnection(
+  db: Queryable,
+  session: StudioSessionRow,
+  connectionId: string,
+): Promise<StudioSessionRow> {
+  const next = await grantedWith(db, session, connectionId);
+  const updated = await updateStudioSession(
+    db,
+    session.id,
+    { granted_connection_ids: next },
+    new Date(),
+  );
+  return updated ?? { ...session, granted_connection_ids: next };
+}
+
+/** Takes one login back from the coach in this session; the session row as it stands after. */
+export async function withdrawSessionConnection(
+  db: Queryable,
+  session: StudioSessionRow,
+  connectionId: string,
+): Promise<StudioSessionRow> {
+  assertTakesGrants(session);
+  const next = grantedConnectionIds(session).filter((id) => id !== connectionId);
+  const updated = await updateStudioSession(
+    db,
+    session.id,
+    { granted_connection_ids: next },
+    new Date(),
+  );
+  return updated ?? { ...session, granted_connection_ids: next };
+}
+
+/** A session takes grants while it is active and its source guild is there. */
+export function assertTakesGrants(session: StudioSessionRow): asserts session is LiveStudioSession {
+  if (session.status !== "active") {
+    throw new StudioConflictError("session is not active");
+  }
+  if (!session.source_guild_id) {
+    throw new StudioUnprocessableError("source guild is gone");
+  }
+}
+
+// The session's granted logins with one more. A grant must name a
+// connected login the source guild can reach.
+export async function grantedWith(
+  db: Queryable,
+  session: StudioSessionRow,
+  connectionId: string,
+): Promise<string[]> {
+  assertTakesGrants(session);
+  const current = grantedConnectionIds(session);
+  const reach = await reachableConnection(
+    db,
+    session.org_id,
+    session.source_guild_id,
+    connectionId,
+  );
+  if (!reach) {
+    throw new StudioUnprocessableError("connection is not reachable from the source guild");
+  }
+  if (reach.connection.status !== "connected") {
+    throw new StudioUnprocessableError(`connection is ${String(reach.connection.status)}`);
+  }
+  return current.includes(connectionId) ? current : [...current, connectionId];
+}
+
+/** An operator's answer to the login request at `seq` of a session's log. */
+export type LoginAnswer = {
+  user: UserRow;
+  seq: number;
+  decision: "grant" | "decline";
+};
+
+// Grant or decline one login request from the Studio log. The answer and
+// who gave it are kept on the request's tool message; a grant also adds the
+// login to the session. The session lock serialises answers.
+export async function answerLoginRequest(
+  db: Queryable,
+  session: LiveStudioSession,
+  { user, seq, decision }: LoginAnswer,
+): Promise<StudioSessionRow> {
+  const sessionId = session.id;
+  return withLockedSession(db, sessionId, async (client, locked) => {
+    const record = findLoginRecord(await getConversationMessage(client, "studio", sessionId, seq), seq);
+    const status = loginStatus(record);
+    if (status !== "pending") {
+      throw new StudioConflictError(`login request is already ${status}`);
+    }
+    const now = new Date();
+    await updateConversationMessage(
+      client,
+      "studio",
+      { session_id: sessionId, seq, payload: record.payload, metadata: {
+      ...record.metadata,
+      access_status: decision === "grant" ? "granted" : "declined",
+      access_resolved_at: now.toISOString(),
+      resolved_by_user_id: user.id ?? null,
+    } },
+    );
+    if (decision === "decline") {
+      return locked;
+    }
+    const next = await grantedWith(db, locked, record.connectionId);
+    return (await updateStudioSession(client, sessionId, { granted_connection_ids: next }, now)) ?? locked;
+  });
 }

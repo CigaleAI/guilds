@@ -1269,6 +1269,11 @@
       "count": 1
     }
   },
+  "src/studio/connection-tools.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    }
+  },
   "src/studio/connections.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 2
@@ -1296,13 +1301,10 @@
       "count": 16
     },
     "complexity": {
-      "count": 6
-    },
-    "max-params": {
-      "count": 1
+      "count": 4
     },
     "no-restricted-syntax": {
-      "count": 8
+      "count": 5
     }
   },
   "src/studio/focus.ts": {
@@ -1318,13 +1320,26 @@
       "count": 1
     },
     "complexity": {
-      "count": 2
-    },
-    "limits/file-lines": {
       "count": 1
     },
     "no-restricted-syntax": {
       "count": 1
+    }
+  },
+  "src/studio/inspector.ts": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/studio/note-edits.ts": {
+    "complexity": {
+      "count": 2
+    },
+    "max-params": {
+      "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 3
     }
   },
   "src/studio/preview.ts": {
@@ -1332,6 +1347,11 @@
       "count": 1
     },
     "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/studio/prompt-tools.ts": {
+    "complexity": {
       "count": 1
     }
   },
@@ -1345,6 +1365,11 @@
       "count": 1
     },
     "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/studio/source-guild.ts": {
+    "@typescript-eslint/explicit-module-boundary-types": {
       "count": 1
     }
   },
@@ -1383,20 +1408,6 @@
     },
     "no-restricted-syntax": {
       "count": 2
-    }
-  },
-  "src/studio/tools.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
-    "@typescript-eslint/explicit-module-boundary-types": {
-      "count": 1
-    },
-    "complexity": {
-      "count": 1
-    },
-    "limits/file-lines": {
-      "count": 1
     }
   },
   "src/toolbox/artifacts.ts": {
