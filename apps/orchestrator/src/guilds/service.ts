@@ -19,7 +19,7 @@ import type { GenerationLoop } from "../generation/index.js";
 import { userActor, type ChangeActor } from "../lib/change-actor.js";
 import { newId } from "../lib/ids.js";
 import type { NotesStore } from "../notes/store.js";
-import { assertCanCreateGuild, orgCounts, type OrgPolicy } from "../policy/index.js";
+import { assertCanCreateGuild, type OrgPolicy } from "../policy/index.js";
 import type { Schedules } from "../schedules/service.js";
 import { requireAdministeredGuild } from "./access.js";
 import { GuildAgentLimitError, GuildError } from "./errors.js";
@@ -135,7 +135,7 @@ export async function createGuild(
   const about = validateAbout(request.about);
   const description = validateGuildDescription(request.description);
   const visibility = validateVisibility(request.visibility);
-  await assertCanCreateGuild(policy, orgCounts(db), org.id);
+  await assertCanCreateGuild(policy, db, org.id);
   const guild = {
     guildId: newId("guild"),
     name,

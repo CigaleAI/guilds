@@ -128,11 +128,11 @@ export type AgentFlags = { browser: boolean; coding: boolean };
 
 export async function assertCanCreateAgents(
   policy: OrgPolicy,
-  counts: OrgCounts,
+  db: Queryable,
   orgId: string,
   adding: AddedAgents,
 ): Promise<void> {
-  await assertCanCreateAgentsThrough(policy, counts, orgId, adding);
+  await assertCanCreateAgentsThrough(policy, orgCounts(db), orgId, adding);
 }
 
 /** `assertCanCreateAgents` through `counts`, the dependencies object a unit test fakes. */
@@ -167,11 +167,11 @@ export async function assertCanCreateAgentsThrough(
 
 export async function assertCanCreateAgent(
   policy: OrgPolicy,
-  counts: OrgCounts,
+  db: Queryable,
   orgId: string,
   flags: AgentFlags,
 ): Promise<void> {
-  await assertCanCreateAgentThrough(policy, counts, orgId, flags);
+  await assertCanCreateAgentThrough(policy, orgCounts(db), orgId, flags);
 }
 
 /** `assertCanCreateAgent` through `counts`, the dependencies object a unit test fakes. */
@@ -209,12 +209,12 @@ export async function machineCap(policy: OrgPolicy, orgId: string): Promise<Held
  */
 export async function assertCanPlaceAgents(
   policy: OrgPolicy,
-  counts: MachineCounts,
+  db: Queryable,
   orgId: string,
   machineId: string,
   adding: number,
 ): Promise<number | null> {
-  return assertCanPlaceAgentsThrough(policy, counts, orgId, machineId, adding);
+  return assertCanPlaceAgentsThrough(policy, machineCounts(db), orgId, machineId, adding);
 }
 
 /** `assertCanPlaceAgents` through `counts`, the dependencies object a unit test fakes. */
@@ -236,8 +236,8 @@ export async function assertCanPlaceAgentsThrough(
 }
 
 /** `maxGuilds` caps the organisation's live guilds. */
-export async function assertCanCreateGuild(policy: OrgPolicy, counts: OrgCounts, orgId: string): Promise<void> {
-  await assertCanCreateGuildThrough(policy, counts, orgId);
+export async function assertCanCreateGuild(policy: OrgPolicy, db: Queryable, orgId: string): Promise<void> {
+  await assertCanCreateGuildThrough(policy, orgCounts(db), orgId);
 }
 
 /** `assertCanCreateGuild` through `counts`, the dependencies object a unit test fakes. */
@@ -250,11 +250,11 @@ export async function assertCanCreateGuildThrough(policy: OrgPolicy, counts: Org
 
 export async function assertCanEnableBrowser(
   policy: OrgPolicy,
-  counts: OrgCounts,
+  db: Queryable,
   orgId: string,
   alreadyBrowser: boolean,
 ): Promise<void> {
-  await assertCanEnableBrowserThrough(policy, counts, orgId, alreadyBrowser);
+  await assertCanEnableBrowserThrough(policy, orgCounts(db), orgId, alreadyBrowser);
 }
 
 /** `assertCanEnableBrowser` through `counts`, the dependencies object a unit test fakes. */
@@ -277,8 +277,8 @@ export async function assertCanEnableBrowserThrough(
 }
 
 /** Turning `coding` on for an existing agent takes one more of the organisation's coding agents. */
-export async function assertCanEnableCoding(policy: OrgPolicy, counts: OrgCounts, orgId: string): Promise<void> {
-  await assertCanEnableCodingThrough(policy, counts, orgId);
+export async function assertCanEnableCoding(policy: OrgPolicy, db: Queryable, orgId: string): Promise<void> {
+  await assertCanEnableCodingThrough(policy, orgCounts(db), orgId);
 }
 
 /** `assertCanEnableCoding` through `counts`, the dependencies object a unit test fakes. */
@@ -299,14 +299,17 @@ export function coachRunClaims(db: Queryable) {
 
 export type CoachRunClaims = ReturnType<typeof coachRunClaims>;
 
-/** Counts one Studio or Builder generation against the month, refusing it past `monthlyCoachRuns`. */
+/**
+ * Counts one Studio or Builder generation against the month on `db`, the pool or the transaction
+ * that starts the run, refusing it past `monthlyCoachRuns`.
+ */
 export async function claimCoachRun(
   policy: OrgPolicy,
-  claims: CoachRunClaims,
+  db: Queryable,
   orgId: string,
   now = new Date(),
 ): Promise<void> {
-  await claimCoachRunThrough(policy, claims, orgId, now);
+  await claimCoachRunThrough(policy, coachRunClaims(db), orgId, now);
 }
 
 /** `claimCoachRun` through `claims`, the dependencies object a unit test fakes. */

@@ -30,7 +30,7 @@ import { GuildAgentLimitError } from "../guilds/errors.js";
 import { addGuild, assertGuildAgentRoom } from "../guilds/service.js";
 import type { ChangeActor } from "../lib/change-actor.js";
 import { newId } from "../lib/ids.js";
-import { assertCanCreateAgents, assertCanCreateGuild, assertCanPlaceAgents, machineCounts, orgCounts } from "../policy/index.js";
+import { assertCanCreateAgents, assertCanCreateGuild, assertCanPlaceAgents } from "../policy/index.js";
 import { agentsOfRoles } from "./access.js";
 import type { ApplyChoices, RecipeApply } from "./apply.js";
 import { checklistFromPlan, grantReusedSecrets, writeOverlays } from "./checklist.js";
@@ -97,15 +97,15 @@ async function assertAllowed(
 ): Promise<number | null> {
   const maxAgentsPerMachine = await assertCanPlaceAgents(
     apply.policy,
-    machineCounts(apply.db),
+    apply.db,
     target.orgId,
     target.machineId,
     recipe.roles.length,
   );
   if (!target.guildId) {
-    await assertCanCreateGuild(apply.policy, orgCounts(apply.db), target.orgId);
+    await assertCanCreateGuild(apply.policy, apply.db, target.orgId);
   }
-  await assertCanCreateAgents(apply.policy, orgCounts(apply.db), target.orgId, {
+  await assertCanCreateAgents(apply.policy, apply.db, target.orgId, {
     agents: recipe.roles.length,
     browserAgents: recipe.roles.filter(roleBrowses).length,
     codingAgents: recipe.roles.filter(roleCodes).length,
