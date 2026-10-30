@@ -8,24 +8,23 @@ import { groupMessageRow } from "../helpers/group-chat.js";
 import { groupMessageItem } from "../../src/db/views.js";
 import {
   CLEARED_ERROR,
-  CONTEXT_HISTORY_LIMIT,
-  DeliveryCreateError,
   GroupChat,
   GroupChatError,
-  deliveriesToStart,
-  groupChatHistory,
-  groupChatUserMessage,
-  interruptTargets,
   limitError,
-  parseTags,
-  recognizedTags,
-  wakeMessage,
+  type MessageAuthor,
+} from "../../src/groupchat/index.js";
+import {
+  DeliveryCreateError,
+  deliveriesToStart,
+  interruptTargets,
   withActiveCursors,
   type ActiveDelivery,
   type GroupDelivery,
   type GroupRunner,
-  type MessageAuthor,
-} from "../../src/groupchat/index.js";
+} from "../../src/groupchat/delivery.js";
+import { CONTEXT_HISTORY_LIMIT, groupChatHistory } from "../../src/groupchat/history.js";
+import { parseTags, recognizedTags } from "../../src/groupchat/tags.js";
+import { groupChatUserMessage, wakeMessage } from "../../src/groupchat/wake.js";
 import { AsyncEvent, sleep } from "../../src/lib/event.js";
 import { AsyncLock } from "../../src/lib/lock.js";
 import { orchestratorRoot } from "../../src/lib/paths.js";

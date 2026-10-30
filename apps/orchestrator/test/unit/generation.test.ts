@@ -3,7 +3,7 @@ import { PLATFORM_SEED_TOOLS } from "../../src/access/runtime.js";
 import { existsSync, mkdirSync, readFileSync as _readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { after, describe, test } from "node:test";
-import { DeliveryBusyError } from "../../src/groupchat/index.js";
+import { DeliveryBusyError } from "../../src/groupchat/delivery.js";
 import { CONTEXT_HISTORY_LIMIT } from "../../src/groupchat/history.js";
 import { operatorActor } from "../../src/artifacts/actors.js";
 import * as generationMod from "../../src/generation/index.js";

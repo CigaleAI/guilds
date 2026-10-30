@@ -1,10 +1,21 @@
-import { jsonObj } from "../db/json.js";
 import { AgentMessageLimitReached, GroupChatCleared } from "../db/errors.js";
 import { groupMessageItem, type GroupMessageView } from "../db/views.js";
 import { AsyncEvent, EventQueue } from "../lib/event.js";
 import { writeLog } from "../observability/log.js";
-import { groupChatHistory, storedTags } from "./history.js";
 import { serializeRecipientDecision, type GroupRouter, type RecipientDecision } from "./router.js";
+import { recognizedTags, type GroupTags } from "./tags.js";
+import { recipientNamesAfter, taggedRecipientNamesAfter } from "./recipients.js";
+import {
+  DeliveryBusyError,
+  DeliveryCreateError,
+  deliveriesToStart,
+  interruptTargets,
+  withActiveCursors,
+  type ActiveDelivery,
+  type GroupDelivery,
+  type GroupRunner,
+  type PendingAgent,
+} from "./delivery.js";
 import { advanceGroupCursor,
   appendGroupChatError,
   clearGroupMessages,
@@ -13,20 +24,12 @@ import { advanceGroupCursor,
   listPendingGroupAgents,
   postAgentGroupMessage,
   postUserGroupMessage,
-  updateGroupAgentMessageLimit, type GroupChatStateRow, type GroupMessageRow, type PendingGroupAgentRow } from "../db/group-chat.js";
-import { getGuild, listGuilds, type GuildOperatorRow } from "../db/guilds.js";
-import { getAgent, listAgents, type GuildAgentRow } from "../db/agents.js";
-import { getRun, type RunMessage } from "../db/runs.js";
-import type { RecipientRouting, UserMessage } from "../db/schema/index.js";
+  updateGroupAgentMessageLimit, type GroupChatStateRow, type GroupMessageRow } from "../db/group-chat.js";
+import { getGuild, listGuilds } from "../db/guilds.js";
+import { getAgent, listAgents } from "../db/agents.js";
+import { getRun } from "../db/runs.js";
+import type { RecipientRouting } from "../db/schema/index.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
-
-export {
-  CONTEXT_HISTORY_LIMIT,
-  HISTORY_CANDIDATE_LIMIT,
-  groupChatHistory,
-  recentGroupRows,
-  storedTags,
-} from "./history.js";
 
 const EVENT_QUEUE_LIMIT = 4096;
 
@@ -39,20 +42,6 @@ export class GroupChatError extends Error {
     this.name = "GroupChatError";
     this.status = status;
     this.detail = detail;
-  }
-}
-
-export class DeliveryCreateError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "DeliveryCreateError";
-  }
-}
-
-export class DeliveryBusyError extends Error {
-  constructor(message = "busy") {
-    super(message);
-    this.name = "DeliveryBusyError";
   }
 }
 
@@ -70,226 +59,8 @@ export function limitError(limit: number): string {
 export const CLEARED_ERROR =
   "ERROR: the group chat was cleared after this run started; nothing was posted";
 
-export const USER_TAG = "user";
-export const TAG_RE = /(?<![A-Za-z0-9-])@([a-z][a-z0-9-]{0,62})\b/g;
-
-export function parseTags(content: string, names: Set<string>): string[] {
-  const tagged: string[] = [];
-  const seen = new Set<string>();
-  const matches = (content || "").matchAll(TAG_RE);
-  for (const match of matches) {
-    const token = match[1];
-    if (token && names.has(token) && !seen.has(token)) {
-      tagged.push(token);
-      seen.add(token);
-    }
-  }
-  return tagged;
-}
-
-export function taggableNames(
-  members: Array<Record<string, unknown>>,
-  operators: GuildOperatorRow[] = [],
-): Set<string> {
-  const names = new Set<string>();
-  for (const member of members) {
-    names.add(String(member.name));
-  }
-  for (const operator of operators) {
-    names.add(operator.name);
-  }
-  names.add(USER_TAG);
-  return names;
-}
-
 /** The operator posting: the user the message is written as. */
 export type MessageAuthor = { id: string; name: string };
-
-export type GroupTags = { names: string[]; agentIds: string[]; userIds: string[] };
-
-/**
- * Tags in a public message: the names as written, the member agents they
- * select, and the operators they reach. `@user` reaches every operator.
- */
-export function recognizedTags(
-  content: string,
-  members: Array<Record<string, unknown>>,
-  operators: GuildOperatorRow[] = [],
-): GroupTags {
-  const names = parseTags(content, taggableNames(members, operators));
-  const agentIdsByName = new Map<string, string>();
-  for (const member of members) {
-    agentIdsByName.set(String(member.name), String(member.id));
-  }
-  const agentIds: string[] = [];
-  const userIds = new Set<string>();
-  for (const name of names) {
-    const agentId = agentIdsByName.get(name);
-    if (agentId !== undefined) {
-      agentIds.push(agentId);
-    }
-    for (const operator of operators) {
-      if (name === USER_TAG || operator.name === name) {
-        userIds.add(operator.user_id);
-      }
-    }
-  }
-  return { names, agentIds, userIds: [...userIds] };
-}
-
-export function storedTagAgentIds(row: Record<string, unknown>): string[] {
-  const tagged = jsonObj(row.tagged_agent_ids);
-  if (!Array.isArray(tagged)) {
-    return [];
-  }
-  return tagged.filter((item): item is string => typeof item === "string");
-}
-
-/** A public message as the recipient rules read it: where it sits, who wrote it, whom it tags. */
-export type RecipientMessage = Pick<
-  GroupMessageRow,
-  "seq" | "author_type" | "author_agent_id" | "tagged_agent_ids"
->;
-
-/** A guild member as the recipient rules name it. */
-export type RecipientMember = Pick<GuildAgentRow, "id" | "name">;
-
-/** The members the messages after `deliveredThrough` tag, leaving out an agent's tag of itself. */
-export function taggedRecipientNamesAfter(
-  rows: RecipientMessage[],
-  members: RecipientMember[],
-  deliveredThrough: number,
-): Set<string> {
-  const membersById = new Map<string, string>();
-  for (const member of members) {
-    membersById.set(member.id, member.name);
-  }
-  const recipients = new Set<string>();
-  for (const row of rows) {
-    if (row.seq <= deliveredThrough) {
-      continue;
-    }
-    const taggedAgentIds = new Set(row.tagged_agent_ids);
-    for (const agentId of taggedAgentIds) {
-      if (row.author_type === "agent" && agentId === row.author_agent_id) {
-        continue;
-      }
-      const name = membersById.get(agentId);
-      if (name !== undefined) {
-        recipients.add(name);
-      }
-    }
-  }
-  return recipients;
-}
-
-export function recipientNamesAfter(
-  rows: Array<Record<string, unknown>>,
-  members: Array<Record<string, unknown>>,
-  deliveredThrough: number,
-): Set<string> {
-  const membersById = new Map<string, string>();
-  for (const member of members) {
-    membersById.set(String(member.id), String(member.name));
-  }
-  const recipients = new Set<string>();
-  for (const row of rows) {
-    if (Number(row.seq) <= deliveredThrough) {
-      continue;
-    }
-    const taggedAgentIds = new Set(storedTagAgentIds(row));
-    let recipientIds: Set<string>;
-    if (row.author_type === "user") {
-      recipientIds = taggedAgentIds.size ? taggedAgentIds : new Set(membersById.keys());
-    } else {
-      recipientIds = new Set([...taggedAgentIds].filter((id) => id !== row.author_agent_id));
-    }
-    for (const agentId of recipientIds) {
-      const name = membersById.get(agentId);
-      if (name !== undefined) {
-        recipients.add(name);
-      }
-    }
-  }
-  return recipients;
-}
-
-function tagsAgent(row: Record<string, unknown>, agentId: string): boolean {
-  const selfTag = row.author_type === "agent" && row.author_agent_id === agentId;
-  return !selfTag && storedTagAgentIds(row).includes(agentId);
-}
-
-/**
- * The public row that woke an agent's group run: the latest row after its
- * cursor that tags it, else the latest operator row that tags no agent, else
- * the latest row after its cursor. Null when no row is after the cursor.
- */
-export function wakeMessage(
-  rows: Array<Record<string, unknown>>,
-  agentId: string,
-  deliveredThrough: number,
-): Record<string, unknown> | null {
-  const unseen = rows.filter((row) => Number(row.seq) > deliveredThrough);
-  const tagging = unseen.filter((row) => tagsAgent(row, agentId));
-  const broadcast = unseen.filter((row) => row.author_type === "user" && !storedTagAgentIds(row).length);
-  return tagging.at(-1) ?? broadcast.at(-1) ?? unseen.at(-1) ?? null;
-}
-
-function viewerWasTagged(
-  rows: Array<Record<string, unknown>>,
-  viewerName: string,
-  deliveredThrough: number,
-): boolean {
-  if (!viewerName) {
-    return false;
-  }
-  for (const row of rows) {
-    if (Number(row.seq) <= deliveredThrough) {
-      continue;
-    }
-    if (storedTags(row).includes(viewerName)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-export function groupChatUserMessage(args: {
-  members: Array<Record<string, unknown>>;
-  rows: GroupMessageRow[];
-  viewerName?: string;
-  deliveredThrough?: number;
-}): RunMessage {
-  const viewerName = args.viewerName ?? "";
-  const deliveredThrough = args.deliveredThrough ?? 0;
-  const history = groupChatHistory(args.rows);
-  const latest = history.length ? history[history.length - 1] : null;
-  const info = {
-    latestMessage: latest,
-    youWereTagged: viewerWasTagged(args.rows, viewerName, deliveredThrough),
-  };
-  const payload: UserMessage = {
-    role: "user",
-    content: `Group Chat info: ${JSON.stringify(info, null, 2)}`,
-  };
-  const last = args.rows.at(-1);
-  if (last === undefined) {
-    return [payload, { source: "group_chat" }];
-  }
-  return [
-    payload,
-    {
-      source: "group_chat",
-      group_message_id: last.id,
-      group_seq: last.seq,
-      author_type: last.author_type,
-      author_name: last.author_name,
-      tagged: latest ? latest.tagged : [],
-      you_were_tagged: info.youWereTagged,
-      recipients: [...recipientNamesAfter(args.rows, args.members, deliveredThrough)].sort(),
-    },
-  ];
-}
 
 /** The db/ functions a guild's group chat is read and written through, on `db`. */
 function groupChatDatabase(db: Queryable) {
@@ -319,89 +90,12 @@ export type GuildEventObserver = (
   data: Record<string, unknown>,
 ) => Promise<void>;
 
-/** One group run to start: the agent, the snapshot it sees, and why it was picked. */
-export type GroupDelivery = {
-  agentId: string;
-  throughSeq: number;
-  deliveredThrough: number;
-  recipients: RecipientRouting | null;
-};
-
-export type GroupRunner = {
-  isAgentBusy(agentId: string): boolean;
-  waitForLockRelease(seen: number): Promise<void>;
-  deliverGroupRun(delivery: GroupDelivery): Promise<void>;
-  /** Stops the run the agent is generating, if any. */
-  cancelAgentRuns(agentId: string): Promise<void>;
-  lockGeneration: number;
-};
-
-/** A group run under way: its agent and the snapshot it was given. */
-export type ActiveDelivery = {
-  id: string;
-  name: string;
-  throughSeq: number;
-  task?: Promise<void>;
-};
-
 type RecipientPick = { decision: RecipientDecision; tagged: Set<string> };
 
 type DispatchHandle = {
   promise: Promise<void>;
   done(): boolean;
 };
-
-/** A pending agent as the dispatcher reads it: who it is, and how far it has seen the chat. */
-type PendingAgent = Pick<PendingGroupAgentRow, "id" | "name" | "group_chat_delivered_through">;
-
-/**
- * Pending agents as the dispatcher sees them: an agent in a group run has seen the chat through
- * that run's snapshot, so it is pending only for what came after.
- */
-export function withActiveCursors<T extends PendingAgent>(
-  pending: T[],
-  active: ReadonlyMap<string, ActiveDelivery>,
-  snapshot: number,
-): T[] {
-  return pending
-    .map((agent) => {
-      const delivery = active.get(agent.id);
-      if (delivery === undefined) {
-        return agent;
-      }
-      return { ...agent, group_chat_delivered_through: Math.max(agent.group_chat_delivered_through, delivery.throughSeq) };
-    })
-    .filter((agent) => agent.group_chat_delivered_through < snapshot);
-}
-
-/**
- * Which picked agents start a run now. A tagged agent starts as soon as it is free, alongside
- * other group runs. An agent picked without a tag runs alone: it starts only when no other group
- * run is under way or starting.
- */
-export function deliveriesToStart<T extends Pick<PendingAgent, "id" | "name">>(args: {
-  actionable: T[];
-  tagged: ReadonlySet<string>;
-  active: ReadonlyMap<string, ActiveDelivery>;
-  isBusy: (agentId: string) => boolean;
-}): { start: T[]; waitsForRelease: boolean } {
-  const waiting = args.actionable.filter((agent) => !args.active.has(agent.id));
-  const idle = waiting.filter((agent) => !args.isBusy(agent.id));
-  const start = idle.filter((agent) => args.tagged.has(agent.name));
-  const untagged = idle.find((agent) => !args.tagged.has(agent.name));
-  if (untagged && args.active.size + start.length === 0) {
-    start.push(untagged);
-  }
-  return { start, waitsForRelease: idle.length < waiting.length };
-}
-
-/** The group runs an interrupting post stops: the tagged agents' runs, or every run when untagged. */
-export function interruptTargets(activeAgentIds: string[], taggedAgentIds: string[]): string[] {
-  if (!taggedAgentIds.length) {
-    return activeAgentIds;
-  }
-  return activeAgentIds.filter((agentId) => taggedAgentIds.includes(agentId));
-}
 
 /** A group run under way as the chat's state names it. */
 export type ActiveAgent = Pick<ActiveDelivery, "id" | "name">;

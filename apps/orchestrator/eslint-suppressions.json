@@ -530,26 +530,30 @@
       "count": 1
     }
   },
+  "src/groupchat/delivery.ts": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
   "src/groupchat/history.ts": {
     "no-restricted-syntax": {
       "count": 1
     }
   },
   "src/groupchat/index.ts": {
-    "boundary/no-reexport-modules": {
-      "count": 1
-    },
     "complexity": {
-      "count": 1
-    },
-    "limits/file-lines": {
       "count": 1
     },
     "max-params": {
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 12
+      "count": 10
+    }
+  },
+  "src/groupchat/wake.ts": {
+    "no-restricted-syntax": {
+      "count": 1
     }
   },
   "src/guilds/service.ts": {

@@ -18,7 +18,8 @@ import {
   type RunRow,
 } from "../db/runs.js";
 import { runItem } from "../db/views.js";
-import { guildGroupChat, type GroupChat, type GroupDelivery, type GroupRunner } from "../groupchat/index.js";
+import { guildGroupChat, type GroupChat } from "../groupchat/index.js";
+import type { GroupDelivery, GroupRunner } from "../groupchat/delivery.js";
 import type { GroupRouter } from "../groupchat/router.js";
 import { guildIssues, type Issues } from "../issues/index.js";
 import { sleep } from "../lib/event.js";
