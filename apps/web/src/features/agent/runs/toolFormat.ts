@@ -270,7 +270,8 @@ const CALL_SUMMARIES: Readonly<Record<string, CallSummary>> = Object.freeze({
   studio_edit_note: friendlyNoteChange,
   studio_edit_guild: () => "Propose guild description edit",
   studio_list_collections: () => "List tables",
-  studio_get_collection: (args) => (args.collection ? `Read table ${args.collection}` : "Read table"),
+  studio_get_collection: (args) =>
+    args.collection ? `Read table ${args.collection}` : "Read table",
   studio_edit_collection: friendlyTableChange,
   studio_edit_routine: friendlyRoutineChange,
   studio_inspect_history: () => "Inspect run history",
@@ -280,7 +281,8 @@ const CALL_SUMMARIES: Readonly<Record<string, CallSummary>> = Object.freeze({
     return handle ? `Inspect access for ${handle}` : "Inspect agent access";
   },
   studio_request_connection_access: () => "Request connection access",
-  studio_call_connection_tool: (args) => (args.tool ? `Read via ${args.tool}` : "Read via connection"),
+  studio_call_connection_tool: (args) =>
+    args.tool ? `Read via ${args.tool}` : "Read via connection",
   builder_list_capabilities: () => "List capabilities",
   builder_search_capabilities: (args) =>
     args.query ? `Search capabilities ${args.query}` : "Search capabilities",
@@ -472,7 +474,8 @@ export function toolOutcome(metadata: Record<string, unknown> | null | undefined
 
 /** A browse call's status when it did not complete, and what it spent. */
 function browseOutcome(metadata: Record<string, unknown>): string {
-  const status = typeof metadata.status === "string" && metadata.status !== "complete" ? metadata.status : "";
+  const status =
+    typeof metadata.status === "string" && metadata.status !== "complete" ? metadata.status : "";
   const usage = metadata.browser_usage;
   const cost =
     usage && typeof usage === "object" && "cost_usd" in usage ? formatCost(usage.cost_usd) : "";

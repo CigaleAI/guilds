@@ -11,7 +11,10 @@ test("a connection with every method the clipboard bridge calls is noVNC's RFB",
 test("a connection missing a method the clipboard bridge calls is not noVNC's RFB", () => {
   const call = () => undefined;
   assert.equal(isRfb({ focus: call, sendKey: call, addEventListener: call }), false);
-  assert.equal(isRfb({ focus: call, sendKey: call, clipboardPasteFrom: "x", addEventListener: call }), false);
+  assert.equal(
+    isRfb({ focus: call, sendKey: call, clipboardPasteFrom: "x", addEventListener: call }),
+    false,
+  );
   assert.equal(isRfb(null), false);
 });
 

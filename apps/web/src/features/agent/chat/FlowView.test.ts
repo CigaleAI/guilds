@@ -67,7 +67,10 @@ test("a stopped generation counts its unanswered calls as errors; a generating o
 
 test("a running code task's hint says its harness is generating", () => {
   const call = flowCall("c1");
-  assert.equal(callHint(call, "codex", "running"), "Codex is generating… · Code task in guilds/api");
+  assert.equal(
+    callHint(call, "codex", "running"),
+    "Codex is generating… · Code task in guilds/api",
+  );
   assert.equal(callHint(call, "codex", "ok"), "Code task in guilds/api");
 });
 
@@ -89,7 +92,10 @@ test("a code task's repository is the one its result names, else the one it was 
 
 test("a code task's prompt is its brief, and empty without one", () => {
   assert.equal(taskPrompt(flowCall("c1")), "Fix it");
-  assert.equal(taskPrompt(flowCall("c1", { call: { function: { arguments: '{"brief":3}' } } })), "");
+  assert.equal(
+    taskPrompt(flowCall("c1", { call: { function: { arguments: '{"brief":3}' } } })),
+    "",
+  );
 });
 
 test("a code task's block reads a finished call as done", () => {

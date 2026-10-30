@@ -253,7 +253,9 @@ const CATALOG: HarnessCatalog[] = [
     harness: "codex",
     label: "Codex",
     enabled: true,
-    models: [{ id: "gpt-6-luna", label: "GPT-6-Luna", efforts: ["low", "high"], default_effort: "low" }],
+    models: [
+      { id: "gpt-6-luna", label: "GPT-6-Luna", efforts: ["low", "high"], default_effort: "low" },
+    ],
     unlisted_efforts: ["minimal", "low", "high"],
   },
   {
@@ -282,7 +284,11 @@ test("a harness the box turns off is offered only to an agent already on it", ()
   assert.equal(harnessOffered(CATALOG, "cursor", "codex"), false);
   assert.equal(harnessOffered(CATALOG, "cursor", "cursor"), true);
   assert.equal(harnessOffered(undefined, "cursor", ""), true, "before the catalogue loads");
-  assert.equal(harnessOffered(CATALOG, "antigravity", ""), true, "a harness the catalogue does not name");
+  assert.equal(
+    harnessOffered(CATALOG, "antigravity", ""),
+    true,
+    "a harness the catalogue does not name",
+  );
 });
 
 test("leaving the effort unset names the model's default effort, else the harness's", () => {
