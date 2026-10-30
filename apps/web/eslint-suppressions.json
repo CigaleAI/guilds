@@ -236,15 +236,7 @@
     }
   },
   "src/features/studio/chatModel.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 8
-    },
     "complexity": {
-      "count": 2
-    }
-  },
-  "src/features/studio/investigate.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     }
   },

@@ -5,15 +5,29 @@ import type { Issue } from "../../api/types/issues";
 import { useIdentity } from "../../app/identity";
 import { preselectedModel } from "../models/models";
 import { toast } from "@guildsrun/ui";
+import { isPlainRecord } from "./json";
+
 /** What a new session starts pinned to, and the question it offers to ask. */
 export type StudioPin = { focus: Record<string, unknown> & { label: string }; prompt: string };
 
 const pinKey = (sessionId: string) => `studio-pin:${sessionId}`;
 
+/** Whether a value read back from storage is a pin: a prompt and a focus with its label. */
+function isStudioPin(value: unknown): value is StudioPin {
+  return (
+    isPlainRecord(value) &&
+    typeof value.prompt === "string" &&
+    isPlainRecord(value.focus) &&
+    typeof value.focus.label === "string"
+  );
+}
+
+/** The pin kept for a session; null when none is kept, or what is kept is not a pin. */
 export function readPin(sessionId: string): StudioPin | null {
   try {
     const raw = sessionStorage.getItem(pinKey(sessionId));
-    return raw ? (JSON.parse(raw) as StudioPin) : null;
+    const kept: unknown = raw ? JSON.parse(raw) : null;
+    return isStudioPin(kept) ? kept : null;
   } catch {
     return null;
   }

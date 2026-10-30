@@ -1,4 +1,5 @@
 import type { StudioMessage } from "../../api/types/studio";
+import { isPlainRecord } from "./json";
 
 /**
  * What a coach edit changes: an agent's memory, access, or routine, a note, the guild's
@@ -21,19 +22,28 @@ export type EditTarget = {
   description?: string;
 };
 
+/** What a coach edit can change. */
+const editKinds = ["memory", "note", "guild", "collection", "access", "routine"] as const;
+
+/** What a table, routine, or note edit does to its target. */
+const editActions = ["create", "edit", "delete"] as const;
+
+/** The lines an edit adds and removes. */
+export type LineCounts = { added?: number; removed?: number };
+
 export type EditWidget = {
   kind: "edit";
   title?: string;
   reason?: string;
   edit: {
-    kind?: "memory" | "note" | "guild" | "collection" | "access" | "routine";
+    kind?: (typeof editKinds)[number];
     /** What a table, routine, or note edit does to its target; a note edit without one changes its text. */
-    action?: "create" | "edit" | "delete";
+    action?: (typeof editActions)[number];
     target?: EditTarget;
     base_version?: number;
     /** The guild fields a guild edit changes. */
     fields?: string[];
-    lines?: { added?: number; removed?: number };
+    lines?: LineCounts;
     /** An access edit's changes, one per tool or connection. */
     changes?: AccessChange[];
     /** Whether an access edit turns on anything the agent cannot use today. */
@@ -41,12 +51,18 @@ export type EditWidget = {
   };
 };
 
+/** What an access overlay sets: a native tool, a connection, or one tool of a connection. */
+const accessChangeKinds = ["native_tool", "mcp", "mcp_tool"] as const;
+
+/** How an access overlay sets its tool or connection. */
+const accessSettings = ["on", "off", "inherit"] as const;
+
 /** One overlay an access edit writes. */
 export type AccessChange = {
-  kind: "native_tool" | "mcp" | "mcp_tool";
+  kind: (typeof accessChangeKinds)[number];
   id: string;
   label: string;
-  setting: "on" | "off" | "inherit";
+  setting: (typeof accessSettings)[number];
 };
 
 /** A Task draft the coach wrote, decided like an edit: published, edited and published, or discarded. */
@@ -147,8 +163,8 @@ export function declinedDecision(widget: EditWidget | AccessWidget): RequestDeci
  * them decided; null while any request is still open.
  */
 export function batchReply(decisions: readonly (RequestDecision | null)[]): string | null {
-  if (!decisions.length || decisions.some((decision) => decision === null)) return null;
-  const all = decisions as RequestDecision[];
+  const all = decisions.filter((decision) => decision !== null);
+  if (!all.length || all.length < decisions.length) return null;
   const next = all.some((decision) => !decision.accepted)
     ? all.length === 1
       ? "Continue without it."
@@ -157,15 +173,110 @@ export function batchReply(decisions: readonly (RequestDecision | null)[]): stri
   return [...all.map((decision) => decision.line), next].join(" ");
 }
 
+/** The fields of a JSON object that hold text, by name; a field of another type is left out. */
+function textFields<Key extends string>(
+  record: Record<string, unknown>,
+  keys: readonly Key[],
+): Partial<Record<Key, string>> {
+  const fields: Partial<Record<Key, string>> = {};
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string") fields[key] = value;
+  }
+  return fields;
+}
+
+/** The fields of a JSON object that hold text or null, by name; a field of another type is left out. */
+function nullableTextFields<Key extends string>(
+  record: Record<string, unknown>,
+  keys: readonly Key[],
+): Partial<Record<Key, string | null>> {
+  const fields: Partial<Record<Key, string | null>> = {};
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" || value === null) fields[key] = value;
+  }
+  return fields;
+}
+
+/** One overlay of an access edit; null when it lacks a field or names an unknown kind or setting. */
+function parseAccessChange(value: unknown): AccessChange | null {
+  if (!isPlainRecord(value)) return null;
+  const kind = accessChangeKinds.find((entry) => entry === value.kind);
+  const setting = accessSettings.find((entry) => entry === value.setting);
+  if (!kind || !setting || typeof value.id !== "string" || typeof value.label !== "string") {
+    return null;
+  }
+  return { kind, id: value.id, label: value.label, setting };
+}
+
+/** The line counts of an edit, keeping the counts that are numbers. */
+function parseLineCounts(lines: Record<string, unknown>): LineCounts {
+  return {
+    ...(typeof lines.added === "number" ? { added: lines.added } : {}),
+    ...(typeof lines.removed === "number" ? { removed: lines.removed } : {}),
+  };
+}
+
+/** What an edit names as its target, keeping the fields of the type each holds. */
+function parseEditTarget(target: Record<string, unknown>): EditTarget {
+  return {
+    ...textFields(target, [
+      "agent_id",
+      "agent_name",
+      "display_path",
+      "title",
+      "guild_id",
+      "guild_name",
+      "name",
+      "description",
+    ]),
+    ...nullableTextFields(target, ["collection_id", "schedule_id"]),
+  };
+}
+
+/** An edit request's edit, keeping each field that holds what the field says. */
+export function parseEdit(value: unknown): EditWidget["edit"] {
+  if (!isPlainRecord(value)) return {};
+  const kind = editKinds.find((entry) => entry === value.kind);
+  const action = editActions.find((entry) => entry === value.action);
+  const { fields, changes } = value;
+  return {
+    ...(kind ? { kind } : {}),
+    ...(action ? { action } : {}),
+    ...(isPlainRecord(value.target) ? { target: parseEditTarget(value.target) } : {}),
+    ...(typeof value.base_version === "number" ? { base_version: value.base_version } : {}),
+    ...(Array.isArray(fields)
+      ? { fields: fields.filter((field) => typeof field === "string") }
+      : {}),
+    ...(isPlainRecord(value.lines) ? { lines: parseLineCounts(value.lines) } : {}),
+    ...(Array.isArray(changes)
+      ? { changes: changes.map(parseAccessChange).filter((change) => change !== null) }
+      : {}),
+    ...(typeof value.widens === "boolean" ? { widens: value.widens } : {}),
+  };
+}
+
+/** The login an access request names, keeping the fields that hold text. */
+export function parseConnection(value: unknown): AccessWidget["connection"] {
+  if (!isPlainRecord(value)) return {};
+  return {
+    ...textFields(value, ["id", "owner_scope", "account_hint"]),
+    ...(isPlainRecord(value.server)
+      ? { server: textFields(value.server, ["id", "slug", "display_name"]) }
+      : {}),
+  };
+}
+
 /** A draft widget's fields, when the tool result carries them. */
 function draftWidget(body: Record<string, unknown>): DraftWidget | null {
-  const agent = (body.agent ?? {}) as Partial<DraftWidget["agent"]>;
-  if (typeof body.draft_id !== "string" || typeof agent.id !== "string") return null;
+  const agent = textFields(isPlainRecord(body.agent) ? body.agent : {}, ["id", "name"]);
+  if (typeof body.draft_id !== "string" || agent.id === undefined) return null;
   return {
     kind: "draft",
-    agent: { id: agent.id, name: typeof agent.name === "string" ? agent.name : agent.id },
+    agent: { id: agent.id, name: agent.name ?? agent.id },
     draft_id: body.draft_id,
-    ...(typeof body.rationale === "string" ? { rationale: body.rationale } : {}),
+    ...textFields(body, ["rationale"]),
   };
 }
 
@@ -175,30 +286,21 @@ export function widgetOf(
 ): StudioWidget | null {
   if (!message || message.payload.role !== "tool" || typeof message.payload.content !== "string")
     return null;
-  let parsed: unknown;
+  let body: unknown;
   try {
-    parsed = JSON.parse(message.payload.content);
+    body = JSON.parse(message.payload.content);
   } catch {
     return null;
   }
-  if (!parsed || typeof parsed !== "object") return null;
-  const body = parsed as Record<string, unknown>;
-  const text = (key: string) =>
-    typeof body[key] === "string" ? { [key]: body[key] as string } : {};
+  if (!isPlainRecord(body)) return null;
   if (body.widget === "studio_edit_request") {
-    return {
-      kind: "edit",
-      ...text("title"),
-      ...text("reason"),
-      edit: (body.edit as EditWidget["edit"]) ?? {},
-    };
+    return { kind: "edit", ...textFields(body, ["title", "reason"]), edit: parseEdit(body.edit) };
   }
   if (body.widget === "studio_connection_access") {
     return {
       kind: "access",
-      ...text("title"),
-      ...text("reason"),
-      connection: (body.connection as AccessWidget["connection"]) ?? {},
+      ...textFields(body, ["title", "reason"]),
+      connection: parseConnection(body.connection),
     };
   }
   if (body.widget === "studio_task_draft") return draftWidget(body);
@@ -222,9 +324,12 @@ export type PinnedFocus = {
 export function focusOf(message: Pick<StudioMessage, "metadata">): PinnedFocus | null {
   const meta = message.metadata ?? {};
   if (meta.source !== "studio_focus") return null;
-  const focus = (meta.focus ?? {}) as Record<string, unknown>;
+  const focus: Record<string, unknown> = isPlainRecord(meta.focus) ? meta.focus : {};
+  const { seq } = focus;
   return {
-    ...(focus as Partial<PinnedFocus>),
+    ...textFields(focus, ["agent_id", "run_id", "schedule_id", "display_path"]),
+    ...nullableTextFields(focus, ["call_id", "revision_id"]),
+    ...(typeof seq === "number" || seq === null ? { seq } : {}),
     kind: typeof focus.kind === "string" ? focus.kind : "focus",
     label: typeof focus.label === "string" ? focus.label : "Pinned evidence",
   };
