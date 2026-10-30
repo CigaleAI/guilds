@@ -63,11 +63,13 @@ function defaultAccess(owner: AccessOwner, manager: boolean): SecretAccessChoice
   return { org_wide: manager, guild_ids: [], agent_ids: [] };
 }
 
+type AccessSecretsProps = { owner: AccessOwner };
+
 /**
  * Values that reach agents' commands as environment variables. Each secret belongs to the
  * organisation under one name; its access says which agents get it.
  */
-export function AccessSecrets({ owner }: { owner: AccessOwner }) {
+export function AccessSecrets({ owner }: AccessSecretsProps) {
   const { org } = useIdentity();
   const manager = managesSecrets(org.role);
   const secrets = useSecrets(owner);
@@ -197,8 +199,10 @@ export function AccessSecrets({ owner }: { owner: AccessOwner }) {
   );
 }
 
+type SecretReachProps = { secret: Pick<Secret, "org_wide" | "grants"> };
+
 /** Available to as chips: Organisation, each granted guild and agent, or Unassigned. */
-export function SecretReach({ secret }: { secret: Pick<Secret, "org_wide" | "grants"> }) {
+export function SecretReach({ secret }: SecretReachProps) {
   return (
     <span className="flex min-w-0 flex-wrap items-center gap-1">
       {availableTo(secret).map((reach, index) => (
@@ -216,7 +220,9 @@ export function SecretReach({ secret }: { secret: Pick<Secret, "org_wide" | "gra
   );
 }
 
-function SecretRow({ secret, actions }: { secret: Secret; actions: ReactNode }) {
+type SecretRowProps = { secret: Secret; actions: ReactNode };
+
+function SecretRow({ secret, actions }: SecretRowProps) {
   const origin = secretOrigin(secret);
   return (
     <div className="flex min-w-0 items-start gap-2.5 border-b border-line px-3.5 py-3 last:border-b-0">
@@ -244,6 +250,16 @@ function nameError(name: string): string | undefined {
     : undefined;
 }
 
+type AddSecretDialogProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  initialAccess: SecretAccessChoice;
+  manager: boolean;
+  initialName?: string;
+  initialDescription?: string;
+  onCreated?: (secret: Secret) => void;
+};
+
 /**
  * Adds a secret with its access. `initialName` and `initialDescription` start the form, as the
  * subscription token picker does; `onCreated` hears the secret once it is stored.
@@ -256,15 +272,7 @@ export function AddSecretDialog({
   initialName = "",
   initialDescription = "",
   onCreated,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  initialAccess: SecretAccessChoice;
-  manager: boolean;
-  initialName?: string;
-  initialDescription?: string;
-  onCreated?: (secret: Secret) => void;
-}) {
+}: AddSecretDialogProps) {
   const create = useCreateSecret();
   const [name, setName] = useState(initialName);
   const [value, setValue] = useState("");
@@ -361,7 +369,9 @@ export function AddSecretDialog({
   );
 }
 
-function EditSecretDialog({ secret, onClose }: { secret: Secret; onClose: () => void }) {
+type EditSecretDialogProps = { secret: Secret; onClose: () => void };
+
+function EditSecretDialog({ secret, onClose }: EditSecretDialogProps) {
   const update = useUpdateSecret();
   const [name, setName] = useState(secret.name);
   const [description, setDescription] = useState(secret.description);
@@ -446,8 +456,10 @@ function EditSecretDialog({ secret, onClose }: { secret: Secret; onClose: () => 
   );
 }
 
+type SecretAccessDialogProps = { secret: Secret; onClose: () => void };
+
 /** Change access: organisation-wide, or the guilds and agents picked. Org owners and admins only. */
-function SecretAccessDialog({ secret, onClose }: { secret: Secret; onClose: () => void }) {
+function SecretAccessDialog({ secret, onClose }: SecretAccessDialogProps) {
   const setAccess = useSetSecretAccess();
   const [access, setChoice] = useState(() => visibleAccess(secret));
   const hidden = secret.org_wide ? 0 : secret.grants.filter((grant) => grant.id === null).length;

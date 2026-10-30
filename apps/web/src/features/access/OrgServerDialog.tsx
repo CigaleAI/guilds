@@ -24,19 +24,17 @@ const empty: OrgServerInput = {
   description: "",
 };
 
+type OrgServerDialogProps = {
+  orgId: string;
+  open: boolean;
+  onClose: () => void;
+};
+
 /**
  * Adds a remote MCP server for this organisation alone: a URL on public HTTPS and how it signs
  * in. A blank name and description fill in from the server once a login connects.
  */
-export function OrgServerDialog({
-  orgId,
-  open,
-  onClose,
-}: {
-  orgId: string;
-  open: boolean;
-  onClose: () => void;
-}) {
+export function OrgServerDialog({ orgId, open, onClose }: OrgServerDialogProps) {
   const add = useAddOrgServer(orgId);
   const [form, setForm] = useState<OrgServerInput>(empty);
   const set = (patch: Partial<OrgServerInput>) => setForm({ ...form, ...patch });

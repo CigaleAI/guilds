@@ -50,15 +50,13 @@ const paneOptions: { value: ToolsPane; label: string }[] = [
   { value: "builtin", label: "Native tools" },
 ];
 
-function Pane({
-  title,
-  description,
-  children,
-}: {
+type PaneProps = {
   title: string;
   description: string;
   children: ReactNode;
-}) {
+};
+
+function Pane({ title, description, children }: PaneProps) {
   return (
     <section aria-label={title} className="flex flex-col gap-3">
       <p className="text-sm text-fg-2">{description}</p>
@@ -72,6 +70,17 @@ function connectable<T extends { slug: string }>(servers: T[], _owner: AccessOwn
   return servers;
 }
 
+type AccessToolsProps = {
+  owner: AccessOwner;
+  hideFamilies?: string[];
+  /** Which of the two sections to show. */
+  panes?: readonly ToolsPane[];
+  /** Agent capabilities that gate browser and coding tools. */
+  capabilities?: AgentNativeCapabilities;
+  /** The viewer may add and remove the organisation's own remote servers. */
+  serverManager?: boolean;
+};
+
 /**
  * What a scope's agents can use: integrations and native tools. Each switch sets the scope's own binding over what it inherits from wider scopes,
  * organisation and the platform; runs take the tools as they are when they start.
@@ -82,16 +91,7 @@ export function AccessTools({
   panes = allPanes,
   capabilities,
   serverManager = false,
-}: {
-  owner: AccessOwner;
-  hideFamilies?: string[];
-  /** Which of the two sections to show. */
-  panes?: readonly ToolsPane[];
-  /** Agent capabilities that gate browser and coding tools. */
-  capabilities?: AgentNativeCapabilities;
-  /** The viewer may add and remove the organisation's own remote servers. */
-  serverManager?: boolean;
-}) {
+}: AccessToolsProps) {
   const copy = scopeCopy(owner);
   const access = useAccess(owner);
   const setBinding = useSetBinding(owner);
@@ -341,17 +341,14 @@ export function AccessTools({
   );
 }
 
-function NativeFamily({
-  label,
-  count,
-  defaultOpen,
-  children,
-}: {
+type NativeFamilyProps = {
   label: string;
   count: number;
   defaultOpen: boolean;
   children: ReactNode;
-}) {
+};
+
+function NativeFamily({ label, count, defaultOpen, children }: NativeFamilyProps) {
   const [open, setOpen] = useState(defaultOpen);
   const bodyId = useId();
   return (
@@ -376,7 +373,9 @@ function NativeFamily({
   );
 }
 
-function Frame({ children }: { children: ReactNode }) {
+type FrameProps = { children: ReactNode };
+
+function Frame({ children }: FrameProps) {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-7 py-6">
       <div className="mx-auto flex max-w-240 flex-col gap-6">{children}</div>

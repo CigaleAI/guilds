@@ -113,22 +113,9 @@
       "count": 1
     }
   },
-  "src/features/access/AccessListPanel.tsx": {
-    "no-restricted-syntax": {
-      "count": 3
-    }
-  },
-  "src/features/access/AccessSecrets.tsx": {
-    "no-restricted-syntax": {
-      "count": 6
-    }
-  },
   "src/features/access/AccessTools.tsx": {
     "complexity": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 4
     }
   },
   "src/features/access/ConnectDialogs.tsx": {
@@ -136,7 +123,7 @@
       "count": 2
     },
     "no-restricted-syntax": {
-      "count": 2
+      "count": 1
     }
   },
   "src/features/access/GithubRepositories.tsx": {
@@ -145,39 +132,15 @@
     },
     "complexity": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/features/access/OrgServerDialog.tsx": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/features/access/ReachList.tsx": {
-    "no-restricted-syntax": {
-      "count": 6
-    }
-  },
-  "src/features/access/SecretAccessPicker.tsx": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/features/access/SecretValueField.tsx": {
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/features/access/ServerCard.tsx": {
     "complexity": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
       "count": 1
     }
   },
@@ -189,15 +152,12 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 6
+      "count": 2
     }
   },
   "src/features/access/TestConnectionDialog.tsx": {
     "complexity": {
       "count": 2
-    },
-    "no-restricted-syntax": {
-      "count": 4
     }
   },
   "src/features/access/access.ts": {
@@ -205,9 +165,6 @@
       "count": 3
     },
     "complexity": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
       "count": 1
     }
   },

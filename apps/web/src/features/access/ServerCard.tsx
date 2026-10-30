@@ -287,19 +287,17 @@ export function ServerCard({
   );
 }
 
+type LoginSettingsProps = {
+  server: McpServerAccess;
+  schema: Record<string, unknown>;
+  owned: string | null;
+};
+
 /**
  * What the login stores beside its credentials, as its connector's schema describes it. The
  * scope that owns the login edits and saves it; an inherited login's settings are read-only.
  */
-function LoginSettings({
-  server,
-  schema,
-  owned,
-}: {
-  server: McpServerAccess;
-  schema: Record<string, unknown>;
-  owned: string | null;
-}) {
+function LoginSettings({ server, schema, owned }: LoginSettingsProps) {
   const connectionId = owned ?? server.connection_id ?? "";
   const save = useSaveSettings(connectionId);
   const [draft, setDraft] = useState<SettingsValue>(server.settings);

@@ -150,6 +150,9 @@ type OAuthDialogProps = {
   onDone: (connected: boolean) => void;
 };
 
+/** What the provider's sign-in window posts back to this page once the login completes or fails. */
+type SignInWindowMessage = { type?: string; success?: boolean };
+
 function openCentered(url: string) {
   const width = 640;
   const height = 760;
@@ -191,7 +194,7 @@ export function OAuthDialog({ pending, onDone }: OAuthDialogProps) {
 
   useEffect(() => {
     if (!pending) return;
-    const onMessage = (event: MessageEvent<{ type?: string; success?: boolean } | null>) => {
+    const onMessage = (event: MessageEvent<SignInWindowMessage | null>) => {
       if (event.data?.type === "oauth_complete" && event.data.success) void refetch();
     };
     window.addEventListener("message", onMessage);

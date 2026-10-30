@@ -47,11 +47,8 @@ function matchesToolState(enabled: boolean, filter: ToolFilter): boolean {
   return filter === "all" || enabled === (filter === "active");
 }
 
-function matchesToolQuery(
-  tool: Pick<AccessBinding, "name"> & { description?: string },
-  needle: string,
-): boolean {
-  return !needle || `${tool.name} ${tool.description ?? ""}`.toLowerCase().includes(needle);
+function matchesToolQuery(name: string, description: string | undefined, needle: string): boolean {
+  return !needle || `${name} ${description ?? ""}`.toLowerCase().includes(needle);
 }
 
 export function filterTools<
@@ -59,7 +56,9 @@ export function filterTools<
 >(tools: readonly T[], query: string, filter: ToolFilter): T[] {
   const needle = query.trim().toLowerCase();
   return tools.filter(
-    (tool) => matchesToolState(tool.enabled, filter) && matchesToolQuery(tool, needle),
+    (tool) =>
+      matchesToolState(tool.enabled, filter) &&
+      matchesToolQuery(tool.name, tool.description, needle),
   );
 }
 

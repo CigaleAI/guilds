@@ -179,13 +179,12 @@ type LookupFieldProps = {
   search: (query: string) => Promise<LookupOption[]>;
 };
 
-function Results({
-  options,
-  onPick,
-}: {
+type ResultsProps = {
   options: LookupOption[];
   onPick: (option: LookupOption) => void;
-}) {
+};
+
+function Results({ options, onPick }: ResultsProps) {
   return (
     <ul className="flex max-h-56 flex-col overflow-y-auto rounded-lg bg-surface p-1">
       {options.length ? (
@@ -213,7 +212,9 @@ function Results({
   );
 }
 
-function Heading({ label, hint }: { label: string; hint: string }) {
+type HeadingProps = { label: string; hint: string };
+
+function Heading({ label, hint }: HeadingProps) {
   return (
     <div className="flex flex-col gap-0.5">
       <span className="text-sm font-semibold">{label}</span>
@@ -222,20 +223,14 @@ function Heading({ label, hint }: { label: string; hint: string }) {
   );
 }
 
-/** A list setting filled from a search: chips for what is stored, a search box to add more. */
-function LookupList({
-  label,
-  hint,
-  disabled,
-  search,
-  items,
-  max,
-  onChange,
-}: LookupFieldProps & {
+type LookupListProps = LookupFieldProps & {
   items: unknown[];
   max: number | undefined;
   onChange?: (next: unknown[]) => void;
-}) {
+};
+
+/** A list setting filled from a search: chips for what is stored, a search box to add more. */
+function LookupList({ label, hint, disabled, search, items, max, onChange }: LookupListProps) {
   const lookup = useLookup(search);
   const full = max !== undefined && items.length >= max;
   const have = new Set(items.map(itemKey));
@@ -304,15 +299,10 @@ function LookupList({
   );
 }
 
+type LookupOneProps = LookupFieldProps & { current: unknown; onChange?: (next: unknown) => void };
+
 /** A single setting picked from a search, such as one folder. */
-function LookupOne({
-  label,
-  hint,
-  disabled,
-  search,
-  current,
-  onChange,
-}: LookupFieldProps & { current: unknown; onChange?: (next: unknown) => void }) {
+function LookupOne({ label, hint, disabled, search, current, onChange }: LookupOneProps) {
   const lookup = useLookup(search);
   const [picked, setPicked] = useState<LookupOption | null>(null);
   const shown =

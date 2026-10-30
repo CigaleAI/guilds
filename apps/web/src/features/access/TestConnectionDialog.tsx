@@ -27,15 +27,13 @@ import {
 
 const unset = "__unset__";
 
-function ArgInput({
-  field,
-  value,
-  onChange,
-}: {
+type ArgInputProps = {
   field: ArgField;
   value: string;
   onChange: (value: string) => void;
-}) {
+};
+
+function ArgInput({ field, value, onChange }: ArgInputProps) {
   const label = field.required ? `${field.name} *` : field.name;
   const common = { label, hint: field.description, tone: "surface" as const };
   if (field.kind === "boolean" || field.kind === "enum") {
@@ -80,7 +78,9 @@ function ArgInput({
   );
 }
 
-function ResultView({ result }: { result: McpToolCallResult }) {
+type ResultViewProps = { result: McpToolCallResult };
+
+function ResultView({ result }: ResultViewProps) {
   const shown = prettyResult(result.content);
   const structured = shown.json !== null && typeof shown.json === "object";
   return (
@@ -127,20 +127,22 @@ export function TestConnectionDialog({
   );
 }
 
-function TestConnectionForm({
-  server,
-  tool,
-}: {
+/** One call of a listed tool on the login under test. */
+type ConnectionToolCall = { name: string; arguments_: Record<string, unknown> };
+
+type TestConnectionFormProps = {
   server: McpServerAccess;
   tool: McpToolAccess | null;
-}) {
+};
+
+function TestConnectionForm({ server, tool }: TestConnectionFormProps) {
   const [selected, setSelected] = useState<McpToolAccess | null>(tool);
   const [values, setValues] = useState(() => emptyArgValues(fieldsFromSchema(tool?.input_schema)));
   const [problem, setProblem] = useState<string | null>(null);
   const [result, setResult] = useState<McpToolCallResult | null>(null);
   const fields = useMemo(() => fieldsFromSchema(selected?.input_schema), [selected]);
   const call = useMutation({
-    mutationFn: ({ name, arguments_ }: { name: string; arguments_: Record<string, unknown> }) =>
+    mutationFn: ({ name, arguments_ }: ConnectionToolCall) =>
       callConnectionTool(server.connection_id ?? "", name, arguments_),
   });
 

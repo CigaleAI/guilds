@@ -4,17 +4,16 @@ import type { GithubSelectedRepository, McpServerAccess } from "../../api/types/
 import { IconButton, Select, Tag, toast } from "@guildsrun/ui";
 import { repositoryNameFrom } from "../guild/repositories";
 
+type GithubSettingsProps = {
+  server: McpServerAccess;
+  owned: string | null;
+};
+
 /**
  * The repositories this GitHub login's coding agents clone. Editable on the scope's own login;
  * inherited logins are read-only until the operator connects here.
  */
-export function GithubSettings({
-  server,
-  owned,
-}: {
-  server: McpServerAccess;
-  owned: string | null;
-}) {
+export function GithubSettings({ server, owned }: GithubSettingsProps) {
   const connectionId = owned ?? server.connection_id ?? "";
   const save = useSetGithubRepositories(connectionId);
   const reachable = useGithubRepositories(connectionId || null);
