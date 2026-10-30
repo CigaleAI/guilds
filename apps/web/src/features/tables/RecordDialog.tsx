@@ -17,6 +17,7 @@ import {
   DialogHeader,
   toast,
   Icon,
+  type FormFieldText,
 } from "@guildsrun/ui";
 import { fieldText, fits, parseField } from "./values";
 import { LatestChange, useOpenStepInAgent } from "../notes/LatestChange";
@@ -30,26 +31,12 @@ type FieldProps = {
   error: string | undefined;
 };
 
+/** A column's field: a pick among its values, a text area for free text, or a typed input. */
 function Field({ column, text, onChange, error }: FieldProps) {
   const label = column.required ? `${column.name} *` : column.name;
-  const common = { label, hint: column.description, ...(error ? { error } : {}) };
+  const labels = { label, hint: column.description, ...(error ? { error } : {}) };
   if (column.type === "boolean" || (column.type === "text" && column.values?.length)) {
-    const options =
-      column.type === "boolean"
-        ? [
-            { value: "true", label: "true" },
-            { value: "false", label: "false" },
-          ]
-        : (column.values ?? []).map((value) => ({ value, label: value }));
-    return (
-      <Select
-        tone="surface"
-        {...common}
-        value={text || unset}
-        onValueChange={(value) => onChange(value === unset ? "" : value)}
-        options={[{ value: unset, label: "(not set)" }, ...options]}
-      />
-    );
+    return <ChoiceField column={column} text={text} onChange={onChange} labels={labels} />;
   }
   if (column.type === "text") {
     return (
@@ -57,16 +44,55 @@ function Field({ column, text, onChange, error }: FieldProps) {
         tone="surface"
         font="sans"
         rows={2}
-        {...common}
+        {...labels}
         value={text}
         onChange={(event) => onChange(event.currentTarget.value)}
       />
     );
   }
+  return <TypedField column={column} text={text} onChange={onChange} labels={labels} />;
+}
+
+type ChoiceFieldProps = {
+  column: Column;
+  text: string;
+  onChange: (text: string) => void;
+  labels: FormFieldText;
+};
+
+/** A boolean column, or a text column with allowed values: one of them, or not set. */
+function ChoiceField({ column, text, onChange, labels }: ChoiceFieldProps) {
+  const options =
+    column.type === "boolean"
+      ? [
+          { value: "true", label: "true" },
+          { value: "false", label: "false" },
+        ]
+      : (column.values ?? []).map((value) => ({ value, label: value }));
+  return (
+    <Select
+      tone="surface"
+      {...labels}
+      value={text || unset}
+      onValueChange={(value) => onChange(value === unset ? "" : value)}
+      options={[{ value: unset, label: "(not set)" }, ...options]}
+    />
+  );
+}
+
+type TypedFieldProps = {
+  column: Column;
+  text: string;
+  onChange: (text: string) => void;
+  labels: FormFieldText;
+};
+
+/** A number, time or array column: an input of its type, an array's values comma-separated. */
+function TypedField({ column, text, onChange, labels }: TypedFieldProps) {
   return (
     <TextField
       tone="surface"
-      {...common}
+      {...labels}
       mono={column.type !== "datetime"}
       type={
         column.type === "number" ? "number" : column.type === "datetime" ? "datetime-local" : "text"
@@ -107,6 +133,22 @@ export function RecordDialog({ collection, record, onClose }: RecordDialogProps)
         ) : null}
       </DialogContent>
     </Dialog>
+  );
+}
+
+type RecordFormHeaderProps = {
+  collection: Collection;
+  record: CollectionRecord | "new";
+};
+
+/** Which record the form holds, and for a saved one who changed it last, when, and its version. */
+function RecordFormHeader({ collection, record }: RecordFormHeaderProps) {
+  if (record === "new") return <DialogHeader title="New record" description={collection.name} />;
+  return (
+    <DialogHeader
+      title={`Record #${record.id}`}
+      description={`${collection.name} · updated ${messageTime(record.updated_at)}${record.updated_by ? ` by ${record.updated_by}` : ""} · v${record.version}`}
+    />
   );
 }
 
@@ -196,14 +238,7 @@ function RecordForm({ collection, record, onClose }: RecordFormProps) {
 
   return (
     <form onSubmit={submit} className="flex min-h-0 flex-col">
-      <DialogHeader
-        title={creating ? "New record" : `Record #${record.id}`}
-        description={
-          creating
-            ? collection.name
-            : `${collection.name} · updated ${messageTime(record.updated_at)}${record.updated_by ? ` by ${record.updated_by}` : ""} · v${record.version}`
-        }
-      />
+      <RecordFormHeader collection={collection} record={record} />
       <DialogBody>
         {!creating && record.display_path ? (
           <LatestChange

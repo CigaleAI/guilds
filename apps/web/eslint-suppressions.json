@@ -368,14 +368,9 @@
       "count": 1
     }
   },
-  "src/features/tables/RecordDialog.tsx": {
-    "complexity": {
-      "count": 2
-    }
-  },
   "src/features/tables/RecordsPanel.tsx": {
     "complexity": {
-      "count": 2
+      "count": 1
     }
   }
 }

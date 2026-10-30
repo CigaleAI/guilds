@@ -59,49 +59,72 @@ function Cell({ value, column }: CellProps) {
   );
 }
 
+type ChoiceFilterProps = {
+  column: Column;
+  filter: ColumnFilter;
+  onChange: (filter: ColumnFilter) => void;
+};
+
+/** A boolean column, or one with allowed values: any record, one value, or the empty ones. */
+function ChoiceFilter({ column, filter, onChange }: ChoiceFilterProps) {
+  const values = column.type === "boolean" ? ["true", "false"] : (column.values ?? []);
+  return (
+    <Select
+      tone="paper"
+      label={column.name}
+      value={filter.value || any}
+      onValueChange={(value) => onChange({ value: value === any ? "" : value })}
+      options={[
+        { value: any, label: "any" },
+        ...values.map((value) => ({ value, label: value })),
+        { value: "(empty)", label: "(empty)" },
+      ]}
+    />
+  );
+}
+
+type RangeFilterProps = {
+  column: Column;
+  filter: ColumnFilter;
+  onChange: (filter: ColumnFilter) => void;
+};
+
+/** A number or time column: the values from one end, up to the other, or both. */
+function RangeFilter({ column, filter, onChange }: RangeFilterProps) {
+  const type = column.type === "number" ? "number" : "datetime-local";
+  return (
+    <div className="flex items-end gap-2">
+      <TextField
+        tone="paper"
+        label={`${column.name} from`}
+        type={type}
+        value={filter.from ?? ""}
+        onChange={(event) => onChange({ ...filter, from: event.currentTarget.value })}
+      />
+      <TextField
+        tone="paper"
+        label="to"
+        type={type}
+        value={filter.to ?? ""}
+        onChange={(event) => onChange({ ...filter, to: event.currentTarget.value })}
+      />
+    </div>
+  );
+}
+
 type FilterInputProps = {
   column: Column;
   filter: ColumnFilter;
   onChange: (filter: ColumnFilter) => void;
 };
 
+/** A column's filter: a pick among its values, a range for numbers and times, or contained text. */
 function FilterInput({ column, filter, onChange }: FilterInputProps) {
   if (column.type === "boolean" || column.values?.length) {
-    const values = column.type === "boolean" ? ["true", "false"] : (column.values ?? []);
-    return (
-      <Select
-        tone="paper"
-        label={column.name}
-        value={filter.value || any}
-        onValueChange={(value) => onChange({ value: value === any ? "" : value })}
-        options={[
-          { value: any, label: "any" },
-          ...values.map((value) => ({ value, label: value })),
-          { value: "(empty)", label: "(empty)" },
-        ]}
-      />
-    );
+    return <ChoiceFilter column={column} filter={filter} onChange={onChange} />;
   }
   if (column.type === "number" || column.type === "datetime") {
-    const type = column.type === "number" ? "number" : "datetime-local";
-    return (
-      <div className="flex items-end gap-2">
-        <TextField
-          tone="paper"
-          label={`${column.name} from`}
-          type={type}
-          value={filter.from ?? ""}
-          onChange={(event) => onChange({ ...filter, from: event.currentTarget.value })}
-        />
-        <TextField
-          tone="paper"
-          label="to"
-          type={type}
-          value={filter.to ?? ""}
-          onChange={(event) => onChange({ ...filter, to: event.currentTarget.value })}
-        />
-      </div>
-    );
+    return <RangeFilter column={column} filter={filter} onChange={onChange} />;
   }
   return (
     <TextField
