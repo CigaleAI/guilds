@@ -59,18 +59,25 @@ export class ConnectError extends Error {
 /** The pool a login is validated, listed and forgotten through. */
 export type ConnectPool = Pick<McpPool, "validate" | "syncTools" | "forget">;
 
+/** A db/ function with its connection bound. */
+type BoundQuery<F> = F extends (db: Queryable, ...args: infer A) => infer R ? (...args: A) => R : never;
+
+/** The db/ functions a login is connected and bound through, and the retiring of it. */
+export type ConnectDatabase = {
+  getMcpConnectionForOwner: BoundQuery<typeof getMcpConnectionForOwner>;
+  connectMcp: BoundQuery<typeof connectMcp>;
+  /** Retires a login that stopped working, and `pool` forgets it (`retireLogin`). */
+  retireLogin: (pool: ConnectPool, connection: McpConnectionRow, failure: LoginFailure) => Promise<void>;
+};
+
 /** The db/ functions a login is connected and bound through, and the retiring of it, on `db`. */
-export function connectDatabase(db: Queryable) {
+export function connectDatabase(db: Queryable): ConnectDatabase {
   return {
     getMcpConnectionForOwner: bindQuery(db, getMcpConnectionForOwner),
     connectMcp: bindQuery(db, connectMcp),
-    /** Retires a login that stopped working, and `pool` forgets it (`retireLogin`). */
-    retireLogin: (pool: ConnectPool, connection: McpConnectionRow, failure: LoginFailure) =>
-      retireLogin(pool, db, connection, failure),
+    retireLogin: (pool, connection, failure) => retireLogin(pool, db, connection, failure),
   };
 }
-
-export type ConnectDatabase = ReturnType<typeof connectDatabase>;
 
 /** The form's values for a token login, by field: every declared field trimmed, the required ones present. */
 export function tokenCredentials(server: LoadedConnector, values: Record<string, unknown>): Credentials {

@@ -1,6 +1,6 @@
 import { Value } from "@sinclair/typebox/value";
 import type { ConnectorTool } from "../connectors/types.js";
-import { jsonObj } from "../db/json.js";
+import { isPlainRecord, jsonObj } from "../db/json.js";
 import type { McpToolRow } from "../db/mcp.js";
 import { ToolInputSchema } from "../db/schema/index.js";
 import { llmToolParameters } from "../lib/tool-schema.js";
@@ -50,7 +50,7 @@ function pythonOr(...values: unknown[]): unknown {
     if (value === null || value === undefined || value === false || value === 0 || value === "") {
       continue;
     }
-    if (typeof value === "object" && !Array.isArray(value) && Object.keys(value as object).length === 0) {
+    if (isPlainRecord(value) && Object.keys(value).length === 0) {
       continue;
     }
     return value;
@@ -92,9 +92,7 @@ export function remoteConnectorTool(tool: Record<string, unknown>): ConnectorToo
   const listed = fromRemote("", tool);
   const annotations = jsonObj(tool.annotations);
   const hint = (name: string): boolean | null => {
-    const value = annotations && typeof annotations === "object" && !Array.isArray(annotations)
-      ? (annotations as Record<string, unknown>)[name]
-      : undefined;
+    const value = isPlainRecord(annotations) ? annotations[name] : undefined;
     return typeof value === "boolean" ? value : null;
   };
   return {

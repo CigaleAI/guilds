@@ -169,11 +169,17 @@ async function requirePickerSession(services: ConnectFlowServices, state: string
   return session;
 }
 
+/** The installations of the App a picking user reaches, each by id and account, and where to install it on another account. */
+export type GithubInstallationPicker = {
+  installations: Array<Pick<GithubInstallation, "id" | "account">>;
+  install_url: string;
+};
+
 /** The installations of the App the picking user reaches, and where to install it on another account. */
 export async function listGithubInstallations(
   services: ConnectFlowServices,
   state: string | undefined,
-) {
+): Promise<GithubInstallationPicker> {
   const session = await requirePickerSession(services, state);
   try {
     const choice = await resolveGithubInstallation(

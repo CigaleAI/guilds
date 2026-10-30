@@ -18,7 +18,7 @@ import {
   type RemoteInfo,
   type RemoteSession,
 } from "../connectors/types.js";
-import { jsonObj } from "../db/json.js";
+import { isPlainRecord, jsonObj } from "../db/json.js";
 import type { McpConnectionRow, McpToolRow } from "../db/mcp.js";
 import type { Queryable } from "../db/pg.js";
 import { utcMonth } from "../db/usage.js";
@@ -65,9 +65,7 @@ function latestListedAt(rows: McpToolRow[]): number | null {
 
 function serverUrl(server: LoadedConnector): string {
   const config = jsonObj(server.config);
-  const url = config && typeof config === "object" && !Array.isArray(config)
-    ? (config as { url?: unknown }).url
-    : undefined;
+  const url = isPlainRecord(config) ? config.url : undefined;
   if (typeof url !== "string" || !url.trim()) {
     throw new McpError("mcp server is missing a url");
   }
@@ -88,6 +86,12 @@ export const OPERATOR_CALLER: McpCaller = { orgId: null, workspaceDir: null };
 
 /** A call of one of a login's remote tools: its name on the remote, its arguments, and who calls it. */
 export type RemoteCall = { tool: string; arguments: Record<string, unknown>; caller: McpCaller };
+
+/**
+ * How a login's tools are listed: `force` lists them again however fresh the stored listing is,
+ * and `validate` runs the connector's check first, by default when forced.
+ */
+export type ToolListing = { force?: boolean; validate?: boolean };
 
 /** A pooled session and when the credential it sends expires. */
 type PooledSession = { session: McpSession; expiresAt: number | null };
@@ -196,11 +200,8 @@ export class McpPool {
   /** Writes an Off overlay at the login's owner for each listed tool that starts Off, unless one is there. */
   private async writeDefaultOff(connection: McpConnectionRow, offered: ListedServerTool[], now: Date): Promise<void> {
     const ownerScope = connection.owner_scope;
-    if (typeof ownerScope !== "string" || !ownerScope) {
-      return;
-    }
-    const ownerId = connection.owner_id;
-    if (ownerScope !== "platform" && typeof ownerId !== "string") {
+    const scopeId = ownerScope === "platform" ? null : connection.owner_id;
+    if (ownerScope !== "platform" && scopeId === null) {
       return;
     }
     const off = new Set(offered.filter((tool) => !tool.default_enabled).map((tool) => tool.namespaced_name));
@@ -211,7 +212,7 @@ export class McpPool {
           catalogKind: "mcp_tool",
           catalogId: namespacedName,
           scope: ownerScope,
-          scopeId: ownerScope === "platform" ? null : (ownerId as string),
+          scopeId,
           enabled: false,
         },
         now,
@@ -417,7 +418,7 @@ export class McpPool {
   async syncTools(
     connection: McpConnectionRow,
     server: LoadedConnector,
-    options: { force?: boolean; validate?: boolean } = {},
+    options: ToolListing = {},
   ): Promise<ListedTool[]> {
     const force = options.force ?? false;
     const validate = options.validate ?? force;

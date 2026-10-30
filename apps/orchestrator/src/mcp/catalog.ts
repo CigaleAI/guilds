@@ -73,7 +73,7 @@ function editsFields(server: LoadedConnector): boolean {
 /** A connector as the Admin tab shows it: the effective copy, what overrides it, and its tools. */
 export function catalogServerItem(server: LoadedConnector): Record<string, unknown> {
   const upstream = server.upstream;
-  const config = jsonObj(server.config) as { url?: unknown } | null;
+  const config = jsonObj(server.config);
   return {
     id: server.id,
     slug: server.slug,
@@ -84,7 +84,7 @@ export function catalogServerItem(server: LoadedConnector): Record<string, unkno
     description: server.description || "",
     limitations: server.limitations,
     setup_hint: server.setup_hint,
-    url: typeof config?.url === "string" ? config.url : null,
+    url: isPlainRecord(config) && typeof config.url === "string" ? config.url : null,
     enabled: server.enabled,
     tool_prefix: server.tool_prefix,
     version: server.version,
@@ -113,17 +113,18 @@ export function validateSlug(raw: string): string {
 }
 
 export function validateAuth(raw: string): Manifest["auth"]["kind"] {
-  if (!(AUTH_KINDS as readonly string[]).includes(raw)) {
+  const kind = AUTH_KINDS.find((item) => item === raw);
+  if (kind === undefined) {
     throw new CatalogError("auth must be none, token, or oauth");
   }
-  return raw as Manifest["auth"]["kind"];
+  return kind;
 }
 
 export function validateOauthStrategy(auth: string, raw: unknown): string {
   if (raw === undefined || raw === null || raw === "") {
     return auth === "oauth" ? "dynamic" : "none";
   }
-  if (typeof raw !== "string" || !(OAUTH_STRATEGIES as readonly string[]).includes(raw)) {
+  if (typeof raw !== "string" || !OAUTH_STRATEGIES.some((strategy) => strategy === raw)) {
     throw new CatalogError("oauth_strategy must be none, dynamic, or configured");
   }
   if (auth !== "oauth" && raw !== "none") {
@@ -192,8 +193,8 @@ export function validateInputSchema(raw: unknown): ToolInputSchema {
   return schema;
 }
 
-/** A hand-made connector's manifest from the Admin form, checked like a folder's. */
-function handManifest(fields: {
+/** A hand-made connector as the Admin form gives it, each field checked, with the tools it keeps. */
+type HandConnector = {
   slug: string;
   displayName: string;
   url: string;
@@ -203,7 +204,10 @@ function handManifest(fields: {
   limitations: string | null;
   setupHint: string | null;
   tools?: Manifest["tools"];
-}): Manifest {
+};
+
+/** A hand-made connector's manifest from the Admin form, checked like a folder's. */
+function handManifest(fields: HandConnector): Manifest {
   const manifest = {
     slug: fields.slug,
     display_name: fields.displayName,
