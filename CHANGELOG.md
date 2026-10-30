@@ -566,7 +566,10 @@ and lists a guild's shared notes with `listSharedNotes(orgSlug,
 guildName, prefix)`, in place of `readNote`, `listNotes` and
 `writeNote`, which took a scope. A shared note is read and written
 with `readSharedFile` and `writeSharedFile` alone. `notesRoot` and
-`resolveScopePath` are gone. The group chat,
+`resolveScopePath` are gone. `NotesError` is exported from
+`notes/errors.js`, and `FIXED_AGENT_FILES`, `ROUTINES_DIR` and
+`HOST_FOLDERS` from `notes/paths.js`, in place of `notes/store.js`,
+which keeps `NotesStore` and `SYSTEM_PROMPT`. The group chat,
 `GenerationLoop.groupChat`, names each method once, in camelCase:
 `postFromRun`, `postUser`, `listMessages`, `setLimit`, `resumeAll`,
 and `isDispatching`, in place of `post_from_run`, `post_user`,

@@ -3,7 +3,8 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "no
 import path from "node:path";
 import { test } from "node:test";
 import { pythonQuote } from "../../src/lib/contain.js";
-import { NotesError, NotesStore } from "../../src/notes/store.js";
+import { NotesError } from "../../src/notes/errors.js";
+import { NotesStore } from "../../src/notes/store.js";
 import { loadJsonFixture, templatesRoot } from "../helpers/fixtures.js";
 import { tempDir } from "../helpers/env.js";
 
