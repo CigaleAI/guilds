@@ -354,11 +354,6 @@
       "count": 1
     }
   },
-  "src/features/models/ModelSetupGate.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/features/notes/NotesBrowser.tsx": {
     "complexity": {
       "count": 2
