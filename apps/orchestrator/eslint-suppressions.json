@@ -1201,14 +1201,11 @@
     }
   },
   "src/studio/edits.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 16
-    },
     "complexity": {
-      "count": 4
+      "count": 3
     },
     "no-restricted-syntax": {
-      "count": 5
+      "count": 1
     }
   },
   "src/studio/focus.ts": {

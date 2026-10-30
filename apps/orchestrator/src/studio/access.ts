@@ -10,6 +10,7 @@ import {
 import { resolveMcpTool } from "../access/runtime.js";
 import { newId } from "../lib/ids.js";
 import { connectionTools } from "../mcp/service.js";
+import type { AgentTarget } from "./edit-request.js";
 import type { EditDeps, EditScope } from "./edits.js";
 import { editActor } from "./actor.js";
 import { StudioConflictError, StudioUnprocessableError } from "./errors.js";
@@ -70,7 +71,7 @@ type Snapshot = {
  */
 export type AccessReview = {
   title: string;
-  target: Record<string, unknown>;
+  target: AgentTarget;
   baseHash: string;
   proposedHash: string;
   live: string;

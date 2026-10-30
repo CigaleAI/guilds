@@ -16,7 +16,14 @@ import { listAgents } from "../db/agents.js";
 import { getGuild } from "../db/guilds.js";
 import { argString } from "../toolbox/schema.js";
 import { editActor } from "./actor.js";
-import { assertContent, awaitOperator, lineDelta, requireReason } from "./edit-request.js";
+import {
+  assertContent,
+  awaitOperator,
+  lineDelta,
+  requireReason,
+  type NoteLifecycleTarget,
+  type StudioEditWidget,
+} from "./edit-request.js";
 import type { EditBase, EditDeps, EditScope } from "./edits.js";
 import { StudioConflictError, StudioUnprocessableError, artifactFailure } from "./errors.js";
 
@@ -91,7 +98,7 @@ type NotePlan =
 type NoteReview = {
   action: "create" | "delete";
   title: string;
-  target: Record<string, unknown>;
+  target: NoteLifecycleTarget;
   baseVersion: number | null;
   baseHash: string;
   proposedHash: string;
@@ -226,12 +233,12 @@ export async function reviewRecordedNote(
   scope: EditScope,
   action: NoteAction,
   args: Record<string, unknown>,
-  recorded: Record<string, unknown>,
+  recorded: NoteLifecycleTarget,
 ): Promise<NoteReview> {
   if (action === "create") {
-    return reviewNoteCreate(deps, scope, args, String(recorded.agent_id ?? "") || null);
+    return reviewNoteCreate(deps, scope, args, recorded.agent_id || null);
   }
-  return reviewNoteDelete(deps, scope, String(recorded.display_path ?? ""));
+  return reviewNoteDelete(deps, scope, recorded.display_path);
 }
 
 export async function applyNote(deps: EditDeps, scope: EditScope, plan: NotePlan): Promise<number | null> {
@@ -264,7 +271,7 @@ export async function noteCreateRequest(
   scope: EditScope,
   args: Record<string, unknown>,
   agentId: string | null,
-): Promise<Record<string, unknown>> {
+): Promise<StudioEditWidget> {
   const reason = requireReason(args);
   return noteWidget(await reviewNoteCreate(deps, scope, args, agentId), reason);
 }
@@ -274,7 +281,7 @@ export async function noteDeleteRequest(
   deps: EditDeps,
   scope: EditScope,
   args: Record<string, unknown>,
-): Promise<Record<string, unknown>> {
+): Promise<StudioEditWidget> {
   const reason = requireReason(args);
   const review = await reviewNoteDelete(deps, scope, argString(args, "display_path"));
   const expected = typeof args.base_version === "number" ? args.base_version : null;
@@ -289,7 +296,7 @@ export async function noteDeleteRequest(
   return noteWidget(review, reason);
 }
 
-function noteWidget(review: NoteReview, reason: string): Record<string, unknown> {
+function noteWidget(review: NoteReview, reason: string): StudioEditWidget {
   return awaitOperator(review.title, reason, {
     kind: "note",
     action: review.action,
