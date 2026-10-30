@@ -18,7 +18,7 @@ import { isMarketplaceModel } from "../llm/providers.js";
 import { newId } from "../lib/ids.js";
 import { EventQueue } from "../lib/event.js";
 import { AdmissionCoordinator } from "../admission/coordinator.js";
-import { OPEN_POLICY, claimCoachRun, coachRunClaims, type OrgPolicy } from "../policy/index.js";
+import { OPEN_POLICY, claimCoachRun, type OrgPolicy } from "../policy/index.js";
 import { ConversationRunner } from "../conversation/runner.js";
 import type { CapabilityService } from "../capabilities/index.js";
 import { assignGuildLooks } from "../avatars/looks.js";
@@ -281,7 +281,7 @@ export class BuilderService {
         throw new BuilderConflictError("builder session is already generating");
       }
       const now = new Date();
-      await claimCoachRun(this.policy, coachRunClaims(client), locked.org_id, now);
+      await claimCoachRun(this.policy, client, locked.org_id, now);
       const recipe = await getRecipe(client, String(locked.recipe_id));
       if (!recipe) {
         throw new BuilderError(404, "recipe not found");

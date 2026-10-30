@@ -18,7 +18,7 @@ import { iso } from "../db/views.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { Schedules } from "../schedules/service.js";
 import { AdmissionCoordinator } from "../admission/coordinator.js";
-import { OPEN_POLICY, claimCoachRun, coachRunClaims, type OrgPolicy } from "../policy/index.js";
+import { OPEN_POLICY, claimCoachRun, type OrgPolicy } from "../policy/index.js";
 import {
   STUDIO_DEFAULT_TEMPERATURE,
   STUDIO_MAX_STEPS,
@@ -759,7 +759,7 @@ export class StudioService {
         throw new StudioConflictError("studio session is already generating");
       }
       const now = new Date();
-      await claimCoachRun(this.policy, coachRunClaims(client), locked.org_id, now);
+      await claimCoachRun(this.policy, client, locked.org_id, now);
       const rows = await studioInventory(this.deps.db, session.source_guild_id, locked.id);
       const systemContent = await this.refreshSystemMessage(locked, rows, client);
       const generation = Number(locked.generation_number) + 1;

@@ -534,6 +534,14 @@ builds `Schedules`, in place of `scheduleDatabase` and
 `scheduleQueries`. `ensureClient` (`oauth/index.js`) takes the
 connection, a connector and a redirect URI, in place of
 `oauthDatabase(db)` and fetch options.
+The cap checks of `policy/index.js`, `assertCanCreateAgent`,
+`assertCanCreateAgents`, `assertCanCreateGuild`, `assertCanPlaceAgents`,
+`assertCanEnableBrowser`, `assertCanEnableCoding` and `claimCoachRun`,
+take the connection in place of the counts or claims, and bind them on
+it: `orgCounts`, `machineCounts` and `coachRunClaims` are not exported.
+Each has a `Through` beside it, `assertCanCreateAgentThrough` and the
+rest, that takes the `OrgCounts`, `MachineCounts` or `CoachRunClaims` a
+unit test fakes.
 `prepareWorkspace` (`sandbox/index.js`) takes no options and makes no
 browser profile; `prepareBrowserWorkspace` makes the home of an agent
 with a browser, its profile included. A sandbox provider's

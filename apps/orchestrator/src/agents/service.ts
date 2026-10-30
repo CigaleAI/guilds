@@ -36,7 +36,6 @@ import {
   assertCanCreateAgent,
   assertCanEnableBrowser,
   assertCanEnableCoding,
-  orgCounts,
   type OrgPolicy,
 } from "../policy/index.js";
 import { AgentError } from "./errors.js";
@@ -240,7 +239,7 @@ export async function createAgent(
   assertCodingAgent(config);
   await assertModelConnected(services.modelCredentials, guild.org_id, config.model);
   const needs = { browser: config.browser, coding: config.coding };
-  await assertCanCreateAgent(policy, orgCounts(db), guild.org_id, needs);
+  await assertCanCreateAgent(policy, db, guild.org_id, needs);
   await assertGuildAgentRoom(db, guild.id, 1);
   const { machine, maxAgentsPerMachine } = await placeAgent(
     services,
@@ -285,10 +284,10 @@ async function assertCanEnable(
   previous: Record<string, unknown>,
 ): Promise<void> {
   if (config.browser && !previous.browser) {
-    await assertCanEnableBrowser(services.policy, orgCounts(services.db), agent.org_id, false);
+    await assertCanEnableBrowser(services.policy, services.db, agent.org_id, false);
   }
   if (config.coding && !previous.coding) {
-    await assertCanEnableCoding(services.policy, orgCounts(services.db), agent.org_id);
+    await assertCanEnableCoding(services.policy, services.db, agent.org_id);
   }
 }
 

@@ -953,14 +953,6 @@
       "count": 1
     }
   },
-  "src/policy/index.ts": {
-    "@typescript-eslint/explicit-module-boundary-types": {
-      "count": 3
-    },
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
   "src/prompts/index.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1

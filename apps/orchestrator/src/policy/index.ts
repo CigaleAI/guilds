@@ -95,7 +95,7 @@ export const OPEN_POLICY: OrgPolicy = {
 };
 
 /** The live counts the caps are checked against. */
-export function orgCounts(db: Queryable) {
+function orgCounts(db: Queryable) {
   return {
     countOrgAgents: bindQuery(db, countOrgAgents),
     countOrgBrowserAgents: bindQuery(db, countOrgBrowserAgents),
@@ -107,7 +107,7 @@ export function orgCounts(db: Queryable) {
 export type OrgCounts = ReturnType<typeof orgCounts>;
 
 /** The live counts the machine caps are checked against. */
-export function machineCounts(db: Queryable) {
+function machineCounts(db: Queryable) {
   return {
     countMachineAgents: bindQuery(db, countMachineAgents),
   };
@@ -120,11 +120,27 @@ export function remaining(limit: number | null, count: number): number | null {
   return limit === null ? null : Math.max(0, limit - count);
 }
 
+/** The agents a create adds, and how many of them have Browser and Coding on. */
+export type AddedAgents = { agents: number; browserAgents: number; codingAgents: number };
+
+/** Whether a new agent has Browser and Coding on. */
+export type AgentFlags = { browser: boolean; coding: boolean };
+
 export async function assertCanCreateAgents(
+  policy: OrgPolicy,
+  db: Queryable,
+  orgId: string,
+  adding: AddedAgents,
+): Promise<void> {
+  await assertCanCreateAgentsThrough(policy, orgCounts(db), orgId, adding);
+}
+
+/** `assertCanCreateAgents` through `counts`, the dependencies object a unit test fakes. */
+export async function assertCanCreateAgentsThrough(
   policy: OrgPolicy,
   counts: OrgCounts,
   orgId: string,
-  adding: { agents: number; browserAgents: number; codingAgents: number },
+  adding: AddedAgents,
 ): Promise<void> {
   const { limits, blocked } = await policy.standing(orgId);
   if (blocked) {
@@ -151,11 +167,21 @@ export async function assertCanCreateAgents(
 
 export async function assertCanCreateAgent(
   policy: OrgPolicy,
+  db: Queryable,
+  orgId: string,
+  flags: AgentFlags,
+): Promise<void> {
+  await assertCanCreateAgentThrough(policy, orgCounts(db), orgId, flags);
+}
+
+/** `assertCanCreateAgent` through `counts`, the dependencies object a unit test fakes. */
+export async function assertCanCreateAgentThrough(
+  policy: OrgPolicy,
   counts: OrgCounts,
   orgId: string,
-  flags: { browser: boolean; coding: boolean },
+  flags: AgentFlags,
 ): Promise<void> {
-  await assertCanCreateAgents(policy, counts, orgId, {
+  await assertCanCreateAgentsThrough(policy, counts, orgId, {
     agents: 1,
     browserAgents: flags.browser ? 1 : 0,
     codingAgents: flags.coding ? 1 : 0,
@@ -183,6 +209,17 @@ export async function machineCap(policy: OrgPolicy, orgId: string): Promise<Held
  */
 export async function assertCanPlaceAgents(
   policy: OrgPolicy,
+  db: Queryable,
+  orgId: string,
+  machineId: string,
+  adding: number,
+): Promise<number | null> {
+  return assertCanPlaceAgentsThrough(policy, machineCounts(db), orgId, machineId, adding);
+}
+
+/** `assertCanPlaceAgents` through `counts`, the dependencies object a unit test fakes. */
+export async function assertCanPlaceAgentsThrough(
+  policy: OrgPolicy,
   counts: MachineCounts,
   orgId: string,
   machineId: string,
@@ -199,7 +236,12 @@ export async function assertCanPlaceAgents(
 }
 
 /** `maxGuilds` caps the organisation's live guilds. */
-export async function assertCanCreateGuild(policy: OrgPolicy, counts: OrgCounts, orgId: string): Promise<void> {
+export async function assertCanCreateGuild(policy: OrgPolicy, db: Queryable, orgId: string): Promise<void> {
+  await assertCanCreateGuildThrough(policy, orgCounts(db), orgId);
+}
+
+/** `assertCanCreateGuild` through `counts`, the dependencies object a unit test fakes. */
+export async function assertCanCreateGuildThrough(policy: OrgPolicy, counts: OrgCounts, orgId: string): Promise<void> {
   const { limits } = await policy.standing(orgId);
   if (limits.maxGuilds !== null && (await counts.countOrgGuilds(orgId)) >= limits.maxGuilds) {
     throw new LimitError(limits.source, "guilds");
@@ -207,6 +249,16 @@ export async function assertCanCreateGuild(policy: OrgPolicy, counts: OrgCounts,
 }
 
 export async function assertCanEnableBrowser(
+  policy: OrgPolicy,
+  db: Queryable,
+  orgId: string,
+  alreadyBrowser: boolean,
+): Promise<void> {
+  await assertCanEnableBrowserThrough(policy, orgCounts(db), orgId, alreadyBrowser);
+}
+
+/** `assertCanEnableBrowser` through `counts`, the dependencies object a unit test fakes. */
+export async function assertCanEnableBrowserThrough(
   policy: OrgPolicy,
   counts: OrgCounts,
   orgId: string,
@@ -225,7 +277,12 @@ export async function assertCanEnableBrowser(
 }
 
 /** Turning `coding` on for an existing agent takes one more of the organisation's coding agents. */
-export async function assertCanEnableCoding(policy: OrgPolicy, counts: OrgCounts, orgId: string): Promise<void> {
+export async function assertCanEnableCoding(policy: OrgPolicy, db: Queryable, orgId: string): Promise<void> {
+  await assertCanEnableCodingThrough(policy, orgCounts(db), orgId);
+}
+
+/** `assertCanEnableCoding` through `counts`, the dependencies object a unit test fakes. */
+export async function assertCanEnableCodingThrough(policy: OrgPolicy, counts: OrgCounts, orgId: string): Promise<void> {
   const { limits, blocked } = await policy.standing(orgId);
   if (blocked) {
     throw blocked;
@@ -236,14 +293,27 @@ export async function assertCanEnableCoding(policy: OrgPolicy, counts: OrgCounts
 }
 
 /** The month's Studio and Builder runs, claimed on `db`: the pool, or the transaction that starts the run. */
-export function coachRunClaims(db: Queryable) {
+function coachRunClaims(db: Queryable) {
   return { claimMonthlyStudioBuilderRun: bindQuery(db, claimMonthlyStudioBuilderRun) };
 }
 
 export type CoachRunClaims = ReturnType<typeof coachRunClaims>;
 
-/** Counts one Studio or Builder generation against the month, refusing it past `monthlyCoachRuns`. */
+/**
+ * Counts one Studio or Builder generation against the month on `db`, the pool or the transaction
+ * that starts the run, refusing it past `monthlyCoachRuns`.
+ */
 export async function claimCoachRun(
+  policy: OrgPolicy,
+  db: Queryable,
+  orgId: string,
+  now = new Date(),
+): Promise<void> {
+  await claimCoachRunThrough(policy, coachRunClaims(db), orgId, now);
+}
+
+/** `claimCoachRun` through `claims`, the dependencies object a unit test fakes. */
+export async function claimCoachRunThrough(
   policy: OrgPolicy,
   claims: CoachRunClaims,
   orgId: string,
