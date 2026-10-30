@@ -19,9 +19,6 @@ import type { Run, RunMessage } from "./types/runs";
 import type { StudioMessage, StudioSession } from "./types/studio";
 import type { BuilderSession } from "./types/builder";
 
-export type { LiveTurn } from "./liveTurn";
-export type { ToolProgress } from "./toolProgress";
-
 type StreamOptions = {
   /** Event names to listen for. */
   events: readonly string[];
