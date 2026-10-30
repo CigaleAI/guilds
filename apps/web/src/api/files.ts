@@ -1,6 +1,6 @@
-import { ApiError, detailText } from "./client";
-import { reportClientError, requestId } from "./clientLog";
-import { authMode, identityHeaders, signInUrl } from "./session";
+import { readApiFailure } from "./client";
+import { requestId } from "./clientLog";
+import { identityHeaders } from "./session";
 import type { FileItem } from "./types/files";
 
 /** A files scope's API root: `/api/agents/:id/files`, `/api/guilds/:id/files` or `/api/org/files`. */
@@ -18,24 +18,6 @@ function bytesHeaders(extra: Record<string, string>): Record<string, string> {
   };
 }
 
-/** The failure a bytes request ended in, read the way `api` reads one. */
-async function failureOf(method: string, path: string, response: Response): Promise<ApiError> {
-  if (response.status >= 500) {
-    reportClientError({ kind: "api", message: `${method} ${path} ${response.status}` });
-  }
-  const signIn = response.status === 401 && authMode() !== "compat-cookie" ? signInUrl() : null;
-  if (signIn) {
-    window.location.assign(signIn);
-  }
-  let detail: unknown = null;
-  try {
-    detail = ((await response.json()) as { detail?: unknown }).detail;
-  } catch {
-    // Not JSON; the status text stands in.
-  }
-  return new ApiError(response.status, detailText(detail, response.statusText || `HTTP ${response.status}`));
-}
-
 /** Stores a file's bytes under a scope with its description; a file of the same name there is replaced. */
 export async function uploadFile(prefix: FilesPrefix, file: File, description: string): Promise<FileItem> {
   const response = await fetch(prefix, {
@@ -50,7 +32,7 @@ export async function uploadFile(prefix: FilesPrefix, file: File, description: s
     body: file,
   });
   if (!response.ok) {
-    throw await failureOf("POST", prefix, response);
+    throw await readApiFailure("POST", prefix, response);
   }
   return (await response.json()) as FileItem;
 }
@@ -60,7 +42,7 @@ export async function downloadFile(id: string, name: string): Promise<void> {
   const path = `/api/files/${encodeURIComponent(id)}`;
   const response = await fetch(path, { headers: bytesHeaders({}), credentials: "same-origin" });
   if (!response.ok) {
-    throw await failureOf("GET", path, response);
+    throw await readApiFailure("GET", path, response);
   }
   const url = URL.createObjectURL(await response.blob());
   try {

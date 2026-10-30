@@ -1,6 +1,6 @@
-import { ApiError, detailText } from "./client";
+import { ApiError, readApiFailure } from "./client";
 import { reportClientError, requestId } from "./clientLog";
-import { authMode, identityHeaders, signInUrl } from "./session";
+import { identityHeaders } from "./session";
 import type { ChatAttachment } from "./types/runs";
 
 /** Stores image bytes, then returns the id later messages reference. */
@@ -27,24 +27,8 @@ export async function uploadAttachment(file: File): Promise<ChatAttachment> {
     });
     throw error;
   }
-  if (response.status >= 500) {
-    reportClientError({ kind: "api", message: `POST /api/attachments ${response.status}` });
-  }
-  const signIn = response.status === 401 && authMode() !== "compat-cookie" ? signInUrl() : null;
-  if (signIn) {
-    window.location.assign(signIn);
-  }
   if (!response.ok) {
-    let detail: unknown = null;
-    try {
-      detail = ((await response.json()) as { detail?: unknown }).detail;
-    } catch {
-      // Not JSON; the status text stands in.
-    }
-    throw new ApiError(
-      response.status,
-      detailText(detail, response.statusText || `HTTP ${response.status}`),
-    );
+    throw await readApiFailure("POST", "/api/attachments", response);
   }
   return (await response.json()) as ChatAttachment;
 }
