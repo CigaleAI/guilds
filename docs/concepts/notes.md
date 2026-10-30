@@ -299,6 +299,11 @@ routes. A read or a write answers
 checks `expected_version`. Agent and guild writes and deletes
 publish `guild.artifacts.changed`.
 
+A write's `content` is a string, empty when left out, and its
+`expected_version` a number or null. A body that is not a JSON object,
+a field of another type, and a `display_path` given more than once are
+422 naming the field, before the caller is identified.
+
 The guild and agent routes need a guild the caller can see. The
 `/api/org/…` routes need only organisation membership.
 `/api/org/embeddable-notes` lists and returns notes of every guild

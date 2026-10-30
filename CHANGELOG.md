@@ -8,6 +8,22 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** The note routes of a guild, an agent and the
+organisation refuse a write whose `content` is not a string or whose
+`expected_version` is neither a number nor null, and a write whose
+body is not a JSON object; the change log, newest change and
+embeddable note routes refuse a `display_path` or `display_paths`
+given more than once in the query, and a body whose `display_paths` is
+not a list of strings. Each answers 422 naming the field, before the
+request's user is identified. Before, a `content` was read as its
+text and a write without a body wrote an empty note. An agent's note
+read an `expected_version` given as digits as its number and refused
+one of another type with `expected_version must be an integer` after
+the user was identified; a guild's or the organisation's ignored it.
+Repeated `display_path` or `display_paths` values were joined with a
+comma, and a body `display_paths` that was not a list was read as
+empty.
+
 **No impact.** The group chat routes refuse, with a 422 that names the
 field and before the request's user is identified: a post without a
 string `content` or with an `interrupt` that is not a boolean, a read

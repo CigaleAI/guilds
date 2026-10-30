@@ -643,11 +643,6 @@
       "count": 1
     }
   },
-  "src/http/note-routes.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
   "src/http/request.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 2

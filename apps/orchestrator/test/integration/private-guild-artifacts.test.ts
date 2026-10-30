@@ -123,6 +123,14 @@ test("organisation-wide note, table, and change routes keep a private guild to i
       payload: { display_paths: [notePath] },
     });
     assert.deepEqual(memberLatest.json(), {});
+    const unlisted = await app.inject({
+      method: "POST",
+      url: "/api/file-changes/latest",
+      headers: { ...TEAMMATE, ...JSON_BODY },
+      payload: { display_paths: notePath },
+    });
+    assert.equal(unlisted.statusCode, 422);
+    assert.deepEqual(unlisted.json().detail[0].loc, ["body", "display_paths"]);
 
     const ownerTable = await app.inject({ method: "GET", url: `/api/collections/${tableId}`, headers: OWNER });
     assert.equal(ownerTable.statusCode, 200);
