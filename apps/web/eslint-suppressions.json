@@ -1,19 +1,9 @@
 {
-  "src/api/attachments.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    }
-  },
   "src/api/client.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 2
     },
     "complexity": {
-      "count": 1
-    }
-  },
-  "src/api/files.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     }
   },

@@ -1,7 +1,8 @@
-import { readApiFailure } from "./client";
+import { ApiError, readApiFailure } from "./client";
 import { requestId } from "./clientLog";
 import { identityHeaders } from "./session";
 import type { FileItem } from "./types/files";
+import { hasFields, isNumber, isRecord, isString } from "./wire";
 
 /** A files scope's API root: `/api/agents/:id/files`, `/api/guilds/:id/files` or `/api/org/files`. */
 export type FilesPrefix = string;
@@ -34,7 +35,26 @@ export async function uploadFile(prefix: FilesPrefix, file: File, description: s
   if (!response.ok) {
     throw await readApiFailure("POST", prefix, response);
   }
-  return (await response.json()) as FileItem;
+  const reply: unknown = await response.json();
+  if (!isFileItem(reply)) {
+    throw new ApiError(response.status, "The server's reply is not a stored file.");
+  }
+  return reply;
+}
+
+/** Whether a reply is a stored file, as a files scope lists one. */
+export function isFileItem(value: unknown): value is FileItem {
+  return (
+    isRecord(value) &&
+    hasFields(
+      value,
+      ["id", "display_path", "name", "description", "mime", "owner_id", "author", "updated_at"],
+      isString,
+    ) &&
+    hasFields(value, ["bytes", "version"], isNumber) &&
+    (value.level === "agent" || value.level === "guild" || value.level === "org") &&
+    (value.access === undefined || value.access === "read" || value.access === "write")
+  );
 }
 
 /** Fetches a file's bytes as the operator and hands them to the browser to save under its name. */
