@@ -186,7 +186,7 @@ export async function projectAgentAccess(
     const base = await projectConnection(deps, connection, server);
     const offered = item.enabled && connection.status === "connected"
       ? base.tools
-          .filter((tool) => resolveMcpTool(rows, tool.name, { serverEnabled: true, ...scope }).enabled)
+          .filter((tool) => resolveMcpTool(rows, tool.name, scope, true).enabled)
           .map((tool) => tool.name)
       : [];
     projected.push({ ...base, server_enabled: item.enabled, offered_tools: offered });
@@ -234,12 +234,7 @@ export async function projectOfferedToolSchemas(
     }
     const listed = await deps.db.connectionTools(connection, server);
     for (const tool of listed) {
-      const resolved = resolveMcpTool(rows, tool.namespaced_name, {
-        serverEnabled: true,
-        orgId,
-        guildId,
-        agentId,
-      });
+      const resolved = resolveMcpTool(rows, tool.namespaced_name, { orgId, guildId, agentId }, true);
       if (!resolved.enabled) {
         continue;
       }

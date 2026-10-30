@@ -10,7 +10,16 @@ import type { ConnectorLogin, McpPool } from "../mcp/pool.js";
 import { connectionTools, resolveConnectionTool, type ConnectionTool } from "../mcp/service.js";
 import { MissingSecretError } from "../secrets/index.js";
 import { listServers, type LoadedConnector } from "../connectors/servers.js";
-import { ACCESS_NATIVE_TOOLS, enabledToolNames, resolveItem, resolvedMcp, resolvedTools, type Resolved } from "./index.js";
+import {
+  ACCESS_NATIVE_TOOLS,
+  enabledToolNames,
+  resolveItem,
+  resolvedMcp,
+  resolvedTools,
+  type ResolutionScope,
+  type ResolvableBinding,
+  type Resolved,
+} from "./index.js";
 import type { AgentPlaceRow } from "../db/agents.js";
 import type { RunMcpConnection, RunMcpTool, SecretRef } from "../db/schema/index.js";
 
@@ -41,24 +50,17 @@ function accessDatabase(db: Queryable) {
 
 export type AccessDatabase = ReturnType<typeof accessDatabase>;
 
+/**
+ * A listed MCP tool resolved for `scope`: off while its server is, and on when no binding names it.
+ */
 export function resolveMcpTool(
-  rows: Array<Record<string, unknown>>,
+  rows: ResolvableBinding[],
   namespaced: string,
-  options: {
-    serverEnabled: boolean;
-    orgId?: string | null;
-    guildId?: string | null;
-    agentId?: string | null;
-    viewScope?: string;
-  },
+  scope: ResolutionScope,
+  serverEnabled: boolean,
 ): Resolved {
-  const item = resolveItem(rows, "mcp_tool", namespaced, {
-    orgId: options.orgId,
-    guildId: options.guildId,
-    agentId: options.agentId,
-    viewScope: options.viewScope ?? "agent",
-  });
-  if (!options.serverEnabled) {
+  const item = resolveItem(rows, "mcp_tool", namespaced, scope);
+  if (!serverEnabled) {
     return {
       catalog_kind: item.catalog_kind,
       catalog_id: item.catalog_id,
@@ -160,7 +162,7 @@ export async function agentToolConnection(
   const tool = (await db.connectionTools(login.connection, login.server)).find(
     (item) => item.remote_name === remoteName,
   );
-  if (!tool || !resolveMcpTool(rows, tool.namespaced_name, { serverEnabled: true, ...scope }).enabled) {
+  if (!tool || !resolveMcpTool(rows, tool.namespaced_name, scope, true).enabled) {
     return null;
   }
   return login.connection;
@@ -215,9 +217,9 @@ async function loginTools(
 }
 
 /** The login's entry in the run's MCP access: its tools that resolve On, or null when none does. */
-function offeredLogin(rows: Array<Record<string, unknown>>, listing: Listing, scope: RuntimeScope): RuntimeMcpConnection | null {
+function offeredLogin(rows: ResolvableBinding[], listing: Listing, scope: RuntimeScope): RuntimeMcpConnection | null {
   const offered = listing.listed
-    .filter((tool) => resolveMcpTool(rows, tool.namespaced_name, { serverEnabled: true, ...scope }).enabled)
+    .filter((tool) => resolveMcpTool(rows, tool.namespaced_name, scope, true).enabled)
     .map((tool) => ({ name: tool.namespaced_name, remote_name: tool.remote_name, schema: tool.schema }));
   if (!offered.length) {
     return null;
@@ -238,7 +240,7 @@ async function loginsById(db: Pick<AccessDatabase, "listMcpConnections">, scope:
 export async function agentRuntimeThrough(
   db: AccessDatabase,
   agent: AgentPlaceRow,
-  options: { mcpPool?: ToolSync | null } = {},
+  mcpPool: ToolSync | null,
 ): Promise<RuntimeAccess> {
   const scope: RuntimeScope = {
     orgId: agent.org_id,
@@ -254,7 +256,7 @@ export async function agentRuntimeThrough(
   for (const [item, server] of resolvedMcp(rows, servers, scope)) {
     const connection = connectedLogin(item, server, connections);
     if (connection !== null) {
-      const listed = await loginTools(db, options.mcpPool ?? null, { connection, server }, scope.agentId);
+      const listed = await loginTools(db, mcpPool, { connection, server }, scope.agentId);
       listings.push({ connection, server, listed });
     }
   }
@@ -275,7 +277,7 @@ export async function agentRuntime(
   agent: AgentPlaceRow,
   mcpPool: ToolSync | null,
 ): Promise<RuntimeAccess> {
-  return agentRuntimeThrough(accessDatabase(db), agent, { mcpPool });
+  return agentRuntimeThrough(accessDatabase(db), agent, mcpPool);
 }
 
 /**
@@ -311,7 +313,7 @@ export async function snapshotEnvValuesThrough(
     }
     let value: string;
     try {
-      value = secretValue(decryptPayload(secret.ciphertext as Buffer, secret.nonce as Buffer));
+      value = secretValue(decryptPayload(secret.ciphertext, secret.nonce));
     } catch {
       throw new MissingSecretError(name);
     }

@@ -13,7 +13,6 @@ import {
 } from "../guilds/service.js";
 import { OPEN_POLICY } from "../policy/index.js";
 import type { AppDeps, RouteApp } from "./deps.js";
-import { notesWrite } from "./errors.js";
 import { currentOrg, currentUser } from "./identity.js";
 import { GuildParams } from "./params.js";
 import type { UserRow } from "../db/users.js";
@@ -78,7 +77,7 @@ export async function registerGuildRoutes(app: RouteApp, deps: AppDeps): Promise
       visibility: body.visibility,
     };
     const scope = { id: String(org.id), slug: String(org.slug) };
-    const guild = await notesWrite(createGuild(services, scope, actorOf(user), draft));
+    const guild = await createGuild(services, scope, actorOf(user), draft);
     return reply.code(201).send(guildItem(guild));
   });
 
@@ -103,8 +102,7 @@ export async function registerGuildRoutes(app: RouteApp, deps: AppDeps): Promise
         ...(body.visibility !== undefined ? { visibility: body.visibility } : {}),
         ...(body.routines_enabled !== undefined ? { routinesEnabled: body.routines_enabled } : {}),
       };
-      const changed = updateGuildSettings(services, guild, actorOf(user), patch);
-      return guildItem(await notesWrite(changed));
+      return guildItem(await updateGuildSettings(services, guild, actorOf(user), patch));
     },
   );
 
@@ -114,7 +112,7 @@ export async function registerGuildRoutes(app: RouteApp, deps: AppDeps): Promise
     async (request, reply) => {
       const user = await currentUser(db, request, deps);
       const guild = await requireAdministeredGuild(db, request.params.guild_id, user.id);
-      await notesWrite(deleteGuild(services, guild));
+      await deleteGuild(services, guild);
       return reply.code(204).send();
     },
   );

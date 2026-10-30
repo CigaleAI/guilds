@@ -131,15 +131,6 @@ export async function notesRead<T>(read: Promise<T>): Promise<T> {
   }
 }
 
-/** Awaits a write that touches the notes folder, answering a refused one as `notesWriteHttp` does. */
-export async function notesWrite<T>(write: Promise<T>): Promise<T> {
-  try {
-    return await write;
-  } catch (error) {
-    throw error instanceof NotesError ? notesWriteHttp(error) : error;
-  }
-}
-
 export function artifactHttp(error: ArtifactError): HttpError {
   return new HttpError(error.status, error.message);
 }
@@ -202,12 +193,15 @@ const INVALID = [
 
 /**
  * The HTTP answer for a refusal a domain module raises: a recipe conflict with the version it met,
- * one with its own status, answered with its detail when it carries one, or a value its validator
- * refused. Any other error is null.
+ * a notes store refusal by its message, one with its own status, answered with its detail when it
+ * carries one, or a value its validator refused. Any other error is null.
  */
 export function domainHttp(error: unknown): HttpError | null {
   if (error instanceof RecipeConflictError) {
     return recipeConflictHttp(error);
+  }
+  if (error instanceof NotesError) {
+    return notesWriteHttp(error);
   }
   for (const kind of REFUSALS) {
     if (error instanceof kind) {

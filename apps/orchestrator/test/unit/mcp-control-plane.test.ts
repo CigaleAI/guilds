@@ -235,14 +235,14 @@ test("catalog refresh does not call sandbox ensure", async () => {
     const server = serverRow("fixture", { id: "mcp_fixture", display_name: "Fixture", auth: "token", config: { url: fixture.url } });
     db.servers = [server];
     db.connections = [connection];
-    const runtime = await agentRuntimeThrough(db as never, { id: "a_1", guild_id: "guild_1", org_id: "org_1" }, { mcpPool: pool });
+    const runtime = await agentRuntimeThrough(db as never, { id: "a_1", guild_id: "guild_1", org_id: "org_1" }, pool);
     assert.equal(db.ensureCalls, 0);
     assert.equal(fixture.listed, 1);
     assert.deepEqual(
       (runtime.mcp[0] as { tools: Array<{ name: string }> }).tools.map((tool) => tool.name),
       ["fixture_ping"],
     );
-    await agentRuntimeThrough(db as never, { id: "a_1", guild_id: "guild_1", org_id: "org_1" }, { mcpPool: pool });
+    await agentRuntimeThrough(db as never, { id: "a_1", guild_id: "guild_1", org_id: "org_1" }, pool);
     assert.equal(fixture.listed, 1);
     assert.equal(db.ensureCalls, 0);
   } finally {
@@ -291,7 +291,7 @@ test("gmail send stays Off and the sandbox env has no Gmail token", async () => 
   db.connections = [connection];
   await pool.syncTools(connection, db.servers[0]!, { force: true });
   assert.equal(db.bindings.get("mcp_tool:gmail_send_message:org_1")?.enabled, false);
-  const runtime = await agentRuntimeThrough(db as never, { id: "a_1", guild_id: "guild_1", org_id: "org_1" }, { mcpPool: pool });
+  const runtime = await agentRuntimeThrough(db as never, { id: "a_1", guild_id: "guild_1", org_id: "org_1" }, pool);
   const offered = ((runtime.mcp[0] as { tools: Array<{ name: string }> } | undefined)?.tools ?? []).map(
     (tool) => tool.name,
   );
@@ -316,7 +316,7 @@ test("a GitHub login's listed tools are offered to its agents like any connector
       new Date().toISOString(),
     ),
   ];
-  const runtime = await agentRuntimeThrough(db as never, { id: "a_1", guild_id: "guild_1", org_id: "org_1" });
+  const runtime = await agentRuntimeThrough(db as never, { id: "a_1", guild_id: "guild_1", org_id: "org_1" }, null);
   assert.deepEqual(
     runtime.mcp.map((entry) => [entry.slug, (entry.tools as Array<{ name: string }>).map((tool) => tool.name)]),
     [["github", ["github_list_issues"]]],
@@ -338,7 +338,7 @@ test("a run that lists a login's tools for the first time is not offered the one
     }) as never;
   db.servers = [serverRow("fixture", { id: "mcp_fixture", display_name: "Fixture", auth: "token", config: { url: "https://mcp.example.com/mcp" } })];
   db.connections = [connectionOf("mcp-test")];
-  const runtime = await agentRuntimeThrough(db as never, { id: "a_1", guild_id: "guild_1", org_id: "org_1" }, { mcpPool: pool });
+  const runtime = await agentRuntimeThrough(db as never, { id: "a_1", guild_id: "guild_1", org_id: "org_1" }, pool);
   assert.equal(db.bindings.get("mcp_tool:fixture_send_ping:org_1")?.enabled, false);
   assert.deepEqual(
     runtime.mcp.map((entry) => (entry.tools as Array<{ name: string }>).map((tool) => tool.name)),
