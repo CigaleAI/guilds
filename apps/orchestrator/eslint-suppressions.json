@@ -1255,12 +1255,14 @@
       "count": 1
     },
     "complexity": {
-      "count": 2
-    },
-    "limits/file-lines": {
       "count": 1
     },
     "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/studio/inspector.ts": {
+    "complexity": {
       "count": 1
     }
   },

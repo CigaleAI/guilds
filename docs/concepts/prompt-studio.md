@@ -826,6 +826,9 @@ app also re-reads the session and its messages every 2.5 s
 | Path | What it holds |
 |---|---|
 | `apps/orchestrator/src/studio/system.md` | The coach's system message template |
+| `apps/orchestrator/src/studio/system-message.ts` | The session's stored system message, recomposed from the live roster before each generation |
+| `apps/orchestrator/src/studio/inventory.ts` | The roster as the inventory lists it, with its warnings |
+| `apps/orchestrator/src/studio/inspector.ts` | The agent inspector: an agent's prompt sources, runs, and routines |
 | `apps/orchestrator/src/conversation/` | The shared conversation runner, and the blocks shared with the Builder: prompt placement, content trust, writing, the Task shape, and what every agent already reads |
 | `apps/orchestrator/src/studio/constants.ts` | Core's run limits and caps |
 | `apps/orchestrator/src/studio/tools.ts` | The coach's tool list, and the call each tool runs for |
