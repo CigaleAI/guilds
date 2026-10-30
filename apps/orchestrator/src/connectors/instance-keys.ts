@@ -2,13 +2,11 @@ import type { Queryable } from "../db/pg.js";
 import { assertKeyChangeConfirmed } from "../instance/changes.js";
 import {
   installedIntegrations,
-  integrationStatuses,
   type Integration,
   type IntegrationStatus,
 } from "../instance/integrations.js";
 import { InstanceKeyError, validateKeyValues, type InstanceKeys } from "../instance/keys.js";
-import { applyKeyChange } from "./instance.js";
-import { installedManifests } from "./servers.js";
+import { applyKeyChange, listAuditedIntegrationStatuses } from "./instance.js";
 
 /** The pool whose tool listings an instance key change makes stale. */
 export type ToolListings = { forgetListings(): void };
@@ -50,9 +48,7 @@ function integrationOf(services: InstanceKeyServices, id: string): Integration {
 
 /** An integration's state as the instance admin sees it: with when and by whom its row was written. */
 function auditedStatus(services: InstanceKeyServices, id: string): IntegrationStatus {
-  const status = integrationStatuses(integrationsOf(services), installedManifests(), undefined, {
-    audit: true,
-  }).find((item) => item.id === id);
+  const status = listAuditedIntegrationStatuses(services).find((item) => item.id === id);
   if (!status) {
     throw new InstanceKeyError("Not Found", 404);
   }

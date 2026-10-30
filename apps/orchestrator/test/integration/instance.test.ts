@@ -77,11 +77,13 @@ test("the instance descriptor lists integrations and their state, never a key", 
     assert.equal(typeof web.set_by, "string");
     assert.ok(web.set_by, "the instance admin sees who wrote the key");
     assert.equal(admin.text.includes(KEY), false);
+    assert.deepEqual(web, stored.json().integration, "the key write answers the integration as the admin's descriptor shows it");
 
     const plain = await describe(MEMBER);
     assert.equal(plain.byId["web-search"]?.state, "on");
     assert.equal(plain.byId["web-search"]?.updated_at, null, "a member sees the state, not the audit");
     assert.equal(plain.byId["web-search"]?.set_by, null);
+    assert.deepEqual(plain.byId["web-search"], { ...web, updated_at: null, set_by: null });
     assert.equal(plain.text.includes(KEY), false);
 
     const stranger = await core.inject({
