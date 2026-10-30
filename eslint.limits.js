@@ -12,6 +12,17 @@ const SILENT_CATCH = {
   selector: "CatchClause:not(:has(ThrowStatement, ReturnStatement))",
   message: "A catch throws a named error or returns a typed absence.",
 };
+// A catch whose only exit is a bare `return;`, and a promise's `.catch()` whose handler returns
+// nothing, `undefined` or `null`, are the same silent catch.
+const SILENT_RETURN_CATCH = {
+  selector: "CatchClause:has(ReturnStatement):not(:has(ThrowStatement, ReturnStatement[argument]))",
+  message: SILENT_CATCH.message,
+};
+const SILENT_PROMISE_CATCH = {
+  selector:
+    "CallExpression[callee.type='MemberExpression'][callee.property.name='catch'] > :matches(ArrowFunctionExpression[body.type='Identifier'][body.name='undefined'], ArrowFunctionExpression[body.type='Literal'][body.raw='null'], ArrowFunctionExpression[body.type='UnaryExpression'][body.operator='void'], :matches(ArrowFunctionExpression, FunctionExpression)[body.type='BlockStatement']:not(:has(ThrowStatement, ReturnStatement[argument])))",
+  message: SILENT_CATCH.message,
+};
 const BARE_ERROR = {
   selector: "ThrowStatement > NewExpression[callee.name='Error']",
   message: "A domain throws a named error class.",
@@ -21,6 +32,16 @@ const INLINE_PARAMETER_TYPE = {
   selector:
     ":function > :matches(Identifier, ObjectPattern, ArrayPattern, AssignmentPattern, RestElement, TSParameterProperty) TSTypeLiteral:not(TSTypeLiteral TSTypeLiteral)",
   message: "An object parameter's type is a named type.",
+};
+// A return type that names nothing, `unknown` or `Record<string, unknown>`, alone or wrapped in a
+// promise or an array, on an exported function, an exported const's function, or a public method.
+const ERASED_TYPE =
+  ":matches(TSUnknownKeyword, TSTypeReference[typeName.name='Record'][typeArguments.params.0.type='TSStringKeyword'][typeArguments.params.1.type='TSUnknownKeyword'])";
+const RETURN_TYPE =
+  ":matches(:matches(ExportNamedDeclaration, ExportDefaultDeclaration) > FunctionDeclaration, ExportNamedDeclaration > VariableDeclaration > VariableDeclarator > :matches(ArrowFunctionExpression, FunctionExpression), ExportDefaultDeclaration > :matches(ArrowFunctionExpression, FunctionExpression), :matches(MethodDefinition, TSAbstractMethodDefinition):not([accessibility='private'], [accessibility='protected'], [key.type='PrivateIdentifier']) > :matches(FunctionExpression, TSEmptyBodyFunctionExpression)) > TSTypeAnnotation";
+const ERASED_RETURN_TYPE = {
+  selector: `:matches(${RETURN_TYPE}, ${RETURN_TYPE} > TSArrayType, ${RETURN_TYPE} > TSTypeReference[typeName.name=/^(Promise|Array)$/] > TSTypeParameterInstantiation) > ${ERASED_TYPE}`,
+  message: "An export returns a named type.",
 };
 
 const fileLines = {
@@ -60,7 +81,16 @@ export function limits({ files, commands = [] }) {
   const forCommands = {
     files: commands,
     ignores: IGNORES,
-    rules: { "no-restricted-syntax": ["error", SILENT_CATCH, INLINE_PARAMETER_TYPE] },
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        SILENT_CATCH,
+        SILENT_RETURN_CATCH,
+        SILENT_PROMISE_CATCH,
+        INLINE_PARAMETER_TYPE,
+        ERASED_RETURN_TYPE,
+      ],
+    },
   };
   return [
     {
@@ -74,7 +104,15 @@ export function limits({ files, commands = [] }) {
         "max-lines": ["warn", { max: 800, skipBlankLines: false, skipComments: false }],
         "limits/file-lines": ["error", { max: 1000 }],
         "@typescript-eslint/consistent-type-assertions": ["error", { assertionStyle: "never" }],
-        "no-restricted-syntax": ["error", SILENT_CATCH, BARE_ERROR, INLINE_PARAMETER_TYPE],
+        "no-restricted-syntax": [
+          "error",
+          SILENT_CATCH,
+          SILENT_RETURN_CATCH,
+          SILENT_PROMISE_CATCH,
+          BARE_ERROR,
+          INLINE_PARAMETER_TYPE,
+          ERASED_RETURN_TYPE,
+        ],
       },
     },
     ...(commands.length === 0 ? [] : [forCommands]),
