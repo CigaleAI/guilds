@@ -173,11 +173,6 @@
       "count": 1
     }
   },
-  "src/features/studio/activity/StepDetail.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/features/studio/state/StateItemDetail.tsx": {
     "complexity": {
       "count": 1
