@@ -497,6 +497,13 @@ export type GuildRepository = {
   updated_at: string;
 };
 
+export type RepositoryInput = {
+  name: string;
+  url: string;
+  default_branch?: string;
+  connection_id?: string;
+};
+
 /** A repository a GitHub connection's installation reaches. */
 export type GithubRepository = {
   name: string;
@@ -679,6 +686,9 @@ export type ReachedTable = {
 /** What a guild's agents, or one agent, reach. */
 export type Reach = { notes: ReachedNote[]; tables: ReachedTable[] };
 
+/** A guild, whose rows its agents share, or one agent. */
+export type ReachSubject = { type: "guild" | "agent"; id: string };
+
 /** A record: its id, its column values, and who last wrote it. */
 export type CollectionRecord = {
   id: number;
@@ -692,8 +702,24 @@ export type CollectionRecord = {
 
 export type RecordsPage = { total: number; records: CollectionRecord[]; columns: Column[] };
 
+/** How a records view asks: a ranked search, or exact filters with an order and a page. */
+export type RecordsQuery = {
+  query?: string;
+  where?: Record<string, unknown>;
+  order?: { column: string; direction: "asc" | "desc" };
+  limit: number;
+  offset: number;
+};
+
 /** A column as a database definition sends it; `rename_from` renames a current column. */
 export type ColumnInput = Column & { rename_from?: string };
+
+export type DatabaseInput = {
+  name: string;
+  purpose: string;
+  columns: ColumnInput[];
+  guild_id: string | null;
+};
 
 /** Per agent, the Task embeds that do not resolve to a file that agent can read; its runs get a marker in their place. */
 export type EmbedStatus = { agents: { id: string; broken_embeds: string[] }[] };
@@ -812,6 +838,9 @@ export type AgentAccess = {
   mcp: McpServerAccess[];
 };
 
+/** Whose tools and logins a view edits, or whose secrets it lists: one agent, one guild, or the organisation. */
+export type AccessOwner = { scope: "agent" | "guild" | "org"; id: string };
+
 /**
  * One guild or agent a secret is granted to. A grant in a guild the viewer cannot see keeps its
  * kind and shows no id or name.
@@ -861,6 +890,16 @@ export type McpConnection = {
 
 /** A key-based login's values, by the connector's field names; empty for OAuth. */
 export type McpCredentials = Record<string, unknown>;
+
+/** What adding an organisation's own remote MCP server sends. */
+export type OrgServerInput = {
+  slug: string;
+  display_name: string;
+  url: string;
+  auth: "none" | "token" | "oauth";
+  oauth_strategy?: "dynamic";
+  description: string;
+};
 
 /** An agent's lifetime model usage; cost is what providers reported, or catalog rates without it. */
 export type AgentUsage = {

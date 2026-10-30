@@ -1,8 +1,8 @@
 import { Link, useParams } from "@tanstack/react-router";
 import { Database, Plus } from "lucide-react";
 import { useState } from "react";
-import { useCollections, useReach, type ReachSubject } from "../../api/queries";
-import type { AccessMode, Column, ReachedTable } from "../../api/types";
+import { useCollections, useReach } from "../../api/queries";
+import type { AccessMode, Column, ReachSubject, ReachedTable } from "../../api/types";
 import { Banner, Button, EmptyState, Icon, SkeletonRows, Tag } from "@guildsrun/ui";
 import { CreateTableDialog } from "./CreateTableDialog";
 

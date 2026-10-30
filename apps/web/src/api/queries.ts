@@ -27,7 +27,6 @@ import type {
   CatalogToolInput,
   Collection,
   CollectionRecord,
-  ColumnInput,
   EmbeddableNote,
   EmbedStatus,
   FileContent,
@@ -113,6 +112,12 @@ import type {
   StudioRun,
   OrgRole,
   OrgUsage,
+  AccessOwner,
+  RepositoryInput,
+  RecordsQuery,
+  DatabaseInput,
+  ReachSubject,
+  OrgServerInput,
 } from "./types";
 
 /** Query keys. Identity is fixed for the page's life, so keys carry no user or org. */
@@ -711,9 +716,6 @@ export function useFileChanges(displayPath: string | undefined) {
   });
 }
 
-/** Whose tools and logins a view edits, or whose secrets it lists: one agent, one guild, or the organisation. */
-export type AccessOwner = { scope: "agent" | "guild" | "org"; id: string };
-
 const accessPath = (owner: AccessOwner) =>
   owner.scope === "org"
     ? "/api/access"
@@ -1230,13 +1232,6 @@ export function useGuildRepositories(guildId: string) {
   });
 }
 
-export type RepositoryInput = {
-  name: string;
-  url: string;
-  default_branch?: string;
-  connection_id?: string;
-};
-
 export function useAddGuildRepository(guildId: string) {
   const client = useQueryClient();
   return useMutation({
@@ -1561,15 +1556,6 @@ export function useDatabase(id: string | undefined) {
   });
 }
 
-/** How a records view asks: a ranked search, or exact filters with an order and a page. */
-export type RecordsQuery = {
-  query?: string;
-  where?: Record<string, unknown>;
-  order?: { column: string; direction: "asc" | "desc" };
-  limit: number;
-  offset: number;
-};
-
 export function useRecords(id: string | undefined, query: RecordsQuery) {
   const params = new URLSearchParams({ limit: String(query.limit) });
   if (query.query) params.set("query", query.query);
@@ -1601,13 +1587,6 @@ function useTablesRefresh() {
     void client.invalidateQueries({ queryKey: keys.accessLists });
   };
 }
-
-export type DatabaseInput = {
-  name: string;
-  purpose: string;
-  columns: ColumnInput[];
-  guild_id: string | null;
-};
 
 export function useCreateDatabase() {
   const refresh = useTablesRefresh();
@@ -1724,9 +1703,6 @@ export function useSetItemAccess(target: AccessTarget) {
     },
   });
 }
-
-/** A guild, whose rows its agents share, or one agent. */
-export type ReachSubject = { type: "guild" | "agent"; id: string };
 
 const reachPaths: Record<ReachSubject["type"], string> = {
   guild: "/api/guilds",
@@ -2787,16 +2763,6 @@ export function usePublishBuilder(id: string) {
     onSuccess: refresh,
   });
 }
-
-/** What adding an organisation's own remote MCP server sends. */
-export type OrgServerInput = {
-  slug: string;
-  display_name: string;
-  url: string;
-  auth: "none" | "token" | "oauth";
-  oauth_strategy?: "dynamic";
-  description: string;
-};
 
 /** Adds a remote MCP server for the organisation alone. */
 export function useAddOrgServer(orgId: string) {

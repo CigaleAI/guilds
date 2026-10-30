@@ -1,8 +1,8 @@
 import { Link, useLocation } from "@tanstack/react-router";
 import { Link2, Play, Trash2, Unlink } from "lucide-react";
 import { useCallback, useState } from "react";
-import { lookupWithLogin, useInstance, useSaveSettings, type AccessOwner } from "../../api/queries";
-import type { McpServerAccess, McpToolAccess } from "../../api/types";
+import { lookupWithLogin, useInstance, useSaveSettings } from "../../api/queries";
+import type { AccessOwner, McpServerAccess, McpToolAccess } from "../../api/types";
 import { useIdentity } from "../../app/identity";
 import { Button, FilterBar, IntegrationCard, Tag, ToolRow, toast, Icon } from "@guildsrun/ui";
 import { connectorSetupGap, setupSearch } from "../instance/instance";

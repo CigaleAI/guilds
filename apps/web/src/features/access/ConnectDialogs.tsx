@@ -4,9 +4,9 @@ import {
   lookupWithCredentials,
   useConnectServer,
   useConnection,
-  type AccessOwner,
 } from "../../api/queries";
 import type {
+  AccessOwner,
   ConnectorAuthField,
   McpConnection,
   McpCredentials,

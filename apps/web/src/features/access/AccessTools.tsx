@@ -9,9 +9,8 @@ import {
   useInstance,
   useRemoveOrgServer,
   useSetBinding,
-  type AccessOwner,
 } from "../../api/queries";
-import type { AccessBinding, McpServerAccess } from "../../api/types";
+import type { AccessBinding, AccessOwner, McpServerAccess } from "../../api/types";
 import {
   Button,
   IconButton,
