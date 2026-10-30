@@ -2,7 +2,7 @@ import { Bookmark, Code2, FileCode, Globe, type LucideIcon } from "lucide-react"
 import type { Machine } from "../../../api/types/agents";
 import type { OrgModels } from "../../../api/types/models";
 import { cn, Icon } from "@guildsrun/ui";
-import { agentMinimum, sizeMeets } from "../../machines/machines";
+import { agentMinimum, sizeMeets, type MachineSize } from "../../machines/machines";
 import { TooSmallNote } from "../../machines/MachineNotes";
 import { BrowserFields, withBrowser } from "./BrowserFields";
 import { withCoding, type ConfigErrors, type ConfigForm } from "./configForm";
@@ -42,6 +42,59 @@ function CapabilityField({ label, hint, checked, onChange, disabled, icon }: Cap
   );
 }
 
+/** A capability, off today, that the chosen machine is below the minimum for, with that minimum. */
+export type BlockedCapability = { what: "Coding" | "Browser"; minimum: MachineSize };
+
+/**
+ * The capabilities, off today, that the chosen machine is too small to turn on, Coding first; Coding
+ * only where the form offers its card. None before a machine is chosen.
+ */
+export function blockedCapabilities(
+  form: ConfigForm,
+  machine: MachineSize | undefined,
+  codingToggle: boolean,
+): BlockedCapability[] {
+  if (!machine) return [];
+  const coding = agentMinimum({ browser: form.browser, coding: true });
+  const browser = agentMinimum({ browser: true, coding: form.coding });
+  return [
+    ...(codingToggle && !form.coding && !sizeMeets(machine, coding)
+      ? [{ what: "Coding" as const, minimum: coding }]
+      : []),
+    ...(!form.browser && !sizeMeets(machine, browser)
+      ? [{ what: "Browser" as const, minimum: browser }]
+      : []),
+  ];
+}
+
+type CodingCapabilityProps = {
+  form: ConfigForm;
+  onChange: (next: ConfigForm) => void;
+  models: OrgModels | undefined;
+  /** The saved agent codes, which keeps Coding on. */
+  savedCoding: boolean;
+  /** The machine is below what Coding needs. */
+  blocked: boolean;
+};
+
+/** The Coding card: it turns on scripting with it, and stays on once an agent codes. */
+function CodingCapability({ form, onChange, models, savedCoding, blocked }: CodingCapabilityProps) {
+  return (
+    <CapabilityField
+      label="Coding"
+      hint={
+        savedCoding
+          ? "Shell, and a harness for code work. A coding agent stays one."
+          : "Shell, and a harness for code work. Turns on scripting. Uses a coding slot."
+      }
+      icon={Code2}
+      checked={form.coding}
+      disabled={savedCoding || blocked}
+      onChange={(coding) => onChange(withCoding(form, coding, models))}
+    />
+  );
+}
+
 type CapabilitiesFieldsProps = {
   form: ConfigForm;
   onChange: (next: ConfigForm) => void;
@@ -70,12 +123,9 @@ export function CapabilitiesFields({
   codingToggle = true,
   savedCoding = false,
 }: CapabilitiesFieldsProps) {
-  const browserMinimum = agentMinimum({ browser: true, coding: form.coding });
-  const codingMinimum = agentMinimum({ browser: form.browser, coding: true });
-  const browserBlocked =
-    !form.browser && machine !== undefined && !sizeMeets(machine, browserMinimum);
-  const codingBlocked =
-    codingToggle && !form.coding && machine !== undefined && !sizeMeets(machine, codingMinimum);
+  const blocked = blockedCapabilities(form, machine, codingToggle);
+  const isBlocked = (what: BlockedCapability["what"]) => blocked.some((item) => item.what === what);
+  const [first] = blocked;
   return (
     <>
       <div
@@ -86,21 +136,16 @@ export function CapabilitiesFields({
           hint="Browser tab and tools. Uses a browser slot."
           icon={Globe}
           checked={form.browser}
-          disabled={browserBlocked}
+          disabled={isBlocked("Browser")}
           onChange={(browser) => onChange(withBrowser(form, browser))}
         />
         {codingToggle ? (
-          <CapabilityField
-            label="Coding"
-            hint={
-              savedCoding
-                ? "Shell, and a harness for code work. A coding agent stays one."
-                : "Shell, and a harness for code work. Turns on scripting. Uses a coding slot."
-            }
-            icon={Code2}
-            checked={form.coding}
-            disabled={savedCoding || codingBlocked}
-            onChange={(coding) => onChange(withCoding(form, coding, models))}
+          <CodingCapability
+            form={form}
+            onChange={onChange}
+            models={models}
+            savedCoding={savedCoding}
+            blocked={isBlocked("Coding")}
           />
         ) : null}
         <CapabilityField
@@ -118,10 +163,8 @@ export function CapabilitiesFields({
           onChange={(memory) => onChange({ ...form, memory })}
         />
       </div>
-      {machine && codingBlocked ? (
-        <TooSmallNote machine={machine} minimum={codingMinimum} what="Coding" />
-      ) : machine && browserBlocked ? (
-        <TooSmallNote machine={machine} minimum={browserMinimum} what="Browser" />
+      {machine && first ? (
+        <TooSmallNote machine={machine} minimum={first.minimum} what={first.what} />
       ) : null}
       {form.browser ? (
         <BrowserFields form={form} onChange={onChange} models={models} errors={errors} />

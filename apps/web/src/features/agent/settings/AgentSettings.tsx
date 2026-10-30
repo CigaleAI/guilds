@@ -8,7 +8,13 @@ import {
 } from "../../../api/queries/agents";
 import { useGuild } from "../../../api/queries/guilds";
 import { useOrgModels } from "../../../api/queries/models";
-import type { AgentDetail } from "../../../api/types/agents";
+import type {
+  AgentConfig,
+  AgentDetail,
+  AgentHarness,
+  Harness,
+  Machine,
+} from "../../../api/types/agents";
 import { hasConnectedProvider } from "../../../api/types/models";
 import { useIdentity } from "../../../app/identity";
 import {
@@ -23,7 +29,7 @@ import {
 import { MachineGroup, ModelStep } from "../AgentSteps";
 import { CodingReadinessBanner } from "../CodingReadiness";
 import { CodingRepositories } from "../CodingRepositories";
-import { codingProblems } from "../harness";
+import { codingProblems, type CodingProblem } from "../harness";
 import { focusMax } from "../IdentityFields";
 import { chosenMachine } from "../../machines/machines";
 import { agentHandleError, handleHint } from "../../names";
@@ -124,6 +130,71 @@ function IdentitySection({ form, set, nameError, savedName }: IdentitySectionPro
   );
 }
 
+/** What is wrong with the name typed; an empty one reads as the rule a name follows. */
+export function settingsNameError(name: string): string | undefined {
+  const trimmed = name.trim();
+  return trimmed ? agentHandleError(trimmed) : handleHint;
+}
+
+/** The machine saving moves the agent to; undefined while it stays where it is. */
+export function machineMove(
+  machine: Machine | undefined,
+  placedOn: AgentDetail["machine_id"],
+): string | undefined {
+  return machine && machine.id !== placedOn ? machine.id : undefined;
+}
+
+/**
+ * The harness CLIs the machine the agent will run on carries: the one it moves to, else the one it
+ * is on as its harness check reports it, else as the machine list does.
+ */
+export function carriedHarnesses(
+  machine: Machine | undefined,
+  moveTo: string | undefined,
+  status: AgentHarness | undefined,
+): readonly Harness[] | null | undefined {
+  if (moveTo) return machine?.harnesses;
+  return status?.machine_harnesses ?? machine?.harnesses;
+}
+
+/** The hint under the machine: that saving moves the agent, or that a coding agent needs a Code machine. */
+export function machineHint(moveTo: string | undefined, coding: boolean): string | undefined {
+  if (moveTo)
+    return "Saving moves the agent and its home there. It can't move while it is generating.";
+  return coding ? "Coding agents need a Code machine." : undefined;
+}
+
+/** What a saved coding agent still lacks to run code tasks; nothing for any other agent. */
+export function readinessProblems(
+  config: AgentConfig,
+  status: AgentHarness | undefined,
+): CodingProblem[] {
+  return config.coding && status ? codingProblems(status) : [];
+}
+
+type SettingsFooterProps = {
+  dirty: boolean;
+  invalid: boolean;
+  saving: boolean;
+  onDiscard: () => void;
+  onSave: () => void;
+};
+
+/** Discard and Save, under every section, with a note while the form holds unsaved changes. */
+function SettingsFooter({ dirty, invalid, saving, onDiscard, onSave }: SettingsFooterProps) {
+  return (
+    <div className="flex shrink-0 items-center justify-end gap-2 border-t border-line bg-surface px-7 py-3">
+      {dirty ? <span className="mr-auto text-sm text-muted">Unsaved changes</span> : null}
+      <Button variant="ghost" disabled={!dirty || saving} onClick={onDiscard}>
+        Discard
+      </Button>
+      <Button disabled={!dirty || invalid || saving} onClick={onSave}>
+        {saving ? "Saving…" : "Save"}
+      </Button>
+    </div>
+  );
+}
+
 /**
  * How the agent looks and runs, in the create dialog's steps as sections opened in any order by
  * `?section=`: an agent's Identity, Model, and Machine; a coding agent's Identity, Machine, Harness,
@@ -164,18 +235,15 @@ export function AgentSettings() {
   const setConfig = (next: ConfigForm) => setDraft({ ...form, ...next });
   const errors = configErrors(form, { models: models.data, machines: machines.data });
   const machine = chosenMachine(machines.data, form.machine_id);
-  const moveTo = machine && machine.id !== agent.data.machine_id ? machine.id : undefined;
-  const carried = moveTo
-    ? machine?.harnesses
-    : (harness.data?.machine_harnesses ?? machine?.harnesses);
-  const nameError = form.name.trim() ? agentHandleError(form.name.trim()) : handleHint;
+  const moveTo = machineMove(machine, agent.data.machine_id);
+  const nameError = settingsNameError(form.name);
   const invalid = Boolean(nameError) || Object.keys(errors).length > 0;
   const noProvider = hasConnectedProvider(models.data) === false;
   const step = { form, setConfig, errors, machine };
 
   const sections = settingsSections(form.coding);
   const section = openSection(search.section, form.coding);
-  const problems = agent.data.config.coding && harness.data ? codingProblems(harness.data) : [];
+  const problems = readinessProblems(agent.data.config, harness.data);
   const needsAttention = (key: SettingsSection) =>
     (key === "identity" ? Boolean(nameError) : sectionHasErrors(sectionErrors[key], errors)) ||
     problems.some((problem) => problemSection(problem) === key);
@@ -187,25 +255,6 @@ export function AgentSettings() {
       search: { section: next },
       replace: true,
     });
-  const machineGroup = (
-    <MachineGroup
-      {...step}
-      machines={machines}
-      coding={form.coding}
-      placed={{
-        id: agent.data.id,
-        machineId: agent.data.machine_id,
-        diskMib: agent.data.config.max_workspace_mib,
-      }}
-      hint={
-        moveTo
-          ? "Saving moves the agent and its home there. It can't move while it is generating."
-          : form.coding
-            ? "Coding agents need a Code machine."
-            : undefined
-      }
-    />
-  );
 
   const submit = () => {
     if (!dirty || invalid || save.isPending) return;
@@ -239,6 +288,52 @@ export function AgentSettings() {
       <button type="submit" hidden aria-hidden tabIndex={-1} />
     </form>
   );
+  /** What each section shows. */
+  const views: Readonly<Record<SettingsSection, ReactNode>> = {
+    identity: fields(
+      <IdentitySection form={form} set={set} nameError={nameError} savedName={agent.data.name} />,
+    ),
+    model: fields(
+      <ModelStep
+        {...step}
+        lead={form.coding}
+        codingToggle
+        savedCoding={saved.coding}
+        models={models.data}
+        noProvider={noProvider}
+      />,
+    ),
+    machine: fields(
+      <MachineGroup
+        {...step}
+        machines={machines}
+        coding={form.coding}
+        placed={{
+          id: agent.data.id,
+          machineId: agent.data.machine_id,
+          diskMib: agent.data.config.max_workspace_mib,
+        }}
+        hint={machineHint(moveTo, form.coding)}
+      />,
+    ),
+    harness: fields(
+      <Group title="Harness">
+        <HarnessField
+          form={form}
+          onChange={setConfig}
+          errors={errors}
+          agent={{ guildId, agentId }}
+          carried={carriedHarnesses(machine, moveTo, harness.data)}
+        />
+      </Group>,
+    ),
+    repositories: (
+      <CodingRepositories
+        guild={{ id: guildId, name: guild.data?.name ?? "this guild" }}
+        missingNote="No repository yet, so this agent's coding runs fail at start."
+      />
+    ),
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -255,48 +350,7 @@ export function AgentSettings() {
             }}
             flagged={flagged}
           />
-          {section === "identity"
-            ? fields(
-                <IdentitySection
-                  form={form}
-                  set={set}
-                  nameError={nameError}
-                  savedName={agent.data.name}
-                />,
-              )
-            : null}
-          {section === "model"
-            ? fields(
-                <ModelStep
-                  {...step}
-                  lead={form.coding}
-                  codingToggle
-                  savedCoding={saved.coding}
-                  models={models.data}
-                  noProvider={noProvider}
-                />,
-              )
-            : null}
-          {section === "machine" ? fields(machineGroup) : null}
-          {section === "harness"
-            ? fields(
-                <Group title="Harness">
-                  <HarnessField
-                    form={form}
-                    onChange={setConfig}
-                    errors={errors}
-                    agent={{ guildId, agentId }}
-                    carried={carried}
-                  />
-                </Group>,
-              )
-            : null}
-          {section === "repositories" ? (
-            <CodingRepositories
-              guild={{ id: guildId, name: guild.data?.name ?? "this guild" }}
-              missingNote="No repository yet, so this agent's coding runs fail at start."
-            />
-          ) : null}
+          {views[section]}
           {save.isError ? (
             <Banner tone="error" title="Couldn't save the settings">
               {save.error.message}
@@ -304,15 +358,13 @@ export function AgentSettings() {
           ) : null}
         </div>
       </div>
-      <div className="flex shrink-0 items-center justify-end gap-2 border-t border-line bg-surface px-7 py-3">
-        {dirty ? <span className="mr-auto text-sm text-muted">Unsaved changes</span> : null}
-        <Button variant="ghost" disabled={!dirty || save.isPending} onClick={() => setDraft(null)}>
-          Discard
-        </Button>
-        <Button disabled={!dirty || invalid || save.isPending} onClick={submit}>
-          {save.isPending ? "Saving…" : "Save"}
-        </Button>
-      </div>
+      <SettingsFooter
+        dirty={dirty}
+        invalid={invalid}
+        saving={save.isPending}
+        onDiscard={() => setDraft(null)}
+        onSave={submit}
+      />
     </div>
   );
 }
