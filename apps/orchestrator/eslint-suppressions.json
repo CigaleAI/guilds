@@ -719,44 +719,6 @@
       "count": 2
     }
   },
-  "src/typesafe/client.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 8
-    },
-    "complexity": {
-      "count": 2
-    },
-    "max-depth": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
-  "src/typesafe/group.ts": {
-    "complexity": {
-      "count": 2
-    },
-    "no-restricted-syntax": {
-      "count": 3
-    }
-  },
-  "src/typesafe/index.ts": {
-    "boundary/no-reexport-modules": {
-      "count": 1
-    }
-  },
-  "src/typesafe/replay.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
-    "complexity": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
   "src/usage/index.ts": {
     "complexity": {
       "count": 2

@@ -91,14 +91,14 @@ try {
     process.stderr.write(`guild ${args.guild} not found\n`);
     process.exit(1);
   }
-  const report = await replayRecipients({
-    rows: await listGroupMessages(db, args.guild),
-    members: await listAgents(db, args.guild),
-    client,
-    ...(args.seq !== undefined ? { seq: args.seq } : {}),
-    ...(args.message !== undefined ? { message: args.message } : {}),
-    ...(args.min !== undefined ? { confidenceMin: args.min } : {}),
-  });
+  const report = await replayRecipients(
+    { rows: await listGroupMessages(db, args.guild), members: await listAgents(db, args.guild) },
+    { client, ...(args.min !== undefined ? { confidenceMin: args.min } : {}) },
+    {
+      ...(args.seq !== undefined ? { seq: args.seq } : {}),
+      ...(args.message !== undefined ? { message: args.message } : {}),
+    },
+  );
   process.stdout.write(
     args.json ? `${JSON.stringify(report, null, 2)}\n` : formatRecipientReplay(report),
   );

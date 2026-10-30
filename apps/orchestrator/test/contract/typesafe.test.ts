@@ -2,11 +2,8 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { GroupMessageRow } from "../../src/db/group-chat.js";
 import { groupMessageRow } from "../helpers/group-chat.js";
-import {
-  RECIPIENT_CONFIDENCE_MIN,
-  createGroupRouter,
-  createTypeSafeClient,
-} from "../../src/typesafe/index.js";
+import { createTypeSafeClient } from "../../src/typesafe/client.js";
+import { RECIPIENT_CONFIDENCE_MIN, createGroupRouter } from "../../src/typesafe/group.js";
 
 // Live Jev contract for recipient Choice and history Noul. The desk is
 // inline so a change to the wording is judged on many message shapes,

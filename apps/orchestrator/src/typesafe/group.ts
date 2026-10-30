@@ -17,7 +17,6 @@ import {
   requireNoul,
   type TypeSafeClient,
   type TypeSafeCriteriaValue,
-  type TypeSafeEvaluateFn,
   type TypeSafeQuestion,
 } from "./client.js";
 
@@ -34,6 +33,51 @@ export const HISTORY_CONTENT_MAX_CHARS = 2_000;
 // Last public rows Jev sees when routing: the current message plus prior ones
 // as `context`. Small on purpose so an older topic cannot steal a new ask.
 export const RECIPIENT_WINDOW = 4;
+
+/**
+ * The group chat as one recipient Choice reads it: the public rows, the members, and the names of
+ * the members whose cursor is behind.
+ */
+export type RecipientSnapshot = {
+  rows: Array<Record<string, unknown>>;
+  members: Array<Record<string, unknown>>;
+  pendingNames: string[];
+};
+
+/** What a recipient Choice decided: the agents it wakes, the option it picked, how sure it was. */
+export type RecipientClassification = {
+  names: Set<string>;
+  choice: string;
+  confidence: number;
+  probabilities: Record<string, number>;
+  model?: string;
+  usage?: TypeSafeUsage;
+};
+
+/** The group chat as one agent's history selection reads it: the public rows and that agent. */
+export type HistorySnapshot = {
+  rows: GroupMessageRow[];
+  agentName: string;
+  agentFocus?: string;
+};
+
+/** The rows an agent reads, and the Noul of each candidate row TypeSafe ranked, by seq. */
+export type HistorySelection = {
+  rows: GroupMessageRow[];
+  keep: Record<string, number>;
+  model?: string;
+  usage?: TypeSafeUsage;
+};
+
+/**
+ * What a group router is built from: the TypeSafe client (one over `sources` when unset) and the
+ * confidence below which the tag rules decide.
+ */
+export type GroupRouterOptions = {
+  client?: TypeSafeClient;
+  sources?: IntegrationSources;
+  confidenceMin?: number;
+};
 
 function clip(value: string, max: number): string {
   const text = value.trim();
@@ -58,9 +102,9 @@ function memberNames(members: Array<Record<string, unknown>>): string[] {
 
 // Choice option for one agent: labelled fields, as the docs recommend for
 // options that are easy to confuse.
-function agentOption(member: Record<string, unknown>, taskChars: number): TypeSafeCriteriaValue {
+function agentOption(member: Record<string, unknown>): TypeSafeCriteriaValue {
   const focus = String(member.focus ?? "").trim();
-  const task = clip(String(member.task ?? ""), taskChars);
+  const task = clip(String(member.task ?? ""), AGENT_TASK_PREVIEW_CHARS);
   if (!focus && !task) {
     return null;
   }
@@ -94,30 +138,19 @@ export function serializeHistoryDecision(decision: HistoryDecision): HistoryRout
   return payload;
 }
 
-export async function classifyGroupRecipients(args: {
-  rows: Array<Record<string, unknown>>;
-  members: Array<Record<string, unknown>>;
-  pendingNames: string[];
-  evaluate: TypeSafeEvaluateFn;
-  taskPreviewChars?: number;
-}): Promise<{
-  names: Set<string>;
-  choice: string;
-  confidence: number;
-  probabilities: Record<string, number>;
-  model?: string;
-  usage?: TypeSafeUsage;
-}> {
+export async function classifyGroupRecipients(
+  snapshot: RecipientSnapshot,
+  client: TypeSafeClient,
+): Promise<RecipientClassification> {
   // Only agents whose cursor is behind can act on this snapshot. The author of
   // the latest message is never pending, so it never appears as an option.
-  const pending = new Set(args.pendingNames);
-  const roster = args.members.filter((member) => pending.has(String(member.name)));
-  const window = recentGroupRows(args.rows, RECIPIENT_WINDOW);
+  const pending = new Set(snapshot.pendingNames);
+  const roster = snapshot.members.filter((member) => pending.has(String(member.name)));
+  const window = recentGroupRows(snapshot.rows, RECIPIENT_WINDOW);
   const latestRow = window[window.length - 1];
   if (!roster.length || !latestRow) {
     return { names: new Set(), choice: NONE_RECIPIENT, confidence: 1, probabilities: {} };
   }
-  const taskChars = args.taskPreviewChars ?? AGENT_TASK_PREVIEW_CHARS;
   // Define `none` by what the message asks, not by surface genre: listing
   // genres (status, chatter) makes the model file any message that reads like
   // one under none, whatever it asks.
@@ -125,9 +158,9 @@ export async function classifyGroupRecipients(args: {
     [NONE_RECIPIENT]: "The message asks no agent to do, answer, or record anything.",
   };
   for (const member of roster) {
-    criteria[String(member.name)] = agentOption(member, taskChars);
+    criteria[String(member.name)] = agentOption(member);
   }
-  const result = await args.evaluate({
+  const result = await client.evaluate({
     state: {
       latest: stateItem(latestRow, LATEST_CONTENT_MAX_CHARS),
       context: window.slice(0, -1).map((row) => stateItem(row, HISTORY_CONTENT_MAX_CHARS)),
@@ -146,7 +179,7 @@ export async function classifyGroupRecipients(args: {
   if (answer.choice !== NONE_RECIPIENT) {
     names.add(answer.choice);
   }
-  const out: Awaited<ReturnType<typeof classifyGroupRecipients>> = {
+  const out: RecipientClassification = {
     names,
     choice: answer.choice,
     confidence: answer.confidence,
@@ -159,38 +192,28 @@ export async function classifyGroupRecipients(args: {
   return out;
 }
 
-export async function selectGroupHistory(args: {
-  rows: GroupMessageRow[];
-  agentName: string;
-  agentFocus?: string;
-  evaluate: TypeSafeEvaluateFn;
-  limit?: number;
-  candidateLimit?: number;
-}): Promise<{
-  rows: GroupMessageRow[];
-  keep: Record<string, number>;
-  model?: string;
-  usage?: TypeSafeUsage;
-}> {
-  const keepLimit = args.limit ?? CONTEXT_HISTORY_LIMIT;
-  const window = recentGroupRows(args.rows, args.candidateLimit ?? HISTORY_CANDIDATE_LIMIT);
-  if (window.length <= keepLimit) {
-    return { rows: window, keep: {} };
-  }
-  const latest = window[window.length - 1];
-  const latestSeq = Number(latest?.seq);
+/** The seqs an agent always reads: the latest row's, then each row that tags it, newest first. */
+function alwaysKeptSeqs(window: GroupMessageRow[], agentName: string): number[] {
+  const latestSeq = Number(window[window.length - 1]?.seq);
   const always: number[] = [];
   if (Number.isFinite(latestSeq)) {
     always.push(latestSeq);
   }
   for (const row of [...window].reverse()) {
     const seq = Number(row.seq);
-    if (storedTags(row).includes(args.agentName) && !always.includes(seq)) {
+    if (storedTags(row).includes(agentName) && !always.includes(seq)) {
       always.push(seq);
     }
   }
-  // One yes/no Noul per candidate row (the rerank pattern); agent and focus
-  // live in state once instead of being repeated in every question.
+  return always;
+}
+
+// One yes/no Noul per candidate row (the rerank pattern); agent and focus
+// live in state once instead of being repeated in every question.
+function keepQuestions(
+  window: GroupMessageRow[],
+  always: number[],
+): Record<string, TypeSafeQuestion> {
   const questions: Record<string, TypeSafeQuestion> = {};
   for (const row of window) {
     const seq = Number(row.seq);
@@ -210,13 +233,45 @@ export async function selectGroupHistory(args: {
       },
     };
   }
+  return questions;
+}
+
+/**
+ * The seqs an agent reads, at most `limit`: the ones it always reads, then the candidates by their
+ * Noul, the newer first on a tie.
+ */
+function selectedSeqs(always: number[], keep: Record<string, number>, limit: number): Set<number> {
+  const ranked = Object.entries(keep)
+    .map(([seq, noul]) => ({ seq: Number(seq), noul }))
+    .sort((left, right) => right.noul - left.noul || right.seq - left.seq);
+  const selected = new Set<number>();
+  for (const seq of [...always, ...ranked.map((item) => item.seq)]) {
+    if (selected.size >= limit) {
+      break;
+    }
+    selected.add(seq);
+  }
+  return selected;
+}
+
+export async function selectGroupHistory(
+  snapshot: HistorySnapshot,
+  client: TypeSafeClient,
+): Promise<HistorySelection> {
+  const window = recentGroupRows(snapshot.rows, HISTORY_CANDIDATE_LIMIT);
+  if (window.length <= CONTEXT_HISTORY_LIMIT) {
+    return { rows: window, keep: {} };
+  }
+  const latest = window[window.length - 1];
+  const always = alwaysKeptSeqs(window, snapshot.agentName);
+  const questions = keepQuestions(window, always);
   const keep: Record<string, number> = {};
   let model: string | undefined;
   let usage: TypeSafeUsage | undefined;
   if (Object.keys(questions).length) {
-    const result = await args.evaluate({
+    const result = await client.evaluate({
       state: {
-        agent: { name: args.agentName, focus: (args.agentFocus ?? "").trim() },
+        agent: { name: snapshot.agentName, focus: (snapshot.agentFocus ?? "").trim() },
         latest: latest ? stateItem(latest, HISTORY_CONTENT_MAX_CHARS) : null,
         messages: window.map((row) => stateItem(row, HISTORY_CONTENT_MAX_CHARS)),
       },
@@ -233,25 +288,10 @@ export async function selectGroupHistory(args: {
       keep[String(seq)] = requireNoul(result, id);
     }
   }
-  const ranked = Object.entries(keep)
-    .map(([seq, noul]) => ({ seq: Number(seq), noul }))
-    .sort((left, right) => right.noul - left.noul || right.seq - left.seq);
-  const selected = new Set<number>();
-  for (const seq of always) {
-    if (selected.size >= keepLimit) {
-      break;
-    }
-    selected.add(seq);
-  }
-  for (const item of ranked) {
-    if (selected.size >= keepLimit) {
-      break;
-    }
-    selected.add(item.seq);
-  }
+  const selected = selectedSeqs(always, keep, CONTEXT_HISTORY_LIMIT);
   const rows = window.filter((row) => selected.has(Number(row.seq)));
-  const out: Awaited<ReturnType<typeof selectGroupHistory>> = {
-    rows: rows.length ? rows : window.slice(-keepLimit),
+  const out: HistorySelection = {
+    rows: rows.length ? rows : window.slice(-CONTEXT_HISTORY_LIMIT),
     keep,
   };
   if (model !== undefined) {
@@ -263,13 +303,38 @@ export async function selectGroupHistory(args: {
   return out;
 }
 
-export function createGroupRouter(
-  options: {
-    client?: TypeSafeClient;
-    sources?: IntegrationSources;
-    confidenceMin?: number;
-  } = {},
-): GroupRouter {
+/**
+ * The decision a recipient Choice makes: the tagged agents and the one it picked, or the tagged
+ * agents and the tag rules' `ruleNames` when it is less sure than `confidenceMin`.
+ */
+function classifiedDecision(
+  classified: RecipientClassification,
+  tagged: Set<string>,
+  ruleNames: Set<string>,
+  confidenceMin: number,
+): RecipientDecision {
+  const decision: RecipientDecision = {
+    source: "typesafe",
+    names: new Set([...tagged, ...classified.names]),
+    choice: classified.choice,
+    confidence: classified.confidence,
+    probabilities: classified.probabilities,
+  };
+  if (classified.model) {
+    decision.model = classified.model;
+  }
+  if (classified.usage) {
+    decision.usage = classified.usage;
+  }
+  if (classified.confidence < confidenceMin) {
+    decision.source = "low_confidence";
+    decision.reason = `confidence ${classified.confidence.toFixed(2)} below ${confidenceMin}`;
+    decision.names = new Set([...tagged, ...ruleNames]);
+  }
+  return decision;
+}
+
+export function createGroupRouter(options: GroupRouterOptions = {}): GroupRouter {
   const client = options.client ?? createTypeSafeClient(options.sources ? { sources: options.sources } : {});
   const confidenceMin = options.confidenceMin ?? RECIPIENT_CONFIDENCE_MIN;
   return {
@@ -285,31 +350,11 @@ export function createGroupRouter(
         return { source: "tags", names: new Set(ruleNames) };
       }
       try {
-        const classified = await classifyGroupRecipients({
-          rows: args.rows,
-          members: args.members,
-          pendingNames,
-          evaluate: client.evaluate,
-        });
-        const decision: RecipientDecision = {
-          source: "typesafe",
-          names: new Set([...tagged, ...classified.names]),
-          choice: classified.choice,
-          confidence: classified.confidence,
-          probabilities: classified.probabilities,
-        };
-        if (classified.model) {
-          decision.model = classified.model;
-        }
-        if (classified.usage) {
-          decision.usage = classified.usage;
-        }
-        if (classified.confidence < confidenceMin) {
-          decision.source = "low_confidence";
-          decision.reason = `confidence ${classified.confidence.toFixed(2)} below ${confidenceMin}`;
-          decision.names = new Set([...tagged, ...ruleNames]);
-        }
-        return decision;
+        const classified = await classifyGroupRecipients(
+          { rows: args.rows, members: args.members, pendingNames },
+          client,
+        );
+        return classifiedDecision(classified, tagged, ruleNames, confidenceMin);
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         writeLog("warn", "typesafe recipients fallback", {
@@ -330,12 +375,7 @@ export function createGroupRouter(
         return { source: "limit", rows: fallbackRows };
       }
       try {
-        const selected = await selectGroupHistory({
-          rows: args.rows,
-          agentName: args.agentName,
-          ...(args.agentFocus !== undefined ? { agentFocus: args.agentFocus } : {}),
-          evaluate: client.evaluate,
-        });
+        const selected = await selectGroupHistory(args, client);
         const decision: HistoryDecision = {
           source: "typesafe",
           rows: selected.rows,

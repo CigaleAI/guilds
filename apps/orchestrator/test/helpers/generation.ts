@@ -38,7 +38,7 @@ import type { ScheduleRow, PlannedWake } from "../../src/db/schedules.js";
 import { Schedules, type ScheduleDatabase } from "../../src/schedules/service.js";
 import { Issues, type IssuesDatabase } from "../../src/issues/index.js";
 import { GroupChat, type GroupChatDatabase } from "../../src/groupchat/index.js";
-import { defaultGroupRouter } from "../../src/typesafe/index.js";
+import { defaultGroupRouter } from "../../src/typesafe/group.js";
 import type { AgentConfig, CompletionMetadata, RunConfigSnapshot, SecretRef, ToolCall } from "../../src/db/schema/index.js";
 import { validateAgentConfig } from "../../src/agents/config.js";
 

@@ -28,7 +28,7 @@ import { prepareBrowserWorkspace, prepareWorkspace } from "../sandbox/index.js";
 import type { Scripts } from "../scripts/catalog.js";
 import { collectRunState, type RunStateInputs } from "../state/index.js";
 import { SCRIPT_TOOLS } from "../toolbox/script.js";
-import { serializeHistoryDecision } from "../typesafe/index.js";
+import { serializeHistoryDecision } from "../typesafe/group.js";
 import type { ActiveGenerations } from "./active-generations.js";
 import { codingRepositoriesDatabase, guildRepositories, type CodingRepositoriesDatabase } from "./coding.js";
 import { RunRequestError } from "./errors.js";
