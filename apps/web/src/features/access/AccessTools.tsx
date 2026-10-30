@@ -13,6 +13,7 @@ import { useInstance } from "../../api/queries/admin";
 import type {
   AccessBinding,
   AccessOwner,
+  BindingsChange,
   BindingTarget,
   McpServerAccess,
 } from "../../api/types/access";
@@ -97,20 +98,11 @@ export function AccessTools({
   const setBinding = useSetBinding(owner);
   const bulk = useBulkBindings(owner);
   const connect = useServerConnect(owner);
-  const [adding, setAdding] = useState(false);
-  const [removing, setRemoving] = useState<McpServerAccess | null>(null);
-  const removeServer = useRemoveOrgServer(owner.id);
-  const disconnect = useDisconnectServer();
   const [pane, setPane] = useState<ToolsPane>(panes[0] ?? "connections");
   const switcher = panes.length > 1;
-  const [disconnecting, setDisconnecting] = useState<{
-    server: McpServerAccess;
-    connectionId: string;
-  } | null>(null);
-  const bindingsOfLogin = useConnection(disconnecting?.connectionId ?? null);
 
   const instance = useInstance();
-  const busy = setBinding.isPending || bulk.isPending || connect.busy || disconnect.isPending;
+  const busy = setBinding.isPending || bulk.isPending || connect.busy;
 
   const failed = (title: string) => (error: Error) =>
     toast({ kind: "error", title, description: error.message });
@@ -160,7 +152,6 @@ export function AccessTools({
   }
 
   const { tools, mcp } = access.data;
-  const bindingCount = bindingsOfLogin.data?.bindings?.length;
 
   const renderBinding = (item: AccessBinding, target: BindingTarget) => {
     const origin = bindingOrigin(item, owner.scope);
@@ -220,50 +211,20 @@ export function AccessTools({
       ) : null}
 
       {pane === "connections" ? (
-        <Pane
-          title="Integrations"
-          description="Remote tools the orchestrator calls with a login it holds; keys never reach an agent's machine. Logins inherited from wider scopes appear here: turn a server off, or sign in with a login of its own."
-        >
-          <div className="flex flex-col gap-3">
-            {serverManager && owner.scope === "org" ? (
-              <div className="flex justify-end">
-                <Button size="sm" variant="outline" onClick={() => setAdding(true)}>
-                  <Icon icon={Plus} size={14} />
-                  Add a remote server
-                </Button>
-              </div>
-            ) : null}
-            {connectable(mcp, owner).map((server) => (
-              <ServerCard
-                key={server.id}
-                server={server}
-                owner={owner}
-                busy={busy || removeServer.isPending}
-                {...(serverManager && owner.scope === "org" && server.org_owned
-                  ? { onRemove: () => setRemoving(server) }
-                  : {})}
-                onServerEnabled={(enabled) =>
-                  toggle({ kind: "mcp", id: server.id }, server, enabled)
-                }
-                onToolEnabled={(name, enabled) => {
-                  const tool = server.tools.find((item) => item.name === name);
-                  if (tool) toggle({ kind: "mcp_tool", id: name }, tool, enabled);
-                }}
-                onBulk={(names, enabled) =>
-                  bulk.mutate(
-                    { targets: names.map((id) => ({ kind: "mcp_tool" as const, id })), enabled },
-                    { onError: failed(`Couldn't update ${server.name}'s tools`) },
-                  )
-                }
-                onConnect={() => connect.start(server)}
-                onDisconnect={(connectionId) => setDisconnecting({ server, connectionId })}
-              />
-            ))}
-          </div>
-          {owner.scope === "org" ? (
-            <OrgServerDialog orgId={owner.id} open={adding} onClose={() => setAdding(false)} />
-          ) : null}
-        </Pane>
+        <IntegrationsPane
+          owner={owner}
+          servers={mcp}
+          serverManager={serverManager}
+          busy={busy}
+          onToggle={toggle}
+          onBulk={(server, names, enabled) =>
+            bulk.mutate(
+              { targets: names.map((id) => ({ kind: "mcp_tool" as const, id })), enabled },
+              { onError: failed(`Couldn't update ${server.name}'s tools`) },
+            )
+          }
+          onConnect={connect.start}
+        />
       ) : (
         <Pane
           title="Native tools"
@@ -289,55 +250,182 @@ export function AccessTools({
       )}
 
       {connect.dialogs}
-      <ConfirmDialog
-        kind="destructive"
-        open={removing !== null}
-        onOpenChange={(open) => !open && setRemoving(null)}
-        title={`Remove ${removing?.name ?? ""}?`}
-        description="This removes the server for the whole organisation, with every login to it and the bindings that use them."
-        confirmLabel="Remove server"
-        onConfirm={() =>
-          removing
-            ? removeServer.mutateAsync(removing.id).then(
-                () => {
-                  toast({ kind: "success", title: `${removing.name} removed` });
-                  setRemoving(null);
-                },
-                (error: Error) => {
-                  failed(`Couldn't remove ${removing.name}`)(error);
-                  throw error;
-                },
-              )
-            : undefined
-        }
-      />
-      <ConfirmDialog
-        kind="destructive"
-        open={disconnecting !== null}
-        onOpenChange={(open) => !open && setDisconnecting(null)}
-        title={`Disconnect ${disconnecting?.server.name ?? ""}?`}
-        description={`${
-          bindingCount === undefined
-            ? "This removes the login."
-            : `This removes the login and ${bindingCount} binding${bindingCount === 1 ? "" : "s"} that use it.`
-        } Its tools go back to the login inherited from a wider scope, if there is one.`}
-        confirmLabel="Disconnect"
-        onConfirm={() =>
-          disconnecting
-            ? disconnect.mutateAsync(disconnecting.connectionId).then(
-                () => {
-                  toast({ kind: "success", title: `${disconnecting.server.name} disconnected` });
-                  setDisconnecting(null);
-                },
-                (error: Error) => {
-                  failed(`Couldn't disconnect ${disconnecting.server.name}`)(error);
-                  throw error;
-                },
-              )
-            : undefined
-        }
-      />
     </Frame>
+  );
+}
+
+type IntegrationsPaneProps = {
+  owner: AccessOwner;
+  servers: McpServerAccess[];
+  /** The viewer may add and remove the organisation's own remote servers. */
+  serverManager: boolean;
+  /** A binding change or a sign-in is in flight. */
+  busy: boolean;
+  onToggle: (
+    target: BindingTarget,
+    item: Pick<AccessBinding, "enabled" | "overlay">,
+    enabled: boolean,
+  ) => void;
+  onBulk: (server: McpServerAccess, names: string[], enabled: BindingsChange["enabled"]) => void;
+  onConnect: (server: McpServerAccess) => void;
+};
+
+/**
+ * The servers the scope reaches, a card each, with adding, removing and disconnecting one: the
+ * organisation's own servers only where the viewer manages them.
+ */
+function IntegrationsPane({
+  owner,
+  servers,
+  serverManager,
+  busy,
+  onToggle,
+  onBulk,
+  onConnect,
+}: IntegrationsPaneProps) {
+  const [adding, setAdding] = useState(false);
+  const [removing, setRemoving] = useState<McpServerAccess | null>(null);
+  const [disconnecting, setDisconnecting] = useState<{
+    server: McpServerAccess;
+    connectionId: string;
+  } | null>(null);
+  const removeServer = useRemoveOrgServer(owner.id);
+  const disconnect = useDisconnectServer();
+  const manages = serverManager && owner.scope === "org";
+  const cardsBusy = busy || disconnect.isPending || removeServer.isPending;
+
+  return (
+    <Pane
+      title="Integrations"
+      description="Remote tools the orchestrator calls with a login it holds; keys never reach an agent's machine. Logins inherited from wider scopes appear here: turn a server off, or sign in with a login of its own."
+    >
+      <div className="flex flex-col gap-3">
+        {manages ? (
+          <div className="flex justify-end">
+            <Button size="sm" variant="outline" onClick={() => setAdding(true)}>
+              <Icon icon={Plus} size={14} />
+              Add a remote server
+            </Button>
+          </div>
+        ) : null}
+        {connectable(servers, owner).map((server) => (
+          <ServerCard
+            key={server.id}
+            server={server}
+            owner={owner}
+            busy={cardsBusy}
+            {...(manages && server.org_owned ? { onRemove: () => setRemoving(server) } : {})}
+            onServerEnabled={(enabled) => onToggle({ kind: "mcp", id: server.id }, server, enabled)}
+            onToolEnabled={(name, enabled) => {
+              const tool = server.tools.find((item) => item.name === name);
+              if (tool) onToggle({ kind: "mcp_tool", id: name }, tool, enabled);
+            }}
+            onBulk={(names, enabled) => onBulk(server, names, enabled)}
+            onConnect={() => onConnect(server)}
+            onDisconnect={(connectionId) => setDisconnecting({ server, connectionId })}
+          />
+        ))}
+      </div>
+      {owner.scope === "org" ? (
+        <OrgServerDialog orgId={owner.id} open={adding} onClose={() => setAdding(false)} />
+      ) : null}
+      <RemoveServerDialog
+        server={removing}
+        onClose={() => setRemoving(null)}
+        remove={removeServer.mutateAsync}
+      />
+      <DisconnectDialog
+        login={disconnecting}
+        onClose={() => setDisconnecting(null)}
+        disconnect={disconnect.mutateAsync}
+      />
+    </Pane>
+  );
+}
+
+type RemoveServerDialogProps = {
+  /** The organisation's own server to remove; null keeps the dialog closed. */
+  server: McpServerAccess | null;
+  onClose: () => void;
+  /** Removes a server by its id; rejects when the removal fails. */
+  remove: (serverId: string) => Promise<unknown>;
+};
+
+/** Asks before removing an organisation's own server with every login to it. */
+function RemoveServerDialog({ server, onClose, remove }: RemoveServerDialogProps) {
+  return (
+    <ConfirmDialog
+      kind="destructive"
+      open={server !== null}
+      onOpenChange={(open) => !open && onClose()}
+      title={`Remove ${server?.name ?? ""}?`}
+      description="This removes the server for the whole organisation, with every login to it and the bindings that use them."
+      confirmLabel="Remove server"
+      onConfirm={() =>
+        server
+          ? remove(server.id).then(
+              () => {
+                toast({ kind: "success", title: `${server.name} removed` });
+                onClose();
+              },
+              (error: Error) => {
+                toast({
+                  kind: "error",
+                  title: `Couldn't remove ${server.name}`,
+                  description: error.message,
+                });
+                throw error;
+              },
+            )
+          : undefined
+      }
+    />
+  );
+}
+
+type DisconnectDialogProps = {
+  /** The server and the scope's own login to it; null keeps the dialog closed. */
+  login: { server: McpServerAccess; connectionId: string } | null;
+  onClose: () => void;
+  /** Deletes a login by its id; rejects when the deletion fails. */
+  disconnect: (connectionId: string) => Promise<unknown>;
+};
+
+/** Asks before deleting the scope's own login to a server, counting the bindings that use it. */
+function DisconnectDialog({ login, onClose, disconnect }: DisconnectDialogProps) {
+  const bindingsOfLogin = useConnection(login?.connectionId ?? null);
+  const bindingCount = bindingsOfLogin.data?.bindings?.length;
+  return (
+    <ConfirmDialog
+      kind="destructive"
+      open={login !== null}
+      onOpenChange={(open) => !open && onClose()}
+      title={`Disconnect ${login?.server.name ?? ""}?`}
+      description={`${
+        bindingCount === undefined
+          ? "This removes the login."
+          : `This removes the login and ${bindingCount} binding${bindingCount === 1 ? "" : "s"} that use it.`
+      } Its tools go back to the login inherited from a wider scope, if there is one.`}
+      confirmLabel="Disconnect"
+      onConfirm={() =>
+        login
+          ? disconnect(login.connectionId).then(
+              () => {
+                toast({ kind: "success", title: `${login.server.name} disconnected` });
+                onClose();
+              },
+              (error: Error) => {
+                toast({
+                  kind: "error",
+                  title: `Couldn't disconnect ${login.server.name}`,
+                  description: error.message,
+                });
+                throw error;
+              },
+            )
+          : undefined
+      }
+    />
   );
 }
 
