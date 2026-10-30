@@ -28,6 +28,7 @@
     "./api/types/secrets": "./src/api/types/secrets.ts",
     "./api/types/studio": "./src/api/types/studio.ts",
     "./api/types/tables": "./src/api/types/tables.ts",
+    "./api/wire": "./src/api/wire.ts",
     "./app/format": "./src/app/format.ts",
     "./app/identity": "./src/app/identity.tsx",
     "./app/router": "./src/app/router.tsx",

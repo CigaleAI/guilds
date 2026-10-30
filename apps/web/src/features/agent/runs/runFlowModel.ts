@@ -1,6 +1,7 @@
 import type { ToolKind } from "@guildsrun/ui";
-import { isJsonObject, messageContentText, toolResultError } from "./toolFormat";
-import type { JsonObject, RunMessage, ToolCallRequest } from "./toolFormat";
+import { isJsonObject, type JsonObject } from "../../../api/wire";
+import { messageContentText, toolResultError } from "./toolFormat";
+import type { RunMessage, ToolCallRequest } from "./toolFormat";
 import { classifyToolCall, kindBreakdown } from "./toolKinds";
 import type { RunWithTools, ToolCallInfo } from "./toolKinds";
 

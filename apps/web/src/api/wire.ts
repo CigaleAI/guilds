@@ -1,8 +1,27 @@
 /** Checks that narrow what the server sends before the app reads it as one of its types. */
 
-/** A value as JSON writes it. */
-export type JsonValue =
-  string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+/** A value JSON carries: a string, number, boolean or null, or an array or object of them. */
+export type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject;
+
+/** A JSON object. A field held as `undefined` is one JSON leaves out. */
+export type JsonObject = { [key: string]: JsonValue | undefined };
+
+const JSON_SCALARS: readonly string[] = ["string", "number", "boolean"];
+
+/** Whether a value is one JSON carries, every element and field of it included. */
+export function isJsonValue(value: unknown): value is JsonValue {
+  if (value === null || JSON_SCALARS.includes(typeof value)) return true;
+  if (Array.isArray(value)) return value.every(isJsonValue);
+  return isJsonObject(value);
+}
+
+/** Whether a value is a JSON object: a plain object, every field of it a JSON value or left out. */
+export function isJsonObject(value: unknown): value is JsonObject {
+  if (typeof value !== "object" || value === null) return false;
+  const prototype: unknown = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return false;
+  return Object.values(value).every((field) => field === undefined || isJsonValue(field));
+}
 
 /** A JSON object, whose fields can be read by name. */
 export function isRecord(value: unknown): value is Record<string, unknown> {

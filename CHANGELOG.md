@@ -18,8 +18,10 @@ as one module per domain, `api/types/<domain>` (`access`, `admin`,
 `features/agent/runs/toolFormat`, `stripRemainingToolCalls` takes and
 returns a string, `parseToolArgs` returns a `ToolArguments`, and the
 `parsed` of what `formatToolArgs` returns is a `JsonValue`. The module
-exports `JsonValue`, `JsonObject`, `ToolArguments`,
-`ToolResultMetadata`, `isJsonValue` and `isJsonObject`.
+exports `ToolArguments` and `ToolResultMetadata`. `JsonValue`,
+`JsonObject`, `isJsonValue` and `isJsonObject` are exported from
+`api/wire`, beside `isRecord` and the other guards that narrow what
+the server sends.
 
 **Rebuild.** The runtime image gains gost, and
 `agent-browser-start` takes the slot's DevTools relay port after the

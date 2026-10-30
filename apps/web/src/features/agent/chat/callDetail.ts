@@ -1,5 +1,6 @@
 import type { CallProgress } from "../../../api/toolProgress";
 import type { Harness } from "../../../api/types/agents";
+import { isJsonObject } from "../../../api/wire";
 import { harnessLabel, isHarness } from "../harness";
 import type { FlowCall } from "../runs/runFlowModel";
 import {
@@ -8,7 +9,6 @@ import {
   formatDuration,
   formatReturnedData,
   formatToolArgs,
-  isJsonObject,
   stripRemainingToolCalls,
   type ReturnedDataInfo,
   type RunMessage,

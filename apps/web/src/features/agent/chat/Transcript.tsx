@@ -5,6 +5,7 @@ import { liveTurnActive, type LiveTurn } from "../../../api/liveTurn";
 import type { ToolProgress } from "../../../api/toolProgress";
 import type { AgentDetail } from "../../../api/types/agents";
 import type { MessageAttachment, Run, RunMessage } from "../../../api/types/runs";
+import { isJsonObject } from "../../../api/wire";
 import { agentLook } from "../../../app/agents";
 import { isoTime, messageTime } from "../../../app/format";
 import { useIdentity } from "../../../app/identity";
@@ -32,7 +33,6 @@ import {
   type FlowCall,
   type FlowSegment,
 } from "../runs/runFlowModel";
-import { isJsonObject } from "../runs/toolFormat";
 import { FlowView, type RevealStep } from "./FlowView";
 import { Reasoning } from "./Reasoning";
 import { offeredToolGroups, promptSectionsOf } from "./runContext";

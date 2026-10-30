@@ -159,8 +159,9 @@ beside these.
 `package.json` lists under `exports` what an extension's package may
 import: `mount`, the slots, the router, the build recipe
 (`appConfig()` in `vite.app.ts`), the API client and session, the
-API types of each domain (`api/types/<domain>`), identity,
-formatting, tool-call formatting
+API types of each domain (`api/types/<domain>`), the JSON value
+type and the guards that narrow a server's reply (`api/wire`),
+identity, formatting, tool-call formatting
 (`features/agent/runs/toolFormat`), and the member role helpers
 (`features/settings/members`).
 

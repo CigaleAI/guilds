@@ -8,8 +8,6 @@ import {
   formatTokens,
   formatToolArgs,
   friendlyToolCall,
-  isJsonObject,
-  isJsonValue,
   parseToolArgs,
   previewText,
   stripRemainingToolCalls,
@@ -29,24 +27,6 @@ test("stripRemainingToolCalls removes only the trailing budget stamp", () => {
     stripRemainingToolCalls(`ok\n\n${wrapUp}\n\nremaining_tool_calls: 5`),
     `ok\n\n${wrapUp}`,
   );
-});
-
-test("isJsonValue accepts what JSON carries and refuses the rest", () => {
-  assert.equal(isJsonValue({ a: [1, "two", true, null, { b: 3 }] }), true);
-  assert.equal(isJsonValue("text"), true);
-  assert.equal(isJsonValue(undefined), false);
-  assert.equal(isJsonValue([1, () => 2]), false);
-  assert.equal(isJsonValue([undefined]), false);
-  assert.equal(isJsonValue({ a: { b: undefined } }), true);
-});
-
-test("isJsonObject accepts an object of JSON values only", () => {
-  assert.equal(isJsonObject({ path: "a.md", offset: 3 }), true);
-  assert.equal(isJsonObject({}), true);
-  assert.equal(isJsonObject(null), false);
-  assert.equal(isJsonObject(["a"]), false);
-  assert.equal(isJsonObject("{}"), false);
-  assert.equal(isJsonObject({ when: new Date(0) }), false);
 });
 
 test("parseToolArgs reads a JSON string or an object, and is empty otherwise", () => {

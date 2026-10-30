@@ -1,3 +1,4 @@
+import { isJsonObject, isJsonValue, type JsonValue } from "../../../api/wire";
 import { diffstat } from "../chat/changes";
 
 /** A recorded run message: the API's message row, every field optional so partial rows fit too. */
@@ -14,15 +15,6 @@ export type ToolCallRequest = {
   id?: unknown;
   function?: { name?: unknown; arguments?: unknown };
 };
-
-/** A value JSON carries: a string, number, boolean or null, or an array or object of them. */
-export type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject;
-
-/**
- * A JSON object: the shape a call's arguments and a result's metadata take on the wire. A field
- * held as `undefined` is one JSON leaves out.
- */
-export type JsonObject = { [key: string]: JsonValue | undefined };
 
 /**
  * A tool call's arguments: the parameters the app reads by name, and the rest of the tool's own
@@ -105,23 +97,6 @@ export type ToolArgsInfo = {
 export type ReturnedDataInfo = { isJson: boolean; isEmpty: boolean; text: string; raw: unknown };
 
 const REMAINING_TOOL_CALLS_RE = /\n\nremaining_tool_calls: \d+\s*$/;
-
-const JSON_SCALARS: readonly string[] = ["string", "number", "boolean"];
-
-/** Whether a value is one JSON carries, every element and field of it included. */
-export function isJsonValue(value: unknown): value is JsonValue {
-  if (value === null || JSON_SCALARS.includes(typeof value)) return true;
-  if (Array.isArray(value)) return value.every(isJsonValue);
-  return isJsonObject(value);
-}
-
-/** Whether a value is a JSON object: a plain object, every field of it a JSON value or left out. */
-export function isJsonObject(value: unknown): value is JsonObject {
-  if (typeof value !== "object" || value === null) return false;
-  const prototype: unknown = Object.getPrototypeOf(value);
-  if (prototype !== Object.prototype && prototype !== null) return false;
-  return Object.values(value).every((field) => field === undefined || isJsonValue(field));
-}
 
 function parseJson(text: string): unknown {
   try {
