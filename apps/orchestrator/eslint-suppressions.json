@@ -549,27 +549,6 @@
       "count": 1
     }
   },
-  "src/sandbox/index.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 4
-    },
-    "no-restricted-syntax": {
-      "count": 9
-    }
-  },
-  "src/sandbox/sdk.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 5
-    }
-  },
-  "src/sandbox/sweep.ts": {
-    "complexity": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 3
-    }
-  },
   "src/schedules/describe.ts": {
     "complexity": {
       "count": 1

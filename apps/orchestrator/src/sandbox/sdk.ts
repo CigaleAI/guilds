@@ -118,11 +118,33 @@ export type OpenSandboxModule = {
   };
 };
 
+/** What the SDK's manager is created with: the connection, under whichever spelling the caller gave it. */
+export type RawManagerOptions = { connectionConfig: unknown };
+
+/** What the SDK creates a sandbox from: its image, lifetime, labels, size, mounts, and connection. */
+export type RawCreateOptions = {
+  image: string;
+  timeoutSeconds: unknown;
+  env: unknown;
+  metadata: unknown;
+  resource: unknown;
+  volumes: unknown;
+  entrypoint: unknown;
+  connectionConfig: unknown;
+};
+
+/** What the SDK connects to a running sandbox with: its id and the connection. */
+export type RawConnectOptions = { sandboxId: string; connectionConfig: unknown };
+
+/**
+ * The OpenSandbox SDK as its module exports it. What each call takes is known; what each returns
+ * is checked to be a manager or a sandbox before it is wrapped.
+ */
 export type RawSdk = {
-  SandboxManager: { create: (opts?: unknown) => unknown };
+  SandboxManager: { create(options: RawManagerOptions): unknown };
   Sandbox: {
-    create: (opts: unknown) => Promise<unknown>;
-    connect: (opts: unknown) => Promise<unknown>;
+    create(options: RawCreateOptions): Promise<unknown>;
+    connect(options: RawConnectOptions): Promise<unknown>;
   };
 };
 
@@ -143,6 +165,62 @@ export type CommandOptions = {
 
 function isStringRecord(value: unknown): value is Record<string, string> {
   return isPlainRecord(value) && Object.values(value).every((item) => typeof item === "string");
+}
+
+/** Whether `value` is an object, a class included, whose `name` member is a function. */
+function hasFunction(value: unknown, name: string): boolean {
+  if (value === null || (typeof value !== "object" && typeof value !== "function")) {
+    return false;
+  }
+  return typeof Reflect.get(value, name) === "function";
+}
+
+/** Whether each member named is a function or absent. */
+function optionalFunctions(value: Record<string, unknown>, names: readonly string[]): boolean {
+  return names.every((name) => value[name] === undefined || typeof value[name] === "function");
+}
+
+const MANAGER_METHODS = [
+  "listSandboxInfos",
+  "list_sandbox_infos",
+  "killSandbox",
+  "kill_sandbox",
+  "getSandboxInfo",
+  "close",
+] as const;
+const HANDLE_METHODS = ["getEndpoint", "close", "destroy", "kill"] as const;
+
+/** Whether a module exports the SDK's calls: `SandboxManager.create`, `Sandbox.create`, `Sandbox.connect`. */
+function isRawSdk(value: unknown): value is RawSdk {
+  return (
+    isPlainRecord(value)
+    && hasFunction(value.SandboxManager, "create")
+    && hasFunction(value.Sandbox, "create")
+    && hasFunction(value.Sandbox, "connect")
+  );
+}
+
+/** Whether the SDK's manager is an object whose methods, under each spelling it has, are functions. */
+function isSandboxManagerHandle(value: unknown): value is SandboxManagerHandle {
+  return isPlainRecord(value) && optionalFunctions(value, MANAGER_METHODS);
+}
+
+/** Whether the SDK's sandbox has an id and a command runner, and its other members are of their types. */
+function isRawSandboxHandle(value: unknown): value is RawSandboxHandle {
+  return (
+    isPlainRecord(value)
+    && typeof value.id === "string"
+    && hasFunction(value.commands, "run")
+    && (value.files === undefined || isPlainRecord(value.files))
+    && optionalFunctions(value, HANDLE_METHODS)
+  );
+}
+
+function sandboxOf(value: unknown): RawSandboxHandle {
+  if (!isRawSandboxHandle(value)) {
+    throw new SandboxError("the sandbox SDK returned a sandbox without an id and a command runner");
+  }
+  return value;
 }
 
 /** A command's options from either spelling of each: `timeout`, `working_directory`, and `env` included. */
@@ -408,7 +486,12 @@ export function wrapOpenSandbox(raw: RawSdk): OpenSandboxModule {
     SandboxManager: {
       create(config: ConnectionConfig) {
         const created = raw.SandboxManager.create({ connectionConfig: connectionOf(config) });
-        return Promise.resolve(created).then((manager) => wrapManager(manager as SandboxManagerHandle));
+        return Promise.resolve(created).then((manager: unknown) => {
+          if (!isSandboxManagerHandle(manager)) {
+            throw new SandboxError("the sandbox SDK returned a manager that is not an object of methods");
+          }
+          return wrapManager(manager);
+        });
       },
     },
     Sandbox: {
@@ -425,35 +508,41 @@ export function wrapOpenSandbox(raw: RawSdk): OpenSandboxModule {
           entrypoint: options.entrypoint,
           connectionConfig: connectionOf(options),
         });
-        return wrapHandle(created as RawSandboxHandle);
+        return wrapHandle(sandboxOf(created));
       },
       async connect(id: string, options: Record<string, unknown> = {}) {
         const connected = await raw.Sandbox.connect({
           sandboxId: id,
           connectionConfig: connectionOf(options),
         });
-        return wrapHandle(connected as RawSandboxHandle);
+        return wrapHandle(sandboxOf(connected));
       },
     },
   };
 }
 
-async function loadRawOpenSandbox(): Promise<RawSdk> {
+/** The SDK module: `OPENSANDBOX_SDK_MODULE` or the package, else the package's source when it is not built. */
+async function importOpenSandbox(): Promise<unknown> {
   const specifier = process.env.OPENSANDBOX_SDK_MODULE ?? "@alibaba-group/opensandbox";
   try {
-    return (await import(specifier)) as RawSdk;
+    return await import(specifier);
   } catch (error) {
     const src = path.join(
       orchestratorRoot(import.meta.url),
       "node_modules/@alibaba-group/opensandbox/src/index.ts",
     );
     if (existsSync(src)) {
-      return (await import(pathToFileURL(src).href)) as RawSdk;
+      return await import(pathToFileURL(src).href);
     }
     throw error;
   }
 }
 
+/** The SDK, wrapped; a module that does not export the calls made of it throws `SandboxError`. */
 export async function openSandboxSdk(): Promise<OpenSandboxModule> {
-  return wrapOpenSandbox(await loadRawOpenSandbox());
+  const loaded = await importOpenSandbox();
+  if (!isRawSdk(loaded)) {
+    throw new SandboxError("the sandbox SDK module does not export SandboxManager.create, Sandbox.create and Sandbox.connect");
+  }
+  return wrapOpenSandbox(loaded);
 }
