@@ -2,6 +2,7 @@ import { encryptPayload } from "../credentials/crypto.js";
 import type { AuthField, Manifest } from "../db/schema/index.js";
 import { replacesGithubApp } from "../instance/changes.js";
 import {
+  auditedIntegrationStatuses,
   connectorIntegrationId,
   GITHUB_APP,
   GITHUB_SERVER_ID,
@@ -133,9 +134,7 @@ export function listIntegrationStatuses(catalog: IntegrationCatalog): Integratio
 
 /** Each integration of the catalog as the instance admin sees it: also when and by whom its store row was written. */
 export function listAuditedIntegrationStatuses(catalog: IntegrationCatalog): IntegrationStatus[] {
-  return integrationStatuses(catalog.integrations ?? installedIntegrations(), installedManifests(), undefined, {
-    audit: true,
-  });
+  return auditedIntegrationStatuses(catalog.integrations ?? installedIntegrations(), installedManifests());
 }
 
 /** The integration a manifest's `auth.instance` reads: a shipped one by id, or the connector's own. */

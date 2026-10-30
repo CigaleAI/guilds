@@ -299,43 +299,54 @@ export function integrationForConnector(
 
 /**
  * What the box has, for the operator: each integration's state and which fields are set, never
- * a value. Its connectors are those of `connectors` whose manifest requires it or takes its key.
- * `audit` adds when and by whom a store row was written, for the instance admin.
+ * a value, and no audit. Its connectors are those of `connectors` whose manifest requires it or
+ * takes its key.
  */
 export function integrationStatuses(
   integrations: readonly Integration[],
   connectors: readonly ConnectorRequirements[],
   sources?: IntegrationSources,
-  options: { audit?: boolean } = {},
 ): IntegrationStatus[] {
-  const { keys } = sourcesOf(sources);
   const connectorsOf = (id: string) =>
     connectors
       .filter((manifest) => integrationForConnector(manifest, integrations)?.id === id)
       .map((manifest) => manifest.slug);
-  return integrations.map((integration) => {
-    const row = integration.source === "store" && options.audit ? (keys[integration.id] ?? null) : null;
-    return {
-      id: integration.id,
-      label: integration.label,
-      enables: integration.enables,
-      source: integration.source,
-      state: integrationState(integration, sources),
-      fields: integration.fields.map((field) => ({
-        name: field.name,
-        label: field.label,
-        optional: Boolean(field.optional),
-        secret: Boolean(field.secret),
-        multiline: Boolean(field.multiline),
-        set: fieldSet(integration, field, sources),
-      })),
-      setup: integration.setup ?? null,
-      updated_at: row?.updated_at ?? null,
-      set_by: row?.set_by ?? null,
-      provides: {
-        native_tools: [...(integration.provides?.nativeTools ?? [])],
-        connectors: [...new Set([...(integration.provides?.connectors ?? []), ...connectorsOf(integration.id)])],
-      },
-    };
+  return integrations.map((integration) => ({
+    id: integration.id,
+    label: integration.label,
+    enables: integration.enables,
+    source: integration.source,
+    state: integrationState(integration, sources),
+    fields: integration.fields.map((field) => ({
+      name: field.name,
+      label: field.label,
+      optional: Boolean(field.optional),
+      secret: Boolean(field.secret),
+      multiline: Boolean(field.multiline),
+      set: fieldSet(integration, field, sources),
+    })),
+    setup: integration.setup ?? null,
+    updated_at: null,
+    set_by: null,
+    provides: {
+      native_tools: [...(integration.provides?.nativeTools ?? [])],
+      connectors: [...new Set([...(integration.provides?.connectors ?? []), ...connectorsOf(integration.id)])],
+    },
+  }));
+}
+
+/**
+ * What the box has, for the instance admin: each integration's status, and when and by whom a
+ * store integration's row was last written. The environment has no audit.
+ */
+export function auditedIntegrationStatuses(
+  integrations: readonly Integration[],
+  connectors: readonly ConnectorRequirements[],
+  sources?: IntegrationSources,
+): IntegrationStatus[] {
+  const { keys } = sourcesOf(sources);
+  return integrationStatuses(integrations, connectors, sources).map((status) => {
+    const row = status.source === "store" ? keys[status.id] : undefined;
+    return { ...status, updated_at: row?.updated_at ?? null, set_by: row?.set_by ?? null };
   });
 }

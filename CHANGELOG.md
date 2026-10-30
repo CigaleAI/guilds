@@ -8,6 +8,12 @@ commands for each effect are in
 
 ## Unreleased
 
+**Breaking for extensions.** `integrationStatuses`
+(`instance/integrations.js`) has no options argument and answers every
+status without audit: `integrationStatuses(integrations, connectors,
+sources)`. `auditedIntegrationStatuses`, with the same arguments, adds
+when and by whom each store integration's row was last written.
+
 **No impact.** The agent's schedule tools refuse a `cron`, a window
 field, or a `schedule_update` `description` or `instruction` of the
 wrong type before anything is written, with the first mismatch named
