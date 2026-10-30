@@ -127,34 +127,40 @@ function questionOf(row: unknown, index: number): Question | null {
   };
 }
 
+/** A question widget: its questions, or the one-question shorthand; null when none is readable. */
+function questionWidgetOf(body: Record<string, unknown>): QuestionWidget | null {
+  const raw = Array.isArray(body.questions) ? body.questions : body.question ? [body] : [];
+  const questions = raw.flatMap((item, index) => questionOf(item, index) ?? []);
+  return questions.length
+    ? { kind: "question", title: text(body.title) || "Question", questions }
+    : null;
+}
+
+/** A connect widget: the server or servers it names and where their login may live. */
+function connectWidgetOf(body: Record<string, unknown>): ConnectWidget {
+  const recommended = isConnectScope(body.recommended_scope) ? body.recommended_scope : "org";
+  const allowed = (Array.isArray(body.allowed_scopes) ? body.allowed_scopes : []).filter(
+    isConnectScope,
+  );
+  return {
+    kind: "connect",
+    mode: body.mode === "any" ? "any" : "org",
+    title: text(body.title) || "Connect a service",
+    reason: text(body.reason),
+    storageHint: typeof body.storage_hint === "string" ? body.storage_hint : null,
+    server: serverOf(body.server),
+    servers: (Array.isArray(body.servers) ? body.servers : []).flatMap(
+      (item) => serverOf(item) ?? [],
+    ),
+    recommendedScope: recommended,
+    allowedScopes: allowed.length ? allowed : [recommended],
+    alreadyConnected: body.already_connected === true,
+  };
+}
+
 function widgetFrom(body: Record<string, unknown>): BuilderWidget | null {
-  if (body.widget === "question") {
-    const raw = Array.isArray(body.questions) ? body.questions : body.question ? [body] : [];
-    const questions = raw.flatMap((item, index) => questionOf(item, index) ?? []);
-    return questions.length
-      ? { kind: "question", title: text(body.title) || "Question", questions }
-      : null;
-  }
-  if (body.widget === "connect") {
-    const recommended = isConnectScope(body.recommended_scope) ? body.recommended_scope : "org";
-    const allowed = (Array.isArray(body.allowed_scopes) ? body.allowed_scopes : []).filter(
-      isConnectScope,
-    );
-    return {
-      kind: "connect",
-      mode: body.mode === "any" ? "any" : "org",
-      title: text(body.title) || "Connect a service",
-      reason: text(body.reason),
-      storageHint: typeof body.storage_hint === "string" ? body.storage_hint : null,
-      server: serverOf(body.server),
-      servers: (Array.isArray(body.servers) ? body.servers : []).flatMap(
-        (item) => serverOf(item) ?? [],
-      ),
-      recommendedScope: recommended,
-      allowedScopes: allowed.length ? allowed : [recommended],
-      alreadyConnected: body.already_connected === true,
-    };
-  }
+  if (body.widget === "question") return questionWidgetOf(body);
+  if (body.widget === "connect") return connectWidgetOf(body);
   return null;
 }
 
