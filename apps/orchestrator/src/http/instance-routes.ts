@@ -1,6 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { installedManifests } from "../connectors/servers.js";
-import { installedIntegrations, integrationStatuses } from "../instance/integrations.js";
+import { listAuditedIntegrationStatuses, listIntegrationStatuses } from "../connectors/instance.js";
 import type { AppDeps } from "./deps.js";
 import { currentUser } from "./identity.js";
 import { isInstanceAdmin } from "./instance-admin.js";
@@ -14,17 +13,9 @@ export async function registerInstanceRoutes(app: FastifyInstance, deps: AppDeps
    */
   app.get("/api/instance", async (request) => {
     const user = await currentUser(deps.db, request, deps);
-    const audit = await isInstanceAdmin(deps, user.id);
-    return {
-      auth_mode: deps.config?.authMode ?? "compat-cookie",
-      integrations: integrationStatuses(
-        deps.integrations ?? installedIntegrations(),
-        installedManifests(),
-        undefined,
-        {
-          audit,
-        },
-      ),
-    };
+    const integrations = (await isInstanceAdmin(deps, user.id))
+      ? listAuditedIntegrationStatuses(deps)
+      : listIntegrationStatuses(deps);
+    return { auth_mode: deps.config?.authMode ?? "compat-cookie", integrations };
   });
 }

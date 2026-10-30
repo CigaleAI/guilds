@@ -97,7 +97,7 @@ export class BuilderService {
     }
   }
 
-  viewSession(
+  private viewSession(
     session: BuilderSessionRow,
     recipe?: Record<string, unknown> | null,
   ): Record<string, unknown> {
@@ -240,12 +240,17 @@ export class BuilderService {
     return this.viewSession(session, recipe);
   }
 
-  async recipeFor(session: BuilderSessionRow): Promise<RecipeRow> {
+  private async recipeFor(session: BuilderSessionRow): Promise<RecipeRow> {
     const recipe = await getRecipe(this.deps.db, String(session.recipe_id));
     if (!recipe) {
       throw new BuilderError(404, "recipe not found");
     }
     return recipe;
+  }
+
+  /** The session as the operator sees it, with its recipe row. */
+  async loadSessionView(session: BuilderSessionRow): Promise<Record<string, unknown>> {
+    return this.viewSession(session, await this.recipeFor(session));
   }
 
   toolContext(session: BuilderSessionRow): BuilderToolContext {
@@ -355,7 +360,7 @@ export class BuilderService {
       maxToolCalls: limits.max_tool_calls,
       maxInput: limits.max_input_tokens,
     });
-    return this.viewSession(started.session, await this.recipeFor(started.session));
+    return this.loadSessionView(started.session);
   }
 
   async cancel(session: BuilderSessionRow): Promise<Record<string, unknown>> {

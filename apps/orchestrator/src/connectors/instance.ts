@@ -7,17 +7,19 @@ import {
   GITHUB_SERVER_ID,
   installedIntegrations,
   integrationState,
+  integrationStatuses,
   integrationValue,
   integrationValues,
   setConnectorIntegrations,
   type Integration,
   type IntegrationField,
   type IntegrationSources,
+  type IntegrationStatus,
 } from "../instance/integrations.js";
 import { newId } from "../lib/ids.js";
 import { installedConnectors } from "./index.js";
 import { authFields } from "./manifest.js";
-import { listServers } from "./servers.js";
+import { installedManifests, listServers } from "./servers.js";
 import type { Credentials } from "./types.js";
 import { connectMcp, disconnectServerConnections, getMcpConnectionForOwner, saveMcpConnection } from "../db/mcp.js";
 import type { Queryable } from "../db/pg.js";
@@ -119,6 +121,21 @@ export async function refreshConnectorIntegrations(db: Queryable): Promise<void>
       return integration ? [integration] : [];
     }),
   );
+}
+
+/** The integrations a box may switch on: the installed ones when absent. */
+export type IntegrationCatalog = { integrations?: readonly Integration[] | undefined };
+
+/** Each integration of the catalog as an operator sees it, with the installed connectors it serves; never a value. */
+export function listIntegrationStatuses(catalog: IntegrationCatalog): IntegrationStatus[] {
+  return integrationStatuses(catalog.integrations ?? installedIntegrations(), installedManifests());
+}
+
+/** Each integration of the catalog as the instance admin sees it: also when and by whom its store row was written. */
+export function listAuditedIntegrationStatuses(catalog: IntegrationCatalog): IntegrationStatus[] {
+  return integrationStatuses(catalog.integrations ?? installedIntegrations(), installedManifests(), undefined, {
+    audit: true,
+  });
 }
 
 /** The integration a manifest's `auth.instance` reads: a shipped one by id, or the connector's own. */

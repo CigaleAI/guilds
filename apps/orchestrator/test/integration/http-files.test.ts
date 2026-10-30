@@ -111,6 +111,7 @@ test("operators upload, list, download, share, and delete files per level", { ti
     assert.equal(download.statusCode, 200);
     assert.equal(download.headers["content-type"], "application/pdf");
     assert.equal(download.headers["x-content-type-options"], "nosniff");
+    assert.equal(download.headers["cache-control"], "private, no-store");
     assert.match(String(download.headers["content-disposition"]), /^attachment; filename="Q3 report\.pdf"/);
     assert.equal(download.rawPayload.toString(), "%PDF-1.4");
 

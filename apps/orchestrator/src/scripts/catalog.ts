@@ -66,8 +66,8 @@ export function scriptItem(script: AgentScript): ScriptItem {
   };
 }
 
-/** Where an agent's script shows in the file-change log. */
-function scriptDisplayPath(orgId: string, agentId: string, name: string): string {
+/** Where an agent's script shows in the agent's files and the file-change log. */
+export function scriptDisplayPath(orgId: string, agentId: string, name: string): string {
   return displayPathFor({ orgId, level: "agent", ownerId: agentId, kind: "script", path: "scripts", key: name });
 }
 

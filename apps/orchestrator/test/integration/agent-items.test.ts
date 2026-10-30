@@ -87,17 +87,15 @@ test(
       assert.equal(sourceless.statusCode, 422);
       assert.deepEqual(sourceless.json().detail[0].loc, ["body", "source"]);
       const listed = await app.inject({ method: "GET", url: `${agent}/scripts`, headers: OWNER });
+      assert.equal(listed.statusCode, 200, listed.body);
       assert.deepEqual(
-        listed
-          .json()
-          .map((row: { name: string; display_path: string }) => [
-            row.name,
-            row.display_path.endsWith(`/scripts/${row.name}`),
-          ]),
-        [
-          ["sum", true],
-          ["tally", true],
-        ],
+        listed.json(),
+        ["sum", "tally"].map((name) => ({
+          ...script,
+          name,
+          parameters: null,
+          display_path: `org/org_home/agents/a_items/scripts/${name}`,
+        })),
       );
       assert.equal(
         (await app.inject({ method: "DELETE", url: `${agent}/scripts/tally`, headers: OWNER }))

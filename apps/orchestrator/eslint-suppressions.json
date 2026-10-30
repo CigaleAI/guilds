@@ -506,11 +506,6 @@
       "count": 1
     }
   },
-  "src/http/file-routes.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
   "src/http/sandbox-proxy.ts": {
     "max-params": {
       "count": 2

@@ -65,8 +65,7 @@ export async function registerBuilderSessionRoutes(app: RouteApp, deps: AppDeps)
       const org = await currentOrg(db, request, user);
       const builder = builderOf(deps);
       const session = await builder.getOwnedSession(request.params.session_id, user, org);
-      const recipe = await builder.recipeFor(session);
-      return builder.viewSession(session, recipe);
+      return await builder.loadSessionView(session);
     },
   );
 

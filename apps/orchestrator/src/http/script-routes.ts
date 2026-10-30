@@ -1,10 +1,9 @@
 import { Type } from "@sinclair/typebox";
 import { loadOperatorActor } from "../artifacts/actors.js";
-import { displayPathFor } from "../artifacts/paths.js";
 import { requireVisibleAgent } from "../agents/access.js";
 import type { AgentRow } from "../db/agents.js";
-import { scriptItem, type AgentScript } from "../scripts/catalog.js";
-import { clearScripts, createScript, deleteScript } from "../scripts/operator.js";
+import { scriptItem } from "../scripts/catalog.js";
+import { clearScripts, createScript, deleteScript, listOperatorScripts } from "../scripts/operator.js";
 import type { AppDeps, RouteApp } from "./deps.js";
 import { currentUser } from "./identity.js";
 import { AgentParams } from "./params.js";
@@ -21,19 +20,6 @@ const ScriptDraftSchema = Type.Object({
 /** The path of one script of an agent. */
 const ScriptParams = Type.Object({ agent_id: Type.String(), name: Type.String() });
 
-/** A script of the agent's listing, with the path it shows under in the agent's files. */
-function listedScript(agent: AgentRow, script: AgentScript) {
-  const displayPath = displayPathFor({
-    orgId: agent.org_id,
-    level: "agent",
-    ownerId: agent.id,
-    kind: "script",
-    path: "scripts",
-    key: script.name,
-  });
-  return { ...scriptItem(script), display_path: displayPath };
-}
-
 /** An agent's scripts: listed, read, written and deleted by its operators. */
 export async function registerScriptRoutes(app: RouteApp, deps: AppDeps): Promise<void> {
   const { db, scripts } = deps;
@@ -49,7 +35,7 @@ export async function registerScriptRoutes(app: RouteApp, deps: AppDeps): Promis
   app.get("/api/agents/:agent_id/scripts", { schema: { params: AgentParams } }, async (request) => {
     const user = await currentUser(db, request, deps);
     const agent = await requireVisibleAgent(db, request.params.agent_id, user.id);
-    return (await scripts.listForAgent(agent.id)).map((script) => listedScript(agent, script));
+    return await listOperatorScripts(scripts, agent);
   });
 
   app.post(
