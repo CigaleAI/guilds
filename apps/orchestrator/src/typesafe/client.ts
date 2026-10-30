@@ -1,7 +1,18 @@
+import { Value } from "@sinclair/typebox/value";
 import { GROUP_ROUTING, integrationValue, type IntegrationSources } from "../instance/integrations.js";
 import { httpRequest, readJson, type FetchFn } from "../net/http.js";
 import type { TypeSafeUsage } from "../db/schema/index.js";
 import { redactApiKey } from "../llm/completion.js";
+import { decode } from "../lib/decode.js";
+import {
+  ChoiceAnswerBody,
+  ErrorBody,
+  Fields,
+  NoulAnswerBody,
+  ScoreAnswerBody,
+  SystemOneResponse,
+  Usage,
+} from "./responses.js";
 
 export const TYPESAFE_URL = "https://api.typesafe.ai/v1/systemone";
 export const TYPESAFE_MODEL = "jev-latest";
@@ -79,10 +90,13 @@ export type TypeSafeResult = {
   usage?: TypeSafeUsage;
 };
 
-export type TypeSafeEvaluateFn = (args: {
+/** One evaluation: the state TypeSafe reads and the questions it answers about it, by id. */
+export type TypeSafeRequest = {
   state: unknown;
   questions: Record<string, TypeSafeQuestion>;
-}) => Promise<TypeSafeResult>;
+};
+
+export type TypeSafeEvaluateFn = (request: TypeSafeRequest) => Promise<TypeSafeResult>;
 
 export type TypeSafeClient = {
   configured: boolean;
@@ -93,6 +107,22 @@ export type TypeSafeRetryOptions = {
   maxRetries?: number;
   sleep?: (ms: number) => Promise<void>;
 };
+
+/**
+ * How System One is reached: the key, model, transport, timeout and retry policy. An unset key or
+ * model is read from the instance keys in `sources`; the others fall back to the defaults above.
+ */
+export type TypeSafeConnection = {
+  apiKey?: string | null;
+  model?: string;
+  fetch?: FetchFn;
+  timeoutMs?: number;
+  sources?: IntegrationSources;
+  retry?: TypeSafeRetryOptions;
+};
+
+/** A client's connection, or the `evaluate` that stands in for System One. */
+export type TypeSafeClientOptions = TypeSafeConnection & { evaluate?: TypeSafeEvaluateFn };
 
 /** The group routing key from the instance keys; empty while the integration is off. */
 export function typeSafeApiKey(sources?: IntegrationSources): string {
@@ -115,24 +145,32 @@ function asTypeSafeError(error: unknown, apiKey: string | null, attempts: number
   return new TypeSafeError(redactApiKey(message, apiKey), null, attempts);
 }
 
-function answerRow(value: unknown, id: string): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+function requireAnswerObject(value: unknown, id: string): void {
+  if (!Value.Check(Fields, value)) {
     throw new TypeSafeError(`missing TypeSafe answer ${id}`);
   }
-  return value as Record<string, unknown>;
 }
 
 function isUnitInterval(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
 }
 
-function numberMap(value: unknown): Record<string, number> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return {};
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function isText(value: unknown): value is string {
+  return typeof value === "string";
+}
+
+/** The fields of `value` that pass `keep`, each other one dropped; empty when it is no object. */
+function keptFields<T>(value: unknown, keep: (item: unknown) => item is T): Record<string, T> {
+  const out: Record<string, T> = {};
+  if (!Value.Check(Fields, value)) {
+    return out;
   }
-  const out: Record<string, number> = {};
-  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-    if (typeof item === "number" && Number.isFinite(item)) {
+  for (const [key, item] of Object.entries(value)) {
+    if (keep(item)) {
       out[key] = item;
     }
   }
@@ -140,11 +178,11 @@ function numberMap(value: unknown): Record<string, number> {
 }
 
 function noulAnswer(value: unknown, id: string): TypeSafeNoulAnswer {
-  const row = answerRow(value, id);
-  if (row.type !== "noul" || !isUnitInterval(row.noul)) {
+  requireAnswerObject(value, id);
+  if (!Value.Check(NoulAnswerBody, value)) {
     throw new TypeSafeError(`invalid TypeSafe noul answer ${id}`);
   }
-  return { type: "noul", noul: row.noul };
+  return { type: "noul", noul: value.noul };
 }
 
 export function requireNoul(result: TypeSafeResult, id: string): number {
@@ -156,18 +194,18 @@ function choiceAnswer(
   id: string,
   options?: ReadonlySet<string>,
 ): TypeSafeChoiceAnswer {
-  const row = answerRow(value, id);
-  if (row.type !== "choice" || typeof row.choice !== "string" || !row.choice) {
+  requireAnswerObject(value, id);
+  if (!Value.Check(ChoiceAnswerBody, value)) {
     throw new TypeSafeError(`invalid TypeSafe choice answer ${id}`);
   }
-  if (options && !options.has(row.choice)) {
-    throw new TypeSafeError(`TypeSafe choice answer ${id} picked unknown option ${row.choice}`);
+  if (options && !options.has(value.choice)) {
+    throw new TypeSafeError(`TypeSafe choice answer ${id} picked unknown option ${value.choice}`);
   }
   return {
     type: "choice",
-    choice: row.choice,
-    probabilities: numberMap(row.probabilities),
-    confidence: isUnitInterval(row.confidence) ? row.confidence : 0,
+    choice: value.choice,
+    probabilities: keptFields(value.probabilities, isFiniteNumber),
+    confidence: isUnitInterval(value.confidence) ? value.confidence : 0,
   };
 }
 
@@ -176,24 +214,16 @@ export function requireChoice(result: TypeSafeResult, id: string): TypeSafeChoic
 }
 
 function scoreAnswer(value: unknown, id: string): TypeSafeScoreAnswer {
-  const row = answerRow(value, id);
-  if (row.type !== "score" || typeof row.score !== "number" || !Number.isFinite(row.score)) {
+  requireAnswerObject(value, id);
+  if (!Value.Check(ScoreAnswerBody, value)) {
     throw new TypeSafeError(`invalid TypeSafe score answer ${id}`);
-  }
-  const legend: Record<string, string> = {};
-  if (row.legend && typeof row.legend === "object" && !Array.isArray(row.legend)) {
-    for (const [key, item] of Object.entries(row.legend as Record<string, unknown>)) {
-      if (typeof item === "string") {
-        legend[key] = item;
-      }
-    }
   }
   return {
     type: "score",
-    score: row.score,
-    legend,
-    probabilities: numberMap(row.probabilities),
-    confidence: isUnitInterval(row.confidence) ? row.confidence : 0,
+    score: value.score,
+    legend: keptFields(value.legend, isText),
+    probabilities: keptFields(value.probabilities, isFiniteNumber),
+    confidence: isUnitInterval(value.confidence) ? value.confidence : 0,
   };
 }
 
@@ -235,13 +265,12 @@ async function errorDetail(response: Response): Promise<string> {
     const stripped = text.trim();
     return stripped || `TypeSafe HTTP ${response.status}`;
   }
-  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
-    const row = payload as { message?: unknown; error?: unknown };
-    const message = typeof row.message === "string" ? row.message.trim() : "";
+  if (Value.Check(ErrorBody, payload)) {
+    const message = typeof payload.message === "string" ? payload.message.trim() : "";
     if (message) {
       return message;
     }
-    const error = typeof row.error === "string" ? row.error.trim() : "";
+    const error = typeof payload.error === "string" ? payload.error.trim() : "";
     if (error) {
       return error;
     }
@@ -310,24 +339,22 @@ async function fetchWithTimeout(
   }
 }
 
-export async function evaluateSystemOne(args: {
-  state: unknown;
-  questions: Record<string, TypeSafeQuestion>;
-  model?: string;
-  apiKey?: string;
-  fetch?: FetchFn;
-  timeoutMs?: number;
-  sources?: IntegrationSources;
-  retry?: TypeSafeRetryOptions;
-}): Promise<TypeSafeResult> {
-  const apiKey = (args.apiKey ?? typeSafeApiKey(args.sources)).trim();
+function unexpected(problem: string): TypeSafeError {
+  return new TypeSafeError(`TypeSafe returned an unexpected response at ${problem}`);
+}
+
+export async function evaluateSystemOne(
+  request: TypeSafeRequest,
+  connection: TypeSafeConnection = {},
+): Promise<TypeSafeResult> {
+  const apiKey = (connection.apiKey ?? typeSafeApiKey(connection.sources)).trim();
   if (!apiKey) {
     throw new TypeSafeError(KEY_NOT_SET);
   }
-  const model = (args.model ?? typeSafeModel(args.sources)).trim() || TYPESAFE_MODEL;
-  const timeoutMs = args.timeoutMs ?? TYPESAFE_TIMEOUT_MS;
-  const maxRetries = Math.max(0, args.retry?.maxRetries ?? TYPESAFE_MAX_RETRIES);
-  const sleep = args.retry?.sleep ?? defaultSleep;
+  const model = (connection.model ?? typeSafeModel(connection.sources)).trim() || TYPESAFE_MODEL;
+  const timeoutMs = connection.timeoutMs ?? TYPESAFE_TIMEOUT_MS;
+  const maxRetries = Math.max(0, connection.retry?.maxRetries ?? TYPESAFE_MAX_RETRIES);
+  const sleep = connection.retry?.sleep ?? defaultSleep;
   const init: RequestInit = {
     method: "POST",
     headers: {
@@ -336,12 +363,13 @@ export async function evaluateSystemOne(args: {
     },
     body: JSON.stringify({
       model,
-      state: args.state,
-      questions: args.questions,
+      state: request.state,
+      questions: request.questions,
     }),
   };
-  const send = args.fetch
-    ? () => fetchWithTimeout(args.fetch as FetchFn, TYPESAFE_URL, init, timeoutMs)
+  const fetchFn = connection.fetch;
+  const send = fetchFn
+    ? () => fetchWithTimeout(fetchFn, TYPESAFE_URL, init, timeoutMs)
     : () => httpRequest(TYPESAFE_URL, init, { timeoutMs });
 
   let attempt = 0;
@@ -368,21 +396,13 @@ export async function evaluateSystemOne(args: {
         }
         throw new TypeSafeError(detail, response.status);
       }
-      const payload = await readJson(response);
-      if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-        throw new TypeSafeError("TypeSafe response must be an object");
-      }
-      const row = payload as Record<string, unknown>;
-      const answers = row.answers;
-      if (!answers || typeof answers !== "object" || Array.isArray(answers)) {
-        throw new TypeSafeError("TypeSafe response is missing answers");
-      }
+      const reply = decode(SystemOneResponse, await readJson(response), unexpected);
       const result: TypeSafeResult = {
-        model: typeof row.model === "string" && row.model ? row.model : model,
-        answers: parseAnswers(args.questions, answers as Record<string, unknown>),
+        model: typeof reply.model === "string" && reply.model ? reply.model : model,
+        answers: parseAnswers(request.questions, reply.answers),
       };
-      if (row.usage && typeof row.usage === "object" && !Array.isArray(row.usage)) {
-        result.usage = row.usage as TypeSafeUsage;
+      if (Value.Check(Usage, reply.usage)) {
+        result.usage = reply.usage;
       }
       return result;
     } catch (error) {
@@ -395,48 +415,22 @@ export async function evaluateSystemOne(args: {
  * A client over the group routing key. The key is read on every call, so a key the admin enters
  * or removes under Platform keys takes effect without a restart; `configured` follows it.
  */
-export function createTypeSafeClient(
-  options: {
-    apiKey?: string | null;
-    evaluate?: TypeSafeEvaluateFn;
-    fetch?: FetchFn;
-    sources?: IntegrationSources;
-    timeoutMs?: number;
-    model?: string;
-    retry?: TypeSafeRetryOptions;
-  } = {},
-): TypeSafeClient {
-  if (options.evaluate) {
-    return { configured: true, evaluate: options.evaluate };
+export function createTypeSafeClient(options: TypeSafeClientOptions = {}): TypeSafeClient {
+  const { evaluate, ...connection } = options;
+  if (evaluate) {
+    return { configured: true, evaluate };
   }
-  const key = () => (options.apiKey ?? typeSafeApiKey(options.sources)).trim();
+  const key = (): string => (connection.apiKey ?? typeSafeApiKey(connection.sources)).trim();
   return {
     get configured() {
       return Boolean(key());
     },
-    evaluate: (args) => {
+    evaluate: (request) => {
       const apiKey = key();
       if (!apiKey) {
         return Promise.reject(new TypeSafeError(KEY_NOT_SET));
       }
-      const request: Parameters<typeof evaluateSystemOne>[0] = {
-        ...args,
-        apiKey,
-        ...(options.sources ? { sources: options.sources } : {}),
-      };
-      if (options.fetch) {
-        request.fetch = options.fetch;
-      }
-      if (options.timeoutMs !== undefined) {
-        request.timeoutMs = options.timeoutMs;
-      }
-      if (options.model !== undefined) {
-        request.model = options.model;
-      }
-      if (options.retry !== undefined) {
-        request.retry = options.retry;
-      }
-      return evaluateSystemOne(request);
+      return evaluateSystemOne(request, { ...connection, apiKey });
     },
   };
 }

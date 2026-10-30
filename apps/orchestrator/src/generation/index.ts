@@ -29,7 +29,7 @@ import { errorMessage, errorName, writeLog } from "../observability/log.js";
 import { OPEN_POLICY, type OrgPolicy } from "../policy/index.js";
 import { agentSchedules, type Schedules } from "../schedules/service.js";
 import { agentScripts, type Scripts } from "../scripts/catalog.js";
-import { defaultGroupRouter } from "../typesafe/index.js";
+import { defaultGroupRouter } from "../typesafe/group.js";
 import { AdmissionCoordinator } from "../admission/coordinator.js";
 import { ActiveGenerations, activeGenerationsDatabase } from "./active-generations.js";
 import { continuedBy, RunChains, runChainsDatabase } from "./chain.js";

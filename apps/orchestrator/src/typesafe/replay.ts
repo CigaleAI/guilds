@@ -1,13 +1,20 @@
 import type { GuildAgentRow } from "../db/agents.js";
 import type { GroupMessageRow } from "../db/group-chat.js";
+import type { RecipientRouting } from "../db/schema/index.js";
 import {
   recipientNamesAfter,
   taggedRecipientNamesAfter,
   type RecipientMessage,
 } from "../groupchat/recipients.js";
 import { serializeRecipientDecision } from "../groupchat/router.js";
-import { AGENT_TASK_PREVIEW_CHARS, createGroupRouter } from "./group.js";
-import type { TypeSafeClient } from "./client.js";
+import { AGENT_TASK_PREVIEW_CHARS, createGroupRouter, type GroupRouterOptions } from "./group.js";
+
+export class ReplayMessageNotFoundError extends Error {
+  constructor(seq: number) {
+    super(`no public message with seq ${seq}`);
+    this.name = "ReplayMessageNotFoundError";
+  }
+}
 
 export type RecipientReplay = {
   seq: number;
@@ -15,7 +22,7 @@ export type RecipientReplay = {
   content: string;
   offered: Array<{ name: string; focus: string; task_chars: number }>;
   rule_names: string[];
-  decision: Record<string, unknown>;
+  decision: RecipientRouting;
   would_wake: string[];
 };
 
@@ -26,53 +33,61 @@ type ReplayMessage = RecipientMessage &
 /** A guild member as the replay offers it to the Choice. */
 type ReplayMember = Pick<GuildAgentRow, "id" | "name" | "focus" | "task">;
 
+/** A guild's group chat as the replay reads it: its public messages and its members. */
+export type ReplayTranscript = {
+  rows: GroupMessageRow[];
+  members: ReplayMember[];
+};
+
+/**
+ * The message a replay re-runs: the public message at `seq` (the last one when unset), or, given
+ * `message`, a hypothetical user post of that text right after it.
+ */
+export type ReplayTarget = {
+  seq?: number;
+  message?: string;
+};
+
 // Re-run the recipient Choice for one public message as the dispatcher would
 // have seen it: every member except the author is offered (a user post
 // makes everyone pending; an agent post everyone but the author), and the tag
 // rules for just that message stand in for the low-confidence fallback.
-export async function replayRecipients(args: {
-  rows: GroupMessageRow[];
-  members: ReplayMember[];
-  client: TypeSafeClient;
-  seq?: number;
-  message?: string;
-  confidenceMin?: number;
-}): Promise<RecipientReplay> {
-  const ordered = [...args.rows].sort((left, right) => left.seq - right.seq);
-  const targetSeq = args.seq ?? ordered[ordered.length - 1]?.seq ?? 0;
+export async function replayRecipients(
+  transcript: ReplayTranscript,
+  router: GroupRouterOptions,
+  target: ReplayTarget = {},
+): Promise<RecipientReplay> {
+  const ordered = [...transcript.rows].sort((left, right) => left.seq - right.seq);
+  const targetSeq = target.seq ?? ordered[ordered.length - 1]?.seq ?? 0;
   const through: ReplayMessage[] = ordered.filter((row) => row.seq <= targetSeq);
   // A hypothetical user post after the chosen point in the transcript.
   const row: ReplayMessage | undefined =
-    args.message === undefined
+    target.message === undefined
       ? through[through.length - 1]
       : {
           seq: targetSeq + 1,
           author_type: "user",
           author_name: "user",
           author_agent_id: null,
-          content: args.message,
+          content: target.message,
           tagged_names: [],
           tagged_agent_ids: [],
         };
   if (row === undefined) {
-    throw new Error(`no public message with seq ${targetSeq}`);
+    throw new ReplayMessageNotFoundError(targetSeq);
   }
-  if (args.message !== undefined) {
+  if (target.message !== undefined) {
     through.push(row);
   }
-  const pending = args.members.filter(
+  const pending = transcript.members.filter(
     (member) => !(row.author_type === "agent" && member.id === row.author_agent_id),
   );
   const deliveredThrough = row.seq - 1;
-  const ruleNames = recipientNamesAfter(through, args.members, deliveredThrough);
-  const tagged = taggedRecipientNamesAfter(through, args.members, deliveredThrough);
-  const router = createGroupRouter({
-    client: args.client,
-    ...(args.confidenceMin !== undefined ? { confidenceMin: args.confidenceMin } : {}),
-  });
-  const decision = await router.recipients({
+  const ruleNames = recipientNamesAfter(through, transcript.members, deliveredThrough);
+  const tagged = taggedRecipientNamesAfter(through, transcript.members, deliveredThrough);
+  const decision = await createGroupRouter(router).recipients({
     rows: through,
-    members: args.members,
+    members: transcript.members,
     pending,
     taggedNames: tagged,
     ruleNames,
@@ -105,24 +120,19 @@ export function formatRecipientReplay(report: RecipientReplay): string {
     lines.push(`  ${member.name}${focus} (task preview ${member.task_chars} chars)`);
   }
   const decision = report.decision;
-  lines.push(
-    `decision: source=${String(decision.source)} choice=${String(decision.choice ?? "-")}`,
-  );
+  lines.push(`decision: source=${decision.source} choice=${decision.choice ?? "-"}`);
   if (decision.confidence !== undefined) {
-    lines.push(
-      `  confidence ${Number(decision.confidence).toFixed(3)} (model ${String(decision.model ?? "?")})`,
-    );
+    lines.push(`  confidence ${decision.confidence.toFixed(3)} (model ${decision.model ?? "?"})`);
   }
-  const probabilities = decision.probabilities as Record<string, number> | undefined;
-  if (probabilities) {
-    const ranked = Object.entries(probabilities).sort((left, right) => right[1] - left[1]);
+  if (decision.probabilities) {
+    const ranked = Object.entries(decision.probabilities).sort((left, right) => right[1] - left[1]);
     lines.push("  probabilities:");
     for (const [name, value] of ranked) {
       lines.push(`    ${name.padEnd(24)} ${value.toFixed(3)}`);
     }
   }
   if (decision.reason) {
-    lines.push(`  reason: ${String(decision.reason)}`);
+    lines.push(`  reason: ${decision.reason}`);
   }
   lines.push(`tag rules alone would wake: ${report.rule_names.join(", ") || "(nobody)"}`);
   lines.push(`with this decision, wakes: ${report.would_wake.join(", ") || "(nobody)"}`);

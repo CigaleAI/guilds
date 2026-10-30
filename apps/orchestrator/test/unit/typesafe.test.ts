@@ -5,22 +5,24 @@ import type { GroupMessageRow } from "../../src/db/group-chat.js";
 import { groupMessageRow } from "../helpers/group-chat.js";
 import { mockFetch } from "../helpers/http.js";
 import {
+  TYPESAFE_MAX_RETRIES,
+  TypeSafeError,
+  backoffMs,
+  createTypeSafeClient,
+  evaluateSystemOne,
+  retryAfterMs,
+  type TypeSafeQuestion,
+} from "../../src/typesafe/client.js";
+import {
   AGENT_TASK_PREVIEW_CHARS,
   HISTORY_CONTENT_MAX_CHARS,
   LATEST_CONTENT_MAX_CHARS,
   RECIPIENT_WINDOW,
-  TYPESAFE_MAX_RETRIES,
-  TypeSafeError,
-  backoffMs,
   classifyGroupRecipients,
   createGroupRouter,
-  createTypeSafeClient,
-  evaluateSystemOne,
-  retryAfterMs,
   selectGroupHistory,
   serializeHistoryDecision,
-  type TypeSafeQuestion,
-} from "../../src/typesafe/index.js";
+} from "../../src/typesafe/group.js";
 import { formatRecipientReplay, replayRecipients } from "../../src/typesafe/replay.js";
 import { serializeRecipientDecision } from "../../src/groupchat/router.js";
 import { setInstanceKeys } from "../../src/instance/integrations.js";
@@ -67,22 +69,26 @@ const noSleep = { sleep: async () => undefined };
 test("evaluateSystemOne posts state and questions", async () => {
   const seen: Array<{ url: string; body: Record<string, unknown>; init: RequestInit | undefined }> =
     [];
-  const result = await evaluateSystemOne({
-    state: { message: "hello" },
-    questions: { urgent: { type: "noul", instructions: "Is this urgent?" } },
-    apiKey: "ts-secret-key",
-    fetch: mockFetch((url, init) => {
-      seen.push({ url, body: JSON.parse(String(init?.body)) as Record<string, unknown>, init });
-      return {
-        status: 200,
-        json: {
-          model: "jev-1.13.0",
-          answers: { urgent: { type: "noul", noul: 0.91 } },
-          usage: { input_tokens: 12, output_tokens: 0 },
-        },
-      };
-    }),
-  });
+  const result = await evaluateSystemOne(
+    {
+      state: { message: "hello" },
+      questions: { urgent: { type: "noul", instructions: "Is this urgent?" } },
+    },
+    {
+      apiKey: "ts-secret-key",
+      fetch: mockFetch((url, init) => {
+        seen.push({ url, body: JSON.parse(String(init?.body)) as Record<string, unknown>, init });
+        return {
+          status: 200,
+          json: {
+            model: "jev-1.13.0",
+            answers: { urgent: { type: "noul", noul: 0.91 } },
+            usage: { input_tokens: 12, output_tokens: 0 },
+          },
+        };
+      }),
+    },
+  );
   assert.equal(seen[0]?.url, "https://api.typesafe.ai/v1/systemone");
   assert.deepEqual(seen[0]?.body.state, { message: "hello" });
   assert.equal(seen[0]?.body.model, "jev-latest");
@@ -98,12 +104,16 @@ test("evaluateSystemOne posts state and questions", async () => {
 test("evaluateSystemOne treats HTTP errors as TypeSafeError and redacts the key", async () => {
   await assert.rejects(
     () =>
-      evaluateSystemOne({
-        state: "x",
-        questions: { urgent: { type: "noul", instructions: "Is this urgent?" } },
-        apiKey: "ts-secret-key",
-        fetch: mockFetch(() => ({ status: 422, json: { message: "bad ts-secret-key" } })),
-      }),
+      evaluateSystemOne(
+        {
+          state: "x",
+          questions: { urgent: { type: "noul", instructions: "Is this urgent?" } },
+        },
+        {
+          apiKey: "ts-secret-key",
+          fetch: mockFetch(() => ({ status: 422, json: { message: "bad ts-secret-key" } })),
+        },
+      ),
     (error: unknown) => {
       assert.ok(error instanceof TypeSafeError);
       assert.equal(error.status, 422);
@@ -117,19 +127,26 @@ test("evaluateSystemOne treats HTTP errors as TypeSafeError and redacts the key"
 test("evaluateSystemOne retries 529 with backoff then succeeds", async () => {
   let calls = 0;
   const slept: number[] = [];
-  const result = await evaluateSystemOne({
-    state: "x",
-    questions: { urgent: { type: "noul", instructions: "Is this urgent?" } },
-    apiKey: "ts-test-key-0123",
-    retry: { sleep: async (ms) => void slept.push(ms) },
-    fetch: mockFetch(() => {
-      calls += 1;
-      if (calls < 3) {
-        return { status: 529, json: { message: "overloaded" } };
-      }
-      return { status: 200, json: { model: "jev-1.13.0", answers: noulAnswers({ urgent: 0.5 }) } };
-    }),
-  });
+  const result = await evaluateSystemOne(
+    {
+      state: "x",
+      questions: { urgent: { type: "noul", instructions: "Is this urgent?" } },
+    },
+    {
+      apiKey: "ts-test-key-0123",
+      retry: { sleep: async (ms) => void slept.push(ms) },
+      fetch: mockFetch(() => {
+        calls += 1;
+        if (calls < 3) {
+          return { status: 529, json: { message: "overloaded" } };
+        }
+        return {
+          status: 200,
+          json: { model: "jev-1.13.0", answers: noulAnswers({ urgent: 0.5 }) },
+        };
+      }),
+    },
+  );
   assert.equal(calls, 3);
   assert.equal(slept.length, 2);
   // 500ms and 1000ms base, ±25% jitter.
@@ -142,16 +159,20 @@ test("evaluateSystemOne gives up after the retry budget and reports attempts", a
   let calls = 0;
   await assert.rejects(
     () =>
-      evaluateSystemOne({
-        state: "x",
-        questions: { urgent: { type: "noul", instructions: "Is this urgent?" } },
-        apiKey: "ts-test-key-0123",
-        retry: noSleep,
-        fetch: mockFetch(() => {
-          calls += 1;
-          return { status: 429, json: { message: "slow down" } };
-        }),
-      }),
+      evaluateSystemOne(
+        {
+          state: "x",
+          questions: { urgent: { type: "noul", instructions: "Is this urgent?" } },
+        },
+        {
+          apiKey: "ts-test-key-0123",
+          retry: noSleep,
+          fetch: mockFetch(() => {
+            calls += 1;
+            return { status: 429, json: { message: "slow down" } };
+          }),
+        },
+      ),
     (error: unknown) => {
       assert.ok(error instanceof TypeSafeError);
       assert.equal(error.status, 429);
@@ -165,34 +186,42 @@ test("evaluateSystemOne gives up after the retry budget and reports attempts", a
 test("evaluateSystemOne honours Retry-After within the cap and does not retry 4xx", async () => {
   const slept: number[] = [];
   let calls = 0;
-  await evaluateSystemOne({
-    state: "x",
-    questions: { urgent: { type: "noul", instructions: "Is this urgent?" } },
-    apiKey: "ts-test-key-0123",
-    retry: { sleep: async (ms) => void slept.push(ms) },
-    fetch: mockFetch(() => {
-      calls += 1;
-      if (calls === 1) {
-        return { status: 429, json: {}, headers: { "retry-after": "1" } };
-      }
-      return { status: 200, json: { answers: noulAnswers({ urgent: 0.2 }) } };
-    }),
-  });
+  await evaluateSystemOne(
+    {
+      state: "x",
+      questions: { urgent: { type: "noul", instructions: "Is this urgent?" } },
+    },
+    {
+      apiKey: "ts-test-key-0123",
+      retry: { sleep: async (ms) => void slept.push(ms) },
+      fetch: mockFetch(() => {
+        calls += 1;
+        if (calls === 1) {
+          return { status: 429, json: {}, headers: { "retry-after": "1" } };
+        }
+        return { status: 200, json: { answers: noulAnswers({ urgent: 0.2 }) } };
+      }),
+    },
+  );
   assert.deepEqual(slept, [1000]);
 
   calls = 0;
   await assert.rejects(
     () =>
-      evaluateSystemOne({
-        state: "x",
-        questions: { urgent: { type: "noul", instructions: "Is this urgent?" } },
-        apiKey: "ts-test-key-0123",
-        retry: noSleep,
-        fetch: mockFetch(() => {
-          calls += 1;
-          return { status: 401, json: { message: "nope" } };
-        }),
-      }),
+      evaluateSystemOne(
+        {
+          state: "x",
+          questions: { urgent: { type: "noul", instructions: "Is this urgent?" } },
+        },
+        {
+          apiKey: "ts-test-key-0123",
+          retry: noSleep,
+          fetch: mockFetch(() => {
+            calls += 1;
+            return { status: 401, json: { message: "nope" } };
+          }),
+        },
+      ),
     /nope/,
   );
   assert.equal(calls, 1);
@@ -200,19 +229,25 @@ test("evaluateSystemOne honours Retry-After within the cap and does not retry 4x
 
 test("evaluateSystemOne retries connection failures", async () => {
   let calls = 0;
-  const result = await evaluateSystemOne({
-    state: "x",
-    questions: { urgent: { type: "noul", instructions: "Is this urgent?" } },
-    apiKey: "ts-test-key-0123",
-    retry: noSleep,
-    fetch: async () => {
-      calls += 1;
-      if (calls === 1) {
-        throw new TypeError("fetch failed");
-      }
-      return new Response(JSON.stringify({ answers: noulAnswers({ urgent: 1 }) }), { status: 200 });
+  const result = await evaluateSystemOne(
+    {
+      state: "x",
+      questions: { urgent: { type: "noul", instructions: "Is this urgent?" } },
     },
-  });
+    {
+      apiKey: "ts-test-key-0123",
+      retry: noSleep,
+      fetch: async () => {
+        calls += 1;
+        if (calls === 1) {
+          throw new TypeError("fetch failed");
+        }
+        return new Response(JSON.stringify({ answers: noulAnswers({ urgent: 1 }) }), {
+          status: 200,
+        });
+      },
+    },
+  );
   assert.equal(calls, 2);
   assert.equal(result.model, "jev-latest");
 });
@@ -240,13 +275,17 @@ test("retryAfterMs parses seconds, ms and dates, and drops hints above the cap",
 
 test("evaluateSystemOne fails closed on missing, out-of-range or unknown answers", async () => {
   const run = (answers: unknown, questions?: Record<string, TypeSafeQuestion>) =>
-    evaluateSystemOne({
-      state: "x",
-      questions: questions ?? { urgent: { type: "noul", instructions: "Is this urgent?" } },
-      apiKey: "ts-test-key-0123",
-      retry: noSleep,
-      fetch: mockFetch(() => ({ status: 200, json: { model: "jev-latest", answers } })),
-    });
+    evaluateSystemOne(
+      {
+        state: "x",
+        questions: questions ?? { urgent: { type: "noul", instructions: "Is this urgent?" } },
+      },
+      {
+        apiKey: "ts-test-key-0123",
+        retry: noSleep,
+        fetch: mockFetch(() => ({ status: 200, json: { model: "jev-latest", answers } })),
+      },
+    );
   await assert.rejects(() => run({}), /missing TypeSafe answer urgent/);
   await assert.rejects(() => run(noulAnswers({ urgent: 1.5 })), /invalid TypeSafe noul answer/);
   await assert.rejects(
@@ -274,7 +313,8 @@ test("createTypeSafeClient is unconfigured without a key", async () => {
   assert.equal(client.configured, false);
   await assert.rejects(
     () => client.evaluate({ state: {}, questions: {} }),
-    (error: unknown) => error instanceof TypeSafeError && error.message === "the group routing key is not set",
+    (error: unknown) =>
+      error instanceof TypeSafeError && error.message === "the group routing key is not set",
   );
 });
 
@@ -291,7 +331,10 @@ test("a client follows the group routing key the admin stores, without a restart
     recipient: { type: "choice", instructions: "?", criteria: { none: null, writer: null } },
   };
   assert.equal(client.configured, false);
-  await assert.rejects(() => client.evaluate({ state: {}, questions }), /the group routing key is not set/);
+  await assert.rejects(
+    () => client.evaluate({ state: {}, questions }),
+    /the group routing key is not set/,
+  );
   assert.deepEqual(seen, []);
   setInstanceKeys(storeKeys({ "group-routing": { api_key: "k" } }));
   try {
@@ -307,32 +350,36 @@ test("a client follows the group routing key the admin stores, without a restart
 
 test("classifyGroupRecipients offers only pending agents, with focus and task preview", async () => {
   const longTask = "Draft short public updates. ".repeat(100);
-  const classified = await classifyGroupRecipients({
-    rows: [chatRow(1, "Write the note.")],
-    members: [
-      { id: "a_1", name: "researcher", focus: "papers" },
-      { id: "a_2", name: "writer", focus: "notes", task: longTask },
-      { id: "a_4", name: "poster", focus: "posts" },
-    ],
-    pendingNames: ["researcher", "writer"],
-    evaluate: async ({ state, questions }) => {
-      assert.deepEqual(Object.keys(state as object), ["latest", "context"]);
-      assert.deepEqual((state as { context: unknown[] }).context, []);
-      const question = questions.recipient;
-      assert.equal(question?.type, "choice");
-      if (question?.type !== "choice") {
-        throw new Error("unreachable");
-      }
-      assert.deepEqual(Object.keys(question.criteria), ["none", "researcher", "writer"]);
-      assert.deepEqual(question.criteria.researcher, { focus: "papers" });
-      const writer = question.criteria.writer as { focus: string; task: string };
-      assert.equal(writer.focus, "notes");
-      assert.ok(writer.task.startsWith("Draft short public updates."));
-      assert.equal(writer.task.length, AGENT_TASK_PREVIEW_CHARS + 1);
-      assert.ok(writer.task.endsWith("…"));
-      return choiceResult("writer", 0.84, { usage: { input_tokens: 40 } });
+  const classified = await classifyGroupRecipients(
+    {
+      rows: [chatRow(1, "Write the note.")],
+      members: [
+        { id: "a_1", name: "researcher", focus: "papers" },
+        { id: "a_2", name: "writer", focus: "notes", task: longTask },
+        { id: "a_4", name: "poster", focus: "posts" },
+      ],
+      pendingNames: ["researcher", "writer"],
     },
-  });
+    createTypeSafeClient({
+      evaluate: async ({ state, questions }) => {
+        assert.deepEqual(Object.keys(state as object), ["latest", "context"]);
+        assert.deepEqual((state as { context: unknown[] }).context, []);
+        const question = questions.recipient;
+        assert.equal(question?.type, "choice");
+        if (question?.type !== "choice") {
+          throw new Error("unreachable");
+        }
+        assert.deepEqual(Object.keys(question.criteria), ["none", "researcher", "writer"]);
+        assert.deepEqual(question.criteria.researcher, { focus: "papers" });
+        const writer = question.criteria.writer as { focus: string; task: string };
+        assert.equal(writer.focus, "notes");
+        assert.ok(writer.task.startsWith("Draft short public updates."));
+        assert.equal(writer.task.length, AGENT_TASK_PREVIEW_CHARS + 1);
+        assert.ok(writer.task.endsWith("…"));
+        return choiceResult("writer", 0.84, { usage: { input_tokens: 40 } });
+      },
+    }),
+  );
   assert.deepEqual([...classified.names], ["writer"]);
   assert.equal(classified.choice, "writer");
   assert.equal(classified.confidence, 0.84);
@@ -341,30 +388,38 @@ test("classifyGroupRecipients offers only pending agents, with focus and task pr
 });
 
 test("classifyGroupRecipients skips the call when nobody is pending", async () => {
-  const classified = await classifyGroupRecipients({
-    rows: [chatRow(1, "Done.", { author: "writer" })],
-    members: [{ id: "a_1", name: "writer" }],
-    pendingNames: [],
-    evaluate: async () => {
-      throw new Error("should not be called");
+  const classified = await classifyGroupRecipients(
+    {
+      rows: [chatRow(1, "Done.", { author: "writer" })],
+      members: [{ id: "a_1", name: "writer" }],
+      pendingNames: [],
     },
-  });
+    createTypeSafeClient({
+      evaluate: async () => {
+        throw new Error("should not be called");
+      },
+    }),
+  );
   assert.deepEqual([...classified.names], []);
   assert.equal(classified.choice, "none");
 });
 
 test("classifyGroupRecipients clips the latest message body for the state", async () => {
   const body = "x".repeat(LATEST_CONTENT_MAX_CHARS + 500);
-  await classifyGroupRecipients({
-    rows: [chatRow(1, body)],
-    members: [{ id: "a_1", name: "writer" }],
-    pendingNames: ["writer"],
-    evaluate: async ({ state }) => {
-      const latest = (state as { latest: { content: string } }).latest;
-      assert.equal(latest.content.length, LATEST_CONTENT_MAX_CHARS + 1);
-      return choiceResult("none");
+  await classifyGroupRecipients(
+    {
+      rows: [chatRow(1, body)],
+      members: [{ id: "a_1", name: "writer" }],
+      pendingNames: ["writer"],
     },
-  });
+    createTypeSafeClient({
+      evaluate: async ({ state }) => {
+        const latest = (state as { latest: { content: string } }).latest;
+        assert.equal(latest.content.length, LATEST_CONTENT_MAX_CHARS + 1);
+        return choiceResult("none");
+      },
+    }),
+  );
 });
 
 test("classifyGroupRecipients sends prior rows as context, not as latest", async () => {
@@ -375,28 +430,32 @@ test("classifyGroupRecipients sends prior rows as context, not as latest", async
     chatRow(4, "near"),
     chatRow(5, "what about that"),
   ];
-  await classifyGroupRecipients({
-    rows,
-    members: [{ id: "a_1", name: "writer" }],
-    pendingNames: ["writer"],
-    evaluate: async ({ state }) => {
-      const typed = state as {
-        latest: { seq: number; content: string; sentBy: string };
-        context: Array<{ seq: number; content: string; sentBy: string }>;
-      };
-      assert.equal(typed.latest.seq, 5);
-      assert.equal(typed.latest.content, "what about that");
-      assert.equal(typed.context.length, RECIPIENT_WINDOW - 1);
-      assert.deepEqual(
-        typed.context.map((row) => row.seq),
-        [2, 3, 4],
-      );
-      assert.equal(typed.context[0]?.sentBy, "writer");
-      assert.equal(typed.context[0]?.content.length, HISTORY_CONTENT_MAX_CHARS + 1);
-      assert.ok(!typed.context.some((row) => row.seq === typed.latest.seq));
-      return choiceResult("writer");
+  await classifyGroupRecipients(
+    {
+      rows,
+      members: [{ id: "a_1", name: "writer" }],
+      pendingNames: ["writer"],
     },
-  });
+    createTypeSafeClient({
+      evaluate: async ({ state }) => {
+        const typed = state as {
+          latest: { seq: number; content: string; sentBy: string };
+          context: Array<{ seq: number; content: string; sentBy: string }>;
+        };
+        assert.equal(typed.latest.seq, 5);
+        assert.equal(typed.latest.content, "what about that");
+        assert.equal(typed.context.length, RECIPIENT_WINDOW - 1);
+        assert.deepEqual(
+          typed.context.map((row) => row.seq),
+          [2, 3, 4],
+        );
+        assert.equal(typed.context[0]?.sentBy, "writer");
+        assert.equal(typed.context[0]?.content.length, HISTORY_CONTENT_MAX_CHARS + 1);
+        assert.ok(!typed.context.some((row) => row.seq === typed.latest.seq));
+        return choiceResult("writer");
+      },
+    }),
+  );
 });
 
 test("createGroupRouter falls back to the tag rules when confidence is low", async () => {
@@ -431,36 +490,40 @@ test("selectGroupHistory keeps ten from the last forty, including latest and tag
       index + 1 === 3 ? { tagged: ["writer"] } : {},
     ),
   );
-  const selected = await selectGroupHistory({
-    rows,
-    agentName: "writer",
-    agentFocus: "notes",
-    evaluate: async ({ state, questions }) => {
-      const typed = state as {
-        agent: { name: string; focus: string };
-        messages: Array<{ seq: number; content: string }>;
-      };
-      assert.deepEqual(typed.agent, { name: "writer", focus: "notes" });
-      assert.equal(typed.messages.length, 15);
-      assert.equal(typed.messages[3]?.content.length, HISTORY_CONTENT_MAX_CHARS + 1);
-      assert.ok(!("keep_3" in questions));
-      assert.ok(!("keep_15" in questions));
-      const sample = questions.keep_2;
-      assert.equal(sample?.type, "noul");
-      assert.deepEqual(Object.keys(sample?.instructions as object), ["seq", "question"]);
-      assert.equal((sample?.instructions as { seq: number }).seq, 2);
-      assert.match((sample?.instructions as { question: string }).question, /^Does `agent` need/);
-      assert.doesNotMatch(JSON.stringify(sample), /notes|Code will keep/);
-      return {
-        model: "jev-1.13.0",
-        usage: { input_tokens: 900 },
-        answers: noulAnswers({
-          ...Object.fromEntries(Object.keys(questions).map((id) => [id, 0.1])),
-          keep_2: 0.95,
-        }),
-      };
+  const selected = await selectGroupHistory(
+    {
+      rows,
+      agentName: "writer",
+      agentFocus: "notes",
     },
-  });
+    createTypeSafeClient({
+      evaluate: async ({ state, questions }) => {
+        const typed = state as {
+          agent: { name: string; focus: string };
+          messages: Array<{ seq: number; content: string }>;
+        };
+        assert.deepEqual(typed.agent, { name: "writer", focus: "notes" });
+        assert.equal(typed.messages.length, 15);
+        assert.equal(typed.messages[3]?.content.length, HISTORY_CONTENT_MAX_CHARS + 1);
+        assert.ok(!("keep_3" in questions));
+        assert.ok(!("keep_15" in questions));
+        const sample = questions.keep_2;
+        assert.equal(sample?.type, "noul");
+        assert.deepEqual(Object.keys(sample?.instructions as object), ["seq", "question"]);
+        assert.equal((sample?.instructions as { seq: number }).seq, 2);
+        assert.match((sample?.instructions as { question: string }).question, /^Does `agent` need/);
+        assert.doesNotMatch(JSON.stringify(sample), /notes|Code will keep/);
+        return {
+          model: "jev-1.13.0",
+          usage: { input_tokens: 900 },
+          answers: noulAnswers({
+            ...Object.fromEntries(Object.keys(questions).map((id) => [id, 0.1])),
+            keep_2: 0.95,
+          }),
+        };
+      },
+    }),
+  );
   assert.deepEqual(
     selected.rows.map((row) => Number(row.seq)),
     [2, 3, 8, 9, 10, 11, 12, 13, 14, 15],
@@ -526,7 +589,7 @@ test("replayRecipients re-runs the Choice for one message and reports the verdic
       return choiceResult("none", 0.71);
     },
   });
-  const report = await replayRecipients({ rows, members, client });
+  const report = await replayRecipients({ rows, members }, { client });
   assert.equal(report.seq, 3);
   assert.equal(report.author, "user");
   assert.deepEqual(seen, [["none", "manager", "trader"]]);
@@ -541,13 +604,21 @@ test("replayRecipients re-runs the Choice for one message and reports the verdic
 
   // An agent's own post never offers the author; a lower gate flips the verdict.
   seen.length = 0;
-  const agentPost = await replayRecipients({ rows, members, client, seq: 2, confidenceMin: 0.9 });
+  const agentPost = await replayRecipients(
+    { rows, members },
+    { client, confidenceMin: 0.9 },
+    { seq: 2 },
+  );
   assert.deepEqual(seen, [["none", "manager"]]);
   assert.equal(agentPost.decision.source, "low_confidence");
   assert.deepEqual(agentPost.rule_names, []);
 
   // A hypothetical message is evaluated as a new user post after seq.
-  const hypothetical = await replayRecipients({ rows, members, client, message: "@manager hi" });
+  const hypothetical = await replayRecipients(
+    { rows, members },
+    { client },
+    { message: "@manager hi" },
+  );
   assert.equal(hypothetical.seq, 4);
   assert.equal(hypothetical.content, "@manager hi");
 });
@@ -559,15 +630,19 @@ test("replayRecipients re-runs the Choice for one message and reports the verdic
 // (RUN_TYPESAFE_CONTRACT=1) before changing this pin.
 test("recipient question wording states the criterion, not genres or examples", async () => {
   let question: TypeSafeQuestion | undefined;
-  await classifyGroupRecipients({
-    rows: [chatRow(1, "hello")],
-    members: [{ id: "a_1", name: "writer", focus: "notes" }],
-    pendingNames: ["writer"],
-    evaluate: async ({ questions }) => {
-      question = questions.recipient;
-      return choiceResult("none");
+  await classifyGroupRecipients(
+    {
+      rows: [chatRow(1, "hello")],
+      members: [{ id: "a_1", name: "writer", focus: "notes" }],
+      pendingNames: ["writer"],
     },
-  });
+    createTypeSafeClient({
+      evaluate: async ({ questions }) => {
+        question = questions.recipient;
+        return choiceResult("none");
+      },
+    }),
+  );
   assert.equal(question?.type, "choice");
   if (question?.type !== "choice") {
     throw new Error("unreachable");

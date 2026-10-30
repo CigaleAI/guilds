@@ -30,7 +30,8 @@ import { AsyncLock } from "../../src/lib/lock.js";
 import { orchestratorRoot } from "../../src/lib/paths.js";
 import { invokeTool } from "../../src/toolbox/index.js";
 import type { GroupRouter } from "../../src/groupchat/router.js";
-import { createGroupRouter, createTypeSafeClient } from "../../src/typesafe/index.js";
+import { createTypeSafeClient } from "../../src/typesafe/client.js";
+import { createGroupRouter } from "../../src/typesafe/group.js";
 import { toolFixture } from "../helpers/toolbox.js";
 
 const OPERATOR: MessageAuthor = { id: "user_1", name: "user" };
