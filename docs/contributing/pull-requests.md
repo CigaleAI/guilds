@@ -64,7 +64,22 @@ commits are what the reviewer reads.
   `eslint-suppressions.json` ends with the prune, so the diff shows
   the entries leaving ([Lint](development.md#lint-and-format)). The
   only commit that adds entries is one that adds a rule, and it adds
-  nothing else.
+  nothing else. A fix satisfies the rule the entry names, not the
+  selector that found it. The reviewer refuses a fix that:
+  - declares a type alias whose body is `unknown` or
+    `Record<string, unknown>`;
+  - names a type after its function and bundles the function's
+    arguments in it;
+  - catches and returns a value whose type does not say absence, or
+    a default that hides the failure;
+  - splits a function by line count into helpers named for steps
+    (`part`, `step`, `handle`);
+  - moves a cast into a one-line helper, or removes it by widening a
+    type to `unknown`;
+  - moves code under a test, stories or scripts path to leave the
+    lint globs;
+  - raises a limit, widens an ignore list, or regenerates a
+    suppressions file instead of pruning it.
 - **Docs**: the page that describes what the change touches is
   updated in the same commit, and describes the new state only
   ([Documentation](development.md#documentation)).
