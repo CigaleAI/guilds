@@ -8,6 +8,18 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** The group chat routes refuse, with a 422 that names the
+field and before the request's user is identified: a post without a
+string `content` or with an `interrupt` that is not a boolean, a read
+cursor without a number `seen_through_seq`, a limit without a number
+`agent_message_limit`, and a body that is not a JSON object. Before, a
+`content` was read as its text and an `agent_message_limit` as its
+number, so `"8"` set eight; a missing `content` or
+`agent_message_limit` was refused after the user was identified, and
+an `interrupt` or `seen_through_seq` of another type with `interrupt
+must be a boolean` or `seen_through_seq must be a non-negative
+integer`.
+
 **No impact.** The Studio routes refuse, with a 422 that names the
 field and before the request's user is identified: a session whose
 `mode`, `source_guild_id`, `model` or `coach_config.model` is not a

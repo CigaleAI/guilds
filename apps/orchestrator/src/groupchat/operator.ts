@@ -1,3 +1,4 @@
+import { Type, type Static } from "@sinclair/typebox";
 import { getGroupChatSeenThrough, markGroupChatSeen } from "../db/group-chat.js";
 import type { Queryable } from "../db/pg.js";
 import type { GroupMessageView } from "../db/views.js";
@@ -12,8 +13,13 @@ export type GroupChatOperatorServices = {
   inbox: { ping(userIds: string[]): Promise<void> };
 };
 
-/** An operator's message to the group chat, before validation. */
-export type OperatorMessage = { content: string; interrupt: unknown };
+/** An operator's message to the group chat, and whether it interrupts the runs it targets. */
+export const OperatorMessageSchema = Type.Object({
+  content: Type.String(),
+  interrupt: Type.Optional(Type.Boolean()),
+});
+
+export type OperatorMessage = Static<typeof OperatorMessageSchema>;
 
 /** The guilds' group chat; a box without a generation loop has none (503). */
 export function groupChatOf(services: GroupChatOperatorServices): GroupChat {
@@ -38,9 +44,9 @@ export async function markGroupChatRead(
   services: GroupChatOperatorServices,
   guildId: string,
   userId: string,
-  seq: unknown,
+  seq: number,
 ): Promise<{ seen_through_seq: number }> {
-  if (typeof seq !== "number" || !Number.isInteger(seq) || seq < 0) {
+  if (!Number.isInteger(seq) || seq < 0) {
     throw new GroupChatError(422, "seen_through_seq must be a non-negative integer");
   }
   const seen = await markGroupChatSeen(
@@ -59,9 +65,6 @@ export async function postOperatorMessage(
   author: MessageAuthor,
   message: OperatorMessage,
 ): Promise<GroupMessageView> {
-  if (message.interrupt !== undefined && typeof message.interrupt !== "boolean") {
-    throw new GroupChatError(422, "interrupt must be a boolean");
-  }
   const chat = groupChatOf(services);
   const posted =
     message.interrupt === true

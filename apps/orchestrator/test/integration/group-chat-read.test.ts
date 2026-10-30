@@ -124,6 +124,10 @@ test(
       const state = await app.inject({ method: "GET", url: base, headers: TEAMMATE });
       assert.equal(state.json().seen_through_seq, 3);
 
+      const textSeq = await mark(TEAMMATE, "2");
+      assert.equal(textSeq.statusCode, 422);
+      assert.deepEqual(textSeq.json().detail[0].loc, ["body", "seen_through_seq"]);
+
       for (const bad of [-1, 1.5, "x", null]) {
         const rejected = await mark(TEAMMATE, bad);
         assert.equal(rejected.statusCode, 422, `seen_through_seq=${String(bad)}`);
