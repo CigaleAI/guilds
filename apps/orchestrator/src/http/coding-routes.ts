@@ -5,11 +5,9 @@ import {
   GithubSelectionSchema,
   RepositoryDraftSchema,
   listGuildRepositoryView,
+  pickGithubRepositories,
   reachableRepositories,
   removeGuildRepository,
-  replaceLoginGuildRepositories,
-  RepositoryListingInstallationGoneError,
-  selectGithubRepositories,
   type RepositoryServices,
 } from "../coding/guild-repositories.js";
 import { harnessCatalog } from "../coding/harness-models.js";
@@ -49,13 +47,17 @@ const HarnessCheckSchema = Type.Object({ harness: Type.Optional(Type.String()) }
 
 /**
  * A guild's repositories, the repositories a GitHub connection reaches, and what a
- * coding run changed in each repository. A GitHub login whose installation GitHub refused
- * while its repositories were listed is retired.
+ * coding run changed in each repository.
  */
 export async function registerCodingRoutes(app: RouteApp, deps: AppDeps): Promise<void> {
   const { db } = deps;
   const pool = deps.mcp ?? null;
-  const repositories: RepositoryServices = { db, masterKey: deps.masterKey };
+  const repositories: RepositoryServices = {
+    db,
+    mcp: pool,
+    masterKey: deps.masterKey,
+    retireLogin: (connection, failure) => retireLogin(pool, db, connection, failure),
+  };
   const review: RunReviewServices = { db, coding: deps.generation?.coding ?? null };
 
   app.get(
@@ -74,15 +76,8 @@ export async function registerCodingRoutes(app: RouteApp, deps: AppDeps): Promis
     async (request, reply) => {
       const user = await currentUser(db, request, deps);
       const guild = await requireVisibleGuild(db, request.params.guild_id, user.id);
-      try {
-        const added = await addGuildRepository(repositories, guild, user.id, request.body);
-        return reply.code(201).send(added);
-      } catch (error) {
-        if (error instanceof RepositoryListingInstallationGoneError) {
-          await retireLogin(pool, db, error.connection, "installation_gone");
-        }
-        throw error;
-      }
+      const added = await addGuildRepository(repositories, guild, user.id, request.body);
+      return reply.code(201).send(added);
     },
   );
 
@@ -104,14 +99,7 @@ export async function registerCodingRoutes(app: RouteApp, deps: AppDeps): Promis
       const user = await currentUser(db, request, deps);
       const connectionId = request.params.connection_id;
       const connection = await requireVisibleGithubConnection(db, connectionId, user.id);
-      try {
-        return { repositories: await reachableRepositories(repositories, connection) };
-      } catch (error) {
-        if (error instanceof RepositoryListingInstallationGoneError) {
-          await retireLogin(pool, db, error.connection, "installation_gone");
-        }
-        throw error;
-      }
+      return { repositories: await reachableRepositories(repositories, connection) };
     },
   );
 
@@ -122,24 +110,8 @@ export async function registerCodingRoutes(app: RouteApp, deps: AppDeps): Promis
       const user = await currentUser(db, request, deps);
       const connectionId = request.params.connection_id;
       const connection = await requireVisibleGithubConnection(db, connectionId, user.id);
-      const now = new Date();
-      try {
-        const selected = await selectGithubRepositories(
-          repositories,
-          connection,
-          request.body.repositories,
-          now,
-        );
-        // The login's tool session holds a token scoped to the repositories it picked before.
-        pool?.drop(connection.id);
-        await replaceLoginGuildRepositories(db, connection, selected, now);
-        return { repositories: selected };
-      } catch (error) {
-        if (error instanceof RepositoryListingInstallationGoneError) {
-          await retireLogin(pool, db, error.connection, "installation_gone");
-        }
-        throw error;
-      }
+      const picked = await pickGithubRepositories(repositories, connection, request.body.repositories);
+      return { repositories: picked };
     },
   );
 
