@@ -15,6 +15,7 @@ import {
   InstallationTokenReply,
   OAuthErrorReply,
   RepositoriesPage,
+  RepositoryReply,
   TokenRepositoryReply,
   UserTokenReply,
 } from "./responses.js";
@@ -176,14 +177,20 @@ function apiHeaders(authorization: string): Record<string, string> {
   };
 }
 
-async function apiError(response: Response, what: string): Promise<GithubError> {
-  let message: string;
+/** What the body of a refused call says went wrong, or null when it is not GitHub's JSON error. */
+async function refusalMessage(response: Response): Promise<string | null> {
+  let body: unknown;
   try {
-    const body = await readJson(response);
-    message = Value.Check(ErrorReply, body) ? body.message : "";
+    body = await readJson(response);
   } catch {
-    message = "";
+    return null;
   }
+  return Value.Check(ErrorReply, body) ? body.message : null;
+}
+
+/** The error a refused call raises: `what` failed, with GitHub's status and the reason it gives. */
+export async function githubApiError(response: Response, what: string): Promise<GithubError> {
+  const message = await refusalMessage(response);
   return new GithubError(`${what}: ${response.status}${message ? ` ${message}` : ""}`, response.status);
 }
 
@@ -204,7 +211,7 @@ export async function exchangeUserCode(
     body: JSON.stringify(payload),
   });
   if (response.status >= 400) {
-    throw await apiError(response, "GitHub code exchange failed");
+    throw await githubApiError(response, "GitHub code exchange failed");
   }
   const body = await readJson(response);
   if (Value.Check(UserTokenReply, body)) {
@@ -295,7 +302,7 @@ export async function userInstallations(userToken: string, services: GithubServi
       headers: apiHeaders(`Bearer ${userToken}`),
     });
     if (response.status >= 400) {
-      throw await apiError(response, "listing GitHub installations failed");
+      throw await githubApiError(response, "listing GitHub installations failed");
     }
     const rows = decode(InstallationsPage, await readJson(response), unexpectedGithubReply).installations;
     for (const row of rows) {
@@ -322,7 +329,7 @@ export async function appInstallation(
     return null;
   }
   if (response.status >= 400) {
-    throw await apiError(response, "reading the GitHub installation failed");
+    throw await githubApiError(response, "reading the GitHub installation failed");
   }
   return installationFrom(decode(InstallationReply, await readJson(response), unexpectedGithubReply));
 }
@@ -341,7 +348,7 @@ export async function userReachesInstallation(
     return false;
   }
   if (response.status >= 400) {
-    throw await apiError(response, "checking the GitHub installation failed");
+    throw await githubApiError(response, "checking the GitHub installation failed");
   }
   return true;
 }
@@ -436,11 +443,11 @@ export async function installationToken(
     body: JSON.stringify(body),
   });
   if (response.status === 404 || response.status === 403) {
-    const error = await apiError(response, "GitHub refused the installation");
+    const error = await githubApiError(response, "GitHub refused the installation");
     throw new GithubInstallationGoneError(error.message, response.status);
   }
   if (response.status >= 400) {
-    throw await apiError(response, "minting a GitHub token failed");
+    throw await githubApiError(response, "minting a GitHub token failed");
   }
   const parsed = await readJson(response);
   if (!Value.Check(InstallationTokenReply, parsed)) {
@@ -465,6 +472,18 @@ export type GithubRepository = {
   url: string;
 };
 
+function repositoryFrom(reply: RepositoryReply): GithubRepository {
+  return {
+    id: reply.id,
+    name: reply.name ?? "",
+    full_name: reply.full_name ?? "",
+    owner: reply.owner?.login ?? "",
+    private: reply.private === true,
+    default_branch: reply.default_branch ?? "main",
+    url: `${GITHUB_WEB}/${reply.full_name ?? ""}`,
+  };
+}
+
 /** Every repository the installation reaches. */
 export async function installationRepositories(
   config: GithubAppConfig,
@@ -480,19 +499,11 @@ export async function installationRepositories(
       headers: apiHeaders(`Bearer ${token}`),
     });
     if (response.status >= 400) {
-      throw await apiError(response, "listing GitHub repositories failed");
+      throw await githubApiError(response, "listing GitHub repositories failed");
     }
     const rows = decode(RepositoriesPage, await readJson(response), unexpectedGithubReply).repositories;
     for (const row of rows) {
-      repositories.push({
-        id: row.id,
-        name: row.name ?? "",
-        full_name: row.full_name ?? "",
-        owner: row.owner?.login ?? "",
-        private: row.private === true,
-        default_branch: row.default_branch ?? "main",
-        url: `${GITHUB_WEB}/${row.full_name ?? ""}`,
-      });
+      repositories.push(repositoryFrom(row));
     }
     if (rows.length < 100) {
       break;
@@ -516,7 +527,7 @@ export async function installationRepository(
     return null;
   }
   if (response.status >= 400) {
-    throw await apiError(response, "reading a GitHub repository failed");
+    throw await githubApiError(response, "reading a GitHub repository failed");
   }
   const body = await readJson(response);
   return isTokenRepository(body) ? { id: body.id, full_name: body.full_name } : null;

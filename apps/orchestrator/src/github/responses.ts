@@ -49,6 +49,7 @@ export const RepositoryReply = Type.Object({
   private: Type.Optional(Type.Boolean()),
   default_branch: Type.Optional(Type.String()),
 });
+export type RepositoryReply = Static<typeof RepositoryReply>;
 
 /** One page of the repositories an installation reaches. */
 export const RepositoriesPage = Type.Object({ repositories: Type.Array(RepositoryReply) });

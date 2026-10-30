@@ -109,6 +109,12 @@ test("the manifest registers the App on the box's address, adding the request's 
   assert.equal(githubAppManifest("http://localhost:8080", "http://localhost:8080").hook_attributes, undefined);
   assert.equal(githubAppManifest("http://127.0.0.1:8080", "http://127.0.0.1:8080").hook_attributes, undefined);
   assert.equal(githubAppManifest("http://192.168.1.10:8080", "http://192.168.1.10:8080").hook_attributes, undefined);
+  for (const host of ["0.0.0.0", "10.1.2.3", "169.254.1.1", "172.16.0.1", "172.31.255.1", "[::1]", "[fd00::1]", "[fe80::1]", "box.local"]) {
+    assert.equal(githubAppManifest(`http://${host}`, `http://${host}`).hook_attributes, undefined, `${host} is not on the internet`);
+  }
+  for (const host of ["8.8.8.8", "172.32.0.1", "169.253.1.1", "192.169.0.1", "[2001:db8::1]"]) {
+    assert.ok(githubAppManifest(`http://${host}`, `http://${host}`).hook_attributes, `${host} is on the internet`);
+  }
   assert.deepEqual(manifest.default_permissions, {
     contents: "write",
     pull_requests: "write",
@@ -179,6 +185,11 @@ test("a manifest code converts into the App's fields; GitHub refusing it or omit
   await assert.rejects(
     convertManifestCode("bad", { fetch: refused.fetch }),
     (error: unknown) => error instanceof GithubError && error.status === 422 && /422 Validation Failed/.test(error.message),
+  );
+  const unexplained = fakeFetch(() => new Response("Bad Gateway", { status: 502 }));
+  await assert.rejects(
+    convertManifestCode("bad", { fetch: unexplained.fetch }),
+    (error: unknown) => error instanceof GithubError && error.status === 502 && error.message === "GitHub App creation failed: 502",
   );
   const keyless = fakeFetch(() => json(201, { id: 4242, slug: "s", client_id: "c", client_secret: "x" }));
   await assert.rejects(

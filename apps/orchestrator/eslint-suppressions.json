@@ -235,19 +235,6 @@
       "count": 1
     }
   },
-  "src/github/index.ts": {
-    "complexity": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/github/manifest.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/groupchat/delivery.ts": {
     "no-restricted-syntax": {
       "count": 1

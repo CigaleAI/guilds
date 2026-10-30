@@ -1,8 +1,7 @@
-import { Value } from "@sinclair/typebox/value";
 import { decode } from "../lib/decode.js";
 import { proxyFetch, readJson } from "../net/http.js";
-import { GITHUB_API, GithubError, unexpectedGithubReply, type GithubServices } from "./index.js";
-import { ErrorReply, ManifestConversionReply } from "./responses.js";
+import { GITHUB_API, GithubError, githubApiError, unexpectedGithubReply, type GithubServices } from "./index.js";
+import { ManifestConversionReply } from "./responses.js";
 
 /**
  * Registering the box's GitHub App from a manifest: the operator app posts the manifest to GitHub,
@@ -101,18 +100,32 @@ function reachableFromInternet(base: string): boolean {
   if (hostname.startsWith("[") && hostname.endsWith("]")) hostname = hostname.slice(1, -1);
   if (hostname === "localhost" || hostname.endsWith(".localhost") || hostname.endsWith(".local")) return false;
   if (hostname.includes(":")) return publicIpv6(hostname);
+  return !isIpv4(hostname) || publicIpv4(hostname);
+}
+
+/** An IPv4 block by its first octet and the range of its second. */
+type Ipv4Block = { first: number; secondFrom: number; secondTo: number };
+
+/** The loopback, private and link-local IPv4 blocks. */
+const PRIVATE_IPV4: readonly Ipv4Block[] = [
+  { first: 0, secondFrom: 0, secondTo: 255 },
+  { first: 10, secondFrom: 0, secondTo: 255 },
+  { first: 127, secondFrom: 0, secondTo: 255 },
+  { first: 169, secondFrom: 254, secondTo: 254 },
+  { first: 172, secondFrom: 16, secondTo: 31 },
+  { first: 192, secondFrom: 168, secondTo: 168 },
+];
+
+/** Whether `hostname` is a dotted IPv4 address. */
+function isIpv4(hostname: string): boolean {
   const octets = hostname.split(".");
-  if (octets.length !== 4 || octets.some((part) => !/^\d{1,3}$/.test(part))) return true;
-  const a = Number(octets[0]);
-  const b = Number(octets[1]);
-  const c = Number(octets[2]);
-  const d = Number(octets[3]);
-  if ([a, b, c, d].some((part) => part > 255)) return true;
-  if (a === 0 || a === 10 || a === 127) return false;
-  if (a === 169 && b === 254) return false;
-  if (a === 172 && b >= 16 && b <= 31) return false;
-  if (a === 192 && b === 168) return false;
-  return true;
+  return octets.length === 4 && octets.every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255);
+}
+
+/** Whether an IPv4 address lies outside the loopback, private and link-local blocks. */
+function publicIpv4(address: string): boolean {
+  const [first, second = 0] = address.split(".").map(Number);
+  return !PRIVATE_IPV4.some((block) => block.first === first && second >= block.secondFrom && second <= block.secondTo);
 }
 
 function publicIpv6(hostname: string): boolean {
@@ -174,15 +187,6 @@ function credentialField(value: unknown, name: string): string {
   throw new GithubError(`GitHub App creation returned no ${name}`);
 }
 
-async function errorMessage(response: Response): Promise<string> {
-  try {
-    const body = await readJson(response);
-    return Value.Check(ErrorReply, body) ? body.message : "";
-  } catch {
-    return "";
-  }
-}
-
 /**
  * Trades the callback's code for the new App. GitHub answers this once per code, within an hour
  * of the confirmation, and needs no token for it.
@@ -201,8 +205,7 @@ export async function convertManifestCode(
     },
   });
   if (response.status !== 201) {
-    const message = await errorMessage(response);
-    throw new GithubError(`GitHub App creation failed: ${response.status}${message ? ` ${message}` : ""}`, response.status);
+    throw await githubApiError(response, "GitHub App creation failed");
   }
   const body = decode(ManifestConversionReply, await readJson(response), unexpectedGithubReply);
   return {
