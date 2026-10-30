@@ -1,18 +1,16 @@
-import { Buffer } from "node:buffer";
-import { credentialFix, HARNESS_INFO, harnessesOn, harnessOffMessage, isHarnessOff } from "../coding/harnesses.js";
 import { harnessLaunch } from "../coding/harness-models.js";
 import type { Harness } from "../db/schema/index.js";
-import { writeLog } from "../observability/log.js";
-import { redact } from "../secrets/index.js";
-import { readArtifactText } from "./artifacts.js";
-import { callSegment, codeResultMaxBytes, HARNESS_HELPER, runCodeHelper, type CodeResult } from "./code.js";
+import { errorMessage, writeLog } from "../observability/log.js";
+import { callSegment, type CodeResult } from "./code.js";
+import { buildBrief } from "./harness-brief.js";
+import { checkpoint, harnessOp, numberOrZero, opsRun, shownProgressLines, stringOrNull } from "./harness-ops.js";
+import { codeTaskText, failureDetail, type ChangedFile, type CodeTaskOutcome, type CodeTaskStatus } from "./harness-result.js";
+import { checkHarness, requiredHarness } from "./harness-setup.js";
 import { functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
-import type { ArtifactActor } from "../artifacts/types.js";
 import type { ToolServices } from "./services.js";
 import {
   callActor,
-  createToolHooks,
   type CancelEvent,
   type Tool,
   type ToolHooks,
@@ -25,56 +23,8 @@ export const CODE_TASK_DEFAULT_MINUTES = 30;
 export const CODE_TASK_MAX_MINUTES = 60;
 /** How often a running call is polled, and how long its minutes are; tests shorten both. */
 export const harnessTiming = { pollMs: 3000, minuteMs: 60_000 };
-/** The content of `notes` appended to a brief, at most. */
-export const BRIEF_NOTES_MAX_BYTES = 64 * 1024;
-const HARNESS_OP_TIMEOUT_SECONDS = 60;
-const CHECKPOINT_TIMEOUT_SECONDS = 300;
 /** Consecutive failed polls after which the harness is stopped and the call ends `interrupted`. */
 const POLL_FAILURES_MAX = 3;
-const FILES_SHOWN = 30;
-const PROGRESS_LINE_CHARS = 240;
-
-export type CodeTaskStatus = "completed" | "failed" | "timed_out" | "cancelled" | "interrupted";
-
-/** What every brief starts with: the harness works alone and never publishes. */
-export const BRIEF_PREAMBLE = [
-  "You are working on a task delegated to you by an agent. You cannot reach its operator, and",
-  "nobody answers questions while you work. When you are blocked or need a decision, stop and",
-  "ask in your final message, saying exactly what you need. You may commit on the current",
-  "branch. Never push and never open pull requests. End with what you changed and what you ran.",
-].join("\n");
-
-function stringOrNull(value: unknown): string | null {
-  return typeof value === "string" && value ? value : null;
-}
-
-function count(value: unknown): number {
-  return Number(value ?? 0) || 0;
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-/** The run the harness ops run under: not interrupted mid-exec; the poll loop stops the harness itself. */
-function opsRun(run: ToolRun): ToolRun {
-  return { ...run, cancel_event: null };
-}
-
-/** The id a check outside a `code_task` call runs under, named for the check. */
-function checkCallId(): string {
-  return `harness_check_${Date.now()}`;
-}
-
-/** Runs one `guilds-harness` op for the call `callId` names on the machine. */
-async function harnessOp(ops: ToolRun, callId: string, op: string, args: Record<string, unknown>): Promise<CodeResult> {
-  return runCodeHelper(
-    ops,
-    createToolHooks(),
-    { ...args, op, call_id: callId },
-    { helper: HARNESS_HELPER, timeoutSeconds: HARNESS_OP_TIMEOUT_SECONDS },
-  );
-}
 
 // --- the call's arguments ---------------------------------------------------
 
@@ -125,234 +75,6 @@ function requiredBrief(args: Record<string, unknown>): string {
     throw new Error("brief is required");
   }
   return brief;
-}
-
-function requiredHarness(run: ToolRun): Harness {
-  if (run.harness === null) {
-    throw harnessMissingError();
-  }
-  if (isHarnessOff(run.harness)) {
-    throw new HarnessSetupError("harness.off", harnessOffMessage(run.harness));
-  }
-  return run.harness;
-}
-
-// --- the brief ----------------------------------------------------------------
-
-type NoteSection = { path: string; section: string };
-type FittedNotes = { used: number; included: string[]; left: string[] };
-
-async function loadNote(services: ToolServices, actor: ArtifactActor | null, path: string): Promise<NoteSection> {
-  try {
-    const loaded = await readArtifactText(services, actor, path);
-    return { path: loaded.path, section: `# ${loaded.path}\n\n${loaded.text.trim()}` };
-  } catch (error) {
-    throw new Error(`notes: ${path}: ${errorText(error)}`, { cause: error });
-  }
-}
-
-function addNote(fitted: FittedNotes, note: NoteSection): void {
-  const size = Buffer.byteLength(note.section, "utf8");
-  if (fitted.used + size > BRIEF_NOTES_MAX_BYTES) {
-    fitted.left.push(note.path);
-    return;
-  }
-  fitted.used += size;
-  fitted.included.push(note.section);
-}
-
-/** The fixed preamble, the brief, and each note in order while the notes fit their cap. */
-export function briefText(brief: string, notes: NoteSection[]): string {
-  const fitted: FittedNotes = { used: 0, included: [], left: [] };
-  notes.forEach((note) => addNote(fitted, note));
-  const parts = [BRIEF_PREAMBLE, `# Task\n\n${brief.trim()}`, ...fitted.included];
-  if (fitted.left.length) {
-    parts.push(`Not included, past the ${BRIEF_NOTES_MAX_BYTES / 1024} KiB cap for notes: ${fitted.left.join(", ")}`);
-  }
-  return parts.join("\n\n") + "\n";
-}
-
-/** The brief the harness reads, with each note under its display path; a note that does not load fails the call. */
-export async function buildBrief(
-  services: ToolServices,
-  actor: ArtifactActor | null,
-  brief: string,
-  paths: string[],
-): Promise<string> {
-  const notes: NoteSection[] = [];
-  for (const path of paths) {
-    notes.push(await loadNote(services, actor, path));
-  }
-  return briefText(brief, notes);
-}
-
-// --- checks before the harness starts --------------------------------------
-
-/** Why a harness cannot run: none is picked, its CLI is missing from the image, or it has no credential. */
-export class HarnessSetupError extends Error {
-  constructor(
-    readonly code: "harness.missing" | "harness.off" | "harness.not_installed" | "harness.credential",
-    message: string,
-  ) {
-    super(message);
-    this.name = "HarnessSetupError";
-  }
-}
-
-/** What a coding run or a `code_task` call of an agent with no harness picked fails with. */
-export function harnessMissingError(): HarnessSetupError {
-  const labels = harnessesOn().map((harness) => HARNESS_INFO[harness].label);
-  const choices = labels.length > 1 ? `${labels.slice(0, -1).join(", ")}, or ${labels.at(-1)}` : labels.join("");
-  return new HarnessSetupError("harness.missing", `no harness is picked: choose ${choices} in the agent's Settings`);
-}
-
-function assertInstalled(harness: Harness, meta: Record<string, unknown>): void {
-  if (meta.installed === true) {
-    return;
-  }
-  const fix =
-    harness === "codex"
-      ? "rebuild the runtime image, which always installs it"
-      : `build the runtime image with HARNESSES naming ${harness}`;
-  throw new HarnessSetupError(
-    "harness.not_installed",
-    `${HARNESS_INFO[harness].label} is not installed in this machine's image: ${fix}`,
-  );
-}
-
-async function assertCredential(
-  services: ToolServices,
-  run: ToolRun,
-  harness: Harness,
-  meta: Record<string, unknown>,
-): Promise<void> {
-  if (meta.credential === "login") {
-    await services.db?.markHarnessLogin(
-      run.agent_id,
-      { harness, account: stringOrNull(meta.account) },
-      new Date(),
-    );
-  } else if (meta.credential !== "secret") {
-    await services.db?.clearHarnessLogin(run.agent_id, harness);
-    throw new HarnessSetupError(
-      "harness.credential",
-      `${HARNESS_INFO[harness].label} has no credential: ${credentialFix(harness, run.secret_aliases)}`,
-    );
-  }
-}
-
-/** Checks the harness's CLI is installed and has a credential; returns its version. */
-async function checkHarness(
-  services: ToolServices,
-  run: ToolRun,
-  callId: string,
-  harness: Harness,
-): Promise<string | null> {
-  const check = await harnessOp(opsRun(run), callId, "check", { harness });
-  assertInstalled(harness, check.meta);
-  await assertCredential(services, run, harness, check.meta);
-  return stringOrNull(check.meta.version);
-}
-
-/**
- * Checks, before a coding generation calls its model, that the run's harness is installed and
- * has a credential, so a run that cannot delegate code work fails at start. Throws
- * `HarnessSetupError` naming the fix.
- */
-export async function assertHarnessReady(services: ToolServices, run: ToolRun): Promise<void> {
-  const harness = requiredHarness(run);
-  await checkHarness(services, run, checkCallId(), harness);
-}
-
-/** What a harness check found on the agent's machine. */
-export type HarnessCheck = {
-  installed: boolean;
-  version: string | null;
-  /** What the harness would run on: a granted secret, a login in the home, or nothing. */
-  credential: "secret" | "login" | null;
-  /** Whose the login is, as the harness recorded it; null without a login or when unknown. */
-  account: string | null;
-};
-
-/** The raw event log the app reads of one `code_task` call, at most this much of it. */
-export const HARNESS_LOG_MAX_BYTES = 256 * 1024;
-
-/** One `code_task` call's kept event log: its progress lines, and its raw JSONL from the start. */
-export type HarnessLog = {
-  lines: string[];
-  lines_truncated: boolean;
-  raw: string;
-  raw_truncated: boolean;
-  /** The log's whole size in bytes. */
-  bytes: number;
-  events: number;
-  /** Lines of the log that were not JSON. */
-  unparsed: number;
-};
-
-/**
- * Reads the kept log of call `callId` of `run` with `guilds-harness log`, redacted with
- * `secrets`; null once the agent's home no longer keeps it.
- */
-export async function readHarnessLog(
-  run: ToolRun,
-  harness: Harness,
-  callId: string,
-  secrets: Record<string, string>,
-): Promise<HarnessLog | null> {
-  const result = await runCodeHelper(
-    run,
-    createToolHooks(),
-    { op: "log", call_id: callId, harness },
-    { helper: HARNESS_HELPER, timeoutSeconds: HARNESS_OP_TIMEOUT_SECONDS, maxBytes: HARNESS_LOG_MAX_BYTES },
-  );
-  const meta = result.meta;
-  if (meta.missing === true) {
-    return null;
-  }
-  const lines = Array.isArray(meta.lines) ? meta.lines.map(String) : [];
-  return {
-    lines: shownProgressLines(lines, secrets),
-    lines_truncated: meta.lines_truncated === true,
-    raw: redact(result.text, secrets),
-    raw_truncated: meta.raw_truncated === true,
-    bytes: Number(meta.bytes) || 0,
-    events: Number(meta.events) || 0,
-    unparsed: Number(meta.unparsed) || 0,
-  };
-}
-
-/** Runs `guilds-harness check` for `harness` in `run`, outside any tool call. */
-export async function checkHarnessOn(run: ToolRun, harness: Harness): Promise<HarnessCheck> {
-  const check = await harnessOp(opsRun(run), checkCallId(), "check", { harness });
-  const credential = check.meta.credential;
-  return {
-    installed: check.meta.installed === true,
-    version: stringOrNull(check.meta.version),
-    credential: credential === "secret" || credential === "login" ? credential : null,
-    account: stringOrNull(check.meta.account),
-  };
-}
-
-async function checkpoint(
-  run: ToolRun,
-  callId: string,
-  which: "start" | "end",
-  repository: string,
-): Promise<Record<string, unknown>> {
-  try {
-    const result = await runCodeHelper(
-      run,
-      createToolHooks(),
-      { op: "checkpoint", call_id: callId, which, task: callId, repositories: [repository] },
-      { timeoutSeconds: CHECKPOINT_TIMEOUT_SECONDS },
-    );
-    const records = Array.isArray(result.meta.repositories) ? result.meta.repositories : [];
-    return (records[0] as Record<string, unknown> | undefined) ?? {};
-  } catch (error) {
-    writeLog("warn", errorText(error), { run_id: run.run_id, agent_id: run.agent_id, operation: "code_task.checkpoint" });
-    return {};
-  }
 }
 
 // --- one turn of the harness -----------------------------------------------
@@ -512,7 +234,7 @@ function countFailedPoll(turn: HarnessTurn, error: unknown): Settled | null {
   if (turn.failures < POLL_FAILURES_MAX) {
     return null;
   }
-  writeLog("warn", errorText(error), { run_id: turn.ops.run_id, agent_id: turn.ops.agent_id, operation: "code_task.poll" });
+  writeLog("warn", errorMessage(error), { run_id: turn.ops.run_id, agent_id: turn.ops.agent_id, operation: "code_task.poll" });
   return "unresponsive";
 }
 
@@ -643,130 +365,8 @@ export async function endLostTurn(
   };
 }
 
-// --- the result ---------------------------------------------------------------
-
-function clipProgressLine(line: string): string {
-  return line.length <= PROGRESS_LINE_CHARS ? line : `${line.slice(0, PROGRESS_LINE_CHARS - 1)}…`;
-}
-
-/** Progress lines as the run view shows them: redacted, then clipped, so no secret is cut in two. */
-export function shownProgressLines(lines: string[], secrets: Record<string, string>): string[] {
-  return lines.map((line) => clipProgressLine(redact(line, secrets)));
-}
-
-export function formatDuration(ms: number): string {
-  const seconds = Math.max(0, Math.round(ms / 1000));
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  if (hours) {
-    return `${hours}h${String(minutes % 60).padStart(2, "0")}m`;
-  }
-  return minutes ? `${minutes}m${String(seconds % 60).padStart(2, "0")}s` : `${seconds}s`;
-}
-
-type ChangedFile = { path: string; insertions: number | null; deletions: number | null };
-
-export type CodeTaskOutcome = {
-  status: CodeTaskStatus;
-  harness: Harness;
-  repository: string;
-  session_id: string | null;
-  duration_ms: number;
-  files_changed: number;
-  insertions: number;
-  deletions: number;
-  files: ChangedFile[];
-  detail: string;
-  message: string;
-  log_path: string;
-};
-
-/** Keeps the end of `text` within `budget` bytes: questions and summaries come last. */
-function keepEnd(text: string, budget: number): string {
-  const data = Buffer.from(text, "utf8");
-  if (data.length <= budget) {
-    return text;
-  }
-  const marker = `[… ${data.length - budget} bytes cut from the start of the message]\n`;
-  const room = Math.max(0, budget - Buffer.byteLength(marker, "utf8"));
-  return marker + data.subarray(data.length - room).toString("utf8").replace(/^�+/, "");
-}
-
-function changeSummary(outcome: CodeTaskOutcome): string {
-  if (!outcome.files_changed) {
-    return "no files changed";
-  }
-  const plural = outcome.files_changed === 1 ? "" : "s";
-  return `${outcome.files_changed} file${plural} changed, +${outcome.insertions} −${outcome.deletions}`;
-}
-
-function fileLine(file: ChangedFile): string {
-  const counts = file.insertions === null ? "binary" : `+${file.insertions} −${file.deletions ?? 0}`;
-  return `${file.path} (${counts})`;
-}
-
-/** The first changed files, and how many more there are. */
-function fileLines(outcome: CodeTaskOutcome): string[] {
-  const shown = outcome.files.slice(0, FILES_SHOWN).map(fileLine);
-  const more = outcome.files_changed - shown.length;
-  return more > 0 ? [...shown, `… ${more} more files`] : shown;
-}
-
-/** The result the agent reads, within `maxBytes`; the final message gives way first, from its start. */
-export function codeTaskText(outcome: CodeTaskOutcome, maxBytes = codeResultMaxBytes()): string {
-  const title = `${outcome.status} · ${outcome.harness} · ${outcome.repository} · session ${outcome.session_id ?? "none"} · ${formatDuration(outcome.duration_ms)}`;
-  const head = [title, changeSummary(outcome), ...fileLines(outcome), outcome.detail].filter(Boolean).join("\n");
-  const tail = `log: ${outcome.log_path}`;
-  const budget = maxBytes - Buffer.byteLength(`${head}\n\n\n\n${tail}`, "utf8") - 16;
-  const message = keepEnd(outcome.message.trim() || "(no final message)", Math.max(0, budget));
-  return `${head}\n\n${message}\n\n${tail}`;
-}
-
-/** The result of a call the orchestrator never saw finish: it restarted while the harness ran. */
-export function interruptedText(task: {
-  harness: Harness;
-  repository: string | null;
-  session_id: string | null;
-  log_path: string | null;
-  run_id: string;
-  call_id: string;
-  stopped: boolean;
-}): string {
-  const resume = task.session_id ? " Resume the session to finish the work." : "";
-  return [
-    `interrupted · ${task.harness} · ${task.repository ?? "unknown"} · session ${task.session_id ?? "none"}`,
-    task.stopped
-      ? "The harness was stopped before it finished: the orchestrator or the machine restarted."
-      : "The orchestrator restarted, and the harness did not stop: it may still be running.",
-    "The working tree holds whatever it wrote, and the task's start checkpoint stays at",
-    `refs/guild/runs/${task.run_id}/tasks/${task.call_id}/start.${resume}`,
-    "",
-    `log: ${task.log_path ?? "none"}`,
-  ].join("\n");
-}
-
 function displayLogPath(runId: string, callId: string): string {
   return `.runs/${runId}/${callId}.harness.jsonl`;
-}
-
-function stderrTail(value: unknown): string {
-  return typeof value === "string" ? value.trim().split("\n").slice(-5).join("\n") : "";
-}
-
-function firstLine(value: unknown): string {
-  return typeof value === "string" ? (value.split("\n")[0] ?? "") : "";
-}
-
-/** Why a turn failed. A CLI that printed no event, such as one refusing to start without a login, says why on stderr. */
-export function failureDetail(harness: Harness, result: Record<string, unknown>, version: string | null): string {
-  const events = count(result.events);
-  if (events === 0 && count(result.unparsed) > 0) {
-    return `error: the ${harness} driver does not parse this CLI's output (${version ?? "unknown version"})`;
-  }
-  const stderr = stderrTail(result.stderr);
-  const error = firstLine(result.error);
-  const reasons = events === 0 ? [stderr, error] : [error, stderr];
-  return `error: ${reasons.find(Boolean) ?? `exited with code ${String(result.exit_code ?? "unknown")}`}`;
 }
 
 function endingStatus(ending: TurnEnding): CodeTaskStatus {
@@ -794,9 +394,9 @@ function turnOutcome(turn: HarnessTurn, ending: TurnEnding, changed: Record<stri
     repository: turn.repository,
     session_id: stringOrNull(ending.result?.session_id) ?? turn.session,
     duration_ms: Date.now() - turn.started,
-    files_changed: count(changed.files_changed),
-    insertions: count(changed.insertions),
-    deletions: count(changed.deletions),
+    files_changed: numberOrZero(changed.files_changed),
+    insertions: numberOrZero(changed.insertions),
+    deletions: numberOrZero(changed.deletions),
     files: Array.isArray(changed.files) ? (changed.files as ChangedFile[]) : [],
     detail: endingDetail(turn, ending, status),
     message: stringOrNull(ending.result?.message) ?? "",

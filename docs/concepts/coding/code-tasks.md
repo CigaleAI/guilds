@@ -335,7 +335,9 @@ harness owns its session state.
 
 ### Code
 
-`apps/orchestrator/src/toolbox/harness.ts` (`code_task`, the harness
-checks, the harness log), `runtime/guilds-harness` (the ops and the
-drivers), and in the app `apps/web/src/features/agent/chat/FlowView.tsx`
+`apps/orchestrator/src/toolbox/harness.ts` (`code_task`),
+`harness-brief.ts` (the brief), `harness-setup.ts` (the harness
+checks), `harness-ops.ts` (the ops, the checkpoints, the harness log),
+`harness-result.ts` (the result), `runtime/guilds-harness` (the ops and
+the drivers), and in the app `apps/web/src/features/agent/chat/FlowView.tsx`
 and `apps/web/src/features/agent/chat/ToolCallDetail.tsx`.

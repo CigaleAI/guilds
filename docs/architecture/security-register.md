@@ -762,7 +762,7 @@ name lookups to the instance admin.
 **Where:** `GET /api/runs/:id/tasks/:call_id/log`
 (`apps/orchestrator/src/http/coding-routes.ts`), `harnessLog` in
 `apps/orchestrator/src/generation/coding.ts`, `readHarnessLog` in
-`apps/orchestrator/src/toolbox/harness.ts`, and the `log` op of
+`apps/orchestrator/src/toolbox/harness-ops.ts`, and the `log` op of
 `runtime/guilds-harness`.
 
 **Exposure:** a harness's event log is stored unredacted in the

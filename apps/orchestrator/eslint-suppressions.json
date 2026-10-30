@@ -1292,12 +1292,27 @@
       "count": 2
     }
   },
+  "src/toolbox/harness-brief.ts": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/toolbox/harness-ops.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    }
+  },
+  "src/toolbox/harness-result.ts": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
   "src/toolbox/harness.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 3
+      "count": 2
     },
     "no-restricted-syntax": {
-      "count": 7
+      "count": 5
     }
   },
   "src/toolbox/index.ts": {
