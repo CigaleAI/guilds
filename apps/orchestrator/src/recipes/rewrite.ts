@@ -1,4 +1,4 @@
-import { TAG_RE } from "../groupchat/index.js";
+import { TAG_RE } from "../groupchat/tags.js";
 import { isDisplayPath } from "../artifacts/paths.js";
 import type { RecipeNote } from "../db/schema/index.js";
 

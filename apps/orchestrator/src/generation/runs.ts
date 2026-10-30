@@ -11,13 +11,8 @@ import {
 import type { RunMetadata } from "../db/schema/index.js";
 import { listDueSchedules, markScheduleFired, type ScheduleRow } from "../db/schedules.js";
 import { iso, runItem } from "../db/views.js";
-import {
-  DeliveryBusyError,
-  DeliveryCreateError,
-  groupChatUserMessage,
-  wakeMessage,
-  type GroupDelivery,
-} from "../groupchat/index.js";
+import { DeliveryBusyError, DeliveryCreateError, type GroupDelivery } from "../groupchat/delivery.js";
+import { groupChatUserMessage, wakeMessage } from "../groupchat/wake.js";
 import { newId } from "../lib/ids.js";
 import { sleep } from "../lib/event.js";
 import { errorName, writeLog } from "../observability/log.js";

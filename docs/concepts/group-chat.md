@@ -286,7 +286,10 @@ that has a tag there ([Inbox and issues](inbox.md)).
 
 ### Code
 
-- `apps/orchestrator/src/groupchat/`: tags, recipients, dispatcher
+- `apps/orchestrator/src/groupchat/`: the group chat and its dispatcher
+  (`index.ts`), history (`history.ts`), tags (`tags.ts`), recipients
+  (`recipients.ts`, `router.ts`), deliveries and interruptions
+  (`delivery.ts`), and the message a woken run reads (`wake.ts`)
 - `apps/orchestrator/src/typesafe/`: the Jev recipient Choice and
   history filter
 - `apps/orchestrator/src/generation/`: `deliverGroupRun`, the busy

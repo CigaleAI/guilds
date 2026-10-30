@@ -4,7 +4,7 @@ import {
   recipientNamesAfter,
   taggedRecipientNamesAfter,
   type RecipientMessage,
-} from "../groupchat/index.js";
+} from "../groupchat/recipients.js";
 import { serializeRecipientDecision } from "../groupchat/router.js";
 import { AGENT_TASK_PREVIEW_CHARS, createGroupRouter } from "./group.js";
 import type { TypeSafeClient } from "./client.js";
