@@ -1,5 +1,6 @@
 import type { AttachmentRef, AttachmentService } from "../attachments/index.js";
 import type { ArtifactFiles } from "../artifacts/files.js";
+import type { ArtifactStore } from "../artifacts/store.js";
 import { deleteAgent, getAgent, listAgents } from "../db/agents.js";
 import { deleteGuild, getGuild } from "../db/guilds.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
@@ -37,7 +38,12 @@ import { ConflictError, RunRequestError } from "./errors.js";
 import { RunEvents, runEventsDatabase } from "./events.js";
 import { RunGenerator, runGeneratorDatabase, runWasResumed } from "./generate.js";
 import { AgentMachines, agentMachinesDatabase, type GenerationSandboxes } from "./machines.js";
-import { RunPreparation, runPreparationDatabase, type ConnectorPool } from "./prepare.js";
+import {
+  generationArtifacts,
+  RunPreparation,
+  runPreparationDatabase,
+  type ConnectorPool,
+} from "./prepare.js";
 import { RunSecrets, runSecretsDatabase } from "./run-secrets.js";
 import { Runs, runsDatabase } from "./runs.js";
 import { ToolCalls, toolCallsDatabase } from "./tool-calls.js";
@@ -116,7 +122,8 @@ export type GenerationLoopServices = {
   sandboxes: GenerationSandboxes;
   /** The pool runs list and call connection tools through. */
   mcp: ConnectorPool;
-  artifacts?: GenerationArtifacts | null;
+  /** Where the runs' tools and prompts read and write artifacts; none when the box keeps none. */
+  artifacts?: ArtifactStore | null;
   files?: ArtifactFiles | null;
   attachments?: AttachmentService | null;
   /** The cap on generations this loop shares with Studio and Builder sessions. */
@@ -131,8 +138,10 @@ export type GenerationLoopServices = {
  * What a generation loop is built from: its services, the db/ functions it and its parts go
  * through, and the other domains its runs read and write through.
  */
-export type GenerationLoopDeps = GenerationLoopServices & {
+export type GenerationLoopDeps = Omit<GenerationLoopServices, "artifacts"> & {
   db: GenerationDatabase;
+  /** The artifact functions the runs' prompts are read through, on the loop's store. */
+  artifacts: GenerationArtifacts | null;
   credentials: ModelCredentialsProvider;
   /** The chat the loop delivers group runs from; it asks the loop whether a guild is being deleted. */
   groupChat: GroupChat;
@@ -181,7 +190,7 @@ export class GenerationLoop implements GroupRunner {
     this.db = db;
     this.notes = notes;
     this.mcp = services.mcp;
-    this.artifacts = services.artifacts ?? null;
+    this.artifacts = services.artifacts;
     this.files = services.files ?? null;
     this.attachments = services.attachments ?? null;
     this.policy = services.policy ?? OPEN_POLICY;
@@ -592,9 +601,10 @@ export function generationLoop(
   const issues = guildIssues(db);
   const schedules = agentSchedules(db);
   const scripts = agentScripts(db);
+  const artifacts = services.artifacts ? generationArtifacts(services.artifacts) : null;
   const tools = toolServices(db, {
     notes: services.notes,
-    artifacts: services.artifacts ?? null,
+    artifacts,
     files: services.files ?? null,
     group_chat: groupChat,
     issues,
@@ -606,6 +616,7 @@ export function generationLoop(
     {
       ...services,
       db: database,
+      artifacts,
       credentials: services.credentials ?? coreModelCredentials(db),
       groupChat,
       groupRouter,

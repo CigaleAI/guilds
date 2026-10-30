@@ -28,7 +28,6 @@ import {
   dropIsolatedDatabase,
   uniqueDbName,
 } from "../helpers/postgres.js";
-import { generationArtifacts } from "../../src/generation/prepare.js";
 
 const live = generationLive;
 const originalStream = live.streamCompletion;
@@ -100,7 +99,7 @@ test("R6 HTTP SSE and WS recordings replay over real HTTP", { timeout: 180_000 }
     workspaceRoot: env.WORKSPACE_ROOT ?? "",
     sandboxes,
     mcp: mcpPool(db),
-    artifacts: generationArtifacts(artifacts),
+    artifacts,
   });
   await generation.reconcile();
   const app = await buildApp(database, {

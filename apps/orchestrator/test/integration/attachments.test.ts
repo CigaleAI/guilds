@@ -16,7 +16,6 @@ import { templatesRoot } from "../helpers/fixtures.js";
 import { ExportSandboxes } from "../helpers/live.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { insertOrg } from "../../src/db/orgs.js";
-import { generationArtifacts } from "../../src/generation/prepare.js";
 import { mcpPool } from "../../src/mcp/pool.js";
 
 const OWNER = {
@@ -54,7 +53,7 @@ test("operators upload images, attach them to a run, and cannot read another org
     workspaceRoot,
     sandboxes: new ExportSandboxes(workspaceRoot),
     attachments,
-    artifacts: generationArtifacts(artifacts),
+    artifacts,
   });
   generation.generateInBackground = () => undefined;
   const app = await buildApp(database, {
