@@ -1,6 +1,7 @@
 import { Copy, ExternalLink } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { lookupWithCredentials, useConnectServer, useConnection } from "../../api/queries/access";
+import { copyText } from "../../app/clipboard";
 import type {
   AccessOwner,
   ConnectorAuthField,
@@ -21,7 +22,6 @@ import {
   toast,
   Icon,
 } from "@guildsrun/ui";
-import { copyText } from "./clipboard";
 import { SettingsForm, type SettingsValue } from "./SettingsForm";
 
 /** What signing in to a server needs to know about it. */
