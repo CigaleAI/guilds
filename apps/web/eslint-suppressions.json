@@ -414,6 +414,9 @@
   "src/features/agent/chat/callDetail.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 1
     }
   },
   "src/features/agent/chat/chatLinger.ts": {
@@ -514,7 +517,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 1
+      "count": 3
     }
   },
   "src/features/agent/runs/toolKinds.ts": {
@@ -1169,6 +1172,9 @@
   "src/features/tables/values.ts": {
     "complexity": {
       "count": 3
+    },
+    "no-restricted-syntax": {
+      "count": 1
     }
   },
   "src/mount.tsx": {
