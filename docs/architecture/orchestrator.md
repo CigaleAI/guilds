@@ -266,7 +266,12 @@ a refused caller gets the same 404 whatever they send.
 
 A domain refuses a request with a named error that carries the HTTP
 status it answers with, or with a validation error, which is a 422.
-`domainHttp` in `http/errors.ts` turns either into the reply.
+`domainHttp` in `http/errors.ts` turns either into the reply. A
+refusal of the notes store answers by its message: 409 for a name
+that exists, 422 for a path or change refused, 404 for what is not
+found, and 500 otherwise. A route that reads notes answers every
+refusal of the store with 404, but an invalid path with 422
+(`notesRead`).
 
 ## Generation
 

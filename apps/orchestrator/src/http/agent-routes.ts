@@ -16,7 +16,6 @@ import type { AgentRow } from "../db/agents.js";
 import { requireVisibleGuild } from "../guilds/access.js";
 import { OPEN_POLICY } from "../policy/index.js";
 import type { RouteApp, RouteDeps } from "./deps.js";
-import { notesWrite } from "./errors.js";
 import { currentUser } from "./identity.js";
 import { AgentParams, GuildParams } from "./params.js";
 
@@ -103,7 +102,7 @@ export async function registerAgentRoutes(app: RouteApp, deps: RouteDeps): Promi
         machineId: body.machine_id,
       };
       const operator = await loadOperatorActor(db, user, { orgId: guild.org_id });
-      const agent = await notesWrite(createAgent(services, guild, operator, draft));
+      const agent = await createAgent(services, guild, operator, draft);
       return reply.code(201).send(await viewOf(agent));
     },
   );
@@ -119,7 +118,7 @@ export async function registerAgentRoutes(app: RouteApp, deps: RouteDeps): Promi
     async (request, reply) => {
       const user = await currentUser(db, request, deps);
       const agent = await requireVisibleAgent(db, request.params.agent_id, user.id);
-      await notesWrite(deleteAgent(services, agent));
+      await deleteAgent(services, agent);
       return reply.code(204).send();
     },
   );
@@ -140,7 +139,7 @@ export async function registerAgentRoutes(app: RouteApp, deps: RouteDeps): Promi
         avatarShape: body.avatar_shape,
         avatarColor: body.avatar_color,
       };
-      return viewOf(await notesWrite(reconfigureAgent(services, agent, user.id, patch)));
+      return viewOf(await reconfigureAgent(services, agent, user.id, patch));
     },
   );
 

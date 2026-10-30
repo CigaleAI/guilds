@@ -19,7 +19,7 @@ import {
   type OperatorNotesServices,
 } from "../notes/operator.js";
 import type { RouteApp, RouteDeps } from "./deps.js";
-import { notesRead, notesWrite } from "./errors.js";
+import { notesRead } from "./errors.js";
 import { currentOrg, currentUser } from "./identity.js";
 import { AgentParams, filePathParam, GuildParams } from "./params.js";
 import type { UserRow } from "../db/users.js";
@@ -93,10 +93,10 @@ export async function registerNoteRoutes(app: RouteApp, deps: RouteDeps): Promis
       content: body.content ?? "",
       expectedVersion: body.expected_version,
     };
-    return notesWrite(writeOwnerNote(services, scope.owner, scope.user, write));
+    return writeOwnerNote(services, scope.owner, scope.user, write);
   };
   const deleteNote = (scope: NoteScope, request: FastifyRequest) =>
-    notesWrite(deleteOwnerNote(services, scope.owner, scope.user, filePathParam(request)));
+    deleteOwnerNote(services, scope.owner, scope.user, filePathParam(request));
 
   app.get("/api/guilds/:guild_id/notes", { schema: { params: GuildParams } }, async (request) =>
     listNotes(await guildNotes(request, request.params.guild_id)),

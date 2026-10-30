@@ -4,6 +4,7 @@ import { HttpError, domainHttp, validationHttp } from "../../src/http/errors.js"
 import { numberOrNull } from "../../src/lib/numbers.js";
 import { ModelNotConnectedError } from "../../src/llm/credentials.js";
 import { MachineError } from "../../src/machines/index.js";
+import { NotesError } from "../../src/notes/errors.js";
 import { GuildAgentLimitError } from "../../src/guilds/errors.js";
 import { LimitError, PolicyError } from "../../src/policy/index.js";
 import { StudioConflictError, StudioNotFoundError, StudioUnprocessableError } from "../../src/studio/errors.js";
@@ -24,6 +25,24 @@ test("a domain refusal answers with its own status and message", () => {
     assert.ok(http instanceof HttpError, error.name);
     assert.equal(http.status, status);
     assert.equal(http.statusCode, status);
+    assert.equal(http.detail, message);
+  }
+});
+
+test("a notes store refusal answers by its message", () => {
+  const cases: Array<[string, number]> = [
+    ["agent folder already exists: scout", 409],
+    ["invalid path", 422],
+    ["path must end in .md", 422],
+    ["routine notes cannot be overwritten", 422],
+    ["cannot delete this file", 422],
+    ["file not found", 404],
+    ["system prompt template is missing", 500],
+  ];
+  for (const [message, status] of cases) {
+    const http = domainHttp(new NotesError(message));
+    assert.ok(http instanceof HttpError, message);
+    assert.equal(http.status, status);
     assert.equal(http.detail, message);
   }
 });
