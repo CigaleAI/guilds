@@ -25,8 +25,6 @@ import type {
   BindingSwitch,
   BindingTarget,
   CatalogServer,
-  CatalogServerInput,
-  CatalogToolInput,
   Collection,
   CollectionRecord,
   EmbeddableNote,
@@ -116,7 +114,6 @@ import type {
   RecipeValidation,
   StudioRoutine,
   StudioRun,
-  OrgRole,
   OrgUsage,
   AccessOwner,
   RepositoryInput,
@@ -140,6 +137,22 @@ import type {
   NewGuild,
   NewAgent,
   RecordUpdate,
+  NewMember,
+  NewUser,
+  UserEmailChange,
+  MemberRoleChange,
+  OrgInput,
+  ModelProviderInput,
+  ProfileChanges,
+  CatalogServerEdit,
+  CatalogToolEdit,
+  RegistryAcceptance,
+  RegistryConnectorAcceptance,
+  RegistryRecipeRef,
+  RecipeInput,
+  RecipeFieldReview,
+  ApplyStepConfirmation,
+  NewBuilderSession,
 } from "./types";
 
 /** Query keys. Identity is fixed for the page's life, so keys carry no user or org. */
@@ -1697,7 +1710,7 @@ export function useReach(subject: ReachSubject) {
 export function useAddMember(orgId: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ name, role }: { name: string; role: OrgRole }) =>
+    mutationFn: ({ name, role }: NewMember) =>
       api<OrgMember>(`/api/orgs/${encodeURIComponent(orgId)}/members`, {
         method: "POST",
         body: { name, role },
@@ -1715,7 +1728,7 @@ export function useUsers() {
 export function useCreateUser() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (input: { name: string; email: string | null }) =>
+    mutationFn: (input: NewUser) =>
       api<User>("/api/users", { method: "POST", body: input }),
     onSuccess: () => void client.invalidateQueries({ queryKey: keys.users }),
   });
@@ -1725,7 +1738,7 @@ export function useCreateUser() {
 export function useSetUserEmail() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ userId, email }: { userId: string; email: string | null }) =>
+    mutationFn: ({ userId, email }: UserEmailChange) =>
       api<User>(`/api/users/${encodeURIComponent(userId)}`, { method: "PATCH", body: { email } }),
     onSuccess: () => void client.invalidateQueries({ queryKey: keys.users }),
   });
@@ -1735,7 +1748,7 @@ export function useSetUserEmail() {
 export function useUpdateMemberRole(orgId: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ userId, role }: { userId: string; role: OrgRole }) =>
+    mutationFn: ({ userId, role }: MemberRoleChange) =>
       api<OrgMember>(
         `/api/orgs/${encodeURIComponent(orgId)}/members/${encodeURIComponent(userId)}`,
         { method: "PATCH", body: { role } },
@@ -1761,7 +1774,7 @@ export function useRemoveMember(orgId: string) {
 export function useUpdateOrg(orgId: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (input: { name: string; slug: string }) =>
+    mutationFn: (input: OrgInput) =>
       api<Org>(`/api/orgs/${encodeURIComponent(orgId)}`, { method: "PATCH", body: input }),
     onSuccess: () => void client.invalidateQueries({ queryKey: keys.identity }),
   });
@@ -1809,15 +1822,7 @@ function useOrgModelsWrite<T>(orgId: string, write: (input: T) => Promise<unknow
 export function useConnectModelProvider(orgId: string) {
   return useOrgModelsWrite(
     orgId,
-    ({
-      provider,
-      ...body
-    }: {
-      provider: ModelProvider;
-      api_key?: string;
-      base_url?: string;
-      models?: string[];
-    }) =>
+    ({ provider, ...body }: ModelProviderInput) =>
       api<OrgModelProvider>(`${orgModelsPath(orgId)}/model-providers/${provider}`, {
         method: "PUT",
         body,
@@ -1849,7 +1854,7 @@ export function useRemoveModelProvider(orgId: string) {
 export function useUpdateProfile() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (profile: { name?: string; timezone?: string | null; color?: string | null }) =>
+    mutationFn: (profile: ProfileChanges) =>
       api<User>("/api/auth/me", { method: "PATCH", body: profile }),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: keys.identity });
@@ -1886,7 +1891,7 @@ function useAdminRefresh() {
 export function useSaveCatalogServer() {
   const refresh = useAdminRefresh();
   return useMutation({
-    mutationFn: ({ id, input }: { id?: string; input: CatalogServerInput }) =>
+    mutationFn: ({ id, input }: CatalogServerEdit) =>
       api(id ? `/api/admin/mcp/servers/${encodeURIComponent(id)}` : "/api/admin/mcp/servers", {
         method: id ? "PATCH" : "POST",
         body: input,
@@ -1898,15 +1903,7 @@ export function useSaveCatalogServer() {
 export function useSaveCatalogTool() {
   const refresh = useAdminRefresh();
   return useMutation({
-    mutationFn: ({
-      serverId,
-      name,
-      input,
-    }: {
-      serverId: string;
-      name: string;
-      input: CatalogToolInput;
-    }) =>
+    mutationFn: ({ serverId, name, input }: CatalogToolEdit) =>
       api(
         `/api/admin/mcp/servers/${encodeURIComponent(serverId)}/tools/${encodeURIComponent(name)}`,
         { method: "PATCH", body: input },
@@ -1927,9 +1924,6 @@ export function useAdminRegistry() {
 const registryConnectorPath = (slug: string) =>
   `/api/admin/registry/connectors/${encodeURIComponent(slug)}`;
 
-/** What installing or updating a registry connector accepts: an unverified or experimental one. */
-type RegistryAcceptance = { unverified: boolean; experimental?: boolean };
-
 const acceptance = ({ unverified, experimental }: RegistryAcceptance) => ({
   ...(unverified ? { unverified } : {}),
   ...(experimental ? { experimental } : {}),
@@ -1942,7 +1936,7 @@ const acceptance = ({ unverified, experimental }: RegistryAcceptance) => ({
 export function useInstallRegistryConnector() {
   const refresh = useAdminRefresh();
   return useMutation({
-    mutationFn: ({ slug, ...accepted }: { slug: string } & RegistryAcceptance) =>
+    mutationFn: ({ slug, ...accepted }: RegistryConnectorAcceptance) =>
       api<CatalogServer>("/api/admin/registry/connectors", {
         method: "POST",
         body: { slug, ...acceptance(accepted) },
@@ -1955,7 +1949,7 @@ export function useInstallRegistryConnector() {
 export function useUpdateRegistryConnector() {
   const refresh = useAdminRefresh();
   return useMutation({
-    mutationFn: ({ slug, ...accepted }: { slug: string } & RegistryAcceptance) =>
+    mutationFn: ({ slug, ...accepted }: RegistryConnectorAcceptance) =>
       api<{ moved: Array<{ slug: string; from: string; to: string }> }>(
         `${registryConnectorPath(slug)}/update`,
         { method: "POST", body: acceptance(accepted) },
@@ -2015,7 +2009,7 @@ export function useRecipeRegistry() {
 export function useImportRegistryRecipe() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (input: { name: string; version?: string }) =>
+    mutationFn: (input: RegistryRecipeRef) =>
       api<RecipeRow>("/api/recipes/registry/import", { method: "POST", body: input }),
     onSuccess: () => void client.invalidateQueries({ queryKey: keys.recipes }),
   });
@@ -2437,7 +2431,7 @@ export function usePublishRecipe(id: string) {
 export function useUpdateRecipe(id: string) {
   return useRecipeWrite(
     id,
-    (input: { name: string; description: string; expected_body_version: number }) =>
+    (input: RecipeInput) =>
       api<RecipeRow>(recipePath(id), { method: "PUT", body: input }),
   );
 }
@@ -2451,7 +2445,7 @@ export function useRecipeAccess(id: string) {
 
 /** Confirms a field the Builder wrote, or replaces it with the operator's text. */
 export function useReviewRecipe(id: string) {
-  return useRecipeWrite(id, (input: { path: string; action: "confirm" | "edit"; value?: string }) =>
+  return useRecipeWrite(id, (input: RecipeFieldReview) =>
     api<RecipeRow>(`${recipePath(id)}/review`, { method: "POST", body: input }),
   );
 }
@@ -2589,7 +2583,7 @@ export function useVerifyStep(id: string) {
 
 /** Confirms a step done by hand, or skips a login or secret the guild will do without. */
 export function useConfirmStep(id: string) {
-  return useApplyWrite(id, ({ stepId, skip }: { stepId: string; skip?: boolean }) =>
+  return useApplyWrite(id, ({ stepId, skip }: ApplyStepConfirmation) =>
     api<ApplyRow>(`${applyPath(id)}/steps/${encodeURIComponent(stepId)}/confirm`, {
       method: "POST",
       body: skip ? { skip: true } : {},
@@ -2624,7 +2618,7 @@ export function useBuilderSessions() {
 export function useStartBuilder() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: async ({ model, brief }: { model: string; brief: string }) => {
+    mutationFn: async ({ model, brief }: NewBuilderSession) => {
       const session = await api<BuilderSession>("/api/builder/sessions", {
         method: "POST",
         body: { model },
@@ -2714,7 +2708,7 @@ export function useBuilderValidation(id: string, version: number | undefined, en
 export function useBuilderReview(id: string) {
   const refresh = useBuilderRefresh(id);
   return useMutation({
-    mutationFn: (input: { path: string; action: "confirm" | "edit"; value?: string }) =>
+    mutationFn: (input: RecipeFieldReview) =>
       api<RecipeRow>(`${builderPath(id)}/review`, { method: "POST", body: input }),
     onSuccess: refresh,
   });

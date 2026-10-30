@@ -84,6 +84,15 @@ export type User = {
   platform_admin: boolean;
 };
 
+/** A new account, with its personal organisation. */
+export type NewUser = { name: string; email: string | null };
+
+/** The email a user signs in with behind an authenticating proxy; null clears it. */
+export type UserEmailChange = { userId: string; email: string | null };
+
+/** The signed-in operator's own settings to change; a field left out keeps its value. */
+export type ProfileChanges = { name?: string; timezone?: string | null; color?: string | null };
+
 export type OrgRole = "owner" | "admin" | "member";
 
 export type Org = {
@@ -94,6 +103,9 @@ export type Org = {
   updated_at: string;
   role: OrgRole;
 };
+
+/** An organisation's new name and slug. */
+export type OrgInput = Pick<Org, "name" | "slug">;
 
 export type GuildOperator = {
   user_id: string;
@@ -1073,6 +1085,17 @@ export type OrgModels = {
   models: CatalogModel[];
 };
 
+/**
+ * A provider to connect, or what a connected one offers: its key (kept when left out), the local
+ * endpoint's URL, and the chosen models.
+ */
+export type ModelProviderInput = {
+  provider: ModelProvider;
+  api_key?: string;
+  base_url?: string;
+  models?: string[];
+};
+
 export function marketplaceModels(models?: OrgModels): CatalogModel[] {
   return (models?.models ?? []).filter((item) => item.kind !== "coding");
 }
@@ -1156,6 +1179,12 @@ export type OrgMember = {
   role: OrgRole;
   created_at: string;
 };
+
+/** A user added to the organisation by their @name, with the role they get. */
+export type NewMember = { name: string; role: OrgRole };
+
+/** A member's new role. */
+export type MemberRoleChange = { userId: string; role: OrgRole };
 
 /** A note in a notes scope; `path` is its file name, such as `process.md`. */
 export type NoteItem = {
@@ -1293,6 +1322,12 @@ export type RegistryConnectors = {
   connectors: RegistryConnector[];
 };
 
+/** What installing or updating a registry connector accepts: an unverified or experimental one. */
+export type RegistryAcceptance = { unverified: boolean; experimental?: boolean };
+
+/** A registry connector to install or update, with what the admin accepts of it. */
+export type RegistryConnectorAcceptance = RegistryAcceptance & { slug: string };
+
 /** `POST /api/admin/registry/reload`: the slugs the running server loaded, dropped, or failed to load. */
 export type RegistryReload = { loaded: string[]; removed: string[]; failed: string[] };
 
@@ -1301,6 +1336,9 @@ export type RegistryRecipe = RegistryEntry & { name: string };
 
 /** `GET /api/recipes/registry`: the registry's recipes; `offline` when `REGISTRY_URL` is set empty. */
 export type RegistryRecipes = { offline: boolean; url: string | null; recipes: RegistryRecipe[] };
+
+/** A registry recipe by name: its newest version unless `version` names one. */
+export type RegistryRecipeRef = { name: string; version?: string };
 
 /** What the Admin form sends: a new server's fields, or a patch; null clears an override. */
 export type CatalogServerInput = {
@@ -1321,6 +1359,12 @@ export type CatalogToolInput = {
   input_schema?: Record<string, unknown> | null;
   default?: boolean | null;
 };
+
+/** A connector's fields to save: a new connector without `id`, or a patch of the one `id` names. */
+export type CatalogServerEdit = { id?: string; input: CatalogServerInput };
+
+/** An edit to one tool of a connector. */
+export type CatalogToolEdit = { serverId: string; name: string; input: CatalogToolInput };
 
 /**
  * A Studio session: a coach conversation about one live guild. The coach proposes Task drafts
@@ -2058,6 +2102,12 @@ export type RecipeRow = {
   updated_at: string;
 };
 
+/** A recipe's new name and description, refused (409) over a body newer than `expected_body_version`. */
+export type RecipeInput = { name: string; description: string; expected_body_version: number };
+
+/** A recipe field confirmed as written, or replaced with the operator's `value`. */
+export type RecipeFieldReview = { path: string; action: "confirm" | "edit"; value?: string };
+
 /** How serious a validation finding is (recipes/validate.ts). */
 export type FindingSeverity = "error" | "warning" | "info";
 
@@ -2278,6 +2328,9 @@ export type ApplyStep = {
   closed_at?: string;
 };
 
+/** A step confirmed done by hand, or with `skip` a login or secret the guild will do without. */
+export type ApplyStepConfirmation = { stepId: string; skip?: boolean };
+
 /** Which login apply gives a connector: a live one to reuse, or one to connect afterwards. */
 export type ApplyConnectionChoice = {
   server: string;
@@ -2344,3 +2397,6 @@ export type BuilderSession = {
 export type BuilderSessionSummary = Omit<BuilderSession, "recipe"> & {
   recipe: Pick<RecipeRow, "name" | "status" | "body_version"> | null;
 };
+
+/** A Builder session to start: its coach's model, and the operator's description of the guild. */
+export type NewBuilderSession = { model: string; brief: string };
