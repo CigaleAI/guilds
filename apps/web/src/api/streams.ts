@@ -3,8 +3,10 @@ import { useEffect, useRef, useState } from "react";
 import {
   dispatchLiveEvent,
   guildEventGuards,
+  inboxEventGuards,
   parseFrameData,
   type GuildEvents,
+  type InboxEvents,
   type LiveEventHandlers,
 } from "./liveEvents";
 import { applyLiveDelta, type LiveTurn } from "./liveTurn";
@@ -132,6 +134,8 @@ export function useGuildStream(guildId: string): void {
   });
 }
 
+const inboxEvents = Object.keys(inboxEventGuards);
+
 /**
  * Keeps the inbox current: its counts, and the unread count of each guild. Bursts of changes
  * collapse into one refetch. A message posted in a guild the operator can see also reaches
@@ -147,13 +151,17 @@ export function useInboxStream(onMessage?: (notice: MessageNotice) => void): voi
       void client.invalidateQueries({ queryKey: chatKeys.notifications });
     }, 150);
   };
-  useEventStream("/api/notifications/stream", {
-    events: ["notifications.changed", "notifications.message"],
-    onOpen: refetch,
-    onEvent: (name, data) => {
+  const handlers: LiveEventHandlers<InboxEvents> = {
+    "notifications.changed": refetch,
+    "notifications.message": (notice) => {
       refetch();
-      if (name === "notifications.message" && data) onMessage?.(data as MessageNotice);
+      onMessage?.(notice);
     },
+  };
+  useEventStream("/api/notifications/stream", {
+    events: inboxEvents,
+    onOpen: refetch,
+    onEvent: (name, data) => dispatchLiveEvent(inboxEventGuards, handlers, name, data),
     retryMs: 5000,
   });
 }
