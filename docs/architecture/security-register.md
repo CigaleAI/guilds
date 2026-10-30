@@ -897,7 +897,7 @@ harness's token variable reads (`CLAUDE_CODE_OAUTH_TOKEN` or
 to it, or a login stored in its home (`runtime/guilds-harness`;
 Antigravity has only the login, SEC-38), the
 **Harness** select on Create agent and agent Settings
-(`apps/web/src/features/agent/settings/configForm.tsx`), and the
+(`apps/web/src/features/agent/settings/HarnessFields.tsx`), and the
 **Subscription token** select under it
 (`apps/web/src/features/agent/settings/HarnessReadiness.tsx`).
 

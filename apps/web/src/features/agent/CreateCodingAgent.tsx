@@ -42,10 +42,10 @@ import {
   configFormOf,
   configOf,
   defaultAgentConfig,
-  HarnessChoiceFields,
   withCoding,
   type ConfigForm,
 } from "./settings/configForm";
+import { HarnessChoiceFields } from "./settings/HarnessFields";
 import { sectionErrors, sectionHasErrors } from "./settings/sections";
 import { Group } from "./settings/Group";
 

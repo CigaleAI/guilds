@@ -374,4 +374,4 @@ capabilities payload reports `max_coding_agents` and the remaining
 | `apps/web/src/features/agent/CreateCodingAgent.tsx` | The create dialog |
 | `apps/web/src/features/agent/harness.ts` | Readiness problems, the coding strip, token choices |
 | `apps/web/src/features/agent/CodingReadiness.tsx`, `CodingStrip.tsx` | The header warning, the Settings banner, the strip |
-| `apps/web/src/features/agent/settings/configForm.tsx`, `HarnessReadiness.tsx` | The harness picker and the Harness section |
+| `apps/web/src/features/agent/settings/HarnessFields.tsx`, `HarnessReadiness.tsx` | The harness picker and the Harness section |

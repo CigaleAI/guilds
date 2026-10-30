@@ -7,17 +7,11 @@ import { DiskBudget } from "../machines/MachineMeters";
 import { MachinePicker } from "../machines/MachinePicker";
 import { diskBudget, seededDiskMib } from "../machines/machines";
 import { ConnectProviderGuide } from "../models/ConnectProviderGuide";
-import {
-  CapabilitiesFields,
-  defaultAgentConfig,
-  LimitFields,
-  MaxDiskField,
-  MaxScriptsField,
-  ModelFields,
-  type ConfigErrors,
-  type ConfigForm,
-} from "./settings/configForm";
+import { CapabilitiesFields } from "./settings/CapabilitiesFields";
+import { defaultAgentConfig, type ConfigErrors, type ConfigForm } from "./settings/configForm";
 import { Group } from "./settings/Group";
+import { LimitFields, MaxDiskField, MaxScriptsField } from "./settings/LimitFields";
+import { ModelFields } from "./settings/ModelFields";
 
 /** What every step edits: the config form, its errors, and the machine it names. */
 export type StepProps = {

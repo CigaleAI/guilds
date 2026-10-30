@@ -6,17 +6,9 @@ import {
   configFormOf,
   configOf,
   defaultAgentConfig,
-  isThinkingLevel,
   withCoding,
   withHarnessModel,
 } from "./configForm";
-
-test("a thinking level a model reasons at is a thinking level; any other value is not", () => {
-  assert.equal(isThinkingLevel("medium"), true);
-  assert.equal(isThinkingLevel("none"), true);
-  assert.equal(isThinkingLevel("xhigh"), false);
-  assert.equal(isThinkingLevel(undefined), false);
-});
 
 test("switching coding on moves default limits to the coding budgets and back", () => {
   const form = configFormOf(defaultAgentConfig);

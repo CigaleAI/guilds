@@ -117,9 +117,14 @@
       "count": 1
     }
   },
-  "src/features/agent/settings/configForm.tsx": {
+  "src/features/agent/settings/CapabilitiesFields.tsx": {
     "complexity": {
-      "count": 2
+      "count": 1
+    }
+  },
+  "src/features/agent/settings/configForm.ts": {
+    "complexity": {
+      "count": 1
     }
   },
   "src/features/coach/CoachLog.tsx": {

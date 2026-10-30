@@ -28,8 +28,9 @@ import { focusMax } from "../IdentityFields";
 import { chosenMachine } from "../../machines/machines";
 import { agentHandleError, handleHint } from "../../names";
 import { AvatarPicker } from "./AvatarPicker";
-import { configErrors, configFormOf, configOf, HarnessField, type ConfigForm } from "./configForm";
+import { configErrors, configFormOf, configOf, type ConfigForm } from "./configForm";
 import { Group } from "./Group";
+import { HarnessField } from "./HarnessFields";
 import {
   openSection,
   problemSection,
