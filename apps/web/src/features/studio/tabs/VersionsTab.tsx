@@ -18,7 +18,7 @@ type VersionsTabProps = { agent: StudioAgent };
 
 /** The agent's Task versions, live first, each compared with the one it replaced. */
 export function VersionsTab({ agent }: VersionsTabProps) {
-  const { session, search, goInPlace } = useStudio();
+  const { search, goInPlace } = useStudio();
   const task = useAgentTask(agent.id);
 
   if (task.isPending)
@@ -85,43 +85,58 @@ export function VersionsTab({ agent }: VersionsTabProps) {
       ))}
       detail={
         selected ? (
-          <>
-            <DetailHeader
-              title={`Task v${selected.version}${selected.replaced ? "" : " · live"}`}
-              meta={
-                selected.replaced
-                  ? `Replaced ${relativeTime(selected.replaced.at)}${selected.replaced.by ? ` by ${selected.replaced.by}` : ""}`
-                  : "The Task as new runs receive it."
-              }
-              actions={
-                selected.replaced ? (
-                  <Button asChild variant="outline" size="sm">
-                    <Link
-                      to="/guilds/$guildId/agents/$agentId/prompt"
-                      params={{ guildId: session.source_guild_id, agentId: agent.id }}
-                    >
-                      <Icon icon={ExternalLink} size={14} />
-                      Restore from Prompt
-                    </Link>
-                  </Button>
-                ) : null
-              }
-            />
-            {previous ? (
-              <DiffView
-                lines={diffLines(previous.content, selected.content)}
-                title={`task · v${previous.version} → v${selected.version}`}
-              />
-            ) : (
-              <pre className="rounded-lg bg-surface px-4 py-3 font-mono text-xs whitespace-pre-wrap">
-                {selected.content || "(Empty Task)"}
-              </pre>
-            )}
-          </>
+          <VersionDetail agentId={agent.id} version={selected} previous={previous} />
         ) : (
           <Empty>No Task yet.</Empty>
         )
       }
     />
+  );
+}
+
+type VersionDetailProps = {
+  agentId: string;
+  version: TaskVersion;
+  /** The version it replaced; none for the first. */
+  previous: TaskVersion | undefined;
+};
+
+/** One Task version: when a later save replaced it, and its text against the one it replaced. */
+function VersionDetail({ agentId, version, previous }: VersionDetailProps) {
+  const { session } = useStudio();
+  return (
+    <>
+      <DetailHeader
+        title={`Task v${version.version}${version.replaced ? "" : " · live"}`}
+        meta={
+          version.replaced
+            ? `Replaced ${relativeTime(version.replaced.at)}${version.replaced.by ? ` by ${version.replaced.by}` : ""}`
+            : "The Task as new runs receive it."
+        }
+        actions={
+          version.replaced ? (
+            <Button asChild variant="outline" size="sm">
+              <Link
+                to="/guilds/$guildId/agents/$agentId/prompt"
+                params={{ guildId: session.source_guild_id, agentId }}
+              >
+                <Icon icon={ExternalLink} size={14} />
+                Restore from Prompt
+              </Link>
+            </Button>
+          ) : null
+        }
+      />
+      {previous ? (
+        <DiffView
+          lines={diffLines(previous.content, version.content)}
+          title={`task · v${previous.version} → v${version.version}`}
+        />
+      ) : (
+        <pre className="rounded-lg bg-surface px-4 py-3 font-mono text-xs whitespace-pre-wrap">
+          {version.content || "(Empty Task)"}
+        </pre>
+      )}
+    </>
   );
 }

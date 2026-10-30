@@ -173,24 +173,9 @@
       "count": 1
     }
   },
-  "src/features/studio/state/StateItemDetail.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/features/studio/tabs/HistoryTab.tsx": {
     "complexity": {
       "count": 2
-    }
-  },
-  "src/features/studio/tabs/TaskTabs.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/features/studio/tabs/VersionsTab.tsx": {
-    "complexity": {
-      "count": 1
     }
   }
 }

@@ -128,6 +128,45 @@ export function DraftTab({ agent, drafts }: DraftTabProps) {
   );
 }
 
+/** What the operator confirms before it happens: publishing a draft, or discarding it. */
+type ConfirmedDraftAction = "publish" | "discard";
+
+type DraftConfirmDialogProps = {
+  /** The action waiting for confirmation; null keeps the dialog closed. */
+  action: ConfirmedDraftAction | null;
+  /** The agent the draft is for. */
+  name: string;
+  /** Whether the agent is running now, so a published Task reaches it on its next run. */
+  generating: boolean;
+  onClose: () => void;
+  onConfirm: (action: ConfirmedDraftAction) => Promise<void>;
+};
+
+/** Asks before a draft is published as the agent's live Task, or discarded. */
+function DraftConfirmDialog({
+  action,
+  name,
+  generating,
+  onClose,
+  onConfirm,
+}: DraftConfirmDialogProps) {
+  return (
+    <ConfirmDialog
+      open={action !== null}
+      onOpenChange={(open) => !open && onClose()}
+      {...(action === "discard" ? { kind: "destructive" as const } : {})}
+      title={action === "publish" ? `Publish this Task for ${name}?` : "Discard this draft?"}
+      description={
+        action === "publish"
+          ? `It becomes ${name}'s live Task as a new version; the current one stays in its versions.${generating ? ` ${name} is running now and picks it up on its next run.` : ""}`
+          : "The proposal is dropped; the live Task stays as it is."
+      }
+      confirmLabel={action === "publish" ? "Publish" : "Discard"}
+      onConfirm={() => (action ? onConfirm(action) : undefined)}
+    />
+  );
+}
+
 type DraftReviewProps = {
   session: StudioSession;
   draft: StudioDraft;
@@ -136,7 +175,7 @@ type DraftReviewProps = {
 
 function DraftReview({ session, draft, generating }: DraftReviewProps) {
   const act = useDraftAction(session.id);
-  const [confirm, setConfirm] = useState<"publish" | "discard" | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmedDraftAction | null>(null);
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(draft.proposed_content);
   const reviewable = openDraft(draft) && session.status === "active";
@@ -200,24 +239,16 @@ function DraftReview({ session, draft, generating }: DraftReviewProps) {
           </Button>
         </div>
       ) : null}
-      <ConfirmDialog
-        open={confirm !== null}
-        onOpenChange={(open) => !open && setConfirm(null)}
-        {...(confirm === "discard" ? { kind: "destructive" as const } : {})}
-        title={confirm === "publish" ? `Publish this Task for ${name}?` : "Discard this draft?"}
-        description={
-          confirm === "publish"
-            ? `It becomes ${name}'s live Task as a new version; the current one stays in its versions.${generating ? ` ${name} is running now and picks it up on its next run.` : ""}`
-            : "The proposal is dropped; the live Task stays as it is."
-        }
-        confirmLabel={confirm === "publish" ? "Publish" : "Discard"}
-        onConfirm={() =>
-          confirm
-            ? update(confirm).catch((error: Error) => {
-                refused(error);
-                throw error;
-              })
-            : undefined
+      <DraftConfirmDialog
+        action={confirm}
+        name={name}
+        generating={generating}
+        onClose={() => setConfirm(null)}
+        onConfirm={(action) =>
+          update(action).catch((error: Error) => {
+            refused(error);
+            throw error;
+          })
         }
       />
       <Dialog open={editing} onOpenChange={setEditing}>

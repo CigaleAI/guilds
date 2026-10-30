@@ -66,21 +66,7 @@ export function StateItemDetail({ row, hours, pending }: StateItemDetailProps) {
         actions={<ItemActions row={row} editing={editing} onEdit={() => setEditing(!editing)} />}
       />
       {editing ? <ItemEditor row={row} /> : null}
-      <StatBand
-        className="rounded-lg"
-        stats={[
-          {
-            value: row.kind === "table" ? itemSize(row) : `v${row.version ?? 1}`,
-            label: row.kind === "table" ? "records" : "version",
-          },
-          { value: row.changes, label: "changes" },
-          { value: row.reads, label: "reads" },
-          {
-            value: relativeTime(row.created_at),
-            label: row.created_by ? `created by ${row.created_by}` : "created",
-          },
-        ]}
-      />
+      <ItemStats row={row} />
       {detail.isError ? (
         <Banner tone="error" title="Couldn't load this item" meta={detail.error.message} />
       ) : !first ? (
@@ -130,6 +116,29 @@ export function StateItemDetail({ row, hours, pending }: StateItemDetailProps) {
         </>
       )}
     </div>
+  );
+}
+
+type ItemStatsProps = { row: StateItemRow };
+
+/** An item's records or version, its changes and reads, and when and by whom it was created. */
+function ItemStats({ row }: ItemStatsProps) {
+  return (
+    <StatBand
+      className="rounded-lg"
+      stats={[
+        {
+          value: row.kind === "table" ? itemSize(row) : `v${row.version ?? 1}`,
+          label: row.kind === "table" ? "records" : "version",
+        },
+        { value: row.changes, label: "changes" },
+        { value: row.reads, label: "reads" },
+        {
+          value: relativeTime(row.created_at),
+          label: row.created_by ? `created by ${row.created_by}` : "created",
+        },
+      ]}
+    />
   );
 }
 
