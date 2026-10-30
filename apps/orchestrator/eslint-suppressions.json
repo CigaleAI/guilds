@@ -1166,9 +1166,6 @@
   "src/studio/activity.ts": {
     "complexity": {
       "count": 2
-    },
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/studio/actor.ts": {
