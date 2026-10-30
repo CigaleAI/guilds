@@ -81,7 +81,7 @@ A repository that extends core holds this one as a submodule
 | `groupchat/` | `GroupChat`: posts, clears, the event stream, and the dispatcher (`index.ts`); group history (`history.ts`); tags (`tags.ts`); the recipient rules (`recipients.ts`) and the recipient router (`router.ts`); the deliveries the dispatcher starts and the runs an interruption stops (`delivery.ts`); the message a woken group run reads (`wake.ts`); and what an operator reads and posts (`operator.ts`) ([Group chat](../concepts/group-chat.md)) |
 | `typesafe/` | The group routing client |
 | `schedules/` | Routine timing, the `Schedules` service, and the routine writes an operator makes, each announced to the agent's guild (`operator.ts`) ([Routines](../concepts/routines.md)) |
-| `scripts/` | The agent `script` catalog, its materialisation, and the script writes an operator makes, each announced to the agent's guild (`operator.ts`) ([Scripts](../concepts/scripts.md)) |
+| `scripts/` | The agent `script` catalog, its materialisation, and the listing an operator reads and the script writes an operator makes, each write announced to the agent's guild (`operator.ts`) ([Scripts](../concepts/scripts.md)) |
 | `sandbox/` | `RunSandboxes`, core's sandbox provider (`index.ts`), the OpenSandbox SDK adapter: its shapes, its loading, and the wrappers over its JS signatures (`sdk.ts`), and the orphan sweep (`sweep.ts`) |
 | `llm/` | Providers, the models.dev catalog, credentials, the model client, tokens, and cost ([Model client](orchestrator.md#model-client)) |
 | `policy/` | `OrgPolicy` and the checks core runs against it |
