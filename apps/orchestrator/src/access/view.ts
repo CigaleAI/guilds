@@ -91,26 +91,14 @@ export async function loadAccessViewThrough(
     const key = item.connection_id ?? `catalog:${server.id}`;
     if (item.connection_id !== null) {
       listedTools[key] = (rawListed[item.connection_id] ?? []).map((tool) => {
-        const resolved = resolveMcpTool(rows, tool.namespaced_name, {
-          serverEnabled: item.enabled,
-          orgId: scope.orgId,
-          guildId: scope.guildId,
-          agentId: scope.agentId,
-          viewScope: options.viewScope,
-        });
+        const resolved = resolveMcpTool(rows, tool.namespaced_name, resolution, item.enabled);
         return mcpToolView(resolved, tool, item.source_scope);
       });
       continue;
     }
     listedTools[key] = serverTools(server).map((tool) => {
       const namespaced = tool.namespaced_name;
-      const resolved = resolveMcpTool(rows, namespaced, {
-        serverEnabled: item.enabled,
-        orgId: scope.orgId,
-        guildId: scope.guildId,
-        agentId: scope.agentId,
-        viewScope: options.viewScope,
-      });
+      const resolved = resolveMcpTool(rows, namespaced, resolution, item.enabled);
       return mcpToolView(
         {
           ...resolved,

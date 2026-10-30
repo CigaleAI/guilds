@@ -140,7 +140,7 @@ function render(snapshot: Snapshot, rows: ResolvableBinding[]): string {
     const status = connection.status === "connected" ? "" : `, ${connection.status}`;
     lines.push(`- ${connection.label}: ${stateOf(item)}${status}`);
     for (const tool of connection.tools) {
-      const resolved = resolveMcpTool(rows, tool.name, { serverEnabled: item.enabled, ...snapshot.scope });
+      const resolved = resolveMcpTool(rows, tool.name, snapshot.scope, item.enabled);
       lines.push(`  - ${tool.name}: ${stateOf(resolved)}${tool.readOnly ? "" : ", changes data"}`);
     }
   }
@@ -258,11 +258,9 @@ function accessEffects(snapshot: Snapshot, after: ResolvableBinding[], changes: 
   for (const { item, connection } of now) {
     for (const tool of connection.tools) {
       if (tool.readOnly) continue;
-      const was = resolveMcpTool(snapshot.rows, tool.name, {
-        serverEnabled: before.get(connection.serverId) ?? false,
-        ...snapshot.scope,
-      }).enabled;
-      const is = resolveMcpTool(after, tool.name, { serverEnabled: item.enabled, ...snapshot.scope }).enabled;
+      const wasServerEnabled = before.get(connection.serverId) ?? false;
+      const was = resolveMcpTool(snapshot.rows, tool.name, snapshot.scope, wasServerEnabled).enabled;
+      const is = resolveMcpTool(after, tool.name, snapshot.scope, item.enabled).enabled;
       if (is && !was) {
         effects.push(`Lets ${name} call ${tool.name}, which can change data in ${connection.label}.`);
       }
@@ -278,7 +276,7 @@ function enabledAccess(snapshot: Snapshot, rows: ResolvableBinding[]): Set<strin
   const keys = on("tool", resolvedTools(rows, snapshot.scope));
   for (const { item, connection } of agentConnections(snapshot, rows)) {
     keys.push(...on("mcp", [item]));
-    const tools = connection.tools.map((tool) => resolveMcpTool(rows, tool.name, { serverEnabled: item.enabled, ...snapshot.scope }));
+    const tools = connection.tools.map((tool) => resolveMcpTool(rows, tool.name, snapshot.scope, item.enabled));
     keys.push(...on("mcp_tool", tools));
   }
   return new Set(keys);

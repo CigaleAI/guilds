@@ -224,6 +224,6 @@ test("a disconnected platform login is left out of a run, not an error", async (
       return [platform];
     },
   };
-  const runtime = await agentRuntimeThrough(db as never, { id: "a_1", guild_id: "guild_1", org_id: "org_1" });
+  const runtime = await agentRuntimeThrough(db as never, { id: "a_1", guild_id: "guild_1", org_id: "org_1" }, null);
   assert.deepEqual(runtime.mcp, []);
 });

@@ -396,7 +396,7 @@ export class FakeDB {
 
   /** The agent's tools, secrets, and connections, as core resolves them over these rows. */
   async agentRuntime(agent: AgentPlaceRow, mcpPool: Pick<McpPool, "syncTools"> | null) {
-    return agentRuntimeThrough(this as never, agent, { mcpPool });
+    return agentRuntimeThrough(this as never, agent, mcpPool);
   }
 
   async agentLogins(agent: AgentPlaceRow) {
@@ -658,7 +658,7 @@ export class RecordingDB {
 
   /** The agent's tools, secrets, and connections, as core resolves them over these rows. */
   async agentRuntime(agent: AgentPlaceRow, mcpPool: Pick<McpPool, "syncTools"> | null) {
-    return agentRuntimeThrough(this as never, agent, { mcpPool });
+    return agentRuntimeThrough(this as never, agent, mcpPool);
   }
 
   async agentLogins(agent: AgentPlaceRow) {
