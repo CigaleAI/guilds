@@ -30,6 +30,40 @@ function personInitials(name: string): string {
     : initialsOf(name);
 }
 
+type AccountTriggerProps = { compact: boolean };
+
+/** What opens the account menu: the operator's avatar, with their name and organisation unless compact. */
+function AccountTrigger({ compact }: AccountTriggerProps) {
+  const { user, org } = useIdentity();
+  return (
+    <DropdownMenu.Trigger asChild>
+      <button
+        type="button"
+        aria-label={`Account: ${user.name}, ${org.name}`}
+        className={cn(
+          "flex min-w-0 cursor-pointer items-center gap-2.5 rounded-lg text-left transition-colors hover:bg-paper data-[state=open]:bg-paper",
+          compact ? "p-1" : "w-full px-2 py-1",
+        )}
+      >
+        <Avatar
+          name={user.name}
+          initials={personInitials(user.name)}
+          tone={personTone(user.color) ?? "dusk"}
+          size={compact ? 36 : 28}
+          round
+          {...(user.image ? { src: user.image } : {})}
+        />
+        {compact ? null : (
+          <span className="flex min-w-0 flex-col">
+            <span className="truncate text-sm font-semibold">{user.name}</span>
+            <span className="truncate text-xs text-muted">{org.name}</span>
+          </span>
+        )}
+      </button>
+    </DropdownMenu.Trigger>
+  );
+}
+
 type AccountMenuProps = { compact?: boolean };
 
 /**
@@ -43,37 +77,10 @@ export function AccountMenu({ compact = false }: AccountMenuProps) {
   const platformAdmin = user.platform_admin;
   const [theme, setTheme] = useThemeChoice();
   const notifications = useDesktopNotificationsChoice();
-  const avatar = (
-    <Avatar
-      name={user.name}
-      initials={personInitials(user.name)}
-      tone={personTone(user.color) ?? "dusk"}
-      size={compact ? 36 : 28}
-      round
-      {...(user.image ? { src: user.image } : {})}
-    />
-  );
 
   return (
     <Menu>
-      <DropdownMenu.Trigger asChild>
-        <button
-          type="button"
-          aria-label={`Account: ${user.name}, ${org.name}`}
-          className={cn(
-            "flex min-w-0 cursor-pointer items-center gap-2.5 rounded-lg text-left transition-colors hover:bg-paper data-[state=open]:bg-paper",
-            compact ? "p-1" : "w-full px-2 py-1",
-          )}
-        >
-          {avatar}
-          {compact ? null : (
-            <span className="flex min-w-0 flex-col">
-              <span className="truncate text-sm font-semibold">{user.name}</span>
-              <span className="truncate text-xs text-muted">{org.name}</span>
-            </span>
-          )}
-        </button>
-      </DropdownMenu.Trigger>
+      <AccountTrigger compact={compact} />
       <MenuContent side="top" align="start" className="min-w-60">
         {orgs.length > 1 ? (
           <>
