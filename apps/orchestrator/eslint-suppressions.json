@@ -394,26 +394,13 @@
       "count": 1
     }
   },
-  "src/llm/catalog.ts": {
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
   "src/llm/client.ts": {
     "complexity": {
       "count": 3
-    },
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/llm/completion.ts": {
     "complexity": {
-      "count": 1
-    }
-  },
-  "src/llm/credentials.ts": {
-    "no-restricted-syntax": {
       "count": 1
     }
   },
@@ -424,9 +411,6 @@
   },
   "src/llm/models.ts": {
     "complexity": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
       "count": 1
     }
   },

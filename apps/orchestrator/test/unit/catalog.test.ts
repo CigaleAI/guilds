@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ModelCatalog } from "../../src/llm/catalog.js";
+import { ModelCatalog, ModelsDevFeedError } from "../../src/llm/catalog.js";
 import { keepModelsDevRow, projectModelsDevFeed, readBundledSnapshot } from "../../src/llm/models-dev.js";
 import { PROVIDERS, parseModelId } from "../../src/llm/providers.js";
 
@@ -117,6 +117,22 @@ test("the catalog fetches on the first read, again after an hour, and keeps the 
   fail = false;
   await Promise.all([entries.ensureFresh(), entries.ensureFresh()]);
   assert.equal(calls.length, 3, "concurrent reads share one fetch");
+});
+
+test("a refresh answers the failure of a fetch that did not go through, and null once the feed loads", async () => {
+  let answer: () => Promise<Response> = async () => new Response("down", { status: 503 });
+  const entries = catalog({ fetch: (async () => answer()) as typeof fetch });
+  const unavailable = await entries.refresh();
+  assert.ok(unavailable?.error instanceof ModelsDevFeedError);
+  assert.equal(unavailable.error.message, "models.dev answered 503");
+  const unreachable = new TypeError("fetch failed");
+  answer = async () => {
+    throw unreachable;
+  };
+  assert.equal((await entries.refresh())?.error, unreachable);
+  assert.equal(entries.entry("openai/gpt-5")?.label, "GPT-5", "a failed refresh keeps the catalog");
+  answer = async () => new Response(JSON.stringify(feed), { status: 200 });
+  assert.equal(await entries.refresh(), null);
 });
 
 test("a feed that is not the models.dev shape projects to empty providers, and a row with no id is dropped", () => {

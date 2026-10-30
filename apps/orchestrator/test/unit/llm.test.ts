@@ -233,9 +233,14 @@ test("listProviderModels reads a bare list of ids, and returns nothing for a bod
     await listProviderModels(provider("kimi"), { apiKey: "sk" }, { fetch: listing(JSON.stringify([" k3 ", { id: "k2" }, 5, { id: 7 }, ""])) }),
     ["k3", "k2"],
   );
-  for (const body of ["not json", "null", JSON.stringify({ data: "k3" }), JSON.stringify({ models: [{ id: "k3" }] })]) {
+  for (const body of ["null", JSON.stringify({ data: "k3" }), JSON.stringify({ models: [{ id: "k3" }] })]) {
     assert.deepEqual(await listProviderModels(provider("kimi"), { apiKey: "sk" }, { fetch: listing(body) }), [], body);
   }
+});
+
+test("listProviderModels answers no models for a listing whose body is not JSON", async () => {
+  const fetchFn = async () => new Response("not json", { status: 200 });
+  assert.deepEqual(await listProviderModels(provider("kimi"), { apiKey: "sk" }, { fetch: fetchFn }), []);
 });
 
 test("parseCompletionChunk reads a chunk's text, reasoning, tool call pieces, finish reason, and usage", () => {

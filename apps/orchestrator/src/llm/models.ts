@@ -130,11 +130,8 @@ export function validateChosenModels(provider: ProviderDef, value: unknown): str
   return chosen;
 }
 
-function localEntry(model: string): CatalogEntry {
-  const local = providerById("local");
-  if (!local) {
-    throw new Error("local provider missing");
-  }
+/** A model the local endpoint lists: thinking and temperature on, attachments off. */
+function localEntry(local: ProviderDef, model: string): CatalogEntry {
   return { ...defaultEntry(local, model), thinking: true, temperature: true, attachments: false, listed: true };
 }
 
@@ -174,7 +171,9 @@ export class ModelsService {
       if (!parsed) {
         return null;
       }
-      return provider.id === "local" ? localEntry(parsed.model) : (this.catalog.entry(id) ?? defaultEntry(provider, parsed.model));
+      return provider.id === "local"
+        ? localEntry(provider, parsed.model)
+        : (this.catalog.entry(id) ?? defaultEntry(provider, parsed.model));
     });
     return entries
       .filter((entry): entry is CatalogEntry => entry !== null)
@@ -248,7 +247,7 @@ export class ModelsService {
       throw new ModelsError(422, "save the local endpoint's URL first");
     }
     const ids = await this.listModels(provider, secret.apiKey, secret.baseURL);
-    return ids.map((id) => entryPayload(localEntry(id)));
+    return ids.map((id) => entryPayload(localEntry(provider, id)));
   }
 
   private async listModels(provider: ProviderDef, apiKey: string, baseURL: string | null): Promise<string[]> {

@@ -71,11 +71,17 @@ export async function listProviderModels(
         : `${provider.label} did not accept the key (${response.status})`,
     );
   }
+  // A listing that is not JSON names no models.
+  return (await listedModelIds(response)) ?? [];
+}
+
+/** The ids a `/models` response lists; null when its body is not JSON. */
+async function listedModelIds(response: Response): Promise<string[] | null> {
   let body: unknown;
   try {
     body = await response.json();
   } catch {
-    body = null;
+    return null;
   }
   return modelIdsOf(body);
 }

@@ -161,19 +161,35 @@ export function modelUsageOf(runId: string, model: string, metadata: CompletionM
   };
 }
 
-/** Reports a completion's usage to the credentials' callback; a failure is logged and swallowed. */
-export async function reportModelUsage(credentials: ModelCredentials, usage: ModelUsage): Promise<void> {
+/** A usage callback that threw: what it threw. The run it reported on carries on. */
+export type UsageCallbackFailure = { error: unknown };
+
+/** Hands a completion's usage to the credentials' callback, when they have one; the failure when it threw. */
+export async function deliverModelUsage(
+  credentials: ModelCredentials,
+  usage: ModelUsage,
+): Promise<UsageCallbackFailure | null> {
   if (!credentials.onUsage) {
-    return;
+    return null;
   }
   try {
     await credentials.onUsage(usage);
+    return null;
   } catch (error) {
-    writeLog(
-      "warn",
-      "model usage callback failed",
-      { source: "backend", operation: "models.usage_callback", run_id: usage.run_id },
-      error,
-    );
+    return { error };
   }
+}
+
+/** Reports a completion's usage to the credentials' callback; a failure is logged and never fails the run. */
+export async function reportModelUsage(credentials: ModelCredentials, usage: ModelUsage): Promise<void> {
+  const failure = await deliverModelUsage(credentials, usage);
+  if (failure === null) {
+    return;
+  }
+  writeLog(
+    "warn",
+    "model usage callback failed",
+    { source: "backend", operation: "models.usage_callback", run_id: usage.run_id },
+    failure.error,
+  );
 }
