@@ -6,7 +6,6 @@ import { switchOrg } from "../../api/identity";
 import type { UsageTotals } from "../../api/types/org";
 import { agentLook } from "../../app/agents";
 import { useIdentity } from "../../app/identity";
-import type { TabSearch } from "../../app/router";
 import { chosenTab, placeTabs, useSlots } from "../../app/slots";
 import {
   Button,
@@ -73,7 +72,7 @@ function Group({ title, children }: GroupProps) {
  */
 export function SettingsPage() {
   const { org } = useIdentity();
-  const search = useSearch({ strict: false }) as TabSearch;
+  const search = useSearch({ from: "/settings" });
   const navigate = useNavigate();
   const { settingsTabs = [] } = useSlots();
   const tabs = placeTabs(coreTabs, settingsTabs);
