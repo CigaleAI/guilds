@@ -42,9 +42,9 @@ two functions.
   Call context (the clock, the actor, a transaction client, a hook)
   is a parameter of its own, never a field of a record or a
   dependencies object.
-- A function has a **cyclomatic complexity of 11 or less**. A flat
-  body with many early returns is fine; the limit exists to keep one
-  function from holding several contracts.
+- A function has a **cyclomatic complexity of 11 or less**, as
+  ESLint counts it. The limit keeps one function from holding
+  several contracts.
 - Nesting goes at most **3 levels** deep. A `try` block counts as
   a level, and ESLint counts it with the others. Use early returns
   to stay flat. Nesting is what makes a body hard to read, so this
@@ -58,8 +58,9 @@ two functions.
   such as a field of a patch, is not.
 
 **What counts towards complexity:** `if`, `else if`, `case`, loops,
-`&&`, `||`, `??`, ternaries (`a ? b : c`), and `catch`. A JSX
-conditional (`cond && <X />`) counts like any other `&&`.
+`&&`, `||`, `??`, ternaries (`a ? b : c`), and `catch`. An `if` that
+returns early counts like any other `if`. A JSX conditional
+(`cond && <X />`) counts like any other `&&`.
 
 A function has no line limit. A long body with one contract is
 better than a short body that calls six helpers a reader has to
@@ -70,7 +71,9 @@ chain of `if`s over a value is a lookup table.
 
 A private helper exists because it names a real step, not to make
 its caller shorter. A helper called from one place, whose name is
-only meaningful inside its caller, is inlined.
+only meaningful inside its caller, is inlined. A function over the
+complexity limit is split along a step a reader would want to know
+by name, never along a line count.
 
 ## Tests
 
