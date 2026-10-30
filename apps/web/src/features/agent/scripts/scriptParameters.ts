@@ -1,4 +1,5 @@
 import type { Script } from "../../../api/types/scripts";
+import { isRecord } from "../../../api/wire";
 
 /**
  * A script form's parameters text as the form reads it: the JSON Schema object it holds (`null`
@@ -9,13 +10,7 @@ export type ParametersInput =
 
 /** Whether a parsed value is a JSON Schema object for a tool's arguments: `"type": "object"`. */
 function isObjectSchema(value: unknown): value is Record<string, unknown> {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    "type" in value &&
-    value.type === "object"
-  );
+  return isRecord(value) && value.type === "object";
 }
 
 /** Reads the parameters a script form holds: empty, a JSON Schema object, or why it is neither. */

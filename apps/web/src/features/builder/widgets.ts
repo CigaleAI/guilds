@@ -1,6 +1,7 @@
 import type { ConnectorAuthField, McpServerAccess } from "../../api/types/access";
 import type { StudioMessage } from "../../api/types/studio";
 import type { AccessEdit } from "../../api/types/recipes";
+import { isRecord } from "../../api/wire";
 import { pendingDesignQuestions } from "../recipes/plan/designSystems";
 
 /**
@@ -84,15 +85,11 @@ export type QuestionWidget = { kind: "question"; title: string; questions: Quest
 
 export type BuilderWidget = ConnectWidget | QuestionWidget;
 
-function isObjectRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
 const text = (value: unknown, fallback = "") => (typeof value === "string" ? value : fallback);
 
 function isConnectorAuthField(value: unknown): value is ConnectorAuthField {
   return (
-    isObjectRecord(value) &&
+    isRecord(value) &&
     typeof value.name === "string" &&
     typeof value.label === "string" &&
     (value.secret === undefined || typeof value.secret === "boolean") &&
@@ -102,7 +99,7 @@ function isConnectorAuthField(value: unknown): value is ConnectorAuthField {
 }
 
 function serverOf(row: unknown): WidgetServer | null {
-  if (!isObjectRecord(row) || typeof row.id !== "string") return null;
+  if (!isRecord(row) || typeof row.id !== "string") return null;
   const auth = row.auth === "token" || row.auth === "none" ? row.auth : "oauth";
   const setup = setupStates.find((state) => state === row.oauth_setup_state);
   return {
@@ -122,9 +119,9 @@ function serverOf(row: unknown): WidgetServer | null {
 }
 
 function questionOf(row: unknown, index: number): Question | null {
-  if (!isObjectRecord(row) || !text(row.question).trim()) return null;
+  if (!isRecord(row) || !text(row.question).trim()) return null;
   const options = (Array.isArray(row.options) ? row.options : []).flatMap((option, position) => {
-    if (!isObjectRecord(option) || !text(option.label).trim()) return [];
+    if (!isRecord(option) || !text(option.label).trim()) return [];
     return [
       {
         id: text(option.id) || `opt-${position + 1}`,
@@ -191,7 +188,7 @@ export function widgetOf(
     if (typeof value !== "string") return null;
     try {
       const parsed: unknown = JSON.parse(value);
-      return isObjectRecord(parsed) ? parsed : null;
+      return isRecord(parsed) ? parsed : null;
     } catch {
       return null;
     }

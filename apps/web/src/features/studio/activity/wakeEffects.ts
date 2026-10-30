@@ -4,7 +4,7 @@ import type {
   ActivityWrite,
   ActivityWriteKind,
 } from "../../../api/types/studio";
-import { isPlainRecord } from "../json";
+import { isRecord } from "../../../api/wire";
 
 /** Tools whose calls a step shows as side effects rather than as plain tool calls. */
 const EFFECT_TOOLS = new Set([
@@ -73,7 +73,7 @@ export function tally(values: readonly string[]): Tally[] {
 function argument(args: string, key: string): string | null {
   try {
     const parsed: unknown = JSON.parse(args);
-    const value = isPlainRecord(parsed) ? parsed[key] : null;
+    const value = isRecord(parsed) ? parsed[key] : null;
     return typeof value === "string" ? value : null;
   } catch {
     return new RegExp(`"${key}"\\s*:\\s*"([^"]*)`).exec(args)?.[1] ?? null;

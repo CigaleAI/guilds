@@ -1,8 +1,8 @@
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ConnectorFacts, LookupOption, McpServerAccess } from "../../api/types/access";
+import { isRecord } from "../../api/wire";
 import { Icon, SearchField, Select, TextField } from "@guildsrun/ui";
-import { isPlainObject } from "./toolArgs";
 
 const searchDelayMs = 300;
 
@@ -26,7 +26,7 @@ type SettingsFormProps = {
 
 /** A JSON value's fields: an object's own, none for any other value. */
 function record(value: unknown): Record<string, unknown> {
-  return isPlainObject(value) ? value : {};
+  return isRecord(value) ? value : {};
 }
 
 /** What a stored value shows as: an object's name or symbol, else the value itself. */

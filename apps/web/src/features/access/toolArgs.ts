@@ -1,3 +1,5 @@
+import { isRecord } from "../../api/wire";
+
 export type ArgFieldKind = "string" | "number" | "integer" | "boolean" | "enum" | "json";
 
 export type ArgField = {
@@ -7,11 +9,6 @@ export type ArgField = {
   description?: string;
   values?: string[];
 };
-
-/** Whether a parsed JSON value is an object: not null, not an array. */
-export function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
 
 function typeOf(spec: Record<string, unknown>): string {
   const raw = spec.type;
@@ -42,7 +39,7 @@ function fieldKind(spec: Record<string, unknown>): ArgFieldKind {
 
 /** One form field per property on an object schema; a single JSON field when there are none. */
 export function fieldsFromSchema(schema: Record<string, unknown> | undefined): ArgField[] {
-  const properties = isPlainObject(schema?.properties) ? schema.properties : null;
+  const properties = isRecord(schema?.properties) ? schema.properties : null;
   if (!properties || !Object.keys(properties).length) {
     return [{ name: "arguments", kind: "json", required: false, description: "JSON object." }];
   }
@@ -52,7 +49,7 @@ export function fieldsFromSchema(schema: Record<string, unknown> | undefined): A
       : [],
   );
   return Object.entries(properties).map(([name, raw]) => {
-    const spec = isPlainObject(raw) ? raw : {};
+    const spec = isRecord(raw) ? raw : {};
     const kind = fieldKind(spec);
     const values = kind === "enum" ? (enumValues(spec) ?? undefined) : undefined;
     const description = typeof spec.description === "string" ? spec.description : undefined;
@@ -126,7 +123,7 @@ export function parseArgValues(
     const parsed = argValueByKind[field.kind](field.name, raw);
     if ("error" in parsed) return parsed;
     if (fields.length === 1 && field.kind === "json" && field.name === "arguments") {
-      return isPlainObject(parsed.value)
+      return isRecord(parsed.value)
         ? { arguments: parsed.value }
         : { error: "arguments must be a JSON object." };
     }

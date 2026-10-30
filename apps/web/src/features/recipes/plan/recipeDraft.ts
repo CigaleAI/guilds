@@ -1,3 +1,4 @@
+import { isRecord } from "../../../api/wire";
 import type { WakeWindow } from "../../../api/types/schedules";
 import type {
   ApplyCreates,
@@ -142,7 +143,7 @@ export function recipeStatusLabel(status: unknown): "approved" | "draft" {
  * draft is optional and read defensively.
  */
 function isRecipeDraft(value: unknown): value is RecipeDraft {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  return isRecord(value);
 }
 
 /** The recipe document inside a recipe row, the value itself when it is a document, or an empty recipe. */
