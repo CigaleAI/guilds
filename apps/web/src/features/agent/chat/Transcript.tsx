@@ -1,5 +1,5 @@
 import { Clock, MessageSquare } from "lucide-react";
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { attachmentBlobUrl } from "../../../api/attachments";
 import { liveTurnActive, type LiveTurn } from "../../../api/liveTurn";
 import type { ToolProgress } from "../../../api/toolProgress";
@@ -156,6 +156,133 @@ function secretRequests(flow: FlowSegment): Array<{ id: string; request: SecretR
   );
 }
 
+/** When a message was written, as a chat row shows it; nothing for a message without a time. */
+function messageStamp(message: RunMessage): { time?: string; dateTime?: string } {
+  const createdAt = typeof message.created_at === "string" ? message.created_at : "";
+  return createdAt ? { time: messageTime(createdAt), dateTime: isoTime(createdAt) } : {};
+}
+
+type UserTurnProps = { message: RunMessage };
+
+/** The operator's message, or what woke the agent when the run did not start from this chat. */
+function UserTurn({ message }: UserTurnProps) {
+  const { user } = useIdentity();
+  const meta = message.metadata;
+  if (meta.source === "group_chat") {
+    return (
+      <WakeNote icon={MessageSquare}>
+        {`Woken by the group chat · message ${String(meta.group_seq ?? "")} from ${String(meta.author_name ?? "someone")}`}
+      </WakeNote>
+    );
+  }
+  if (meta.source === "schedule") {
+    return <WakeNote icon={Clock}>Woken by a routine</WakeNote>;
+  }
+  const text = turnText(message);
+  return (
+    <OperatorMessage author="You" tone={personTone(user.color)} {...messageStamp(message)}>
+      <div className="flex flex-col gap-2">
+        <OperatorAttachments items={messageAttachments(meta)} />
+        {text.trim() ? <Markdown density="compact">{text}</Markdown> : null}
+      </div>
+    </OperatorMessage>
+  );
+}
+
+type AgentTurnProps = { agent: AgentDetail; message: RunMessage };
+
+/** The agent's reply: its reasoning, what it said, and whether the token limit cut it short. */
+function AgentTurn({ agent, message }: AgentTurnProps) {
+  const text = turnText(message);
+  const reasoning = turnReasoning(message);
+  return (
+    <AgentMessage
+      name={agent.name}
+      {...agentLook(agent)}
+      bubble="surface"
+      {...messageStamp(message)}
+    >
+      <div className="flex flex-col gap-2">
+        {reasoning ? <Reasoning text={reasoning} /> : null}
+        {text.trim() ? <Markdown density="compact">{text}</Markdown> : null}
+        {message.metadata.finish_reason === "length" ? (
+          <p className="text-xs text-t-ochre-fg">
+            Output token limit reached; the reply stops here.
+          </p>
+        ) : null}
+      </div>
+    </AgentMessage>
+  );
+}
+
+type TranscriptMessageProps = { agent: AgentDetail; message: RunMessage };
+
+/** A message outside the tool flows: a system note, the operator's turn, or the agent's reply. */
+function TranscriptMessage({ agent, message }: TranscriptMessageProps) {
+  const { payload } = message;
+  if (payload.role === "system") {
+    if (Number(message.seq) === 0) return null;
+    return (
+      <Banner tone="info" title="System note">
+        {String(payload.content ?? "")}
+      </Banner>
+    );
+  }
+  if (payload.role === "user") return <UserTurn message={message} />;
+  return <AgentTurn agent={agent} message={message} />;
+}
+
+type TranscriptFlowProps = {
+  agent: AgentDetail;
+  run: Run;
+  flow: FlowSegment;
+  progress: ToolProgress | undefined;
+  reveal: RevealStep | undefined;
+  onAskCall: ((call: FlowCall) => void) | undefined;
+};
+
+/** A generation's tool flow, then a card for each secret its calls asked the operator for. */
+function TranscriptFlow({ agent, run, flow, progress, reveal, onAskCall }: TranscriptFlowProps) {
+  return (
+    <>
+      <FlowView
+        flow={flow}
+        runId={run.id}
+        generating={run.generating}
+        {...(progress ? { progress } : {})}
+        harness={agent.config.harness}
+        {...(reveal ? { reveal } : {})}
+        inspector={{ guildId: agent.guild_id, agentId: agent.id }}
+        onAskCall={onAskCall}
+      />
+      {secretRequests(flow).map((item) => (
+        <SecretRequestCard key={item.id} agent={agent} run={run} request={item.request} />
+      ))}
+    </>
+  );
+}
+
+type LiveReplyProps = { agent: AgentDetail; live: LiveTurn | null; generating: boolean };
+
+/** The reply the agent is writing: what it has streamed so far, or that it is typing. */
+function LiveReply({ agent, live, generating }: LiveReplyProps) {
+  const look = agentLook(agent);
+  if (!liveTurnActive(live)) {
+    return generating ? <TypingIndicator name={agent.name} {...look} bubble="surface" /> : null;
+  }
+  return (
+    <AgentMessage name={agent.name} {...look} bubble="surface">
+      <div className="flex flex-col gap-2">
+        {live.reasoning ? <Reasoning text={live.reasoning} streaming={!live.text} /> : null}
+        {live.text ? <Markdown density="compact">{live.text}</Markdown> : null}
+        {generating ? (
+          <TypingDots role="status" aria-label="Still writing" className="py-1" />
+        ) : null}
+      </div>
+    </AgentMessage>
+  );
+}
+
 /** A run from its prompt to its latest turn, with its system prompt and offered tools on their own tabs. */
 export function Transcript({
   agent,
@@ -166,12 +293,10 @@ export function Transcript({
   reveal,
   onAskCall,
 }: TranscriptProps) {
-  const { user } = useIdentity();
   const { segments, unattachedErrors } = useMemo(
     () => buildFlowSegments(messages, run),
     [messages, run],
   );
-  const look = agentLook(agent);
   const system = messages.find((message) => message.seq === 0 && message.payload.role === "system");
   const latestError = unattachedErrors.at(-1);
   const toolGroups = offeredToolGroups(run);
@@ -211,108 +336,23 @@ export function Transcript({
           />
         ) : null}
 
-        {segments.map((segment) => {
-          if (segment.type === "flow") {
-            return (
-              <Fragment key={segment.key}>
-                <FlowView
-                  flow={segment}
-                  runId={run.id}
-                  generating={run.generating}
-                  {...(progress ? { progress } : {})}
-                  harness={agent.config.harness}
-                  {...(reveal ? { reveal } : {})}
-                  inspector={{ guildId: agent.guild_id, agentId: agent.id }}
-                  onAskCall={onAskCall}
-                />
-                {secretRequests(segment).map((item) => (
-                  <SecretRequestCard key={item.id} agent={agent} run={run} request={item.request} />
-                ))}
-              </Fragment>
-            );
-          }
-          const message = segment.msg;
-          const payload = message.payload;
-          const meta = message.metadata;
-          const seq = Number(message.seq);
-          const createdAt = typeof message.created_at === "string" ? message.created_at : "";
-          if (payload.role === "system") {
-            if (seq === 0) return null;
-            return (
-              <Banner key={seq} tone="info" title="System note">
-                {String(payload.content ?? "")}
-              </Banner>
-            );
-          }
-          if (payload.role === "user") {
-            if (meta.source === "group_chat") {
-              return (
-                <WakeNote key={seq} icon={MessageSquare}>
-                  {`Woken by the group chat · message ${String(meta.group_seq ?? "")} from ${String(meta.author_name ?? "someone")}`}
-                </WakeNote>
-              );
-            }
-            if (meta.source === "schedule") {
-              return (
-                <WakeNote key={seq} icon={Clock}>
-                  Woken by a routine
-                </WakeNote>
-              );
-            }
-            const attachments = messageAttachments(meta);
-            const text = turnText(message);
-            return (
-              <OperatorMessage
-                key={seq}
-                author="You"
-                tone={personTone(user.color)}
-                {...(createdAt
-                  ? { time: messageTime(createdAt), dateTime: isoTime(createdAt) }
-                  : {})}
-              >
-                <div className="flex flex-col gap-2">
-                  <OperatorAttachments items={attachments} />
-                  {text.trim() ? <Markdown density="compact">{text}</Markdown> : null}
-                </div>
-              </OperatorMessage>
-            );
-          }
-          const text = turnText(message);
-          const reasoning = turnReasoning(message);
-          return (
-            <AgentMessage
-              key={seq}
-              name={agent.name}
-              {...look}
-              bubble="surface"
-              {...(createdAt ? { time: messageTime(createdAt), dateTime: isoTime(createdAt) } : {})}
-            >
-              <div className="flex flex-col gap-2">
-                {reasoning ? <Reasoning text={reasoning} /> : null}
-                {text.trim() ? <Markdown density="compact">{text}</Markdown> : null}
-                {meta.finish_reason === "length" ? (
-                  <p className="text-xs text-t-ochre-fg">
-                    Output token limit reached; the reply stops here.
-                  </p>
-                ) : null}
-              </div>
-            </AgentMessage>
-          );
-        })}
+        {segments.map((segment) =>
+          segment.type === "flow" ? (
+            <TranscriptFlow
+              key={segment.key}
+              agent={agent}
+              run={run}
+              flow={segment}
+              progress={progress}
+              reveal={reveal}
+              onAskCall={onAskCall}
+            />
+          ) : (
+            <TranscriptMessage key={Number(segment.msg.seq)} agent={agent} message={segment.msg} />
+          ),
+        )}
 
-        {liveTurnActive(live) ? (
-          <AgentMessage name={agent.name} {...look} bubble="surface">
-            <div className="flex flex-col gap-2">
-              {live.reasoning ? <Reasoning text={live.reasoning} streaming={!live.text} /> : null}
-              {live.text ? <Markdown density="compact">{live.text}</Markdown> : null}
-              {run.generating ? (
-                <TypingDots role="status" aria-label="Still writing" className="py-1" />
-              ) : null}
-            </div>
-          </AgentMessage>
-        ) : run.generating ? (
-          <TypingIndicator name={agent.name} {...look} bubble="surface" />
-        ) : null}
+        <LiveReply agent={agent} live={live} generating={run.generating} />
       </TabsContent>
     </Tabs>
   );
