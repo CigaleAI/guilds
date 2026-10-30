@@ -1,6 +1,14 @@
 import { ArrowDown, MessageSquare } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import {
   useGroupMessages,
   useMarkGroupChatRead,
@@ -44,50 +52,147 @@ type GroupChatProps = {
 /** How close to the end the log must be to count as "at the bottom". */
 const bottomSlack = 48;
 
-/** The guild's public conversation: agents post on paper, people in their own colour. */
-export function GroupChat({ guild, agents, state, focusSeq }: GroupChatProps) {
-  const { user, org } = useIdentity();
-  const members = useOrgMembers(org.id);
-  const messages = useGroupMessages(guild.id);
-  const post = usePostGroupMessage(guild.id);
-  const markRead = useMarkGroupChatRead(guild.id);
-  const log = useRef<HTMLDivElement>(null);
-  const atBottom = useRef(focusSeq === undefined);
-  const focused = useRef(false);
-  const [away, setAway] = useState(false);
-  const [dismissedError, setDismissedError] = useState<string | null>(null);
+type GroupChatReadMarker = {
+  /** Marks the chat read through its latest message while the operator is at its visible end. */
+  markIfRead: () => void;
+  /** Marks the chat read through a message, unless it already is. */
+  markReadThrough: (seq: number) => void;
+  /** Whether messages past the read marker have arrived. */
+  unread: boolean;
+};
 
-  const agentById = useMemo(() => new Map(agents.map((agent) => [agent.id, agent])), [agents]);
-  const agentByName = useMemo(() => new Map(agents.map((agent) => [agent.name, agent])), [agents]);
-  const colorByName = useMemo(
-    () => new Map((members.data ?? []).map((member) => [member.name, member.color])),
-    [members.data],
-  );
-
-  /** Where "New" goes: fixed when the chat opens, so reading does not move it. */
-  const [firstUnseen, setFirstUnseen] = useState<number | null | undefined>(undefined);
-  if (firstUnseen === undefined && state && messages.data) {
-    const seen = state.seen_through_seq;
-    const next =
-      seen === null || seen === undefined ? null : messages.data.find((m) => m.seq > seen);
-    setFirstUnseen(next ? next.seq : null);
-  }
-
-  const lastSeq = messages.data?.at(-1)?.seq;
+/**
+ * Moves the guild's read marker: through the latest message whenever the operator is at the end
+ * of a visible chat, including when the page becomes visible again.
+ */
+function useGroupChatRead(
+  guildId: string,
+  messages: readonly GroupMessage[] | undefined,
+  state: GroupChatState | undefined,
+  atBottom: RefObject<boolean>,
+): GroupChatReadMarker {
+  const markRead = useMarkGroupChatRead(guildId);
+  const lastSeq = messages?.at(-1)?.seq;
   const seenThrough = state?.seen_through_seq ?? -1;
   const markPending = markRead.isPending;
   const mutateRead = markRead.mutate;
+  const markReadThrough = useCallback(
+    (seq: number) => {
+      if (seq > seenThrough && !markPending) mutateRead(seq);
+    },
+    [seenThrough, markPending, mutateRead],
+  );
   const markIfRead = useCallback(() => {
-    if (lastSeq === undefined || lastSeq <= seenThrough || markPending) return;
-    if (!atBottom.current || document.visibilityState !== "visible") return;
-    mutateRead(lastSeq);
-  }, [lastSeq, seenThrough, markPending, mutateRead]);
+    if (lastSeq === undefined || !atBottom.current || document.visibilityState !== "visible")
+      return;
+    markReadThrough(lastSeq);
+  }, [lastSeq, atBottom, markReadThrough]);
 
   useEffect(() => {
     markIfRead();
     document.addEventListener("visibilitychange", markIfRead);
     return () => document.removeEventListener("visibilitychange", markIfRead);
   }, [markIfRead]);
+
+  return { markIfRead, markReadThrough, unread: lastSeq !== undefined && lastSeq > seenThrough };
+}
+
+/**
+ * Where the "New" divider goes: the first message past the read marker as the chat opened, fixed
+ * then so reading does not move it; null when none is past it, undefined until both have loaded.
+ */
+function useFirstUnseenSeq(
+  messages: readonly GroupMessage[] | undefined,
+  state: GroupChatState | undefined,
+): number | null | undefined {
+  const [firstUnseen, setFirstUnseen] = useState<number | null | undefined>(undefined);
+  if (firstUnseen === undefined && state && messages) {
+    const seen = state.seen_through_seq;
+    const next = seen === null || seen === undefined ? null : messages.find((m) => m.seq > seen);
+    setFirstUnseen(next ? next.seq : null);
+  }
+  return firstUnseen;
+}
+
+type TurnErrorBannerProps = {
+  state: GroupChatState | undefined;
+  agentById: ReadonlyMap<string, Agent>;
+};
+
+/** The latest agent turn that failed, until the operator dismisses it. */
+function TurnErrorBanner({ state, agentById }: TurnErrorBannerProps) {
+  const [dismissedError, setDismissedError] = useState<string | null>(null);
+  const latestError = state?.errors.at(-1);
+  if (!latestError) return null;
+  const errorKey = `${latestError.at}-${latestError.agent_id}`;
+  if (errorKey === dismissedError) return null;
+  return (
+    <Banner
+      tone="error"
+      title={`${agentById.get(latestError.agent_id)?.name ?? "An agent"} couldn't take its turn`}
+      meta={latestError.error_type}
+      onDismiss={() => setDismissedError(errorKey)}
+    >
+      {latestError.message}
+    </Banner>
+  );
+}
+
+type RespondingAgentsProps = {
+  agents: readonly Agent[];
+  state: GroupChatState | undefined;
+  onOpenAgent: (agentId: string) => void;
+};
+
+/** The agents taking their turn now, the last one saying how many more wait for theirs. */
+function RespondingAgents({ agents, state, onOpenAgent }: RespondingAgentsProps) {
+  const agentByName = useMemo(() => new Map(agents.map((agent) => [agent.name, agent])), [agents]);
+  const responding = (state?.active_agents ?? []).flatMap((active) => {
+    const agent = agentByName.get(active.name);
+    return agent ? [agent] : [];
+  });
+  const waiting = Math.max(0, (state?.pending_agent_count ?? 0) - responding.length);
+  return responding.map((agent, index) => (
+    <button
+      key={agent.id}
+      type="button"
+      title={`Open ${agent.name}`}
+      onClick={() => onOpenAgent(agent.id)}
+      className="cursor-pointer self-start rounded-2xl text-left"
+    >
+      <TypingIndicator
+        name={agent.name}
+        {...agentLook(agent)}
+        caption={`${agent.name} is responding…${index === responding.length - 1 && waiting > 0 ? ` ${waiting} more waiting` : ""}`}
+        bubble="surface"
+      />
+    </button>
+  ));
+}
+
+/** The guild's public conversation: agents post on paper, people in their own colour. */
+export function GroupChat({ guild, agents, state, focusSeq }: GroupChatProps) {
+  const { user, org } = useIdentity();
+  const members = useOrgMembers(org.id);
+  const messages = useGroupMessages(guild.id);
+  const post = usePostGroupMessage(guild.id);
+  const log = useRef<HTMLDivElement>(null);
+  const atBottom = useRef(focusSeq === undefined);
+  const focused = useRef(false);
+  const [away, setAway] = useState(false);
+  const { markIfRead, markReadThrough, unread } = useGroupChatRead(
+    guild.id,
+    messages.data,
+    state,
+    atBottom,
+  );
+  const firstUnseen = useFirstUnseenSeq(messages.data, state);
+
+  const agentById = useMemo(() => new Map(agents.map((agent) => [agent.id, agent])), [agents]);
+  const colorByName = useMemo(
+    () => new Map((members.data ?? []).map((member) => [member.name, member.color])),
+    [members.data],
+  );
 
   // Follow the conversation while the operator is at the end of it.
   useLayoutEffect(() => {
@@ -104,8 +209,8 @@ export function GroupChat({ guild, agents, state, focusSeq }: GroupChatProps) {
     focused.current = true;
     el.scrollTop +=
       target.getBoundingClientRect().top - el.getBoundingClientRect().top - el.clientHeight / 3;
-    if (focusSeq > seenThrough && !markPending) mutateRead(focusSeq);
-  }, [focusSeq, messages.data, seenThrough, markPending, mutateRead]);
+    markReadThrough(focusSeq);
+  }, [focusSeq, messages.data, markReadThrough]);
 
   const jumpToLatest = () => {
     const el = log.current;
@@ -153,14 +258,6 @@ export function GroupChat({ guild, agents, state, focusSeq }: GroupChatProps) {
       },
     );
   };
-
-  const latestError = state?.errors.at(-1);
-  const errorKey = latestError ? `${latestError.at}-${latestError.agent_id}` : null;
-  const responding = (state?.active_agents ?? []).flatMap((active) => {
-    const agent = agentByName.get(active.name);
-    return agent ? [agent] : [];
-  });
-  const waiting = Math.max(0, (state?.pending_agent_count ?? 0) - responding.length);
 
   const renderMessage = (message: GroupMessage) => (
     <div
@@ -246,16 +343,7 @@ export function GroupChat({ guild, agents, state, focusSeq }: GroupChatProps) {
                 Post a message to let them continue.
               </Banner>
             ) : null}
-            {latestError && errorKey !== dismissedError ? (
-              <Banner
-                tone="error"
-                title={`${agentById.get(latestError.agent_id)?.name ?? "An agent"} couldn't take its turn`}
-                meta={latestError.error_type}
-                onDismiss={() => setDismissedError(errorKey)}
-              >
-                {latestError.message}
-              </Banner>
-            ) : null}
+            <TurnErrorBanner state={state} agentById={agentById} />
 
             {messages.isPending ? (
               <SkeletonRows rows={5} label="Loading messages" />
@@ -289,22 +377,7 @@ export function GroupChat({ guild, agents, state, focusSeq }: GroupChatProps) {
               )
             )}
 
-            {responding.map((agent, index) => (
-              <button
-                key={agent.id}
-                type="button"
-                title={`Open ${agent.name}`}
-                onClick={() => openAgent(agent.id)}
-                className="cursor-pointer self-start rounded-2xl text-left"
-              >
-                <TypingIndicator
-                  name={agent.name}
-                  {...agentLook(agent)}
-                  caption={`${agent.name} is responding…${index === responding.length - 1 && waiting > 0 ? ` ${waiting} more waiting` : ""}`}
-                  bubble="surface"
-                />
-              </button>
-            ))}
+            <RespondingAgents agents={agents} state={state} onOpenAgent={openAgent} />
           </div>
         </div>
         {away ? (
@@ -315,7 +388,7 @@ export function GroupChat({ guild, agents, state, focusSeq }: GroupChatProps) {
             onClick={jumpToLatest}
           >
             <Icon icon={ArrowDown} size={14} />
-            {lastSeq !== undefined && lastSeq > seenThrough ? "New messages" : "Jump to latest"}
+            {unread ? "New messages" : "Jump to latest"}
           </Button>
         ) : null}
       </div>
