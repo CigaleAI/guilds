@@ -88,6 +88,9 @@ export type ToolProgressEvent = {
   session_id: string | null;
 };
 
+/** `run.continued` on a run's stream: the run of its chain that carries on. */
+export type RunContinuation = { run_id: string };
+
 /** One repository's change over a run: its start and end checkpoints and their diffstat. */
 export type RunRepositoryChange = {
   name: string;

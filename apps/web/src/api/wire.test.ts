@@ -1,6 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { hasFields, isNumber, isRecord, isString } from "./wire";
+import {
+  hasFields,
+  isBoolean,
+  isListOf,
+  isNumber,
+  isNumberOrNull,
+  isRecord,
+  isString,
+  isStringList,
+  isStringOrNull,
+} from "./wire";
 
 test("isRecord admits an object and refuses null, a list and a scalar", () => {
   assert.equal(isRecord({ a: 1 }), true);
@@ -14,6 +24,26 @@ test("the scalar checks admit their own kind only", () => {
   assert.equal(isString(1), false);
   assert.equal(isNumber(1), true);
   assert.equal(isNumber("1"), false);
+});
+
+test("the nullable and boolean checks admit their own kind only", () => {
+  assert.equal(isBoolean(false), true);
+  assert.equal(isBoolean(0), false);
+  assert.equal(isStringOrNull(null), true);
+  assert.equal(isStringOrNull("a"), true);
+  assert.equal(isStringOrNull(undefined), false);
+  assert.equal(isNumberOrNull(null), true);
+  assert.equal(isNumberOrNull(2), true);
+  assert.equal(isNumberOrNull("2"), false);
+});
+
+test("isListOf admits a list whose every item passes", () => {
+  assert.equal(isListOf(["a", "b"], isString), true);
+  assert.equal(isListOf([], isString), true);
+  assert.equal(isListOf(["a", 1], isString), false);
+  assert.equal(isListOf("a", isString), false);
+  assert.equal(isStringList(["a"]), true);
+  assert.equal(isStringList([null]), false);
 });
 
 test("hasFields checks every named field, a missing one included", () => {

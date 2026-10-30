@@ -176,6 +176,12 @@ export type StudioMessage = {
   created_at: string;
 };
 
+/** `message.committed` on a coach session's stream: the row the session committed. */
+export type StudioMessageCommit = { message: StudioMessage };
+
+/** `session.error` on a coach session's stream: why the coach stopped. */
+export type SessionFailure = { detail: string };
+
 /** An agent of the guild as Studio lists it: its Task version, latest run and pending draft. */
 export type StudioAgent = {
   id: string;

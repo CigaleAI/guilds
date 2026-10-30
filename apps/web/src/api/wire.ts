@@ -13,6 +13,27 @@ export function isNumber(value: unknown): value is number {
   return typeof value === "number";
 }
 
+export function isBoolean(value: unknown): value is boolean {
+  return typeof value === "boolean";
+}
+
+export function isStringOrNull(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
+export function isNumberOrNull(value: unknown): value is number | null {
+  return value === null || typeof value === "number";
+}
+
+/** A list whose every item passes `isItem`. */
+export function isListOf<T>(value: unknown, isItem: (item: unknown) => item is T): value is T[] {
+  return Array.isArray(value) && value.every((item) => isItem(item));
+}
+
+export function isStringList(value: unknown): value is string[] {
+  return isListOf(value, isString);
+}
+
 /** Whether every named field of a record passes `isField`. */
 export function hasFields(
   record: Record<string, unknown>,

@@ -205,6 +205,9 @@ export type AgentBrief = {
   avatar_color: string;
 };
 
+/** `agent.routines.changed` or `agent.scripts.changed` on a guild's stream: the agent it names. */
+export type AgentChange = { agent_id: string };
+
 /** An agent's lifetime model usage; cost is what providers reported, or catalog rates without it. */
 export type AgentUsage = {
   id: string;
