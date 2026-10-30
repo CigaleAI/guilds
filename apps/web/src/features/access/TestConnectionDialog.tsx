@@ -33,27 +33,44 @@ type ArgInputProps = {
   onChange: (value: string) => void;
 };
 
+/** An argument's label: its name, starred when the call needs it. */
+function argLabel(field: ArgField): string {
+  return field.required ? `${field.name} *` : field.name;
+}
+
+type ChoiceArgInputProps = {
+  field: ArgField;
+  value: string;
+  onChange: (value: string) => void;
+};
+
+/** A true-or-false or enum argument picked from its values; an optional one can stay unset. */
+function ChoiceArgInput({ field, value, onChange }: ChoiceArgInputProps) {
+  const options =
+    field.kind === "boolean"
+      ? [
+          { value: "true", label: "true" },
+          { value: "false", label: "false" },
+        ]
+      : (field.values ?? []).map((item) => ({ value: item, label: item }));
+  return (
+    <Select
+      label={argLabel(field)}
+      hint={field.description}
+      tone="surface"
+      mono
+      value={value || unset}
+      onValueChange={(next) => onChange(next === unset ? "" : next)}
+      options={field.required ? options : [{ value: unset, label: "(not set)" }, ...options]}
+    />
+  );
+}
+
 function ArgInput({ field, value, onChange }: ArgInputProps) {
-  const label = field.required ? `${field.name} *` : field.name;
-  const common = { label, hint: field.description, tone: "surface" as const };
   if (field.kind === "boolean" || field.kind === "enum") {
-    const options =
-      field.kind === "boolean"
-        ? [
-            { value: "true", label: "true" },
-            { value: "false", label: "false" },
-          ]
-        : (field.values ?? []).map((item) => ({ value: item, label: item }));
-    return (
-      <Select
-        {...common}
-        mono
-        value={value || unset}
-        onValueChange={(next) => onChange(next === unset ? "" : next)}
-        options={field.required ? options : [{ value: unset, label: "(not set)" }, ...options]}
-      />
-    );
+    return <ChoiceArgInput field={field} value={value} onChange={onChange} />;
   }
+  const common = { label: argLabel(field), hint: field.description, tone: "surface" as const };
   if (field.kind === "json") {
     return (
       <TextAreaField
@@ -127,6 +144,35 @@ export function TestConnectionDialog({
   );
 }
 
+type ToolPickerProps = {
+  tools: McpToolAccess[];
+  onPick: (tool: McpToolAccess) => void;
+};
+
+/** The login's listed functions to pick one to call from. */
+function ToolPicker({ tools, onPick }: ToolPickerProps) {
+  if (!tools.length) {
+    return <p className="text-sm text-muted">This login has no listed functions yet.</p>;
+  }
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto rounded-lg bg-surface">
+      {tools.map((item) => (
+        <button
+          key={item.name}
+          type="button"
+          onClick={() => onPick(item)}
+          className="flex flex-col gap-0.5 border-b border-line px-3.5 py-3 text-left last:border-b-0 hover:bg-paper"
+        >
+          <span className="font-mono text-sm font-medium wrap-anywhere text-fg">{item.name}</span>
+          {item.description ? (
+            <span className="line-clamp-2 text-xs text-fg-2">{item.description}</span>
+          ) : null}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /** One call of a listed tool on the login under test. */
 type ConnectionToolCall = { name: string; arguments_: Record<string, unknown> };
 
@@ -179,27 +225,7 @@ function TestConnectionForm({ server, tool }: TestConnectionFormProps) {
       />
       <DialogBody>
         {picking ? (
-          server.tools.length ? (
-            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto rounded-lg bg-surface">
-              {server.tools.map((item) => (
-                <button
-                  key={item.name}
-                  type="button"
-                  onClick={() => selectTool(item)}
-                  className="flex flex-col gap-0.5 border-b border-line px-3.5 py-3 text-left last:border-b-0 hover:bg-paper"
-                >
-                  <span className="font-mono text-sm font-medium wrap-anywhere text-fg">
-                    {item.name}
-                  </span>
-                  {item.description ? (
-                    <span className="line-clamp-2 text-xs text-fg-2">{item.description}</span>
-                  ) : null}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted">This login has no listed functions yet.</p>
-          )
+          <ToolPicker tools={server.tools} onPick={selectTool} />
         ) : (
           <>
             {selected.description ? (

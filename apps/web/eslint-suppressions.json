@@ -19,11 +19,6 @@
       "count": 1
     }
   },
-  "src/features/access/TestConnectionDialog.tsx": {
-    "complexity": {
-      "count": 2
-    }
-  },
   "src/features/admin/AdminPage.tsx": {
     "complexity": {
       "count": 2
