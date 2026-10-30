@@ -346,9 +346,13 @@ cycle: `pnpm --filter <package> cycles`, the `import-cycles` and
 domain sits in a cycle of value imports and the package's
 `import-cycles.json` does not list it. A domain is a directory under
 `src/`, and in the operator app each directory under `src/features/`
-is a domain of its own. Tests and stories are not scanned.
-`cycles --write` rewrites that file from the tree as it is, and like
-`eslint-suppressions.json` it only shrinks.
+is a domain of its own. Tests and stories are not scanned. The
+file's `compositionRoots` names the package's
+[composition roots](code-guidelines.md#locality): their own imports
+are left out of the graph, and an import of one is still an edge.
+`cycles --write` rewrites the cycles from the tree as it is and
+keeps `compositionRoots`; like `eslint-suppressions.json`, the
+cycles only shrink.
 
 ## Documentation
 

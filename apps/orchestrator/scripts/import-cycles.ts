@@ -10,9 +10,14 @@
 // import-cycles.json lists the files that sit in a cycle today and the domains that sit in a
 // domain-level cycle. A file's domain is its first directory under src/, or features/<name> for a
 // file under src/features/<name>/, so each feature of the operator app is a domain of its own.
-// Like eslint-suppressions.json, the list only shrinks: a file or a domain that enters a cycle
-// fails the check, one that leaves it is reported so the list can be rewritten.
-import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+// Like eslint-suppressions.json, the lists only shrink: a file or a domain that enters a cycle
+// fails the check, one that leaves it is reported so the lists can be rewritten.
+//
+// import-cycles.json also names the package's composition roots (compositionRoots, src-relative
+// paths, empty when absent). A composition root imports every module it assembles, so its own
+// imports are left out of the graph; it stays a node, and an import of it is still an edge. --write
+// keeps the list as it is. A listed root that is not a source file fails the check.
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -22,7 +27,16 @@ const PACKAGE = given ? resolve(given) : resolve(dirname(fileURLToPath(import.me
 const SRC = join(PACKAGE, "src");
 const BASELINE = join(PACKAGE, "import-cycles.json");
 
-type Baseline = { filesInCycles: string[]; domainsInCycles: string[] };
+type Baseline = { filesInCycles: string[]; domainsInCycles: string[]; compositionRoots: string[] };
+
+const stored: Partial<Baseline> = existsSync(BASELINE)
+  ? JSON.parse(readFileSync(BASELINE, "utf8"))
+  : {};
+const baseline: Baseline = {
+  filesInCycles: stored.filesInCycles ?? [],
+  domainsInCycles: stored.domainsInCycles ?? [],
+  compositionRoots: stored.compositionRoots ?? [],
+};
 
 const SOURCE = /\.tsx?$/;
 const EXCLUDED = /\.(?:d|test|stories)\.tsx?$/;
@@ -126,7 +140,11 @@ function stronglyConnected(nodes: string[], edges: Map<string, Set<string>>): st
   return components.filter((component) => component.length > 1);
 }
 
-const fileEdges = new Map(files.map((file) => [file, valueImports(file)]));
+const roots = new Set(baseline.compositionRoots);
+const missingRoots = baseline.compositionRoots.filter((root) => !known.has(join(SRC, root)));
+const fileEdges = new Map(
+  files.map((file) => [file, roots.has(id(file)) ? new Set<string>() : valueImports(file)]),
+);
 const domainEdges = new Map<string, Set<string>>();
 for (const [from, targets] of fileEdges) {
   const domain = domainOf(from);
@@ -142,7 +160,12 @@ const current: Baseline = {
   domainsInCycles: stronglyConnected([...new Set(files.map(domainOf))], domainEdges)
     .flat()
     .sort(),
+  compositionRoots: baseline.compositionRoots,
 };
+
+for (const root of missingRoots)
+  console.log(`  ✗ ${root} is listed as a composition root but is not a source file`);
+if (missingRoots.length > 0) process.exit(1);
 
 if (process.argv.includes("--write")) {
   writeFileSync(BASELINE, `${JSON.stringify(current, null, 2)}\n`);
@@ -152,7 +175,6 @@ if (process.argv.includes("--write")) {
   process.exit(0);
 }
 
-const baseline: Baseline = JSON.parse(readFileSync(BASELINE, "utf8"));
 const entered = {
   files: current.filesInCycles.filter((file) => !baseline.filesInCycles.includes(file)),
   domains: current.domainsInCycles.filter((domain) => !baseline.domainsInCycles.includes(domain)),

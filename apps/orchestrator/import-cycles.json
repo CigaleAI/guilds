@@ -1,4 +1,8 @@
 {
   "filesInCycles": [],
-  "domainsInCycles": []
+  "domainsInCycles": [],
+  "compositionRoots": [
+    "app.ts",
+    "compose.ts"
+  ]
 }
