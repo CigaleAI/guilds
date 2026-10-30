@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type { ArtifactStore } from "../artifacts/store.js";
 import { memoryHistory } from "../memory/history.js";
 import { canSeeGuild } from "../guilds/operators.js";
@@ -19,7 +18,7 @@ import {
   STUDIO_MAX_STEPS,
 } from "./constants.js";
 import { StudioConflictError, StudioNotFoundError, StudioUnprocessableError } from "./errors.js";
-import { StudioDrafts, viewDraft } from "./drafts.js";
+import { StudioDrafts } from "./drafts.js";
 import { StudioRunner } from "./runner.js";
 import { withLockedSession } from "./session-lock.js";
 import {
@@ -27,7 +26,6 @@ import {
   composeStudioSystemMessage,
   hydrateStudioMember,
   readStudioSystemTemplate,
-  studioSystemHash,
 } from "./system.js";
 import { refreshSystemMessage } from "./system-message.js";
 import { inventoryItem, type StudioInventoryItem } from "./inventory.js";
@@ -785,5 +783,3 @@ export class StudioService {
     return agent;
   }
 }
-
-export { viewDraft, studioSystemHash, createHash };
