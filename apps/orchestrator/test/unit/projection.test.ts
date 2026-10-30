@@ -53,7 +53,8 @@ test("keepGenerationFloor clamps invalid keep counts to one generation", () => {
 test("stubToolResultPayload copies path, range, and optional content hash", () => {
   const payload: ToolMessage = { role: "tool", tool_call_id: "c", content: "body" };
   const source = { ...row(9, 1, payload, { tool_name: "file_read", path: "src/a.ts", range: [1, 4] }), payload };
-  const hashed = stubToolResultPayload(source, AGENT_TOOL_RESULT_STUB_HINT, {
+  const hashed = stubToolResultPayload(source, {
+    hint: AGENT_TOOL_RESULT_STUB_HINT,
     includeContentHash: true,
   });
   const stub = JSON.parse(hashed.content) as Record<string, unknown>;

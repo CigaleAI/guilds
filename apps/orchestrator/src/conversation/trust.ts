@@ -6,19 +6,22 @@ export function escapeXml(value: string): string {
     .replaceAll('"', "&quot;");
 }
 
-export function wrapEvidence(args: {
+/** Untrusted content shown to the model: where it came from, its text, and where it sits in its source. */
+export type Evidence = {
   source: string;
   body: string;
   coordinates?: Record<string, unknown>;
-}): string {
-  const parts = [`trust="untrusted"`, `source="${escapeXml(args.source)}"`];
-  for (const [key, value] of Object.entries(args.coordinates ?? {})) {
+};
+
+export function wrapEvidence(evidence: Evidence): string {
+  const parts = [`trust="untrusted"`, `source="${escapeXml(evidence.source)}"`];
+  for (const [key, value] of Object.entries(evidence.coordinates ?? {})) {
     if (value === null || value === undefined) {
       continue;
     }
     parts.push(`${key}="${escapeXml(String(value))}"`);
   }
-  return `<evidence ${parts.join(" ")}>\n${args.body.replace(/\s+$/, "")}\n</evidence>`;
+  return `<evidence ${parts.join(" ")}>\n${evidence.body.replace(/\s+$/, "")}\n</evidence>`;
 }
 
 export function wrapUntrustedText(label: string, value: string): string {

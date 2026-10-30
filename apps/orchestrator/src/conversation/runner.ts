@@ -8,6 +8,7 @@ import {
   nextConversationSeq,
   updateConversationSession,
 } from "../db/conversations.js";
+import { isPlainRecord } from "../db/json.js";
 import type { Queryable } from "../db/pg.js";
 import type { MessagePayload, ToolCall, ToolMessage } from "../db/schema/index.js";
 import { incrementOrgUsage } from "../db/usage.js";
@@ -17,7 +18,6 @@ import {
   countInputTokens,
   streamCompletion,
   type Completion,
-  type ModelEvent,
 } from "../llm/index.js";
 import { CancelEvent } from "../toolbox/index.js";
 import { OPEN_POLICY, type OrgPolicy } from "../policy/index.js";
@@ -82,6 +82,51 @@ export type ConversationRunnerDeps = {
   ) => Promise<void>;
 };
 
+/**
+ * One generation of a coach conversation: the session and the operator it answers, its number,
+ * the context and system prompt it is sent, the tools it offers, and its limits.
+ */
+export type ConversationGeneration = {
+  session: StudioSessionRow | BuilderSessionRow;
+  user: UserRow;
+  generation: number;
+  generationContext: string;
+  systemContent?: string;
+  tools: Map<string, ConversationTool>;
+  toolContext: unknown;
+  bindToolContext?: (upcoming: number) => unknown;
+  maxTokens: number;
+  maxSteps: number;
+  maxToolCalls: number;
+  maxInput: number;
+  minUnstubbed?: number;
+};
+
+/** One call of the model: the history it is sent and the settings from the session's snapshot. */
+type CompletionRequest = {
+  model: string;
+  messages: Array<Record<string, unknown>>;
+  temperature: number;
+  max_tokens: number;
+  tools: unknown[];
+};
+
+/**
+ * A coach conversation's history as the model is sent it: the stored rows, the generation they
+ * are seen from, the context and system prompt this generation replaces, and how old tool
+ * results are stubbed. `stubbed` collects the seqs the projection stubs.
+ */
+export type ConversationProjection = {
+  history: ProjectedRow[];
+  generationContext: string;
+  currentGeneration: number;
+  stubHint: string;
+  stubbed: number[];
+  minUnstubbed?: number;
+  budget?: ConversationProjectionBudget;
+  systemContent?: string;
+};
+
 export class ConversationRunner {
   private subs = new Map<string, Set<EventQueue<[string, Record<string, unknown>]>>>();
   private cancels = new Map<string, CancelEvent>();
@@ -126,21 +171,7 @@ export class ConversationRunner {
     await this.tasks.get(sessionId);
   }
 
-  start(args: {
-    session: StudioSessionRow | BuilderSessionRow;
-    user: UserRow;
-    generation: number;
-    generationContext: string;
-    systemContent?: string;
-    tools: Map<string, ConversationTool>;
-    toolContext: unknown;
-    bindToolContext?: (upcoming: number) => unknown;
-    maxTokens: number;
-    maxSteps: number;
-    maxToolCalls: number;
-    maxInput: number;
-    minUnstubbed?: number;
-  }): void {
+  start(args: ConversationGeneration): void {
     const sessionId = args.session.id;
     const task = this.run(args).finally(() => {
       if (this.tasks.get(sessionId) === task) {
@@ -158,21 +189,7 @@ export class ConversationRunner {
     await updateConversationSession(this.deps.db, this.session(session.id), { generation_state: "idle", generation_token: null }, new Date());
   }
 
-  private async run(args: {
-    session: StudioSessionRow | BuilderSessionRow;
-    user: UserRow;
-    generation: number;
-    generationContext: string;
-    systemContent?: string;
-    tools: Map<string, ConversationTool>;
-    toolContext: unknown;
-    bindToolContext?: (upcoming: number) => unknown;
-    maxTokens: number;
-    maxSteps: number;
-    maxToolCalls: number;
-    maxInput: number;
-    minUnstubbed?: number;
-  }): Promise<void> {
+  private async run(args: ConversationGeneration): Promise<void> {
     const sessionId = args.session.id;
     const orgId = args.session.org_id;
     const cancel = new CancelEvent();
@@ -258,16 +275,11 @@ export class ConversationRunner {
         await this.assertAllowed(orgId);
         let completion: Completion;
         try {
-          completion = await this.complete({
-            sessionId,
-            model,
-            messages: providerMessages,
-            temperature,
-            max_tokens: maxTokens,
-            tools: schemas,
-            orgId,
+          completion = await this.complete(
+            args,
+            { model, messages: providerMessages, temperature, max_tokens: maxTokens, tools: schemas },
             cancel,
-          });
+          );
         } catch (error) {
           if (cancel.aborted) {
             await this.repair(sessionId, args.generation, "cancelled");
@@ -392,29 +404,21 @@ export class ConversationRunner {
     }
   }
 
-  private async complete(options: {
-    sessionId: string;
-    model: string;
-    messages: Array<Record<string, unknown>>;
-    temperature: number;
-    max_tokens: number;
-    tools: unknown[];
-    orgId: string;
-    cancel: CancelEvent;
-  }): Promise<Completion> {
+  private async complete(
+    turn: ConversationGeneration,
+    request: CompletionRequest,
+    cancel: CancelEvent,
+  ): Promise<Completion> {
+    const sessionId = turn.session.id;
     const abort = new AbortController();
     const credentials: ModelCredentials = await resolveModelCredentials(
       this.deps.credentials ?? NO_CREDENTIALS,
-      options.orgId,
-      options.model,
+      turn.session.org_id,
+      request.model,
     );
     void modelCatalog.ensureFresh();
     const agen = generationLive.streamCompletion({
-      model: options.model,
-      messages: options.messages,
-      temperature: options.temperature,
-      max_tokens: options.max_tokens,
-      tools: options.tools,
+      ...request,
       signal: abort.signal,
       apiKey: credentials.apiKey,
       ...(credentials.baseURL ? { baseURL: credentials.baseURL } : {}),
@@ -426,24 +430,24 @@ export class ConversationRunner {
         const nextPromise = iterator.next();
         const winner = await Promise.race([
           nextPromise.then((value) => ({ cancelled: false as const, value })),
-          options.cancel.wait().then(() => ({ cancelled: true as const })),
+          cancel.wait().then(() => ({ cancelled: true as const })),
         ]);
-        if ("cancelled" in winner && winner.cancelled) {
+        if (winner.cancelled) {
           abort.abort();
           throw new Error("cancelled");
         }
-        const result = (winner as { value: IteratorResult<ModelEvent> }).value;
+        const result = winner.value;
         if (result.done) break;
         const event = result.value;
         if (event[0] === "delta") {
-          await this.publish(options.sessionId, "assistant.delta", {
-            session_id: options.sessionId,
+          await this.publish(sessionId, "assistant.delta", {
+            session_id: sessionId,
             content: event[1],
             text: event[1],
           });
         } else if (event[0] === "reasoning") {
-          await this.publish(options.sessionId, "assistant.reasoning.delta", {
-            session_id: options.sessionId,
+          await this.publish(sessionId, "assistant.reasoning.delta", {
+            session_id: sessionId,
             text: event[1],
           });
         } else {
@@ -456,7 +460,7 @@ export class ConversationRunner {
     if (!completion) {
       throw new LLMError("provider returned no completion");
     }
-    await reportModelUsage(credentials, modelUsageOf(options.sessionId, options.model, completion.metadata));
+    await reportModelUsage(credentials, modelUsageOf(sessionId, request.model, completion.metadata));
     return completion;
   }
 
@@ -533,16 +537,7 @@ export class ConversationRunner {
   }
 }
 
-export function projectConversationHistory(args: {
-  history: ProjectedRow[];
-  generationContext: string;
-  currentGeneration: number;
-  stubHint: string;
-  stubbed: number[];
-  minUnstubbed?: number;
-  budget?: ConversationProjectionBudget;
-  systemContent?: string;
-}): MessagePayload[] {
+export function projectConversationHistory(args: ConversationProjection): MessagePayload[] {
   const messages = projectToolResults({
     history: args.history,
     currentGeneration: args.currentGeneration,
@@ -563,15 +558,14 @@ export function projectConversationHistory(args: {
 }
 
 export function toolArgsAreJsonObject(raw: unknown): boolean {
-  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+  if (isPlainRecord(raw)) {
     return true;
   }
   if (typeof raw !== "string" || !raw.trim()) {
     return false;
   }
   try {
-    const parsed = JSON.parse(raw) as unknown;
-    return Boolean(parsed && typeof parsed === "object" && !Array.isArray(parsed));
+    return isPlainRecord(JSON.parse(raw));
   } catch {
     return false;
   }
@@ -583,12 +577,12 @@ export function truncatedToolArguments(finishReason: unknown, raw: unknown): boo
 
 export function parseToolArgs(raw: unknown): Record<string, unknown> {
   if (!raw) return {};
-  if (typeof raw === "object" && !Array.isArray(raw)) return raw as Record<string, unknown>;
+  if (isPlainRecord(raw)) return raw;
   if (typeof raw !== "string") return {};
   try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
+    const parsed: unknown = JSON.parse(raw);
+    if (isPlainRecord(parsed)) {
+      return parsed;
     }
   } catch {
     return recoverPartialToolArgs(raw);
