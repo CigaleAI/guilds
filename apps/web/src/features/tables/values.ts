@@ -1,4 +1,5 @@
 import type { Column, ColumnInput, ColumnType } from "../../api/types/tables";
+import type { RecordWhere } from "./types";
 
 export const columnTypes = [
   "text",
@@ -102,8 +103,8 @@ export type ColumnFilter = { value?: string; from?: string; to?: string };
 export function whereOf(
   filters: Record<string, ColumnFilter>,
   columns: readonly Column[],
-): Record<string, unknown> {
-  const where: Record<string, unknown> = {};
+): RecordWhere {
+  const where: RecordWhere = {};
   for (const [name, filter] of Object.entries(filters)) {
     if (name === "id") {
       if (filter.value?.trim()) where.id = Number(filter.value);

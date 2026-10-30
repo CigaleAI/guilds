@@ -391,9 +391,6 @@
   "src/features/tables/values.ts": {
     "complexity": {
       "count": 3
-    },
-    "no-restricted-syntax": {
-      "count": 1
     }
   }
 }
