@@ -1,7 +1,6 @@
 import { Type } from "@sinclair/typebox";
 import { catalogServerItem } from "../mcp/catalog.js";
 import { registryClient, type RegistryClient } from "../registry/client.js";
-import { compareVersions } from "../registry/index.js";
 import {
   installRegistryConnector,
   registryCatalog,
@@ -36,23 +35,6 @@ const RegistrySlugParams = Type.Object({ slug: Type.String() });
 /** The box's registry client: the one the deps carry, else `REGISTRY_URL`'s; null while offline. */
 export function registryOf(deps: AppDeps): RegistryClient | null {
   return deps.registry === undefined ? registryClient() : deps.registry;
-}
-
-/** Each name's newest entry, with every version the index offers for it. */
-export function latestEntries<E extends { version: string }>(
-  entries: readonly E[],
-  nameOf: (entry: E) => string,
-): Array<E & { versions: string[] }> {
-  const byName = new Map<string, E[]>();
-  for (const entry of entries) {
-    byName.set(nameOf(entry), [...(byName.get(nameOf(entry)) ?? []), entry]);
-  }
-  return [...byName.values()]
-    .map((versions) => {
-      const sorted = [...versions].sort((a, b) => compareVersions(b.version, a.version));
-      return { ...sorted[0]!, versions: sorted.map((entry) => entry.version) };
-    })
-    .sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
 }
 
 /**
