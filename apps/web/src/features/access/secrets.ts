@@ -1,6 +1,6 @@
 import type { OrgRole } from "../../api/types/org";
 import type { Secret, SecretAccessChoice } from "../../api/types/secrets";
-import { isPlainObject } from "./toolArgs";
+import { isPlainObject, parseJson } from "./toolArgs";
 
 /** The server's rules for a secret: an environment variable name and a description the agent reads. */
 export const secretNamePattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -102,15 +102,6 @@ export function askedRequest(argumentsText: unknown, resultText: unknown): Secre
     description: typeof args.description === "string" ? args.description : "",
     reason: typeof args.reason === "string" ? args.reason : "",
   };
-}
-
-/** The value a JSON text holds; null when the text is not JSON. */
-function parseJson(text: string): { value: unknown } | null {
-  try {
-    return { value: JSON.parse(text) };
-  } catch {
-    return null;
-  }
 }
 
 /** The first line of a secret_request result, when it says the operator was asked; null otherwise. */

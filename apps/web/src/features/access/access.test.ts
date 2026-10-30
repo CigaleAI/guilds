@@ -226,6 +226,16 @@ test("browser and coding tools follow the agent's capability, not a binding", ()
     caption: "Offered when coding is on",
     bindable: false,
   });
+  assert.deepEqual(nativeToolDisplay(binding("code_task"), "agent", { coding: true }), {
+    enabled: true,
+    caption: "Active via coding",
+    bindable: false,
+  });
+  assert.deepEqual(nativeToolDisplay(binding("shell"), "org"), {
+    enabled: true,
+    caption: "Offered when an agent has coding on",
+    bindable: false,
+  });
   assert.deepEqual(nativeToolDisplay(binding("report_issue"), "agent"), {
     enabled: true,
     caption: "Always offered",
@@ -301,7 +311,16 @@ test("the agent-optimized browser is listed only while its platform key is on, a
         enables: "The agent-optimized browser",
         source: "store",
         state,
-        fields: [{ name: "api_key", label: "API key", optional: false, secret: true, multiline: false, set: state === "on" }],
+        fields: [
+          {
+            name: "api_key",
+            label: "API key",
+            optional: false,
+            secret: true,
+            multiline: false,
+            set: state === "on",
+          },
+        ],
         setup: null,
         updated_at: null,
         set_by: null,

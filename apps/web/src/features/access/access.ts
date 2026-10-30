@@ -199,30 +199,18 @@ export function nativeToolDisplay(
       bindable: false,
     };
   }
-  if (ANY_BROWSER_NATIVE_TOOLS.includes(item.name)) {
-    const on = capabilities?.browser;
-    const mode = item.name === "browse" ? "the agent-optimized browser" : "browser";
+  const capability = gatingCapability(item.name);
+  if (capability) {
+    const on = capabilities?.[capability];
+    const mode = item.name === "browse" ? "the agent-optimized browser" : capability;
     return {
       enabled: on ?? true,
       caption:
         scope === "agent"
           ? on
-            ? "Active via browser"
-            : "Offered when browser is on"
+            ? `Active via ${capability}`
+            : `Offered when ${capability} is on`
           : `Offered when an agent has ${mode} on`,
-      bindable: false,
-    };
-  }
-  if (CODING_NATIVE_TOOLS.some((name) => name === item.name)) {
-    const on = capabilities?.coding;
-    return {
-      enabled: on ?? true,
-      caption:
-        scope === "agent"
-          ? on
-            ? "Active via coding"
-            : "Offered when coding is on"
-          : "Offered when an agent has coding on",
       bindable: false,
     };
   }
@@ -230,6 +218,12 @@ export function nativeToolDisplay(
     return { enabled: true, caption: "Always offered", bindable: false };
   }
   return { enabled: item.enabled, bindable: true };
+}
+
+/** The agent capability a native tool waits for; null for a tool no capability gates. */
+function gatingCapability(name: string): "browser" | "coding" | null {
+  if (ANY_BROWSER_NATIVE_TOOLS.includes(name)) return "browser";
+  return CODING_NATIVE_TOOLS.some((tool) => tool === name) ? "coding" : null;
 }
 
 export function toolFamilyGroups(

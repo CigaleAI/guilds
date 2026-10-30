@@ -39,19 +39,6 @@
       "count": 2
     }
   },
-  "src/features/access/access.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/features/access/toolArgs.ts": {
-    "complexity": {
-      "count": 1
-    },
-    "max-depth": {
-      "count": 1
-    }
-  },
   "src/features/admin/AdminPage.tsx": {
     "complexity": {
       "count": 2

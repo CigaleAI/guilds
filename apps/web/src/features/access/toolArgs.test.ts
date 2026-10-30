@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { emptyArgValues, fieldsFromSchema, isPlainObject, parseArgValues } from "./toolArgs";
+import {
+  emptyArgValues,
+  fieldsFromSchema,
+  isPlainObject,
+  parseArgValues,
+  parseJson,
+} from "./toolArgs";
 
 test("only_a_json_object_counts_as_a_plain_object", () => {
   assert.equal(isPlainObject({ type: "object" }), true);
@@ -70,4 +76,48 @@ test("a lone arguments field must be a JSON object", () => {
   assert.deepEqual(parseArgValues(fields, { arguments: "[]" }), {
     error: "arguments must be a JSON object.",
   });
+});
+
+test("each kind of field refuses text it cannot read", () => {
+  const fields = fieldsFromSchema({
+    type: "object",
+    properties: {
+      live: { type: "boolean" },
+      price: { type: "number" },
+      count: { type: "integer" },
+      filter: { type: "object" },
+    },
+  });
+  const empty = { live: "", price: "", count: "", filter: "" };
+  assert.deepEqual(parseArgValues(fields, { ...empty, live: "yes" }), {
+    error: "live must be true or false.",
+  });
+  assert.deepEqual(parseArgValues(fields, { ...empty, price: "cheap" }), {
+    error: "price must be a number.",
+  });
+  assert.deepEqual(parseArgValues(fields, { ...empty, count: "many" }), {
+    error: "count must be a number.",
+  });
+  assert.deepEqual(parseArgValues(fields, { ...empty, filter: "{" }), {
+    error: "filter must be valid JSON.",
+  });
+  assert.deepEqual(parseArgValues(fields, { ...empty, price: "2.5", filter: "[1]" }), {
+    arguments: { price: 2.5, filter: [1] },
+  });
+});
+
+test("a lone string property named arguments stays text", () => {
+  const fields = fieldsFromSchema({
+    type: "object",
+    properties: { arguments: { type: "string" } },
+  });
+  assert.deepEqual(parseArgValues(fields, { arguments: "eth" }), {
+    arguments: { arguments: "eth" },
+  });
+});
+
+test("json text parses to its value and other text to none", () => {
+  assert.deepEqual(parseJson('{"a":1}'), { value: { a: 1 } });
+  assert.deepEqual(parseJson("null"), { value: null });
+  assert.equal(parseJson("{"), null);
 });
