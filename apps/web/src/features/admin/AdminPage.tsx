@@ -23,6 +23,7 @@ import type {
   CatalogServer,
   CatalogServerInput,
   CatalogTool,
+  Instance,
 } from "../../api/types/admin";
 import { useIdentity } from "../../app/identity";
 import { chosenTab, placeTabs, useSlots } from "../../app/slots";
@@ -246,136 +247,20 @@ function Catalog({ servers }: CatalogProps) {
           </Button>
         </div>
         <div className="flex flex-col overflow-hidden rounded-xl bg-surface">
-          {shown.map((server) => {
-            const expanded = open === server.id;
-            const edits =
-              server.overridden.length + server.tools.filter((tool) => tool.overridden).length;
-            const integration = integrationFor(instance.data, "connectors", server.slug);
-            const notSetUp = integration && integration.state !== "on" ? integration : null;
-            return (
-              <div key={server.id} className="border-b border-line last:border-b-0">
-                <div className="flex items-center gap-3 px-4 py-3 hover:bg-paper">
-                  <button
-                    type="button"
-                    aria-expanded={expanded}
-                    onClick={() => setOpen(expanded ? null : server.id)}
-                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
-                  >
-                    <Icon icon={expanded ? ChevronDown : ChevronRight} size={14} />
-                    {connectorLogo(server.logo_url, "size-4")}
-                    <span className="min-w-0 flex-1 truncate text-sm">
-                      <span className="font-semibold">{server.display_name}</span>{" "}
-                      <span className="font-mono text-xs text-muted">
-                        {server.slug} · {server.auth}
-                        {server.oauth_strategy !== "none" ? ` · ${server.oauth_strategy}` : ""}
-                      </span>
-                    </span>
-                    {server.source === "local" ? (
-                      <Tag tone="ochre" font="sans">
-                        added here
-                      </Tag>
-                    ) : !server.verified ? (
-                      <Tag tone="ochre" font="sans">
-                        unverified
-                      </Tag>
-                    ) : null}
-                    {server.experimental ? (
-                      <Tag tone="ochre" font="sans">
-                        experimental
-                      </Tag>
-                    ) : null}
-                    {notSetUp ? (
-                      <Tag tone="ochre" font="sans">
-                        Not set up
-                      </Tag>
-                    ) : null}
-                    {edits ? (
-                      <span className="type-meta text-muted">
-                        {edits} edit{edits === 1 ? "" : "s"}
-                      </span>
-                    ) : null}
-                  </button>
-                  {notSetUp ? (
-                    <Link
-                      to="/admin"
-                      search={setupSearch(notSetUp.id, location.href)}
-                      className="text-sm underline"
-                    >
-                      Set up
-                    </Link>
-                  ) : null}
-                  <OnOffSwitch
-                    label={`${server.display_name} on this box`}
-                    value={server.enabled}
-                    disabled={save.isPending}
-                    onValueChange={(enabled) => setEnabled(server, enabled)}
-                  />
-                </div>
-                {expanded ? (
-                  <div className="flex flex-col gap-3 bg-paper px-4 py-3">
-                    <p className="font-mono text-xs text-muted">
-                      prefix {server.tool_prefix} · setup {server.oauth_setup_state} ·{" "}
-                      {server.url ?? "no endpoint"}
-                      {server.version ? ` · v${server.version}` : ""}
-                      {server.publisher ? ` · ${server.publisher}` : ""}
-                    </p>
-                    {server.description ? (
-                      <p className="text-sm text-fg-2">{server.description}</p>
-                    ) : null}
-                    <div className="flex gap-2">
-                      <Button variant="outline" size="sm" onClick={() => setEditingServer(server)}>
-                        <Icon icon={Pencil} size={14} />
-                        {server.editable === "fields" ? "Edit server" : "Edit copy"}
-                      </Button>
-                      <Button variant="ghost" size="sm" asChild>
-                        <a href={catalogExportUrl(server.id)} download>
-                          <Icon icon={Download} size={14} />
-                          Export connector.json
-                        </a>
-                      </Button>
-                    </div>
-                    {server.tools.length ? (
-                      <div className="flex flex-col">
-                        {server.tools.map((tool) => (
-                          <div
-                            key={tool.remote_name}
-                            className="flex items-center gap-3 border-t border-line py-2"
-                          >
-                            <span className="flex min-w-0 flex-1 flex-col">
-                              <span className="font-mono text-xs">{tool.namespaced_name}</span>
-                              <span className="truncate text-xs text-muted">
-                                {tool.description}
-                              </span>
-                            </span>
-                            {tool.mutating ? (
-                              <Tag tone="plum" font="sans">
-                                mutating
-                              </Tag>
-                            ) : null}
-                            <Tag tone={tool.default_enabled ? "tide" : "well"} font="sans">
-                              {tool.default_enabled ? "starts on" : "starts off"}
-                              {tool.default_override === null ? "" : " · set here"}
-                            </Tag>
-                            <IconButton
-                              icon={Pencil}
-                              label={`Edit ${tool.namespaced_name}`}
-                              variant="ghost"
-                              size={24}
-                              onClick={() => setEditingTool({ server, tool })}
-                            />
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-muted">
-                        Its tools are those each login lists; the Tools view sets them per scope.
-                      </p>
-                    )}
-                  </div>
-                ) : null}
-              </div>
-            );
-          })}
+          {shown.map((server) => (
+            <CatalogServerRow
+              key={server.id}
+              server={server}
+              expanded={open === server.id}
+              instance={instance.data}
+              returnTo={location.href}
+              saving={save.isPending}
+              onExpandedChange={(expanded) => setOpen(expanded ? server.id : null)}
+              onEnabledChange={(enabled) => setEnabled(server, enabled)}
+              onEdit={() => setEditingServer(server)}
+              onEditTool={(tool) => setEditingTool({ server, tool })}
+            />
+          ))}
         </div>
       </section>
 
@@ -383,6 +268,184 @@ function Catalog({ servers }: CatalogProps) {
       <ToolDialog editing={editingTool} onClose={() => setEditingTool(null)} />
       <RegistryDialog open={browsing} onClose={() => setBrowsing(false)} />
     </Scroll>
+  );
+}
+
+type CatalogServerRowProps = {
+  server: CatalogServer;
+  expanded: boolean;
+  instance: Instance | undefined;
+  /** Where the setup link brings the admin back to. */
+  returnTo: string;
+  /** A change to a catalog server is being saved. */
+  saving: boolean;
+  onExpandedChange: (expanded: boolean) => void;
+  onEnabledChange: (enabled: boolean) => void;
+  onEdit: () => void;
+  onEditTool: (tool: CatalogTool) => void;
+};
+
+/** One connector of the catalog: its name, tags and switch, and its details once expanded. */
+function CatalogServerRow({
+  server,
+  expanded,
+  instance,
+  returnTo,
+  saving,
+  onExpandedChange,
+  onEnabledChange,
+  onEdit,
+  onEditTool,
+}: CatalogServerRowProps) {
+  const integration = integrationFor(instance, "connectors", server.slug);
+  const notSetUp = integration && integration.state !== "on" ? integration : null;
+  return (
+    <div className="border-b border-line last:border-b-0">
+      <div className="flex items-center gap-3 px-4 py-3 hover:bg-paper">
+        <button
+          type="button"
+          aria-expanded={expanded}
+          onClick={() => onExpandedChange(!expanded)}
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
+        >
+          <Icon icon={expanded ? ChevronDown : ChevronRight} size={14} />
+          {connectorLogo(server.logo_url, "size-4")}
+          <span className="min-w-0 flex-1 truncate text-sm">
+            <span className="font-semibold">{server.display_name}</span>{" "}
+            <span className="font-mono text-xs text-muted">
+              {server.slug} · {server.auth}
+              {server.oauth_strategy !== "none" ? ` · ${server.oauth_strategy}` : ""}
+            </span>
+          </span>
+          <CatalogServerTags server={server} notSetUp={notSetUp !== null} />
+        </button>
+        {notSetUp ? (
+          <Link
+            to="/admin"
+            search={setupSearch(notSetUp.id, returnTo)}
+            className="text-sm underline"
+          >
+            Set up
+          </Link>
+        ) : null}
+        <OnOffSwitch
+          label={`${server.display_name} on this box`}
+          value={server.enabled}
+          disabled={saving}
+          onValueChange={onEnabledChange}
+        />
+      </div>
+      {expanded ? (
+        <CatalogServerDetails server={server} onEdit={onEdit} onEditTool={onEditTool} />
+      ) : null}
+    </div>
+  );
+}
+
+type CatalogServerTagsProps = {
+  server: CatalogServer;
+  /** The platform key the connector needs is not set up. */
+  notSetUp: boolean;
+};
+
+/** What sets a catalog connector apart: where it comes from, whether it is tried out or set up, and its edits. */
+function CatalogServerTags({ server, notSetUp }: CatalogServerTagsProps) {
+  const edits = server.overridden.length + server.tools.filter((tool) => tool.overridden).length;
+  return (
+    <>
+      {server.source === "local" ? (
+        <Tag tone="ochre" font="sans">
+          added here
+        </Tag>
+      ) : !server.verified ? (
+        <Tag tone="ochre" font="sans">
+          unverified
+        </Tag>
+      ) : null}
+      {server.experimental ? (
+        <Tag tone="ochre" font="sans">
+          experimental
+        </Tag>
+      ) : null}
+      {notSetUp ? (
+        <Tag tone="ochre" font="sans">
+          Not set up
+        </Tag>
+      ) : null}
+      {edits ? (
+        <span className="type-meta text-muted">
+          {edits} edit{edits === 1 ? "" : "s"}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
+type CatalogServerDetailsProps = {
+  server: CatalogServer;
+  onEdit: () => void;
+  onEditTool: (tool: CatalogTool) => void;
+};
+
+/** An expanded catalog connector: its endpoint and origin, its edit and export, and its tools. */
+function CatalogServerDetails({ server, onEdit, onEditTool }: CatalogServerDetailsProps) {
+  return (
+    <div className="flex flex-col gap-3 bg-paper px-4 py-3">
+      <p className="font-mono text-xs text-muted">
+        prefix {server.tool_prefix} · setup {server.oauth_setup_state} ·{" "}
+        {server.url ?? "no endpoint"}
+        {server.version ? ` · v${server.version}` : ""}
+        {server.publisher ? ` · ${server.publisher}` : ""}
+      </p>
+      {server.description ? <p className="text-sm text-fg-2">{server.description}</p> : null}
+      <div className="flex gap-2">
+        <Button variant="outline" size="sm" onClick={onEdit}>
+          <Icon icon={Pencil} size={14} />
+          {server.editable === "fields" ? "Edit server" : "Edit copy"}
+        </Button>
+        <Button variant="ghost" size="sm" asChild>
+          <a href={catalogExportUrl(server.id)} download>
+            <Icon icon={Download} size={14} />
+            Export connector.json
+          </a>
+        </Button>
+      </div>
+      {server.tools.length ? (
+        <div className="flex flex-col">
+          {server.tools.map((tool) => (
+            <div
+              key={tool.remote_name}
+              className="flex items-center gap-3 border-t border-line py-2"
+            >
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="font-mono text-xs">{tool.namespaced_name}</span>
+                <span className="truncate text-xs text-muted">{tool.description}</span>
+              </span>
+              {tool.mutating ? (
+                <Tag tone="plum" font="sans">
+                  mutating
+                </Tag>
+              ) : null}
+              <Tag tone={tool.default_enabled ? "tide" : "well"} font="sans">
+                {tool.default_enabled ? "starts on" : "starts off"}
+                {tool.default_override === null ? "" : " · set here"}
+              </Tag>
+              <IconButton
+                icon={Pencil}
+                label={`Edit ${tool.namespaced_name}`}
+                variant="ghost"
+                size={24}
+                onClick={() => onEditTool(tool)}
+              />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-muted">
+          Its tools are those each login lists; the Tools view sets them per scope.
+        </p>
+      )}
+    </div>
   );
 }
 

@@ -11,7 +11,7 @@
   },
   "src/features/admin/AdminPage.tsx": {
     "complexity": {
-      "count": 2
+      "count": 1
     }
   },
   "src/features/admin/InstanceTab.tsx": {
