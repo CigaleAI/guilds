@@ -73,7 +73,9 @@ function messageAttachments(meta: Record<string, unknown>): MessageAttachment[] 
   return out;
 }
 
-function AttachmentImage({ id, filename }: { id: string; filename: string }) {
+type AttachmentImageProps = { id: string; filename: string };
+
+function AttachmentImage({ id, filename }: AttachmentImageProps) {
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
     let url: string | null = null;
@@ -101,7 +103,9 @@ function AttachmentImage({ id, filename }: { id: string; filename: string }) {
   return <img src={src} alt={filename} className="max-h-56 max-w-full rounded-md object-contain" />;
 }
 
-function OperatorAttachments({ items }: { items: MessageAttachment[] }) {
+type OperatorAttachmentsProps = { items: MessageAttachment[] };
+
+function OperatorAttachments({ items }: OperatorAttachmentsProps) {
   const images = items.filter((item) => item.kind === "image");
   if (!images.length) return null;
   return (
@@ -115,8 +119,10 @@ function OperatorAttachments({ items }: { items: MessageAttachment[] }) {
   );
 }
 
+type WakeNoteProps = { icon: typeof Clock; children: string };
+
 /** What woke the agent when the run did not start from this chat. */
-function WakeNote({ icon, children }: { icon: typeof Clock; children: string }) {
+function WakeNote({ icon, children }: WakeNoteProps) {
   return (
     <div className="flex items-center gap-2 self-center rounded-full bg-surface px-3 py-1.5 text-xs text-muted">
       <Icon icon={icon} size={14} />

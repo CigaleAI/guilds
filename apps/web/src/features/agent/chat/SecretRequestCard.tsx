@@ -25,20 +25,18 @@ function accessFor(target: Target, agent: AgentDetail): SecretAccessChoice {
   return { org_wide: false, guild_ids: [], agent_ids: [agent.id] };
 }
 
+type SecretRequestCardProps = {
+  agent: AgentDetail;
+  run: Run;
+  request: SecretRequest;
+};
+
 /**
  * An agent's secret_request in its chat. The card keeps no state: it reads the name in the
  * organisation and offers to provide it, grant it, or says it is set. The value goes straight to
  * the secrets API and never into the transcript; once it lands, an idle run hears "Secret NAME is set."
  */
-export function SecretRequestCard({
-  agent,
-  run,
-  request,
-}: {
-  agent: AgentDetail;
-  run: Run;
-  request: SecretRequest;
-}) {
+export function SecretRequestCard({ agent, run, request }: SecretRequestCardProps) {
   const { org } = useIdentity();
   const manager = managesSecrets(org.role);
   const orgSecrets = useSecrets({ scope: "org", id: org.id });

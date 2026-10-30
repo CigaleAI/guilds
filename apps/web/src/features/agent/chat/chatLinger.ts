@@ -40,61 +40,53 @@ export function useHeldChatRun(agentId: string): string | null | undefined {
 }
 
 /** Whether a finished chat should close on this focus: idle long enough, and not generating. */
-export function shouldCloseFinishedChat(args: {
-  generating: boolean;
-  lastActionAt: number | null;
-  now: number;
-  idleMs?: number;
-}): boolean {
-  if (args.generating || args.lastActionAt === null) return false;
-  return args.now - args.lastActionAt >= (args.idleMs ?? chatIdleCloseMs);
+export function shouldCloseFinishedChat(
+  generating: boolean,
+  lastActionAt: number | null,
+  now: number,
+  idleMs?: number,
+): boolean {
+  if (generating || lastActionAt === null) return false;
+  return now - lastActionAt >= (idleMs ?? chatIdleCloseMs);
 }
 
 /**
  * After the agent finishes a generation on Chat, the next window focus that comes after
  * `chatIdleCloseMs` with no operator action closes the inspector.
  */
-export function useFinishedChatIdleClose(args: {
-  agentId: string;
-  generating: boolean;
-  enabled: boolean;
-  onClose: () => void;
-}): void {
+export function useFinishedChatIdleClose(
+  agentId: string,
+  generating: boolean,
+  enabled: boolean,
+  onClose: () => void,
+): void {
   const lastActionAt = useRef<number | null>(null);
-  const wasGenerating = useRef(args.generating);
-  const onCloseRef = useRef(args.onClose);
+  const wasGenerating = useRef(generating);
+  const onCloseRef = useRef(onClose);
 
   useEffect(() => {
-    onCloseRef.current = args.onClose;
-  }, [args.onClose]);
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
-    if (!args.enabled) {
+    if (!enabled) {
       lastActionAt.current = null;
-      wasGenerating.current = args.generating;
+      wasGenerating.current = generating;
       return;
     }
-    if (args.generating) lastActionAt.current = null;
+    if (generating) lastActionAt.current = null;
     else if (wasGenerating.current) lastActionAt.current = Date.now();
-    wasGenerating.current = args.generating;
-  }, [args.enabled, args.generating]);
+    wasGenerating.current = generating;
+  }, [enabled, generating]);
 
   useEffect(() => {
-    if (!args.enabled) return;
+    if (!enabled) return;
     const markAction = () => {
       if (lastActionAt.current !== null) lastActionAt.current = Date.now();
     };
     const onFocus = () => {
-      if (
-        !shouldCloseFinishedChat({
-          generating: args.generating,
-          lastActionAt: lastActionAt.current,
-          now: Date.now(),
-        })
-      ) {
-        return;
-      }
-      releaseChatRun(args.agentId);
+      if (!shouldCloseFinishedChat(generating, lastActionAt.current, Date.now())) return;
+      releaseChatRun(agentId);
       onCloseRef.current();
     };
     const onVisible = () => {
@@ -112,5 +104,5 @@ export function useFinishedChatIdleClose(args: {
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [args.agentId, args.enabled, args.generating]);
+  }, [agentId, enabled, generating]);
 }

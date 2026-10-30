@@ -253,8 +253,10 @@ function stepText(step: FlowStep): string {
   return step.turn ? turnText(step.turn).trim() : "";
 }
 
+type ThoughtBodyProps = { text: string };
+
 /** Reasoning unfolded: the whole text, with a copy button. */
-function ThoughtBody({ text }: { text: string }) {
+function ThoughtBody({ text }: ThoughtBodyProps) {
   return (
     <div className="relative rounded-lg bg-paper px-3 py-2 pr-9">
       <p className="text-sm whitespace-pre-wrap text-fg-2">{text}</p>
@@ -277,6 +279,9 @@ function centerInScroller(node: HTMLElement) {
   const target = node.getBoundingClientRect();
   scroller.scrollTop += target.top - box.top - (box.height - target.height) / 2;
 }
+
+/** A step of the flow with its position among the flow's steps. */
+type IndexedStep = { step: FlowStep; index: number };
 
 const callKey = (call: FlowCall) => `${call.id}:${call.position}`;
 
@@ -606,7 +611,7 @@ export function FlowView({
   };
 
   /** Consecutive steps that produced nothing but calls, compacted into one block that opens onto them. */
-  const runBlock = (run: readonly { step: FlowStep; index: number }[]): ReactNode => {
+  const runBlock = (run: readonly IndexedStep[]): ReactNode => {
     const [first] = run;
     if (!first) return null;
     const steps = run.map(({ step }) => step);
@@ -637,7 +642,7 @@ export function FlowView({
   /** The rail: one block per step, and runs of two or more steps that produced nothing compacted into one. */
   const timeline = (): ReactNode[] => {
     const entries: ReactNode[] = [];
-    let silent: { step: FlowStep; index: number }[] = [];
+    let silent: IndexedStep[] = [];
     const flush = () => {
       const [only] = silent;
       if (silent.length === 1 && only) entries.push(stepBlock(only.step, only.index));

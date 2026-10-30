@@ -92,12 +92,7 @@ export function AgentInspector() {
     setFull(!full);
   };
   const close = () => void navigate({ to: "/guilds/$guildId", params: { guildId } });
-  useFinishedChatIdleClose({
-    agentId,
-    generating: Boolean(agent.data?.generating),
-    enabled: onChat,
-    onClose: close,
-  });
+  useFinishedChatIdleClose(agentId, Boolean(agent.data?.generating), onChat, close);
 
   return (
     <Sheet open onOpenChange={(open) => !open && close()}>

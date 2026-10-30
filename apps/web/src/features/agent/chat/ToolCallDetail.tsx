@@ -37,7 +37,9 @@ type CallRun = {
   progress?: CallProgress;
 };
 
-function Code({ children }: { children: string }) {
+type CodeProps = { children: string };
+
+function Code({ children }: CodeProps) {
   return (
     <pre className="max-h-96 overflow-auto rounded-md bg-surface p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap text-fg">
       {children}
@@ -45,14 +47,13 @@ function Code({ children }: { children: string }) {
   );
 }
 
-/** The lines a running call has reported, latest last, kept scrolled to the latest. */
-export function ProgressLines({
-  lines,
-  className,
-}: {
+type ProgressLinesProps = {
   lines: readonly string[];
   className?: string;
-}) {
+};
+
+/** The lines a running call has reported, latest last, kept scrolled to the latest. */
+export function ProgressLines({ lines, className }: ProgressLinesProps) {
   const box = useRef<HTMLPreElement>(null);
   useLayoutEffect(() => {
     const el = box.current;
@@ -82,21 +83,18 @@ const markdownViews = [
   { value: "raw", label: "Raw" },
 ];
 
-/**
- * A call's arguments or result: JSON as a tree, or as raw text; anything else as text, or as
- * rendered Markdown when `markdown` is set.
- */
-function Payload({
-  text,
-  json,
-  what,
-  markdown = false,
-}: {
+type PayloadProps = {
   text: string;
   json: unknown;
   what: string;
   markdown?: boolean;
-}) {
+};
+
+/**
+ * A call's arguments or result: JSON as a tree, or as raw text; anything else as text, or as
+ * rendered Markdown when `markdown` is set.
+ */
+function Payload({ text, json, what, markdown = false }: PayloadProps) {
   const structured = json !== null && typeof json === "object";
   const views = structured ? treeViews : markdown ? markdownViews : null;
   const [raw, setRaw] = useState(false);
@@ -129,7 +127,9 @@ function Payload({
   );
 }
 
-function ArgumentsPane({ call }: { call: FlowCall }) {
+type ArgumentsPaneProps = { call: FlowCall };
+
+function ArgumentsPane({ call }: ArgumentsPaneProps) {
   const args = callArguments(call);
   return args.isEmpty ? (
     <p className="text-sm text-muted">{args.text}</p>
@@ -138,7 +138,9 @@ function ArgumentsPane({ call }: { call: FlowCall }) {
   );
 }
 
-function ReturnedPayload({ result }: { result: RunMessage }) {
+type ReturnedPayloadProps = { result: RunMessage };
+
+function ReturnedPayload({ result }: ReturnedPayloadProps) {
   const returned = returnedData(result);
   return (
     <Payload
@@ -150,8 +152,10 @@ function ReturnedPayload({ result }: { result: RunMessage }) {
   );
 }
 
+type RunningResultProps = { lines: readonly string[] };
+
 /** A running call's result: the lines it has reported, or that none came yet. */
-function RunningResult({ lines }: { lines: readonly string[] }) {
+function RunningResult({ lines }: RunningResultProps) {
   return lines.length ? (
     <ProgressLines lines={lines} />
   ) : (
@@ -159,8 +163,10 @@ function RunningResult({ lines }: { lines: readonly string[] }) {
   );
 }
 
+type ResultBodyProps = { call: FlowCall; run: CallRun };
+
 /** What came back; while the call runs, what it has reported. */
-function ResultBody({ call, run }: { call: FlowCall; run: CallRun }) {
+function ResultBody({ call, run }: ResultBodyProps) {
   if (call.result) return <ReturnedPayload result={call.result} />;
   if (run.generating) return <RunningResult lines={run.progress?.lines ?? []} />;
   return (
@@ -168,8 +174,10 @@ function ResultBody({ call, run }: { call: FlowCall; run: CallRun }) {
   );
 }
 
+type ResultPaneProps = { call: FlowCall; run: CallRun };
+
 /** The result, under the error the tool failed with and how the output pipeline cut it. */
-function ResultPane({ call, run }: { call: FlowCall; run: CallRun }) {
+function ResultPane({ call, run }: ResultPaneProps) {
   const meta = callMetadata(call);
   return (
     <div className="flex flex-col gap-2">
@@ -185,7 +193,9 @@ function ResultPane({ call, run }: { call: FlowCall; run: CallRun }) {
   );
 }
 
-function TaskDiff({ runId, callId }: { runId: string; callId: string }) {
+type TaskDiffProps = { runId: string; callId: string };
+
+function TaskDiff({ runId, callId }: TaskDiffProps) {
   return <DiffView diff={useTaskDiff(runId, callId)} className="bg-surface" />;
 }
 
@@ -197,8 +207,10 @@ const logViews: { value: LogView; label: string }[] = [
   { value: "json", label: "JSON" },
 ];
 
+type TaskLogProps = { runId: string; callId: string };
+
 /** A code task's kept harness log, read from the agent's machine once this view opens. */
-function TaskLog({ runId, callId }: { runId: string; callId: string }) {
+function TaskLog({ runId, callId }: TaskLogProps) {
   const log = useTaskLog(runId, callId);
   const [view, setView] = useState<LogView>("steps");
   if (log.isError) {
@@ -246,14 +258,13 @@ function TaskLog({ runId, callId }: { runId: string; callId: string }) {
   );
 }
 
-function MetadataPane({
-  facts,
-  onOpenLog,
-}: {
+type MetadataPaneProps = {
   facts: readonly CallFact[];
   /** Opens the call's harness log; its path in the list then leads there. */
   onOpenLog?: (() => void) | undefined;
-}) {
+};
+
+function MetadataPane({ facts, onOpenLog }: MetadataPaneProps) {
   return (
     <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
       {facts.map(([label, value]) => (
@@ -279,17 +290,14 @@ function MetadataPane({
   );
 }
 
-function DetailPane({
-  view,
-  call,
-  run,
-  onView,
-}: {
+type DetailPaneProps = {
   view: DetailView;
   call: FlowCall;
   run: CallRun;
   onView: (view: DetailView) => void;
-}) {
+};
+
+function DetailPane({ view, call, run, onView }: DetailPaneProps) {
   if (view === "arguments") return <ArgumentsPane call={call} />;
   if (view === "result") return <ResultPane call={call} run={run} />;
   if (view === "diff") return <TaskDiff runId={run.id ?? ""} callId={call.id} />;
@@ -321,20 +329,18 @@ function detailViews(call: FlowCall, runId: string | undefined) {
   ];
 }
 
-/**
- * One tool call opened up: what the agent asked for, what came back (or, while it runs, what it
- * has reported), how it ran, and for a code task the diff it made.
- */
-export function ToolCallDetail({
-  call,
-  run,
-  onAsk,
-}: {
+type ToolCallDetailProps = {
   call: FlowCall;
   run: CallRun;
   /** Pins this call to a question for Studio's coach. */
   onAsk?: ((call: FlowCall) => void) | undefined;
-}) {
+};
+
+/**
+ * One tool call opened up: what the agent asked for, what came back (or, while it runs, what it
+ * has reported), how it ran, and for a code task the diff it made.
+ */
+export function ToolCallDetail({ call, run, onAsk }: ToolCallDetailProps) {
   const [view, setView] = useState<DetailView>(openingView(call, run.progress));
   return (
     <div className="flex min-w-0 flex-col gap-2.5">

@@ -284,43 +284,17 @@
       "count": 1
     }
   },
-  "src/features/agent/chat/ChangesPanel.tsx": {
-    "no-restricted-syntax": {
-      "count": 3
-    }
-  },
   "src/features/agent/chat/FlowView.tsx": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 5
     },
     "complexity": {
       "count": 5
-    },
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
-  "src/features/agent/chat/Reasoning.tsx": {
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/features/agent/chat/SecretRequestCard.tsx": {
     "complexity": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/features/agent/chat/SessionChrome.tsx": {
-    "no-restricted-syntax": {
-      "count": 3
-    }
-  },
-  "src/features/agent/chat/ToolCallDetail.tsx": {
-    "no-restricted-syntax": {
-      "count": 13
     }
   },
   "src/features/agent/chat/Transcript.tsx": {
@@ -331,7 +305,7 @@
       "count": 3
     },
     "no-restricted-syntax": {
-      "count": 4
+      "count": 1
     }
   },
   "src/features/agent/chat/callDetail.ts": {
@@ -340,11 +314,6 @@
     },
     "no-restricted-syntax": {
       "count": 1
-    }
-  },
-  "src/features/agent/chat/chatLinger.ts": {
-    "no-restricted-syntax": {
-      "count": 2
     }
   },
   "src/features/agent/chat/runContext.ts": {
