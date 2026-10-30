@@ -1,12 +1,17 @@
-// Fails when the import graph of src/ gains a cycle. Value imports only; `import type` is ignored.
+// Fails when the import graph of a package's src/ gains a cycle. Value imports only; `import type`
+// is ignored. Tests and stories are not scanned.
 //
-//   tsx scripts/import-cycles.ts            compares src/ with import-cycles.json
-//   tsx scripts/import-cycles.ts --write    rewrites import-cycles.json from src/ as it is
+//   tsx scripts/import-cycles.ts [package]           compares src/ with import-cycles.json
+//   tsx scripts/import-cycles.ts [package] --write   rewrites import-cycles.json from src/ as it is
 //
-// import-cycles.json lists the files that sit in a cycle today and the domains (directories under
-// src/) that sit in a domain-level cycle. Like eslint-suppressions.json, it only shrinks: a file or
-// a domain that enters a cycle fails the check, one that leaves it is reported so the list can be
-// rewritten.
+// [package] is the package directory that holds src/ and import-cycles.json, the script's parent
+// when omitted.
+//
+// import-cycles.json lists the files that sit in a cycle today and the domains that sit in a
+// domain-level cycle. A file's domain is its first directory under src/, or features/<name> for a
+// file under src/features/<name>/, so each feature of the operator app is a domain of its own.
+// Like eslint-suppressions.json, the list only shrinks: a file or a domain that enters a cycle
+// fails the check, one that leaves it is reported so the list can be rewritten.
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,12 +24,14 @@ const BASELINE = join(PACKAGE, "import-cycles.json");
 
 type Baseline = { filesInCycles: string[]; domainsInCycles: string[] };
 
+const SOURCE = /\.tsx?$/;
+const EXCLUDED = /\.(?:d|test|stories)\.tsx?$/;
+
 function sourceFiles(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
     const path = join(dir, name);
     if (statSync(path).isDirectory()) sourceFiles(path, out);
-    else if (name.endsWith(".ts") && !name.endsWith(".d.ts") && !name.endsWith(".test.ts"))
-      out.push(path);
+    else if (SOURCE.test(name) && !EXCLUDED.test(name)) out.push(path);
   }
   return out.sort();
 }
@@ -33,8 +40,9 @@ const files = sourceFiles(SRC);
 const known = new Set(files);
 const id = (path: string): string => relative(SRC, path).split(sep).join("/");
 const domainOf = (path: string): string => {
-  const [first, ...rest] = id(path).split("/");
-  return rest.length === 0 || first === undefined ? "(root)" : first;
+  const [first, second] = id(path).split("/").slice(0, -1);
+  if (first === undefined) return "(root)";
+  return first === "features" && second !== undefined ? `${first}/${second}` : first;
 };
 
 function resolveSpecifier(from: string, specifier: string): string | null {
@@ -42,9 +50,12 @@ function resolveSpecifier(from: string, specifier: string): string | null {
   const base = resolve(dirname(from), specifier);
   for (const candidate of [
     base.replace(/\.js$/, ".ts"),
+    base.replace(/\.js$/, ".tsx"),
     base,
     `${base}.ts`,
+    `${base}.tsx`,
     join(base, "index.ts"),
+    join(base, "index.tsx"),
   ]) {
     if (known.has(candidate)) return candidate;
   }
