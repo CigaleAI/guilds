@@ -14,7 +14,8 @@ import type { GroupRouter } from "../groupchat/router.js";
 import { McpDisconnectedError } from "../mcp/errors.js";
 import type { McpPool } from "../mcp/pool.js";
 import { readMemory } from "../memory/index.js";
-import { NotesError, type NotesStore } from "../notes/store.js";
+import { NotesError } from "../notes/errors.js";
+import type { NotesStore } from "../notes/store.js";
 import {
   PromptError,
   composeSystemPrompt,

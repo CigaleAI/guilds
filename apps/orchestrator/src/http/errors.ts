@@ -21,7 +21,7 @@ import { MachineError } from "../machines/index.js";
 import { CatalogError } from "../mcp/catalog.js";
 import { OperatorCallError } from "../mcp/operator-call.js";
 import { ConnectionError } from "../mcp/visibility.js";
-import { NotesError } from "../notes/store.js";
+import { NotesError } from "../notes/errors.js";
 import { OrgValidationError } from "../organisations/index.js";
 import { OrgError } from "../organisations/service.js";
 import { PolicyError } from "../policy/index.js";

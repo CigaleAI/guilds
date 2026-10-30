@@ -18,7 +18,8 @@ import {
   renderMemorySection,
   validateMemory,
 } from "../../src/memory/index.js";
-import { NotesError, NotesStore } from "../../src/notes/store.js";
+import { NotesError } from "../../src/notes/errors.js";
+import { NotesStore } from "../../src/notes/store.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { tempDir } from "../helpers/env.js";
 

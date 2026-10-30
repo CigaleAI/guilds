@@ -25,32 +25,32 @@ import {
   MEMORY_DIR,
   MEMORY_FILE,
 } from "../memory/index.js";
+import { NotesError } from "./errors.js";
+import { migrateAgentLayout } from "./migrate.js";
+import {
+  FIXED_AGENT_FILES,
+  HOST_FOLDERS,
+  isDir,
+  isInAgentFolder,
+  isPrivateAllowed,
+  isRoutineRel,
+  mapHostRel,
+  notePosix,
+  posixParts,
+  posixRel,
+  prefixPosix,
+  relativePosix,
+  resolveAgentFile,
+  resolved,
+  resolveSharedFile,
+  rewriteLegacyPrivate,
+  rglobAll,
+  rglobFiles,
+  ROUTINES_DIR,
+  statIfFile,
+} from "./paths.js";
 
-export const FIXED_AGENT_FILES = ["task.md", MEMORY_FILE] as const;
 export const SYSTEM_PROMPT = "system.md";
-export const ROUTINES_DIR = "routines";
-export const HOST_FOLDERS = ["notes", ROUTINES_DIR, MEMORY_DIR, LEGACY_MEMORY_DIR] as const;
-
-export class NotesError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "NotesError";
-  }
-}
-
-function resolved(value: string): string {
-  const absolute = path.resolve(value);
-  try {
-    return realpathSync(absolute);
-  } catch {
-    const parent = path.dirname(absolute);
-    try {
-      return path.join(realpathSync(parent), path.basename(absolute));
-    } catch {
-      return absolute;
-    }
-  }
-}
 
 export class NotesStore {
   root: string;
@@ -124,7 +124,7 @@ export class NotesStore {
             if (!isDir(agentDir)) {
               continue;
             }
-            this.migrateAgentLayout(agentDir);
+            migrateAgentLayout(agentDir);
             const filePath = path.join(agentDir, MEMORY_FILE);
             if (!statIfFile(filePath)) {
               writeFileSync(filePath, EMPTY_MEMORY, "utf8");
@@ -163,7 +163,7 @@ export class NotesStore {
     } else if (posix.startsWith("guilds/")) {
       resolvedPath = resolved(path.join(this.root, "orgs", orgSlug, posix));
     } else {
-      const mapped = this.mapHostRel(posix);
+      const mapped = mapHostRel(posix);
       const first = mapped.split("/", 1)[0];
       if (first === ROUTINES_DIR || first === MEMORY_DIR || first === LEGACY_MEMORY_DIR) {
         resolvedPath = resolved(path.join(agent, mapped));
@@ -171,8 +171,8 @@ export class NotesStore {
         resolvedPath = resolved(path.join(root, mapped));
       }
     }
-    resolvedPath = this.rewriteLegacyPrivate(resolvedPath, agent);
-    if (!this.isPrivateAllowed(resolvedPath, agent, root)) {
+    resolvedPath = rewriteLegacyPrivate(resolvedPath, agent);
+    if (!isPrivateAllowed(resolvedPath, agent, root)) {
       throw new NotesError("invalid path");
     }
     return resolvedPath;
@@ -282,7 +282,7 @@ export class NotesStore {
 
   /** A note of the agent's private notes: its repository path and its text. */
   readPrivateNote(orgSlug: string, guildName: string, agentName: string, relative: string): [string, string] {
-    const filePath = this.resolvePrivatePath(orgSlug, guildName, agentName, this.notePosix(relative));
+    const filePath = this.resolvePrivatePath(orgSlug, guildName, agentName, notePosix(relative));
     if (!statIfFile(filePath)) {
       throw new NotesError("file not found");
     }
@@ -294,7 +294,7 @@ export class NotesStore {
    * the root, its routines and Memory archive are listed too.
    */
   listPrivateNotes(orgSlug: string, guildName: string, agentName: string, prefix: string): string[] {
-    const posix = this.prefixPosix(prefix);
+    const posix = prefixPosix(prefix);
     const base = this.resolvePrivatePath(orgSlug, guildName, agentName, posix);
     if (statIfFile(base)) {
       if (path.extname(base) !== ".md") {
@@ -320,7 +320,7 @@ export class NotesStore {
 
   /** The repository paths of the guild's shared notes under a prefix, folders ending in `/`. */
   listSharedNotes(orgSlug: string, guildName: string, prefix: string): string[] {
-    const base = this.resolveSharedPath(orgSlug, guildName, this.prefixPosix(prefix));
+    const base = this.resolveSharedPath(orgSlug, guildName, prefixPosix(prefix));
     if (statIfFile(base)) {
       if (path.extname(base) !== ".md") {
         throw new NotesError("invalid path");
@@ -342,15 +342,15 @@ export class NotesStore {
     content: string,
   ): Promise<string> {
     return this.lock.run(() => {
-      const filePath = this.resolvePrivatePath(orgSlug, guildName, agentName, this.notePosix(relative));
+      const filePath = this.resolvePrivatePath(orgSlug, guildName, agentName, notePosix(relative));
       if (existsSync(filePath) && !statIfFile(filePath)) {
         throw new NotesError("invalid path");
       }
       const agent = this.agentDir(orgSlug, guildName, agentName);
-      if (this.isInAgentFolder(agent, ROUTINES_DIR, filePath)) {
+      if (isInAgentFolder(agent, ROUTINES_DIR, filePath)) {
         throw new NotesError("routine notes cannot be overwritten");
       }
-      if ([MEMORY_DIR, LEGACY_MEMORY_DIR].some((name) => this.isInAgentFolder(agent, name, filePath))) {
+      if ([MEMORY_DIR, LEGACY_MEMORY_DIR].some((name) => isInAgentFolder(agent, name, filePath))) {
         throw new NotesError("memory archive notes cannot be overwritten");
       }
       return this.writeFile(filePath, content);
@@ -370,7 +370,7 @@ export class NotesStore {
       if (!isDir(agent)) {
         throw new NotesError("agent folder not found");
       }
-      const posix = this.relativePosix(relative);
+      const posix = relativePosix(relative);
       if (!posix.endsWith(".md")) {
         throw new NotesError("path must end in .md");
       }
@@ -386,13 +386,13 @@ export class NotesStore {
           replacedBy: `user ${options.actor} (Files pane)`,
         });
       }
-      const filePath = this.resolveAgentFile(agent, posix);
+      const filePath = resolveAgentFile(agent, posix);
       if (!statIfFile(filePath)) {
         if (
           !posix.startsWith("notes/") ||
           !posix.endsWith(".md") ||
           isRelativeMemoryArchivePath(posix) ||
-          this.isRoutineRel(posix)
+          isRoutineRel(posix)
         ) {
           throw new NotesError("file not found");
         }
@@ -424,7 +424,7 @@ export class NotesStore {
       if (!isDir(shared)) {
         throw new NotesError("shared folder not found");
       }
-      const filePath = this.resolveSharedFile(shared, relative);
+      const filePath = resolveSharedFile(shared, relative);
       return this.writeFile(filePath, content);
     });
   }
@@ -440,20 +440,20 @@ export class NotesStore {
       if (!isDir(agent)) {
         throw new NotesError("agent folder not found");
       }
-      const posix = this.relativePosix(relative);
+      const posix = relativePosix(relative);
       if ((FIXED_AGENT_FILES as readonly string[]).includes(posix)) {
         throw new NotesError("cannot delete this file");
       }
       if (isRelativeMemoryArchivePath(posix)) {
         throw new NotesError("memory archive notes cannot be deleted");
       }
-      if (this.isRoutineRel(posix)) {
+      if (isRoutineRel(posix)) {
         throw new NotesError("routine notes cannot be deleted");
       }
       if (!posix.startsWith("notes/") || !posix.endsWith(".md")) {
         throw new NotesError("invalid path");
       }
-      const filePath = this.resolveAgentFile(agent, posix);
+      const filePath = resolveAgentFile(agent, posix);
       if (!statIfFile(filePath)) {
         throw new NotesError("file not found");
       }
@@ -468,7 +468,7 @@ export class NotesStore {
       if (!isDir(shared)) {
         throw new NotesError("shared folder not found");
       }
-      const filePath = this.resolveSharedFile(shared, relative);
+      const filePath = resolveSharedFile(shared, relative);
       if (!statIfFile(filePath)) {
         throw new NotesError("file not found");
       }
@@ -507,7 +507,7 @@ export class NotesStore {
     if (!isDir(agent)) {
       throw new NotesError("agent folder not found");
     }
-    const filePath = this.resolveAgentFile(agent, relative);
+    const filePath = resolveAgentFile(agent, relative);
     if (!statIfFile(filePath)) {
       throw new NotesError("file not found");
     }
@@ -535,7 +535,7 @@ export class NotesStore {
     if (!isDir(shared)) {
       throw new NotesError("shared folder not found");
     }
-    const filePath = this.resolveSharedFile(shared, relative);
+    const filePath = resolveSharedFile(shared, relative);
     if (!statIfFile(filePath)) {
       throw new NotesError("file not found");
     }
@@ -665,30 +665,6 @@ export class NotesStore {
     }
   }
 
-  /** A note's relative path as posix: not empty, inside its root, ending in `.md`. */
-  private notePosix(relative: string): string {
-    if (relative.startsWith("/") || path.isAbsolute(relative)) {
-      throw new NotesError("invalid path");
-    }
-    const posix = this.relativePosix(relative.replace(/\/+$/, ""));
-    if (!posix.endsWith(".md")) {
-      throw new NotesError("path must end in .md");
-    }
-    return posix;
-  }
-
-  /** A listing prefix as posix: `""` for the root, else a folder or a note inside it. */
-  private prefixPosix(prefix: string): string {
-    if (prefix.startsWith("/") || path.isAbsolute(prefix)) {
-      throw new NotesError("invalid path");
-    }
-    const trimmed = prefix.replace(/\/+$/, "");
-    if (trimmed === "" || trimmed === ".") {
-      return "";
-    }
-    return this.relativePosix(trimmed);
-  }
-
   private pruneEmptyParents(filePath: string, stop: string): void {
     let parent = resolved(path.dirname(filePath));
     const end = resolved(stop);
@@ -699,50 +675,6 @@ export class NotesStore {
       rmdirSync(parent);
       parent = path.dirname(parent);
     }
-  }
-
-  private migrateAgentLayout(agentDir: string): void {
-    const notesDir = path.join(agentDir, "notes");
-    this.liftDir(path.join(notesDir, ROUTINES_DIR), path.join(agentDir, ROUTINES_DIR));
-    this.liftDir(path.join(notesDir, MEMORY_DIR), path.join(agentDir, MEMORY_DIR));
-    this.liftDir(path.join(notesDir, LEGACY_MEMORY_DIR), path.join(agentDir, MEMORY_DIR));
-    this.liftDir(path.join(agentDir, LEGACY_MEMORY_DIR), path.join(agentDir, MEMORY_DIR));
-  }
-
-  private liftDir(source: string, dest: string): void {
-    if (!isDir(source)) {
-      return;
-    }
-    if (resolved(source) === resolved(dest)) {
-      return;
-    }
-    if (!existsSync(dest)) {
-      mkdirSync(path.dirname(dest), { recursive: true });
-      renameSync(source, dest);
-      return;
-    }
-    mkdirSync(dest, { recursive: true });
-    for (const name of readdirSync(source)) {
-      const child = path.join(source, name);
-      if (!statIfFile(child)) {
-        continue;
-      }
-      const target = path.join(dest, name);
-      if (existsSync(target)) {
-        unlinkSync(child);
-      } else {
-        renameSync(child, target);
-      }
-    }
-    if (isDir(source) && readdirSync(source).length === 0) {
-      rmdirSync(source);
-    }
-  }
-
-  private isInAgentFolder(agentDir: string, folder: string, filePath: string): boolean {
-    const root = resolved(path.join(agentDir, folder));
-    const value = resolved(filePath);
-    return value === root || isRelativeTo(value, root);
   }
 
   private writeMemoryUnlocked(
@@ -815,92 +747,12 @@ export class NotesStore {
     return items;
   }
 
-  private mapHostRel(posix: string): string {
-    for (const name of [ROUTINES_DIR, MEMORY_DIR, LEGACY_MEMORY_DIR]) {
-      const old = `notes/${name}`;
-      if (posix === old) {
-        return name;
-      }
-      if (posix.startsWith(`${old}/`)) {
-        return `${name}${posix.slice(old.length)}`;
-      }
-    }
-    return posix;
-  }
-
-  private rewriteLegacyPrivate(value: string, agentDir: string): string {
-    const notesDir = resolved(path.join(agentDir, "notes"));
-    if (!isRelativeTo(value, notesDir)) {
-      return value;
-    }
-    const rel = posixRel(notesDir, value);
-    const mapped = this.mapHostRel(rel);
-    if (mapped === rel) {
-      return value;
-    }
-    return resolved(path.join(agentDir, mapped));
-  }
-
-  private isPrivateAllowed(value: string, agentDir: string, notesRoot: string): boolean {
-    if (isRelativeTo(value, notesRoot)) {
-      return true;
-    }
-    for (const name of [ROUTINES_DIR, MEMORY_DIR, LEGACY_MEMORY_DIR]) {
-      const special = resolved(path.join(agentDir, name));
-      if (value === special || isRelativeTo(value, special)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  private isRoutineRel(posix: string): boolean {
-    const mapped = this.mapHostRel(posix);
-    return mapped === ROUTINES_DIR || mapped.startsWith(`${ROUTINES_DIR}/`);
-  }
-
   private guildDir(orgSlug: string, name: string): string {
     return resolved(path.join(this.root, "orgs", orgSlug, "guilds", name));
   }
 
   private sharedDir(orgSlug: string, name: string): string {
     return resolved(path.join(this.guildDir(orgSlug, name), "shared"));
-  }
-
-  private resolveAgentFile(agentDir: string, relative: string): string {
-    const posix = this.mapHostRel(this.relativePosix(relative));
-    const first = posix.split("/", 1)[0];
-    if (!(FIXED_AGENT_FILES as readonly string[]).includes(posix) && !(HOST_FOLDERS as readonly string[]).includes(first ?? "")) {
-      throw new NotesError("invalid path");
-    }
-    return this.contained(agentDir, posix);
-  }
-
-  private resolveSharedFile(sharedDir: string, relative: string): string {
-    const posix = this.relativePosix(relative);
-    if (!posix.endsWith(".md")) {
-      throw new NotesError("invalid path");
-    }
-    return this.contained(sharedDir, posix);
-  }
-
-  private relativePosix(relative: string): string {
-    if (!relative || relative.startsWith("/") || path.isAbsolute(relative)) {
-      throw new NotesError("invalid path");
-    }
-    const parts = posixParts(relative);
-    if (!parts.length || parts.some((part) => part === "" || part === "." || part === "..")) {
-      throw new NotesError("invalid path");
-    }
-    return parts.join("/");
-  }
-
-  private contained(root: string, posix: string): string {
-    const candidate = resolved(path.join(root, posix));
-    if (!isRelativeTo(candidate, resolved(root))) {
-      throw new NotesError("invalid path");
-    }
-    return candidate;
   }
 
   private fileItem(absolute: string, relative: string): { path: string; obsidian: string } {
@@ -910,47 +762,4 @@ export class NotesStore {
       obsidian: `obsidian://open?path=${pythonQuote(value)}`,
     };
   }
-}
-
-function isDir(value: string): boolean {
-  try {
-    return statSync(value).isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-function statIfFile(value: string): boolean {
-  try {
-    return statSync(value).isFile();
-  } catch {
-    return false;
-  }
-}
-
-function posixParts(relative: string): string[] {
-  return relative.replaceAll("\\", "/").split("/").filter((part) => part.length > 0);
-}
-
-function posixRel(from: string, to: string): string {
-  return path.relative(from, to).split(path.sep).join("/");
-}
-
-function rglobAll(root: string): string[] {
-  const items: string[] = [];
-  const walk = (dir: string) => {
-    for (const name of readdirSync(dir)) {
-      const child = path.join(dir, name);
-      items.push(child);
-      if (isDir(child)) {
-        walk(child);
-      }
-    }
-  };
-  walk(root);
-  return items;
-}
-
-function rglobFiles(root: string): string[] {
-  return rglobAll(root).filter((item) => statIfFile(item));
 }

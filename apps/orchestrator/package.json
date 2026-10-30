@@ -49,6 +49,8 @@
     "./mcp/service.js": "./src/mcp/service.ts",
     "./mcp/view.js": "./src/mcp/view.ts",
     "./net/http.js": "./src/net/http.ts",
+    "./notes/errors.js": "./src/notes/errors.ts",
+    "./notes/paths.js": "./src/notes/paths.ts",
     "./notes/store.js": "./src/notes/store.ts",
     "./oauth/index.js": "./src/oauth/index.ts",
     "./observability/log.js": "./src/observability/log.ts",
