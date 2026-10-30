@@ -29,7 +29,7 @@ function entriesFor(index: RegistryIndex, slug: string): RegistryConnectorEntry[
 }
 
 /** What an install accepts beyond a verified, stable entry. */
-type Acceptance = { unverified?: boolean; experimental?: boolean };
+export type Acceptance = { unverified?: boolean; experimental?: boolean };
 
 function chosenEntry(index: RegistryIndex, slug: string, version: string | undefined, accept: Acceptance): RegistryConnectorEntry {
   const entry = pickEntry(entriesFor(index, slug), version);
