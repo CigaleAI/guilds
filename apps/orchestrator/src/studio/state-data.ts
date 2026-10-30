@@ -10,7 +10,7 @@ import {
   type ItemChangeRow,
 } from "../db/state.js";
 import type { ActivityWindow } from "./activity.js";
-import { StudioError, StudioUnprocessableError } from "./errors.js";
+import { StudioNotFoundError, StudioUnprocessableError } from "./errors.js";
 import {
   changeActor,
   changeEvents,
@@ -143,7 +143,7 @@ export async function loadStateItem(
 ): Promise<{ item: StateRow; changes: ReturnType<typeof tallyBy>; reads: ReturnType<typeof tallyBy> }> {
   const { items, events } = await loadStateEvents(deps, scope);
   const item = items.find((entry) => entry.display_path === path);
-  if (!item) throw new StudioError(404, "item not found");
+  if (!item) throw new StudioNotFoundError("item not found");
   const own = events.filter((event) => event.path === path && counts(event.actor));
   return {
     item: stateRow(item, events),
@@ -181,7 +181,7 @@ export async function loadStateHistory(
   const agents = await agentNames(deps, scope.guildId);
   const items = await loadStateItems(deps, scope.actor, { guildId: scope.guildId, agentIds: [...agents.keys()] });
   const item = items.find((entry) => entry.display_path === request.path);
-  if (!item) throw new StudioError(404, "item not found");
+  if (!item) throw new StudioNotFoundError("item not found");
   const rows = await listItemChanges(deps.db, scope.actor.orgId, {
     displayPath: item.display_path,
     collectionId: item.collection_id,
