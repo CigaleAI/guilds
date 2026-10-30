@@ -23,6 +23,15 @@ test("cron reads as the server's label", () => {
   assert.equal(describeCron("not cron"), "not cron");
 });
 
+test("a cron the describer has no words for reads as the expression itself", () => {
+  assert.equal(describeCron("0 9 * * moon"), "0 9 * * moon");
+  assert.equal(describeCron("0 9 32 * *"), "0 9 32 * *");
+  assert.equal(describeCron("0 9 * * 1,3/2"), "0 9 * * 1,3/2");
+  assert.equal(describeCron("0 9 * * 5-1,2"), "0 9 * * 5-1,2");
+  assert.equal(describeCron("0,30 1-5 * * *"), "0,30 1-5 * * *");
+  assert.equal(describeCron("* 9 * * *"), "* 9 * * *");
+});
+
 test("a window names its count, span and timezone", () => {
   const paris = { timezone: "Europe/Paris", start: "08:00", end: "20:00", max_wakes: 20 };
   assert.equal(

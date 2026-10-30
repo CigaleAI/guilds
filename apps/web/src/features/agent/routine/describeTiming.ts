@@ -5,6 +5,14 @@
  */
 import type { WakeWindow } from "../../../api/types/schedules";
 
+/** A cron the describer has no words for; describeCron answers with the expression itself. */
+class CronDescriptionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CronDescriptionError";
+  }
+}
+
 const DOW: Record<string, number> = {
   "0": 0,
   "1": 1,
@@ -114,10 +122,10 @@ function parseToken(
   } else if (/^\d+$/.test(token)) {
     value = Number(token);
   } else {
-    throw new Error(`unsupported cron token ${token}`);
+    throw new CronDescriptionError(`unsupported cron token ${token}`);
   }
   if (value < lo || value > hi) {
-    throw new Error(`cron token ${token} out of range`);
+    throw new CronDescriptionError(`cron token ${token} out of range`);
   }
   return value;
 }
@@ -131,14 +139,14 @@ function expandField(
   const values: number[] = [];
   for (const item of field.split(",")) {
     if (item.includes("/")) {
-      throw new Error(`unsupported cron step ${item}`);
+      throw new CronDescriptionError(`unsupported cron step ${item}`);
     }
     if (item.includes("-")) {
       const [startS, endS] = item.split("-", 2);
       const start = parseToken(startS!, table, lo, hi);
       const end = parseToken(endS!, table, lo, hi);
       if (start > end) {
-        throw new Error(`unsupported cron range ${item}`);
+        throw new CronDescriptionError(`unsupported cron range ${item}`);
       }
       for (let value = start; value <= end; value += 1) {
         values.push(value);
@@ -206,11 +214,11 @@ function describeTime(minute: string, hour: string): string {
     const hours = expandField(hour, null, 0, 23);
     const times = hours.flatMap((h) => minutes.map((m) => `${pad2(h)}:${pad2(m)}`));
     if (times.length > 8) {
-      throw new Error("too many clock times");
+      throw new CronDescriptionError("too many clock times");
     }
     return `At ${joinAnd(times)}`;
   }
-  throw new Error("unsupported time fields");
+  throw new CronDescriptionError("unsupported time fields");
 }
 
 function isClockTime(minute: string, hour: string): boolean {
@@ -320,8 +328,11 @@ export function describeCron(value: string): string {
       label = `${label} ${when}`;
     }
     return `${label} (UTC)`;
-  } catch {
-    return text;
+  } catch (error) {
+    if (error instanceof CronDescriptionError) {
+      return text;
+    }
+    throw error;
   }
 }
 
