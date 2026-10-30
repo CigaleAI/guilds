@@ -114,12 +114,12 @@ const studioSessionRoute = createRoute({
   validateSearch: (search: Partial<StudioSearch> & SearchSchemaInput) => parseStudioSearch(search),
 });
 
-const tableTabs: TableTab[] = ["records", "columns", "access"];
+const tableTabs = ["records", "columns", "access"] as const satisfies readonly TableTab[];
 
-const validateTableTab = (search: Record<string, unknown>): { tab?: TableTab } =>
-  tableTabs.includes(search.tab as TableTab) && search.tab !== "records"
-    ? { tab: search.tab as TableTab }
-    : {};
+const validateTableTab = (search: Record<string, unknown>): { tab?: TableTab } => {
+  const tab = tableTabs.find((item) => item === search.tab);
+  return tab && tab !== "records" ? { tab } : {};
+};
 
 const tablesRoute = createRoute({
   getParentRoute: () => rootRoute,

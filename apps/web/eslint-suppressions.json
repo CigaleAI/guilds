@@ -10,9 +10,6 @@
     }
   },
   "src/app/router.tsx": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 2
-    },
     "complexity": {
       "count": 1
     }
