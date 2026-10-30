@@ -1,3 +1,5 @@
+import type { GithubLogin } from "../../api/types/guilds";
+
 /** The server's rule for a guild repository's name, which is also its folder under repos/ in each coding agent's home. */
 export const repositoryNamePattern = /^[a-z][a-z0-9_-]{0,62}$/;
 
@@ -26,7 +28,7 @@ export const NO_LOGIN = "none";
 export function repositoryLogin(
   url: string,
   chosen: string,
-  logins: ReadonlyArray<{ id: string; status: string }>,
+  logins: ReadonlyArray<Pick<GithubLogin, "id" | "status">>,
 ): string | null {
   if (!isGithubUrl(url) || chosen === NO_LOGIN) return null;
   const connected = logins.filter((login) => login.status === "connected");

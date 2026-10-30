@@ -559,11 +559,6 @@
       "count": 1
     }
   },
-  "src/features/guild/CreateGuildDialog.tsx": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
   "src/features/guild/GroupChat.tsx": {
     "complexity": {
       "count": 1
@@ -579,26 +574,13 @@
       "count": 1
     }
   },
-  "src/features/guild/MessageBudget.tsx": {
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
   "src/features/guild/pages/GuildIssues.tsx": {
     "complexity": {
       "count": 1
     }
   },
-  "src/features/guild/pages/GuildPage.tsx": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
   "src/features/guild/pages/GuildRepositories.tsx": {
     "complexity": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
       "count": 1
     }
   },
@@ -614,11 +596,6 @@
     "complexity": {
       "count": 1
     },
-    "no-restricted-syntax": {
-      "count": 4
-    }
-  },
-  "src/features/guild/repositories.ts": {
     "no-restricted-syntax": {
       "count": 1
     }

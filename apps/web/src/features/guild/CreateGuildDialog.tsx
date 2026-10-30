@@ -16,14 +16,13 @@ import {
 } from "@guildsrun/ui";
 import { handleHint, liveHandleError } from "../names";
 
-/** A new guild: its name, what it is for, and whether only its operators see it. */
-export function CreateGuildDialog({
-  open,
-  onOpenChange,
-}: {
+type CreateGuildDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-}) {
+};
+
+/** A new guild: its name, what it is for, and whether only its operators see it. */
+export function CreateGuildDialog({ open, onOpenChange }: CreateGuildDialogProps) {
   const navigate = useNavigate();
   const create = useCreateGuild();
   const [name, setName] = useState("");

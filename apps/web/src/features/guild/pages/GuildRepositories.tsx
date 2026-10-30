@@ -28,11 +28,13 @@ function loginLabel(repository: GuildRepository): ReactNode {
   );
 }
 
+type GuildRepositoriesProps = { guild: Pick<Guild, "id"> };
+
 /**
  * Extra git URLs this guild's coding agents clone, besides the repositories picked on a GitHub
  * login (Tools → GitHub).
  */
-export function GuildRepositories({ guild }: { guild: Pick<Guild, "id"> }) {
+export function GuildRepositories({ guild }: GuildRepositoriesProps) {
   const listed = useGuildRepositories(guild.id);
   const add = useAddGuildRepository(guild.id);
   const remove = useRemoveGuildRepository(guild.id);

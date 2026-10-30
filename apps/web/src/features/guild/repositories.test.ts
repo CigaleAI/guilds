@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { GithubLogin } from "../../api/types/guilds";
 import { isGithubUrl, NO_LOGIN, repositoryLogin, repositoryNameFrom, repositoryNamePattern } from "./repositories";
 
 test("a GitHub repository name becomes a folder name the server accepts", () => {
@@ -19,7 +20,7 @@ test("only github.com repository URLs can use a GitHub login", () => {
 });
 
 test("a GitHub URL is added with a connected login unless the operator picks none", () => {
-  const logins = [
+  const logins: Pick<GithubLogin, "id" | "status">[] = [
     { id: "conn_old", status: "disconnected" },
     { id: "conn_org", status: "connected" },
     { id: "conn_guild", status: "connected" },

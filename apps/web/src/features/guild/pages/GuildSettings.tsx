@@ -55,7 +55,9 @@ function positiveInteger(text: string): boolean {
   return /^\d+$/.test(text.trim()) && Number(text) >= 1;
 }
 
-function Group({ title, children }: { title: string; children: ReactNode }) {
+type GroupProps = { title: string; children: ReactNode };
+
+function Group({ title, children }: GroupProps) {
   return (
     <section aria-label={title} className="flex flex-col gap-3">
       <h3 className="type-label text-muted">{title}</h3>
@@ -300,8 +302,10 @@ export function GuildSettings() {
   );
 }
 
+type OperatorsProps = { guild: Guild; admin: boolean };
+
 /** The people the guild works for: agents can tag them, and they get its issues and tags. */
-function Operators({ guild, admin }: { guild: Guild; admin: boolean }) {
+function Operators({ guild, admin }: OperatorsProps) {
   const { user, org } = useIdentity();
   const members = useOrgMembers(org.id);
   const setOperator = useSetOperator(guild.id);
@@ -434,8 +438,10 @@ function Operators({ guild, admin }: { guild: Guild; admin: boolean }) {
   );
 }
 
+type DangerZoneProps = { guild: Guild };
+
 /** Deleting the guild, with everything in it. */
-function DangerZone({ guild }: { guild: Guild }) {
+function DangerZone({ guild }: DangerZoneProps) {
   const navigate = useNavigate();
   const remove = useDeleteGuild();
   const [confirming, setConfirming] = useState(false);
