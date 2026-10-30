@@ -33,7 +33,8 @@ import {
   Tag,
 } from "@guildsrun/ui";
 import { ApplyMachinePicker } from "./ApplyMachinePicker";
-import { isRecipeApproved, planFromRecipe } from "./plan/planModel";
+import { isRecipeApproved } from "./plan/recipeDraft";
+import { planFromRecipe } from "./plan/planModel";
 import { PlanView } from "./plan/PlanView";
 
 const connectLater = "create";

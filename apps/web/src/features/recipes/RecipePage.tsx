@@ -14,15 +14,14 @@ import { useCapabilities } from "../../api/queries/builder";
 import type { RecipeRow } from "../../api/types/recipes";
 import { Button, PageError, SkeletonRows, toast, Icon, Tag } from "@guildsrun/ui";
 import { PendingAccessBar } from "./plan/PendingAccessBar";
+import { isRecipeApproved, recipeStatusLabel } from "./plan/recipeDraft";
+import { planFromRecipe } from "./plan/planModel";
 import {
   emptyPendingAccess,
-  isRecipeApproved,
   pendingAccessEdits,
-  planFromRecipe,
-  recipeStatusLabel,
   toolKey,
   type PendingAccess,
-} from "./plan/planModel";
+} from "./plan/pendingAccess";
 import { PlanView } from "./plan/PlanView";
 
 const sourceLabel: Record<RecipeRow["source_kind"], string> = {

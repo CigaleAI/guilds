@@ -1,7 +1,7 @@
 import type { ConnectorAuthField, McpServerAccess } from "../../api/types/access";
 import type { StudioMessage } from "../../api/types/studio";
 import type { AccessEdit } from "../../api/types/recipes";
-import { pendingDesignQuestions } from "../recipes/plan/planModel";
+import { pendingDesignQuestions } from "../recipes/plan/designSystems";
 
 /**
  * The Builder coach's requests to the operator, read from its tool results: a login to connect or

@@ -27,15 +27,14 @@ import {
 } from "@guildsrun/ui";
 import { Splitter, useSplitShare } from "../coach/Splitter";
 import { PendingAccessBar } from "../recipes/plan/PendingAccessBar";
+import { isRecipeApproved, recipeStatusLabel } from "../recipes/plan/recipeDraft";
+import { planFromRecipe } from "../recipes/plan/planModel";
 import {
   emptyPendingAccess,
-  isRecipeApproved,
   pendingAccessEdits,
-  planFromRecipe,
-  recipeStatusLabel,
   toolKey,
   type PendingAccess,
-} from "../recipes/plan/planModel";
+} from "../recipes/plan/pendingAccess";
 import { PlanView } from "../recipes/plan/PlanView";
 import { BuilderChat, openRequest } from "./BuilderChat";
 import { accessCutMessage } from "./widgets";

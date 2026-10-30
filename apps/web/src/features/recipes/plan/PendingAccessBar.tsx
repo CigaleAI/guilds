@@ -1,5 +1,5 @@
 import { Button } from "@guildsrun/ui";
-import { pendingAccessSummary, type PendingAccess } from "./planModel";
+import { pendingAccessSummary, type PendingAccess } from "./pendingAccess";
 
 type PendingAccessBarProps = {
   pending: PendingAccess;

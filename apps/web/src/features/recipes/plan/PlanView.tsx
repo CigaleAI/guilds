@@ -36,31 +36,24 @@ import {
 } from "@guildsrun/ui";
 import { connectorLogo } from "../../access/connectorLogo";
 import { sizingNote } from "../../machines/machines";
+import type { RecipePlan } from "./planModel";
+import { agentCard, type AgentCapability, type PlanAgent } from "./planAgents";
+import { routineView } from "./planRoutines";
+import { accessSection, connectionCard, secretCard, type CatalogEntry } from "./planConnectors";
+import type { PendingAccess } from "./pendingAccess";
+import { collectionView } from "./planCollections";
+import { noteCard } from "./planNotes";
+import { blockingSummary, planIssues, type PlanIssue } from "./planFindings";
+import { handoffChart } from "./planHandoffs";
+import { externalCard } from "./planActions";
 import {
-  accessSection,
-  agentCard,
-  type AgentCapability,
-  blockingSummary,
-  collectionView,
-  connectionCard,
-  externalCard,
   guildHero,
-  handoffChart,
-  noteCard,
-  planIssues,
   planMachineMinimum,
   planSections,
   planTally,
-  routineView,
-  secretCard,
-  type CatalogEntry,
-  type PendingAccess,
-  type PlanAgent,
-  type PlanIssue,
   type PlanSection,
   type PlanSectionId,
-  type RecipePlan,
-} from "./planModel";
+} from "./planSections";
 
 /** Tool switches and connector removals, when the viewer may change a recipe's access. */
 export type PlanAccessEditing = {
