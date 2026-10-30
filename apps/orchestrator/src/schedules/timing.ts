@@ -4,16 +4,17 @@ import { describeCron } from "./describe.js";
 import type { RoutineTimingInput } from "./input.js";
 import { describeWindow, planWindowAfterFire, planWindowWake, validateWindow } from "./window.js";
 
+/** The timing `input` names, validated; it names exactly one of a cron and a window. */
 export function validateTiming(input: RoutineTimingInput): ScheduleTiming {
-  const hasCron = input.cron !== undefined && input.cron !== null;
-  const hasWindow = input.window !== undefined && input.window !== null;
-  if (hasCron === hasWindow) {
-    throw new ScheduleError("set exactly one of cron or window");
+  const cron = input.cron ?? null;
+  const window = input.window ?? null;
+  if (cron !== null && window === null) {
+    return { cron: validateCron(cron), window: null };
   }
-  if (hasCron) {
-    return { cron: validateCron(input.cron), window: null };
+  if (window !== null && cron === null) {
+    return { cron: null, window: validateWindow(window) };
   }
-  return { cron: null, window: validateWindow(input.window) };
+  throw new ScheduleError("set exactly one of cron or window");
 }
 
 export function rowTiming(row: ScheduleTimingColumns): ScheduleTiming {

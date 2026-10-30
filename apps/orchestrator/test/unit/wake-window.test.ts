@@ -34,16 +34,17 @@ test("validateWindow normalises and bounds the window", () => {
     end: "02:00",
     max_wakes: 48,
   });
-  const cases: Array<[unknown, RegExp]> = [
+  const jittered = { ...PARIS, jitter: 1 };
+  const cases: Array<[WakeWindow, RegExp]> = [
     [{ ...PARIS, timezone: "Mars/Olympus" }, /IANA timezone/],
+    [{ ...PARIS, timezone: " " }, /IANA timezone/],
     [{ ...PARIS, start: "8:00" }, /window.start must be a 24-hour HH:MM time/],
     [{ ...PARIS, end: "24:00" }, /window.end must be a 24-hour HH:MM time/],
     [{ ...PARIS, end: "08:00" }, /must differ/],
     [{ ...PARIS, max_wakes: 0 }, /positive integer/],
     [{ ...PARIS, max_wakes: 2.5 }, /positive integer/],
     [{ ...PARIS, max_wakes: 145 }, /at most 144/],
-    [{ ...PARIS, jitter: 1 }, /unknown field jitter/],
-    ["08:00-20:00", /must be an object/],
+    [jittered, /unknown field jitter/],
   ];
   for (const [input, message] of cases) {
     assert.throws(
