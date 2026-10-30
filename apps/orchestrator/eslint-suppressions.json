@@ -1051,13 +1051,7 @@
   },
   "src/sandbox/sdk.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 16
-    },
-    "complexity": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 1
+      "count": 5
     }
   },
   "src/sandbox/sweep.ts": {

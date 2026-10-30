@@ -360,7 +360,6 @@ export class RunSandboxes {
     const directory = machineDirectory(this.workspaceRoot, machine.id);
     mkdirSync(directory, { recursive: true });
     const created = await sdk.Sandbox.create(this.image, {
-      timeout: null,
       timeoutSeconds: null,
       metadata: machineMetadata(machine, { hostId: this.hostId, image: this.image }),
       resource: machineResource(machine),
