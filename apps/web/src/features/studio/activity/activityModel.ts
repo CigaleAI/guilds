@@ -154,6 +154,9 @@ export type ChainStart =
   | { kind: "earlier"; message: ActivityMessage; at: number }
   | { kind: "unknown"; seq: number | null; at: number };
 
+/** The starts of the named kinds. */
+export type ChainStartOf<Kind extends ChainStart["kind"]> = Extract<ChainStart, { kind: Kind }>;
+
 /** A wake in a chain: the map node that woke it, the post that did, and the wakes its posts woke. */
 export type ChainStep = {
   wake: ActivityWake;

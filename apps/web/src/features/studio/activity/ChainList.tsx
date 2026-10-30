@@ -15,7 +15,10 @@ import {
   toMs,
   triggerReasonLabel,
   wakeBucket,
+  type ActivityIndex,
   type Chain,
+  type ChainStart,
+  type ChainStartOf,
   type ChainStep,
   type MapSelection,
 } from "./activityModel";
@@ -254,33 +257,59 @@ type TriggerChipProps = {
   onOpen: () => void;
 };
 
-function TriggerChip({ data, chain, selected, onOpen }: TriggerChipProps) {
-  const { start } = chain;
-  const { index } = data;
-  let label: string;
-  let hint: string;
-  let icon: LucideIcon = sourceIcon.message;
-  if (start.kind === "routine") {
+/** How a chain's start shows as a chip: its words, the hint under the pointer, and its icon. */
+type TriggerLook = { label: string; hint: string; icon: LucideIcon };
+
+/** How each kind of start shows as a chip. */
+const triggerLooks: {
+  [Kind in ChainStart["kind"]]: (
+    start: ChainStartOf<Kind>,
+    chain: Chain,
+    index: ActivityIndex,
+  ) => TriggerLook;
+} = {
+  routine: (start, _chain, index) => {
     const routine = start.scheduleId ? index.routines.get(start.scheduleId) : undefined;
-    label = routine?.description || "A routine no longer listed";
-    hint = routine ? `Routine · ${routine.label}` : "Routine";
-    icon = sourceIcon.routine;
-  } else if (start.kind === "operator") {
-    label = `You · #${start.message.seq}`;
-    hint = start.message.preview.slice(0, 160);
-    icon = sourceIcon.operator;
-  } else if (start.kind === "direct") {
-    label = "Direct chat";
-    hint = chain.steps[0]?.wake.opening?.slice(0, 160) ?? "A direct chat";
-    icon = sourceIcon.direct;
-  } else if (start.kind === "earlier") {
-    label = `${nodeName(index, start.message.author_agent_id ?? "")} · #${start.message.seq}`;
-    hint = `A post from before this window: ${start.message.preview.slice(0, 140)}`;
-    icon = MessageSquareText;
-  } else {
-    label = "Unknown message";
-    hint = "The message that started this chain isn't in the window";
-  }
+    return {
+      label: routine?.description || "A routine no longer listed",
+      hint: routine ? `Routine · ${routine.label}` : "Routine",
+      icon: sourceIcon.routine,
+    };
+  },
+  operator: (start) => ({
+    label: `You · #${start.message.seq}`,
+    hint: start.message.preview.slice(0, 160),
+    icon: sourceIcon.operator,
+  }),
+  direct: (_start, chain) => ({
+    label: "Direct chat",
+    hint: chain.steps[0]?.wake.opening?.slice(0, 160) ?? "A direct chat",
+    icon: sourceIcon.direct,
+  }),
+  earlier: (start, _chain, index) => ({
+    label: `${nodeName(index, start.message.author_agent_id ?? "")} · #${start.message.seq}`,
+    hint: `A post from before this window: ${start.message.preview.slice(0, 140)}`,
+    icon: MessageSquareText,
+  }),
+  unknown: () => ({
+    label: "Unknown message",
+    hint: "The message that started this chain isn't in the window",
+    icon: sourceIcon.message,
+  }),
+};
+
+/** How a chain's start of the kind named shows as a chip. */
+function triggerLook<Kind extends ChainStart["kind"]>(
+  kind: Kind,
+  start: ChainStartOf<Kind>,
+  chain: Chain,
+  index: ActivityIndex,
+): TriggerLook {
+  return triggerLooks[kind](start, chain, index);
+}
+
+function TriggerChip({ data, chain, selected, onOpen }: TriggerChipProps) {
+  const { label, hint, icon } = triggerLook(chain.start.kind, chain.start, chain, data.index);
   return (
     <Tooltip label={hint}>
       <button
