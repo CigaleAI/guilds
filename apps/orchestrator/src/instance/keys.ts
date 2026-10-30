@@ -8,7 +8,10 @@ import {
 } from "./integrations.js";
 import type { Queryable } from "../db/pg.js";
 
-/** A write the store refuses: an env-sourced integration, a missing required field, a field the integration lacks. */
+/**
+ * A key write the box refuses: an unknown or env-sourced integration, a missing required field, a
+ * field the integration lacks, a GitHub App name or owner GitHub would refuse.
+ */
 export class InstanceKeyError extends Error {
   status: number;
   /** What the refusal answers with, when it says more than its message. */

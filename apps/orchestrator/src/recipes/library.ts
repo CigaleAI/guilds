@@ -17,8 +17,8 @@ import {
 } from "../db/recipes.js";
 import type { RecipeFinding, RecipeDocument } from "../db/schema/index.js";
 import { newId } from "../lib/ids.js";
-import type { RegistryClient } from "../registry/client.js";
-import { pickEntry, RegistryError } from "../registry/index.js";
+import { onlineRegistry, type RegistryClient } from "../registry/client.js";
+import { latestEntries, pickEntry, RegistryError, type RegistryRecipeEntry } from "../registry/index.js";
 import type { Schedules } from "../schedules/service.js";
 import type { Scripts } from "../scripts/catalog.js";
 import { applyAccessEdits, operatorAccessCuts, type AccessCut, type AccessEdit } from "./access-edits.js";
@@ -163,16 +163,38 @@ export async function importRecipe(db: Queryable, document: unknown, owner: Reci
   );
 }
 
+/** What a registry offers to import: each recipe's newest entry with every version; empty while the box is offline. */
+export type RegistryRecipes = {
+  offline: boolean;
+  url: string | null;
+  recipes: Array<RegistryRecipeEntry & { versions: string[] }>;
+};
+
+/** The recipes the box's registry offers, by name; null is the box offline. */
+export async function registryRecipes(registry: RegistryClient | null): Promise<RegistryRecipes> {
+  if (registry === null) {
+    return { offline: true, url: null, recipes: [] };
+  }
+  const index = await registry.index();
+  return {
+    offline: false,
+    url: registry.baseUrl,
+    recipes: latestEntries(index.recipes, (entry) => entry.name),
+  };
+}
+
 /**
- * Imports the recipe `wanted` names from the registry as `importRecipe` imports a document. One
- * the index lacks is a 404; a file that is not a recipe is refused naming the registry's recipe.
+ * Imports the recipe `wanted` names from the registry as `importRecipe` imports a document. A null
+ * client is the box offline, a 409; a recipe the index lacks is a 404; a file that is not a recipe
+ * is refused naming the registry's recipe.
  */
 export async function importRegistryRecipe(
   db: Queryable,
-  registry: RegistryClient,
+  client: RegistryClient | null,
   wanted: RegistryRecipeRef,
   owner: RecipeOwner,
 ): Promise<RecipeRow> {
+  const registry = onlineRegistry(client);
   const entry = pickEntry(
     (await registry.index()).recipes.filter((item) => item.name === wanted.name),
     wanted.version,

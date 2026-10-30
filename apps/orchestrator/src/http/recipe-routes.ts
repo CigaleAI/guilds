@@ -11,6 +11,7 @@ import {
   orgRecipe,
   orgRecipes,
   publishRecipe,
+  registryRecipes,
   reviewRecipe,
   validateLibraryRecipe,
 } from "../recipes/library.js";
@@ -20,7 +21,7 @@ import { userActor } from "../lib/change-actor.js";
 import { parseReviewAction, ReviewSchema } from "../recipes/review.js";
 import { ApplyChoicesSchema } from "../recipes/apply.js";
 import type { AppDeps, RouteApp } from "./deps.js";
-import { latestEntries, registryOf } from "./admin-registry-routes.js";
+import { registryOf } from "./admin-registry-routes.js";
 import { HttpError } from "./errors.js";
 import { currentOrg, currentUser } from "./identity.js";
 import { GuildParams } from "./params.js";
@@ -121,12 +122,7 @@ export async function registerRecipeRoutes(app: RouteApp, deps: AppDeps): Promis
 
   app.get("/api/recipes/registry", async (request) => {
     await currentUser(db, request, deps);
-    const client = registryOf(deps);
-    if (client === null) {
-      return { offline: true, url: null, recipes: [] };
-    }
-    const index = await client.index();
-    return { offline: false, url: client.baseUrl, recipes: latestEntries(index.recipes, (entry) => entry.name) };
+    return registryRecipes(registryOf(deps));
   });
 
   app.post(
@@ -135,12 +131,9 @@ export async function registerRecipeRoutes(app: RouteApp, deps: AppDeps): Promis
     async (request, reply) => {
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
-      const client = registryOf(deps);
-      if (client === null) {
-        throw new HttpError(409, "the box is offline: REGISTRY_URL is set empty");
-      }
       const wanted = { name: request.body.name ?? "", version: request.body.version || undefined };
-      const row = await importRegistryRecipe(db, client, wanted, { orgId: org.id, userId: user.id });
+      const owner = { orgId: org.id, userId: user.id };
+      const row = await importRegistryRecipe(db, registryOf(deps), wanted, owner);
       reply.code(201);
       return row;
     },

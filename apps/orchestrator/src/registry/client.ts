@@ -146,6 +146,14 @@ export class RegistryClient {
   }
 }
 
+/** The registry a change reads from; refused with a 409 while the box is offline. */
+export function onlineRegistry(client: RegistryClient | null): RegistryClient {
+  if (client === null) {
+    throw new RegistryError("the box is offline: REGISTRY_URL is set empty", 409);
+  }
+  return client;
+}
+
 /** This box's registry client, verifying with `REGISTRY_PUBLIC_KEY` when set; null while offline. */
 export function registryClient(env: NodeJS.ProcessEnv = process.env, fetchFn?: FetchFn): RegistryClient | null {
   const url = registryUrl(env);

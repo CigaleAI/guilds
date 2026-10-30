@@ -232,8 +232,9 @@ does; an optional field tunes it and never switches it off.
 - A `store` integration's values are entered by a platform admin on
   Admin's Platform keys tab, through
   `PUT /api/admin/instance/keys/:integration`, and removed with
-  `DELETE` on the same path (`http/admin-instance-routes.ts`; anyone
-  but an instance admin gets 404). The store (`instance/keys.ts`)
+  `DELETE` on the same path (`http/admin-instance-routes.ts` over
+  `connectors/instance-keys.ts`; anyone but an instance admin gets
+  404). The store (`instance/keys.ts`)
   keeps one row per integration in `instance_keys`, encrypted with
   AES-GCM under `SECRETS_MASTER_KEY`, with who wrote it and when.
   It is decrypted into a process snapshot at boot and again after

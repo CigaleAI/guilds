@@ -4,7 +4,7 @@ import { GITHUB_API, GithubError } from "./index.js";
 /**
  * Registering the box's GitHub App from a manifest: the operator app posts the manifest to GitHub,
  * the admin confirms there, GitHub sends a one-use code back to the box, and the box trades it
- * for the App's credentials. Nothing here holds a credential; the route stores what comes back.
+ * for the App's credentials. Nothing here holds a credential; `GithubManifestFlows` stores what comes back.
  */
 const GITHUB_WEB = "https://github.com";
 const API_VERSION = "2022-11-28";

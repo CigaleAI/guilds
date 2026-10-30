@@ -94,6 +94,23 @@ export function pickEntry<E extends { version: string }>(entries: readonly E[], 
   return [...entries].sort((a, b) => compareVersions(b.version, a.version))[0] ?? null;
 }
 
+/** Each name's newest entry, with every version the index offers for it. */
+export function latestEntries<E extends { version: string }>(
+  entries: readonly E[],
+  nameOf: (entry: E) => string,
+): Array<E & { versions: string[] }> {
+  const byName = new Map<string, E[]>();
+  for (const entry of entries) {
+    byName.set(nameOf(entry), [...(byName.get(nameOf(entry)) ?? []), entry]);
+  }
+  return [...byName.values()]
+    .map((versions) => {
+      const sorted = [...versions].sort((a, b) => compareVersions(b.version, a.version));
+      return { ...sorted[0]!, versions: sorted.map((entry) => entry.version) };
+    })
+    .sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
+}
+
 /** JSON with every object's keys sorted and no whitespace: the bytes a signature covers. */
 export function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) {

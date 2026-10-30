@@ -1118,7 +1118,8 @@ names receives what the login sends (SEC-17).
 shipped.
 
 **Where:** `GET /api/admin/instance/keys/github-app/manifest/callback`
-(`src/http/admin-instance-routes.ts`, `src/github/manifest.ts`).
+(`src/http/admin-instance-routes.ts`, `src/mcp/github-app-manifest.ts`,
+`src/github/manifest.ts`).
 
 **Exposure:** after the admin confirms the App on GitHub, GitHub
 sends their browser back to the box with a `code`, and the box
@@ -1149,7 +1150,7 @@ is trusted to post the manifest it was given.
 moved from the environment into the store.
 
 **Where:** `PUT` and `DELETE /api/admin/instance/keys/:integration`
-(`src/http/admin-instance-routes.ts`), the store
+(`src/http/admin-instance-routes.ts`, `src/connectors/instance-keys.ts`), the store
 (`src/instance/keys.ts`), and the `instance_keys` table.
 
 **Exposure:** the box's own credentials (the GitHub App, the Google
