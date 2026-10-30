@@ -1,5 +1,10 @@
 import type { ToolKind, ToolLevel } from "@guildsrun/ui";
-import { parseToolArgs, type RunMessage, type ToolCallRequest } from "./toolFormat";
+import {
+  parseToolArgs,
+  type RunMessage,
+  type ToolArguments,
+  type ToolCallRequest,
+} from "./toolFormat";
 
 /** How a recorded tool call reads in the run view: its effect, the level it touched, and the connected server that served it. */
 export type ToolCallInfo = {
@@ -187,7 +192,7 @@ function firstLine(content: unknown): string {
 
 function derivedLevel(
   name: string,
-  args: Record<string, unknown>,
+  args: ToolArguments,
   resultMsg: RunMessage | null | undefined,
 ): ToolLevel | null {
   const explicit = lookup(LEVEL_BY_ARGUMENT, String(args.level || "").toLowerCase());
@@ -199,8 +204,29 @@ function derivedLevel(
   return name.includes("_find") ? "all" : null;
 }
 
-function touchesMemory(args: Record<string, unknown>): boolean {
+function touchesMemory(args: ToolArguments): boolean {
   return MEMORY_PATH_RE.test(String(args.path || ""));
+}
+
+/** How a call of a tool the app knows reads: its kind and level, a read of the agent's memory counting as memory. */
+function knownToolInfo(
+  name: string,
+  entry: ToolEntry,
+  args: ToolArguments,
+  resultMsg: RunMessage | null | undefined,
+): ToolCallInfo {
+  const memory = entry.kind === "read" && touchesMemory(args);
+  const kind = memory ? "memory" : entry.kind;
+  const level = memory ? "local" : (entry.level ?? derivedLevel(name, args, resultMsg));
+  return { name, kind, level, server: null };
+}
+
+/** The tool a recorded call names: its request's, else its result's; empty when neither names one. */
+function calledToolName(
+  call: ToolCallRequest | null | undefined,
+  resultMsg: RunMessage | null | undefined,
+): string {
+  return String(call?.function?.name || resultMsg?.metadata?.tool_name || "");
 }
 
 /** Classifies a recorded tool call by effect, level, and serving connected server, using its result and the run's snapshot. */
@@ -209,15 +235,9 @@ export function classifyToolCall(
   resultMsg?: RunMessage | null,
   run?: RunWithTools | null,
 ): ToolCallInfo {
-  const name = String(call?.function?.name || resultMsg?.metadata?.tool_name || "");
-  const args = parseToolArgs(call?.function?.arguments);
+  const name = calledToolName(call, resultMsg);
   const entry = lookup(TABLE, name);
-  if (entry) {
-    const memory = entry.kind === "read" && touchesMemory(args);
-    const kind = memory ? "memory" : entry.kind;
-    const level = memory ? "local" : (entry.level ?? derivedLevel(name, args, resultMsg));
-    return { name, kind, level, server: null };
-  }
+  if (entry) return knownToolInfo(name, entry, parseToolArgs(call?.function?.arguments), resultMsg);
   const servers = connectedToolServers(run);
   if (servers.has(name)) {
     return { name, kind: "connected", level: null, server: servers.get(name) || null };

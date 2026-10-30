@@ -30,6 +30,7 @@ import {
   flowStats,
   turnReasoning,
   turnText,
+  turnUsage,
   type FlowCall,
   type FlowSegment,
   type FlowStep,
@@ -41,7 +42,6 @@ import {
   formatDuration,
   formatTokens,
   friendlyToolCall,
-  isJsonObject,
   messageContentText,
   parseToolArgs,
   previewText,
@@ -159,7 +159,7 @@ function plainText(text: string): string {
 function stepCues(steps: readonly FlowStep[], generating: boolean): FlowStepCues {
   const calls = steps.flatMap((step) => step.calls);
   const metas = steps.map(turnMeta);
-  const usages = metas.map((meta) => (isJsonObject(meta.usage) ? meta.usage : {}));
+  const usages = steps.map((step) => turnUsage(step.turn));
   const sum = (values: unknown[]) =>
     values.reduce<number>((total, value) => total + numberOf(value), 0);
   const modelMs = sum(metas.map((meta) => meta.latency_ms));
