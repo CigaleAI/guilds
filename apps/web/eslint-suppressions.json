@@ -367,10 +367,5 @@
     "complexity": {
       "count": 1
     }
-  },
-  "src/features/tables/RecordsPanel.tsx": {
-    "complexity": {
-      "count": 1
-    }
   }
 }
