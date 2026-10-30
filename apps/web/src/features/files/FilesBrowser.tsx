@@ -1,6 +1,6 @@
 import { ArrowLeft, Download, FileUp, Paperclip, ShieldCheck, Trash2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { downloadFile, type FilesPrefix } from "../../api/files";
+import type { FilesPrefix } from "../../api/files";
 import { useDeleteFile, useFileList, useUploadFile } from "../../api/queries/files";
 import type { FileItem } from "../../api/types/files";
 import { formatSize, relativeTime } from "../../app/format";
@@ -28,6 +28,7 @@ import {
 import { AccessListPanel } from "../access/AccessListPanel";
 import { LatestChange, type OpenChangeStep } from "../notes/LatestChange";
 import { scopeOfDisplayPath } from "../../app/displayPath";
+import { attemptFileDownload } from "./download";
 import { fileMeta, filterFiles, uploadProblem } from "./fileList";
 
 export type FileScope = { id: "agent" | "guild" | "org"; title: string; prefix: FilesPrefix };
@@ -225,12 +226,10 @@ function FileView({ scope, item, guildId, onOpenStep, onBack, onDeleted }: FileV
 
   const download = async () => {
     setDownloading(true);
-    try {
-      await downloadFile(item.id, item.name);
-    } catch (error) {
-      toast({ kind: "error", title: "Couldn't download the file", description: (error as Error).message });
-    } finally {
-      setDownloading(false);
+    const outcome = await attemptFileDownload(item.id, item.name);
+    setDownloading(false);
+    if (outcome.kind === "failed") {
+      toast({ kind: "error", title: "Couldn't download the file", description: outcome.reason });
     }
   };
 
