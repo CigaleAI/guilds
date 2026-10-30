@@ -4,11 +4,6 @@
       "count": 2
     }
   },
-  "src/app/returnTrail.ts": {
-    "max-params": {
-      "count": 1
-    }
-  },
   "src/app/router.tsx": {
     "complexity": {
       "count": 1
