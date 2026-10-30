@@ -44,18 +44,6 @@ const ManifestCallbackQuery = Type.Object({
   state: Type.Optional(Type.String()),
 });
 
-/** A path on this app the callback may send the admin back to; never another origin. */
-export function sameOriginPath(value: unknown): string | null {
-  if (typeof value !== "string") {
-    return null;
-  }
-  const path = value.trim();
-  if (!path.startsWith("/") || path.startsWith("//") || path.includes("\\") || /[\r\n]/.test(path)) {
-    return null;
-  }
-  return path;
-}
-
 function appendSetCookie(reply: FastifyReply, value: string): void {
   const existing = reply.getHeader("set-cookie");
   if (!existing) {
