@@ -1,8 +1,8 @@
-import { CircleHelp, Clock, MessagesSquare, User, type LucideIcon } from "lucide-react";
-import { useCallback, useState } from "react";
+import { CircleHelp, Clock, MessagesSquare, User, X, type LucideIcon } from "lucide-react";
+import { useCallback, useState, type ReactNode } from "react";
 import type { ActivityAgent, ActivityView } from "../../../api/types/studio";
 import { agentLook } from "../../../app/agents";
-import { cn, identityFill, identityText, Icon } from "@guildsrun/ui";
+import { cn, identityFill, identityText, Icon, IconButton } from "@guildsrun/ui";
 import type { ActivityIndex, ActivityMap, Chain } from "./activityModel";
 import { DIRECT_NODE, MESSAGE_NODE, OPERATOR_NODE, type MapNodeKind } from "./activityModel";
 
@@ -99,4 +99,52 @@ export function useWidth() {
     return () => observer.disconnect();
   }, []);
   return [ref, width] as const;
+}
+
+type DetailHeadProps = { children: ReactNode; onClose: () => void };
+
+export function DetailHead({ children, onClose }: DetailHeadProps) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2">
+      {children}
+      <IconButton
+        icon={X}
+        label="Close"
+        variant="ghost"
+        size={28}
+        className="ml-auto"
+        onClick={onClose}
+      />
+    </div>
+  );
+}
+
+type SectionProps = {
+  title: string;
+  highlighted?: boolean;
+  children: ReactNode;
+};
+
+export function Section({ title, highlighted, children }: SectionProps) {
+  return (
+    <section
+      className={cn(
+        "flex min-w-0 flex-col gap-1.5 rounded-md",
+        highlighted && "-m-2 p-2 ring-2 ring-signal-t",
+      )}
+    >
+      <h4 className="type-label text-muted">{title}</h4>
+      {children}
+    </section>
+  );
+}
+
+type QuotedProps = { children: string };
+
+export function Quoted({ children }: QuotedProps) {
+  return (
+    <p className="max-h-56 overflow-y-auto rounded-md bg-surface px-3 py-2 font-mono text-xs whitespace-pre-wrap text-fg-2 [overflow-wrap:anywhere]">
+      {children}
+    </p>
+  );
 }

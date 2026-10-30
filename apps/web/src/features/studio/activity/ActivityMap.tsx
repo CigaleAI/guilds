@@ -3,13 +3,11 @@ import { cn, Icon, OutcomeStrip, wakeOutcomeLabel } from "@guildsrun/ui";
 import {
   WAKE_BUCKETS,
   formatUsd,
-  layoutActivityMap,
   plural,
   type MapSelection,
   type OutcomeCounts,
-  type PlacedMapLink,
-  type PlacedMapNode,
 } from "./activityModel";
+import { layoutActivityMap, type PlacedMapLink, type PlacedMapNode } from "./mapLayout";
 import { AgentMark, AgentName, nodeName, sourceIcon, useWidth, type ActivityData } from "./parts";
 
 const MIN_WIDTH = 560;

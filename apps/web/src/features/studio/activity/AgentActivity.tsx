@@ -21,8 +21,8 @@ import {
   plural,
   type AgentInput,
   type MapSelection,
-  type Tally,
 } from "./activityModel";
+import type { Tally } from "./wakeEffects";
 import { AgentMark, AgentName, NodeMark, nodeName, type ActivityData } from "./parts";
 
 type AgentActivityListProps = {
