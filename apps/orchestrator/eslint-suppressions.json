@@ -927,11 +927,6 @@
       "count": 1
     }
   },
-  "src/policy/index.ts": {
-    "max-params": {
-      "count": 2
-    }
-  },
   "src/prompts/index.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1

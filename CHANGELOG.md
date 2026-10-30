@@ -554,7 +554,10 @@ take the connection in place of the counts or claims, and bind them on
 it: `orgCounts`, `machineCounts` and `coachRunClaims` are not exported.
 Each has a `Through` beside it, `assertCanCreateAgentThrough` and the
 rest, that takes the `OrgCounts`, `MachineCounts` or `CoachRunClaims` a
-unit test fakes.
+unit test fakes. `assertCanPlaceAgents` and `assertCanPlaceAgentsThrough`
+take the machine and the number of agents placed on it as one
+`PlacedAgents`, `{ machineId, agents }`, after the organisation, in
+place of a machine id and a count.
 `prepareWorkspace` (`sandbox/index.js`) takes no options and makes no
 browser profile; `prepareBrowserWorkspace` makes the home of an agent
 with a browser, its profile included. A sandbox provider's

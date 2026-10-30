@@ -203,6 +203,9 @@ export async function machineCap(policy: OrgPolicy, orgId: string): Promise<Held
   return { max: limits.maxMachines, refuse: () => new LimitError(limits.source, "machines") };
 }
 
+/** The agents a placement puts on one machine. */
+export type PlacedAgents = { machineId: string; agents: number };
+
 /**
  * `maxAgentsPerMachine` caps the agents one machine takes. Returns the cap, which placement holds
  * to inside its transaction; null leaves core's ceiling alone.
@@ -211,10 +214,9 @@ export async function assertCanPlaceAgents(
   policy: OrgPolicy,
   db: Queryable,
   orgId: string,
-  machineId: string,
-  adding: number,
+  placed: PlacedAgents,
 ): Promise<number | null> {
-  return assertCanPlaceAgentsThrough(policy, machineCounts(db), orgId, machineId, adding);
+  return assertCanPlaceAgentsThrough(policy, machineCounts(db), orgId, placed);
 }
 
 /** `assertCanPlaceAgents` through `counts`, the dependencies object a unit test fakes. */
@@ -222,13 +224,12 @@ export async function assertCanPlaceAgentsThrough(
   policy: OrgPolicy,
   counts: MachineCounts,
   orgId: string,
-  machineId: string,
-  adding: number,
+  placed: PlacedAgents,
 ): Promise<number | null> {
   const { limits } = await policy.standing(orgId);
   if (
     limits.maxAgentsPerMachine !== null
-    && (await counts.countMachineAgents(machineId)) + adding > limits.maxAgentsPerMachine
+    && (await counts.countMachineAgents(placed.machineId)) + placed.agents > limits.maxAgentsPerMachine
   ) {
     throw new LimitError(limits.source, "agents per machine");
   }

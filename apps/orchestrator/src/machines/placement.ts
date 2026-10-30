@@ -146,12 +146,6 @@ export async function placeAgent(
     return { machine, maxAgentsPerMachine: null, moves: false };
   }
   await assertCanPlaceOn(db, orgId, machine.id, userId);
-  const maxAgentsPerMachine = await assertCanPlaceAgents(
-    policy,
-    db,
-    orgId,
-    machine.id,
-    1,
-  );
+  const maxAgentsPerMachine = await assertCanPlaceAgents(policy, db, orgId, { machineId: machine.id, agents: 1 });
   return { machine, maxAgentsPerMachine, moves: true };
 }

@@ -95,13 +95,10 @@ async function assertAllowed(
   target: { orgId: string; machineId: string; guildId: string | undefined },
   recipe: RecipeDocument,
 ): Promise<number | null> {
-  const maxAgentsPerMachine = await assertCanPlaceAgents(
-    apply.policy,
-    apply.db,
-    target.orgId,
-    target.machineId,
-    recipe.roles.length,
-  );
+  const maxAgentsPerMachine = await assertCanPlaceAgents(apply.policy, apply.db, target.orgId, {
+    machineId: target.machineId,
+    agents: recipe.roles.length,
+  });
   if (!target.guildId) {
     await assertCanCreateGuild(apply.policy, apply.db, target.orgId);
   }
