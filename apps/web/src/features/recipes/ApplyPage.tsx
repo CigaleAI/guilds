@@ -130,39 +130,14 @@ function Checklist({ apply }: ChecklistProps) {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-6 py-8 md:px-10">
       <div className="mx-auto flex max-w-200 flex-col gap-6">
-        <header className="flex flex-wrap items-end gap-3">
-          <div className="flex min-w-60 flex-1 flex-col gap-1">
-            <span className="type-label text-muted">Apply</span>
-            <h1 className="type-h1">{guildName}</h1>
-            <p className="text-sm text-fg-2">
-              {!open
-                ? apply.status === "ready"
-                  ? "Done: the guild is live and its routines run."
-                  : "Aborted: the guild this apply created was deleted."
-                : workOpen(apply.checklist)
-                  ? "Connect the remaining logins, then activate."
-                  : "Everything required is done. Activate to start the routines."}
-            </p>
-          </div>
-          {open ? (
-            <>
-              <Button variant="ghost" size="md" disabled={busy} onClick={() => setAborting(true)}>
-                <Icon icon={X} size={14} />
-                Abort
-              </Button>
-              <Button size="md" disabled={busy || workOpen(apply.checklist)} onClick={start}>
-                <Icon icon={Play} size={14} />
-                Activate
-              </Button>
-            </>
-          ) : apply.status === "ready" ? (
-            <Button asChild size="md">
-              <Link to="/guilds/$guildId" params={{ guildId: apply.guild_id }}>
-                Open the guild
-              </Link>
-            </Button>
-          ) : null}
-        </header>
+        <ChecklistHeader
+          apply={apply}
+          guildName={guildName}
+          open={open}
+          busy={busy}
+          onAbort={() => setAborting(true)}
+          onActivate={start}
+        />
 
         <section className="flex flex-col gap-2 rounded-xl bg-surface p-5">
           <div className="flex items-baseline gap-2">
@@ -278,6 +253,66 @@ function Checklist({ apply }: ChecklistProps) {
         }
       />
     </div>
+  );
+}
+
+type ChecklistHeaderProps = {
+  apply: ApplyRow;
+  guildName: string;
+  /** True while the apply is open: neither activated nor aborted. */
+  open: boolean;
+  busy: boolean;
+  onAbort: () => void;
+  onActivate: () => void;
+};
+
+/**
+ * The checklist's title and where the apply stands, with Abort and Activate while it is open and
+ * the way to the guild once it is live.
+ */
+function ChecklistHeader({
+  apply,
+  guildName,
+  open,
+  busy,
+  onAbort,
+  onActivate,
+}: ChecklistHeaderProps) {
+  const workLeft = workOpen(apply.checklist);
+  return (
+    <header className="flex flex-wrap items-end gap-3">
+      <div className="flex min-w-60 flex-1 flex-col gap-1">
+        <span className="type-label text-muted">Apply</span>
+        <h1 className="type-h1">{guildName}</h1>
+        <p className="text-sm text-fg-2">
+          {!open
+            ? apply.status === "ready"
+              ? "Done: the guild is live and its routines run."
+              : "Aborted: the guild this apply created was deleted."
+            : workLeft
+              ? "Connect the remaining logins, then activate."
+              : "Everything required is done. Activate to start the routines."}
+        </p>
+      </div>
+      {open ? (
+        <>
+          <Button variant="ghost" size="md" disabled={busy} onClick={onAbort}>
+            <Icon icon={X} size={14} />
+            Abort
+          </Button>
+          <Button size="md" disabled={busy || workLeft} onClick={onActivate}>
+            <Icon icon={Play} size={14} />
+            Activate
+          </Button>
+        </>
+      ) : apply.status === "ready" ? (
+        <Button asChild size="md">
+          <Link to="/guilds/$guildId" params={{ guildId: apply.guild_id }}>
+            Open the guild
+          </Link>
+        </Button>
+      ) : null}
+    </header>
   );
 }
 
