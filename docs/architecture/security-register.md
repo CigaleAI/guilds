@@ -632,7 +632,7 @@ for one guild its caller can see.
 **Found:** 2026-10-18, adding routine requests to Prompt Studio.
 
 **Where:** `studio_edit_routine` (actions `create` and `edit`) in
-`apps/orchestrator/src/studio/tools.ts` and
+`apps/orchestrator/src/studio/routine-tools.ts` and
 `apps/orchestrator/src/studio/routines.ts`.
 
 **Exposure:** the coach reads run transcripts, notes, Memory, group
@@ -671,7 +671,7 @@ leaving them to the Routine tab.
 
 **Found:** 2026-10-17, adding access requests to Prompt Studio.
 
-**Where:** `studio_edit_access` in `apps/orchestrator/src/studio/tools.ts`
+**Where:** `studio_edit_access` in `apps/orchestrator/src/studio/access-tools.ts`
 and `apps/orchestrator/src/studio/access.ts`.
 
 **Exposure:** the coach reads run transcripts, notes, Memory, group

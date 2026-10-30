@@ -19,37 +19,31 @@ import { agentSchedules } from "../../src/schedules/service.js";
 import { StudioService } from "../../src/studio/index.js";
 import type { StudioFocusRequest } from "../../src/studio/focus.js";
 import { generationLive } from "../../src/studio/runner.js";
+import { studioEditAccess, studioGetAgentAccess, studioGetScript } from "../../src/studio/access-tools.js";
+import { studioEditCollection, studioGetCollection, studioListCollections } from "../../src/studio/collection-tools.js";
+import { studioCallConnectionTool, studioRequestConnectionAccess } from "../../src/studio/connection-tools.js";
 import {
-  studioCallConnectionTool,
-  studioCreateTaskDraft,
-  studioEditAccess,
   studioEditNote,
-  studioEditCollection,
-  studioEditGuild,
-  studioEditMemory,
-  studioEditRoutine,
   studioFindArtifacts,
-  studioGetAgentAccess,
   studioGetArtifact,
-  studioGetCollection,
-  studioGetGuidelines,
-  studioGetGuild,
-  studioGetAgentContext,
-  studioGetMemoryVersion,
-  studioGetRun,
-  studioGetScript,
-  studioListCollections,
-  studioListGroupMessages,
-  studioListTaskRevisions,
   studioListFileChanges,
+} from "../../src/studio/file-tools.js";
+import {
+  studioEditGuild,
+  studioGetGuild,
+  studioListGroupMessages,
   studioListGuilds,
+} from "../../src/studio/guild-tools.js";
+import {
+  studioEditMemory,
+  studioGetMemoryVersion,
   studioListMemoryRevisions,
-  studioListRoutines,
-  studioListRuns,
-  studioRequestConnectionAccess,
-  type StudioToolCall,
-  type StudioToolDeps,
-} from "../../src/studio/tools.js";
+} from "../../src/studio/memory-tools.js";
+import { studioGetAgentContext, studioGetGuidelines } from "../../src/studio/prompt-tools.js";
+import { studioEditRoutine, studioListRoutines } from "../../src/studio/routine-tools.js";
+import { studioGetRun, studioListRuns } from "../../src/studio/run-tools.js";
+import { studioCreateTaskDraft, studioListTaskRevisions } from "../../src/studio/task-tools.js";
+import type { StudioToolCall, StudioToolDeps } from "../../src/studio/tools.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import { newId } from "../../src/lib/ids.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";

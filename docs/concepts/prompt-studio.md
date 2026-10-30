@@ -828,6 +828,9 @@ app also re-reads the session and its messages every 2.5 s
 | `apps/orchestrator/src/studio/system.md` | The coach's system message template |
 | `apps/orchestrator/src/conversation/` | The shared conversation runner, and the blocks shared with the Builder: prompt placement, content trust, writing, the Task shape, and what every agent already reads |
 | `apps/orchestrator/src/studio/constants.ts` | Core's run limits and caps |
+| `apps/orchestrator/src/studio/tools.ts` | The coach's tool list, and the call each tool runs for |
+| `apps/orchestrator/src/studio/*-tools.ts` | The coach's tools, one file per sub-domain: prompt, task, memory, run, routine, guild, file, collection, access, and connection |
+| `apps/orchestrator/src/studio/paging.ts`, `source-guild.ts` | What the tools share: paging and byte caps, and the source-guild agent a handle names |
 | `apps/orchestrator/src/studio/focus.ts` | Focus pin resolution |
 | `apps/orchestrator/src/studio/tool-usage.ts` | The Tools list and a tool's calls |
 | `apps/orchestrator/src/toolbox/offered.ts` | Which native tools a run offers under the agent's switches |

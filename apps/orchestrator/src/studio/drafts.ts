@@ -19,7 +19,7 @@ import { StudioConflictError, StudioError, StudioUnprocessableError } from "./er
 import { previewCurrentState, projectOfferedToolSchemas, type PreviewDeps } from "./preview.js";
 import { withLockedSession } from "./session-lock.js";
 import type { StudioToolCall } from "./tools.js";
-import { resolveSourceGuildAgent, sourceGuildAgents } from "./tools.js";
+import { resolveSourceGuildAgent, sourceGuildAgents } from "./source-guild.js";
 import { studioAgentHandleFromArgs } from "./arguments.js";
 import { argString } from "../toolbox/schema.js";
 import { excerptBytes } from "./system.js";
