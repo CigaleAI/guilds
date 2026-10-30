@@ -303,22 +303,31 @@ const guildSecretsRoute = createRoute({
   ),
 });
 
-/** The run the agent's chat shows, the step to open in it, and whether the session history drawer is open. */
-function parseAgentSearch(search: Record<string, unknown>): {
-  run?: string;
-  call?: string;
-  seq?: number;
-  history?: true;
-} {
-  const run = typeof search.run === "string" && search.run ? search.run : undefined;
-  const history =
-    search.history === true || search.history === "true" || search.history === 1 ? true : undefined;
+/** The step a run opens on: its tool call, or its place in the run's sequence. */
+type RunStepSearch = { call?: string; seq?: number };
+
+/** The step a search names in the run it opens. */
+function parseRunStepSearch(search: Record<string, unknown>): RunStepSearch {
   const seq = Number(search.seq);
   return {
-    ...(run ? { run } : {}),
-    ...(run && typeof search.call === "string" && search.call ? { call: search.call } : {}),
-    ...(run && search.seq !== undefined && Number.isInteger(seq) && seq >= 0 ? { seq } : {}),
-    ...(history ? { history: true as const } : {}),
+    ...(typeof search.call === "string" && search.call ? { call: search.call } : {}),
+    ...(search.seq !== undefined && Number.isInteger(seq) && seq >= 0 ? { seq } : {}),
+  };
+}
+
+/** Whether a search value opens the session history drawer: `true`, `"true"` or `1`. */
+function opensHistory(value: unknown): boolean {
+  return value === true || value === "true" || value === 1;
+}
+
+/** The run the agent's chat shows, the step to open in it, and whether the session history drawer is open. */
+function parseAgentSearch(
+  search: Record<string, unknown>,
+): RunStepSearch & { run?: string; history?: true } {
+  const run = typeof search.run === "string" && search.run ? search.run : undefined;
+  return {
+    ...(run ? { run, ...parseRunStepSearch(search) } : {}),
+    ...(opensHistory(search.history) ? { history: true as const } : {}),
   };
 }
 

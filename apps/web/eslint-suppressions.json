@@ -4,11 +4,6 @@
       "count": 2
     }
   },
-  "src/app/router.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/app/storage.ts": {
     "no-restricted-syntax": {
       "count": 1
