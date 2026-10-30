@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AppConfig } from "../../src/config/index.js";
 import { HttpError } from "../../src/http/errors.js";
-import { currentUser, type IdentityProvider } from "../../src/http/identity.js";
+import { currentUser, signedInUserOrNull, type IdentityProvider } from "../../src/http/identity.js";
 import { userRow } from "../helpers/users.js";
 
 const USERS = [{ id: "user_one", name: "one" }];
@@ -56,4 +56,27 @@ test("session mode without its provider signs no one in", async () => {
     (error: unknown) => error instanceof HttpError && error.status === 401,
   );
   assert.deepEqual(calls, [], "it never falls back to the unauthenticated lookup");
+});
+
+test("a signed-in request reads as its user", async () => {
+  const user = await signedInUserOrNull(dbOf([]), request);
+  assert.equal(user?.id, "user_one");
+});
+
+test("a request the identity refuses reads as nobody signed in", async () => {
+  const identity: IdentityProvider = {
+    currentUser: async () => {
+      throw new HttpError(401, "not signed in");
+    },
+  };
+  assert.equal(await signedInUserOrNull(dbOf([]), request, { identity }), null);
+});
+
+test("a failure that is not a refusal is thrown, not read as nobody signed in", async () => {
+  const identity: IdentityProvider = {
+    currentUser: async () => {
+      throw new Error("database unreachable");
+    },
+  };
+  await assert.rejects(() => signedInUserOrNull(dbOf([]), request, { identity }), /database unreachable/);
 });

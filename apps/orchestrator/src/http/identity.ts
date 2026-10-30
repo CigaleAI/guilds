@@ -57,6 +57,31 @@ export async function currentUser(
   }
 }
 
+/**
+ * The request's user, or null when nobody is signed in: a request `currentUser` refuses with a
+ * 4xx identifies nobody. Any other failure is thrown.
+ */
+export async function signedInUserOrNull(
+  db: Queryable,
+  request: IdentityRequest,
+  deps: Pick<AppDeps, "config" | "identity"> = {},
+): Promise<UserRow | null> {
+  try {
+    return await currentUser(db, request, deps);
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "statusCode" in error &&
+      typeof error.statusCode === "number" &&
+      error.statusCode < 500
+    ) {
+      return null;
+    }
+    throw error;
+  }
+}
+
 export async function currentOrg(
   db: Queryable,
   request: IdentityRequest,

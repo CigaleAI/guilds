@@ -53,7 +53,7 @@ export type CallbackOutcome =
   | { redirect: string; clearsGithubCookie: boolean };
 
 /** What the browser coming back is known by: the URL the provider returns to, and its signed-in user when it has one. */
-export type CallbackRequest = { redirectUri: string; signedInUserId: () => Promise<string | null> };
+export type CallbackRequest = { redirectUri: string; signedInUserId: string | null };
 
 const EXPIRED: CallbackPage = {
   status: 404,
@@ -155,10 +155,9 @@ async function pendingRow(
   if (row !== null || !isGithubCallback(callback)) {
     return row;
   }
-  const userId = await request.signedInUserId();
-  return userId === null
+  return request.signedInUserId === null
     ? null
-    : getPendingGithubConnectionForUser(services.db, userId, GITHUB_SERVER_ID);
+    : getPendingGithubConnectionForUser(services.db, request.signedInUserId, GITHUB_SERVER_ID);
 }
 
 /** The page for a callback whose pending login is gone: expired, or a sign-in left before it finished. */

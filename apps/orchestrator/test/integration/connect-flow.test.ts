@@ -38,7 +38,7 @@ const NO_CALLBACK: OAuthCallback = {
 };
 const REQUEST = {
   redirectUri: "http://127.0.0.1:8080/api/mcp/oauth/callback",
-  signedInUserId: async () => null,
+  signedInUserId: null,
 };
 
 after(async () => {

@@ -17,7 +17,7 @@ import {
 } from "../github/index.js";
 import { cookieSecure, requestCookies } from "./cookies.js";
 import type { AppDeps, RouteApp } from "./deps.js";
-import { currentUser } from "./identity.js";
+import { currentUser, signedInUserOrNull } from "./identity.js";
 
 /**
  * A Connect: the connector, the owner, and the form's other fields (a token login's credentials
@@ -104,16 +104,10 @@ export async function registerOAuthRoutes(app: RouteApp, deps: AppDeps): Promise
         installationId: query.installation_id || undefined,
         setupAction: query.setup_action || undefined,
       };
-      const signedInUserId = async () => {
-        try {
-          return String((await currentUser(db, request, deps)).id);
-        } catch {
-          return null;
-        }
-      };
+      const user = await signedInUserOrNull(db, request, deps);
       const outcome = await completeOAuthCallback(services, callback, {
         redirectUri: redirectUriOf(request),
-        signedInUserId,
+        signedInUserId: user === null ? null : user.id,
       });
       if (outcome.clearsGithubCookie) {
         appendSetCookie(reply, clearGithubOauthStateCookie(secureCookie()));

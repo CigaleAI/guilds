@@ -370,6 +370,28 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
       204,
     );
 
+    // A GitHub callback that lost both its state and its cookie completes the signed-in user's
+    // pending login; a request that signs in nobody, here a user the box does not know, matches none.
+    const lost = await app.inject({
+      method: "POST",
+      url: "/api/mcp/connections",
+      headers: JSON_HEADERS,
+      payload: { mcp_server_id: "mcp_github", owner_scope: "org", owner_id: "org_home" },
+    });
+    assert.equal(lost.statusCode, 201, lost.body);
+    const stateless = "/api/mcp/oauth/callback?code=good-code&setup_action=install";
+    const unsigned = await app.inject({ method: "GET", url: stateless, headers: { "X-Guilds-User": "user_unknown" } });
+    assert.equal(unsigned.statusCode, 404, unsigned.body);
+    assert.match(unsigned.body, /could not be matched to a pending connection/);
+    assert.equal((await getMcpConnection(db, String(lost.json().id)))?.status, "pending");
+    const signedIn = await app.inject({ method: "GET", url: stateless, headers: OWNER });
+    assert.equal(signedIn.statusCode, 200, signedIn.body);
+    assert.equal((await getMcpConnection(db, String(lost.json().id)))?.status, "connected");
+    assert.equal(
+      (await app.inject({ method: "DELETE", url: `/api/mcp/connections/${String(lost.json().id)}`, headers: OWNER })).statusCode,
+      204,
+    );
+
     // A user who has not installed the App is sent on to install it. GitHub's own authorization
     // hop then returns a code issued without `redirect_uri`, which is traded without one.
     const fresh = await app.inject({
