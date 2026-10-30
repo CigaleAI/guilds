@@ -161,25 +161,25 @@ export class StudioService {
     const guild = await getGuild(this.deps.db, args.sourceGuildId);
     if (
       !guild ||
-      String(guild.org_id) !== String(args.org.id) ||
-      !canSeeGuild(guild, String(args.user.id))
+      guild.org_id !== args.org.id ||
+      !canSeeGuild(guild, args.user.id)
     ) {
       throw new StudioNotFoundError("guild not found");
     }
-    const model = await this.validateModel(String(args.org.id), args.model);
+    const model = await this.validateModel(args.org.id, args.model);
     const temperature = this.validateTemperature(args.temperature);
     if (args.parentSessionId) {
       const parent = await getStudioSession(this.deps.db, args.parentSessionId);
       if (
         !parent ||
-        String(parent.org_id) !== String(args.org.id) ||
-        String(parent.created_by_user_id ?? "") !== String(args.user.id)
+        parent.org_id !== args.org.id ||
+        parent.created_by_user_id !== args.user.id
       ) {
         throw new StudioNotFoundError("parent studio session not found");
       }
     }
     const template = readStudioSystemTemplate({ guidelinesPath: this.deps.notesSystemPath });
-    const limits = (await this.policy.standing(String(args.org.id))).limits.coach.studio;
+    const limits = (await this.policy.standing(args.org.id)).limits.coach.studio;
     const coachConfig = {
       model,
       temperature,
@@ -200,8 +200,8 @@ export class StudioService {
       this.deps.db,
       {
         id: newId("stu"),
-        org_id: String(args.org.id),
-        created_by_user_id: String(args.user.id),
+        org_id: args.org.id,
+        created_by_user_id: args.user.id,
         created_by_name: typeof args.user.name === "string" ? args.user.name : "operator",
         mode: "optimize",
         source_guild_id: guild.id,
@@ -270,12 +270,12 @@ export class StudioService {
   async listSessions(orgId: string, userId: string): Promise<Array<Record<string, unknown>>> {
     const rows = await listStudioSessions(this.deps.db, orgId, userId);
     const hidden = new Set<string>();
-    for (const guildId of new Set(rows.map((row) => String(row.source_guild_id ?? "")).filter(Boolean))) {
+    for (const guildId of new Set(rows.flatMap((row) => (row.source_guild_id ? [row.source_guild_id] : [])))) {
       const guild = await getGuild(this.deps.db, guildId);
       if (guild && !canSeeGuild(guild, userId)) hidden.add(guildId);
     }
     return rows
-      .filter((row) => !hidden.has(String(row.source_guild_id ?? "")))
+      .filter((row) => !hidden.has(row.source_guild_id ?? ""))
       .map((row) => this.viewSession(row));
   }
 
@@ -481,7 +481,7 @@ export class StudioService {
       await claimCoachRun(this.policy, client, locked.org_id, now);
       const rows = await studioInventory(this.deps.db, session.source_guild_id, locked.id);
       const systemContent = await refreshSystemMessage(this.deps, locked, rows, client);
-      const generation = Number(locked.generation_number) + 1;
+      const generation = locked.generation_number + 1;
       let seq = await nextConversationSeq(client, "studio", locked.id);
       if (focus) {
         // A stored user row, so the pin stays in the projected history of
@@ -627,7 +627,7 @@ export class StudioService {
       temperature: config.temperature,
       parentSessionId: session.id,
       summary,
-      selectedTargetAgentId: session.selected_target_agent_id ? String(session.selected_target_agent_id) : null,
+      selectedTargetAgentId: session.selected_target_agent_id,
     });
   }
 

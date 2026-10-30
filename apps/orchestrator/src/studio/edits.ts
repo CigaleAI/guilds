@@ -114,14 +114,14 @@ export async function loadMemoryBase(
 
 export async function loadGuildBase(deps: EditDeps, scope: EditScope): Promise<EditBase> {
   const guild = await getGuild(deps.db, scope.sourceGuildId);
-  if (!guild || String(guild.org_id) !== scope.orgId) {
+  if (!guild || guild.org_id !== scope.orgId) {
     throw new StudioUnprocessableError("source guild not found");
   }
   return {
     kind: "guild",
-    guildId: String(guild.id),
-    guildName: String(guild.name),
-    text: { about: String(guild.about ?? ""), description: String(guild.description ?? "") },
+    guildId: guild.id,
+    guildName: guild.name,
+    text: { about: guild.about, description: guild.description },
   };
 }
 

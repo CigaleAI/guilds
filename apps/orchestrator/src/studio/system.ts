@@ -19,6 +19,7 @@ import {
   wrapEvidence,
   wrapUntrustedText,
 } from "../conversation/trust.js";
+import type { StudioInventoryRow } from "../db/studio.js";
 import { STUDIO_OBJECTIVE_EXCERPT_BYTES, STUDIO_TASK_EXCERPT_WORDS } from "./constants.js";
 import { StudioUnprocessableError } from "./errors.js";
 
@@ -54,21 +55,20 @@ export type StudioMemberHydration = {
   focus?: string;
   task_excerpt?: string;
   task_excerpt_truncated?: boolean;
-  task_version?: unknown;
-  task_hash?: unknown;
+  task_version?: StudioInventoryRow["task_version"] | null;
+  task_hash?: StudioInventoryRow["task_hash"] | null;
 };
 
-export function hydrateStudioMember(row: Record<string, unknown>): StudioMemberHydration {
-  const content = String(row.task_content ?? row.task_excerpt ?? "");
-  const excerpt = excerptWords(content, STUDIO_TASK_EXCERPT_WORDS);
+export function hydrateStudioMember(row: StudioInventoryRow): StudioMemberHydration {
+  const excerpt = excerptWords(row.task_content, STUDIO_TASK_EXCERPT_WORDS);
   return {
-    id: String(row.id ?? ""),
-    name: String(row.name ?? ""),
-    focus: String(row.focus ?? ""),
+    id: row.id,
+    name: row.name,
+    focus: row.focus,
     task_excerpt: excerpt.text,
-    task_excerpt_truncated: Boolean(row.task_excerpt_truncated) || excerpt.truncated,
-    task_version: row.task_version ?? null,
-    task_hash: row.task_hash ?? null,
+    task_excerpt_truncated: excerpt.truncated,
+    task_version: row.task_version,
+    task_hash: row.task_hash,
   };
 }
 

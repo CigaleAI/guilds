@@ -75,10 +75,10 @@ export class StudioDrafts implements StudioDraftService {
     if (!task) {
       throw new StudioUnprocessableError("task.md not found");
     }
-    const messages = await listConversationMessages(db, "studio", String(call.session.id));
+    const messages = await listConversationMessages(db, "studio", call.session.id);
     const { refs, warnings } = resolveEvidenceRefs(args.evidence_refs, messages);
     const now = new Date();
-    return withLockedSession(this.db, String(call.session.id), async (client, session) => {
+    return withLockedSession(this.db, call.session.id, async (client, session) => {
       if (session.generation_state !== "generating" && session.generation_state !== "idle") {
         throw new StudioConflictError("session cannot accept a draft");
       }
@@ -87,7 +87,7 @@ export class StudioDrafts implements StudioDraftService {
       );
       const previous = heads[0] ?? null;
       if (previous) {
-        await updateStudioDraft(client, String(previous.id), { status: "superseded", resolved_at: now });
+        await updateStudioDraft(client, previous.id, { status: "superseded", resolved_at: now });
       }
       const seq = await nextConversationSeq(client, "studio", session.id);
       const draft = await insertStudioDraft(
@@ -153,10 +153,10 @@ export class StudioDrafts implements StudioDraftService {
       if (current.status !== "draft" && current.status !== "conflicted") {
         throw new StudioConflictError("draft is not editable");
       }
-      if (String(current.id) !== expectedHeadId) {
+      if (current.id !== expectedHeadId) {
         throw new StudioConflictError("stale draft head");
       }
-      await updateStudioDraft(client, String(current.id), { status: "superseded", resolved_at: now });
+      await updateStudioDraft(client, current.id, { status: "superseded", resolved_at: now });
       const next = await insertStudioDraft(
         client,
         {
@@ -164,7 +164,7 @@ export class StudioDrafts implements StudioDraftService {
           id: newId("std"),
           proposed_content: proposed,
           status: "draft",
-          draft_number: Number(current.draft_number) + 1,
+          draft_number: current.draft_number + 1,
           supersedes_draft_id: current.id,
           created_generation: current.created_generation,
           created_message_seq: current.created_message_seq,
@@ -191,7 +191,7 @@ export class StudioDrafts implements StudioDraftService {
       }
       const updated = await updateStudioDraft(
         client,
-        String(current.id),
+        current.id,
         { status: "discarded", resolved_at: now, discarded_by_user_id: userIdOf(user) },
       );
       return viewDraft(updated ?? current);
@@ -225,37 +225,37 @@ export class StudioDrafts implements StudioDraftService {
       if (!draft.target_agent_id || !draft.source_guild_id) {
         throw new StudioUnprocessableError("draft target is no longer live");
       }
-      const agent = await getAgent(args.db, String(draft.target_agent_id));
+      const agent = await getAgent(args.db, draft.target_agent_id);
       if (!agent) {
         throw new StudioUnprocessableError("target is not a publishable agent");
       }
       const currentHash = JSON.stringify(agent.config);
       if (currentHash !== preflight.config_hash) {
-        const again = await this.runPreflight(agent, String(draft.proposed_content), args);
+        const again = await this.runPreflight(agent, draft.proposed_content, args);
         Object.assign(preflight, again);
       }
       const actor = operatorActor({
         orgId: session.org_id,
         actorId: String(user.id ?? "orphan"),
         actorName: user.name,
-        guildId: String(draft.source_guild_id),
-        agentId: String(draft.target_agent_id),
+        guildId: draft.source_guild_id,
+        agentId: draft.target_agent_id,
       });
-      const result = await publishAgentTask(client, actor, String(draft.target_agent_id), {
-        content: String(draft.proposed_content),
-        baseVersion: Number(draft.base_version),
+      const result = await publishAgentTask(client, actor, draft.target_agent_id, {
+        content: draft.proposed_content,
+        baseVersion: draft.base_version,
       });
       if (result.outcome === "missing") {
         throw new StudioUnprocessableError("task.md not found");
       }
       if (result.outcome === "conflict") {
-        await updateStudioDraft(client, String(draft.id), { status: "conflicted", resolved_at: now });
+        await updateStudioDraft(client, draft.id, { status: "conflicted", resolved_at: now });
         throw new StudioConflictError("task version conflict");
       }
       if (result.outcome === "unchanged") {
         const unchanged = await updateStudioDraft(
           client,
-          String(draft.id),
+          draft.id,
           { status: "unchanged", resolved_at: now, published_at: now, published_by_user_id: userIdOf(user) },
         );
         return { outcome: "unchanged", draft: viewDraft(unchanged ?? draft), preflight };
@@ -263,7 +263,7 @@ export class StudioDrafts implements StudioDraftService {
       const written = result.task;
       const published = await updateStudioDraft(
         client,
-        String(draft.id),
+        draft.id,
         {
           status: "published",
           resolved_at: now,
@@ -294,11 +294,11 @@ export class StudioDrafts implements StudioDraftService {
     if (!draft || !draft.target_agent_id) {
       throw new StudioNotFoundError("draft not found");
     }
-    const agent = await getAgent(args.db, String(draft.target_agent_id));
+    const agent = await getAgent(args.db, draft.target_agent_id);
     if (!agent) {
       throw new StudioUnprocessableError("target agent not found");
     }
-    return this.runPreflight(agent, String(draft.proposed_content), args);
+    return this.runPreflight(agent, draft.proposed_content, args);
   }
 
   private async runPreflight(
@@ -446,9 +446,9 @@ async function missingDraftAgentMessage(
   handle: string | null | undefined,
 ): Promise<string> {
   const members = await listAgents(db, call.sourceGuildId);
-  const live = members.filter((row) => String(row.guild_id) === String(call.sourceGuildId));
+  const live = members.filter((row) => row.guild_id === call.sourceGuildId);
   const known = live.length ? ` Known agents: ${live.map((row) => `${row.name} (${row.id})`).join(", ")}.` : "";
-  const needle = String(handle ?? "").trim();
+  const needle = (handle ?? "").trim();
   if (needle) {
     return `studio_create_task_draft agent ${needle} is not a source-guild member.${known}`;
   }

@@ -5,7 +5,7 @@ import { StudioUnprocessableError } from "./errors.js";
 import { projectAgentAccess, type PreviewDeps } from "./preview.js";
 import type { ActivityWindow } from "./activity.js";
 import { listAgents, type AgentRow } from "../db/agents.js";
-import { listGuildToolCallStats, listGuildToolCalls } from "../db/activity.js";
+import { listGuildToolCallStats, listGuildToolCalls, type GuildToolCallRow } from "../db/activity.js";
 import type { Queryable } from "../db/pg.js";
 
 // The guild's tools as Studio's Tools section lists them: what each agent is
@@ -206,20 +206,32 @@ export function parseToolCursor(cursor: string | null): { at: Date; id: number }
   return { at: date, id: Number(id) };
 }
 
-function argumentsPreview(raw: unknown): string {
-  const text = typeof raw === "string" ? raw : "";
+function argumentsPreview(raw: GuildToolCallRow["arguments"]): string {
+  const text = raw ?? "";
   return text.length > TOOL_ARGUMENT_CHARS ? `${text.slice(0, TOOL_ARGUMENT_CHARS).trimEnd()}…` : text;
 }
 
 /** One stored call as the call list shows it. */
-export function viewToolCall(row: Record<string, unknown>): Record<string, unknown> {
-  const error = typeof row.error === "string" && row.error ? row.error : null;
+export type ToolCallView = {
+  at: string;
+  agent_id: GuildToolCallRow["agent_id"];
+  run_id: GuildToolCallRow["run_id"];
+  call_id: GuildToolCallRow["call_id"];
+  seq: GuildToolCallRow["seq"];
+  arguments: string;
+  status: "error" | "ok";
+  error: string | null;
+  duration_ms: number | null;
+};
+
+export function viewToolCall(row: GuildToolCallRow): ToolCallView {
+  const error = row.error || null;
   return {
     at: iso(row.created_at),
-    agent_id: String(row.agent_id),
-    run_id: String(row.run_id),
-    call_id: row.call_id ?? null,
-    seq: num(row.seq),
+    agent_id: row.agent_id,
+    run_id: row.run_id,
+    call_id: row.call_id,
+    seq: row.seq,
     arguments: argumentsPreview(row.arguments),
     status: error ? "error" : "ok",
     error,
@@ -232,7 +244,7 @@ export async function loadToolCalls(
   db: Queryable,
   guildId: string,
   request: { tool: string; window: ActivityWindow; query: ToolCallsQuery },
-): Promise<{ calls: Array<Record<string, unknown>>; next_cursor: string | null }> {
+): Promise<{ calls: ToolCallView[]; next_cursor: string | null }> {
   const rows = await listGuildToolCalls(db, guildId, request.tool, {
     ...request.window,
     errorsOnly: request.query.errorsOnly,
@@ -243,6 +255,6 @@ export async function loadToolCalls(
   const last = page.at(-1);
   return {
     calls: page.map(viewToolCall),
-    next_cursor: rows.length > TOOL_CALLS_PAGE && last ? `${iso(last.created_at)}~${String(last.id)}` : null,
+    next_cursor: rows.length > TOOL_CALLS_PAGE && last ? `${iso(last.created_at)}~${last.id}` : null,
   };
 }

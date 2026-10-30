@@ -49,7 +49,7 @@ export const studioListRoutines: StudioTool = studioTool({
         instruction: wrapEvidence({
           source: "routine",
           coordinates: { schedule_id: row.id },
-          body: String(row.instruction ?? ""),
+          body: row.instruction,
         }),
       });
     }

@@ -13,8 +13,8 @@ export function editActor(
 ): ArtifactActor {
   const actor = operatorActor({
     orgId: scope.orgId,
-    actorId: String(scope.user.id),
-    actorName: String(scope.user.name ?? "operator"),
+    actorId: scope.user.id,
+    actorName: scope.user.name ?? "operator",
     guildId: extra.guildId ?? scope.sourceGuildId,
     agentId: extra.agentId ?? null,
   });

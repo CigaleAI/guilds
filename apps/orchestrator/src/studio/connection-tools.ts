@@ -19,7 +19,7 @@ export async function liveGrantedConnectionIds(
   deps: StudioToolDeps,
   call: StudioToolCall,
 ): Promise<Set<string>> {
-  const live = await getStudioSession(deps.db, String(call.session.id));
+  const live = await getStudioSession(deps.db, call.session.id);
   return new Set(grantedConnectionIds(live ?? call.session));
 }
 

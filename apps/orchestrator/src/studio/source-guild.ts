@@ -37,31 +37,31 @@ export async function resolveSourceGuildAgent(
   call: Pick<StudioToolCall, "sourceGuildId" | "orgId">,
   handle: string | null | undefined,
 ): Promise<AgentRow | null> {
-  const needle = String(handle ?? "").trim();
+  const needle = (handle ?? "").trim();
   if (!needle) {
     return null;
   }
   const byId = await agents.getAgent(needle);
-  if (byId && String(byId.guild_id) === String(call.sourceGuildId) && (!call.orgId || String(byId.org_id) === call.orgId)) {
+  if (byId && byId.guild_id === call.sourceGuildId && (!call.orgId || byId.org_id === call.orgId)) {
     return byId;
   }
   const members = await agents.listAgents(call.sourceGuildId);
   const lower = needle.toLowerCase();
   const normalized = normalizeAgentHandle(needle);
-  const live = members.filter((row) => String(row.guild_id) === String(call.sourceGuildId));
+  const live = members.filter((row) => row.guild_id === call.sourceGuildId);
   const match =
-    live.find((row) => row.id === needle || String(row.name).toLowerCase() === lower) ??
-    live.find((row) => normalizeAgentHandle(String(row.name)) === normalized) ??
+    live.find((row) => row.id === needle || row.name.toLowerCase() === lower) ??
+    live.find((row) => normalizeAgentHandle(row.name) === normalized) ??
     null;
   // The roster query omits org and guild columns; projections need the full row.
-  return match ? agents.getAgent(String(match.id)) : null;
+  return match ? agents.getAgent(match.id) : null;
 }
 
 export function editScope(call: StudioToolCall): EditScope {
   return {
     orgId: call.orgId,
     sourceGuildId: call.sourceGuildId,
-    sessionId: String(call.session.id),
+    sessionId: call.session.id,
     user: call.user,
   };
 }
