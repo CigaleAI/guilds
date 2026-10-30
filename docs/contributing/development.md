@@ -306,7 +306,7 @@ drizzle-kit reads.
 Every package also runs the limits of the
 [code guidelines](code-guidelines.md#functions) on its source,
 tests and stories excepted (`eslint.limits.js`): `complexity`,
-`max-depth`, a warning at five parameters and an error at six, a
+`max-depth`, an error at five parameters, a
 warning past 800 lines and an error past 1,000, and a refusal of
 every type assertion except `as const`. The orchestrator also requires explicit
 parameter and return types on what a module exports

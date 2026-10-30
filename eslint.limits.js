@@ -42,8 +42,7 @@ export function limits({ files }) {
     rules: {
       complexity: ["error", 11],
       "max-depth": ["error", 3],
-      "max-params": ["warn", 4],
-      "@typescript-eslint/max-params": ["error", { max: 5 }],
+      "max-params": ["error", 4],
       "max-lines": ["warn", { max: 800, skipBlankLines: false, skipComments: false }],
       "limits/file-lines": ["error", { max: 1000 }],
       "@typescript-eslint/consistent-type-assertions": ["error", { assertionStyle: "never" }],

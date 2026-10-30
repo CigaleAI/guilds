@@ -19,8 +19,7 @@ everything it does. Nothing happens inside that the name does not
 promise, including side effects. If the name needs an "and", it is
 two functions.
 
-- A function has at most **4 parameters**. ESLint warns at 5 and
-  fails at 6.
+- A function has at most **4 parameters**. ESLint fails at 5.
 - An object parameter is one of two kinds, and its type is always
   a named type:
   - A **record** names a thing that exists in the application

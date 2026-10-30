@@ -116,6 +116,11 @@
       "count": 2
     }
   },
+  "src/artifacts/task.ts": {
+    "max-params": {
+      "count": 2
+    }
+  },
   "src/artifacts/types.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 5
@@ -315,6 +320,9 @@
     }
   },
   "src/connectors/instance.ts": {
+    "max-params": {
+      "count": 1
+    },
     "no-restricted-syntax": {
       "count": 1
     }
@@ -472,6 +480,9 @@
     }
   },
   "src/directories/index.ts": {
+    "max-params": {
+      "count": 1
+    },
     "no-restricted-syntax": {
       "count": 1
     }
@@ -601,6 +612,9 @@
     "limits/file-lines": {
       "count": 1
     },
+    "max-params": {
+      "count": 1
+    },
     "no-restricted-syntax": {
       "count": 9
     }
@@ -647,8 +661,8 @@
     "@typescript-eslint/consistent-type-assertions": {
       "count": 6
     },
-    "@typescript-eslint/max-params": {
-      "count": 1
+    "max-params": {
+      "count": 3
     },
     "no-restricted-syntax": {
       "count": 7
@@ -807,6 +821,9 @@
     "complexity": {
       "count": 2
     },
+    "max-params": {
+      "count": 1
+    },
     "no-restricted-syntax": {
       "count": 1
     }
@@ -826,6 +843,9 @@
       "count": 1
     },
     "complexity": {
+      "count": 1
+    },
+    "max-params": {
       "count": 1
     },
     "no-restricted-syntax": {
@@ -856,11 +876,11 @@
     "@typescript-eslint/consistent-type-assertions": {
       "count": 2
     },
-    "@typescript-eslint/max-params": {
-      "count": 1
-    },
     "complexity": {
       "count": 1
+    },
+    "max-params": {
+      "count": 3
     },
     "no-restricted-syntax": {
       "count": 2
@@ -884,7 +904,7 @@
     "@typescript-eslint/consistent-type-assertions": {
       "count": 2
     },
-    "@typescript-eslint/max-params": {
+    "max-params": {
       "count": 1
     }
   },
@@ -907,14 +927,14 @@
     "@typescript-eslint/consistent-type-assertions": {
       "count": 3
     },
-    "@typescript-eslint/max-params": {
-      "count": 1
-    },
     "complexity": {
       "count": 1
     },
     "max-depth": {
       "count": 2
+    },
+    "max-params": {
+      "count": 4
     },
     "no-restricted-syntax": {
       "count": 3
@@ -980,6 +1000,9 @@
     "@typescript-eslint/explicit-module-boundary-types": {
       "count": 3
     },
+    "max-params": {
+      "count": 1
+    },
     "no-restricted-syntax": {
       "count": 2
     }
@@ -988,11 +1011,11 @@
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     },
-    "@typescript-eslint/max-params": {
-      "count": 2
-    },
     "complexity": {
       "count": 1
+    },
+    "max-params": {
+      "count": 2
     },
     "no-restricted-syntax": {
       "count": 2
@@ -1119,10 +1142,10 @@
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     },
-    "@typescript-eslint/max-params": {
+    "complexity": {
       "count": 1
     },
-    "complexity": {
+    "max-params": {
       "count": 1
     },
     "no-restricted-syntax": {
@@ -1135,7 +1158,7 @@
     }
   },
   "src/schedules/service.ts": {
-    "@typescript-eslint/max-params": {
+    "max-params": {
       "count": 1
     },
     "no-restricted-syntax": {
@@ -1147,8 +1170,13 @@
       "count": 1
     }
   },
+  "src/schedules/window.ts": {
+    "max-params": {
+      "count": 1
+    }
+  },
   "src/scripts/catalog.ts": {
-    "@typescript-eslint/max-params": {
+    "max-params": {
       "count": 1
     },
     "no-restricted-syntax": {
@@ -1157,6 +1185,9 @@
   },
   "src/scripts/materialise.ts": {
     "complexity": {
+      "count": 1
+    },
+    "max-params": {
       "count": 1
     },
     "no-restricted-syntax": {
@@ -1179,6 +1210,9 @@
     },
     "complexity": {
       "count": 2
+    },
+    "max-params": {
+      "count": 1
     }
   },
   "src/studio/access.ts": {
@@ -1222,6 +1256,9 @@
     "complexity": {
       "count": 1
     },
+    "max-params": {
+      "count": 1
+    },
     "no-restricted-syntax": {
       "count": 3
     }
@@ -1232,6 +1269,9 @@
     },
     "complexity": {
       "count": 6
+    },
+    "max-params": {
+      "count": 1
     },
     "no-restricted-syntax": {
       "count": 3
@@ -1332,9 +1372,17 @@
       "count": 2
     }
   },
+  "src/toolbox/browser.ts": {
+    "max-params": {
+      "count": 1
+    }
+  },
   "src/toolbox/code.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 3
+    },
+    "max-params": {
+      "count": 1
     },
     "no-restricted-syntax": {
       "count": 7
