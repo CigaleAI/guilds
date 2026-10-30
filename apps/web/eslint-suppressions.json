@@ -223,11 +223,6 @@
       "count": 1
     }
   },
-  "src/features/studio/activity/activityModel.ts": {
-    "complexity": {
-      "count": 3
-    }
-  },
   "src/features/studio/chatModel.ts": {
     "complexity": {
       "count": 1

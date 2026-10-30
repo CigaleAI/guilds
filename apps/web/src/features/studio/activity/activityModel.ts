@@ -209,37 +209,13 @@ export function buildChains(
   const byMessage = new Map<number, Chain>();
   for (const wake of view.wakes) {
     if (parentOf(wake) !== null || seen.has(wake.run_id)) continue;
-    const startedAt = toMs(wake.started_at) ?? 0;
-    const { trigger } = wake;
-    if (trigger.type === "message" && trigger.seq !== null) {
-      const existing = byMessage.get(trigger.seq);
-      if (existing) {
-        existing.steps.push(step(wake, existing.source, null));
-        continue;
-      }
+    const seq = triggerSeq(wake);
+    const existing = seq === null ? undefined : byMessage.get(seq);
+    if (existing) {
+      existing.steps.push(step(wake, existing.source, null));
+      continue;
     }
-    let start: ChainStart;
-    let source: string;
-    if (trigger.type === "routine") {
-      start = { kind: "routine", scheduleId: trigger.schedule_id, at: startedAt };
-      source = routineNode(trigger.schedule_id);
-    } else if (trigger.type === "direct") {
-      start = { kind: "direct", at: startedAt };
-      source = DIRECT_NODE;
-    } else {
-      const message = trigger.seq === null ? undefined : index.messages.get(trigger.seq);
-      const author = message?.author_agent_id;
-      if (message?.author_type === "user") {
-        start = { kind: "operator", message, at: toMs(message.created_at) ?? startedAt };
-        source = OPERATOR_NODE;
-      } else if (message && author && index.agents.has(author)) {
-        start = { kind: "earlier", message, at: toMs(message.created_at) ?? startedAt };
-        source = author;
-      } else {
-        start = { kind: "unknown", seq: trigger.seq, at: startedAt };
-        source = MESSAGE_NODE;
-      }
-    }
+    const { start, source } = chainOrigin(wake, index);
     const chain: Chain = {
       id: wake.run_id,
       start,
@@ -251,17 +227,64 @@ export function buildChains(
       quiet: true,
     };
     chains.push(chain);
-    if (trigger.type === "message" && trigger.seq !== null) byMessage.set(trigger.seq, chain);
+    if (seq !== null) byMessage.set(seq, chain);
   }
-  for (const chain of chains) {
-    for (const item of chainSteps(chain)) {
-      chain.wakes += 1;
-      chain.cost += item.wake.cost_usd || 0;
-      chain.end = Math.max(chain.end, toMs(item.wake.ended_at) ?? chain.end);
-      if (wakeBucket(item.wake) !== "silent") chain.quiet = false;
-    }
+  return chains.map(withTotals).sort((left, right) => right.start.at - left.start.at);
+}
+
+/** What started the chain a wake begins, and the map node it starts from. */
+function chainOrigin(wake: ActivityWake, index: ActivityIndex): Pick<Chain, "start" | "source"> {
+  const at = toMs(wake.started_at) ?? 0;
+  const { trigger } = wake;
+  if (trigger.type === "routine") {
+    return {
+      start: { kind: "routine", scheduleId: trigger.schedule_id, at },
+      source: routineNode(trigger.schedule_id),
+    };
   }
-  return chains.sort((left, right) => right.start.at - left.start.at);
+  if (trigger.type === "direct") return { start: { kind: "direct", at }, source: DIRECT_NODE };
+  return messageOrigin(trigger.seq, index, at);
+}
+
+/**
+ * What started the chain a message wake begins: the operator's row, an agent's post from before
+ * the window, or a row the ledger does not include. `wokeAt` dates a start whose row is missing.
+ */
+function messageOrigin(
+  seq: number | null,
+  index: ActivityIndex,
+  wokeAt: number,
+): Pick<Chain, "start" | "source"> {
+  const message = seq === null ? undefined : index.messages.get(seq);
+  const author = message?.author_agent_id;
+  if (message?.author_type === "user") {
+    return {
+      start: { kind: "operator", message, at: toMs(message.created_at) ?? wokeAt },
+      source: OPERATOR_NODE,
+    };
+  }
+  if (message && author && index.agents.has(author)) {
+    return {
+      start: { kind: "earlier", message, at: toMs(message.created_at) ?? wokeAt },
+      source: author,
+    };
+  }
+  return { start: { kind: "unknown", seq, at: wokeAt }, source: MESSAGE_NODE };
+}
+
+/** A chain with its wakes counted, their cost added up, when the last ended, and whether all were silent. */
+function withTotals(chain: Chain): Chain {
+  const steps = chainSteps(chain);
+  return {
+    ...chain,
+    wakes: steps.length,
+    cost: steps.reduce((sum, item) => sum + (item.wake.cost_usd || 0), 0),
+    end: steps.reduce(
+      (end, item) => Math.max(end, toMs(item.wake.ended_at) ?? end),
+      chain.start.at,
+    ),
+    quiet: steps.every((item) => wakeBucket(item.wake) === "silent"),
+  };
 }
 
 /** Every step of a chain, depth first. */
@@ -432,6 +455,22 @@ export function buildActivityMap(view: ActivityView, chains: readonly Chain[]): 
     return { id: agent.id, kind: "agent", count: countTotal(counts), counts, agentId: agent.id };
   });
   const onMap = new Set(agents.map((agent) => agent.id));
+  return {
+    sources: mapSources(view.routines, started, onMap),
+    agents,
+    links: [...links.values()].filter((link) => onMap.has(link.to)),
+  };
+}
+
+/**
+ * The map's sources, each with the chains it started: every routine of an agent on the map, then
+ * every other node that started a chain and is no agent on the map.
+ */
+function mapSources(
+  routines: readonly ActivityRoutine[],
+  started: ReadonlyMap<string, number>,
+  onMap: ReadonlySet<string>,
+): MapNode[] {
   const sources: MapNode[] = [];
   const addSource = (id: string, agentId: string | null) =>
     sources.push({
@@ -441,18 +480,14 @@ export function buildActivityMap(view: ActivityView, chains: readonly Chain[]): 
       counts: emptyCounts(),
       agentId,
     });
-  for (const routine of view.routines) {
+  for (const routine of routines) {
     if (onMap.has(routine.agent_id)) addSource(routineNode(routine.id), routine.agent_id);
   }
   for (const id of started.keys()) {
     if (onMap.has(id) || sources.some((source) => source.id === id)) continue;
     addSource(id, null);
   }
-  return {
-    sources,
-    agents,
-    links: [...links.values()].filter((link) => onMap.has(link.to)),
-  };
+  return sources;
 }
 
 /* ---------- Each agent's inputs and outputs ---------- */
@@ -515,80 +550,102 @@ export function agentActivity(
     const agent = view.agents.find((item) => item.id === node.id);
     if (!agent) return [];
     const mine = steps.filter((item) => item.wake.agent_id === agent.id);
-    const inputs = new Map<string, AgentInput>();
-    for (const source of map.sources) {
-      if (source.kind === "routine" && source.agentId === agent.id) {
-        inputs.set(source.id, {
-          id: source.id,
-          kind: "routine",
-          count: 0,
-          counts: emptyCounts(),
-          cost: 0,
-          reasons: {},
-        });
-      }
-    }
-    for (const item of mine) {
-      const input = inputs.get(item.from) ?? {
-        id: item.from,
-        kind: nodeKind(item.from),
+    return [
+      {
+        agent,
+        inputs: agentInputs(agent.id, map.sources, mine),
+        outputs: agentOutputs(node.counts, mine),
+      },
+    ];
+  });
+}
+
+/**
+ * How an agent was woken, routines first and then the operator, other agents, direct chats and
+ * unknown rows, busiest first: one input per map source or waking agent of its wakes, its routines
+ * listed even when they did not fire.
+ */
+function agentInputs(
+  agentId: string,
+  sources: readonly MapNode[],
+  wakes: readonly ChainStep[],
+): AgentInput[] {
+  const inputs = new Map<string, AgentInput>();
+  for (const source of sources) {
+    if (source.kind === "routine" && source.agentId === agentId) {
+      inputs.set(source.id, {
+        id: source.id,
+        kind: "routine",
         count: 0,
         counts: emptyCounts(),
         cost: 0,
         reasons: {},
-      };
-      input.count += 1;
-      input.counts[wakeBucket(item.wake)] += 1;
-      input.cost += item.wake.cost_usd || 0;
-      if (item.wake.trigger.type === "message") {
-        const reason = item.wake.trigger.reason;
-        input.reasons[reason] = (input.reasons[reason] ?? 0) + 1;
-      }
-      inputs.set(item.from, input);
+      });
     }
-    const wakes = mine.map((item) => item.wake);
-    const effects = wakes.map(wakeEffects);
-    const recordOperations: Record<string, number> = {};
-    for (const group of effects.flatMap((effect) => effect.records)) {
-      for (const [operation, count] of Object.entries(group.operations)) {
-        recordOperations[operation] = (recordOperations[operation] ?? 0) + count;
-      }
-    }
-    const expand = (groups: WriteGroup[]) =>
-      groups.flatMap((group) => Array<string>(group.count).fill(group.target));
-    const woken = mine.flatMap((item) => item.next.map((next) => next.wake.agent_id));
-    const outputs: AgentOutputs = {
-      wakes: wakes.length,
-      counts: node.counts,
-      cost: wakes.reduce((sum, wake) => sum + (wake.cost_usd || 0), 0),
-      posts: wakes.reduce((sum, wake) => sum + wake.posts.length, 0),
-      postingWakes: wakes.filter((wake) => wake.posts.length > 0).length,
-      woke: tally(woken),
-      records: tally(expand(effects.flatMap((effect) => effect.records))),
-      recordOperations,
-      notes: tally(expand(effects.flatMap((effect) => effect.notes))),
-      scriptRuns: tally(
-        effects.flatMap((effect) =>
-          effect.scriptRuns.flatMap((run) => Array<string>(run.count).fill(run.value)),
-        ),
-      ),
-      scriptChanges: tally(expand(effects.flatMap((effect) => effect.scripts))),
-      issues: effects.reduce((sum, effect) => sum + effect.issues.length, 0),
-      memory: effects.filter((effect) => effect.memory).length,
-      errors: tally([
-        ...wakes.flatMap((wake) =>
-          wake.errors.map((error) => error.message ?? error.operation ?? "error"),
-        ),
-        ...effects.flatMap((effect) =>
-          effect.failedCalls.map((call) => `${call.name}: ${call.error ?? ""}`),
-        ),
-      ]),
+  }
+  for (const item of wakes) {
+    const input = inputs.get(item.from) ?? {
+      id: item.from,
+      kind: nodeKind(item.from),
+      count: 0,
+      counts: emptyCounts(),
+      cost: 0,
+      reasons: {},
     };
-    const ordered = [...inputs.values()].sort(
-      (left, right) => inputOrder[left.kind] - inputOrder[right.kind] || right.count - left.count,
-    );
-    return [{ agent, inputs: ordered, outputs }];
-  });
+    input.count += 1;
+    input.counts[wakeBucket(item.wake)] += 1;
+    input.cost += item.wake.cost_usd || 0;
+    if (item.wake.trigger.type === "message") {
+      const reason = item.wake.trigger.reason;
+      input.reasons[reason] = (input.reasons[reason] ?? 0) + 1;
+    }
+    inputs.set(item.from, input);
+  }
+  return [...inputs.values()].sort(
+    (left, right) => inputOrder[left.kind] - inputOrder[right.kind] || right.count - left.count,
+  );
+}
+
+/** What an agent's wakes produced, added up; `counts` are its wakes by outcome. */
+function agentOutputs(counts: OutcomeCounts, steps: readonly ChainStep[]): AgentOutputs {
+  const wakes = steps.map((item) => item.wake);
+  const effects = wakes.map(wakeEffects);
+  const recordOperations: Record<string, number> = {};
+  for (const group of effects.flatMap((effect) => effect.records)) {
+    for (const [operation, count] of Object.entries(group.operations)) {
+      recordOperations[operation] = (recordOperations[operation] ?? 0) + count;
+    }
+  }
+  const expand = (groups: WriteGroup[]) =>
+    groups.flatMap((group) => Array<string>(group.count).fill(group.target));
+  const woken = steps.flatMap((item) => item.next.map((next) => next.wake.agent_id));
+  return {
+    wakes: wakes.length,
+    counts,
+    cost: wakes.reduce((sum, wake) => sum + (wake.cost_usd || 0), 0),
+    posts: wakes.reduce((sum, wake) => sum + wake.posts.length, 0),
+    postingWakes: wakes.filter((wake) => wake.posts.length > 0).length,
+    woke: tally(woken),
+    records: tally(expand(effects.flatMap((effect) => effect.records))),
+    recordOperations,
+    notes: tally(expand(effects.flatMap((effect) => effect.notes))),
+    scriptRuns: tally(
+      effects.flatMap((effect) =>
+        effect.scriptRuns.flatMap((run) => Array<string>(run.count).fill(run.value)),
+      ),
+    ),
+    scriptChanges: tally(expand(effects.flatMap((effect) => effect.scripts))),
+    issues: effects.reduce((sum, effect) => sum + effect.issues.length, 0),
+    memory: effects.filter((effect) => effect.memory).length,
+    errors: tally([
+      ...wakes.flatMap((wake) =>
+        wake.errors.map((error) => error.message ?? error.operation ?? "error"),
+      ),
+      ...effects.flatMap((effect) =>
+        effect.failedCalls.map((call) => `${call.name}: ${call.error ?? ""}`),
+      ),
+    ]),
+  };
 }
 
 /* ---------- Words ---------- */
