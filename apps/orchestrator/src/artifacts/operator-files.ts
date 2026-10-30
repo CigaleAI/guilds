@@ -20,6 +20,19 @@ export type SharedFileUpload = {
   bytes: Buffer;
 };
 
+/** A file as an operator downloads it: its view, which names it and gives its media type, and its bytes. */
+export type SharedFileDownload = { file: FileView; bytes: Buffer };
+
+/** The file with this id and its current bytes, as `actor` reaches it. */
+export async function readSharedFile(
+  files: ArtifactFiles,
+  actor: ArtifactActor,
+  fileId: string,
+): Promise<SharedFileDownload> {
+  const row = await files.loadFileById(actor, fileId);
+  return { file: files.view(row), bytes: await files.readBytes(row) };
+}
+
 /**
  * Stores the upload as `actor`'s file at its level, or a new version of the file of that name,
  * and announces it to the file's guild; an organisation's file has none.
