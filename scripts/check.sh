@@ -114,6 +114,7 @@ extension_steps() {
 
 orchestrator_lane() {
   step typecheck pnpm -r typecheck &&
+    step suppressions "$core_path/scripts/check-suppressions.sh" "$tree" &&
     step lint pnpm -r lint &&
     step import-cycles pnpm --filter @guildsrun/orchestrator cycles &&
     step compat-verify pnpm --filter @guildsrun/orchestrator compat:verify &&

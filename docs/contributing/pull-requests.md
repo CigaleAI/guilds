@@ -64,7 +64,12 @@ commits are what the reviewer reads.
   `eslint-suppressions.json` ends with the prune, so the diff shows
   the entries leaving ([Lint](development.md#lint-and-format)). The
   only commit that adds entries is one that adds a rule, and it adds
-  nothing else. A fix satisfies the rule the entry names, not the
+  nothing else. The `suppressions` step of the
+  [check](development.md#check) fails a commit of the branch, or a
+  working tree, in which a package's total of suppressed errors
+  grows, unless it changes only suppressions files, ESLint
+  configurations (`eslint.*.js`) and pages under `docs/`.
+  A fix satisfies the rule the entry names, not the
   selector that found it. The reviewer refuses a fix that:
   - declares a type alias whose body is `unknown` or
     `Record<string, unknown>`;

@@ -155,7 +155,7 @@ log.
 
 | Lane | Steps |
 | --- | --- |
-| orchestrator | `typecheck`, `lint`, `import-cycles`, `compat-verify`, `test-orchestrator` |
+| orchestrator | `typecheck`, `suppressions`, `lint`, `import-cycles`, `compat-verify`, `test-orchestrator` |
 | web | `test-ui`, `test-web`, `import-cycles-web`, `build-web`, `build-storybook` |
 | core stack | `smoke-core-stack`: `./setup.sh` and `docker compose up` on a copy of the checkout, under its own Compose project, port, image tag, and state directory. It checks that the box is healthy, serves the app on loopback alone, holds one operator, and refuses a request from another web origin |
 
