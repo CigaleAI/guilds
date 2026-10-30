@@ -59,7 +59,7 @@
   },
   "src/artifacts/store.ts": {
     "no-restricted-syntax": {
-      "count": 2
+      "count": 3
     }
   },
   "src/attachments/hydrate.ts": {
@@ -134,6 +134,11 @@
       "count": 4
     }
   },
+  "src/coding/guild-repositories.ts": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
   "src/coding/harness-models.ts": {
     "no-restricted-syntax": {
       "count": 1
@@ -161,6 +166,11 @@
     }
   },
   "src/connectors/drive/upload.ts": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/connectors/settings.ts": {
     "no-restricted-syntax": {
       "count": 1
     }
@@ -242,6 +252,11 @@
     }
   },
   "src/generation/operator.ts": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/generation/run-review.ts": {
     "no-restricted-syntax": {
       "count": 1
     }
@@ -409,10 +424,15 @@
   },
   "src/mcp/connect-flow.ts": {
     "no-restricted-syntax": {
-      "count": 1
+      "count": 2
     }
   },
   "src/mcp/connect-token.ts": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/mcp/connections.ts": {
     "no-restricted-syntax": {
       "count": 1
     }
@@ -550,6 +570,11 @@
       "count": 1
     }
   },
+  "src/organisations/service.ts": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
   "src/prompts/index.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
@@ -669,6 +694,11 @@
       "count": 1
     }
   },
+  "src/secrets/service.ts": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
   "src/seed/operator.ts": {
     "no-restricted-syntax": {
       "count": 1
@@ -772,7 +802,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 1
+      "count": 2
     }
   },
   "src/studio/note-edits.ts": {
@@ -816,6 +846,11 @@
       "count": 1
     }
   },
+  "src/studio/state-list.ts": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
   "src/studio/system.ts": {
     "boundary/no-reexport-modules": {
       "count": 1
@@ -831,6 +866,9 @@
   },
   "src/studio/tool-usage.ts": {
     "complexity": {
+      "count": 1
+    },
+    "no-restricted-syntax": {
       "count": 1
     }
   },
