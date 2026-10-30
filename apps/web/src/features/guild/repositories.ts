@@ -3,6 +3,13 @@ import type { GithubLogin } from "../../api/types/guilds";
 /** The server's rule for a guild repository's name, which is also its folder under repos/ in each coding agent's home. */
 export const repositoryNamePattern = /^[a-z][a-z0-9_-]{0,62}$/;
 
+/** Why the server would refuse a repository name as typed; undefined while it is empty or valid. */
+export function repositoryNameError(name: string): string | undefined {
+  return name && !repositoryNamePattern.test(name)
+    ? "Lowercase letters, digits, - and _, starting with a letter."
+    : undefined;
+}
+
 /** A repository name the server accepts, derived from a GitHub repository's name. */
 export function repositoryNameFrom(name: string): string {
   const cleaned = name

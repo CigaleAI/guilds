@@ -188,21 +188,6 @@
       "count": 1
     }
   },
-  "src/features/guild/pages/GuildIssues.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/features/guild/pages/GuildRepositories.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/features/guild/pages/GuildRoutines.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/features/guild/pages/GuildSettings.tsx": {
     "complexity": {
       "count": 1

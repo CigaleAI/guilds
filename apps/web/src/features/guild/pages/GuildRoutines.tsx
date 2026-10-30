@@ -32,6 +32,57 @@ function byNextWake(a: GuildSchedule, b: GuildSchedule): number {
   return next || a.created_at.localeCompare(b.created_at);
 }
 
+type RoutinesSwitchProps = {
+  guildId: string;
+  routines: readonly GuildSchedule[] | undefined;
+};
+
+/** The switch that holds every routine in the guild, with how many run, wait held, or are paused. */
+function RoutinesSwitch({ guildId, routines }: RoutinesSwitchProps) {
+  const guild = useGuild(guildId);
+  const update = useUpdateGuild(guildId);
+  const on = guild.data?.routines_enabled ?? true;
+  const all = routines ?? [];
+  const paused = all.filter((routine) => routine.paused).length;
+  const running = all.length - paused;
+  const summary = [
+    on ? `${running} active` : running ? `${running} held` : "",
+    paused ? `${paused} paused` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  return (
+    <div className="flex flex-wrap items-center gap-4 rounded-xl bg-surface p-4">
+      <div className="flex min-w-60 flex-1 flex-col gap-0.5">
+        <span className="text-md font-semibold">{on ? "Routines on" : "Routines off"}</span>
+        <span className="text-sm text-fg-2">
+          Turn off to hold every wake-up in this guild; turning back on plans missed ones from now.
+        </span>
+      </div>
+      {summary ? <span className="type-meta text-muted">{summary}</span> : null}
+      <OnOffSwitch
+        label="Routines in this guild"
+        value={on}
+        disabled={!guild.data || update.isPending}
+        onValueChange={(next) =>
+          update.mutate(
+            { routines_enabled: next },
+            {
+              onError: (error) =>
+                toast({
+                  kind: "error",
+                  title: "Couldn't switch the guild's routines",
+                  description: error.message,
+                }),
+            },
+          )
+        }
+      />
+    </div>
+  );
+}
+
 /**
  * Every routine in the guild, by agent, and the switch that holds them all. Routines are added and
  * deleted from their agent's Routine tab.
@@ -41,7 +92,6 @@ export function GuildRoutines() {
   const navigate = useNavigate();
   const guild = useGuild(guildId);
   const routines = useGuildSchedules(guildId);
-  const update = useUpdateGuild(guildId);
   const setPaused = useSetGuildSchedulePaused(guildId);
   const on = guild.data?.routines_enabled ?? true;
 
@@ -58,16 +108,6 @@ export function GuildRoutines() {
     }));
   }, [routines.data]);
 
-  const all = routines.data ?? [];
-  const paused = all.filter((routine) => routine.paused).length;
-  const running = all.length - paused;
-  const summary = [
-    on ? `${running} active` : running ? `${running} held` : "",
-    paused ? `${paused} paused` : "",
-  ]
-    .filter(Boolean)
-    .join(" · ");
-
   const stateOf = (routine: GuildSchedule): RoutineState =>
     routine.paused
       ? { kind: "paused" }
@@ -77,34 +117,7 @@ export function GuildRoutines() {
 
   return (
     <GuildPage>
-      <div className="flex flex-wrap items-center gap-4 rounded-xl bg-surface p-4">
-        <div className="flex min-w-60 flex-1 flex-col gap-0.5">
-          <span className="text-md font-semibold">{on ? "Routines on" : "Routines off"}</span>
-          <span className="text-sm text-fg-2">
-            Turn off to hold every wake-up in this guild; turning back on plans missed ones from
-            now.
-          </span>
-        </div>
-        {summary ? <span className="type-meta text-muted">{summary}</span> : null}
-        <OnOffSwitch
-          label="Routines in this guild"
-          value={on}
-          disabled={!guild.data || update.isPending}
-          onValueChange={(next) =>
-            update.mutate(
-              { routines_enabled: next },
-              {
-                onError: (error) =>
-                  toast({
-                    kind: "error",
-                    title: "Couldn't switch the guild's routines",
-                    description: error.message,
-                  }),
-              },
-            )
-          }
-        />
-      </div>
+      <RoutinesSwitch guildId={guildId} routines={routines.data} />
 
       {routines.isPending ? (
         <SkeletonRows rows={4} label="Loading routines" />
