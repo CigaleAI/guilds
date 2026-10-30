@@ -1,8 +1,11 @@
-export function oauthCallbackHtml(options: {
+/** What the page a provider's callback lands on says: whether the login succeeded, its title and its message. */
+export type OAuthCallbackPage = {
   success: boolean;
   title: string;
   message: string;
-}): string {
+};
+
+export function oauthCallbackHtml(options: OAuthCallbackPage): string {
   const color = options.success ? "#10b981" : "#ef4444";
   const bgTint = options.success ? "rgba(16, 185, 129, 0.12)" : "rgba(239, 68, 68, 0.12)";
   const borderTint = options.success ? "rgba(16, 185, 129, 0.3)" : "rgba(239, 68, 68, 0.3)";

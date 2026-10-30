@@ -340,15 +340,13 @@ test("register exchange and refresh", async () => {
     clientId: "cid",
     clientSecret: null,
     redirectUri: "http://127.0.0.1:8080/cb",
-    client,
-  });
+  }, { client });
   assert.equal(tokens.access_token, "tok");
   const refreshed = await refreshTokens(discovery, {
     refreshToken: "ref",
     clientId: "cid",
     clientSecret: null,
-    client,
-  });
+  }, { client });
   assert.equal(refreshed.access_token, "tok2");
 });
 
@@ -363,12 +361,11 @@ test("refresh invalid_grant is reauth", async () => {
   };
   await assert.rejects(
     () =>
-      refreshTokens(discovery, {
-        refreshToken: "ref",
-        clientId: "cid",
-        clientSecret: null,
-        client: mockFetch(() => ({ status: 400, json: { error: "invalid_grant" } })),
-      }),
+      refreshTokens(
+        discovery,
+        { refreshToken: "ref", clientId: "cid", clientSecret: null },
+        { client: mockFetch(() => ({ status: 400, json: { error: "invalid_grant" } })) },
+      ),
     (error: unknown) => error instanceof OAuthReauthError,
   );
 });
