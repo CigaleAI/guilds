@@ -36,25 +36,31 @@ function collectionColumn(column: Draft<Column> | null | undefined): PlanColumn 
   };
 }
 
+/** The apply decisions a collection can carry. */
+const collectionActions = ["create", "reuse", "conflict"] as const;
+
+/** One collection as the plan shows it; its action is "" unless it is a decision apply makes. */
+function planCollection(collection: CollectionDraft | null | undefined): PlanCollection {
+  const item = asObject(collection);
+  return {
+    name: String(item.name || ""),
+    purpose: String(item.purpose || ""),
+    columns: asArray(item.columns).map(collectionColumn),
+    scope: item.scope === "guild" ? "guild" : "org",
+    guild: item.guild === "write" ? "write" : "read",
+    writers: asArray(item.writers).map((role) => String(role)),
+    action: collectionActions.find((action) => action === item.action) ?? "",
+    collection_id: item.collection_id || null,
+    differences: asArray(item.differences).map((line) => String(line)),
+  };
+}
+
 export function collectionsFromRecipe(
   docCollections: readonly CollectionDraft[],
   overlayCollections: readonly CollectionDraft[],
 ): PlanCollection[] {
   const source = overlayCollections.length ? overlayCollections : docCollections;
-  return source.map((item) => ({
-    name: String(item?.name || ""),
-    purpose: String(item?.purpose || ""),
-    columns: asArray(item?.columns).map(collectionColumn),
-    scope: item?.scope === "guild" ? "guild" : "org",
-    guild: item?.guild === "write" ? "write" : "read",
-    writers: asArray(item?.writers).map((role) => String(role)),
-    action:
-      item?.action === "create" || item?.action === "reuse" || item?.action === "conflict"
-        ? item.action
-        : "",
-    collection_id: item?.collection_id || null,
-    differences: asArray(item?.differences).map((line) => String(line)),
-  }));
+  return source.map(planCollection);
 }
 
 /** A collection's card. */

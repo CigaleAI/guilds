@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { collectionView } from "./planCollections";
 import { planFromRecipe } from "./planModel";
 import { deskRecipe } from "./planFixtures";
+import type { CollectionDraft } from "./recipeDraft";
 
 test("collections normalise their fields and take the apply decision when given", () => {
   const recipe = deskRecipe();
@@ -38,6 +39,8 @@ test("collections normalise their fields and take the apply decision when given"
   assert.equal(overlaid.collections.length, 1);
   assert.equal(overlaid.collections[0]?.action, "conflict");
   assert.equal(overlaid.collections[0]?.collection_id, "c1");
+  const handMade: CollectionDraft = JSON.parse('{ "name": "queue", "action": "drop" }');
+  assert.equal(planFromRecipe({ collections: [handMade] }).collections[0]?.action, "");
 });
 
 test("collectionView labels access, the apply decision, conflicts, and column rules", () => {
