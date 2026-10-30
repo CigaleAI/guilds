@@ -196,11 +196,9 @@ export class AgentMachines {
 
   /** Arms a machine's idle stop: its container goes after the idle timeout without work or input. */
   armIdle(machineId: string): void {
-    this.idle.arm(machineId, async () => {
-      if (!this.generations.isMachineBusy(machineId)) {
-        logOperationFailure(await this.destroyContainer(machineId, "sandbox.idle.stop"));
-      }
-    });
+    this.idle.arm(machineId, async () =>
+      this.generations.isMachineBusy(machineId) ? null : this.destroyContainer(machineId, "sandbox.idle.stop"),
+    );
   }
 
   /**
@@ -223,7 +221,7 @@ export class AgentMachines {
 
   /** Arms an agent's Chrome idle stop: it stops after the idle timeout without a browser call or input. */
   armBrowserIdle(agentId: string): void {
-    this.browserIdle.arm(agentId, async () => logOperationFailure(await this.stopAgentBrowser(agentId)));
+    this.browserIdle.arm(agentId, () => this.stopAgentBrowser(agentId));
   }
 
   /**
