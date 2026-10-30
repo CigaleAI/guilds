@@ -188,9 +188,19 @@
       "count": 1
     }
   },
+  "src/features/recipes/plan/AgentCardView.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/recipes/plan/ConnectorsBody.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
   "src/features/recipes/plan/PlanView.tsx": {
     "complexity": {
-      "count": 3
+      "count": 1
     }
   },
   "src/features/recipes/plan/designSystems.ts": {

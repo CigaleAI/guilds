@@ -2,44 +2,23 @@ import {
   ArrowRight,
   Bot,
   ChevronDown,
-  Code2,
   Database,
   FileText,
   GitBranch,
   Globe,
-  KeyRound,
-  PenLine,
   Plug,
   Repeat,
   Server,
-  Trash2,
-  TriangleAlert,
-  Undo2,
-  Wrench,
   type LucideIcon,
 } from "lucide-react";
 import { useId, useState, type ReactNode } from "react";
 import type { RecipeFinding } from "../../../api/types/recipes";
-import { agentLook } from "../../../app/agents";
-import {
-  Button,
-  CopyButton,
-  Markdown,
-  TextAreaField,
-  ToolRow,
-  Banner,
-  Avatar,
-  cn,
-  Icon,
-  Tag,
-  Tooltip,
-} from "@guildsrun/ui";
-import { connectorLogo } from "../../access/connectorLogo";
+import { Button, Markdown, Banner, cn, Icon, Tag, Tooltip } from "@guildsrun/ui";
 import { sizingNote } from "../../machines/machines";
 import type { RecipePlan } from "./planModel";
-import { agentCard, type AgentCapability, type PlanAgent } from "./planAgents";
+import type { PlanAgent } from "./planAgents";
 import { routineView } from "./planRoutines";
-import { accessSection, connectionCard, secretCard, type CatalogEntry } from "./planConnectors";
+import type { CatalogEntry } from "./planConnectors";
 import type { PendingAccess } from "./pendingAccess";
 import { collectionView } from "./planCollections";
 import { noteCard } from "./planNotes";
@@ -54,6 +33,9 @@ import {
   type PlanSection,
   type PlanSectionId,
 } from "./planSections";
+import { ReviewerTag } from "./ReviewerTag";
+import { AgentCardView } from "./AgentCardView";
+import { ConnectorsBody } from "./ConnectorsBody";
 
 /** Tool switches and connector removals, when the viewer may change a recipe's access. */
 export type PlanAccessEditing = {
@@ -81,7 +63,10 @@ type PlanViewProps = {
 };
 
 /** What a plan's cards can do besides showing it. */
-type PlanHooks = Pick<PlanViewProps, "access" | "onEditTask" | "agentExtras" | "connectionExtras">;
+export type PlanHooks = Pick<
+  PlanViewProps,
+  "access" | "onEditTask" | "agentExtras" | "connectionExtras"
+>;
 
 const sectionIcon: Record<PlanSectionId, LucideIcon> = {
   agents: Bot,
@@ -442,443 +427,6 @@ function SectionBody({ id, plan, findings, catalog, hooks }: SectionBodyProps) {
         </div>
       );
   }
-}
-
-type ReviewerTagProps = { by: string };
-
-function ReviewerTag({ by }: ReviewerTagProps) {
-  return (
-    <Tag tone="tide" font="sans" title={`Last written by the ${by}`}>
-      {by} edit
-    </Tag>
-  );
-}
-
-type FoldProps = {
-  title: ReactNode;
-  badge?: string;
-  reviewer?: string | null;
-  children: ReactNode;
-};
-
-/** A folded block inside a card: its title, a badge, and its body when opened. */
-function Fold({ title, badge, reviewer, children }: FoldProps) {
-  return (
-    <details className="group rounded-lg bg-paper px-3 py-2">
-      <summary className="flex cursor-pointer list-none items-center gap-2 text-sm">
-        <span className="min-w-0 flex-1 truncate font-medium">{title}</span>
-        {reviewer ? <ReviewerTag by={reviewer} /> : null}
-        {badge ? <span className="font-mono text-xs text-muted">{badge}</span> : null}
-        <Icon
-          icon={ChevronDown}
-          size={14}
-          className="text-muted transition-transform group-open:rotate-180"
-        />
-      </summary>
-      <div className="mt-2">{children}</div>
-    </details>
-  );
-}
-
-type AgentCardViewProps = {
-  agent: PlanAgent;
-  plan: RecipePlan;
-  findings: readonly RecipeFinding[] | undefined;
-  hooks: PlanHooks;
-};
-
-function AgentCardView({ agent, plan, findings, hooks }: AgentCardViewProps) {
-  const card = agentCard(agent, plan, findings);
-  const { metrics } = card;
-  const [metric, setMetric] = useState<"connectors" | "routines" | "tools" | null>(null);
-  const pills = [
-    {
-      id: "connectors" as const,
-      icon: Plug,
-      label: metrics.connectors.label,
-      empty: metrics.connectors.empty,
-      warning: null,
-    },
-    {
-      id: "routines" as const,
-      icon: Repeat,
-      label: metrics.routines.label,
-      empty: metrics.routines.empty,
-      warning: metrics.routines.warning,
-    },
-    {
-      id: "tools" as const,
-      icon: Wrench,
-      label: metrics.tools.label,
-      empty: metrics.tools.empty,
-      warning: null,
-    },
-  ];
-
-  return (
-    <article className="flex min-w-0 flex-col gap-3 rounded-xl bg-surface p-4">
-      <header className="flex items-start gap-3">
-        <Avatar
-          name={agent.name || agent.role}
-          size={36}
-          {...agentLook({ avatar_shape: agent.avatar_shape, avatar_color: agent.avatar_color })}
-        />
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <h4 className="truncate font-mono text-md font-semibold">{agent.name || agent.role}</h4>
-          {agent.focus ? <p className="text-sm text-fg-2">{agent.focus}</p> : null}
-          <p className="truncate font-mono text-xs text-muted">
-            @{agent.role}
-            {agent.model ? ` · ${agent.model}` : ""}
-          </p>
-        </div>
-      </header>
-
-      <div className="flex flex-wrap gap-1.5">
-        {pills.map((pill) => {
-          const button = (
-            <button
-              key={pill.id}
-              type="button"
-              aria-pressed={metric === pill.id}
-              onClick={() => setMetric(metric === pill.id ? null : pill.id)}
-              className={cn(
-                "flex cursor-pointer items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium",
-                "bg-paper hover:bg-paper-hi selected:bg-ink-fill selected:text-on-ink",
-                pill.empty && "text-muted",
-              )}
-            >
-              <Icon icon={pill.icon} size={14} />
-              {pill.label}
-              {pill.warning ? (
-                <Icon icon={TriangleAlert} size={14} className="text-t-ochre-fg" />
-              ) : null}
-            </button>
-          );
-          return pill.warning ? (
-            <Tooltip key={pill.id} label={pill.warning}>
-              {button}
-            </Tooltip>
-          ) : (
-            button
-          );
-        })}
-      </div>
-      {metric === "connectors" ? (
-        <ul className="flex flex-col gap-1 rounded-lg bg-paper px-3 py-2 text-xs">
-          {metrics.connectors.entries.map((entry) => (
-            <li key={entry.server}>
-              <span className="font-mono font-medium">{entry.server}</span>{" "}
-              <span className="text-muted">{entry.detail}</span>
-            </li>
-          ))}
-          {metrics.connectors.empty ? <li className="text-muted">No connectors.</li> : null}
-        </ul>
-      ) : metric === "routines" ? (
-        <ul className="flex flex-col gap-1 rounded-lg bg-paper px-3 py-2 text-xs">
-          {metrics.routines.entries.map((entry) => (
-            <li key={entry.key}>
-              <span className="font-medium">{entry.cadence}</span>
-              {entry.description ? (
-                <span className="text-muted"> · {entry.description}</span>
-              ) : null}
-            </li>
-          ))}
-          {metrics.routines.empty ? <li className="text-muted">No routines.</li> : null}
-        </ul>
-      ) : metric === "tools" ? (
-        <div className="flex flex-wrap gap-1 rounded-lg bg-paper px-3 py-2">
-          {metrics.tools.nativeTools.map((tool) => (
-            <Tag key={tool} tone="term">
-              {tool}
-            </Tag>
-          ))}
-          {metrics.tools.empty ? <span className="text-xs text-muted">No tools.</span> : null}
-        </div>
-      ) : null}
-
-      {card.capabilities.length ? <CapabilityList capabilities={card.capabilities} /> : null}
-      {card.findings.notices.map((notice, index) => (
-        <Banner
-          key={`${notice.path}:${index}`}
-          tone={notice.severity === "error" ? "error" : "info"}
-          title={notice.message}
-        />
-      ))}
-
-      <TaskBlock
-        role={agent.role}
-        text={card.prompt.text}
-        badge={card.prompt.badge}
-        reviewer={card.prompt.reviewer}
-        onSave={hooks.onEditTask}
-      />
-      {hooks.agentExtras?.(agent)}
-
-      {card.operator?.cards.map((item, index) => (
-        <div key={index} className="flex flex-col gap-1 rounded-lg bg-t-sig px-3 py-2 text-sm">
-          {item.title ? <span className="font-semibold">{item.title}</span> : null}
-          <p className="text-fg-2">{item.text}</p>
-        </div>
-      ))}
-
-      {card.scripts.map((script) => (
-        <Fold
-          key={script.name}
-          title={<span className="font-mono">{script.name}.py</span>}
-          reviewer={script.reviewer}
-        >
-          <pre className="overflow-x-auto font-mono text-xs">{script.source}</pre>
-        </Fold>
-      ))}
-    </article>
-  );
-}
-
-const capabilityIcon: Record<AgentCapability["id"], LucideIcon> = {
-  browser: Globe,
-  coding: Code2,
-};
-
-type CapabilityListProps = { capabilities: readonly AgentCapability[] };
-
-/** An agent's capabilities as chips; hovering one shows what apply needs for it. */
-function CapabilityList({ capabilities }: CapabilityListProps) {
-  return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <span className="type-label mr-1 text-muted">Capabilities</span>
-      {capabilities.map((capability) => (
-        <Tooltip
-          key={capability.id}
-          label={
-            <span className="flex flex-col gap-1">
-              {capability.hint.map((line) => (
-                <span key={line}>{line}</span>
-              ))}
-              {capability.reviewer ? (
-                <span className="text-on-panel-muted">
-                  Last written by the {capability.reviewer}
-                </span>
-              ) : null}
-            </span>
-          }
-        >
-          <span
-            tabIndex={0}
-            className={cn(
-              "flex cursor-help items-center gap-1.5 rounded-full bg-paper px-2.5 py-1 text-xs font-medium",
-              capability.pending && "text-muted",
-            )}
-          >
-            <Icon icon={capabilityIcon[capability.id]} size={14} />
-            {capability.label}
-          </span>
-        </Tooltip>
-      ))}
-    </div>
-  );
-}
-
-type ConnectorsBodyProps = {
-  plan: RecipePlan;
-  catalog: readonly CatalogEntry[] | undefined;
-  hooks: PlanHooks;
-};
-
-function ConnectorsBody({ plan, catalog, hooks }: ConnectorsBodyProps) {
-  const { access } = hooks;
-  const { systems } = accessSection(plan);
-  return (
-    <div className="flex flex-col gap-3">
-      {plan.connections.map((connection) => {
-        const card = connectionCard(connection, plan, catalog, access?.pending ?? null);
-        const removed = access?.pending.removed.has(card.server) ?? false;
-        return (
-          <article
-            key={card.server}
-            className={cn(
-              "flex flex-col gap-2.5 rounded-xl bg-surface p-4",
-              removed && "opacity-60",
-            )}
-          >
-            <div className="flex flex-wrap items-center gap-2">
-              {connectorLogo(
-                catalog?.find((entry) => (entry.slug ?? entry.server) === card.server)?.logo_url,
-                "size-4 text-muted",
-              ) ?? <Icon icon={Plug} size={16} className="text-muted" />}
-              <span className="font-mono text-sm font-semibold">{card.server}</span>
-              <Tag tone={card.chip.tone === "ok" ? "tide" : "signal"} font="sans">
-                {removed ? "removed" : card.chip.label}
-              </Tag>
-              {card.reviewer ? <ReviewerTag by={card.reviewer} /> : null}
-              {access ? (
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  className="ml-auto"
-                  disabled={access.disabled}
-                  onClick={() => access.onRemoveConnection(card.server, !removed)}
-                >
-                  <Icon icon={removed ? Undo2 : Trash2} size={14} />
-                  {removed ? "Keep" : "Remove"}
-                </Button>
-              ) : null}
-            </div>
-            {card.description ? (
-              <Markdown density="compact">{card.description}</Markdown>
-            ) : card.snippet ? (
-              <p className="text-sm text-fg-2">{card.snippet}</p>
-            ) : null}
-            <p className="text-xs text-muted">{card.meta}</p>
-            {hooks.connectionExtras?.(card.server)}
-            {card.resources.length ? (
-              <ul className="flex flex-col gap-0.5 text-xs text-fg-2">
-                {card.resources.map((resource) => (
-                  <li key={resource}>{resource}</li>
-                ))}
-              </ul>
-            ) : null}
-            {!removed ? (
-              card.tools.groups.length ? (
-                card.tools.groups.map((group) => (
-                  <details key={group.role} className="group rounded-lg bg-paper">
-                    <summary className="flex cursor-pointer list-none items-center gap-2 px-3.5 py-2.5 text-sm">
-                      <span className="font-medium">{group.title}</span>
-                      <span className="text-xs text-muted">
-                        {group.tools.filter((tool) => tool.enabled).length} of {group.tools.length}{" "}
-                        on
-                      </span>
-                      <Icon
-                        icon={ChevronDown}
-                        size={14}
-                        className="ml-auto text-muted transition-transform group-open:rotate-180"
-                      />
-                    </summary>
-                    <div className="border-t border-line">
-                      {group.tools.map((tool) => (
-                        <ToolRow
-                          key={tool.name}
-                          name={tool.name}
-                          enabled={tool.enabled}
-                          disabled={!access || Boolean(access.disabled)}
-                          onEnabledChange={(enabled) =>
-                            access?.onToolChange(card.server, group.role, tool.name, enabled)
-                          }
-                        />
-                      ))}
-                    </div>
-                  </details>
-                ))
-              ) : card.tools.empty ? (
-                <p className="text-xs text-muted">{card.tools.empty}</p>
-              ) : null
-            ) : null}
-          </article>
-        );
-      })}
-      {plan.secrets.map((secret) => {
-        const card = secretCard(secret);
-        return (
-          <article
-            key={card.name}
-            className="flex items-center gap-3 rounded-xl bg-surface px-4 py-3"
-          >
-            <Icon icon={KeyRound} size={16} className="shrink-0 text-muted" />
-            <div className="flex min-w-0 flex-1 flex-col">
-              <span className="font-mono text-sm font-semibold">{card.name}</span>
-              {card.snippet ? <span className="text-xs text-fg-2">{card.snippet}</span> : null}
-            </div>
-            <Tag tone="well" font="sans">
-              secret
-            </Tag>
-          </article>
-        );
-      })}
-      {systems.map((system) => (
-        <article
-          key={`${system.name}:${system.server ?? ""}`}
-          className="flex flex-col gap-1 rounded-xl bg-surface px-4 py-3"
-        >
-          <div className="flex flex-wrap items-center gap-2">
-            <Icon icon={Globe} size={16} className="text-muted" />
-            <span className="text-sm font-semibold">{system.name}</span>
-            <Tag tone="well" font="sans">
-              {system.resolution}
-            </Tag>
-          </div>
-          {system.reason ? <p className="text-sm text-fg-2">{system.reason}</p> : null}
-        </article>
-      ))}
-    </div>
-  );
-}
-
-type TaskBlockProps = {
-  role: string;
-  text: string;
-  badge: string;
-  reviewer: string | null;
-  onSave: ((role: string, text: string) => Promise<unknown>) | undefined;
-};
-
-/** An agent's Task, folded; the operator can rewrite it when the page allows. */
-function TaskBlock({ role, text, badge, reviewer, onSave }: TaskBlockProps) {
-  const [draft, setDraft] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  return (
-    <Fold title="Task" badge={badge} reviewer={reviewer}>
-      {draft !== null ? (
-        <div className="flex flex-col gap-2">
-          <TextAreaField
-            tone="surface"
-            font="mono"
-            aria-label="Task"
-            rows={10}
-            value={draft}
-            onChange={(event) => setDraft(event.currentTarget.value)}
-          />
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              disabled={saving || draft.trim() === text}
-              onClick={() => {
-                if (!onSave) return;
-                setSaving(true);
-                onSave(role, draft.trim()).then(
-                  () => {
-                    setSaving(false);
-                    setDraft(null);
-                  },
-                  () => setSaving(false),
-                );
-              }}
-            >
-              {saving ? "Saving…" : "Save Task"}
-            </Button>
-            <Button variant="ghost" size="sm" disabled={saving} onClick={() => setDraft(null)}>
-              Cancel
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {text ? (
-            <Markdown density="compact">{text}</Markdown>
-          ) : (
-            <p className="text-sm text-muted">No Task written yet.</p>
-          )}
-          <div className="flex items-center gap-2">
-            {onSave ? (
-              <Button variant="outline" size="xs" onClick={() => setDraft(text)}>
-                <Icon icon={PenLine} size={14} />
-                Edit Task
-              </Button>
-            ) : null}
-            {text ? <CopyButton text={text} what="Task" size={24} /> : null}
-          </div>
-        </div>
-      )}
-    </Fold>
-  );
 }
 
 const issuesShown = 5;
