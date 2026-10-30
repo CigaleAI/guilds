@@ -175,7 +175,7 @@
   },
   "src/features/recipes/ApplyPage.tsx": {
     "complexity": {
-      "count": 2
+      "count": 1
     }
   },
   "src/features/studio/AgentsSection.tsx": {

@@ -9,7 +9,7 @@ import {
   Play,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   useAbortApply,
   useActivateApply,
@@ -18,6 +18,7 @@ import {
   useVerifyStep,
 } from "../../api/queries/recipes";
 import { useAccess } from "../../api/queries/access";
+import type { McpServerAccess } from "../../api/types/access";
 import { useInstance } from "../../api/queries/admin";
 import type { ApplyRow, ApplyStep } from "../../api/types/recipes";
 import { useIdentity } from "../../app/identity";
@@ -32,7 +33,7 @@ import {
   Icon,
 } from "@guildsrun/ui";
 import { useServerConnect, type ConnectableServer } from "../access/ConnectDialogs";
-import { connectorSetupGap, setupSearch } from "../instance/instance";
+import { connectorSetupGap, setupSearch, type ConnectorSetupGap } from "../instance/instance";
 import {
   applyOpen,
   checklistProgress,
@@ -80,8 +81,6 @@ function Checklist({ apply }: ChecklistProps) {
   const owner = { scope: "guild" as const, id: apply.guild_id };
   const access = useAccess(owner);
   const instance = useInstance();
-  const { user } = useIdentity();
-  const location = useLocation();
   const verify = useVerifyStep(apply.id);
   const confirm = useConfirmStep(apply.id);
   const activate = useActivateApply(apply.id);
@@ -194,123 +193,39 @@ function Checklist({ apply }: ChecklistProps) {
           />
           <Milestone title="Guild created" detail={createdSummary(apply.preview.creates)} />
           {steps.map((step) => {
-            const { server, connected: isConnected } = stepConnector(step, servers);
+            const { server, connected } = stepConnector(step, servers);
             const gap = server ? connectorSetupGap(server, instance.data) : null;
-            const closed = stepClosed(step);
-            const hint = problems[step.id] ?? stepHint(step, isConnected, gap?.text ?? null);
             return (
-              <li
+              <ChecklistStep
                 key={step.id}
-                className={cn(
-                  "flex flex-col gap-3 rounded-xl p-4",
-                  closed ? "bg-surface" : "bg-paper-hi inset-ring-[1.5px] inset-ring-line",
-                )}
+                step={step}
+                connected={connected}
+                gap={gap}
+                problem={problems[step.id]}
               >
-                <div className="flex items-start gap-3">
-                  <StepMark step={step} />
-                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="text-md font-semibold">{step.title}</span>
-                    <span className="text-sm text-fg-2">{stepDetail(step)}</span>
-                  </div>
-                  <span className="shrink-0 text-xs text-muted">
-                    {stepStatus(step, isConnected)}
-                  </span>
-                </div>
-                {hint ? (
-                  <p className={cn("text-xs", problems[step.id] ? "text-plum-t" : "text-muted")}>
-                    {hint}
-                  </p>
+                {open && !stepClosed(step) ? (
+                  <StepActions
+                    step={step}
+                    server={server}
+                    connected={connected}
+                    gap={gap}
+                    busy={busy}
+                    connecting={connect.busy}
+                    workLeft={workOpen(apply.checklist)}
+                    guildId={apply.guild_id}
+                    onConnect={connect.start}
+                    onCheck={() => check(step.id)}
+                    onDone={() =>
+                      confirm.mutate(
+                        { stepId: step.id },
+                        { onError: (error) => problem(step.id, error.message) },
+                      )
+                    }
+                    onSkip={() => setSkipping(step)}
+                    onActivate={start}
+                  />
                 ) : null}
-                {open && !closed ? (
-                  <div className="flex flex-wrap gap-2">
-                    {step.kind === "connection" && !isConnected && server ? (
-                      <>
-                        <Button
-                          size="sm"
-                          disabled={busy || connect.busy || gap !== null}
-                          {...(gap ? { title: gap.text } : {})}
-                          onClick={() => connect.start(server)}
-                        >
-                          <Icon icon={Link2} size={14} />
-                          Connect {server.name}
-                        </Button>
-                        {gap?.integration && user.platform_admin ? (
-                          <Button asChild variant="outline" size="sm">
-                            <Link to="/admin" search={setupSearch(gap.integration, location.href)}>
-                              Set up
-                            </Link>
-                          </Button>
-                        ) : null}
-                      </>
-                    ) : null}
-                    {step.closure === "verified" ? (
-                      <Button
-                        variant={step.kind === "connection" && !isConnected ? "outline" : "primary"}
-                        size="sm"
-                        disabled={busy}
-                        onClick={() => check(step.id)}
-                      >
-                        Check
-                      </Button>
-                    ) : step.kind === "activate" ? (
-                      <Button
-                        size="sm"
-                        disabled={busy || workOpen(apply.checklist)}
-                        onClick={start}
-                      >
-                        Activate routines
-                      </Button>
-                    ) : (
-                      <Button
-                        size="sm"
-                        disabled={busy}
-                        onClick={() =>
-                          confirm.mutate(
-                            { stepId: step.id },
-                            { onError: (error) => problem(step.id, error.message) },
-                          )
-                        }
-                      >
-                        <Icon icon={Check} size={14} />
-                        Done
-                      </Button>
-                    )}
-                    {step.kind === "connection" ||
-                    step.kind === "secret" ||
-                    step.kind === "repository" ? (
-                      <Button asChild variant="ghost" size="sm">
-                        <Link
-                          to={
-                            step.kind === "connection"
-                              ? "/guilds/$guildId/tools"
-                              : step.kind === "secret"
-                                ? "/guilds/$guildId/secrets"
-                                : "/guilds/$guildId/settings"
-                          }
-                          params={{ guildId: apply.guild_id }}
-                        >
-                          <Icon icon={ExternalLink} size={14} />
-                          {step.kind === "connection"
-                            ? "Guild tools"
-                            : step.kind === "secret"
-                              ? "Guild secrets"
-                              : "Guild settings"}
-                        </Link>
-                      </Button>
-                    ) : null}
-                    {skippable(step) ? (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={busy}
-                        onClick={() => setSkipping(step)}
-                      >
-                        Skip
-                      </Button>
-                    ) : null}
-                  </div>
-                ) : null}
-              </li>
+              </ChecklistStep>
             );
           })}
         </ol>
@@ -363,6 +278,218 @@ function Checklist({ apply }: ChecklistProps) {
         }
       />
     </div>
+  );
+}
+
+type ChecklistStepProps = {
+  step: ApplyStep;
+  connected: boolean;
+  gap: ConnectorSetupGap | null;
+  /** Why the step's last check or confirm failed; undefined when it has not. */
+  problem: string | undefined;
+  /** What the operator can do on the step while it is open. */
+  children: ReactNode;
+};
+
+/** One step of the checklist: its mark, title, detail and status, its hint or problem, and its actions. */
+function ChecklistStep({ step, connected, gap, problem, children }: ChecklistStepProps) {
+  const closed = stepClosed(step);
+  const hint = problem ?? stepHint(step, connected, gap?.text ?? null);
+  return (
+    <li
+      className={cn(
+        "flex flex-col gap-3 rounded-xl p-4",
+        closed ? "bg-surface" : "bg-paper-hi inset-ring-[1.5px] inset-ring-line",
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <StepMark step={step} />
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="text-md font-semibold">{step.title}</span>
+          <span className="text-sm text-fg-2">{stepDetail(step)}</span>
+        </div>
+        <span className="shrink-0 text-xs text-muted">{stepStatus(step, connected)}</span>
+      </div>
+      {hint ? (
+        <p className={cn("text-xs", problem ? "text-plum-t" : "text-muted")}>{hint}</p>
+      ) : null}
+      {children}
+    </li>
+  );
+}
+
+type StepActionsProps = {
+  step: ApplyStep;
+  /** The connector a connection step logs into, when the guild's access lists it. */
+  server: McpServerAccess | null;
+  connected: boolean;
+  gap: ConnectorSetupGap | null;
+  busy: boolean;
+  connecting: boolean;
+  /** True while a required step is open, which keeps the routines from being activated. */
+  workLeft: boolean;
+  guildId: string;
+  onConnect: (server: McpServerAccess) => void;
+  onCheck: () => void;
+  onDone: () => void;
+  onSkip: () => void;
+  onActivate: () => void;
+};
+
+/**
+ * What the operator can do on an open step: connect its connector, close it by a check, a
+ * confirmation or activating the routines, open the guild page that adds its access, and skip it.
+ */
+function StepActions({
+  step,
+  server,
+  connected,
+  gap,
+  busy,
+  connecting,
+  workLeft,
+  guildId,
+  onConnect,
+  onCheck,
+  onDone,
+  onSkip,
+  onActivate,
+}: StepActionsProps) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {step.kind === "connection" && !connected && server ? (
+        <ConnectStepButtons
+          server={server}
+          gap={gap}
+          disabled={busy || connecting}
+          onConnect={onConnect}
+        />
+      ) : null}
+      <StepCloseButton
+        step={step}
+        connected={connected}
+        busy={busy}
+        workLeft={workLeft}
+        onCheck={onCheck}
+        onDone={onDone}
+        onActivate={onActivate}
+      />
+      <GuildPageLink kind={step.kind} guildId={guildId} />
+      {skippable(step) ? (
+        <Button variant="ghost" size="sm" disabled={busy} onClick={onSkip}>
+          Skip
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+type ConnectStepButtonsProps = {
+  server: McpServerAccess;
+  gap: ConnectorSetupGap | null;
+  disabled: boolean;
+  onConnect: (server: McpServerAccess) => void;
+};
+
+/** Connecting a step's connector, and the way to set its platform key up when a platform admin must. */
+function ConnectStepButtons({ server, gap, disabled, onConnect }: ConnectStepButtonsProps) {
+  const { user } = useIdentity();
+  const location = useLocation();
+  return (
+    <>
+      <Button
+        size="sm"
+        disabled={disabled || gap !== null}
+        {...(gap ? { title: gap.text } : {})}
+        onClick={() => onConnect(server)}
+      >
+        <Icon icon={Link2} size={14} />
+        Connect {server.name}
+      </Button>
+      {gap?.integration && user.platform_admin ? (
+        <Button asChild variant="outline" size="sm">
+          <Link to="/admin" search={setupSearch(gap.integration, location.href)}>
+            Set up
+          </Link>
+        </Button>
+      ) : null}
+    </>
+  );
+}
+
+type StepCloseButtonProps = {
+  step: ApplyStep;
+  connected: boolean;
+  busy: boolean;
+  workLeft: boolean;
+  onCheck: () => void;
+  onDone: () => void;
+  onActivate: () => void;
+};
+
+/** How a step closes: a check apply verifies, activating the routines, or the operator's Done. */
+function StepCloseButton({
+  step,
+  connected,
+  busy,
+  workLeft,
+  onCheck,
+  onDone,
+  onActivate,
+}: StepCloseButtonProps) {
+  if (step.closure === "verified") {
+    return (
+      <Button
+        variant={step.kind === "connection" && !connected ? "outline" : "primary"}
+        size="sm"
+        disabled={busy}
+        onClick={onCheck}
+      >
+        Check
+      </Button>
+    );
+  }
+  if (step.kind === "activate") {
+    return (
+      <Button size="sm" disabled={busy || workLeft} onClick={onActivate}>
+        Activate routines
+      </Button>
+    );
+  }
+  return (
+    <Button size="sm" disabled={busy} onClick={onDone}>
+      <Icon icon={Check} size={14} />
+      Done
+    </Button>
+  );
+}
+
+/** A guild page where the access a step asks for is added. */
+type GuildPage = {
+  to: "/guilds/$guildId/tools" | "/guilds/$guildId/secrets" | "/guilds/$guildId/settings";
+  label: string;
+};
+
+/** The guild page that adds each kind of step's access, for the kinds that add one. */
+const guildPageOf: Partial<Record<ApplyStep["kind"], GuildPage>> = {
+  connection: { to: "/guilds/$guildId/tools", label: "Guild tools" },
+  secret: { to: "/guilds/$guildId/secrets", label: "Guild secrets" },
+  repository: { to: "/guilds/$guildId/settings", label: "Guild settings" },
+};
+
+type GuildPageLinkProps = { kind: ApplyStep["kind"]; guildId: string };
+
+/** The link to the guild page that adds a step's access; nothing for a step that adds none. */
+function GuildPageLink({ kind, guildId }: GuildPageLinkProps) {
+  const page = guildPageOf[kind];
+  if (!page) return null;
+  return (
+    <Button asChild variant="ghost" size="sm">
+      <Link to={page.to} params={{ guildId }}>
+        <Icon icon={ExternalLink} size={14} />
+        {page.label}
+      </Link>
+    </Button>
   );
 }
 
