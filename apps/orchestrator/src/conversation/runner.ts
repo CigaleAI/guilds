@@ -32,7 +32,7 @@ import {
 } from "../llm/credentials.js";
 import { AdmissionConflictError, AdmissionCoordinator } from "../admission/coordinator.js";
 import { promptHash } from "../prompts/index.js";
-import { ConversationConflictError, ConversationError } from "./errors.js";
+import { ConversationCancelled, ConversationConflictError } from "./errors.js";
 import {
   projectToolResults,
   TOOL_RESULT_STUB_MIN_BYTES,
@@ -110,6 +110,9 @@ type CompletionRequest = {
   max_tokens: number;
   tools: unknown[];
 };
+
+/** A completion the model did not return: what the session records as the generation's error. */
+type CompletionFailure = { failure: string };
 
 /**
  * A coach conversation's history as the model is sent it: the stored rows, the generation they
@@ -273,21 +276,17 @@ export class ConversationRunner {
           break;
         }
         await this.assertAllowed(orgId);
-        let completion: Completion;
-        try {
-          completion = await this.complete(
-            args,
-            { model, messages: providerMessages, temperature, max_tokens: maxTokens, tools: schemas },
-            cancel,
-          );
-        } catch (error) {
+        const completion = await this.requestCompletion(
+          args,
+          { model, messages: providerMessages, temperature, max_tokens: maxTokens, tools: schemas },
+          cancel,
+        );
+        if ("failure" in completion) {
           if (cancel.aborted) {
             await this.repair(sessionId, args.generation, "cancelled");
             break;
           }
-          const detail =
-            error instanceof LLMError ? error.message : error instanceof Error ? error.message : "provider error";
-          await this.fail(sessionId, detail);
+          await this.fail(sessionId, completion.failure);
           break;
         }
         const now = new Date();
@@ -325,31 +324,9 @@ export class ConversationRunner {
             await this.commitToolError(sessionId, args.generation, call, "tool call limit reached");
             continue;
           }
-          const fn = call.function;
-          const name = fn.name;
-          const tool = tools.get(name);
+          const name = call.function.name;
           const upcoming = await nextConversationSeq(this.deps.db, this.deps.kind, sessionId);
-          let result: Record<string, unknown>;
-          try {
-            if (!tool) {
-              result = { error: `unknown tool ${name}` };
-            } else if (truncatedToolArguments(finishReason, fn.arguments)) {
-              result = {
-                error:
-                  "output truncated at max_tokens; tool arguments are incomplete JSON. Retry with a smaller payload.",
-              };
-            } else {
-              result = await tool.handler(
-                args.bindToolContext ? args.bindToolContext(upcoming) : args.toolContext,
-                parseToolArgs(fn.arguments),
-              );
-            }
-          } catch (error) {
-            result = {
-              error:
-                error instanceof ConversationError || error instanceof Error ? error.message : "tool failed",
-            };
-          }
+          const result = await callConversationTool(args, call, upcoming, finishReason);
           const envelope = { tool_message_seq: upcoming, ...result };
           const candidateMessages = [
             ...providerMessages,
@@ -404,6 +381,19 @@ export class ConversationRunner {
     }
   }
 
+  /** The model's completion of a step; a provider failure or a cancel ends with its message as a typed failure. */
+  private async requestCompletion(
+    turn: ConversationGeneration,
+    request: CompletionRequest,
+    cancel: CancelEvent,
+  ): Promise<Completion | CompletionFailure> {
+    try {
+      return await this.complete(turn, request, cancel);
+    } catch (error) {
+      return { failure: error instanceof Error ? error.message : "provider error" };
+    }
+  }
+
   private async complete(
     turn: ConversationGeneration,
     request: CompletionRequest,
@@ -434,7 +424,7 @@ export class ConversationRunner {
         ]);
         if (winner.cancelled) {
           abort.abort();
-          throw new Error("cancelled");
+          throw new ConversationCancelled();
         }
         const result = winner.value;
         if (result.done) break;
@@ -557,6 +547,36 @@ export function projectConversationHistory(args: ConversationProjection): Messag
   return messages;
 }
 
+/**
+ * Calls the tool the model named with the call's arguments and the generation's tool context.
+ * A tool that is unknown, whose arguments the step's output cut short, or that throws, ends with
+ * its error as the result, which the model reads.
+ */
+export async function callConversationTool(
+  turn: ConversationGeneration,
+  call: ToolCall,
+  upcoming: number,
+  finishReason: string,
+): Promise<Record<string, unknown>> {
+  const tool = turn.tools.get(call.function.name);
+  if (!tool) {
+    return { error: `unknown tool ${call.function.name}` };
+  }
+  if (truncatedToolArguments(finishReason, call.function.arguments)) {
+    return {
+      error: "output truncated at max_tokens; tool arguments are incomplete JSON. Retry with a smaller payload.",
+    };
+  }
+  try {
+    return await tool.handler(
+      turn.bindToolContext ? turn.bindToolContext(upcoming) : turn.toolContext,
+      parseToolArgs(call.function.arguments),
+    );
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "tool failed" };
+  }
+}
+
 export function toolArgsAreJsonObject(raw: unknown): boolean {
   if (isPlainRecord(raw)) {
     return true;
@@ -594,21 +614,23 @@ export function recoverPartialToolArgs(raw: string): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   const handle = raw.match(/"(?:agent_id|agent_name)"\s*:\s*"((?:\\.|[^"\\])*)"/);
   if (handle?.[1]) {
-    try {
-      out.agent_id = JSON.parse(`"${handle[1]}"`);
-    } catch {
-      out.agent_id = handle[1];
-    }
+    out.agent_id = decodeJsonStringBody(handle[1]) ?? handle[1];
   }
   const rationale = raw.match(/"rationale"\s*:\s*"((?:\\.|[^"\\])*)"/);
   if (rationale?.[1]) {
-    try {
-      out.rationale = JSON.parse(`"${rationale[1]}"`);
-    } catch {
-      out.rationale = rationale[1];
-    }
+    out.rationale = decodeJsonStringBody(rationale[1]) ?? rationale[1];
   }
   return out;
+}
+
+/** The text a JSON string's body between its quotes decodes to; null when its escapes are not JSON. */
+function decodeJsonStringBody(body: string): string | null {
+  try {
+    const decoded: unknown = JSON.parse(`"${body}"`);
+    return typeof decoded === "string" ? decoded : null;
+  } catch {
+    return null;
+  }
 }
 
 function unresolvedCalls(messages: ConversationMessageRow[]): ToolCall[] {

@@ -178,10 +178,7 @@
       "count": 1
     },
     "max-depth": {
-      "count": 6
-    },
-    "no-restricted-syntax": {
-      "count": 5
+      "count": 4
     }
   },
   "src/credentials/crypto.ts": {
