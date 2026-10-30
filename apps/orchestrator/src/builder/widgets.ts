@@ -119,7 +119,8 @@ const QuestionInput = Type.Union([
 export type OptionInput = Static<typeof OptionInput>;
 export type QuestionInput = Static<typeof QuestionInput>;
 
-function compactServer(row: LoadedConnector, state: ConnectionState): ConnectServer {
+/** `row` as a connect widget shows it; `connected` says whether the organisation has a login to it it may reuse. */
+function compactServer(row: LoadedConnector, connected: boolean): ConnectServer {
   return {
     id: row.id,
     slug: row.slug,
@@ -128,7 +129,7 @@ function compactServer(row: LoadedConnector, state: ConnectionState): ConnectSer
     oauth_setup_state: oauthSetupState(row),
     setup_hint: row.setup_hint ?? null,
     ...(row.auth === "token" ? { auth_fields: connectorFacts(row).auth_fields } : {}),
-    connection_state: state,
+    connection_state: connected ? "connected" : "registered_not_connected",
   };
 }
 
@@ -156,7 +157,7 @@ export async function buildOrgConnectWidget(
   return {
     widget: CONNECT_WIDGET,
     mode: "org",
-    server: compactServer(server, connection ? "connected" : "registered_not_connected"),
+    server: compactServer(server, Boolean(connection)),
     recommended_scope: "org",
     allowed_scopes: ["org"],
     connect_now: !connection,
@@ -188,37 +189,34 @@ export async function buildAnyConnectWidget(
       )
       .map((row) => String(row.mcp_server_id)),
   );
-  const servers = published.map((row) =>
-    compactServer(row, connectedIds.has(String(row.id)) ? "connected" : "registered_not_connected"),
-  );
+  const servers = published.map((row) => compactServer(row, connectedIds.has(String(row.id))));
   const allowed: ConnectWidgetScope[] = request.allowScopeChange
     ? [...CONNECT_SCOPES]
     : [request.recommendedScope];
-  const selected = request.serverRef?.trim()
-    ? await resolvePublishedServer(db, request.serverRef, orgId)
-    : null;
-  if (request.serverRef?.trim() && !selected) {
+  const ref = (request.serverRef ?? "").trim();
+  const selected = ref ? await resolvePublishedServer(db, ref, orgId) : null;
+  if (ref && !selected) {
     return { error: "unknown or unpublished connector" };
   }
   const orgConnected = selected
     ? Boolean(await findReusableOrgConnection(db, orgId, selected))
     : false;
-  const connectNow = request.recommendedScope === "org" && !orgConnected;
+  const named = selected ? compactServer(selected, orgConnected) : null;
+  const orgOwned = request.recommendedScope === "org";
+  const alreadyConnected = orgOwned && orgConnected;
   return {
     widget: CONNECT_WIDGET,
     mode: "any",
-    server: selected ? compactServer(selected, orgConnected ? "connected" : "registered_not_connected") : null,
+    server: named,
     servers,
     recommended_scope: request.recommendedScope,
     allowed_scopes: allowed,
-    connect_now: connectNow,
-    already_connected: orgConnected && request.recommendedScope === "org",
-    await_operator: !(orgConnected && request.recommendedScope === "org"),
-    apply_later: request.recommendedScope !== "org",
+    connect_now: orgOwned && !orgConnected,
+    already_connected: alreadyConnected,
+    await_operator: !alreadyConnected,
+    apply_later: !orgOwned,
     reason: request.reason.trim(),
-    title: selected
-      ? `Connect ${selected.display_name || selected.slug}`
-      : "Connect a service",
+    title: named ? `Connect ${named.display_name}` : "Connect a service",
     storage_hint: storageHint(),
   };
 }

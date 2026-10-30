@@ -45,7 +45,7 @@ import {
   BUILDER_MAX_STEPS,
   BUILDER_TOOL_RESULT_STUB_HINT,
 } from "./constants.js";
-import { BuilderConflictError, BuilderError } from "./errors.js";
+import { ConversationConflictError, ConversationError } from "../conversation/errors.js";
 import { builderConversationTools, builderToolSchemas, type BuilderToolContext } from "./tools.js";
 import type { BuilderMcpClient } from "./connected.js";
 import { composeBuilderGenerationContext, composeBuilderSystemMessage, type CoachSettings } from "./system.js";
@@ -123,10 +123,10 @@ export class BuilderService {
   ): Promise<BuilderSessionRow> {
     const session = await getBuilderSession(this.deps.db, sessionId);
     if (!session || session.org_id !== org.id) {
-      throw new BuilderError(404, "builder session not found");
+      throw new ConversationError(404, "builder session not found");
     }
     if (session.created_by_user_id && session.created_by_user_id !== user.id) {
-      throw new BuilderError(404, "builder session not found");
+      throw new ConversationError(404, "builder session not found");
     }
     return session;
   }
@@ -146,16 +146,16 @@ export class BuilderService {
   async validateModel(orgId: string, model: string): Promise<string> {
     const id = model.trim();
     if (!id) {
-      throw new BuilderError(422, "model is required");
+      throw new ConversationError(422, "model is required");
     }
     if (!isMarketplaceModel(id)) {
-      throw new BuilderError(422, "the coach needs a marketplace model");
+      throw new ConversationError(422, "the coach needs a marketplace model");
     }
     try {
       await assertModelConnected(this.credentials, orgId, id);
     } catch (error) {
       if (error instanceof ModelNotConnectedError) {
-        throw new BuilderError(422, error.message);
+        throw new ConversationError(422, error.message);
       }
       throw error;
     }
@@ -243,7 +243,7 @@ export class BuilderService {
   private async recipeFor(session: BuilderSessionRow): Promise<RecipeRow> {
     const recipe = await getRecipe(this.deps.db, String(session.recipe_id));
     if (!recipe) {
-      throw new BuilderError(404, "recipe not found");
+      throw new ConversationError(404, "recipe not found");
     }
     return recipe;
   }
@@ -272,24 +272,24 @@ export class BuilderService {
     content: string,
   ): Promise<Record<string, unknown>> {
     if (!content.trim()) {
-      throw new BuilderError(422, "content must not be empty");
+      throw new ConversationError(422, "content must not be empty");
     }
     if (session.status !== "active") {
-      throw new BuilderConflictError("session cannot generate");
+      throw new ConversationConflictError("session cannot generate");
     }
     const started = await withTransaction(this.deps.db, async (client) => {
       const locked = await lockBuilderSession(client, session.id);
       if (!locked) {
-        throw new BuilderError(404, "builder session not found");
+        throw new ConversationError(404, "builder session not found");
       }
       if (locked.generation_state !== "idle") {
-        throw new BuilderConflictError("builder session is already generating");
+        throw new ConversationConflictError("builder session is already generating");
       }
       const now = new Date();
       await claimCoachRun(this.policy, client, locked.org_id, now);
       const recipe = await getRecipe(client, String(locked.recipe_id));
       if (!recipe) {
-        throw new BuilderError(404, "recipe not found");
+        throw new ConversationError(404, "recipe not found");
       }
       const expectedBodyVersion = recipe.body_version;
       const system = composeBuilderSystemMessage(locked.config_snapshot, recipe, this.deps.guidelinesPath);

@@ -483,16 +483,21 @@ export const builderWriteRecipe = {
       }
       return builderWriteToolResult(written, next);
     } catch (error) {
-      if (error instanceof RecipeConflictError) {
-        return { error: error.message, code: "conflict", body_version: error.body_version };
-      }
-      if (error instanceof RecipeError) {
-        return { error: error.message };
-      }
-      throw error;
+      return recipeWriteRefusal(error);
     }
   },
 };
+
+/** The refusal a recipe write's domain error becomes; any other error is rethrown. */
+function recipeWriteRefusal(error: unknown): BuilderToolRefusal {
+  if (error instanceof RecipeConflictError) {
+    return { error: error.message, code: "conflict", body_version: error.body_version };
+  }
+  if (error instanceof RecipeError) {
+    return { error: error.message };
+  }
+  throw error;
+}
 
 /** A role the coach wrote without a model is recommended the coach's own. */
 export function recommendCoachModel(recipe: RecipeDocument, coachModel: string): void {

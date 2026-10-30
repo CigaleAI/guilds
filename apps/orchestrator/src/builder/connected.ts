@@ -1,6 +1,5 @@
 import { defaultSearchServer, isSearchable, storageHint } from "../connectors/builder.js";
 import { getMcpServer, getMcpServerBySlug, listServers, type LoadedConnector } from "../connectors/servers.js";
-import { McpError } from "../mcp/errors.js";
 import { OPERATOR_CALLER, type McpPool } from "../mcp/pool.js";
 import { callTool } from "../mcp/service.js";
 import { listMcpConnections, listMcpTools, type McpConnectionRow, type McpToolRow } from "../db/mcp.js";
@@ -354,7 +353,7 @@ export async function searchConnectedWorkspace(
       ...(parsed.raw_excerpt ? { raw_excerpt: parsed.raw_excerpt } : {}),
     };
   } catch (error) {
-    const message = error instanceof McpError || error instanceof Error ? error.message : "search failed";
+    const message = error instanceof Error ? error.message : "search failed";
     return {
       server: slug,
       display_name: displayName,

@@ -71,26 +71,6 @@
       "count": 1
     }
   },
-  "src/builder/connected.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/builder/errors.ts": {
-    "boundary/no-reexport-modules": {
-      "count": 1
-    }
-  },
-  "src/builder/tools.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/builder/widgets.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/capabilities/index.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
