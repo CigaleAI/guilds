@@ -508,11 +508,14 @@ export async function listAgentsEmbedding(db: Queryable, orgId: string, displayP
   return result.rows.map((row) => row.agent_id);
 }
 
+/** One owner's notes or files: the owner's level and id, and the kind. */
+export type OwnerArtifactsKey = Pick<Artifact, "level" | "owner_id"> & { kind: "note" | "file" };
+
 /** The live notes or files one owner holds that the reader may read, by key. */
 export async function listOwnerArtifacts(
   db: Queryable,
   reader: ArtifactReader,
-  owner: Pick<Artifact, "level" | "owner_id"> & { kind: "note" | "file" },
+  owner: OwnerArtifactsKey,
 ): Promise<ArtifactRow[]> {
   const values: unknown[] = [reader.orgId, owner.level, owner.owner_id, owner.kind];
   const result = await db.query<ArtifactRow>(
@@ -527,11 +530,14 @@ export async function listOwnerArtifacts(
   return result.rows;
 }
 
+/** A guild and its agents, the owners of a guild's artifacts below the organisation. */
+export type GuildArtifactOwners = { guildId: string; agentIds: string[] };
+
 /** The live notes, Memory, scripts, and files of one guild, its agents, and the organisation that the reader may read. */
 export async function listGuildArtifacts(
   db: Queryable,
   reader: ArtifactReader,
-  owners: { guildId: string; agentIds: string[] },
+  owners: GuildArtifactOwners,
 ): Promise<ArtifactRow[]> {
   const values: unknown[] = [reader.orgId, owners.guildId, owners.agentIds];
   const result = await db.query<ArtifactRow>(
@@ -568,12 +574,15 @@ export async function listReadableNotes(db: Queryable, reader: ArtifactReader): 
 /** What a search or listing of notes or files reads: an optional level and a row cap. */
 export type ArtifactListing = { level: Artifact["level"] | undefined; limit: number };
 
+/** A search of notes or files: a listing and the words it matches. */
+export type ArtifactSearch = ArtifactListing & { query: string };
+
 /** The notes or files the reader may read whose search document or search text matches `query`, best first. */
 export async function searchArtifactsByKind(
   db: Queryable,
   reader: ArtifactReader,
   kind: "note" | "file",
-  search: ArtifactListing & { query: string },
+  search: ArtifactSearch,
 ): Promise<ArtifactRow[]> {
   const values: unknown[] = [reader.orgId, kind];
   let sql = `SELECT ${ARTIFACT_SELECT}, m.access

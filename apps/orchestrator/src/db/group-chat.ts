@@ -118,10 +118,13 @@ export async function updateGroupAgentMessageLimit(
   return getGroupChatState(pool, guildId);
 }
 
+/** Where a read of a guild's group transcript stops: at `throughSeq`, or at its end when that is absent. */
+export type GroupTranscriptEnd = { throughSeq?: number | null };
+
 export async function listGroupMessages(
   pool: Queryable,
   guildId: string,
-  options: { throughSeq?: number | null } = {},
+  options: GroupTranscriptEnd = {},
 ): Promise<GroupMessageRow[]> {
   if (options.throughSeq === undefined || options.throughSeq === null) {
     const result = await pool.query<GroupMessageRow>(

@@ -20,18 +20,21 @@ type FileChangeRow = Omit<InferSelectModel<typeof fileChanges>, "org_id"> & {
 
 export type FileChangeOperation = FileChangeRow["operation"];
 
+/** One change to a file to record: the file, what the operation did, and the version it left. */
+export type NewFileChange = {
+  orgId: string;
+  artifactId?: string;
+  taskAgentId?: string;
+  displayPath: string;
+  operation: FileChangeOperation;
+  version: number;
+  createdAt?: Date;
+};
+
 export async function recordFileChange(
   db: Queryable,
   actor: ChangeActor,
-  args: {
-    orgId: string;
-    artifactId?: string;
-    taskAgentId?: string;
-    displayPath: string;
-    operation: FileChangeOperation;
-    version: number;
-    createdAt?: Date;
-  },
+  args: NewFileChange,
 ): Promise<string> {
   const id = newId("fchg");
   await db.query(

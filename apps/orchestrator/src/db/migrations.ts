@@ -48,9 +48,12 @@ function journalTags(folder: string): Array<string | undefined> {
   return entries.map((entry) => (isPlainRecord(entry) && typeof entry.tag === "string" ? entry.tag : undefined));
 }
 
+/** A migration the database has recorded: its SQL's hash and its stamp, a `bigint` read as a string. */
+type RecordedMigrationRow = { hash: string; created_at: string };
+
 async function recordedStamps(pool: pg.Pool): Promise<Map<string, number>> {
-  const result = await pool.query(`SELECT hash, created_at FROM ${MIGRATIONS_TABLE}`);
-  return new Map(result.rows.map((row: { hash: string; created_at: string }) => [row.hash, Number(row.created_at)]));
+  const result = await pool.query<RecordedMigrationRow>(`SELECT hash, created_at FROM ${MIGRATIONS_TABLE}`);
+  return new Map(result.rows.map((row) => [row.hash, Number(row.created_at)]));
 }
 
 /** Throws `MigrationsNotApplied` naming each committed migration the database has not recorded. */

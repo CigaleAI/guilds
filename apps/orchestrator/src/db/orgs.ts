@@ -164,11 +164,14 @@ export async function insertOrg(
   });
 }
 
+/** An organisation's new name and slug; an absent or null one keeps its value. */
+export type OrgRowPatch = { name?: string | null; slug?: string | null };
+
 export async function updateOrg(
   pool: Queryable,
   orgId: string,
   now: Date,
-  options: { name?: string | null; slug?: string | null },
+  options: OrgRowPatch,
 ): Promise<OrgRow | null> {
   const result = await pool.query<OrgRow>(
     `UPDATE orgs

@@ -102,10 +102,13 @@ async function insertSecretGrants(
   );
 }
 
+/** The guild or agent a secret listing keeps to: organisation-wide secrets and those granted to it; neither keeps every secret. */
+export type SecretHolder = { guildId?: string | null; agentId?: string | null };
+
 export async function listSecrets(
   pool: Queryable,
   orgId: string,
-  options: { guildId?: string | null; agentId?: string | null } = {},
+  options: SecretHolder = {},
 ): Promise<SecretRow[]> {
   const result = await pool.query<SecretRow>(
     `SELECT ${SECRET_COLUMNS}
@@ -124,10 +127,13 @@ export async function listSecrets(
   return result.rows;
 }
 
+/** An agent with the guild and organisation it sits in. */
+export type SecretAgentKey = { orgId: string; guildId: string; agentId: string };
+
 /** The agent's environment: organisation-wide secrets, its guild's grants, and its own. */
 export async function listAgentSecrets(
   pool: Queryable,
-  options: { orgId: string; guildId: string; agentId: string },
+  options: SecretAgentKey,
 ): Promise<AgentSecretRow[]> {
   const result = await pool.query<AgentSecretRow>(
     `SELECT s.id, s.name, s.description
@@ -218,15 +224,18 @@ export async function insertSecret(
   }
 }
 
+/** A secret's new name, description, and sealed value; an absent or null field keeps its value. */
+export type SecretPatch = {
+  name?: string | null;
+  description?: string | null;
+  ciphertext?: Buffer | null;
+  nonce?: Buffer | null;
+};
+
 export async function updateSecret(
   pool: Queryable,
   secretId: string,
-  changes: {
-    name?: string | null;
-    description?: string | null;
-    ciphertext?: Buffer | null;
-    nonce?: Buffer | null;
-  },
+  changes: SecretPatch,
   now: Date,
 ): Promise<SecretCipherRow | null> {
   const rotate = changes.ciphertext !== undefined && changes.ciphertext !== null;

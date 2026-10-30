@@ -1,6 +1,6 @@
 import type { InferSelectModel } from "drizzle-orm";
 import { newId } from "../lib/ids.js";
-import { upsertMcpBinding, type McpConnectionBinding } from "./bindings.js";
+import { upsertMcpBinding, type CoveredScope, type McpConnectionBinding } from "./bindings.js";
 import { pickColumns, ownerRefs } from "./columns.js";
 import { RowMissing } from "./errors.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
@@ -93,11 +93,7 @@ const MCP_CONNECTION_COLUMNS = pickColumns(mcpConnections, MCP_CONNECTION_KEYS);
 
 export async function listMcpConnections(
   pool: Queryable,
-  options: {
-    orgId?: string | null;
-    guildId?: string | null;
-    agentId?: string | null;
-  },
+  options: CoveredScope,
 ): Promise<ScopedMcpConnectionRow[]> {
   const result = await pool.query<ScopedMcpConnectionRow>(
     `SELECT id, mcp_server_id, owner_scope, owner_id, guild_id, agent_id,
