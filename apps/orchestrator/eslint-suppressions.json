@@ -623,23 +623,8 @@
       "count": 2
     }
   },
-  "src/http/cookies.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/http/error-handler.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 2
-    }
-  },
   "src/http/file-routes.ts": {
     "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/http/identity.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     }
   },
@@ -652,14 +637,6 @@
     },
     "no-restricted-syntax": {
       "count": 7
-    }
-  },
-  "src/http/sse.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/instance/integrations.ts": {

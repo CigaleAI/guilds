@@ -1,17 +1,15 @@
-import type { IncomingHttpHeaders } from "node:http";
-import { ORG_COOKIE, ORG_HEADER } from "../organisations/index.js";
-import { USER_COOKIE, USER_HEADER } from "../users/index.js";
+import { ORG_COOKIE, ORG_HEADER, OrgIdentityError } from "../organisations/index.js";
+import { USER_COOKIE, USER_HEADER, UserIdentityError } from "../users/index.js";
 import type { AppDeps } from "./deps.js";
-import { requestCookies } from "./cookies.js";
+import { requestCookies, type RequestWithHeaders } from "./cookies.js";
 import { HttpError } from "./errors.js";
 import type { OrgMembershipRow } from "../db/orgs.js";
 import type { Queryable } from "../db/pg.js";
 import type { UserRow } from "../db/users.js";
 import { resolveEmailUser, resolveTokenOrg, resolveTokenUser } from "../users/identity.js";
 
-export type IdentityRequest = {
-  headers: IncomingHttpHeaders;
-};
+/** The request an identity provider reads: its headers. */
+export type IdentityRequest = RequestWithHeaders;
 
 export type IdentityReply = {
   header: (name: string, value: string) => unknown;
@@ -98,9 +96,8 @@ function identityHttp(error: unknown): HttpError {
   if (error instanceof HttpError) {
     return error;
   }
-  if (error && typeof error === "object" && "status" in error) {
-    const typed = error as { status: number; detail: string };
-    return new HttpError(typed.status, typed.detail);
+  if (error instanceof UserIdentityError || error instanceof OrgIdentityError) {
+    return new HttpError(error.status, error.detail);
   }
   throw error;
 }

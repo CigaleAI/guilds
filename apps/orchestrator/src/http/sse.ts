@@ -28,7 +28,8 @@ function encodeValue(value: unknown): string {
   }
   if (typeof value === "object") {
     const parts: string[] = [];
-    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    const entries: [string, unknown][] = Object.entries(value);
+    for (const [key, item] of entries) {
       if (item === undefined) {
         continue;
       }
@@ -106,8 +107,11 @@ export async function pipeSse(
       const [event, data] = await queue.get(abort.signal);
       reply.raw.write(frameSse(event, data));
     }
-  } catch {
-    /* client disconnected or aborted */
+  } catch (error) {
+    // The queue refuses a read once the client has gone away, which ends the stream.
+    if (!abort.signal.aborted) {
+      throw error;
+    }
   } finally {
     request.raw.off("close", onClose);
     unsubscribe(queue);
