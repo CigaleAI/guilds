@@ -5,7 +5,8 @@ import { Type, type Static } from "@sinclair/typebox";
 import { listGroupMessages } from "../db/group-chat.js";
 import { listGuildsForUser } from "../db/guilds.js";
 import { ABOUT_MAX, DESCRIPTION_MAX } from "../guilds/validation.js";
-import { decodeStudioArguments, studioFunctionSchema } from "./arguments.js";
+import { studioTool } from "./arguments.js";
+import { EditGuildArguments } from "./edit-arguments.js";
 import { STUDIO_DEFAULT_LIMIT, STUDIO_GROUP_LIST_MAX, STUDIO_TOTAL_RETURNED_BYTES } from "./constants.js";
 import { editRequest, loadGuildBase } from "./edits.js";
 import { StudioUnprocessableError } from "./errors.js";
@@ -22,15 +23,11 @@ const ListGroupMessagesArguments = Type.Object({
 });
 type ListGroupMessagesArguments = Static<typeof ListGroupMessagesArguments>;
 
-export const studioListGroupMessages: StudioTool = {
+export const studioListGroupMessages: StudioTool = studioTool({
   name: "studio_list_group_messages",
-  schema: studioFunctionSchema(
-    "studio_list_group_messages",
-    "Inspect bounded public guild history.",
-    ListGroupMessagesArguments,
-  ),
-  async handler(deps, call, args) {
-    const input: ListGroupMessagesArguments = decodeStudioArguments(ListGroupMessagesArguments, args);
+  description: "Inspect bounded public guild history.",
+  parameters: ListGroupMessagesArguments,
+  async run(deps, call, input: ListGroupMessagesArguments) {
     const limit = clampLimit(input.limit, STUDIO_DEFAULT_LIMIT, STUDIO_GROUP_LIST_MAX);
     const offset = cursorOffset(input.cursor);
     const { author_type: authorType, author_handle: authorHandle } = input;
@@ -58,16 +55,14 @@ export const studioListGroupMessages: StudioTool = {
       next_cursor: offset + slice.length < rows.length ? String(offset + slice.length) : null,
     };
   },
-};
+});
 
-export const studioGetGuild: StudioTool = {
+export const studioGetGuild: StudioTool = studioTool({
   name: "studio_get_guild",
-  schema: studioFunctionSchema(
-    "studio_get_guild",
+  description:
     "Read the source guild's live about (short, one line) and description (long) in full. The system message holds the text from session start, capped; this tool returns the current text.",
-    Type.Object({}),
-  ),
-  async handler(deps, call) {
+  parameters: Type.Object({}),
+  async run(deps, call) {
     const base = await loadGuildBase(deps, editScope(call));
     if (base.kind !== "guild") {
       throw new StudioUnprocessableError("source guild not found");
@@ -87,7 +82,7 @@ export const studioGetGuild: StudioTool = {
       }),
     };
   },
-};
+});
 
 const ListGuildsArguments = Type.Object({
   cursor: Type.Optional(Type.String()),
@@ -95,15 +90,12 @@ const ListGuildsArguments = Type.Object({
 });
 type ListGuildsArguments = Static<typeof ListGuildsArguments>;
 
-export const studioListGuilds: StudioTool = {
+export const studioListGuilds: StudioTool = studioTool({
   name: "studio_list_guilds",
-  schema: studioFunctionSchema(
-    "studio_list_guilds",
+  description:
     "Read the organisation's other guilds that the operator can see: each one's name, about (short), and description (long). Their agents, files, and tables stay out of reach; their shared output reaches this guild through organisation tables and notes.",
-    ListGuildsArguments,
-  ),
-  async handler(deps, call, args) {
-    const input: ListGuildsArguments = decodeStudioArguments(ListGuildsArguments, args);
+  parameters: ListGuildsArguments,
+  async run(deps, call, input: ListGuildsArguments) {
     const limit = clampLimit(input.limit, STUDIO_DEFAULT_LIMIT, STUDIO_GROUP_LIST_MAX);
     const offset = cursorOffset(input.cursor);
     const others = (await listGuildsForUser(deps.db, call.orgId, String(call.user.id))).filter(
@@ -135,25 +127,15 @@ export const studioListGuilds: StudioTool = {
       next_cursor: next < others.length ? String(next) : null,
     });
   },
-};
-
-const EditGuildArguments = Type.Object({
-  about: Type.Optional(Type.String({ description: "Complete proposed about line." })),
-  description: Type.Optional(Type.String({ description: "Complete proposed description." })),
-  reason: Type.String({ description: "Why this edit, one or two sentences. Required." }),
 });
-type EditGuildArguments = Static<typeof EditGuildArguments>;
 
-export const studioEditGuild: StudioTool = {
+export const studioEditGuild: StudioTool = studioTool({
   name: "studio_edit_guild",
-  schema: studioFunctionSchema(
-    "studio_edit_guild",
+  description:
     `Propose new text for the source guild's about (short, at most ${ABOUT_MAX} characters), description (long, at most ${DESCRIPTION_MAX} characters), or both. A field left out keeps its live text. Nothing is written: the turn pauses and the operator applies or declines. Read the live text with studio_get_guild first.`,
-    EditGuildArguments,
-  ),
-  async handler(deps, call, args) {
-    const input: EditGuildArguments = decodeStudioArguments(EditGuildArguments, args);
+  parameters: EditGuildArguments,
+  async run(deps, call, input: EditGuildArguments) {
     const base = await loadGuildBase(deps, editScope(call));
     return editRequest(base, input, null);
   },
-};
+});

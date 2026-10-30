@@ -4,7 +4,7 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { agentTask } from "../artifacts/task.js";
 import { composeAgentSystemPrompt, hydrateStanding, promptHash, schemasOffer } from "../prompts/index.js";
-import { decodeStudioArguments, studioFunctionSchema } from "./arguments.js";
+import { studioChoice, studioTool } from "./arguments.js";
 import { STUDIO_DEFAULT_CONTEXT_SECTIONS, STUDIO_TOTAL_RETURNED_BYTES } from "./constants.js";
 import { sliceStudioBytes, truncatePayload } from "./paging.js";
 import { previewCurrentState, projectOfferedToolSchemas } from "./preview.js";
@@ -33,10 +33,11 @@ function fitStudioPayload(payload: Record<string, unknown>): Record<string, unkn
   return truncatePayload(next);
 }
 
-export const studioGetGuidelines: StudioTool = {
+export const studioGetGuidelines: StudioTool = studioTool({
   name: "studio_get_guidelines",
-  schema: studioFunctionSchema("studio_get_guidelines", "Inspect the shared read-only Guidelines source.", Type.Object({})),
-  async handler(deps) {
+  description: "Inspect the shared read-only Guidelines source.",
+  parameters: Type.Object({}),
+  async run(deps) {
     const standing = hydrateStanding({
       systemPath: deps.notesSystemPath,
       agentName: "studio",
@@ -50,12 +51,15 @@ export const studioGetGuidelines: StudioTool = {
       content: wrapEvidence({ source: "guidelines", body: standing }),
     };
   },
-};
+});
+
+const CONTEXT_SECTIONS = ["task", "memory", "state", "config", "effective_prompt", "effective_prompt_headers"] as const;
+type ContextSection = (typeof CONTEXT_SECTIONS)[number];
 
 const GetAgentContextArguments = Type.Object({
   agent_id: Type.String({ description: "Source-guild agent id or name. Required." }),
   sections: Type.Optional(
-    Type.Array(Type.String(), {
+    Type.Array(studioChoice(CONTEXT_SECTIONS), {
       description: "Any of task, memory, state, config, effective_prompt, effective_prompt_headers. Defaults to task.",
     }),
   ),
@@ -63,17 +67,14 @@ const GetAgentContextArguments = Type.Object({
 });
 type GetAgentContextArguments = Static<typeof GetAgentContextArguments>;
 
-export const studioGetAgentContext: StudioTool = {
+export const studioGetAgentContext: StudioTool = studioTool({
   name: "studio_get_agent_context",
-  schema: studioFunctionSchema(
-    "studio_get_agent_context",
+  description:
     "Inspect current prompt sources for one source-guild agent. The first 500 words of each standing task are already in the Studio system prompt. Use this tool for the remainder of a truncated task, the full task, memory, state, config, or effective_prompt (the exact opening system message the next run would receive, with task embeds inlined). Pass agent_id or name.",
-    GetAgentContextArguments,
-  ),
-  async handler(deps, call, args) {
-    const input: GetAgentContextArguments = decodeStudioArguments(GetAgentContextArguments, args);
+  parameters: GetAgentContextArguments,
+  async run(deps, call, input: GetAgentContextArguments) {
     const agent = await resolveHandle(deps, call, input.agent_id);
-    const want = new Set<string>(input.sections ?? STUDIO_DEFAULT_CONTEXT_SECTIONS);
+    const want = new Set<ContextSection>(input.sections ?? STUDIO_DEFAULT_CONTEXT_SECTIONS);
     const cursor = input.cursor;
     const task = await agentTask(deps.artifacts, agent);
     const memory = task.memory;
@@ -168,4 +169,4 @@ export const studioGetAgentContext: StudioTool = {
     }
     return fitStudioPayload(result);
   },
-};
+});

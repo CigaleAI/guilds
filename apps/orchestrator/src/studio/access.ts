@@ -10,6 +10,7 @@ import {
 import { resolveMcpTool } from "../access/runtime.js";
 import { newId } from "../lib/ids.js";
 import { connectionTools } from "../mcp/service.js";
+import type { AccessSetting, EditAccessArguments } from "./edit-arguments.js";
 import type { AgentTarget } from "./edit-request.js";
 import type { EditDeps, EditScope } from "./edits.js";
 import { editActor } from "./actor.js";
@@ -31,9 +32,6 @@ export function isAccessTool(name: string): name is StudioAccessTool {
   return (STUDIO_ACCESS_TOOLS as readonly string[]).includes(name);
 }
 
-const SETTINGS = ["on", "off", "inherit"] as const;
-type Setting = (typeof SETTINGS)[number];
-
 type CatalogKind = BindingRow["catalog_kind"];
 
 /** The fields of a binding that resolving an agent's access reads. */
@@ -42,7 +40,7 @@ type ResolvableBinding = Pick<
   "catalog_kind" | "catalog_id" | "scope" | "scope_id" | "enabled" | "connection_id"
 >;
 
-type Change = { kind: CatalogKind; id: string; label: string; setting: Setting };
+type Change = { kind: CatalogKind; id: string; label: string; setting: AccessSetting };
 
 type ListedTool = { name: string; readOnly: boolean };
 
@@ -189,24 +187,9 @@ function rowsAfter(snapshot: Snapshot, changes: Change[]): ResolvableBinding[] {
   return rows;
 }
 
-function isSetting(raw: unknown): raw is Setting {
-  return SETTINGS.some((setting) => setting === raw);
-}
-
-function settingOf(raw: unknown, field: string, name: string): Setting {
-  if (!isSetting(raw)) {
-    throw new StudioUnprocessableError(`${field}.${name} must be on, off, or inherit`);
-  }
-  return raw;
-}
-
-function entries(args: Record<string, unknown>, field: string): Array<[string, Setting]> {
-  const raw = args[field];
-  if (raw === undefined || raw === null) return [];
-  if (typeof raw !== "object" || Array.isArray(raw)) {
-    throw new StudioUnprocessableError(`${field} must be an object of name to on, off, or inherit`);
-  }
-  return Object.entries(raw).map(([name, value]) => [name.trim(), settingOf(value, field, name)]);
+/** The settings `settings` gives, each name trimmed; none when it is left out. */
+function entries(settings: Record<string, AccessSetting> | undefined): Array<[string, AccessSetting]> {
+  return Object.entries(settings ?? {}).map(([name, setting]) => [name.trim(), setting]);
 }
 
 function nativeToolId(name: string): string {
@@ -219,7 +202,7 @@ function nativeToolId(name: string): string {
 }
 
 /** The overlays a proposal asks for; a setting the agent already has is not a change. */
-function parseChanges(snapshot: Snapshot, args: Record<string, unknown>): Change[] {
+function parseChanges(snapshot: Snapshot, args: EditAccessArguments): Change[] {
   const changes: Change[] = [];
   const seen = new Set<string>();
   const add = (change: Change) => {
@@ -235,12 +218,12 @@ function parseChanges(snapshot: Snapshot, args: Record<string, unknown>): Change
         : existing !== undefined && existing.enabled === (change.setting === "on");
     if (!unchanged) changes.push(change);
   };
-  for (const [name, setting] of entries(args, "native_tools")) {
+  for (const [name, setting] of entries(args.native_tools)) {
     const id = nativeToolId(name);
     add({ kind: "native_tool", id, label: id, setting });
   }
   const connections = agentConnections(snapshot, snapshot.rows).map((item) => item.connection);
-  for (const [id, setting] of entries(args, "connections")) {
+  for (const [id, setting] of entries(args.connections)) {
     const connection = connections.find((item) => item.id === id);
     if (!connection) {
       throw new StudioUnprocessableError(
@@ -249,7 +232,7 @@ function parseChanges(snapshot: Snapshot, args: Record<string, unknown>): Change
     }
     add({ kind: "mcp", id: connection.serverId, label: connection.label, setting });
   }
-  for (const [name, setting] of entries(args, "connection_tools")) {
+  for (const [name, setting] of entries(args.connection_tools)) {
     if (!connections.some((connection) => connection.tools.some((tool) => tool.name === name))) {
       throw new StudioUnprocessableError(
         `connection_tools.${name} is not a tool of ${snapshot.agentName}'s connections; use a name from studio_get_agent_access`,
@@ -316,7 +299,7 @@ function widensAccess(snapshot: Snapshot, after: ResolvableBinding[]): boolean {
  * Reviews a new access request against the live bindings. The request must
  * change something, or it is rejected as unprocessable.
  */
-export async function reviewAccessRequest(deps: EditDeps, scope: EditScope, agentId: string, args: Record<string, unknown>): Promise<AccessReview> {
+export async function reviewAccessRequest(deps: EditDeps, scope: EditScope, agentId: string, args: EditAccessArguments): Promise<AccessReview> {
   const review = await reviewAccess(deps, scope, agentId, args);
   if (!review.changes.length) {
     throw new StudioUnprocessableError(`the proposal matches ${review.target.agent_name}'s live access; nothing to change`);
@@ -328,7 +311,7 @@ export async function reviewAccessRequest(deps: EditDeps, scope: EditScope, agen
  * Recomputes what an access proposal asks for against the live bindings, so a
  * binding that moved since the proposal shows as a changed base.
  */
-export async function reviewAccess(deps: EditDeps, scope: EditScope, agentId: string, args: Record<string, unknown>): Promise<AccessReview> {
+export async function reviewAccess(deps: EditDeps, scope: EditScope, agentId: string, args: EditAccessArguments): Promise<AccessReview> {
   const snapshot = await loadSnapshot(deps, scope, agentId);
   const changes = parseChanges(snapshot, args);
   const after = rowsAfter(snapshot, changes);

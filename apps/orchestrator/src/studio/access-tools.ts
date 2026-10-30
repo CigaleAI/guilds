@@ -4,7 +4,8 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { ScriptError } from "../scripts/validation.js";
 import { NATIVE_TOOLS } from "../seed/catalog.js";
-import { decodeStudioArguments, studioFunctionSchema } from "./arguments.js";
+import { studioTool } from "./arguments.js";
+import { EditAccessArguments } from "./edit-arguments.js";
 import { liveGrantedConnectionIds } from "./connection-tools.js";
 import { accessEditRequest } from "./edits.js";
 import { StudioUnprocessableError } from "./errors.js";
@@ -19,15 +20,12 @@ const GetAgentAccessArguments = Type.Object({
 });
 type GetAgentAccessArguments = Static<typeof GetAgentAccessArguments>;
 
-export const studioGetAgentAccess: StudioTool = {
+export const studioGetAgentAccess: StudioTool = studioTool({
   name: "studio_get_agent_access",
-  schema: studioFunctionSchema(
-    "studio_get_agent_access",
+  description:
     "Inspect what one source-guild agent is offered at run start: native tools, scripts, secret names, and MCP connections with their listed tools. Withheld lists name what the agent could be offered but is not. Each connection says whether this Studio session may read through it (studio_granted).",
-    GetAgentAccessArguments,
-  ),
-  async handler(deps, call, args) {
-    const input: GetAgentAccessArguments = decodeStudioArguments(GetAgentAccessArguments, args);
+  parameters: GetAgentAccessArguments,
+  async run(deps, call, input: GetAgentAccessArguments) {
     const agent = await resolveHandle(deps, call, input.agent_id);
     const access = await projectAgentAccess(deps.preview, agent);
     const granted = await liveGrantedConnectionIds(deps, call);
@@ -54,7 +52,7 @@ export const studioGetAgentAccess: StudioTool = {
       })),
     });
   },
-};
+});
 
 const GetScriptArguments = Type.Object({
   agent_id: Type.String({ description: "Source-guild agent id or name. Required." }),
@@ -63,15 +61,12 @@ const GetScriptArguments = Type.Object({
 });
 type GetScriptArguments = Static<typeof GetScriptArguments>;
 
-export const studioGetScript: StudioTool = {
+export const studioGetScript: StudioTool = studioTool({
   name: "studio_get_script",
-  schema: studioFunctionSchema(
-    "studio_get_script",
+  description:
     "Read the source of one script owned by a source-guild agent. Script names come from the State projection or studio_get_agent_access.",
-    GetScriptArguments,
-  ),
-  async handler(deps, call, args) {
-    const input: GetScriptArguments = decodeStudioArguments(GetScriptArguments, args);
+  parameters: GetScriptArguments,
+  async run(deps, call, input: GetScriptArguments) {
     const agent = await resolveHandle(deps, call, input.agent_id);
     let script: Record<string, unknown>;
     try {
@@ -100,53 +95,15 @@ export const studioGetScript: StudioTool = {
       ...(sliced.truncated ? { truncated: true } : {}),
     };
   },
-};
-
-const ACCESS_SETTING = Type.String({ enum: ["on", "off", "inherit"] });
-
-const EditAccessArguments = Type.Object({
-  agent_id: Type.String({ description: "Source-guild agent id or name. Required." }),
-  native_tools: Type.Optional(
-    Type.Object(
-      {},
-      {
-        additionalProperties: ACCESS_SETTING,
-        description: "Native tool name to setting, from native_tools or withheld_native_tools.",
-      },
-    ),
-  ),
-  connections: Type.Optional(
-    Type.Object(
-      {},
-      {
-        additionalProperties: ACCESS_SETTING,
-        description: "Connection id from studio_get_agent_access to setting: the whole connection for this agent.",
-      },
-    ),
-  ),
-  connection_tools: Type.Optional(
-    Type.Object(
-      {},
-      {
-        additionalProperties: ACCESS_SETTING,
-        description: "Connection tool name from offered_tools or withheld_tools to setting.",
-      },
-    ),
-  ),
-  reason: Type.String({ description: "Why this change, one or two sentences, citing evidence. Required." }),
 });
-type EditAccessArguments = Static<typeof EditAccessArguments>;
 
-export const studioEditAccess: StudioTool = {
+export const studioEditAccess: StudioTool = studioTool({
   name: "studio_edit_access",
-  schema: studioFunctionSchema(
-    "studio_edit_access",
+  description:
     "Propose what one source-guild agent is offered: native tools, whole connections, and single connection tools. Each entry sets the agent's own overlay: on, off, or inherit (drop the overlay and take the guild's setting). Entries left out stay as they are. Nothing is written: the turn pauses and the operator applies or declines. Read the agent with studio_get_agent_access first. The browser, coding, scripting, and memory switches are agent configuration, not access.",
-    EditAccessArguments,
-  ),
-  async handler(deps, call, args) {
-    const input: EditAccessArguments = decodeStudioArguments(EditAccessArguments, args);
+  parameters: EditAccessArguments,
+  async run(deps, call, input: EditAccessArguments) {
     const agent = await resolveHandle(deps, call, input.agent_id);
     return accessEditRequest(deps, editScope(call), agent.id, input);
   },
-};
+});

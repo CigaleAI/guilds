@@ -192,14 +192,15 @@ test("note, table, and routine tools each take a create, edit, or delete action"
     };
     assert.deepEqual(schema.function?.parameters?.properties?.action?.enum, ["create", "edit", "delete"], name);
     assert.deepEqual(schema.function?.parameters?.required, ["action", "reason"], name);
+    await assert.rejects(
+      studioToolMap().get(name)!.handler({} as never, {} as never, { action: "rename", reason: "r" }),
+      /^StudioUnprocessableError: \/action: Expected string to match/,
+      name,
+    );
   }
   assert.throws(() => editActionOf({ action: "rename" }), /action must be create, edit, or delete/);
   assert.throws(() => editActionOf({}), /action must be/);
   assert.equal(editActionOf({ action: "delete" }), "delete");
-  await assert.rejects(
-    studioToolMap().get("studio_edit_routine")!.handler({} as never, {} as never, { action: "rename", reason: "r" }),
-    /action must be/,
-  );
 });
 
 test("studio system prompt teaches the routine and table actions", () => {

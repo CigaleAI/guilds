@@ -6,7 +6,8 @@ import { operatorActor } from "../artifacts/actors.js";
 import { memoryDiffText, memoryTimeline, type MemoryTimelineEntry } from "../artifacts/memory.js";
 import type { AgentRow } from "../db/agents.js";
 import { capBytes } from "../lib/bytes.js";
-import { decodeStudioArguments, studioFunctionSchema } from "./arguments.js";
+import { studioTool } from "./arguments.js";
+import { EditMemoryArguments } from "./edit-arguments.js";
 import { STUDIO_DEFAULT_LIMIT, STUDIO_REVISION_LIST_MAX, STUDIO_TOOL_RESULT_MAX_BYTES } from "./constants.js";
 import { editRequest, loadMemoryBase } from "./edits.js";
 import { StudioUnprocessableError } from "./errors.js";
@@ -44,15 +45,12 @@ function timelineHeader(entry: MemoryTimelineEntry): Record<string, unknown> {
   };
 }
 
-export const studioListMemoryRevisions: StudioTool = {
+export const studioListMemoryRevisions: StudioTool = studioTool({
   name: "studio_list_memory_revisions",
-  schema: studioFunctionSchema(
-    "studio_list_memory_revisions",
+  description:
     "List the versions an agent's Memory has held, newest first: who wrote each version (a run id, a user, or the agent), when, and line counts. Content is not included; read one version with studio_get_memory_version.",
-    AgentHistoryArguments,
-  ),
-  async handler(deps, call, args) {
-    const input: AgentHistoryArguments = decodeStudioArguments(AgentHistoryArguments, args);
+  parameters: AgentHistoryArguments,
+  async run(deps, call, input: AgentHistoryArguments) {
     const agent = await resolveHandle(deps, call, input.agent_id);
     const limit = clampLimit(input.limit, STUDIO_DEFAULT_LIMIT, STUDIO_REVISION_LIST_MAX);
     const offset = cursorOffset(input.cursor);
@@ -64,7 +62,7 @@ export const studioListMemoryRevisions: StudioTool = {
       next_cursor: offset + slice.length < entries.length ? String(offset + slice.length) : null,
     };
   },
-};
+});
 
 const GetMemoryVersionArguments = Type.Object({
   agent_id: Type.String({ description: "Source-guild agent id or name. Required." }),
@@ -76,15 +74,12 @@ const GetMemoryVersionArguments = Type.Object({
 });
 type GetMemoryVersionArguments = Static<typeof GetMemoryVersionArguments>;
 
-export const studioGetMemoryVersion: StudioTool = {
+export const studioGetMemoryVersion: StudioTool = studioTool({
   name: "studio_get_memory_version",
-  schema: studioFunctionSchema(
-    "studio_get_memory_version",
+  description:
     "Read one version of an agent's Memory by revision_id or version_index from studio_list_memory_revisions (omit both for the live version), with the line diff against the previous version.",
-    GetMemoryVersionArguments,
-  ),
-  async handler(deps, call, args) {
-    const input: GetMemoryVersionArguments = decodeStudioArguments(GetMemoryVersionArguments, args);
+  parameters: GetMemoryVersionArguments,
+  async run(deps, call, input: GetMemoryVersionArguments) {
     const agent = await resolveHandle(deps, call, input.agent_id);
     const entries = await memoryTimelineFor(deps, call, agent);
     const { revision_id: revisionId, version_index: index } = input;
@@ -117,27 +112,16 @@ export const studioGetMemoryVersion: StudioTool = {
         : null,
     };
   },
-};
-
-const EditMemoryArguments = Type.Object({
-  agent_id: Type.String({ description: "Source-guild agent id or name. Required." }),
-  content: Type.String({ description: "Complete proposed Memory, not a description of changes. Required." }),
-  base_version: Type.Integer({ description: "Memory version the proposal was built from. Required." }),
-  reason: Type.String({ description: "Why this edit, one or two sentences, citing evidence. Required." }),
 });
-type EditMemoryArguments = Static<typeof EditMemoryArguments>;
 
-export const studioEditMemory: StudioTool = {
+export const studioEditMemory: StudioTool = studioTool({
   name: "studio_edit_memory",
-  schema: studioFunctionSchema(
-    "studio_edit_memory",
+  description:
     "Propose a complete replacement of one source-guild agent's Memory. Nothing is written: the turn pauses and the operator applies or declines. Read the live Memory first and pass its version as base_version.",
-    EditMemoryArguments,
-  ),
-  async handler(deps, call, args) {
-    const input: EditMemoryArguments = decodeStudioArguments(EditMemoryArguments, args);
+  parameters: EditMemoryArguments,
+  async run(deps, call, input: EditMemoryArguments) {
     const agent = await resolveHandle(deps, call, input.agent_id);
     const base = await loadMemoryBase(deps, editScope(call), agent);
     return editRequest(base, input, input.base_version);
   },
-};
+});

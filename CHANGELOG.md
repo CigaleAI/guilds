@@ -8,6 +8,20 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** A Studio tool call that gives a value outside an
+argument's fixed list is refused before the tool does any work, with
+the first mismatch named by its JSON pointer, such as
+`/sections/0: Expected string to match '^(?:task|memory|…)$'`. This
+covers a `studio_get_agent_context` section, a `studio_find_artifacts`
+level, the `action` of `studio_edit_note`, `studio_edit_collection` and
+`studio_edit_routine`, a note `level`, a table `scope`, column `type`
+and access mode, and a `studio_edit_access` setting; each is offered
+to the model as an enum. Before, an unknown section or level was
+ignored, and the other values were refused by the tool with a message
+of its own, such as `scope must be guild or org`. Opening, applying or
+declining an edit request reads the recorded call through the same
+check.
+
 **No impact.** The browser and terminal proxies
 (`/api/agents/:id/browser/vnc/*`, `/api/agents/:id/cli/tty/*`) answer
 502 for a body that is not in the gzip or deflate encoding the sandbox

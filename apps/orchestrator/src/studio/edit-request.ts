@@ -4,7 +4,6 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { WRITE_MAX_BYTES } from "../artifacts/types.js";
-import { argString } from "../toolbox/schema.js";
 import { StudioUnprocessableError } from "./errors.js";
 
 // An edit tool never writes. It returns this widget; the turn pauses until
@@ -177,12 +176,13 @@ export function assertContent(content: string): void {
   }
 }
 
-export function requireReason(args: Record<string, unknown>): string {
-  const reason = argString(args, "reason").trim();
-  if (!reason) {
+/** The reason an edit gives, trimmed; a blank one is refused. */
+export function requireReason(reason: string): string {
+  const trimmed = reason.trim();
+  if (!trimmed) {
     throw new StudioUnprocessableError("reason is required");
   }
-  return reason;
+  return trimmed;
 }
 
 export function awaitOperator(title: string, reason: string, edit: StudioEdit): StudioEditWidget {
