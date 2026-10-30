@@ -1280,22 +1280,6 @@
       "count": 1
     }
   },
-  "src/studio/state-data.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 4
-    }
-  },
-  "src/studio/state-list.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
   "src/studio/system.ts": {
     "complexity": {
       "count": 1
