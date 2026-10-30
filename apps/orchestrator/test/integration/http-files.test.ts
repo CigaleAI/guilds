@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { ArtifactFiles } from "../../src/artifacts/files.js";
+import type { SharedFileChange } from "../../src/artifacts/operator-files.js";
 import { artifactStore } from "../../src/artifacts/store.js";
 import { connect } from "../../src/seed/connect.js";
 import { MemoryBlobStore } from "../../src/lib/blob-store.js";
@@ -35,11 +36,15 @@ test("operators upload, list, download, share, and delete files per level", { ti
   const artifacts = artifactStore(database.pool, templatesRoot());
   const blobs = new MemoryBlobStore();
   const files = new ArtifactFiles(artifacts, blobs);
+  const published: Array<[string, SharedFileChange]> = [];
   const app = await buildApp(database, {
     db,
     notes,
     artifacts,
     files,
+    publishSharedFileChanged: async (guildId, change) => {
+      published.push([guildId, change]);
+    },
     scripts: agentScripts(db),
     schedules: agentSchedules(db),
   });
@@ -173,6 +178,25 @@ test("operators upload, list, download, share, and delete files per level", { ti
     const gone = await app.inject({ method: "GET", url: `/api/files/${file.id}`, headers: OWNER });
     assert.equal(gone.statusCode, 404);
     assert.equal(blobs.objects.size, 1, "only the organisation file's bytes remain");
+
+    const agentUpload = await app.inject({
+      method: "POST",
+      url: `/api/agents/${agentId}/files`,
+      headers: { ...OWNER, ...BYTES, "x-filename": "notes.txt", "x-description": "Working notes" },
+      payload: Buffer.from("notes"),
+    });
+    assert.equal(agentUpload.statusCode, 201, agentUpload.body);
+    const guildPath = file.display_path;
+    assert.deepEqual(
+      published,
+      [
+        [guildId, { displayPath: guildPath }],
+        [guildId, { displayPath: guildPath }],
+        [guildId, { displayPath: guildPath }],
+        [guildId, { displayPath: `org/org_home/agents/${agentId}/files/notes.txt` }],
+      ],
+      "a guild or agent file's upload, replacement and deletion are each announced once to its guild; an organisation file's are not",
+    );
   } finally {
     await app.close();
     await database.close();

@@ -2,6 +2,7 @@ import { Type, type Static } from "@sinclair/typebox";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { loadOperatorActor } from "../artifacts/actors.js";
 import { ArtifactFiles, type FileView } from "../artifacts/files.js";
+import { deleteSharedFile, uploadSharedFile } from "../artifacts/operator-files.js";
 import { FILE_MAX_BYTES, type ArtifactActor, type ArtifactLevel } from "../artifacts/types.js";
 import { requireVisibleGuild } from "../guilds/access.js";
 import { requireVisibleAgent } from "../agents/access.js";
@@ -10,7 +11,6 @@ import type { AppDeps, RouteApp } from "./deps.js";
 import { HttpError } from "./errors.js";
 import { currentOrg, currentUser } from "./identity.js";
 import { AgentParams, GuildParams } from "./params.js";
-import { publishGroup } from "./publish.js";
 
 /** An upload's headers: the file's name and description, URL-encoded, and its media type. */
 const UploadHeadersSchema = Type.Object({
@@ -91,12 +91,6 @@ async function orgOwner(deps: AppDeps, request: FastifyRequest): Promise<FileOwn
   return { level: "org", ownerId: String(org.id), guildId: null, actor };
 }
 
-async function publishFileChanged(deps: AppDeps, guildId: string | null, displayPath: string): Promise<void> {
-  if (guildId) {
-    await publishGroup(deps, guildId, "guild.artifacts.changed", { scope: "files", path: displayPath });
-  }
-}
-
 /** The files an owner holds. */
 async function listFiles(deps: AppDeps, owner: FileOwner): Promise<FileView[]> {
   return await filesOf(deps).listOwnerFiles(owner.actor, owner.level, owner.ownerId);
@@ -109,10 +103,8 @@ async function uploadFile(
   owner: FileOwner,
   upload: FileUpload,
 ): Promise<FastifyReply> {
-  const files = filesOf(deps);
-  const row = await files.putFile(owner.actor, { level: owner.level, ...upload });
-  const view = files.view(row);
-  await publishFileChanged(deps, owner.guildId, view.display_path);
+  const writes = { ...deps, files: filesOf(deps) };
+  const view = await uploadSharedFile(writes, owner.actor, { level: owner.level, ...upload });
   return reply.code(201).send(view);
 }
 
@@ -172,10 +164,7 @@ export async function registerFileRoutes(app: RouteApp, deps: AppDeps): Promise<
 
   app.delete("/api/files/:file_id", { schema: { params: FileParams } }, async (request, reply) => {
     const { actor } = await orgOwner(deps, request);
-    const files = filesOf(deps);
-    const row = await files.loadFileById(actor, request.params.file_id);
-    await files.deleteFile(actor, row);
-    await publishFileChanged(deps, row.guild_id, files.view(row).display_path);
+    await deleteSharedFile({ ...deps, files: filesOf(deps) }, actor, request.params.file_id);
     return reply.code(204).send();
   });
 }

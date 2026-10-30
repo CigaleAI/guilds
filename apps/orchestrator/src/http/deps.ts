@@ -7,6 +7,7 @@ import type {
   RawServerDefault,
 } from "fastify";
 import type { ArtifactFiles } from "../artifacts/files.js";
+import type { SharedFileChange } from "../artifacts/operator-files.js";
 import type { ArtifactStore } from "../artifacts/store.js";
 import type { Database } from "../db/client.js";
 import type { OrgCreatedHook } from "../db/orgs.js";
@@ -59,6 +60,8 @@ export type AppDeps = {
   artifacts?: ArtifactStore;
   /** The shared files over `artifacts` and the blob store. */
   files?: ArtifactFiles;
+  /** Tells a guild that one of its shared files changed; file writes announce nothing when absent. */
+  publishSharedFileChanged?: (guildId: string, change: SharedFileChange) => Promise<void>;
   scripts: Scripts;
   schedules: Schedules;
   /** Tells a guild that one of its agents' routines changed; routine writes announce nothing when absent. */

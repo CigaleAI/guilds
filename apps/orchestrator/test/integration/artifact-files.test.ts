@@ -7,6 +7,12 @@ import { addAgent } from "../../src/agents/service.js";
 import { systemActor } from "../helpers/agents.js";
 import { ArtifactFiles, fileBlobKey } from "../../src/artifacts/files.js";
 import { agentActor, operatorActor } from "../../src/artifacts/actors.js";
+import {
+  deleteSharedFile,
+  uploadSharedFile,
+  type SharedFileChange,
+  type SharedFileWriteDeps,
+} from "../../src/artifacts/operator-files.js";
 import { listFileChanges } from "../../src/db/file-changes.js";
 import { artifactStore, type ArtifactStore } from "../../src/artifacts/store.js";
 import type { Database } from "../../src/db/client.js";
@@ -209,5 +215,30 @@ describe("shared files", { concurrency: 1 }, () => {
     assert.equal((await accessList(store, operator, { kind: "file", id: row.id }).catch((error: Error) => error.message)), "file not found");
     const changes = await listFileChanges(database.pool, "org_home", put);
     assert.deepEqual(changes.map((change) => change.operation), ["delete", "create"]);
+  });
+
+  test("an operator's upload and delete are announced to the file's guild, and an organisation file's to none", async () => {
+    const published: Array<[string, SharedFileChange]> = [];
+    const deps: SharedFileWriteDeps = {
+      files,
+      publishSharedFileChanged: async (guildId, change) => {
+        published.push([guildId, change]);
+      },
+    };
+    const upload = { name: "brief.txt", description: "The brief", mime: "", bytes: Buffer.from("brief") };
+    const guildFile = await uploadSharedFile(deps, beta, { level: "guild", ...upload });
+    const agentFile = await uploadSharedFile(deps, beta, { level: "agent", ...upload });
+    const orgFile = await uploadSharedFile(deps, operator, { level: "org", ...upload });
+    await deleteSharedFile(deps, beta, guildFile.id);
+    await deleteSharedFile(deps, operator, orgFile.id);
+    assert.deepEqual(published, [
+      ["guild_beta", { displayPath: "org/org_home/guilds/guild_beta/files/brief.txt" }],
+      ["guild_beta", { displayPath: "org/org_home/agents/a_beta/files/brief.txt" }],
+      ["guild_beta", { displayPath: "org/org_home/guilds/guild_beta/files/brief.txt" }],
+    ]);
+
+    await deleteSharedFile({ files }, beta, agentFile.id);
+    await assert.rejects(() => files.loadFileById(beta, agentFile.id), /artifact not found/);
+    assert.equal(published.length, 3, "a write without a publisher announces nothing");
   });
 });

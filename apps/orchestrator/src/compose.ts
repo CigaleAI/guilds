@@ -206,6 +206,13 @@ export async function createServer(
       notes,
       artifacts,
       files,
+      // A shared file an operator uploads or deletes is published on its guild's group chat.
+      publishSharedFileChanged: async (guildId, change) => {
+        await generation.groupChat.publish(guildId, "guild.artifacts.changed", {
+          scope: "files",
+          path: change.displayPath,
+        });
+      },
       scripts,
       schedules,
       publishRoutinesChanged,
