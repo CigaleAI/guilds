@@ -4,7 +4,8 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { connectionConfig, openSandboxSdk, type ConnectionConfig } from "../../src/sandbox/index.js";
+import { connectionConfig } from "../../src/sandbox/index.js";
+import { openSandboxSdk, type ConnectionConfig } from "../../src/sandbox/sdk.js";
 
 const OPENSANDBOX_COMMIT = "473ff611d93670a149ce6600f27ed194b18cce89";
 const OPENSANDBOX_IMAGE = `guilds-opensandbox-server:${OPENSANDBOX_COMMIT.slice(0, 8)}`;

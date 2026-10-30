@@ -82,7 +82,7 @@ A repository that extends core holds this one as a submodule
 | `typesafe/` | The group routing client |
 | `schedules/` | Routine timing and the `Schedules` service ([Routines](../concepts/routines.md)) |
 | `scripts/` | The agent `script` catalog and its materialisation ([Scripts](../concepts/scripts.md)) |
-| `sandbox/` | `RunSandboxes`, core's sandbox provider, and the orphan sweep |
+| `sandbox/` | `RunSandboxes`, core's sandbox provider (`index.ts`), the OpenSandbox SDK adapter: its shapes, its loading, and the wrappers over its JS signatures (`sdk.ts`), and the orphan sweep (`sweep.ts`) |
 | `llm/` | Providers, the models.dev catalog, credentials, the model client, tokens, and cost ([Model client](orchestrator.md#model-client)) |
 | `policy/` | `OrgPolicy` and the checks core runs against it |
 | `avatars/` | [DiceBear](https://www.dicebear.com/) SVGs in seven styles (critters, cameo, pixelbot, bottts-neutral, clay, cutouts, voxel-bot); `looks.ts` assigns a guild family and a variant per builder role |

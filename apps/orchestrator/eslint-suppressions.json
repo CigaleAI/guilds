@@ -1095,16 +1095,21 @@
   },
   "src/sandbox/index.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 23
+      "count": 7
+    },
+    "no-restricted-syntax": {
+      "count": 7
+    }
+  },
+  "src/sandbox/sdk.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 16
     },
     "complexity": {
       "count": 1
     },
-    "limits/file-lines": {
-      "count": 1
-    },
     "no-restricted-syntax": {
-      "count": 8
+      "count": 1
     }
   },
   "src/sandbox/sweep.ts": {
