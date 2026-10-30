@@ -10,7 +10,15 @@ import type { ConnectorLogin, McpPool } from "../mcp/pool.js";
 import { connectionTools, resolveConnectionTool, type ConnectionTool } from "../mcp/service.js";
 import { MissingSecretError } from "../secrets/index.js";
 import { listServers, type LoadedConnector } from "../connectors/servers.js";
-import { ACCESS_NATIVE_TOOLS, enabledToolNames, resolveItem, resolvedMcp, resolvedTools, type Resolved } from "./index.js";
+import {
+  ACCESS_NATIVE_TOOLS,
+  enabledToolNames,
+  resolveItem,
+  resolvedMcp,
+  resolvedTools,
+  type ResolvableBinding,
+  type Resolved,
+} from "./index.js";
 import type { AgentPlaceRow } from "../db/agents.js";
 import type { RunMcpConnection, RunMcpTool, SecretRef } from "../db/schema/index.js";
 
@@ -42,7 +50,7 @@ function accessDatabase(db: Queryable) {
 export type AccessDatabase = ReturnType<typeof accessDatabase>;
 
 export function resolveMcpTool(
-  rows: Array<Record<string, unknown>>,
+  rows: ResolvableBinding[],
   namespaced: string,
   options: {
     serverEnabled: boolean;
@@ -215,7 +223,7 @@ async function loginTools(
 }
 
 /** The login's entry in the run's MCP access: its tools that resolve On, or null when none does. */
-function offeredLogin(rows: Array<Record<string, unknown>>, listing: Listing, scope: RuntimeScope): RuntimeMcpConnection | null {
+function offeredLogin(rows: ResolvableBinding[], listing: Listing, scope: RuntimeScope): RuntimeMcpConnection | null {
   const offered = listing.listed
     .filter((tool) => resolveMcpTool(rows, tool.namespaced_name, { serverEnabled: true, ...scope }).enabled)
     .map((tool) => ({ name: tool.namespaced_name, remote_name: tool.remote_name, schema: tool.schema }));

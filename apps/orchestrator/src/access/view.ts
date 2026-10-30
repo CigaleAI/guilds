@@ -1,4 +1,4 @@
-import { accessPayload, mcpToolView, resolvedMcp } from "./index.js";
+import { accessPayload, mcpToolView, resolvedMcp, type ResolutionScope } from "./index.js";
 import { agentSecrets, resolveMcpTool } from "./runtime.js";
 import { agentDetail } from "../agents/view.js";
 import { listServers, serverTools, type LoadedConnector } from "../connectors/servers.js";
@@ -80,18 +80,14 @@ export async function loadAccessViewThrough(
     guildId: options.guildId ?? null,
     agentId: options.agentId ?? null,
   };
+  const resolution: ResolutionScope = { ...scope, viewScope: options.viewScope };
   const connections = await db.listMcpConnections(scope);
   const servers = visibleServers(await db.listServers({ owner: { visibleTo: scope.orgId } }), connections);
   const rawListed = await listConnectionTools(db, options.mcp ?? null, connections, servers);
   // Read after the syncs: a sync writes an Off binding for each tool it lists for the first time.
   const rows = await db.listBindingsCovering(scope);
   const listedTools: Record<string, Array<Record<string, unknown>>> = {};
-  for (const [item, server] of resolvedMcp(rows, servers, {
-    orgId: scope.orgId,
-    guildId: scope.guildId,
-    agentId: scope.agentId,
-    viewScope: options.viewScope,
-  })) {
+  for (const [item, server] of resolvedMcp(rows, servers, resolution)) {
     const key = item.connection_id ?? `catalog:${server.id}`;
     if (item.connection_id !== null) {
       listedTools[key] = (rawListed[item.connection_id] ?? []).map((tool) => {
@@ -102,7 +98,7 @@ export async function loadAccessViewThrough(
           agentId: scope.agentId,
           viewScope: options.viewScope,
         });
-        return mcpToolView(resolved, tool, { serverSource: item.source_scope });
+        return mcpToolView(resolved, tool, item.source_scope);
       });
       continue;
     }
@@ -126,20 +122,11 @@ export async function loadAccessViewThrough(
           description: tool.description,
           input_schema: tool.input_schema,
         },
-        { serverSource: item.source_scope },
+        item.source_scope,
       );
     });
   }
-  return accessPayload({
-    rows,
-    orgId: scope.orgId,
-    guildId: scope.guildId,
-    agentId: scope.agentId,
-    viewScope: options.viewScope,
-    servers,
-    connections,
-    listedTools,
-  });
+  return accessPayload(rows, resolution, { servers, connections, listedTools });
 }
 
 /** The tools, connectors and bindings a scope sees, with each listed tool resolved for it. */

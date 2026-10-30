@@ -12,7 +12,13 @@ import { userActor } from "../lib/change-actor.js";
 import { newId } from "../lib/ids.js";
 import { serverVisible } from "../mcp/visibility.js";
 import { resetBinding, writeBinding } from "./bindings.js";
-import { BindingError, validateBinding, validateCatalog, validateScope } from "./index.js";
+import {
+  BindingError,
+  validateBinding,
+  validateCatalog,
+  validateScope,
+  type BoundConnector,
+} from "./index.js";
 import type { UserRow } from "../db/users.js";
 
 /** A binding as an operator asks for it, before validation; `connectionId` absent keeps the stored login. */
@@ -74,7 +80,7 @@ async function loadBoundConnector(
   key: BindingKey,
   orgId: string | null,
   connectionId: string | null,
-) {
+): Promise<BoundConnector> {
   if (key.catalogKind === "mcp_tool" && !(await isListedMcpTool(db, key.catalogId, orgId))) {
     throw new BindingError("mcp tool not found", 404);
   }
@@ -108,16 +114,13 @@ export async function setBinding(
   const orgId = await scopeOrgId(db, scope, scopeId);
   const replacesConnection = request.connectionId !== undefined;
   const connectionId = request.connectionId ?? null;
-  const { server, connection } = await loadBoundConnector(db, key, orgId, connectionId);
-  const overlay = validateBinding({
-    ...key,
-    enabled: request.enabled,
-    guildId,
-    orgId,
-    server,
-    connection,
-    connectionId,
-  });
+  const connector = await loadBoundConnector(db, key, orgId, connectionId);
+  const overlay = validateBinding(
+    key,
+    { enabled: request.enabled, connectionId },
+    { orgId, guildId },
+    connector,
+  );
   const existing = catalogKind === "mcp" && !replacesConnection ? await getBinding(db, key) : null;
   const binding = {
     bindingId: newId("bind"),

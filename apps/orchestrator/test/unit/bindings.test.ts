@@ -12,6 +12,7 @@ import {
   validateBinding,
   validateCatalog,
   validateScope,
+  type ResolvableBinding,
 } from "../../src/access/index.js";
 import { visibleAt } from "../../src/credentials/visibility.js";
 import { loadJsonFixture } from "../helpers/fixtures.js";
@@ -30,13 +31,13 @@ const fixture = loadJsonFixture<{
 }>("bindings/resolution.json");
 
 function binding(
-  kind: string,
+  kind: ResolvableBinding["catalog_kind"],
   catalogId: string,
-  scope: string,
+  scope: ResolvableBinding["scope"],
   scopeId: string | null,
   enabled: boolean,
   connectionId: string | null = null,
-): Record<string, unknown> {
+): ResolvableBinding {
   return {
     catalog_kind: kind,
     catalog_id: catalogId,
@@ -163,29 +164,23 @@ test("secrets are not a binding kind", () => {
 test("mcp binding requires a catalog server", () => {
   assert.throws(
     () =>
-      validateBinding({
-        catalogKind: "mcp",
-        catalogId: "mcp_notion",
-        scope: "guild",
-        scopeId: "pd",
-        enabled: true,
-      }),
+      validateBinding(
+        { catalogKind: "mcp", catalogId: "mcp_notion", scope: "guild", scopeId: "pd" },
+        { enabled: true, connectionId: null },
+        { orgId: null, guildId: null },
+        { server: null, connection: null },
+      ),
     /unknown mcp server/,
   );
 });
 
 test("mcp binding accepts a visible connection", () => {
-  const overlay = validateBinding({
-    catalogKind: "mcp",
-    catalogId: "mcp_notion",
-    scope: "guild",
-    scopeId: "pd",
-    enabled: true,
-    server: server(),
-    connection: connection("conn_1"),
-    connectionId: "conn_1",
-    guildId: "pd",
-  });
+  const overlay = validateBinding(
+    { catalogKind: "mcp", catalogId: "mcp_notion", scope: "guild", scopeId: "pd" },
+    { enabled: true, connectionId: "conn_1" },
+    { orgId: null, guildId: "pd" },
+    { server: server(), connection: connection("conn_1") },
+  );
   assert.equal(overlay.connection_id, "conn_1");
   assert.equal(overlay.enabled, true);
 });
@@ -194,17 +189,12 @@ test("mcp connection visibility", () => {
   const agentConn = connection("conn_a", { ownerScope: "agent", ownerId: "a" });
   assert.throws(
     () =>
-      validateBinding({
-        catalogKind: "mcp",
-        catalogId: "mcp_notion",
-        scope: "guild",
-        scopeId: "pd",
-        enabled: true,
-        server: server(),
-        connection: agentConn,
-        connectionId: "conn_a",
-        guildId: "pd",
-      }),
+      validateBinding(
+        { catalogKind: "mcp", catalogId: "mcp_notion", scope: "guild", scopeId: "pd" },
+        { enabled: true, connectionId: "conn_a" },
+        { orgId: null, guildId: "pd" },
+        { server: server(), connection: agentConn },
+      ),
     /not visible/,
   );
 });
@@ -229,6 +219,7 @@ test("mcp_tool_view includes the listed input schema", () => {
       description: "Find",
       input_schema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
     },
+    null,
   );
   assert.equal(view.name, "coingecko_search");
   assert.deepEqual(view.input_schema, {
@@ -239,14 +230,11 @@ test("mcp_tool_view includes the listed input schema", () => {
 });
 
 test("access_payload lists catalog and connection status", () => {
-  const payload = accessPayload({
-    rows: [binding("mcp", "mcp_notion", "guild", "pd", true, "conn_p")],
-    guildId: "pd",
-    agentId: "a",
-    viewScope: "agent",
-    servers: [server(), server("mcp_gmail", "gmail")],
-    connections: [connection("conn_p")],
-  });
+  const payload = accessPayload(
+    [binding("mcp", "mcp_notion", "guild", "pd", true, "conn_p")],
+    { guildId: "pd", agentId: "a", viewScope: "agent" },
+    { servers: [server(), server("mcp_gmail", "gmail")], connections: [connection("conn_p")], listedTools: {} },
+  );
   const byId = Object.fromEntries(
     (payload.mcp as Array<Record<string, unknown>>).map((item) => [item.id, item]),
   );
@@ -264,12 +252,10 @@ test("access_payload lists catalog and connection status", () => {
 });
 
 test("pending oauth without a binding is not enabled", () => {
-  const payload = accessPayload({
-    rows: [],
-    orgId: "o1",
-    viewScope: "org",
+  const payload = accessPayload([], { orgId: "o1", viewScope: "org" }, {
     servers: [server("mcp_gmail", "gmail")],
     connections: [connection("conn_g", { serverId: "mcp_gmail", ownerScope: "org", ownerId: "o1" })],
+    listedTools: {},
   });
   const gmail = (payload.mcp as Array<Record<string, unknown>>)[0];
   assert.equal(gmail?.enabled, false);

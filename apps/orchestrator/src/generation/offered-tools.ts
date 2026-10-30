@@ -1,4 +1,4 @@
-import { enabledToolNames, resolvedTools } from "../access/index.js";
+import { enabledToolNames, resolvedTools, type ResolvableBinding } from "../access/index.js";
 import { isPlainRecord } from "../db/json.js";
 import type { RunMcpConnection, RunScriptSnapshot } from "../db/schema/index.js";
 import { REGISTRY } from "../toolbox/index.js";
@@ -72,7 +72,7 @@ export type OfferedToolSettings = {
  */
 export function liveOfferedNames(
   snapshotNames: Set<string>,
-  rows: Array<Record<string, unknown>>,
+  rows: ResolvableBinding[],
   scope: ToolBindingScope,
   settings: OfferedToolSettings,
 ): Set<string> {

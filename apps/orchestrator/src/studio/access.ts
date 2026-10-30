@@ -5,6 +5,7 @@ import {
   resolvedMcp,
   resolvedTools,
   validateCatalog,
+  type ResolvableBinding,
   type Resolved,
 } from "../access/index.js";
 import { resolveMcpTool } from "../access/runtime.js";
@@ -33,12 +34,6 @@ export function isAccessTool(name: string): name is StudioAccessTool {
 }
 
 type CatalogKind = BindingRow["catalog_kind"];
-
-/** The fields of a binding that resolving an agent's access reads. */
-type ResolvableBinding = Pick<
-  BindingRow,
-  "catalog_kind" | "catalog_id" | "scope" | "scope_id" | "enabled" | "connection_id"
->;
 
 type Change = { kind: CatalogKind; id: string; label: string; setting: AccessSetting };
 
