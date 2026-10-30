@@ -34,12 +34,12 @@ export async function connectorCommand(
         throw new RegistryError(USAGE, 400);
       }
       const [slug = "", version] = target.split("@");
-      const { row, code } = await installConnector(deps.db, onlineRegistry(deps.client), slug, {
-        ...(version ? { version } : {}),
-        unverified,
-        experimental,
-        codeRoot: codeTierRoot(deps.env),
-      });
+      const { row, code } = await installConnector(
+        deps.db,
+        onlineRegistry(deps.client),
+        { slug, version, unverified, experimental },
+        codeTierRoot(deps.env),
+      );
       const marks = [row.verified ? "" : "unverified", row.experimental ? "experimental" : ""].filter(Boolean);
       return [`installed ${slug}@${String(row.version)}${marks.length ? ` (${marks.join(", ")})` : ""}${code ? SERVES : ""}`];
     }
@@ -68,13 +68,12 @@ export async function connectorCommand(
       );
     }
     case "update": {
-      const moved = await updateConnectors(deps.db, onlineRegistry(deps.client), {
-        ...(target ? { slug: target } : {}),
-        unverified,
-        experimental,
-        codeRoot: codeTierRoot(deps.env),
-        connectorsRoot: connectorsRoot(deps.env),
-      });
+      const moved = await updateConnectors(
+        deps.db,
+        onlineRegistry(deps.client),
+        { slug: target, unverified, experimental },
+        { codeTier: codeTierRoot(deps.env), connectors: connectorsRoot(deps.env) },
+      );
       return moved.length
         ? moved.map((item) => `updated ${item.slug} ${item.from || "-"} -> ${item.to}${item.code ? SERVES : ""}`)
         : ["up to date"];

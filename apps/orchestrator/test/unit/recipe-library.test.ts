@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { test } from "node:test";
 import pg from "pg";
 import type { RecipeRow } from "../../src/db/recipes.js";
-import { RegistryError } from "../../src/registry/index.js";
+import { RegistryError, RegistryNotFoundError } from "../../src/registry/index.js";
 import { RecipeError } from "../../src/recipes/errors.js";
 import { exportRecipe, importRegistryRecipe } from "../../src/recipes/library.js";
 import { linkedInNotionRecipe } from "../helpers/recipe-docs.js";
@@ -58,7 +58,7 @@ test("refuses_a_registry_recipe_the_index_lacks_with_404_naming_it", async () =>
   try {
     await assert.rejects(
       importRegistryRecipe(db, registry.client, { name: "crm-desk", version: undefined }, OWNER),
-      (error) => error instanceof RegistryError && error.status === 404 && error.message === "the registry has no recipe crm-desk",
+      (error) => error instanceof RegistryNotFoundError && error.status === 404 && error.message === "the registry has no recipe crm-desk",
     );
   } finally {
     await db.end();
@@ -107,7 +107,7 @@ test("refuses_a_registry_recipe_version_the_index_lacks_with_404_naming_the_vers
     await assert.rejects(
       importRegistryRecipe(db, registry.client, { name: "crm-desk", version: "2.0.0" }, OWNER),
       (error) =>
-        error instanceof RegistryError && error.status === 404 && error.message === "the registry has no recipe crm-desk@2.0.0",
+        error instanceof RegistryNotFoundError && error.status === 404 && error.message === "the registry has no recipe crm-desk@2.0.0",
     );
   } finally {
     await db.end();

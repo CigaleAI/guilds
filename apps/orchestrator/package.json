@@ -52,6 +52,7 @@
     "./notes/errors.js": "./src/notes/errors.ts",
     "./notes/paths.js": "./src/notes/paths.ts",
     "./notes/store.js": "./src/notes/store.ts",
+    "./oauth/html.js": "./src/oauth/html.ts",
     "./oauth/index.js": "./src/oauth/index.ts",
     "./observability/log.js": "./src/observability/log.ts",
     "./observability/runtime.js": "./src/observability/runtime.ts",

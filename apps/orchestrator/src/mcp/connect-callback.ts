@@ -284,7 +284,7 @@ async function completeBrowserCallback(
       clientSecret: client.client_secret,
       redirectUri,
     });
-    const stored = tokenPayload(tokens, { now: new Date() });
+    const stored = tokenPayload(tokens, new Date());
     if (!holdsRequiredSettings(server, row.settings)) {
       await awaitSettings(services, row, stored);
       return {

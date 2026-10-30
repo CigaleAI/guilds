@@ -151,7 +151,7 @@ export async function readyLogin(pool: SessionPool, connection: McpConnectionRow
     throw new McpDisconnectedError("connection is not connected");
   }
   const payload = connectionPayload(connection);
-  if (payload === null || !accessExpired(payload, { now: new Date() })) {
+  if (payload === null || !accessExpired(payload, new Date())) {
     return connection;
   }
   return refreshLogin(pool, connection, server);

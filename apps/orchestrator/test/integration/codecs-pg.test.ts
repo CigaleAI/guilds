@@ -1,13 +1,9 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import {
-  formatColumnTimestamp,
-  parseInt8,
-  roundCostUsd,
-  usageFields,
-} from "../../src/db/codecs.js";
+import { formatColumnTimestamp, parseInt8 } from "../../src/db/codecs.js";
 import { applyMigrations, createPool } from "../../src/db/client.js";
 import { reportPoolError } from "../../src/observability/runtime.js";
+import { usageFields } from "../../src/usage/index.js";
 import {
   createIsolatedDatabase,
   dropIsolatedDatabase,
@@ -38,7 +34,6 @@ test("node-postgres codecs round-trip int8, timestamptz strings, and numeric cos
 
     const cost = await pool.query("SELECT '0.011984499999999999'::numeric AS cost_usd");
     assert.equal(typeof cost.rows[0]?.cost_usd, "string");
-    assert.equal(roundCostUsd(String(cost.rows[0]?.cost_usd)), 0.0119845);
     assert.equal(
       usageFields({
         input_tokens: 8,

@@ -274,33 +274,42 @@ export function clientCoversRedirect(client: OAuthClient, redirectUri: string): 
   return client.redirect_uris.includes(redirectUri);
 }
 
+/** The account fields a token response may leave out, kept from the payload it replaces. */
+const ACCOUNT_FIELDS: readonly string[] = ["user_id", "workspace_id", "email_domain"];
+
+/** The instant a token response's `expires_in` ends, counted from `now`, or null when it names none. */
+function expiryOf(tokens: Record<string, unknown>, now: Date): string | null {
+  const expiresIn = tokens.expires_in;
+  if (typeof expiresIn !== "number" || !Number.isInteger(expiresIn)) {
+    return null;
+  }
+  return new Date(now.getTime() + expiresIn * 1000).toISOString();
+}
+
+/**
+ * The payload a login stores from a token response received at `now`: the fields the response
+ * leaves out are kept from `existing`, the payload it replaces.
+ */
 export function tokenPayload(
   tokens: Record<string, unknown>,
-  options: { now: Date; existing?: Record<string, unknown> | null },
+  now: Date,
+  existing: Record<string, unknown> = {},
 ): Record<string, unknown> {
   const access = tokens.access_token;
   if (typeof access !== "string" || !access) {
     throw new OAuthError("token response is missing access_token");
   }
-  const previous = options.existing ?? {};
   let refresh = tokens.refresh_token;
   if (typeof refresh !== "string" || !refresh) {
-    refresh = previous.refresh_token;
-  }
-  let expiresAt = previous.expires_at;
-  const expiresIn = tokens.expires_in;
-  if (typeof expiresIn === "number" && Number.isInteger(expiresIn)) {
-    expiresAt = new Date(options.now.getTime() + expiresIn * 1000).toISOString();
+    refresh = existing.refresh_token;
   }
   const payload: Record<string, unknown> = {
     access_token: access,
     refresh_token: typeof refresh === "string" ? refresh : null,
     token_type: tokens.token_type || "Bearer",
-    expires_at: expiresAt,
-    user_id: tokens.user_id || previous.user_id,
-    workspace_id: tokens.workspace_id || previous.workspace_id,
-    email_domain: tokens.email_domain || previous.email_domain,
-    oauth_replaces: tokens.oauth_replaces === true || previous.oauth_replaces === true ? true : undefined,
+    expires_at: expiryOf(tokens, now) ?? existing.expires_at,
+    ...Object.fromEntries(ACCOUNT_FIELDS.map((field) => [field, tokens[field] || existing[field]])),
+    oauth_replaces: tokens.oauth_replaces === true || existing.oauth_replaces === true ? true : undefined,
   };
   return Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== null && value !== undefined));
 }
@@ -354,10 +363,8 @@ export function storedTokenRedactions(connection: McpConnectionRow, masterKey?: 
   }
 }
 
-export function accessExpired(
-  payload: Record<string, unknown>,
-  options: { now: Date; skewMs?: number },
-): boolean {
+/** Whether a login's access token has expired at `now`, or expires within `skewMs` of it. */
+export function accessExpired(payload: Record<string, unknown>, now: Date, skewMs = 60_000): boolean {
   const raw = payload.expires_at;
   if (typeof raw !== "string" || !raw) {
     return false;
@@ -366,8 +373,7 @@ export function accessExpired(
   if (Number.isNaN(expires)) {
     return false;
   }
-  const skew = options.skewMs ?? 60_000;
-  return options.now.getTime() + skew >= expires;
+  return now.getTime() + skewMs >= expires;
 }
 
 export function pendingOauthPayload(codeVerifier: string, redirectUri: string, replaces = false): Record<string, unknown> {
@@ -426,6 +432,17 @@ function authServerMetadataUrl(issuer: string): string {
   return `${parsed.origin}/.well-known/oauth-authorization-server`;
 }
 
+/** The JSON object `text` holds, or null when it is not JSON or holds anything else. */
+function parseJsonObject(text: string): Record<string, unknown> | null {
+  try {
+    const payload: unknown = JSON.parse(text);
+    return isPlainRecord(payload) ? payload : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The first JSON object one of `urls` answers, tried in order. */
 async function getJson(fetchFn: FetchFn, urls: string[]): Promise<Record<string, unknown>> {
   let last = "discovery failed";
   for (const url of urls) {
@@ -434,19 +451,38 @@ async function getJson(fetchFn: FetchFn, urls: string[]): Promise<Record<string,
       last = `discovery failed: ${response.status}`;
       continue;
     }
-    let payload: unknown;
-    try {
-      payload = JSON.parse(await response.text());
-    } catch {
-      last = "discovery returned a non-object";
-      continue;
-    }
-    if (isPlainRecord(payload)) {
+    const payload = parseJsonObject(await response.text());
+    if (payload !== null) {
       return payload;
     }
     last = "discovery returned a non-object";
   }
   throw new OAuthError(last);
+}
+
+/** The fetch OAuth requests go through: `http.client`, or else the proxy, or else a direct fetch. */
+function oauthFetch(http: OAuthHttp): FetchFn {
+  return http.client ?? proxyFetch(http.proxyUrl ?? "");
+}
+
+/** What a login reads of a protected resource's metadata: the resource it names, and its first authorization server. */
+type ProtectedResource = {
+  resource: string;
+  authorizationServer: string;
+};
+
+/** The protected resource `metadata` describes, the resource defaulting to `mcpUrl`. */
+function protectedResourceOf(metadata: Record<string, unknown>, mcpUrl: string): ProtectedResource {
+  const resource = metadata.resource;
+  const servers = metadata.authorization_servers;
+  const first: unknown = Array.isArray(servers) ? servers[0] : undefined;
+  if (typeof first !== "string") {
+    throw new OAuthError("protected resource metadata is missing authorization_servers");
+  }
+  return {
+    resource: typeof resource === "string" && resource.trim() ? resource.trim() : mcpUrl,
+    authorizationServer: first,
+  };
 }
 
 function scopedDiscovery(server: LoadedConnector, discovery: OAuthDiscovery): OAuthDiscovery {
@@ -484,16 +520,10 @@ export async function discover(
   mcpUrl: string,
   options: OAuthHttp = {},
 ): Promise<OAuthDiscovery> {
-  const fetchFn = options.client ?? proxyFetch(options.proxyUrl ?? "");
+  const fetchFn = oauthFetch(options);
   const resourceMeta = await getJson(fetchFn, resourceMetadataUrls(mcpUrl));
-  const resource = resourceMeta.resource;
-  const resourceUrl =
-    typeof resource === "string" && resource.trim() ? resource.trim() : mcpUrl;
-  const servers = resourceMeta.authorization_servers;
-  if (!Array.isArray(servers) || !servers.length || typeof servers[0] !== "string") {
-    throw new OAuthError("protected resource metadata is missing authorization_servers");
-  }
-  const asMeta = await getJson(fetchFn, [authServerMetadataUrl(servers[0])]);
+  const { resource, authorizationServer } = protectedResourceOf(resourceMeta, mcpUrl);
+  const asMeta = await getJson(fetchFn, [authServerMetadataUrl(authorizationServer)]);
   const authorization = asMeta.authorization_endpoint;
   const token = asMeta.token_endpoint;
   if (typeof authorization !== "string" || typeof token !== "string") {
@@ -502,7 +532,7 @@ export async function discover(
   const registration = asMeta.registration_endpoint;
   const scopes = resourceMeta.scopes_supported ?? asMeta.scopes_supported ?? [];
   return {
-    resource: resourceUrl,
+    resource,
     authorization_endpoint: authorization.trim(),
     token_endpoint: token.trim(),
     registration_endpoint:
@@ -523,8 +553,7 @@ export async function registerClient(
   if (!discovery.registration_endpoint) {
     throw new OAuthError("authorization server does not support dynamic client registration");
   }
-  const fetchFn = options.client ?? proxyFetch(options.proxyUrl ?? "");
-  const response = await fetchFn(discovery.registration_endpoint, {
+  const response = await oauthFetch(options)(discovery.registration_endpoint, {
     method: "POST",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -554,15 +583,8 @@ export async function registerClient(
 }
 
 async function tokenError(response: Response, text: string): Promise<string | null> {
-  try {
-    const payload: unknown = text ? JSON.parse(text) : {};
-    if (isPlainRecord(payload) && typeof payload.error === "string") {
-      return payload.error;
-    }
-  } catch {
-    return null;
-  }
-  return null;
+  const error = parseJsonObject(text)?.error;
+  return typeof error === "string" ? error : null;
 }
 
 async function tokenRequest(
@@ -575,8 +597,7 @@ async function tokenRequest(
   if (clientSecret) {
     params.set("client_secret", clientSecret);
   }
-  const fetchFn = http.client ?? proxyFetch(http.proxyUrl ?? "");
-  const response = await fetchFn(discovery.token_endpoint, {
+  const response = await oauthFetch(http)(discovery.token_endpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
@@ -720,7 +741,7 @@ export async function refreshConnection(
     { refreshToken: refresh, clientId: client.client_id, clientSecret: client.client_secret },
     services,
   );
-  const stored = tokenPayload(tokens, { now, existing: payload });
+  const stored = tokenPayload(tokens, now, payload);
   const [ciphertext, nonce] = (services.encrypt ?? encryptPayload)(stored);
   const row = await db.saveMcpConnection(
     connection.id,
@@ -738,5 +759,3 @@ export async function refreshConnection(
   }
   return row;
 }
-
-export { githubInstallationPickerHtml, oauthCallbackHtml } from "./html.js";

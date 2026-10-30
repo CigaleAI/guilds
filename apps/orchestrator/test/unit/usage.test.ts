@@ -1,7 +1,19 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { test } from "node:test";
 import { messageCostUsd, usageDelta, utcMonth } from "../../src/db/usage.js";
+import { repoRoot } from "../../src/lib/paths.js";
 import { usageCounterKey, usageFields, usageTree, type UsageSource } from "../../src/usage/index.js";
+
+/** The usage fields recorded for a NUMERIC cost, and the timestamp they were recorded with. */
+const codecs = JSON.parse(
+  readFileSync(path.join(repoRoot(import.meta.url), "fixtures/compat/codecs/timestamps.json"), "utf8"),
+) as {
+  isoformat_whole: string;
+  numeric_cost: Record<string, unknown>;
+  numeric_cost_quarter: Record<string, unknown>;
+};
 
 test("usage_delta_reads_assistant_metadata", () => {
   const delta = usageDelta({
@@ -77,6 +89,12 @@ test("usage_fields_formats_row", () => {
   );
   assert.equal(fields.calls, 3);
   assert.equal(fields.updated_at, "2026-09-13T00:00:00+00:00");
+});
+
+test("usage_fields_round_a_numeric_cost_to_8_decimal_places_as_recorded", () => {
+  const row = { input_tokens: 8, output_tokens: 2, cache_read_tokens: 1, calls: 3, updated_at: codecs.isoformat_whole };
+  assert.deepEqual(usageFields({ ...row, cost_usd: "0.011984499999999999" }), codecs.numeric_cost);
+  assert.deepEqual(usageFields({ ...row, cost_usd: "0.25" }), codecs.numeric_cost_quarter);
 });
 
 test("usage_tree_nests_resources_under_organisations", () => {

@@ -18,7 +18,13 @@ import {
 import type { RecipeFinding, RecipeDocument } from "../db/schema/index.js";
 import { newId } from "../lib/ids.js";
 import { onlineRegistry, type RegistryClient } from "../registry/client.js";
-import { latestEntries, pickEntry, RegistryError, type RegistryRecipeEntry } from "../registry/index.js";
+import {
+  latestEntries,
+  pickEntry,
+  RegistryError,
+  RegistryNotFoundError,
+  type RegistryRecipeEntry,
+} from "../registry/index.js";
 import type { Schedules } from "../schedules/service.js";
 import type { Scripts } from "../scripts/catalog.js";
 import { applyAccessEdits, operatorAccessCuts, type AccessCut, type AccessEdit } from "./access-edits.js";
@@ -200,11 +206,10 @@ export async function importRegistryRecipe(
     wanted.version,
   );
   if (entry === null) {
-    throw new RegistryError(
+    throw new RegistryNotFoundError(
       wanted.version
         ? `the registry has no recipe ${wanted.name}@${wanted.version}`
         : `the registry has no recipe ${wanted.name}`,
-      404,
     );
   }
   const file = await registry.recipeFile(entry);

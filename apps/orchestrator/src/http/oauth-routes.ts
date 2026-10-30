@@ -1,10 +1,7 @@
 import { Type } from "@sinclair/typebox";
 import type { FastifyReply, FastifyRequest } from "fastify";
-import {
-  githubInstallationPickerHtml,
-  oauthCallbackHtml,
-  oauthCallbackUrl,
-} from "../oauth/index.js";
+import { githubInstallationPickerHtml, oauthCallbackHtml } from "../oauth/html.js";
+import { oauthCallbackUrl } from "../oauth/index.js";
 import { completeOAuthCallback, type CallbackPage } from "../mcp/connect-callback.js";
 import type { ConnectFlowServices } from "../mcp/connect-flow.js";
 import { startConnection } from "../mcp/connect-start.js";
