@@ -4,7 +4,13 @@ import { useState } from "react";
 import { useAgent } from "../../../api/queries/agents";
 import { useRun, useRunMessages } from "../../../api/queries/runs";
 import { useStudioInspector, useStudioRoutines, useStudioRuns } from "../../../api/queries/studio";
-import type { StudioAgent, StudioRoutine, StudioRun } from "../../../api/types/studio";
+import type { RunKind } from "../../../api/types/runs";
+import type {
+  StudioAgent,
+  StudioInspector,
+  StudioRoutine,
+  StudioRun,
+} from "../../../api/types/studio";
 import { clockTime, dayLabel, relativeTime } from "../../../app/format";
 import {
   Button,
@@ -17,9 +23,11 @@ import {
   Tag,
   Tile,
 } from "@guildsrun/ui";
+import type { RevealStep } from "../../agent/chat/FlowView";
 import { Transcript } from "../../agent/chat/Transcript";
 import { runKindLabel } from "../../agent/runState";
 import { DetailHeader, Empty, MasterDetail } from "../MasterDetail";
+import { revealedStep } from "../location";
 import { useStudio } from "../StudioContext";
 import { isRunKindFilter, type RunKindFilter } from "./historyFilters";
 
@@ -120,7 +128,7 @@ type HistoryTabProps = { agent: StudioAgent };
  * the selected run's transcript opens beside them, at a step when one is named.
  */
 export function HistoryTab({ agent }: HistoryTabProps) {
-  const { session, search, go, goInPlace } = useStudio();
+  const { session, search, goInPlace } = useStudio();
   const runs = useStudioRuns(session.id, agent.id);
   const routines = useStudioRoutines(session.id, agent.id);
   const inspector = useStudioInspector(session.id, agent.id);
@@ -145,11 +153,6 @@ export function HistoryTab({ agent }: HistoryTabProps) {
       (!currentOnly || !currentTask || run.task_prompt_hash === currentTask),
   );
   const selectedId = search.item ?? runs.data[0]?.id;
-  const selected = runs.data.find((run) => run.id === selectedId);
-  const fromRoutine =
-    selected?.schedule_id && search.item
-      ? routines.data?.find((routine) => routine.id === selected.schedule_id)
-      : undefined;
 
   return (
     <MasterDetail
@@ -207,30 +210,11 @@ export function HistoryTab({ agent }: HistoryTabProps) {
       }
       detail={
         selectedId ? (
-          <RunDetail
-            key={`${selectedId}:${search.call ?? ""}:${search.seq ?? ""}`}
+          <SelectedRun
             agent={agent}
             runId={selectedId}
-            header={selected}
-            title={selected ? runSummary(selected, routines.data) : undefined}
-            reveal={{
-              ...(search.call ? { call: search.call } : {}),
-              ...(search.seq !== undefined ? { seq: search.seq } : {}),
-            }}
-            back={
-              fromRoutine
-                ? {
-                    label: fromRoutine.description || "Routine",
-                    onBack: () =>
-                      go({
-                        section: "agents",
-                        agent: agent.id,
-                        tab: "routines",
-                        item: fromRoutine.id,
-                      }),
-                  }
-                : undefined
-            }
+            run={runs.data.find((run) => run.id === selectedId)}
+            routines={routines.data}
           />
         ) : (
           <Empty>
@@ -243,8 +227,62 @@ export function HistoryTab({ agent }: HistoryTabProps) {
   );
 }
 
+type SelectedRunProps = {
+  agent: StudioAgent;
+  runId: string;
+  /** The run as History lists it; missing while the list does not hold it. */
+  run: StudioRun | undefined;
+  routines: StudioRoutine[] | undefined;
+};
+
+/**
+ * The run the location selects, at the step it names, with the way back to its routine when the
+ * location came from one.
+ */
+function SelectedRun({ agent, runId, run, routines }: SelectedRunProps) {
+  const { search, go } = useStudio();
+  const fromRoutine =
+    run?.schedule_id && search.item
+      ? routines?.find((routine) => routine.id === run.schedule_id)
+      : undefined;
+  return (
+    <RunDetail
+      key={`${runId}:${search.call ?? ""}:${search.seq ?? ""}`}
+      agent={agent}
+      runId={runId}
+      header={run}
+      title={run ? runSummary(run, routines) : undefined}
+      reveal={revealedStep(search)}
+      back={
+        fromRoutine
+          ? {
+              label: fromRoutine.description || "Routine",
+              onBack: () =>
+                go({
+                  section: "agents",
+                  agent: agent.id,
+                  tab: "routines",
+                  item: fromRoutine.id,
+                }),
+            }
+          : undefined
+      }
+    />
+  );
+}
+
 /** The hashes of the prompts an agent runs on now, each present once it is known. */
 type PromptHashes = { guidelines?: string; task?: string; memory?: string };
+
+/** The hashes of the Task, guidelines and memory the agent runs on now, as its inspector knows them. */
+function promptHashesNow(inspector: StudioInspector | undefined): PromptHashes {
+  if (!inspector) return {};
+  return {
+    ...(inspector.task.effective_hash ? { task: inspector.task.effective_hash } : {}),
+    guidelines: inspector.guidelines.content_hash,
+    memory: inspector.memory.prompt_hash,
+  };
+}
 
 /** Whether the run used what the agent runs on now: its guidelines, Task and memory. */
 function sameAsNow(header: StudioRun | undefined, now: PromptHashes): string[] {
@@ -261,13 +299,21 @@ function sameAsNow(header: StudioRun | undefined, now: PromptHashes): string[] {
   return notes;
 }
 
+/** Whether a run's detail opens at a step: a call or a row of the run. */
+function isRevealing(reveal: RevealStep): boolean {
+  return reveal.call !== undefined || reveal.seq !== undefined;
+}
+
+/** Where a run's detail goes back to: the routine it was opened from. */
+type RunBack = { label: string; onBack: () => void };
+
 type RunDetailProps = {
   agent: StudioAgent;
   runId: string;
   header: StudioRun | undefined;
   title: string | undefined;
-  reveal: { call?: string; seq?: number };
-  back: { label: string; onBack: () => void } | undefined;
+  reveal: RevealStep;
+  back: RunBack | undefined;
 };
 
 function RunDetail({ agent, runId, header, title, reveal, back }: RunDetailProps) {
@@ -276,11 +322,7 @@ function RunDetail({ agent, runId, header, title, reveal, back }: RunDetailProps
   const run = useRun(runId);
   const messages = useRunMessages(runId);
   const inspector = useStudioInspector(session.id, agent.id);
-  const notes = sameAsNow(header, {
-    ...(inspector.data?.task.effective_hash ? { task: inspector.data.task.effective_hash } : {}),
-    ...(inspector.data ? { guidelines: inspector.data.guidelines.content_hash } : {}),
-    ...(inspector.data ? { memory: inspector.data.memory.prompt_hash } : {}),
-  });
+  const notes = sameAsNow(header, promptHashesNow(inspector.data));
 
   if (run.isError || messages.isError) {
     return (
@@ -294,7 +336,7 @@ function RunDetail({ agent, runId, header, title, reveal, back }: RunDetailProps
   if (!run.data || !messages.data || !detail.data) {
     return <SkeletonRows rows={6} label="Loading the run" />;
   }
-  const revealing = reveal.call !== undefined || reveal.seq !== undefined;
+  const revealing = isRevealing(reveal);
 
   return (
     <>
@@ -311,62 +353,22 @@ function RunDetail({ agent, runId, header, title, reveal, back }: RunDetailProps
           </span>
         }
         actions={
-          <>
-            {back ? (
-              <Button variant="ghost" size="sm" onClick={back.onBack}>
-                <Icon icon={ArrowLeft} size={14} />
-                {back.label}
-              </Button>
-            ) : null}
-            <Button asChild variant="outline" size="sm">
-              <Link
-                to="/guilds/$guildId/agents/$agentId"
-                params={{ guildId: session.source_guild_id, agentId: agent.id }}
-                search={{ run: runId }}
-              >
-                <Icon icon={ExternalLink} size={14} />
-                Open in agent
-              </Link>
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                ask({
-                  kind: "run",
-                  agent_id: agent.id,
-                  run_id: runId,
-                  ...(reveal.call ? { call_id: reveal.call } : {}),
-                  ...(reveal.seq !== undefined ? { seq: reveal.seq } : {}),
-                  label: `${agent.name} · ${runKindLabel[run.data.kind]}${revealing ? " · this step" : ""}`,
-                })
-              }
-            >
-              <Icon icon={Pin} size={14} />
-              Ask the coach
-            </Button>
-          </>
+          <RunActions
+            agent={agent}
+            runId={runId}
+            kind={run.data.kind}
+            reveal={reveal}
+            back={back}
+          />
         }
       />
       {run.data.generating ? (
-        <Banner
-          tone="info"
-          title="This run is generating"
-          action={
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                void run.refetch();
-                void messages.refetch();
-              }}
-            >
-              Refresh
-            </Button>
-          }
-        >
-          Studio shows the steps it has stored so far; the agent view streams it live.
-        </Banner>
+        <RunGeneratingBanner
+          onRefresh={() => {
+            void run.refetch();
+            void messages.refetch();
+          }}
+        />
       ) : null}
       <div className="flex flex-col gap-3">
         <Transcript
@@ -388,5 +390,76 @@ function RunDetail({ agent, runId, header, title, reveal, back }: RunDetailProps
         />
       </div>
     </>
+  );
+}
+
+type RunActionsProps = {
+  agent: StudioAgent;
+  runId: string;
+  kind: RunKind;
+  /** The step the detail reveals, which Ask the coach pins with the run. */
+  reveal: RevealStep;
+  back: RunBack | undefined;
+};
+
+/** Back to the routine the run was opened from, the run in the agent view, and Ask the coach. */
+function RunActions({ agent, runId, kind, reveal, back }: RunActionsProps) {
+  const { session, ask } = useStudio();
+  const revealing = isRevealing(reveal);
+  return (
+    <>
+      {back ? (
+        <Button variant="ghost" size="sm" onClick={back.onBack}>
+          <Icon icon={ArrowLeft} size={14} />
+          {back.label}
+        </Button>
+      ) : null}
+      <Button asChild variant="outline" size="sm">
+        <Link
+          to="/guilds/$guildId/agents/$agentId"
+          params={{ guildId: session.source_guild_id, agentId: agent.id }}
+          search={{ run: runId }}
+        >
+          <Icon icon={ExternalLink} size={14} />
+          Open in agent
+        </Link>
+      </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() =>
+          ask({
+            kind: "run",
+            agent_id: agent.id,
+            run_id: runId,
+            ...(reveal.call ? { call_id: reveal.call } : {}),
+            ...(reveal.seq !== undefined ? { seq: reveal.seq } : {}),
+            label: `${agent.name} · ${runKindLabel[kind]}${revealing ? " · this step" : ""}`,
+          })
+        }
+      >
+        <Icon icon={Pin} size={14} />
+        Ask the coach
+      </Button>
+    </>
+  );
+}
+
+type RunGeneratingBannerProps = { onRefresh: () => void };
+
+/** That the run is still generating, so Studio shows only the steps stored so far. */
+function RunGeneratingBanner({ onRefresh }: RunGeneratingBannerProps) {
+  return (
+    <Banner
+      tone="info"
+      title="This run is generating"
+      action={
+        <Button variant="outline" size="sm" onClick={onRefresh}>
+          Refresh
+        </Button>
+      }
+    >
+      Studio shows the steps it has stored so far; the agent view streams it live.
+    </Banner>
   );
 }

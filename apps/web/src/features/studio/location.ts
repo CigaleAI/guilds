@@ -1,3 +1,4 @@
+import type { RevealStep } from "../agent/chat/FlowView";
 import type { PinnedFocus } from "./chatModel";
 
 /** The four parts of a session's workspace. */
@@ -140,6 +141,14 @@ const sectionParsers: Record<StudioSection, (search: Record<string, unknown>) =>
 export function parseStudioSearch(search: Record<string, unknown>): StudioSearch {
   const section = oneOf(studioSections, search.section) ?? "guild";
   return compact(sectionParsers[section](search));
+}
+
+/** The step a location reveals in the run it selects: its call, its row, both, or neither. */
+export function revealedStep(search: StudioSearch): RevealStep {
+  return {
+    ...(search.call ? { call: search.call } : {}),
+    ...(search.seq !== undefined ? { seq: search.seq } : {}),
+  };
 }
 
 /** A file opens in State with the file selected; a record opens its table. */

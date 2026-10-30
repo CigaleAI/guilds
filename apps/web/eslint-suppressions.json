@@ -172,10 +172,5 @@
     "complexity": {
       "count": 1
     }
-  },
-  "src/features/studio/tabs/HistoryTab.tsx": {
-    "complexity": {
-      "count": 2
-    }
   }
 }
