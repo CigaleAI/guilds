@@ -1,6 +1,12 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { parseFrameData } from "./liveEvents";
+import {
+  dispatchLiveEvent,
+  guildEventGuards,
+  parseFrameData,
+  type GuildEvents,
+  type LiveEventHandlers,
+} from "./liveEvents";
 import { applyLiveDelta, type LiveTurn } from "./liveTurn";
 import { agentKeys } from "./queries/agents";
 import { builderKeys } from "./queries/builder";
@@ -69,19 +75,7 @@ export function useEventStream(url: string | null, options: StreamOptions): void
   }, [url, eventList, retryMs]);
 }
 
-const guildEvents = [
-  "group.message.committed",
-  "group.cleared",
-  "group.limit_reached",
-  "group.idle",
-  "group.delivery.started",
-  "group.delivery.finished",
-  "group.delivery.failed",
-  "guild.issues.changed",
-  "guild.artifacts.changed",
-  "agent.routines.changed",
-  "agent.scripts.changed",
-] as const;
+const guildEvents = Object.keys(guildEventGuards);
 
 /**
  * Keeps a guild's chat, agents, open issues, files and routines current: committed messages are
@@ -90,6 +84,43 @@ const guildEvents = [
  */
 export function useGuildStream(guildId: string): void {
   const client = useQueryClient();
+  const showChatState = (state: GroupChatState) => {
+    client.setQueryData<GroupChatState>(chatKeys.chatState(guildId), (previous) => ({
+      ...state,
+      seen_through_seq: previous?.seen_through_seq ?? null,
+    }));
+    void client.invalidateQueries({ queryKey: agentKeys.agents(guildId) });
+  };
+  const refreshChatState = () => {
+    void client.invalidateQueries({ queryKey: chatKeys.chatState(guildId) });
+    void client.invalidateQueries({ queryKey: agentKeys.agents(guildId) });
+  };
+  const handlers: LiveEventHandlers<GuildEvents> = {
+    "group.message.committed": (message) => {
+      client.setQueryData<GroupMessage[]>(chatKeys.chatMessages(guildId), (messages) =>
+        messages && !messages.some((known) => known.seq === message.seq)
+          ? [...messages, message].sort((a, b) => a.seq - b.seq)
+          : messages,
+      );
+      void client.invalidateQueries({ queryKey: chatKeys.chatState(guildId) });
+    },
+    "group.cleared": (state) => showClearedGroupChat(client, guildId, state),
+    "group.limit_reached": showChatState,
+    "group.idle": showChatState,
+    "group.delivery.started": refreshChatState,
+    "group.delivery.finished": refreshChatState,
+    "group.delivery.failed": refreshChatState,
+    "guild.issues.changed": () =>
+      void client.invalidateQueries({ queryKey: issueKeys.issues(guildId) }),
+    "guild.artifacts.changed": () =>
+      void client.invalidateQueries({ queryKey: noteKeys.artifacts }),
+    "agent.routines.changed": (change) => {
+      void client.invalidateQueries({ queryKey: scheduleKeys.agentSchedules(change.agent_id) });
+      void client.invalidateQueries({ queryKey: guildKeys.guildSchedules(guildId) });
+    },
+    "agent.scripts.changed": (change) =>
+      void client.invalidateQueries({ queryKey: scriptKeys.agentScripts(change.agent_id) }),
+  };
   useEventStream(`/api/guilds/${encodeURIComponent(guildId)}/group-chat/stream`, {
     events: guildEvents,
     onOpen: () => {
@@ -97,47 +128,7 @@ export function useGuildStream(guildId: string): void {
       void client.invalidateQueries({ queryKey: chatKeys.chatState(guildId) });
       void client.invalidateQueries({ queryKey: agentKeys.agents(guildId) });
     },
-    onEvent: (name, data) => {
-      if (name === "group.message.committed") {
-        const message = data as GroupMessage;
-        client.setQueryData<GroupMessage[]>(chatKeys.chatMessages(guildId), (messages) =>
-          messages && !messages.some((known) => known.seq === message.seq)
-            ? [...messages, message].sort((a, b) => a.seq - b.seq)
-            : messages,
-        );
-        void client.invalidateQueries({ queryKey: chatKeys.chatState(guildId) });
-        return;
-      }
-      if (name === "group.cleared") {
-        showClearedGroupChat(client, guildId, data as GroupChatState);
-        return;
-      }
-      if (name === "group.idle" || name === "group.limit_reached") {
-        const state = data as GroupChatState;
-        client.setQueryData<GroupChatState>(chatKeys.chatState(guildId), (previous) => ({
-          ...state,
-          seen_through_seq: previous?.seen_through_seq ?? null,
-        }));
-      } else if (name === "guild.issues.changed") {
-        void client.invalidateQueries({ queryKey: issueKeys.issues(guildId) });
-        return;
-      } else if (name === "guild.artifacts.changed") {
-        void client.invalidateQueries({ queryKey: noteKeys.artifacts });
-        return;
-      } else if (name === "agent.scripts.changed") {
-        const agentId = (data as { agent_id?: string } | null)?.agent_id;
-        if (agentId) void client.invalidateQueries({ queryKey: scriptKeys.agentScripts(agentId) });
-        return;
-      } else if (name === "agent.routines.changed") {
-        const agentId = (data as { agent_id?: string } | null)?.agent_id;
-        if (agentId) void client.invalidateQueries({ queryKey: scheduleKeys.agentSchedules(agentId) });
-        void client.invalidateQueries({ queryKey: guildKeys.guildSchedules(guildId) });
-        return;
-      } else {
-        void client.invalidateQueries({ queryKey: chatKeys.chatState(guildId) });
-      }
-      void client.invalidateQueries({ queryKey: agentKeys.agents(guildId) });
-    },
+    onEvent: (name, data) => dispatchLiveEvent(guildEventGuards, handlers, name, data),
   });
 }
 
