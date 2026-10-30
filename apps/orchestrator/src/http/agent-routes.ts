@@ -1,18 +1,19 @@
 import { Type } from "@sinclair/typebox";
 import { requireVisibleAgent } from "../agents/access.js";
 import {
-  createAgent,
   deleteAgent,
   listBrokenTaskEmbeds,
   listGuildAgents,
-  moveAgentToMachine,
-  reconfigureAgent,
-  type AgentServices,
+  type AgentRequest,
   type AgentSettingsPatch,
 } from "../agents/service.js";
-import { loadAgentView } from "../access/view.js";
-import { loadOperatorActor } from "../artifacts/actors.js";
-import type { AgentRow } from "../db/agents.js";
+import {
+  createAgentFromPage,
+  loadAgentPage,
+  moveAgentToMachineFromPage,
+  reconfigureAgentFromPage,
+  type AgentPageServices,
+} from "../access/agent-page.js";
 import { requireVisibleGuild } from "../guilds/access.js";
 import { OPEN_POLICY } from "../policy/index.js";
 import type { RouteApp, RouteDeps } from "./deps.js";
@@ -51,23 +52,15 @@ const AgentMachineSchema = Type.Object({ machine_id: MachineIdField });
 /** A guild's agents: listed, created, configured, moved between machines, and deleted. */
 export async function registerAgentRoutes(app: RouteApp, deps: RouteDeps): Promise<void> {
   const { db } = deps;
-  const services: AgentServices = {
+  const services: AgentPageServices = {
     db,
     notes: deps.notes,
     artifacts: deps.artifacts,
     policy: deps.policy ?? OPEN_POLICY,
     modelCredentials: deps.modelCredentials,
     generation: deps.generation ?? null,
+    mcp: deps.mcp ?? null,
   };
-
-  async function viewOf(row: AgentRow): Promise<Record<string, unknown>> {
-    return loadAgentView(
-      db,
-      deps.mcp ?? null,
-      row,
-      deps.generation?.isAgentBusy(row.id) ?? false,
-    );
-  }
 
   app.get("/api/guilds/:guild_id/agents", { schema: { params: GuildParams } }, async (request) => {
     const user = await currentUser(db, request, deps);
@@ -90,9 +83,8 @@ export async function registerAgentRoutes(app: RouteApp, deps: RouteDeps): Promi
     { schema: { params: GuildParams, body: AgentDraftSchema } },
     async (request, reply) => {
       const user = await currentUser(db, request, deps);
-      const guild = await requireVisibleGuild(db, request.params.guild_id, user.id);
       const body = request.body;
-      const draft = {
+      const draft: AgentRequest = {
         name: body.name,
         focus: body.focus ?? "",
         wakeTriggers: body.wake_triggers ?? "",
@@ -101,15 +93,14 @@ export async function registerAgentRoutes(app: RouteApp, deps: RouteDeps): Promi
         config: body.config,
         machineId: body.machine_id,
       };
-      const operator = await loadOperatorActor(db, user, { orgId: guild.org_id });
-      const agent = await createAgent(services, guild, operator, draft);
-      return reply.code(201).send(await viewOf(agent));
+      const page = await createAgentFromPage(services, request.params.guild_id, user, draft);
+      return reply.code(201).send(page);
     },
   );
 
   app.get("/api/agents/:agent_id", { schema: { params: AgentParams } }, async (request) => {
     const user = await currentUser(db, request, deps);
-    return viewOf(await requireVisibleAgent(db, request.params.agent_id, user.id));
+    return loadAgentPage(services, request.params.agent_id, user.id);
   });
 
   app.delete(
@@ -128,7 +119,6 @@ export async function registerAgentRoutes(app: RouteApp, deps: RouteDeps): Promi
     { schema: { params: AgentParams, body: AgentSettingsSchema } },
     async (request) => {
       const user = await currentUser(db, request, deps);
-      const agent = await requireVisibleAgent(db, request.params.agent_id, user.id);
       const body = request.body;
       const patch: AgentSettingsPatch = {
         config: body.config,
@@ -139,7 +129,7 @@ export async function registerAgentRoutes(app: RouteApp, deps: RouteDeps): Promi
         avatarShape: body.avatar_shape,
         avatarColor: body.avatar_color,
       };
-      return viewOf(await reconfigureAgent(services, agent, user.id, patch));
+      return reconfigureAgentFromPage(services, request.params.agent_id, user.id, patch);
     },
   );
 
@@ -148,9 +138,8 @@ export async function registerAgentRoutes(app: RouteApp, deps: RouteDeps): Promi
     { schema: { params: AgentParams, body: AgentMachineSchema } },
     async (request) => {
       const user = await currentUser(db, request, deps);
-      const agent = await requireVisibleAgent(db, request.params.agent_id, user.id);
       const machineId = request.body.machine_id;
-      return viewOf(await moveAgentToMachine(services, agent, user.id, machineId));
+      return moveAgentToMachineFromPage(services, request.params.agent_id, user.id, machineId);
     },
   );
 }

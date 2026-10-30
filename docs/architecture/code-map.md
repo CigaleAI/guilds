@@ -67,7 +67,7 @@ A repository that extends core holds this one as a submodule
 | `github/` | The GitHub App, its manifest flow, and the installation tokens minted for a login's repositories ([GitHub](../tools-and-connectors/github.md)) |
 | `coding/` | Guild repositories and the GitHub logins they use (`guild-repositories.ts`), a coding run's git side, the harnesses (`harnesses.ts`), and each harness's models and efforts (`harness-models.ts`) ([Coding agents](../concepts/coding/index.md)) |
 | `machines/` | Tiers, sizes, slots, placement and its access, an organisation's machines as its members manage them (`service.ts`), and the boot layout of agent homes ([Machines](../concepts/machines.md)) |
-| `access/` | Binding resolution, a run's tools, MCP, and secrets, the access view a scope's page shows (`view.ts`), and the bindings an operator sets (`operator.ts`) ([Access](../concepts/access.md)) |
+| `access/` | Binding resolution, a run's tools, MCP, and secrets, the access view a scope's page shows (`view.ts`), an agent's page with the writes it makes, each answered with the page (`agent-page.ts`), and the bindings an operator sets (`operator.ts`) ([Access](../concepts/access.md)) |
 | `credentials/` | AES-GCM, environment fingerprints, and validation |
 | `secrets/` | Who reaches and manages a secret, `secret_store`, redaction, and an organisation's secrets as its members manage them (`service.ts`) ([Secrets](../concepts/secrets.md)) |
 | `db/` | Pool, codecs, Drizzle schema, one query module per table family (`users.ts`, `agents.ts`, `runs.ts`, …), seeds, and the migration check |
