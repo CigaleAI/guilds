@@ -123,6 +123,23 @@ async function withTimeout<T>(work: Promise<T>, ms: number, message: string): Pr
   }
 }
 
+/** Logs a failed tool call: a warning for a login that is not connected or a refusal below 500, an error otherwise. */
+function logCallFailure(error: unknown): void {
+  const status = error instanceof McpError ? error.status : null;
+  const level =
+    error instanceof McpDisconnectedError || (typeof status === "number" && status < 500) ? "warn" : "error";
+  writeLog(
+    level,
+    error instanceof Error ? error.message : String(error),
+    {
+      source: "backend",
+      operation: "mcp.call",
+      error_type: error instanceof Error ? error.name : "Error",
+    },
+    error,
+  );
+}
+
 /** Studio's stand-in for `McpPool.state`: each key the connectors of an agent's logins fill, without calling them. */
 export function previewConnectorState(logins: ConnectorLogin[]): Record<string, unknown> {
   const state: Record<string, unknown> = {};
@@ -467,21 +484,7 @@ export class McpPool {
         }
       }
     } catch (error) {
-      const status = error instanceof McpError ? error.status : null;
-      const level =
-        error instanceof McpDisconnectedError || (typeof status === "number" && status < 500)
-          ? "warn"
-          : "error";
-      writeLog(
-        level,
-        error instanceof Error ? error.message : String(error),
-        {
-          source: "backend",
-          operation: "mcp.call",
-          error_type: error instanceof Error ? error.name : "Error",
-        },
-        error,
-      );
+      logCallFailure(error);
       throw error;
     }
   }

@@ -5,7 +5,7 @@ import type {
 } from "../db/mcp.js";
 import { newId } from "../lib/ids.js";
 import { McpDisconnectedError, McpError } from "./errors.js";
-import type { McpPool } from "./pool.js";
+import type { ConnectorLogin, McpPool } from "./pool.js";
 import { retireLogin, type LoginFailure } from "./service.js";
 import { authFields } from "../connectors/manifest.js";
 import { serverManifest, settingsOutcome, type LoadedConnector, type SettingsOutcome } from "../connectors/servers.js";
@@ -133,18 +133,81 @@ export function translateConnectFailure(error: unknown, server: LoadedConnector)
   return new ConnectError(502, `${String(server.display_name ?? server.slug)}: ${error.message}`);
 }
 
-/** Answers a connector's failure: a rejected credential or a bad setting is a 422, anything else upstream a 502. */
-export function connectFailure(error: unknown, server: LoadedConnector): never {
-  if (error instanceof McpError && !(error instanceof McpDisconnectedError)) {
-    if (error.status === 401 || error.status === 403) {
-      throw new ConnectError(422, "api key was rejected");
-    }
-    if (error.status === 422) {
+/** The login's settings checked against the manifest's `settings_schema`; a setting it refuses is a 422. */
+function validateConnectSettings(server: LoadedConnector, values: Record<string, unknown>): SettingsOutcome {
+  try {
+    return settingsOutcome(server, values);
+  } catch (error) {
+    if (error instanceof SettingsError) {
       throw new ConnectError(422, error.message);
     }
-    throw new ConnectError(502, `${String(server.display_name ?? server.slug)}: ${error.message}`);
+    throw error;
   }
-  throw error;
+}
+
+/**
+ * What `onExisting` makes of the owner's stored login: a 409 when it refuses, the login kept or
+ * already current, or null when none is connected or the credentials replace it.
+ */
+function resolveExistingLogin(
+  existing: McpConnectionRow | null,
+  onExisting: OnExisting,
+  credentials: Credentials,
+  masterKey: Buffer | undefined,
+): ConnectResult | null {
+  if (existing === null || existing.status !== "connected") {
+    return null;
+  }
+  if (onExisting === "refuse") {
+    throw new ConnectError(409, "already connected; disconnect first");
+  }
+  if (onExisting === "keep") {
+    return { connection: existing, outcome: "kept" };
+  }
+  if (sameCredentials(storedCredentials(existing, masterKey), credentials)) {
+    return { connection: existing, outcome: "current" };
+  }
+  if (typeof onExisting === "object" && existing.account_hint !== onExisting.replace_when_hint) {
+    return { connection: existing, outcome: "kept" };
+  }
+  return null;
+}
+
+/** The account hint the connector's `validate` gives the credentials, none without a pool; a failure is the error it answers. */
+async function validateCredentials(
+  pool: ConnectPool | null,
+  server: LoadedConnector,
+  credentials: Credentials,
+  settings: Record<string, unknown>,
+): Promise<string> {
+  if (pool === null) {
+    return "";
+  }
+  try {
+    return await pool.validate(server, credentials, settings);
+  } catch (error) {
+    throw translateConnectFailure(error, server);
+  }
+}
+
+/**
+ * Lists a new login's tools. A listing the server refuses with 401 or 403 retires the login as
+ * `failure` says and is a 422; any other listing failure leaves the tools for the next sync.
+ */
+async function listNewLoginTools(
+  db: ConnectDatabase,
+  pool: ConnectPool,
+  login: ConnectorLogin,
+  failure: LoginFailure,
+): Promise<void> {
+  try {
+    await pool.syncTools(login.connection, login.server, { force: true, validate: false });
+  } catch (error) {
+    if (error instanceof McpError && (error.status === 401 || error.status === 403)) {
+      await db.retireLogin(pool, login.connection, failure);
+      throw new ConnectError(422, "api key was rejected");
+    }
+  }
 }
 
 /**
@@ -160,43 +223,18 @@ export async function connect(
   now: Date = new Date(),
 ): Promise<ConnectResult> {
   const { server } = input;
-  const pool = services.mcp;
   if (server.auth !== "token") {
     throw new ConnectError(422, "connector does not take a key");
   }
   const credentials = tokenCredentials(server, input.credentials);
-  let settings: SettingsOutcome;
-  try {
-    settings = settingsOutcome(server, input.settings ?? {});
-  } catch (error) {
-    if (error instanceof SettingsError) {
-      throw new ConnectError(422, error.message);
-    }
-    throw error;
-  }
+  const settings = validateConnectSettings(server, input.settings ?? {});
   const complete = settings.kind === "complete";
-  const onExisting = input.onExisting ?? "refuse";
   const existing = await db.getMcpConnectionForOwner(server.id, input.ownerScope, input.ownerId);
-  if (existing !== null && existing.status === "connected") {
-    if (onExisting === "refuse") {
-      throw new ConnectError(409, "already connected; disconnect first");
-    }
-    if (onExisting === "keep") {
-      return { connection: existing, outcome: "kept" };
-    }
-    if (sameCredentials(storedCredentials(existing, services.masterKey), credentials)) {
-      return { connection: existing, outcome: "current" };
-    }
-    if (typeof onExisting === "object" && existing.account_hint !== onExisting.replace_when_hint) {
-      return { connection: existing, outcome: "kept" };
-    }
+  const resolved = resolveExistingLogin(existing, input.onExisting ?? "refuse", credentials, services.masterKey);
+  if (resolved !== null) {
+    return resolved;
   }
-  let hint: string;
-  try {
-    hint = pool ? await pool.validate(server, credentials, settings.values) : "";
-  } catch (error) {
-    throw translateConnectFailure(error, server);
-  }
+  const hint = await validateCredentials(services.mcp, server, credentials, settings.values);
   const [ciphertext, nonce] = encryptPayload({ ...credentials }, services.masterKey);
   const connection = await db.connectMcp(
     {
@@ -213,16 +251,9 @@ export async function connect(
     },
     now,
   );
-  if (pool === null || !complete) {
-    return { connection, outcome: "installed" };
-  }
-  try {
-    await pool.syncTools(connection, server, { force: true, validate: false });
-  } catch (error) {
-    if (error instanceof McpError && (error.status === 401 || error.status === 403)) {
-      await db.retireLogin(pool, connection, existing === null ? "never_connected" : "unauthorised");
-      throw new ConnectError(422, "api key was rejected");
-    }
+  if (services.mcp !== null && complete) {
+    const failure = existing === null ? "never_connected" : "unauthorised";
+    await listNewLoginTools(db, services.mcp, { connection, server }, failure);
   }
   return { connection, outcome: "installed" };
 }

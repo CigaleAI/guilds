@@ -16,7 +16,9 @@ place of the pool, and has no options argument:
 `SettingsLookup`, `{ property, q }`, which `mcp/pool.js` exports:
 `lookup(server, { property, q }, credentials, settings)`. The tools
 `McpPool.syncTools` answers are plain `ListedTool` records, not
-instances of a class.
+instances of a class. `connectFailure` (`mcp/connect-token.js`) is
+`translateConnectFailure`, which answers the error to throw:
+`throw translateConnectFailure(error, server)`.
 
 **No impact.** A connector tool call, from an agent's run or through
 `POST /api/mcp/connections/:connection_id/call`, fails with the

@@ -234,6 +234,17 @@ function handManifest(fields: HandConnector): Manifest {
   }
 }
 
+/** Refuses a configured OAuth client on an organisation's server, which signs in with a registered one. */
+function assertOrgOauthClient(
+  ownerOrgId: string | null,
+  auth: Manifest["auth"]["kind"],
+  strategy: ConnectorPatch["oauth_strategy"],
+): void {
+  if (ownerOrgId !== null && auth === "oauth" && strategy === "configured") {
+    throw new CatalogError("an organisation's server signs in with a dynamically registered client");
+  }
+}
+
 /**
  * Refuses a slug another server holds. A platform server's slug may not match any server's, and
  * an organisation's may not match a platform server's or another of its own; two organisations
@@ -275,9 +286,7 @@ export async function createConnector(
   const slug = validateSlug(body.slug);
   await assertSlugFree(db, slug, ownerOrgId);
   const auth = validateAuth(body.auth ?? "token");
-  if (ownerOrgId !== null && auth === "oauth" && body.oauth_strategy === "configured") {
-    throw new CatalogError("an organisation's server signs in with a dynamically registered client");
-  }
+  assertOrgOauthClient(ownerOrgId, auth, body.oauth_strategy);
   const manifest = handManifest({
     slug,
     displayName: String(body.display_name ?? slug).trim() || slug,
@@ -310,6 +319,48 @@ export async function createConnector(
   return loadConnector(row);
 }
 
+/** A hand-made connector's copy after `body` edits it; a field `body` leaves out keeps its value. */
+function editedCopy(
+  current: Manifest,
+  body: ConnectorPatch,
+  slug: string,
+): Pick<HandConnector, "displayName" | "description" | "limitations" | "setupHint"> {
+  return {
+    displayName: body.display_name === undefined ? current.display_name : String(body.display_name).trim() || slug,
+    description: body.description === undefined ? current.description : validateCatalogDescription(body.description),
+    limitations:
+      body.limitations === undefined ? (current.limitations ?? null) : validateOptionalText(body.limitations, "limitations"),
+    setupHint:
+      body.setup_hint === undefined ? (current.setup_hint ?? null) : validateOptionalText(body.setup_hint, "setup_hint"),
+  };
+}
+
+/**
+ * A hand-made connector's manifest after `body` edits its own fields, each field it leaves out
+ * kept. A new slug is refused when another server holds it.
+ */
+async function editedHandManifest(db: Queryable, server: LoadedConnector, body: ConnectorPatch): Promise<Manifest> {
+  const current = server.manifest;
+  const slug = body.slug === undefined ? current.slug : validateSlug(body.slug);
+  const ownerOrgId = server.owner_org_id ? String(server.owner_org_id) : null;
+  if (slug !== current.slug) {
+    await assertSlugFree(db, slug, ownerOrgId, server.id);
+  }
+  const auth = body.auth === undefined ? current.auth.kind : validateAuth(body.auth);
+  assertOrgOauthClient(ownerOrgId, auth, body.oauth_strategy);
+  return handManifest({
+    slug,
+    url: body.url === undefined ? String(current.endpoint?.url ?? "") : validateEndpointUrl(body.url),
+    auth,
+    oauthStrategy: validateOauthStrategy(
+      auth,
+      body.oauth_strategy ?? (body.auth === undefined ? server.oauth_strategy : undefined),
+    ),
+    ...editedCopy(current, body, slug),
+    tools: current.tools,
+  });
+}
+
 /**
  * Edits a connector. Its switch always; a hand-made one's own fields; any other's copy as
  * overrides, where null clears an override. The endpoint, auth, and slug of a connector the
@@ -326,37 +377,10 @@ export async function patchConnector(
     patch.enabled = body.enabled;
   }
   if (editsFields(server)) {
-    const current = server.manifest;
-    const slug = body.slug !== undefined ? validateSlug(body.slug) : current.slug;
-    const ownerOrgId = server.owner_org_id ? String(server.owner_org_id) : null;
-    if (slug !== current.slug) {
-      await assertSlugFree(db, slug, ownerOrgId, server.id);
-      patch.slug = slug;
+    patch.manifest = await editedHandManifest(db, server, body);
+    if (patch.manifest.slug !== server.manifest.slug) {
+      patch.slug = patch.manifest.slug;
     }
-    const auth = body.auth !== undefined ? validateAuth(body.auth) : current.auth.kind;
-    if (ownerOrgId !== null && auth === "oauth" && body.oauth_strategy === "configured") {
-      throw new CatalogError("an organisation's server signs in with a dynamically registered client");
-    }
-    const pick = (field: "description" | "limitations" | "setup_hint"): string | null =>
-      body[field] !== undefined
-        ? field === "description"
-          ? validateCatalogDescription(body[field])
-          : validateOptionalText(body[field], field)
-        : (current[field] ?? (field === "description" ? "" : null));
-    patch.manifest = handManifest({
-      slug,
-      displayName: body.display_name !== undefined ? String(body.display_name).trim() || slug : current.display_name,
-      url: body.url !== undefined ? validateEndpointUrl(body.url) : String(current.endpoint?.url ?? ""),
-      auth,
-      oauthStrategy: validateOauthStrategy(
-        auth,
-        body.oauth_strategy ?? (body.auth !== undefined ? undefined : server.oauth_strategy),
-      ),
-      description: String(pick("description") ?? ""),
-      limitations: pick("limitations"),
-      setupHint: pick("setup_hint"),
-      tools: current.tools,
-    });
   } else {
     for (const field of ["slug", "url", "auth", "oauth_strategy"] as const) {
       if (body[field] !== undefined) {
@@ -372,6 +396,27 @@ export async function patchConnector(
   return loadConnector(updated);
 }
 
+/** A tool's override after `edit`: a field set to null is cleared, and a field left out kept. */
+function editedToolOverride(current: ToolOverride, edit: ToolEdit): ToolOverride {
+  const next: ToolOverride = { ...current };
+  if (edit.description === null) {
+    delete next.description;
+  } else if (edit.description !== undefined) {
+    next.description = validateCatalogDescription(edit.description);
+  }
+  if (edit.input_schema === null) {
+    delete next.input_schema;
+  } else if (edit.input_schema !== undefined) {
+    next.input_schema = validateInputSchema(edit.input_schema);
+  }
+  if (edit.default === null) {
+    delete next.default;
+  } else if (edit.default !== undefined) {
+    next.default = edit.default;
+  }
+  return next;
+}
+
 /** Edits one tool by name: its description, its input schema, and whether it starts On. Null clears an edit. */
 export async function patchConnectorTool(
   db: Queryable,
@@ -379,35 +424,13 @@ export async function patchConnectorTool(
   change: ConnectorToolEdit,
   now = new Date(),
 ): Promise<LoadedConnector> {
-  const body = change.edit;
   const toolName = change.tool.trim();
   if (!toolName || toolName.length > 128) {
     throw new CatalogError("tool name is invalid");
   }
   const overrides: Overrides = { ...server.overrides };
   const tools = { ...(overrides.tools ?? {}) };
-  const edit: ToolOverride = { ...(tools[toolName] ?? {}) };
-  if (body.description !== undefined) {
-    if (body.description === null) {
-      delete edit.description;
-    } else {
-      edit.description = validateCatalogDescription(body.description);
-    }
-  }
-  if (body.input_schema !== undefined) {
-    if (body.input_schema === null) {
-      delete edit.input_schema;
-    } else {
-      edit.input_schema = validateInputSchema(body.input_schema);
-    }
-  }
-  if (body.default !== undefined) {
-    if (body.default === null) {
-      delete edit.default;
-    } else {
-      edit.default = body.default;
-    }
-  }
+  const edit = editedToolOverride(tools[toolName] ?? {}, change.edit);
   if (Object.keys(edit).length) {
     tools[toolName] = edit;
   } else {

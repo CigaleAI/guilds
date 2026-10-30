@@ -735,32 +735,9 @@
       "count": 1
     }
   },
-  "src/mcp/catalog.ts": {
-    "complexity": {
-      "count": 2
-    }
-  },
-  "src/mcp/connect-token.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/mcp/operator-call.ts": {
     "no-restricted-syntax": {
       "count": 2
-    }
-  },
-  "src/mcp/pool.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/mcp/session.ts": {
-    "complexity": {
-      "count": 2
-    },
-    "max-depth": {
-      "count": 1
     }
   },
   "src/memory/history.ts": {

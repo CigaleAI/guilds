@@ -20,11 +20,9 @@ function parseBody(contentType: string, text: string): unknown {
   if (contentType.includes("text/event-stream")) {
     let data: unknown = null;
     for (const line of text.split(/\r?\n/)) {
-      if (line.startsWith("data:")) {
-        const raw = line.slice(5).trim();
-        if (raw) {
-          data = JSON.parse(raw);
-        }
+      const raw = line.startsWith("data:") ? line.slice(5).trim() : "";
+      if (raw) {
+        data = JSON.parse(raw);
       }
     }
     return data;
@@ -60,6 +58,16 @@ export function rpcPayload(response: RpcResponse): unknown {
   throw new McpError(`mcp ${response.status}`, response.status);
 }
 
+/** The text of each part of a tool result's content: a part's `text`, or the part itself when it is a string. */
+function textParts(content: unknown[]): string[] {
+  return content.flatMap((item) => {
+    if (typeof item === "string") {
+      return [item];
+    }
+    return isPlainRecord(item) && typeof item.text === "string" ? [item.text] : [];
+  });
+}
+
 function callText(result: unknown): string {
   if (result === null || result === undefined) {
     return "";
@@ -74,18 +82,9 @@ function callText(result: unknown): string {
   if (typeof content === "string") {
     return content;
   }
-  if (Array.isArray(content)) {
-    const parts: string[] = [];
-    for (const item of content) {
-      if (isPlainRecord(item) && typeof item.text === "string") {
-        parts.push(item.text);
-      } else if (typeof item === "string") {
-        parts.push(item);
-      }
-    }
-    if (parts.length) {
-      return parts.join("\n");
-    }
+  const parts = Array.isArray(content) ? textParts(content) : [];
+  if (parts.length) {
+    return parts.join("\n");
   }
   return JSON.stringify(result);
 }
@@ -223,6 +222,24 @@ export class McpSession {
     return payload.result;
   }
 
+  /** Sends `init` to the endpoint, aborted once `timeoutMs` passes, when given; an abort is an `McpError`. */
+  private async send(init: RequestInit, timeoutMs: number | undefined): Promise<Response> {
+    const controller = timeoutMs ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+    try {
+      return await this.fetchFn(this.url, controller ? { ...init, signal: controller.signal } : init);
+    } catch (error) {
+      if (controller?.signal.aborted) {
+        throw new McpError("mcp tools/list timed out");
+      }
+      throw error;
+    } finally {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    }
+  }
+
   private async post(
     body: Record<string, unknown>,
     options: RequestLimits = {},
@@ -236,28 +253,7 @@ export class McpSession {
     if (carried) {
       headers["Mcp-Session-Id"] = carried;
     }
-    const controller = options.timeoutMs ? new AbortController() : null;
-    const timer = controller && options.timeoutMs
-      ? setTimeout(() => controller.abort(), options.timeoutMs)
-      : null;
-    let response: Response;
-    try {
-      response = await this.fetchFn(this.url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
-        ...(controller ? { signal: controller.signal } : {}),
-      });
-    } catch (error) {
-      if (controller?.signal.aborted) {
-        throw new McpError("mcp tools/list timed out");
-      }
-      throw error;
-    } finally {
-      if (timer) {
-        clearTimeout(timer);
-      }
-    }
+    const response = await this.send({ method: "POST", headers, body: JSON.stringify(body) }, options.timeoutMs);
     const session = response.headers.get("mcp-session-id");
     if (session) {
       this.sessionId = session;
