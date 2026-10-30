@@ -32,11 +32,6 @@
       "count": 1
     }
   },
-  "src/app/theme.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
   "src/features/access/AccessTools.tsx": {
     "complexity": {
       "count": 1

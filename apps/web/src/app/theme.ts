@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { readStored, writeStored } from "./storage";
 
 export type ThemePreference = "light" | "dark" | "system";
 
@@ -9,12 +10,8 @@ function systemTheme(): "light" | "dark" {
 }
 
 export function readThemePreference(): ThemePreference {
-  try {
-    const stored = localStorage.getItem(storageKey);
-    return stored === "light" || stored === "dark" ? stored : "system";
-  } catch {
-    return "system";
-  }
+  const stored = readStored(storageKey);
+  return stored === "light" || stored === "dark" ? stored : "system";
 }
 
 /** Sets `data-theme` on <html>, which every token reads. */
@@ -36,12 +33,7 @@ export function useTheme(): [ThemePreference, (next: ThemePreference) => void] {
   }, [preference]);
 
   const choose = useCallback((next: ThemePreference) => {
-    try {
-      if (next === "system") localStorage.removeItem(storageKey);
-      else localStorage.setItem(storageKey, next);
-    } catch {
-      // Storage can be unavailable (private mode); the choice still applies for this visit.
-    }
+    writeStored(storageKey, next === "system" ? null : next);
     setPreference(next);
   }, []);
 
