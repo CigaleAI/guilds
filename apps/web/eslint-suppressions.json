@@ -17,11 +17,6 @@
       "count": 1
     }
   },
-  "src/api/liveTurn.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    }
-  },
   "src/api/streams.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 12
@@ -30,11 +25,6 @@
       "count": 3
     },
     "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/api/toolProgress.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     }
   },

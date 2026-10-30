@@ -4,9 +4,8 @@ export type LiveTurn = { reasoning: string; text: string };
 /** Text from a live delta: coach frames send `content` (and `text`); run frames send `text`. */
 export function liveDeltaText(data: unknown): string {
   if (!data || typeof data !== "object") return "";
-  const body = data as { content?: unknown; text?: unknown };
-  if (typeof body.content === "string" && body.content) return body.content;
-  return typeof body.text === "string" ? body.text : "";
+  if ("content" in data && typeof data.content === "string" && data.content) return data.content;
+  return "text" in data && typeof data.text === "string" ? data.text : "";
 }
 
 /** Appends an `assistant.delta` or `assistant.reasoning.delta` to the turn being written. */

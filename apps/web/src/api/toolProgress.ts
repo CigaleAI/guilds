@@ -26,11 +26,14 @@ function stringLines(value: unknown): string[] {
 
 /** Reads a `tool.progress` event's data; null when it names no tool call. */
 function readProgressEvent(data: unknown): ProgressEvent | null {
-  if (!data || typeof data !== "object") return null;
-  const event = data as { tool_call_id?: unknown; lines?: unknown; session_id?: unknown };
-  const callId = nonEmptyString(event.tool_call_id);
+  if (!data || typeof data !== "object" || !("tool_call_id" in data)) return null;
+  const callId = nonEmptyString(data.tool_call_id);
   if (!callId) return null;
-  return { callId, lines: stringLines(event.lines), sessionId: nonEmptyString(event.session_id) };
+  return {
+    callId,
+    lines: stringLines("lines" in data ? data.lines : null),
+    sessionId: nonEmptyString("session_id" in data ? data.session_id : null),
+  };
 }
 
 /** Whether an event changes nothing for a call already known: no lines, and no new session. */

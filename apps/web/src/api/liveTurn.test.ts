@@ -6,6 +6,7 @@ test("liveDeltaText reads coach content and run text", () => {
   assert.equal(liveDeltaText({ content: "hello", text: "hello" }), "hello");
   assert.equal(liveDeltaText({ text: "run" }), "run");
   assert.equal(liveDeltaText({ content: "" }), "");
+  assert.equal(liveDeltaText({ content: 5, text: "run" }), "run");
   assert.equal(liveDeltaText(null), "");
 });
 
