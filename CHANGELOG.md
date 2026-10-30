@@ -596,6 +596,12 @@ tool context's `group_chat` posts through `postFromRun` alone.
 of the options `author_name`, `author_user_id`, and `interrupt`, and
 answers the posted message. `postUserInterruption` posts a message
 that stops the group runs it targets.
+`exchangeCode` and `refreshTokens` (`oauth/index.js`) take the grant,
+an `AuthorizationCodeGrant` or a `RefreshTokenGrant`, and the network
+they reach the provider through, an `OAuthHttp` of `client` and
+`proxyUrl`, as two arguments, in place of one object of both.
+`refreshConnection` takes `TokenRefreshServices` without `now`, and
+dates the refreshed tokens when it runs.
 
 **Breaking for extending repositories.** The Makefile variables
 `EDITION`, `EDITION_TEST_PACKAGES`, and `EDITION_COMPOSE_FILES` are

@@ -25,15 +25,17 @@ import {
   registerClient,
   startsBrowserOauth,
   storedClient,
+  storedTokenRedactions,
   tokenPayload,
   tokenRedactions,
   type OAuthDiscovery,
 } from "../../src/oauth/index.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
+import { encryptPayload } from "../../src/credentials/crypto.js";
 import { loadTextFixture } from "../helpers/fixtures.js";
-import { storeKeys } from "../helpers/env.js";
+import { HEX_MASTER_KEY, storeKeys } from "../helpers/env.js";
 import { mockFetch } from "../helpers/http.js";
-import { serverRow } from "../helpers/servers.js";
+import { connectionRow, serverRow } from "../helpers/servers.js";
 import type { Manifest } from "../../src/db/schema/index.js";
 
 const GMAIL_SCOPES = CONNECTORS.bySlug("gmail")!.manifest.auth.oauth!.scopes!;
@@ -241,6 +243,20 @@ test("token redactions and pending oauth", () => {
   );
 });
 
+test("stored token redactions decrypt a connection's payload into its token values", () => {
+  const masterKey = Buffer.from(HEX_MASTER_KEY, "hex");
+  const [ciphertext, nonce] = encryptPayload({ access_token: "tok", scope: "read" }, masterKey);
+  assert.deepEqual(storedTokenRedactions(connectionRow({ id: "conn_5", ciphertext, nonce }), masterKey), {
+    mcp_conn_5_access_token: "tok",
+  });
+});
+
+test("stored token redactions are empty when the payload cannot be decrypted", () => {
+  const masterKey = Buffer.from(HEX_MASTER_KEY, "hex");
+  const broken = connectionRow({ ciphertext: Buffer.from("not a payload"), nonce: Buffer.alloc(12) });
+  assert.deepEqual(storedTokenRedactions(broken, masterKey), {});
+});
+
 test("stored client requires matching redirect", () => {
   const server = serverRow("custom", { config: {
       url: "https://mcp.notion.com/mcp",
@@ -324,15 +340,13 @@ test("register exchange and refresh", async () => {
     clientId: "cid",
     clientSecret: null,
     redirectUri: "http://127.0.0.1:8080/cb",
-    client,
-  });
+  }, { client });
   assert.equal(tokens.access_token, "tok");
   const refreshed = await refreshTokens(discovery, {
     refreshToken: "ref",
     clientId: "cid",
     clientSecret: null,
-    client,
-  });
+  }, { client });
   assert.equal(refreshed.access_token, "tok2");
 });
 
@@ -347,12 +361,11 @@ test("refresh invalid_grant is reauth", async () => {
   };
   await assert.rejects(
     () =>
-      refreshTokens(discovery, {
-        refreshToken: "ref",
-        clientId: "cid",
-        clientSecret: null,
-        client: mockFetch(() => ({ status: 400, json: { error: "invalid_grant" } })),
-      }),
+      refreshTokens(
+        discovery,
+        { refreshToken: "ref", clientId: "cid", clientSecret: null },
+        { client: mockFetch(() => ({ status: 400, json: { error: "invalid_grant" } })) },
+      ),
     (error: unknown) => error instanceof OAuthReauthError,
   );
 });

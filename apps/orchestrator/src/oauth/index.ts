@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { proxyFetch, type FetchFn } from "../net/http.js";
-import { encryptPayload } from "../credentials/crypto.js";
+import { decryptPayload, encryptPayload } from "../credentials/crypto.js";
 import { githubAppConfig } from "../github/index.js";
 import {
   GOOGLE_CONNECTORS,
@@ -11,6 +11,7 @@ import {
   type IntegrationSources,
 } from "../instance/integrations.js";
 import { saveOauthClient, type LoadedConnector } from "../connectors/servers.js";
+import { isPlainRecord } from "../db/json.js";
 import { saveMcpConnection, type McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import type { Manifest, OAuthClient, OAuthClientCredentials } from "../db/schema/index.js";
@@ -98,6 +99,56 @@ export type OAuthDiscovery = {
   access_type: string | null;
 };
 
+/**
+ * How OAuth requests reach a provider: through `client`, or else through the proxy at
+ * `proxyUrl`, or directly when neither is set.
+ */
+export type OAuthHttp = {
+  client?: FetchFn | undefined;
+  proxyUrl?: string | undefined;
+};
+
+/** The services a login's OAuth client is resolved and registered through: the network, and the instance's integration values. */
+export type OAuthClientServices = OAuthHttp & {
+  sources?: IntegrationSources | undefined;
+};
+
+/** The services a login's tokens are refreshed through: the network, and the cipher of its stored payload. */
+export type TokenRefreshServices = OAuthHttp & {
+  decrypt: (ciphertext: Buffer, nonce: Buffer) => Record<string, unknown>;
+  encrypt?: typeof encryptPayload;
+};
+
+/** The request a login started from, as far as its callback URL needs it: its protocol and Host header. */
+export type RequestOrigin = {
+  protocol: string;
+  headers: { host?: string | string[] | undefined };
+};
+
+/** The parameters of an authorization request a login sends the operator's browser to. */
+export type AuthorizationRequest = {
+  clientId: string;
+  redirectUri: string;
+  codeChallenge: string;
+  state: string;
+};
+
+/** An authorization code grant: the code, the PKCE verifier it was requested with, and the client that trades it. */
+export type AuthorizationCodeGrant = {
+  code: string;
+  codeVerifier: string;
+  clientId: string;
+  clientSecret?: string | null | undefined;
+  redirectUri: string;
+};
+
+/** A refresh token grant: the refresh token and the client that trades it. */
+export type RefreshTokenGrant = {
+  refreshToken: string;
+  clientId: string;
+  clientSecret?: string | null | undefined;
+};
+
 export class OAuthUnsupportedError extends OAuthError {
   constructor(message: string) {
     super(message);
@@ -145,16 +196,6 @@ function urlsafe(raw: Buffer): string {
   return raw.toString("base64url").replace(/=+$/, "");
 }
 
-function omitUndefined<T extends Record<string, unknown>>(value: T): T {
-  const out: Record<string, unknown> = {};
-  for (const [key, item] of Object.entries(value)) {
-    if (item !== undefined) {
-      out[key] = item;
-    }
-  }
-  return out as T;
-}
-
 export function pkcePair(): [string, string] {
   const verifier = urlsafe(randomBytes(32));
   const digest = createHash("sha256").update(verifier, "ascii").digest();
@@ -167,7 +208,7 @@ export function newState(): string {
 
 export function oauthCallbackUrl(
   publicBaseUrl: string,
-  request: { protocol: string; headers: { host?: string | string[] | undefined } },
+  request: RequestOrigin,
 ): string {
   const base = publicBaseUrl.trim().replace(/\/+$/, "");
   if (base) {
@@ -179,7 +220,7 @@ export function oauthCallbackUrl(
 
 export function authorizationUrl(
   discovery: OAuthDiscovery,
-  options: { clientId: string; redirectUri: string; codeChallenge: string; state: string },
+  options: AuthorizationRequest,
 ): string {
   const params = new URLSearchParams();
   params.set("response_type", "code");
@@ -215,7 +256,7 @@ export function providerClient(
   if (provider === null) {
     return null;
   }
-  const values = integrationValues(provider.integration, sources) as Record<string, string> | null;
+  const values = integrationValues(provider.integration, sources);
   if (values === null) {
     return null;
   }
@@ -301,6 +342,18 @@ export function tokenRedactions(payload: Record<string, unknown>, connectionId: 
   return values;
 }
 
+/**
+ * The tokens a connection stores, as redaction values, decrypted with `masterKey` or the
+ * environment's key; a payload that cannot be read holds none.
+ */
+export function storedTokenRedactions(connection: McpConnectionRow, masterKey?: Buffer): Record<string, string> {
+  try {
+    return tokenRedactions(decryptPayload(connection.ciphertext, connection.nonce, masterKey), connection.id);
+  } catch {
+    return {};
+  }
+}
+
 export function accessExpired(
   payload: Record<string, unknown>,
   options: { now: Date; skewMs?: number },
@@ -332,16 +385,16 @@ export function pendingReplaces(payload: Record<string, unknown>): boolean {
     return true;
   }
   const oauth = payload.oauth;
-  return Boolean(oauth && typeof oauth === "object" && !Array.isArray(oauth) && (oauth as { replaces?: unknown }).replaces === true);
+  return isPlainRecord(oauth) && oauth.replaces === true;
 }
 
 export function pendingOauth(payload: Record<string, unknown>): [string, string] {
   const oauth = payload.oauth;
-  if (!oauth || typeof oauth !== "object" || Array.isArray(oauth)) {
+  if (!isPlainRecord(oauth)) {
     throw new OAuthError("connection is missing oauth state");
   }
-  const verifier = (oauth as { code_verifier?: unknown }).code_verifier;
-  const redirectUri = (oauth as { redirect_uri?: unknown }).redirect_uri;
+  const verifier = oauth.code_verifier;
+  const redirectUri = oauth.redirect_uri;
   if (typeof verifier !== "string" || typeof redirectUri !== "string") {
     throw new OAuthError("connection is missing oauth state");
   }
@@ -388,8 +441,8 @@ async function getJson(fetchFn: FetchFn, urls: string[]): Promise<Record<string,
       last = "discovery returned a non-object";
       continue;
     }
-    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
-      return payload as Record<string, unknown>;
+    if (isPlainRecord(payload)) {
+      return payload;
     }
     last = "discovery returned a non-object";
   }
@@ -414,7 +467,7 @@ function scopedDiscovery(server: LoadedConnector, discovery: OAuthDiscovery): OA
  */
 export async function serverDiscovery(
   server: LoadedConnector,
-  options: { client?: FetchFn | undefined; proxyUrl?: string | undefined } = {},
+  options: OAuthHttp = {},
 ): Promise<OAuthDiscovery> {
   const url = server.config.url?.trim();
   if (url) {
@@ -429,7 +482,7 @@ export async function serverDiscovery(
 
 export async function discover(
   mcpUrl: string,
-  options: { client?: FetchFn | undefined; proxyUrl?: string | undefined } = {},
+  options: OAuthHttp = {},
 ): Promise<OAuthDiscovery> {
   const fetchFn = options.client ?? proxyFetch(options.proxyUrl ?? "");
   const resourceMeta = await getJson(fetchFn, resourceMetadataUrls(mcpUrl));
@@ -465,7 +518,7 @@ const Registration = Type.Object({ client_id: Type.String(), client_secret: Type
 export async function registerClient(
   discovery: OAuthDiscovery,
   redirectUri: string,
-  options: { client?: FetchFn | undefined; proxyUrl?: string | undefined } = {},
+  options: OAuthHttp = {},
 ): Promise<OAuthClient> {
   if (!discovery.registration_endpoint) {
     throw new OAuthError("authorization server does not support dynamic client registration");
@@ -503,8 +556,8 @@ export async function registerClient(
 async function tokenError(response: Response, text: string): Promise<string | null> {
   try {
     const payload: unknown = text ? JSON.parse(text) : {};
-    if (payload && typeof payload === "object" && !Array.isArray(payload) && typeof (payload as { error?: unknown }).error === "string") {
-      return (payload as { error: string }).error;
+    if (isPlainRecord(payload) && typeof payload.error === "string") {
+      return payload.error;
     }
   } catch {
     return null;
@@ -515,13 +568,14 @@ async function tokenError(response: Response, text: string): Promise<string | nu
 async function tokenRequest(
   discovery: OAuthDiscovery,
   fields: Record<string, string>,
-  options: { clientSecret?: string | null | undefined; client?: FetchFn | undefined; proxyUrl?: string | undefined },
+  clientSecret: string | null | undefined,
+  http: OAuthHttp,
 ): Promise<Record<string, unknown>> {
   const params = new URLSearchParams(fields);
-  if (options.clientSecret) {
-    params.set("client_secret", options.clientSecret);
+  if (clientSecret) {
+    params.set("client_secret", clientSecret);
   }
-  const fetchFn = options.client ?? proxyFetch(options.proxyUrl ?? "");
+  const fetchFn = http.client ?? proxyFetch(http.proxyUrl ?? "");
   const response = await fetchFn(discovery.token_endpoint, {
     method: "POST",
     headers: {
@@ -539,57 +593,47 @@ async function tokenRequest(
     throw new OAuthError(`token request failed: ${response.status}`);
   }
   const payload: unknown = text ? JSON.parse(text) : {};
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+  if (!isPlainRecord(payload)) {
     throw new OAuthError("token response is not an object");
   }
-  return payload as Record<string, unknown>;
+  return payload;
 }
 
 export async function exchangeCode(
   discovery: OAuthDiscovery,
-  options: {
-    code: string;
-    codeVerifier: string;
-    clientId: string;
-    clientSecret?: string | null | undefined;
-    redirectUri: string;
-    client?: FetchFn | undefined;
-    proxyUrl?: string | undefined;
-  },
+  grant: AuthorizationCodeGrant,
+  http: OAuthHttp = {},
 ): Promise<Record<string, unknown>> {
   return tokenRequest(
     discovery,
     {
       grant_type: "authorization_code",
-      code: options.code,
-      client_id: options.clientId,
-      redirect_uri: options.redirectUri,
-      code_verifier: options.codeVerifier,
+      code: grant.code,
+      client_id: grant.clientId,
+      redirect_uri: grant.redirectUri,
+      code_verifier: grant.codeVerifier,
       ...(discovery.resource ? { resource: discovery.resource } : {}),
     },
-    omitUndefined({ clientSecret: options.clientSecret, client: options.client, proxyUrl: options.proxyUrl }),
+    grant.clientSecret,
+    http,
   );
 }
 
 export async function refreshTokens(
   discovery: OAuthDiscovery,
-  options: {
-    refreshToken: string;
-    clientId: string;
-    clientSecret?: string | null | undefined;
-    client?: FetchFn | undefined;
-    proxyUrl?: string | undefined;
-  },
+  grant: RefreshTokenGrant,
+  http: OAuthHttp = {},
 ): Promise<Record<string, unknown>> {
   return tokenRequest(
     discovery,
     {
       grant_type: "refresh_token",
-      refresh_token: options.refreshToken,
-      client_id: options.clientId,
+      refresh_token: grant.refreshToken,
+      client_id: grant.clientId,
       ...(discovery.resource ? { resource: discovery.resource } : {}),
     },
-    omitUndefined({ clientSecret: options.clientSecret, client: options.client, proxyUrl: options.proxyUrl }),
+    grant.clientSecret,
+    http,
   );
 }
 
@@ -619,24 +663,24 @@ export async function ensureClient(
 /**
  * The provider's discovery and the OAuth client a login to `server` signs in with at
  * `redirectUri`, saved through `db`, the dependencies object a unit test fakes, and fetched
- * with `options`.
+ * and read through `services`.
  */
 export async function ensureClientThrough(
   db: OauthDatabase,
   server: LoadedConnector,
   redirectUri: string,
-  options: { client?: FetchFn | undefined; proxyUrl?: string | undefined; sources?: IntegrationSources | undefined } = {},
+  services: OAuthClientServices = {},
 ): Promise<[OAuthDiscovery, OAuthClientCredentials]> {
   const strategy = oauthStrategy(server);
   if (strategy === "none" || server.auth !== "oauth") {
     throw new OAuthUnsupportedError("connector is not oauth");
   }
-  const discovery = await serverDiscovery(server, omitUndefined({ client: options.client, proxyUrl: options.proxyUrl }));
+  const discovery = await serverDiscovery(server, services);
   const current = storedClient(server);
   if (current !== null && clientCoversRedirect(current, redirectUri)) {
     return [discovery, current];
   }
-  const provided = providerClient(server, options.sources);
+  const provided = providerClient(server, services.sources);
   if (provided !== null) {
     return [discovery, provided];
   }
@@ -648,43 +692,36 @@ export async function ensureClientThrough(
       "authorization server does not support dynamic client registration and no client is configured",
     );
   }
-  const registered = await registerClient(discovery, redirectUri, options);
+  const registered = await registerClient(discovery, redirectUri, services);
   await db.saveOauthClient(server.id, registered, new Date());
   return [discovery, registered];
 }
 
+/** Refreshes a login's tokens at its provider and saves them, encrypted, through `db`. */
 export async function refreshConnection(
   db: OauthDatabase,
   connection: McpConnectionRow,
   server: LoadedConnector,
-  options: {
-    client?: FetchFn | undefined;
-    proxyUrl?: string | undefined;
-    now?: Date;
-    decrypt: (ciphertext: Buffer, nonce: Buffer) => Record<string, unknown>;
-    encrypt?: typeof encryptPayload;
-  },
+  services: TokenRefreshServices,
 ): Promise<McpConnectionRow> {
-  const now = options.now ?? new Date();
-  const payload = options.decrypt(connection.ciphertext, connection.nonce);
+  const now = new Date();
+  const payload = services.decrypt(connection.ciphertext, connection.nonce);
   const refresh = payload.refresh_token;
   if (typeof refresh !== "string" || !refresh) {
     throw new OAuthReauthError("connection has no refresh token");
   }
-  const discovery = await serverDiscovery(server, options);
+  const discovery = await serverDiscovery(server, services);
   const client = configuredClient(server);
   if (client === null) {
     throw new OAuthError("mcp server is missing an oauth client");
   }
-  const tokens = await refreshTokens(discovery, omitUndefined({
-    refreshToken: refresh,
-    clientId: client.client_id,
-    clientSecret: client.client_secret,
-    client: options.client,
-    proxyUrl: options.proxyUrl,
-  }));
+  const tokens = await refreshTokens(
+    discovery,
+    { refreshToken: refresh, clientId: client.client_id, clientSecret: client.client_secret },
+    services,
+  );
   const stored = tokenPayload(tokens, { now, existing: payload });
-  const [ciphertext, nonce] = (options.encrypt ?? encryptPayload)(stored);
+  const [ciphertext, nonce] = (services.encrypt ?? encryptPayload)(stored);
   const row = await db.saveMcpConnection(
     connection.id,
     {

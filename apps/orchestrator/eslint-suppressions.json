@@ -720,7 +720,7 @@
   },
   "src/mcp/operator-call.ts": {
     "no-restricted-syntax": {
-      "count": 2
+      "count": 1
     }
   },
   "src/mcp/pool.ts": {
@@ -799,15 +799,7 @@
       "count": 3
     }
   },
-  "src/oauth/html.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
   "src/oauth/index.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 9
-    },
     "boundary/no-reexport-modules": {
       "count": 1
     },
@@ -815,7 +807,7 @@
       "count": 2
     },
     "no-restricted-syntax": {
-      "count": 13
+      "count": 3
     }
   },
   "src/observability/client-errors.ts": {
