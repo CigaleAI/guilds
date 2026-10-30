@@ -1,4 +1,4 @@
-import type { StateActor, StateFlag, StateItemRow, StateLink } from "../../../api/types/studio";
+import type { StateFlag, StateItemRow, StateLink, StateShare } from "../../../api/types/studio";
 import type { Proposal } from "../pendingModel";
 
 /** The windows State offers, in hours: a day, three days, a week. */
@@ -50,6 +50,9 @@ export type StateSortKey = "name" | "changes" | "reads" | "last";
 
 export type StateListFilters = { needsLook: boolean; query: string };
 
+/** The column a list is sorted by, and its direction. */
+export type StateSort = { key: StateSortKey; descending: boolean };
+
 const sorters: Record<StateSortKey, (a: StateItemRow, b: StateItemRow) => number> = {
   name: (a, b) => a.title.localeCompare(b.title),
   changes: (a, b) => a.changes - b.changes,
@@ -60,12 +63,12 @@ const sorters: Record<StateSortKey, (a: StateItemRow, b: StateItemRow) => number
 /** The rows the filters keep, in the order asked. */
 export function filterStateRows(
   rows: readonly StateItemRow[],
-  filters: StateListFilters & { waiting: ReadonlySet<string> },
-  sort: { key: StateSortKey; descending: boolean },
+  filters: StateListFilters,
+  waiting: ReadonlySet<string>,
+  sort: StateSort,
 ): StateItemRow[] {
   const query = filters.query.trim().toLowerCase();
-  const flagged = (row: StateItemRow) =>
-    row.flags.length > 0 || isAwaitingApproval(row, filters.waiting);
+  const flagged = (row: StateItemRow) => row.flags.length > 0 || isAwaitingApproval(row, waiting);
   const kept = rows.filter(
     (row) =>
       (!filters.needsLook || flagged(row)) &&
@@ -76,7 +79,7 @@ export function filterStateRows(
 }
 
 /** An actor as a list names it, with its share when it has one. */
-export function actorShare(share: { actor: StateActor; share: number } | null): string {
+export function actorShare(share: Pick<StateShare, "actor" | "share"> | null): string {
   return share ? `${share.actor.name} · ${Math.round(share.share * 100)}%` : "—";
 }
 

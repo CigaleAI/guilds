@@ -92,40 +92,42 @@ test("filters keep flagged or waiting items and search words, in the order asked
     row("org/o/b.md", { title: "beta", changes: 3, flags: ["untouched"] }),
     row("org/o/c.md", { title: "gamma", changes: 3 }),
   ];
-  const none = { needsLook: false, query: "", waiting: new Set<string>() };
+  const none = { needsLook: false, query: "" };
+  const waiting = new Set<string>();
   const names = (sorted: StateItemRow[]) => sorted.map((item) => item.title);
-  assert.deepEqual(names(filterStateRows(rows, none, { key: "changes", descending: true })), [
-    "beta",
-    "gamma",
-    "alpha",
-  ]);
-  assert.deepEqual(names(filterStateRows(rows, none, { key: "name", descending: false })), [
-    "alpha",
-    "beta",
-    "gamma",
-  ]);
-  assert.deepEqual(names(filterStateRows(rows, none, { key: "reads", descending: true })), [
-    "alpha",
-    "beta",
-    "gamma",
-  ]);
-  assert.deepEqual(names(filterStateRows(rows, none, { key: "last", descending: true })), [
+  assert.deepEqual(
+    names(filterStateRows(rows, none, waiting, { key: "changes", descending: true })),
+    ["beta", "gamma", "alpha"],
+  );
+  assert.deepEqual(
+    names(filterStateRows(rows, none, waiting, { key: "name", descending: false })),
+    ["alpha", "beta", "gamma"],
+  );
+  assert.deepEqual(
+    names(filterStateRows(rows, none, waiting, { key: "reads", descending: true })),
+    ["alpha", "beta", "gamma"],
+  );
+  assert.deepEqual(names(filterStateRows(rows, none, waiting, { key: "last", descending: true })), [
     "alpha",
     "beta",
     "gamma",
   ]);
   assert.deepEqual(
     names(
-      filterStateRows(
-        rows,
-        { ...none, needsLook: true, waiting: new Set(["org/o/c.md"]) },
-        { key: "name", descending: false },
-      ),
+      filterStateRows(rows, { ...none, needsLook: true }, new Set(["org/o/c.md"]), {
+        key: "name",
+        descending: false,
+      }),
     ),
     ["beta", "gamma"],
   );
   assert.deepEqual(
-    names(filterStateRows(rows, { ...none, query: " GAM" }, { key: "name", descending: false })),
+    names(
+      filterStateRows(rows, { ...none, query: " GAM" }, waiting, {
+        key: "name",
+        descending: false,
+      }),
+    ),
     ["gamma"],
   );
 });

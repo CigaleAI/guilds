@@ -93,26 +93,22 @@ const sortKeys: Record<string, StateSortKey> = {
   last: "last",
 };
 
-function StateTable({
-  rows,
-  waiting,
-  hours,
-  onHoursChange,
-}: {
+type StateTableProps = {
   rows: StateItemRow[];
   waiting: Set<string>;
   hours: number;
   onHoursChange: (hours: number) => void;
-}) {
+};
+
+function StateTable({ rows, waiting, hours, onHoursChange }: StateTableProps) {
   const { agents, search, go } = useStudio();
   const [query, setQuery] = useState("");
   const [needsLook, setNeedsLook] = useState(false);
   const [sort, setSort] = useState<DataTableSort>({ columnId: "changes", direction: "descending" });
-  const shown = filterStateRows(
-    rows,
-    { needsLook, query, waiting },
-    { key: sortKeys[sort.columnId] ?? "changes", descending: sort.direction === "descending" },
-  );
+  const shown = filterStateRows(rows, { needsLook, query }, waiting, {
+    key: sortKeys[sort.columnId] ?? "changes",
+    descending: sort.direction === "descending",
+  });
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
       <FilterBar

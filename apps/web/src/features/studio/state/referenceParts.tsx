@@ -3,8 +3,10 @@ import { Icon, Row } from "@guildsrun/ui";
 import type { ReferenceNode } from "../../../api/types/studio";
 import { referenceKindIcon } from "./ReferencesMap";
 
+type ReferenceSectionProps = { title: string; children: ReactNode };
+
 /** A labelled group of rows under the map or in the detail. */
-export function ReferenceSection({ title, children }: { title: string; children: ReactNode }) {
+export function ReferenceSection({ title, children }: ReferenceSectionProps) {
   return (
     <div className="flex flex-col gap-1">
       <h3 className="type-label text-muted">{title}</h3>
@@ -13,16 +15,14 @@ export function ReferenceSection({ title, children }: { title: string; children:
   );
 }
 
-/** One node as a row that selects it on the map. */
-export function NodeRow({
-  node,
-  meta,
-  onSelect,
-}: {
+type NodeRowProps = {
   node: ReferenceNode;
   meta: string;
   onSelect: (id: string) => void;
-}) {
+};
+
+/** One node as a row that selects it on the map. */
+export function NodeRow({ node, meta, onSelect }: NodeRowProps) {
   return (
     <Row
       asChild

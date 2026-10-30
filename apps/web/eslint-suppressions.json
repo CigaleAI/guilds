@@ -673,50 +673,19 @@
       "count": 2
     }
   },
-  "src/features/studio/state/ReferenceDetail.tsx": {
-    "no-restricted-syntax": {
-      "count": 6
-    }
-  },
   "src/features/studio/state/ReferencesMap.tsx": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
-  "src/features/studio/state/ReferencesView.tsx": {
-    "no-restricted-syntax": {
-      "count": 3
-    }
-  },
-  "src/features/studio/state/StateEditors.tsx": {
-    "no-restricted-syntax": {
-      "count": 2
     }
   },
   "src/features/studio/state/StateItemDetail.tsx": {
     "complexity": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 6
     }
   },
   "src/features/studio/state/StateList.tsx": {
     "no-restricted-syntax": {
-      "count": 2
-    }
-  },
-  "src/features/studio/state/referenceParts.tsx": {
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
-  "src/features/studio/state/stateModel.ts": {
-    "no-restricted-syntax": {
-      "count": 3
+      "count": 1
     }
   },
   "src/features/studio/tabs/HistoryTab.tsx": {

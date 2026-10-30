@@ -37,22 +37,19 @@ const edgeTone: Record<ReferenceEdgeStatus, { stroke: string; fill: string }> = 
 
 const edgeStatuses = Object.keys(edgeTone) as ReferenceEdgeStatus[];
 
+type ReferencesMapProps = {
+  data: StudioReferences;
+  view: ReferenceMapView;
+  selected: string | null;
+  onSelect: (id: string) => void;
+};
+
 /**
  * Every Task in the first column, then the notes and tables its embeds reach, one column per hop,
  * with the files no Task reaches in a band below. A solid line is an embed, a dotted one a path
  * named in the text. Hovering or selecting a box lights what it pulls in and what pulls it in.
  */
-export function ReferencesMap({
-  data,
-  view,
-  selected,
-  onSelect,
-}: {
-  data: StudioReferences;
-  view: ReferenceMapView;
-  selected: string | null;
-  onSelect: (id: string) => void;
-}) {
+export function ReferencesMap({ data, view, selected, onSelect }: ReferencesMapProps) {
   const [measure, width] = useWidth();
   const [hover, setHover] = useState<string | null>(null);
   const markers = useId();
@@ -137,21 +134,16 @@ export function ReferencesMap({
   );
 }
 
-function ReferenceBox({
-  data,
-  placed,
-  selected,
-  faded,
-  onHover,
-  onSelect,
-}: {
+type ReferenceBoxProps = {
   data: StudioReferences;
   placed: PlacedReference;
   selected: boolean;
   faded: boolean;
   onHover: (on: boolean) => void;
   onSelect: () => void;
-}) {
+};
+
+function ReferenceBox({ data, placed, selected, faded, onHover, onSelect }: ReferenceBoxProps) {
   const { node } = placed;
   const failing = isBroken(node) || isOverBudget(node, data.budget);
   return (
