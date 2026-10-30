@@ -25,7 +25,7 @@ type MemoryTabProps = { agent: StudioAgent };
  * what it changed against the one before, and the run step that wrote it.
  */
 export function MemoryTab({ agent }: MemoryTabProps) {
-  const { session, search, go } = useStudio();
+  const { session, search, goInPlace } = useStudio();
   const timeline = useMemoryTimeline(session.id, agent.id);
   const [author, setAuthor] = useState<string>(any);
 
@@ -75,15 +75,12 @@ export function MemoryTab({ agent }: MemoryTabProps) {
               }
               meta={`${memoryAuthorLabel(entry)} · ${memoryChangeLabel(entry)}`}
               onSelect={() =>
-                go(
-                  {
-                    section: "agents",
-                    agent: agent.id,
-                    tab: "memory",
-                    item: memoryVersionId(entry),
-                  },
-                  { replace: true },
-                )
+                goInPlace({
+                  section: "agents",
+                  agent: agent.id,
+                  tab: "memory",
+                  item: memoryVersionId(entry),
+                })
               }
             />
           ))

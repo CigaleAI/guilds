@@ -20,8 +20,10 @@ export type StudioView = {
   /** The guild's agents. */
   agents: StudioAgent[];
   search: StudioSearch;
-  /** Points the inspector somewhere else; `replace` keeps the current history entry. */
-  go: (next: StudioSearch, options?: { replace?: boolean }) => void;
+  /** Points the inspector somewhere else, as a new history entry. */
+  go: (next: StudioSearch) => void;
+  /** Points the inspector somewhere else in place of the current history entry. */
+  goInPlace: (next: StudioSearch) => void;
   /** Opens a run at a step, in the History tab of the agent that ran it. */
   openStep: (step: StudioStep) => void;
   /** Pins evidence to the operator's next message to the coach. */

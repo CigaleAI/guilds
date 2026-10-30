@@ -573,9 +573,6 @@
   "src/features/studio/StudioWorkspace.tsx": {
     "complexity": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/features/studio/activity/ActivityLedger.tsx": {

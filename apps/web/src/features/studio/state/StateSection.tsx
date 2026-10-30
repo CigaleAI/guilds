@@ -9,7 +9,7 @@ const allAgents = "all";
 
 /** The guild's notes, tables, scripts and Memory: a list to work in, or what references what. */
 export function StateSection() {
-  const { agents, search, go } = useStudio();
+  const { agents, search, goInPlace } = useStudio();
   const agent = agents.find((item) => item.id === search.agent) ?? null;
   return (
     <>
@@ -18,7 +18,7 @@ export function StateSection() {
         {search.tab === "references" ? (
           <ReferencesView
             agent={agent}
-            onSelect={(item) => go({ ...stateFilters(search), item }, { replace: true })}
+            onSelect={(item) => goInPlace({ ...stateFilters(search), item })}
           />
         ) : (
           <StateList />
@@ -38,12 +38,12 @@ const kindLabel: Record<string, string> = {
 
 /** The view, the agent filter, and in the list which kind of item it shows. */
 function StateBar() {
-  const { session, agents, search, go } = useStudio();
+  const { session, agents, search, goInPlace } = useStudio();
   const view = search.tab === "references" ? "references" : "list";
   const filters = stateFilters(search);
   const setAgent = (value: string) => {
     const { agent: _agent, ...rest } = filters;
-    go(value === allAgents ? rest : { ...rest, agent: value }, { replace: true });
+    goInPlace(value === allAgents ? rest : { ...rest, agent: value });
   };
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2">
@@ -80,7 +80,7 @@ function StateBar() {
           onValueChange={(value) => {
             const { kind: _kind, ...rest } = filters;
             const kind = studioStateKinds.find((entry) => entry === value);
-            go(kind ? { ...rest, kind } : rest, { replace: true });
+            goInPlace(kind ? { ...rest, kind } : rest);
           }}
           options={["all", ...studioStateKinds].map((value) => ({
             value,

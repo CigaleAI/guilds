@@ -76,16 +76,19 @@ function Workspace({ sessionId }: WorkspaceProps) {
 
   const agents = inventory.data ?? [];
 
-  const go = (next: StudioSearch, options?: { replace?: boolean }) => {
-    void navigate({
-      to: "/studio/$sessionId",
-      params: { sessionId },
-      search: next,
-      ...(options?.replace ? { replace: true } : {}),
-    });
+  // The coach works on the agent the inspector shows.
+  const followTarget = (next: StudioSearch) => {
     const target = next.agent ?? null;
     if (live && target !== (session.data?.selected_target_agent_id ?? null))
       setTarget.mutate(target);
+  };
+  const go = (next: StudioSearch) => {
+    void navigate({ to: "/studio/$sessionId", params: { sessionId }, search: next });
+    followTarget(next);
+  };
+  const goInPlace = (next: StudioSearch) => {
+    void navigate({ to: "/studio/$sessionId", params: { sessionId }, search: next, replace: true });
+    followTarget(next);
   };
 
   const streamText = useStudioStream(sessionId);
@@ -112,6 +115,7 @@ function Workspace({ sessionId }: WorkspaceProps) {
     agents,
     search,
     go,
+    goInPlace,
     openStep: ({ agentId, runId, call, seq }) => {
       if (!agents.some((item) => item.id === agentId)) {
         toast({ kind: "error", title: "That run belongs to an agent outside this guild" });

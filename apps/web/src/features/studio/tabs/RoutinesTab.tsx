@@ -23,7 +23,7 @@ type RoutinesTabProps = { agent: StudioAgent };
 
 /** The agent's routines: each one's instruction, when it wakes next, and the runs it started. */
 export function RoutinesTab({ agent }: RoutinesTabProps) {
-  const { session, search, go } = useStudio();
+  const { session, search, goInPlace } = useStudio();
   const routines = useStudioRoutines(session.id, agent.id);
 
   if (routines.isPending) {
@@ -73,10 +73,12 @@ export function RoutinesTab({ agent }: RoutinesTabProps) {
                   type="button"
                   aria-current={isSelected ? "true" : undefined}
                   onClick={() =>
-                    go(
-                      { section: "agents", agent: agent.id, tab: "routines", item: routine.id },
-                      { replace: true },
-                    )
+                    goInPlace({
+                      section: "agents",
+                      agent: agent.id,
+                      tab: "routines",
+                      item: routine.id,
+                    })
                   }
                 />
               </Row>

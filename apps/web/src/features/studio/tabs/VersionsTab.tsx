@@ -18,7 +18,7 @@ type VersionsTabProps = { agent: StudioAgent };
 
 /** The agent's Task versions, live first, each compared with the one it replaced. */
 export function VersionsTab({ agent }: VersionsTabProps) {
-  const { session, search, go } = useStudio();
+  const { session, search, goInPlace } = useStudio();
   const task = useAgentTask(agent.id);
 
   if (task.isPending)
@@ -73,15 +73,12 @@ export function VersionsTab({ agent }: VersionsTabProps) {
             type="button"
             aria-current={position === index ? "true" : undefined}
             onClick={() =>
-              go(
-                {
-                  section: "agents",
-                  agent: agent.id,
-                  tab: "versions",
-                  item: String(entry.version),
-                },
-                { replace: true },
-              )
+              goInPlace({
+                section: "agents",
+                agent: agent.id,
+                tab: "versions",
+                item: String(entry.version),
+              })
             }
           />
         </Row>

@@ -63,7 +63,7 @@ function store(key: string, value: string) {
  * chains to those passing through it. Per agent adds up what woke each agent and what it did.
  */
 export function ActivityLedger() {
-  const { session, search, go } = useStudio();
+  const { session, search, goInPlace } = useStudio();
   const [hours, setHours] = useState(() =>
     stored(hoursKey, (value) =>
       ACTIVITY_WINDOW_HOURS.includes(Number(value)) ? Number(value) : ACTIVITY_DEFAULT_HOURS,
@@ -84,13 +84,10 @@ export function ActivityLedger() {
   const wanted = selectionFromItem(search.item);
   const selection = data && wanted && selectionExists(data.map, wanted) ? wanted : null;
   const select = (next: MapSelection | null) =>
-    go(
-      {
-        section: "agents",
-        ...(next && !sameSelection(selection, next) ? { item: selectionItem(next) } : {}),
-      },
-      { replace: true },
-    );
+    goInPlace({
+      section: "agents",
+      ...(next && !sameSelection(selection, next) ? { item: selectionItem(next) } : {}),
+    });
   const switchTab = (next: ActivityTab) => {
     setTab(next);
     store(tabKey, next);

@@ -120,7 +120,7 @@ type HistoryTabProps = { agent: StudioAgent };
  * the selected run's transcript opens beside them, at a step when one is named.
  */
 export function HistoryTab({ agent }: HistoryTabProps) {
-  const { session, search, go } = useStudio();
+  const { session, search, go, goInPlace } = useStudio();
   const runs = useStudioRuns(session.id, agent.id);
   const routines = useStudioRoutines(session.id, agent.id);
   const inspector = useStudioInspector(session.id, agent.id);
@@ -195,10 +195,7 @@ export function HistoryTab({ agent }: HistoryTabProps) {
               currentTask={currentTask}
               selected={run.id === selectedId}
               onSelect={() =>
-                go(
-                  { section: "agents", agent: agent.id, tab: "history", item: run.id },
-                  { replace: true },
-                )
+                goInPlace({ section: "agents", agent: agent.id, tab: "history", item: run.id })
               }
             />
           ))

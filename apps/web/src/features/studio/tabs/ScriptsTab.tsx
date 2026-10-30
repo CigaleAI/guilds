@@ -12,7 +12,7 @@ type ScriptsTabProps = { agent: StudioAgent };
 
 /** The agent's scripts: what each does, its tool parameters, its source and who changed it last. */
 export function ScriptsTab({ agent }: ScriptsTabProps) {
-  const { search, go } = useStudio();
+  const { search, goInPlace } = useStudio();
   const scripts = useAgentScripts(agent.id);
 
   if (scripts.isPending) return <SkeletonRows rows={4} label="Loading scripts" className="p-5" />;
@@ -60,10 +60,12 @@ export function ScriptsTab({ agent }: ScriptsTabProps) {
                   type="button"
                   aria-current={isSelected ? "true" : undefined}
                   onClick={() =>
-                    go(
-                      { section: "agents", agent: agent.id, tab: "scripts", item: script.name },
-                      { replace: true },
-                    )
+                    goInPlace({
+                      section: "agents",
+                      agent: agent.id,
+                      tab: "scripts",
+                      item: script.name,
+                    })
                   }
                 />
               </Row>
