@@ -82,17 +82,14 @@ export function ToolsSection() {
   );
 }
 
-function ToolList({
-  tools,
-  flagsOf,
-  hours,
-  onHoursChange,
-}: {
+type ToolListProps = {
   tools: StudioTool[];
   flagsOf: (tool: StudioTool) => ReturnType<typeof toolFlags>;
   hours: number;
   onHoursChange: (hours: number) => void;
-}) {
+};
+
+function ToolList({ tools, flagsOf, hours, onHoursChange }: ToolListProps) {
   const { agents, go } = useStudio();
   const [filters, setFilters] = useState<ToolFilters>(noToolFilters);
   const rows = filterTools(tools, filters, flagsOf);
@@ -120,19 +117,15 @@ function ToolList({
   );
 }
 
-function ToolFiltersBar({
-  filters,
-  onChange,
-  agents,
-  hours,
-  onHoursChange,
-}: {
+type ToolFiltersBarProps = {
   filters: ToolFilters;
   onChange: (filters: ToolFilters) => void;
   agents: StudioAgent[];
   hours: number;
   onHoursChange: (hours: number) => void;
-}) {
+};
+
+function ToolFiltersBar({ filters, onChange, agents, hours, onHoursChange }: ToolFiltersBarProps) {
   return (
     <FilterBar
       query={filters.query}

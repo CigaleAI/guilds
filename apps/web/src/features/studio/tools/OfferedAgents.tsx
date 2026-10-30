@@ -2,8 +2,10 @@ import type { StudioAgent, StudioTool } from "../../../api/types/studio";
 import { agentLook } from "../../../app/agents";
 import { Avatar, cn } from "@guildsrun/ui";
 
+type OfferedAgentsProps = { tool: StudioTool; agents: StudioAgent[] };
+
 /** The agents offered a tool: a solid ring for those that call it, a dashed one for the rest. */
-export function OfferedAgents({ tool, agents }: { tool: StudioTool; agents: StudioAgent[] }) {
+export function OfferedAgents({ tool, agents }: OfferedAgentsProps) {
   const shown = tool.agents.filter((usage) => usage.offered);
   if (!shown.length) {
     return <span className="text-xs text-muted">no longer offered</span>;
