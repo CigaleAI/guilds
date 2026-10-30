@@ -1,6 +1,10 @@
 import { Trash2 } from "lucide-react";
 import { useGithubRepositories, useSetGithubRepositories } from "../../api/queries/access";
-import type { GithubSelectedRepository, McpServerAccess } from "../../api/types/access";
+import type {
+  GithubRepository,
+  GithubSelectedRepository,
+  McpServerAccess,
+} from "../../api/types/access";
 import { IconButton, Select, Tag, toast } from "@guildsrun/ui";
 import { repositoryNameFrom } from "../guild/repositories";
 import { selectedRepositories } from "./githubSettings";
@@ -70,15 +74,13 @@ export function GithubSettings({ server, owned }: GithubSettingsProps) {
         <p className="text-sm text-muted">No repositories on this login yet.</p>
       )}
       {owned ? (
-        <Select
-          tone="paper"
-          label={`From GitHub · ${server.account_hint || "GitHub"}`}
-          placeholder={reachable.isLoading ? "Loading repositories…" : "Pick a repository"}
-          value=""
-          disabled={save.isPending || !pickable.length}
-          onValueChange={(value) => {
-            const picked = pickable.find((item) => item.full_name === value);
-            if (!picked) return;
+        <RepositoryPicker
+          accountHint={server.account_hint}
+          pickable={pickable}
+          loading={reachable.isLoading}
+          error={reachable.isError ? reachable.error.message : null}
+          busy={save.isPending}
+          onPick={(picked) =>
             persist([
               ...selected,
               {
@@ -86,14 +88,8 @@ export function GithubSettings({ server, owned }: GithubSettingsProps) {
                 url: picked.url,
                 default_branch: picked.default_branch,
               },
-            ]);
-          }}
-          options={pickable.map((item) => ({
-            value: item.full_name,
-            label: item.full_name,
-            description: item.private ? "private" : "public",
-          }))}
-          {...(reachable.isError ? { error: reachable.error.message } : {})}
+            ])
+          }
         />
       ) : (
         <p className="text-xs text-muted">
@@ -101,5 +97,47 @@ export function GithubSettings({ server, owned }: GithubSettingsProps) {
         </p>
       )}
     </div>
+  );
+}
+
+type RepositoryPickerProps = {
+  /** The GitHub account the login reaches, for the picker's label. */
+  accountHint: string;
+  /** The repositories the login reaches that are not picked yet. */
+  pickable: GithubRepository[];
+  loading: boolean;
+  /** Why the reachable repositories could not be listed; null when they were. */
+  error: string | null;
+  busy: boolean;
+  onPick: (repository: GithubRepository) => void;
+};
+
+/** Adds one of the repositories the scope's own GitHub login reaches. */
+function RepositoryPicker({
+  accountHint,
+  pickable,
+  loading,
+  error,
+  busy,
+  onPick,
+}: RepositoryPickerProps) {
+  return (
+    <Select
+      tone="paper"
+      label={`From GitHub · ${accountHint || "GitHub"}`}
+      placeholder={loading ? "Loading repositories…" : "Pick a repository"}
+      value=""
+      disabled={busy || !pickable.length}
+      onValueChange={(value) => {
+        const picked = pickable.find((item) => item.full_name === value);
+        if (picked) onPick(picked);
+      }}
+      options={pickable.map((item) => ({
+        value: item.full_name,
+        label: item.full_name,
+        description: item.private ? "private" : "public",
+      }))}
+      {...(error ? { error } : {})}
+    />
   );
 }
