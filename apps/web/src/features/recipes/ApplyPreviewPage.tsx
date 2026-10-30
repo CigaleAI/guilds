@@ -418,17 +418,22 @@ function Installs({ installs, onInstalled }: InstallsProps) {
   const canAdd = org.role === "owner" || org.role === "admin";
   const busy = install.isPending || addServer.isPending;
 
-  const fromRegistry = (server: string, verified: boolean) =>
-    install.mutateAsync({ slug: server, unverified: !verified }).then(
-      () => {
-        toast({ kind: "success", title: `${server} installed` });
-        onInstalled();
-      },
-      (error: Error) => {
-        toast({ kind: "error", title: `Couldn't install ${server}`, description: error.message });
-        throw error;
-      },
-    );
+  /** What an install reports either way, and the refreshed preview once it lands. */
+  const installOutcome = (server: string) => ({
+    onSuccess: () => {
+      toast({ kind: "success", title: `${server} installed` });
+      onInstalled();
+    },
+    onError: (error: Error) =>
+      toast({ kind: "error", title: `Couldn't install ${server}`, description: error.message }),
+  });
+
+  const installVerified = (server: string) =>
+    install.mutate({ slug: server, unverified: false }, installOutcome(server));
+
+  /** Rejects on failure, so the confirm dialog stays open. */
+  const installUnverified = (server: string) =>
+    install.mutateAsync({ slug: server, unverified: true }, installOutcome(server));
 
   const fromRecipe = (item: RecipeConnectorInstall) =>
     addServer.mutate(
@@ -466,9 +471,7 @@ function Installs({ installs, onInstalled }: InstallsProps) {
                 canInstall={user.platform_admin}
                 busy={busy}
                 onInstall={() =>
-                  item.verified
-                    ? void fromRegistry(item.server, true).catch(() => undefined)
-                    : setConfirming(item.server)
+                  item.verified ? installVerified(item.server) : setConfirming(item.server)
                 }
               />
             ) : (
@@ -488,7 +491,7 @@ function Installs({ installs, onInstalled }: InstallsProps) {
         title={`Install ${confirming ?? ""} unverified?`}
         description="The registry hasn't verified its publisher. Its tools reach whatever its logins grant."
         confirmLabel="Install unverified"
-        onConfirm={() => (confirming ? fromRegistry(confirming, false) : undefined)}
+        onConfirm={() => (confirming ? installUnverified(confirming) : undefined)}
       />
     </section>
   );

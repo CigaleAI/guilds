@@ -184,9 +184,6 @@
     },
     "complexity": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/features/recipes/RecipePage.tsx": {
