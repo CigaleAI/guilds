@@ -1,7 +1,7 @@
 import type { FastifyRequest } from "fastify";
 import type { WebSocket } from "ws";
 import { requireVisibleAgent } from "../agents/access.js";
-import { RunRequestError } from "../generation/index.js";
+import { RunRequestError } from "../generation/errors.js";
 import { generationLoopOf } from "../generation/operator.js";
 import type { AppDeps, RouteApp } from "./deps.js";
 import { currentUser } from "./identity.js";

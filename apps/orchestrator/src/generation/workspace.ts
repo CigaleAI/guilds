@@ -1,14 +1,15 @@
 import { DEFAULT_MAX_WORKSPACE_MIB } from "../agents/config.js";
 import { setAgentWorkspaceMib, type AgentRow } from "../db/agents.js";
 import { setMachineWorkspaceMib } from "../db/machines.js";
-import { bindQuery, type Queryable } from "../db/pg.js";
+import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import { DEFAULT_MACHINE_MAX_WORKSPACE_MIB, type AgentConfig } from "../db/schema/index.js";
 import { agentHome } from "../lib/agent-file.js";
-import { errorMessage, errorName, writeLog } from "../observability/log.js";
+import { errorMessage } from "../observability/log.js";
 import { agentSandbox, seatEnvironment } from "../sandbox/index.js";
 import type { SandboxHandle } from "../sandbox/sdk.js";
 import { measureMachine, measureWorkspace } from "../toolbox/code.js";
 import { createToolHooks, createToolRun, type ToolRun } from "../toolbox/index.js";
+import type { OperationFailure } from "./errors.js";
 import type { RunEvents, RunGeneration } from "./events.js";
 import { agentSeat } from "./machines.js";
 
@@ -40,15 +41,19 @@ export function maintenanceRun(runId: string, agent: AgentRow, sandbox: SandboxH
   });
 }
 
+/** The db/ functions the workspace sizes are kept through. */
+export type WorkspaceLimitsDatabase = {
+  setAgentWorkspaceMib: BoundQuery<typeof setAgentWorkspaceMib>;
+  setMachineWorkspaceMib: BoundQuery<typeof setMachineWorkspaceMib>;
+};
+
 /** The db/ functions the workspace sizes are kept through, on `db`. */
-export function workspaceLimitsDatabase(db: Queryable) {
+export function workspaceLimitsDatabase(db: Queryable): WorkspaceLimitsDatabase {
   return {
     setAgentWorkspaceMib: bindQuery(db, setAgentWorkspaceMib),
     setMachineWorkspaceMib: bindQuery(db, setMachineWorkspaceMib),
   };
 }
-
-export type WorkspaceLimitsDatabase = ReturnType<typeof workspaceLimitsDatabase>;
 
 /** A size the workspace check holds to its limit: the agent's home, or its machine's directory. */
 type WorkspaceCheck = {
@@ -96,18 +101,22 @@ export class WorkspaceLimits {
     return true;
   }
 
-  /** Measures the agent's home and its machine's directory and stores both sizes; a failure is logged. */
-  async recordSize(runId: string, agent: AgentRow, sandbox: SandboxHandle): Promise<void> {
+  /**
+   * Measures the agent's home and its machine's directory and stores both sizes; returns the
+   * failure of a measure that did not go through, which leaves the sizes stored before.
+   */
+  async recordSize(runId: string, agent: AgentRow, sandbox: SandboxHandle): Promise<OperationFailure | null> {
     const run = maintenanceRun(runId, agent, sandbox);
     try {
       await this.db.setAgentWorkspaceMib(agent.id, await measureWorkspace(run, createToolHooks()));
       await this.db.setMachineWorkspaceMib(agent.machine_id, await measureMachine(run, createToolHooks()));
+      return null;
     } catch (error) {
-      writeLog(
-        "warn",
-        errorMessage(error),
-        { run_id: runId, agent_id: agent.id, operation: "workspace.measure", error_type: errorName(error) },
-      );
+      return {
+        message: errorMessage(error),
+        fields: { run_id: runId, agent_id: agent.id, operation: "workspace.measure" },
+        error,
+      };
     }
   }
 

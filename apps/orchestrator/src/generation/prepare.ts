@@ -9,7 +9,7 @@ import type { AgentConfig, RunTaskSource } from "../db/schema/index.js";
 import { FILE_TOOLS, NOTE_TOOLS } from "../seed/catalog.js";
 import { listAgents, type AgentRow } from "../db/agents.js";
 import { listGroupMessages } from "../db/group-chat.js";
-import { bindQuery, type Queryable } from "../db/pg.js";
+import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import type { GroupRouter } from "../groupchat/router.js";
 import { McpDisconnectedError } from "../mcp/errors.js";
 import type { McpPool } from "../mcp/pool.js";
@@ -30,17 +30,24 @@ import { collectRunState, type RunStateInputs } from "../state/index.js";
 import { SCRIPT_TOOLS } from "../toolbox/script.js";
 import { serializeHistoryDecision } from "../typesafe/index.js";
 import type { ActiveGenerations } from "./active-generations.js";
-import { codingRepositoriesDatabase, guildRepositories } from "./coding.js";
+import { codingRepositoriesDatabase, guildRepositories, type CodingRepositoriesDatabase } from "./coding.js";
 import { RunRequestError } from "./errors.js";
 import type { AgentMachines } from "./machines.js";
 import type { PreparedRun } from "./snapshot.js";
 import { collectionCatalog } from "../artifacts/collections.js";
 import { agentTask, taskSnapshot } from "../artifacts/task.js";
 import type { ArtifactStore } from "../artifacts/store.js";
-import { toolArtifacts } from "../toolbox/artifacts.js";
+import { toolArtifacts, type ToolArtifacts } from "../toolbox/artifacts.js";
+
+/** The artifact functions a generation calls: its tools', and the reads of its prompts. */
+export type GenerationArtifacts = ToolArtifacts & {
+  agentTask: BoundQuery<typeof agentTask>;
+  taskSnapshot: BoundQuery<typeof taskSnapshot>;
+  collectionCatalog: BoundQuery<typeof collectionCatalog>;
+};
 
 /** The artifact functions a generation calls: its tools', and the reads of its prompts, on `store`. */
-export function generationArtifacts(store: ArtifactStore) {
+export function generationArtifacts(store: ArtifactStore): GenerationArtifacts {
   return {
     ...toolArtifacts(store),
     agentTask: bindQuery(store, agentTask),
@@ -49,10 +56,16 @@ export function generationArtifacts(store: ArtifactStore) {
   };
 }
 
-export type GenerationArtifacts = ReturnType<typeof generationArtifacts>;
+/** The db/ functions a run is prepared through. */
+export type RunPreparationDatabase = CodingRepositoriesDatabase & {
+  agentRuntime: BoundQuery<typeof agentRuntime>;
+  agentLogins: BoundQuery<typeof agentLogins>;
+  listAgents: BoundQuery<typeof listAgents>;
+  listGroupMessages: BoundQuery<typeof listGroupMessages>;
+};
 
 /** The db/ functions a run is prepared through, on `db`. */
-export function runPreparationDatabase(db: Queryable) {
+export function runPreparationDatabase(db: Queryable): RunPreparationDatabase {
   return {
     agentRuntime: bindQuery(db, agentRuntime),
     agentLogins: bindQuery(db, agentLogins),
@@ -61,8 +74,6 @@ export function runPreparationDatabase(db: Queryable) {
     listGroupMessages: bindQuery(db, listGroupMessages),
   };
 }
-
-export type RunPreparationDatabase = ReturnType<typeof runPreparationDatabase>;
 
 /**
  * The connector pool generation calls connection tools, lists their tools, and reads connector

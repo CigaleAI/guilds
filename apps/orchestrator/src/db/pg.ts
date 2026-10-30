@@ -17,6 +17,9 @@ export function bindQuery<C, A extends unknown[], R>(
   return (...args) => query(db, ...args);
 }
 
+/** The type `bindQuery` gives `F`: the query with its connection, or its store, bound. */
+export type BoundQuery<F> = F extends (db: never, ...args: infer A) => infer R ? (...args: A) => R : never;
+
 /** Runs `work` in one transaction, on the dependencies object of its client. */
 export type Transaction<D> = <T>(work: (tx: D) => Promise<T>) => Promise<T>;
 

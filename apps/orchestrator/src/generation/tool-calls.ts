@@ -1,10 +1,10 @@
 import { DEFAULT_MAX_TOOL_CALLS } from "../agents/config.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
-import { bindQuery, type Queryable } from "../db/pg.js";
+import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import { getRun, listMessages, type RunRow, type MessageRow } from "../db/runs.js";
 import type { AssistantMessage, Harness, ToolCall, ToolMessage, ToolResultMetadata } from "../db/schema/index.js";
 import { callTool } from "../mcp/service.js";
-import { errorMessage, errorName, writeLog } from "../observability/log.js";
+import { errorMessage } from "../observability/log.js";
 import { callSegment, repeatedReadStep, repeatedReadText, type ReadRow } from "../toolbox/code.js";
 import {
   identityOutput,
@@ -20,7 +20,7 @@ import {
 import type { ToolServices } from "../toolbox/services.js";
 import type { ActiveGenerations } from "./active-generations.js";
 import type { CodingRuns } from "./coding.js";
-import { GenerationCancelled } from "./errors.js";
+import { GenerationCancelled, logOperationFailure, type OperationFailure } from "./errors.js";
 import type { RunEvents, RunGeneration } from "./events.js";
 import type { AgentMachines } from "./machines.js";
 import type { ConnectorPool } from "./prepare.js";
@@ -134,8 +134,11 @@ export function pendingToolCalls(
 /** A tool call's result as a run keeps it: the message the model reads, and its metadata. */
 export type ToolRecord = [ToolMessage, ToolResultMetadata];
 
+/** The result of a call whose execution was lost, as the run keeps it under a generation's number. */
+export type InterruptedToolRecord = [ToolMessage, ToolResultMetadata & { generation: number }];
+
 /** The result a call gets when its execution was lost, numbered `generation`. */
-export function interruptionRecord(call: ToolCall, generation: number): [ToolMessage, ToolResultMetadata & { generation: number }] {
+export function interruptionRecord(call: ToolCall, generation: number): InterruptedToolRecord {
   const name = call.function.name;
   const callId = call.id;
   const payload: ToolMessage = {
@@ -143,7 +146,7 @@ export function interruptionRecord(call: ToolCall, generation: number): [ToolMes
     tool_call_id: callId,
     content: INTERRUPTED_CONTENT,
   };
-  const metadata: ToolResultMetadata & { generation: number } = {
+  const metadata: InterruptedToolRecord[1] = {
     generation,
     tool_name: name,
     tool_call_id: callId,
@@ -160,16 +163,21 @@ export function interruptionRecord(call: ToolCall, generation: number): [ToolMes
   return [payload, metadata];
 }
 
+/** The db/ functions tool calls read the run through. */
+export type ToolCallsDatabase = {
+  getAgent: BoundQuery<typeof getAgent>;
+  getRun: BoundQuery<typeof getRun>;
+  listMessages: BoundQuery<typeof listMessages>;
+};
+
 /** The db/ functions tool calls read the run through, on `db`. */
-export function toolCallsDatabase(db: Queryable) {
+export function toolCallsDatabase(db: Queryable): ToolCallsDatabase {
   return {
     getAgent: bindQuery(db, getAgent),
     getRun: bindQuery(db, getRun),
     listMessages: bindQuery(db, listMessages),
   };
 }
-
-export type ToolCallsDatabase = ReturnType<typeof toolCallsDatabase>;
 
 /**
  * The tools a generation calls: their run record and hooks, the schemas the model is offered,
@@ -184,6 +192,9 @@ export type GenerationTools = {
   connections: Record<string, [string, string]>;
   maxToolCalls: number;
 };
+
+/** A connection's answer to a tool call: its text, or the failure the model reads as the call's result. */
+type ConnectionAnswer = { ok: true; text: string } | { ok: false; failure: OperationFailure };
 
 /** What tool calls are made with, built once by the loop. */
 export type ToolCallsServices = {
@@ -283,39 +294,23 @@ export class ToolCalls {
     ];
   }
 
-  /** Calls `remoteName` on the connection; a failure is the call's result, as the model reads it. */
+  /** Calls `remoteName` on the connection; a failure is the call's result, as the model reads it, and is logged. */
   private async callConnectionTool(
     call: ToolCall,
-    [connectionId, remoteName]: [string, string],
+    target: [string, string],
     owner: AgentRow | null,
     secrets: Record<string, string>,
   ): Promise<ToolRecord> {
-    const { mcp, machines } = this.services;
     const name = call.function.name;
     const callId = call.id;
     const started = performance.now();
-    let error: string | null = null;
-    let raw: string;
-    try {
-      raw = await callTool(mcp, {
-        connectionId,
-        tool: remoteName,
-        arguments: parseArguments(call),
-        caller: { orgId: owner?.org_id ?? null, workspaceDir: await machines.agentWorkspace(owner) },
-      });
-    } catch (caught) {
-      writeLog("warn", errorMessage(caught), {
-        operation: `tool.${name}`,
-        run_id: callId,
-        error_type: errorName(caught),
-      });
-      raw = `ERROR: ${errorMessage(caught)}`;
-      error = errorMessage(caught);
+    const answer = await this.askConnection(call, target, owner);
+    if (!answer.ok) {
+      logOperationFailure(answer.failure, "warn");
     }
+    const raw = answer.ok ? answer.text : `ERROR: ${answer.failure.message}`;
     const [content, pipeline] = processOutput(raw, identityOutput, secrets, toolResultMaxBytes());
-    if (pipeline.error) {
-      error = pipeline.error;
-    }
+    const error = pipeline.error || (answer.ok ? null : answer.failure.message);
     return [
       { role: "tool", tool_call_id: callId, content },
       {
@@ -329,5 +324,28 @@ export class ToolCalls {
         error,
       },
     ];
+  }
+
+  /** What the connection answers the call with, or the failure of a call that did not go through. */
+  private async askConnection(
+    call: ToolCall,
+    [connectionId, remoteName]: [string, string],
+    owner: AgentRow | null,
+  ): Promise<ConnectionAnswer> {
+    const { mcp, machines } = this.services;
+    try {
+      const text = await callTool(mcp, {
+        connectionId,
+        tool: remoteName,
+        arguments: parseArguments(call),
+        caller: { orgId: owner?.org_id ?? null, workspaceDir: await machines.agentWorkspace(owner) },
+      });
+      return { ok: true, text };
+    } catch (error) {
+      return {
+        ok: false,
+        failure: { message: errorMessage(error), fields: { operation: `tool.${call.function.name}`, run_id: call.id }, error },
+      };
+    }
   }
 }

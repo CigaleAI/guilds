@@ -9,7 +9,7 @@ import { AgentError } from "../agents/errors.js";
 import { BuilderError } from "../builder/errors.js";
 import { AgentValidationError } from "../agents/validation.js";
 import { BindingError } from "../access/index.js";
-import { RunRequestError } from "../generation/index.js";
+import { RunRequestError } from "../generation/errors.js";
 import { GroupChatError } from "../groupchat/index.js";
 import { GuildAgentLimitError, GuildError } from "../guilds/errors.js";
 import { GuildValidationError } from "../guilds/validation.js";

@@ -3,7 +3,8 @@ import { getAgent, type AgentRow } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
 import { listMessages, type RunRow } from "../db/runs.js";
 import { messageItem } from "../db/views.js";
-import { RunRequestError, type GenerationLoop } from "./index.js";
+import { RunRequestError } from "./errors.js";
+import type { GenerationLoop } from "./index.js";
 
 /** What an operator starts and talks to runs through, built once from the app's services. */
 export type RunOperatorServices = {
@@ -21,7 +22,7 @@ export type RunStart = { message: unknown; attachmentIds: string[] };
 export type RunMessage = { content: unknown; attachmentIds: string[] };
 
 /** The generation loop; a box without one runs nothing (503). */
-export function generationLoopOf(services: { loop: GenerationLoop | null }): GenerationLoop {
+export function generationLoopOf(services: Pick<RunOperatorServices, "loop">): GenerationLoop {
   if (services.loop === null) {
     throw new RunRequestError(503, "generation is unavailable");
   }

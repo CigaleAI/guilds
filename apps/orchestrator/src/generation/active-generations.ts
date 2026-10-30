@@ -1,18 +1,19 @@
 import { AdmissionConflictError, type AdmissionCoordinator } from "../admission/coordinator.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
-import { bindQuery, type Queryable } from "../db/pg.js";
+import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import { AsyncEvent } from "../lib/event.js";
 import type { OrgPolicy } from "../policy/index.js";
 import type { SandboxHandle } from "../sandbox/sdk.js";
 import { CancelEvent } from "../toolbox/index.js";
 import { ConflictError, RunRequestError } from "./errors.js";
 
+/** The db/ functions the generations in progress read their agents through. */
+export type ActiveGenerationsDatabase = { getAgent: BoundQuery<typeof getAgent> };
+
 /** The db/ functions the generations in progress read their agents through, on `db`. */
-export function activeGenerationsDatabase(db: Queryable) {
+export function activeGenerationsDatabase(db: Queryable): ActiveGenerationsDatabase {
   return { getAgent: bindQuery(db, getAgent) };
 }
-
-export type ActiveGenerationsDatabase = ReturnType<typeof activeGenerationsDatabase>;
 
 /** A run that generates: its agent, how it is cancelled, and the work in flight for it. */
 type ActiveRun = {

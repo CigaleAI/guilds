@@ -35,7 +35,7 @@ import { ActiveGenerations, activeGenerationsDatabase } from "./active-generatio
 import { continuedBy, RunChains, runChainsDatabase } from "./chain.js";
 import { CodingRuns, codingRunsDatabase } from "./coding.js";
 import { generationLive, ModelCompletion, modelCompletionDatabase } from "./completion.js";
-import { ConflictError, RunRequestError } from "./errors.js";
+import { ConflictError, logOperationFailure, RunRequestError, type OperationFailure } from "./errors.js";
 import { RunEvents, runEventsDatabase } from "./events.js";
 import { RunGenerator, runGeneratorDatabase, runWasResumed } from "./generate.js";
 import { AgentMachines, agentMachinesDatabase, type GenerationSandboxes } from "./machines.js";
@@ -51,8 +51,6 @@ import { ToolCalls, toolCallsDatabase } from "./tool-calls.js";
 import { toolServices, type ToolServices } from "../toolbox/services.js";
 import { WorkspaceLimits, workspaceLimitsDatabase } from "./workspace.js";
 import type { GenerationArtifacts } from "./prepare.js";
-
-export { RunRequestError } from "./errors.js";
 
 /** How long a loop's machines wait idle before they stop, and how often its scheduler wakes the due schedules. */
 export type GenerationLoopTimings = { idleTimeoutMs: number; schedulerTickMs: number };
@@ -283,7 +281,7 @@ export class GenerationLoop implements GroupRunner {
     const runIds = this.generations.runIds();
     for (const runId of runIds) {
       this.generations.cancelEvent(runId)?.set();
-      await this.interruptCommand(runId);
+      logOperationFailure(await this.interruptCommand(runId));
     }
     const tasks = runIds.flatMap((runId) => {
       const task = this.generations.task(runId);
@@ -299,26 +297,24 @@ export class GenerationLoop implements GroupRunner {
     }
   }
 
-  /** Interrupts the command the run waits on in its sandbox, when there is one. */
-  private async interruptCommand(runId: string): Promise<void> {
+  /**
+   * Interrupts the command the run waits on in its sandbox, when there is one; returns the
+   * failure of an interrupt that did not go through.
+   */
+  private async interruptCommand(runId: string): Promise<OperationFailure | null> {
     const command = this.generations.command(runId);
     if (command === null) {
-      return;
+      return null;
     }
     try {
       await command[0].commands.interrupt?.(command[1]);
+      return null;
     } catch (error) {
-      writeLog(
-        "error",
-        "command.interrupt failed",
-        {
-          run_id: runId,
-          agent_id: this.generations.agentOf(runId),
-          operation: "command.interrupt",
-          error_type: errorName(error),
-        },
+      return {
+        message: "command.interrupt failed",
+        fields: { run_id: runId, agent_id: this.generations.agentOf(runId), operation: "command.interrupt" },
         error,
-      );
+      };
     }
   }
 
@@ -354,7 +350,7 @@ export class GenerationLoop implements GroupRunner {
     }
     this.generations.holdAgent(agentId);
     try {
-      await this.machines.removeAgent(agent);
+      logOperationFailure(await this.machines.removeAgent(agent));
       await this.notes.deleteAgent(agent.org_slug, agent.guild_name, agent.name);
       await this.db.deleteAgent(agentId);
     } finally {
@@ -379,7 +375,7 @@ export class GenerationLoop implements GroupRunner {
       for (const agentId of agentIds) {
         const agent = await this.db.getAgent(agentId);
         if (agent !== null) {
-          await this.machines.removeAgent(agent);
+          logOperationFailure(await this.machines.removeAgent(agent));
         }
       }
       await this.notes.deleteGuild(guild.org_slug, guild.name);
@@ -492,7 +488,7 @@ export class GenerationLoop implements GroupRunner {
       return null;
     }
     this.generations.cancelEvent(runId)?.set();
-    await this.interruptCommand(runId);
+    logOperationFailure(await this.interruptCommand(runId));
     const task = this.generations.task(runId);
     if (task) {
       const abortWait = new AbortController();

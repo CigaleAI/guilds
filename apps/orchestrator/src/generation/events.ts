@@ -1,4 +1,4 @@
-import { bindQuery, type Queryable } from "../db/pg.js";
+import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import { appendRunError, insertMessage, nextSeq, type MessageRow } from "../db/runs.js";
 import type { MessageMetadata, MessagePayload } from "../db/schema/index.js";
 import { messageItem } from "../db/views.js";
@@ -10,16 +10,21 @@ const EVENT_QUEUE_LIMIT = 4096;
 /** One event on a run's stream: its name and its data. */
 export type RunEvent = [string, Record<string, unknown>];
 
+/** The db/ functions a run's messages and errors are written through. */
+export type RunEventsDatabase = {
+  nextSeq: BoundQuery<typeof nextSeq>;
+  insertMessage: BoundQuery<typeof insertMessage>;
+  appendRunError: BoundQuery<typeof appendRunError>;
+};
+
 /** The db/ functions a run's messages and errors are written through, on `db`. */
-export function runEventsDatabase(db: Queryable) {
+export function runEventsDatabase(db: Queryable): RunEventsDatabase {
   return {
     nextSeq: bindQuery(db, nextSeq),
     insertMessage: bindQuery(db, insertMessage),
     appendRunError: bindQuery(db, appendRunError),
   };
 }
-
-export type RunEventsDatabase = ReturnType<typeof runEventsDatabase>;
 
 /** One generation of a run, and the fields each log line about it carries. */
 export type RunGeneration = {
