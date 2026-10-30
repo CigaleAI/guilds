@@ -9,11 +9,6 @@
       "count": 1
     }
   },
-  "src/features/admin/UsersTab.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/features/agent/AgentInspector.tsx": {
     "complexity": {
       "count": 1
