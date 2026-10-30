@@ -66,11 +66,43 @@ export async function readApiFailure(
   return new ApiError(response.status, (await readErrorBody(response)) ?? statusLine(response));
 }
 
+type ApiMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+
 type RequestOptions = {
-  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  method?: ApiMethod;
   body?: unknown;
   signal?: AbortSignal;
 };
+
+/** The request `api` sends: as the operator, with the tab's request id, and `body` as JSON. */
+function buildApiRequest(
+  method: ApiMethod,
+  body: unknown,
+  signal: AbortSignal | undefined,
+): RequestInit {
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    "X-Request-Id": requestId(),
+    ...identityHeaders(),
+  };
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  return {
+    method,
+    headers,
+    credentials: "same-origin",
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    ...(signal ? { signal } : {}),
+  };
+}
+
+/** A reply's JSON as `T`, nothing for a 204; a failed reply throws its `ApiError`. */
+async function readApiReply<T>(method: ApiMethod, path: string, response: Response): Promise<T> {
+  if (!response.ok) {
+    throw await readApiFailure(method, path, response);
+  }
+  if (response.status === 204) return undefined as T;
+  return (await response.json()) as T;
+}
 
 /**
  * Calls the orchestrator API as the current operator, with the tab's request id. A signed-out
@@ -79,21 +111,9 @@ type RequestOptions = {
  */
 export async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = "GET", body, signal } = options;
-  const headers: Record<string, string> = {
-    Accept: "application/json",
-    "X-Request-Id": requestId(),
-    ...identityHeaders(),
-  };
-  if (body !== undefined) headers["Content-Type"] = "application/json";
   let response: Response;
   try {
-    response = await fetch(path, {
-      method,
-      headers,
-      credentials: "same-origin",
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-      ...(signal ? { signal } : {}),
-    });
+    response = await fetch(path, buildApiRequest(method, body, signal));
   } catch (error) {
     if (!signal?.aborted) {
       reportClientError({
@@ -103,9 +123,5 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
     }
     throw error;
   }
-  if (!response.ok) {
-    throw await readApiFailure(method, path, response);
-  }
-  if (response.status === 204) return undefined as T;
-  return (await response.json()) as T;
+  return readApiReply<T>(method, path, response);
 }
