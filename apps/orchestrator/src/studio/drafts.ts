@@ -39,6 +39,13 @@ export type StudioDraftService = {
   ): Promise<Record<string, unknown>>;
 };
 
+/** What a draft's preflight and publish read through: its agent in `db`, the agent's offer from `preview`, the standing notes at `notesSystemPath`. */
+export type DraftPublishDeps = {
+  db: Queryable;
+  preview: PreviewDeps;
+  notesSystemPath: string;
+};
+
 // A draft is decided like an edit: the tool returns this widget and the turn
 // pauses until the operator publishes or discards it.
 export const STUDIO_TASK_DRAFT_WIDGET = "studio_task_draft";
@@ -198,25 +205,20 @@ export class StudioDrafts implements StudioDraftService {
     });
   }
 
-  async publish(args: {
-    session: StudioSessionRow;
-    user: UserRow;
-    draftId: string;
-    db: Queryable;
-    preview: PreviewDeps;
-    notesSystemPath: string;
-    publishFilesChanged?: (guildId: string) => Promise<void>;
-    orphan?: boolean;
-  }): Promise<Record<string, unknown>> {
-    const { session, user, draftId } = args;
+  async publish(
+    deps: DraftPublishDeps,
+    session: StudioSessionRow,
+    user: UserRow,
+    draftId: string,
+  ): Promise<Record<string, unknown>> {
     const now = new Date();
-    const preflight = await this.preflight(args);
+    const preflight = await this.preflight(deps, draftId);
     return withLockedSession(this.db, session.id, async (client) => {
       const draft = await lockStudioDraft(client, draftId);
       if (!draft) {
         throw new StudioNotFoundError("draft not found");
       }
-      if (!args.orphan && draft.session_id !== session.id) {
+      if (draft.session_id !== session.id) {
         throw new StudioNotFoundError("draft not found");
       }
       if (draft.status !== "draft" && draft.status !== "conflicted") {
@@ -225,13 +227,13 @@ export class StudioDrafts implements StudioDraftService {
       if (!draft.target_agent_id || !draft.source_guild_id) {
         throw new StudioUnprocessableError("draft target is no longer live");
       }
-      const agent = await getAgent(args.db, draft.target_agent_id);
+      const agent = await getAgent(deps.db, draft.target_agent_id);
       if (!agent) {
         throw new StudioUnprocessableError("target is not a publishable agent");
       }
       const currentHash = JSON.stringify(agent.config);
       if (currentHash !== preflight.config_hash) {
-        const again = await this.runPreflight(agent, draft.proposed_content, args);
+        const again = await this.runPreflight(deps, agent, draft.proposed_content);
         Object.assign(preflight, again);
       }
       const actor = operatorActor({
@@ -283,28 +285,22 @@ export class StudioDrafts implements StudioDraftService {
     });
   }
 
-  async preflight(args: {
-    session: StudioSessionRow;
-    draftId: string;
-    db: Queryable;
-    preview: PreviewDeps;
-    notesSystemPath: string;
-  }): Promise<Record<string, unknown>> {
-    const draft = await getStudioDraft(this.db, args.draftId);
+  async preflight(deps: DraftPublishDeps, draftId: string): Promise<Record<string, unknown>> {
+    const draft = await getStudioDraft(this.db, draftId);
     if (!draft || !draft.target_agent_id) {
       throw new StudioNotFoundError("draft not found");
     }
-    const agent = await getAgent(args.db, draft.target_agent_id);
+    const agent = await getAgent(deps.db, draft.target_agent_id);
     if (!agent) {
       throw new StudioUnprocessableError("target agent not found");
     }
-    return this.runPreflight(agent, draft.proposed_content, args);
+    return this.runPreflight(deps, agent, draft.proposed_content);
   }
 
   private async runPreflight(
+    deps: DraftPublishDeps,
     agent: AgentRow,
     proposed: string,
-    args: { preview: PreviewDeps; notesSystemPath: string },
   ): Promise<Record<string, unknown>> {
     let expanded: string;
     try {
@@ -317,12 +313,12 @@ export class StudioDrafts implements StudioDraftService {
     }
     const live = await agentTask(this.artifacts, agent);
     const standing = hydrateStanding({
-      systemPath: args.notesSystemPath,
+      systemPath: deps.notesSystemPath,
       agentName: agent.name,
       agentId: agent.id,
     });
-    const preview = await previewCurrentState(args.preview, agent);
-    const tools = await projectOfferedToolSchemas(args.preview, agent);
+    const preview = await previewCurrentState(deps.preview, agent);
+    const tools = await projectOfferedToolSchemas(deps.preview, agent);
     const { config } = agent;
     const memoryEnabled = config.memory;
     const composed = composeAgentSystemPrompt(

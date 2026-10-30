@@ -178,9 +178,15 @@ export function buildToolRows(entries: ToolEntry[], stats: StatRow[]): ToolRow[]
   );
 }
 
+/** What the guild's tools are read through: its calls from `db`, each agent's offer from `preview`. */
+export type GuildToolsDeps = {
+  db: Queryable;
+  preview: PreviewDeps;
+};
+
 /** The guild's tools: what each agent is offered now, and their calls in the window. */
 export async function loadGuildTools(
-  deps: { db: Queryable; preview: PreviewDeps },
+  deps: GuildToolsDeps,
   guildId: string,
   window: ActivityWindow,
 ): Promise<{ since: string; until: string; tools: ToolRow[] }> {
@@ -192,8 +198,8 @@ export async function loadGuildTools(
   return { since: iso(window.since), until: iso(window.until), tools: buildToolRows(entries, stats) };
 }
 
-/** Which calls a page lists: only failed ones or all, after the cursor the previous page returned. */
-export type ToolCallsQuery = { errorsOnly: boolean; cursor: string | null };
+/** Which calls a page lists: those in the window, only failed ones or all, after the cursor the previous page returned. */
+export type ToolCallsQuery = ActivityWindow & { errorsOnly: boolean; cursor: string | null };
 
 /** A page cursor names the last call shown: its time and message id. */
 export function parseToolCursor(cursor: string | null): { at: Date; id: number } | null {
@@ -243,12 +249,14 @@ export function viewToolCall(row: GuildToolCallRow): ToolCallView {
 export async function loadToolCalls(
   db: Queryable,
   guildId: string,
-  request: { tool: string; window: ActivityWindow; query: ToolCallsQuery },
+  tool: string,
+  query: ToolCallsQuery,
 ): Promise<{ calls: ToolCallView[]; next_cursor: string | null }> {
-  const rows = await listGuildToolCalls(db, guildId, request.tool, {
-    ...request.window,
-    errorsOnly: request.query.errorsOnly,
-    before: parseToolCursor(request.query.cursor),
+  const rows = await listGuildToolCalls(db, guildId, tool, {
+    since: query.since,
+    until: query.until,
+    errorsOnly: query.errorsOnly,
+    before: parseToolCursor(query.cursor),
     limit: TOOL_CALLS_PAGE + 1,
   });
   const page = rows.slice(0, TOOL_CALLS_PAGE);

@@ -110,6 +110,17 @@ function sourceGuildSnapshot(guild: Pick<GuildRow, "id" | "name" | "about" | "de
   return { id: guild.id, name: guild.name, about: guild.about, ...(objective ? { objective } : {}) };
 }
 
+/** What an operator opens a Studio session with: its mode, source guild, coach model, and the session it continues. */
+export type StudioSessionRequest = {
+  mode: string;
+  sourceGuildId: string;
+  model: string;
+  temperature?: number;
+  parentSessionId?: string | null;
+  summary?: string;
+  selectedTargetAgentId?: string | null;
+};
+
 export class StudioService {
   drafts: StudioDrafts;
   runner: StudioRunner;
@@ -144,42 +155,36 @@ export class StudioService {
     }
   }
 
-  async createSession(args: {
-    user: UserRow;
-    org: OrgMembershipRow;
-    mode: string;
-    sourceGuildId: string;
-    model: string;
-    temperature?: number;
-    parentSessionId?: string | null;
-    summary?: string;
-    selectedTargetAgentId?: string | null;
-  }): Promise<Record<string, unknown>> {
-    if (args.mode !== "optimize") {
+  async createSession(
+    user: UserRow,
+    org: OrgMembershipRow,
+    request: StudioSessionRequest,
+  ): Promise<Record<string, unknown>> {
+    if (request.mode !== "optimize") {
       throw new StudioUnprocessableError("create mode is not available");
     }
-    const guild = await getGuild(this.deps.db, args.sourceGuildId);
+    const guild = await getGuild(this.deps.db, request.sourceGuildId);
     if (
       !guild ||
-      guild.org_id !== args.org.id ||
-      !canSeeGuild(guild, args.user.id)
+      guild.org_id !== org.id ||
+      !canSeeGuild(guild, user.id)
     ) {
       throw new StudioNotFoundError("guild not found");
     }
-    const model = await this.validateModel(args.org.id, args.model);
-    const temperature = this.validateTemperature(args.temperature);
-    if (args.parentSessionId) {
-      const parent = await getStudioSession(this.deps.db, args.parentSessionId);
+    const model = await this.validateModel(org.id, request.model);
+    const temperature = this.validateTemperature(request.temperature);
+    if (request.parentSessionId) {
+      const parent = await getStudioSession(this.deps.db, request.parentSessionId);
       if (
         !parent ||
-        parent.org_id !== args.org.id ||
-        parent.created_by_user_id !== args.user.id
+        parent.org_id !== org.id ||
+        parent.created_by_user_id !== user.id
       ) {
         throw new StudioNotFoundError("parent studio session not found");
       }
     }
     const template = readStudioSystemTemplate({ guidelinesPath: this.deps.notesSystemPath });
-    const limits = (await this.policy.standing(args.org.id)).limits.coach.studio;
+    const limits = (await this.policy.standing(org.id)).limits.coach.studio;
     const coachConfig = {
       model,
       temperature,
@@ -188,21 +193,15 @@ export class StudioService {
     };
     const sourceGuild = sourceGuildSnapshot(guild);
     const members = (await studioInventory(this.deps.db, guild.id, null)).map((row) => hydrateStudioMember(row));
-    const system = composeStudioSystemMessage({
-      mode: "optimize",
-      sourceGuild,
-      members,
-      config: coachConfig,
-      template,
-    });
+    const system = composeStudioSystemMessage(template, { mode: "optimize", config: coachConfig }, { sourceGuild, members });
     const now = new Date();
     const session = await insertStudioSession(
       this.deps.db,
       {
         id: newId("stu"),
-        org_id: args.org.id,
-        created_by_user_id: args.user.id,
-        created_by_name: typeof args.user.name === "string" ? args.user.name : "operator",
+        org_id: org.id,
+        created_by_user_id: user.id,
+        created_by_name: typeof user.name === "string" ? user.name : "operator",
         mode: "optimize",
         source_guild_id: guild.id,
         source_guild_snapshot: sourceGuild,
@@ -211,8 +210,8 @@ export class StudioService {
           system_prompt_hash: system.hash,
           tool_schemas: studioToolSchemas(),
         },
-        parent_session_id: args.parentSessionId ?? null,
-        selected_target_agent_id: args.selectedTargetAgentId ?? null,
+        parent_session_id: request.parentSessionId ?? null,
+        selected_target_agent_id: request.selectedTargetAgentId ?? null,
         status: "active",
       },
       now,
@@ -229,7 +228,7 @@ export class StudioService {
       },
       now,
     );
-    if (args.summary) {
+    if (request.summary) {
       await insertConversationMessage(
         this.deps.db,
         "studio",
@@ -237,7 +236,7 @@ export class StudioService {
           session_id: session.id,
           seq: 1,
           generation: 0,
-          payload: { role: "user", content: args.summary },
+          payload: { role: "user", content: request.summary },
           metadata: { source: "continuation" },
         },
         now,
@@ -527,29 +526,30 @@ export class StudioService {
       return { session: updated ?? locked, generation, systemContent, rows };
     });
     const drafts = await listStudioDraftHeads(this.deps.db, started.session.id);
-    const generationContext = composeGenerationContext({
-      sourceGuild: { id: session.source_guild_id },
-      roster: started.rows.map((row) => inventoryItem(row)),
-      draft: drafts[0] ?? null,
-    });
+    const generationContext = composeGenerationContext(
+      session.source_guild_id,
+      started.rows.map((row) => inventoryItem(row)),
+      drafts[0] ?? null,
+    );
     const limits = (await this.policy.standing(started.session.org_id)).limits.coach.studio;
-    this.runner.start({
-      session: {
-        ...started.session,
-        config_snapshot: { ...started.session.config_snapshot, ...limits },
+    this.runner.start(
+      this.toolDeps(),
+      {
+        session: {
+          ...started.session,
+          config_snapshot: { ...started.session.config_snapshot, ...limits },
+        },
+        generation: started.generation,
+        generationContext,
+        systemContent: started.systemContent,
       },
-      user,
-      generation: started.generation,
-      generationContext,
-      systemContent: started.systemContent,
-      toolDeps: this.toolDeps(),
-      toolCall: {
+      {
         session: started.session,
         user,
         orgId: started.session.org_id,
         sourceGuildId: session.source_guild_id,
       },
-    });
+    );
     return this.viewSession(started.session);
   }
 
@@ -618,9 +618,7 @@ export class StudioService {
     const config = session.config_snapshot;
     const heads = await listStudioDraftHeads(this.deps.db, session.id);
     const summary = `Continue from Studio session ${session.id}. Active draft heads: ${heads.map((row) => row.id).join(", ") || "none"}.`;
-    return this.createSession({
-      user,
-      org,
+    return this.createSession(user, org, {
       mode: "optimize",
       sourceGuildId: session.source_guild_id,
       model: config.model,
@@ -631,38 +629,18 @@ export class StudioService {
     });
   }
 
-  /** Publishes a draft of the session to its target agent's task. */
+  /** Publishes a draft of the session to its target agent's task, as `user`. */
   async publishDraft(
     session: StudioSessionRow,
     user: UserRow,
     draftId: string,
   ): Promise<Record<string, unknown>> {
-    const result = await this.drafts.publish({
+    const result = await this.drafts.publish(
+      { db: this.deps.db, preview: this.previewDeps(), notesSystemPath: this.deps.notesSystemPath },
       session,
       user,
       draftId,
-      db: this.deps.db,
-      preview: this.previewDeps(),
-      notesSystemPath: this.deps.notesSystemPath,
-    });
-    return this.announcePublish(session, result);
-  }
-
-  /** Publishes a draft of a session whose operator is gone, for an organisation manager. */
-  async publishOrphanDraft(
-    session: StudioSessionRow,
-    user: UserRow,
-    draftId: string,
-  ): Promise<Record<string, unknown>> {
-    const result = await this.drafts.publish({
-      session,
-      user,
-      draftId,
-      db: this.deps.db,
-      preview: this.previewDeps(),
-      notesSystemPath: this.deps.notesSystemPath,
-      orphan: true,
-    });
+    );
     return this.announcePublish(session, result);
   }
 

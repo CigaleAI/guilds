@@ -156,9 +156,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
     const body = request.body;
     const temperature = body.coach_config?.temperature;
     const parentSessionId = body.parent_session_id?.trim() ?? "";
-    return await studioOf(deps).createSession({
-      user,
-      org,
+    return await studioOf(deps).createSession(user, org, {
       mode: body.mode ?? "optimize",
       sourceGuildId: body.source_guild_id ?? "",
       model: body.coach_config?.model ?? body.model ?? "",
@@ -425,9 +423,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const org = await currentOrg(db, request, user);
       const loaded = await loadDraftContext(deps, user, org, request.params.draft_id);
       const studio: StudioService = studioOf(deps);
-      return loaded.orphan
-        ? await studio.publishOrphanDraft(loaded.session, loaded.user, loaded.draft.id)
-        : await studio.publishDraft(loaded.session, loaded.user, loaded.draft.id);
+      return await studio.publishDraft(loaded.session, loaded.user, loaded.draft.id);
     },
   );
 
@@ -551,13 +547,10 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(request.params.session_id, user, org);
       studio.assertLive(session);
-      return await loadToolCalls(db, session.source_guild_id, {
-        tool: request.params.name,
-        window: hoursWindow(query.hours, new Date()),
-        query: {
-          errorsOnly: query.errors === "true" || query.errors === "1",
-          cursor: query.cursor || null,
-        },
+      return await loadToolCalls(db, session.source_guild_id, request.params.name, {
+        ...hoursWindow(query.hours, new Date()),
+        errorsOnly: query.errors === "true" || query.errors === "1",
+        cursor: query.cursor || null,
       });
     },
   );

@@ -21,20 +21,23 @@ export function composeLiveSystem(
 ): { content: string; hash: string } {
   const config = session.config_snapshot;
   const members = rows.map((row) => hydrateStudioMember(row));
-  return composeStudioSystemMessage({
-    mode: session.mode,
-    template: readStudioSystemTemplate({ guidelinesPath: notesSystemPath }),
-    sourceGuild: session.source_guild_id ? { ...session.source_guild_snapshot, id: session.source_guild_id } : null,
-    members,
-    config: {
-      model: config.model,
-      temperature: config.temperature,
-      max_tokens: config.max_tokens,
-      max_steps: config.max_steps,
-      max_tool_calls: config.max_tool_calls,
-      max_input_tokens: config.max_input_tokens,
+  return composeStudioSystemMessage(
+    readStudioSystemTemplate({ guidelinesPath: notesSystemPath }),
+    {
+      mode: session.mode,
+      config: {
+        model: config.model,
+        temperature: config.temperature,
+        max_tokens: config.max_tokens,
+        max_steps: config.max_steps,
+        max_tool_calls: config.max_tool_calls,
+        max_input_tokens: config.max_input_tokens,
+      },
     },
-  });
+    session.source_guild_id
+      ? { sourceGuild: { ...session.source_guild_snapshot, id: session.source_guild_id }, members }
+      : null,
+  );
 }
 
 /** Recomposes the session's system message and rewrites its stored row when the hash changed. */
