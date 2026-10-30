@@ -6,7 +6,15 @@ import { assertSlugFree, CatalogError } from "../mcp/catalog.js";
 import { generateToolPrefix, isReservedToolPrefix } from "../mcp/policy.js";
 import type { ConnectorPackage, RegistryClient } from "./client.js";
 import { codeEntry, codeFolder, removeCodePackage, writeCodePackage } from "./code.js";
-import { compareVersions, pickEntry, RegistryError, type RegistryConnectorEntry, type RegistryIndex } from "./index.js";
+import {
+  compareVersions,
+  pickEntry,
+  RegistryError,
+  RegistryNotFoundError,
+  RegistryPackageError,
+  type RegistryConnectorEntry,
+  type RegistryIndex,
+} from "./index.js";
 import { deleteConnector, insertConnector, listTakenToolPrefixes, updateConnector } from "../db/connectors.js";
 import { expireMcpTools } from "../db/mcp.js";
 import { deleteInstanceKey } from "../db/orgs.js";
@@ -34,7 +42,7 @@ export type Acceptance = { unverified?: boolean; experimental?: boolean };
 function chosenEntry(index: RegistryIndex, slug: string, version: string | undefined, accept: Acceptance): RegistryConnectorEntry {
   const entry = pickEntry(entriesFor(index, slug), version);
   if (entry === null) {
-    throw new RegistryError(version ? `the registry has no ${slug}@${version}` : `the registry has no connector ${slug}`, 404);
+    throw new RegistryNotFoundError(version ? `the registry has no ${slug}@${version}` : `the registry has no connector ${slug}`);
   }
   if (!entry.verified && accept.unverified !== true) {
     throw new RegistryError(`${slug}@${entry.version} is unverified; install it with --unverified to accept that`, 409);
@@ -75,7 +83,7 @@ async function placeCode(
     await codeEntry(codeRoot, slug, entry.version, { verified: entry.verified, publisher: entry.publisher });
   } catch (error) {
     rmSync(codeFolder(codeRoot, slug, entry.version), { recursive: true, force: true });
-    throw new RegistryError(`${slug}@${entry.version} does not load: ${error instanceof Error ? error.message : String(error)}`, 422);
+    throw new RegistryPackageError(`${slug}@${entry.version} does not load: ${error instanceof Error ? error.message : String(error)}`);
   }
   return true;
 }
@@ -143,13 +151,26 @@ export async function installConnector(
 async function registryRow(db: Queryable, slug: string): Promise<Record<string, unknown>> {
   const row = await getMcpServerBySlug(db, slug, null);
   if (row === null || row.owner_org_id) {
-    throw new RegistryError(`connector ${slug} is not installed`, 404);
+    throw new RegistryNotFoundError(`connector ${slug} is not installed`);
   }
   if (row.source !== "registry") {
     throw new RegistryError(`connector ${slug} is ${String(row.source)}, not a registry install`, 409);
   }
   return row;
 }
+
+export type UpdateOptions = Acceptance & {
+  /** The one connector to move; every registry connector when unset. */
+  slug?: string;
+  now?: Date;
+  /** The code tier's root while it is on: a package carrying code is written there. */
+  codeRoot?: string | null;
+  /** Where code connectors live, so a connector that moves keeps only its new version's folder. */
+  connectorsRoot?: string | null;
+};
+
+/** A registry connector moved from one version to another; `code` says the new version carries code. */
+export type ConnectorMove = { slug: string; from: string; to: string; code: boolean };
 
 /**
  * Moves registry connectors to the newest version the index offers, or `slug` alone. The row keeps
@@ -160,13 +181,13 @@ async function registryRow(db: Queryable, slug: string): Promise<Record<string, 
 export async function updateConnectors(
   db: Queryable,
   client: RegistryClient,
-  options: Acceptance & { slug?: string; now?: Date; codeRoot?: string | null; connectorsRoot?: string | null } = {},
-): Promise<Array<{ slug: string; from: string; to: string; code: boolean }>> {
+  options: UpdateOptions = {},
+): Promise<ConnectorMove[]> {
   const index = await client.index();
   const rows = options.slug
     ? [await registryRow(db, options.slug)]
     : await listServers(db, { owner: "platform", source: "registry" });
-  const moved: Array<{ slug: string; from: string; to: string; code: boolean }> = [];
+  const moved: ConnectorMove[] = [];
   for (const row of rows) {
     const slug = String(row.slug);
     const latest = pickEntry(entriesFor(index, slug));

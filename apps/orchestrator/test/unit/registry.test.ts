@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { generateKeyPairSync } from "node:crypto";
+import { mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { test } from "node:test";
 import { boxWiringProblem, endpointOnlyProblem, loadManifest, recipeManifestProblem } from "../../src/connectors/manifest.js";
 import { integrationState, REGISTRY } from "../../src/instance/integrations.js";
@@ -10,10 +13,17 @@ import {
   parseIndex,
   pickEntry,
   RegistryError,
+  RegistryFetchError,
+  RegistryIndexError,
+  RegistryNotFoundError,
+  RegistryPackageError,
   registryPublicKey,
+  RegistrySignatureError,
   signIndex,
 } from "../../src/registry/index.js";
+import { codeEntry } from "../../src/registry/code.js";
 import { readTarball } from "../../src/registry/tar.js";
+import { tempDir } from "../helpers/env.js";
 import { endpointManifest, fakeRegistry, registryKeys, tarball } from "../helpers/registry.js";
 
 test("the registry is the default one while REGISTRY_URL is unset, and offline when it is set empty", () => {
@@ -33,17 +43,41 @@ test("versions order numerically and the newest is picked unless one is named", 
   assert.equal(pickEntry(entries, "3.0.0"), null);
 });
 
-test("an index that does not match the schema is refused", () => {
-  assert.throws(() => parseIndex({ generated_at: "x", connectors: [{ slug: "Bad" }], recipes: [] }), RegistryError);
-  assert.throws(() => parseIndex([]), RegistryError);
+test("an index that does not match the schema is refused as a bad gateway", () => {
+  const isIndexError = (error: unknown) => error instanceof RegistryIndexError && error.status === 502;
+  assert.throws(() => parseIndex({ generated_at: "x", connectors: [{ slug: "Bad" }], recipes: [] }), isIndexError);
+  assert.throws(() => parseIndex([]), isIndexError);
 });
 
 test("a tarball reads back its files and refuses a path that leaves it", () => {
   const files = readTarball(tarball({ "acme/connector.json": "{}", "acme/logo.svg": "<svg/>" }));
   assert.deepEqual([...files.keys()], ["acme/connector.json", "acme/logo.svg"]);
   assert.equal(files.get("acme/logo.svg")?.toString(), "<svg/>");
-  assert.throws(() => readTarball(tarball({ "../escape.json": "{}" })), /leaves the archive/);
+  assert.throws(
+    () => readTarball(tarball({ "../escape.json": "{}" })),
+    (error: unknown) => error instanceof RegistryPackageError && /leaves the archive/.test(error.message),
+  );
   assert.throws(() => readTarball(Buffer.from("not gzip")), /gzipped/);
+});
+
+test("a registry failure is a RegistryError answered with the status of what failed", () => {
+  assert.ok(new RegistryIndexError("x") instanceof RegistryError);
+  assert.deepEqual(
+    [
+      new RegistryIndexError("x"),
+      new RegistrySignatureError("x"),
+      new RegistryFetchError("x"),
+      new RegistryPackageError("x"),
+      new RegistryNotFoundError("x"),
+    ].map((error) => [error.name, error.status]),
+    [
+      ["RegistryIndexError", 502],
+      ["RegistrySignatureError", 502],
+      ["RegistryFetchError", 502],
+      ["RegistryPackageError", 422],
+      ["RegistryNotFoundError", 404],
+    ],
+  );
 });
 
 test("the client reads a connector package under one top-level folder", async () => {
@@ -174,7 +208,10 @@ test("a client with a key reads only an index that key signed", async () => {
   assert.equal(signed.client.verifiesSignatures, true);
 
   const wrong = fakeRegistry({ signWith: other.privateKey, verifyWith: keys.publicKey });
-  await assert.rejects(() => wrong.client.index(), /does not verify/);
+  await assert.rejects(
+    () => wrong.client.index(),
+    (error: unknown) => error instanceof RegistrySignatureError && /does not verify/.test(error.message),
+  );
 
   const unsigned = fakeRegistry({ verifyWith: keys.publicKey });
   await assert.rejects(() => unsigned.client.index(), /unsigned/);
@@ -184,4 +221,32 @@ test("a client with a key reads only an index that key signed", async () => {
   assertSigned(good, registryPublicKey(keys.publicKey));
   assert.throws(() => assertSigned({ ...good, generated_at: "2030-01-01T00:00:00Z" }, registryPublicKey(keys.publicKey)), /does not verify/);
   assert.throws(() => registryPublicKey("bm90IGEga2V5"), /not an Ed25519 public key/);
+  const ec = generateKeyPairSync("ec", { namedCurve: "P-256" }).publicKey.export({ format: "der", type: "spki" });
+  assert.throws(() => registryPublicKey(ec.toString("base64")), {
+    message: "REGISTRY_PUBLIC_KEY is not an Ed25519 public key: not an Ed25519 key",
+  });
+});
+
+test("a code connector loads only when adapter.js exports an object whose hooks are functions", async () => {
+  const root = tempDir("guilds-code-");
+  const provenance = { verified: true, publisher: "acme" };
+  const write = (version: string, adapter: string) => {
+    const folder = path.join(root, "coded", version);
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(path.join(folder, "connector.json"), JSON.stringify(endpointManifest("coded")));
+    writeFileSync(path.join(folder, "adapter.js"), adapter);
+  };
+  write("1.0.0", "export default { async list() { return []; } };");
+  write("2.0.0", "export default 42;");
+  write("3.0.0", 'export default { call: "not code" };');
+  const entry = await codeEntry(root, "coded", "1.0.0", provenance);
+  assert.equal(typeof entry.adapter.list, "function");
+  await assert.rejects(() => codeEntry(root, "coded", "2.0.0", provenance), {
+    name: "RegistryPackageError",
+    message: "adapter.js has no default export object",
+  });
+  await assert.rejects(() => codeEntry(root, "coded", "3.0.0", provenance), {
+    name: "RegistryPackageError",
+    message: "adapter.js exports call that is not a function",
+  });
 });

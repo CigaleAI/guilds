@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { decodeMasterKey, loadConfig, loadToolConfig, parseHarnessesOff } from "../../src/config/index.js";
+import { ConfigError, decodeMasterKey, loadConfig, loadToolConfig, parseHarnessesOff } from "../../src/config/index.js";
 import { HEX_MASTER_KEY, tempDir, testEnv } from "../helpers/env.js";
 
 test("loadConfig requires env, existing dirs, and a 32-byte master key", () => {
@@ -30,6 +30,24 @@ test("loadConfig rejects missing required values and missing directories", () =>
       ),
     /WORKSPACE_ROOT must be an existing directory/,
   );
+});
+
+test("a refused setting throws a ConfigError that names the setting", () => {
+  const base = { NOTES_ROOT: tempDir("guilds-notes-"), WORKSPACE_ROOT: tempDir("guilds-workspaces-") };
+  const refusals: [NodeJS.ProcessEnv, string][] = [
+    [{}, "DATABASE_URL"],
+    [testEnv("postgresql://example", { ...base, TEMPLATES_ROOT: "/no/such/templates" }), "TEMPLATES_ROOT"],
+    [testEnv("postgresql://example", { ...base, MAX_CONCURRENT_GENERATIONS: "-1" }), "MAX_CONCURRENT_GENERATIONS"],
+    [testEnv("postgresql://example", { ...base, SECRETS_MASTER_KEY: "short" }), "SECRETS_MASTER_KEY"],
+    [testEnv("postgresql://example", { ...base, AUTH_MODE: "trusted-header" }), "TRUSTED_PROXY_SECRET"],
+  ];
+  for (const [env, setting] of refusals) {
+    assert.throws(
+      () => loadConfig(env),
+      (error: unknown) => error instanceof ConfigError && error.setting === setting,
+      setting,
+    );
+  }
 });
 
 test("loadConfig rejects unknown AUTH_MODE", () => {

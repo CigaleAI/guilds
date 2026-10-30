@@ -173,14 +173,6 @@
       "count": 1
     }
   },
-  "src/config/index.ts": {
-    "complexity": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 14
-    }
-  },
   "src/connectors/alchemy/client.ts": {
     "no-restricted-syntax": {
       "count": 5
@@ -915,43 +907,6 @@
   "src/recipes/validate.ts": {
     "no-restricted-syntax": {
       "count": 1
-    }
-  },
-  "src/registry/client.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/registry/code.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 3
-    },
-    "complexity": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 4
-    }
-  },
-  "src/registry/index.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/registry/install.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/registry/tar.ts": {
-    "complexity": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 6
     }
   },
   "src/run.ts": {

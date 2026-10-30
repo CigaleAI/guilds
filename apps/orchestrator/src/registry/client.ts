@@ -9,6 +9,9 @@ import {
   parseIndex,
   registryPublicKey,
   RegistryError,
+  RegistryFetchError,
+  RegistryIndexError,
+  RegistryPackageError,
   type RegistryConnectorEntry,
   type RegistryIndex,
   type RegistryRecipeEntry,
@@ -22,12 +25,7 @@ export function registryUrl(env: NodeJS.ProcessEnv = process.env): string | null
 
 /** The files of a package, with a single top-level directory taken off. */
 function packageFiles(bytes: Buffer): Map<string, Buffer> {
-  let files: Map<string, Buffer>;
-  try {
-    files = readTarball(bytes);
-  } catch (error) {
-    throw new RegistryError(error instanceof Error ? error.message : "package is unreadable");
-  }
+  const files = readTarball(bytes);
   const tops = new Set([...files.keys()].map((name) => (name.includes("/") ? name.split("/")[0] : "")));
   const [top] = [...tops];
   if (tops.size === 1 && top) {
@@ -35,6 +33,9 @@ function packageFiles(bytes: Buffer): Map<string, Buffer> {
   }
   return files;
 }
+
+/** A file an index entry lists: where it sits, and the size and hash its bytes must have. */
+type IndexedFile = Pick<RegistryConnectorEntry, "path" | "sha256" | "size">;
 
 /** A connector package: its manifest, and the bundled adapter and logo when it ships them. */
 export type ConnectorPackage = { manifest: Manifest; adapter: Buffer | null; logo: Buffer | null };
@@ -71,26 +72,26 @@ export class RegistryClient {
     try {
       response = await this.fetchFn(url);
     } catch (error) {
-      throw new RegistryError(`registry unreachable at ${url}: ${error instanceof Error ? error.message : String(error)}`, 502);
+      throw new RegistryFetchError(`registry unreachable at ${url}: ${error instanceof Error ? error.message : String(error)}`);
     }
     if (!response.ok) {
-      throw new RegistryError(`registry answered ${response.status} for ${path}`, 502);
+      throw new RegistryFetchError(`registry answered ${response.status} for ${path}`);
     }
     const body = Buffer.from(await response.arrayBuffer());
     if (body.length > limit) {
-      throw new RegistryError(`registry ${path} exceeds ${limit} bytes`, 502);
+      throw new RegistryFetchError(`registry ${path} exceeds ${limit} bytes`);
     }
     return body;
   }
 
-  private async checked(entry: { path: string; sha256: string; size: number }): Promise<Buffer> {
+  private async checked(entry: IndexedFile): Promise<Buffer> {
     const body = await this.bytes(entry.path, PACKAGE_MAX_BYTES);
     if (body.length !== entry.size) {
-      throw new RegistryError(`${entry.path} is ${body.length} bytes; the index says ${entry.size}`);
+      throw new RegistryPackageError(`${entry.path} is ${body.length} bytes; the index says ${entry.size}`);
     }
     const digest = createHash("sha256").update(body).digest("hex");
     if (digest !== entry.sha256) {
-      throw new RegistryError(`${entry.path} does not match the index's hash`);
+      throw new RegistryPackageError(`${entry.path} does not match the index's hash`);
     }
     return body;
   }
@@ -101,7 +102,7 @@ export class RegistryClient {
     try {
       raw = JSON.parse(body.toString("utf8"));
     } catch {
-      throw new RegistryError("registry index is not JSON", 502);
+      throw new RegistryIndexError("registry index is not JSON");
     }
     const index = parseIndex(raw);
     if (this.publicKey) {
@@ -117,25 +118,25 @@ export class RegistryClient {
   async connectorPackage(entry: RegistryConnectorEntry): Promise<ConnectorPackage> {
     const files = packageFiles(await this.checked(entry));
     if (files.has("adapter.ts")) {
-      throw new RegistryError(`connector ${entry.slug} ships adapter.ts; a package carries the bundled adapter.js`);
+      throw new RegistryPackageError(`connector ${entry.slug} ships adapter.ts; a package carries the bundled adapter.js`);
     }
     const raw = files.get("connector.json");
     if (!raw) {
-      throw new RegistryError(`connector ${entry.slug} package has no connector.json`);
+      throw new RegistryPackageError(`connector ${entry.slug} package has no connector.json`);
     }
     let manifest: Manifest;
     try {
       manifest = loadManifest(JSON.parse(raw.toString("utf8")), entry.slug);
     } catch (error) {
       if (error instanceof ManifestError || error instanceof SyntaxError) {
-        throw new RegistryError(error.message);
+        throw new RegistryPackageError(error.message);
       }
       throw error;
     }
     const adapter = files.get("adapter.js") ?? null;
     const problem = adapter === null ? endpointOnlyProblem(manifest) : codeManifestProblem(manifest);
     if (problem !== null) {
-      throw new RegistryError(problem);
+      throw new RegistryPackageError(problem);
     }
     return { manifest, adapter, logo: files.get("logo.svg") ?? null };
   }
