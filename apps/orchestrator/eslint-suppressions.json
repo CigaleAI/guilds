@@ -314,16 +314,6 @@
       "count": 1
     }
   },
-  "src/db/artifacts.ts": {
-    "no-restricted-syntax": {
-      "count": 4
-    }
-  },
-  "src/db/collections.ts": {
-    "no-restricted-syntax": {
-      "count": 3
-    }
-  },
   "src/db/schema/columns.ts": {
     "@typescript-eslint/explicit-module-boundary-types": {
       "count": 1

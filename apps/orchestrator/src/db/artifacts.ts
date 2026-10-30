@@ -2,6 +2,7 @@ import type { InferSelectModel } from "drizzle-orm";
 import type { ChangeActor } from "../lib/change-actor.js";
 import { newId } from "../lib/ids.js";
 import { agentModeSql, type ArtifactMode, type ArtifactReader } from "./artifact-access.js";
+import { RowMissing } from "./errors.js";
 import { type Queryable, stamp } from "./pg.js";
 import type { artifactCollections, artifacts, memoryRevisions } from "./schema/index.js";
 
@@ -284,7 +285,7 @@ export async function updateMemoryContent(
   );
   const row = result.rows[0];
   if (!row) {
-    throw new Error("memory row vanished during its write");
+    throw new RowMissing("memory row vanished during its write");
   }
   return row;
 }
@@ -367,7 +368,7 @@ export async function updateNoteContent(
   );
   const row = result.rows[0];
   if (!row) {
-    throw new Error("note row vanished during its write");
+    throw new RowMissing("note row vanished during its write");
   }
   return row;
 }
@@ -412,7 +413,7 @@ export async function insertNote(
   );
   const row = result.rows[0];
   if (!row) {
-    throw new Error("note insert returned no row");
+    throw new RowMissing("note insert returned no row");
   }
   return row;
 }
@@ -693,7 +694,7 @@ export async function insertFile(db: Queryable, file: NewFile, actor: ChangeActo
   );
   const row = result.rows[0];
   if (!row) {
-    throw new Error("file insert returned no row");
+    throw new RowMissing("file insert returned no row");
   }
   return row;
 }

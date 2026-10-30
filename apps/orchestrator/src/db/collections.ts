@@ -3,6 +3,7 @@ import type { ChangeActor } from "../lib/change-actor.js";
 import { newId } from "../lib/ids.js";
 import { agentModeSql, type ArtifactMode, type ArtifactReader } from "./artifact-access.js";
 import { ARTIFACT_RETURNING, ARTIFACT_SELECT, type ArtifactOrTombstoneRow, type ArtifactRow } from "./artifacts.js";
+import { RowMissing } from "./errors.js";
 import { type Queryable, stamp } from "./pg.js";
 import type { artifactCollections, artifacts, CollectionColumn, ColumnType, guilds, RecordBody } from "./schema/index.js";
 
@@ -116,7 +117,7 @@ export async function insertCollection(
   );
   const row = result.rows[0];
   if (!row) {
-    throw new Error("collection insert returned no row");
+    throw new RowMissing("collection insert returned no row");
   }
   return row;
 }
@@ -354,7 +355,7 @@ export async function insertRecord(
   );
   const row = result.rows[0];
   if (!row) {
-    throw new Error("record insert returned no row");
+    throw new RowMissing("record insert returned no row");
   }
   return row;
 }
@@ -389,7 +390,7 @@ export async function updateRecordBody(
   );
   const row = result.rows[0];
   if (!row) {
-    throw new Error("record row vanished during its write");
+    throw new RowMissing("record row vanished during its write");
   }
   return row;
 }
