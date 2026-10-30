@@ -1236,7 +1236,7 @@
       "count": 16
     },
     "complexity": {
-      "count": 6
+      "count": 4
     },
     "no-restricted-syntax": {
       "count": 3
@@ -1264,6 +1264,11 @@
   "src/studio/inspector.ts": {
     "complexity": {
       "count": 1
+    }
+  },
+  "src/studio/note-edits.ts": {
+    "complexity": {
+      "count": 2
     }
   },
   "src/studio/preview.ts": {

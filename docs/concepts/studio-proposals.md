@@ -387,7 +387,9 @@ resolution is in its metadata.
 
 | Path | What it holds |
 |---|---|
-| `apps/orchestrator/src/studio/edits.ts` | Edit, note, and guild requests: review and apply |
+| `apps/orchestrator/src/studio/edits.ts` | Memory, note body, and guild requests, and reading and applying every edit request |
+| `apps/orchestrator/src/studio/edit-request.ts` | The request an edit tool returns instead of writing: its reason, content limit, line counts, and widget |
+| `apps/orchestrator/src/studio/note-edits.ts` | Note requests: the note a body edit replaces, and notes created or deleted |
 | `apps/orchestrator/src/studio/access.ts` | Access requests |
 | `apps/orchestrator/src/studio/tables.ts` | Collection requests read from the coach's arguments, their review and its wording, and collection evidence |
 | `apps/orchestrator/src/artifacts/guild-tables.ts` | `planGuildTableChange`: the rules a collection request follows and what it writes; `guildTableEditEffects`: what a collection edit does to its records and readers |

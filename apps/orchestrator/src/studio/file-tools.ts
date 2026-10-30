@@ -13,7 +13,8 @@ import {
   STUDIO_REVISION_LIST_MAX,
   STUDIO_TOOL_RESULT_MAX_BYTES,
 } from "./constants.js";
-import { editRequest, loadNoteBase, noteCreateRequest, noteDeleteRequest } from "./edits.js";
+import { editRequest } from "./edits.js";
+import { loadNoteBase, noteCreateRequest, noteDeleteRequest } from "./note-edits.js";
 import { StudioUnprocessableError } from "./errors.js";
 import { clampLimit, cursorOffset } from "./paging.js";
 import { studioReachesParsed, studioReachesPath } from "./reach.js";
