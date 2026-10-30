@@ -976,11 +976,6 @@
       "count": 1
     }
   },
-  "src/policy/index.ts": {
-    "@typescript-eslint/explicit-module-boundary-types": {
-      "count": 3
-    }
-  },
   "src/prompts/index.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1

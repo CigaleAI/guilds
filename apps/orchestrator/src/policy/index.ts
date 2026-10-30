@@ -95,7 +95,7 @@ export const OPEN_POLICY: OrgPolicy = {
 };
 
 /** The live counts the caps are checked against. */
-export function orgCounts(db: Queryable) {
+function orgCounts(db: Queryable) {
   return {
     countOrgAgents: bindQuery(db, countOrgAgents),
     countOrgBrowserAgents: bindQuery(db, countOrgBrowserAgents),
@@ -107,7 +107,7 @@ export function orgCounts(db: Queryable) {
 export type OrgCounts = ReturnType<typeof orgCounts>;
 
 /** The live counts the machine caps are checked against. */
-export function machineCounts(db: Queryable) {
+function machineCounts(db: Queryable) {
   return {
     countMachineAgents: bindQuery(db, countMachineAgents),
   };
@@ -293,7 +293,7 @@ export async function assertCanEnableCodingThrough(policy: OrgPolicy, counts: Or
 }
 
 /** The month's Studio and Builder runs, claimed on `db`: the pool, or the transaction that starts the run. */
-export function coachRunClaims(db: Queryable) {
+function coachRunClaims(db: Queryable) {
   return { claimMonthlyStudioBuilderRun: bindQuery(db, claimMonthlyStudioBuilderRun) };
 }
 
