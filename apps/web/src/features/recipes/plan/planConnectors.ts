@@ -153,6 +153,18 @@ export type ConnectionCard = {
   tools: ConnectionToolGroups;
 };
 
+/** True when apply reuses a live login for a connector: its plan says reuse and names the login. */
+function reusesLogin(connection: ConnectionDraft): boolean {
+  return Boolean(connection.action === "reuse" && connection.connection_id);
+}
+
+/** A connector card's chip: the live login apply reuses, an organisation login, or one to connect at apply. */
+function connectionChip(connection: ConnectionDraft): ConnectionCard["chip"] {
+  if (reusesLogin(connection)) return { label: "reuse login", tone: "ok" };
+  if (connection.recommended_scope === "org") return { label: "org login", tone: "action" };
+  return { label: "connect at apply", tone: "action" };
+}
+
 /**
  * A connector's card: whether apply reuses a live login, its setup or the roles using it (with
  * their tools), its auth and scope line, its resources, and its tools per role.
@@ -163,7 +175,6 @@ export function connectionCard(
   catalog: readonly CatalogEntry[] | null | undefined,
   pending: PendingAccess | null = null,
 ): ConnectionCard {
-  const reused = Boolean(connection.action === "reuse" && connection.connection_id);
   const roleBits = plan.agents
     .filter((agent) => roleUsesConnection(connection, agent.role))
     .map((agent) => {
@@ -174,15 +185,8 @@ export function connectionCard(
   const description = connection.setup || connection.hint || "";
   return {
     server: connection.server ?? "",
-    reused,
-    chip: {
-      label: reused
-        ? "reuse login"
-        : connection.recommended_scope === "org"
-          ? "org login"
-          : "connect at apply",
-      tone: reused ? "ok" : "action",
-    },
+    reused: reusesLogin(connection),
+    chip: connectionChip(connection),
     snippet: description || (roleBits.length ? `Used by: ${roleBits.join(", ")}` : ""),
     description,
     meta: [
