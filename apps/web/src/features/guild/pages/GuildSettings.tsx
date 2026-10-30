@@ -31,7 +31,7 @@ import {
   personTone,
   Tag,
 } from "@guildsrun/ui";
-import { handleError, handleHint } from "../../names";
+import { handleError, handleHint } from "../../../app/names";
 import { isGuildAdmin, isOperatorRole } from "../permissions";
 import { GuildPage } from "./GuildPage";
 import { GuildRepositories } from "./GuildRepositories";

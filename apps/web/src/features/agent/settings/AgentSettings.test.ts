@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AgentHarness, Machine } from "../../../api/types/agents";
-import { handleHint } from "../../names";
+import { handleHint } from "../../../app/names";
 import {
   carriedHarnesses,
   machineHint,

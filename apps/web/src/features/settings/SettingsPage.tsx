@@ -26,7 +26,7 @@ import { AccessSecrets } from "../access/AccessSecrets";
 import { AccessTools } from "../access/AccessTools";
 import { formatCost } from "../agent/runs/toolFormat";
 import { ModelProviders } from "../models/ModelProviders";
-import { handlePattern } from "../names";
+import { handlePattern } from "../../app/names";
 import { MachinesTab } from "../machines/MachinesTab";
 import { MembersTab } from "./MembersTab";
 import { canManageMembers } from "./members";

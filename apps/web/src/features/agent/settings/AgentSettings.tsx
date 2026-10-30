@@ -32,7 +32,7 @@ import { CodingRepositories } from "../CodingRepositories";
 import { codingProblems, type CodingProblem } from "../harness";
 import { focusMax } from "../IdentityFields";
 import { chosenMachine } from "../../machines/machines";
-import { agentHandleError, handleHint } from "../../names";
+import { agentHandleError, handleHint } from "../../../app/names";
 import { AvatarPicker } from "./AvatarPicker";
 import { configErrors, configFormOf, configOf, type ConfigForm } from "./configForm";
 import { Group } from "./Group";

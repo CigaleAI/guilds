@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { identityHex, TextField } from "@guildsrun/ui";
-import { liveHandleError } from "../names";
+import { liveHandleError } from "../../app/names";
 import { AvatarPicker } from "./settings/AvatarPicker";
 
 /** The server's cap on an agent's focus. */

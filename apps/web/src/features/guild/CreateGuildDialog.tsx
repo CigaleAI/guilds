@@ -14,7 +14,7 @@ import {
   DialogFooter,
   DialogHeader,
 } from "@guildsrun/ui";
-import { handleHint, liveHandleError } from "../names";
+import { handleHint, liveHandleError } from "../../app/names";
 
 type CreateGuildDialogProps = {
   open: boolean;
