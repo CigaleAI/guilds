@@ -20,7 +20,7 @@
   },
   "src/api/clientLog.ts": {
     "no-restricted-syntax": {
-      "count": 2
+      "count": 3
     }
   },
   "src/api/files.ts": {
@@ -262,7 +262,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 5
+      "count": 6
     }
   },
   "src/features/admin/RegistryDialog.tsx": {
@@ -270,7 +270,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 1
+      "count": 2
     }
   },
   "src/features/admin/UsersTab.tsx": {
@@ -408,7 +408,7 @@
       "count": 3
     },
     "no-restricted-syntax": {
-      "count": 3
+      "count": 4
     }
   },
   "src/features/agent/chat/callDetail.ts": {
@@ -447,7 +447,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 1
+      "count": 2
     }
   },
   "src/features/agent/prompt/EmbedPreview.tsx": {
@@ -584,7 +584,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 1
+      "count": 2
     }
   },
   "src/features/builder/widgets.ts": {
@@ -628,6 +628,11 @@
   },
   "src/features/guild/GroupChat.tsx": {
     "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/guild/GroupQueue.tsx": {
+    "no-restricted-syntax": {
       "count": 1
     }
   },
@@ -783,7 +788,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 9
+      "count": 10
     }
   },
   "src/features/recipes/OpenApplyStrip.tsx": {
@@ -856,6 +861,11 @@
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     },
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/features/shell/chime.ts": {
     "no-restricted-syntax": {
       "count": 1
     }
@@ -1095,7 +1105,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 3
+      "count": 4
     }
   },
   "src/features/studio/tabs/VersionsTab.tsx": {
@@ -1166,7 +1176,7 @@
       "count": 3
     },
     "no-restricted-syntax": {
-      "count": 3
+      "count": 4
     }
   },
   "src/features/tables/values.ts": {

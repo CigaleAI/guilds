@@ -12,6 +12,17 @@ const SILENT_CATCH = {
   selector: "CatchClause:not(:has(ThrowStatement, ReturnStatement))",
   message: "A catch throws a named error or returns a typed absence.",
 };
+// A catch whose only exit is a bare `return;`, and a promise's `.catch()` whose handler returns
+// nothing, `undefined` or `null`, are the same silent catch.
+const SILENT_RETURN_CATCH = {
+  selector: "CatchClause:has(ReturnStatement):not(:has(ThrowStatement, ReturnStatement[argument]))",
+  message: SILENT_CATCH.message,
+};
+const SILENT_PROMISE_CATCH = {
+  selector:
+    "CallExpression[callee.type='MemberExpression'][callee.property.name='catch'] > :matches(ArrowFunctionExpression[body.type='Identifier'][body.name='undefined'], ArrowFunctionExpression[body.type='Literal'][body.raw='null'], ArrowFunctionExpression[body.type='UnaryExpression'][body.operator='void'], :matches(ArrowFunctionExpression, FunctionExpression)[body.type='BlockStatement']:not(:has(ThrowStatement, ReturnStatement[argument])))",
+  message: SILENT_CATCH.message,
+};
 const BARE_ERROR = {
   selector: "ThrowStatement > NewExpression[callee.name='Error']",
   message: "A domain throws a named error class.",
@@ -71,7 +82,14 @@ export function limits({ files, commands = [] }) {
     files: commands,
     ignores: IGNORES,
     rules: {
-      "no-restricted-syntax": ["error", SILENT_CATCH, INLINE_PARAMETER_TYPE, ERASED_RETURN_TYPE],
+      "no-restricted-syntax": [
+        "error",
+        SILENT_CATCH,
+        SILENT_RETURN_CATCH,
+        SILENT_PROMISE_CATCH,
+        INLINE_PARAMETER_TYPE,
+        ERASED_RETURN_TYPE,
+      ],
     },
   };
   return [
@@ -89,6 +107,8 @@ export function limits({ files, commands = [] }) {
         "no-restricted-syntax": [
           "error",
           SILENT_CATCH,
+          SILENT_RETURN_CATCH,
+          SILENT_PROMISE_CATCH,
           BARE_ERROR,
           INLINE_PARAMETER_TYPE,
           ERASED_RETURN_TYPE,

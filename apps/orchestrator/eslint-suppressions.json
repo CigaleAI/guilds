@@ -213,14 +213,24 @@
       "count": 5
     }
   },
+  "src/generation/chain.ts": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/generation/completion.ts": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
   "src/generation/index.ts": {
     "no-restricted-syntax": {
-      "count": 3
+      "count": 4
     }
   },
   "src/generation/machines.ts": {
     "no-restricted-syntax": {
-      "count": 2
+      "count": 3
     }
   },
   "src/generation/offered-tools.ts": {
@@ -317,7 +327,7 @@
   },
   "src/lib/agent-file.ts": {
     "no-restricted-syntax": {
-      "count": 4
+      "count": 6
     }
   },
   "src/lib/blob-store.ts": {
@@ -394,6 +404,11 @@
       "count": 1
     }
   },
+  "src/mcp/connect-flow.ts": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
   "src/mcp/connect-token.ts": {
     "no-restricted-syntax": {
       "count": 1
@@ -440,6 +455,9 @@
   "src/net/endpoints.ts": {
     "complexity": {
       "count": 2
+    },
+    "no-restricted-syntax": {
+      "count": 1
     }
   },
   "src/net/http.ts": {
@@ -563,7 +581,7 @@
   },
   "src/recipes/lifecycle.ts": {
     "no-restricted-syntax": {
-      "count": 1
+      "count": 4
     }
   },
   "src/recipes/minimal.ts": {
@@ -593,7 +611,7 @@
   },
   "src/recipes/skeleton.ts": {
     "no-restricted-syntax": {
-      "count": 1
+      "count": 4
     }
   },
   "src/recipes/validate-design.ts": {
@@ -639,6 +657,11 @@
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     },
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/secrets/agent.ts": {
     "no-restricted-syntax": {
       "count": 1
     }
@@ -725,6 +748,9 @@
   "src/studio/focus.ts": {
     "complexity": {
       "count": 4
+    },
+    "no-restricted-syntax": {
+      "count": 2
     }
   },
   "src/studio/index.ts": {
@@ -824,6 +850,11 @@
       "count": 1
     }
   },
+  "src/toolbox/harness.ts": {
+    "no-restricted-syntax": {
+      "count": 3
+    }
+  },
   "src/toolbox/index.ts": {
     "boundary/no-reexport-modules": {
       "count": 1
@@ -845,6 +876,9 @@
   "src/toolbox/shell.ts": {
     "max-depth": {
       "count": 2
+    },
+    "no-restricted-syntax": {
+      "count": 1
     }
   },
   "src/usage/index.ts": {
