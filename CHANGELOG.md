@@ -8,6 +8,17 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** A GitHub reply that lists installations or an
+installation's repositories without its list, or with an entry whose
+`id` is not an integer or whose fields have the wrong type, fails the
+GitHub sign-in, the repository picker, or the token a coding run
+mints, with the first mismatch named by its JSON pointer, such as
+`GitHub returned an unexpected reply at /installations/0/id: Expected
+integer`. Before, a missing list read as empty and a malformed entry
+was kept with blank fields. A minted token whose `repositories` is not
+a list fails with `GitHub returned no installation token`; before, it
+read as listing none.
+
 **No impact.** The agent's schedule tools refuse a `cron`, a window
 field, or a `schedule_update` `description` or `instruction` of the
 wrong type before anything is written, with the first mismatch named

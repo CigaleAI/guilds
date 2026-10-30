@@ -102,10 +102,9 @@ export class GithubManifestFlows {
     }
     const state = newState();
     this.pending.set(state, { userId, returnTo, expiresAt: now + PENDING_MS });
-    const { baseUrl, requestOrigin } = request;
     return {
       action: manifestAction(owner || null, state),
-      manifest: githubAppManifest({ baseUrl, requestOrigin, ...(name ? { name } : {}) }),
+      manifest: githubAppManifest(request.baseUrl, request.requestOrigin, name),
       state,
     };
   }

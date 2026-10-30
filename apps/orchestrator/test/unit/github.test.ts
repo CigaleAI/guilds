@@ -97,7 +97,7 @@ test("the App needs all five values from the instance keys; a pasted key's \\n s
 });
 
 test("the manifest registers the App on the box's address, adding the request's own callback when it differs", () => {
-  const manifest = githubAppManifest({ baseUrl: "https://guilds.example/", requestOrigin: "http://127.0.0.1:8080" });
+  const manifest = githubAppManifest("https://guilds.example/", "http://127.0.0.1:8080");
   assert.equal(manifest.name, "Guilds (guilds.example)");
   assert.equal(manifest.url, "https://guilds.example");
   assert.equal(manifest.redirect_url, `https://guilds.example${MANIFEST_CALLBACK_PATH}`);
@@ -106,9 +106,15 @@ test("the manifest registers the App on the box's address, adding the request's 
     "http://127.0.0.1:8080/api/mcp/oauth/callback",
   ]);
   assert.deepEqual(manifest.hook_attributes, { url: "https://guilds.example/api/github/webhook", active: false });
-  assert.equal(githubAppManifest({ baseUrl: "http://localhost:8080", requestOrigin: "http://localhost:8080" }).hook_attributes, undefined);
-  assert.equal(githubAppManifest({ baseUrl: "http://127.0.0.1:8080", requestOrigin: "http://127.0.0.1:8080" }).hook_attributes, undefined);
-  assert.equal(githubAppManifest({ baseUrl: "http://192.168.1.10:8080", requestOrigin: "http://192.168.1.10:8080" }).hook_attributes, undefined);
+  assert.equal(githubAppManifest("http://localhost:8080", "http://localhost:8080").hook_attributes, undefined);
+  assert.equal(githubAppManifest("http://127.0.0.1:8080", "http://127.0.0.1:8080").hook_attributes, undefined);
+  assert.equal(githubAppManifest("http://192.168.1.10:8080", "http://192.168.1.10:8080").hook_attributes, undefined);
+  for (const host of ["0.0.0.0", "10.1.2.3", "169.254.1.1", "172.16.0.1", "172.31.255.1", "[::1]", "[fd00::1]", "[fe80::1]", "box.local"]) {
+    assert.equal(githubAppManifest(`http://${host}`, `http://${host}`).hook_attributes, undefined, `${host} is not on the internet`);
+  }
+  for (const host of ["8.8.8.8", "172.32.0.1", "169.253.1.1", "192.169.0.1", "[2001:db8::1]"]) {
+    assert.ok(githubAppManifest(`http://${host}`, `http://${host}`).hook_attributes, `${host} is on the internet`);
+  }
   assert.deepEqual(manifest.default_permissions, {
     contents: "write",
     pull_requests: "write",
@@ -121,10 +127,10 @@ test("the manifest registers the App on the box's address, adding the request's 
   assert.equal(manifest.public, false);
   assert.equal(manifest.request_oauth_on_install, true);
   assert.equal(manifest.setup_on_update, true);
-  const same = githubAppManifest({ baseUrl: "https://guilds.example", requestOrigin: "https://guilds.example/", name: " Team box " });
+  const same = githubAppManifest("https://guilds.example", "https://guilds.example/", " Team box ");
   assert.deepEqual(same.callback_urls, ["https://guilds.example/api/mcp/oauth/callback"]);
   assert.equal(same.name, "Team box");
-  assert.equal(githubAppManifest({ baseUrl: "https://guilds.example", requestOrigin: "https://guilds.example", name: "  " }).name, "Guilds (guilds.example)");
+  assert.equal(githubAppManifest("https://guilds.example", "https://guilds.example", "  ").name, "Guilds (guilds.example)");
 });
 
 test("the manifest is posted to the admin's account or to an organisation, carrying the state", () => {
@@ -180,6 +186,11 @@ test("a manifest code converts into the App's fields; GitHub refusing it or omit
     convertManifestCode("bad", { fetch: refused.fetch }),
     (error: unknown) => error instanceof GithubError && error.status === 422 && /422 Validation Failed/.test(error.message),
   );
+  const unexplained = fakeFetch(() => new Response("Bad Gateway", { status: 502 }));
+  await assert.rejects(
+    convertManifestCode("bad", { fetch: unexplained.fetch }),
+    (error: unknown) => error instanceof GithubError && error.status === 502 && error.message === "GitHub App creation failed: 502",
+  );
   const keyless = fakeFetch(() => json(201, { id: 4242, slug: "s", client_id: "c", client_secret: "x" }));
   await assert.rejects(
     convertManifestCode("c", { fetch: keyless.fetch }),
@@ -228,7 +239,7 @@ test("an installation token is scoped to repository ids, holds the permissions a
       repositories: [{ id: 101, full_name: "acme/shop", name: "shop" }, { full_name: "acme/no-id" }],
     }),
   );
-  const minted = await installationToken(APP, 77, { repositoryIds: [101], fetch: fake.fetch });
+  const minted = await installationToken(APP, { installationId: 77, repositoryIds: [101] }, { fetch: fake.fetch });
   assert.deepEqual(minted, {
     token: "ghs_abc",
     expiresAt: "2026-09-30T13:00:00Z",
@@ -237,10 +248,10 @@ test("an installation token is scoped to repository ids, holds the permissions a
   assert.equal(fake.calls[0]?.url, "https://api.github.com/app/installations/77/access_tokens");
   assert.deepEqual(JSON.parse(String(fake.calls[0]?.init.body)), { repository_ids: [101] }, "every permission the installation grants");
   assert.match(String((fake.calls[0]?.init.headers as Record<string, string>).Authorization), /^Bearer ey/);
-  await installationToken(APP, 77, { repositoryIds: [101], permissions: { issues: "read" }, fetch: fake.fetch });
+  await installationToken(APP, { installationId: 77, repositoryIds: [101], permissions: { issues: "read" } }, { fetch: fake.fetch });
   assert.deepEqual(JSON.parse(String(fake.calls[1]?.init.body)), { repository_ids: [101], permissions: { issues: "read" } });
   const gone = fakeFetch(() => json(404, { message: "Not Found" }));
-  await assert.rejects(installationToken(APP, 77, { fetch: gone.fetch }), GithubInstallationGoneError);
+  await assert.rejects(installationToken(APP, { installationId: 77 }, { fetch: gone.fetch }), GithubInstallationGoneError);
 });
 
 test("a user's installations are listed across pages", async () => {
@@ -334,13 +345,13 @@ test("an installation missing from the list still counts when the user token can
 
 test("code exchange omits redirect_uri unless the authorize hop set one", async () => {
   const fake = fakeFetch(() => json(200, { access_token: "ghu_user" }));
-  await exchangeUserCode(APP, "code-1", { fetch: fake.fetch });
+  await exchangeUserCode(APP, "code-1", undefined, { fetch: fake.fetch });
   assert.deepEqual(JSON.parse(String(fake.calls[0]?.init.body)), {
     client_id: APP.clientId,
     client_secret: APP.clientSecret,
     code: "code-1",
   });
-  await exchangeUserCode(APP, "code-2", { fetch: fake.fetch, redirectUri: "https://guilds.run/api/mcp/oauth/callback" });
+  await exchangeUserCode(APP, "code-2", "https://guilds.run/api/mcp/oauth/callback", { fetch: fake.fetch });
   assert.equal(
     (JSON.parse(String(fake.calls[1]?.init.body)) as { redirect_uri?: string }).redirect_uri,
     "https://guilds.run/api/mcp/oauth/callback",
