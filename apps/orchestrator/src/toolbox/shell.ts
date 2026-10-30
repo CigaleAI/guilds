@@ -1,4 +1,5 @@
-import type { CommandResult, ToolHooks, ToolInvocation, ToolRun } from "./types.js";
+import { exitCodeOf, type CommandResult } from "../sandbox/sdk.js";
+import type { ToolHooks, ToolInvocation, ToolRun } from "./types.js";
 
 export const COMMAND_TIMEOUT_SECONDS = 120;
 
@@ -7,8 +8,8 @@ export function formatExecution(execution: CommandResult): string {
   const stderr = (execution.logs?.stderr ?? []).map((message) => message.text ?? "").join("\n");
   const chunks = [stdout, stderr].filter((part) => part);
   const text = chunks.join("\n");
-  const code = execution.exit_code ?? execution.exitCode;
-  if (code !== 0 && code !== null && code !== undefined) {
+  const code = exitCodeOf(execution);
+  if (code !== 0 && code !== undefined) {
     const suffix = `exit_code: ${code}`;
     return text ? `${text}\n${suffix}` : suffix;
   }
@@ -20,7 +21,7 @@ export type CommandSettings = { timeoutSeconds?: number; envs?: Record<string, s
 
 /** The output of the command `call` ran, as the agent reads it; the command's exit code is kept on the call. */
 export function commandOutput(call: ToolInvocation, execution: CommandResult): string {
-  call.exit_code = execution.exit_code ?? execution.exitCode ?? null;
+  call.exit_code = exitCodeOf(execution) ?? null;
   return formatExecution(execution);
 }
 

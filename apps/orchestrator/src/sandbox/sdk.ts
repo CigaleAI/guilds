@@ -37,11 +37,12 @@ export type SandboxEndpoint = {
   buildRequestHeaders?: (config: ConnectionConfig) => Record<string, string>;
 };
 
+/** A command's result as the SDK returns it, whose exit code comes under either spelling. */
 export type CommandResult = {
   id?: string;
-  exit_code?: number;
-  exitCode?: number;
-  logs?: { stdout?: Array<{ text?: string }> };
+  exit_code?: number | null;
+  exitCode?: number | null;
+  logs?: { stdout?: Array<{ text?: string }>; stderr?: Array<{ text?: string }> };
 };
 
 export type SandboxCommands = {
@@ -168,14 +169,20 @@ export function commandOptions(opts: unknown): CommandOptions {
   return options;
 }
 
-/** The exit code a command's result reports, under either spelling. */
+/** The exit code a command's result reports, under either spelling; undefined when it reports none. */
 export function exitCodeOf(result: CommandResult | null | undefined): number | undefined {
-  return result?.exit_code ?? result?.exitCode;
+  return result?.exit_code ?? result?.exitCode ?? undefined;
 }
 
 /** What a command printed, its lines joined and trimmed. */
 export function stdoutOf(result: CommandResult | null | undefined): string {
   const messages = result?.logs?.stdout ?? [];
+  return messages.map((item) => item.text ?? "").join("\n").trim();
+}
+
+/** What a command printed on stderr, its lines joined and trimmed. */
+export function stderrOf(result: CommandResult | null | undefined): string {
+  const messages = result?.logs?.stderr ?? [];
   return messages.map((item) => item.text ?? "").join("\n").trim();
 }
 

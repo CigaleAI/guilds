@@ -12,7 +12,8 @@ import { argString, functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
 import { commandOutput, executeCommand } from "./shell.js";
 import type { ToolServices } from "./services.js";
-import { callActor, type CommandResult, type Tool, type ToolHooks, type ToolInvocation, type ToolRun } from "./types.js";
+import type { CommandResult } from "../sandbox/sdk.js";
+import { callActor, type Tool, type ToolHooks, type ToolInvocation, type ToolRun } from "./types.js";
 
 export const SCRIPT_TOOLS = [
   "script_create",

@@ -3,6 +3,7 @@ import type { Harness, Effort, ReportedToolMetadata } from "../db/schema/index.j
 import { agentHome } from "../lib/agent-file.js";
 import type { ArtifactActor } from "../artifacts/types.js";
 import type { RunScriptSnapshot } from "../db/schema/index.js";
+import type { CommandResult } from "../sandbox/sdk.js";
 import type { ToolServices } from "./services.js";
 
 export type GroupChat = {
@@ -57,16 +58,6 @@ export class CancelEvent {
     });
   }
 }
-
-export type CommandResult = {
-  id?: string;
-  exit_code?: number | null;
-  exitCode?: number | null;
-  logs?: {
-    stdout?: Array<{ text?: string }>;
-    stderr?: Array<{ text?: string }>;
-  };
-};
 
 export type SandboxCommands = {
   run(

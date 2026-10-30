@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 import { Type } from "@sinclair/typebox";
 import type { MessageMetadata, ReportedToolMetadata } from "../db/schema/index.js";
 import { keepMatching } from "../lib/decode.js";
+import { stderrOf, stdoutOf, type CommandResult } from "../sandbox/sdk.js";
 import { executeCommand } from "./shell.js";
 import { functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
@@ -47,14 +48,6 @@ export function decodeEnvelope(stdout: string): { ok: boolean; text?: string; me
   return decoded as { ok: boolean; text?: string; meta?: unknown; error?: string };
 }
 
-function stdoutOf(execution: { logs?: { stdout?: Array<{ text?: string }> } }): string {
-  return (execution.logs?.stdout ?? []).map((message) => message.text ?? "").join("");
-}
-
-function stderrOf(execution: { logs?: { stderr?: Array<{ text?: string }> } }): string {
-  return (execution.logs?.stderr ?? []).map((message) => message.text ?? "").join("\n").trim();
-}
-
 /** The command that runs `helper` on `request`: inline, or through a request file when it is too large. */
 async function helperCommand(run: ToolRun, helper: string, request: Record<string, unknown>): Promise<string> {
   const json = JSON.stringify(request);
@@ -72,7 +65,7 @@ async function helperCommand(run: ToolRun, helper: string, request: Record<strin
 }
 
 /** The helper's result from its envelope; throws with its error text, or with stderr when it printed no envelope. */
-function helperResult(execution: Parameters<typeof stdoutOf>[0] & Parameters<typeof stderrOf>[0]): CodeResult {
+function helperResult(execution: CommandResult): CodeResult {
   let envelope: ReturnType<typeof decodeEnvelope>;
   try {
     envelope = decodeEnvelope(stdoutOf(execution));
