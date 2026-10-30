@@ -2,7 +2,20 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import { inflateSync, gunzipSync } from "node:zlib";
 import { request as undiciRequest } from "undici";
 import WebSocket from "ws";
-import { HttpError } from "./errors.js";
+
+/**
+ * A request the sandbox proxy refuses, with the status it answers: a path outside the daemon's
+ * base is a 404, and a body the daemon marks with an encoding it is not in is a 502.
+ */
+export class SandboxProxyError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "SandboxProxyError";
+    this.status = status;
+  }
+}
 
 export const HOP_REQ = new Set([
   "host",
@@ -36,7 +49,7 @@ export function joinUpstream(base: string, pathPart: string, query: string): str
   const url = new URL(root);
   url.pathname = `${root.pathname}${pathPart}`;
   if (!url.pathname.startsWith(root.pathname)) {
-    throw new HttpError(404, "Not Found");
+    throw new SandboxProxyError("Not Found", 404);
   }
   if (query) {
     url.search = query.startsWith("?") ? query : `?${query}`;
@@ -87,28 +100,46 @@ async function requestBody(request: FastifyRequest): Promise<Buffer> {
   return Buffer.alloc(0);
 }
 
+/** The decoder for each `content-encoding` the proxy decodes. */
+const DECODERS = new Map<string, (body: Buffer) => Buffer>([
+  ["gzip", (body) => gunzipSync(body)],
+  ["x-gzip", (body) => gunzipSync(body)],
+  ["deflate", (body) => inflateSync(body)],
+]);
+
+/** `body` decoded by `decode`, or null when `body` is not in that encoding. */
+function decodedOrNull(body: Buffer, decode: (body: Buffer) => Buffer): Buffer | null {
+  try {
+    return decode(body);
+  } catch {
+    return null;
+  }
+}
+
+function looksGzipped(body: Buffer): boolean {
+  return body.length >= 2 && body[0] === 0x1f && body[1] === 0x8b;
+}
+
+/**
+ * The body a daemon sent, without its `content-encoding`. A body in an encoding the proxy decodes
+ * that does not decode is a `SandboxProxyError` 502. Any other body that starts as gzip does is
+ * gunzipped when it is gzip, and passed on as it is when it is not.
+ */
 function decodeUpstreamBody(body: Buffer, encoding: string | undefined): Buffer {
-  const enc = (encoding ?? "").toLowerCase();
-  if (enc === "gzip" || enc === "x-gzip") {
-    try {
-      return gunzipSync(body);
-    } catch {
-      return body;
-    }
+  if (body.length === 0) {
+    return body;
   }
-  if (enc === "deflate") {
-    try {
-      return inflateSync(body);
-    } catch {
-      return body;
+  const name = (encoding ?? "").toLowerCase();
+  const decode = DECODERS.get(name);
+  if (decode) {
+    const decoded = decodedOrNull(body, decode);
+    if (!decoded) {
+      throw new SandboxProxyError(`The sandbox daemon sent a body that is not valid ${name}`, 502);
     }
+    return decoded;
   }
-  if (body.length >= 2 && body[0] === 0x1f && body[1] === 0x8b) {
-    try {
-      return gunzipSync(body);
-    } catch {
-      return body;
-    }
+  if (looksGzipped(body)) {
+    return decodedOrNull(body, (gzipped) => gunzipSync(gzipped)) ?? body;
   }
   return body;
 }
@@ -236,24 +267,16 @@ export function startSandboxWsProxy(
     }
     pending.push([data, binary]);
   });
+  // ws makes close() a no-op on a socket already closing or closed, so no close here is guarded.
   socket.on("error", () => {
-    try {
-      socket.close();
-    } catch {
-      /* already closed */
-    }
+    socket.close();
   });
   void (async () => {
     try {
       const target = await resolve();
       sendUp = connectUpstream(socket, request, target.base, target.extraHeaders, target.pathPart, pending);
     } catch (error) {
-      const code = closeCode(error);
-      try {
-        socket.close(code);
-      } catch {
-        /* already closed */
-      }
+      socket.close(closeCode(error));
     }
   })();
 }
@@ -271,18 +294,6 @@ function connectUpstream(
   const upstream = new WebSocket(url, subprotocol ? [subprotocol] : undefined, {
     headers: extraHeaders,
   });
-  const closeBoth = (code?: number) => {
-    try {
-      socket.close(code);
-    } catch {
-      /* already closed */
-    }
-    try {
-      upstream.close();
-    } catch {
-      /* already closed */
-    }
-  };
   const sendUp = (data: WebSocket.RawData, binary: boolean) => {
     if (upstream.readyState !== WebSocket.OPEN) {
       pending.push([data, binary]);
@@ -304,21 +315,14 @@ function connectUpstream(
     socket.send(typeof payload === "string" ? payload : payload.toString(), { binary: false });
   });
   upstream.on("error", () => {
-    closeBoth();
+    socket.close();
+    upstream.close();
   });
   upstream.on("close", () => {
-    try {
-      socket.close();
-    } catch {
-      /* already closed */
-    }
+    socket.close();
   });
   socket.on("close", () => {
-    try {
-      upstream.close();
-    } catch {
-      /* already closed */
-    }
+    upstream.close();
   });
   return sendUp;
 }

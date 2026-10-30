@@ -8,6 +8,12 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** The browser and terminal proxies
+(`/api/agents/:id/browser/vnc/*`, `/api/agents/:id/cli/tty/*`) answer
+502 for a body that is not in the gzip or deflate encoding the sandbox
+daemon names. Before, that body was passed on undecoded, without its
+`content-encoding`, as the daemon's status.
+
 **No impact.** The note routes of a guild, an agent and the
 organisation refuse a write whose `content` is not a string or whose
 `expected_version` is neither a number nor null, and a write whose
