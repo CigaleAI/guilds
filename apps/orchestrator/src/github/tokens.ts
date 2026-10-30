@@ -1,6 +1,6 @@
 import { decryptPayload } from "../credentials/crypto.js";
 import { recordGithubRepository, type McpConnectionRow } from "../db/mcp.js";
-import { bindQuery, type Queryable } from "../db/pg.js";
+import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import type { FetchFn } from "../net/http.js";
 import {
   GithubError,
@@ -11,6 +11,7 @@ import {
   parseGithubUrl,
   requireGithubApp,
   type GithubAppConfig,
+  type GithubServices,
   type TokenPermissions,
   type TokenRepository,
 } from "./index.js";
@@ -40,12 +41,13 @@ export function loginAccount(connection: McpConnectionRow): string {
   return String(connection.account_hint ?? "") || connection.id;
 }
 
+/** Where minting stores a repository's GitHub id and current URL. */
+export type GithubRepositoryRecorder = { recordGithubRepository: BoundQuery<typeof recordGithubRepository> };
+
 /** Where minting stores a repository's GitHub id and current URL, on `db`. */
-export function githubRepositoryRecorder(db: Queryable) {
+export function githubRepositoryRecorder(db: Queryable): GithubRepositoryRecorder {
   return { recordGithubRepository: bindQuery(db, recordGithubRepository) };
 }
-
-export type GithubRepositoryRecorder = ReturnType<typeof githubRepositoryRecorder>;
 
 export type MintOptions = { app?: GithubAppConfig; fetch?: FetchFn; masterKey?: Buffer; now?: () => Date };
 
@@ -65,7 +67,8 @@ type InstallationCall = {
   app: GithubAppConfig;
   installationId: number;
   account: string;
-  http: { fetch: FetchFn | undefined; now: Date };
+  services: GithubServices;
+  now: Date;
 };
 
 function outOfReach(account: string, missing: Item[]): RepositoryAccessError {
@@ -95,9 +98,9 @@ async function identifyRepositories(call: InstallationCall, items: Item[]): Prom
   if (!unidentified.length) {
     return [];
   }
-  const { token } = await installationToken(call.app, call.installationId, call.http);
+  const { token } = await installationToken(call.app, { installationId: call.installationId }, call.services, call.now);
   for (const item of unidentified) {
-    const found = await installationRepository(token, item.path, call.http);
+    const found = await installationRepository(token, item.path, call.services);
     if (found) {
       item.row.github_id = found.id;
     }
@@ -118,7 +121,9 @@ async function explainRefusal(call: InstallationCall, items: Item[], error: unkn
   if (!(error instanceof GithubError) || error.status !== 422) {
     return error;
   }
-  const reached = new Set((await installationRepositories(call.app, call.installationId, call.http)).map((item) => item.id));
+  const reached = new Set(
+    (await installationRepositories(call.app, call.installationId, call.services, call.now)).map((item) => item.id),
+  );
   const missing = items.filter((item) => !reached.has(githubIdOf(item.row)!));
   return missing.length ? outOfReach(call.account, missing) : error;
 }
@@ -126,11 +131,12 @@ async function explainRefusal(call: InstallationCall, items: Item[], error: unkn
 async function mintScopedToken(call: InstallationCall, items: Item[], permissions: TokenPermissions | undefined) {
   const repositoryIds = [...new Set(items.map((item) => githubIdOf(item.row)!))];
   try {
-    return await installationToken(call.app, call.installationId, {
-      ...call.http,
-      repositoryIds,
-      ...(permissions ? { permissions } : {}),
-    });
+    return await installationToken(
+      call.app,
+      { installationId: call.installationId, repositoryIds, permissions },
+      call.services,
+      call.now,
+    );
   } catch (error) {
     throw await explainRefusal(call, items, error);
   }
@@ -168,7 +174,8 @@ export async function mintRepositoryToken(
     app: options.app ?? requireGithubApp(),
     installationId: installationIdOf(request.connection, options.masterKey),
     account: loginAccount(request.connection),
-    http: { fetch: options.fetch, now },
+    services: { fetch: options.fetch },
+    now,
   };
   const items = repositoryItems(request.repositories);
   let identified: Item[];

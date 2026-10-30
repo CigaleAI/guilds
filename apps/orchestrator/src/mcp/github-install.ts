@@ -90,10 +90,7 @@ export async function completeGithubAuth(
   const fields = githubPendingFields(services, row);
   const github = requireGithubApp();
   const proxyUrl = process.env.ADAPTER_PROXY_URL ?? "";
-  const userToken = await exchangeUserCode(github, code, {
-    proxyUrl,
-    ...(fields.redirectUri ? { redirectUri: fields.redirectUri } : {}),
-  });
+  const userToken = await exchangeUserCode(github, code, fields.redirectUri, { proxyUrl });
   let choice;
   try {
     choice = await resolveGithubInstallation(github, userToken, installationId || fields.storedId, {

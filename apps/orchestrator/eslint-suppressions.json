@@ -236,29 +236,15 @@
     }
   },
   "src/github/index.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 12
-    },
     "complexity": {
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 6
+      "count": 1
     }
   },
   "src/github/manifest.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 2
-    },
     "complexity": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
-  "src/github/tokens.ts": {
-    "@typescript-eslint/explicit-module-boundary-types": {
       "count": 1
     }
   },
