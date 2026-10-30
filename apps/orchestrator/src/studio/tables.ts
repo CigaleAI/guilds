@@ -150,8 +150,8 @@ async function tableContext(deps: EditDeps, scope: EditScope): Promise<TableCont
     deps,
     scope,
     actor: await tableActor(deps, scope),
-    guildName: String(guild?.name ?? "this guild"),
-    members: agents.map((row) => ({ id: String(row.id), name: String(row.name) })),
+    guildName: guild?.name ?? "this guild",
+    members: agents.map((row) => ({ id: row.id, name: row.name })),
   };
 }
 

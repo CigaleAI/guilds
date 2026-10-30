@@ -104,7 +104,7 @@ export const studioGetRun: StudioTool = studioTool({
     if (!run) {
       throw new StudioUnprocessableError("run not found");
     }
-    const agent = await getAgent(deps.db, String(run.agent_id));
+    const agent = await getAgent(deps.db, run.agent_id);
     if (!agent || agent.guild_id !== call.sourceGuildId) {
       throw new StudioUnprocessableError("run is not in the source guild");
     }

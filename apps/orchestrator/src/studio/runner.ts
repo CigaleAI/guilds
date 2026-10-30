@@ -19,10 +19,17 @@ import {
   type StudioToolCall,
   type StudioToolDeps,
 } from "./tools.js";
-import type { UserRow } from "../db/users.js";
 import type { StudioSessionRow } from "../db/studio.js";
 
 export { generationLive };
+
+/** A generation a Studio session starts: its number, the context composed for it, and the system message it runs under. */
+export type StudioGeneration = {
+  session: StudioSessionRow;
+  generation: number;
+  generationContext: string;
+  systemContent?: string;
+};
 
 export type StudioRunnerDeps = {
   db: Queryable;
@@ -88,27 +95,20 @@ export class StudioRunner {
     await this.inner.wait(sessionId);
   }
 
-  start(args: {
-    session: StudioSessionRow;
-    user: UserRow;
-    toolDeps: StudioToolDeps;
-    toolCall: Omit<StudioToolCall, "generation">;
-    generation: number;
-    generationContext: string;
-    systemContent?: string;
-  }): void {
-    const config = args.session.config_snapshot;
+  /** Starts the generation as the operator `toolCall` names, its tools reading through `toolDeps`. */
+  start(toolDeps: StudioToolDeps, started: StudioGeneration, toolCall: Omit<StudioToolCall, "generation">): void {
+    const config = started.session.config_snapshot;
     this.inner.start({
-      session: args.session,
-      user: args.user,
-      generation: args.generation,
-      generationContext: args.generationContext,
-      ...(args.systemContent ? { systemContent: args.systemContent } : {}),
-      tools: conversationTools(studioToolMap(), args.toolDeps),
-      toolContext: args.toolCall,
+      session: started.session,
+      user: toolCall.user,
+      generation: started.generation,
+      generationContext: started.generationContext,
+      ...(started.systemContent ? { systemContent: started.systemContent } : {}),
+      tools: conversationTools(studioToolMap(), toolDeps),
+      toolContext: toolCall,
       bindToolContext: (upcoming): StudioToolCall => ({
-        ...args.toolCall,
-        generation: args.generation,
+        ...toolCall,
+        generation: started.generation,
         nextMessageSeq: upcoming,
       }),
       maxTokens: config.max_tokens,

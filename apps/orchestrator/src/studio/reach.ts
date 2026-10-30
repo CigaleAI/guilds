@@ -81,5 +81,5 @@ async function sourceAgentIds(
   scope: StudioReachScope,
 ): Promise<Set<string>> {
   const agents = await listAgents(deps.db, scope.sourceGuildId);
-  return new Set(agents.map((row) => String(row.id)));
+  return new Set(agents.map((row) => row.id));
 }

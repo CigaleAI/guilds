@@ -902,11 +902,6 @@
       "count": 2
     }
   },
-  "src/studio/actor.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
   "src/studio/connection-tools.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
@@ -926,9 +921,6 @@
     },
     "max-params": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 3
     }
   },
   "src/studio/edits.ts": {
@@ -946,9 +938,6 @@
       "count": 1
     },
     "complexity": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
       "count": 1
     }
   },
@@ -978,9 +967,6 @@
   "src/studio/runner.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/studio/source-guild.ts": {
@@ -991,17 +977,11 @@
   "src/studio/system.ts": {
     "complexity": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 3
     }
   },
   "src/studio/tool-usage.ts": {
     "complexity": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 2
     }
   },
   "src/toolbox/artifacts.ts": {

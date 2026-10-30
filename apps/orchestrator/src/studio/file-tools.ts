@@ -39,8 +39,8 @@ export const studioFindArtifacts: StudioTool = studioTool({
     const limit = clampLimit(input.limit, STUDIO_DEFAULT_LIMIT, STUDIO_ARTIFACT_LIST_MAX);
     const actor = operatorActor({
       orgId: call.orgId,
-      actorId: String(call.user.id),
-      actorName: String(call.user.name ?? "operator"),
+      actorId: call.user.id,
+      actorName: call.user.name ?? "operator",
       guildId: call.sourceGuildId,
     });
     const found = await findNotes(deps.artifacts, actor, {
@@ -83,8 +83,8 @@ export const studioGetArtifact: StudioTool = studioTool({
     const displayPath = input.display_path;
     const actor = operatorActor({
       orgId: call.orgId,
-      actorId: String(call.user.id),
-      actorName: String(call.user.name ?? "operator"),
+      actorId: call.user.id,
+      actorName: call.user.name ?? "operator",
       guildId: call.sourceGuildId,
     });
     const parsed = parseActorPath(actor, displayPath);
@@ -135,8 +135,8 @@ export const studioListFileChanges: StudioTool = studioTool({
     const displayPath = input.display_path;
     const actor = operatorActor({
       orgId: call.orgId,
-      actorId: String(call.user.id),
-      actorName: String(call.user.name ?? "operator"),
+      actorId: call.user.id,
+      actorName: call.user.name ?? "operator",
       guildId: call.sourceGuildId,
     });
     if (!(await studioReachesParsed(deps, call, parseActorPath(actor, displayPath)))) {

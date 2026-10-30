@@ -49,7 +49,7 @@ export const studioListGroupMessages: StudioTool = studioTool({
         content: wrapEvidence({
           source: "group_message",
           coordinates: { seq: row.seq },
-          body: String(row.content ?? ""),
+          body: row.content,
         }),
       })),
       next_cursor: offset + slice.length < rows.length ? String(offset + slice.length) : null,
@@ -98,8 +98,8 @@ export const studioListGuilds: StudioTool = studioTool({
   async run(deps, call, input: ListGuildsArguments) {
     const limit = clampLimit(input.limit, STUDIO_DEFAULT_LIMIT, STUDIO_GROUP_LIST_MAX);
     const offset = cursorOffset(input.cursor);
-    const others = (await listGuildsForUser(deps.db, call.orgId, String(call.user.id))).filter(
-      (row) => row.id !== String(call.sourceGuildId),
+    const others = (await listGuildsForUser(deps.db, call.orgId, call.user.id)).filter(
+      (row) => row.id !== call.sourceGuildId,
     );
     // A page ends at the limit or where the next guild would pass the byte cap.
     const guilds: Array<Record<string, unknown>> = [];
@@ -107,12 +107,12 @@ export const studioListGuilds: StudioTool = studioTool({
     for (const row of others.slice(offset, offset + limit)) {
       const item = {
         guild_id: row.id,
-        name: wrapEvidence({ source: "guild_name", coordinates: { guild_id: row.id }, body: String(row.name ?? "") }),
-        about: wrapEvidence({ source: "guild_about", coordinates: { guild_id: row.id }, body: String(row.about ?? "") }),
+        name: wrapEvidence({ source: "guild_name", coordinates: { guild_id: row.id }, body: row.name }),
+        about: wrapEvidence({ source: "guild_about", coordinates: { guild_id: row.id }, body: row.about }),
         description: wrapEvidence({
           source: "guild_description",
           coordinates: { guild_id: row.id },
-          body: String(row.description ?? ""),
+          body: row.description,
         }),
       };
       const size = Buffer.byteLength(JSON.stringify(item), "utf8");

@@ -90,9 +90,9 @@ async function routineContext(deps: EditDeps, scope: EditScope): Promise<Routine
   return {
     deps,
     scope,
-    guildName: String(guild?.name ?? "this guild"),
+    guildName: guild?.name ?? "this guild",
     routinesEnabled: guild?.routines_enabled !== false,
-    members: agents.map((row) => ({ id: String(row.id), name: String(row.name) })),
+    members: agents.map((row) => ({ id: row.id, name: row.name })),
   };
 }
 
@@ -106,13 +106,13 @@ function requireMember(rc: RoutineContext, agentId: string | null): Member {
 
 async function loadRoutine(rc: RoutineContext, scheduleId: string): Promise<Routine> {
   const rows = await listSchedulesForGuild(rc.deps.db, rc.scope.sourceGuildId);
-  const row = rows.find((item) => String(item.id) === scheduleId);
+  const row = rows.find((item) => item.id === scheduleId);
   if (!row) {
     throw new StudioUnprocessableError(
       `unknown routine ${scheduleId || "(none named)"}; list the routines with studio_list_routines`,
     );
   }
-  const agent = rc.members.find((member) => member.id === String(row.agent_id));
+  const agent = rc.members.find((member) => member.id === row.agent_id);
   if (!agent) {
     throw new StudioUnprocessableError("the routine's agent is not in the source guild");
   }
@@ -286,7 +286,7 @@ async function writeRoutine(
       instruction,
       paused,
     });
-    return { agentId: plan.agentId, action: "create", scheduleId: String(row.id) };
+    return { agentId: plan.agentId, action: "create", scheduleId: row.id };
   }
   if (plan.action === "edit") {
     await deps.schedules.update(editActor(scope), plan.agentId, plan.scheduleId, plan.changes);

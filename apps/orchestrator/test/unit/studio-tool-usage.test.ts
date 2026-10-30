@@ -116,11 +116,12 @@ test("a page cursor is the last call's time and id, and anything else is refused
 test("a call shows its status and a short preview of its arguments", () => {
   const long = "x".repeat(TOOL_ARGUMENT_CHARS + 10);
   const failed = viewToolCall({
-    created_at: new Date("2026-10-19T10:00:00Z"),
+    id: 1,
+    created_at: "2026-10-19T10:00:00.000Z",
     agent_id: "a_1",
     run_id: "r_1",
     call_id: "c_1",
-    seq: "4",
+    seq: 4,
     arguments: long,
     error: "boom",
     duration_ms: "12",
@@ -128,8 +129,19 @@ test("a call shows its status and a short preview of its arguments", () => {
   assert.equal(failed.status, "error");
   assert.equal(failed.error, "boom");
   assert.equal(failed.seq, 4);
-  assert.equal(String(failed.arguments).length, TOOL_ARGUMENT_CHARS + 1);
-  const fine = viewToolCall({ created_at: new Date(), agent_id: "a_1", run_id: "r_1", arguments: null, error: "", duration_ms: null });
+  assert.equal(failed.duration_ms, 12);
+  assert.equal(failed.arguments.length, TOOL_ARGUMENT_CHARS + 1);
+  const fine = viewToolCall({
+    id: 2,
+    created_at: "2026-10-19T10:00:00.000Z",
+    agent_id: "a_1",
+    run_id: "r_1",
+    call_id: null,
+    seq: 5,
+    arguments: null,
+    error: "",
+    duration_ms: null,
+  });
   assert.equal(fine.status, "ok");
   assert.equal(fine.arguments, "");
   assert.equal(fine.call_id, null);

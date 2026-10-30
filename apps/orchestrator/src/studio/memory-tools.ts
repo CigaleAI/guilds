@@ -23,8 +23,8 @@ async function memoryTimelineFor(
 ): Promise<MemoryTimelineEntry[]> {
   const actor = operatorActor({
     orgId: call.orgId,
-    actorId: String(call.user.id),
-    actorName: String(call.user.name ?? "operator"),
+    actorId: call.user.id,
+    actorName: call.user.name ?? "operator",
     guildId: call.sourceGuildId,
     agentId: agent.id,
   });

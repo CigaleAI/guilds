@@ -39,6 +39,13 @@ export type StudioDraftService = {
   ): Promise<Record<string, unknown>>;
 };
 
+/** What a draft's preflight and publish read through: its agent in `db`, the agent's offer from `preview`, the standing notes at `notesSystemPath`. */
+export type DraftPublishDeps = {
+  db: Queryable;
+  preview: PreviewDeps;
+  notesSystemPath: string;
+};
+
 // A draft is decided like an edit: the tool returns this widget and the turn
 // pauses until the operator publishes or discards it.
 export const STUDIO_TASK_DRAFT_WIDGET = "studio_task_draft";
@@ -75,10 +82,10 @@ export class StudioDrafts implements StudioDraftService {
     if (!task) {
       throw new StudioUnprocessableError("task.md not found");
     }
-    const messages = await listConversationMessages(db, "studio", String(call.session.id));
+    const messages = await listConversationMessages(db, "studio", call.session.id);
     const { refs, warnings } = resolveEvidenceRefs(args.evidence_refs, messages);
     const now = new Date();
-    return withLockedSession(this.db, String(call.session.id), async (client, session) => {
+    return withLockedSession(this.db, call.session.id, async (client, session) => {
       if (session.generation_state !== "generating" && session.generation_state !== "idle") {
         throw new StudioConflictError("session cannot accept a draft");
       }
@@ -87,7 +94,7 @@ export class StudioDrafts implements StudioDraftService {
       );
       const previous = heads[0] ?? null;
       if (previous) {
-        await updateStudioDraft(client, String(previous.id), { status: "superseded", resolved_at: now });
+        await updateStudioDraft(client, previous.id, { status: "superseded", resolved_at: now });
       }
       const seq = await nextConversationSeq(client, "studio", session.id);
       const draft = await insertStudioDraft(
@@ -153,10 +160,10 @@ export class StudioDrafts implements StudioDraftService {
       if (current.status !== "draft" && current.status !== "conflicted") {
         throw new StudioConflictError("draft is not editable");
       }
-      if (String(current.id) !== expectedHeadId) {
+      if (current.id !== expectedHeadId) {
         throw new StudioConflictError("stale draft head");
       }
-      await updateStudioDraft(client, String(current.id), { status: "superseded", resolved_at: now });
+      await updateStudioDraft(client, current.id, { status: "superseded", resolved_at: now });
       const next = await insertStudioDraft(
         client,
         {
@@ -164,7 +171,7 @@ export class StudioDrafts implements StudioDraftService {
           id: newId("std"),
           proposed_content: proposed,
           status: "draft",
-          draft_number: Number(current.draft_number) + 1,
+          draft_number: current.draft_number + 1,
           supersedes_draft_id: current.id,
           created_generation: current.created_generation,
           created_message_seq: current.created_message_seq,
@@ -191,32 +198,27 @@ export class StudioDrafts implements StudioDraftService {
       }
       const updated = await updateStudioDraft(
         client,
-        String(current.id),
+        current.id,
         { status: "discarded", resolved_at: now, discarded_by_user_id: userIdOf(user) },
       );
       return viewDraft(updated ?? current);
     });
   }
 
-  async publish(args: {
-    session: StudioSessionRow;
-    user: UserRow;
-    draftId: string;
-    db: Queryable;
-    preview: PreviewDeps;
-    notesSystemPath: string;
-    publishFilesChanged?: (guildId: string) => Promise<void>;
-    orphan?: boolean;
-  }): Promise<Record<string, unknown>> {
-    const { session, user, draftId } = args;
+  async publish(
+    deps: DraftPublishDeps,
+    session: StudioSessionRow,
+    user: UserRow,
+    draftId: string,
+  ): Promise<Record<string, unknown>> {
     const now = new Date();
-    const preflight = await this.preflight(args);
+    const preflight = await this.preflight(deps, draftId);
     return withLockedSession(this.db, session.id, async (client) => {
       const draft = await lockStudioDraft(client, draftId);
       if (!draft) {
         throw new StudioNotFoundError("draft not found");
       }
-      if (!args.orphan && draft.session_id !== session.id) {
+      if (draft.session_id !== session.id) {
         throw new StudioNotFoundError("draft not found");
       }
       if (draft.status !== "draft" && draft.status !== "conflicted") {
@@ -225,37 +227,37 @@ export class StudioDrafts implements StudioDraftService {
       if (!draft.target_agent_id || !draft.source_guild_id) {
         throw new StudioUnprocessableError("draft target is no longer live");
       }
-      const agent = await getAgent(args.db, String(draft.target_agent_id));
+      const agent = await getAgent(deps.db, draft.target_agent_id);
       if (!agent) {
         throw new StudioUnprocessableError("target is not a publishable agent");
       }
       const currentHash = JSON.stringify(agent.config);
       if (currentHash !== preflight.config_hash) {
-        const again = await this.runPreflight(agent, String(draft.proposed_content), args);
+        const again = await this.runPreflight(deps, agent, draft.proposed_content);
         Object.assign(preflight, again);
       }
       const actor = operatorActor({
         orgId: session.org_id,
         actorId: String(user.id ?? "orphan"),
         actorName: user.name,
-        guildId: String(draft.source_guild_id),
-        agentId: String(draft.target_agent_id),
+        guildId: draft.source_guild_id,
+        agentId: draft.target_agent_id,
       });
-      const result = await publishAgentTask(client, actor, String(draft.target_agent_id), {
-        content: String(draft.proposed_content),
-        baseVersion: Number(draft.base_version),
+      const result = await publishAgentTask(client, actor, draft.target_agent_id, {
+        content: draft.proposed_content,
+        baseVersion: draft.base_version,
       });
       if (result.outcome === "missing") {
         throw new StudioUnprocessableError("task.md not found");
       }
       if (result.outcome === "conflict") {
-        await updateStudioDraft(client, String(draft.id), { status: "conflicted", resolved_at: now });
+        await updateStudioDraft(client, draft.id, { status: "conflicted", resolved_at: now });
         throw new StudioConflictError("task version conflict");
       }
       if (result.outcome === "unchanged") {
         const unchanged = await updateStudioDraft(
           client,
-          String(draft.id),
+          draft.id,
           { status: "unchanged", resolved_at: now, published_at: now, published_by_user_id: userIdOf(user) },
         );
         return { outcome: "unchanged", draft: viewDraft(unchanged ?? draft), preflight };
@@ -263,7 +265,7 @@ export class StudioDrafts implements StudioDraftService {
       const written = result.task;
       const published = await updateStudioDraft(
         client,
-        String(draft.id),
+        draft.id,
         {
           status: "published",
           resolved_at: now,
@@ -283,28 +285,22 @@ export class StudioDrafts implements StudioDraftService {
     });
   }
 
-  async preflight(args: {
-    session: StudioSessionRow;
-    draftId: string;
-    db: Queryable;
-    preview: PreviewDeps;
-    notesSystemPath: string;
-  }): Promise<Record<string, unknown>> {
-    const draft = await getStudioDraft(this.db, args.draftId);
+  async preflight(deps: DraftPublishDeps, draftId: string): Promise<Record<string, unknown>> {
+    const draft = await getStudioDraft(this.db, draftId);
     if (!draft || !draft.target_agent_id) {
       throw new StudioNotFoundError("draft not found");
     }
-    const agent = await getAgent(args.db, String(draft.target_agent_id));
+    const agent = await getAgent(deps.db, draft.target_agent_id);
     if (!agent) {
       throw new StudioUnprocessableError("target agent not found");
     }
-    return this.runPreflight(agent, String(draft.proposed_content), args);
+    return this.runPreflight(deps, agent, draft.proposed_content);
   }
 
   private async runPreflight(
+    deps: DraftPublishDeps,
     agent: AgentRow,
     proposed: string,
-    args: { preview: PreviewDeps; notesSystemPath: string },
   ): Promise<Record<string, unknown>> {
     let expanded: string;
     try {
@@ -317,12 +313,12 @@ export class StudioDrafts implements StudioDraftService {
     }
     const live = await agentTask(this.artifacts, agent);
     const standing = hydrateStanding({
-      systemPath: args.notesSystemPath,
+      systemPath: deps.notesSystemPath,
       agentName: agent.name,
       agentId: agent.id,
     });
-    const preview = await previewCurrentState(args.preview, agent);
-    const tools = await projectOfferedToolSchemas(args.preview, agent);
+    const preview = await previewCurrentState(deps.preview, agent);
+    const tools = await projectOfferedToolSchemas(deps.preview, agent);
     const { config } = agent;
     const memoryEnabled = config.memory;
     const composed = composeAgentSystemPrompt(
@@ -446,9 +442,9 @@ async function missingDraftAgentMessage(
   handle: string | null | undefined,
 ): Promise<string> {
   const members = await listAgents(db, call.sourceGuildId);
-  const live = members.filter((row) => String(row.guild_id) === String(call.sourceGuildId));
+  const live = members.filter((row) => row.guild_id === call.sourceGuildId);
   const known = live.length ? ` Known agents: ${live.map((row) => `${row.name} (${row.id})`).join(", ")}.` : "";
-  const needle = String(handle ?? "").trim();
+  const needle = (handle ?? "").trim();
   if (needle) {
     return `studio_create_task_draft agent ${needle} is not a source-guild member.${known}`;
   }

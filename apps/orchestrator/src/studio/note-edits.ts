@@ -12,7 +12,7 @@ import {
   writeNote,
 } from "../artifacts/notes.js";
 import { hashArtifactContent } from "../artifacts/store.js";
-import { listAgents } from "../db/agents.js";
+import { listAgents, type GuildAgentRow } from "../db/agents.js";
 import { getGuild } from "../db/guilds.js";
 import { editActor } from "./actor.js";
 import type { EditNoteArguments } from "./edit-arguments.js";
@@ -34,7 +34,7 @@ export type NoteAction = "create" | "delete";
 
 async function sourceAgentIds(deps: EditDeps, scope: EditScope): Promise<Set<string>> {
   const agents = await listAgents(deps.db, scope.sourceGuildId);
-  return new Set(agents.map((row) => String(row.id)));
+  return new Set(agents.map((row) => row.id));
 }
 
 export async function loadNoteBase(
@@ -71,8 +71,8 @@ export async function loadNoteBase(
       level: row.level,
       ownerId: row.owner_id,
       title: row.title,
-      guildId: String(row.guild_id ?? scope.sourceGuildId),
-      version: Number(row.version),
+      guildId: row.guild_id ?? scope.sourceGuildId,
+      version: row.version,
       content: row.content_text ?? "",
     };
   } catch (error) {
@@ -108,8 +108,8 @@ type NoteReview = {
   plan: NotePlan;
 };
 
-function names(rows: Array<Record<string, unknown>>): string {
-  return rows.map((row) => String(row.name)).join(", ");
+function names(rows: Array<Pick<GuildAgentRow, "name">>): string {
+  return rows.map((row) => row.name).join(", ");
 }
 
 /** A note at a display path, or null when none is live there. */
@@ -120,7 +120,7 @@ async function liveNoteAt(
 ): Promise<{ version: number } | null> {
   try {
     const view = await artifactAt(deps.artifacts, editActor(scope), displayPath);
-    return view.kind === "row" && !view.deleted ? { version: Number(view.row.version) } : null;
+    return view.kind === "row" && !view.deleted ? { version: view.row.version } : null;
   } catch (error) {
     if (error instanceof ArtifactError && error.status === 404) return null;
     throw artifactRefusal(error);
@@ -153,7 +153,7 @@ async function reviewNoteCreate(
   let reader: string;
   if (level === "agent") {
     const agents = await listAgents(deps.db, scope.sourceGuildId);
-    const agent = agents.find((row) => String(row.id) === agentId);
+    const agent = agents.find((row) => row.id === agentId);
     if (!agent) {
       throw new StudioUnprocessableError("an agent note needs agent_id: a live agent of the source guild");
     }
@@ -196,9 +196,9 @@ async function reviewNoteDelete(
     throw new StudioUnprocessableError("only notes can be deleted here");
   }
   const members = await listAgents(deps.db, scope.sourceGuildId);
-  const embedding = members.filter((row) => String(row.task ?? "").includes(`![[${base.displayPath}]]`));
+  const embedding = members.filter((row) => row.task.includes(`![[${base.displayPath}]]`));
   const naming = members.filter(
-    (row) => !embedding.includes(row) && String(row.task ?? "").includes(base.displayPath),
+    (row) => !embedding.includes(row) && row.task.includes(base.displayPath),
   );
   const effects = [`Deletes ${base.displayPath} from Files; its change history stays.`];
   if (embedding.length) {

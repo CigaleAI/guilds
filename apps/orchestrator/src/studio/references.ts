@@ -359,7 +359,7 @@ function referenceTask(orgId: string, agent: Pick<AgentRow, "id" | "name" | "tas
     agent_id: agentId,
     label: agent.name,
     display_path: taskDisplayPath(orgId, agentId),
-    text: String(agent.task ?? ""),
+    text: agent.task,
   };
 }
 
