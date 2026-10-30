@@ -27,12 +27,12 @@ two functions.
     session) and holds only that thing's fields. A settings type is
     a record when several callers and instances share it.
   - A **dependencies object** holds the services a module needs. It
-    is built once at composition and reused by every call, so it
-    never holds a per-call value: the user, the actor, an org id, a
-    guild id, and the clock are never its fields. A `Queryable` that
-    is the application's connection pool is the same for every call,
-    so it may be a field. A transaction client is call context, not
-    the pool.
+    is built once in a composition root, or faked in a test, and
+    reused by every call, so it never holds a per-call value: the
+    user, the actor, an org id, a guild id, and the clock are never
+    its fields. A `Queryable` that is the application's connection
+    pool is the same for every call, so it may be a field. A
+    transaction client is call context, not the pool.
 
   A React component's props object is the component's record.
   Every other object parameter is an argument bag and is not
@@ -134,6 +134,12 @@ feature-specific knowledge, is a pure function where possible, and
 has a name easy to find by search. A shared directory never imports
 from a feature.
 
+A composition root assembles the application: in the orchestrator
+`src/compose.ts` and `src/app.ts`, in the operator app
+`src/app/router.tsx`. A composition root imports every feature it
+assembles, so the rule that a shared directory never imports from a
+feature excludes it, even where it sits in a shared directory.
+
 ## Scaffolding
 
 Files are grouped by feature, not by type: one directory per
@@ -195,8 +201,9 @@ leaked, not the import:
   the boundary, into a named type.
 - **Callback**: a caller passes a function in so the domain need not
   import it. The domain imports what it calls. A function arrives
-  only as a service in a dependencies object, built where the
-  application is composed or faked in a test.
+  only as a service in a dependencies object, built in a
+  composition root (`src/compose.ts`, `src/app.ts`,
+  `src/app/router.tsx`) or faked in a test.
 
 Core imports nothing from an extension built on it.
 `eslint.boundary.js` fails the file that tries.
@@ -210,8 +217,8 @@ calls, each bound to that `Queryable` with `bindQuery`, and writes
 that commit together run in a transaction bound beside them with
 `bindTransaction`. That bound object is built inside the domain,
 from the `Queryable` it holds; a caller never builds it. A
-dependencies object built at composition holds the services a
-domain needs, such as a blob store, a policy, or the connection
+dependencies object built in a composition root holds the services
+a domain needs, such as a blob store, a policy, or the connection
 pool. A transaction client is call context: it is a parameter of
 its own, never a field of a dependencies object. Nothing else
 stands between a domain module and `db/`: no facade, no class that
@@ -224,8 +231,8 @@ records a write needs belong to the domain module that calls it,
 which opens the transaction they share.
 
 A domain module imports nothing from the HTTP framework. Only
-`http/`, the app and composition roots, the extension points and
-the observability hooks import `fastify`.
+`http/`, the orchestrator's composition roots, the extension points
+and the observability hooks import `fastify`.
 
 Custom code attaches through the
 [extension points](../architecture/extension-points.md). A need
