@@ -21,8 +21,7 @@ import {
 import type { RouteApp, RouteDeps } from "./deps.js";
 import { notesRead, notesWrite } from "./errors.js";
 import { currentOrg, currentUser } from "./identity.js";
-import { AgentParams, GuildParams } from "./params.js";
-import { filePathParam } from "./request.js";
+import { AgentParams, filePathParam, GuildParams } from "./params.js";
 import type { UserRow } from "../db/users.js";
 
 /** A note's content, and the version the writer edited when they name one. */

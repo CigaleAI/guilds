@@ -5,8 +5,7 @@ import { RunRequestError } from "../generation/index.js";
 import { generationLoopOf } from "../generation/operator.js";
 import type { AppDeps, RouteApp } from "./deps.js";
 import { currentUser } from "./identity.js";
-import { AgentParams } from "./params.js";
-import { filePathParam } from "./request.js";
+import { AgentParams, filePathParam } from "./params.js";
 import { proxyHttp, startSandboxWsProxy } from "./sandbox-proxy.js";
 
 /** How often operator input on a proxied sandbox view restarts its idle timer. */
