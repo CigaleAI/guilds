@@ -48,6 +48,14 @@ export function useSeededDisk() {
 /** An existing agent as its machine sees it: its id, and the machine and disk cap it has saved. */
 export type PlacedAgent = { id: string; machineId: string; diskMib: number };
 
+type MachineGroupProps = StepProps & {
+  machines: ReturnType<typeof useOrgMachines>;
+  coding: boolean;
+  hint?: string | undefined;
+  placed?: PlacedAgent | undefined;
+  onDiskTyped?: () => void;
+};
+
 /**
  * The machine the agent goes on, with what it adds to that machine's memory, then its disk cap
  * against the disk the machine's other agents reserve. An existing agent's own saved cap is not
@@ -63,13 +71,7 @@ export function MachineGroup({
   hint,
   placed,
   onDiskTyped,
-}: StepProps & {
-  machines: ReturnType<typeof useOrgMachines>;
-  coding: boolean;
-  hint?: string | undefined;
-  placed?: PlacedAgent | undefined;
-  onDiskTyped?: () => void;
-}) {
+}: MachineGroupProps) {
   const ownMib = placed && machine?.id === placed.machineId ? placed.diskMib : 0;
   const disk = machine ? diskBudget(machine, Number(form.max_workspace_mib) || 0, ownMib) : null;
   return (
@@ -105,6 +107,14 @@ export function MachineGroup({
   );
 }
 
+type ModelStepProps = StepProps & {
+  lead: boolean;
+  codingToggle?: boolean;
+  savedCoding?: boolean;
+  models: OrgModels | undefined;
+  noProvider: boolean;
+};
+
 /**
  * The model that runs the agent, its capabilities, and its run limits behind a disclosure. A
  * coding agent's model is its lead model, beside the harness that writes the code. With
@@ -118,13 +128,7 @@ export function ModelStep({
   models,
   noProvider,
   ...step
-}: StepProps & {
-  lead: boolean;
-  codingToggle?: boolean;
-  savedCoding?: boolean;
-  models: OrgModels | undefined;
-  noProvider: boolean;
-}) {
+}: ModelStepProps) {
   const { form, setConfig, errors, machine } = step;
   const patch = (next: Partial<ConfigForm>) => setConfig({ ...form, ...next });
   return (
@@ -166,6 +170,16 @@ export function ModelStep({
   );
 }
 
+type StepFooterProps = {
+  step: number;
+  count: number;
+  ready: boolean;
+  busy: boolean;
+  createLabel: string;
+  onStep: (step: number) => void;
+  onCreate: () => void;
+};
+
 /** The dialog's Back, Next, and Create buttons for the step in progress. */
 export function StepFooter({
   step,
@@ -175,15 +189,7 @@ export function StepFooter({
   createLabel,
   onStep,
   onCreate,
-}: {
-  step: number;
-  count: number;
-  ready: boolean;
-  busy: boolean;
-  createLabel: string;
-  onStep: (step: number) => void;
-  onCreate: () => void;
-}) {
+}: StepFooterProps) {
   return (
     <DialogFooter>
       <DialogClose asChild>

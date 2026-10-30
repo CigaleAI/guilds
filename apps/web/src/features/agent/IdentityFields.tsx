@@ -44,14 +44,13 @@ export function useIdentityDraft() {
   return { draft, setDraft, reset: () => setDraft(emptyIdentity()) };
 }
 
-/** Name, focus, and avatar of a new agent. */
-export function IdentityFields({
-  draft,
-  onChange,
-}: {
+type IdentityFieldsProps = {
   draft: IdentityDraft;
   onChange: (next: IdentityDraft) => void;
-}) {
+};
+
+/** Name, focus, and avatar of a new agent. */
+export function IdentityFields({ draft, onChange }: IdentityFieldsProps) {
   const nameError = identityNameError(draft);
   return (
     <>

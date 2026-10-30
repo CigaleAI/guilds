@@ -162,7 +162,9 @@ export function AgentBrowser() {
   );
 }
 
-function Viewer({ agentId, name, nonce }: { agentId: string; name: string; nonce: number }) {
+type ViewerProps = { agentId: string; name: string; nonce: number };
+
+function Viewer({ agentId, name, nonce }: ViewerProps) {
   const area = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const rfb = useRef<Rfb | null>(null);

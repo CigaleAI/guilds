@@ -101,7 +101,7 @@ export function formatReturnedData(content: unknown): ReturnedDataInfo {
 }
 
 /** The text of a message payload, joining the text parts of multi-part content. */
-export function messageContentText(payload: { content?: unknown } | null | undefined): string {
+export function messageContentText(payload: RunMessage["payload"] | null | undefined): string {
   if (!payload) return "";
   const { content } = payload;
   if (typeof content === "string") return content;

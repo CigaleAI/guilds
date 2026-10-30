@@ -10,11 +10,11 @@ const levelLabel: Record<NoteLevel, string> = {
   org: "Organisation",
 };
 
+/** Where an agent sits: its organisation, its guild, and its own id. */
+export type AgentLocation = { orgId: string; guildId: string; agentId: string };
+
 /** The notes a Task can embed: the agent's own, its guild's and the organisation's. */
-export function pickableNotes(
-  notes: readonly EmbeddableNote[],
-  scope: { orgId: string; guildId: string; agentId: string },
-): NoteGroup[] {
+export function pickableNotes(notes: readonly EmbeddableNote[], scope: AgentLocation): NoteGroup[] {
   const prefix: Record<NoteLevel, string> = {
     agent: `org/${scope.orgId}/agents/${scope.agentId}/`,
     guild: `org/${scope.orgId}/guilds/${scope.guildId}/`,
@@ -60,18 +60,22 @@ export function insertMarkup(kind: InsertKind, pick: InsertPick): string | null 
 const noteListLimit = 500;
 
 /**
+ * What is known of where a Task's embeds lead: the embeds the server found broken in the saved
+ * Task, and the notes and tables the operator can see in the organisation (each `undefined` until
+ * it loads).
+ */
+export type KnownEmbeds = {
+  serverBroken: readonly string[];
+  notes: readonly EmbeddableNote[] | undefined;
+  collections: readonly Pick<Collection, "name">[] | undefined;
+  orgId: string;
+};
+
+/**
  * Whether an embed is not reachable. The server's check of the saved Task, made as the agent,
  * decides; embeds only in the draft are checked against the notes and tables the operator can see.
  */
-export function embedIsBroken(
-  path: string,
-  known: {
-    serverBroken: readonly string[];
-    notes: readonly EmbeddableNote[] | undefined;
-    collections: readonly Pick<Collection, "name">[] | undefined;
-    orgId: string;
-  },
-): boolean {
+export function embedIsBroken(path: string, known: KnownEmbeds): boolean {
   if (known.serverBroken.includes(path)) return true;
   if (embedKind(path) === "table") {
     return known.collections

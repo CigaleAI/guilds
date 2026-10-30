@@ -10,8 +10,10 @@ import { useServerConnect } from "../access/ConnectDialogs";
 import { GuildRepositories } from "../guild/pages/GuildRepositories";
 import { setupSearch } from "../instance/instance";
 
+type GithubBlockProps = { guildId: string };
+
 /** The GitHub login the guild's repositories come from: connect one, or pick repositories on it. */
-function GithubBlock({ guildId }: { guildId: string }) {
+function GithubBlock({ guildId }: GithubBlockProps) {
   const owner = { scope: "guild", id: guildId } as const;
   const access = useAccess(owner);
   const connect = useServerConnect(owner);
@@ -24,11 +26,7 @@ function GithubBlock({ guildId }: { guildId: string }) {
       <p className="flex flex-wrap items-center gap-x-1.5 text-sm text-fg-2">
         GitHub is not set up on this box.
         {user.platform_admin ? (
-          <Link
-            to="/admin"
-            search={setupSearch("github-app", location.href)}
-            className="underline"
-          >
+          <Link to="/admin" search={setupSearch("github-app", location.href)} className="underline">
             Set up
           </Link>
         ) : (
@@ -75,18 +73,17 @@ export function useGuildHasRepositories(guildId: string): boolean | null {
   return listed.data.repositories.length > 0 || picked.length > 0;
 }
 
+type CodingRepositoriesProps = {
+  guild: { id: string; name: string };
+  missingNote: string;
+};
+
 /**
  * The guild's repositories, which every coding agent of the guild codes in: its GitHub login and
  * the repositories picked on it, then those added by URL. While it has none, `missingNote` says
  * what that means where it shows.
  */
-export function CodingRepositories({
-  guild,
-  missingNote,
-}: {
-  guild: { id: string; name: string };
-  missingNote: string;
-}) {
+export function CodingRepositories({ guild, missingNote }: CodingRepositoriesProps) {
   const hasRepositories = useGuildHasRepositories(guild.id);
   return (
     <>

@@ -367,16 +367,15 @@ export type TokenDraft = { secret: string; pasted: string };
  * pasted token takes the variable's name, or the agent's on it when a secret of that name already
  * reaches the guild.
  */
-export function tokenPlan(input: {
-  variable: string | undefined;
-  draft: TokenDraft;
-  agentName: string;
-  guildSecrets: readonly TokenSecret[];
-}): { aliases: Record<string, string>; add: string | null } {
-  const { variable, draft } = input;
+export function tokenPlan(
+  variable: string | undefined,
+  draft: TokenDraft,
+  agentName: string,
+  guildSecrets: readonly TokenSecret[],
+): { aliases: Record<string, string>; add: string | null } {
   if (!variable) return { aliases: {}, add: null };
   if (draft.pasted.trim()) {
-    const name = freeTokenName(variable, input.agentName, input.guildSecrets);
+    const name = freeTokenName(variable, agentName, guildSecrets);
     return { aliases: withTokenAlias({}, variable, name), add: name };
   }
   return { aliases: withTokenAlias({}, variable, draft.secret), add: null };

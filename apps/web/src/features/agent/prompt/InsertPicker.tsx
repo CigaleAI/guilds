@@ -245,14 +245,13 @@ export function InsertPicker({ kind, noteGroups, collections, orgId, onPick }: I
   );
 }
 
-/** Embed or reference, with what each one does on hover. */
-function ModeSwitch({
-  mode,
-  onModeChange,
-}: {
+type ModeSwitchProps = {
   mode: EmbedMode;
   onModeChange: (mode: EmbedMode) => void;
-}) {
+};
+
+/** Embed or reference, with what each one does on hover. */
+function ModeSwitch({ mode, onModeChange }: ModeSwitchProps) {
   return (
     <div className="flex items-center gap-1.5">
       <Segmented
@@ -292,6 +291,16 @@ function ModeSwitch({
   );
 }
 
+type ChoiceListProps = {
+  groups: ChoiceGroup[] | undefined;
+  copy: PickerCopy;
+  query: string;
+  showLabels: boolean;
+  selected: string | null;
+  onSelect: (path: string) => void;
+  onPick: (choice: Choice) => void;
+};
+
 function ChoiceList({
   groups,
   copy,
@@ -300,15 +309,7 @@ function ChoiceList({
   selected,
   onSelect,
   onPick,
-}: {
-  groups: ChoiceGroup[] | undefined;
-  copy: PickerCopy;
-  query: string;
-  showLabels: boolean;
-  selected: string | null;
-  onSelect: (path: string) => void;
-  onPick: (choice: Choice) => void;
-}) {
+}: ChoiceListProps) {
   if (!groups) return <SkeletonRows rows={4} label="Loading" />;
   if (groups.length === 0) {
     return (
@@ -352,8 +353,10 @@ function ChoiceList({
   );
 }
 
+type ChoicePreviewProps = { choice: Choice };
+
 /** A chosen note's text, or a chosen table's purpose and columns. */
-function ChoicePreview({ choice }: { choice: Choice }) {
+function ChoicePreview({ choice }: ChoicePreviewProps) {
   if (choice.note) {
     return choice.note.content.trim() ? (
       <Markdown density="compact">{choice.note.content}</Markdown>
@@ -379,18 +382,15 @@ function ChoicePreview({ choice }: { choice: Choice }) {
   );
 }
 
-/** A table's columns to pick one from, each with its type and description. */
-function ColumnList({
-  collection,
-  selected,
-  onSelect,
-  onPick,
-}: {
+type ColumnListProps = {
   collection: Collection | undefined;
   selected: string | null;
   onSelect: (name: string) => void;
   onPick: (name: string) => void;
-}) {
+};
+
+/** A table's columns to pick one from, each with its type and description. */
+function ColumnList({ collection, selected, onSelect, onPick }: ColumnListProps) {
   if (!collection?.columns.length) {
     return <p className="text-sm text-muted">This table has no columns.</p>;
   }

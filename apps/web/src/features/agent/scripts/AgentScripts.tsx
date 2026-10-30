@@ -39,16 +39,14 @@ import { capabilityOn, defaultAgentConfig } from "../settings/configForm";
 /** The server's rules: a script name like a tool name, and not the reserved `manifest`. */
 const scriptName = /^[a-z][a-z0-9_-]{0,62}$/;
 
-/** Who wrote the script's current version: this agent through a run, or a person. */
-function Provenance({
-  change,
-  agentName,
-  onOpenStep,
-}: {
+type ProvenanceProps = {
   change: FileChange;
   agentName: string;
   onOpenStep: () => void;
-}) {
+};
+
+/** Who wrote the script's current version: this agent through a run, or a person. */
+function Provenance({ change, agentName, onOpenStep }: ProvenanceProps) {
   const actor = changeActor(change);
   const when = relativeTime(change.created_at);
   if (actor.kind === "run") {
@@ -73,21 +71,16 @@ function Provenance({
 
 type Disclosure = "history" | "parameters";
 
-function ScriptCard({
-  script,
-  agentId,
-  agentName,
-  guildId,
-  onEdit,
-  onDelete,
-}: {
+type ScriptCardProps = {
   script: Script;
   agentId: string;
   agentName: string;
   guildId: string;
   onEdit: () => void;
   onDelete: () => void;
-}) {
+};
+
+function ScriptCard({ script, agentId, agentName, guildId, onEdit, onDelete }: ScriptCardProps) {
   const latest = useLatestChange(script.display_path);
   const openStep = useOpenStepInAgent(guildId);
   const [showing, setShowing] = useState<Disclosure | null>(null);
@@ -166,8 +159,10 @@ function ScriptCard({
   );
 }
 
+type RemoveAllScriptsButtonProps = { agentId: string; count: number };
+
 /** Removes every script on this agent after the operator confirms. */
-export function RemoveAllScriptsButton({ agentId, count }: { agentId: string; count: number }) {
+export function RemoveAllScriptsButton({ agentId, count }: RemoveAllScriptsButtonProps) {
   const removeAll = useDeleteAllScripts(agentId);
   const [confirming, setConfirming] = useState(false);
   return (
@@ -352,20 +347,16 @@ export function AgentScripts() {
   );
 }
 
-/** Adds a script, or saves a new version of `script`; saving under an existing name replaces it. */
-function ScriptForm({
-  agentId,
-  script,
-  existing,
-  open,
-  onOpenChange,
-}: {
+type ScriptFormProps = {
   agentId: string;
   script: Script | null;
   existing: string[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
-}) {
+};
+
+/** Adds a script, or saves a new version of `script`; saving under an existing name replaces it. */
+function ScriptForm({ agentId, script, existing, open, onOpenChange }: ScriptFormProps) {
   const create = useCreateScript(agentId);
   const [name, setName] = useState(script?.name ?? "");
   const [description, setDescription] = useState(script?.description ?? "");

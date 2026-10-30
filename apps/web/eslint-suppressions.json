@@ -209,62 +209,16 @@
       "count": 1
     }
   },
-  "src/features/agent/AgentSteps.tsx": {
-    "no-restricted-syntax": {
-      "count": 3
-    }
-  },
-  "src/features/agent/BrowserLoginStrip.tsx": {
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
-  "src/features/agent/CodingReadiness.tsx": {
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
   "src/features/agent/CodingRepositories.tsx": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     },
     "complexity": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
-  "src/features/agent/CodingStrip.tsx": {
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
-  "src/features/agent/CreateAgentDialog.tsx": {
-    "no-restricted-syntax": {
-      "count": 2
     }
   },
   "src/features/agent/CreateCodingAgent.tsx": {
     "complexity": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 6
-    }
-  },
-  "src/features/agent/CreateStandardAgent.tsx": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/features/agent/HarnessLogo.tsx": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/features/agent/IdentityFields.tsx": {
-    "no-restricted-syntax": {
       "count": 1
     }
   },
@@ -276,7 +230,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 2
+      "count": 1
     }
   },
   "src/features/agent/chat/AgentChat.tsx": {
@@ -324,14 +278,6 @@
   "src/features/agent/harness.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/features/agent/memory/memoryVersions.tsx": {
-    "no-restricted-syntax": {
-      "count": 2
     }
   },
   "src/features/agent/prompt/AgentPrompt.tsx": {
@@ -339,7 +285,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 2
+      "count": 1
     }
   },
   "src/features/agent/prompt/EmbedPreview.tsx": {
@@ -350,17 +296,11 @@
   "src/features/agent/prompt/InsertPicker.tsx": {
     "complexity": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 4
     }
   },
   "src/features/agent/prompt/taskContext.ts": {
     "complexity": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 2
     }
   },
   "src/features/agent/routine/AgentRoutines.tsx": {
@@ -406,7 +346,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 4
+      "count": 3
     }
   },
   "src/features/agent/runs/toolKinds.ts": {
@@ -425,7 +365,7 @@
       "count": 2
     },
     "no-restricted-syntax": {
-      "count": 5
+      "count": 1
     }
   },
   "src/features/agent/settings/AgentSettings.tsx": {

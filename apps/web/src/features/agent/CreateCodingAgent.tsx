@@ -55,17 +55,14 @@ const STEPS = ["Identity", "Machine", "Harness", "Lead model", "Repositories"] a
 
 type TokenMode = "paste" | "secret" | "cli";
 
-function TokenPasteField({
-  harness,
-  variable,
-  value,
-  onChange,
-}: {
+type TokenPasteFieldProps = {
   harness: Harness;
   variable: string;
   value: string;
   onChange: (value: string) => void;
-}) {
+};
+
+function TokenPasteField({ harness, variable, value, onChange }: TokenPasteFieldProps) {
   return (
     <SecretValueField
       tone="surface"
@@ -82,17 +79,14 @@ function TokenPasteField({
   );
 }
 
-function TokenSelectField({
-  variable,
-  value,
-  guildId,
-  onChange,
-}: {
+type TokenSelectFieldProps = {
   variable: string;
   value: string;
   guildId: string;
   onChange: (value: string) => void;
-}) {
+};
+
+function TokenSelectField({ variable, value, guildId, onChange }: TokenSelectFieldProps) {
   const secrets = useSecrets({ scope: "guild", id: guildId });
   return (
     <Select
@@ -106,7 +100,9 @@ function TokenSelectField({
   );
 }
 
-function CliLoginCard({ label }: { label: string }) {
+type CliLoginCardProps = { label: string };
+
+function CliLoginCard({ label }: CliLoginCardProps) {
   return (
     <div className="flex items-start gap-3 rounded-xl border border-line bg-surface p-3.5">
       <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-well text-fg">
@@ -122,20 +118,16 @@ function CliLoginCard({ label }: { label: string }) {
   );
 }
 
-/** The subscription token a new agent's harness runs on: pasted, a saved secret, or CLI login. */
-function TokenStep({
-  guildId,
-  harness,
-  variable,
-  draft,
-  onChange,
-}: {
+type TokenStepProps = {
   guildId: string;
   harness: Harness;
   variable: string;
   draft: TokenDraft;
   onChange: (next: TokenDraft) => void;
-}) {
+};
+
+/** The subscription token a new agent's harness runs on: pasted, a saved secret, or CLI login. */
+function TokenStep({ guildId, harness, variable, draft, onChange }: TokenStepProps) {
   const [mode, setMode] = useState<TokenMode>(() => {
     if (draft.pasted.trim()) return "paste";
     if (draft.secret !== NO_TOKEN_ALIAS) return "secret";
@@ -189,17 +181,14 @@ function TokenStep({
   );
 }
 
-/** The harness and its model, and the subscription the harness runs on. */
-function HarnessStep({
-  guild,
-  token,
-  onToken,
-  ...step
-}: StepProps & {
+type HarnessStepProps = StepProps & {
   guild: CreateAgentGuild;
   token: TokenDraft;
   onToken: (next: TokenDraft) => void;
-}) {
+};
+
+/** The harness and its model, and the subscription the harness runs on. */
+function HarnessStep({ guild, token, onToken, ...step }: HarnessStepProps) {
   const { form, setConfig, errors, machine } = step;
   const variable = form.harness ? harnessSecrets[form.harness] : undefined;
 
@@ -259,19 +248,18 @@ function HarnessStep({
   );
 }
 
+type CodingAgentFormProps = {
+  guild: CreateAgentGuild;
+  onClose: () => void;
+};
+
 /**
  * A new coding agent, step by step: its identity; the machine with its disk cap, the harness,
  * harness model, and the subscription token the harness runs on; the model that leads it, with
  * its capabilities and run limits; and the guild's repositories. Create sends the agent, then the pasted token as a
  * secret granted to it.
  */
-export function CodingAgentForm({
-  guild,
-  onClose,
-}: {
-  guild: CreateAgentGuild;
-  onClose: () => void;
-}) {
+export function CodingAgentForm({ guild, onClose }: CodingAgentFormProps) {
   const navigate = useNavigate();
   const { org } = useIdentity();
   const models = useOrgModels(org.id);
@@ -310,12 +298,12 @@ export function CodingAgentForm({
   const stepProps = { form, setConfig, errors, machine };
 
   const submit = async () => {
-    const plan = tokenPlan({
-      variable: form.harness ? harnessSecrets[form.harness] : undefined,
-      draft: token,
-      agentName: identity.draft.name.trim(),
-      guildSecrets: guildSecrets.data ?? [],
-    });
+    const plan = tokenPlan(
+      form.harness ? harnessSecrets[form.harness] : undefined,
+      token,
+      identity.draft.name.trim(),
+      guildSecrets.data ?? [],
+    );
     const agent = await create.mutateAsync({
       name: identity.draft.name.trim(),
       focus: identity.draft.focus.trim(),

@@ -8,20 +8,16 @@ import { codingStrip, type StripPart } from "./harness";
 import { HarnessLogo } from "./HarnessLogo";
 import type { SettingsSection } from "./settings/sections";
 
-/** One part of the strip: a link to the Settings section that sets it, explained on hover. */
-function Part({
-  part,
-  section,
-  guildId,
-  agentId,
-  children,
-}: {
+type PartProps = {
   part: StripPart;
   section: Extract<SettingsSection, "harness" | "repositories">;
   guildId: string;
   agentId: string;
   children: ReactNode;
-}) {
+};
+
+/** One part of the strip: a link to the Settings section that sets it, explained on hover. */
+function Part({ part, section, guildId, agentId, children }: PartProps) {
   return (
     <Tooltip label={part.detail}>
       <Link
@@ -40,12 +36,14 @@ function Part({
   );
 }
 
+type CodingStripProps = { guildId: string; agentId: string };
+
 /**
  * One line over a coding agent's chat: the harness that codes, whether it can sign in, and how
  * many repositories it reaches, each explained on hover and leading to the Settings section that
  * sets it. A missing piece is named and turns the strip ochre.
  */
-export function CodingStrip({ guildId, agentId }: { guildId: string; agentId: string }) {
+export function CodingStrip({ guildId, agentId }: CodingStripProps) {
   const status = useAgentHarness(agentId);
   const secrets = useSecrets({ scope: "agent", id: agentId });
   if (!status.data) return null;

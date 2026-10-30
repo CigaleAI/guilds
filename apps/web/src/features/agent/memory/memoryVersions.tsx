@@ -70,14 +70,13 @@ export function MemoryVersionRow({ entry, selected, meta, onSelect }: MemoryVers
 /** The run step that wrote a version: the run, and the memory write in it when known. */
 export type MemoryStep = { runId: string; call: string | null };
 
-/** Opens the run step that wrote a version; disabled once that run is gone. */
-export function MemoryStepButton({
-  entry,
-  onOpen,
-}: {
+type MemoryStepButtonProps = {
   entry: MemoryVersion;
   onOpen: (step: MemoryStep) => void;
-}) {
+};
+
+/** Opens the run step that wrote a version; disabled once that run is gone. */
+export function MemoryStepButton({ entry, onOpen }: MemoryStepButtonProps) {
   const run = entry.run;
   if (!run) return null;
   return (
@@ -94,17 +93,16 @@ export function MemoryStepButton({
   );
 }
 
+type MemoryVersionViewProps = {
+  entry: MemoryVersion;
+  actions?: ReactNode;
+};
+
 /**
  * One version, read-only: who wrote it and when, and either what it changed against the version
  * before or its whole text.
  */
-export function MemoryVersionView({
-  entry,
-  actions,
-}: {
-  entry: MemoryVersion;
-  actions?: ReactNode;
-}) {
+export function MemoryVersionView({ entry, actions }: MemoryVersionViewProps) {
   const [mode, setMode] = useState<"diff" | "full">(
     entry.previous_content === null ? "full" : "diff",
   );
