@@ -173,14 +173,6 @@
       "count": 1
     }
   },
-  "src/conversation/runner.ts": {
-    "complexity": {
-      "count": 1
-    },
-    "max-depth": {
-      "count": 4
-    }
-  },
   "src/credentials/crypto.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1

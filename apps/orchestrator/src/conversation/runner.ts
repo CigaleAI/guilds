@@ -114,6 +114,12 @@ type CompletionRequest = {
 /** A completion the model did not return: what the session records as the generation's error. */
 type CompletionFailure = { failure: string };
 
+/** What a generation has used across its steps: the tool calls it made, and the seqs its projections stubbed. */
+type GenerationProgress = { toolCalls: number; stubbed: number[] };
+
+/** Whether the generation takes another step after this one. */
+type StepEnd = "next" | "stop";
+
 /**
  * A coach conversation's history as the model is sent it: the stored rows, the generation they
  * are seen from, the context and system prompt this generation replaces, and how old tool
@@ -192,29 +198,16 @@ export class ConversationRunner {
     await updateConversationSession(this.deps.db, this.session(session.id), { generation_state: "idle", generation_token: null }, new Date());
   }
 
-  private async run(args: ConversationGeneration): Promise<void> {
-    const sessionId = args.session.id;
-    const orgId = args.session.org_id;
+  private async run(turn: ConversationGeneration): Promise<void> {
+    const sessionId = turn.session.id;
+    const orgId = turn.session.org_id;
     const cancel = new CancelEvent();
     this.cancels.set(sessionId, cancel);
     await this.publish(sessionId, "generation.started", {
       session_id: sessionId,
-      generation: args.generation,
+      generation: turn.generation,
     });
-    const config = args.session.config_snapshot;
-    const model = config.model;
-    const temperature = config.temperature;
-    const maxTokens = args.maxTokens;
-    const maxSteps = args.maxSteps;
-    const maxToolCalls = args.maxToolCalls;
-    const maxInput = args.maxInput;
-    const tools = args.tools;
-    const schemas = [...tools.values()].map((tool) => tool.schema);
-    let toolCalls = 0;
-    let step = 0;
-    const stubbed: number[] = [];
     const kind = this.deps.kind;
-    let exhaustedSteps;
     try {
       await this.deps.admission.acquire(kind, sessionId, orgId, await this.maxConcurrent(orgId));
     } catch (error) {
@@ -225,160 +218,221 @@ export class ConversationRunner {
       throw error;
     }
     try {
-      while (step < maxSteps) {
-        if (cancel.aborted) {
-          await this.repair(sessionId, args.generation, "cancelled");
-          break;
-        }
-        const history = await listConversationMessages(this.deps.db, this.deps.kind, sessionId);
-        const stubbedThisStep: number[] = [];
-        const minUnstubbed = args.minUnstubbed ?? this.deps.minUnstubbedToolResults;
-        const providerMessages = projectConversationHistory({
-          history,
-          generationContext: args.generationContext,
-          currentGeneration: args.generation,
-          stubHint: this.deps.stubHint,
-          stubbed: stubbedThisStep,
-          ...(minUnstubbed !== undefined ? { minUnstubbed } : {}),
-          budget: {
-            model,
-            schemas,
-            maxInput,
-            countInputTokens: (nextModel, messages, nextTools) =>
-              generationLive.countInputTokens(nextModel, messages, nextTools),
-          },
-          ...(args.systemContent ? { systemContent: args.systemContent } : {}),
-        });
-        stubbed.push(...stubbedThisStep.filter((seq) => !stubbed.includes(seq)));
-        const projectedTokens = generationLive.countInputTokens(model, providerMessages, schemas);
-        if (projectedTokens > maxInput) {
-          await updateConversationSession(
-            this.deps.db,
-            this.session(sessionId),
-            {
-              status: "blocked",
-              blocked_reason: "input_token_limit",
-              generation_state: "idle",
-              generation_token: null,
-            },
-            new Date(),
-          );
-          await this.publish(sessionId, "session.error", {
-            detail: "input token limit reached",
-            blocked_reason: "input_token_limit",
-          });
-          writeLog("warn", "input token limit reached", {
-            source: "backend",
-            operation: `${kind}.session`,
-            session_id: sessionId,
-            error_type: "InputTokenLimit",
-          });
-          break;
-        }
-        await this.assertAllowed(orgId);
-        const completion = await this.requestCompletion(
-          args,
-          { model, messages: providerMessages, temperature, max_tokens: maxTokens, tools: schemas },
-          cancel,
-        );
-        if ("failure" in completion) {
-          if (cancel.aborted) {
-            await this.repair(sessionId, args.generation, "cancelled");
-            break;
-          }
-          await this.fail(sessionId, completion.failure);
-          break;
-        }
-        const now = new Date();
-        const seq = await nextConversationSeq(this.deps.db, this.deps.kind, sessionId);
-        const metadata = {
-          generation: args.generation,
-          projection_policy_version: this.deps.projectionPolicyVersion ?? 2,
-          projected_input_hash: promptHash(JSON.stringify(providerMessages)),
-          stubbed_message_seqs: stubbed,
-          ...completion.metadata,
-        };
-        const row = await insertConversationMessage(
-          this.deps.db,
-          this.deps.kind,
-          {
-            session_id: sessionId,
-            seq,
-            generation: args.generation,
-            payload: completion.payload,
-            metadata,
-          },
-          now,
-        );
-        await incrementOrgUsage(this.deps.db, orgId, metadata, now);
-        await this.publish(sessionId, "message.committed", { message: row });
-        const calls = completion.payload.tool_calls ?? [];
-        if (!calls.length) {
-          break;
-        }
-        const finishReason = completion.metadata.finish_reason;
-        let awaitOperator = false;
-        for (const call of calls) {
-          toolCalls += 1;
-          if (toolCalls > maxToolCalls) {
-            await this.commitToolError(sessionId, args.generation, call, "tool call limit reached");
-            continue;
-          }
-          const name = call.function.name;
-          const upcoming = await nextConversationSeq(this.deps.db, this.deps.kind, sessionId);
-          const result = await callConversationTool(args, call, upcoming, finishReason);
-          const envelope = { tool_message_seq: upcoming, ...result };
-          const candidateMessages = [
-            ...providerMessages,
-            { role: "tool", tool_call_id: call.id, content: JSON.stringify(envelope) },
-          ];
-          const nextTokens = generationLive.countInputTokens(model, candidateMessages, schemas);
-          const payload: ToolMessage =
-            nextTokens > maxInput
-              ? {
-                  role: "tool",
-                  tool_call_id: call.id,
-                  content: JSON.stringify({
-                    tool_message_seq: upcoming,
-                    error: "projected tool result exceeds the session input-token limit; narrow the requested range",
-                  }),
-                }
-              : { role: "tool", tool_call_id: call.id, content: JSON.stringify(envelope) };
-          const committed = await insertConversationMessage(
-            this.deps.db,
-            this.deps.kind,
-            {
-              session_id: sessionId,
-              seq: upcoming,
-              generation: args.generation,
-              payload,
-              metadata: { generation: args.generation, tool_name: name },
-            },
-            new Date(),
-          );
-          await this.publish(sessionId, "message.committed", { message: committed });
-          if (this.deps.onToolResult) {
-            await this.deps.onToolResult(sessionId, name, result, (id, event, data) => this.publish(id, event, data));
-          }
-          if (result.await_operator === true) {
-            awaitOperator = true;
-          }
-        }
-        if (awaitOperator) {
-          break;
-        }
+      const progress: GenerationProgress = { toolCalls: 0, stubbed: [] };
+      let step = 0;
+      while (step < turn.maxSteps && (await this.takeStep(turn, cancel, progress)) === "next") {
         step += 1;
       }
-      exhaustedSteps = step >= maxSteps;
-      if (exhaustedSteps) {
+      if (step >= turn.maxSteps) {
         await this.fail(sessionId, "generation step limit reached");
       }
     } finally {
       this.cancels.delete(sessionId);
       this.deps.admission.release(kind, sessionId);
       await updateConversationSession(this.deps.db, this.session(sessionId), { generation_state: "idle", generation_token: null, generation_started_at: null }, new Date());
-      await this.publish(sessionId, "generation.finished", { session_id: sessionId, generation: args.generation });
+      await this.publish(sessionId, "generation.finished", { session_id: sessionId, generation: turn.generation });
     }
+  }
+
+  /**
+   * One model step: sends the projected history to the model, commits its message, and runs its
+   * tool calls. The generation stops after a step that is cancelled, would pass the input limit,
+   * fails, calls no tool, or awaits the operator.
+   */
+  private async takeStep(turn: ConversationGeneration, cancel: CancelEvent, progress: GenerationProgress): Promise<StepEnd> {
+    const sessionId = turn.session.id;
+    if (cancel.aborted) {
+      await this.repair(sessionId, turn.generation, "cancelled");
+      return "stop";
+    }
+    const { model, temperature } = turn.session.config_snapshot;
+    const schemas = offeredToolSchemas(turn);
+    const messages = await this.projectHistory(turn, progress);
+    if (generationLive.countInputTokens(model, messages, schemas) > turn.maxInput) {
+      await this.blockAtInputTokenLimit(sessionId);
+      return "stop";
+    }
+    await this.assertAllowed(turn.session.org_id);
+    const completion = await this.requestCompletion(
+      turn,
+      { model, messages, temperature, max_tokens: turn.maxTokens, tools: schemas },
+      cancel,
+    );
+    if ("failure" in completion) {
+      if (cancel.aborted) {
+        await this.repair(sessionId, turn.generation, "cancelled");
+      } else {
+        await this.fail(sessionId, completion.failure);
+      }
+      return "stop";
+    }
+    await this.commitCompletion(turn, messages, completion, progress);
+    if (!completion.payload.tool_calls?.length) {
+      return "stop";
+    }
+    return (await this.runToolCalls(turn, messages, completion, progress)) ? "stop" : "next";
+  }
+
+  /** The history as this step sends it to the model; the seqs it stubs join the generation's. */
+  private async projectHistory(turn: ConversationGeneration, progress: GenerationProgress): Promise<MessagePayload[]> {
+    const history = await listConversationMessages(this.deps.db, this.deps.kind, turn.session.id);
+    const stubbedThisStep: number[] = [];
+    const minUnstubbed = turn.minUnstubbed ?? this.deps.minUnstubbedToolResults;
+    const messages = projectConversationHistory({
+      history,
+      generationContext: turn.generationContext,
+      currentGeneration: turn.generation,
+      stubHint: this.deps.stubHint,
+      stubbed: stubbedThisStep,
+      ...(minUnstubbed !== undefined ? { minUnstubbed } : {}),
+      budget: {
+        model: turn.session.config_snapshot.model,
+        schemas: offeredToolSchemas(turn),
+        maxInput: turn.maxInput,
+        countInputTokens: (nextModel, nextMessages, nextTools) =>
+          generationLive.countInputTokens(nextModel, nextMessages, nextTools),
+      },
+      ...(turn.systemContent ? { systemContent: turn.systemContent } : {}),
+    });
+    progress.stubbed.push(...stubbedThisStep.filter((seq) => !progress.stubbed.includes(seq)));
+    return messages;
+  }
+
+  /** Blocks the session because its projected history passes the input-token limit. */
+  private async blockAtInputTokenLimit(sessionId: string): Promise<void> {
+    await updateConversationSession(
+      this.deps.db,
+      this.session(sessionId),
+      {
+        status: "blocked",
+        blocked_reason: "input_token_limit",
+        generation_state: "idle",
+        generation_token: null,
+      },
+      new Date(),
+    );
+    await this.publish(sessionId, "session.error", {
+      detail: "input token limit reached",
+      blocked_reason: "input_token_limit",
+    });
+    writeLog("warn", "input token limit reached", {
+      source: "backend",
+      operation: `${this.deps.kind}.session`,
+      session_id: sessionId,
+      error_type: "InputTokenLimit",
+    });
+  }
+
+  /** Commits the model's message with the projection it answered, and charges its usage to the organisation. */
+  private async commitCompletion(
+    turn: ConversationGeneration,
+    messages: MessagePayload[],
+    completion: Completion,
+    progress: GenerationProgress,
+  ): Promise<void> {
+    const sessionId = turn.session.id;
+    const now = new Date();
+    const seq = await nextConversationSeq(this.deps.db, this.deps.kind, sessionId);
+    const metadata = {
+      generation: turn.generation,
+      projection_policy_version: this.deps.projectionPolicyVersion ?? 2,
+      projected_input_hash: promptHash(JSON.stringify(messages)),
+      stubbed_message_seqs: progress.stubbed,
+      ...completion.metadata,
+    };
+    const row = await insertConversationMessage(
+      this.deps.db,
+      this.deps.kind,
+      {
+        session_id: sessionId,
+        seq,
+        generation: turn.generation,
+        payload: completion.payload,
+        metadata,
+      },
+      now,
+    );
+    await incrementOrgUsage(this.deps.db, turn.session.org_id, metadata, now);
+    await this.publish(sessionId, "message.committed", { message: row });
+  }
+
+  /**
+   * Runs the completion's tool calls in order; a call past the generation's limit is answered
+   * with an error. True when a result awaits the operator.
+   */
+  private async runToolCalls(
+    turn: ConversationGeneration,
+    messages: MessagePayload[],
+    completion: Completion,
+    progress: GenerationProgress,
+  ): Promise<boolean> {
+    let awaitsOperator = false;
+    for (const call of completion.payload.tool_calls ?? []) {
+      progress.toolCalls += 1;
+      if (progress.toolCalls > turn.maxToolCalls) {
+        await this.commitToolError(turn.session.id, turn.generation, call, "tool call limit reached");
+        continue;
+      }
+      const result = await this.runToolCall(turn, messages, call, completion.metadata.finish_reason);
+      if (result.await_operator === true) {
+        awaitsOperator = true;
+      }
+    }
+    return awaitsOperator;
+  }
+
+  /**
+   * Calls the tool and commits its result as the next message, or an error when the result
+   * would put the next prompt over the input limit, then hands the result to `onToolResult`.
+   */
+  private async runToolCall(
+    turn: ConversationGeneration,
+    messages: MessagePayload[],
+    call: ToolCall,
+    finishReason: string,
+  ): Promise<Record<string, unknown>> {
+    const sessionId = turn.session.id;
+    const name = call.function.name;
+    const upcoming = await nextConversationSeq(this.deps.db, this.deps.kind, sessionId);
+    const result = await callConversationTool(turn, call, upcoming, finishReason);
+    const envelope = { tool_message_seq: upcoming, ...result };
+    const candidateMessages = [
+      ...messages,
+      { role: "tool", tool_call_id: call.id, content: JSON.stringify(envelope) },
+    ];
+    const nextTokens = generationLive.countInputTokens(
+      turn.session.config_snapshot.model,
+      candidateMessages,
+      offeredToolSchemas(turn),
+    );
+    const payload: ToolMessage =
+      nextTokens > turn.maxInput
+        ? {
+            role: "tool",
+            tool_call_id: call.id,
+            content: JSON.stringify({
+              tool_message_seq: upcoming,
+              error: "projected tool result exceeds the session input-token limit; narrow the requested range",
+            }),
+          }
+        : { role: "tool", tool_call_id: call.id, content: JSON.stringify(envelope) };
+    const committed = await insertConversationMessage(
+      this.deps.db,
+      this.deps.kind,
+      {
+        session_id: sessionId,
+        seq: upcoming,
+        generation: turn.generation,
+        payload,
+        metadata: { generation: turn.generation, tool_name: name },
+      },
+      new Date(),
+    );
+    await this.publish(sessionId, "message.committed", { message: committed });
+    if (this.deps.onToolResult) {
+      await this.deps.onToolResult(sessionId, name, result, (id, event, data) => this.publish(id, event, data));
+    }
+    return result;
   }
 
   /** The model's completion of a step; a provider failure or a cancel ends with its message as a typed failure. */
@@ -525,6 +579,11 @@ export class ConversationRunner {
       throw new ConversationConflictError(blocked.message);
     }
   }
+}
+
+/** The function schemas of the tools a generation offers, as the model is sent them. */
+function offeredToolSchemas(turn: ConversationGeneration): Array<Record<string, unknown>> {
+  return [...turn.tools.values()].map((tool) => tool.schema);
 }
 
 export function projectConversationHistory(args: ConversationProjection): MessagePayload[] {
