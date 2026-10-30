@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { proxyFetch, type FetchFn } from "../net/http.js";
-import { encryptPayload } from "../credentials/crypto.js";
+import { decryptPayload, encryptPayload } from "../credentials/crypto.js";
 import { githubAppConfig } from "../github/index.js";
 import {
   GOOGLE_CONNECTORS,
@@ -299,6 +299,18 @@ export function tokenRedactions(payload: Record<string, unknown>, connectionId: 
     }
   }
   return values;
+}
+
+/**
+ * The tokens a connection stores, as redaction values, decrypted with `masterKey` or the
+ * environment's key; a payload that cannot be read holds none.
+ */
+export function storedTokenRedactions(connection: McpConnectionRow, masterKey?: Buffer): Record<string, string> {
+  try {
+    return tokenRedactions(decryptPayload(connection.ciphertext, connection.nonce, masterKey), connection.id);
+  } catch {
+    return {};
+  }
 }
 
 export function accessExpired(
