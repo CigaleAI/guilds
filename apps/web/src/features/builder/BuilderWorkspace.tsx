@@ -97,21 +97,26 @@ function Workspace({ session }: WorkspaceProps) {
   const plan = planFromRecipe(recipe.body, preview.data ? { creates: preview.data.creates } : {});
   const title = recipe.body.meta.name || "Untitled guild";
 
-  const approve = () =>
-    publish.mutateAsync().then(
-      () => toast({ kind: "success", title: `Approved ${title}` }),
-      (error: Error) => {
-        toast({ kind: "error", title: "Couldn't approve the draft", description: error.message });
-        throw error;
-      },
-    );
+  const approvalToasts = {
+    onSuccess: () => toast({ kind: "success", title: `Approved ${title}` }),
+    onError: (error: Error) =>
+      toast({ kind: "error", title: "Couldn't approve the draft", description: error.message }),
+  };
+  const openApply = () =>
+    void navigate({ to: "/recipes/$recipeId/apply", params: { recipeId: recipe.id } });
 
   const deploy = () => {
-    const ready = approved ? Promise.resolve() : approve();
-    void ready.then(
-      () => navigate({ to: "/recipes/$recipeId/apply", params: { recipeId: recipe.id } }),
-      () => undefined,
-    );
+    if (approved) {
+      openApply();
+      return;
+    }
+    publish.mutate(undefined, {
+      ...approvalToasts,
+      onSuccess: () => {
+        approvalToasts.onSuccess();
+        openApply();
+      },
+    });
   };
 
   const saveAccess = () => {
@@ -214,7 +219,7 @@ function Workspace({ session }: WorkspaceProps) {
                 size="sm"
                 disabled={publish.isPending}
                 title="Approve the draft so it can be applied"
-                onClick={() => void approve().catch(() => undefined)}
+                onClick={() => publish.mutate(undefined, approvalToasts)}
               >
                 <Icon icon={Check} size={14} />
                 Approve

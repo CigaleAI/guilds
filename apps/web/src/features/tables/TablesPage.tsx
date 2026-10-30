@@ -94,11 +94,7 @@ export function TablesPage() {
           {tables.isPending ? (
             <SkeletonRows rows={5} label="Loading tables" />
           ) : tables.isError ? (
-            <Banner
-              tone="error"
-              title="Couldn't load the tables"
-              meta={tables.error.message}
-            />
+            <Banner tone="error" title="Couldn't load the tables" meta={tables.error.message} />
           ) : (
             groups.map((group) => (
               <div key={group.label} className="flex flex-col gap-1">
@@ -316,17 +312,15 @@ function ColumnsTab({ collection }: ColumnsTabProps) {
       (change) => !change.startsWith("Add ") && !change.startsWith("Change the description of "),
     );
 
-  const save = () =>
-    update.mutateAsync({ columns: columnsForSave(columns) }).then(
-      () => {
-        setDraft(null);
-        toast({ kind: "success", title: "Columns saved" });
-      },
-      (error: Error) => {
-        toast({ kind: "error", title: "Couldn't save the columns", description: error.message });
-        throw error;
-      },
-    );
+  const columnsUpdate = { columns: columnsForSave(columns) };
+  const saveToasts = {
+    onSuccess: () => {
+      setDraft(null);
+      toast({ kind: "success", title: "Columns saved" });
+    },
+    onError: (error: Error) =>
+      toast({ kind: "error", title: "Couldn't save the columns", description: error.message }),
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -344,7 +338,9 @@ function ColumnsTab({ collection }: ColumnsTabProps) {
         </Button>
         <Button
           disabled={!dirty || errors.size > 0 || update.isPending}
-          onClick={() => (reshapes ? setConfirming(true) : void save().catch(() => undefined))}
+          onClick={() =>
+            reshapes ? setConfirming(true) : update.mutate(columnsUpdate, saveToasts)
+          }
         >
           Save columns
         </Button>
@@ -361,7 +357,7 @@ function ColumnsTab({ collection }: ColumnsTabProps) {
           </ul>
         }
         confirmLabel="Apply"
-        onConfirm={save}
+        onConfirm={() => update.mutateAsync(columnsUpdate, saveToasts)}
       />
     </div>
   );
