@@ -55,10 +55,6 @@ export type TableAction = EditAction;
 
 const RECENT_RECORDS = 5;
 
-export function isTableTool(name: string): boolean {
-  return name === STUDIO_TABLE_TOOL;
-}
-
 type Member = { id: string; name: string };
 
 type Table = {

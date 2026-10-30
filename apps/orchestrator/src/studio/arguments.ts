@@ -18,7 +18,7 @@ import type { StudioTool, StudioToolCall, StudioToolDeps } from "./tools.js";
 const AGENT_HANDLE_KEYS = ["agent_id", "agent", "agent_name"];
 
 /** The agent a Studio tool call names: the first non-blank of agent_id, agent, and agent_name. */
-export function studioAgentHandleFromArgs(args: Record<string, unknown>): string {
+function agentHandleOf(args: Record<string, unknown>): string {
   for (const key of AGENT_HANDLE_KEYS) {
     const value = args[key];
     if (typeof value === "string" && value.trim()) {
@@ -79,7 +79,7 @@ export function decodeStudioArguments<T extends TObject>(
     }
   }
   if ("agent_id" in parameters.properties && AGENT_HANDLE_KEYS.some((key) => key in args)) {
-    given.agent_id = studioAgentHandleFromArgs(args);
+    given.agent_id = agentHandleOf(args);
   }
   return decode(parameters, given, (problem) => new StudioUnprocessableError(problem));
 }

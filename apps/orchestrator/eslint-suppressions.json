@@ -1153,11 +1153,6 @@
       "count": 1
     }
   },
-  "src/studio/actions.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 2
-    }
-  },
   "src/studio/activity.ts": {
     "complexity": {
       "count": 2

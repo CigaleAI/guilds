@@ -21,10 +21,6 @@ import { listSchedulesForGuild } from "../db/schedules.js";
 export const STUDIO_ROUTINE_TOOL = "studio_edit_routine";
 export type RoutineAction = EditAction;
 
-export function isRoutineTool(name: string): boolean {
-  return name === STUDIO_ROUTINE_TOOL;
-}
-
 /** What a routine is: when it wakes, its label, what it tells the agent, and whether it fires. */
 type Definition = {
   timing: ScheduleTiming;
