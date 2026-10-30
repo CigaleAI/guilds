@@ -90,18 +90,27 @@ export type AccessWidget = {
  * note's title, "degen · about", "leads · table".
  */
 export function editTargetLabel(edit: EditWidget["edit"]): string {
-  const target = edit.target ?? {};
-  if (edit.kind === "memory") return `${target.agent_name || target.agent_id || "agent"} · Memory`;
-  if (edit.kind === "access") return `${target.agent_name || target.agent_id || "agent"} · access`;
-  if (edit.kind === "collection") return `${target.name || "table"} · table`;
-  if (edit.kind === "routine") {
-    return `${target.agent_name || target.agent_id || "agent"} · ${target.description || "routine"}`;
-  }
-  if (edit.kind === "note") {
-    return target.title || target.display_path?.split("/").pop() || "note";
-  }
-  return `${target.guild_name || "guild"} · ${edit.fields?.join(" + ") || "description"}`;
+  return editTargetLabels[edit.kind ?? "guild"](edit.target ?? {}, edit);
 }
+
+/** The agent an edit names, by name, else by id. */
+function editAgentName(target: EditTarget): string {
+  return target.agent_name || target.agent_id || "agent";
+}
+
+/** What each kind of edit changes, in words; an edit without a kind changes the guild. */
+const editTargetLabels: Record<
+  (typeof editKinds)[number],
+  (target: EditTarget, edit: EditWidget["edit"]) => string
+> = {
+  memory: (target) => `${editAgentName(target)} · Memory`,
+  access: (target) => `${editAgentName(target)} · access`,
+  collection: (target) => `${target.name || "table"} · table`,
+  routine: (target) => `${editAgentName(target)} · ${target.description || "routine"}`,
+  note: (target) => target.title || target.display_path?.split("/").pop() || "note",
+  guild: (target, edit) =>
+    `${target.guild_name || "guild"} · ${edit.fields?.join(" + ") || "description"}`,
+};
 
 /** The login an access request names, with its account when it has one. */
 export function connectionLabel(connection: AccessWidget["connection"]): string {

@@ -156,9 +156,7 @@ function EditCard({ proposal, actionable, showable, widget }: EditCardProps) {
   const view = useStudioEdits(session.id, [proposal.seq])[0]?.data;
   const { disabled, answer } = useAnswer(proposal);
   const target = editTargetLabel(widget.edit);
-  const lines = widget.edit.lines ?? {};
   const pending = proposal.state === "open";
-  const effects = pending ? (view?.effects ?? []) : [];
 
   return (
     <RequestCard
@@ -166,26 +164,94 @@ function EditCard({ proposal, actionable, showable, widget }: EditCardProps) {
       reason={widget.reason}
       show={<ShowButton proposal={proposal} showable={showable} />}
     >
-      <span className="font-mono text-xs text-fg-2">
-        {target} · +{lines.added ?? 0} −{lines.removed ?? 0} lines
-        {widget.edit.base_version !== undefined ? ` · from v${widget.edit.base_version}` : ""}
-      </span>
-      {proposal.decision ? (
-        <Outcome accepted={proposal.decision.accepted}>
-          {proposal.decision.accepted
-            ? `Applied${view?.applied_version ? ` as v${view.applied_version}` : ""}`
-            : "Declined"}
-        </Outcome>
-      ) : view?.stale ? (
-        <p className="text-sm text-plum-t">
-          The live content changed since this proposal; ask the coach to rebuild it, or decline.
-        </p>
-      ) : null}
+      <EditSummary edit={widget.edit} target={target} />
+      <EditStatus proposal={proposal} view={view} />
       {widget.edit.widens && pending ? (
         <p className="text-sm text-fg-2">
           This widens what the agent can do, so it is decided on its own.
         </p>
       ) : null}
+      {pending && view ? <EditPreview view={view} /> : null}
+      {pending && actionable ? (
+        <EditAnswers
+          edit={widget.edit}
+          disabled={disabled}
+          stale={Boolean(view?.stale)}
+          onAnswer={answer}
+        />
+      ) : null}
+    </RequestCard>
+  );
+}
+
+type EditAnswersProps = {
+  edit: EditWidget["edit"];
+  disabled: boolean;
+  /** Whether the live content changed under the edit, which can then only be declined. */
+  stale: boolean;
+  onAnswer: (accept: boolean) => void;
+};
+
+/** Apply, or create or delete for an edit that does, and Decline. */
+function EditAnswers({ edit, disabled, stale, onAnswer }: EditAnswersProps) {
+  return (
+    <div className="flex gap-2">
+      <Button
+        size="sm"
+        variant={edit.action === "delete" ? "destructive" : "primary"}
+        disabled={disabled || stale}
+        onClick={() => onAnswer(true)}
+      >
+        {applyLabel(edit)}
+      </Button>
+      <Button variant="ghost" size="sm" disabled={disabled} onClick={() => onAnswer(false)}>
+        Decline
+      </Button>
+    </div>
+  );
+}
+
+type EditSummaryProps = { edit: EditWidget["edit"]; target: string };
+
+/** What an edit changes, how many lines it adds and removes, and the version it starts from. */
+function EditSummary({ edit, target }: EditSummaryProps) {
+  const lines = edit.lines ?? {};
+  return (
+    <span className="font-mono text-xs text-fg-2">
+      {target} · +{lines.added ?? 0} −{lines.removed ?? 0} lines
+      {edit.base_version !== undefined ? ` · from v${edit.base_version}` : ""}
+    </span>
+  );
+}
+
+type EditStatusProps = { proposal: Proposal; view: StudioEdit | undefined };
+
+/** How an edit was answered, or, while it waits, that the live content changed under it. */
+function EditStatus({ proposal, view }: EditStatusProps) {
+  if (proposal.decision) {
+    return (
+      <Outcome accepted={proposal.decision.accepted}>
+        {proposal.decision.accepted
+          ? `Applied${view?.applied_version ? ` as v${view.applied_version}` : ""}`
+          : "Declined"}
+      </Outcome>
+    );
+  }
+  if (!view?.stale) return null;
+  return (
+    <p className="text-sm text-plum-t">
+      The live content changed since this proposal; ask the coach to rebuild it, or decline.
+    </p>
+  );
+}
+
+type EditPreviewProps = { view: StudioEdit };
+
+/** What applying a pending edit does, then its text beside the live text. */
+function EditPreview({ view }: EditPreviewProps) {
+  const effects = view.effects ?? [];
+  return (
+    <>
       {effects.length ? (
         <ul className="flex list-disc flex-col gap-1 pl-5 text-sm text-fg-2">
           {effects.map((effect) => (
@@ -193,23 +259,8 @@ function EditCard({ proposal, actionable, showable, widget }: EditCardProps) {
           ))}
         </ul>
       ) : null}
-      {pending && view ? <EditDiff view={view} /> : null}
-      {pending && actionable ? (
-        <div className="flex gap-2">
-          <Button
-            size="sm"
-            variant={widget.edit.action === "delete" ? "destructive" : "primary"}
-            disabled={disabled || Boolean(view?.stale)}
-            onClick={() => answer(true)}
-          >
-            {applyLabel(widget.edit)}
-          </Button>
-          <Button variant="ghost" size="sm" disabled={disabled} onClick={() => answer(false)}>
-            Decline
-          </Button>
-        </div>
-      ) : null}
-    </RequestCard>
+      <EditDiff view={view} />
+    </>
   );
 }
 

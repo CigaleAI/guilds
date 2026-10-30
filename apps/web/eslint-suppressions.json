@@ -173,16 +173,6 @@
       "count": 1
     }
   },
-  "src/features/studio/ProposalCards.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/features/studio/StudioChat.tsx": {
-    "complexity": {
-      "count": 2
-    }
-  },
   "src/features/studio/StudioLanding.tsx": {
     "complexity": {
       "count": 1
@@ -219,11 +209,6 @@
     }
   },
   "src/features/studio/activity/TriggerDetail.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/features/studio/chatModel.ts": {
     "complexity": {
       "count": 1
     }
