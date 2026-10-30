@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { emptyArgValues, fieldsFromSchema, parseArgValues } from "./toolArgs";
+import { emptyArgValues, fieldsFromSchema, isPlainObject, parseArgValues } from "./toolArgs";
+
+test("only_a_json_object_counts_as_a_plain_object", () => {
+  assert.equal(isPlainObject({ type: "object" }), true);
+  assert.equal(isPlainObject([]), false);
+  assert.equal(isPlainObject(null), false);
+  assert.equal(isPlainObject("{}"), false);
+});
 
 test("object properties become typed fields; an empty schema is a JSON blob", () => {
   assert.deepEqual(

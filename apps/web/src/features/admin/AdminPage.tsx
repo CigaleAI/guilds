@@ -54,6 +54,7 @@ import { connectorLogo } from "../access/connectorLogo";
 import { integrationFor, setupSearch } from "../instance/instance";
 import { InstanceTab } from "./InstanceTab";
 import { RegistryDialog } from "./RegistryDialog";
+import { parseInputSchema } from "./toolSchema";
 import { UsersTab } from "./UsersTab";
 
 const coreTabs = [
@@ -665,20 +666,12 @@ function ToolForm({ server, tool, onClose }: ToolFormProps) {
     tool.default_override === null ? "manifest" : tool.default_override ? "on" : "off",
   );
   const [schema, setSchema] = useState(JSON.stringify(tool.input_schema, null, 2));
-  let parsed: Record<string, unknown> | null = null;
-  let schemaError: string | undefined;
-  try {
-    const value: unknown = JSON.parse(schema);
-    if (value && typeof value === "object" && !Array.isArray(value))
-      parsed = value as Record<string, unknown>;
-    else schemaError = "A JSON object.";
-  } catch (error) {
-    schemaError = (error as Error).message;
-  }
+  const parsed = parseInputSchema(schema);
+  const schemaError = "error" in parsed ? parsed.error : undefined;
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (!parsed) return;
+    if ("error" in parsed) return;
     save.mutate(
       {
         serverId: server.id,
@@ -687,7 +680,7 @@ function ToolForm({ server, tool, onClose }: ToolFormProps) {
           ...(description === tool.description ? {} : { description }),
           ...(schema === JSON.stringify(tool.input_schema, null, 2)
             ? {}
-            : { input_schema: parsed }),
+            : { input_schema: parsed.schema }),
           default: start === "manifest" ? null : start === "on",
         },
       },

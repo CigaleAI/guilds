@@ -8,7 +8,8 @@ export type ArgField = {
   values?: string[];
 };
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
+/** Whether a parsed JSON value is an object: not null, not an array. */
+export function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
