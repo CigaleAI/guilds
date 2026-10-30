@@ -202,11 +202,6 @@
       "count": 1
     }
   },
-  "src/features/guild/GroupQueue.tsx": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
   "src/features/guild/GuildWorkspace.tsx": {
     "complexity": {
       "count": 1
@@ -232,9 +227,6 @@
       "count": 2
     },
     "complexity": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
       "count": 1
     }
   },

@@ -7,8 +7,8 @@ import { Button, Icon, IconButton, Tooltip, toast } from "@guildsrun/ui";
 import {
   blockingAgents,
   dropQueuedMessage,
-  markQueuedMessage,
   sendableHead,
+  sendQueuedMessage,
   useQueuedMessages,
   type QueuedMessage,
 } from "./messageQueue";
@@ -26,19 +26,17 @@ export function useWaitsFor(
   }, [agents, activeAgents]);
 }
 
-/** Sends a queued message through `post`, dropping it once posted and holding it if that fails. */
+/** Sends a queued message through `post`, and tells the operator when it could not go. */
 function sendQueued(
   guildId: string,
   message: QueuedMessage,
   post: (content: string) => Promise<unknown>,
 ): void {
-  markQueuedMessage(guildId, message.id, "sending");
-  post(message.content)
-    .then(() => dropQueuedMessage(guildId, message.id))
-    .catch((error: Error) => {
-      markQueuedMessage(guildId, message.id, "failed");
+  void sendQueuedMessage(guildId, message, post).then((error) => {
+    if (error) {
       toast({ kind: "error", title: "Couldn't send a queued message", description: error.message });
-    });
+    }
+  });
 }
 
 /**

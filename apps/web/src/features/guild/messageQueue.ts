@@ -55,6 +55,27 @@ export function markQueuedMessage(
   );
 }
 
+/**
+ * Sends a queued message through `post`: drops it once posted, or marks it failed so it waits for
+ * the operator. Resolves to the error the post failed with, or null once the message is sent.
+ */
+export function sendQueuedMessage(
+  guildId: string,
+  message: QueuedMessage,
+  post: (content: string) => Promise<unknown>,
+): Promise<Error | null> {
+  markQueuedMessage(guildId, message.id, "sending");
+  return post(message.content)
+    .then(() => {
+      dropQueuedMessage(guildId, message.id);
+      return null;
+    })
+    .catch((error: Error) => {
+      markQueuedMessage(guildId, message.id, "failed");
+      return error;
+    });
+}
+
 /** The guild's queued messages, re-rendering when they change. */
 export function useQueuedMessages(guildId: string): readonly QueuedMessage[] {
   const subscribe = useCallback((listener: () => void) => {

@@ -123,26 +123,24 @@ export function GuildSettings() {
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (invalid) return;
-    try {
-      await Promise.all([
-        update.mutateAsync({
-          name: form.name.trim(),
-          about: form.about.trim(),
-          description: form.description.trim(),
-          max_agents: Number(form.maxAgents),
-          git_author_email: form.gitAuthorEmail.trim(),
-          routines_enabled: form.routines,
-          ...(admin ? { visibility: form.private ? ("private" as const) : ("org" as const) } : {}),
-        }),
-        form.messageLimit !== saved.messageLimit
-          ? setLimit.mutateAsync(Number(form.messageLimit))
-          : undefined,
-      ]);
-      setDraft(null);
-      toast({ kind: "success", title: "Guild settings saved" });
-    } catch {
-      // The banner under the form says what failed.
-    }
+    // A save that fails shows in the banner under the form, from the mutation's error.
+    const results = await Promise.allSettled([
+      update.mutateAsync({
+        name: form.name.trim(),
+        about: form.about.trim(),
+        description: form.description.trim(),
+        max_agents: Number(form.maxAgents),
+        git_author_email: form.gitAuthorEmail.trim(),
+        routines_enabled: form.routines,
+        ...(admin ? { visibility: form.private ? ("private" as const) : ("org" as const) } : {}),
+      }),
+      form.messageLimit !== saved.messageLimit
+        ? setLimit.mutateAsync(Number(form.messageLimit))
+        : undefined,
+    ]);
+    if (results.some((result) => result.status === "rejected")) return;
+    setDraft(null);
+    toast({ kind: "success", title: "Guild settings saved" });
   };
 
   const failure = update.error ?? setLimit.error;
