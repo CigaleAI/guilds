@@ -93,9 +93,6 @@
     }
   },
   "src/features/agent/runs/runFlowModel.ts": {
-    "boundary/no-reexport-modules": {
-      "count": 1
-    },
     "complexity": {
       "count": 2
     }

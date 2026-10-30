@@ -4,8 +4,6 @@ import type { RunMessage, ToolCallRequest } from "./toolFormat";
 import { classifyToolCall, kindBreakdown } from "./toolKinds";
 import type { RunWithTools, ToolCallInfo } from "./toolKinds";
 
-export type { RunMessage, ToolCallRequest } from "./toolFormat";
-
 /** An error recorded on a run; `generation` ties it to the generation it ended. */
 export type RunError = {
   at?: string;
