@@ -19,12 +19,28 @@ export function readPin(sessionId: string): StudioPin | null {
   }
 }
 
-export function clearPin(sessionId: string): void {
+/** This tab's session storage; null where the browser denies the page its storage. */
+function tabStorage(): Storage | null {
   try {
-    sessionStorage.removeItem(pinKey(sessionId));
+    return sessionStorage;
   } catch {
-    // Nothing kept, nothing to clear.
+    return null;
   }
+}
+
+/** Keeps a pin for the session's workspace to open with; false where this tab cannot keep it. */
+export function keepPin(sessionId: string, pin: StudioPin): boolean {
+  try {
+    sessionStorage.setItem(pinKey(sessionId), JSON.stringify(pin));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Forgets the session's kept pin; a tab without session storage kept none. */
+export function clearPin(sessionId: string): void {
+  tabStorage()?.removeItem(pinKey(sessionId));
 }
 
 /**
@@ -64,10 +80,12 @@ export function useInvestigateIssue() {
               },
               prompt: "What caused this issue, and what should change so it does not happen again?",
             };
-            try {
-              sessionStorage.setItem(pinKey(session.id), JSON.stringify(pin));
-            } catch {
-              // Without storage the session opens unpinned.
+            if (!keepPin(session.id, pin)) {
+              toast({
+                kind: "error",
+                title: "Couldn't pin the issue",
+                description: "This tab couldn't keep it, so the session opens without the issue.",
+              });
             }
             void navigate({
               to: "/studio/$sessionId",
