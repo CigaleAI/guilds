@@ -16,7 +16,7 @@ import type {
 } from "../../api/types/recipes";
 import { hasConnectedProvider } from "../../api/types/models";
 import { useIdentity } from "../../app/identity";
-import { harnessLabel, harnessOptions, harnessSubscriptionNote } from "../agent/harness";
+import { harnessLabel, harnessOptions, harnessSubscriptionNote, isHarness } from "../agent/harness";
 import { setupSearch } from "../instance/instance";
 import { ConnectProviderGuide } from "../models/ConnectProviderGuide";
 import { modelOptions } from "../models/models";
@@ -356,7 +356,9 @@ function AgentChoices({
           label="Harness"
           placeholder="Choose a harness"
           value={harness}
-          onValueChange={(value) => onHarness(value as Harness)}
+          onValueChange={(value) => {
+            if (isHarness(value)) onHarness(value);
+          }}
           options={harnessOptions}
           hint={
             recommendedHarness
