@@ -6,9 +6,16 @@ it: a function's name and signature say what it does, what it
 needs, and what it returns, and behaviour lives next to the code
 that uses it.
 
-ESLint enforces the limits below and the boundary rules
-([Lint](development.md#lint-and-format)). The other rules are
-checked in review ([Pull requests](pull-requests.md)).
+ESLint and the import-cycle check
+([Lint](development.md#lint-and-format)) enforce these rules:
+cyclomatic complexity, nesting depth, parameter count, file length,
+type assertions, a `catch` that neither throws nor returns, a throw
+of a plain `Error`, an object type written inline in a parameter,
+explicit types on what an orchestrator module exports, imports of
+`fastify`, `http/` importing `db/`, what `db/` and `lib/` import,
+re-exports, imports of hosted code, and import cycles. Every other
+rule on this page is checked in review
+([Pull requests](pull-requests.md)).
 
 ---
 
