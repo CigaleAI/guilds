@@ -213,7 +213,7 @@ export function nativeToolDisplay(
       bindable: false,
     };
   }
-  if ((CODING_NATIVE_TOOLS as readonly string[]).includes(item.name)) {
+  if (CODING_NATIVE_TOOLS.some((name) => name === item.name)) {
     const on = capabilities?.coding;
     return {
       enabled: on ?? true,
@@ -226,7 +226,7 @@ export function nativeToolDisplay(
       bindable: false,
     };
   }
-  if ((ALWAYS_NATIVE_TOOLS as readonly string[]).includes(item.name)) {
+  if (ALWAYS_NATIVE_TOOLS.some((name) => name === item.name)) {
     return { enabled: true, caption: "Always offered", bindable: false };
   }
   return { enabled: item.enabled, bindable: true };
@@ -235,9 +235,9 @@ export function nativeToolDisplay(
 export function toolFamilyGroups(
   tools: readonly AccessBinding[],
 ): { label: string; tools: AccessBinding[] }[] {
-  const groups = toolFamilies.map((family) => ({
+  const groups: { label: string; tools: AccessBinding[] }[] = toolFamilies.map((family) => ({
     label: family.label,
-    tools: [] as AccessBinding[],
+    tools: [],
   }));
   const other: AccessBinding[] = [];
   for (const tool of tools) {

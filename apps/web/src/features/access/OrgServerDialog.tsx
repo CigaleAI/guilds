@@ -15,6 +15,7 @@ import {
   TextField,
   toast,
 } from "@guildsrun/ui";
+import { isRemoteServerAuth } from "./remoteServer";
 
 const empty: OrgServerInput = {
   slug: "",
@@ -104,7 +105,9 @@ export function OrgServerDialog({ orgId, open, onClose }: OrgServerDialogProps) 
               tone="surface"
               label="Sign-in"
               value={form.auth}
-              onValueChange={(value) => set({ auth: value as OrgServerInput["auth"] })}
+              onValueChange={(value) => {
+                if (isRemoteServerAuth(value)) set({ auth: value });
+              }}
               options={[
                 { value: "token", label: "An API key or token" },
                 { value: "oauth", label: "OAuth at the server" },

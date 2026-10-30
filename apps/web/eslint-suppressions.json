@@ -24,11 +24,6 @@
       "count": 1
     }
   },
-  "src/features/access/OrgServerDialog.tsx": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    }
-  },
   "src/features/access/ServerCard.tsx": {
     "complexity": {
       "count": 1
@@ -45,9 +40,6 @@
     }
   },
   "src/features/access/access.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 3
-    },
     "complexity": {
       "count": 1
     }
