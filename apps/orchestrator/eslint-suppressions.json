@@ -1261,14 +1261,8 @@
     }
   },
   "src/toolbox/artifacts.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
     "@typescript-eslint/explicit-module-boundary-types": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 2
     }
   },
   "src/toolbox/browser.ts": {
@@ -1277,26 +1271,8 @@
     }
   },
   "src/toolbox/code.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 3
-    },
     "max-params": {
       "count": 1
-    }
-  },
-  "src/toolbox/harness-ops.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    }
-  },
-  "src/toolbox/harness-result.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/toolbox/harness.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 2
     }
   },
   "src/toolbox/index.ts": {
@@ -1304,30 +1280,9 @@
       "count": 1
     }
   },
-  "src/toolbox/offered.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 3
-    },
-    "no-restricted-syntax": {
-      "count": 4
-    }
-  },
-  "src/toolbox/schema.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    }
-  },
-  "src/toolbox/script.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 2
-    }
-  },
   "src/toolbox/shell.ts": {
     "max-depth": {
       "count": 2
-    },
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/typesafe/client.ts": {

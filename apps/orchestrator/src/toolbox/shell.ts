@@ -1,5 +1,5 @@
 import { exitCodeOf, type CommandResult } from "../sandbox/sdk.js";
-import type { ToolHooks, ToolInvocation, ToolRun } from "./types.js";
+import type { CommandInit, ToolHooks, ToolInvocation, ToolRun } from "./types.js";
 import { SandboxCommandError, ToolUnavailableError } from "./errors.js";
 
 export const COMMAND_TIMEOUT_SECONDS = 120;
@@ -53,7 +53,7 @@ export async function executeCommand(
   const handlers =
     run.cancel_event !== null && track !== null
       ? {
-          onInit: async (init: { id?: string }) => {
+          onInit: async (init: CommandInit) => {
             const executionId = init.id;
             if (typeof executionId === "string" && executionId) {
               track(executionId);

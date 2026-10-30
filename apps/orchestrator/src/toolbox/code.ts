@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import { Type } from "@sinclair/typebox";
+import { isPlainRecord } from "../db/json.js";
 import type { MessageMetadata, ReportedToolMetadata } from "../db/schema/index.js";
 import { keepMatching } from "../lib/decode.js";
 import { stderrOf, stdoutOf, type CommandResult } from "../sandbox/sdk.js";
@@ -40,13 +41,22 @@ export function callSegment(callId: string): string {
   return cleaned && cleaned !== "." && cleaned !== ".." ? cleaned : `call_${Date.now()}`;
 }
 
-export function decodeEnvelope(stdout: string): { ok: boolean; text?: string; meta?: unknown; error?: string } {
+/** What a sandbox helper prints: whether its op succeeded, its text and meta, and its error text when it says one. */
+export type HelperEnvelope = { ok: boolean; text: string; meta: Record<string, unknown>; error: string | null };
+
+/** The envelope a helper printed as base64 JSON; throws when it is not a JSON object. */
+export function decodeEnvelope(stdout: string): HelperEnvelope {
   const compact = stdout.replace(/\s+/g, "");
-  const decoded = JSON.parse(Buffer.from(compact, "base64").toString("utf8")) as unknown;
-  if (!decoded || typeof decoded !== "object" || Array.isArray(decoded)) {
+  const decoded: unknown = JSON.parse(Buffer.from(compact, "base64").toString("utf8"));
+  if (!isPlainRecord(decoded)) {
     throw new SandboxCommandError("code helper returned a non-object");
   }
-  return decoded as { ok: boolean; text?: string; meta?: unknown; error?: string };
+  return {
+    ok: Boolean(decoded.ok),
+    text: typeof decoded.text === "string" ? decoded.text : "",
+    meta: isPlainRecord(decoded.meta) ? decoded.meta : {},
+    error: typeof decoded.error === "string" && decoded.error ? decoded.error : null,
+  };
 }
 
 /** The command that runs `helper` on `request`: inline, or through a request file when it is too large. */
@@ -67,7 +77,7 @@ async function helperCommand(run: ToolRun, helper: string, request: Record<strin
 
 /** The helper's result from its envelope; throws with its error text, or with stderr when it printed no envelope. */
 function helperResult(execution: CommandResult): CodeResult {
-  let envelope: ReturnType<typeof decodeEnvelope>;
+  let envelope: HelperEnvelope;
   try {
     envelope = decodeEnvelope(stdoutOf(execution));
   } catch {
@@ -75,10 +85,9 @@ function helperResult(execution: CommandResult): CodeResult {
     throw new SandboxCommandError(`code helper failed${detail ? `: ${detail}` : ""}`);
   }
   if (!envelope.ok) {
-    throw new SandboxCommandError(envelope.error || "code helper failed");
+    throw new SandboxCommandError(envelope.error ?? "code helper failed");
   }
-  const meta = envelope.meta && typeof envelope.meta === "object" && !Array.isArray(envelope.meta) ? envelope.meta : {};
-  return { text: typeof envelope.text === "string" ? envelope.text : "", meta: meta as Record<string, unknown> };
+  return { text: envelope.text, meta: envelope.meta };
 }
 
 const ReportedFields = Type.Object({

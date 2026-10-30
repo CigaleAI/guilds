@@ -4,7 +4,7 @@ import { errorMessage, writeLog } from "../observability/log.js";
 import { callSegment, type CodeResult } from "./code.js";
 import { buildBrief } from "./harness-brief.js";
 import { checkpoint, harnessOp, numberOrZero, opsRun, shownProgressLines, stringOrNull } from "./harness-ops.js";
-import { codeTaskText, failureDetail, type ChangedFile, type CodeTaskOutcome, type CodeTaskStatus } from "./harness-result.js";
+import { codeTaskText, failureDetail, isChangedFile, type CodeTaskOutcome, type CodeTaskStatus } from "./harness-result.js";
 import { checkHarness, requiredHarness } from "./harness-setup.js";
 import { functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
@@ -64,10 +64,10 @@ export function notePaths(args: Record<string, unknown>): string[] {
   if (raw === undefined || raw === null) {
     return [];
   }
-  if (!Array.isArray(raw) || raw.some((item) => typeof item !== "string")) {
+  if (!Array.isArray(raw) || !raw.every((item): item is string => typeof item === "string")) {
     throw new ToolArgumentError("notes must be a list of display paths");
   }
-  return [...new Set((raw as string[]).map((item) => item.trim()).filter(Boolean))];
+  return [...new Set(raw.map((item) => item.trim()).filter(Boolean))];
 }
 
 function requiredBrief(args: Record<string, unknown>): string {
@@ -398,7 +398,7 @@ function turnOutcome(turn: HarnessTurn, ending: TurnEnding, changed: Record<stri
     files_changed: numberOrZero(changed.files_changed),
     insertions: numberOrZero(changed.insertions),
     deletions: numberOrZero(changed.deletions),
-    files: Array.isArray(changed.files) ? (changed.files as ChangedFile[]) : [],
+    files: Array.isArray(changed.files) ? changed.files.filter(isChangedFile) : [],
     detail: endingDetail(turn, ending, status),
     message: stringOrNull(ending.result?.message) ?? "",
     log_path: turn.log_path,

@@ -21,7 +21,7 @@ import { HARNESS_HELPER, runCodeHelper } from "../../src/toolbox/code.js";
 import { harnessTiming, notePaths, timeoutMinutes } from "../../src/toolbox/harness.js";
 import { BRIEF_PREAMBLE, buildBrief } from "../../src/toolbox/harness-brief.js";
 import { HARNESS_LOG_MAX_BYTES, readHarnessLog, shownProgressLines } from "../../src/toolbox/harness-ops.js";
-import { codeTaskText, failureDetail, formatDuration, type CodeTaskOutcome } from "../../src/toolbox/harness-result.js";
+import { codeTaskText, failureDetail, formatDuration, isChangedFile, type CodeTaskOutcome } from "../../src/toolbox/harness-result.js";
 import { assertHarnessReady, checkHarnessOn, HarnessSetupError } from "../../src/toolbox/harness-setup.js";
 import { applySecretAliases } from "../../src/access/runtime.js";
 import { answerOps, HostCodeSandbox } from "../helpers/code-sandbox.js";
@@ -969,6 +969,14 @@ test("a failed turn names the most telling reason it has", () => {
   assert.equal(detail({ events: 4, stderr: "killed" }), "error: killed");
   assert.equal(detail({ events: 4, exit_code: 2 }), "error: exited with code 2");
   assert.equal(detail({ events: 4 }), "error: exited with code unknown");
+});
+
+test("a changed file has a path and line counts, null for a binary file", () => {
+  assert.equal(isChangedFile({ path: "a.ts", insertions: 3, deletions: 1 }), true);
+  assert.equal(isChangedFile({ path: "logo.png", insertions: null, deletions: null }), true);
+  assert.equal(isChangedFile({ path: "a.ts", insertions: "3", deletions: 1 }), false);
+  assert.equal(isChangedFile({ insertions: 3, deletions: 1 }), false);
+  assert.equal(isChangedFile("a.ts"), false);
 });
 
 test("stop kills a harness that ignores SIGTERM once the grace period is over", async () => {

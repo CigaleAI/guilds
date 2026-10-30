@@ -22,6 +22,8 @@ import {
 } from "../artifacts/notes.js";
 import type { ArtifactStore } from "../artifacts/store.js";
 import { writeMemory } from "../artifacts/memory.js";
+import type { ArtifactRow } from "../db/artifacts.js";
+import { isPlainRecord } from "../db/json.js";
 import { bindQuery } from "../db/pg.js";
 
 /** The artifact functions the note, record, and Memory tools call, on `store`. */
@@ -91,7 +93,7 @@ function findArgs(args: Record<string, unknown>): {
 }
 
 /** A row `note_get` may show: a script or a file is read with its own family's tool. */
-function assertReadableNote(row: { kind: string }): void {
+function assertReadableNote(row: ArtifactRow): void {
   if (row.kind === "script") {
     throw new ArtifactError("use script_read for scripts", 422);
   }
@@ -101,7 +103,7 @@ function assertReadableNote(row: { kind: string }): void {
 }
 
 /** A row `note_delete` may delete: a script or a file is deleted with its own family's tool. */
-function assertDeletableNote(row: { kind: string }): void {
+function assertDeletableNote(row: ArtifactRow): void {
   if (row.kind === "script") {
     throw new ArtifactError("use script_delete for scripts", 422);
   }
@@ -270,10 +272,10 @@ export const noteDelete: Tool = {
 
 function bodyArg(args: Record<string, unknown>): Record<string, unknown> {
   const body = args.body;
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
+  if (!isPlainRecord(body)) {
     throw new ArtifactError("body must be a JSON object of column: value", 422);
   }
-  return body as Record<string, unknown>;
+  return body;
 }
 
 function optional<T>(value: T | undefined | null): T | undefined {

@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { isPlainRecord } from "../db/json.js";
 import type { Harness } from "../db/schema/index.js";
 import { codeResultMaxBytes } from "./code.js";
 import { numberOrZero } from "./harness-ops.js";
@@ -18,6 +19,15 @@ export function formatDuration(ms: number): string {
 }
 
 export type ChangedFile = { path: string; insertions: number | null; deletions: number | null };
+
+function isCount(value: unknown): value is number | null {
+  return value === null || typeof value === "number";
+}
+
+/** Whether `value` is a file of a checkpoint's change list: its path, and its line counts or null for a binary file. */
+export function isChangedFile(value: unknown): value is ChangedFile {
+  return isPlainRecord(value) && typeof value.path === "string" && isCount(value.insertions) && isCount(value.deletions);
+}
 
 export type CodeTaskOutcome = {
   status: CodeTaskStatus;
@@ -75,8 +85,8 @@ export function codeTaskText(outcome: CodeTaskOutcome, maxBytes = codeResultMaxB
   return `${head}\n\n${message}\n\n${tail}`;
 }
 
-/** The result of a call the orchestrator never saw finish: it restarted while the harness ran. */
-export function interruptedText(task: {
+/** A `code_task` call the orchestrator never saw finish: where it ran, its session and log, and whether its harness was stopped. */
+export type InterruptedTask = {
   harness: Harness;
   repository: string | null;
   session_id: string | null;
@@ -84,7 +94,10 @@ export function interruptedText(task: {
   run_id: string;
   call_id: string;
   stopped: boolean;
-}): string {
+};
+
+/** The result of a call the orchestrator never saw finish: it restarted while the harness ran. */
+export function interruptedText(task: InterruptedTask): string {
   const resume = task.session_id ? " Resume the session to finish the work." : "";
   return [
     `interrupted · ${task.harness} · ${task.repository ?? "unknown"} · session ${task.session_id ?? "none"}`,

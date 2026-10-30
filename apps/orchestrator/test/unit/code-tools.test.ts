@@ -15,6 +15,7 @@ import { invokeTool } from "../../src/toolbox/index.js";
 import {
   callSegment,
   CODING_TOOLS,
+  decodeEnvelope,
   INLINE_REQUEST_MAX,
   repeatedReadStep,
   type ReadRow,
@@ -235,6 +236,23 @@ test("call ids become safe file names", () => {
   assert.equal(callSegment("call_abc-1.2"), "call_abc-1.2");
   assert.equal(callSegment("functions.shell:0"), "functions.shell_0");
   assert.match(callSegment(".."), /^call_\d+$/);
+});
+
+test("a helper envelope reads its fields by type, and is refused when it is not an object", () => {
+  const encode = (value: unknown) => Buffer.from(JSON.stringify(value), "utf8").toString("base64");
+  assert.deepEqual(decodeEnvelope(encode({ ok: true, text: "hi", meta: { lines: 2 } })), {
+    ok: true,
+    text: "hi",
+    meta: { lines: 2 },
+    error: null,
+  });
+  assert.deepEqual(decodeEnvelope(encode({ ok: false, error: "no such file", meta: [1] })), {
+    ok: false,
+    text: "",
+    meta: {},
+    error: "no such file",
+  });
+  assert.throws(() => decodeEnvelope(encode([1])), /non-object/);
 });
 
 test("a read of a range already held, unchanged, points at the earlier step", () => {

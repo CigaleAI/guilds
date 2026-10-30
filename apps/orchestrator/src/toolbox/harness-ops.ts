@@ -1,3 +1,4 @@
+import { isPlainRecord } from "../db/json.js";
 import type { Harness } from "../db/schema/index.js";
 import { errorMessage, writeLog } from "../observability/log.js";
 import { redact } from "../secrets/index.js";
@@ -100,8 +101,8 @@ export async function checkpoint(
       { op: "checkpoint", call_id: callId, which, task: callId, repositories: [repository] },
       { timeoutSeconds: CHECKPOINT_TIMEOUT_SECONDS },
     );
-    const records = Array.isArray(result.meta.repositories) ? result.meta.repositories : [];
-    return (records[0] as Record<string, unknown> | undefined) ?? {};
+    const first: unknown = Array.isArray(result.meta.repositories) ? result.meta.repositories[0] : undefined;
+    return isPlainRecord(first) ? first : {};
   } catch (error) {
     writeLog("warn", errorMessage(error), { run_id: run.run_id, agent_id: run.agent_id, operation: "code_task.checkpoint" });
     return {};

@@ -59,11 +59,14 @@ export class CancelEvent {
   }
 }
 
+/** What a sandbox command reports once it starts: its execution id, which interrupts it. */
+export type CommandInit = { id?: string };
+
 export type SandboxCommands = {
   run(
     command: string,
     opts?: Record<string, unknown>,
-    handlers?: { onInit?: (init: { id?: string }) => Promise<void> | void; on_init?: (init: { id?: string }) => Promise<void> | void },
+    handlers?: { onInit?: (init: CommandInit) => Promise<void> | void; on_init?: (init: CommandInit) => Promise<void> | void },
   ): Promise<CommandResult>;
   interrupt?(executionId: string): Promise<void>;
 };
