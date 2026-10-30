@@ -198,6 +198,11 @@
       "count": 3
     }
   },
+  "src/index.ts": {
+    "boundary/no-reexport-modules": {
+      "count": 1
+    }
+  },
   "src/primitives/Divider.tsx": {
     "no-restricted-syntax": {
       "count": 2

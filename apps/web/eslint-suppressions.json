@@ -61,6 +61,9 @@
     "@typescript-eslint/consistent-type-assertions": {
       "count": 12
     },
+    "boundary/no-reexport-modules": {
+      "count": 1
+    },
     "complexity": {
       "count": 3
     },
@@ -494,6 +497,9 @@
   },
   "src/features/agent/runs/runFlowModel.ts": {
     "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    },
+    "boundary/no-reexport-modules": {
       "count": 1
     },
     "complexity": {

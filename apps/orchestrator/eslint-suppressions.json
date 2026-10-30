@@ -24,6 +24,9 @@
     }
   },
   "src/app.ts": {
+    "boundary/no-reexport-modules": {
+      "count": 1
+    },
     "complexity": {
       "count": 1
     }
@@ -529,6 +532,9 @@
     }
   },
   "src/generation/index.ts": {
+    "boundary/no-reexport-modules": {
+      "count": 1
+    },
     "no-restricted-syntax": {
       "count": 1
     }
@@ -623,6 +629,9 @@
     }
   },
   "src/groupchat/index.ts": {
+    "boundary/no-reexport-modules": {
+      "count": 1
+    },
     "complexity": {
       "count": 1
     },
@@ -942,6 +951,9 @@
     }
   },
   "src/memory/index.ts": {
+    "boundary/no-reexport-modules": {
+      "count": 1
+    },
     "no-restricted-syntax": {
       "count": 1
     }
@@ -976,6 +988,9 @@
   "src/oauth/index.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 9
+    },
+    "boundary/no-reexport-modules": {
+      "count": 1
     },
     "complexity": {
       "count": 2
@@ -1450,6 +1465,9 @@
     }
   },
   "src/toolbox/index.ts": {
+    "boundary/no-reexport-modules": {
+      "count": 1
+    },
     "complexity": {
       "count": 1
     },

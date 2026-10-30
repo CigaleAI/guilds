@@ -298,7 +298,7 @@ recommended React Hooks rules.
 Every package also runs the boundary rule
 (`eslint.boundary.js`). It fails any file that imports a package
 of an extension or a relative path that leaves this repository. It
-also fails a module made only of re-exports (`export * from`,
+also fails a module that holds a re-export (`export * from`,
 `export { x } from`), except an index a tool requires, which the
 package names: the orchestrator's `src/db/schema/index.ts`, which
 drizzle-kit reads.
