@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useStudioState } from "../../../api/queries/studio";
 import type { StateItemRow, StudioAgent } from "../../../api/types/studio";
 import { relativeTime } from "../../../app/format";
+import { readStored, writeStored } from "../../../app/storage";
 import {
   Banner,
   Checkbox,
@@ -33,20 +34,8 @@ const windowLabel: Record<number, string> = { 24: "24 h", 72: "3 d", 168: "7 d" 
 
 /** The window State last showed, remembered in this browser. */
 export function storedStateHours(): number {
-  try {
-    const value = Number(localStorage.getItem(hoursKey));
-    return STATE_WINDOW_HOURS.includes(value) ? value : STATE_DEFAULT_HOURS;
-  } catch {
-    return STATE_DEFAULT_HOURS;
-  }
-}
-
-function storeHours(hours: number) {
-  try {
-    localStorage.setItem(hoursKey, String(hours));
-  } catch {
-    // Without storage the window resets on the next visit.
-  }
+  const value = Number(readStored(hoursKey));
+  return STATE_WINDOW_HOURS.includes(value) ? value : STATE_DEFAULT_HOURS;
 }
 
 /**
@@ -79,7 +68,7 @@ export function StateList() {
   }
   const changeHours = (next: number) => {
     setHours(next);
-    storeHours(next);
+    writeStored(hoursKey, String(next));
   };
   return (
     <StateTable rows={rows.data} waiting={waiting} hours={hours} onHoursChange={changeHours} />

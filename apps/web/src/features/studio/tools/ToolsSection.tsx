@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useStudioTools } from "../../../api/queries/studio";
 import type { StudioAgent, StudioTool } from "../../../api/types/studio";
 import { relativeTime } from "../../../app/format";
+import { readStored, writeStored } from "../../../app/storage";
 import {
   Banner,
   Checkbox,
@@ -34,20 +35,8 @@ const windowLabel: Record<number, string> = { 24: "24 h", 72: "3 d", 168: "7 d" 
 const allAgents = "all";
 
 function storedHours(): number {
-  try {
-    const value = Number(localStorage.getItem(hoursKey));
-    return TOOL_WINDOW_HOURS.includes(value) ? value : TOOL_DEFAULT_HOURS;
-  } catch {
-    return TOOL_DEFAULT_HOURS;
-  }
-}
-
-function storeHours(hours: number) {
-  try {
-    localStorage.setItem(hoursKey, String(hours));
-  } catch {
-    // Without storage the window resets on the next visit.
-  }
+  const value = Number(readStored(hoursKey));
+  return TOOL_WINDOW_HOURS.includes(value) ? value : TOOL_DEFAULT_HOURS;
 }
 
 /**
@@ -62,7 +51,7 @@ export function ToolsSection() {
   const flagsOf = (tool: StudioTool) => toolFlags(tool, pending.has(tool.name));
   const changeHours = (next: number) => {
     setHours(next);
-    storeHours(next);
+    writeStored(hoursKey, String(next));
   };
 
   if (tools.isError) {

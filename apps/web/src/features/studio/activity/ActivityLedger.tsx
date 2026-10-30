@@ -1,6 +1,7 @@
 import { RefreshCw } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useStudioActivity } from "../../../api/queries/studio";
+import { readStored, writeStored } from "../../../app/storage";
 import {
   IconButton,
   Segmented,
@@ -41,22 +42,6 @@ const hoursKey = "studio.activity.hours";
 const tabKey = "studio.activity.tab";
 type ActivityTab = "map" | "agents";
 
-function stored<T>(key: string, read: (value: string | null) => T): T {
-  try {
-    return read(localStorage.getItem(key));
-  } catch {
-    return read(null);
-  }
-}
-
-function store(key: string, value: string) {
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    // Without storage the choice resets on the next visit.
-  }
-}
-
 /**
  * The guild's activity over a window of hours. Map draws who woke whom and lists every chain of
  * wakes, from what started it to where it stopped; a line or box selected on the map narrows the
@@ -64,13 +49,12 @@ function store(key: string, value: string) {
  */
 export function ActivityLedger() {
   const { session, search, goInPlace } = useStudio();
-  const [hours, setHours] = useState(() =>
-    stored(hoursKey, (value) =>
-      ACTIVITY_WINDOW_HOURS.includes(Number(value)) ? Number(value) : ACTIVITY_DEFAULT_HOURS,
-    ),
-  );
+  const [hours, setHours] = useState(() => {
+    const value = Number(readStored(hoursKey));
+    return ACTIVITY_WINDOW_HOURS.includes(value) ? value : ACTIVITY_DEFAULT_HOURS;
+  });
   const [tab, setTab] = useState<ActivityTab>(() =>
-    stored(tabKey, (value) => (value === "agents" ? "agents" : "map")),
+    readStored(tabKey) === "agents" ? "agents" : "map",
   );
   const activity = useStudioActivity(session.id, hours);
 
@@ -90,7 +74,7 @@ export function ActivityLedger() {
     });
   const switchTab = (next: ActivityTab) => {
     setTab(next);
-    store(tabKey, next);
+    writeStored(tabKey, next);
   };
 
   const wakes = data?.view.wakes ?? [];
@@ -114,7 +98,7 @@ export function ActivityLedger() {
           value={String(hours)}
           onValueChange={(value) => {
             setHours(Number(value));
-            store(hoursKey, value);
+            writeStored(hoursKey, value);
           }}
           options={ACTIVITY_WINDOW_HOURS.map((value) => ({
             value: String(value),
