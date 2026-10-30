@@ -53,20 +53,6 @@ export type RepositoryServices = {
   retireLogin: (connection: McpConnectionRow, failure: LoginFailure) => Promise<void>;
 };
 
-/**
- * GitHub refused the installation behind `connection` while the repositories it reaches were
- * listed. Its caller retires the login, as the message tells the operator.
- */
-export class RepositoryListingInstallationGoneError extends RepositoryValidationError {
-  readonly connection: McpConnectionRow;
-
-  constructor(connection: McpConnectionRow) {
-    super("GitHub refused the installation; the connection is now disconnected");
-    this.name = "RepositoryListingInstallationGoneError";
-    this.connection = connection;
-  }
-}
-
 type Item = Record<string, unknown>;
 
 /** A repository's fields as a request sends them, before validation: its name, URL and branch. */
@@ -118,8 +104,8 @@ async function requireGithubConnection(
 
 /**
  * Every repository the installation behind a connected GitHub login reaches. A login whose
- * installation GitHub no longer knows is retired as `installation_gone`, and the listing
- * throws a `RepositoryListingInstallationGoneError`.
+ * installation GitHub no longer knows is retired as `installation_gone`, and the listing is a
+ * 422 saying so.
  */
 export async function reachableRepositories(
   services: RepositoryServices,
@@ -139,7 +125,9 @@ export async function reachableRepositories(
   } catch (error) {
     if (error instanceof GithubInstallationGoneError) {
       await services.retireLogin(connection, "installation_gone");
-      throw new RepositoryListingInstallationGoneError(connection);
+      throw new RepositoryValidationError(
+        "GitHub refused the installation; the connection is now disconnected",
+      );
     }
     if (error instanceof GithubError || error instanceof RepositoryAccessError) {
       throw new RepositoryValidationError(error.message, 502);
@@ -325,23 +313,6 @@ function matchSelection(
   });
 }
 
-/** Replaces the repositories a GitHub login picks, among those its installation reaches, and returns them. */
-export async function selectGithubRepositories(
-  services: RepositoryServices,
-  connection: McpConnectionRow,
-  repositories: GithubSelection,
-  now: Date,
-): Promise<GithubRepositorySelection[]> {
-  const { db } = services;
-  const validated = validateGithubRepositories(repositories);
-  const reached = await reachableRepositories(services, connection);
-  const selected = matchSelection(validated, reached, repositories);
-  if ((await updateMcpConnectionGithubRepositories(db, connection.id, selected, now)) === null) {
-    throw new RepositoryValidationError("connection not found", 404);
-  }
-  return selected;
-}
-
 /**
  * Replaces the repositories a GitHub login picks, among those its installation reaches, and
  * returns them. The login's tool session, whose token is scoped to its previous pick, is
@@ -352,15 +323,21 @@ export async function pickGithubRepositories(
   connection: McpConnectionRow,
   repositories: GithubSelection,
 ): Promise<GithubRepositorySelection[]> {
+  const { db } = services;
   const now = new Date();
-  const selected = await selectGithubRepositories(services, connection, repositories, now);
+  const validated = validateGithubRepositories(repositories);
+  const reached = await reachableRepositories(services, connection);
+  const selected = matchSelection(validated, reached, repositories);
+  if ((await updateMcpConnectionGithubRepositories(db, connection.id, selected, now)) === null) {
+    throw new RepositoryValidationError("connection not found", 404);
+  }
   services.mcp?.drop(connection.id);
-  await replaceLoginGuildRepositories(services.db, connection, selected, now);
+  await replaceLoginGuildRepositories(db, connection, selected, now);
   return selected;
 }
 
 /** Replaces a guild's repositories with the ones its own GitHub login picks; another login changes none. */
-export async function replaceLoginGuildRepositories(
+async function replaceLoginGuildRepositories(
   db: Queryable,
   connection: McpConnectionRow,
   selected: GithubRepositorySelection[],
