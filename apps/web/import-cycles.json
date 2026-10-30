@@ -1,0 +1,23 @@
+{
+  "filesInCycles": [],
+  "domainsInCycles": [
+    "app",
+    "features/access",
+    "features/admin",
+    "features/agent",
+    "features/builder",
+    "features/coach",
+    "features/files",
+    "features/guild",
+    "features/home",
+    "features/inbox",
+    "features/machines",
+    "features/models",
+    "features/notes",
+    "features/recipes",
+    "features/settings",
+    "features/shell",
+    "features/studio",
+    "features/tables"
+  ]
+}

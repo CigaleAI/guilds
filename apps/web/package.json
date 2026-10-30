@@ -26,6 +26,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src",
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
+    "cycles": "tsx ../orchestrator/scripts/import-cycles.ts .",
     "format": "prettier --write src"
   },
   "dependencies": {
