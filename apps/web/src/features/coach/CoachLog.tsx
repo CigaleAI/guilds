@@ -40,6 +40,39 @@ type CoachLogProps = {
   operatorNote?: (message: CoachRow) => ReactNode | null;
 };
 
+type CoachReplyProps = {
+  message: CoachRow;
+  coach: CoachLogProps["coach"];
+  time: { time: string; dateTime: string };
+};
+
+/** Says that the coach's reply ended at its output limit. */
+function OutputLimitNote() {
+  return (
+    <p className="text-xs text-t-ochre-fg">The coach reached its output limit before replying.</p>
+  );
+}
+
+/**
+ * One reply the coach wrote: its reasoning and its text, and a note when it reached its output
+ * limit. A reply with neither shows only that note, or nothing.
+ */
+function CoachReply({ message, coach, time }: CoachReplyProps) {
+  const text = turnText(message);
+  const reasoning = turnReasoning(message);
+  const limited = message.metadata.finish_reason === "length";
+  if (!text.trim() && !reasoning) return limited ? <OutputLimitNote /> : null;
+  return (
+    <AgentMessage {...coach} bubble="surface" {...time}>
+      <div className="flex flex-col gap-2">
+        {reasoning ? <Reasoning text={reasoning} /> : null}
+        {text.trim() ? <Markdown density="compact">{text}</Markdown> : null}
+        {limited ? <OutputLimitNote /> : null}
+      </div>
+    </AgentMessage>
+  );
+}
+
 /**
  * A conversation with a coach: the operator's messages, the coach's steps and replies as they are
  * written, and its requests after the steps that made them. It follows the end while the reader
@@ -111,28 +144,7 @@ export function CoachLog({
               </OperatorMessage>
             );
           }
-          const text = turnText(message);
-          const reasoning = turnReasoning(message);
-          if (!text.trim() && !reasoning) {
-            return message.metadata.finish_reason === "length" ? (
-              <p key={message.seq} className="text-xs text-t-ochre-fg">
-                The coach reached its output limit before replying.
-              </p>
-            ) : null;
-          }
-          return (
-            <AgentMessage key={message.seq} {...coach} bubble="surface" {...time}>
-              <div className="flex flex-col gap-2">
-                {reasoning ? <Reasoning text={reasoning} /> : null}
-                {text.trim() ? <Markdown density="compact">{text}</Markdown> : null}
-                {message.metadata.finish_reason === "length" ? (
-                  <p className="text-xs text-t-ochre-fg">
-                    The coach reached its output limit before replying.
-                  </p>
-                ) : null}
-              </div>
-            </AgentMessage>
-          );
+          return <CoachReply key={message.seq} message={message} coach={coach} time={time} />;
         })}
         {liveTurnActive(live) ? (
           <AgentMessage {...coach} bubble="surface">

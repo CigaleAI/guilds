@@ -3,10 +3,5 @@
     "@typescript-eslint/consistent-type-assertions": {
       "count": 2
     }
-  },
-  "src/features/coach/CoachLog.tsx": {
-    "complexity": {
-      "count": 1
-    }
   }
 }
