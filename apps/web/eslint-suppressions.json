@@ -9,7 +9,7 @@
   },
   "src/api/streams.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 3
+      "count": 2
     },
     "complexity": {
       "count": 1

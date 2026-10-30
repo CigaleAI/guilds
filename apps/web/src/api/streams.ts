@@ -6,10 +6,12 @@ import {
   inboxEventGuards,
   parseFrameData,
   runEventGuards,
+  studioEventGuards,
   type GuildEvents,
   type InboxEvents,
   type LiveEventHandlers,
   type RunEvents,
+  type StudioEvents,
 } from "./liveEvents";
 import { applyLiveDelta, type LiveTurn } from "./liveTurn";
 import { agentKeys } from "./queries/agents";
@@ -253,15 +255,7 @@ export function useRunStream(
   return { live, progress };
 }
 
-const studioEvents = [
-  "generation.started",
-  "assistant.delta",
-  "assistant.reasoning.delta",
-  "message.committed",
-  "draft.changed",
-  "generation.finished",
-  "session.error",
-] as const;
+const studioEvents = Object.keys(studioEventGuards);
 
 /**
  * Follows a Studio session: the coach's reply as it is written, committed rows into the cached
@@ -277,43 +271,40 @@ export function useStudioStream(sessionId: string): LiveTurn | null {
   }
   const refresh = () => void client.invalidateQueries({ queryKey: studioKeys.studio(sessionId) });
 
+  const handlers: LiveEventHandlers<StudioEvents> = {
+    "generation.started": () =>
+      client.setQueryData<StudioSession>(studioKeys.studio(sessionId), (session) =>
+        session ? { ...session, generation_state: "generating" } : session,
+      ),
+    "assistant.delta": (delta) => setLive((turn) => applyLiveDelta(turn, "assistant.delta", delta)),
+    "assistant.reasoning.delta": (delta) =>
+      setLive((turn) => applyLiveDelta(turn, "assistant.reasoning.delta", delta)),
+    "message.committed": ({ message }) => {
+      client.setQueryData<StudioMessage[]>(studioKeys.studioMessages(sessionId), (messages) =>
+        messages && !messages.some((known) => known.seq === message.seq)
+          ? [...messages, message].sort((a, b) => a.seq - b.seq)
+          : messages,
+      );
+      if (message.payload.role === "assistant") setLive(null);
+    },
+    "draft.changed": refresh,
+    "generation.finished": () => {
+      setLive(null);
+      client.setQueryData<StudioSession>(studioKeys.studio(sessionId), (session) =>
+        session ? { ...session, generation_state: "idle" } : session,
+      );
+      refresh();
+    },
+    "session.error": () => {
+      setLive(null);
+      refresh();
+    },
+  };
+
   useEventStream(`/api/studio/sessions/${encodeURIComponent(sessionId)}/stream`, {
     events: studioEvents,
     onOpen: refresh,
-    onEvent: (name, data) => {
-      if (name === "assistant.reasoning.delta" || name === "assistant.delta") {
-        setLive((turn) => applyLiveDelta(turn, name, data));
-        return;
-      }
-      if (name === "generation.started") {
-        client.setQueryData<StudioSession>(studioKeys.studio(sessionId), (session) =>
-          session ? { ...session, generation_state: "generating" } : session,
-        );
-        return;
-      }
-      if (name === "message.committed") {
-        const message = (data as { message?: StudioMessage } | null)?.message;
-        if (!message) return;
-        client.setQueryData<StudioMessage[]>(studioKeys.studioMessages(sessionId), (messages) =>
-          messages && !messages.some((known) => known.seq === message.seq)
-            ? [...messages, message].sort((a, b) => a.seq - b.seq)
-            : messages,
-        );
-        if (message.payload.role === "assistant") setLive(null);
-        return;
-      }
-      if (name === "draft.changed") {
-        refresh();
-        return;
-      }
-      setLive(null);
-      if (name === "generation.finished") {
-        client.setQueryData<StudioSession>(studioKeys.studio(sessionId), (session) =>
-          session ? { ...session, generation_state: "idle" } : session,
-        );
-      }
-      refresh();
-    },
+    onEvent: (name, data) => dispatchLiveEvent(studioEventGuards, handlers, name, data),
   });
   return live;
 }
