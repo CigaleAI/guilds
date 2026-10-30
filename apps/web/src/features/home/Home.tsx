@@ -1,6 +1,6 @@
 import { Navigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { useGuilds } from "../../api/queries";
+import { useGuilds } from "../../api/queries/guilds";
 import { readStored } from "../../app/storage";
 import { SkeletonRows } from "@guildsrun/ui";
 import { CreateGuildDialog } from "../guild/CreateGuildDialog";

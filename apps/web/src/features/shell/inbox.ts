@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useNotifications } from "../../api/queries";
+import { useNotifications } from "../../api/queries/chat";
 import type { Notifications } from "../../api/types";
 
 /** Items waiting in the operator's inbox: open issues plus unread tags. */

@@ -1,7 +1,11 @@
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { CheckCheck, Flag } from "lucide-react";
 import { useState } from "react";
-import { useGuildIssues, useResolveOpenIssues, useSetIssueStatus } from "../../../api/queries";
+import {
+  useGuildIssues,
+  useResolveOpenIssues,
+  useSetIssueStatus,
+} from "../../../api/queries/issues";
 import type { Issue } from "../../../api/types";
 import { agentLook } from "../../../app/agents";
 import { relativeTime } from "../../../app/format";

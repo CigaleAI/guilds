@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { ExternalLink } from "lucide-react";
 import { useState } from "react";
-import { useDraftAction, useStudioInspector } from "../../../api/queries";
+import { useDraftAction, useStudioInspector } from "../../../api/queries/studio";
 import type { StudioAgent, StudioDraft, StudioSession } from "../../../api/types";
 import {
   Button,

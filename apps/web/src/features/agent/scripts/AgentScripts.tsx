@@ -1,14 +1,14 @@
 import { Link, useParams } from "@tanstack/react-router";
 import { FileCode, Pencil, Plus, Trash2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
+import { useAgent } from "../../../api/queries/agents";
 import {
-  useAgent,
   useAgentScripts,
   useCreateScript,
   useDeleteAllScripts,
   useDeleteScript,
-  useLatestChange,
-} from "../../../api/queries";
+} from "../../../api/queries/scripts";
+import { useLatestChange } from "../../../api/queries/notes";
 import type { FileChange, Script } from "../../../api/types";
 import { relativeTime } from "../../../app/format";
 import {

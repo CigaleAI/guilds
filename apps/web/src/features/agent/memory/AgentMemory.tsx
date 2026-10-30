@@ -1,7 +1,12 @@
 import { useBlocker, useParams } from "@tanstack/react-router";
 import { Brain } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { agentNotesPrefix, useAgentMemory, useNote, useSaveMemory } from "../../../api/queries";
+import {
+  agentNotesPrefix,
+  useAgentMemory,
+  useNote,
+  useSaveMemory,
+} from "../../../api/queries/notes";
 import type { MemoryVersion } from "../../../api/types";
 import { relativeTime } from "../../../app/format";
 import {

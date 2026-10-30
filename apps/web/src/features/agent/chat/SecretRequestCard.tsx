@@ -1,11 +1,7 @@
 import { KeyRound } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import {
-  useCreateSecret,
-  useSecrets,
-  useSendRunMessage,
-  useSetSecretAccess,
-} from "../../../api/queries";
+import { useCreateSecret, useSecrets, useSetSecretAccess } from "../../../api/queries/secrets";
+import { useSendRunMessage } from "../../../api/queries/runs";
 import type { AgentDetail, Run, SecretAccessChoice } from "../../../api/types";
 import { useIdentity } from "../../../app/identity";
 import { Button, Segmented, TextField, Banner, toast, Icon } from "@guildsrun/ui";

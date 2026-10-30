@@ -1,7 +1,8 @@
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { Clock, Plus } from "lucide-react";
-import { useAgentRuns, useAgentSchedules, useRun } from "../../../api/queries";
+import { useAgentRuns, useRun } from "../../../api/queries/runs";
+import { useAgentSchedules } from "../../../api/queries/schedules";
 import type { Run, Schedule } from "../../../api/types";
 import { messageTime } from "../../../app/format";
 import { IconButton, StatusBadge, Tooltip } from "@guildsrun/ui";

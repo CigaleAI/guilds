@@ -3,12 +3,12 @@ import { BookOpen, Download, Package, Sparkles, Upload } from "lucide-react";
 import { useRef, useState } from "react";
 import {
   useCaptureRecipe,
-  useGuilds,
   useImportRecipe,
   useImportRegistryRecipe,
   useRecipeRegistry,
   useRecipes,
-} from "../../api/queries";
+} from "../../api/queries/recipes";
+import { useGuilds } from "../../api/queries/guilds";
 import type { RecipeRow } from "../../api/types";
 import { relativeTime } from "../../app/format";
 import {

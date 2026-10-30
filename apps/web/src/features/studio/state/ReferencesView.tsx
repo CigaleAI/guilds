@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Waypoints } from "lucide-react";
 import { Banner, EmptyState, SkeletonRows } from "@guildsrun/ui";
-import { useStudioReferences, useStudioState } from "../../../api/queries";
+import { useStudioReferences, useStudioState } from "../../../api/queries/studio";
 import type { StudioAgent, StudioReferences } from "../../../api/types";
 import { Empty } from "../MasterDetail";
 import { useStudio } from "../StudioContext";

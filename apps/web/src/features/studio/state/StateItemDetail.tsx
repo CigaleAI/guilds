@@ -1,6 +1,6 @@
 import { ArrowLeft, Code, MessageCircleQuestion, Pencil, Table } from "lucide-react";
 import { useState } from "react";
-import { useStudioReferences, useStudioStateItem } from "../../../api/queries";
+import { useStudioReferences, useStudioStateItem } from "../../../api/queries/studio";
 import type { StateHistoryEntry, StateItemRow, StateTally } from "../../../api/types";
 import { relativeTime } from "../../../app/format";
 import { Banner, Button, Icon, Segmented, SkeletonRows, StatBand, Tag } from "@guildsrun/ui";

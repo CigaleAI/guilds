@@ -3,14 +3,14 @@ import { ArrowLeft, Check, Download, Rocket } from "lucide-react";
 import { useState } from "react";
 import {
   exportRecipe,
-  useCapabilities,
   usePublishRecipe,
   useRecipe,
   useRecipeAccess,
   useRecipePreview,
   useRecipeValidation,
   useReviewRecipe,
-} from "../../api/queries";
+} from "../../api/queries/recipes";
+import { useCapabilities } from "../../api/queries/builder";
 import type { RecipeRow } from "../../api/types";
 import { Button, PageError, SkeletonRows, toast, Icon, Tag } from "@guildsrun/ui";
 import { PendingAccessBar } from "./plan/PendingAccessBar";

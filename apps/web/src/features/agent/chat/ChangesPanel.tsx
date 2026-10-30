@@ -1,7 +1,7 @@
 import type { UseQueryResult } from "@tanstack/react-query";
 import { GitBranch } from "lucide-react";
 import { useState } from "react";
-import { useRunDiff } from "../../../api/queries";
+import { useRunDiff } from "../../../api/queries/runs";
 import type { Run, RunDiff, RunRepositoryChange } from "../../../api/types";
 import { Button, CopyButton, Banner, cn, Icon } from "@guildsrun/ui";
 import { diffLineTone, diffstat } from "./changes";

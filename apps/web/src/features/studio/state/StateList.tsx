@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useStudioState } from "../../../api/queries";
+import { useStudioState } from "../../../api/queries/studio";
 import type { StateItemRow, StudioAgent } from "../../../api/types";
 import { relativeTime } from "../../../app/format";
 import {

@@ -1,14 +1,14 @@
 import { MessageSquarePlus } from "lucide-react";
 import { useLayoutEffect, useRef } from "react";
+import { useAgent } from "../../../api/queries/agents";
 import {
-  useAgent,
   useCancelRun,
-  useOrgModels,
   useResumeRun,
   useRunMessages,
   useSendRunMessage,
   useStartRun,
-} from "../../../api/queries";
+} from "../../../api/queries/runs";
+import { useOrgModels } from "../../../api/queries/models";
 import { useRunStream } from "../../../api/streams";
 import { progressLineCount } from "../../../api/toolProgress";
 import { messageTime } from "../../../app/format";

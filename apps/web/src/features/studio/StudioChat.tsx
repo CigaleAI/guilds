@@ -1,7 +1,11 @@
 import { Pin } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { useAskInNewSession, useCancelStudio, usePostStudioMessage } from "../../api/queries";
+import {
+  useAskInNewSession,
+  useCancelStudio,
+  usePostStudioMessage,
+} from "../../api/queries/studio";
 import type { LiveTurn } from "../../api/liveTurn";
 import type { StudioMessage, StudioSession } from "../../api/types";
 import { Button, Checkbox, Composer, Banner, toast, Icon } from "@guildsrun/ui";

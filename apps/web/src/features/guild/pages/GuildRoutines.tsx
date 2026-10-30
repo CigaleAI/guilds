@@ -1,12 +1,8 @@
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { Repeat } from "lucide-react";
 import { useMemo } from "react";
-import {
-  useGuild,
-  useGuildSchedules,
-  useSetGuildSchedulePaused,
-  useUpdateGuild,
-} from "../../../api/queries";
+import { useGuild, useUpdateGuild } from "../../../api/queries/guilds";
+import { useGuildSchedules, useSetGuildSchedulePaused } from "../../../api/queries/schedules";
 import type { GuildSchedule } from "../../../api/types";
 import { agentLook } from "../../../app/agents";
 import { upcomingTime } from "../../../app/format";

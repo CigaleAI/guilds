@@ -1,7 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { TriangleAlert } from "lucide-react";
 import { Banner, IconButton } from "@guildsrun/ui";
-import { useAgentHarness } from "../../api/queries";
+import { useAgentHarness } from "../../api/queries/agents";
 import { codingProblems, codingProblemsSentence, codingProblemsText } from "./harness";
 import { problemSection } from "./settings/sections";
 

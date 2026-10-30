@@ -111,7 +111,7 @@ A repository that extends core holds this one as a submodule
 | `src/main.tsx`, `index.html` | Entry: mounts the app with no slot filled |
 | `src/mount.tsx` | `mount(slots)` ([Boot](web-app.md#boot)) |
 | `src/app/` | The app frame: providers, identity, routes, slots, theme, storage helpers, formatting, and the back button (`returnTrail.ts`) |
-| `src/api/` | The typed API client, identity, queries, streams, and the client error log ([State and events](web-app.md#state-and-events)) |
+| `src/api/` | The typed API client, identity, the queries (`queries/`, one module per domain, [Code paths](web-app.md#code-paths)), streams, and the client error log ([State and events](web-app.md#state-and-events)) |
 | `public/` | Files served as-is |
 | `vite.app.ts` | `appConfig()`: build and dev-server configuration, shared with an extension |
 | `package.json` | `exports`: what an extension's package may import ([Extension slots](web-app.md#extension-slots)) |

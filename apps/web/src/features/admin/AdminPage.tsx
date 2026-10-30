@@ -17,7 +17,7 @@ import {
   useReloadRegistry,
   useSaveCatalogServer,
   useSaveCatalogTool,
-} from "../../api/queries";
+} from "../../api/queries/admin";
 import type {
   CatalogCopyField,
   CatalogServer,

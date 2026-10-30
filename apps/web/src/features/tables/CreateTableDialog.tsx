@@ -1,6 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
-import { useCreateDatabase, useGuilds } from "../../api/queries";
+import { useCreateDatabase } from "../../api/queries/tables";
+import { useGuilds } from "../../api/queries/guilds";
 import type { ColumnInput } from "../../api/types";
 import {
   Button,

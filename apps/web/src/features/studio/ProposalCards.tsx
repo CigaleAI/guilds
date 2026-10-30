@@ -1,6 +1,6 @@
 import { Eye } from "lucide-react";
 import type { ReactNode } from "react";
-import { useStudioEdits } from "../../api/queries";
+import { useStudioEdits } from "../../api/queries/studio";
 import type { StudioEdit } from "../../api/types";
 import { Button, DiffView, diffLines, Icon, Tag, cn, toast } from "@guildsrun/ui";
 import {

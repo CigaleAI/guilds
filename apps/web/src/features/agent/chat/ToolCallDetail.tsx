@@ -1,6 +1,6 @@
 import { Pin } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
-import { useTaskDiff, useTaskLog } from "../../../api/queries";
+import { useTaskDiff, useTaskLog } from "../../../api/queries/runs";
 import type { CallProgress } from "../../../api/toolProgress";
 import {
   Button,

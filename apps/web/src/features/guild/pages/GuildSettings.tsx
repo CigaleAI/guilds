@@ -3,15 +3,14 @@ import { Trash2, X } from "lucide-react";
 import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import {
   useDeleteGuild,
-  useGroupChatState,
   useGuild,
-  useGuildAgents,
-  useOrgMembers,
   useRemoveOperator,
-  useSetMessageLimit,
   useSetOperator,
   useUpdateGuild,
-} from "../../../api/queries";
+} from "../../../api/queries/guilds";
+import { useGroupChatState, useSetMessageLimit } from "../../../api/queries/chat";
+import { useGuildAgents } from "../../../api/queries/agents";
+import { useOrgMembers } from "../../../api/queries/org";
 import type { Guild, GuildOperator } from "../../../api/types";
 import { useIdentity } from "../../../app/identity";
 import {

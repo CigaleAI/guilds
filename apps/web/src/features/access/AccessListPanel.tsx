@@ -1,6 +1,8 @@
 import { Plus, X } from "lucide-react";
 import { useState } from "react";
-import { useAgentsByGuild, useGuilds, useItemAccess, useSetItemAccess } from "../../api/queries";
+import { useAgentsByGuild } from "../../api/queries/agents";
+import { useGuilds } from "../../api/queries/guilds";
+import { useItemAccess, useSetItemAccess } from "../../api/queries/access";
 import type { AccessEntry, AccessListMode, AccessRow, AccessTarget } from "../../api/types";
 import { useIdentity } from "../../app/identity";
 import {

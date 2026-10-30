@@ -1,5 +1,5 @@
 import { Link, useLocation } from "@tanstack/react-router";
-import { useInstance } from "../../../api/queries";
+import { useInstance } from "../../../api/queries/admin";
 import type { InstanceIntegration, OrgModels } from "../../../api/types";
 import { useIdentity } from "../../../app/identity";
 import { Select, Tag, Toggle } from "@guildsrun/ui";

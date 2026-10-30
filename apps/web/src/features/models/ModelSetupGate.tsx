@@ -1,6 +1,10 @@
 import { ArrowLeft, ExternalLink } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { useConnectModelProvider, useOrgModels, useSetDefaultModel } from "../../api/queries";
+import {
+  useConnectModelProvider,
+  useOrgModels,
+  useSetDefaultModel,
+} from "../../api/queries/models";
 import { hasConnectedProvider, type ModelProvider, type OrgModelProvider } from "../../api/types";
 import { useIdentity } from "../../app/identity";
 import {

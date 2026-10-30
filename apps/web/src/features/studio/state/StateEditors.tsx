@@ -1,4 +1,4 @@
-import { useDatabase } from "../../../api/queries";
+import { useDatabase } from "../../../api/queries/tables";
 import type { StudioAgent } from "../../../api/types";
 import { Banner, SkeletonRows } from "@guildsrun/ui";
 import { RecordsPanel } from "../../tables/RecordsPanel";

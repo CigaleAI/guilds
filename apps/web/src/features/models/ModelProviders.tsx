@@ -4,7 +4,7 @@ import {
   useProviderCatalog,
   useRemoveModelProvider,
   useSetDefaultModel,
-} from "../../api/queries";
+} from "../../api/queries/models";
 import type { CatalogModel, ModelProvider, OrgModelProvider, OrgModels } from "../../api/types";
 import { useIdentity } from "../../app/identity";
 import {

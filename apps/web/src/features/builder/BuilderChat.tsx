@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useCancelBuilder, usePostBuilderMessage } from "../../api/queries";
+import { useCancelBuilder, usePostBuilderMessage } from "../../api/queries/builder";
 import type { LiveTurn } from "../../api/liveTurn";
 import type { BuilderSession, StudioMessage } from "../../api/types";
 import { Composer, Banner, toast } from "@guildsrun/ui";

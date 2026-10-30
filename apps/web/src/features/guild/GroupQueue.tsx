@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 import { Clock, X, Zap } from "lucide-react";
-import { usePostGroupMessage } from "../../api/queries";
+import { usePostGroupMessage } from "../../api/queries/chat";
 import type { Agent, GroupChatState } from "../../api/types";
 import { Button, Icon, IconButton, Tooltip, toast } from "@guildsrun/ui";
 import {

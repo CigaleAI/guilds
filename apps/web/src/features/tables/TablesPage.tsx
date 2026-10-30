@@ -5,10 +5,10 @@ import {
   useDatabase,
   useDatabases,
   useDeleteDatabase,
-  useGuilds,
-  useItemAccess,
   useUpdateDatabase,
-} from "../../api/queries";
+} from "../../api/queries/tables";
+import { useGuilds } from "../../api/queries/guilds";
+import { useItemAccess } from "../../api/queries/access";
 import type { Collection, ColumnInput } from "../../api/types";
 import { relativeTime } from "../../app/format";
 import { useMediaQuery, wideScreen } from "../../app/media";

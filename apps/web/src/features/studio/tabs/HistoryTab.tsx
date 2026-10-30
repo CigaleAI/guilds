@@ -1,14 +1,9 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft, ExternalLink, MessagesSquare, Pin, Repeat, User } from "lucide-react";
 import { useState } from "react";
-import {
-  useAgent,
-  useRun,
-  useRunMessages,
-  useStudioInspector,
-  useStudioRoutines,
-  useStudioRuns,
-} from "../../../api/queries";
+import { useAgent } from "../../../api/queries/agents";
+import { useRun, useRunMessages } from "../../../api/queries/runs";
+import { useStudioInspector, useStudioRoutines, useStudioRuns } from "../../../api/queries/studio";
 import type { RunKind, StudioAgent, StudioRoutine, StudioRun } from "../../../api/types";
 import { clockTime, dayLabel, relativeTime } from "../../../app/format";
 import {

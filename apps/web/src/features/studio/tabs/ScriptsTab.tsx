@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { ExternalLink, Pin } from "lucide-react";
-import { useAgentScripts } from "../../../api/queries";
+import { useAgentScripts } from "../../../api/queries/scripts";
 import type { Script, StudioAgent } from "../../../api/types";
 import { Button, Banner, SkeletonRows, Icon, Row, Tag } from "@guildsrun/ui";
 import { DetailHeader, Empty, MasterDetail } from "../MasterDetail";

@@ -2,7 +2,7 @@ import { Link, useParams } from "@tanstack/react-router";
 import { ArrowDownToLine, Check, Copy, Globe, RotateCw } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api } from "../../../api/client";
-import { useAgent } from "../../../api/queries";
+import { useAgent } from "../../../api/queries/agents";
 import { Button, IconButton, TextField, EmptyState, StatusBadge } from "@guildsrun/ui";
 /** The browser desktop is fixed at 1280 × 720 and scales to the pane. */
 const desktopRatio = 16 / 9;

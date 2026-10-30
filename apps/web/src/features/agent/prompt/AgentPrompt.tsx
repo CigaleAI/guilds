@@ -4,11 +4,11 @@ import { useMemo, useRef, useState, type ReactNode } from "react";
 import { ApiError } from "../../../api/client";
 import {
   useAgentTask,
-  useCollections,
   useEmbeddableNotes,
   useEmbedStatus,
   useSaveTask,
-} from "../../../api/queries";
+} from "../../../api/queries/notes";
+import { useCollections } from "../../../api/queries/tables";
 import type { TaskFile, TaskRevision } from "../../../api/types";
 import { messageTime } from "../../../app/format";
 import { useIdentity } from "../../../app/identity";

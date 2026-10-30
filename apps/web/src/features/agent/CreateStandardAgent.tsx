@@ -1,6 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { useCreateAgent, useOrgMachines, useOrgModels } from "../../api/queries";
+import { useCreateAgent, useOrgMachines } from "../../api/queries/agents";
+import { useOrgModels } from "../../api/queries/models";
 import { hasConnectedProvider } from "../../api/types";
 import { useIdentity } from "../../app/identity";
 import { Banner, DialogBody, DialogHeader, Stepper } from "@guildsrun/ui";

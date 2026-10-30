@@ -41,11 +41,6 @@
       "count": 1
     }
   },
-  "src/api/queries.ts": {
-    "limits/file-lines": {
-      "count": 1
-    }
-  },
   "src/api/session.ts": {
     "no-restricted-syntax": {
       "count": 1

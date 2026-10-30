@@ -4,7 +4,7 @@ import {
   useDraftAction,
   usePostStudioMessage,
   useResolveStudioLogin,
-} from "../../api/queries";
+} from "../../api/queries/studio";
 import type { StudioDraft, StudioMessage, StudioSession } from "../../api/types";
 import { toast } from "@guildsrun/ui";
 import { turnProposals, turnReply, type Proposal } from "./pendingModel";

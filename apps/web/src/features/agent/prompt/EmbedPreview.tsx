@@ -1,4 +1,4 @@
-import { useEmbeddableNote } from "../../../api/queries";
+import { useEmbeddableNote } from "../../../api/queries/notes";
 import type { Collection, EmbeddableNote } from "../../../api/types";
 import { Link } from "@tanstack/react-router";
 import {

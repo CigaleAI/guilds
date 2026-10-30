@@ -1,6 +1,6 @@
 import { RefreshCw } from "lucide-react";
 import { useMemo, useState } from "react";
-import { useStudioActivity } from "../../../api/queries";
+import { useStudioActivity } from "../../../api/queries/studio";
 import {
   IconButton,
   Segmented,

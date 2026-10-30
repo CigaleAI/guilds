@@ -1,6 +1,6 @@
 import { Link, useMatchRoute } from "@tanstack/react-router";
 import { Globe } from "lucide-react";
-import { useGuildApply, useGuildBrowserLogins } from "../../api/queries";
+import { useGuildApply, useGuildBrowserLogins } from "../../api/queries/recipes";
 import { useStoredFlag } from "../../app/storage";
 import { Button, Icon } from "@guildsrun/ui";
 

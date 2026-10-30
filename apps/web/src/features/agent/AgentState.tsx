@@ -1,6 +1,6 @@
 import { Link, Navigate, Outlet, useParams } from "@tanstack/react-router";
 import { BookOpen, Brain, Database, FileCode, Paperclip, ShieldCheck } from "lucide-react";
-import { useAgent } from "../../api/queries";
+import { useAgent } from "../../api/queries/agents";
 import { TabsNav, tabsTrigger, Icon } from "@guildsrun/ui";
 import { capabilityOn } from "./settings/configForm";
 

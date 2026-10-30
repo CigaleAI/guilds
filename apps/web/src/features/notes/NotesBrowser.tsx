@@ -1,15 +1,15 @@
 import { useBlocker } from "@tanstack/react-router";
 import { ArrowLeft, Copy, FilePlus, FileText, Pin, ShieldCheck, Trash2 } from "lucide-react";
 import { useMemo, useRef, useState, type FormEvent } from "react";
+import { useCollections } from "../../api/queries/tables";
 import {
-  useCollections,
   useDeleteNote,
   useEmbeddableNotes,
   useNote,
   useNoteList,
   useSaveNote,
   type NotesPrefix,
-} from "../../api/queries";
+} from "../../api/queries/notes";
 import type { NoteItem } from "../../api/types";
 
 import { scopeOfDisplayPath } from "../../app/displayPath";

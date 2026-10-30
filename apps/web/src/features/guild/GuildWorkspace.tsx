@@ -9,14 +9,12 @@ import {
 import { BookmarkPlus, Eraser, SearchX, Settings, Sparkles, UserPlus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ApiError } from "../../api/client";
-import {
-  useCaptureRecipe,
-  useGroupChatState,
-  useGuild,
-  useGuildAgents,
-  useOpenIssues,
-  useStudioSessions,
-} from "../../api/queries";
+import { useCaptureRecipe } from "../../api/queries/recipes";
+import { useGroupChatState } from "../../api/queries/chat";
+import { useGuild } from "../../api/queries/guilds";
+import { useGuildAgents } from "../../api/queries/agents";
+import { useOpenIssues } from "../../api/queries/issues";
+import { useStudioSessions } from "../../api/queries/studio";
 import { useGuildStream } from "../../api/streams";
 import type { Agent } from "../../api/types";
 import { agentLook } from "../../app/agents";

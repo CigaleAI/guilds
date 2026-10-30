@@ -1,10 +1,6 @@
 import { Copy, ExternalLink } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import {
-  lookupWithCredentials,
-  useConnectServer,
-  useConnection,
-} from "../../api/queries";
+import { lookupWithCredentials, useConnectServer, useConnection } from "../../api/queries/access";
 import type {
   AccessOwner,
   ConnectorAuthField,

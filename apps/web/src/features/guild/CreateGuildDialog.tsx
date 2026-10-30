@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
-import { useCreateGuild } from "../../api/queries";
+import { useCreateGuild } from "../../api/queries/guilds";
 import {
   Button,
   Checkbox,

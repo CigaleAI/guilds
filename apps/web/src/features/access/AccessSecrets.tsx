@@ -6,7 +6,7 @@ import {
   useSecrets,
   useSetSecretAccess,
   useUpdateSecret,
-} from "../../api/queries";
+} from "../../api/queries/secrets";
 import type { AccessOwner, Secret, SecretAccessChoice } from "../../api/types";
 import { relativeTime } from "../../app/format";
 import { useIdentity } from "../../app/identity";

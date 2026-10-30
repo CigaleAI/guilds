@@ -18,7 +18,8 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { useFinishedChatIdleClose } from "./chat/chatLinger";
-import { useAgent, useBrokenEmbeds, useDeleteAgent } from "../../api/queries";
+import { useAgent, useDeleteAgent } from "../../api/queries/agents";
+import { useBrokenEmbeds } from "../../api/queries/notes";
 import { agentLook } from "../../app/agents";
 import { ReturnButton } from "../../app/ReturnButton";
 import { useMediaQuery, wideScreen } from "../../app/media";

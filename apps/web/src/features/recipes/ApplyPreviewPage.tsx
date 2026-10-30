@@ -1,14 +1,10 @@
 import { Link, useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import { ArrowLeft, CircleCheck, Rocket } from "lucide-react";
 import { useState } from "react";
-import {
-  useAddOrgServer,
-  useApplyRecipe,
-  useInstallRegistryConnector,
-  useOrgModels,
-  useRecipe,
-  useRecipePreview,
-} from "../../api/queries";
+import { useAddOrgServer } from "../../api/queries/access";
+import { useApplyRecipe, useRecipe, useRecipePreview } from "../../api/queries/recipes";
+import { useInstallRegistryConnector } from "../../api/queries/admin";
+import { useOrgModels } from "../../api/queries/models";
 import type {
   ApplyConnectionChoice,
   ApplyInstall,

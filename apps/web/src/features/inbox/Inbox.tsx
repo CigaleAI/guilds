@@ -1,7 +1,8 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { CheckCheck } from "lucide-react";
 import { useState } from "react";
-import { useMarkTagsRead, useNotifications, useSetAnyIssueStatus } from "../../api/queries";
+import { useMarkTagsRead, useNotifications } from "../../api/queries/chat";
+import { useSetAnyIssueStatus } from "../../api/queries/issues";
 import type { Issue, MentionNotice } from "../../api/types";
 import { agentLook } from "../../app/agents";
 import { relativeTime } from "../../app/format";

@@ -6,10 +6,10 @@ import {
   useBulkBindings,
   useConnection,
   useDisconnectServer,
-  useInstance,
   useRemoveOrgServer,
   useSetBinding,
-} from "../../api/queries";
+} from "../../api/queries/access";
+import { useInstance } from "../../api/queries/admin";
 import type {
   AccessBinding,
   AccessOwner,

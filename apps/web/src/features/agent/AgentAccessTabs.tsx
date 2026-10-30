@@ -1,5 +1,6 @@
 import { useParams } from "@tanstack/react-router";
-import { useAgent, useInstance } from "../../api/queries";
+import { useAgent } from "../../api/queries/agents";
+import { useInstance } from "../../api/queries/admin";
 import { AccessSecrets } from "../access/AccessSecrets";
 import { offersOptimizedBrowser } from "../access/access";
 import { AccessTools } from "../access/AccessTools";

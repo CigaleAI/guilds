@@ -1,5 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
-import { useCreateStudioSession, useOrgModels } from "../../api/queries";
+import { useCreateStudioSession } from "../../api/queries/studio";
+import { useOrgModels } from "../../api/queries/models";
 import type { Issue } from "../../api/types";
 import { useIdentity } from "../../app/identity";
 import { preselectedModel } from "../models/models";

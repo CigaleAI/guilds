@@ -24,7 +24,7 @@ import {
   useRemoveInstanceKeys,
   useSaveInstanceKeys,
   useStartGithubAppManifest,
-} from "../../api/queries";
+} from "../../api/queries/admin";
 import type { InstanceIntegration, IntegrationField, IntegrationState } from "../../api/types";
 import { DocsLink } from "../../app/docs";
 import type { TabSearch } from "../../app/router";

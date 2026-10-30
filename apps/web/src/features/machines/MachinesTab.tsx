@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { useDeleteMachine, useOrgMachines } from "../../api/queries";
+import { useDeleteMachine, useOrgMachines } from "../../api/queries/agents";
 import type { Machine, MachineAgent } from "../../api/types";
 import { useIdentity } from "../../app/identity";
 import {

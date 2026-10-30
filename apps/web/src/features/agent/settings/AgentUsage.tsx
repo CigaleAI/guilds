@@ -1,5 +1,5 @@
 import { useParams } from "@tanstack/react-router";
-import { useAgentUsage } from "../../../api/queries";
+import { useAgentUsage } from "../../../api/queries/agents";
 import { messageTime } from "../../../app/format";
 import { Button, StatBand, Banner, SkeletonRows } from "@guildsrun/ui";
 import { DiskMeter } from "../../machines/MachineMeters";

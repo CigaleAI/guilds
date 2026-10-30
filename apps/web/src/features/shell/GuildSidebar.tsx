@@ -1,7 +1,9 @@
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { BookOpen, Database, Inbox, Sparkles } from "lucide-react";
 import { useState } from "react";
-import { useAgentsByGuild, useBrokenEmbeds, useGuilds } from "../../api/queries";
+import { useAgentsByGuild } from "../../api/queries/agents";
+import { useBrokenEmbeds } from "../../api/queries/notes";
+import { useGuilds } from "../../api/queries/guilds";
 import { agentLook } from "../../app/agents";
 import { readStored, writeStored } from "../../app/storage";
 import {

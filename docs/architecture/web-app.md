@@ -235,6 +235,7 @@ import components from the package barrel
 | `apps/web/src/app/slots.ts` | `AppSlots` and tab placement |
 | `apps/web/src/app/theme.ts` | Theme preference and `data-theme` |
 | `apps/web/src/api/` | API client, identity, session storage, streams, client log |
+| `apps/web/src/api/queries/` | Every API read and write as a TanStack Query hook, with its query keys, one module per domain: `guilds`, `agents` (with the machines they run on), `scripts`, `chat` (the group chat and the inbox), `issues`, `schedules`, `runs`, `notes` (notes, Tasks, memory and embeds), `files`, `tables`, `access` (tools, logins, access lists and reach), `secrets`, `admin` (the instance, the catalog, the registry and the users), `org`, `models`, `recipes` (with their applies), `studio`, `builder`. A module imports another's keys to refresh what a write changes there |
 | `apps/web/src/features/` | One directory per area of the app |
 | `apps/web/vite.app.ts` | Build and dev-server configuration, shared with an extension's package |
 | `apps/orchestrator/src/http/web-app.ts` | Serving the build and the page fallback |

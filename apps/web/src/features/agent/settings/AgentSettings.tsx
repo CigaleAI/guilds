@@ -3,11 +3,11 @@ import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import {
   useAgent,
   useAgentHarness,
-  useGuild,
   useOrgMachines,
-  useOrgModels,
   useSaveAgentSettings,
-} from "../../../api/queries";
+} from "../../../api/queries/agents";
+import { useGuild } from "../../../api/queries/guilds";
+import { useOrgModels } from "../../../api/queries/models";
 import { hasConnectedProvider, type AgentDetail } from "../../../api/types";
 import { useIdentity } from "../../../app/identity";
 import {

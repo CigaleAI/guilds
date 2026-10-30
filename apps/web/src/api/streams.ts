@@ -1,7 +1,18 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { applyLiveDelta, type LiveTurn } from "./liveTurn";
-import { keys, showClearedGroupChat } from "./queries";
+import { agentKeys } from "./queries/agents";
+import { builderKeys } from "./queries/builder";
+import { chatKeys, showClearedGroupChat } from "./queries/chat";
+import { guildKeys } from "./queries/guilds";
+import { issueKeys } from "./queries/issues";
+import { noteKeys } from "./queries/notes";
+import { recipeKeys } from "./queries/recipes";
+import { runKeys } from "./queries/runs";
+import { scheduleKeys } from "./queries/schedules";
+import { scriptKeys } from "./queries/scripts";
+import { studioKeys } from "./queries/studio";
+import { tableKeys } from "./queries/tables";
 import { applyToolProgress, dropToolProgress, type ToolProgress } from "./toolProgress";
 import type {
   BuilderSession,
@@ -95,19 +106,19 @@ export function useGuildStream(guildId: string): void {
   useEventStream(`/api/guilds/${encodeURIComponent(guildId)}/group-chat/stream`, {
     events: guildEvents,
     onOpen: () => {
-      void client.invalidateQueries({ queryKey: keys.chatMessages(guildId) });
-      void client.invalidateQueries({ queryKey: keys.chatState(guildId) });
-      void client.invalidateQueries({ queryKey: keys.agents(guildId) });
+      void client.invalidateQueries({ queryKey: chatKeys.chatMessages(guildId) });
+      void client.invalidateQueries({ queryKey: chatKeys.chatState(guildId) });
+      void client.invalidateQueries({ queryKey: agentKeys.agents(guildId) });
     },
     onEvent: (name, data) => {
       if (name === "group.message.committed") {
         const message = data as GroupMessage;
-        client.setQueryData<GroupMessage[]>(keys.chatMessages(guildId), (messages) =>
+        client.setQueryData<GroupMessage[]>(chatKeys.chatMessages(guildId), (messages) =>
           messages && !messages.some((known) => known.seq === message.seq)
             ? [...messages, message].sort((a, b) => a.seq - b.seq)
             : messages,
         );
-        void client.invalidateQueries({ queryKey: keys.chatState(guildId) });
+        void client.invalidateQueries({ queryKey: chatKeys.chatState(guildId) });
         return;
       }
       if (name === "group.cleared") {
@@ -116,29 +127,29 @@ export function useGuildStream(guildId: string): void {
       }
       if (name === "group.idle" || name === "group.limit_reached") {
         const state = data as GroupChatState;
-        client.setQueryData<GroupChatState>(keys.chatState(guildId), (previous) => ({
+        client.setQueryData<GroupChatState>(chatKeys.chatState(guildId), (previous) => ({
           ...state,
           seen_through_seq: previous?.seen_through_seq ?? null,
         }));
       } else if (name === "guild.issues.changed") {
-        void client.invalidateQueries({ queryKey: keys.issues(guildId) });
+        void client.invalidateQueries({ queryKey: issueKeys.issues(guildId) });
         return;
       } else if (name === "guild.artifacts.changed") {
-        void client.invalidateQueries({ queryKey: keys.artifacts });
+        void client.invalidateQueries({ queryKey: noteKeys.artifacts });
         return;
       } else if (name === "agent.scripts.changed") {
         const agentId = (data as { agent_id?: string } | null)?.agent_id;
-        if (agentId) void client.invalidateQueries({ queryKey: keys.agentScripts(agentId) });
+        if (agentId) void client.invalidateQueries({ queryKey: scriptKeys.agentScripts(agentId) });
         return;
       } else if (name === "agent.routines.changed") {
         const agentId = (data as { agent_id?: string } | null)?.agent_id;
-        if (agentId) void client.invalidateQueries({ queryKey: keys.agentSchedules(agentId) });
-        void client.invalidateQueries({ queryKey: keys.guildSchedules(guildId) });
+        if (agentId) void client.invalidateQueries({ queryKey: scheduleKeys.agentSchedules(agentId) });
+        void client.invalidateQueries({ queryKey: guildKeys.guildSchedules(guildId) });
         return;
       } else {
-        void client.invalidateQueries({ queryKey: keys.chatState(guildId) });
+        void client.invalidateQueries({ queryKey: chatKeys.chatState(guildId) });
       }
-      void client.invalidateQueries({ queryKey: keys.agents(guildId) });
+      void client.invalidateQueries({ queryKey: agentKeys.agents(guildId) });
     },
   });
 }
@@ -155,7 +166,7 @@ export function useInboxStream(onMessage?: (notice: MessageNotice) => void): voi
   const refetch = () => {
     clearTimeout(pending.current);
     pending.current = setTimeout(() => {
-      void client.invalidateQueries({ queryKey: keys.notifications });
+      void client.invalidateQueries({ queryKey: chatKeys.notifications });
     }, 150);
   };
   useEventStream("/api/notifications/stream", {
@@ -205,10 +216,10 @@ export function useRunStream(
   }
   const refreshRun = () => {
     if (!runId) return;
-    void client.invalidateQueries({ queryKey: keys.run(runId) });
-    void client.invalidateQueries({ queryKey: keys.runMessages(runId) });
-    void client.invalidateQueries({ queryKey: keys.agentRuns(agentId) });
-    void client.invalidateQueries({ queryKey: keys.agent(agentId) });
+    void client.invalidateQueries({ queryKey: runKeys.run(runId) });
+    void client.invalidateQueries({ queryKey: runKeys.runMessages(runId) });
+    void client.invalidateQueries({ queryKey: runKeys.agentRuns(agentId) });
+    void client.invalidateQueries({ queryKey: agentKeys.agent(agentId) });
   };
 
   useEventStream(runId ? `/api/runs/${encodeURIComponent(runId)}/stream` : null, {
@@ -221,17 +232,17 @@ export function useRunStream(
         return;
       }
       if (name === "generation.started") {
-        client.setQueryData<Run>(keys.run(runId), (run) =>
+        client.setQueryData<Run>(runKeys.run(runId), (run) =>
           run ? { ...run, generating: true } : run,
         );
-        client.setQueryData<Run[]>(keys.agentRuns(agentId), (runs) =>
+        client.setQueryData<Run[]>(runKeys.agentRuns(agentId), (runs) =>
           runs?.map((run) => (run.id === runId ? { ...run, generating: true } : run)),
         );
         return;
       }
       if (name === "message.committed") {
         const message = data as RunMessage;
-        client.setQueryData<RunMessage[]>(keys.runMessages(runId), (messages) =>
+        client.setQueryData<RunMessage[]>(runKeys.runMessages(runId), (messages) =>
           messages && !messages.some((known) => known.seq === message.seq)
             ? [...messages, message].sort((a, b) => a.seq - b.seq)
             : messages,
@@ -240,7 +251,7 @@ export function useRunStream(
         // Files, scripts and routines follow the guild's stream; records follow the run's tools.
         if (message.payload.role === "tool") {
           setProgress((current) => dropToolProgress(current, message.payload.tool_call_id));
-          void client.invalidateQueries({ queryKey: keys.databases });
+          void client.invalidateQueries({ queryKey: tableKeys.databases });
         }
         return;
       }
@@ -287,7 +298,7 @@ export function useStudioStream(sessionId: string): LiveTurn | null {
     setTracked(sessionId);
     setLive(null);
   }
-  const refresh = () => void client.invalidateQueries({ queryKey: keys.studio(sessionId) });
+  const refresh = () => void client.invalidateQueries({ queryKey: studioKeys.studio(sessionId) });
 
   useEventStream(`/api/studio/sessions/${encodeURIComponent(sessionId)}/stream`, {
     events: studioEvents,
@@ -298,7 +309,7 @@ export function useStudioStream(sessionId: string): LiveTurn | null {
         return;
       }
       if (name === "generation.started") {
-        client.setQueryData<StudioSession>(keys.studio(sessionId), (session) =>
+        client.setQueryData<StudioSession>(studioKeys.studio(sessionId), (session) =>
           session ? { ...session, generation_state: "generating" } : session,
         );
         return;
@@ -306,7 +317,7 @@ export function useStudioStream(sessionId: string): LiveTurn | null {
       if (name === "message.committed") {
         const message = (data as { message?: StudioMessage } | null)?.message;
         if (!message) return;
-        client.setQueryData<StudioMessage[]>(keys.studioMessages(sessionId), (messages) =>
+        client.setQueryData<StudioMessage[]>(studioKeys.studioMessages(sessionId), (messages) =>
           messages && !messages.some((known) => known.seq === message.seq)
             ? [...messages, message].sort((a, b) => a.seq - b.seq)
             : messages,
@@ -320,7 +331,7 @@ export function useStudioStream(sessionId: string): LiveTurn | null {
       }
       setLive(null);
       if (name === "generation.finished") {
-        client.setQueryData<StudioSession>(keys.studio(sessionId), (session) =>
+        client.setQueryData<StudioSession>(studioKeys.studio(sessionId), (session) =>
           session ? { ...session, generation_state: "idle" } : session,
         );
       }
@@ -356,8 +367,8 @@ export function useBuilderStream(
     setLive(null);
   }
   const refresh = () => {
-    void client.invalidateQueries({ queryKey: keys.builder(sessionId) });
-    void client.invalidateQueries({ queryKey: keys.recipes });
+    void client.invalidateQueries({ queryKey: builderKeys.builder(sessionId) });
+    void client.invalidateQueries({ queryKey: recipeKeys.recipes });
   };
 
   useEventStream(`/api/builder/sessions/${encodeURIComponent(sessionId)}/stream`, {
@@ -369,7 +380,7 @@ export function useBuilderStream(
         return;
       }
       if (name === "generation.started") {
-        client.setQueryData<BuilderSession>(keys.builder(sessionId), (session) =>
+        client.setQueryData<BuilderSession>(builderKeys.builder(sessionId), (session) =>
           session ? { ...session, generation_state: "generating" } : session,
         );
         return;
@@ -377,7 +388,7 @@ export function useBuilderStream(
       if (name === "message.committed") {
         const message = (data as { message?: StudioMessage } | null)?.message;
         if (!message) return;
-        client.setQueryData<StudioMessage[]>(keys.builderMessages(sessionId), (messages) =>
+        client.setQueryData<StudioMessage[]>(builderKeys.builderMessages(sessionId), (messages) =>
           messages && !messages.some((known) => known.seq === message.seq)
             ? [...messages, message].sort((a, b) => a.seq - b.seq)
             : messages,
@@ -395,7 +406,7 @@ export function useBuilderStream(
       }
       setLive(null);
       if (name === "generation.finished") {
-        client.setQueryData<BuilderSession>(keys.builder(sessionId), (session) =>
+        client.setQueryData<BuilderSession>(builderKeys.builder(sessionId), (session) =>
           session ? { ...session, generation_state: "idle" } : session,
         );
       }

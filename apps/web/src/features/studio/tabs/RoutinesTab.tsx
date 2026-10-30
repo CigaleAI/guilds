@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { ExternalLink, Pin } from "lucide-react";
-import { useStudioInspector, useStudioRoutines, useStudioRuns } from "../../../api/queries";
+import { useStudioInspector, useStudioRoutines, useStudioRuns } from "../../../api/queries/studio";
 import type { StudioAgent, StudioRoutine } from "../../../api/types";
 import { clockTime, dayLabel, relativeTime, upcomingTime } from "../../../app/format";
 import { Button, Markdown, Banner, SkeletonRows, Icon, Row, Tag } from "@guildsrun/ui";

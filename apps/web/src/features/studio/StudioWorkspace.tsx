@@ -9,7 +9,7 @@ import {
   useStudioInventory,
   useStudioMessages,
   useStudioSession,
-} from "../../api/queries";
+} from "../../api/queries/studio";
 import { useStudioStream } from "../../api/streams";
 import type { StudioDraft } from "../../api/types";
 import { useMediaQuery } from "../../app/media";

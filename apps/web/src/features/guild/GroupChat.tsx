@@ -4,9 +4,9 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import {
   useGroupMessages,
   useMarkGroupChatRead,
-  useOrgMembers,
   usePostGroupMessage,
-} from "../../api/queries";
+} from "../../api/queries/chat";
+import { useOrgMembers } from "../../api/queries/org";
 import type { Agent, GroupChatState, GroupMessage, Guild } from "../../api/types";
 import { agentLook } from "../../app/agents";
 import { isoTime, messageTime } from "../../app/format";

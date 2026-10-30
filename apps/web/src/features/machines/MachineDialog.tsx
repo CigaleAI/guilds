@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { useCreateMachine, useUpdateMachine } from "../../api/queries";
+import { useCreateMachine, useUpdateMachine } from "../../api/queries/agents";
 import type { Machine, MachineBox } from "../../api/types";
 import { useIdentity } from "../../app/identity";
 import {

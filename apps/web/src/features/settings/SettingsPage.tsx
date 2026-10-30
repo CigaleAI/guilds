@@ -1,6 +1,7 @@
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useState, type FormEvent, type ReactNode } from "react";
-import { useOrgModels, useOrgUsage, useUpdateProfile, useUpdateOrg } from "../../api/queries";
+import { useOrgModels } from "../../api/queries/models";
+import { useOrgUsage, useUpdateProfile, useUpdateOrg } from "../../api/queries/org";
 import { switchOrg } from "../../api/identity";
 import type { UsageTotals } from "../../api/types";
 import { agentLook } from "../../app/agents";

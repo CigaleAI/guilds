@@ -1,7 +1,7 @@
 import { ArrowLeft, Download, FileUp, Paperclip, ShieldCheck, Trash2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { downloadFile, type FilesPrefix } from "../../api/files";
-import { useDeleteFile, useFileList, useUploadFile } from "../../api/queries";
+import { useDeleteFile, useFileList, useUploadFile } from "../../api/queries/files";
 import type { FileItem } from "../../api/types";
 import { formatSize, relativeTime } from "../../app/format";
 import { useMediaQuery, wideScreen } from "../../app/media";

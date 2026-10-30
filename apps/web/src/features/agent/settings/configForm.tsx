@@ -1,5 +1,6 @@
 import { Bookmark, Check, Code2, FileCode, Globe, Info, type LucideIcon } from "lucide-react";
-import { useHarnessCatalog, useOrgModels } from "../../../api/queries";
+import { useHarnessCatalog } from "../../../api/queries/agents";
+import { useOrgModels } from "../../../api/queries/models";
 import type {
   AgentConfig,
   Harness,

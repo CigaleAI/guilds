@@ -1,5 +1,6 @@
 import { Link, useLocation } from "@tanstack/react-router";
-import { useAccess, useGuildRepositories } from "../../api/queries";
+import { useAccess } from "../../api/queries/access";
+import { useGuildRepositories } from "../../api/queries/guilds";
 import type { GithubSelectedRepository } from "../../api/types";
 import { DocsLink } from "../../app/docs";
 import { useIdentity } from "../../app/identity";

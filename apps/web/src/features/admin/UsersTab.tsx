@@ -19,7 +19,7 @@ import {
   personTone,
   toast,
 } from "@guildsrun/ui";
-import { useCreateUser, useSetUserEmail, useUsers } from "../../api/queries";
+import { useCreateUser, useSetUserEmail, useUsers } from "../../api/queries/admin";
 import type { User } from "../../api/types";
 import { useIdentity } from "../../app/identity";
 

@@ -1,7 +1,8 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Sparkles } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { useBuilderSessions, useOrgModels, useStartBuilder } from "../../api/queries";
+import { useBuilderSessions, useStartBuilder } from "../../api/queries/builder";
+import { useOrgModels } from "../../api/queries/models";
 import { hasConnectedProvider } from "../../api/types";
 import { useIdentity } from "../../app/identity";
 import { relativeTime } from "../../app/format";

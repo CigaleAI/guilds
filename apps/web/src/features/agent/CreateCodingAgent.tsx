@@ -1,13 +1,9 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { SquareTerminal } from "lucide-react";
-import {
-  useCreateAgent,
-  useCreateSecret,
-  useOrgMachines,
-  useOrgModels,
-  useSecrets,
-} from "../../api/queries";
+import { useCreateAgent, useOrgMachines } from "../../api/queries/agents";
+import { useCreateSecret, useSecrets } from "../../api/queries/secrets";
+import { useOrgModels } from "../../api/queries/models";
 import { hasConnectedProvider, type Harness } from "../../api/types";
 import { useIdentity } from "../../app/identity";
 import {

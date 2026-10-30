@@ -1,14 +1,14 @@
 import { Link, useParams } from "@tanstack/react-router";
 import { Pencil, Plus, Repeat, Trash2 } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
+import { useAgent } from "../../../api/queries/agents";
+import { useAgentRuns } from "../../../api/queries/runs";
 import {
-  useAgent,
-  useAgentRuns,
   useAgentSchedules,
   useDeleteSchedule,
-  useGuild,
   useSetSchedulePaused,
-} from "../../../api/queries";
+} from "../../../api/queries/schedules";
+import { useGuild } from "../../../api/queries/guilds";
 import type { Run, Schedule } from "../../../api/types";
 import { messageTime, upcomingTime } from "../../../app/format";
 import {

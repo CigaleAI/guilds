@@ -1,6 +1,6 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { callConnectionTool } from "../../api/queries";
+import { callConnectionTool } from "../../api/queries/access";
 import type { McpServerAccess, McpToolAccess, McpToolCallResult } from "../../api/types";
 import {
   Button,

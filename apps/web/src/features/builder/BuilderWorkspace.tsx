@@ -10,8 +10,8 @@ import {
   useCapabilities,
   usePostBuilderMessage,
   usePublishBuilder,
-  useRecipePreview,
-} from "../../api/queries";
+} from "../../api/queries/builder";
+import { useRecipePreview } from "../../api/queries/recipes";
 import { useBuilderStream } from "../../api/streams";
 import type { BuilderSession } from "../../api/types";
 import { useMediaQuery } from "../../app/media";

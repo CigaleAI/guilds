@@ -1,4 +1,5 @@
-import { useAgentsByGuild, useGuilds } from "../../api/queries";
+import { useAgentsByGuild } from "../../api/queries/agents";
+import { useGuilds } from "../../api/queries/guilds";
 import type { SecretAccessChoice } from "../../api/types";
 import { Checkbox, Toggle } from "@guildsrun/ui";
 

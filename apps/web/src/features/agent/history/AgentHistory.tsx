@@ -1,7 +1,8 @@
 import { Navigate, useParams } from "@tanstack/react-router";
 import { History, MessagesSquare, Plus, Repeat, User, type LucideIcon } from "lucide-react";
 import { useMemo, useState } from "react";
-import { useAgentRuns, useAgentSchedules } from "../../../api/queries";
+import { useAgentRuns } from "../../../api/queries/runs";
+import { useAgentSchedules } from "../../../api/queries/schedules";
 import type { Run, RunKind } from "../../../api/types";
 import { clockTime, dayKey, dayLabel, isoTime } from "../../../app/format";
 import {

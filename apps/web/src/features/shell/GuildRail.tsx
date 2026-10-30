@@ -1,6 +1,6 @@
 import { Link, useParams } from "@tanstack/react-router";
 import { BookOpen, Database, Inbox, Settings, Sparkles } from "lucide-react";
-import { useGuilds } from "../../api/queries";
+import { useGuilds } from "../../api/queries/guilds";
 import { cappedCount, RingCount, CollapsedRail, RailItem } from "@guildsrun/ui";
 import { AccountMenu } from "./AccountMenu";
 import { guildInitials } from "./guilds";

@@ -12,13 +12,13 @@ import {
 import { useState } from "react";
 import {
   useAbortApply,
-  useAccess,
   useActivateApply,
   useApply,
   useConfirmStep,
-  useInstance,
   useVerifyStep,
-} from "../../api/queries";
+} from "../../api/queries/recipes";
+import { useAccess } from "../../api/queries/access";
+import { useInstance } from "../../api/queries/admin";
 import type { ApplyRow, ApplyStep } from "../../api/types";
 import { useIdentity } from "../../app/identity";
 import {

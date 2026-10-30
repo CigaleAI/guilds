@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useSetMessageLimit } from "../../api/queries";
+import { useSetMessageLimit } from "../../api/queries/chat";
 import type { GroupChatState } from "../../api/types";
 import {
   Button,
