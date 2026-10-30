@@ -22,11 +22,6 @@
       "count": 1
     }
   },
-  "src/api/identity.ts": {
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
   "src/api/liveTurn.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1

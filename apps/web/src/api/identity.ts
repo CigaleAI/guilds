@@ -5,6 +5,14 @@ import type { Org, User } from "./types/org";
 
 export type Identity = { mode: AuthMode; user: User; org: Org; orgs: Org[] };
 
+/** The app has no one to act as: no operator exists yet, or the operator belongs to no organisation. */
+export class IdentityError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "IdentityError";
+  }
+}
+
 /**
  * Resolves the operator and organisation the app acts as. Compat-cookie mode (local development)
  * picks the stored user, or the first; other modes ask the server who is signed in. The stored
@@ -18,7 +26,7 @@ export async function loadIdentity(): Promise<Identity> {
     const users = await api<User[]>("/api/users");
     const stored = storedUserId();
     const chosen = users.find((candidate) => candidate.id === stored) ?? users[0];
-    if (!chosen) throw new Error("No users exist yet. Seed one with pnpm seed:operator.");
+    if (!chosen) throw new IdentityError("No users exist yet. Seed one with pnpm seed:operator.");
     rememberUser(chosen.id);
   }
   const user = await api<User>("/api/auth/me");
@@ -26,7 +34,7 @@ export async function loadIdentity(): Promise<Identity> {
   const orgs = await api<Org[]>("/api/orgs");
   const stored = storedOrgId();
   const org = orgs.find((candidate) => candidate.id === stored) ?? orgs[0];
-  if (!org) throw new Error("This account does not belong to an organisation yet.");
+  if (!org) throw new IdentityError("This account does not belong to an organisation yet.");
   rememberOrg(org.id);
   return { mode: config.mode, user, org, orgs };
 }
