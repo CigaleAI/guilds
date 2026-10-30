@@ -6,9 +6,16 @@ it: a function's name and signature say what it does, what it
 needs, and what it returns, and behaviour lives next to the code
 that uses it.
 
-ESLint enforces the limits below and the boundary rules
-([Lint](development.md#lint-and-format)). The other rules are
-checked in review ([Pull requests](pull-requests.md)).
+ESLint and the import-cycle check
+([Lint](development.md#lint-and-format)) enforce these rules:
+cyclomatic complexity, nesting depth, parameter count, file length,
+type assertions, a `catch` that neither throws nor returns, a throw
+of a plain `Error`, an object type written inline in a parameter,
+explicit types on what an orchestrator module exports, imports of
+`fastify`, `http/` importing `db/`, what `db/` and `lib/` import,
+re-exports, imports of hosted code, and import cycles. Every other
+rule on this page is checked in review
+([Pull requests](pull-requests.md)).
 
 ---
 
@@ -27,8 +34,12 @@ two functions.
     session) and holds only that thing's fields. A settings type is
     a record when several callers and instances share it.
   - A **dependencies object** holds the services a module needs. It
-    could be built once at composition and reused by every call, so
-    it never holds a per-call value such as the user or the actor.
+    is built once in a composition root, or faked in a test, and
+    reused by every call, so it never holds a per-call value: the
+    user, the actor, an org id, a guild id, and the clock are never
+    its fields. A `Queryable` that is the application's connection
+    pool is the same for every call, so it may be a field. A
+    transaction client is call context, not the pool.
 
   A React component's props object is the component's record.
   Every other object parameter is an argument bag and is not
@@ -38,9 +49,9 @@ two functions.
   Call context (the clock, the actor, a transaction client, a hook)
   is a parameter of its own, never a field of a record or a
   dependencies object.
-- A function has a **cyclomatic complexity of 11 or less**. A flat
-  body with many early returns is fine; the limit exists to keep one
-  function from holding several contracts.
+- A function has a **cyclomatic complexity of 11 or less**, as
+  ESLint counts it. The limit keeps one function from holding
+  several contracts.
 - Nesting goes at most **3 levels** deep. A `try` block counts as
   a level, and ESLint counts it with the others. Use early returns
   to stay flat. Nesting is what makes a body hard to read, so this
@@ -54,8 +65,9 @@ two functions.
   such as a field of a patch, is not.
 
 **What counts towards complexity:** `if`, `else if`, `case`, loops,
-`&&`, `||`, `??`, ternaries (`a ? b : c`), and `catch`. A JSX
-conditional (`cond && <X />`) counts like any other `&&`.
+`&&`, `||`, `??`, ternaries (`a ? b : c`), and `catch`. An `if` that
+returns early counts like any other `if`. A JSX conditional
+(`cond && <X />`) counts like any other `&&`.
 
 A function has no line limit. A long body with one contract is
 better than a short body that calls six helpers a reader has to
@@ -66,7 +78,9 @@ chain of `if`s over a value is a lookup table.
 
 A private helper exists because it names a real step, not to make
 its caller shorter. A helper called from one place, whose name is
-only meaningful inside its caller, is inlined.
+only meaningful inside its caller, is inlined. A function over the
+complexity limit is split along a step a reader would want to know
+by name, never along a line count.
 
 ## Tests
 
@@ -127,6 +141,12 @@ feature-specific knowledge, is a pure function where possible, and
 has a name easy to find by search. A shared directory never imports
 from a feature.
 
+A composition root assembles the application: in the orchestrator
+`src/compose.ts` and `src/app.ts`, in the operator app
+`src/app/router.tsx`. A composition root imports every feature it
+assembles, so the rule that a shared directory never imports from a
+feature excludes it, even where it sits in a shared directory.
+
 ## Scaffolding
 
 Files are grouped by feature, not by type: one directory per
@@ -179,7 +199,7 @@ An import that points up the stack is a leak. The fix moves what
 leaked, not the import:
 
 - **Wiring**: a caller binds a domain's `db/` functions for it. The
-  domain's public functions take a `Queryable` and bind their own.
+  domain binds its own from the `Queryable` it holds.
 - **Rule**: a caller re-derives a domain's rule from its data. The
   domain exports the rule as one named function.
 - **Ownership**: a concept sits in the wrong domain, so both import
@@ -188,26 +208,28 @@ leaked, not the import:
   the boundary, into a named type.
 - **Callback**: a caller passes a function in so the domain need not
   import it. The domain imports what it calls. A function arrives
-  only as a service in a dependencies object, built where the
-  application is composed or faked in a test.
+  only as a service in a dependencies object, built in a
+  composition root (`src/compose.ts`, `src/app.ts`,
+  `src/app/router.tsx`) or faked in a test.
 
 Core imports nothing from an extension built on it.
 `eslint.boundary.js` fails the file that tries.
 
 A domain module imports the `db/` modules it reads and writes
-through, and its public functions take a `Queryable` as their
-connection. Where a unit test fakes the database, the domain binds
-its own dependencies object of the `db/` functions it calls, each
-bound to the connection with `bindQuery`, and writes that commit
-together run in a transaction bound beside them with
-`bindTransaction`. That object is built inside the domain, from the
-`Queryable` its public function received; a caller never builds it.
-A dependencies object built at composition holds the services a
-domain needs besides `db/`, such as a blob store or a policy; the
-connection is never one of them. Nothing else stands between a
-domain module and `db/`: no facade,
-no class that forwards every query. Only `http/` is kept out of
-`db/`.
+through, and holds a `Queryable` as its connection: a parameter of
+its public functions, or the application's connection pool as a
+field of its dependencies object. Where a unit test fakes the
+database, the domain binds its own object of the `db/` functions it
+calls, each bound to that `Queryable` with `bindQuery`, and writes
+that commit together run in a transaction bound beside them with
+`bindTransaction`. That bound object is built inside the domain,
+from the `Queryable` it holds; a caller never builds it. A
+dependencies object built in a composition root holds the services
+a domain needs, such as a blob store, a policy, or the connection
+pool. A transaction client is call context: it is a parameter of
+its own, never a field of a dependencies object. Nothing else
+stands between a domain module and `db/`: no facade, no class that
+forwards every query. Only `http/` is kept out of `db/`.
 
 `db/` imports nothing outside `db/` and `lib/`, and `lib/` nothing
 outside `lib/`. `db/` holds the queries and the types and defaults
@@ -216,8 +238,8 @@ records a write needs belong to the domain module that calls it,
 which opens the transaction they share.
 
 A domain module imports nothing from the HTTP framework. Only
-`http/`, the app and composition roots, the extension points and
-the observability hooks import `fastify`.
+`http/`, the orchestrator's composition roots, the extension points
+and the observability hooks import `fastify`.
 
 Custom code attaches through the
 [extension points](../architecture/extension-points.md). A need
@@ -298,6 +320,9 @@ Before you submit a change, check:
       No flag parameters, complexity of 11 or less, nesting of 3 or
       less, 4 parameters or fewer, object parameters only for
       records and dependencies objects.
+- [ ] A dependencies object holds services and at most the
+      connection pool; a transaction client and every per-call value
+      are parameters of their own.
 - [ ] Every file is under 800 lines and holds one concern.
 - [ ] Rows leave `db/` typed; route handlers call one domain
       function and never touch `db/`.
