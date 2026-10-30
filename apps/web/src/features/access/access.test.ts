@@ -1,13 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { AccessBinding, AgentAccess, Instance, McpServerAccess } from "../../api/types";
+import type { AccessBinding, Instance, McpServerAccess } from "../../api/types";
 import {
   BROWSER_NATIVE_TOOLS,
   bindingOrigin,
   canResetFirst,
   connectionStatus,
   filterTools,
-  findBinding,
   isCapabilityNativeTool,
   listedBrowserTools,
   nativeToolDisplay,
@@ -64,17 +63,6 @@ function server(overrides: Partial<McpServerAccess> = {}): McpServerAccess {
     ...overrides,
   };
 }
-
-test("a target finds its tool, server or server tool", () => {
-  const access: AgentAccess = {
-    tools: [binding("note_find")],
-    mcp: [server()],
-  };
-  assert.equal(findBinding(access, { kind: "native_tool", id: "note_find" })?.enabled, true);
-  assert.equal(findBinding(access, { kind: "mcp", id: "mcp_alchemy" })?.enabled, true);
-  assert.equal(findBinding(access, { kind: "mcp_tool", id: "alchemy_holdings" })?.enabled, true);
-  assert.equal(findBinding(access, { kind: "native_tool", id: "gone" }), undefined);
-});
 
 test("the caption says overridden, inherited, or nothing when set here or unbound", () => {
   assert.equal(bindingOrigin(binding("x", true, { source_scope: "guild" }), "guild"), undefined);

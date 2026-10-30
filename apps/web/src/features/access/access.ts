@@ -1,33 +1,13 @@
 import type {
   AccessBinding,
-  AgentAccess,
   AgentConfig,
   BindingScope,
-  CatalogKind,
   Instance,
   McpConnectionStatus,
   McpServerAccess,
 } from "../../api/types";
 import type { BindingOrigin } from "@guildsrun/ui";
 import { missingFieldsPhrase, toolIntegrationGap } from "../instance/instance";
-/** One switch in the Tools tab: what it binds, and how the agent gets it now. */
-export type BindingTarget = { kind: CatalogKind; id: string };
-
-/** The item a target points at in an access payload, or undefined when it is gone. */
-export function findBinding(
-  access: AgentAccess,
-  target: BindingTarget,
-): AccessBinding | McpServerAccess | undefined {
-  switch (target.kind) {
-    case "native_tool":
-      return access.tools.find((item) => item.name === target.id);
-    case "mcp":
-      return access.mcp.find((server) => server.id === target.id);
-    case "mcp_tool":
-      return access.mcp.flatMap((server) => server.tools).find((tool) => tool.name === target.id);
-  }
-}
-
 /**
  * The agent's own binding can go when it holds no login: dropping it may already give the wanted
  * state, which keeps overrides to the ones that matter.

@@ -41,8 +41,21 @@ export type InstanceIntegration = {
   provides: { native_tools: string[]; connectors: string[] };
 };
 
+/** An integration's values to enter; replacing the GitHub App while logins exist needs `confirmReplace`. */
+export type InstanceKeysInput = {
+  integration: string;
+  values: Record<string, string>;
+  confirmReplace?: boolean;
+};
+
+/** An integration whose values to delete; removing the GitHub App while logins exist needs `confirmReplace`. */
+export type InstanceKeysRemoval = { integration: string; confirmReplace?: boolean };
+
 /** `PUT`/`DELETE /api/admin/instance/keys/:integration`: the integration after the change, and the logins it dropped. */
 export type InstanceKeysResult = { integration: InstanceIntegration; disconnected: number };
+
+/** The GitHub App a manifest creates: its name, the account that owns it, and where GitHub returns to. */
+export type GithubAppManifestInput = { name?: string; owner?: string; return_to?: string };
 
 /** `POST /api/admin/instance/keys/github-app/manifest`: where the browser posts the manifest, and the manifest. */
 export type GithubAppManifestStart = {
@@ -841,6 +854,18 @@ export type AgentAccess = {
 /** Whose tools and logins a view edits, or whose secrets it lists: one agent, one guild, or the organisation. */
 export type AccessOwner = { scope: "agent" | "guild" | "org"; id: string };
 
+/** A catalog item a binding switches: a native tool, a connector, or one of a connector's tools. */
+export type BindingTarget = { kind: CatalogKind; id: string };
+
+/**
+ * One item switched for an owner; `resetFirst` when the owner's own binding holds no login, so it
+ * is dropped first and nothing more is written when what the owner then inherits matches.
+ */
+export type BindingSwitch = { target: BindingTarget; enabled: boolean; resetFirst: boolean };
+
+/** Many items set for an owner at once, or returned to what the owner inherits. */
+export type BindingsChange = { targets: BindingTarget[]; enabled: boolean | "inherit" };
+
 /**
  * One guild or agent a secret is granted to. A grant in a guild the viewer cannot see keeps its
  * kind and shows no id or name.
@@ -875,6 +900,12 @@ export type NewSecret = SecretAccessChoice & { name: string; value: string; desc
 /** A secret's edit: any of a new name, description or value. */
 export type SecretChanges = { name?: string; description?: string; value?: string };
 
+/** An edit to one secret. */
+export type SecretUpdate = { secretId: string; changes: SecretChanges };
+
+/** Who gets one secret, replacing who got it. */
+export type SecretAccessUpdate = { secretId: string; access: SecretAccessChoice };
+
 /** A login to a connected-tools server; OAuth logins start with a URL to sign in at. */
 export type McpConnection = {
   id: string;
@@ -888,8 +919,17 @@ export type McpConnection = {
   bindings?: unknown[];
 };
 
-/** A key-based login's values, by the connector's field names; empty for OAuth. */
-export type McpCredentials = Record<string, unknown>;
+/**
+ * A key-based login's values, by the connector's field names, with the login's settings when its
+ * connector stores some; empty for OAuth.
+ */
+export type McpCredentials = {
+  [field: string]: string | McpServerAccess["settings"];
+  settings?: McpServerAccess["settings"];
+};
+
+/** A login to start: the server signed in to, and the values a key-based login needs. */
+export type McpConnectionInput = { serverId: string; credentials: McpCredentials };
 
 /** What adding an organisation's own remote MCP server sends. */
 export type OrgServerInput = {

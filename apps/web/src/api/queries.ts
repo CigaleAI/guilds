@@ -1,5 +1,6 @@
 import {
   keepPreviousData,
+  type Query,
   type QueryClient,
   useMutation,
   useQueries,
@@ -21,7 +22,9 @@ import type {
   AgentDetail,
   AgentSettingsInput,
   AgentUsage,
-  CatalogKind,
+  BindingsChange,
+  BindingSwitch,
+  BindingTarget,
   CatalogServer,
   CatalogServerInput,
   CatalogToolInput,
@@ -43,20 +46,24 @@ import type {
   GithubLogin,
   GithubSelectedRepository,
   GithubRepository,
+  GithubAppManifestInput,
   GithubAppManifestStart,
   Instance,
+  InstanceKeysInput,
+  InstanceKeysRemoval,
   InstanceKeysResult,
   Issue,
   McpConnection,
-  McpCredentials,
+  McpConnectionInput,
+  McpServerAccess,
   McpToolCallResult,
   CatalogModel,
   Machine,
   MachineInput,
   NewSecret,
   Secret,
-  SecretAccessChoice,
-  SecretChanges,
+  SecretAccessUpdate,
+  SecretUpdate,
   OrgMember,
   ModelProvider,
   OrgModelProvider,
@@ -207,9 +214,9 @@ export const keys = {
     ["studio", id, "files", "state", "item", path, hours, op] as const,
   studioToolCalls: (id: string, name: string, hours: number, errors: boolean) =>
     ["studio", id, "tools", name, "calls", hours, errors] as const,
-  access: (owner: { scope: string; id: string }) => ["access", owner.scope, owner.id] as const,
+  access: (owner: AccessOwner) => ["access", owner.scope, owner.id] as const,
   secretsAll: ["secrets"] as const,
-  secrets: (owner: { scope: string; id: string }) => ["secrets", owner.scope, owner.id] as const,
+  secrets: (owner: AccessOwner) => ["secrets", owner.scope, owner.id] as const,
   run: (runId: string) => ["run", runId] as const,
   runDiff: (runId: string, repository: string) => ["run", runId, "diff", repository] as const,
   taskDiff: (runId: string, callId: string) => ["run", runId, "task-diff", callId] as const,
@@ -732,9 +739,7 @@ export function useAccess(owner: AccessOwner) {
   });
 }
 
-type BindingRef = { kind: CatalogKind; id: string };
-
-function bindingQuery(owner: AccessOwner, target: BindingRef): string {
+function bindingQuery(owner: AccessOwner, target: BindingTarget): string {
   const query = new URLSearchParams({
     catalog_kind: target.kind,
     catalog_id: target.id,
@@ -745,7 +750,7 @@ function bindingQuery(owner: AccessOwner, target: BindingRef): string {
 }
 
 /** Drops the owner's own binding so the item inherits again; one that is already gone is fine. */
-async function inherit(owner: AccessOwner, target: BindingRef): Promise<void> {
+async function inherit(owner: AccessOwner, target: BindingTarget): Promise<void> {
   try {
     await api(bindingQuery(owner, target), { method: "DELETE" });
   } catch (error) {
@@ -753,7 +758,7 @@ async function inherit(owner: AccessOwner, target: BindingRef): Promise<void> {
   }
 }
 
-function bind(owner: AccessOwner, target: BindingRef, enabled: boolean) {
+function bind(owner: AccessOwner, target: BindingTarget, enabled: boolean) {
   return api("/api/bindings", {
     method: "PUT",
     body: {
@@ -764,6 +769,21 @@ function bind(owner: AccessOwner, target: BindingRef, enabled: boolean) {
       enabled,
     },
   });
+}
+
+/** The item a target points at in an access payload, or undefined when it is gone. */
+export function findBinding(
+  access: AgentAccess,
+  target: BindingTarget,
+): AccessBinding | McpServerAccess | undefined {
+  switch (target.kind) {
+    case "native_tool":
+      return access.tools.find((item) => item.name === target.id);
+    case "mcp":
+      return access.mcp.find((server) => server.id === target.id);
+    case "mcp_tool":
+      return access.mcp.flatMap((server) => server.tools).find((tool) => tool.name === target.id);
+  }
 }
 
 /** A binding at one scope changes what every narrower scope inherits, so every access read refreshes. */
@@ -779,20 +799,10 @@ function useAccessRefresh() {
 export function useSetBinding(owner: AccessOwner) {
   const refresh = useAccessRefresh();
   return useMutation({
-    mutationFn: async ({
-      target,
-      enabled,
-      resetFirst,
-      find,
-    }: {
-      target: BindingRef;
-      enabled: boolean;
-      resetFirst: boolean;
-      find: (access: AgentAccess) => Pick<AccessBinding, "enabled"> | undefined;
-    }) => {
+    mutationFn: async ({ target, enabled, resetFirst }: BindingSwitch) => {
       if (resetFirst) {
         await inherit(owner, target);
-        const inherited = find(await api<AgentAccess>(accessPath(owner)));
+        const inherited = findBinding(await api<AgentAccess>(accessPath(owner)), target);
         if (inherited?.enabled === enabled) return;
       }
       await bind(owner, target, enabled);
@@ -805,7 +815,7 @@ export function useSetBinding(owner: AccessOwner) {
 export function useBulkBindings(owner: AccessOwner) {
   const refresh = useAccessRefresh();
   return useMutation({
-    mutationFn: ({ targets, enabled }: { targets: BindingRef[]; enabled: boolean | "inherit" }) =>
+    mutationFn: ({ targets, enabled }: BindingsChange) =>
       Promise.all(
         targets.map((target) =>
           enabled === "inherit" ? inherit(owner, target) : bind(owner, target, enabled),
@@ -819,7 +829,7 @@ export function useBulkBindings(owner: AccessOwner) {
 export function useConnectServer(owner: AccessOwner) {
   const refresh = useAccessRefresh();
   return useMutation({
-    mutationFn: ({ serverId, credentials }: { serverId: string; credentials: McpCredentials }) =>
+    mutationFn: ({ serverId, credentials }: McpConnectionInput) =>
       api<McpConnection>("/api/mcp/connections", {
         method: "POST",
         body: {
@@ -904,7 +914,7 @@ export function useCreateSecret() {
 export function useUpdateSecret() {
   const refresh = useSecretsRefresh();
   return useMutation({
-    mutationFn: ({ secretId, changes }: { secretId: string; changes: SecretChanges }) =>
+    mutationFn: ({ secretId, changes }: SecretUpdate) =>
       api<Secret>(secretPath(secretId), { method: "PATCH", body: changes }),
     onSuccess: refresh,
   });
@@ -914,7 +924,7 @@ export function useUpdateSecret() {
 export function useSetSecretAccess() {
   const refresh = useSecretsRefresh();
   return useMutation({
-    mutationFn: ({ secretId, access }: { secretId: string; access: SecretAccessChoice }) =>
+    mutationFn: ({ secretId, access }: SecretAccessUpdate) =>
       api<Secret>(`${secretPath(secretId)}/access`, { method: "PUT", body: access }),
     onSuccess: refresh,
   });
@@ -961,15 +971,7 @@ const instanceKeysPath = (integration: string) =>
 export function useSaveInstanceKeys() {
   const refresh = useInstanceRefresh();
   return useMutation({
-    mutationFn: ({
-      integration,
-      values,
-      confirmReplace,
-    }: {
-      integration: string;
-      values: Record<string, string>;
-      confirmReplace?: boolean;
-    }) =>
+    mutationFn: ({ integration, values, confirmReplace }: InstanceKeysInput) =>
       api<InstanceKeysResult>(instanceKeysPath(integration), {
         method: "PUT",
         body: { values, ...(confirmReplace ? { confirm_replace: true } : {}) },
@@ -982,13 +984,7 @@ export function useSaveInstanceKeys() {
 export function useRemoveInstanceKeys() {
   const refresh = useInstanceRefresh();
   return useMutation({
-    mutationFn: ({
-      integration,
-      confirmReplace,
-    }: {
-      integration: string;
-      confirmReplace?: boolean;
-    }) =>
+    mutationFn: ({ integration, confirmReplace }: InstanceKeysRemoval) =>
       api<InstanceKeysResult>(
         `${instanceKeysPath(integration)}${confirmReplace ? "?confirm_replace=1" : ""}`,
         { method: "DELETE" },
@@ -1001,7 +997,7 @@ export function useRemoveInstanceKeys() {
 export function useStartGithubAppManifest() {
   const refresh = useInstanceRefresh();
   return useMutation({
-    mutationFn: (input: { name?: string; owner?: string; return_to?: string }) =>
+    mutationFn: (input: GithubAppManifestInput) =>
       api<GithubAppManifestStart>("/api/admin/instance/keys/github-app/manifest", {
         method: "POST",
         body: input,
@@ -1681,7 +1677,7 @@ export function useItemAccess(target: AccessTarget) {
 }
 
 /** Studio's activity and State views in any session, which list access-list changes. */
-const isStudioChangeView = (query: { queryKey: readonly unknown[] }) =>
+const isStudioChangeView = (query: Query) =>
   query.queryKey[0] === "studio" &&
   (query.queryKey[2] === "activity" || query.queryKey[3] === "state");
 

@@ -10,7 +10,12 @@ import {
   useRemoveOrgServer,
   useSetBinding,
 } from "../../api/queries";
-import type { AccessBinding, AccessOwner, McpServerAccess } from "../../api/types";
+import type {
+  AccessBinding,
+  AccessOwner,
+  BindingTarget,
+  McpServerAccess,
+} from "../../api/types";
 import {
   Button,
   IconButton,
@@ -26,13 +31,11 @@ import {
 import {
   bindingOrigin,
   canResetFirst,
-  findBinding,
   isCapabilityNativeTool,
   nativeToolDisplay,
   toolFamilyGroups,
   withCapabilityNativeTools,
   type AgentNativeCapabilities,
-  type BindingTarget,
 } from "./access";
 import { useServerConnect } from "./ConnectDialogs";
 import { OrgServerDialog } from "./OrgServerDialog";
@@ -123,7 +126,6 @@ export function AccessTools({
         target,
         enabled,
         resetFirst: canResetFirst(item),
-        find: (latest) => findBinding(latest, target),
       },
       {
         onError: failed(

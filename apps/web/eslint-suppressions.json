@@ -49,7 +49,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 54
+      "count": 43
     }
   },
   "src/api/session.ts": {
@@ -78,9 +78,6 @@
   },
   "src/api/types.ts": {
     "limits/file-lines": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
       "count": 1
     }
   },
