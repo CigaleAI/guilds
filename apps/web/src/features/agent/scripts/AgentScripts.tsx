@@ -35,6 +35,7 @@ import {
 import { ChangeHistory, useOpenStepInAgent } from "../../notes/LatestChange";
 import { changeActor } from "../prompt/taskContext";
 import { capabilityOn, defaultAgentConfig } from "../settings/configForm";
+import { readParameters } from "./scriptParameters";
 
 /** The server's rules: a script name like a tool name, and not the reserved `manifest`. */
 const scriptName = /^[a-z][a-z0-9_-]{0,62}$/;
@@ -373,25 +374,7 @@ function ScriptForm({ agentId, script, existing, open, onOpenChange }: ScriptFor
       : trimmed === "manifest"
         ? "That name is reserved."
         : undefined;
-  let parsed: Record<string, unknown> | null = null;
-  let parametersError: string | undefined;
-  if (parameters.trim()) {
-    try {
-      const value: unknown = JSON.parse(parameters);
-      if (
-        value &&
-        typeof value === "object" &&
-        !Array.isArray(value) &&
-        (value as { type?: unknown }).type === "object"
-      ) {
-        parsed = value as Record<string, unknown>;
-      } else {
-        parametersError = 'A JSON Schema object, with "type": "object".';
-      }
-    } catch {
-      parametersError = "Not valid JSON.";
-    }
-  }
+  const { schema, error: parametersError } = readParameters(parameters);
 
   const close = () => {
     setName("");
@@ -406,7 +389,7 @@ function ScriptForm({ agentId, script, existing, open, onOpenChange }: ScriptFor
     event.preventDefault();
     if (nameError || parametersError) return;
     create.mutate(
-      { name: trimmed, description: description.trim(), source, parameters: parsed },
+      { name: trimmed, description: description.trim(), source, parameters: schema },
       {
         onSuccess: () => {
           toast({ kind: "success", title: `${trimmed} saved` });

@@ -56,6 +56,19 @@ function chord(rfb: Rfb, keysym: number, code: string) {
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * Writes text to the host clipboard and says whether it did: false when the page is not allowed
+ * to, and the text then stays in the clipboard field for the operator to copy.
+ */
+export async function copyToHostClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 type Session =
   { kind: "starting" } | { kind: "live"; nonce: number } | { kind: "failed"; detail: string };
 
@@ -251,12 +264,7 @@ function Viewer({ agentId, name, nonce }: ViewerProps) {
     await wait(400);
     const text = clipRef.current;
     if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
-      flashed("copy");
-    } catch {
-      // The page may not be allowed to write the clipboard; the text stays in the field.
-    }
+    if (await copyToHostClipboard(text)) flashed("copy");
   };
 
   return (

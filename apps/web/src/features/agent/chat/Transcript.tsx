@@ -73,6 +73,15 @@ function messageAttachments(meta: Record<string, unknown>): MessageAttachment[] 
   return out;
 }
 
+/** An attached image as a blob URL, or `null` when it cannot be fetched and its filename shows instead. */
+export async function attachmentImageUrl(id: string): Promise<string | null> {
+  try {
+    return await attachmentBlobUrl(id);
+  } catch {
+    return null;
+  }
+}
+
 type AttachmentImageProps = { id: string; filename: string };
 
 function AttachmentImage({ id, filename }: AttachmentImageProps) {
@@ -80,18 +89,14 @@ function AttachmentImage({ id, filename }: AttachmentImageProps) {
   useEffect(() => {
     let url: string | null = null;
     let cancelled = false;
-    void attachmentBlobUrl(id)
-      .then((next) => {
-        if (cancelled) {
-          URL.revokeObjectURL(next);
-          return;
-        }
-        url = next;
-        setSrc(next);
-      })
-      .catch(() => {
-        if (!cancelled) setSrc(null);
-      });
+    void attachmentImageUrl(id).then((next) => {
+      if (cancelled) {
+        if (next) URL.revokeObjectURL(next);
+        return;
+      }
+      url = next;
+      setSrc(next);
+    });
     return () => {
       cancelled = true;
       if (url) URL.revokeObjectURL(url);

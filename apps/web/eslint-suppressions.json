@@ -228,9 +228,6 @@
     },
     "complexity": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/features/agent/chat/AgentChat.tsx": {
@@ -257,9 +254,6 @@
     },
     "complexity": {
       "count": 3
-    },
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/features/agent/chat/callDetail.ts": {
@@ -282,9 +276,6 @@
   },
   "src/features/agent/prompt/AgentPrompt.tsx": {
     "complexity": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
       "count": 1
     }
   },
@@ -355,14 +346,8 @@
     }
   },
   "src/features/agent/scripts/AgentScripts.tsx": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 2
-    },
     "complexity": {
       "count": 2
-    },
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/features/agent/settings/AgentSettings.tsx": {

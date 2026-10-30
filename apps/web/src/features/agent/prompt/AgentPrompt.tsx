@@ -9,7 +9,7 @@ import {
   useSaveTask,
 } from "../../../api/queries/notes";
 import { useCollections } from "../../../api/queries/tables";
-import type { TaskFile, TaskRevision } from "../../../api/types/notes";
+import type { TaskFile, TaskInput, TaskRevision } from "../../../api/types/notes";
 import { messageTime } from "../../../app/format";
 import { useIdentity } from "../../../app/identity";
 import {
@@ -37,6 +37,19 @@ import { LatestChange } from "../../notes/LatestChange";
 type Draft = { text: string; base: number | undefined };
 
 const currentVersion = "current";
+
+/** A save of the Task that failed and was reported; it rejects a dialog's confirm so it stays open. */
+class TaskNotSaved extends Error {
+  constructor() {
+    super("The Task was not saved");
+    this.name = "TaskNotSaved";
+  }
+}
+
+/** A save of the Task's text, over the version it started from when it knows one. */
+function taskInput(content: string, expected: number | undefined): TaskInput {
+  return { content, ...(expected !== undefined ? { expected_version: expected } : {}) };
+}
 
 /**
  * The agent's Task: the part of its system prompt an operator writes. Saving keeps the previous
@@ -97,33 +110,60 @@ export function AgentPrompt() {
       setPicking(kind);
     });
 
-  const write = (content: string, expected: number | undefined, done: (saved: TaskFile) => void) =>
-    save
-      .mutateAsync({ content, ...(expected !== undefined ? { expected_version: expected } : {}) })
-      .then(done, (error: Error) => {
-        if (error instanceof ApiError && error.status === 409) {
-          void task.refetch();
-          toast({
-            kind: "warning",
-            title: "Someone saved the Task while you were editing",
-            description: "Your text is kept. Compare it with theirs before saving.",
-          });
-        } else {
-          toast({ kind: "error", title: "Couldn't save the Task", description: error.message });
-        }
-        throw error;
+  /** Tells why the Task did not save: someone saved it meanwhile, or the error it failed with. */
+  const reportSaveFailure = (error: unknown) => {
+    if (error instanceof ApiError && error.status === 409) {
+      void task.refetch();
+      toast({
+        kind: "warning",
+        title: "Someone saved the Task while you were editing",
+        description: "Your text is kept. Compare it with theirs before saving.",
       });
+    } else {
+      toast({
+        kind: "error",
+        title: "Couldn't save the Task",
+        description: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
+  /**
+   * Saves the Task's text over the version it started from: the saved file, or `null` when the
+   * save failed and the operator was told why.
+   */
+  const saveTask = async (
+    content: string,
+    expected: number | undefined,
+  ): Promise<TaskFile | null> => {
+    try {
+      return await save.mutateAsync(taskInput(content, expected));
+    } catch (error) {
+      reportSaveFailure(error);
+      return null;
+    }
+  };
 
   const onSave = () => {
     if (!task.data) return;
-    write(value, draft?.base ?? task.data.version, (next) => {
+    void saveTask(value, draft?.base ?? task.data.version).then((next) => {
+      if (!next) return;
       setDraft(null);
       setShowConflict(false);
       toast({
         kind: "success",
         title: next.version ? `Task saved as v${next.version}` : "Task saved",
       });
-    }).catch(() => undefined);
+    });
+  };
+
+  /** Restores a past version as the live Task; a failed save rejects, so the dialog stays open. */
+  const restore = async (revision: TaskRevision, expected: number | undefined) => {
+    const next = await saveTask(revision.content, expected);
+    if (!next) throw new TaskNotSaved();
+    setViewing(null);
+    setRestoring(null);
+    toast({ kind: "success", title: `Restored as v${next.version ?? ""}` });
   };
 
   if (task.isPending)
@@ -325,15 +365,7 @@ export function AgentPrompt() {
         title={restoring ? `Restore v${restoring.version}?` : ""}
         description={`Its text becomes the live Task as a new version, v${(current.version ?? 0) + 1}. v${current.version} stays in the version list.`}
         confirmLabel="Restore"
-        onConfirm={() =>
-          restoring
-            ? write(restoring.content, current.version, (next) => {
-                setViewing(null);
-                setRestoring(null);
-                toast({ kind: "success", title: `Restored as v${next.version ?? ""}` });
-              })
-            : undefined
-        }
+        onConfirm={() => (restoring ? restore(restoring, current.version) : undefined)}
       />
       <ConfirmDialog
         open={blocker.status === "blocked"}
