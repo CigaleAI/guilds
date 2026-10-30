@@ -181,26 +181,6 @@
       "count": 14
     }
   },
-  "src/connectors/coingecko/client.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/connectors/format.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/connectors/manifest.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/connectors/settings.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/conversation/projection.ts": {
     "no-restricted-syntax": {
       "count": 5

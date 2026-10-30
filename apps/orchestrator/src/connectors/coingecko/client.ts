@@ -446,12 +446,18 @@ type ChartRequest = {
   series: string;
 };
 
-function chartRequest(arguments_: Record<string, unknown>): ChartRequest {
-  const [coinId, platform, address] = coinRef(arguments_);
+/** The chart the arguments ask for: `price` when they name none; throws on any other kind. */
+function chartKind(arguments_: Record<string, unknown>): ChartRequest["kind"] {
   const kind = argStr(arguments_, "kind", "price") || "price";
   if (kind !== "price" && kind !== "ohlc") {
     throw new CoinGeckoError("kind must be price or ohlc");
   }
+  return kind;
+}
+
+function chartRequest(arguments_: Record<string, unknown>): ChartRequest {
+  const [coinId, platform, address] = coinRef(arguments_);
+  const kind = chartKind(arguments_);
   if (kind === "ohlc" && !coinId) {
     throw new CoinGeckoError("ohlc requires coin id");
   }

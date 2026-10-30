@@ -41,6 +41,48 @@ function typeMatches(type: unknown, value: unknown): boolean {
   }
 }
 
+/** Checks a string against the schema's `minLength`, `maxLength` and `pattern`. */
+function checkString(schema: Schema, value: string, path: string): void {
+  if (typeof schema.minLength === "number" && value.length < schema.minLength) {
+    throw new SettingsError(`${path} must have at least ${schema.minLength} characters`);
+  }
+  if (typeof schema.maxLength === "number" && value.length > schema.maxLength) {
+    throw new SettingsError(`${path} must have at most ${schema.maxLength} characters`);
+  }
+  if (typeof schema.pattern === "string" && !new RegExp(schema.pattern).test(value)) {
+    throw new SettingsError(`${path} must match ${schema.pattern}`);
+  }
+}
+
+/** Checks an array against the schema's `minItems` and `maxItems`, and each entry against its `items`. */
+function checkArray(schema: Schema, value: unknown[], path: string): void {
+  if (typeof schema.minItems === "number" && value.length < schema.minItems) {
+    throw new SettingsError(`${path} must have at least ${schema.minItems} entries`);
+  }
+  if (typeof schema.maxItems === "number" && value.length > schema.maxItems) {
+    throw new SettingsError(`${path} must have at most ${schema.maxItems} entries`);
+  }
+  const items = schemaOf(schema.items);
+  value.forEach((item, index) => check(items, item, `${path}[${index}]`));
+}
+
+/** Checks an object's `required` properties, each property against its schema, and `additionalProperties: false`. */
+function checkObject(schema: Schema, value: Record<string, unknown>, path: string): void {
+  const properties = schemaOf(schema.properties);
+  for (const name of Array.isArray(schema.required) ? schema.required : []) {
+    if (value[String(name)] === undefined) {
+      throw new SettingsError(`${path}.${String(name)} is required`);
+    }
+  }
+  for (const [name, item] of Object.entries(value)) {
+    if (name in properties) {
+      check(schemaOf(properties[name]), item, `${path}.${name}`);
+    } else if (schema.additionalProperties === false) {
+      throw new SettingsError(`${path}.${name} is not a setting`);
+    }
+  }
+}
+
 function check(schema: Schema, value: unknown, path: string): void {
   if (schema.type !== undefined && !typeMatches(schema.type, value)) {
     throw new SettingsError(`${path} must be ${String(schema.type)}`);
@@ -49,40 +91,13 @@ function check(schema: Schema, value: unknown, path: string): void {
     throw new SettingsError(`${path} must be one of ${schema.enum.map(String).join(", ")}`);
   }
   if (typeof value === "string") {
-    if (typeof schema.minLength === "number" && value.length < schema.minLength) {
-      throw new SettingsError(`${path} must have at least ${schema.minLength} characters`);
-    }
-    if (typeof schema.maxLength === "number" && value.length > schema.maxLength) {
-      throw new SettingsError(`${path} must have at most ${schema.maxLength} characters`);
-    }
-    if (typeof schema.pattern === "string" && !new RegExp(schema.pattern).test(value)) {
-      throw new SettingsError(`${path} must match ${schema.pattern}`);
-    }
+    checkString(schema, value, path);
   }
   if (Array.isArray(value)) {
-    if (typeof schema.minItems === "number" && value.length < schema.minItems) {
-      throw new SettingsError(`${path} must have at least ${schema.minItems} entries`);
-    }
-    if (typeof schema.maxItems === "number" && value.length > schema.maxItems) {
-      throw new SettingsError(`${path} must have at most ${schema.maxItems} entries`);
-    }
-    const items = schemaOf(schema.items);
-    value.forEach((item, index) => check(items, item, `${path}[${index}]`));
+    checkArray(schema, value, path);
   }
   if (isPlainRecord(value)) {
-    const properties = schemaOf(schema.properties);
-    for (const name of Array.isArray(schema.required) ? schema.required : []) {
-      if (value[String(name)] === undefined) {
-        throw new SettingsError(`${path}.${String(name)} is required`);
-      }
-    }
-    for (const [name, item] of Object.entries(value)) {
-      if (name in properties) {
-        check(schemaOf(properties[name]), item, `${path}.${name}`);
-      } else if (schema.additionalProperties === false) {
-        throw new SettingsError(`${path}.${name} is not a setting`);
-      }
-    }
+    checkObject(schema, value, path);
   }
 }
 
