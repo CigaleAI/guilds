@@ -25,6 +25,8 @@ import {
   Row,
   Tag,
 } from "@guildsrun/ui";
+import { readRecipeFile } from "./recipeFile";
+
 const sourceLabel: Record<RecipeRow["source_kind"], string> = {
   builder: "from the Builder",
   guild: "from a guild",
@@ -51,21 +53,20 @@ export function RecipesPage() {
 
   const onFile = async (picked: File | undefined) => {
     if (!picked) return;
-    try {
-      const recipe: unknown = JSON.parse(await picked.text());
-      importRecipe.mutate(recipe, {
-        onSuccess: (row) => {
-          toast({ kind: "success", title: `Imported ${row.name}` });
-          openRecipe(row.id);
-        },
-        onError: (error) =>
-          toast({ kind: "error", title: "Couldn't import the recipe", description: error.message }),
-      });
-    } catch {
+    const read = await readRecipeFile(picked);
+    if (file.current) file.current.value = "";
+    if (read.kind === "not-json") {
       toast({ kind: "error", title: "That file isn't JSON" });
-    } finally {
-      if (file.current) file.current.value = "";
+      return;
     }
+    importRecipe.mutate(read.recipe, {
+      onSuccess: (row) => {
+        toast({ kind: "success", title: `Imported ${row.name}` });
+        openRecipe(row.id);
+      },
+      onError: (error) =>
+        toast({ kind: "error", title: "Couldn't import the recipe", description: error.message }),
+    });
   };
 
   return (

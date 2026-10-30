@@ -194,11 +194,6 @@
       "count": 1
     }
   },
-  "src/features/recipes/RecipesPage.tsx": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
   "src/features/recipes/plan/PlanView.tsx": {
     "complexity": {
       "count": 3
