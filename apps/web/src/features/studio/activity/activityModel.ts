@@ -12,6 +12,7 @@ import type {
   ActivityWrite,
   ActivityWriteKind,
 } from "../../../api/types/studio";
+import { isPlainRecord } from "../json";
 
 /**
  * Studio's activity views: the chains of wakes that woke one another, the map of who woke whom, and
@@ -25,6 +26,20 @@ export const reasonLabel: Record<ActivityTriggerReason, string> = {
   rules: "rules",
   fallback: "fallback",
 };
+
+/** Every reason a message reaches the agent it wakes. */
+const activityTriggerReasons = [
+  "tag",
+  "jev",
+  "rules",
+  "fallback",
+] as const satisfies readonly ActivityTriggerReason[];
+
+/** Whether a key of an agent input's reasons names a reason a message wakes an agent for. */
+export function isActivityTriggerReason(value: string): value is ActivityTriggerReason {
+  const known: readonly string[] = activityTriggerReasons;
+  return known.includes(value);
+}
 
 /**
  * Why a message woke an agent, in a word, or null for a wake no message started. A run stores
@@ -295,8 +310,7 @@ export function chainLines(chain: Pick<Chain, "steps">): ChainLine[] {
     from: null,
     steps: [first],
   }));
-  while (queue.length) {
-    const line = queue.shift() as ChainLine;
+  for (let line = queue.shift(); line; line = queue.shift()) {
     lines.push(line);
     let current = line.steps[0];
     while (current?.next.length) {
@@ -521,6 +535,9 @@ export type MapLayout = {
   links: PlacedMapLink[];
 };
 
+/** A link the layout draws, with the two boxes it runs between. */
+type DrawnLink = { link: MapLink; from: PlacedMapNode; to: PlacedMapNode };
+
 type Point = { x: number; y: number };
 
 function cubicAt(p0: Point, p1: Point, p2: Point, p3: Point, t: number): Point {
@@ -603,33 +620,28 @@ export function layoutActivityMap(
     }),
   );
 
-  const drawn = map.links.filter((link) => placed.has(link.from) && placed.has(link.to));
-  const isForward = (link: MapLink) => {
-    const from = placed.get(link.from) as PlacedMapNode;
-    const to = placed.get(link.to) as PlacedMapNode;
-    return from.kind !== "agent" || from.x < to.x;
-  };
+  const drawn = map.links.flatMap((link): DrawnLink[] => {
+    const from = placed.get(link.from);
+    const to = placed.get(link.to);
+    return from && to ? [{ link, from, to }] : [];
+  });
+  const isForward = ({ from, to }: DrawnLink) => from.kind !== "agent" || from.x < to.x;
   const forward = drawn.filter(isForward);
   const loops = drawn
-    .filter((link) => !isForward(link))
-    .sort(
-      (left, right) =>
-        Math.abs((placed.get(left.from)?.x ?? 0) - (placed.get(left.to)?.x ?? 0)) -
-        Math.abs((placed.get(right.from)?.x ?? 0) - (placed.get(right.to)?.x ?? 0)),
-    );
+    .filter((item) => !isForward(item))
+    .sort((left, right) => Math.abs(left.from.x - left.to.x) - Math.abs(right.from.x - right.to.x));
   const ports = (side: "in" | "out") => {
-    const bySide = new Map<string, MapLink[]>();
-    for (const link of forward) {
-      const id = side === "in" ? link.to : link.from;
-      bySide.set(id, [...(bySide.get(id) ?? []), link]);
+    const bySide = new Map<PlacedMapNode, DrawnLink[]>();
+    for (const item of forward) {
+      const box = side === "in" ? item.to : item.from;
+      bySide.set(box, [...(bySide.get(box) ?? []), item]);
     }
     const at = new Map<string, number>();
-    for (const [id, links] of bySide) {
-      const box = placed.get(id) as PlacedMapNode;
-      const other = (link: MapLink) => placed.get(side === "in" ? link.from : link.to)?.y ?? 0;
+    for (const [box, links] of bySide) {
+      const other = (item: DrawnLink) => (side === "in" ? item.from : item.to).y;
       links.sort((left, right) => other(left) - other(right));
       const room = box.h - 14;
-      links.forEach((link, position) =>
+      links.forEach(({ link }, position) =>
         at.set(
           link.id,
           box.y + 7 + (links.length === 1 ? room / 2 : (room * position) / (links.length - 1)),
@@ -640,14 +652,12 @@ export function layoutActivityMap(
   };
   const inPort = ports("in");
   const outPort = ports("out");
-  const maxCount = Math.max(1, ...drawn.map((link) => link.count));
+  const maxCount = Math.max(1, ...drawn.map(({ link }) => link.count));
   const strokeOf = (count: number) => round(1.5 + 7.5 * (count / maxCount));
   const loopBase = top + body + 8;
 
   const links: PlacedMapLink[] = [];
-  for (const link of forward) {
-    const from = placed.get(link.from) as PlacedMapNode;
-    const to = placed.get(link.to) as PlacedMapNode;
+  for (const { link, from, to } of forward) {
     const p0 = { x: from.x + from.w, y: outPort.get(link.id) ?? from.y + from.h / 2 };
     const p3 = { x: to.x - 2, y: inPort.get(link.id) ?? to.y + to.h / 2 };
     const bend = (p3.x - p0.x) / 2;
@@ -663,9 +673,7 @@ export function layoutActivityMap(
       fromAgent: from.kind === "agent",
     });
   }
-  loops.forEach((link, position) => {
-    const from = placed.get(link.from) as PlacedMapNode;
-    const to = placed.get(link.to) as PlacedMapNode;
+  loops.forEach(({ link, from, to }, position) => {
     const depth = loopBase + 18 + position * 20;
     const p0 = { x: from.x + from.w * 0.62, y: from.y + from.h };
     const p3 = { x: to.x + to.w * 0.38, y: to.y + to.h + 2 };
@@ -741,7 +749,8 @@ export function tally(values: readonly string[]): Tally[] {
 
 function argument(args: string, key: string): string | null {
   try {
-    const value = (JSON.parse(args) as Record<string, unknown>)[key];
+    const parsed: unknown = JSON.parse(args);
+    const value = isPlainRecord(parsed) ? parsed[key] : null;
     return typeof value === "string" ? value : null;
   } catch {
     return new RegExp(`"${key}"\\s*:\\s*"([^"]*)`).exec(args)?.[1] ?? null;

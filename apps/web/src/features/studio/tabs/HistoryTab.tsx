@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useAgent } from "../../../api/queries/agents";
 import { useRun, useRunMessages } from "../../../api/queries/runs";
 import { useStudioInspector, useStudioRoutines, useStudioRuns } from "../../../api/queries/studio";
-import type { RunKind } from "../../../api/types/runs";
 import type { StudioAgent, StudioRoutine, StudioRun } from "../../../api/types/studio";
 import { clockTime, dayLabel, relativeTime } from "../../../app/format";
 import {
@@ -22,6 +21,7 @@ import { Transcript } from "../../agent/chat/Transcript";
 import { runKindLabel } from "../../agent/runState";
 import { DetailHeader, Empty, MasterDetail } from "../MasterDetail";
 import { useStudio } from "../StudioContext";
+import { isRunKindFilter, type RunKindFilter } from "./historyFilters";
 
 const kindIcon = { direct: User, group: MessagesSquare, schedule: Repeat } as const;
 const any = "all";
@@ -124,7 +124,7 @@ export function HistoryTab({ agent }: HistoryTabProps) {
   const runs = useStudioRuns(session.id, agent.id);
   const routines = useStudioRoutines(session.id, agent.id);
   const inspector = useStudioInspector(session.id, agent.id);
-  const [kind, setKind] = useState<RunKind | typeof any>(any);
+  const [kind, setKind] = useState<RunKindFilter>(any);
   const [errorsOnly, setErrorsOnly] = useState(false);
   const [currentOnly, setCurrentOnly] = useState(false);
   const currentTask = inspector.data?.task.effective_hash;
@@ -161,7 +161,9 @@ export function HistoryTab({ agent }: HistoryTabProps) {
             aria-label="Run kind"
             className="w-36"
             value={kind}
-            onValueChange={(value) => setKind(value as RunKind | typeof any)}
+            onValueChange={(value) => {
+              if (isRunKindFilter(value)) setKind(value);
+            }}
             options={[
               { value: any, label: "All kinds" },
               ...(["direct", "group", "schedule"] as const).map((value) => ({

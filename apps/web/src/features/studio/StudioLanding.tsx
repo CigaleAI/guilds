@@ -24,7 +24,7 @@ import {
  * coach's model and temperature.
  */
 export function StudioLanding() {
-  const search = useSearch({ strict: false }) as { guild?: string; new?: boolean };
+  const search = useSearch({ from: "/studio" });
   const navigate = useNavigate();
   const guilds = useGuilds();
   const sessions = useStudioSessions();

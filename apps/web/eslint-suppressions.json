@@ -173,11 +173,6 @@
       "count": 1
     }
   },
-  "src/features/studio/AgentsSection.tsx": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    }
-  },
   "src/features/studio/ProposalCards.tsx": {
     "complexity": {
       "count": 1
@@ -189,9 +184,6 @@
     }
   },
   "src/features/studio/StudioLanding.tsx": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
     "complexity": {
       "count": 1
     }
@@ -212,9 +204,6 @@
     }
   },
   "src/features/studio/activity/AgentActivity.tsx": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
     "complexity": {
       "count": 1
     }
@@ -225,9 +214,6 @@
     }
   },
   "src/features/studio/activity/activityModel.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 9
-    },
     "complexity": {
       "count": 4
     },
@@ -240,25 +226,12 @@
       "count": 1
     }
   },
-  "src/features/studio/location.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    }
-  },
-  "src/features/studio/state/ReferencesMap.tsx": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    }
-  },
   "src/features/studio/state/StateItemDetail.tsx": {
     "complexity": {
       "count": 1
     }
   },
   "src/features/studio/tabs/HistoryTab.tsx": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
     "complexity": {
       "count": 2
     }

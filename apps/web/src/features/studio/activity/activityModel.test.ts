@@ -17,6 +17,7 @@ import {
   formatUsd,
   groupWrites,
   indexActivity,
+  isActivityTriggerReason,
   layoutActivityMap,
   recordIdFromPath,
   routineNode,
@@ -634,4 +635,10 @@ test("an operator row is the viewer's own, or names the person who posted it", (
   assert.equal(operatorAuthor(row(1, 0, null), "user_operator"), "your");
   assert.equal(operatorAuthor({ ...row(1, 0, null), author_name: "sam" }, "user_other"), "sam's");
   assert.equal(operatorAuthor({ ...row(1, 0, null), author_user_id: null }, "user_other"), "your");
+});
+
+test("a reason key names why a message woke an agent only when it is one of the ledger's reasons", () => {
+  assert.equal(isActivityTriggerReason("jev"), true);
+  assert.equal(isActivityTriggerReason("fallback"), true);
+  assert.equal(isActivityTriggerReason("routine"), false);
 });

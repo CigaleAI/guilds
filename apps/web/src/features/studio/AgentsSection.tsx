@@ -13,7 +13,6 @@ import {
   studioTabLabel,
   type StudioAgentTab,
   type StudioSearch,
-  type StudioTab,
 } from "./location";
 import { useStudio } from "./StudioContext";
 import { HistoryTab } from "./tabs/HistoryTab";
@@ -117,7 +116,11 @@ function AgentInspector({ agent, drafts }: AgentInspectorProps) {
       : null,
   );
   const tabs = studioAgentTabs.filter((value) => value !== "scripts" || agent.scripting !== false);
-  const tab = agentTab(search.tab, Object.keys(waiting) as StudioTab[], tabs);
+  const tab = agentTab(
+    search.tab,
+    tabs.filter((value) => value in waiting),
+    tabs,
+  );
   const open = drafts.filter(openDraft).length;
   return (
     <>

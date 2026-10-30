@@ -15,13 +15,14 @@ import { useStudio } from "../StudioContext";
 import {
   WAKE_BUCKETS,
   agentActivity,
+  isActivityTriggerReason,
+  reasonLabel,
   formatUsd,
   plural,
   type AgentInput,
   type MapSelection,
   type Tally,
 } from "./activityModel";
-import { reasonLabel } from "./activityModel";
 import { AgentMark, AgentName, NodeMark, nodeName, type ActivityData } from "./parts";
 
 type AgentActivityListProps = {
@@ -178,7 +179,9 @@ function InputRow({ data, input, share, onShow }: InputRowProps) {
   const { index } = data;
   const routine = input.kind === "routine" ? index.routines.get(input.id.slice(8)) : undefined;
   const reasons = Object.entries(input.reasons)
-    .map(([reason, count]) => `${count} ${reasonLabel[reason as keyof typeof reasonLabel]}`)
+    .flatMap(([reason, count]) =>
+      isActivityTriggerReason(reason) ? [`${count} ${reasonLabel[reason]}`] : [],
+    )
     .join(" · ");
   const detail =
     input.kind === "routine"

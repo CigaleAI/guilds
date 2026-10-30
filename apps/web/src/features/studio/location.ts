@@ -94,13 +94,22 @@ const parseSeq = (value: unknown): number | undefined => {
 };
 
 /** A location whose optional fields may be spelled out as missing. */
-type LooseSearch = { [Key in keyof StudioSearch]: StudioSearch[Key] | undefined };
+type LooseSearch = Pick<StudioSearch, "section"> & {
+  [Key in Exclude<keyof StudioSearch, "section">]?: StudioSearch[Key] | undefined;
+};
 
 /** Drops the keys whose value is missing, so the URL carries only what is set. */
 function compact(search: LooseSearch): StudioSearch {
-  return Object.fromEntries(
-    Object.entries(search).filter(([, value]) => value !== undefined),
-  ) as StudioSearch;
+  const { section, agent, tab, kind, item, call, seq } = search;
+  return {
+    section,
+    ...(agent === undefined ? {} : { agent }),
+    ...(tab === undefined ? {} : { tab }),
+    ...(kind === undefined ? {} : { kind }),
+    ...(item === undefined ? {} : { item }),
+    ...(call === undefined ? {} : { call }),
+    ...(seq === undefined ? {} : { seq }),
+  };
 }
 
 /** Each section keeps only the fields it reads. */

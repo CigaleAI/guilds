@@ -35,7 +35,14 @@ const edgeTone: Record<ReferenceEdgeStatus, { stroke: string; fill: string }> = 
   named: { stroke: "stroke-rule-2", fill: "fill-rule-2" },
 };
 
-const edgeStatuses = Object.keys(edgeTone) as ReferenceEdgeStatus[];
+/** Every status an edge can have, one arrow marker each. */
+const edgeStatuses: readonly ReferenceEdgeStatus[] = [
+  "inlined",
+  "too_deep",
+  "unreached",
+  "broken",
+  "named",
+];
 
 type ReferencesMapProps = {
   data: StudioReferences;
