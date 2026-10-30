@@ -46,13 +46,8 @@ export function planAfterFire(
 ): PlannedWake {
   const timing = rowTiming(row);
   if (timing.window) {
-    return planWindowAfterFire(
-      timing.window,
-      new Date(row.next_run_at),
-      row.window_fires,
-      firedAt,
-      random,
-    );
+    const due = { at: new Date(row.next_run_at), windowFires: row.window_fires };
+    return planWindowAfterFire(timing.window, due, firedAt, random);
   }
   return { at: nextRunAt(firedAt, timing.cron), windowFires: 0 };
 }

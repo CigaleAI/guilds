@@ -110,15 +110,15 @@ test("wakes stay at least five minutes apart", () => {
 });
 
 test("fires count within the window they land in", () => {
-  const due = new Date("2026-09-25T08:00:00Z");
+  const due = { at: new Date("2026-09-25T08:00:00Z"), windowFires: 5 };
   // Same window: the fire is the sixth.
-  const same = planWindowAfterFire(PARIS, due, 5, new Date("2026-09-25T08:00:05Z"), fixed(0.5));
+  const same = planWindowAfterFire(PARIS, due, new Date("2026-09-25T08:00:05Z"), fixed(0.5));
   assert.equal(same.windowFires, 6);
   // Late fire after the window closed: plan the next window from scratch.
-  const late = planWindowAfterFire(PARIS, due, 5, new Date("2026-09-25T19:00:00Z"), fixed(0));
+  const late = planWindowAfterFire(PARIS, due, new Date("2026-09-25T19:00:00Z"), fixed(0));
   assert.deepEqual(late, { at: new Date("2026-09-26T06:00:00Z"), windowFires: 0 });
   // Late fire that lands in the next day's window counts as its first.
-  const nextDay = planWindowAfterFire(PARIS, due, 5, new Date("2026-09-26T07:00:00Z"), fixed(0.5));
+  const nextDay = planWindowAfterFire(PARIS, due, new Date("2026-09-26T07:00:00Z"), fixed(0.5));
   assert.equal(nextDay.windowFires, 1);
 });
 

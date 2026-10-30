@@ -114,15 +114,14 @@ export function planWindowWake(
 }
 
 /**
- * Plan the wake-up after a fire at `firedAt` of a wake that was due at
- * `dueAt` with `windowFires` earlier wake-ups in its window. A fire that lands
- * outside any window (a late fire after the window closed) does not count
- * toward the next window.
+ * Plan the wake-up after a fire at `firedAt` of the wake `due`, planned with
+ * `due.windowFires` earlier wake-ups in its window. A fire that lands outside
+ * any window (a late fire after the window closed) does not count toward the
+ * next window.
  */
 export function planWindowAfterFire(
   win: WakeWindow,
-  dueAt: Date,
-  windowFires: number,
+  due: PlannedWake,
   firedAt: Date,
   random: () => number = Math.random,
 ): PlannedWake {
@@ -130,8 +129,8 @@ export function planWindowAfterFire(
   if (end === null) {
     return planWindowWake(win, firedAt, 0, random);
   }
-  const dueEnd = windowEndAt(win, dueAt);
-  const prior = dueEnd !== null && dueEnd.getTime() === end.getTime() ? windowFires : 0;
+  const dueEnd = windowEndAt(win, due.at);
+  const prior = dueEnd !== null && dueEnd.getTime() === end.getTime() ? due.windowFires : 0;
   return planWindowWake(win, firedAt, prior + 1, random);
 }
 

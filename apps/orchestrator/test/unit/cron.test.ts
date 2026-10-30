@@ -85,6 +85,16 @@ test("describe_cron", () => {
   assert.equal(describeCron("15 14 1 * *"), "At 14:15 on day 1 of the month (UTC)");
   assert.equal(describeCron("0 0 1 1 *"), "At 00:00 on day 1 of the month in January (UTC)");
   assert.equal(describeCron("not cron"), "not cron");
+  assert.equal(describeCron("0 9 * jun-aug 1-7"), "At 09:00 on Monday through Sunday in June through August (UTC)");
+});
+
+test("describe_cron_answers_with_the_expression_it_has_no_words_for", () => {
+  assert.equal(describeCron("0 9 * * moon"), "0 9 * * moon");
+  assert.equal(describeCron("0 9 32 * *"), "0 9 32 * *");
+  assert.equal(describeCron("0 9 * * 1,3/2"), "0 9 * * 1,3/2");
+  assert.equal(describeCron("0 9 * * 5-1,2"), "0 9 * * 5-1,2");
+  assert.equal(describeCron("0,30 1-5 * * *"), "0,30 1-5 * * *");
+  assert.equal(describeCron("* 9 * * *"), "* 9 * * *");
 });
 
 test("next_run follows cron including Vixie DOM/DOW OR", () => {

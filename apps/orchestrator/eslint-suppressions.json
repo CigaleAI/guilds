@@ -1064,21 +1064,7 @@
     }
   },
   "src/schedules/describe.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
     "complexity": {
-      "count": 1
-    },
-    "max-params": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 6
-    }
-  },
-  "src/schedules/window.ts": {
-    "max-params": {
       "count": 1
     }
   },
