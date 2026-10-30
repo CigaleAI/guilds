@@ -308,11 +308,6 @@
       "count": 1
     }
   },
-  "src/features/files/FilesBrowser.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/features/guild/GroupChat.tsx": {
     "complexity": {
       "count": 1
