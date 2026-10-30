@@ -60,7 +60,7 @@ export async function registerAdminMcpRoutes(app: RouteApp, deps: AppDeps): Prom
     async (request) => {
       const server = await requirePlatformServer(db, request.params.server_id);
       return catalogServerItem(
-        await patchConnectorTool(db, server, request.params.name, request.body),
+        await patchConnectorTool(db, server, { tool: request.params.name, edit: request.body }),
       );
     },
   );

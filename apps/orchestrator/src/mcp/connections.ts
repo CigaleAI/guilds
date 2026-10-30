@@ -1,12 +1,11 @@
 import { readFile } from "node:fs/promises";
 import { requireVisibleAgent } from "../agents/access.js";
-import { connectFailure, tokenCredentials } from "./connect-token.js";
+import { tokenCredentials, translateConnectFailure } from "./connect-token.js";
 import {
   getMcpServer,
   listServers,
   logoPath,
   serverSettings,
-  type LoadedConnector,
 } from "../connectors/servers.js";
 import { validateSettings } from "../connectors/settings.js";
 import { bindingItem, connectionMetadata, serverItem } from "./view.js";
@@ -22,7 +21,7 @@ import {
 import type { Queryable } from "../db/pg.js";
 import { GITHUB_SLUG } from "../github/index.js";
 import { requireVisibleGuild } from "../guilds/access.js";
-import type { McpPool } from "./pool.js";
+import { relistTools, type McpPool, type SettingsLookup } from "./pool.js";
 import { awaitingSettings } from "../connectors/login.js";
 import { callOwnedConnectionTool } from "./operator-call.js";
 import { ConnectionError, seesConnection, serverVisible } from "./visibility.js";
@@ -40,9 +39,6 @@ export type ConnectionListScope = { guildId: string | null; agentId: string | nu
 
 /** A tool call an operator makes with a login: the tool, and its arguments before validation. */
 export type ConnectionToolCall = { tool: string; arguments: unknown };
-
-/** A search for a settings property's values: the property marked `x-lookup`, and the text searched for. */
-export type SettingsLookup = { property: string; q: string };
 
 /** A lookup made from a Connect form, with the credentials the form holds before they are saved. */
 export type CredentialsLookup = SettingsLookup & { credentials: unknown };
@@ -186,14 +182,14 @@ export async function lookupWithCredentials(
     throw new ConnectionError(404, "mcp server not found");
   }
   const mcp = poolOf(services, "lookups are unavailable");
-  const { property, q } = requireLookup(lookup);
+  const search = requireLookup(lookup);
   const credentials = isPlainRecord(lookup.credentials) ? lookup.credentials : {};
   try {
     return {
-      options: await mcp.lookup(server, property, q, tokenCredentials(server, credentials)),
+      options: await mcp.lookup(server, search, tokenCredentials(server, credentials)),
     };
   } catch (error) {
-    connectFailure(error, server);
+    throw translateConnectFailure(error, server);
   }
 }
 
@@ -211,7 +207,7 @@ export async function lookupWithLogin(
       options: await mcp.lookupLogin(connection, server, property, q),
     };
   } catch (error) {
-    connectFailure(error, server);
+    throw translateConnectFailure(error, server);
   }
 }
 
@@ -237,11 +233,11 @@ export async function saveConnectionSettings(
   // The check refuses settings that lack a property the schema requires, so a login waiting
   // for its settings connects with any it accepts.
   const valid = validateSettings(schema, settings ?? null);
-  let accountHint = "";
+  let accountHint: string;
   try {
     accountHint = await mcp.validateLogin(connection, server, valid);
   } catch (error) {
-    connectFailure(error, server);
+    throw translateConnectFailure(error, server);
   }
   const row = await updateMcpConnectionSettings(
     services.db,
@@ -256,23 +252,9 @@ export async function saveConnectionSettings(
   }
   mcp.forget(row.id);
   if (row.status === "connected") {
-    await syncAfterSettings(services, mcp, row, server);
+    await relistTools(mcp, row, server, { force: true, validate: false });
   }
   return connectionMetadata(row);
-}
-
-/** Lists a login's tools once its settings are saved; a failed listing waits for the next sync. */
-async function syncAfterSettings(
-  services: ConnectionServices,
-  mcp: McpPool,
-  row: McpConnectionRow,
-  server: LoadedConnector,
-): Promise<void> {
-  try {
-    await mcp.syncTools(row, server, { force: true, validate: false });
-  } catch {
-    // The settings stand; the login's tools list on the next sync.
-  }
 }
 
 /** Deletes a login the platform does not own. */

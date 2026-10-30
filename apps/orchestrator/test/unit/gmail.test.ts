@@ -22,7 +22,6 @@ import {
   stripTags,
 } from "../../src/connectors/gmail/client.js";
 import { McpDisconnectedError } from "../../src/mcp/errors.js";
-import { ListedTool } from "../../src/mcp/tools.js";
 import { McpPool, OPERATOR_CALLER } from "../../src/mcp/pool.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
@@ -467,7 +466,7 @@ test("sync Gmail writes the curated catalog", async () => {
   assert.deepEqual(first, second);
   assert.deepEqual(
     first[0],
-    new ListedTool("search_threads", "gmail_search_threads", TOOLS[0]!.description, TOOLS[0]!.input_schema),
+    { remote_name: "search_threads", namespaced_name: "gmail_search_threads", description: TOOLS[0]!.description, input_schema: TOOLS[0]!.input_schema, read_only_hint: null, destructive_hint: null },
   );
 });
 

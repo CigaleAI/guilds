@@ -37,6 +37,15 @@ export function decrypt(services: ConnectFlowServices, row: McpConnectionRow): P
   return decryptPayload(asBuffer(row.ciphertext), asBuffer(row.nonce), services.masterKey);
 }
 
+/** A login's pending payload; null when it no longer decrypts. */
+function pendingPayload(services: ConnectFlowServices, row: McpConnectionRow): Payload | null {
+  try {
+    return decrypt(services, row);
+  } catch {
+    return null;
+  }
+}
+
 /** A pending payload's `oauth` object; none when it holds none. */
 export function oauthOf(pending: Payload): Payload {
   return isPlainRecord(pending.oauth) ? pending.oauth : {};
@@ -72,11 +81,8 @@ export async function discardAttempt(
 ): Promise<void> {
   let keep = replaces;
   if (keep === undefined) {
-    try {
-      keep = pendingReplaces(decrypt(services, row));
-    } catch {
-      keep = false;
-    }
+    const pending = pendingPayload(services, row);
+    keep = pending !== null && pendingReplaces(pending);
   }
   await retireLogin(services.mcp, services.db, row, keep ? "unauthorised" : "never_connected");
 }
@@ -107,8 +113,8 @@ function filledManifest(manifest: Manifest, blank: BlankFields, info: RemoteInfo
 
 /**
  * Fills an organisation server's blank display name (its slug) and blank description from what
- * its endpoint says at `initialize`, once a login to it connects. A server that says nothing
- * keeps what it has.
+ * its endpoint says at `initialize`, once a login to it connects. A server that says nothing, or
+ * does not answer, keeps what it has.
  */
 export async function fillFromEndpoint(
   services: ConnectFlowServices,
@@ -128,13 +134,14 @@ export async function fillFromEndpoint(
   ) {
     return;
   }
+  let info: RemoteInfo;
   try {
-    const info = await services.mcp.describeEndpoint(connection, server);
-    const next = filledManifest(manifest, blank, info);
-    if (next.display_name !== manifest.display_name || next.description !== manifest.description) {
-      await updateConnector(services.db, server.id, { manifest: next }, new Date());
-    }
+    info = await services.mcp.describeEndpoint(connection, server);
   } catch {
-    // The server keeps the name and description it was added with.
+    return;
+  }
+  const next = filledManifest(manifest, blank, info);
+  if (next.display_name !== manifest.display_name || next.description !== manifest.description) {
+    await updateConnector(services.db, server.id, { manifest: next }, new Date());
   }
 }

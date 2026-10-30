@@ -78,15 +78,7 @@ async function connectWithToken(
     throw new ConnectionError(422, "settings must be an object");
   }
   const input = { server, ...owner, credentials: form, ...(settings ? { settings } : {}) };
-  const { connection } = await connect(
-    connectDatabase(services.db),
-    services.mcp,
-    input,
-    new Date(),
-    {
-      masterKey: services.masterKey,
-    },
-  );
+  const { connection } = await connect(connectDatabase(services.db), services, input, new Date());
   await fillFromEndpoint(services, connection, server);
   return { connection: connectionMetadata(connection), githubState: null };
 }

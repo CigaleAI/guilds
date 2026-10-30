@@ -6,10 +6,10 @@ import { CONNECTORS } from "../../src/connectors/index.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import { decodeMasterKey } from "../../src/config/index.js";
 import { McpDisconnectedError, McpError } from "../../src/mcp/errors.js";
-import { ListedTool, mcpSchema } from "../../src/mcp/tools.js";
+import { mcpSchema } from "../../src/mcp/tools.js";
 import { CALL_TOOL_TIMEOUT_MS, McpSession, rpcPayload } from "../../src/mcp/session.js";
 import { authHeaders } from "../../src/mcp/login-auth.js";
-import { McpPool, OPERATOR_CALLER } from "../../src/mcp/pool.js";
+import { McpPool, OPERATOR_CALLER, relistTools, type ToolListing } from "../../src/mcp/pool.js";
 import { isReadOnlyRemote } from "../../src/connectors/servers.js";
 import { TOKEN_REFRESH_MS } from "../../src/github/tokens.js";
 import { setInstanceKeys } from "../../src/instance/integrations.js";
@@ -85,9 +85,66 @@ test("hosted MCP calls drop empty optional strings only", async () => {
   ]);
 });
 
+test("a call whose login's stored listing cannot be read fails and calls nothing", async () => {
+  const seen: Array<Record<string, unknown>> = [];
+  const db = new MemoryMcpDatabase();
+  const unreadable = new Error("connection terminated");
+  db.listMcpTools = async () => {
+    throw unreadable;
+  };
+  const pool = new McpPool(db);
+  pool.session = async () =>
+    ({
+      async callTool(_name: string, arguments_: Record<string, unknown>) {
+        seen.push(arguments_);
+        return "ok";
+      },
+    }) as never;
+  await assert.rejects(
+    pool.call(connectionOf("tok"), serverRow("cigale", { auth: "token", config: { url: "https://api.cigale.ai/mcp" } }), {
+      tool: "generate_reply_options",
+      arguments: { prompt: "" },
+      caller: OPERATOR_CALLER,
+    }),
+    unreadable,
+  );
+  assert.deepEqual(seen, []);
+});
+
+test("relisting a login's tools answers the listing, or null when it fails", async () => {
+  const listing = [
+    {
+      remote_name: "search",
+      namespaced_name: "notion_search",
+      description: "Search",
+      input_schema: { type: "object" },
+      read_only_hint: null,
+      destructive_hint: null,
+    },
+  ];
+  const asked: ToolListing[] = [];
+  const listingPool = {
+    syncTools: async (_connection: McpConnectionRow, _server: unknown, options: ToolListing = {}) => {
+      asked.push(options);
+      return listing;
+    },
+  };
+  const server = serverRow("notion");
+  assert.deepEqual(await relistTools(listingPool, connectionOf("tok"), server, { force: true }), listing);
+  assert.deepEqual(asked, [{ force: true }]);
+  const failing = {
+    syncTools: async () => {
+      throw new McpError("mcp 503", 503);
+    },
+  };
+  assert.equal(await relistTools(failing, connectionOf("tok"), server, { force: true, validate: false }), null);
+});
+
 test("offered Cigale schema marks optional strings for omit", () => {
-  const schema = mcpSchema(
-    new ListedTool("generate_reply_options", "cigale_generate_reply_options", "Draft replies", {
+  const schema = mcpSchema({
+    namespaced_name: "cigale_generate_reply_options",
+    description: "Draft replies",
+    input_schema: {
       type: "object",
       properties: {
         tweetId: { type: "string", minLength: 1 },
@@ -97,8 +154,8 @@ test("offered Cigale schema marks optional strings for omit", () => {
       },
       required: ["tweetId", "agentId"],
       additionalProperties: false,
-    }),
-  );
+    },
+  });
   const parameters = (schema.function as { parameters: Record<string, unknown> }).parameters;
   const properties = parameters.properties as {
     campaignId: Record<string, unknown>;
@@ -113,8 +170,10 @@ test("offered Cigale schema marks optional strings for omit", () => {
 });
 
 test("mcpSchema drops format uuid from optional properties", () => {
-  const schema = mcpSchema(
-    new ListedTool("generate_reply_options", "cigale_generate_reply_options", "Draft replies", {
+  const schema = mcpSchema({
+    namespaced_name: "cigale_generate_reply_options",
+    description: "Draft replies",
+    input_schema: {
       type: "object",
       properties: {
         tweetId: { type: "string" },
@@ -135,8 +194,8 @@ test("mcpSchema drops format uuid from optional properties", () => {
       },
       required: ["tweetId", "agentId"],
       additionalProperties: false,
-    }),
-  );
+    },
+  });
   const parameters = (schema.function as { parameters: Record<string, unknown> }).parameters;
   const properties = parameters.properties as {
     agentId: Record<string, unknown>;
@@ -156,8 +215,10 @@ test("mcpSchema drops format uuid from optional properties", () => {
 });
 
 test("mcpSchema drops format on nullable required properties", () => {
-  const schema = mcpSchema(
-    new ListedTool("generate_reply_options", "cigale_generate_reply_options", "Draft replies", {
+  const schema = mcpSchema({
+    namespaced_name: "cigale_generate_reply_options",
+    description: "Draft replies",
+    input_schema: {
       type: "object",
       properties: {
         tweetId: { type: "string" },
@@ -171,8 +232,8 @@ test("mcpSchema drops format on nullable required properties", () => {
         },
       },
       required: ["tweetId", "campaignId", "window"],
-    }),
-  );
+    },
+  });
   const properties = (
     schema.function as {
       parameters: {
@@ -339,7 +400,7 @@ test("syncTools uses stored catalog within TTL", async () => {
   const second = await pool.syncTools(connection, server);
   assert.equal(session.listed, 1);
   assert.deepEqual(first, second);
-  assert.deepEqual(first, [new ListedTool("search", "notion_search", "Search", { type: "object" })]);
+  assert.deepEqual(first, [{ remote_name: "search", namespaced_name: "notion_search", description: "Search", input_schema: { type: "object" }, read_only_hint: null, destructive_hint: null }]);
   await pool.syncTools(connection, server, { force: true });
   assert.equal(session.listed, 2);
 });
@@ -468,7 +529,7 @@ test("sync OpenSea writes default-off and destructive tools Off, and reads On", 
     ["opensea_search", "opensea_get_favorites", "opensea_get_instant_api_key"],
   );
   assert.deepEqual(first, second);
-  assert.deepEqual(first[0], new ListedTool("search", "opensea_search", "Search", { type: "object" }));
+  assert.deepEqual(first[0], { remote_name: "search", namespaced_name: "opensea_search", description: "Search", input_schema: { type: "object" }, read_only_hint: null, destructive_hint: null });
   assert.equal(db.bindings.get("mcp_tool:opensea_get_favorites:guild_1")?.enabled, false);
   assert.equal(db.bindings.get("mcp_tool:opensea_get_instant_api_key:guild_1")?.enabled, false);
   assert.equal(db.bindings.has("mcp_tool:opensea_search:guild_1"), false);

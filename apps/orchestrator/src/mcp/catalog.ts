@@ -65,6 +65,9 @@ export const ToolEditSchema = Type.Object({
 
 export type ToolEdit = Static<typeof ToolEditSchema>;
 
+/** An edit of one of a connector's tools: the tool's name, and the change to it. */
+export type ConnectorToolEdit = { tool: string; edit: ToolEdit };
+
 /** Whether the admin edits the connector's own fields (a server made on this box) or overrides its manifest. */
 function editsFields(server: LoadedConnector): boolean {
   return server.source === "local";
@@ -373,11 +376,11 @@ export async function patchConnector(
 export async function patchConnectorTool(
   db: Queryable,
   server: LoadedConnector,
-  name: string,
-  body: ToolEdit,
+  change: ConnectorToolEdit,
   now = new Date(),
 ): Promise<LoadedConnector> {
-  const toolName = name.trim();
+  const body = change.edit;
+  const toolName = change.tool.trim();
   if (!toolName || toolName.length > 128) {
     throw new CatalogError("tool name is invalid");
   }

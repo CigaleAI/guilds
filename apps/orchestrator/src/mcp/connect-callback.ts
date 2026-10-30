@@ -31,6 +31,7 @@ import {
   type Payload,
 } from "./connect-flow.js";
 import { completeGithubAuth } from "./github-install.js";
+import { relistTools } from "./pool.js";
 
 /** What the provider's callback carries back, and the state cookie a GitHub sign-in left. */
 export type OAuthCallback = {
@@ -99,10 +100,8 @@ async function finishOauthConnection(
     return;
   }
   await bindToOwner(services.db, connected, now);
-  try {
-    await services.mcp?.syncTools(connected, server, { force: true });
-  } catch {
-    // The login stands; its tools list on the next sync.
+  if (services.mcp !== null) {
+    await relistTools(services.mcp, connected, server, { force: true });
   }
   await fillFromEndpoint(services, connected, server);
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { McpDisconnectedError, McpError } from "../../src/mcp/errors.js";
-import { ListedTool, mcpSchema } from "../../src/mcp/tools.js";
+import { mcpSchema, type ListedTool } from "../../src/mcp/tools.js";
 import { OPERATOR_CALLER, type RemoteCall } from "../../src/mcp/pool.js";
 import { callTool, currentTools, resolveConnectionTool } from "../../src/mcp/service.js";
 import { MemoryMcpDatabase, storedTool } from "../helpers/mcp-database.js";
@@ -11,7 +11,7 @@ const NOTION = serverRow("notion", { id: "mcp_notion" });
 const SCHEMA = { type: "object", properties: { query: { type: "string" } } };
 
 function listed(remoteName: string): ListedTool {
-  return new ListedTool(remoteName, `notion_${remoteName}`, `Does ${remoteName}`, SCHEMA);
+  return { remote_name: remoteName, namespaced_name: `notion_${remoteName}`, description: `Does ${remoteName}`, input_schema: SCHEMA, read_only_hint: null, destructive_hint: null };
 }
 
 /** A database whose login `conn_1` last listed `remoteNames`. */

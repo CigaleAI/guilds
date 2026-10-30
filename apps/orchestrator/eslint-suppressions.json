@@ -738,35 +738,11 @@
   "src/mcp/catalog.ts": {
     "complexity": {
       "count": 2
-    },
-    "max-params": {
-      "count": 1
-    }
-  },
-  "src/mcp/connect-callback.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/mcp/connect-flow.ts": {
-    "no-restricted-syntax": {
-      "count": 2
     }
   },
   "src/mcp/connect-token.ts": {
     "complexity": {
       "count": 1
-    },
-    "max-params": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
-  "src/mcp/connections.ts": {
-    "no-restricted-syntax": {
-      "count": 4
     }
   },
   "src/mcp/operator-call.ts": {
@@ -777,12 +753,6 @@
   "src/mcp/pool.ts": {
     "complexity": {
       "count": 1
-    },
-    "max-params": {
-      "count": 3
-    },
-    "no-restricted-syntax": {
-      "count": 2
     }
   },
   "src/mcp/session.ts": {
@@ -790,11 +760,6 @@
       "count": 2
     },
     "max-depth": {
-      "count": 1
-    }
-  },
-  "src/mcp/tools.ts": {
-    "max-params": {
       "count": 1
     }
   },

@@ -59,6 +59,14 @@ export class ConnectError extends Error {
 /** The pool a login is validated, listed and forgotten through. */
 export type ConnectPool = Pick<McpPool, "validate" | "syncTools" | "forget">;
 
+/** What a token login is connected through, built once from the app's services. */
+export type ConnectServices = {
+  /** The pool that talks to the connectors; absent on a box that calls none. */
+  mcp: ConnectPool | null;
+  /** The key logins are encrypted with; the process's own when absent. */
+  masterKey: Buffer | undefined;
+};
+
 /** A db/ function with its connection bound. */
 type BoundQuery<F> = F extends (db: Queryable, ...args: infer A) => infer R ? (...args: A) => R : never;
 
@@ -108,6 +116,23 @@ function storedCredentials(
   }
 }
 
+/**
+ * The error a connector's failure answers: a rejected credential or a bad setting is a 422
+ * `ConnectError`, any other failure upstream a 502; an error that is not the connector's stays.
+ */
+export function translateConnectFailure(error: unknown, server: LoadedConnector): unknown {
+  if (!(error instanceof McpError) || error instanceof McpDisconnectedError) {
+    return error;
+  }
+  if (error.status === 401 || error.status === 403) {
+    return new ConnectError(422, "api key was rejected");
+  }
+  if (error.status === 422) {
+    return new ConnectError(422, error.message);
+  }
+  return new ConnectError(502, `${String(server.display_name ?? server.slug)}: ${error.message}`);
+}
+
 /** Answers a connector's failure: a rejected credential or a bad setting is a 422, anything else upstream a 502. */
 export function connectFailure(error: unknown, server: LoadedConnector): never {
   if (error instanceof McpError && !(error instanceof McpDisconnectedError)) {
@@ -130,12 +155,12 @@ export function connectFailure(error: unknown, server: LoadedConnector): never {
  */
 export async function connect(
   db: ConnectDatabase,
-  pool: ConnectPool | null,
+  services: ConnectServices,
   input: ConnectInput,
   now: Date = new Date(),
-  options: { masterKey?: Buffer | undefined } = {},
 ): Promise<ConnectResult> {
   const { server } = input;
+  const pool = services.mcp;
   if (server.auth !== "token") {
     throw new ConnectError(422, "connector does not take a key");
   }
@@ -159,20 +184,20 @@ export async function connect(
     if (onExisting === "keep") {
       return { connection: existing, outcome: "kept" };
     }
-    if (sameCredentials(storedCredentials(existing, options.masterKey), credentials)) {
+    if (sameCredentials(storedCredentials(existing, services.masterKey), credentials)) {
       return { connection: existing, outcome: "current" };
     }
     if (typeof onExisting === "object" && existing.account_hint !== onExisting.replace_when_hint) {
       return { connection: existing, outcome: "kept" };
     }
   }
-  let hint = "";
+  let hint: string;
   try {
     hint = pool ? await pool.validate(server, credentials, settings.values) : "";
   } catch (error) {
-    connectFailure(error, server);
+    throw translateConnectFailure(error, server);
   }
-  const [ciphertext, nonce] = encryptPayload({ ...credentials }, options.masterKey);
+  const [ciphertext, nonce] = encryptPayload({ ...credentials }, services.masterKey);
   const connection = await db.connectMcp(
     {
       connectionId: newId("conn"),
