@@ -9,11 +9,6 @@
       "count": 1
     }
   },
-  "src/features/access/ConnectDialogs.tsx": {
-    "complexity": {
-      "count": 2
-    }
-  },
   "src/features/access/GithubRepositories.tsx": {
     "complexity": {
       "count": 1

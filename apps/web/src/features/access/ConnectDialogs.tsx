@@ -49,27 +49,45 @@ type KeyDialogProps = {
  * an agent's machine.
  */
 export function KeyConnectDialog({ owner, server, onClose, onConnected }: KeyDialogProps) {
+  return (
+    <Dialog open={server !== null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent size="sm">
+        {server ? (
+          <KeyConnectForm
+            key={server.id}
+            owner={owner}
+            server={server}
+            onClose={onClose}
+            {...(onConnected ? { onConnected } : {})}
+          />
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+type KeyConnectFormProps = {
+  owner: AccessOwner;
+  server: ConnectableServer;
+  onClose: () => void;
+  onConnected?: (server: ConnectableServer) => void;
+};
+
+/** The inputs and settings of one key-based login, entered afresh each time the dialog opens. */
+function KeyConnectForm({ owner, server, onClose, onConnected }: KeyConnectFormProps) {
   const connect = useConnectServer(owner);
   const [values, setValues] = useState<Record<string, string>>({});
   const [settings, setSettings] = useState<SettingsValue>({});
-  const fields = server?.auth_fields?.length ? server.auth_fields : [API_KEY_FIELD];
-  const schema = server?.settings_schema ?? null;
-  const serverId = server?.id ?? "";
+  const fields = server.auth_fields?.length ? server.auth_fields : [API_KEY_FIELD];
+  const schema = server.settings_schema ?? null;
+  const serverId = server.id;
   const search = useCallback(
     (property: string, query: string) => lookupWithCredentials(serverId, property, query, values),
     [serverId, values],
   );
 
-  const close = () => {
-    setValues({});
-    setSettings({});
-    connect.reset();
-    onClose();
-  };
-
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (!server) return;
     const credentials: McpCredentials = Object.fromEntries(
       fields.map((field) => [field.name, (values[field.name] ?? "").trim()]),
     );
@@ -85,63 +103,52 @@ export function KeyConnectDialog({ owner, server, onClose, onConnected }: KeyDia
               : `${server.name} connected`,
           });
           onConnected?.(server);
-          close();
+          onClose();
         },
       },
     );
   };
 
   return (
-    <Dialog open={server !== null} onOpenChange={(open) => !open && close()}>
-      <DialogContent size="sm">
-        <form onSubmit={submit} className="flex min-h-0 flex-col">
-          <DialogHeader
-            title={`Connect ${server?.name ?? ""}`}
-            description="Signs in with a login of its own instead of the one it inherits."
+    <form onSubmit={submit} className="flex min-h-0 flex-col">
+      <DialogHeader
+        title={`Connect ${server.name}`}
+        description="Signs in with a login of its own instead of the one it inherits."
+      />
+      <DialogBody>
+        {server.setup_hint ? <p className="text-sm text-fg-2">{server.setup_hint}</p> : null}
+        {fields.map((field) => (
+          <TextField
+            key={field.name}
+            name={field.name}
+            tone="surface"
+            label={field.label}
+            type={field.secret === false ? "text" : "password"}
+            required={!field.optional}
+            autoComplete="off"
+            {...(field.placeholder ? { placeholder: field.placeholder } : {})}
+            value={values[field.name] ?? ""}
+            onChange={(event) => setValues({ ...values, [field.name]: event.currentTarget.value })}
           />
-          <DialogBody>
-            {server?.setup_hint ? <p className="text-sm text-fg-2">{server.setup_hint}</p> : null}
-            {fields.map((field) => (
-              <TextField
-                key={field.name}
-                name={field.name}
-                tone="surface"
-                label={field.label}
-                type={field.secret === false ? "text" : "password"}
-                required={!field.optional}
-                autoComplete="off"
-                {...(field.placeholder ? { placeholder: field.placeholder } : {})}
-                value={values[field.name] ?? ""}
-                onChange={(event) =>
-                  setValues({ ...values, [field.name]: event.currentTarget.value })
-                }
-              />
-            ))}
-            {schema ? (
-              <SettingsForm
-                schema={schema}
-                value={settings}
-                onChange={setSettings}
-                search={search}
-              />
-            ) : null}
-            {connect.isError ? (
-              <Banner tone="error" title="Couldn't connect">
-                {connect.error.message}
-              </Banner>
-            ) : null}
-          </DialogBody>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="ghost">Cancel</Button>
-            </DialogClose>
-            <Button type="submit" disabled={connect.isPending}>
-              {connect.isPending ? "Connecting…" : "Connect"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+        ))}
+        {schema ? (
+          <SettingsForm schema={schema} value={settings} onChange={setSettings} search={search} />
+        ) : null}
+        {connect.isError ? (
+          <Banner tone="error" title="Couldn't connect">
+            {connect.error.message}
+          </Banner>
+        ) : null}
+      </DialogBody>
+      <DialogFooter>
+        <DialogClose asChild>
+          <Button variant="ghost">Cancel</Button>
+        </DialogClose>
+        <Button type="submit" disabled={connect.isPending}>
+          {connect.isPending ? "Connecting…" : "Connect"}
+        </Button>
+      </DialogFooter>
+    </form>
   );
 }
 
@@ -173,34 +180,57 @@ function openCentered(url: string) {
  * or in this tab. The dialog closes once the login reads connected.
  */
 export function OAuthDialog({ pending, onDone }: OAuthDialogProps) {
-  const connectionId = pending?.connection.id ?? null;
-  const connection = useConnection(connectionId, true);
-  const url = pending?.connection.authorization_url ?? "";
+  return (
+    <Dialog open={pending !== null} onOpenChange={(open) => !open && onDone(false)}>
+      <DialogContent size="sm">
+        {pending ? (
+          <OAuthSignIn
+            key={pending.connection.id}
+            server={pending.server}
+            connection={pending.connection}
+            onDone={onDone}
+          />
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+type OAuthSignInProps = {
+  server: ConnectableServer;
+  /** The login the server started, with the provider's address to sign in at. */
+  connection: McpConnection;
+  onDone: (connected: boolean) => void;
+};
+
+/** The ways to reach the provider's sign-in, and the wait until the login reads connected. */
+function OAuthSignIn({ server, connection: started, onDone }: OAuthSignInProps) {
+  const connection = useConnection(started.id, true);
+  const url = started.authorization_url ?? "";
   const connected =
     connection.data?.status === "connected" || connection.data?.needs_settings === true;
   const refetch = connection.refetch;
-  const finished = useRef<string | null>(null);
+  const finished = useRef(false);
 
   useEffect(() => {
-    if (!connected || !pending || finished.current === pending.connection.id) return;
-    finished.current = pending.connection.id;
+    if (!connected || finished.current) return;
+    finished.current = true;
     toast({
       kind: "success",
       title: connection.data?.needs_settings
-        ? `${pending.server.name} signed in; finish its settings on its card`
-        : `${pending.server.name} connected`,
+        ? `${server.name} signed in; finish its settings on its card`
+        : `${server.name} connected`,
     });
     onDone(true);
-  }, [connected, pending, onDone, connection.data?.needs_settings]);
+  }, [connected, server.name, onDone, connection.data?.needs_settings]);
 
   useEffect(() => {
-    if (!pending) return;
     const onMessage = (event: MessageEvent<SignInWindowMessage | null>) => {
       if (event.data?.type === "oauth_complete" && event.data.success) void refetch();
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [pending, refetch]);
+  }, [refetch]);
 
   const copy = async () => {
     if ((await copyText(url)) === "copied")
@@ -209,28 +239,26 @@ export function OAuthDialog({ pending, onDone }: OAuthDialogProps) {
   };
 
   return (
-    <Dialog open={pending !== null} onOpenChange={(open) => !open && onDone(false)}>
-      <DialogContent size="sm">
-        <DialogHeader
-          title={`Sign in to ${pending?.server.name ?? ""}`}
-          description={`You'll sign in at ${pending?.connection.authorization_host ?? "the provider"}; this closes by itself once the login connects.`}
-        />
-        <DialogBody className="gap-3">
-          <Button onClick={() => openCentered(url)}>
-            <Icon icon={ExternalLink} size={14} />
-            Open sign-in window
-          </Button>
-          <Button variant="outline" onClick={() => void copy()}>
-            <Icon icon={Copy} size={14} />
-            Copy sign-in link
-          </Button>
-          <Button variant="ghost" onClick={() => window.location.assign(url)}>
-            Continue in this tab
-          </Button>
-          <p className="text-xs text-muted">Waiting for the login to connect…</p>
-        </DialogBody>
-      </DialogContent>
-    </Dialog>
+    <>
+      <DialogHeader
+        title={`Sign in to ${server.name}`}
+        description={`You'll sign in at ${started.authorization_host ?? "the provider"}; this closes by itself once the login connects.`}
+      />
+      <DialogBody className="gap-3">
+        <Button onClick={() => openCentered(url)}>
+          <Icon icon={ExternalLink} size={14} />
+          Open sign-in window
+        </Button>
+        <Button variant="outline" onClick={() => void copy()}>
+          <Icon icon={Copy} size={14} />
+          Copy sign-in link
+        </Button>
+        <Button variant="ghost" onClick={() => window.location.assign(url)}>
+          Continue in this tab
+        </Button>
+        <p className="text-xs text-muted">Waiting for the login to connect…</p>
+      </DialogBody>
+    </>
   );
 }
 
