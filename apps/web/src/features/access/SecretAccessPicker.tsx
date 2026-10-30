@@ -1,6 +1,6 @@
 import { useAgentsByGuild } from "../../api/queries/agents";
 import { useGuilds } from "../../api/queries/guilds";
-import type { SecretAccessChoice } from "../../api/types";
+import type { SecretAccessChoice } from "../../api/types/secrets";
 import { Checkbox, Toggle } from "@guildsrun/ui";
 
 function withId(ids: readonly string[], id: string): string[] {

@@ -7,7 +7,7 @@ import {
   useNote,
   useSaveMemory,
 } from "../../../api/queries/notes";
-import type { MemoryVersion } from "../../../api/types";
+import type { MemoryVersion } from "../../../api/types/notes";
 import { relativeTime } from "../../../app/format";
 import {
   Button,

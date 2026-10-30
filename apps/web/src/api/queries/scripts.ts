@@ -4,9 +4,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { api } from "../client";
-import type {
-  Script,
-} from "../types";
+import type { Script } from "../types/scripts";
 
 /**
  * Query keys of agents' scripts. Identity is fixed for the page's life, so keys carry no user or

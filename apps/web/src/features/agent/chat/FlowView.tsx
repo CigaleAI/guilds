@@ -55,7 +55,7 @@ import {
   levelFromDisplayPath,
 } from "../runs/toolKinds";
 import type { ToolProgress } from "../../../api/toolProgress";
-import type { Harness } from "../../../api/types";
+import type { Harness } from "../../../api/types/agents";
 import { harnessLabels } from "../harness";
 import { HarnessLogo } from "../HarnessLogo";
 import { callHarness } from "./callDetail";

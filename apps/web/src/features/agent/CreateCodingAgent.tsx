@@ -4,7 +4,8 @@ import { SquareTerminal } from "lucide-react";
 import { useCreateAgent, useOrgMachines } from "../../api/queries/agents";
 import { useCreateSecret, useSecrets } from "../../api/queries/secrets";
 import { useOrgModels } from "../../api/queries/models";
-import { hasConnectedProvider, type Harness } from "../../api/types";
+import type { Harness } from "../../api/types/agents";
+import { hasConnectedProvider } from "../../api/types/models";
 import { useIdentity } from "../../app/identity";
 import {
   Banner,

@@ -26,7 +26,7 @@ import type {
   AccessOwner,
   ReachSubject,
   OrgServerInput,
-} from "../types";
+} from "../types/access";
 
 /**
  * Query keys of tools, logins and access lists. Identity is fixed for the page's life, so keys

@@ -9,7 +9,7 @@ import {
 } from "../../api/queries/tables";
 import { useGuilds } from "../../api/queries/guilds";
 import { useItemAccess } from "../../api/queries/access";
-import type { Collection, ColumnInput } from "../../api/types";
+import type { Collection, ColumnInput } from "../../api/types/tables";
 import { relativeTime } from "../../app/format";
 import { useMediaQuery, wideScreen } from "../../app/media";
 import {

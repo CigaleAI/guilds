@@ -8,6 +8,12 @@ commands for each effect are in
 
 ## Unreleased
 
+**Breaking for extensions.** `@guildsrun/web` exports the API types
+as one module per domain, `api/types/<domain>` (`access`, `admin`,
+`agents`, `builder`, `chat`, `files`, `guilds`, `issues`, `models`,
+`notes`, `org`, `recipes`, `runs`, `schedules`, `scripts`, `secrets`,
+`studio`, `tables`), in place of `api/types`.
+
 **Rebuild.** The runtime image gains gost, and
 `agent-browser-start` takes the slot's DevTools relay port after the
 DevTools port: `agent-browser-start <agent id> <display> <vnc port>

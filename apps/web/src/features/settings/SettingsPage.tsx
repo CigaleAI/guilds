@@ -3,7 +3,7 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import { useOrgModels } from "../../api/queries/models";
 import { useOrgUsage, useUpdateProfile, useUpdateOrg } from "../../api/queries/org";
 import { switchOrg } from "../../api/identity";
-import type { UsageTotals } from "../../api/types";
+import type { UsageTotals } from "../../api/types/org";
 import { agentLook } from "../../app/agents";
 import { useIdentity } from "../../app/identity";
 import type { TabSearch } from "../../app/router";

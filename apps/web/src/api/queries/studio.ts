@@ -10,6 +10,7 @@ import { api } from "../client";
 import { generatingPollMs } from "./runs";
 import { tableKeys } from "./tables";
 import { accessKeys } from "./access";
+import type { MemoryTimeline } from "../types/notes";
 import type {
   StudioAgent,
   StudioConnection,
@@ -23,7 +24,6 @@ import type {
   StudioTool,
   ActivityView,
   StudioReferences,
-  MemoryTimeline,
   StudioRoutine,
   StudioRun,
   StudioMessageInput,
@@ -33,7 +33,7 @@ import type {
   StudioLoginDecision,
   StudioConnectionGrant,
   StudioToolCallsPage,
-} from "../types";
+} from "../types/studio";
 
 /** Query keys of Studio. Identity is fixed for the page's life, so keys carry no user or org. */
 export const studioKeys = {

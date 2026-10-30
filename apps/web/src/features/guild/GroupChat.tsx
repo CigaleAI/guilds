@@ -7,7 +7,9 @@ import {
   usePostGroupMessage,
 } from "../../api/queries/chat";
 import { useOrgMembers } from "../../api/queries/org";
-import type { Agent, GroupChatState, GroupMessage, Guild } from "../../api/types";
+import type { Guild } from "../../api/types/guilds";
+import type { Agent } from "../../api/types/agents";
+import type { GroupChatState, GroupMessage } from "../../api/types/chat";
 import { agentLook } from "../../app/agents";
 import { isoTime, messageTime } from "../../app/format";
 import { useIdentity } from "../../app/identity";

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useCreateSchedule, useUpdateSchedule } from "../../../api/queries/schedules";
-import type { Schedule, ScheduleInput, WakeWindow } from "../../../api/types";
+import type { Schedule, ScheduleInput, WakeWindow } from "../../../api/types/schedules";
 import { useIdentity } from "../../../app/identity";
 import {
   Button,

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useAddOrgServer } from "../../api/queries/access";
-import type { OrgServerInput } from "../../api/types";
+import type { OrgServerInput } from "../../api/types/access";
 import {
   Banner,
   Button,

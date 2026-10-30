@@ -12,7 +12,7 @@ import type {
   RecordsQuery,
   DatabaseInput,
   RecordUpdate,
-} from "../types";
+} from "../types/tables";
 
 /** Query keys of tables. Identity is fixed for the page's life, so keys carry no user or org. */
 export const tableKeys = {

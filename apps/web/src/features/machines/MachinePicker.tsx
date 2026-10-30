@@ -1,4 +1,4 @@
-import type { Machine } from "../../api/types";
+import type { Machine } from "../../api/types/agents";
 import { Select } from "@guildsrun/ui";
 import { LoadBudget } from "./MachineMeters";
 import { MachinesSettingsLink, NoMachines, TooSmallNote } from "./MachineNotes";

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { HarnessCatalog, Machine } from "../../../api/types";
+import type { HarnessCatalog, Machine } from "../../../api/types/agents";
 import {
   configErrors,
   configFormOf,

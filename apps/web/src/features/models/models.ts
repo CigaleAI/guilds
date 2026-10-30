@@ -1,5 +1,5 @@
 import type { SelectOption, SelectOptionGroup } from "@guildsrun/ui";
-import type { ModelProvider, OrgModels } from "../../api/types";
+import type { ModelProvider, OrgModels } from "../../api/types/models";
 
 /**
  * The picker's options: the organisation's chosen models grouped by provider. Coding rows appear

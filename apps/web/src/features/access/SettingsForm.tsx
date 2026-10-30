@@ -1,6 +1,6 @@
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { LookupOption } from "../../api/types";
+import type { LookupOption } from "../../api/types/access";
 import { Icon, SearchField, Select, TextField } from "@guildsrun/ui";
 
 const searchDelayMs = 300;

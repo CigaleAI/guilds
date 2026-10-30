@@ -3,7 +3,8 @@ import { Database, Plus } from "lucide-react";
 import { useState } from "react";
 import { useCollections } from "../../api/queries/tables";
 import { useReach } from "../../api/queries/access";
-import type { AccessMode, Column, ReachSubject, ReachedTable } from "../../api/types";
+import type { Column } from "../../api/types/tables";
+import type { AccessMode, ReachSubject, ReachedTable } from "../../api/types/access";
 import { Banner, Button, EmptyState, Icon, SkeletonRows, Tag } from "@guildsrun/ui";
 import { CreateTableDialog } from "./CreateTableDialog";
 

@@ -19,7 +19,7 @@ import type {
   HarnessCheck,
   MachineUpdate,
   NewAgent,
-} from "../types";
+} from "../types/agents";
 
 /**
  * Query keys of agents and the machines they run on. Identity is fixed for the page's life, so keys

@@ -1,7 +1,11 @@
 import { useId, useMemo, useState } from "react";
 import { FileText, Link2Off, ScrollText, Table2, type LucideIcon } from "lucide-react";
 import { cn, Icon } from "@guildsrun/ui";
-import type { ReferenceEdgeStatus, ReferenceNodeKind, StudioReferences } from "../../../api/types";
+import type {
+  ReferenceEdgeStatus,
+  ReferenceNodeKind,
+  StudioReferences,
+} from "../../../api/types/studio";
 import { useWidth } from "../activity/parts";
 import {
   isBroken,

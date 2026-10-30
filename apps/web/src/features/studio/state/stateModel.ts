@@ -1,4 +1,4 @@
-import type { StateActor, StateFlag, StateItemRow, StateLink } from "../../../api/types";
+import type { StateActor, StateFlag, StateItemRow, StateLink } from "../../../api/types/studio";
 import type { Proposal } from "../pendingModel";
 
 /** The windows State offers, in hours: a day, three days, a week. */

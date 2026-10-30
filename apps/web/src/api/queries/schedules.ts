@@ -12,7 +12,7 @@ import type {
   ScheduleUpdate,
   SchedulePause,
   GuildSchedulePause,
-} from "../types";
+} from "../types/schedules";
 
 /** Query keys of routines. Identity is fixed for the page's life, so keys carry no user or org. */
 export const scheduleKeys = {

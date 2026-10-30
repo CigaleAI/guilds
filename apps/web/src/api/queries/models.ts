@@ -11,7 +11,7 @@ import type {
   OrgModelProvider,
   OrgModels,
   ModelProviderInput,
-} from "../types";
+} from "../types/models";
 
 /**
  * Query keys of the organisation's models. Identity is fixed for the page's life, so keys carry no

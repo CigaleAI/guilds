@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { useOrgMachines } from "../../api/queries/agents";
-import type { Machine, OrgModels } from "../../api/types";
+import type { Machine } from "../../api/types/agents";
+import type { OrgModels } from "../../api/types/models";
 import { Banner, Button, DialogClose, DialogFooter } from "@guildsrun/ui";
 import { DiskBudget } from "../machines/MachineMeters";
 import { MachinePicker } from "../machines/MachinePicker";

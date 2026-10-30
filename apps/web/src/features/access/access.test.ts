@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { AccessBinding, Instance, McpServerAccess } from "../../api/types";
+import type { Instance } from "../../api/types/admin";
+import type { AccessBinding, McpServerAccess } from "../../api/types/access";
 import {
   BROWSER_NATIVE_TOOLS,
   bindingOrigin,

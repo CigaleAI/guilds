@@ -7,7 +7,7 @@ import {
   usePostStudioMessage,
 } from "../../api/queries/studio";
 import type { LiveTurn } from "../../api/liveTurn";
-import type { StudioMessage, StudioSession } from "../../api/types";
+import type { StudioMessage, StudioSession } from "../../api/types/studio";
 import { Button, Checkbox, Composer, Banner, toast, Icon } from "@guildsrun/ui";
 import type { FlowSegment } from "../agent/runs/runFlowModel";
 import { CoachLog, type CoachRow } from "../coach/CoachLog";

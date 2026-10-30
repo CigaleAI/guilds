@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useAgentsByGuild } from "../../api/queries/agents";
 import { useGuilds } from "../../api/queries/guilds";
 import { useItemAccess, useSetItemAccess } from "../../api/queries/access";
-import type { AccessEntry, AccessListMode, AccessRow, AccessTarget } from "../../api/types";
+import type { AccessEntry, AccessListMode, AccessRow, AccessTarget } from "../../api/types/access";
 import { useIdentity } from "../../app/identity";
 import {
   Banner,

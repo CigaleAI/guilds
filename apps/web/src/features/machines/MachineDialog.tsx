@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useCreateMachine, useUpdateMachine } from "../../api/queries/agents";
-import type { Machine, MachineBox } from "../../api/types";
+import type { Machine, MachineBox } from "../../api/types/agents";
 import { useIdentity } from "../../app/identity";
 import {
   Banner,

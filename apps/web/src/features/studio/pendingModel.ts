@@ -1,4 +1,4 @@
-import type { StudioDraft, StudioMessage } from "../../api/types";
+import type { StudioDraft, StudioMessage } from "../../api/types/studio";
 import {
   batchReply,
   connectionLabel,

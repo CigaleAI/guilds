@@ -4,7 +4,8 @@ import { useState } from "react";
 import { useAgent } from "../../../api/queries/agents";
 import { useRun, useRunMessages } from "../../../api/queries/runs";
 import { useStudioInspector, useStudioRoutines, useStudioRuns } from "../../../api/queries/studio";
-import type { RunKind, StudioAgent, StudioRoutine, StudioRun } from "../../../api/types";
+import type { RunKind } from "../../../api/types/runs";
+import type { StudioAgent, StudioRoutine, StudioRun } from "../../../api/types/studio";
 import { clockTime, dayLabel, relativeTime } from "../../../app/format";
 import {
   Button,

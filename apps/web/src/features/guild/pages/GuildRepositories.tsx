@@ -5,7 +5,7 @@ import {
   useGuildRepositories,
   useRemoveGuildRepository,
 } from "../../../api/queries/guilds";
-import type { Guild, GuildRepository } from "../../../api/types";
+import type { Guild, GuildRepository } from "../../../api/types/guilds";
 import { Button, IconButton, TextField, Banner, Select, toast, Icon, Tag } from "@guildsrun/ui";
 import { isGithubUrl, NO_LOGIN, repositoryLogin, repositoryNamePattern } from "../repositories";
 

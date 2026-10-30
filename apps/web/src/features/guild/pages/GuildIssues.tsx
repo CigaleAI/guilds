@@ -6,7 +6,7 @@ import {
   useResolveOpenIssues,
   useSetIssueStatus,
 } from "../../../api/queries/issues";
-import type { Issue } from "../../../api/types";
+import type { Issue } from "../../../api/types/issues";
 import { agentLook } from "../../../app/agents";
 import { relativeTime } from "../../../app/format";
 import {

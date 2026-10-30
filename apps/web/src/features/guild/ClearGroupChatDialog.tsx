@@ -1,6 +1,6 @@
 import { ConfirmDialog, toast } from "@guildsrun/ui";
 import { useClearGroupChat } from "../../api/queries/chat";
-import type { Guild } from "../../api/types";
+import type { Guild } from "../../api/types/guilds";
 
 type ClearGroupChatDialogProps = {
   guild: Pick<Guild, "id" | "name">;

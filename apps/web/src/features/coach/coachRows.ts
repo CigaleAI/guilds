@@ -1,4 +1,4 @@
-import type { StudioMessage } from "../../api/types";
+import type { StudioMessage } from "../../api/types/studio";
 import type { RunMessage } from "../agent/runs/runFlowModel";
 
 /** A coach conversation as run rows, so the run flow model groups its steps and tool calls. */

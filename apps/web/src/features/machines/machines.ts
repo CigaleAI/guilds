@@ -1,4 +1,5 @@
-import type { Machine, MachineBox, MachineInput, OrgRole } from "../../api/types";
+import type { OrgRole } from "../../api/types/org";
+import type { Machine, MachineBox, MachineInput } from "../../api/types/agents";
 
 /**
  * The size of each fixed tier, for the tier picker before a machine exists; it mirrors the

@@ -4,7 +4,7 @@ import { useState, type FormEvent } from "react";
 import { useCreateStudioSession, useStudioSessions } from "../../api/queries/studio";
 import { useGuilds } from "../../api/queries/guilds";
 import { useOrgModels } from "../../api/queries/models";
-import { hasConnectedProvider } from "../../api/types";
+import { hasConnectedProvider } from "../../api/types/models";
 import { useIdentity } from "../../app/identity";
 import { messageTime } from "../../app/format";
 import { ConnectProviderGuide } from "../models/ConnectProviderGuide";

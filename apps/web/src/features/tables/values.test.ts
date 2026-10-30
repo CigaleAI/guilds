@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { Column } from "../../api/types";
+import type { Column } from "../../api/types/tables";
 import {
   columnErrors,
   columnsForSave,

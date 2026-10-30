@@ -1,9 +1,6 @@
-import type {
-  AccessEdit,
-  ConnectorAuthField,
-  McpServerAccess,
-  StudioMessage,
-} from "../../api/types";
+import type { ConnectorAuthField, McpServerAccess } from "../../api/types/access";
+import type { StudioMessage } from "../../api/types/studio";
+import type { AccessEdit } from "../../api/types/recipes";
 import { pendingDesignQuestions } from "../recipes/plan/planModel";
 
 /**

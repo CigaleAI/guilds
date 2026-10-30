@@ -3,7 +3,7 @@ import { Sparkles } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useBuilderSessions, useStartBuilder } from "../../api/queries/builder";
 import { useOrgModels } from "../../api/queries/models";
-import { hasConnectedProvider } from "../../api/types";
+import { hasConnectedProvider } from "../../api/types/models";
 import { useIdentity } from "../../app/identity";
 import { relativeTime } from "../../app/format";
 import { ConnectProviderGuide } from "../models/ConnectProviderGuide";

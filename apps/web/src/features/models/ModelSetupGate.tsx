@@ -5,7 +5,11 @@ import {
   useOrgModels,
   useSetDefaultModel,
 } from "../../api/queries/models";
-import { hasConnectedProvider, type ModelProvider, type OrgModelProvider } from "../../api/types";
+import {
+  hasConnectedProvider,
+  type ModelProvider,
+  type OrgModelProvider,
+} from "../../api/types/models";
 import { useIdentity } from "../../app/identity";
 import {
   Banner,

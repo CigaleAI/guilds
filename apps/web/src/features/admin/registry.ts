@@ -1,4 +1,4 @@
-import type { RegistryConnector } from "../../api/types";
+import type { RegistryConnector } from "../../api/types/admin";
 
 /**
  * What the registry dialog offers for a connector: `install` when the box lacks it, `update` when a

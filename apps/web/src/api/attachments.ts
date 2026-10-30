@@ -1,7 +1,7 @@
 import { ApiError, detailText } from "./client";
 import { reportClientError, requestId } from "./clientLog";
 import { authMode, identityHeaders, signInUrl } from "./session";
-import type { ChatAttachment } from "./types";
+import type { ChatAttachment } from "./types/runs";
 
 /** Stores image bytes, then returns the id later messages reference. */
 export async function uploadAttachment(file: File): Promise<ChatAttachment> {

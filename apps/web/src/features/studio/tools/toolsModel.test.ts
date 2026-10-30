@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { StudioTool, StudioToolCall } from "../../../api/types";
+import type { StudioTool, StudioToolCall } from "../../../api/types/studio";
 import type { Proposal } from "../pendingModel";
 import {
   errorGroups,

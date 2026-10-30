@@ -65,11 +65,6 @@
       "count": 1
     }
   },
-  "src/api/types.ts": {
-    "limits/file-lines": {
-      "count": 1
-    }
-  },
   "src/app/App.tsx": {
     "no-restricted-syntax": {
       "count": 1

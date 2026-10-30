@@ -1,11 +1,11 @@
+import type { Instance } from "../../api/types/admin";
+import type { AgentConfig } from "../../api/types/agents";
 import type {
   AccessBinding,
-  AgentConfig,
   BindingScope,
-  Instance,
   McpConnectionStatus,
   McpServerAccess,
-} from "../../api/types";
+} from "../../api/types/access";
 import type { BindingOrigin } from "@guildsrun/ui";
 import { missingFieldsPhrase, toolIntegrationGap } from "../instance/instance";
 /**

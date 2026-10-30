@@ -1,7 +1,8 @@
 import { Pin } from "lucide-react";
 import { useState } from "react";
 import { useMemoryTimeline } from "../../../api/queries/studio";
-import type { MemoryVersion, StudioAgent } from "../../../api/types";
+import type { MemoryVersion } from "../../../api/types/notes";
+import type { StudioAgent } from "../../../api/types/studio";
 import { Button, Select, Banner, SkeletonRows, Icon } from "@guildsrun/ui";
 import {
   MemoryStepButton,

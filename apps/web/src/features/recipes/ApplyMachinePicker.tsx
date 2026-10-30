@@ -1,4 +1,4 @@
-import type { ApplyMachine, ApplyPreview } from "../../api/types";
+import type { ApplyMachine, ApplyPreview } from "../../api/types/recipes";
 import { Select } from "@guildsrun/ui";
 import { LoadBudget } from "../machines/MachineMeters";
 import { MachinesSettingsLink, NoMachines } from "../machines/MachineNotes";

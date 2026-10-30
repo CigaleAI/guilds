@@ -14,16 +14,10 @@ import { scriptKeys } from "./queries/scripts";
 import { studioKeys } from "./queries/studio";
 import { tableKeys } from "./queries/tables";
 import { applyToolProgress, dropToolProgress, type ToolProgress } from "./toolProgress";
-import type {
-  BuilderSession,
-  GroupChatState,
-  GroupMessage,
-  MessageNotice,
-  Run,
-  RunMessage,
-  StudioMessage,
-  StudioSession,
-} from "./types";
+import type { GroupChatState, GroupMessage, MessageNotice } from "./types/chat";
+import type { Run, RunMessage } from "./types/runs";
+import type { StudioMessage, StudioSession } from "./types/studio";
+import type { BuilderSession } from "./types/builder";
 
 export type { LiveTurn } from "./liveTurn";
 export type { ToolProgress } from "./toolProgress";

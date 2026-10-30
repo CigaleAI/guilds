@@ -1,4 +1,4 @@
-import type { StudioTool, StudioToolCall } from "../../../api/types";
+import type { StudioTool, StudioToolCall } from "../../../api/types/studio";
 import type { AccessChange } from "../chatModel";
 import type { Proposal } from "../pendingModel";
 

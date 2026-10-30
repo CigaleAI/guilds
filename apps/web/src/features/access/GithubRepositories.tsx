@@ -1,6 +1,6 @@
 import { Trash2 } from "lucide-react";
 import { useGithubRepositories, useSetGithubRepositories } from "../../api/queries/access";
-import type { GithubSelectedRepository, McpServerAccess } from "../../api/types";
+import type { GithubSelectedRepository, McpServerAccess } from "../../api/types/access";
 import { IconButton, Select, Tag, toast } from "@guildsrun/ui";
 import { repositoryNameFrom } from "../guild/repositories";
 

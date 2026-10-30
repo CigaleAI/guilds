@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { Collection, EmbeddableNote, FileChange } from "../../../api/types";
+import type { EmbeddableNote, FileChange } from "../../../api/types/notes";
+import type { Collection } from "../../../api/types/tables";
 import { changeActor, embedIsBroken, insertMarkup, pickableNotes } from "./taskContext";
 
 const scope = { orgId: "org_a", guildId: "guild_1", agentId: "a_1" };

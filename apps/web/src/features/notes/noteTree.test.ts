@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { NoteItem } from "../../api/types";
+import type { NoteItem } from "../../api/types/notes";
 import { buildTree, newNotePath } from "./noteTree";
 
 function file(path: string): NoteItem {

@@ -23,7 +23,7 @@ import type {
   CatalogServer,
   CatalogServerInput,
   CatalogTool,
-} from "../../api/types";
+} from "../../api/types/admin";
 import type { TabSearch } from "../../app/router";
 import { useIdentity } from "../../app/identity";
 import { chosenTab, placeTabs, useSlots } from "../../app/slots";

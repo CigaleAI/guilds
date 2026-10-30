@@ -7,7 +7,8 @@ import {
   useSetSecretAccess,
   useUpdateSecret,
 } from "../../api/queries/secrets";
-import type { AccessOwner, Secret, SecretAccessChoice } from "../../api/types";
+import type { AccessOwner } from "../../api/types/access";
+import type { Secret, SecretAccessChoice } from "../../api/types/secrets";
 import { relativeTime } from "../../app/format";
 import { useIdentity } from "../../app/identity";
 import { SecretValueField } from "./SecretValueField";

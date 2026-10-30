@@ -2,7 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
 import { useCreateDatabase } from "../../api/queries/tables";
 import { useGuilds } from "../../api/queries/guilds";
-import type { ColumnInput } from "../../api/types";
+import type { ColumnInput } from "../../api/types/tables";
 import {
   Button,
   Select,

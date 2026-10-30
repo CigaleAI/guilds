@@ -6,18 +6,20 @@ import {
 import { api } from "../client";
 import { generatingPollMs } from "./runs";
 import { recipeKeys } from "./recipes";
+import type { StudioMessage } from "../types/studio";
 import type {
   RecipeRow,
-  StudioMessage,
   AccessEdit,
   AccessEditResult,
+  RecipeValidation,
+  RecipeFieldReview,
+} from "../types/recipes";
+import type {
   BuilderCapabilities,
   BuilderSession,
   BuilderSessionSummary,
-  RecipeValidation,
-  RecipeFieldReview,
   NewBuilderSession,
-} from "../types";
+} from "../types/builder";
 
 /**
  * Query keys of the Builder. Identity is fixed for the page's life, so keys carry no user or org.

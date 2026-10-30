@@ -1,4 +1,4 @@
-import type { StudioMessage } from "../../api/types";
+import type { StudioMessage } from "../../api/types/studio";
 
 /**
  * What a coach edit changes: an agent's memory, access, or routine, a note, the guild's

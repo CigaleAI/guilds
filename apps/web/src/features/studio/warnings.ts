@@ -1,4 +1,4 @@
-import type { StudioAgent } from "../../api/types";
+import type { StudioAgent } from "../../api/types/studio";
 
 /** What Studio flags on an agent, in words. */
 export const warningLabel: Record<StudioAgent["warnings"][number], string> = {

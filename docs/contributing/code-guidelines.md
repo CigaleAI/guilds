@@ -51,8 +51,8 @@ two functions.
   - Every other record, such as what a call sends or addresses (a
     mutation's variables, the owner a query key names, a patch), is
     named for that thing (`SecretOwner`, `ScheduleUpdate`) and
-    declared in the feature's `types.ts`, or in `api/types.ts` when
-    the API shares it.
+    declared in the feature's `types.ts`, or in the API's module of
+    its domain under `api/types/` when the API shares it.
 
   Every other object parameter is an argument bag and is not
   allowed. That includes an inline object type that lists a

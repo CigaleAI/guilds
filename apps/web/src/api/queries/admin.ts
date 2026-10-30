@@ -15,14 +15,14 @@ import type {
   InstanceKeysResult,
   RegistryConnectors,
   RegistryReload,
-  User,
   NewUser,
   UserEmailChange,
   CatalogServerEdit,
   CatalogToolEdit,
   RegistryAcceptance,
   RegistryConnectorAcceptance,
-} from "../types";
+} from "../types/admin";
+import type { User } from "../types/org";
 
 /**
  * Query keys of this server, its catalog, its registry and its users. Identity is fixed for the

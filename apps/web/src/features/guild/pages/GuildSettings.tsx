@@ -11,7 +11,7 @@ import {
 import { useGroupChatState, useSetMessageLimit } from "../../../api/queries/chat";
 import { useGuildAgents } from "../../../api/queries/agents";
 import { useOrgMembers } from "../../../api/queries/org";
-import type { Guild, GuildOperator } from "../../../api/types";
+import type { Guild, GuildOperator } from "../../../api/types/guilds";
 import { useIdentity } from "../../../app/identity";
 import {
   Button,

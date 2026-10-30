@@ -13,7 +13,7 @@ import type {
   MemberRoleChange,
   OrgInput,
   ProfileChanges,
-} from "../types";
+} from "../types/org";
 
 /**
  * Query keys of the organisation, its members and the operator's profile. Identity is fixed for the

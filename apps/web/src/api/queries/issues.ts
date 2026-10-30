@@ -6,11 +6,7 @@ import {
 import { api } from "../client";
 import { guildPath } from "./guilds";
 import { chatKeys } from "./chat";
-import type {
-  Issue,
-  IssueStatusChange,
-  GuildIssueStatusChange,
-} from "../types";
+import type { Issue, IssueStatusChange, GuildIssueStatusChange } from "../types/issues";
 
 /** Query keys of issues. Identity is fixed for the page's life, so keys carry no user or org. */
 export const issueKeys = {

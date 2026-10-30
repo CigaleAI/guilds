@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { CatalogModel, OrgModels } from "../../api/types";
+import type { CatalogModel, OrgModels } from "../../api/types/models";
 import { modelOptions, preselectedModel, setupProgress } from "./models";
 
 function model(id: string, kind: "marketplace" | "coding" = "marketplace"): CatalogModel {

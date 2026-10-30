@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowUpRight, TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
-import type { StudioAgent, StudioDraft } from "../../api/types";
+import type { StudioAgent, StudioDraft } from "../../api/types/studio";
 import { agentLook } from "../../app/agents";
 import { AgentTabs, Icon, PillCount, Tag, tabsList, tabsTrigger } from "@guildsrun/ui";
 import { ActivityLedger } from "./activity/ActivityLedger";

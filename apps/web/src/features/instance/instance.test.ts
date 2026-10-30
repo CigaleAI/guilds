@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { Instance, InstanceIntegration, IntegrationField } from "../../api/types";
+import type { Instance, InstanceIntegration, IntegrationField } from "../../api/types/admin";
 import {
   connectorSetupGap,
   integrationFor,

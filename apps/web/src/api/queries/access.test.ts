@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { findBinding } from "./access";
-import type { AccessBinding, AgentAccess, McpServerAccess } from "../types";
+import type { AccessBinding, AgentAccess, McpServerAccess } from "../types/access";
 
 function binding(name: string): AccessBinding {
   return { name, enabled: true, source_scope: "platform", overlay: null };

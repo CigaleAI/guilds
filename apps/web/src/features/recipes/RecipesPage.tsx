@@ -9,7 +9,7 @@ import {
   useRecipes,
 } from "../../api/queries/recipes";
 import { useGuilds } from "../../api/queries/guilds";
-import type { RecipeRow } from "../../api/types";
+import type { RecipeRow } from "../../api/types/recipes";
 import { relativeTime } from "../../app/format";
 import {
   Button,

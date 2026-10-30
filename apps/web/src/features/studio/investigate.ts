@@ -1,7 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useCreateStudioSession } from "../../api/queries/studio";
 import { useOrgModels } from "../../api/queries/models";
-import type { Issue } from "../../api/types";
+import type { Issue } from "../../api/types/issues";
 import { useIdentity } from "../../app/identity";
 import { preselectedModel } from "../models/models";
 import { toast } from "@guildsrun/ui";

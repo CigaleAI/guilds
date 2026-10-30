@@ -6,7 +6,7 @@ import {
   useRemoveMember,
   useUpdateMemberRole,
 } from "../../api/queries/org";
-import type { OrgRole } from "../../api/types";
+import type { OrgRole } from "../../api/types/org";
 import { useIdentity } from "../../app/identity";
 import { useSlots } from "../../app/slots";
 import {

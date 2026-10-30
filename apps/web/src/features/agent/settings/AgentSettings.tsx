@@ -8,7 +8,8 @@ import {
 } from "../../../api/queries/agents";
 import { useGuild } from "../../../api/queries/guilds";
 import { useOrgModels } from "../../../api/queries/models";
-import { hasConnectedProvider, type AgentDetail } from "../../../api/types";
+import type { AgentDetail } from "../../../api/types/agents";
+import { hasConnectedProvider } from "../../../api/types/models";
 import { useIdentity } from "../../../app/identity";
 import {
   Button,

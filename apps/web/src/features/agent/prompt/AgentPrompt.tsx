@@ -9,7 +9,7 @@ import {
   useSaveTask,
 } from "../../../api/queries/notes";
 import { useCollections } from "../../../api/queries/tables";
-import type { TaskFile, TaskRevision } from "../../../api/types";
+import type { TaskFile, TaskRevision } from "../../../api/types/notes";
 import { messageTime } from "../../../app/format";
 import { useIdentity } from "../../../app/identity";
 import {

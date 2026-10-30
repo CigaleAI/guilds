@@ -1,7 +1,7 @@
 import { ArrowLeft, MessageCircleQuestion } from "lucide-react";
 import { useState } from "react";
 import { useStudioToolCalls } from "../../../api/queries/studio";
-import type { StudioAgent, StudioTool, StudioToolCall } from "../../../api/types";
+import type { StudioAgent, StudioTool, StudioToolCall } from "../../../api/types/studio";
 import { relativeTime } from "../../../app/format";
 import { Banner, Button, Icon, Segmented, SkeletonRows, StatBand, Tag, cn } from "@guildsrun/ui";
 import { DetailHeader } from "../MasterDetail";

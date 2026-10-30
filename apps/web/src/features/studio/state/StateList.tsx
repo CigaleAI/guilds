@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useStudioState } from "../../../api/queries/studio";
-import type { StateItemRow, StudioAgent } from "../../../api/types";
+import type { StateItemRow, StudioAgent } from "../../../api/types/studio";
 import { relativeTime } from "../../../app/format";
 import {
   Banner,

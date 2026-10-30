@@ -5,8 +5,8 @@ import type {
   HarnessCatalogModel,
   HarnessCredential,
   HarnessEffort,
-  Secret,
-} from "../../api/types";
+} from "../../api/types/agents";
+import type { Secret } from "../../api/types/secrets";
 import { relativeTime } from "../../app/format";
 
 /** Each harness's name as the app shows it. */

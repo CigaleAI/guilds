@@ -5,16 +5,16 @@ import { useAddOrgServer } from "../../api/queries/access";
 import { useApplyRecipe, useRecipe, useRecipePreview } from "../../api/queries/recipes";
 import { useInstallRegistryConnector } from "../../api/queries/admin";
 import { useOrgModels } from "../../api/queries/models";
+import type { Harness } from "../../api/types/agents";
+import type { OrgModels } from "../../api/types/models";
 import type {
   ApplyConnectionChoice,
   ApplyInstall,
   ApplyPreview,
   ApplySetup,
-  Harness,
-  OrgModels,
   PlannedConnection,
-} from "../../api/types";
-import { hasConnectedProvider } from "../../api/types";
+} from "../../api/types/recipes";
+import { hasConnectedProvider } from "../../api/types/models";
 import { useIdentity } from "../../app/identity";
 import { harnessLabel, harnessOptions, harnessSubscriptionNote } from "../agent/harness";
 import { setupSearch } from "../instance/instance";

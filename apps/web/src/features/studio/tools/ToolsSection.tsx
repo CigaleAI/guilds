@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useStudioTools } from "../../../api/queries/studio";
-import type { StudioAgent, StudioTool } from "../../../api/types";
+import type { StudioAgent, StudioTool } from "../../../api/types/studio";
 import { relativeTime } from "../../../app/format";
 import {
   Banner,

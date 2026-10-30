@@ -7,10 +7,10 @@ import type {
   HarnessCatalog,
   HarnessEffort,
   Machine,
-  OrgModels,
   ThinkingLevel,
-} from "../../../api/types";
-import { isCodingOnlyModel } from "../../../api/types";
+} from "../../../api/types/agents";
+import type { OrgModels } from "../../../api/types/models";
+import { isCodingOnlyModel } from "../../../api/types/models";
 import { useIdentity } from "../../../app/identity";
 import { useState } from "react";
 import { cn, Icon, Select, Slider, TextField } from "@guildsrun/ui";

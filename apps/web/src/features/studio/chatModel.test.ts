@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { StudioMessage } from "../../api/types";
+import type { StudioMessage } from "../../api/types/studio";
 import {
   applyLabel,
   batchReply,

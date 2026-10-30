@@ -1,6 +1,7 @@
 import { api } from "./client";
 import { rememberOrg, rememberUser, setAuthMode, storedOrgId, storedUserId } from "./session";
-import type { AuthConfig, AuthMode, Org, User } from "./types";
+import type { AuthConfig, AuthMode } from "./types/admin";
+import type { Org, User } from "./types/org";
 
 export type Identity = { mode: AuthMode; user: User; org: Org; orgs: Org[] };
 

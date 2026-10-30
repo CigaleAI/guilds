@@ -1,7 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useFileChanges, useLatestChange } from "../../api/queries/notes";
-import type { FileChange } from "../../api/types";
+import type { FileChange } from "../../api/types/notes";
 import { relativeTime } from "../../app/format";
 import { Button, VersionBar, SkeletonRows, Tag, cn } from "@guildsrun/ui";
 import { changeActor } from "../agent/prompt/taskContext";

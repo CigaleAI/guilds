@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { useCancelBuilder, usePostBuilderMessage } from "../../api/queries/builder";
 import type { LiveTurn } from "../../api/liveTurn";
-import type { BuilderSession, StudioMessage } from "../../api/types";
+import type { StudioMessage } from "../../api/types/studio";
+import type { BuilderSession } from "../../api/types/builder";
 import { Composer, Banner, toast } from "@guildsrun/ui";
 import type { FlowSegment } from "../agent/runs/runFlowModel";
 import { CoachLog, type CoachRow } from "../coach/CoachLog";

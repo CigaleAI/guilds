@@ -22,7 +22,7 @@ import type {
   RecipeInput,
   RecipeFieldReview,
   ApplyStepConfirmation,
-} from "../types";
+} from "../types/recipes";
 
 /**
  * Query keys of recipes and their applies. Identity is fixed for the page's life, so keys carry no

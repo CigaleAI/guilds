@@ -1,4 +1,4 @@
-import type { StudioAgent, StudioTool } from "../../../api/types";
+import type { StudioAgent, StudioTool } from "../../../api/types/studio";
 import { agentLook } from "../../../app/agents";
 import { Avatar, cn } from "@guildsrun/ui";
 

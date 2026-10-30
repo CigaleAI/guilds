@@ -1,6 +1,6 @@
 import { useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 import { liveTurnActive, type LiveTurn } from "../../api/liveTurn";
-import type { StudioMessage } from "../../api/types";
+import type { StudioMessage } from "../../api/types/studio";
 import { isoTime, messageTime } from "../../app/format";
 import { useIdentity } from "../../app/identity";
 import {

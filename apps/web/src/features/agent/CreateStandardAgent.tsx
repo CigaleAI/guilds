@@ -2,7 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useCreateAgent, useOrgMachines } from "../../api/queries/agents";
 import { useOrgModels } from "../../api/queries/models";
-import { hasConnectedProvider } from "../../api/types";
+import { hasConnectedProvider } from "../../api/types/models";
 import { useIdentity } from "../../app/identity";
 import { Banner, DialogBody, DialogHeader, Stepper } from "@guildsrun/ui";
 import { chosenMachine } from "../machines/machines";

@@ -1,5 +1,5 @@
 import { useDatabase } from "../../../api/queries/tables";
-import type { StudioAgent } from "../../../api/types";
+import type { StudioAgent } from "../../../api/types/studio";
 import { Banner, SkeletonRows } from "@guildsrun/ui";
 import { RecordsPanel } from "../../tables/RecordsPanel";
 import { NotesBrowser, type NoteScope } from "../../notes/NotesBrowser";

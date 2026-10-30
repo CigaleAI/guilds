@@ -11,7 +11,7 @@ import type {
   ActivityWake,
   ActivityWrite,
   ActivityWriteKind,
-} from "../../../api/types";
+} from "../../../api/types/studio";
 
 /**
  * Studio's activity views: the chains of wakes that woke one another, the map of who woke whom, and

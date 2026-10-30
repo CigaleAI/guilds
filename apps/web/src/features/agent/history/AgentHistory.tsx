@@ -3,7 +3,7 @@ import { History, MessagesSquare, Plus, Repeat, User, type LucideIcon } from "lu
 import { useMemo, useState } from "react";
 import { useAgentRuns } from "../../../api/queries/runs";
 import { useAgentSchedules } from "../../../api/queries/schedules";
-import type { Run, RunKind } from "../../../api/types";
+import type { Run, RunKind } from "../../../api/types/runs";
 import { clockTime, dayKey, dayLabel, isoTime } from "../../../app/format";
 import {
   Button,

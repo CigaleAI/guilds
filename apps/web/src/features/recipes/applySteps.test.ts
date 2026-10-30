@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { ApplyStep, McpServerAccess } from "../../api/types";
+import type { McpServerAccess } from "../../api/types/access";
+import type { ApplyStep } from "../../api/types/recipes";
 import {
   checklistProgress,
   checklistSteps,

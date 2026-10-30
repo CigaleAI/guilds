@@ -13,7 +13,7 @@ import {
 } from "../../api/queries/builder";
 import { useRecipePreview } from "../../api/queries/recipes";
 import { useBuilderStream } from "../../api/streams";
-import type { BuilderSession } from "../../api/types";
+import type { BuilderSession } from "../../api/types/builder";
 import { useMediaQuery } from "../../app/media";
 import {
   Button,

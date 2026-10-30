@@ -1,9 +1,5 @@
-import type {
-  Instance,
-  InstanceIntegration,
-  IntegrationField,
-  McpServerAccess,
-} from "../../api/types";
+import type { Instance, InstanceIntegration, IntegrationField } from "../../api/types/admin";
+import type { McpServerAccess } from "../../api/types/access";
 
 type Provided = keyof InstanceIntegration["provides"];
 

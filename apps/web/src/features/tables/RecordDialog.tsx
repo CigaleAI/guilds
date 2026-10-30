@@ -1,7 +1,7 @@
 import { TriangleAlert } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useAddRecord, useDeleteRecord, useUpdateRecord } from "../../api/queries/tables";
-import type { Collection, CollectionRecord, Column } from "../../api/types";
+import type { Collection, CollectionRecord, Column } from "../../api/types/tables";
 import { messageTime } from "../../app/format";
 import {
   Button,

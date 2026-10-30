@@ -4,13 +4,8 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { api } from "../client";
-import type {
-  NewSecret,
-  Secret,
-  SecretAccessUpdate,
-  SecretUpdate,
-  AccessOwner,
-} from "../types";
+import type { AccessOwner } from "../types/access";
+import type { NewSecret, Secret, SecretAccessUpdate, SecretUpdate } from "../types/secrets";
 
 /** Query keys of secrets. Identity is fixed for the page's life, so keys carry no user or org. */
 export const secretKeys = {

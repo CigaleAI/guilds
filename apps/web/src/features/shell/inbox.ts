@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useNotifications } from "../../api/queries/chat";
-import type { Notifications } from "../../api/types";
+import type { Notifications } from "../../api/types/chat";
 
 /** Items waiting in the operator's inbox: open issues plus unread tags. */
 export function useInboxCount(): number | undefined {

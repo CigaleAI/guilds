@@ -38,7 +38,7 @@ import type {
   ActivityView,
   ActivityWake,
   ActivityWrite,
-} from "../../../api/types";
+} from "../../../api/types/studio";
 
 const MIN = 60_000;
 const T0 = Date.parse("2026-09-26T09:00:00Z");

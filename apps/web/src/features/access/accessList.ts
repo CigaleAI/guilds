@@ -1,4 +1,9 @@
-import type { AccessEntry, AccessListMode, AccessRow, AccessSubjectType } from "../../api/types";
+import type {
+  AccessEntry,
+  AccessListMode,
+  AccessRow,
+  AccessSubjectType,
+} from "../../api/types/access";
 
 /** The modes a row of each subject type takes: only an agent row can shut its agent out. */
 export const accessModes: Record<AccessSubjectType, readonly AccessListMode[]> = {

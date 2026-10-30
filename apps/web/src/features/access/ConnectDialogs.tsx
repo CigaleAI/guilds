@@ -7,7 +7,7 @@ import type {
   McpConnection,
   McpCredentials,
   McpServerAccess,
-} from "../../api/types";
+} from "../../api/types/access";
 import {
   Button,
   TextField,

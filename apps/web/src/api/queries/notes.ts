@@ -16,7 +16,7 @@ import type {
   MemoryTimeline,
   TaskInput,
   NoteInput,
-} from "../types";
+} from "../types/notes";
 
 /**
  * Query keys of notes, Tasks, memory and their embeds. Identity is fixed for the page's life, so

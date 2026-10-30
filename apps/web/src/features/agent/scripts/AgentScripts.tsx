@@ -9,7 +9,8 @@ import {
   useDeleteScript,
 } from "../../../api/queries/scripts";
 import { useLatestChange } from "../../../api/queries/notes";
-import type { FileChange, Script } from "../../../api/types";
+import type { Script } from "../../../api/types/scripts";
+import type { FileChange } from "../../../api/types/notes";
 import { relativeTime } from "../../../app/format";
 import {
   Button,

@@ -6,14 +6,7 @@ import {
 import { attachmentIdsOf } from "../attachments";
 import { api } from "../client";
 import { agentKeys } from "./agents";
-import type {
-  Run,
-  RunDiff,
-  HarnessLog,
-  RunMessage,
-  NewRun,
-  RunMessageInput,
-} from "../types";
+import type { Run, RunDiff, HarnessLog, RunMessage, NewRun, RunMessageInput } from "../types/runs";
 
 /** Query keys of runs. Identity is fixed for the page's life, so keys carry no user or org. */
 export const runKeys = {

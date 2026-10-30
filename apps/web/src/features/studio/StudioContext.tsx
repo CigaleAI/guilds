@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react";
-import type { StudioAgent, StudioSession } from "../../api/types";
+import type { StudioAgent, StudioSession } from "../../api/types/studio";
 import type { Approvals } from "./approvals";
 import type { StudioPin } from "./investigate";
 import type { StudioSearch } from "./location";

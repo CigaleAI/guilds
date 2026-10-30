@@ -1,6 +1,6 @@
 import { KeyRound } from "lucide-react";
 import { useGrantStudioConnection, useStudioConnections } from "../../api/queries/studio";
-import type { StudioSession } from "../../api/types";
+import type { StudioSession } from "../../api/types/studio";
 import {
   Button,
   SkeletonRows,

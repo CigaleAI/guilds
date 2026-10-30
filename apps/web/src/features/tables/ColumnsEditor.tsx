@@ -1,6 +1,6 @@
 import { ArrowDown, ArrowUp, Plus, X } from "lucide-react";
 import { useId, useRef, useState, type KeyboardEvent } from "react";
-import type { ColumnInput, ColumnType } from "../../api/types";
+import type { ColumnInput, ColumnType } from "../../api/types/tables";
 import {
   Button,
   IconButton,

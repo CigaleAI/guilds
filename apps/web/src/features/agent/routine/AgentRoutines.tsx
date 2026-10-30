@@ -9,7 +9,8 @@ import {
   useSetSchedulePaused,
 } from "../../../api/queries/schedules";
 import { useGuild } from "../../../api/queries/guilds";
-import type { Run, Schedule } from "../../../api/types";
+import type { Run } from "../../../api/types/runs";
+import type { Schedule } from "../../../api/types/schedules";
 import { messageTime, upcomingTime } from "../../../app/format";
 import {
   Button,

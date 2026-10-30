@@ -1,5 +1,5 @@
 import { Server } from "lucide-react";
-import type { ModelProvider } from "../../api/types";
+import type { ModelProvider } from "../../api/types/models";
 import { Icon, Tile, type IconSize, type TileProps } from "@guildsrun/ui";
 
 // The marks of the hosted providers, as models.dev draws them (THIRD_PARTY_NOTICES.md); each

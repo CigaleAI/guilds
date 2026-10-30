@@ -3,7 +3,7 @@ import { Repeat } from "lucide-react";
 import { useMemo } from "react";
 import { useGuild, useUpdateGuild } from "../../../api/queries/guilds";
 import { useGuildSchedules, useSetGuildSchedulePaused } from "../../../api/queries/schedules";
-import type { GuildSchedule } from "../../../api/types";
+import type { GuildSchedule } from "../../../api/types/schedules";
 import { agentLook } from "../../../app/agents";
 import { upcomingTime } from "../../../app/format";
 import {

@@ -1,6 +1,6 @@
 import { CircleHelp, Clock, MessagesSquare, User, type LucideIcon } from "lucide-react";
 import { useCallback, useState } from "react";
-import type { ActivityAgent, ActivityView } from "../../../api/types";
+import type { ActivityAgent, ActivityView } from "../../../api/types/studio";
 import { agentLook } from "../../../app/agents";
 import { cn, identityFill, identityText, Icon } from "@guildsrun/ui";
 import type { ActivityIndex, ActivityMap, Chain } from "./activityModel";

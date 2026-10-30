@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { Harness } from "../../api/types";
+import type { Harness } from "../../api/types/agents";
 import { Tile, type TileProps } from "@guildsrun/ui";
 
 type Mark = { viewBox: string; paths: ReactNode };

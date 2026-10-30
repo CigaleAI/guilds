@@ -1,4 +1,4 @@
-import type { AuthMode } from "./types";
+import type { AuthMode } from "./types/admin";
 
 /**
  * Who the app acts as: the stored user and organisation, in localStorage for the page and in

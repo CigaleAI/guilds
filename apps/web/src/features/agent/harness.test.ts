@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { AgentHarness, HarnessCatalog, HarnessCredential } from "../../api/types";
+import type { AgentHarness, HarnessCatalog, HarnessCredential } from "../../api/types/agents";
 import {
   catalogFor,
   codingProblems,

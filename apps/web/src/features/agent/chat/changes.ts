@@ -1,4 +1,4 @@
-import type { RunRepositoryChange } from "../../../api/types";
+import type { RunRepositoryChange } from "../../../api/types/runs";
 
 /** A repository's change in a few words: "3 files · +40 −2", or "no changes". */
 export function diffstat(

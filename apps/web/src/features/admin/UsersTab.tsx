@@ -20,7 +20,7 @@ import {
   toast,
 } from "@guildsrun/ui";
 import { useCreateUser, useSetUserEmail, useUsers } from "../../api/queries/admin";
-import type { User } from "../../api/types";
+import type { User } from "../../api/types/org";
 import { useIdentity } from "../../app/identity";
 
 /** Every account on the box, with a new one and the email each signs in with. */

@@ -1,7 +1,7 @@
 import { Filter, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useClearRecords, useDeleteRecord, useRecords } from "../../api/queries/tables";
-import type { Collection, CollectionRecord, Column } from "../../api/types";
+import type { Collection, CollectionRecord, Column } from "../../api/types/tables";
 import { relativeTime } from "../../app/format";
 import {
   Button,

@@ -5,7 +5,12 @@ import {
   useRemoveModelProvider,
   useSetDefaultModel,
 } from "../../api/queries/models";
-import type { CatalogModel, ModelProvider, OrgModelProvider, OrgModels } from "../../api/types";
+import type {
+  CatalogModel,
+  ModelProvider,
+  OrgModelProvider,
+  OrgModels,
+} from "../../api/types/models";
 import { useIdentity } from "../../app/identity";
 import {
   Banner,

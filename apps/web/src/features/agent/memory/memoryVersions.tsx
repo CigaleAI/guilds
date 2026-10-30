@@ -1,6 +1,6 @@
 import { Play } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import type { MemoryVersion } from "../../../api/types";
+import type { MemoryVersion } from "../../../api/types/notes";
 import { relativeTime } from "../../../app/format";
 import { Button, DiffView, diffLines, Segmented, Icon, Row, Tag } from "@guildsrun/ui";
 import { DetailHeader } from "../../studio/MasterDetail";

@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { useReach } from "../../api/queries/access";
-import type { AccessMode, ReachSubject, ReachedNote, ReachedTable } from "../../api/types";
+import type { AccessMode, ReachSubject, ReachedNote, ReachedTable } from "../../api/types/access";
 import { Banner, SkeletonRows, Tag } from "@guildsrun/ui";
 import { accessModeLabel } from "./accessList";
 import { noteLink, notePlacement } from "./reach";

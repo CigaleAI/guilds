@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { CatalogModel, ModelProvider, OrgModelProvider, OrgModels } from "../../../api/types";
+import type {
+  CatalogModel,
+  ModelProvider,
+  OrgModelProvider,
+  OrgModels,
+} from "../../../api/types/models";
 import { configFormOf, defaultAgentConfig } from "./configForm";
 import { withBrowser, withBrowserOptimized } from "./BrowserFields";
 

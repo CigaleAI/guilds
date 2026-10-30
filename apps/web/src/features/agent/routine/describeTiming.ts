@@ -3,7 +3,7 @@
  * and `describeWindow`, so the form shows the label the server will store. The tests pin both to
  * the shared compat fixture.
  */
-import type { WakeWindow } from "../../../api/types";
+import type { WakeWindow } from "../../../api/types/schedules";
 
 const DOW: Record<string, number> = {
   "0": 0,

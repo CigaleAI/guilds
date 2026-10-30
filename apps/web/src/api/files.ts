@@ -1,7 +1,7 @@
 import { ApiError, detailText } from "./client";
 import { reportClientError, requestId } from "./clientLog";
 import { authMode, identityHeaders, signInUrl } from "./session";
-import type { FileItem } from "./types";
+import type { FileItem } from "./types/files";
 
 /** A files scope's API root: `/api/agents/:id/files`, `/api/guilds/:id/files` or `/api/org/files`. */
 export type FilesPrefix = string;

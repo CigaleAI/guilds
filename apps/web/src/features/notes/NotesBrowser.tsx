@@ -10,7 +10,7 @@ import {
   useSaveNote,
   type NotesPrefix,
 } from "../../api/queries/notes";
-import type { NoteItem } from "../../api/types";
+import type { NoteItem } from "../../api/types/notes";
 
 import { scopeOfDisplayPath } from "../../app/displayPath";
 import { useIdentity } from "../../app/identity";

@@ -3,7 +3,7 @@ import { Link2, Play, Trash2, Unlink } from "lucide-react";
 import { useCallback, useState } from "react";
 import { lookupWithLogin, useSaveSettings } from "../../api/queries/access";
 import { useInstance } from "../../api/queries/admin";
-import type { AccessOwner, McpServerAccess, McpToolAccess } from "../../api/types";
+import type { AccessOwner, McpServerAccess, McpToolAccess } from "../../api/types/access";
 import { useIdentity } from "../../app/identity";
 import { Button, FilterBar, IntegrationCard, Tag, ToolRow, toast, Icon } from "@guildsrun/ui";
 import { connectorSetupGap, setupSearch } from "../instance/instance";

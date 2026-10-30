@@ -1,4 +1,4 @@
-import type { OrgRole } from "../../api/types";
+import type { OrgRole } from "../../api/types/org";
 
 /** Owners and admins invite, change roles, and remove members. */
 export function canManageMembers(role: OrgRole): boolean {

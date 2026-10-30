@@ -1,4 +1,4 @@
-import type { StudioDraft } from "../../../api/types";
+import type { StudioDraft } from "../../../api/types/studio";
 import { agentLook } from "../../../app/agents";
 import { relativeTime } from "../../../app/format";
 import { Button, Markdown, Avatar } from "@guildsrun/ui";

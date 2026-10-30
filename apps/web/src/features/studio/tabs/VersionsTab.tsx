@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { ExternalLink } from "lucide-react";
 import { useAgentTask } from "../../../api/queries/notes";
-import type { StudioAgent } from "../../../api/types";
+import type { StudioAgent } from "../../../api/types/studio";
 import { relativeTime } from "../../../app/format";
 import { Button, DiffView, diffLines, Banner, SkeletonRows, Icon, Row } from "@guildsrun/ui";
 import { DetailHeader, Empty, MasterDetail } from "../MasterDetail";

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Icon, Row } from "@guildsrun/ui";
-import type { ReferenceNode } from "../../../api/types";
+import type { ReferenceNode } from "../../../api/types/studio";
 import { referenceKindIcon } from "./ReferencesMap";
 
 /** A labelled group of rows under the map or in the detail. */

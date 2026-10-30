@@ -1,4 +1,4 @@
-import type { Run } from "../../../api/types";
+import type { Run } from "../../../api/types/runs";
 import { promptSections } from "@guildsrun/ui";
 import type { PromptSection, OfferedToolGroup } from "@guildsrun/ui";
 /** The system message's four sections, as the run hydrated them. */

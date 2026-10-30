@@ -25,7 +25,11 @@ import {
   useSaveInstanceKeys,
   useStartGithubAppManifest,
 } from "../../api/queries/admin";
-import type { InstanceIntegration, IntegrationField, IntegrationState } from "../../api/types";
+import type {
+  InstanceIntegration,
+  IntegrationField,
+  IntegrationState,
+} from "../../api/types/admin";
 import { DocsLink } from "../../app/docs";
 import type { TabSearch } from "../../app/router";
 import { safeReturnTo } from "../instance/instance";

@@ -11,7 +11,7 @@ import {
   useStudioSession,
 } from "../../api/queries/studio";
 import { useStudioStream } from "../../api/streams";
-import type { StudioDraft } from "../../api/types";
+import type { StudioDraft } from "../../api/types/studio";
 import { useMediaQuery } from "../../app/media";
 import {
   Button,

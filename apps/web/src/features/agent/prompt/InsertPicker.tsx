@@ -1,6 +1,7 @@
 import { Columns3, FileText, Info, Table2, type LucideIcon } from "lucide-react";
 import { useMemo, useState } from "react";
-import type { Collection, EmbeddableNote } from "../../../api/types";
+import type { EmbeddableNote } from "../../../api/types/notes";
+import type { Collection } from "../../../api/types/tables";
 import {
   Button,
   Markdown,

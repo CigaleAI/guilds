@@ -1,4 +1,4 @@
-import type { Guild } from "../../api/types";
+import type { Guild } from "../../api/types/guilds";
 
 /**
  * Guild admins change visibility and operators, clear the group chat, and delete the guild; anyone

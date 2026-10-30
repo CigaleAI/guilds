@@ -1,4 +1,5 @@
-import type { Collection, EmbeddableNote, FileChange, NoteLevel } from "../../../api/types";
+import type { EmbeddableNote, FileChange, NoteLevel } from "../../../api/types/notes";
+import type { Collection } from "../../../api/types/tables";
 import { embedKind, embedMarkup, linkMarkup } from "@guildsrun/ui";
 import type { ChangeActor, EmbedMode, InsertKind } from "@guildsrun/ui";
 export type NoteGroup = { level: NoteLevel; label: string; notes: EmbeddableNote[] };

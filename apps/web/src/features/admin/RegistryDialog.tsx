@@ -5,7 +5,7 @@ import {
   useRemoveRegistryConnector,
   useUpdateRegistryConnector,
 } from "../../api/queries/admin";
-import type { RegistryConnector } from "../../api/types";
+import type { RegistryConnector } from "../../api/types/admin";
 import {
   Banner,
   Button,

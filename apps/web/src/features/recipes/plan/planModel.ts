@@ -1,11 +1,12 @@
 import { describeCron, describeWindow } from "../../agent/routine/describeTiming";
 import { harnessLabel, isHarness } from "../../agent/harness";
 import { agentsMinimum, machineSizeLabel } from "../../machines/machines";
+import type { Harness } from "../../../api/types/agents";
+import type { WakeWindow } from "../../../api/types/schedules";
+import type { Column } from "../../../api/types/tables";
 import type {
   AccessEdit,
   ApplyCreates,
-  CapabilityServer,
-  Column,
   CollectionPlan,
   CreatedAgent,
   CreatedRoutine,
@@ -13,7 +14,6 @@ import type {
   DesignHandoff,
   DesignSystem,
   FieldAuthor,
-  Harness,
   PlannedConnection,
   PlannedSecret,
   RecipeConnection,
@@ -27,8 +27,8 @@ import type {
   RecipeSchedule,
   RecipeScript,
   RecipeSecret,
-  WakeWindow,
-} from "../../../api/types";
+} from "../../../api/types/recipes";
+import type { CapabilityServer } from "../../../api/types/builder";
 
 /**
  * A value as the plan reads it: every field optional at any depth, so partial drafts and hand-made

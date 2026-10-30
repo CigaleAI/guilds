@@ -19,7 +19,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useId, useState, type ReactNode } from "react";
-import type { RecipeFinding } from "../../../api/types";
+import type { RecipeFinding } from "../../../api/types/recipes";
 import { agentLook } from "../../../app/agents";
 import {
   Button,

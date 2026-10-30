@@ -1,6 +1,6 @@
 import { FILE_MAX_BYTES } from "../../api/files";
 import { formatSize } from "../../app/format";
-import type { FileItem } from "../../api/types";
+import type { FileItem } from "../../api/types/files";
 
 /** The files whose name or description holds the search, in the server's order. */
 export function filterFiles(items: readonly FileItem[], query: string): FileItem[] {

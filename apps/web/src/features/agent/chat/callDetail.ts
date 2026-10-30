@@ -1,5 +1,5 @@
 import type { CallProgress } from "../../../api/toolProgress";
-import type { Harness } from "../../../api/types";
+import type { Harness } from "../../../api/types/agents";
 import { harnessLabel, isHarness } from "../harness";
 import type { FlowCall } from "../runs/runFlowModel";
 import {

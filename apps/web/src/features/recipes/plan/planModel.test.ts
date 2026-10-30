@@ -44,7 +44,8 @@ import {
   toolsForConnectionRole,
 } from "./planModel";
 import type { RecipeDraft, RoleDraft, SystemDraft } from "./planModel";
-import type { ApplyPreview, CapabilityServer, RecipeFinding, RecipeRow } from "../../../api/types";
+import type { ApplyPreview, RecipeFinding, RecipeRow } from "../../../api/types/recipes";
+import type { CapabilityServer } from "../../../api/types/builder";
 
 const builder = { by: "builder", reviewed: false } as const;
 const operator = { by: "operator", reviewed: true } as const;

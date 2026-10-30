@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { MessageNotice } from "../../api/types";
+import type { MessageNotice } from "../../api/types/chat";
 import {
   desktopNotificationsKey,
   desktopNotificationsOn,

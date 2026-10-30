@@ -6,10 +6,7 @@ import {
 import { api } from "../client";
 import { uploadFile, type FilesPrefix } from "../files";
 import { noteKeys } from "./notes";
-import type {
-  FileItem,
-  FileUpload,
-} from "../types";
+import type { FileItem, FileUpload } from "../types/files";
 
 /**
  * Query keys of shared files. Identity is fixed for the page's life, so keys carry no user or org.

@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { Server } from "lucide-react";
 import type { ReactNode } from "react";
-import type { Machine } from "../../api/types";
+import type { Machine } from "../../api/types/agents";
 import { machineSizeLabel, type MachineSize } from "./machines";
 import { Button, EmptyState } from "@guildsrun/ui";
 

@@ -1,4 +1,4 @@
-import type { Column, ColumnInput, ColumnType } from "../../api/types";
+import type { Column, ColumnInput, ColumnType } from "../../api/types/tables";
 
 export const columnTypes: ColumnType[] = ["text", "number", "boolean", "datetime", "array"];
 

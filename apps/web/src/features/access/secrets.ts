@@ -1,4 +1,5 @@
-import type { OrgRole, Secret, SecretAccessChoice } from "../../api/types";
+import type { OrgRole } from "../../api/types/org";
+import type { Secret, SecretAccessChoice } from "../../api/types/secrets";
 
 /** The server's rules for a secret: an environment variable name and a description the agent reads. */
 export const secretNamePattern = /^[A-Za-z_][A-Za-z0-9_]*$/;

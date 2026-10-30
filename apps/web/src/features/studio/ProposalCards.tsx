@@ -1,7 +1,7 @@
 import { Eye } from "lucide-react";
 import type { ReactNode } from "react";
 import { useStudioEdits } from "../../api/queries/studio";
-import type { StudioEdit } from "../../api/types";
+import type { StudioEdit } from "../../api/types/studio";
 import { Button, DiffView, diffLines, Icon, Tag, cn, toast } from "@guildsrun/ui";
 import {
   applyLabel,

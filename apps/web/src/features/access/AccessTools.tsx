@@ -15,7 +15,7 @@ import type {
   AccessOwner,
   BindingTarget,
   McpServerAccess,
-} from "../../api/types";
+} from "../../api/types/access";
 import {
   Button,
   IconButton,

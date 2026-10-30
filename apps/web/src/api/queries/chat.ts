@@ -6,12 +6,7 @@ import {
 } from "@tanstack/react-query";
 import { api } from "../client";
 import { guildPath } from "./guilds";
-import type {
-  GroupChatState,
-  GroupMessage,
-  Notifications,
-  GroupMessageInput,
-} from "../types";
+import type { GroupChatState, GroupMessage, Notifications, GroupMessageInput } from "../types/chat";
 
 /**
  * Query keys of the group chat and the inbox. Identity is fixed for the page's life, so keys carry

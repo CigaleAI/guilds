@@ -16,7 +16,7 @@ import { useGuildAgents } from "../../api/queries/agents";
 import { useOpenIssues } from "../../api/queries/issues";
 import { useStudioSessions } from "../../api/queries/studio";
 import { useGuildStream } from "../../api/streams";
-import type { Agent } from "../../api/types";
+import type { Agent } from "../../api/types/agents";
 import { agentLook } from "../../app/agents";
 import { useIdentity } from "../../app/identity";
 import { ReturnButton } from "../../app/ReturnButton";
