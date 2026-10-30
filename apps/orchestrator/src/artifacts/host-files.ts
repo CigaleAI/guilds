@@ -255,7 +255,7 @@ export async function writeHostFile(
   const name = hostFileName(write.path);
   const { content } = write;
   if (owner.level === "agent" && name === TASK_KEY) {
-    const row = await writeAgentTask(db, actor, owner.ownerId, content, write.expectedVersion);
+    const row = await writeAgentTask(db, actor, owner.ownerId, { content, expectedVersion: write.expectedVersion });
     const payload = {
       path: name,
       content,

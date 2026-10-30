@@ -285,7 +285,7 @@ async function fillAgent(skeleton: Skeleton, role: RecipeRole, recipe: RecipeDoc
   const named = withTrailingNewline(rewriteRolesToNames(roleTaskText(role, recipe), skeleton.names));
   const task = linkedText(skeleton, named, `${role.role} standing prompt`);
   if (task.trim()) {
-    await writeAgentTask(skeleton.apply.db, agentOperator(skeleton, agentId), agentId, task);
+    await writeAgentTask(skeleton.apply.db, agentOperator(skeleton, agentId), agentId, { content: task });
   }
   await createScripts(skeleton, role, agentId);
   await createRoutines(skeleton, role, recipe, agentId);

@@ -31,11 +31,6 @@
       "count": 1
     }
   },
-  "src/artifacts/task.ts": {
-    "max-params": {
-      "count": 2
-    }
-  },
   "src/attachments/hydrate.ts": {
     "no-restricted-syntax": {
       "count": 1

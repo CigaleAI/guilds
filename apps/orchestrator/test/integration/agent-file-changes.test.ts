@@ -39,7 +39,7 @@ async function changes(): Promise<Array<{ display_path: string; operation: strin
 }
 
 test("an agent's task and scripts log each create, update, and delete", async () => {
-  const task = await writeAgentTask(database.pool, ACTOR, AGENT, "Keep the notes tidy.\n");
+  const task = await writeAgentTask(database.pool, ACTOR, AGENT, { content: "Keep the notes tidy.\n" });
   assert.equal(task.content_hash, hashTaskContent("Keep the notes tidy.\n"));
   const script = {
     scriptId: "scr_tidy",

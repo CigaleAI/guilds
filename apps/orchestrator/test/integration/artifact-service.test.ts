@@ -82,7 +82,7 @@ after(async () => {
 });
 
 async function agentWithTask(task: string): Promise<AgentRow> {
-  await writeAgentTask(db, operator, AGENT, task);
+  await writeAgentTask(db, operator, AGENT, { content: task });
   const row = await getAgent(db, AGENT);
   assert.ok(row);
   return row;
