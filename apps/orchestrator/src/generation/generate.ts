@@ -6,7 +6,7 @@ import { isPlainRecord } from "../db/json.js";
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import { completeRun, getRun, listMessages, mergeRunMetadata, type MessageRow, type RunRow } from "../db/runs.js";
 import { agentHome } from "../lib/agent-file.js";
-import { INPUT_TOKEN_LIMIT_MESSAGE } from "../llm/index.js";
+import { INPUT_TOKEN_LIMIT_MESSAGE } from "../llm/tokens.js";
 import { slotPorts } from "../machines/index.js";
 import { agentSandbox, applyRunScripts, prepareBrowserWorkspace, prepareWorkspace, seatEnvironment } from "../sandbox/index.js";
 import type { SandboxHandle } from "../sandbox/sdk.js";

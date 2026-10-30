@@ -1,16 +1,10 @@
 import assert from "node:assert/strict";
 import http from "node:http";
 import { test } from "node:test";
-import {
-  LLMError,
-  MODEL_USER_AGENT,
-  listProviderModels,
-  messagesFromHistory,
-  messagesRequestBody,
-  providerById,
-  streamCompletion,
-  type ModelEvent,
-} from "../../src/llm/index.js";
+import { messagesFromHistory, messagesRequestBody } from "../../src/llm/anthropic.js";
+import { listProviderModels, streamCompletion } from "../../src/llm/client.js";
+import { LLMError, MODEL_USER_AGENT, type ModelEvent } from "../../src/llm/completion.js";
+import { providerById } from "../../src/llm/providers.js";
 
 function anthropic() {
   const definition = providerById("anthropic");
@@ -247,16 +241,17 @@ test("streamCompletion speaks the Messages API to Anthropic and assembles an Ope
     },
     async (baseURL) => {
       const events: ModelEvent[] = [];
-      for await (const event of streamCompletion({
-        model: "anthropic/claude-opus-5-5",
-        messages: [{ role: "user", content: "hi" }],
-        temperature: 0,
-        max_tokens: 64,
-        tools: [{ type: "function", function: { name: "read", parameters: { type: "object" } } }],
-        apiKey: "sk-ant-test",
-        baseURL,
-        thinking_level: "medium",
-      })) {
+      for await (const event of streamCompletion(
+        {
+          model: "anthropic/claude-opus-5-5",
+          messages: [{ role: "user", content: "hi" }],
+          temperature: 0,
+          max_tokens: 64,
+          tools: [{ type: "function", function: { name: "read", parameters: { type: "object" } } }],
+          thinking_level: "medium",
+        },
+        { apiKey: "sk-ant-test", baseURL },
+      )) {
         events.push(event);
       }
       assert.deepEqual(events.slice(0, 2), [["reasoning", "plan"], ["delta", "reading"]]);
@@ -292,14 +287,15 @@ test("streamCompletion redacts the Anthropic key from a provider error", async (
     async (baseURL) => {
       await assert.rejects(
         async () => {
-          for await (const _event of streamCompletion({
-            model: "anthropic/claude-opus-5-5",
-            messages: [{ role: "user", content: "hi" }],
-            temperature: 0,
-            max_tokens: 8,
-            apiKey: "sk-ant-secret",
-            baseURL,
-          })) {
+          for await (const _event of streamCompletion(
+            {
+              model: "anthropic/claude-opus-5-5",
+              messages: [{ role: "user", content: "hi" }],
+              temperature: 0,
+              max_tokens: 8,
+            },
+            { apiKey: "sk-ant-secret", baseURL },
+          )) {
             // drained
           }
         },

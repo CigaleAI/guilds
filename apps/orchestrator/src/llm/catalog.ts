@@ -11,7 +11,7 @@ import {
   type ModelsDevFeed,
   type ModelsDevSnapshot,
 } from "./models-dev.js";
-import { PROVIDERS, parseModelId, providerById, type ProviderId } from "./providers.js";
+import { PROVIDERS, parseModelId, type ProviderId } from "./providers.js";
 
 export type ModelCatalogOptions = {
   fetch?: typeof fetch;
@@ -168,4 +168,3 @@ export function providerPrefixes(): string {
   return PROVIDERS.map((provider) => `${provider.id}/`).join(", ");
 }
 
-export { providerById };

@@ -392,9 +392,6 @@
   "src/llm/anthropic.ts": {
     "complexity": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 4
     }
   },
   "src/llm/catalog.ts": {
@@ -407,24 +404,16 @@
       "count": 3
     },
     "no-restricted-syntax": {
-      "count": 4
+      "count": 1
     }
   },
   "src/llm/completion.ts": {
     "complexity": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/llm/credentials.ts": {
     "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/llm/index.ts": {
-    "boundary/no-reexport-modules": {
       "count": 1
     }
   },
@@ -434,9 +423,6 @@
     }
   },
   "src/llm/models.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
     "complexity": {
       "count": 1
     },

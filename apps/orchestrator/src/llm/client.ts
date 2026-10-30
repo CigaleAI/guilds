@@ -4,6 +4,7 @@ import type { ReasoningDetail } from "../db/schema/index.js";
 import { listMessagesModels, streamMessages } from "./anthropic.js";
 import { modelCatalog } from "./catalog.js";
 import {
+  LISTING_TIMEOUT_MS,
   LLMError,
   MODEL_USER_AGENT,
   asLlmError,
@@ -12,7 +13,10 @@ import {
   completionTimeoutMs,
   providerForModel,
   reasoningEffortForModel,
+  type ModelEndpoint,
   type ModelEvent,
+  type ModelListingServices,
+  type ModelRequest,
   type ProviderUsage,
 } from "./completion.js";
 import { isPlainObject, optionalString } from "./payload.js";
@@ -28,31 +32,26 @@ function modelIdsOf(body: unknown): string[] {
 }
 
 /**
- * The models the key lists: the probe a save runs, and the local endpoint's catalog. A rejected
- * key fails; the listed ids come back.
+ * The models the key at `endpoint` lists: the probe a save runs, and the local endpoint's catalog.
+ * A rejected key fails; the listed ids come back.
  */
 export async function listProviderModels(
   provider: ProviderDef,
-  options: { apiKey: string; baseURL?: string | null; fetch?: typeof fetch; timeoutMs?: number },
+  endpoint: ModelEndpoint,
+  services: ModelListingServices = {},
 ): Promise<string[]> {
-  const key = options.apiKey.trim();
+  const key = endpoint.apiKey.trim();
   if (!key && provider.id !== "local") {
     throw new LLMError("api_key is required");
   }
-  const base = (options.baseURL ?? provider.baseURL ?? "").replace(/\/+$/, "");
+  const base = (endpoint.baseURL ?? provider.baseURL ?? "").replace(/\/+$/, "");
   if (!base) {
     throw new LLMError(`${provider.label} needs a base URL`);
   }
-  const timeoutMs = options.timeoutMs ?? 10_000;
   if (provider.api === "messages") {
-    return listMessagesModels(provider, {
-      apiKey: key,
-      baseURL: base,
-      timeoutMs,
-      ...(options.fetch ? { fetch: options.fetch } : {}),
-    });
+    return listMessagesModels(provider, { apiKey: key, baseURL: base }, services);
   }
-  const fetchFn = options.fetch ?? fetch;
+  const fetchFn = services.fetch ?? fetch;
   let response: Response;
   try {
     response = await fetchFn(`${base}/models`, {
@@ -60,7 +59,7 @@ export async function listProviderModels(
         ...(key ? { Authorization: `Bearer ${key}` } : {}),
         "User-Agent": MODEL_USER_AGENT,
       },
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: AbortSignal.timeout(services.timeoutMs ?? LISTING_TIMEOUT_MS),
     });
   } catch (error) {
     throw asLlmError(error, key);
@@ -264,35 +263,27 @@ export type ChatCompletionsBody = {
 };
 
 /** The Chat Completions body a provider takes: the fields in its row, and `temperature` only when the catalog says the model takes one. */
-export function completionRequestBody(options: {
-  model: string;
-  messages: Array<Record<string, unknown>>;
-  temperature: number;
-  max_tokens: number;
-  tools?: unknown[] | null;
-  tool_choice?: unknown;
-  thinking_level?: string;
-}): ChatCompletionsBody {
-  const { provider, upstream } = providerForModel(options.model);
+export function completionRequestBody(request: ModelRequest): ChatCompletionsBody {
+  const { provider, upstream } = providerForModel(request.model);
   const openrouter = provider.id === "openrouter";
   const body: ChatCompletionsBody = {
     model: upstream,
-    messages: openrouter ? applyPromptCacheControl(options.messages) : options.messages,
+    messages: openrouter ? applyPromptCacheControl(request.messages) : request.messages,
     stream: true,
     stream_options: { include_usage: true },
   };
-  if (modelCatalog.entry(options.model)?.temperature !== false) {
-    body.temperature = options.temperature;
+  if (modelCatalog.entry(request.model)?.temperature !== false) {
+    body.temperature = request.temperature;
   }
   if (provider.id === "openai") {
-    body.max_completion_tokens = options.max_tokens;
+    body.max_completion_tokens = request.max_tokens;
   } else {
-    body.max_tokens = options.max_tokens;
+    body.max_tokens = request.max_tokens;
   }
   if (openrouter) {
     body.cache_control = PROMPT_CACHE_CONTROL;
   }
-  const effort = reasoningEffortForModel(options.model, options.thinking_level ?? "none");
+  const effort = reasoningEffortForModel(request.model, request.thinking_level ?? "none");
   if (effort) {
     if (openrouter) {
       body.reasoning = { effort };
@@ -300,49 +291,43 @@ export function completionRequestBody(options: {
       body.reasoning_effort = effort;
     }
   }
-  if (options.tools && options.tools.length) {
-    body.tools = options.tools;
+  if (request.tools && request.tools.length) {
+    body.tools = request.tools;
   }
-  if (options.tool_choice !== undefined && options.tool_choice !== null) {
-    body.tool_choice = options.tool_choice;
+  if (request.tool_choice !== undefined && request.tool_choice !== null) {
+    body.tool_choice = request.tool_choice;
   }
   return body;
 }
 
-export async function* streamCompletion(options: {
-  model: string;
-  messages: Array<Record<string, unknown>>;
-  temperature: number;
-  max_tokens: number;
-  tools?: unknown[] | null;
-  tool_choice?: unknown;
-  signal?: AbortSignal;
-  baseURL?: string;
-  apiKey?: string;
-  thinking_level?: string;
-}): AsyncGenerator<ModelEvent> {
-  const { provider } = providerForModel(options.model);
-  const baseURL = options.baseURL ?? provider.baseURL;
+/**
+ * A completion from the provider the model id names, called with the key at `endpoint`, streamed as
+ * text and reasoning deltas and one assembled assistant payload. `signal` aborts the call.
+ */
+export async function* streamCompletion(
+  request: ModelRequest,
+  endpoint: ModelEndpoint,
+  signal?: AbortSignal,
+): AsyncGenerator<ModelEvent> {
+  const { provider } = providerForModel(request.model);
+  const baseURL = endpoint.baseURL || provider.baseURL;
   if (!baseURL) {
     throw new LLMError(`${provider.label} needs a base URL`);
   }
-  if (options.apiKey === undefined) {
-    throw new LLMError(`${provider.label} is not connected`);
-  }
   if (provider.api === "messages") {
-    yield* streamMessages({ ...options, baseURL, apiKey: options.apiKey });
+    yield* streamMessages(request, { apiKey: endpoint.apiKey, baseURL }, signal);
     return;
   }
-  const apiKey = options.apiKey.trim() || "local";
+  const apiKey = endpoint.apiKey.trim() || "local";
   const client = new OpenAI({
     apiKey,
     baseURL,
-    timeout: completionTimeoutMs(options.max_tokens),
+    timeout: completionTimeoutMs(request.max_tokens),
     maxRetries: 0,
     defaultHeaders: { "User-Agent": MODEL_USER_AGENT },
   });
   const started = performance.now();
-  const body = completionRequestBody(options);
+  const body = completionRequestBody(request);
   let stream: Stream<unknown>;
   try {
     // The body carries fields the SDK's request type does not name, so it goes through `post`, which
@@ -351,7 +336,7 @@ export async function* streamCompletion(options: {
     stream = await client.post<Stream<unknown>>("/chat/completions", {
       body,
       stream: true,
-      signal: options.signal,
+      signal,
     });
   } catch (error) {
     throw asLlmError(error, apiKey);
@@ -412,7 +397,8 @@ export async function* streamCompletion(options: {
           reasoning,
           reasoning_details: reasoningDetails.filter((detail) => detail !== undefined),
         },
-        { latencyMs, model: options.model },
+        request.model,
+        latencyMs,
       ),
     },
   ];

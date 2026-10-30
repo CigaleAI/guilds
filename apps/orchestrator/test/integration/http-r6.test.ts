@@ -92,8 +92,7 @@ test("R6 HTTP SSE and WS recordings replay over real HTTP", { timeout: 180_000 }
   sandboxes.novncBase = upstream.base;
   sandboxes.novncHeaders = { "OPEN-SANDBOX-API-KEY": "compat-test" };
   const stream = new StreamScript();
-  live.streamCompletion = ((options: Parameters<typeof originalStream>[0]) =>
-    stream.run(options)) as typeof live.streamCompletion;
+  live.streamCompletion = (request, _endpoint, signal) => stream.run(request.model, signal);
   const generation = generationLoop(db, {
     notes,
     workspaceRoot: env.WORKSPACE_ROOT ?? "",

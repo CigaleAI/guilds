@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { modelCatalog } from "./catalog.js";
 import {
+  LISTING_TIMEOUT_MS,
   LLMError,
   MODEL_USER_AGENT,
   asLlmError,
@@ -9,7 +10,10 @@ import {
   completionTimeoutMs,
   providerForModel,
   reasoningEffortForModel,
+  type ModelEndpoint,
   type ModelEvent,
+  type ModelListingServices,
+  type ModelRequest,
 } from "./completion.js";
 import { isPlainObject } from "./payload.js";
 import type { ProviderDef } from "./providers.js";
@@ -54,15 +58,15 @@ function isInputSchema(schema: Record<string, unknown>): schema is Anthropic.Too
 }
 
 /** A Messages API client for a key: no retries, no credentials read from the environment. */
-function messagesClient(options: { apiKey: string; baseURL: string; timeoutMs: number; fetch?: typeof fetch }): Anthropic {
+function messagesClient(endpoint: ModelEndpoint, timeoutMs: number, fetchFn?: typeof fetch): Anthropic {
   return new Anthropic({
-    apiKey: options.apiKey,
+    apiKey: endpoint.apiKey,
     authToken: null,
-    baseURL: options.baseURL,
-    timeout: options.timeoutMs,
+    baseURL: endpoint.baseURL,
+    timeout: timeoutMs,
     maxRetries: 0,
     defaultHeaders: { "User-Agent": MODEL_USER_AGENT },
-    ...(options.fetch ? { fetch: options.fetch } : {}),
+    ...(fetchFn ? { fetch: fetchFn } : {}),
   });
 }
 
@@ -229,38 +233,30 @@ function messagesEffort(model: string, level: string): Effort | null {
  * effort, with its summary streamed; `temperature` is sent only without thinking, and only when
  * the catalog says the model takes one. The prompt is cached up to its last block.
  */
-export function messagesRequestBody(options: {
-  model: string;
-  messages: Array<Record<string, unknown>>;
-  temperature: number;
-  max_tokens: number;
-  tools?: unknown[] | null;
-  tool_choice?: unknown;
-  thinking_level?: string;
-}): Anthropic.MessageStreamParams {
-  const { upstream } = providerForModel(options.model);
-  const { system, messages } = messagesFromHistory(options.messages);
+export function messagesRequestBody(request: ModelRequest): Anthropic.MessageStreamParams {
+  const { upstream } = providerForModel(request.model);
+  const { system, messages } = messagesFromHistory(request.messages);
   const body: Anthropic.MessageStreamParams = {
     model: upstream,
-    max_tokens: options.max_tokens,
+    max_tokens: request.max_tokens,
     messages,
     cache_control: PROMPT_CACHE_CONTROL,
   };
   if (system.length) {
     body.system = system;
   }
-  const effort = messagesEffort(options.model, options.thinking_level ?? "none");
+  const effort = messagesEffort(request.model, request.thinking_level ?? "none");
   if (effort) {
     body.thinking = { type: "adaptive", display: "summarized" };
     body.output_config = { effort };
-  } else if (modelCatalog.entry(options.model)?.temperature !== false) {
-    body.temperature = options.temperature;
+  } else if (modelCatalog.entry(request.model)?.temperature !== false) {
+    body.temperature = request.temperature;
   }
-  const tools = (options.tools ?? []).map(messagesTool).filter((tool): tool is Anthropic.Tool => tool !== null);
+  const tools = (request.tools ?? []).map(messagesTool).filter((tool): tool is Anthropic.Tool => tool !== null);
   if (tools.length) {
     body.tools = tools;
   }
-  const choice = options.tool_choice === undefined || options.tool_choice === null ? null : messagesToolChoice(options.tool_choice);
+  const choice = request.tool_choice === undefined || request.tool_choice === null ? null : messagesToolChoice(request.tool_choice);
   if (choice) {
     body.tool_choice = choice;
   }
@@ -277,28 +273,24 @@ const FINISH_REASONS: Record<string, string> = {
   refusal: "content_filter",
 };
 
-/** A Messages API completion, streamed as text and reasoning deltas and one assembled assistant payload. */
-export async function* streamMessages(options: {
-  model: string;
-  messages: Array<Record<string, unknown>>;
-  temperature: number;
-  max_tokens: number;
-  tools?: unknown[] | null;
-  tool_choice?: unknown;
-  signal?: AbortSignal;
-  baseURL: string;
-  apiKey: string;
-  thinking_level?: string;
-}): AsyncGenerator<ModelEvent> {
-  const apiKey = options.apiKey.trim();
-  const client = messagesClient({ apiKey, baseURL: options.baseURL, timeoutMs: completionTimeoutMs(options.max_tokens) });
+/**
+ * A Messages API completion at `endpoint`, streamed as text and reasoning deltas and one assembled
+ * assistant payload.
+ */
+export async function* streamMessages(
+  request: ModelRequest,
+  endpoint: ModelEndpoint,
+  signal?: AbortSignal,
+): AsyncGenerator<ModelEvent> {
+  const apiKey = endpoint.apiKey.trim();
+  const client = messagesClient({ ...endpoint, apiKey }, completionTimeoutMs(request.max_tokens));
   const started = performance.now();
-  const body = messagesRequestBody(options);
+  const body = messagesRequestBody(request);
   let reasoning = "";
   let message: Anthropic.Message;
   let requestId: string | null;
   try {
-    const stream = client.messages.stream(body, { signal: options.signal });
+    const stream = client.messages.stream(body, { signal });
     for await (const event of stream) {
       if (event.type !== "content_block_delta") {
         continue;
@@ -341,18 +333,20 @@ export async function* streamMessages(options: {
           provider_request_id: requestId,
           reasoning,
         },
-        { latencyMs: Math.trunc(performance.now() - started), model: options.model },
+        request.model,
+        Math.trunc(performance.now() - started),
       ),
     },
   ];
 }
 
-/** The model ids a Messages API key lists: the probe a save runs. A rejected key fails. */
+/** The model ids a Messages API key lists at `endpoint`: the probe a save runs. A rejected key fails. */
 export async function listMessagesModels(
   provider: ProviderDef,
-  options: { apiKey: string; baseURL: string; fetch?: typeof fetch; timeoutMs: number },
+  endpoint: ModelEndpoint,
+  services: ModelListingServices = {},
 ): Promise<string[]> {
-  const client = messagesClient(options);
+  const client = messagesClient(endpoint, services.timeoutMs ?? LISTING_TIMEOUT_MS, services.fetch);
   const ids: string[] = [];
   try {
     for await (const model of client.models.list({ limit: 1000 })) {
@@ -365,7 +359,7 @@ export async function listMessagesModels(
     if (error instanceof Anthropic.APIError && typeof error.status === "number") {
       throw new LLMError(`${provider.label} did not accept the key (${error.status})`);
     }
-    throw asLlmError(error, options.apiKey);
+    throw asLlmError(error, endpoint.apiKey);
   }
   return ids;
 }

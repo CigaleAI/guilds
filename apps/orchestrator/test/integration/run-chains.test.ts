@@ -10,7 +10,7 @@ import { RunRequestError } from "../../src/generation/errors.js";
 import { generationLoop, LOOP_TIMINGS } from "../../src/generation/index.js";
 import { generationLive } from "../../src/generation/completion.js";
 import { type GenerationSandboxes } from "../../src/generation/machines.js";
-import type { Completion } from "../../src/llm/index.js";
+import type { Completion } from "../../src/llm/completion.js";
 import type { AssistantMessage } from "../../src/db/schema/index.js";
 import { mcpPool } from "../../src/mcp/pool.js";
 import { NotesStore } from "../../src/notes/store.js";

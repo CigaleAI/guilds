@@ -14,7 +14,6 @@ import {
 import { defaultEntry, entryPayload, type CatalogEntry } from "./entries.js";
 import {
   PROVIDERS,
-  catalogModelId,
   parseModelId,
   providerById,
   providerLabel,
@@ -97,14 +96,18 @@ export type OrgModelsPayload = {
 
 const MAX_CHOSEN_MODELS = 500;
 
+function isStringList(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
 function stringList(value: unknown, field: string): string[] {
   if (value === undefined) {
     return [];
   }
-  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+  if (!isStringList(value)) {
     throw new ModelsError(422, `${field} must be a list of model ids`);
   }
-  return value as string[];
+  return value;
 }
 
 /** The chosen ids of a provider: `{provider}/{model}`, trimmed, deduplicated, in the order given. */
@@ -250,11 +253,7 @@ export class ModelsService {
 
   private async listModels(provider: ProviderDef, apiKey: string, baseURL: string | null): Promise<string[]> {
     try {
-      return await listProviderModels(provider, {
-        apiKey,
-        baseURL,
-        ...(this.deps.fetch ? { fetch: this.deps.fetch } : {}),
-      });
+      return await listProviderModels(provider, { apiKey, baseURL }, this.deps.fetch ? { fetch: this.deps.fetch } : {});
     } catch (error) {
       throw new ModelsError(422, error instanceof LLMError ? error.message : "couldn't reach the provider");
     }
@@ -381,4 +380,3 @@ export function modelsService(db: Queryable, services: ModelsServices = {}): Mod
   return new ModelsService({ ...services, db: modelsDatabase(db), credentials });
 }
 
-export { catalogModelId };

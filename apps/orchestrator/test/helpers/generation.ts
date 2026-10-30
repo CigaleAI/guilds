@@ -21,7 +21,7 @@ import {
 import { RunEvents, type RunEventsDatabase } from "../../src/generation/events.js";
 import { type GenerationSandboxes } from "../../src/generation/machines.js";
 import type { ToolboxDatabase, ToolServices } from "../../src/toolbox/services.js";
-import type { Completion } from "../../src/llm/index.js";
+import type { Completion } from "../../src/llm/completion.js";
 import { McpPool } from "../../src/mcp/pool.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { MemoryMcpDatabase } from "./mcp-database.js";

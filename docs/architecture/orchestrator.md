@@ -583,8 +583,9 @@ AES-GCM plaintext is compact sorted UTF-8 JSON with non-ASCII
 ```ts
 interface ModelClient {
   streamCompletion(
-    request: CompletionRequest,
-    signal: AbortSignal,
+    request: ModelRequest,
+    endpoint: ModelEndpoint,
+    signal?: AbortSignal,
   ): AsyncIterable<ModelEvent>;
 
   countInputTokens(request: TokenCountRequest): Promise<number>;

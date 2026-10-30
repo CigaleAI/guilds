@@ -4,7 +4,7 @@ import { gzipSync } from "node:zlib";
 import path from "node:path";
 import WebSocket, { WebSocketServer } from "ws";
 import { AsyncEvent } from "../../src/lib/event.js";
-import type { Completion, ModelEvent } from "../../src/llm/index.js";
+import type { Completion, ModelEvent } from "../../src/llm/completion.js";
 import type { AgentSeat, MachineSpec } from "../../src/sandbox/index.js";
 
 /** A sandbox provider for HTTP tests: machines that run, agents' browsers and terminals, nothing real. */
@@ -99,7 +99,7 @@ export class StreamScript {
     this.hold = new AsyncEvent();
   }
 
-  async *run(options: { model?: string; signal?: AbortSignal }): AsyncGenerator<ModelEvent> {
+  async *run(model: string, signal?: AbortSignal): AsyncGenerator<ModelEvent> {
     const usage = {
       usage: {
         input_tokens: 1,
@@ -109,14 +109,14 @@ export class StreamScript {
       cost_usd: 0.0,
       cost_source: "catalog" as const,
       finish_reason: "stop",
-      model: options.model || "openrouter/openai/gpt-5.6-luna",
+      model: model || "openrouter/openai/gpt-5.6-luna",
       response_id: "compat-response",
       provider_request_id: "compat-provider",
       latency_ms: 1,
     };
     if (this.mode === "hold") {
       yield ["delta", "partial-"];
-      await this.hold.wait(options.signal);
+      await this.hold.wait(signal);
       return;
     }
     yield ["delta", "Hello"];

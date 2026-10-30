@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseModelId, streamCompletion } from "../../src/llm/index.js";
+import { streamCompletion } from "../../src/llm/client.js";
+import type { ModelRequest } from "../../src/llm/completion.js";
+import { parseModelId } from "../../src/llm/providers.js";
 
 // The live contract: MODEL_CONTRACT_MODEL names a {provider}/{model} on any provider core speaks
 // to, MODEL_CONTRACT_API_KEY is the key it runs with, and MODEL_CONTRACT_BASE_URL points a local
@@ -24,23 +26,13 @@ async function stream(messages: Array<Record<string, unknown>>, extra: {
   max_tokens: number;
 }): Promise<{ payload: Record<string, unknown>; metadata: Record<string, unknown> }> {
   const model = contractModel();
-  const apiKey = process.env.MODEL_CONTRACT_API_KEY;
+  const apiKey = process.env.MODEL_CONTRACT_API_KEY ?? "";
   const baseURL = (process.env.MODEL_CONTRACT_BASE_URL ?? "").trim();
-  const request: {
-    model: string;
-    messages: Array<Record<string, unknown>>;
-    temperature: number;
-    max_tokens: number;
-    tools?: unknown[] | null;
-    tool_choice?: unknown;
-    apiKey?: string;
-    baseURL?: string;
-  } = {
+  const request: ModelRequest = {
     model,
     messages,
     temperature: 0,
     max_tokens: extra.max_tokens,
-    ...(baseURL ? { baseURL } : {}),
   };
   if (extra.tools) {
     request.tools = extra.tools;
@@ -48,11 +40,8 @@ async function stream(messages: Array<Record<string, unknown>>, extra: {
   if (extra.tool_choice !== undefined) {
     request.tool_choice = extra.tool_choice;
   }
-  if (apiKey) {
-    request.apiKey = apiKey;
-  }
   let done: { payload: Record<string, unknown>; metadata: Record<string, unknown> } | undefined;
-  for await (const event of streamCompletion(request)) {
+  for await (const event of streamCompletion(request, { apiKey, ...(baseURL ? { baseURL } : {}) })) {
     if (event[0] === "done") {
       done = event[1];
     }

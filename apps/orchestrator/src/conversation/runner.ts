@@ -12,13 +12,9 @@ import type { Queryable } from "../db/pg.js";
 import type { MessagePayload, ToolCall, ToolMessage } from "../db/schema/index.js";
 import { incrementOrgUsage } from "../db/usage.js";
 import { EventQueue } from "../lib/event.js";
-import {
-  LLMError,
-  countInputTokens,
-  streamCompletion,
-  type Completion,
-  type ModelEvent,
-} from "../llm/index.js";
+import { streamCompletion } from "../llm/client.js";
+import { LLMError, type Completion, type ModelEvent } from "../llm/completion.js";
+import { countInputTokens } from "../llm/tokens.js";
 import { CancelEvent } from "../toolbox/index.js";
 import { OPEN_POLICY, type OrgPolicy } from "../policy/index.js";
 import { modelCatalog } from "../llm/catalog.js";
@@ -409,16 +405,17 @@ export class ConversationRunner {
       options.model,
     );
     void modelCatalog.ensureFresh();
-    const agen = generationLive.streamCompletion({
-      model: options.model,
-      messages: options.messages,
-      temperature: options.temperature,
-      max_tokens: options.max_tokens,
-      tools: options.tools,
-      signal: abort.signal,
-      apiKey: credentials.apiKey,
-      ...(credentials.baseURL ? { baseURL: credentials.baseURL } : {}),
-    });
+    const agen = generationLive.streamCompletion(
+      {
+        model: options.model,
+        messages: options.messages,
+        temperature: options.temperature,
+        max_tokens: options.max_tokens,
+        tools: options.tools,
+      },
+      credentials,
+      abort.signal,
+    );
     const iterator = agen[Symbol.asyncIterator]();
     let completion: Completion | null = null;
     try {
