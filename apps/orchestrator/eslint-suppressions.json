@@ -33,11 +33,6 @@
       "count": 1
     }
   },
-  "src/artifacts/embeds.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    }
-  },
   "src/artifacts/paths.ts": {
     "complexity": {
       "count": 1

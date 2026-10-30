@@ -195,7 +195,7 @@ export function noteReader(source: EmbedSource, actor: ArtifactActor): EmbedRead
       return null;
     }
     const note = await readEmbedNote(source, actor, href);
-    return note.row ? String(note.row.content_text ?? "") : null;
+    return note.row ? (note.row.content_text ?? "") : null;
   };
 }
 
@@ -330,9 +330,9 @@ export async function snapshotTaskEmbeds(
 function noteSnapshot(href: string, row: ArtifactRow): TaskEmbedSnapshot {
   return {
     display_path: href,
-    version: Number(row.version),
-    content_hash: String((row as { content_hash?: unknown }).content_hash ?? hashFromRow(row)),
-    kind: String(row.kind),
+    version: row.version,
+    content_hash: hashFromRow(row),
+    kind: row.kind,
   };
 }
 
