@@ -1,5 +1,5 @@
 import type { AttachmentRef } from "../attachments/index.js";
-import { bindQuery, type Queryable } from "../db/pg.js";
+import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import {
   completeGroupDelivery,
   createGroupRun,
@@ -30,8 +30,19 @@ import {
   type PreparedRun,
 } from "./snapshot.js";
 
+/** The db/ functions runs are created and delivered through. */
+export type RunsDatabase = {
+  getRun: BoundQuery<typeof getRun>;
+  createRun: BoundQuery<typeof createRun>;
+  createGroupRun: BoundQuery<typeof createGroupRun>;
+  createScheduleRun: BoundQuery<typeof createScheduleRun>;
+  completeGroupDelivery: BoundQuery<typeof completeGroupDelivery>;
+  listDueSchedules: BoundQuery<typeof listDueSchedules>;
+  markScheduleFired: BoundQuery<typeof markScheduleFired>;
+};
+
 /** The db/ functions runs are created and delivered through, on `db`. */
-export function runsDatabase(db: Queryable) {
+export function runsDatabase(db: Queryable): RunsDatabase {
   return {
     getRun: bindQuery(db, getRun),
     createRun: bindQuery(db, createRun),
@@ -42,8 +53,6 @@ export function runsDatabase(db: Queryable) {
     markScheduleFired: bindQuery(db, markScheduleFired),
   };
 }
-
-export type RunsDatabase = ReturnType<typeof runsDatabase>;
 
 /** How a created run starts generating: the loop admits it, ends it, and generates it. */
 export type GenerationStarter = {

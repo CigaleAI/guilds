@@ -52,8 +52,6 @@ import { toolServices, type ToolServices } from "../toolbox/services.js";
 import { WorkspaceLimits, workspaceLimitsDatabase } from "./workspace.js";
 import type { GenerationArtifacts } from "./prepare.js";
 
-export { RunRequestError } from "./errors.js";
-
 /** How long a loop's machines wait idle before they stop, and how often its scheduler wakes the due schedules. */
 export type GenerationLoopTimings = { idleTimeoutMs: number; schedulerTickMs: number };
 

@@ -1,7 +1,7 @@
 import { DEFAULT_MAX_WORKSPACE_MIB } from "../agents/config.js";
 import { setAgentWorkspaceMib, type AgentRow } from "../db/agents.js";
 import { setMachineWorkspaceMib } from "../db/machines.js";
-import { bindQuery, type Queryable } from "../db/pg.js";
+import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import { DEFAULT_MACHINE_MAX_WORKSPACE_MIB, type AgentConfig } from "../db/schema/index.js";
 import { agentHome } from "../lib/agent-file.js";
 import { errorMessage, errorName, writeLog } from "../observability/log.js";
@@ -40,15 +40,19 @@ export function maintenanceRun(runId: string, agent: AgentRow, sandbox: SandboxH
   });
 }
 
+/** The db/ functions the workspace sizes are kept through. */
+export type WorkspaceLimitsDatabase = {
+  setAgentWorkspaceMib: BoundQuery<typeof setAgentWorkspaceMib>;
+  setMachineWorkspaceMib: BoundQuery<typeof setMachineWorkspaceMib>;
+};
+
 /** The db/ functions the workspace sizes are kept through, on `db`. */
-export function workspaceLimitsDatabase(db: Queryable) {
+export function workspaceLimitsDatabase(db: Queryable): WorkspaceLimitsDatabase {
   return {
     setAgentWorkspaceMib: bindQuery(db, setAgentWorkspaceMib),
     setMachineWorkspaceMib: bindQuery(db, setMachineWorkspaceMib),
   };
 }
-
-export type WorkspaceLimitsDatabase = ReturnType<typeof workspaceLimitsDatabase>;
 
 /** A size the workspace check holds to its limit: the agent's home, or its machine's directory. */
 type WorkspaceCheck = {

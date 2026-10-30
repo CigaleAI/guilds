@@ -7,7 +7,7 @@ import {
   projectToolResults,
 } from "../conversation/projection.js";
 import type { AgentRow } from "../db/agents.js";
-import { bindQuery, type Queryable } from "../db/pg.js";
+import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import type { RunConfigSnapshot } from "../db/schema/index.js";
 import { listMessages, type MessageRow } from "../db/runs.js";
 import { modelCatalog } from "../llm/catalog.js";
@@ -37,15 +37,17 @@ export const generationLive = {
   shutdownTimeoutMs: SHUTDOWN_TIMEOUT_MS,
 };
 
-export const countInputTokensImpl = (...args: Parameters<typeof countInputTokens>) =>
-  generationLive.countInputTokens(...args);
+export const countInputTokensImpl = (
+  ...args: Parameters<typeof countInputTokens>
+): ReturnType<typeof countInputTokens> => generationLive.countInputTokens(...args);
+
+/** The db/ functions a model call reads the run's history through. */
+export type ModelCompletionDatabase = { listMessages: BoundQuery<typeof listMessages> };
 
 /** The db/ functions a model call reads the run's history through, on `db`. */
-export function modelCompletionDatabase(db: Queryable) {
+export function modelCompletionDatabase(db: Queryable): ModelCompletionDatabase {
   return { listMessages: bindQuery(db, listMessages) };
 }
-
-export type ModelCompletionDatabase = ReturnType<typeof modelCompletionDatabase>;
 
 /** What model calls are made with, built once by the loop. */
 export type ModelCompletionServices = {

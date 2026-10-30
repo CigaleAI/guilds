@@ -1,6 +1,6 @@
 import { DEFAULT_MAX_TOOL_CALLS } from "../agents/config.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
-import { bindQuery, type Queryable } from "../db/pg.js";
+import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import { getRun, listMessages, type RunRow, type MessageRow } from "../db/runs.js";
 import type { AssistantMessage, Harness, ToolCall, ToolMessage, ToolResultMetadata } from "../db/schema/index.js";
 import { callTool } from "../mcp/service.js";
@@ -134,8 +134,11 @@ export function pendingToolCalls(
 /** A tool call's result as a run keeps it: the message the model reads, and its metadata. */
 export type ToolRecord = [ToolMessage, ToolResultMetadata];
 
+/** The result of a call whose execution was lost, as the run keeps it under a generation's number. */
+export type InterruptedToolRecord = [ToolMessage, ToolResultMetadata & { generation: number }];
+
 /** The result a call gets when its execution was lost, numbered `generation`. */
-export function interruptionRecord(call: ToolCall, generation: number): [ToolMessage, ToolResultMetadata & { generation: number }] {
+export function interruptionRecord(call: ToolCall, generation: number): InterruptedToolRecord {
   const name = call.function.name;
   const callId = call.id;
   const payload: ToolMessage = {
@@ -143,7 +146,7 @@ export function interruptionRecord(call: ToolCall, generation: number): [ToolMes
     tool_call_id: callId,
     content: INTERRUPTED_CONTENT,
   };
-  const metadata: ToolResultMetadata & { generation: number } = {
+  const metadata: InterruptedToolRecord[1] = {
     generation,
     tool_name: name,
     tool_call_id: callId,
@@ -160,16 +163,21 @@ export function interruptionRecord(call: ToolCall, generation: number): [ToolMes
   return [payload, metadata];
 }
 
+/** The db/ functions tool calls read the run through. */
+export type ToolCallsDatabase = {
+  getAgent: BoundQuery<typeof getAgent>;
+  getRun: BoundQuery<typeof getRun>;
+  listMessages: BoundQuery<typeof listMessages>;
+};
+
 /** The db/ functions tool calls read the run through, on `db`. */
-export function toolCallsDatabase(db: Queryable) {
+export function toolCallsDatabase(db: Queryable): ToolCallsDatabase {
   return {
     getAgent: bindQuery(db, getAgent),
     getRun: bindQuery(db, getRun),
     listMessages: bindQuery(db, listMessages),
   };
 }
-
-export type ToolCallsDatabase = ReturnType<typeof toolCallsDatabase>;
 
 /**
  * The tools a generation calls: their run record and hooks, the schemas the model is offered,

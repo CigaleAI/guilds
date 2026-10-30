@@ -12,9 +12,9 @@ import { clearHarnessLogin, getAgent, markHarnessLogin, type AgentRow } from "..
 import { getGuild, listGuildRepositories } from "../db/guilds.js";
 import { isPlainRecord } from "../db/json.js";
 import { getMcpConnectionForOwner, type McpConnectionRow } from "../db/mcp.js";
-import { bindQuery, type Queryable } from "../db/pg.js";
+import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import { getRun, mergeRunMetadata, type RunRow } from "../db/runs.js";
-import { RunRepositoryChangeSchema, type Harness, type RunRepositoryChange, type ToolCall, type ToolMessage, type ToolResultMetadata } from "../db/schema/index.js";
+import { RunRepositoryChangeSchema, type Harness, type RunRepositoryChange, type ToolCall } from "../db/schema/index.js";
 import { decode } from "../lib/decode.js";
 import { RepositoryAccessError } from "../github/tokens.js";
 import { GITHUB_SERVER_ID } from "../instance/integrations.js";
@@ -41,20 +41,24 @@ import type { ActiveGenerations } from "./active-generations.js";
 import { RunRequestError } from "./errors.js";
 import type { RunEvents, RunGeneration } from "./events.js";
 import type { AgentMachines } from "./machines.js";
-import { lostCodeTask, type GenerationTools, type LostCodeTask } from "./tool-calls.js";
+import { lostCodeTask, type GenerationTools, type InterruptedToolRecord, type LostCodeTask } from "./tool-calls.js";
 import { maintenanceRun } from "./workspace.js";
 
 export const RUN_DIFF_MAX_BYTES = 256 * 1024;
 
+/** The db/ functions a coding run's repositories are read through. */
+export type CodingRepositoriesDatabase = {
+  listGuildRepositories: BoundQuery<typeof listGuildRepositories>;
+  getMcpConnectionForOwner: BoundQuery<typeof getMcpConnectionForOwner>;
+};
+
 /** The db/ functions a coding run's repositories are read through, on `db`. */
-export function codingRepositoriesDatabase(db: Queryable) {
+export function codingRepositoriesDatabase(db: Queryable): CodingRepositoriesDatabase {
   return {
     listGuildRepositories: bindQuery(db, listGuildRepositories),
     getMcpConnectionForOwner: bindQuery(db, getMcpConnectionForOwner),
   };
 }
-
-export type CodingRepositoriesDatabase = ReturnType<typeof codingRepositoriesDatabase>;
 
 /** The GitHub connection a coding run of the agent clones with: the agent's, else its guild's, else its organisation's. */
 async function githubConnectionOf(
@@ -82,13 +86,27 @@ export async function guildRepositories(
   return codingRepositories(await db.listGuildRepositories(agent.guild_id), await githubConnectionOf(db, agent));
 }
 
+/** The db/ functions coding runs read and keep their repositories, logins and checkpoints through, the retiring of a login, and the minting of a run's repository tokens. */
+export type CodingRunsDatabase = CodingRepositoriesDatabase & {
+  agentSecrets: BoundQuery<typeof agentSecrets>;
+  snapshotEnvValues: BoundQuery<typeof snapshotEnvValues>;
+  /** Retires a login that stopped working (`retireLogin`, with no pool to forget it). */
+  retireLogin: (connection: McpConnectionRow, failure: LoginFailure) => ReturnType<typeof retireLogin>;
+  getAgent: BoundQuery<typeof getAgent>;
+  getGuild: BoundQuery<typeof getGuild>;
+  getRun: BoundQuery<typeof getRun>;
+  mergeRunMetadata: BoundQuery<typeof mergeRunMetadata>;
+  markHarnessLogin: BoundQuery<typeof markHarnessLogin>;
+  clearHarnessLogin: BoundQuery<typeof clearHarnessLogin>;
+  repositoryTokens: BoundQuery<typeof repositoryTokens>;
+};
+
 /** The db/ functions coding runs read and keep their repositories, logins and checkpoints through, the retiring of a login, and the minting of a run's repository tokens, on `db`. */
-export function codingRunsDatabase(db: Queryable) {
+export function codingRunsDatabase(db: Queryable): CodingRunsDatabase {
   return {
     agentSecrets: bindQuery(db, agentSecrets),
     snapshotEnvValues: bindQuery(db, snapshotEnvValues),
     ...codingRepositoriesDatabase(db),
-    /** Retires a login that stopped working (`retireLogin`, with no pool to forget it). */
     retireLogin: (connection: McpConnectionRow, failure: LoginFailure) => retireLogin(null, db, connection, failure),
     getAgent: bindQuery(db, getAgent),
     getGuild: bindQuery(db, getGuild),
@@ -99,8 +117,6 @@ export function codingRunsDatabase(db: Queryable) {
     repositoryTokens: bindQuery(db, repositoryTokens),
   };
 }
-
-export type CodingRunsDatabase = ReturnType<typeof codingRunsDatabase>;
 
 /** What coding runs are run with, built once by the loop. */
 export type CodingRunsServices = {
@@ -312,8 +328,8 @@ export class CodingRuns {
   async interruptedCodeTask(
     run: RunRow,
     call: ToolCall,
-    record: [ToolMessage, ToolResultMetadata & { generation: number }],
-  ): Promise<[ToolMessage, ToolResultMetadata & { generation: number }]> {
+    record: InterruptedToolRecord,
+  ): Promise<InterruptedToolRecord> {
     const harness = run.config_snapshot.harness;
     if (harness === null) {
       return record;

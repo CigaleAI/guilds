@@ -1,6 +1,6 @@
 import { getAgent } from "../db/agents.js";
 import type { AssistantMessage } from "../db/schema/index.js";
-import { bindQuery, type Queryable } from "../db/pg.js";
+import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import { completeRun, getRun, listMessages, mergeRunMetadata, type RunMessage, type RunRow } from "../db/runs.js";
 import { INPUT_TOKEN_LIMIT_MESSAGE, type Completion } from "../llm/index.js";
 import { remainingAfter, stampToolResult } from "../toolbox/index.js";
@@ -62,8 +62,17 @@ export function continuationMessage(
   ];
 }
 
+/** The db/ functions a chain is followed and handed off through. */
+export type RunChainsDatabase = {
+  getRun: BoundQuery<typeof getRun>;
+  getAgent: BoundQuery<typeof getAgent>;
+  listMessages: BoundQuery<typeof listMessages>;
+  mergeRunMetadata: BoundQuery<typeof mergeRunMetadata>;
+  completeRun: BoundQuery<typeof completeRun>;
+};
+
 /** The db/ functions a chain is followed and handed off through, on `db`. */
-export function runChainsDatabase(db: Queryable) {
+export function runChainsDatabase(db: Queryable): RunChainsDatabase {
   return {
     getRun: bindQuery(db, getRun),
     getAgent: bindQuery(db, getAgent),
@@ -72,8 +81,6 @@ export function runChainsDatabase(db: Queryable) {
     completeRun: bindQuery(db, completeRun),
   };
 }
-
-export type RunChainsDatabase = ReturnType<typeof runChainsDatabase>;
 
 /** Completes the run unless it already ended. */
 export async function completeIfActive(

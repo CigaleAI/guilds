@@ -3,7 +3,7 @@ import { REPOSITORIES_MISSING, REPOSITORIES_MISSING_MESSAGE } from "../coding/ha
 import { getAgent, type AgentRow } from "../db/agents.js";
 import { listBindingsCovering } from "../db/bindings.js";
 import { isPlainRecord } from "../db/json.js";
-import { bindQuery, type Queryable } from "../db/pg.js";
+import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import { completeRun, getRun, listMessages, mergeRunMetadata, type MessageRow, type RunRow } from "../db/runs.js";
 import { agentHome } from "../lib/agent-file.js";
 import { INPUT_TOKEN_LIMIT_MESSAGE } from "../llm/index.js";
@@ -18,12 +18,19 @@ import { createToolRun, type ToolHooks, type ToolRun } from "../toolbox/index.js
 import { dynamicScriptTools, liveExtraForAgent } from "../toolbox/script.js";
 import type { ActiveGenerations } from "./active-generations.js";
 import { chainOf, completeIfActive, HANDOFF_FRACTION, type RunChains } from "./chain.js";
-import { codingRepositoriesDatabase, guildRepositories, type CodingRuns } from "./coding.js";
+import { codingRepositoriesDatabase, guildRepositories, type CodingRepositoriesDatabase, type CodingRuns } from "./coding.js";
 import { completionRequest, historyTokens, type ModelCompletion } from "./completion.js";
 import { GenerationCancelled, RunLimitError } from "./errors.js";
 import type { RunEvents, RunGeneration } from "./events.js";
 import { agentSeat, type AgentMachines } from "./machines.js";
-import { liveOfferedNames, mcpIndex, snapshotOfferedNames, toolSchemaName, withFirstClassScriptTools } from "./offered-tools.js";
+import {
+  liveOfferedNames,
+  mcpIndex,
+  snapshotOfferedNames,
+  toolSchemaName,
+  withFirstClassScriptTools,
+  type ToolBindingScope,
+} from "./offered-tools.js";
 import type { GenerationSecrets, RunSecrets } from "./run-secrets.js";
 import type { GenerationStarter } from "./runs.js";
 import { executedToolCalls, toolCallsOf, type GenerationTools, type ToolCalls } from "./tool-calls.js";
@@ -87,8 +94,18 @@ function groupTagsOf(rows: MessageRow[]): string[] {
   return tagged.filter((item) => item);
 }
 
+/** The db/ functions a generation reads its run and keeps its progress through. */
+export type RunGeneratorDatabase = CodingRepositoriesDatabase & {
+  listBindingsCovering: BoundQuery<typeof listBindingsCovering>;
+  getRun: BoundQuery<typeof getRun>;
+  getAgent: BoundQuery<typeof getAgent>;
+  listMessages: BoundQuery<typeof listMessages>;
+  completeRun: BoundQuery<typeof completeRun>;
+  mergeRunMetadata: BoundQuery<typeof mergeRunMetadata>;
+};
+
 /** The db/ functions a generation reads its run and keeps its progress through, on `db`. */
-export function runGeneratorDatabase(db: Queryable) {
+export function runGeneratorDatabase(db: Queryable): RunGeneratorDatabase {
   return {
     listBindingsCovering: bindQuery(db, listBindingsCovering),
     ...codingRepositoriesDatabase(db),
@@ -99,8 +116,6 @@ export function runGeneratorDatabase(db: Queryable) {
     mergeRunMetadata: bindQuery(db, mergeRunMetadata),
   };
 }
-
-export type RunGeneratorDatabase = ReturnType<typeof runGeneratorDatabase>;
 
 /** What a memory write in this run names as its source: the run, and what woke it. */
 async function memoryReplacedBy(db: Pick<RunGeneratorDatabase, "listMessages">, run: RunRow): Promise<string> {
@@ -406,11 +421,10 @@ export class RunGenerator {
 
   private async offeredNames(gen: Generation, frozen: RunConfigSnapshot["tools"]): Promise<Set<string>> {
     const { agent, run } = gen;
-    const scope = { orgId: agent.org_id || null, guildId: agent.guild_id, agentId: agent.id };
+    const scope: ToolBindingScope = { orgId: agent.org_id || null, guildId: agent.guild_id, agentId: agent.id };
     const rows = await this.services.db.listBindingsCovering(scope);
     const live = agent.config;
-    return liveOfferedNames(snapshotOfferedNames(frozen), rows, {
-      ...scope,
+    return liveOfferedNames(snapshotOfferedNames(frozen), rows, scope, {
       browser: live.browser,
       coding: live.coding,
       scripting: live.scripting,

@@ -402,76 +402,19 @@
       "count": 5
     }
   },
-  "src/generation/active-generations.ts": {
-    "@typescript-eslint/explicit-module-boundary-types": {
-      "count": 1
-    }
-  },
-  "src/generation/chain.ts": {
-    "@typescript-eslint/explicit-module-boundary-types": {
-      "count": 1
-    }
-  },
-  "src/generation/coding.ts": {
-    "@typescript-eslint/explicit-module-boundary-types": {
-      "count": 2
-    },
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/generation/completion.ts": {
-    "@typescript-eslint/explicit-module-boundary-types": {
-      "count": 2
-    }
-  },
-  "src/generation/events.ts": {
-    "@typescript-eslint/explicit-module-boundary-types": {
-      "count": 1
-    }
-  },
   "src/generation/generate.ts": {
-    "@typescript-eslint/explicit-module-boundary-types": {
-      "count": 1
-    },
     "no-restricted-syntax": {
       "count": 1
     }
   },
   "src/generation/index.ts": {
-    "boundary/no-reexport-modules": {
-      "count": 1
-    },
     "no-restricted-syntax": {
       "count": 1
     }
   },
   "src/generation/machines.ts": {
-    "@typescript-eslint/explicit-module-boundary-types": {
-      "count": 1
-    },
     "no-restricted-syntax": {
-      "count": 7
-    }
-  },
-  "src/generation/offered-tools.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/generation/operator.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/generation/prepare.ts": {
-    "@typescript-eslint/explicit-module-boundary-types": {
-      "count": 2
-    }
-  },
-  "src/generation/run-review.ts": {
-    "@typescript-eslint/explicit-module-boundary-types": {
-      "count": 2
+      "count": 5
     }
   },
   "src/generation/run-secrets.ts": {
@@ -480,25 +423,16 @@
     }
   },
   "src/generation/runs.ts": {
-    "@typescript-eslint/explicit-module-boundary-types": {
-      "count": 1
-    },
     "no-restricted-syntax": {
       "count": 2
     }
   },
   "src/generation/tool-calls.ts": {
-    "@typescript-eslint/explicit-module-boundary-types": {
-      "count": 1
-    },
     "no-restricted-syntax": {
       "count": 1
     }
   },
   "src/generation/workspace.ts": {
-    "@typescript-eslint/explicit-module-boundary-types": {
-      "count": 1
-    },
     "no-restricted-syntax": {
       "count": 1
     }

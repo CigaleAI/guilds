@@ -19,6 +19,14 @@ export class RunRequestError extends Error {
   }
 }
 
+/** The agent a run belongs to was deleted while the run still worked for it. */
+export class AgentGoneError extends Error {
+  constructor() {
+    super("agent not found");
+    this.name = "AgentGoneError";
+  }
+}
+
 export class GenerationCancelled extends Error {
   constructor(message = "cancelled") {
     super(message);

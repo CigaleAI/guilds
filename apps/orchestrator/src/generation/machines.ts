@@ -4,7 +4,7 @@ import { validateAgentConfig } from "../agents/config.js";
 import { AgentValidationError } from "../agents/validation.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
 import { setMachineHarnesses } from "../db/machines.js";
-import { bindQuery, type Queryable } from "../db/pg.js";
+import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import type { AgentConfig } from "../db/schema/index.js";
 import { agentDirectory, machineDirectory, machineFromRow, type AgentNeeds } from "../machines/index.js";
 import { moveAgent } from "../machines/placement.js";
@@ -18,7 +18,7 @@ import {
 } from "../sandbox/index.js";
 import { SandboxError, type SandboxHandle } from "../sandbox/sdk.js";
 import type { ActiveGenerations } from "./active-generations.js";
-import { RunRequestError } from "./errors.js";
+import { AgentGoneError, RunRequestError } from "./errors.js";
 import { IdleTimers } from "./idle.js";
 
 /**
@@ -71,8 +71,15 @@ export function agentSeat(agent: AgentRow): AgentSeat {
   };
 }
 
+/** The db/ functions the machines read agents and keep their state through. */
+export type AgentMachinesDatabase = {
+  getAgent: BoundQuery<typeof getAgent>;
+  setMachineHarnesses: BoundQuery<typeof setMachineHarnesses>;
+  moveAgent: BoundQuery<typeof moveAgent>;
+};
+
 /** The db/ functions the machines read agents and keep their state through, on `db`. */
-export function agentMachinesDatabase(db: Queryable) {
+export function agentMachinesDatabase(db: Queryable): AgentMachinesDatabase {
   return {
     getAgent: bindQuery(db, getAgent),
     setMachineHarnesses: bindQuery(db, setMachineHarnesses),
@@ -80,7 +87,11 @@ export function agentMachinesDatabase(db: Queryable) {
   };
 }
 
-export type AgentMachinesDatabase = ReturnType<typeof agentMachinesDatabase>;
+/**
+ * What a move of an agent is held to: its organisation's cap on agents per machine, and what the
+ * agent needs of the machine it moves to.
+ */
+export type AgentMoveLimits = { maxAgentsPerMachine?: number | null; needs?: AgentNeeds };
 
 /** What the machines are run with, built once by the loop. */
 export type AgentMachinesServices = {
@@ -504,7 +515,7 @@ export class AgentMachines {
   async moveAgent(
     agentId: string,
     machineId: string,
-    options: { maxAgentsPerMachine?: number | null; needs?: AgentNeeds } = {},
+    limits: AgentMoveLimits = {},
   ): Promise<void> {
     const agent = await this.db.getAgent(agentId);
     if (agent === null) {
@@ -529,7 +540,7 @@ export class AgentMachines {
         renameSync(source, target);
       }
       try {
-        if ((await this.db.moveAgent(agentId, machineId, options)) === null) {
+        if ((await this.db.moveAgent(agentId, machineId, limits)) === null) {
           throw new RunRequestError(404, "agent not found");
         }
       } catch (error) {
@@ -564,10 +575,10 @@ export class AgentMachines {
     return { source: agentDirectory(sourceRoot, from, agentId), target };
   }
 
-  /** The agent's home on the host: its folder in its machine's directory. */
+  /** The agent's home on the host: its folder in its machine's directory; refused for an agent that is gone. */
   async agentWorkspace(agent: AgentRow | null): Promise<string> {
     if (agent === null) {
-      throw new Error("agent not found");
+      throw new AgentGoneError();
     }
     const machineId = agent.machine_id;
     return agentDirectory(await this.workspaceRootFor(machineId), machineId, agent.id);

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { RunRequestError } from "../../src/generation/index.js";
+import { RunRequestError } from "../../src/generation/errors.js";
 import { tempDir } from "../helpers/env.js";
 import { FakeDB, FakeSandboxes, makeLoop } from "../helpers/generation.js";
 

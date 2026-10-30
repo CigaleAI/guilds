@@ -18,6 +18,7 @@ import {
   harnessSecretSource,
   isHarness,
 } from "../coding/harnesses.js";
+import type { HarnessCheck, HarnessLog } from "../toolbox/harness.js";
 import type { CodingRuns } from "./coding.js";
 import { RunRequestError } from "./errors.js";
 
@@ -107,7 +108,7 @@ export async function checkAgentHarness(
   services: RunReviewServices,
   agent: AgentRow,
   harness: unknown,
-) {
+): Promise<HarnessCheck> {
   if (!isHarness(harness)) {
     throw new RunRequestError(422, `harness must be one of: ${HARNESSES.join(", ")}`);
   }
@@ -144,7 +145,7 @@ export async function taskDiff(
 }
 
 /** The log the harness of one `code_task` call kept. */
-export async function taskLog(services: RunReviewServices, run: RunRow, callId: string) {
+export async function taskLog(services: RunReviewServices, run: RunRow, callId: string): Promise<HarnessLog> {
   const harness = taskLogHarness(await getToolResultMetadata(services.db, run.id, callId));
   if (harness === null) {
     throw new RunRequestError(404, "that call has no harness log");
