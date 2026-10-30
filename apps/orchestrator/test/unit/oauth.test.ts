@@ -14,7 +14,6 @@ import {
   serverDiscovery,
   providerClient,
   exchangeCode,
-  oauthCallbackHtml,
   oauthCallbackUrl,
   oauthSetupState,
   pendingOauth,
@@ -30,6 +29,7 @@ import {
   tokenRedactions,
   type OAuthDiscovery,
 } from "../../src/oauth/index.js";
+import { oauthCallbackHtml } from "../../src/oauth/html.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import { loadTextFixture } from "../helpers/fixtures.js";
@@ -188,15 +188,15 @@ test("token payload and account hint", () => {
       email_domain: "acme.com",
       workspace_id: "ws_1",
     },
-    { now },
+    now,
   );
   assert.equal(stored.access_token, "tok");
   assert.equal(stored.refresh_token, "ref");
   assert.equal(stored.email_domain, "acme.com");
   assert.equal(accountHint(stored), "acme.com");
-  assert.equal(accessExpired(stored, { now: new Date(now.getTime() + 2 * 60 * 60 * 1000) }), true);
-  assert.equal(accessExpired(stored, { now: new Date(now.getTime() + 60 * 1000) }), false);
-  const refreshed = tokenPayload({ access_token: "tok2", expires_in: 60 }, { now, existing: stored });
+  assert.equal(accessExpired(stored, new Date(now.getTime() + 2 * 60 * 60 * 1000)), true);
+  assert.equal(accessExpired(stored, new Date(now.getTime() + 60 * 1000)), false);
+  const refreshed = tokenPayload({ access_token: "tok2", expires_in: 60 }, now, stored);
   assert.equal(refreshed.refresh_token, "ref");
   assert.equal(refreshed.access_token, "tok2");
 });
@@ -301,6 +301,33 @@ test("discover follows protected resource metadata", async () => {
   assert.equal(discovery.token_endpoint, "https://mcp.notion.com/token");
   assert.equal(discovery.registration_endpoint, "https://mcp.notion.com/register");
   assert.deepEqual(discovery.scopes, ["default"]);
+});
+
+test("discover skips metadata that is not a JSON object and refuses a resource without an authorization server", async () => {
+  const requested: string[] = [];
+  const answers = (servers: unknown) =>
+    mockFetch((url) => {
+      requested.push(url);
+      const path = new URL(url).pathname;
+      if (path === "/mcp/.well-known/oauth-protected-resource") {
+        return { status: 200, text: "<html>not json</html>" };
+      }
+      if (path.includes("oauth-protected-resource")) {
+        return { status: 200, json: { authorization_servers: servers } };
+      }
+      return {
+        status: 200,
+        json: { authorization_endpoint: "https://mcp.example/authorize", token_endpoint: "https://mcp.example/token" },
+      };
+    });
+  const discovery = await discover("https://mcp.example/mcp", { client: answers(["https://mcp.example"]) });
+  assert.equal(discovery.resource, "https://mcp.example/mcp");
+  assert.equal(discovery.token_endpoint, "https://mcp.example/token");
+  assert.equal(requested[0], "https://mcp.example/mcp/.well-known/oauth-protected-resource");
+  await assert.rejects(discover("https://mcp.example/mcp", { client: answers([]) }), {
+    name: "OAuthError",
+    message: "protected resource metadata is missing authorization_servers",
+  });
 });
 
 test("register exchange and refresh", async () => {

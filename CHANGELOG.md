@@ -640,6 +640,12 @@ takes the publisher as its fourth argument,
 `{ publisher }`. `formatChart` (`connectors/coingecko/client.js`)
 takes the title and the series as arguments,
 `formatChart(payload, title, series)`, in place of `{ title, series }`.
+`tokenPayload` and `accessExpired` (`oauth/index.js`) take the clock as
+their second argument, `tokenPayload(tokens, now, existing)` and
+`accessExpired(payload, now, skewMs)`, in place of `{ now, existing }`
+and `{ now, skewMs }`. `oauthCallbackHtml` and
+`githubInstallationPickerHtml` are exported from `oauth/html.js`, in
+place of `oauth/index.js`.
 
 **Breaking for extending repositories.** The Makefile variables
 `EDITION`, `EDITION_TEST_PACKAGES`, and `EDITION_COMPOSE_FILES` are
