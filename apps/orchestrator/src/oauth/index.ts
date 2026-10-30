@@ -11,6 +11,7 @@ import {
   type IntegrationSources,
 } from "../instance/integrations.js";
 import { saveOauthClient, type LoadedConnector } from "../connectors/servers.js";
+import { isPlainRecord } from "../db/json.js";
 import { saveMcpConnection, type McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import type { Manifest, OAuthClient, OAuthClientCredentials } from "../db/schema/index.js";
@@ -255,7 +256,7 @@ export function providerClient(
   if (provider === null) {
     return null;
   }
-  const values = integrationValues(provider.integration, sources) as Record<string, string> | null;
+  const values = integrationValues(provider.integration, sources);
   if (values === null) {
     return null;
   }
@@ -384,16 +385,16 @@ export function pendingReplaces(payload: Record<string, unknown>): boolean {
     return true;
   }
   const oauth = payload.oauth;
-  return Boolean(oauth && typeof oauth === "object" && !Array.isArray(oauth) && (oauth as { replaces?: unknown }).replaces === true);
+  return isPlainRecord(oauth) && oauth.replaces === true;
 }
 
 export function pendingOauth(payload: Record<string, unknown>): [string, string] {
   const oauth = payload.oauth;
-  if (!oauth || typeof oauth !== "object" || Array.isArray(oauth)) {
+  if (!isPlainRecord(oauth)) {
     throw new OAuthError("connection is missing oauth state");
   }
-  const verifier = (oauth as { code_verifier?: unknown }).code_verifier;
-  const redirectUri = (oauth as { redirect_uri?: unknown }).redirect_uri;
+  const verifier = oauth.code_verifier;
+  const redirectUri = oauth.redirect_uri;
   if (typeof verifier !== "string" || typeof redirectUri !== "string") {
     throw new OAuthError("connection is missing oauth state");
   }
@@ -440,8 +441,8 @@ async function getJson(fetchFn: FetchFn, urls: string[]): Promise<Record<string,
       last = "discovery returned a non-object";
       continue;
     }
-    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
-      return payload as Record<string, unknown>;
+    if (isPlainRecord(payload)) {
+      return payload;
     }
     last = "discovery returned a non-object";
   }
@@ -555,8 +556,8 @@ export async function registerClient(
 async function tokenError(response: Response, text: string): Promise<string | null> {
   try {
     const payload: unknown = text ? JSON.parse(text) : {};
-    if (payload && typeof payload === "object" && !Array.isArray(payload) && typeof (payload as { error?: unknown }).error === "string") {
-      return (payload as { error: string }).error;
+    if (isPlainRecord(payload) && typeof payload.error === "string") {
+      return payload.error;
     }
   } catch {
     return null;
@@ -592,10 +593,10 @@ async function tokenRequest(
     throw new OAuthError(`token request failed: ${response.status}`);
   }
   const payload: unknown = text ? JSON.parse(text) : {};
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+  if (!isPlainRecord(payload)) {
     throw new OAuthError("token response is not an object");
   }
-  return payload as Record<string, unknown>;
+  return payload;
 }
 
 export async function exchangeCode(

@@ -870,9 +870,6 @@
     }
   },
   "src/oauth/index.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 8
-    },
     "boundary/no-reexport-modules": {
       "count": 1
     },
