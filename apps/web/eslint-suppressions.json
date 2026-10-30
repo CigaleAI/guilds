@@ -4,11 +4,6 @@
       "count": 2
     }
   },
-  "src/app/identity.tsx": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
   "src/app/returnTrail.ts": {
     "max-params": {
       "count": 1
@@ -605,11 +600,6 @@
     "complexity": {
       "count": 3
     },
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/mount.tsx": {
     "no-restricted-syntax": {
       "count": 1
     }
