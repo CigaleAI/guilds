@@ -9,11 +9,14 @@ that uses it.
 ESLint and the import-cycle check
 ([Lint](development.md#lint-and-format)) enforce these rules:
 cyclomatic complexity, nesting depth, parameter count, file length,
-type assertions, a `catch` that neither throws nor returns, a throw
-of a plain `Error`, an object type written inline in a parameter,
-explicit types on what an orchestrator module exports, imports of
-`fastify`, `http/` importing `db/`, what `db/` and `lib/` import,
-re-exports, imports of hosted code, and import cycles. Every other
+type assertions, a `catch` that neither throws nor returns a value,
+a throw of a plain `Error`, an object type written inline in a
+parameter, explicit types on what an orchestrator module exports,
+an export whose return type is `unknown` or
+`Record<string, unknown>`, imports of `fastify`, `http/` importing
+`db/`, what `db/` and `lib/` import, a shared directory of the
+operator app importing a feature, re-exports, imports of hosted
+code, and import cycles. Every other
 rule on this page is checked in review
 ([Pull requests](pull-requests.md)).
 
