@@ -141,16 +141,16 @@ test("the per-machine cap counts the agents on the machine plus those being plac
       return count;
     },
   });
-  assert.equal(await assertCanPlaceAgentsThrough(policyOf({}), countsOn(1_000), "org_1", "mach_1", 50), null);
+  assert.equal(await assertCanPlaceAgentsThrough(policyOf({}), countsOn(1_000), "org_1", { machineId: "mach_1", agents: 50 }), null);
   const policy = policyOf({ maxAgentsPerMachine: 4 });
-  assert.equal(await assertCanPlaceAgentsThrough(policy, countsOn(2), "org_1", "mach_1", 1), 4);
-  assert.equal(await assertCanPlaceAgentsThrough(policy, countsOn(2), "org_1", "mach_1", 2), 4);
+  assert.equal(await assertCanPlaceAgentsThrough(policy, countsOn(2), "org_1", { machineId: "mach_1", agents: 1 }), 4);
+  assert.equal(await assertCanPlaceAgentsThrough(policy, countsOn(2), "org_1", { machineId: "mach_1", agents: 2 }), 4);
   await assert.rejects(
-    () => assertCanPlaceAgentsThrough(policy, countsOn(3), "org_1", "mach_2", 2),
+    () => assertCanPlaceAgentsThrough(policy, countsOn(3), "org_1", { machineId: "mach_2", agents: 2 }),
     limitOn("agents per machine"),
   );
   await assert.rejects(
-    () => assertCanPlaceAgentsThrough(policy, countsOn(4), "org_1", "mach_2", 1),
+    () => assertCanPlaceAgentsThrough(policy, countsOn(4), "org_1", { machineId: "mach_2", agents: 1 }),
     limitOn("agents per machine"),
   );
   assert.deepEqual(seen, ["mach_1", "mach_1", "mach_2", "mach_2"]);

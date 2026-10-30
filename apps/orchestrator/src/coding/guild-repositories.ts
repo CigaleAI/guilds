@@ -43,15 +43,27 @@ import {
   validateRepositoryInput,
 } from "./repositories.js";
 
+/** What a login that stopped working is retired through, built once from the app's services. */
+export type LoginRetirement = {
+  /** Retires a login that stopped working, and the pool forgets it (`retireLogin` of mcp/). */
+  retireLogin: (connection: McpConnectionRow, failure: LoginFailure) => Promise<void>;
+};
+
 /** What a guild's repositories and the GitHub logins they use are managed through, built once from the app's services. */
-export type RepositoryServices = {
+export type RepositoryServices = LoginRetirement & {
   db: Queryable;
   /** The pool that talks to the connectors; absent on a box that calls none. */
   mcp: Pick<McpPool, "drop"> | null;
   masterKey: Buffer | undefined;
-  /** Retires a login that stopped working, and the pool forgets it (`retireLogin` of mcp/). */
-  retireLogin: (connection: McpConnectionRow, failure: LoginFailure) => Promise<void>;
 };
+
+/** Retires a GitHub login whose installation GitHub no longer knows, as `installation_gone`. */
+export async function retireInstallationGone(
+  services: LoginRetirement,
+  connection: McpConnectionRow,
+): Promise<void> {
+  await services.retireLogin(connection, "installation_gone");
+}
 
 type Item = Record<string, unknown>;
 
@@ -124,7 +136,7 @@ export async function reachableRepositories(
     );
   } catch (error) {
     if (error instanceof GithubInstallationGoneError) {
-      await services.retireLogin(connection, "installation_gone");
+      await retireInstallationGone(services, connection);
       throw new RepositoryValidationError(
         "GitHub refused the installation; the connection is now disconnected",
       );

@@ -6,6 +6,7 @@ import {
   repositoryTokens,
   RepositoryTokenInstallationGoneError,
 } from "../coding/git.js";
+import { retireInstallationGone } from "../coding/guild-repositories.js";
 import { codingRepositories } from "../coding/repositories.js";
 import { clearHarnessLogin, getAgent, markHarnessLogin, type AgentRow } from "../db/agents.js";
 import { getGuild, listGuildRepositories } from "../db/guilds.js";
@@ -17,7 +18,6 @@ import { RunRepositoryChangeSchema, type Harness, type RunRepositoryChange, type
 import { decode } from "../lib/decode.js";
 import { RepositoryAccessError } from "../github/tokens.js";
 import { GITHUB_SERVER_ID } from "../instance/integrations.js";
-import type { McpPool } from "../mcp/pool.js";
 import { retireLogin, type LoginFailure } from "../mcp/service.js";
 import { errorMessage, errorName, writeLog } from "../observability/log.js";
 import { agentRunDir } from "../sandbox/index.js";
@@ -88,9 +88,8 @@ export function codingRunsDatabase(db: Queryable) {
     agentSecrets: bindQuery(db, agentSecrets),
     snapshotEnvValues: bindQuery(db, snapshotEnvValues),
     ...codingRepositoriesDatabase(db),
-    /** Retires a login that stopped working, and `pool` forgets it when there is one (`retireLogin`). */
-    retireLogin: (pool: Pick<McpPool, "forget"> | null, connection: McpConnectionRow, failure: LoginFailure) =>
-      retireLogin(pool, db, connection, failure),
+    /** Retires a login that stopped working (`retireLogin`, with no pool to forget it). */
+    retireLogin: (connection: McpConnectionRow, failure: LoginFailure) => retireLogin(null, db, connection, failure),
     getAgent: bindQuery(db, getAgent),
     getGuild: bindQuery(db, getGuild),
     getRun: bindQuery(db, getRun),
@@ -165,7 +164,7 @@ export class CodingRuns {
         await tokens.mint();
       } catch (error) {
         if (error instanceof RepositoryTokenInstallationGoneError) {
-          await db.retireLogin(null, error.connection, "installation_gone");
+          await retireInstallationGone(db, error.connection);
         }
         throw error;
       }

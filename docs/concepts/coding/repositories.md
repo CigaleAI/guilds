@@ -296,11 +296,11 @@ list), `apps/orchestrator/src/coding/git.ts` (the agent's tokens,
 identity, clone errors), `apps/orchestrator/src/github/tokens.ts`
 (minting a login's installation token),
 `apps/orchestrator/src/coding/guild-repositories.ts` (a guild's
-repositories and the GitHub logins they use, and the retiring of a
-login whose installation GitHub refused while its repositories were
-listed),
-`apps/orchestrator/src/generation/coding.ts` (a coding run's tokens,
-and the retiring of a login whose installation GitHub refused),
+repositories and the GitHub logins they use, and
+`retireInstallationGone`, which retires a login whose installation
+GitHub refused, while its repositories are listed and while a run's
+tokens are minted),
+`apps/orchestrator/src/generation/coding.ts` (a coding run's tokens),
 `apps/orchestrator/src/mcp/connections.ts` (the GitHub login an
 operator sees),
 `apps/orchestrator/src/http/coding-routes.ts` (routes),
