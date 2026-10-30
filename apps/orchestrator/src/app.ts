@@ -29,6 +29,7 @@ import { InstanceKeys } from "./instance/keys.js";
 import { repoRoot } from "./lib/paths.js";
 import { coreModelCredentials } from "./llm/credentials.js";
 import { modelsService } from "./llm/models.js";
+import { loginRetirement } from "./mcp/service.js";
 import { registerClientErrorRoute } from "./observability/client-errors.js";
 import { fastifyRequestIdOptions, registerHttpObservability } from "./observability/http.js";
 
@@ -157,6 +158,7 @@ export async function buildApp(
       deps.models ??
       modelsService(deps.db, { credentials: modelCredentials, masterKey: deps.masterKey });
     const instanceKeys = deps.instanceKeys ?? new InstanceKeys(database.pool, deps.masterKey);
+    const retirement = deps.loginRetirement ?? loginRetirement(deps.mcp ?? null, deps.db);
     const orgCreated = deps.orgCreated ?? extensionOrgCreated(extensions);
     const full = {
       database,
@@ -165,6 +167,7 @@ export async function buildApp(
       instanceKeys,
       modelCredentials,
       models,
+      loginRetirement: retirement,
       // An absent field is core's own rule: the open policy, core's sign-in modes, core's
       // instance admin.
       ...(policy ? { policy } : {}),

@@ -22,8 +22,7 @@ import {
 } from "../generation/run-review.js";
 import { requireVisibleGuild } from "../guilds/access.js";
 import { requireVisibleGithubConnection } from "../mcp/connections.js";
-import { retireLogin } from "../mcp/service.js";
-import type { AppDeps, RouteApp } from "./deps.js";
+import type { RouteApp, RouteDeps } from "./deps.js";
 import { currentUser } from "./identity.js";
 import { AgentParams, GuildParams } from "./params.js";
 
@@ -49,14 +48,13 @@ const HarnessCheckSchema = Type.Object({ harness: Type.Optional(Type.String()) }
  * A guild's repositories, the repositories a GitHub connection reaches, and what a
  * coding run changed in each repository.
  */
-export async function registerCodingRoutes(app: RouteApp, deps: AppDeps): Promise<void> {
+export async function registerCodingRoutes(app: RouteApp, deps: RouteDeps): Promise<void> {
   const { db } = deps;
-  const pool = deps.mcp ?? null;
   const repositories: RepositoryServices = {
     db,
-    mcp: pool,
+    loginRetirement: deps.loginRetirement,
+    mcp: deps.mcp ?? null,
     masterKey: deps.masterKey,
-    retireLogin: (connection, failure) => retireLogin(pool, db, connection, failure),
   };
   const review: RunReviewServices = { db, coding: deps.generation?.coding ?? null };
 

@@ -19,6 +19,7 @@ import type { ScriptChange } from "../scripts/operator.js";
 import type { Schedules } from "../schedules/service.js";
 import type { AppConfig } from "../config/index.js";
 import type { McpPool } from "../mcp/pool.js";
+import type { LoginRetirement } from "../mcp/service.js";
 import type { GenerationLoop } from "../generation/index.js";
 import type { GenerationSandboxes } from "../generation/machines.js";
 import type { StudioService } from "../studio/index.js";
@@ -51,6 +52,7 @@ export type RouteDeps = AppDeps & {
   instanceKeys: InstanceKeys;
   modelCredentials: ModelCredentialsProvider;
   models: ModelsService;
+  loginRetirement: LoginRetirement;
 };
 
 export type AppDeps = {
@@ -73,6 +75,8 @@ export type AppDeps = {
   config?: AppConfig;
   masterKey?: Buffer;
   mcp?: McpPool;
+  /** Retires a login that stopped working; built over `db` and `mcp` when absent. */
+  loginRetirement?: LoginRetirement;
   generation?: GenerationLoop;
   attachments?: AttachmentService;
   sandboxes?: GenerationSandboxes;

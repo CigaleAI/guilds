@@ -5,6 +5,7 @@ import { buildApp } from "../../src/app.js";
 import { decryptPayload } from "../../src/credentials/crypto.js";
 import { connect } from "../../src/seed/connect.js";
 import { mcpPool } from "../../src/mcp/pool.js";
+import { loginRetirement, type LoginFailure } from "../../src/mcp/service.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
 import { agentSchedules } from "../../src/schedules/service.js";
@@ -112,12 +113,21 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
   await notes.ensureSystemPrompt();
   const db = database.pool;
   await connectModelProvider(db, "org_home", "openrouter");
+  // The composed retirement, recording each login it retires.
+  const retired: Array<[string, LoginFailure]> = [];
+  const composed = loginRetirement(null, db);
   const app = await buildApp(database, {
     db,
     notes,
     scripts: agentScripts(db),
     schedules: agentSchedules(db),
     masterKey: Buffer.from(HEX_MASTER_KEY, "hex"),
+    loginRetirement: {
+      retireLogin: async (connection, failure) => {
+        retired.push([connection.id, failure]);
+        await composed.retireLogin(connection, failure);
+      },
+    },
   });
   try {
     const guild = await app.inject({ method: "POST", url: "/api/guilds", headers: JSON_HEADERS, payload: { name: "coders" } });
@@ -314,6 +324,7 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
     assert.equal(refused.statusCode, 422, refused.body);
     assert.equal(refused.json().detail, "GitHub refused the installation; the connection is now disconnected");
     assert.equal((await getMcpConnection(db, githubId))?.status, "disconnected");
+    assert.deepEqual(retired, [[githubId, "installation_gone"]], "the route retires through the composed service");
 
     // Deleting the connection removes the repositories added through it, and leaves the anonymous one.
     assert.equal(
@@ -356,6 +367,28 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
     });
     assert.equal(
       (await app.inject({ method: "DELETE", url: `/api/mcp/connections/${String(hop.json().id)}`, headers: OWNER })).statusCode,
+      204,
+    );
+
+    // A GitHub callback that lost both its state and its cookie completes the signed-in user's
+    // pending login; a request that signs in nobody, here a user the box does not know, matches none.
+    const lost = await app.inject({
+      method: "POST",
+      url: "/api/mcp/connections",
+      headers: JSON_HEADERS,
+      payload: { mcp_server_id: "mcp_github", owner_scope: "org", owner_id: "org_home" },
+    });
+    assert.equal(lost.statusCode, 201, lost.body);
+    const stateless = "/api/mcp/oauth/callback?code=good-code&setup_action=install";
+    const unsigned = await app.inject({ method: "GET", url: stateless, headers: { "X-Guilds-User": "user_unknown" } });
+    assert.equal(unsigned.statusCode, 404, unsigned.body);
+    assert.match(unsigned.body, /could not be matched to a pending connection/);
+    assert.equal((await getMcpConnection(db, String(lost.json().id)))?.status, "pending");
+    const signedIn = await app.inject({ method: "GET", url: stateless, headers: OWNER });
+    assert.equal(signedIn.statusCode, 200, signedIn.body);
+    assert.equal((await getMcpConnection(db, String(lost.json().id)))?.status, "connected");
+    assert.equal(
+      (await app.inject({ method: "DELETE", url: `/api/mcp/connections/${String(lost.json().id)}`, headers: OWNER })).statusCode,
       204,
     );
 

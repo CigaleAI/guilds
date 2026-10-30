@@ -118,3 +118,16 @@ export async function retireLogin(
   }
   pool?.forget(connection.id);
 }
+
+/** What a login that stopped working is retired through, built once from the app's services. */
+export type LoginRetirement = {
+  /** Retires a login that stopped working, and the pool forgets it (`retireLogin`). */
+  retireLogin: (connection: McpConnectionRow, failure: LoginFailure) => Promise<void>;
+};
+
+/** The retirement of logins on `db`, each forgotten by `pool` when the box has one (`retireLogin`). */
+export function loginRetirement(pool: Pick<McpPool, "forget"> | null, db: Queryable): LoginRetirement {
+  return {
+    retireLogin: (connection, failure) => retireLogin(pool, db, connection, failure),
+  };
+}
