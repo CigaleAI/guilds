@@ -439,22 +439,17 @@ export function capabilityOn(
   return Boolean(config?.[key]);
 }
 
-/** An on/off capability as a pressed button. */
-function CapabilityField({
-  label,
-  hint,
-  checked,
-  onChange,
-  disabled,
-  icon,
-}: {
+type CapabilityFieldProps = {
   label: string;
   hint: string;
   checked: boolean;
   onChange: (checked: boolean) => void;
   disabled?: boolean;
   icon?: LucideIcon;
-}) {
+};
+
+/** An on/off capability as a pressed button. */
+function CapabilityField({ label, hint, checked, onChange, disabled, icon }: CapabilityFieldProps) {
   return (
     <button
       type="button"
@@ -515,21 +510,18 @@ export type SettingsAgent = { guildId: string; agentId: string };
 const DEFAULT_MODEL = "default";
 const CUSTOM_MODEL = "custom";
 
-/**
- * The model the picked harness runs, from its listed models, the subscription's default, or a
- * custom name typed in; then the effort it runs at, among the ones that model takes.
- */
-function HarnessModelFields({
-  form,
-  harness,
-  onChange,
-  error,
-}: {
+type HarnessModelFieldsProps = {
   form: ConfigForm;
   harness: Harness;
   onChange: (next: ConfigForm) => void;
   error?: string | undefined;
-}) {
+};
+
+/**
+ * The model the picked harness runs, from its listed models, the subscription's default, or a
+ * custom name typed in; then the effort it runs at, among the ones that model takes.
+ */
+function HarnessModelFields({ form, harness, onChange, error }: HarnessModelFieldsProps) {
   const catalog = useHarnessCatalog();
   const entry = catalogFor(catalog.data, harness);
   const model = form.harness_model.trim();
@@ -582,19 +574,17 @@ function HarnessModelFields({
 /** The effort select's value for leaving the effort to the model's default. */
 const DEFAULT_EFFORT = "default";
 
+type HarnessEffortFieldProps = {
+  form: ConfigForm;
+  entry: HarnessCatalog | undefined;
+  onChange: (next: ConfigForm) => void;
+};
+
 /**
  * The effort the harness runs its model at, among the ones the model takes; none is shown for a
  * model that takes none, such as a Cursor model whose name carries it.
  */
-function HarnessEffortField({
-  form,
-  entry,
-  onChange,
-}: {
-  form: ConfigForm;
-  entry: HarnessCatalog | undefined;
-  onChange: (next: ConfigForm) => void;
-}) {
+function HarnessEffortField({ form, entry, onChange }: HarnessEffortFieldProps) {
   const model = form.harness_model.trim();
   const efforts = harnessEffortsFor(entry, model);
   if (efforts.length === 0) return null;
@@ -627,15 +617,7 @@ const HARNESS_ITEMS = [
   { value: "antigravity" as const, label: "Antigravity", subtitle: "Google" },
 ] as const;
 
-function HarnessCard({
-  harness,
-  label,
-  subtitle,
-  selected,
-  available,
-  off,
-  onPick,
-}: {
+type HarnessCardProps = {
   harness: Harness;
   label: string;
   subtitle: string;
@@ -644,7 +626,17 @@ function HarnessCard({
   /** The box turns it off; shown only while the agent is on it. */
   off: boolean;
   onPick: () => void;
-}) {
+};
+
+function HarnessCard({
+  harness,
+  label,
+  subtitle,
+  selected,
+  available,
+  off,
+  onPick,
+}: HarnessCardProps) {
   return (
     <button
       type="button"
@@ -682,22 +674,19 @@ function HarnessCard({
   );
 }
 
+type HarnessChoiceFieldsProps = {
+  form: ConfigForm;
+  onChange: (next: ConfigForm) => void;
+  errors: ConfigErrors;
+  carried?: readonly Harness[] | null | undefined;
+};
+
 /**
  * A button with its logo for each harness the box offers and, once one is picked, its model and
  * effort. A harness the machine's image lacks is disabled with a note; one the box turns off shows
  * only while the agent is on it. Picking another harness clears the model and effort.
  */
-export function HarnessChoiceFields({
-  form,
-  onChange,
-  errors,
-  carried,
-}: {
-  form: ConfigForm;
-  onChange: (next: ConfigForm) => void;
-  errors: ConfigErrors;
-  carried?: readonly Harness[] | null | undefined;
-}) {
+export function HarnessChoiceFields({ form, onChange, errors, carried }: HarnessChoiceFieldsProps) {
   const pick = (value: Harness) =>
     onChange({
       ...form,
@@ -746,23 +735,19 @@ export function HarnessChoiceFields({
   );
 }
 
-/**
- * The coding agent's harness and the model it runs, with a note that it runs on the operator's own
- * subscription; for an existing agent, what its code tasks still need under it.
- */
-export function HarnessField({
-  form,
-  onChange,
-  errors,
-  agent,
-  carried,
-}: {
+type HarnessFieldProps = {
   form: ConfigForm;
   onChange: (next: ConfigForm) => void;
   errors: ConfigErrors;
   agent?: SettingsAgent | undefined;
   carried?: readonly Harness[] | null | undefined;
-}) {
+};
+
+/**
+ * The coding agent's harness and the model it runs, with a note that it runs on the operator's own
+ * subscription; for an existing agent, what its code tasks still need under it.
+ */
+export function HarnessField({ form, onChange, errors, agent, carried }: HarnessFieldProps) {
   const missing = form.harness ? harnessCarried(carried, form.harness) === false : false;
   return (
     <div className="flex flex-col gap-3">
@@ -794,6 +779,18 @@ export function HarnessField({
   );
 }
 
+type CapabilitiesFieldsProps = {
+  form: ConfigForm;
+  onChange: (next: ConfigForm) => void;
+  models?: OrgModels | undefined;
+  errors?: ConfigErrors;
+  /** The machine the agent goes on; undefined while none is chosen. */
+  machine?: Pick<Machine, "name" | "cpu" | "memory_mib"> | undefined;
+  codingToggle?: boolean;
+  /** Whether the saved agent codes, which keeps Coding on. */
+  savedCoding?: boolean;
+};
+
 /**
  * Browser, Coding, scripting, and Memory. Every agent has the CLI, so it has no card. Browser and
  * Coding are greyed out while off when the machine is below the minimum they would set, with a
@@ -809,17 +806,7 @@ export function CapabilitiesFields({
   machine,
   codingToggle = true,
   savedCoding = false,
-}: {
-  form: ConfigForm;
-  onChange: (next: ConfigForm) => void;
-  models?: OrgModels | undefined;
-  errors?: ConfigErrors;
-  /** The machine the agent goes on; undefined while none is chosen. */
-  machine?: Pick<Machine, "name" | "cpu" | "memory_mib"> | undefined;
-  codingToggle?: boolean;
-  /** Whether the saved agent codes, which keeps Coding on. */
-  savedCoding?: boolean;
-}) {
+}: CapabilitiesFieldsProps) {
   const browserMinimum = agentMinimum({ browser: true, coding: form.coding });
   const codingMinimum = agentMinimum({ browser: form.browser, coding: true });
   const browserBlocked =

@@ -223,7 +223,12 @@ type RoutineDetailProps = {
   onDelete: () => void;
 };
 
-function Facts({ items }: { items: { term: string; value: ReactNode }[] }) {
+/** One line of a description list: what it states and its value. */
+type Fact = { term: string; value: ReactNode };
+
+type FactsProps = { items: Fact[] };
+
+function Facts({ items }: FactsProps) {
   return (
     <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5 text-sm">
       {items.map(({ term, value }) => (

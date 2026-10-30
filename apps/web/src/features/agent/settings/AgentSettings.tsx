@@ -62,18 +62,15 @@ function formOf(agent: AgentDetail): Form {
   };
 }
 
-/** The agent's name, focus, and mascot, and what wakes it in group chat. */
-function IdentitySection({
-  form,
-  set,
-  nameError,
-  savedName,
-}: {
+type IdentitySectionProps = {
   form: Form;
   set: (patch: Partial<Form>) => void;
   nameError: string | undefined;
   savedName: string;
-}) {
+};
+
+/** The agent's name, focus, and mascot, and what wakes it in group chat. */
+function IdentitySection({ form, set, nameError, savedName }: IdentitySectionProps) {
   return (
     <>
       <Group title="Identity">
