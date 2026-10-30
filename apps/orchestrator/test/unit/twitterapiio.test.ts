@@ -67,7 +67,7 @@ test("formatSearch is compact TSV", () => {
       has_next_page: true,
       next_cursor: "page-2",
     },
-    { query: "from:elonmusk" },
+    "from:elonmusk",
   );
   assert.equal(stored, fixture.search);
   assert.ok(!stored.includes("example.com"));
@@ -84,7 +84,7 @@ test("formatPosts caps rows and clips text", () => {
       })),
     },
   };
-  const stored = formatPosts(payload, { limit: 3 });
+  const stored = formatPosts(payload, 3);
   const lines = stored.split("\n");
   assert.equal(lines.length, 4);
   assert.equal(lines.at(-1), "+17 more");

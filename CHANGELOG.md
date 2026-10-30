@@ -611,6 +611,13 @@ they reach the provider through, an `OAuthHttp` of `client` and
 `refreshConnection` takes `TokenRefreshServices` without `now`, and
 dates the refreshed tokens when it runs.
 
+**Breaking for extensions.** `folderEntry` (`connectors/registry.js`)
+takes the publisher as its fourth argument,
+`folderEntry(manifest, adapter, folder, "acme")`, in place of
+`{ publisher }`. `formatChart` (`connectors/coingecko/client.js`)
+takes the title and the series as arguments,
+`formatChart(payload, title, series)`, in place of `{ title, series }`.
+
 **Breaking for extending repositories.** The Makefile variables
 `EDITION`, `EDITION_TEST_PACKAGES`, and `EDITION_COMPOSE_FILES` are
 `DEV_STACK`, `EXTENSION_TEST_PACKAGES`, and `EXTENSION_COMPOSE_FILES`.

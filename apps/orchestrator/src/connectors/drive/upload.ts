@@ -178,9 +178,10 @@ function multipartBody(
 export async function createDriveFile(
   accessToken: string,
   arguments_: Record<string, unknown>,
-  options: DriveClientOptions & { workspaceDir?: string } = {},
+  options: DriveClientOptions = {},
+  workspaceDir?: string,
 ): Promise<string> {
-  const prepared = await attachDriveCreateFile(arguments_, options.workspaceDir);
+  const prepared = await attachDriveCreateFile(arguments_, workspaceDir);
   const title = typeof prepared.title === "string" ? prepared.title.trim() : "";
   const parentId = argString(prepared, "parentId", "parent_id");
   if (!title) {

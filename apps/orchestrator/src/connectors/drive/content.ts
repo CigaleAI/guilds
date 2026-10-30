@@ -8,6 +8,7 @@ import {
   driveBytes,
   driveJson,
   type DriveClientOptions,
+  type DriveLogin,
 } from "./folder.js";
 import type { ToolInputSchema } from "../../db/schema/index.js";
 import { DriveFile, PermissionList } from "./responses.js";
@@ -216,9 +217,10 @@ export async function getDriveFilePermissions(
 export async function downloadDriveFileContent(
   accessToken: string,
   arguments_: Record<string, unknown>,
-  options: DriveClientOptions & { workspaceDir?: string },
+  options: DriveClientOptions,
+  workspaceDir?: string,
 ): Promise<string> {
-  if (!options.workspaceDir) {
+  if (!workspaceDir) {
     throw new DriveFolderError("download_file_content is only available during an agent run");
   }
   const fileId = requireFileId(arguments_, "download_file_content");
@@ -230,7 +232,7 @@ export async function downloadDriveFileContent(
   let resolved: string;
   try {
     resolved = await writeAgentFile(
-      options.workspaceDir,
+      workspaceDir,
       requested || downloadFileName(title, fileId, downloaded.mimeType),
       downloaded.bytes,
     );
@@ -244,7 +246,7 @@ export async function downloadDriveFileContent(
     id: fileId,
     title,
     mimeType: downloaded.mimeType,
-    file_path: agentDisplayPath(options.workspaceDir, resolved),
+    file_path: agentDisplayPath(workspaceDir, resolved),
     bytes: downloaded.bytes.length,
   });
 }
@@ -313,23 +315,24 @@ export async function copyDriveFile(
 export async function callDriveFileTool(
   remoteName: string,
   arguments_: Record<string, unknown>,
-  options: DriveClientOptions & { accessToken: string; workspaceDir?: string },
+  login: DriveLogin,
+  workspaceDir?: string,
 ): Promise<string | null> {
-  const { accessToken } = options;
+  const { accessToken } = login;
   if (remoteName === "get_file_metadata") {
-    return getDriveFileMetadata(accessToken, arguments_, options);
+    return getDriveFileMetadata(accessToken, arguments_, login);
   }
   if (remoteName === "get_file_permissions") {
-    return getDriveFilePermissions(accessToken, arguments_, options);
+    return getDriveFilePermissions(accessToken, arguments_, login);
   }
   if (remoteName === "download_file_content") {
-    return downloadDriveFileContent(accessToken, arguments_, options);
+    return downloadDriveFileContent(accessToken, arguments_, login, workspaceDir);
   }
   if (remoteName === "read_file_content") {
-    return readDriveFileContent(accessToken, arguments_, options);
+    return readDriveFileContent(accessToken, arguments_, login);
   }
   if (remoteName === "copy_file") {
-    return copyDriveFile(accessToken, arguments_, options);
+    return copyDriveFile(accessToken, arguments_, login);
   }
   return null;
 }

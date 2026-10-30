@@ -11,6 +11,7 @@ import {
   joinParts,
   rowLimit,
 } from "../format.js";
+import type { ApiGet } from "../types.js";
 import {
   ErrorBody,
   OhlcvResponse,
@@ -271,7 +272,7 @@ function unexpected(problem: string): DexPaprikaError {
 
 /** The response at `path` with `params`, as `schema` describes it; the pro host when the free one refuses. */
 async function getJson<T extends TSchema>(
-  request: { path: string; params: Record<string, string>; schema: T },
+  request: ApiGet<T>,
   apiKey: string,
   options: DexPaprikaOptions = {},
 ): Promise<Static<T>> {

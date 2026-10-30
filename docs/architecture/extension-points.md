@@ -148,7 +148,7 @@ and `trusted-header`. Paths below are under
   `GET /api/instance`, and its store integrations are written through
   the same admin routes.
 - **Connectors.** Each is built from a connector folder with
-  `folderEntry(manifest, adapter, folder, { publisher })`. An
+  `folderEntry(manifest, adapter, folder, publisher)`. An
   extension's are installed after core's, before the seed runs, and are
   listed and seeded like core's. A slug core already has fails boot.
 - **Database.** An extension's migrations and seeds run after core's,

@@ -53,7 +53,7 @@ test("formatHoldings drops images and descriptions", () => {
     totalCount: 12,
     pageKey: "next-page",
   };
-  const stored = formatHoldings(payload, { owner: "0xd8da6bf26964af9d7eed9e03e53415d37aa96045", chain: "ethereum" });
+  const stored = formatHoldings(payload, "0xd8da6bf26964af9d7eed9e03e53415d37aa96045", "ethereum");
   assert.equal(
     stored,
     "0xd8da6bf26964af9d7eed9e03e53415d37aa96045  ethereum  total=12\n"
@@ -76,7 +76,7 @@ test("formatHoldings caps rows and marks spam", () => {
     })),
     totalCount: 20,
   };
-  const stored = formatHoldings(payload, { owner: "0xabc", chain: "base", limit: 3 });
+  const stored = formatHoldings(payload, "0xabc", "base", 3);
   assert.ok(stored.startsWith("0xabc  base  total=20"));
   assert.equal(stored.split("\n").length - 1, 4);
   assert.ok(stored.includes("+17 more"));

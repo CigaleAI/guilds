@@ -95,7 +95,6 @@ test("createDriveFile uploads with Shared drive flags", async () => {
     "tok",
     { file_path: "notes.txt", parentId: "folder_1" },
     {
-      workspaceDir: workspace,
       client: mockFetch((url, init) => {
         const parsed = new URL(url);
         assert.equal(parsed.searchParams.get("supportsAllDrives"), "true");
@@ -107,6 +106,7 @@ test("createDriveFile uploads with Shared drive flags", async () => {
         };
       }),
     },
+    workspace,
   );
   assert.equal(uploaded?.method, "POST");
   assert.match(String(uploaded?.headers && (uploaded.headers as Record<string, string>)["Content-Type"]), /multipart\/related/);

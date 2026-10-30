@@ -146,7 +146,7 @@ test("formatChart downsamples and keeps price only", () => {
       market_caps: prices.map(([ts]) => [ts, 1e12]),
       total_volumes: prices.map(([ts]) => [ts, 2e10]),
     },
-    { title: "bitcoin usd 7d" },
+    "bitcoin usd 7d",
   );
   const lines = stored.split("\n");
   assert.equal(lines[0], "bitcoin usd 7d n=48");

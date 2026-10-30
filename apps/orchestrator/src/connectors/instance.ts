@@ -264,6 +264,19 @@ export async function syncInstanceLogins(
   }
 }
 
+/** The pool whose tool listings an instance key change makes stale. */
+export type ToolListings = { forgetListings(): void };
+
+/** The services an instance key change is applied with: the key platform logins are sealed with, and the pool. */
+export type PlatformLoginServices = { masterKey?: Buffer | undefined; mcp?: ToolListings | undefined };
+
+/** An integration's values before and after a write or a removal, null where it has none. */
+export type IntegrationValuesChange = {
+  integrationId: string;
+  previous: Record<string, string> | null;
+  next: Record<string, string> | null;
+};
+
 /**
  * What the process does once an instance key changed: platform logins follow their integration,
  * and a GitHub App that is replaced or removed disconnects every login installed with it, since
@@ -271,17 +284,16 @@ export async function syncInstanceLogins(
  * how many logins it disconnected.
  */
 export async function applyKeyChange(
-  ctx: { db: Queryable; masterKey?: Buffer | undefined; mcp?: { forgetListings(): void } | undefined },
-  integrationId: string,
-  previous: Record<string, string> | null,
-  next: Record<string, string> | null,
+  db: Queryable,
+  services: PlatformLoginServices,
+  change: IntegrationValuesChange,
   now = new Date(),
 ): Promise<{ disconnected: number }> {
-  await syncInstanceLogins(ctx.db, ctx.masterKey, now);
+  await syncInstanceLogins(db, services.masterKey, now);
   let disconnected = 0;
-  if (integrationId === GITHUB_APP.id && replacesGithubApp(previous, next)) {
-    disconnected = await disconnectServerConnections(ctx.db, GITHUB_SERVER_ID, now);
+  if (change.integrationId === GITHUB_APP.id && replacesGithubApp(change.previous, change.next)) {
+    disconnected = await disconnectServerConnections(db, GITHUB_SERVER_ID, now);
   }
-  ctx.mcp?.forgetListings();
+  services.mcp?.forgetListings();
   return { disconnected };
 }

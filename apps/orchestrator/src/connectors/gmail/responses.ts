@@ -30,8 +30,12 @@ export type Message = Static<typeof Message>;
 
 export const ProfileResponse = Type.Object({ emailAddress: Shown });
 
+/** A thread as a listing names it: its id and a snippet. */
+export const ThreadSummary = Type.Object({ id: Shown, snippet: Shown });
+export type ThreadSummary = Static<typeof ThreadSummary>;
+
 export const ThreadListResponse = Type.Object({
-  threads: Nullable(Type.Array(Type.Object({ id: Shown, snippet: Shown }))),
+  threads: Nullable(Type.Array(ThreadSummary)),
   resultSizeEstimate: Shown,
   nextPageToken: Shown,
 });
@@ -44,8 +48,12 @@ export const LabelsResponse = Type.Object({
   labels: Nullable(Type.Array(Type.Object({ id: Shown, name: Shown, type: Shown }))),
 });
 
+/** A draft as a listing names it: its id. */
+export const DraftSummary = Type.Object({ id: Shown });
+export type DraftSummary = Static<typeof DraftSummary>;
+
 export const DraftListResponse = Type.Object({
-  drafts: Nullable(Type.Array(Type.Object({ id: Shown }))),
+  drafts: Nullable(Type.Array(DraftSummary)),
   nextPageToken: Shown,
 });
 

@@ -3,6 +3,7 @@ import { Value } from "@sinclair/typebox/value";
 import { decode } from "../../lib/decode.js";
 import { proxyFetch, withQuery, type FetchFn } from "../../net/http.js";
 import { LIST_DEFAULT, argStr, clipRows, fmtNum, joinParts, rowLimit } from "../format.js";
+import type { ApiGet } from "../types.js";
 import {
   ContractResponse,
   DasAsset,
@@ -135,18 +136,11 @@ function contractRow(item: ContractResponse): string {
   return joinParts(item.address ?? item.contractAddress, item.symbol, item.name ?? collectionName(item), ...extra);
 }
 
-export function formatHoldings(
-  payload: HoldingsResponse,
-  options: { owner: string; chain: string; limit?: number },
-): string {
+export function formatHoldings(payload: HoldingsResponse, owner: string, chain: string, limit = LIST_DEFAULT): string {
   const owned = payload.ownedNfts ?? [];
   const total = payload.totalCount;
-  const head = joinParts(
-    options.owner,
-    options.chain,
-    `total=${fmtNum(total !== null && total !== undefined ? total : owned.length)}`,
-  );
-  const body = clipRows(owned.map((item) => nftRow(item)).filter(Boolean), options.limit ?? LIST_DEFAULT);
+  const head = joinParts(owner, chain, `total=${fmtNum(total !== null && total !== undefined ? total : owned.length)}`);
+  const body = clipRows(owned.map((item) => nftRow(item)).filter(Boolean), limit);
   const parts = [head];
   if (body !== "no results") {
     parts.push(body);
@@ -263,9 +257,18 @@ async function parsedBody(response: Response): Promise<unknown> {
   }
 }
 
+/** One NFT API GET: the request on the host of `network`. */
+type NftGet<T extends TSchema> = ApiGet<T> & { network: string };
+
+/** One DAS call on the Solana RPC: `method` with its `params`, the result decoded with `schema`. */
+type DasCall<T extends TSchema> = { method: string; params: Record<string, unknown>; schema: T };
+
+/** One page of the NFTs an owner holds, within one collection when `contract` is set; `pageKey` empty for the first. */
+type HoldingsPage = { owner: string; contract: string; pageKey: string; limit: number };
+
 /** The NFT API's response at `path` on `network`, as `schema` describes it. */
 async function getJson<T extends TSchema>(
-  request: { network: string; path: string; params: Record<string, string>; schema: T },
+  request: NftGet<T>,
   apiKey: string,
   options: AlchemyOptions = {},
 ): Promise<Static<T>> {
@@ -281,7 +284,7 @@ async function getJson<T extends TSchema>(
 
 /** The result of the DAS `method` called with `params`, as `schema` describes it. */
 async function das<T extends TSchema>(
-  request: { method: string; params: Record<string, unknown>; schema: T },
+  request: DasCall<T>,
   apiKey: string,
   options: AlchemyOptions = {},
 ): Promise<Static<T>> {
@@ -305,7 +308,7 @@ async function das<T extends TSchema>(
 }
 
 /** The DAS params of a holdings page: by owner, or within one collection. */
-function dasHoldingsParams(request: { owner: string; contract: string; pageKey: string; limit: number }) {
+function dasHoldingsParams(request: HoldingsPage): Record<string, unknown> {
   const params: Record<string, unknown> = {
     ownerAddress: request.owner,
     limit: request.limit,
@@ -325,10 +328,7 @@ function dasHoldingsParams(request: { owner: string; contract: string; pageKey: 
   return params;
 }
 
-async function solanaHoldings(
-  request: { owner: string; contract: string; pageKey: string; limit: number },
-  options: ToolOptions,
-): Promise<HoldingsResponse> {
+async function solanaHoldings(request: HoldingsPage, options: ToolOptions): Promise<HoldingsResponse> {
   const method = request.contract ? "searchAssets" : "getAssetsByOwner";
   const payload = await das({ method, params: dasHoldingsParams(request), schema: DasPage }, options.apiKey, options);
   return dasHoldings(payload, request.limit);
@@ -352,7 +352,7 @@ export async function holdingsTool(arguments_: Record<string, unknown>, options:
   const pageKey = argStr(arguments_, "page_key");
   if (chain === "solana") {
     const payload = await solanaHoldings({ owner, contract, pageKey, limit }, options);
-    return formatHoldings(payload, { owner, chain, limit });
+    return formatHoldings(payload, owner, chain, limit);
   }
   const params: Record<string, string> = {
     owner,
@@ -370,7 +370,7 @@ export async function holdingsTool(arguments_: Record<string, unknown>, options:
     options.apiKey,
     options,
   );
-  return formatHoldings(payload, { owner, chain, limit });
+  return formatHoldings(payload, owner, chain, limit);
 }
 
 export async function nftTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {

@@ -131,7 +131,7 @@ test("an extension's connector is installed with core's and listed like one", { 
     auth: { kind: "token" },
     description: "Read the operator's Acme notes.",
   };
-  const entry = folderEntry(manifest, {}, folder, { publisher: "acme" });
+  const entry = folderEntry(manifest, {}, folder, "acme");
   const env = testEnv(await createIsolatedDatabase(connectorDb), {
     ATTACHMENTS_ROOT: tempDir("guilds-compose-attachments-"),
   });

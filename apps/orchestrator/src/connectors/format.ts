@@ -26,6 +26,25 @@ export function pythonG(value: number, precision: number): string {
   return sign + abs.toFixed(decimals).replace(/\.?0+$/, "");
 }
 
+/** A finite number in six significant digits, four from a million up and under a thousandth. */
+function fmtFinite(value: number): string {
+  if (value === 0) {
+    return "0";
+  }
+  const magnitude = Math.abs(value);
+  return pythonG(value, magnitude >= 1_000_000 || magnitude < 0.001 ? 4 : 6);
+}
+
+/** Text as a number when it reads as one without its commas, `$` and `%`; else the trimmed text, `-` when empty. */
+function fmtText(value: string): string {
+  const stripped = value.trim();
+  if (!stripped) {
+    return "-";
+  }
+  const numeric = Number(stripped.replaceAll(",", "").replaceAll("$", "").replaceAll("%", ""));
+  return Number.isNaN(numeric) ? stripped : fmtNum(numeric);
+}
+
 export function fmtNum(value: unknown): string {
   if (value === null || value === undefined || value === "") {
     return "-";
@@ -34,25 +53,10 @@ export function fmtNum(value: unknown): string {
     return value ? "true" : "false";
   }
   if (typeof value === "string") {
-    const stripped = value.trim();
-    if (!stripped) {
-      return "-";
-    }
-    const numeric = Number(stripped.replaceAll(",", "").replaceAll("$", "").replaceAll("%", ""));
-    if (!Number.isNaN(numeric)) {
-      return fmtNum(numeric);
-    }
-    return stripped;
+    return fmtText(value);
   }
   if (typeof value === "number" && Number.isFinite(value)) {
-    if (value === 0) {
-      return "0";
-    }
-    const magnitude = Math.abs(value);
-    if (magnitude >= 1_000_000 || magnitude < 0.001) {
-      return pythonG(value, 4);
-    }
-    return pythonG(value, 6);
+    return fmtFinite(value);
   }
   return String(value);
 }
