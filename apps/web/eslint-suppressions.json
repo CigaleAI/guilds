@@ -364,11 +364,6 @@
       "count": 1
     }
   },
-  "src/features/machines/MachineDialog.tsx": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    }
-  },
   "src/features/models/ModelProviders.tsx": {
     "complexity": {
       "count": 1

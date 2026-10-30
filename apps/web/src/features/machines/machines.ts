@@ -53,6 +53,9 @@ export type AgentNeeds = { browser: boolean; coding: boolean };
 /** The server's rule for a machine's name. */
 export const machineNamePattern = /^[a-z][a-z0-9-]{0,62}$/;
 
+/** Every box a machine is sized as, in the order the form offers them. */
+export const machineBoxes = ["standard", "code", "custom"] as const satisfies readonly MachineBox[];
+
 export const machineBoxLabel: Record<MachineBox, string> = {
   standard: "Standard",
   code: "Code",

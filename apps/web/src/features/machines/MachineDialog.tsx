@@ -19,6 +19,7 @@ import {
 import {
   customMachineBounds,
   machineBoxLabel,
+  machineBoxes,
   machineFormErrors,
   machineFormOf,
   machineInputOf,
@@ -35,7 +36,7 @@ const tierHint: Record<MachineBox, string> = {
   custom: `A size you choose, ${customMachineBounds.minCpu} to ${customMachineBounds.maxCpu} CPUs and ${customMachineBounds.minMemoryMib} to ${customMachineBounds.maxMemoryMib} MiB. Hosts any agent, coding agents included.`,
 };
 
-const tierOptions = (Object.keys(machineBoxLabel) as MachineBox[]).map((box) => ({
+const tierOptions = machineBoxes.map((box) => ({
   value: box,
   label: machineBoxLabel[box],
 }));

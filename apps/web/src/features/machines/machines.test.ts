@@ -12,6 +12,8 @@ import {
   formatMib,
   loadShares,
   machineAgentCount,
+  machineBoxLabel,
+  machineBoxes,
   machineFormErrors,
   machineFormOf,
   machineInputOf,
@@ -256,4 +258,8 @@ test("a new agent's disk cap starts within the machine's unreserved disk when it
   assert.equal(seededDiskMib(machine({ allocated_workspace_mib: 6144 }), 10240), 4096);
   assert.equal(seededDiskMib(machine({ allocated_workspace_mib: 9728 }), 10240), 10240);
   assert.equal(seededDiskMib(machine({ max_workspace_mib: 40960 }), 10240), 10240);
+});
+
+test("the form offers every box a machine has a label for, standard first", () => {
+  assert.deepEqual([...machineBoxes], Object.keys(machineBoxLabel));
 });
