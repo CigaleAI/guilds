@@ -9,6 +9,8 @@ risk is kept by design), or **Fixed** with its date.
 
 | Id | Issue | Status |
 |---|---|---|
+| [SEC-54](#sec-54--while-a-browse-call-runs-any-process-on-the-orchestrators-host-can-drive-the-agents-chrome-through-its-cdp-bridge) | While a `browse` call runs, any process on the orchestrator's host can drive the agent's Chrome through its CDP bridge | Open, accepted |
+| [SEC-53](#sec-53--an-agents-devtools-relay-answers-any-process-on-its-machines-container-network-without-authentication) | An agent's DevTools relay answers any process on its machine's container network without authentication | Open, accepted |
 | [SEC-52](#sec-52--the-sandbox-proxy-sent-a-request-to-any-host-a-proxied-path-named) | The sandbox proxy sent a request to any host a proxied path named | Fixed 2026-10-29 |
 | [SEC-51](#sec-51--a-recipe-capture-copies-the-notes-of-private-guilds-its-operator-does-not-operate) | A recipe capture copies the notes of private guilds its operator does not operate | Fixed 2026-10-28 |
 | [SEC-50](#sec-50--an-operators-read-of-a-memory-revision-path-is-not-limited-to-its-organisation) | An operator's read of a Memory revision path is not limited to its organisation | Fixed 2026-10-28 |
@@ -61,6 +63,74 @@ risk is kept by design), or **Fixed** with its date.
 | [SEC-3](#sec-3--check-then-open-race-on-agent-workspace-paths) | Check-then-open race on agent workspace paths | Open |
 | [SEC-2](#sec-2--any-organisation-member-could-write-organisation-wide-secrets) | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | [SEC-1](#sec-1--links-planted-in-an-agent-workspace-redirect-orchestrator-file-access) | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-54 — While a `browse` call runs, any process on the orchestrator's host can drive the agent's Chrome through its CDP bridge
+
+**Status:** open, accepted, by design since 2026-10-30. Fastbrowse
+runs in the orchestrator so that the System One key and the model key
+stay out of the machine's container.
+
+**Found:** 2026-10-30, building the `browse` tool.
+
+**Where:** `openCdpBridge` in `apps/orchestrator/src/browse/bridge.ts`,
+opened by `runBrowse` in `apps/orchestrator/src/browse/runner.ts` for
+each `browse` call.
+
+**Exposure:** fastbrowse's CDP client connects only to a local port
+and adds no headers, so each `browse` call opens a bridge on an
+ephemeral port of the orchestrator's loopback interface. The bridge
+forwards Chrome's `/json` endpoints and `/devtools/` WebSockets to the
+agent's DevTools relay with the sandbox host's headers added, and asks
+nothing of its clients. While the call runs, any process on the
+orchestrator's host that finds the port has full DevTools control of
+that agent's Chrome, as SEC-53 describes, without the sandbox host's
+credentials.
+
+**Control in place:** the bridge listens on `127.0.0.1` only, on a
+port the system picks, for one call, and is closed with every
+connection it holds when the call ends, however it ends. It forwards
+only the DevTools paths and only to the one relay it was opened for;
+any other path answers 404. The sandbox host's headers never leave the
+orchestrator. The TypeSafe and model keys stay in the orchestrator's
+fastbrowse process and never enter the machine's container.
+
+**Residual risk:** a process on the orchestrator's host is already
+trusted with the orchestrator's own credentials. Closing the window
+takes a per-call secret the client presents, which fastbrowse's CDP
+client cannot send.
+
+## SEC-53 — An agent's DevTools relay answers any process on its machine's container network without authentication
+
+**Status:** open, accepted, by design since 2026-10-30. The relay is
+the agent-optimized browser's way into Chrome from the orchestrator.
+
+**Found:** 2026-10-30, building the agent-optimized browser.
+
+**Where:** the gost relay `runtime/agent-browser-start` starts per
+browser slot, on port `9400+slot` of every interface of the machine's
+container, forwarding to Chrome's loopback DevTools port
+(`SlotPorts.cdpRelay`, `apps/orchestrator/src/machines/index.ts`).
+
+**Exposure:** the relay forwards bytes and sets each request's Host to
+Chrome's; it checks no credential. Any process that reaches the
+container's network address on that port has full DevTools control of
+the agent's Chrome: it can read and change every page, the profile's
+cookies and logins, and type into any site the agent is signed in to.
+That covers every process in the container, as SEC-24 already allows
+through Chrome's loopback port, and any other client the sandbox host's
+network routes to the container.
+
+**Control in place:** a machine's container is one organisation's
+(SEC-24), and a relay serves one agent's Chrome on one slot. Outside
+the container, the orchestrator reaches the relay through the sandbox
+host's endpoint, which requires the host's credentials, as the
+Browser tab's noVNC port does: the same exposure class. The relay runs
+only while the agent's browser runs and stops with it.
+
+**Residual risk:** a process able to reach the container's address
+directly on the sandbox host's network drives the agent's Chrome.
+Closing that takes the relay listening only where the sandbox host's
+endpoint connects from, or a credential on the DevTools connection.
 
 ## SEC-52 — The sandbox proxy sent a request to any host a proxied path named
 

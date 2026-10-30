@@ -119,6 +119,13 @@ test("code tools read as the command, the file, or the background job they touch
   assert.equal(call("code_search", { pattern: "refund" }), 'Search files "refund"');
 });
 
+test("browse reads as where the delegated web task starts", () => {
+  const call = (args: Record<string, unknown>) =>
+    friendlyToolCall({ function: { name: "browse", arguments: JSON.stringify(args) } });
+  assert.equal(call({ task: "find the price", start: "https://example.com" }), "Browse from https://example.com");
+  assert.equal(call({ task: "find the price" }), "Browse");
+});
+
 test("summarizeCalls names what a batch did, merging calls that share a verb", () => {
   const call = (name: string, args: Record<string, unknown>) => ({
     function: { name, arguments: JSON.stringify(args) },
@@ -158,6 +165,18 @@ test("toolOutcome names a failing exit and a repeated read", () => {
   assert.equal(toolOutcome({ tool_name: "shell", exit_code: 124, timed_out: true }), "timed out");
   assert.equal(toolOutcome({ tool_name: "file_read", repeat_of: 14 }), "unchanged since step 14");
   assert.equal(toolOutcome(null), "");
+});
+
+test("a browse call ends with its status when it did not complete, and its cost", () => {
+  assert.equal(
+    toolOutcome({ tool_name: "browse", status: "complete", browser_usage: { cost_usd: 0.0123 } }),
+    "$0.01",
+  );
+  assert.equal(
+    toolOutcome({ tool_name: "browse", status: "needs_login", browser_usage: { cost_usd: 0.004 } }),
+    "needs login · $0.0040",
+  );
+  assert.equal(toolOutcome({ tool_name: "browse", status: "cancelled" }), "cancelled");
 });
 
 test("a code task reads by its repository and session, and ends with its status and diffstat", () => {

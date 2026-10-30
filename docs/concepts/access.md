@@ -430,8 +430,8 @@ absent, enable:
 - `secret_request`
 - `group_post`
 
-`report_issue` and the eight browser tools are never bindings; a
-binding on one is 422 `NAME is not a binding`. The code tools are not
+`report_issue` and the browser tools, `browse` among them, are never
+bindings; a binding on one is 422 `NAME is not a binding`. The code tools are not
 in the native registry's bindable set either (422 `unknown native
 tool: NAME`). Deleting a connection, agent, or guild cascades the
 bindings that point at it. Deleting an organisation's own MCP server

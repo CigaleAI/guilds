@@ -4,6 +4,7 @@ import { argString, functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
 import type { Tool, ToolHooks, ToolInvocation, ToolRun } from "./types.js";
 
+/** The step-by-step browser tools: the run drives the agent's Chrome one action at a time. */
 export const BROWSER_TOOLS = [
   "browser_navigate",
   "browser_snapshot",
@@ -14,6 +15,10 @@ export const BROWSER_TOOLS = [
   "browser_screenshot",
   "browser_eval",
 ] as const;
+/** The tool that delegates a whole web task on the agent's Chrome to the agent-optimized browser. */
+export const BROWSE_TOOL = "browse";
+/** The browser tools of the agent-optimized browser: `browse`, and `browser_eval` for page scripts. */
+export const OPTIMIZED_BROWSER_TOOLS = [BROWSE_TOOL, "browser_eval"] as const;
 export const BROWSER_TIMEOUT_SECONDS = 60;
 export const HELPER = "/usr/local/bin/guilds-browser";
 

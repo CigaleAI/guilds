@@ -1,6 +1,7 @@
 import type { AttachmentRef, AttachmentService } from "../attachments/index.js";
 import type { ArtifactFiles } from "../artifacts/files.js";
 import type { ArtifactStore } from "../artifacts/store.js";
+import { browseService } from "../browse/service.js";
 import { deleteAgent, getAgent, listAgents } from "../db/agents.js";
 import { deleteGuild, getGuild } from "../db/guilds.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
@@ -599,6 +600,7 @@ export function generationLoop(
   const schedules = agentSchedules(db);
   const scripts = agentScripts(db);
   const artifacts = services.artifacts ? generationArtifacts(services.artifacts) : null;
+  const credentials = services.credentials ?? coreModelCredentials(db);
   const tools = toolServices(db, {
     notes: services.notes,
     artifacts,
@@ -608,13 +610,14 @@ export function generationLoop(
     schedules,
     scripts,
     events,
+    browse: browseService(db, credentials, events),
   });
   const loop = new GenerationLoop(
     {
       ...services,
       db: database,
       artifacts,
-      credentials: services.credentials ?? coreModelCredentials(db),
+      credentials,
       groupChat,
       groupRouter,
       issues,

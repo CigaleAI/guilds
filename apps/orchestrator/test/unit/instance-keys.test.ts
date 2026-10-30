@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { replacesGithubApp } from "../../src/instance/changes.js";
-import { GITHUB_APP, GROUP_ROUTING, REGISTRY, WEB_SEARCH } from "../../src/instance/integrations.js";
+import { GITHUB_APP, REGISTRY, SYSTEM_ONE, WEB_SEARCH } from "../../src/instance/integrations.js";
 import { InstanceKeyError, validateKeyValues } from "../../src/instance/keys.js";
 
 function refused(work: () => unknown, pattern: RegExp): void {
@@ -22,10 +22,22 @@ test("a write keeps each field trimmed and needs every required one", () => {
 });
 
 test("an optional field is left out when empty and kept trimmed when given", () => {
-  assert.deepEqual(validateKeyValues(GROUP_ROUTING, { api_key: "k", model: "" }), { api_key: "k" });
-  assert.deepEqual(validateKeyValues(GROUP_ROUTING, { api_key: "k", model: "  " }), { api_key: "k" });
-  assert.deepEqual(validateKeyValues(GROUP_ROUTING, { api_key: "k" }), { api_key: "k" });
-  assert.deepEqual(validateKeyValues(GROUP_ROUTING, { api_key: "k", model: " jev-next " }), { api_key: "k", model: "jev-next" });
+  assert.deepEqual(validateKeyValues(SYSTEM_ONE, { api_key: "k", model: "" }), { api_key: "k" });
+  assert.deepEqual(validateKeyValues(SYSTEM_ONE, { api_key: "k", model: "  " }), { api_key: "k" });
+  assert.deepEqual(validateKeyValues(SYSTEM_ONE, { api_key: "k" }), { api_key: "k" });
+  assert.deepEqual(validateKeyValues(SYSTEM_ONE, { api_key: "k", model: " jev-next " }), { api_key: "k", model: "jev-next" });
+});
+
+test("a System One write with a provider it does not accept is a 422 naming the providers it does", () => {
+  assert.deepEqual(validateKeyValues(SYSTEM_ONE, { api_key: "k", provider: " typesafe " }), { api_key: "k", provider: "typesafe" });
+  assert.deepEqual(validateKeyValues(SYSTEM_ONE, { api_key: "k", provider: "  " }), { api_key: "k" });
+  assert.throws(
+    () => validateKeyValues(SYSTEM_ONE, { api_key: "k", provider: "other" }),
+    (error: unknown) =>
+      error instanceof InstanceKeyError &&
+      error.status === 422 &&
+      error.message === 'System One provider "other" is not one of: typesafe',
+  );
 });
 
 test("a field the integration lacks, an env-sourced integration, and a value that is not a string are refused", () => {

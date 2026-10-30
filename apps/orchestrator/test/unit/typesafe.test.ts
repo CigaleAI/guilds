@@ -314,11 +314,11 @@ test("createTypeSafeClient is unconfigured without a key", async () => {
   await assert.rejects(
     () => client.evaluate({ state: {}, questions: {} }),
     (error: unknown) =>
-      error instanceof TypeSafeError && error.message === "the group routing key is not set",
+      error instanceof TypeSafeError && error.message === "the System One key is not set",
   );
 });
 
-test("a client follows the group routing key the admin stores, without a restart", async () => {
+test("a client follows the System One key the admin stores, without a restart", async () => {
   const seen: string[] = [];
   const client = createTypeSafeClient({
     fetch: mockFetch((_url, init) => {
@@ -333,10 +333,10 @@ test("a client follows the group routing key the admin stores, without a restart
   assert.equal(client.configured, false);
   await assert.rejects(
     () => client.evaluate({ state: {}, questions }),
-    /the group routing key is not set/,
+    /the System One key is not set/,
   );
   assert.deepEqual(seen, []);
-  setInstanceKeys(storeKeys({ "group-routing": { api_key: "k" } }));
+  setInstanceKeys(storeKeys({ "system-one": { api_key: "k" } }));
   try {
     assert.equal(client.configured, true);
     const result = await client.evaluate({ state: {}, questions });

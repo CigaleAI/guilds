@@ -7,8 +7,9 @@ import {
   CORE_INTEGRATIONS,
   ERROR_REPORTING,
   GITHUB_APP,
-  GROUP_ROUTING,
   REGISTRY,
+  SYSTEM_ONE,
+  SystemOneProviderError,
   WEB_SEARCH,
   instanceKeys,
   integrationForConnector,
@@ -57,11 +58,23 @@ test("an env integration reads its variables; a default keeps it on without coun
 });
 
 test("an optional field tunes an integration without switching it", () => {
-  const routing = (values: Record<string, string>) => ({ keys: storeKeys({ "group-routing": values }) });
-  assert.equal(integrationState(GROUP_ROUTING, routing({ model: "jev-next" })), "off");
-  assert.equal(integrationState(GROUP_ROUTING, routing({ api_key: "key" })), "on");
-  assert.deepEqual(integrationValues(GROUP_ROUTING, routing({ api_key: " key " })), { api_key: "key", model: "" });
-  assert.equal(integrationValue(GROUP_ROUTING, "model", routing({ model: "jev-next" })), "jev-next");
+  const systemOne = (values: Record<string, string>) => ({ keys: storeKeys({ "system-one": values }) });
+  assert.equal(integrationState(SYSTEM_ONE, systemOne({ model: "jev-next" })), "off");
+  assert.equal(integrationState(SYSTEM_ONE, systemOne({ api_key: "key" })), "on");
+  assert.deepEqual(integrationValues(SYSTEM_ONE, systemOne({ api_key: " key " })), { provider: "", api_key: "key", model: "" });
+  assert.equal(integrationValue(SYSTEM_ONE, "model", systemOne({ model: "jev-next" })), "jev-next");
+});
+
+test("System One accepts a blank or listed provider and refuses any other", () => {
+  const validate = SYSTEM_ONE.validate;
+  assert.ok(validate);
+  validate({ api_key: "key" });
+  validate({ api_key: "key", provider: "typesafe" });
+  assert.throws(
+    () => validate({ api_key: "key", provider: "other" }),
+    (error: unknown) =>
+      error instanceof SystemOneProviderError && /"other"/.test(error.message) && /typesafe/.test(error.message),
+  );
 });
 
 test("values come back only while the integration is on, typed by field name", () => {
@@ -99,7 +112,7 @@ test("statuses name each integration, its source and its fields with labels, nev
     statuses.map((item) => [item.id, item.source, item.state]),
     [
       ["web-search", "store", "on"],
-      ["group-routing", "store", "off"],
+      ["system-one", "store", "off"],
       ["github-app", "store", "incomplete"],
       ["google-connectors", "store", "off"],
       ["error-reporting", "env", "off"],
@@ -144,9 +157,9 @@ test("audit adds when and by whom a store row was written; the environment has n
   const web = audited.find((item) => item.id === "web-search")!;
   assert.equal(web.updated_at, "2026-10-09T08:00:00.000Z");
   assert.equal(web.set_by, "operator");
-  const routing = audited.find((item) => item.id === "group-routing")!;
-  assert.equal(routing.updated_at, null);
-  assert.equal(routing.set_by, null);
+  const systemOne = audited.find((item) => item.id === "system-one")!;
+  assert.equal(systemOne.updated_at, null);
+  assert.equal(systemOne.set_by, null);
   const errors = audited.find((item) => item.id === "error-reporting")!;
   assert.equal(errors.state, "on");
   assert.equal(errors.updated_at, null);
@@ -183,5 +196,5 @@ test("statuses say which tools and connectors each integration switches on, and 
   assert.deepEqual(provides["web-search"], { native_tools: [], connectors: ["tavily"] });
   assert.deepEqual(provides["github-app"], { native_tools: [], connectors: ["github"] });
   assert.deepEqual(provides["google-connectors"], { native_tools: [], connectors: ["gmail", "drive"] });
-  assert.deepEqual(provides["group-routing"], { native_tools: [], connectors: [] });
+  assert.deepEqual(provides["system-one"], { native_tools: ["browse"], connectors: [] });
 });

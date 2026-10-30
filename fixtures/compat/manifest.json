@@ -23,7 +23,7 @@
       "path": "codecs/timestamps.json",
       "source": "src/db/codecs.ts and src/usage.ts",
       "generator_version": "1",
-      "sha256": "dca57fcb15146f603a027add2c6cd94535500a4edff7dad94cfe8f59c421f634"
+      "sha256": "27688c33482226ee644625a98ea529b5e4eaff54e6f5b4e71104ee74adedb10f"
     },
     {
       "path": "crypto/vectors.json",
@@ -47,7 +47,7 @@
       "path": "http/routes.json",
       "source": "recorded HTTP request/response pairs",
       "generator_version": "1",
-      "sha256": "ca553f8fa1f15e85b351a1ce08242088b5f746da3f1eeabaf76fbf8c968872d8"
+      "sha256": "7223b8c20529b30ab6556ea2348575277f55dcf2faf7e92d896e0a6828458fcb"
     },
     {
       "path": "ids/shape.json",

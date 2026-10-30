@@ -31,6 +31,45 @@ test("switching coding on moves default limits to the coding budgets and back", 
   assert.equal(configOf(coding, undefined).coding, true);
 });
 
+test("a new agent's form starts on the step-by-step browser with no browser model", () => {
+  const form = configFormOf(defaultAgentConfig);
+  assert.equal(form.browser_optimized, false);
+  assert.equal(form.browser_model, "");
+  const sent = configOf(form, undefined);
+  assert.equal(sent.browser_optimized, false);
+  assert.equal(sent.browser_model, null);
+});
+
+test("the agent-optimized browser and its model round-trip through the form", () => {
+  const stored = {
+    ...defaultAgentConfig,
+    model: "openai/gpt-5",
+    browser: true,
+    browser_optimized: true,
+    browser_model: "openrouter/openai/gpt-5-mini",
+  };
+  const form = configFormOf(stored);
+  assert.equal(form.browser_optimized, true);
+  assert.equal(form.browser_model, "openrouter/openai/gpt-5-mini");
+  const sent = configOf(form, undefined);
+  assert.equal(sent.browser_optimized, true);
+  assert.equal(sent.browser_model, "openrouter/openai/gpt-5-mini");
+  assert.equal(
+    configOf({ ...form, browser_model: "  " }, undefined).browser_model,
+    null,
+    "blank sends null",
+  );
+  const plain = configOf({ ...form, browser_optimized: false }, undefined);
+  assert.equal(plain.browser_model, null, "no model without the agent-optimized browser");
+  const browserless = configOf({ ...form, browser: false }, undefined);
+  assert.equal(
+    browserless.browser_optimized,
+    false,
+    "no agent-optimized browser without the browser",
+  );
+  assert.equal(browserless.browser_model, null);
+});
+
 test("a config sent from the form carries no CLI flag", () => {
   const coding = withCoding(configFormOf(defaultAgentConfig), true);
   assert.equal("cli" in configOf(coding, undefined), false);
@@ -88,6 +127,53 @@ test("a model is required, must fit the coding flag, and must have its provider 
   assert.equal(
     configErrors({ ...form, model: "xai/grok" }, { models }).model,
     "Connect a xai key on Model keys first.",
+  );
+});
+
+test("the agent-optimized browser needs a browser model the organisation's key runs", () => {
+  const models = {
+    default: null,
+    providers: [
+      {
+        id: "openai" as const,
+        label: "OpenAI",
+        kind: "marketplace" as const,
+        connected: true,
+        source: "own" as const,
+        key_hint: "abcd",
+        base_url: null,
+      },
+    ],
+    models: [],
+  };
+  const form = {
+    ...configFormOf(defaultAgentConfig),
+    model: "openai/gpt-5",
+    browser: true,
+    browser_optimized: true,
+  };
+  assert.equal(configErrors(form, { models }).browser_model, "Choose a browser model.");
+  assert.equal(
+    configErrors({ ...form, browser_model: "openai/gpt-5-mini" }, { models }).browser_model,
+    undefined,
+  );
+  assert.equal(
+    configErrors({ ...form, browser_model: "kimi/k3" }, { models }).browser_model,
+    "A coding plan's model can't browse. Pick another.",
+  );
+  assert.equal(
+    configErrors({ ...form, browser_model: "xai/grok" }, { models }).browser_model,
+    "Connect a xai key on Model keys first.",
+  );
+  assert.equal(
+    configErrors({ ...form, browser_optimized: false }, { models }).browser_model,
+    undefined,
+    "no model is needed without the agent-optimized browser",
+  );
+  assert.equal(
+    configErrors({ ...form, browser: false }, { models }).browser_model,
+    undefined,
+    "no model is needed without the browser",
   );
 });
 
@@ -202,7 +288,11 @@ test("a harness effort reaches the form and back; empty sends the harness's defa
   assert.equal(configOf(form, undefined).harness_effort, "high");
   assert.equal(configOf({ ...form, harness_effort: "" }, undefined).harness_effort, null);
   assert.equal(configFormOf({ ...stored, harness_effort: null }).harness_effort, "");
-  assert.equal(configOf({ ...form, harness: "" }, undefined).harness_effort, null, "no effort without a harness");
+  assert.equal(
+    configOf({ ...form, harness: "" }, undefined).harness_effort,
+    null,
+    "no effort without a harness",
+  );
   assert.equal(withCoding(form, false).harness_effort, "");
 });
 
@@ -213,7 +303,12 @@ const CODEX_CATALOG: HarnessCatalog[] = [
     enabled: true,
     models: [
       { id: "gpt-6-luna", label: "GPT-6-Luna", efforts: ["low", "high"], default_effort: "low" },
-      { id: "gpt-5.6-terra", label: "GPT-5.6-Terra", efforts: ["low", "ultra"], default_effort: "low" },
+      {
+        id: "gpt-5.6-terra",
+        label: "GPT-5.6-Terra",
+        efforts: ["low", "ultra"],
+        default_effort: "low",
+      },
     ],
     unlisted_efforts: ["low", "high", "ultra"],
   },
@@ -230,7 +325,11 @@ test("another harness model keeps the effort while it runs at it, else goes back
   assert.equal(withHarnessModel(form, "gpt-5.6-terra", CODEX_CATALOG).harness_effort, "");
   assert.equal(withHarnessModel(form, "gpt-custom", CODEX_CATALOG).harness_effort, "high");
   assert.equal(withHarnessModel(form, "", CODEX_CATALOG).harness_model, "");
-  assert.equal(withHarnessModel(form, "gpt-5.6-terra", undefined).harness_effort, "high", "left to the server");
+  assert.equal(
+    withHarnessModel(form, "gpt-5.6-terra", undefined).harness_effort,
+    "high",
+    "left to the server",
+  );
 });
 
 test("a harness model must be a model name, and turning coding off clears it", () => {

@@ -233,7 +233,7 @@ test("an agent config has no box: box, cpu, and memory_mib are unknown keys", ()
   for (const key of ["box", "cpu", "memory_mib"]) {
     assert.equal(CONFIG_KEYS.has(key), false, key);
   }
-  assert.equal(CONFIG_KEYS.size, 19);
+  assert.equal(CONFIG_KEYS.size, 21);
   assert.throws(() => validateAgentConfig({ model, box: "standard" }), /unknown keys: box/);
   assert.throws(() => validateAgentConfig({ model, cpu: 2, memory_mib: 3072 }), /unknown keys: cpu, memory_mib/);
   assert.equal("box" in validateAgentConfig({ model }), false);
@@ -263,6 +263,8 @@ test("a config that leaves out every setting but its model takes every default",
     max_workspace_mib: DEFAULT_MAX_WORKSPACE_MIB,
     browser: false,
     browser_language: "en-US",
+    browser_optimized: false,
+    browser_model: null,
     coding: false,
     harness: null,
     harness_model: null,
@@ -489,6 +491,40 @@ test("config defaults browser_language to en-US", () => {
 });
 
 
+
+test("a config that leaves out the browser mode browses with the step-by-step browser tools", () => {
+  const config = validateAgentConfig({ model: VALID_CONFIG.model, browser: true });
+  assert.equal(config.browser_optimized, false);
+  assert.equal(config.browser_model, null);
+});
+
+test("the agent-optimized browser needs the browser on", () => {
+  const optimized = { ...VALID_CONFIG, browser_optimized: true, browser_model: VALID_CONFIG.model };
+  assert.throws(() => validateAgentConfig(optimized), /browser_optimized requires browser/);
+  assert.throws(() => validateAgentConfig({ ...optimized, browser: true, browser_optimized: "yes" }), /browser_optimized must be a boolean/);
+  assert.equal(validateAgentConfig({ ...optimized, browser: true }).browser_optimized, true);
+});
+
+test("the agent-optimized browser needs a marketplace browser_model", () => {
+  const optimized = { ...VALID_CONFIG, browser: true, browser_optimized: true };
+  const refused = /browser_model must be a marketplace \{provider\}\/\{model\} when browser_optimized is on/;
+  assert.throws(() => validateAgentConfig(optimized), refused, "missing");
+  assert.throws(() => validateAgentConfig({ ...optimized, browser_model: "  " }), refused, "blank");
+  assert.throws(() => validateAgentConfig({ ...optimized, browser_model: 4 }), refused, "not a string");
+  assert.throws(() => validateAgentConfig({ ...optimized, browser_model: "nowhere/model" }), refused, "unknown provider");
+  assert.throws(() => validateAgentConfig({ ...optimized, browser_model: "kimi/kimi-for-coding" }), refused, "coding only");
+  assert.equal(validateAgentConfig({ ...optimized, browser_model: ` ${VALID_CONFIG.model} ` }).browser_model, VALID_CONFIG.model);
+});
+
+test("browser_model is null without the agent-optimized browser; blank reads as null", () => {
+  const browsing = { ...VALID_CONFIG, browser: true };
+  assert.equal(validateAgentConfig({ ...browsing, browser_model: "" }).browser_model, null);
+  assert.equal(validateAgentConfig({ ...browsing, browser_model: null }).browser_model, null);
+  assert.throws(
+    () => validateAgentConfig({ ...browsing, browser_model: VALID_CONFIG.model }),
+    /browser_model is only for the agent-optimized browser/,
+  );
+});
 
 test("secretPayload keeps a value without the whitespace around it and refuses one of only whitespace", () => {
   assert.deepEqual(secretPayload(" sk-token\n"), { value: "sk-token" });

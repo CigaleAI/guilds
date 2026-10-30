@@ -2,6 +2,7 @@ import type { InferSelectModel } from "drizzle-orm";
 import { decryptPayload, encryptPayload } from "../credentials/crypto.js";
 import { writeLog } from "../observability/log.js";
 import {
+  IntegrationValueError,
   setInstanceKeys,
   type Integration,
   type InstanceKeyRow,
@@ -23,7 +24,8 @@ type DecryptedValues = { readable: true; values: Record<string, string> } | { re
 
 /**
  * A key write the box refuses: an unknown or env-sourced integration, a missing required field, a
- * field the integration lacks, a GitHub App name or owner GitHub would refuse.
+ * field the integration lacks, a value the integration refuses, a GitHub App name or owner GitHub
+ * would refuse.
  */
 export class InstanceKeyError extends Error {
   status: number;
@@ -41,6 +43,7 @@ export class InstanceKeyError extends Error {
 /**
  * The values a write stores for an integration: each field trimmed, every required field present
  * and non-empty, an optional field left out when empty, nothing the integration does not declare.
+ * Values the integration's own `validate` refuses are a 422 with its message.
  */
 export function validateKeyValues(integration: Integration, raw: unknown): Record<string, string> {
   if (integration.source !== "store") {
@@ -71,7 +74,20 @@ export function validateKeyValues(integration: Integration, raw: unknown): Recor
   if (missing.length) {
     throw new InstanceKeyError(`${integration.label} needs ${missing.join(", ")}`);
   }
+  assertIntegrationAccepts(integration, values);
   return values;
+}
+
+/** Refuses with a 422 the values `integration`'s own `validate` refuses. */
+function assertIntegrationAccepts(integration: Integration, values: Record<string, string>): void {
+  try {
+    integration.validate?.(values);
+  } catch (error) {
+    if (error instanceof IntegrationValueError) {
+      throw new InstanceKeyError(error.message, 422);
+    }
+    throw error;
+  }
 }
 
 function setByOf(row: StoredInstanceKey): string | null {

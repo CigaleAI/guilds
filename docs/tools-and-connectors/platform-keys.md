@@ -31,7 +31,7 @@ value does not count as set.
 | Integration | Source | Fields | Switches on |
 |---|---|---|---|
 | `web-search` | store | `api_key` | The Web search connector's platform login, `tavily_search` ([Web search](connector-list.md#web-search)) |
-| `group-routing` | store | `api_key`, optional `model` | Recipient and history selection in group chat |
+| `system-one` | store | optional `provider`, `api_key`, optional `model` | Recipient and history selection in group chat, and the agent-optimized browser |
 | `github-app` | store | `app_id`, `slug`, `private_key`, `client_id`, `client_secret` | The GitHub connector and a guild's repositories ([GitHub](github.md)) |
 | `google-connectors` | store | `client_id`, `client_secret` | The Gmail and Drive connectors ([Gmail and Drive](google.md)) |
 | `error-reporting` | env | `SENTRY_DSN` | Errors and traces sent to Sentry |
@@ -114,7 +114,9 @@ at runtime cannot do that
 A route for the instance admin is 404 to anyone else, whatever they
 send. `PUT` takes a boolean `confirm_replace`, and the manifest start
 string `name`, `owner` and `return_to`; another type is 422 naming the
-field.
+field. A `PUT` whose values the integration refuses beyond its fields
+is 422 with the reason: `system-one` takes a blank `provider` or
+`typesafe`, and another names the providers it accepts.
 
 `PUT` and `DELETE` answer `{ integration, disconnected }`.
 `disconnected` counts the GitHub logins a replaced or removed App

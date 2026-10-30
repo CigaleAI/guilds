@@ -2,6 +2,7 @@ import { clearHarnessLogin, markHarnessLogin } from "../db/agents.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import { mergeRunMetadata, updateRunScripts } from "../db/runs.js";
 import type { ArtifactFiles } from "../artifacts/files.js";
+import type { BrowseService } from "../browse/service.js";
 import type { Issues } from "../issues/index.js";
 import type { NotesStore } from "../notes/store.js";
 import type { Schedules } from "../schedules/service.js";
@@ -23,6 +24,8 @@ export type ToolServices = {
   db: ToolboxDatabase | null;
   /** The runs' streams, where a running tool call publishes its progress. */
   events: ToolEvents | null;
+  /** Runs `browse` calls on the agent-optimized browser. */
+  browse: BrowseService | null;
 };
 
 /** The db/ functions the tools keep their run's state and its agent's harness logins through. */

@@ -24,7 +24,8 @@ Agent flags and the run kind narrow that set:
 
 | Tools | Offered when |
 | --- | --- |
-| The eight browser tools | `config.browser` is true |
+| The eight step-by-step browser tools | `config.browser` is true and the agent-optimized browser is not on |
+| `browse` and `browser_eval` | `config.browser` and `config.browser_optimized` are true and the System One platform key is on |
 | The five code tools | `config.coding` is true |
 | The five script tools | `config.scripting` is not false |
 | `memory_write` | `config.memory` is not false |
@@ -33,7 +34,12 @@ Agent flags and the run kind narrow that set:
 | `report_issue` | Always |
 
 Each turn re-reads the agent's bindings and flags. A native tool that
-is now off leaves the run at the next turn. A script with
+is now off leaves the run at the next turn. `browse` leaves the run
+when `config.browser_optimized` is now off, and stays while it is on
+even after the System One key is removed, its calls then answering
+`ERROR:` with the missing key; the step-by-step browser tools stay
+while `config.browser` is on, whatever the browser's mode
+([Browser modes](native.md#browser)). A script with
 `parameters` is also offered as a tool of its own while `script_run`
 is offered ([Scripts](../concepts/scripts.md)).
 
@@ -63,8 +69,8 @@ guild's repositories ([GitHub](github.md)).
 
 ### Browser calls
 
-Each browser call starts the agent's Chrome on its machine when it is
-not running. It then runs `/usr/local/bin/guilds-browser` there. The
+Each step-by-step browser call starts the agent's Chrome on its
+machine when it is not running. It then runs `/usr/local/bin/guilds-browser` there. The
 helper attaches Playwright to the agent's own Chrome at its DevTools
 port, `http://127.0.0.1:<9300 + slot>`, and leaves Chrome running
 ([Browser](../concepts/browser.md)).

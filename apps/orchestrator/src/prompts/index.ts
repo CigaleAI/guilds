@@ -38,6 +38,8 @@ export type StandingCaps = {
   /** Whether the file tools are offered. Missing means off. */
   files?: boolean;
   browser: boolean;
+  /** Whether the browser is the agent-optimized one, which offers `browse`. Missing means off. */
+  browserOptimized?: boolean;
   coding: boolean;
   /** Missing means on, matching agent config. */
   memory?: boolean;
@@ -179,11 +181,13 @@ export function standingForMemory(standing: string, memory: boolean, memoryWrite
 
 export function standingForCapabilities(standing: string, caps: StandingCaps): string {
   const memory = memoryOn(caps);
+  const browserOptimized = caps.browserOptimized === true;
   return resolveCapabilities(standing, {
     scripts: caps.scripts,
     notes: caps.notes,
     files: caps.files === true,
-    browser: caps.browser,
+    browser_standard: caps.browser && !browserOptimized,
+    browser_optimized: caps.browser && browserOptimized,
     coding: caps.coding,
     no_coding: !caps.coding,
     memory_write: memoryWriteOn(caps),
@@ -197,6 +201,7 @@ const PREVIEW_CAPS = {
   notes: true,
   files: true,
   browser: true,
+  browserOptimized: false,
   coding: true,
 } as const;
 

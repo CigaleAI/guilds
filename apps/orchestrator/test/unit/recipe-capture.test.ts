@@ -190,10 +190,11 @@ function captureDeps(options: {
   };
 }
 
-test("portable role config carries every setting in the order of the config keys", () => {
+test("portable role config carries every setting but the browser mode in the order of the config keys", () => {
   const stored = validateAgentConfig({ model: TEST_MODEL, browser: true });
   const config = portableRoleConfig(stored);
-  assert.deepEqual(Object.keys(config), [...CONFIG_KEYS].filter((key) => !key.startsWith("harness") && key !== "secret_aliases"));
+  const left = new Set(["secret_aliases", "browser_optimized", "browser_model"]);
+  assert.deepEqual(Object.keys(config), [...CONFIG_KEYS].filter((key) => !key.startsWith("harness") && !left.has(key)));
   assert.equal(config.browser, true);
   assert.equal(config.model, TEST_MODEL);
   assert.equal(config.browser_language, "en-US");
@@ -225,6 +226,14 @@ test("portable role config of a role without coding keeps every secret alias", (
   const aliases = { CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN" };
   const config = portableRoleConfig(validateAgentConfig({ model: TEST_MODEL, secret_aliases: aliases }));
   assert.deepEqual(config.secret_aliases, aliases);
+});
+
+test("portable role config of an agent on the agent-optimized browser carries the browser without its mode", () => {
+  const stored = validateAgentConfig({ model: TEST_MODEL, browser: true, browser_optimized: true, browser_model: TEST_MODEL });
+  const config = portableRoleConfig(stored);
+  assert.equal(config.browser, true);
+  assert.equal("browser_optimized" in config, false);
+  assert.equal("browser_model" in config, false);
 });
 
 test("recipe scope prefers organisation reuse", () => {

@@ -182,10 +182,14 @@ export type SlotPorts = {
   vnc: number;
   /** Chrome's DevTools port. */
   cdp: number;
+  /** The DevTools relay gost serves on every interface, forwarding to `cdp` with Chrome's Host. */
+  cdpRelay: number;
   /** The noVNC page and WebSocket the Browser tab proxies to. */
   novnc: number;
   /** The terminal the CLI tab proxies to. */
   ttyd: number;
+  /** Reserved for the slot's local forward proxy. */
+  proxy: number;
   /** The first and last port of the block the agent's own servers use. */
   portsFrom: number;
   portsTo: number;
@@ -200,8 +204,10 @@ export function slotPorts(slot: number): SlotPorts {
     display,
     vnc: 5900 + display,
     cdp: 9300 + slot,
+    cdpRelay: 9400 + slot,
     novnc: 6100 + slot,
     ttyd: 7700 + slot,
+    proxy: 9500 + slot,
     portsFrom: 20000 + 100 * slot,
     portsTo: 20000 + 100 * slot + 99,
   };

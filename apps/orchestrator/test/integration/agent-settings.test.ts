@@ -21,7 +21,8 @@ import { NotesStore } from "../../src/notes/store.js";
 import { OPEN_POLICY } from "../../src/policy/index.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
 import { agentSchedules } from "../../src/schedules/service.js";
-import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
+import { clearInstanceKeys, HEX_MASTER_KEY, storeKeys, tempDir } from "../helpers/env.js";
+import { setInstanceKeys } from "../../src/instance/integrations.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { TEST_CREDENTIALS, TEST_MODEL } from "../helpers/models.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
@@ -172,6 +173,15 @@ test(
         [],
         "an agent that keeps its machine and browser is neither moved nor restarted",
       );
+
+      setInstanceKeys(storeKeys({ "system-one": { api_key: "ts-key" } }));
+      const optimized = { model: TEST_MODEL, browser: true, browser_optimized: true, browser_model: TEST_MODEL };
+      const switched = await reconfigureAgent(services, renamed, "user_operator", { ...unchanged, config: optimized });
+      assert.equal(switched.config.browser_optimized, true);
+      assert.equal(switched.config.browser_model, TEST_MODEL);
+      await reconfigureAgent(services, switched, "user_operator", unchanged);
+      clearInstanceKeys();
+      assert.deepEqual(calls, [], "switching the agent-optimized browser on or off keeps Chrome running");
 
       await reconfigureAgent(services, renamed, "user_operator", {
         ...unchanged,

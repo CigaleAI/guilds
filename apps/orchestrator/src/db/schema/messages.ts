@@ -72,6 +72,21 @@ export type ToolResultMetadata = {
   repeat_of?: number;
 } & ReportedToolMetadata;
 
+/**
+ * What one `browse` call spent: the browsing service's own tokens and cost (`jev_*`), the
+ * model it drove the page with (`llm_*`), and their sum.
+ */
+export type BrowserUsageMetadata = {
+  model: string;
+  jev_input_tokens: number;
+  jev_output_tokens: number;
+  jev_cost_usd: number;
+  llm_input_tokens: number;
+  llm_output_tokens: number;
+  llm_cost_usd: number;
+  cost_usd: number;
+};
+
 /** The fields a native tool reports about its call, kept on the call's result. */
 export type ReportedToolMetadata = {
   exit_code?: number | null;
@@ -98,6 +113,12 @@ export type ReportedToolMetadata = {
   deletions?: number;
   start_sha?: string | null;
   end_sha?: string | null;
+  /** The page a `browse` call ended on; null when it never loaded one. */
+  final_url?: string | null;
+  /** The browser actions a `browse` call took. */
+  steps?: number;
+  /** What a `browse` call spent, counted in the usage counters apart from model calls. */
+  browser_usage?: BrowserUsageMetadata;
 };
 
 /** Where a run's opening or operator message came from. */

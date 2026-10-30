@@ -58,6 +58,7 @@ export const sectionErrors: Readonly<Record<SettingsSection, ReadonlyArray<keyof
     "max_input_tokens",
     "keep_tool_result_generations",
     "max_scripts",
+    "browser_model",
   ],
   machine: ["machine", "max_workspace_mib"],
   harness: ["harness", "harness_model"],

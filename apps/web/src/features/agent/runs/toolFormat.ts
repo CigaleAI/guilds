@@ -272,6 +272,9 @@ export function friendlyToolCall(call: ToolCallRequest | null | undefined): stri
   if (name === "report_issue") {
     return args.summary ? `Report: ${args.summary}` : "Report issue";
   }
+  if (name === "browse") {
+    return args.start ? `Browse from ${args.start}` : "Browse";
+  }
   if (name === "browser_navigate") {
     return args.url ? `Open ${args.url}` : "Open page";
   }
@@ -420,6 +423,7 @@ export function codeTaskChanges(metadata: Record<string, unknown>): string {
  */
 export function toolOutcome(metadata: Record<string, unknown> | null | undefined): string {
   if (!metadata) return "";
+  if (metadata.tool_name === "browse") return browseOutcome(metadata);
   if (metadata.tool_name === "code_task") {
     const status = codeTaskStatus(metadata.status);
     return [status === "completed" ? "" : status, codeTaskChanges(metadata)]
@@ -433,6 +437,15 @@ export function toolOutcome(metadata: Record<string, unknown> | null | undefined
     if (typeof code === "number" && code !== 0) return `exit ${code}`;
   }
   return "";
+}
+
+/** A browse call's status when it did not complete, and what it spent. */
+function browseOutcome(metadata: Record<string, unknown>): string {
+  const status = typeof metadata.status === "string" && metadata.status !== "complete" ? metadata.status : "";
+  const usage = metadata.browser_usage;
+  const cost =
+    usage && typeof usage === "object" && "cost_usd" in usage ? formatCost(usage.cost_usd) : "";
+  return [status.replaceAll("_", " "), cost].filter(Boolean).join(" · ");
 }
 
 /** A compact duration: "9ms", "1.2s", "12s", "2m 05s"; empty for negative or non-numeric input. */

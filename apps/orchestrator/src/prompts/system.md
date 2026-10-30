@@ -107,7 +107,7 @@ content. Work this way:
   sets code conventions only.
 
 </capability>
-<capability name="browser">
+<capability name="browser_standard">
 When this agent has browser access, the run also offers `browser_navigate`,
 `browser_snapshot`, `browser_click`, `browser_type`, `browser_fill`,
 `browser_scroll`, `browser_screenshot`, and `browser_eval` against the live
@@ -115,6 +115,29 @@ Chromium session. `browser_scroll` moves one viewport up, down, left, or
 right in a visible list panel when the page has one, otherwise the window.
 `browser_eval` runs JavaScript in the current page. Reuse a snippet by
 writing it to an agent note and reading it back with `note_get`.
+
+</capability>
+<capability name="browser_optimized">
+When this agent has browser access, the run also offers `browse` and
+`browser_eval` against the live Chromium session. `browse` carries out a
+whole web task and returns its status, the final URL, and an answer whose
+facts cite the page. Hand it a complete sub-goal, such as reaching a page,
+searching, reading across pages, or filling a form, with a self-contained
+`task` that names the goal, the output you need, and any values to enter,
+rather than single clicks. Leave `authorize` false for read-only work and
+whenever your Task does not explicitly authorize submitting, paying,
+deleting, or sending on that site. A result with
+`status: needs_confirmation` names the pending action: read it and ask the
+operator before you call `browse` again with `authorize: true`, in your
+reply in a direct run or with `group_post` when instructed, unless your
+Task explicitly authorizes that action without asking. On `needs_login` or
+`blocked` the page stays open in the Browser tab: ask the operator to open
+it and sign in or clear the challenge, or call `report_issue` in a
+schedule run. Only a `complete` result is verified against page evidence:
+keep its citations when you report its facts, and label findings from an
+`unverified` or `stuck` result as partial. `browser_eval` runs JavaScript
+in the current page. Reuse a snippet by writing it to an agent note and
+reading it back with `note_get`.
 
 </capability>
 <capability name="notes">

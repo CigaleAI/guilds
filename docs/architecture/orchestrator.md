@@ -401,7 +401,7 @@ One in-process bus carries every event. Each SSE stream sends
 | `run.continued` | run | durable | A coding run continued in the run named by `run_id` |
 | `assistant.delta` | run, Studio, Builder | ephemeral | Text being written |
 | `assistant.reasoning.delta` | run, Studio, Builder | ephemeral | Reasoning being written |
-| `tool.progress` | run | ephemeral | `{run_id, tool_call_id, lines, session_id}`: a running `code_task`'s redacted progress lines |
+| `tool.progress` | run | ephemeral | `{run_id, tool_call_id, lines, session_id?}`: a running `code_task`'s redacted progress lines with its session, or a running `browse` call's redacted step line |
 | `session.error` | Studio, Builder | durable | A coach session error |
 | `draft.changed` | Studio | durable | A Task draft changed |
 | `recipe.changed` | Builder | durable | The draft recipe changed |
@@ -742,7 +742,7 @@ A manager's work:
 - execute and interrupt commands
 - start and stop an agent's browser (`agent-browser-start`,
   `agent-stop`) and terminal (`agent-cli-start`) on its slot's ports
-- resolve the agent's noVNC and terminal endpoints
+- resolve the agent's noVNC, DevTools relay, and terminal endpoints
 - destroy the containers of idle or stale machines
 
 The generation loop hands every tool an agent's view of the
@@ -752,6 +752,48 @@ secrets in its own environment. Files and interrupts are the
 machine's.
 
 OpenSandbox SDK objects do not escape the sandbox module.
+
+A CDP client in the orchestrator reaches an agent's Chrome through a
+CDP bridge (`browse/bridge.ts`), which its caller opens for one use
+and closes after it. The bridge listens on an ephemeral port of the
+loopback interface only. It forwards Chrome's `/json` endpoints, and
+the `/devtools/` WebSockets they name, to the endpoint of the agent's
+DevTools relay with the headers the sandbox host requires, its Host
+left as the endpoint's URL names it, and rewrites every
+`webSocketDebuggerUrl` it relays to point at itself. A client that
+connects only to a local port and adds no headers, as fastbrowse
+does, drives the agent's Chrome that way. Any other path answers
+404; a relay that does not answer is a 502 on HTTP and an ended
+socket on a WebSocket. The relay in the container sets each
+request's Host to Chrome's loopback address, because the sandbox
+host's proxy rebuilds the Host from its own upstream address and
+Chrome refuses a DevTools request whose Host is not an IP address or
+`localhost`.
+
+A `browse` call runs in the orchestrator (`browse/service.ts`,
+`browse/runner.ts`). The tool validates its arguments and wakes the
+agent's Chrome (`ensure_browser`). The service reads the System One
+key and the agent's `browser_model`, resolves that model's credentials
+through `resolveModelCredentials`, and turns both into fastbrowse's
+environment (`browse/env.ts`). That environment sets every variable
+fastbrowse reads a key, an endpoint, a model, or its Jev source from,
+blank where the run's route does not use it, so nothing of the
+orchestrator's own environment reaches fastbrowse's routing. It asks the generation's `cdp_target`
+hook for the agent's DevTools relay, opens a CDP bridge to it, and
+starts a fastbrowse process attached to that Chrome in the foreground,
+its stderr logged at debug. The run's cancel, or `max_seconds` plus
+30 seconds, aborts the run, and an aborted run's spend is logged as
+uncounted (`browse.cost`), since fastbrowse answers no result. Each
+step is published as the call's `tool.progress` event, redacted with
+the run's secrets and clipped like a harness's progress lines, and
+re-arms the agent's browser and machine idle timers (`touch_browser`);
+a step that fails to publish is logged (`browse.progress`) and the run
+goes on. The result is formatted for the model
+(`browse/format.ts`), and its cost lines become the call's
+`browser_usage` (`browse/cost.ts`), which `incrementUsage` counts when
+the tool message is committed. Fastbrowse and the bridge close however
+the call ends. The keys stay in the orchestrator's process: the
+machine's container sees only DevTools traffic.
 
 Control-plane tools run in Node (notes, records, memory, schedules,
 scripts, secrets, remote MCP servers, adapters). Sandbox tools

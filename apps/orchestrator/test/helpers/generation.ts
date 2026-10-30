@@ -54,6 +54,8 @@ export const AGENT_CONFIG: AgentConfig = {
   max_workspace_mib: 10240,
   browser: false,
   browser_language: "en-US",
+  browser_optimized: false,
+  browser_model: null,
   coding: false,
   harness: null,
   harness_model: null,
@@ -272,6 +274,10 @@ export class FakeSandboxes {
 
   async novncTarget(_sandbox: unknown, _seat: AgentSeat): Promise<[string, Record<string, string>]> {
     return ["http://novnc.test", { "OPEN-SANDBOX-API-KEY": "k" }];
+  }
+
+  async cdpTarget(_sandbox: unknown, _seat: AgentSeat): Promise<[string, Record<string, string>]> {
+    return ["http://cdp.test", { "OPEN-SANDBOX-API-KEY": "k" }];
   }
 
   cli_starts = 0;
@@ -1047,6 +1053,7 @@ export function makeLoop(
     scripts,
     db: db as ToolboxDatabase,
     events,
+    browse: null,
   };
   const loop: GenerationLoop = new GenerationLoop(
     {

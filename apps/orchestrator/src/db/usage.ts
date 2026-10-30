@@ -1,16 +1,30 @@
 import type { InferSelectModel } from "drizzle-orm";
 import type pg from "pg";
 import { type Queryable, stamp } from "./pg.js";
-import { orgMonthlyUsage, usageCounters, type CompletionMetadata } from "./schema/index.js";
+import {
+  orgMonthlyUsage,
+  usageCounters,
+  type CompletionMetadata,
+  type ReportedToolMetadata,
+} from "./schema/index.js";
 
 export const GLOBAL_SCOPE = "global";
 export const GLOBAL_SCOPE_ID = "";
 
+/**
+ * What one message adds to the usage counters. A model call adds its tokens and one call; a
+ * `browse` call adds its tokens, cost and one browser call. `cost_usd` is the total of both.
+ */
 export type UsageDelta = {
   input_tokens: number;
   output_tokens: number;
   cache_read_tokens: number;
   cost_usd: number;
+  calls: number;
+  browser_input_tokens: number;
+  browser_output_tokens: number;
+  browser_cost_usd: number;
+  browser_calls: number;
 };
 
 /** The UTC month a usage row is counted under, as `YYYY-MM`. */
@@ -18,16 +32,41 @@ export function utcMonth(now = new Date()): string {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
-/** The usage a message's metadata records: an assistant message's completion. */
-export type UsageMetadata = Partial<Pick<CompletionMetadata, "usage" | "cost_usd">>;
+/** The usage a message's metadata records: an assistant message's completion, or a `browse` result's spend. */
+export type UsageMetadata = Partial<Pick<CompletionMetadata, "usage" | "cost_usd">> &
+  Partial<Pick<ReportedToolMetadata, "browser_usage">>;
 
 /** The tokens and cost a message's metadata records, or null when it records no usage. */
 export function usageDelta(metadata: UsageMetadata): UsageDelta | null {
-  if (metadata.usage === undefined) {
+  if (metadata.usage !== undefined) {
+    const { input_tokens, output_tokens, cache_read_tokens } = metadata.usage;
+    return {
+      input_tokens,
+      output_tokens,
+      cache_read_tokens,
+      cost_usd: metadata.cost_usd ?? 0,
+      calls: 1,
+      browser_input_tokens: 0,
+      browser_output_tokens: 0,
+      browser_cost_usd: 0,
+      browser_calls: 0,
+    };
+  }
+  const browse = metadata.browser_usage;
+  if (browse === undefined) {
     return null;
   }
-  const { input_tokens, output_tokens, cache_read_tokens } = metadata.usage;
-  return { input_tokens, output_tokens, cache_read_tokens, cost_usd: metadata.cost_usd ?? 0 };
+  return {
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_read_tokens: 0,
+    cost_usd: browse.cost_usd,
+    calls: 0,
+    browser_input_tokens: browse.jev_input_tokens + browse.llm_input_tokens,
+    browser_output_tokens: browse.jev_output_tokens + browse.llm_output_tokens,
+    browser_cost_usd: browse.cost_usd,
+    browser_calls: 1,
+  };
 }
 
 /** The cost a message's metadata records, the `cost_usd` column stored beside it. */
@@ -43,7 +82,8 @@ export type OrgMonthlyUsageRow = InferSelectModel<typeof orgMonthlyUsage>;
 export async function listUsageCounters(pool: Queryable): Promise<UsageCounterRow[]> {
   const result = await pool.query<UsageCounterRow>(
     `SELECT scope, scope_id, input_tokens, output_tokens,
-            cache_read_tokens, cost_usd, calls, updated_at
+            cache_read_tokens, cost_usd, calls, browser_input_tokens,
+            browser_output_tokens, browser_cost_usd, browser_calls, updated_at
      FROM usage_counters`,
   );
   return result.rows;
@@ -56,7 +96,8 @@ export async function getUsage(
 ): Promise<UsageCounterRow | null> {
   const result = await pool.query<UsageCounterRow>(
     `SELECT scope, scope_id, input_tokens, output_tokens,
-            cache_read_tokens, cost_usd, calls, updated_at
+            cache_read_tokens, cost_usd, calls, browser_input_tokens,
+            browser_output_tokens, browser_cost_usd, browser_calls, updated_at
      FROM usage_counters WHERE scope = $1 AND scope_id = $2`,
     [scope, scopeId],
   );
@@ -70,7 +111,8 @@ export async function getOrgMonthlyUsage(
 ): Promise<OrgMonthlyUsageRow | null> {
   const result = await pool.query<OrgMonthlyUsageRow>(
     `SELECT org_id, month, input_tokens, output_tokens, cache_read_tokens,
-            cost_usd, calls, studio_builder_runs, updated_at
+            cost_usd, calls, browser_input_tokens, browser_output_tokens,
+            browser_cost_usd, browser_calls, studio_builder_runs, updated_at
      FROM org_monthly_usage
      WHERE org_id = $1 AND month = $2`,
     [orgId, month],
@@ -95,9 +137,10 @@ export async function claimMonthlyStudioBuilderRun(
   const result = await db.query<{ studio_builder_runs: number }>(
     `INSERT INTO org_monthly_usage (
        org_id, month, input_tokens, output_tokens, cache_read_tokens,
-       cost_usd, calls, studio_builder_runs, updated_at
+       cost_usd, calls, browser_input_tokens, browser_output_tokens,
+       browser_cost_usd, browser_calls, studio_builder_runs, updated_at
      )
-     VALUES ($1, $2, 0, 0, 0, 0, 0, 1, $3)
+     VALUES ($1, $2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, $3)
      ON CONFLICT (org_id, month) DO UPDATE SET
        studio_builder_runs = org_monthly_usage.studio_builder_runs + 1,
        updated_at = EXCLUDED.updated_at
@@ -175,15 +218,20 @@ async function addCounterUsage(
     await pool.query(
       `INSERT INTO usage_counters (
          scope, scope_id, input_tokens, output_tokens, cache_read_tokens,
-         cost_usd, calls, updated_at
+         cost_usd, calls, browser_input_tokens, browser_output_tokens,
+         browser_cost_usd, browser_calls, updated_at
        )
-       VALUES ($1, $2, $3, $4, $5, $6, 1, $7)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        ON CONFLICT (scope, scope_id) DO UPDATE SET
          input_tokens = usage_counters.input_tokens + EXCLUDED.input_tokens,
          output_tokens = usage_counters.output_tokens + EXCLUDED.output_tokens,
          cache_read_tokens = usage_counters.cache_read_tokens + EXCLUDED.cache_read_tokens,
          cost_usd = usage_counters.cost_usd + EXCLUDED.cost_usd,
-         calls = usage_counters.calls + 1,
+         calls = usage_counters.calls + EXCLUDED.calls,
+         browser_input_tokens = usage_counters.browser_input_tokens + EXCLUDED.browser_input_tokens,
+         browser_output_tokens = usage_counters.browser_output_tokens + EXCLUDED.browser_output_tokens,
+         browser_cost_usd = usage_counters.browser_cost_usd + EXCLUDED.browser_cost_usd,
+         browser_calls = usage_counters.browser_calls + EXCLUDED.browser_calls,
          updated_at = EXCLUDED.updated_at`,
       [
         scope,
@@ -192,6 +240,11 @@ async function addCounterUsage(
         delta.output_tokens,
         delta.cache_read_tokens,
         delta.cost_usd,
+        delta.calls,
+        delta.browser_input_tokens,
+        delta.browser_output_tokens,
+        delta.browser_cost_usd,
+        delta.browser_calls,
         stamp(now),
       ],
     );
@@ -202,15 +255,20 @@ async function addMonthlyUsage(pool: Queryable, orgId: string, delta: UsageDelta
   await pool.query(
     `INSERT INTO org_monthly_usage (
        org_id, month, input_tokens, output_tokens, cache_read_tokens,
-       cost_usd, calls, updated_at
+       cost_usd, calls, browser_input_tokens, browser_output_tokens,
+       browser_cost_usd, browser_calls, updated_at
      )
-     VALUES ($1, $2, $3, $4, $5, $6, 1, $7)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      ON CONFLICT (org_id, month) DO UPDATE SET
        input_tokens = org_monthly_usage.input_tokens + EXCLUDED.input_tokens,
        output_tokens = org_monthly_usage.output_tokens + EXCLUDED.output_tokens,
        cache_read_tokens = org_monthly_usage.cache_read_tokens + EXCLUDED.cache_read_tokens,
        cost_usd = org_monthly_usage.cost_usd + EXCLUDED.cost_usd,
-       calls = org_monthly_usage.calls + 1,
+       calls = org_monthly_usage.calls + EXCLUDED.calls,
+       browser_input_tokens = org_monthly_usage.browser_input_tokens + EXCLUDED.browser_input_tokens,
+       browser_output_tokens = org_monthly_usage.browser_output_tokens + EXCLUDED.browser_output_tokens,
+       browser_cost_usd = org_monthly_usage.browser_cost_usd + EXCLUDED.browser_cost_usd,
+       browser_calls = org_monthly_usage.browser_calls + EXCLUDED.browser_calls,
        updated_at = EXCLUDED.updated_at`,
     [
       orgId,
@@ -219,6 +277,11 @@ async function addMonthlyUsage(pool: Queryable, orgId: string, delta: UsageDelta
       delta.output_tokens,
       delta.cache_read_tokens,
       delta.cost_usd,
+      delta.calls,
+      delta.browser_input_tokens,
+      delta.browser_output_tokens,
+      delta.browser_cost_usd,
+      delta.browser_calls,
       stamp(now),
     ],
   );

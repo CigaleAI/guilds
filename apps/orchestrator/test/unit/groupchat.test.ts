@@ -293,7 +293,7 @@ class MemoryGroupDB {
   }
 }
 
-/** A router without a key, as a box without group routing has: the chat keeps to its tag rules. */
+/** A router without a key, as a box without the System One key has: the chat keeps to its tag rules. */
 const TAG_RULES_ROUTER: GroupRouter = {
   configured: false,
   recipients: async ({ ruleNames, taggedNames }) => ({

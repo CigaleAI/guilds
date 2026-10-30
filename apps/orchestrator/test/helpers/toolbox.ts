@@ -47,15 +47,18 @@ export function toolFixture(fields: ToolFixtureFields): ToolFixture {
     scripts = null,
     db = null,
     events = null,
+    browse = null,
     track_command = null,
     ensure_browser = null,
+    touch_browser = null,
+    cdp_target = null,
     before_command = null,
     secret_store = null,
     ...run
   } = fields;
   return {
-    services: { notes, artifacts, files, group_chat, issues, schedules, scripts, db, events },
+    services: { notes, artifacts, files, group_chat, issues, schedules, scripts, db, events, browse },
     run: createToolRun(run),
-    hooks: { track_command, ensure_browser, before_command, secret_store },
+    hooks: { track_command, ensure_browser, touch_browser, cdp_target, before_command, secret_store },
   };
 }

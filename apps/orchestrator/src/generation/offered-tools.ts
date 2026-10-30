@@ -59,6 +59,12 @@ export type ToolBindingScope = {
  */
 export type OfferedToolSettings = {
   browser: boolean;
+  /**
+   * Whether the agent's config turns the agent-optimized browser on, whatever the System One key:
+   * a snapshot that froze `browse` keeps it while this holds, and its calls answer that the key is
+   * missing while it is.
+   */
+  browserOptimized: boolean;
   coding: boolean;
   scripting: boolean;
   memory: boolean;
@@ -68,7 +74,9 @@ export type OfferedToolSettings = {
 
 /**
  * The snapshot's tool names that the live bindings of `scope`, in `rows`, still grant under
- * `settings`; connection tools and names no native tool owns stay offered.
+ * `settings`; connection tools and names no native tool owns stay offered. While the browser is
+ * on, the step-by-step browser tools a snapshot froze stay offered whatever the browser's mode;
+ * `browse` stays offered only while the agent's config keeps the agent-optimized browser on.
  */
 export function liveOfferedNames(
   snapshotNames: Set<string>,
@@ -80,7 +88,11 @@ export function liveOfferedNames(
   if (!nativeRows.length) {
     return snapshotNames;
   }
-  const liveNative = new Set(offeredToolNames(enabledToolNames(resolvedTools(rows, scope)), settings));
+  const granted = enabledToolNames(resolvedTools(rows, scope));
+  const liveNative = new Set([
+    ...offeredToolNames(granted, { ...settings, browserOptimized: false }),
+    ...offeredToolNames(granted, settings),
+  ]);
   const offered = new Set<string>();
   for (const name of snapshotNames) {
     if (name in REGISTRY && !liveNative.has(name)) {

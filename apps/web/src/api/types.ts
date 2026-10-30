@@ -217,6 +217,10 @@ export type AgentConfig = {
   browser: boolean;
   /** Chrome UI and Accept-Language. Default `en-US`. */
   browser_language: string;
+  /** Whether browsing runs through the agent-optimized `browse` tool instead of the step-by-step browser tools. */
+  browser_optimized: boolean;
+  /** The `{provider}/{model}` the agent-optimized browser plans and reads with; null unless `browser_optimized`. */
+  browser_model: string | null;
   coding: boolean;
   /** The harness a coding agent runs; null when coding is off. */
   harness: Harness | null;
@@ -871,6 +875,13 @@ export type AgentUsage = {
   total_tokens: number;
   cost_usd: number;
   calls: number;
+  /** Tokens `browse` calls spent: the browsing service's and the model it drove the page with. */
+  browser_input_tokens: number;
+  browser_output_tokens: number;
+  /** What `browse` calls cost; also counted in `cost_usd`. */
+  browser_cost_usd: number;
+  /** `browse` calls, counted apart from model calls. */
+  browser_calls: number;
   updated_at: string | null;
   /** The agent's home, measured after the last generation; null before one. */
   workspace_mib: number | null;
@@ -981,6 +992,13 @@ export type UsageTotals = {
   total_tokens: number;
   cost_usd: number;
   calls: number;
+  /** Tokens `browse` calls spent: the browsing service's and the model it drove the page with. */
+  browser_input_tokens: number;
+  browser_output_tokens: number;
+  /** What `browse` calls cost; also counted in `cost_usd`. */
+  browser_cost_usd: number;
+  /** `browse` calls, counted apart from model calls. */
+  browser_calls: number;
   updated_at: string | null;
 };
 

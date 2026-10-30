@@ -161,7 +161,9 @@ is disabled once the guild is full. Each agent row shows:
    off only for a model that does not take it. Then **Agent
    capabilities**, three buttons: Browser, scripting, and Memory.
    Scripting and Memory start on; Browser starts off. The browser
-   language shows while Browser is on. **Run limits** sit folded under
+   language and **Agent-optimized browser** show while Browser is on,
+   and **Browser model** while that is on
+   ([Browser](browser.md#in-the-app)). **Run limits** sit folded under
    a disclosure: the five run limits and **Max scripts**.
 3. **Machine**: which machine the agent goes on, and **Disk** under
    it. With one machine the step names it in place of the picker. See
@@ -234,8 +236,9 @@ the bottom cover every section. Enter in a field saves.
   disclosure, with the five run limits and **Max scripts**. Browser
   and Coding are greyed out while off on a machine below the minimum
   they need, with a line naming both sizes. Coding is greyed out on a
-  saved coding agent, which stays one. The browser language shows
-  while Browser is on.
+  saved coding agent, which stays one. The browser language and
+  **Agent-optimized browser** show while Browser is on, and **Browser
+  model** while that is on ([Browser](browser.md#in-the-app)).
 - Turning **Coding** on before the first save turns scripting on, and
   moves max steps and max tool calls from 30 and 50 to 200 each when
   they are still at their defaults. Turning it off again moves them
@@ -269,7 +272,7 @@ the bottom cover every section. Enter in a field saves.
 
 ### Configuration keys
 
-Agent configuration is a JSON object of nineteen keys. A missing key
+Agent configuration is a JSON object of twenty-one keys. A missing key
 takes its default, then the check runs. `model` has no default, so a
 configuration without it is 422 `missing keys: model`. Unknown keys
 are rejected. The tier, CPU, and memory belong to the machine, not to
@@ -289,6 +292,8 @@ the agent.
 | `max_workspace_mib` | positive integer | `10240` | [Agent home](agent-home.md) |
 | `browser` | boolean | `false` | [Browser](browser.md) |
 | `browser_language` | Chrome language tag | `en-US` | [Browser](browser.md) |
+| `browser_optimized` | boolean; needs `browser` | `false` | [Browser](browser.md#config-keys) |
+| `browser_model` | `provider/model` that is not for coding agents only, while `browser_optimized` is on; else null | `null` | [Browser](browser.md#config-keys) |
 | `coding` | boolean | `false` | [Coding agents](coding/index.md) |
 | `harness` | `claude-code`, `codex`, `cursor`, `antigravity`, or null | `null` | [Harnesses](coding/harnesses.md) |
 | `harness_model` | model name of at most 120 characters, or null; needs a harness | `null` | [Harnesses](coding/harnesses.md) |

@@ -1,3 +1,4 @@
+import { isOptimizedBrowserOn } from "../agents/config.js";
 import { iso } from "../db/views.js";
 import { REGISTRY } from "../toolbox/index.js";
 import { offeredToolNames } from "../toolbox/offered.js";
@@ -70,6 +71,7 @@ function nativeEntries(agent: Pick<AgentRow, "id" | "config">, access: AgentAcce
   const { config } = agent;
   const offered = offeredToolNames(access.native_tools, {
     browser: config.browser,
+    browserOptimized: isOptimizedBrowserOn(config),
     coding: config.coding,
     scripting: config.scripting,
     memory: config.memory,

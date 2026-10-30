@@ -891,9 +891,6 @@
     }
   },
   "src/usage/index.ts": {
-    "complexity": {
-      "count": 2
-    },
     "no-restricted-syntax": {
       "count": 5
     }

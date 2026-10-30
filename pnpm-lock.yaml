@@ -49,6 +49,9 @@ importers:
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(pg@8.23.0)
+      fastbrowse:
+        specifier: ^0.9.0
+        version: 0.9.0
       fastify:
         specifier: ^5.12.4
         version: 5.12.4
@@ -887,6 +890,33 @@ packages:
   '@eslint/plugin-kit@0.7.3':
     resolution: {integrity: sha512-IkO+/KEUvwbVpiURZg+P7zF74z5Jxe0UgJxVni+RtoHQ6IZieXaO02kmadomap/q+l6bc/jdPGGqTjhuZnuz1Q==}
     engines: {node: ^20.19.0 || ^22.13.0 || >=24}
+
+  '@fastbrowse/darwin-arm64@0.9.0':
+    resolution: {integrity: sha512-j8ftnesoHnwzplmZkHm7GSzyfwc+ErQy+dz3NnrZdARLYTTGXld97U/lXFQwgTkXfEGJ82gCrZT3XIpq+qdx1w==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@fastbrowse/darwin-x64@0.9.0':
+    resolution: {integrity: sha512-GEr0GJDj8OTX27G7WDqs5qDtSJDaLZKGcMwLYQupu9DYoHCWlTIsjnuXS81wakrIc/7Pnw24WXpFLgQjk/c6JA==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@fastbrowse/linux-arm64@0.9.0':
+    resolution: {integrity: sha512-1P/FM1feiBYRlmRfKR8RRiVqWWyS+4HKiSdZ9VwNszfZE4BLIj3KmzjAIx9ewWSQ0WZxj7b1ufsiba1wOytS0g==}
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
+  '@fastbrowse/linux-x64@0.9.0':
+    resolution: {integrity: sha512-uK73DJvG7kJlcsViS1Z87fsspfcE2stcVxI2tdSgZBGRsysBMCjT+puGgxfMLgmSwW4bS1oIZaSkj7Y1K49k8g==}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@fastbrowse/win32-x64@0.9.0':
+    resolution: {integrity: sha512-o1LozY9MuSdWT3sVjJqMvJNf/HSfCeLDdUfFT6ojYJezWJ5gXhYZIcbY9E8cuDlPDSplbdpn8vOqNM4EOKkvww==}
+    cpu: [x64]
+    os: [win32]
 
   '@fastify/accept-negotiator@2.1.0':
     resolution: {integrity: sha512-F3EVbzWt+xcnVaOHmWyIlpuFtbxOln7HDZQsh09MtMmMm/CipMayNt8hnIL8VQi54u2ZociDbf+iluGYkf7B1A==}
@@ -3175,6 +3205,10 @@ packages:
   fast-uri@4.1.5:
     resolution: {integrity: sha512-vZeoMRB4epNr7QfdHxel7te/RcX16CxyXI07JCCTFWZA2s4v1azGNESRj+2EoaHSaWFL/Z3GmKT2jF6A202jLg==}
 
+  fastbrowse@0.9.0:
+    resolution: {integrity: sha512-CIONptrSTgDfz/kSNFyHPbt1ceBmFP64nyg3ORTvZC8+Xt1O5gi06DfklxP2tmZSGsaBXbm5dANcZ7Tcgd3J8A==}
+    engines: {node: '>=20'}
+
   fastify-plugin@6.0.0:
     resolution: {integrity: sha512-fZOty7z3O7vOliF6d8bHE3wiEh1KcNnKEQensSgTk9C1DvN6nRLS++XVd86v33Hw/8u9Un8A1zDrQ8ujcQDHEg==}
 
@@ -4933,6 +4967,21 @@ snapshots:
     dependencies:
       '@eslint/core': 1.2.1
       levn: 0.4.1
+
+  '@fastbrowse/darwin-arm64@0.9.0':
+    optional: true
+
+  '@fastbrowse/darwin-x64@0.9.0':
+    optional: true
+
+  '@fastbrowse/linux-arm64@0.9.0':
+    optional: true
+
+  '@fastbrowse/linux-x64@0.9.0':
+    optional: true
+
+  '@fastbrowse/win32-x64@0.9.0':
+    optional: true
 
   '@fastify/accept-negotiator@2.1.0': {}
 
@@ -7083,6 +7132,14 @@ snapshots:
   fast-uri@3.1.8: {}
 
   fast-uri@4.1.5: {}
+
+  fastbrowse@0.9.0:
+    optionalDependencies:
+      '@fastbrowse/darwin-arm64': 0.9.0
+      '@fastbrowse/darwin-x64': 0.9.0
+      '@fastbrowse/linux-arm64': 0.9.0
+      '@fastbrowse/linux-x64': 0.9.0
+      '@fastbrowse/win32-x64': 0.9.0
 
   fastify-plugin@6.0.0: {}
 

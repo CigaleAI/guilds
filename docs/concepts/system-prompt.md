@@ -196,7 +196,8 @@ without its tags, when the condition holds, and removed otherwise:
 |---|---|
 | `notes` | the run offers note tools |
 | `scripts` | `scripting` is on and the run offers script tools |
-| `browser` | `browser` is on |
+| `browser_standard` | `browser` is on and the agent-optimized browser is not |
+| `browser_optimized` | `browser` and `browser_optimized` are on and the System One platform key is on |
 | `coding` | `coding` is on |
 | `no_coding` | `coding` is off |
 | `memory` | `memory` is on |

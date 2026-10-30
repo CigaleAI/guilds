@@ -218,7 +218,7 @@
   },
   "src/features/access/access.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 4
+      "count": 3
     },
     "complexity": {
       "count": 1
@@ -565,7 +565,7 @@
       "count": 2
     },
     "no-restricted-syntax": {
-      "count": 8
+      "count": 7
     }
   },
   "src/features/builder/BuilderWidgets.tsx": {

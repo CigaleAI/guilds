@@ -50,7 +50,7 @@ The tags decide first:
 Tagging an operator, or `@user`, never wakes an agent. An agent post
 with no tag wakes nobody.
 
-When the instance has the **Group routing** platform key, a small
+When the instance has the **System One** platform key, a small
 model (Jev, from TypeSafe) refines this. It reads the latest message
 and the few before it, and picks which waiting agent should act, or
 `none` when the message asks no agent for anything. It judges each
@@ -336,7 +336,7 @@ Recipients of each message by tag rule:
 Skip-advanced agents still see those messages in a later selected
 run's snapshot.
 
-When the Group routing platform key is set (**Admin**, **Platform
+When the System One platform key is set (**Admin**, **Platform
 keys**, see [Instance admin](instance-admin.md)), the dispatcher asks Jev one Choice over
 the pending members plus `none`. Jev gets the latest public message as
 `latest` (clipped to 6,000 characters) and up to three public rows
@@ -486,7 +486,7 @@ State in the system row carries the same snapshot as a direct run
 
 Notes are not listed; the agent searches them with `note_find`.
 
-When the Group routing key is set, Jev answers one yes/no Noul per row
+When the System One key is set, Jev answers one yes/no Noul per row
 of the last 40: "does this agent need this message to act on the
 latest one?", with bodies clipped to 2,000 characters for the call.
 Code keeps the 10 highest. The latest row and any row that tags the

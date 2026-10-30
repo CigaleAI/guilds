@@ -1,15 +1,19 @@
-import { BROWSER_TOOLS } from "./browser.js";
+import { BROWSER_TOOLS, OPTIMIZED_BROWSER_TOOLS } from "./browser.js";
 import { CODING_TOOLS } from "./code.js";
 import { HARNESS_TOOLS } from "./harness.js";
 import { SCHEDULE_TOOLS } from "./schedule.js";
 import { SCRIPT_TOOLS } from "./script.js";
 
 // Which native tools a run offers: the names the bindings turn on, less the
-// ones the agent's switches withhold, plus the tools its switches add.
+// ones the agent's switches withhold, plus the tools its switches add. With the
+// browser on, the run offers the step-by-step browser tools, or `browse` and
+// `browser_eval` when the agent-optimized browser is on.
 
 /** The agent's switches that change which native tools a run offers; one left out is the default. */
 export type ToolSwitches = {
   browser?: boolean;
+  /** Whether the browser offers `browse` in place of the step-by-step tools; only read with `browser` on. */
+  browserOptimized?: boolean;
   coding?: boolean;
   scripting?: boolean;
   memory?: boolean;
@@ -18,7 +22,12 @@ export type ToolSwitches = {
 };
 
 /** The tools the browser and coding switches offer, whatever the bindings say. */
-const BROWSER_AND_CODING_TOOLS: ReadonlySet<string> = new Set<string>([...BROWSER_TOOLS, ...CODING_TOOLS, ...HARNESS_TOOLS]);
+const BROWSER_AND_CODING_TOOLS: ReadonlySet<string> = new Set<string>([
+  ...BROWSER_TOOLS,
+  ...OPTIMIZED_BROWSER_TOOLS,
+  ...CODING_TOOLS,
+  ...HARNESS_TOOLS,
+]);
 
 function nameMatchesToolList(name: string, tools: readonly string[] | string): boolean {
   return typeof tools === "string" ? name === tools : tools.includes(name);
@@ -43,11 +52,16 @@ function offeredNativeNames(names: string[], options: ToolSwitches): string[] {
   });
 }
 
+/** The browser tools the switches offer: none with the browser off, else those of its mode. */
+function browserToolNames(options: ToolSwitches): readonly string[] {
+  if (!options.browser) {
+    return [];
+  }
+  return options.browserOptimized ? OPTIMIZED_BROWSER_TOOLS : BROWSER_TOOLS;
+}
+
 function capabilityToolNames(options: ToolSwitches): string[] {
-  return [
-    ...(options.coding ? [...CODING_TOOLS, ...HARNESS_TOOLS] : []),
-    ...(options.browser ? BROWSER_TOOLS : []),
-  ];
+  return [...(options.coding ? [...CODING_TOOLS, ...HARNESS_TOOLS] : []), ...browserToolNames(options)];
 }
 
 // The browser and code tools follow the agent's flags, not bindings.

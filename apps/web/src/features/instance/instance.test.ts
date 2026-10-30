@@ -70,10 +70,16 @@ const githubOn = integration(
   [field("app_id", "App ID", true, { secret: false }), field("private_key", "Private key", true)],
   { provides: { connectors: ["github"] } },
 );
-const routing = integration("group-routing", "Group routing", [
-  field("api_key", "API key", false),
-  field("model", "Model", false, { optional: true, secret: false }),
-]);
+const systemOne = integration(
+  "system-one",
+  "System One",
+  [
+    field("provider", "Provider", false, { optional: true, secret: false }),
+    field("api_key", "API key", false),
+    field("model", "Model", false, { optional: true, secret: false }),
+  ],
+  { provides: { native_tools: ["browse"] } },
+);
 const registry = integration(
   "registry",
   "Registry",
@@ -95,7 +101,7 @@ test("an integration is found by what it switches on", () => {
 
 test("only required fields that are unset count as missing", () => {
   assert.deepEqual(
-    missingFields(routing).map((item) => item.name),
+    missingFields(systemOne).map((item) => item.name),
     ["api_key"],
   );
   assert.deepEqual(
@@ -114,6 +120,7 @@ test("a native tool waits for its integration and no other tool does", () => {
   });
   assert.equal(toolIntegrationGap(instance(lookupOff), "lookup_find")?.id, "lookup");
   assert.equal(toolIntegrationGap(instance(lookupOff), "note_find"), null);
+  assert.equal(toolIntegrationGap(instance(systemOne), "browse")?.id, "system-one");
   const on = integration("lookup", "Lookup", [field("api_key", "API key", true)], {
     provides: { native_tools: ["lookup_find"] },
   });

@@ -113,6 +113,27 @@
       "when": 1791932400000,
       "tag": "0016_recipe_apply_preview",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1791936000000,
+      "tag": "0017_system_one_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1791939600000,
+      "tag": "0018_agent_browser_config",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791943200000,
+      "tag": "0019_browser_usage",
+      "breakpoints": true
     }
   ]
 }
