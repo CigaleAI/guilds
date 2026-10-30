@@ -8,7 +8,7 @@ import { tokenRedactions } from "../oauth/index.js";
 import { redact } from "../secrets/index.js";
 import { capBytes } from "../lib/bytes.js";
 import { STUDIO_TOOL_RESULT_MAX_BYTES } from "./constants.js";
-import { StudioConflictError, StudioError, StudioUnprocessableError } from "./errors.js";
+import { StudioConflictError, StudioNotFoundError, StudioUnprocessableError } from "./errors.js";
 import { projectGuildConnections, type PreviewDeps } from "./preview.js";
 import { withLockedSession } from "./session-lock.js";
 import type { LiveStudioSession } from "./index.js";
@@ -56,7 +56,7 @@ export function findLoginRecord(message: ConversationMessageRow | null, seq: num
     widget?.widget !== STUDIO_CONNECTION_ACCESS_WIDGET ||
     typeof connection.id !== "string"
   ) {
-    throw new StudioError(404, "login request not found");
+    throw new StudioNotFoundError("login request not found");
   }
   return { seq, connectionId: connection.id, payload, metadata: message.metadata };
 }

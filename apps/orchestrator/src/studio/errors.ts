@@ -17,6 +17,13 @@ export class StudioConflictError extends StudioError {
   }
 }
 
+export class StudioNotFoundError extends StudioError {
+  constructor(message: string) {
+    super(404, message);
+    this.name = "StudioNotFoundError";
+  }
+}
+
 export class StudioUnprocessableError extends StudioError {
   constructor(message: string) {
     super(422, message);

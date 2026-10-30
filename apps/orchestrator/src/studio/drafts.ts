@@ -15,7 +15,7 @@ import {
   STUDIO_EVIDENCE_REF_MAX,
   STUDIO_LARGE_DELETION_RATIO,
 } from "./constants.js";
-import { StudioConflictError, StudioError, StudioUnprocessableError } from "./errors.js";
+import { StudioConflictError, StudioNotFoundError, StudioUnprocessableError } from "./errors.js";
 import { previewCurrentState, projectOfferedToolSchemas, type PreviewDeps } from "./preview.js";
 import { withLockedSession } from "./session-lock.js";
 import type { StudioToolCall } from "./tools.js";
@@ -155,7 +155,7 @@ export class StudioDrafts implements StudioDraftService {
     return withLockedSession(this.db, session.id, async (client) => {
       const current = await lockStudioDraft(client, draftId);
       if (!current || current.session_id !== session.id) {
-        throw new StudioError(404, "draft not found");
+        throw new StudioNotFoundError("draft not found");
       }
       if (current.status !== "draft" && current.status !== "conflicted") {
         throw new StudioConflictError("draft is not editable");
@@ -191,7 +191,7 @@ export class StudioDrafts implements StudioDraftService {
     return withLockedSession(this.db, session.id, async (client) => {
       const current = await lockStudioDraft(client, draftId);
       if (!current || current.session_id !== session.id) {
-        throw new StudioError(404, "draft not found");
+        throw new StudioNotFoundError("draft not found");
       }
       if (current.status !== "draft" && current.status !== "conflicted") {
         throw new StudioConflictError("draft cannot be discarded");
@@ -221,10 +221,10 @@ export class StudioDrafts implements StudioDraftService {
     return withLockedSession(this.db, session.id, async (client) => {
       const draft = await lockStudioDraft(client, draftId);
       if (!draft) {
-        throw new StudioError(404, "draft not found");
+        throw new StudioNotFoundError("draft not found");
       }
       if (!args.orphan && draft.session_id !== session.id) {
-        throw new StudioError(404, "draft not found");
+        throw new StudioNotFoundError("draft not found");
       }
       if (draft.status !== "draft" && draft.status !== "conflicted") {
         throw new StudioConflictError("draft is not publishable");
@@ -299,7 +299,7 @@ export class StudioDrafts implements StudioDraftService {
   }): Promise<Record<string, unknown>> {
     const draft = await getStudioDraft(this.db, args.draftId);
     if (!draft || !draft.target_agent_id) {
-      throw new StudioError(404, "draft not found");
+      throw new StudioNotFoundError("draft not found");
     }
     const agent = await getAgent(args.db, String(draft.target_agent_id));
     if (!agent) {
