@@ -6,20 +6,22 @@ import {
   activityWindow,
   classifyWrite,
   groupPostSeq,
+  hoursWindow,
   messageFloor,
   projectActivity,
   type ActivityInput,
 } from "../../src/studio/activity.js";
 import type { GuildActivityRunRow } from "../../src/db/activity.js";
+import type { ActivityGroupMessageRow } from "../../src/db/group-chat.js";
 import { StudioUnprocessableError } from "../../src/studio/errors.js";
 
 const NOW = new Date("2026-09-25T17:40:00Z");
 const since = new Date("2026-09-25T13:40:00Z");
-const ts = (hhmmss: string) => new Date(`2026-09-25T${hhmmss}Z`);
+const ts = (hhmmss: string) => new Date(`2026-09-25T${hhmmss}Z`).toISOString();
 
 /** A run as the activity query returns it: a completed run with no errors, metadata or group snapshot unless given. */
 function activityRun(
-  fields: Partial<Omit<GuildActivityRunRow, "created_at" | "updated_at">> & { id: string; created_at: Date; updated_at: Date },
+  fields: Partial<GuildActivityRunRow> & Pick<GuildActivityRunRow, "id" | "created_at" | "updated_at">,
 ): GuildActivityRunRow {
   return {
     agent_id: "a_desk",
@@ -33,14 +35,12 @@ function activityRun(
     wake_seq: null,
     previous_through_seq: null,
     ...fields,
-    created_at: fields.created_at.toISOString(),
-    updated_at: fields.updated_at.toISOString(),
   };
 }
 
 /** A run of `fields` at a fixed time, for what its group snapshot decides. */
 function floorRun(fields: Partial<Omit<GuildActivityRunRow, "created_at" | "updated_at">>): GuildActivityRunRow {
-  return activityRun({ id: "r_floor", created_at: NOW, updated_at: NOW, ...fields });
+  return activityRun({ id: "r_floor", created_at: NOW.toISOString(), updated_at: NOW.toISOString(), ...fields });
 }
 
 function input(overrides: Partial<ActivityInput> = {}): ActivityInput {
@@ -67,12 +67,19 @@ function input(overrides: Partial<ActivityInput> = {}): ActivityInput {
   };
 }
 
-const message = (seq: number, time: string, author: string | null, tagged: string[], sourceRunId: string | null = null) => ({
+const message = (
+  seq: number,
+  time: string,
+  author: string | null,
+  tagged: string[],
+  sourceRunId: string | null = null,
+): ActivityGroupMessageRow => ({
   id: seq,
-  seq: String(seq),
+  seq,
   author_type: author ? "agent" : "user",
   author_name: author ?? "operator",
   author_agent_id: author ? `a_${author}` : null,
+  author_user_id: null,
   source_run_id: sourceRunId,
   content: `message ${seq}`,
   tagged_names: tagged,
@@ -89,6 +96,12 @@ test("the window is hours back from until, capped, and never in the future", () 
   assert.throws(() => activityWindow({ hours: "0" }, NOW), StudioUnprocessableError);
   assert.throws(() => activityWindow({ hours: "soon" }, NOW), StudioUnprocessableError);
   assert.throws(() => activityWindow({ until: "yesterday" }, NOW), StudioUnprocessableError);
+});
+
+test("an hours window ends now and takes the default when it names no hours", () => {
+  assert.equal(hoursWindow("6", NOW).since.toISOString(), "2026-09-25T11:40:00.000Z");
+  assert.equal(hoursWindow(undefined, NOW).since.toISOString(), "2026-09-24T17:40:00.000Z");
+  assert.equal(hoursWindow(undefined, NOW).until.toISOString(), NOW.toISOString());
 });
 
 test("writes are classified by display path", () => {
@@ -321,11 +334,11 @@ test("a wake lists its tool calls with their results, its last text, and a direc
       ],
       stats: [{ run_id: "r_chat", last_seq: 12, first_at: ts("14:58:00"), last_at: ts("15:00:00"), cost_usd: "0" }],
       steps: [
-        step({ run_id: "r_tick", seq: 1, created_at: ts("14:00:10").toISOString(), role: "assistant", tool_calls: [call("c_bal", "wallet_get_balance", '{"chain":"base"}'), call("c_note", "note_get", `{"path":"${"p".repeat(300)}"}`)], text: "" }),
-        step({ run_id: "r_tick", seq: 2, created_at: ts("14:00:11").toISOString(), role: "tool", tool_call_id: "c_bal", error: "wallet credentials are missing", duration_ms: "98" }),
-        step({ run_id: "r_tick", seq: 3, created_at: ts("14:00:12").toISOString(), role: "tool", tool_call_id: "c_note", error: null, duration_ms: "4" }),
-        step({ run_id: "r_tick", seq: 4, created_at: ts("14:00:40").toISOString(), role: "assistant", tool_calls: null, text: "  Balances unavailable; nothing to post.  " }),
-        step({ run_id: "r_chat", seq: 11, created_at: ts("14:59:00").toISOString(), role: "assistant", tool_calls: [], text: "Here are the likes." }),
+        step({ run_id: "r_tick", seq: 1, created_at: ts("14:00:10"), role: "assistant", tool_calls: [call("c_bal", "wallet_get_balance", '{"chain":"base"}'), call("c_note", "note_get", `{"path":"${"p".repeat(300)}"}`)], text: "" }),
+        step({ run_id: "r_tick", seq: 2, created_at: ts("14:00:11"), role: "tool", tool_call_id: "c_bal", error: "wallet credentials are missing", duration_ms: "98" }),
+        step({ run_id: "r_tick", seq: 3, created_at: ts("14:00:12"), role: "tool", tool_call_id: "c_note", error: null, duration_ms: "4" }),
+        step({ run_id: "r_tick", seq: 4, created_at: ts("14:00:40"), role: "assistant", tool_calls: null, text: "  Balances unavailable; nothing to post.  " }),
+        step({ run_id: "r_chat", seq: 11, created_at: ts("14:59:00"), role: "assistant", tool_calls: [], text: "Here are the likes." }),
       ],
       openings: [{ run_id: "r_chat", text: "how many likes on my last post?" }, { run_id: "r_tick", text: "Schedule wake-up: {}" }],
     }),

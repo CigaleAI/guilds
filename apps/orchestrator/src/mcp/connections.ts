@@ -1,11 +1,14 @@
 import { readFile } from "node:fs/promises";
 import { requireVisibleAgent } from "../agents/access.js";
-import { connectFailure, tokenCredentials } from "../connectors/connect.js";
-import { installedConnectors } from "../connectors/index.js";
-import { getMcpServer, listMcpServers } from "../connectors/servers.js";
-import { settingsComplete, validateSettings } from "../connectors/settings.js";
-import { logoPath } from "../connectors/view.js";
-import { bindingItem, connectionMetadata, serverItem } from "../credentials/items.js";
+import { tokenCredentials, translateConnectFailure } from "./connect-token.js";
+import {
+  getMcpServer,
+  listServers,
+  logoPath,
+  serverSettings,
+} from "../connectors/servers.js";
+import { validateSettings } from "../connectors/settings.js";
+import { bindingItem, connectionMetadata, serverItem } from "./view.js";
 import { listBindingsForConnection } from "../db/bindings.js";
 import { isPlainRecord } from "../db/json.js";
 import {
@@ -16,11 +19,12 @@ import {
   type McpConnectionRow,
 } from "../db/mcp.js";
 import type { Queryable } from "../db/pg.js";
+import { GITHUB_SLUG } from "../github/index.js";
 import { requireVisibleGuild } from "../guilds/access.js";
-import { awaitingSettings, mcpDatabase, type McpPool } from "./index.js";
+import { relistTools, type McpPool, type SettingsLookup } from "./pool.js";
+import { awaitingSettings } from "../connectors/login.js";
 import { callOwnedConnectionTool } from "./operator-call.js";
 import { ConnectionError, seesConnection, serverVisible } from "./visibility.js";
-import type { LoadedConnector } from "../connectors/load.js";
 
 /** What an operator's connector logins are read, used and changed through, built once from the app's services. */
 export type ConnectionServices = {
@@ -35,9 +39,6 @@ export type ConnectionListScope = { guildId: string | null; agentId: string | nu
 
 /** A tool call an operator makes with a login: the tool, and its arguments before validation. */
 export type ConnectionToolCall = { tool: string; arguments: unknown };
-
-/** A search for a settings property's values: the property marked `x-lookup`, and the text searched for. */
-export type SettingsLookup = { property: string; q: string };
 
 /** A lookup made from a Connect form, with the credentials the form holds before they are saved. */
 export type CredentialsLookup = SettingsLookup & { credentials: unknown };
@@ -76,12 +77,12 @@ function assertNotPlatform(connection: McpConnectionRow): void {
 }
 
 export async function listOrgServers(db: Queryable, orgId: string): Promise<{ servers: Item[] }> {
-  return { servers: (await listMcpServers(db, orgId)).map((row) => serverItem(row)) };
+  return { servers: (await listServers(db, { owner: { visibleTo: orgId } })).map((row) => serverItem(row)) };
 }
 
 /** An installed connector's logo, as SVG. */
 export async function readConnectorLogo(serverId: string): Promise<Buffer> {
-  const file = logoPath(installedConnectors().byId(serverId));
+  const file = logoPath(serverId);
   if (file === null) {
     throw new ConnectionError(404, "logo not found");
   }
@@ -118,6 +119,26 @@ export async function requireVisibleConnection(
   return row;
 }
 
+/** A GitHub login the user sees and that is not the platform's; any other is a 404. */
+export async function requireVisibleGithubConnection(
+  db: Queryable,
+  connectionId: string,
+  userId: string,
+): Promise<McpConnectionRow> {
+  const connection = await getMcpConnection(db, connectionId);
+  if (connection === null) {
+    throw new ConnectionError(404, "connection not found");
+  }
+  const server = await getMcpServer(db, connection.mcp_server_id);
+  if (server?.slug !== GITHUB_SLUG) {
+    throw new ConnectionError(422, "connection is not a GitHub connection");
+  }
+  if (connection.owner_scope === "platform" || !(await seesConnection(db, connection, userId))) {
+    throw new ConnectionError(404, "connection not found");
+  }
+  return connection;
+}
+
 /** A login with the bindings that use it. */
 export async function viewConnection(db: Queryable, connection: McpConnectionRow): Promise<Item> {
   const bindings = await listBindingsForConnection(db, connection.id);
@@ -140,7 +161,6 @@ export async function callConnectionTool(
     throw new ConnectionError(422, "arguments must be an object");
   }
   return callOwnedConnectionTool({
-    db: mcpDatabase(services.db),
     mcp,
     connection,
     server,
@@ -162,14 +182,14 @@ export async function lookupWithCredentials(
     throw new ConnectionError(404, "mcp server not found");
   }
   const mcp = poolOf(services, "lookups are unavailable");
-  const { property, q } = requireLookup(lookup);
+  const search = requireLookup(lookup);
   const credentials = isPlainRecord(lookup.credentials) ? lookup.credentials : {};
   try {
     return {
-      options: await mcp.lookup(server, property, q, tokenCredentials(server, credentials)),
+      options: await mcp.lookup(server, search, tokenCredentials(server, credentials)),
     };
   } catch (error) {
-    connectFailure(error, server);
+    throw translateConnectFailure(error, server);
   }
 }
 
@@ -184,10 +204,10 @@ export async function lookupWithLogin(
   const { property, q } = requireLookup(lookup);
   try {
     return {
-      options: await mcp.lookupLogin(mcpDatabase(services.db), connection, server, property, q),
+      options: await mcp.lookupLogin(connection, server, property, q),
     };
   } catch (error) {
-    connectFailure(error, server);
+    throw translateConnectFailure(error, server);
   }
 }
 
@@ -202,7 +222,7 @@ export async function saveConnectionSettings(
 ): Promise<Item> {
   assertNotPlatform(connection);
   const server = await requireServer(services.db, connection.mcp_server_id);
-  const schema = installedConnectors().forServer(server)?.manifest.settings_schema;
+  const schema = serverSettings(server);
   if (!schema) {
     throw new ConnectionError(422, "this connector has no settings");
   }
@@ -210,40 +230,31 @@ export async function saveConnectionSettings(
     throw new ConnectionError(409, "sign in before saving settings");
   }
   const mcp = poolOf(services, "settings are unavailable");
+  // The check refuses settings that lack a property the schema requires, so a login waiting
+  // for its settings connects with any it accepts.
   const valid = validateSettings(schema, settings ?? null);
-  let accountHint = "";
+  let accountHint: string;
   try {
-    accountHint = await mcp.validateLogin(mcpDatabase(services.db), connection, server, valid);
+    accountHint = await mcp.validateLogin(connection, server, valid);
   } catch (error) {
-    connectFailure(error, server);
+    throw translateConnectFailure(error, server);
   }
-  const connect = awaitingSettings(connection) && settingsComplete(schema, valid);
-  const row = await updateMcpConnectionSettings(services.db, connection.id, valid, new Date(), {
-    connect,
-    accountHint,
-  });
+  const row = await updateMcpConnectionSettings(
+    services.db,
+    connection.id,
+    awaitingSettings(connection)
+      ? { settings: valid, status: "connected", account_hint: accountHint }
+      : { settings: valid, account_hint: accountHint },
+    new Date(),
+  );
   if (row === null) {
     throw new ConnectionError(404, "connection not found");
   }
   mcp.forget(row.id);
   if (row.status === "connected") {
-    await syncAfterSettings(services, mcp, row, server);
+    await relistTools(mcp, row, server, { force: true, validate: false });
   }
   return connectionMetadata(row);
-}
-
-/** Lists a login's tools once its settings are saved; a failed listing waits for the next sync. */
-async function syncAfterSettings(
-  services: ConnectionServices,
-  mcp: McpPool,
-  row: McpConnectionRow,
-  server: LoadedConnector,
-): Promise<void> {
-  try {
-    await mcp.syncTools(mcpDatabase(services.db), row, server, { force: true, validate: false });
-  } catch {
-    // The settings stand; the login's tools list on the next sync.
-  }
 }
 
 /** Deletes a login the platform does not own. */

@@ -1,9 +1,6 @@
-import { syncInstanceLogins } from "../connectors/instance.js";
-import { GITHUB_SERVER_ID } from "../github/index.js";
-import type { McpPool } from "../mcp/index.js";
-import { GITHUB_APP, type Integration } from "./integrations.js";
+import { GITHUB_APP, GITHUB_SERVER_ID, type Integration } from "./integrations.js";
 import { InstanceKeyError } from "./keys.js";
-import { countServerConnections, disconnectServerConnections } from "../db/mcp.js";
+import { countServerConnections } from "../db/mcp.js";
 import type { Queryable } from "../db/pg.js";
 
 /** Whether a GitHub App write puts another App in place of the one connections were installed with, or takes it away. */
@@ -37,25 +34,4 @@ export async function assertKeyChangeConfirmed(
   }
   const message = `Replacing the GitHub App disconnects ${connections} GitHub login${connections === 1 ? "" : "s"}.`;
   throw new InstanceKeyError(message, 409, { message, replaces_app: true, connections });
-}
-
-/**
- * What the process does once an instance key changed: platform logins follow their integration,
- * and a GitHub App that is replaced or removed disconnects every login installed with it, since
- * their installations belong to the old App. Returns how many it disconnected.
- */
-export async function applyKeyChange(
-  ctx: { db: Queryable; masterKey?: Buffer | undefined; mcp?: McpPool | undefined },
-  integrationId: string,
-  previous: Record<string, string> | null,
-  next: Record<string, string> | null,
-  now = new Date(),
-): Promise<{ disconnected: number }> {
-  await syncInstanceLogins(ctx.db, ctx.masterKey, now);
-  let disconnected = 0;
-  if (integrationId === GITHUB_APP.id && replacesGithubApp(previous, next)) {
-    disconnected = await disconnectServerConnections(ctx.db, GITHUB_SERVER_ID, now);
-  }
-  ctx.mcp?.forgetListings();
-  return { disconnected };
 }

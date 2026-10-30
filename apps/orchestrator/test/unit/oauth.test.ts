@@ -10,11 +10,10 @@ import {
   clientCoversRedirect,
   configuredClient,
   discover,
-  ensureClient,
+  ensureClientThrough,
   serverDiscovery,
   providerClient,
   exchangeCode,
-  oauthCallbackHtml,
   oauthCallbackUrl,
   oauthSetupState,
   pendingOauth,
@@ -25,15 +24,18 @@ import {
   registerClient,
   startsBrowserOauth,
   storedClient,
+  storedTokenRedactions,
   tokenPayload,
   tokenRedactions,
   type OAuthDiscovery,
 } from "../../src/oauth/index.js";
+import { oauthCallbackHtml } from "../../src/oauth/html.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
+import { encryptPayload } from "../../src/credentials/crypto.js";
 import { loadTextFixture } from "../helpers/fixtures.js";
-import { storeKeys } from "../helpers/env.js";
+import { HEX_MASTER_KEY, storeKeys } from "../helpers/env.js";
 import { mockFetch } from "../helpers/http.js";
-import { serverRow } from "../helpers/servers.js";
+import { connectionRow, serverRow } from "../helpers/servers.js";
 import type { Manifest } from "../../src/db/schema/index.js";
 
 const GMAIL_SCOPES = CONNECTORS.bySlug("gmail")!.manifest.auth.oauth!.scopes!;
@@ -186,15 +188,15 @@ test("token payload and account hint", () => {
       email_domain: "acme.com",
       workspace_id: "ws_1",
     },
-    { now },
+    now,
   );
   assert.equal(stored.access_token, "tok");
   assert.equal(stored.refresh_token, "ref");
   assert.equal(stored.email_domain, "acme.com");
   assert.equal(accountHint(stored), "acme.com");
-  assert.equal(accessExpired(stored, { now: new Date(now.getTime() + 2 * 60 * 60 * 1000) }), true);
-  assert.equal(accessExpired(stored, { now: new Date(now.getTime() + 60 * 1000) }), false);
-  const refreshed = tokenPayload({ access_token: "tok2", expires_in: 60 }, { now, existing: stored });
+  assert.equal(accessExpired(stored, new Date(now.getTime() + 2 * 60 * 60 * 1000)), true);
+  assert.equal(accessExpired(stored, new Date(now.getTime() + 60 * 1000)), false);
+  const refreshed = tokenPayload({ access_token: "tok2", expires_in: 60 }, now, stored);
   assert.equal(refreshed.refresh_token, "ref");
   assert.equal(refreshed.access_token, "tok2");
 });
@@ -239,6 +241,20 @@ test("token redactions and pending oauth", () => {
       mcp_conn_4_secret_key: "sk-secret",
     },
   );
+});
+
+test("stored token redactions decrypt a connection's payload into its token values", () => {
+  const masterKey = Buffer.from(HEX_MASTER_KEY, "hex");
+  const [ciphertext, nonce] = encryptPayload({ access_token: "tok", scope: "read" }, masterKey);
+  assert.deepEqual(storedTokenRedactions(connectionRow({ id: "conn_5", ciphertext, nonce }), masterKey), {
+    mcp_conn_5_access_token: "tok",
+  });
+});
+
+test("stored token redactions are empty when the payload cannot be decrypted", () => {
+  const masterKey = Buffer.from(HEX_MASTER_KEY, "hex");
+  const broken = connectionRow({ ciphertext: Buffer.from("not a payload"), nonce: Buffer.alloc(12) });
+  assert.deepEqual(storedTokenRedactions(broken, masterKey), {});
 });
 
 test("stored client requires matching redirect", () => {
@@ -287,6 +303,33 @@ test("discover follows protected resource metadata", async () => {
   assert.deepEqual(discovery.scopes, ["default"]);
 });
 
+test("discover skips metadata that is not a JSON object and refuses a resource without an authorization server", async () => {
+  const requested: string[] = [];
+  const answers = (servers: unknown) =>
+    mockFetch((url) => {
+      requested.push(url);
+      const path = new URL(url).pathname;
+      if (path === "/mcp/.well-known/oauth-protected-resource") {
+        return { status: 200, text: "<html>not json</html>" };
+      }
+      if (path.includes("oauth-protected-resource")) {
+        return { status: 200, json: { authorization_servers: servers } };
+      }
+      return {
+        status: 200,
+        json: { authorization_endpoint: "https://mcp.example/authorize", token_endpoint: "https://mcp.example/token" },
+      };
+    });
+  const discovery = await discover("https://mcp.example/mcp", { client: answers(["https://mcp.example"]) });
+  assert.equal(discovery.resource, "https://mcp.example/mcp");
+  assert.equal(discovery.token_endpoint, "https://mcp.example/token");
+  assert.equal(requested[0], "https://mcp.example/mcp/.well-known/oauth-protected-resource");
+  await assert.rejects(discover("https://mcp.example/mcp", { client: answers([]) }), {
+    name: "OAuthError",
+    message: "protected resource metadata is missing authorization_servers",
+  });
+});
+
 test("register exchange and refresh", async () => {
   const client = mockFetch((url, init) => {
     const path = new URL(url).pathname;
@@ -324,15 +367,13 @@ test("register exchange and refresh", async () => {
     clientId: "cid",
     clientSecret: null,
     redirectUri: "http://127.0.0.1:8080/cb",
-    client,
-  });
+  }, { client });
   assert.equal(tokens.access_token, "tok");
   const refreshed = await refreshTokens(discovery, {
     refreshToken: "ref",
     clientId: "cid",
     clientSecret: null,
-    client,
-  });
+  }, { client });
   assert.equal(refreshed.access_token, "tok2");
 });
 
@@ -347,12 +388,11 @@ test("refresh invalid_grant is reauth", async () => {
   };
   await assert.rejects(
     () =>
-      refreshTokens(discovery, {
-        refreshToken: "ref",
-        clientId: "cid",
-        clientSecret: null,
-        client: mockFetch(() => ({ status: 400, json: { error: "invalid_grant" } })),
-      }),
+      refreshTokens(
+        discovery,
+        { refreshToken: "ref", clientId: "cid", clientSecret: null },
+        { client: mockFetch(() => ({ status: 400, json: { error: "invalid_grant" } })) },
+      ),
     (error: unknown) => error instanceof OAuthReauthError,
   );
 });
@@ -456,7 +496,7 @@ test("ensureClient gmail uses the Google connectors keys and restricts scopes", 
       return null;
     },
   };
-  const [discovery, registered] = await ensureClient(
+  const [discovery, registered] = await ensureClientThrough(
     db,
     GMAIL_SERVER,
     "http://127.0.0.1:8080/api/mcp/oauth/callback",
@@ -490,7 +530,7 @@ test("ensureClient drive uses the Google connectors keys and restricts scopes", 
       return null;
     },
   };
-  const [discovery, registered] = await ensureClient(
+  const [discovery, registered] = await ensureClientThrough(
     db,
     DRIVE_SERVER,
     "http://127.0.0.1:8080/api/mcp/oauth/callback",
@@ -526,7 +566,7 @@ test("ensureClient gmail without the Google connectors keys fails", async () => 
   };
   await assert.rejects(
     () =>
-      ensureClient(db, GMAIL_SERVER, "http://127.0.0.1:8080/api/mcp/oauth/callback", {
+      ensureClientThrough(db, GMAIL_SERVER, "http://127.0.0.1:8080/api/mcp/oauth/callback", {
         sources: { keys: {} },
       }),
     (error: unknown) => error instanceof OAuthError && /OAuth client is not configured/.test(error.message),

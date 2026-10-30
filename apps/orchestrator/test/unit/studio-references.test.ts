@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { EMBED_BUDGET, walkTaskEmbeds, type EmbedStep } from "../../src/artifacts/index.js";
+import { EMBED_BUDGET } from "../../src/artifacts/types.js";
+import { EMBED_DEPTH, walkTaskEmbeds } from "../../src/artifacts/embeds.js";
+import type { TaskEmbedRun } from "../../src/artifacts/task.js";
 import {
   buildReferences,
   namedPaths,
@@ -44,15 +46,13 @@ async function input(
   blocked: Record<string, string[]> = {},
 ): Promise<ReferenceInput> {
   const texts = noteTexts(files);
-  const walks = new Map<string, EmbedStep[]>();
-  const unreachable = new Map<string, Set<string>>();
+  const runs = new Map<string, TaskEmbedRun>();
   for (const item of tasks) {
     const cannotRead = new Set(blocked[item.agent_id] ?? []);
     const read = async (href: string) => (cannotRead.has(href) ? null : (texts.get(href) ?? null));
-    walks.set(item.agent_id, await walkTaskEmbeds(item.text, read, 3));
-    unreachable.set(item.agent_id, cannotRead);
+    runs.set(item.agent_id, { steps: await walkTaskEmbeds(item.text, read, EMBED_DEPTH + 1), unreachable: cannotRead });
   }
-  return { guild_id: "g", tasks, files, unresolved, walks, unreachable };
+  return { guild_id: "g", tasks, files, unresolved, runs, depth: EMBED_DEPTH, budget: EMBED_BUDGET };
 }
 
 const leads: ReferenceFile = {

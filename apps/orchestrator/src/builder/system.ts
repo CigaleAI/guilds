@@ -3,7 +3,14 @@ import { utcClock } from "../lib/clock.js";
 import { wrapEvidence } from "../conversation/trust.js";
 import { readBuilderSystemTemplate, readBuilderWriteExample } from "../conversation/templates.js";
 import { operatorAccessCuts } from "../recipes/access-edits.js";
-import type { RecipeDocument } from "../recipes/schema.js";
+import type { CoachSessionConfig, RecipeDocument } from "../db/schema/index.js";
+import type { RecipeRow } from "../db/recipes.js";
+
+/** The coach settings a Builder session runs with; its snapshot adds audit fields the model never reads. */
+export type CoachSettings = Omit<CoachSessionConfig, "system_prompt_hash" | "tool_schemas">;
+
+/** The system message a Builder session opens and refreshes with, and the hash its snapshot records. */
+export type BuilderSystemMessage = { content: string; hash: string };
 
 function accessCutsBlock(recipe: RecipeDocument): string[] {
   const cuts = operatorAccessCuts(recipe);
@@ -32,7 +39,7 @@ const COACH_CONFIG_KEYS = [
   "max_input_tokens",
 ] as const;
 
-function coachConfigOf(snapshot: Record<string, unknown>): Record<string, unknown> {
+function coachConfigOf(snapshot: CoachSettings): Partial<CoachSettings> {
   return Object.fromEntries(
     COACH_CONFIG_KEYS.filter((key) => snapshot[key] !== undefined).map((key) => [key, snapshot[key]]),
   );
@@ -53,35 +60,37 @@ function writeExampleBlock(recipe: RecipeDocument): string[] {
   ];
 }
 
-export function composeBuilderSystemMessage(args: {
-  config: Record<string, unknown>;
-  recipe: RecipeDocument;
-  expectedBodyVersion: number;
-  /** The agent Guidelines template the coach is shown; the repository's own when absent. */
-  guidelinesPath?: string | undefined;
-  now?: Date;
-}): { content: string; hash: string } {
-  const template = readBuilderSystemTemplate({ guidelinesPath: args.guidelinesPath });
-  const clock = utcClock(args.now);
+/**
+ * The system message for `recipe` at its version, under `config`. `guidelinesPath` is the agent
+ * Guidelines template the coach is shown; the repository's own when undefined.
+ */
+export function composeBuilderSystemMessage(
+  config: CoachSettings,
+  recipe: Pick<RecipeRow, "body" | "body_version">,
+  guidelinesPath: string | undefined,
+  now?: Date,
+): BuilderSystemMessage {
+  const template = readBuilderSystemTemplate({ guidelinesPath });
+  const clock = utcClock(now);
   const lines = [
     template.replace(/\s+$/, ""),
     "",
     "## Coach configuration",
-    JSON.stringify(coachConfigOf(args.config), null, 2),
+    JSON.stringify(coachConfigOf(config), null, 2),
     "",
-    ...writeExampleBlock(args.recipe),
+    ...writeExampleBlock(recipe.body),
     "## Current recipe",
     "Instance data for this session. Empty arrays mean unset, not omitted keys. Do not copy `meta.name` onto a role.",
     wrapEvidence({
       source: "builder.recipe",
-      body: JSON.stringify(args.recipe, null, 2),
+      body: JSON.stringify(recipe.body, null, 2),
     }),
-    ...accessCutsBlock(args.recipe),
+    ...accessCutsBlock(recipe.body),
     "",
     "## Session",
     `- utc_now: ${clock.utc_now}`,
     `- utc_date: ${clock.utc_date}`,
-    `- expected_body_version: ${args.expectedBodyVersion}`,
+    `- expected_body_version: ${recipe.body_version}`,
   ];
   const content = `${lines.join("\n")}\n`;
   return { content, hash: createHash("sha256").update(content, "utf8").digest("hex") };

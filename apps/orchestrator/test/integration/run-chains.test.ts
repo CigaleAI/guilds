@@ -3,18 +3,19 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
-import { artifactStore } from "../../src/artifacts/index.js";
+import { artifactStore } from "../../src/artifacts/store.js";
 import { connect } from "../../src/seed/connect.js";
 import { HANDOFF_REQUEST, HANDOFF_TOOL_REFUSED } from "../../src/generation/chain.js";
-import { generationDatabase, GenerationLoop, LOOP_TIMINGS, RunRequestError } from "../../src/generation/index.js";
+import { RunRequestError } from "../../src/generation/errors.js";
+import { generationLoop, LOOP_TIMINGS } from "../../src/generation/index.js";
 import { generationLive } from "../../src/generation/completion.js";
 import { type GenerationSandboxes } from "../../src/generation/machines.js";
-import type { Completion } from "../../src/llm/index.js";
+import type { Completion } from "../../src/llm/completion.js";
 import type { AssistantMessage } from "../../src/db/schema/index.js";
-import { McpPool } from "../../src/mcp/index.js";
+import { mcpPool } from "../../src/mcp/pool.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { answerOps, HostCodeSandbox } from "../helpers/code-sandbox.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { connectModelProvider } from "../helpers/models.js";
@@ -25,7 +26,6 @@ import { codeDefaultMachine } from "../helpers/machines.js";
 import { getRun, listMessages, listRuns, mergeRunMetadata } from "../../src/db/runs.js";
 import { updateAgentConfig } from "../../src/db/agents.js";
 import { agentConfig } from "../helpers/generation.js";
-import { generationArtifacts } from "../../src/generation/prepare.js";
 
 const live = generationLive;
 const originalStream = live.streamCompletion;
@@ -82,14 +82,14 @@ test("a coding run near its input limit hands off and continues in a new run", {
     sandboxes.running.add(agentId);
     return sandbox;
   }) as unknown as FakeSandboxes["ensure"];
-  const loop = new GenerationLoop(
+  const loop = generationLoop(
+    db,
     {
-      db: generationDatabase(db),
       notes,
       workspaceRoot: tempDir("guilds-chain-ws-"),
       sandboxes: sandboxes as unknown as GenerationSandboxes,
-      mcp: new McpPool(),
-      artifacts: generationArtifacts(artifacts),
+      mcp: mcpPool(db),
+      artifacts,
     },
     { ...LOOP_TIMINGS, idleTimeoutMs: 0 },
   );
@@ -100,8 +100,8 @@ test("a coding run near its input limit hands off and continues in a new run", {
     db,
     notes,
     artifacts,
-    scripts: new Scripts(scriptDatabase(db)),
-    schedules: new Schedules(scheduleDatabase(db)),
+    scripts: agentScripts(db),
+    schedules: agentSchedules(db),
     generation: loop,
   });
   const headers = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home", "content-type": "application/json" };
@@ -247,7 +247,7 @@ test("a coding run near its input limit hands off and continues in a new run", {
     const groupRuns = async () => (await listRuns(db, agentId)).filter((row) => row.kind === "group");
     for (let attempt = 0; attempt < 200; attempt += 1) {
       const runs = await groupRuns();
-      if (runs.length === 2 && runs.every((row) => row.status === "completed") && !loop.groupChat.is_dispatching(guildId)) {
+      if (runs.length === 2 && runs.every((row) => row.status === "completed") && !loop.groupChat.isDispatching(guildId)) {
         break;
       }
       await new Promise((resolve) => setTimeout(resolve, 50));
@@ -263,7 +263,12 @@ test("a coding run near its input limit hands off and continues in a new run", {
     assert.equal(Number(cursor.rows[0]?.group_chat_delivered_through), Number(root.group_chat_through_seq));
 
     // A run without coding keeps the terminal cap.
-    await updateAgentConfig(db, agentId, agentConfig({ ...config, coding: false, harness: null }), new Date(), {});
+    await updateAgentConfig(
+      db,
+      agentId,
+      { config: agentConfig({ ...config, coding: false, harness: null }) },
+      new Date(),
+    );
     live.streamCompletion = script((messages) => shellCall(`c${messages.length}`));
     const plain = String((await loop.runs.createRun(agentId, "plain")).id);
     await loop.generations.task(plain);

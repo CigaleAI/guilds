@@ -9,40 +9,6 @@ export function parseInt8(value: string): number {
   return parsed;
 }
 
-export function roundCostUsd(value: number | string): number {
-  return Number(Number(value).toFixed(8));
-}
-
-export function usageFields(row: {
-  input_tokens: number;
-  output_tokens: number;
-  cache_read_tokens: number;
-  cost_usd: number | string;
-  calls: number;
-  updated_at: string | null;
-}): {
-  input_tokens: number;
-  output_tokens: number;
-  cache_read_tokens: number;
-  total_tokens: number;
-  cost_usd: number;
-  calls: number;
-  updated_at: string | null;
-} {
-  const inputTokens = row.input_tokens || 0;
-  const outputTokens = row.output_tokens || 0;
-  const cacheRead = row.cache_read_tokens || 0;
-  return {
-    input_tokens: inputTokens,
-    output_tokens: outputTokens,
-    cache_read_tokens: cacheRead,
-    total_tokens: inputTokens + outputTokens,
-    cost_usd: roundCostUsd(row.cost_usd || 0),
-    calls: row.calls || 0,
-    updated_at: row.updated_at,
-  };
-}
-
 const OFFSET = /([+-])(\d{2})(?::?(\d{2}))?$/;
 
 export function formatColumnTimestamp(value: string): string {

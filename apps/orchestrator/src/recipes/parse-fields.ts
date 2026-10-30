@@ -1,6 +1,6 @@
 import { isPlainRecord } from "../db/json.js";
 import { RecipeError } from "./errors.js";
-import type { FieldAuthor } from "./schema.js";
+import type { FieldAuthor } from "../db/schema/index.js";
 
 // The field readers a recipe is parsed with. Each names the field it reads by its path in the
 // document, so an error tells the author where to look; an unknown key also says which key the

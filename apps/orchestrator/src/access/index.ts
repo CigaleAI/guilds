@@ -1,9 +1,9 @@
 import { NATIVE_TOOLS } from "../seed/catalog.js";
 import { visibleAt } from "../credentials/visibility.js";
 import { oauthSetupState } from "../oauth/index.js";
-import { connectorFacts } from "../connectors/view.js";
+import { connectorFacts, type LoadedConnector } from "../connectors/servers.js";
 import { awaitingSettings } from "../connectors/login.js";
-import type { LoadedConnector } from "../connectors/load.js";
+import type { BindingKey, BindingRow, BindingState } from "../db/bindings.js";
 import type { McpConnectionRow } from "../db/mcp.js";
 import type { ToolInputSchema } from "../db/schema/index.js";
 
@@ -73,6 +73,45 @@ export type Overlay = {
   connection_id: string | null;
 };
 
+/** A stored binding, as far as resolving it reads it. */
+export type ResolvableBinding = Pick<
+  BindingRow,
+  "catalog_kind" | "catalog_id" | "scope" | "scope_id" | "enabled" | "connection_id"
+>;
+
+/**
+ * The scope bindings resolve for: the organisation, guild, and agent whose bindings cover it, and
+ * the level it is viewed at, the agent's when left out.
+ */
+export type ResolutionScope = {
+  orgId?: string | null | undefined;
+  guildId?: string | null | undefined;
+  agentId?: string | null | undefined;
+  viewScope?: string | undefined;
+};
+
+/** The organisation and guild a binding's scope sits in; null where the scope sits above one. */
+export type BindingPlace = {
+  orgId: string | null;
+  guildId: string | null;
+};
+
+/** The connector a binding names and the login it uses; null for a binding of neither. */
+export type BoundConnector = {
+  server: LoadedConnector | null;
+  connection: McpConnectionRow | null;
+};
+
+/**
+ * The connectors a scope sees, the logins covering it, and each one's listed tools as its view
+ * shows them, by login id, or by `catalog:<server id>` for a connector without a login.
+ */
+export type ScopeConnectors = {
+  servers: LoadedConnector[];
+  connections: McpConnectionRow[];
+  listedTools: Record<string, Array<Record<string, unknown>>>;
+};
+
 export type Resolved = {
   catalog_kind: string;
   catalog_id: string;
@@ -82,11 +121,16 @@ export type Resolved = {
   overlay: Overlay | null;
 };
 
+/** Whether `value` is one of `names`. */
+function isOneOf<T extends string>(names: readonly T[], value: string): value is T {
+  return names.some((name) => name === value);
+}
+
 export function validateScope(
   scope: string,
   scopeId: string | null | undefined,
 ): [string, string | null] {
-  if (!(SCOPES as readonly string[]).includes(scope)) {
+  if (!isOneOf(SCOPES, scope)) {
     throw new BindingError("scope must be platform, org, guild, or agent");
   }
   if (scope === "platform") {
@@ -102,7 +146,7 @@ export function validateScope(
 }
 
 export function validateCatalog(catalogKind: string, catalogId: string): [string, string] {
-  if (!(CATALOG_KINDS as readonly string[]).includes(catalogKind)) {
+  if (!isOneOf(CATALOG_KINDS, catalogKind)) {
     throw new BindingError("catalog_kind must be native_tool, mcp, or mcp_tool");
   }
   if (typeof catalogId !== "string" || !catalogId.trim()) {
@@ -113,148 +157,150 @@ export function validateCatalog(catalogKind: string, catalogId: string): [string
     if (id === "report_issue") {
       throw new BindingError(`${id} is not a binding`);
     }
-    if ((BROWSER_TOOLS as readonly string[]).includes(id)) {
+    if (isOneOf(BROWSER_TOOLS, id)) {
       throw new BindingError(`${id} is not a binding`);
     }
-    if (!(NATIVE_TOOLS as readonly string[]).includes(id)) {
+    if (!isOneOf(NATIVE_TOOLS, id)) {
       throw new BindingError(`unknown native tool: ${id}`);
     }
   }
   return [catalogKind, id];
 }
 
-export function validateBinding(args: {
-  catalogKind: string;
-  catalogId: string;
-  scope: string;
-  scopeId: string | null | undefined;
-  enabled: boolean;
-  guildId?: string | null;
-  orgId?: string | null;
-  server?: LoadedConnector | null;
-  connection?: McpConnectionRow | null;
-  connectionId?: string | null;
-}): Overlay {
-  const [catalogKind, catalogId] = validateCatalog(args.catalogKind, args.catalogId);
-  const [scope, scopeId] = validateScope(args.scope, args.scopeId);
+/**
+ * The login a binding of an MCP server uses, checked against the server and login it names and
+ * the scope it is set at: null when it names none.
+ */
+function validateMcpLogin(
+  overlay: Overlay,
+  connectionId: string | null,
+  place: BindingPlace,
+  connector: BoundConnector,
+): string | null {
+  if (connector.server === null) {
+    throw new BindingError("unknown mcp server");
+  }
+  if (connector.server.id !== overlay.catalog_id) {
+    throw new BindingError("mcp catalog_id must be the server id");
+  }
+  if (connectionId === null) {
+    return null;
+  }
+  const connection = connector.connection;
+  if (connection === null) {
+    throw new BindingError("unknown connection");
+  }
+  if (connection.id !== connectionId) {
+    throw new BindingError("connection_id must match the connection");
+  }
+  if (connection.mcp_server_id !== overlay.catalog_id) {
+    throw new BindingError("connection is for a different server");
+  }
+  const at = { scope: overlay.scope, scopeId: overlay.scope_id, guildId: place.guildId, orgId: place.orgId };
+  if (!visibleAt(connection.owner_scope, connection.owner_id, at)) {
+    throw new BindingError("connection is not visible at this scope");
+  }
+  return connectionId;
+}
+
+/**
+ * The overlay a binding writes, checked: its catalog item and scope, and for an MCP server the
+ * server and login `connector` holds, visible from the scope's `place`.
+ */
+export function validateBinding(
+  key: BindingKey,
+  state: BindingState,
+  place: BindingPlace,
+  connector: BoundConnector,
+): Overlay {
+  const [catalogKind, catalogId] = validateCatalog(key.catalogKind, key.catalogId);
+  const [scope, scopeId] = validateScope(key.scope, key.scopeId);
+  const overlay: Overlay = {
+    catalog_kind: catalogKind,
+    catalog_id: catalogId,
+    scope,
+    scope_id: scopeId,
+    enabled: state.enabled,
+    connection_id: null,
+  };
   if (catalogKind === "native_tool" || catalogKind === "mcp_tool") {
-    return {
-      catalog_kind: catalogKind,
-      catalog_id: catalogId,
-      scope,
-      scope_id: scopeId,
-      enabled: args.enabled,
-      connection_id: null,
-    };
+    return overlay;
   }
   if (catalogKind === "mcp") {
-    if (args.server == null) {
-      throw new BindingError("unknown mcp server");
-    }
-    if (args.server.id !== catalogId) {
-      throw new BindingError("mcp catalog_id must be the server id");
-    }
-    if (args.connectionId == null) {
-      return {
-        catalog_kind: catalogKind,
-        catalog_id: catalogId,
-        scope,
-        scope_id: scopeId,
-        enabled: args.enabled,
-        connection_id: null,
-      };
-    }
-    if (args.connection == null) {
-      throw new BindingError("unknown connection");
-    }
-    if (args.connection.id !== args.connectionId) {
-      throw new BindingError("connection_id must match the connection");
-    }
-    if (args.connection.mcp_server_id !== catalogId) {
-      throw new BindingError("connection is for a different server");
-    }
-    if (
-      !visibleAt(
-        String(args.connection.owner_scope),
-        (args.connection.owner_id as string | null) ?? null,
-        {
-          scope,
-          scopeId,
-          guildId: args.guildId ?? null,
-          orgId: args.orgId ?? null,
-        },
-      )
-    ) {
-      throw new BindingError("connection is not visible at this scope");
-    }
-    return {
-      catalog_kind: catalogKind,
-      catalog_id: catalogId,
-      scope,
-      scope_id: scopeId,
-      enabled: args.enabled,
-      connection_id: args.connectionId,
-    };
+    return { ...overlay, connection_id: validateMcpLogin(overlay, state.connectionId, place, connector) };
   }
   throw new BindingError("unsupported catalog_kind");
 }
 
-function rowOverlay(row: Record<string, unknown>): Overlay {
+function rowOverlay(row: ResolvableBinding): Overlay {
   return {
-    catalog_kind: String(row.catalog_kind),
-    catalog_id: String(row.catalog_id),
-    scope: String(row.scope),
-    scope_id: (row.scope_id as string | null) ?? null,
-    enabled: Boolean(row.enabled),
-    connection_id: (row.connection_id as string | null) ?? null,
+    catalog_kind: row.catalog_kind,
+    catalog_id: row.catalog_id,
+    scope: row.scope,
+    scope_id: row.scope_id,
+    enabled: row.enabled,
+    connection_id: row.connection_id,
   };
 }
 
+/** How many levels each scope sits below the platform. */
+const SCOPE_DEPTHS = new Map<string, number>([
+  ["platform", 0],
+  ["org", 1],
+  ["guild", 2],
+  ["agent", 3],
+]);
+
+/**
+ * The scopes whose bindings a view at `scope` inherits, from the platform down to the level it is
+ * viewed at; a level `scope` names no id for is left out.
+ */
+function coveringScopes(scope: ResolutionScope): Array<[string, string | null]> {
+  const depth = SCOPE_DEPTHS.get(scope.viewScope ?? "agent") ?? 0;
+  const levels: Array<[string, string | null | undefined]> = [
+    ["org", scope.orgId],
+    ["guild", scope.guildId],
+    ["agent", scope.agentId],
+  ];
+  const chain: Array<[string, string | null]> = [["platform", null]];
+  for (const [index, [level, id]] of levels.entries()) {
+    if (id != null && index < depth) {
+      chain.push([level, id]);
+    }
+  }
+  return chain;
+}
+
 export function resolveItem(
-  rows: Array<Record<string, unknown>>,
+  rows: ResolvableBinding[],
   catalogKind: string,
   catalogId: string,
-  options: {
-    orgId?: string | null | undefined;
-    guildId?: string | null | undefined;
-    agentId?: string | null | undefined;
-    viewScope?: string | undefined;
-  } = {},
+  scope: ResolutionScope = {},
 ): Resolved {
-  const viewScope = options.viewScope ?? "agent";
-  const chain: Array<[string, string | null]> = [["platform", null]];
-  if (options.orgId != null && (viewScope === "org" || viewScope === "guild" || viewScope === "agent")) {
-    chain.push(["org", options.orgId]);
-  }
-  if (options.guildId != null && (viewScope === "guild" || viewScope === "agent")) {
-    chain.push(["guild", options.guildId]);
-  }
-  if (options.agentId != null && viewScope === "agent") {
-    chain.push(["agent", options.agentId]);
-  }
-
+  const viewScope = scope.viewScope ?? "agent";
+  const chain = coveringScopes(scope);
   let enabled = false;
   let sourceScope: string | null = null;
   let connectionId: string | null = null;
   let overlay: Overlay | null = null;
-  const indexed = new Map<string, Record<string, unknown>>();
+  const indexed = new Map<string, ResolvableBinding>();
   for (const row of rows) {
     if (row.catalog_kind === catalogKind && row.catalog_id === catalogId) {
       indexed.set(`${row.scope}\0${row.scope_id}\0${row.catalog_kind}\0${row.catalog_id}`, row);
     }
   }
-  for (const [scope, scopeId] of chain) {
-    const row = indexed.get(`${scope}\0${scopeId}\0${catalogKind}\0${catalogId}`);
+  for (const [level, levelId] of chain) {
+    const row = indexed.get(`${level}\0${levelId}\0${catalogKind}\0${catalogId}`);
     if (row === undefined) {
       continue;
     }
     const current = rowOverlay(row);
     enabled = current.enabled;
-    sourceScope = scope;
+    sourceScope = level;
     if (current.connection_id !== null) {
       connectionId = current.connection_id;
     }
-    if (scope === viewScope) {
+    if (level === viewScope) {
       overlay = current;
     }
   }
@@ -268,23 +314,8 @@ export function resolveItem(
   };
 }
 
-export function resolvedTools(
-  rows: Array<Record<string, unknown>>,
-  options: {
-    orgId?: string | null | undefined;
-    guildId?: string | null | undefined;
-    agentId?: string | null | undefined;
-    viewScope?: string | undefined;
-  } = {},
-): Resolved[] {
-  return NATIVE_TOOLS.map((name) =>
-    resolveItem(rows, "native_tool", name, {
-      orgId: options.orgId,
-      guildId: options.guildId,
-      agentId: options.agentId,
-      viewScope: options.viewScope,
-    }),
-  );
+export function resolvedTools(rows: ResolvableBinding[], scope: ResolutionScope = {}): Resolved[] {
+  return NATIVE_TOOLS.map((name) => resolveItem(rows, "native_tool", name, scope));
 }
 
 export function enabledToolNames(items: Resolved[]): string[] {
@@ -292,24 +323,11 @@ export function enabledToolNames(items: Resolved[]): string[] {
 }
 
 export function resolvedMcp(
-  rows: Array<Record<string, unknown>>,
+  rows: ResolvableBinding[],
   servers: LoadedConnector[],
-  options: {
-    orgId?: string | null | undefined;
-    guildId?: string | null | undefined;
-    agentId?: string | null | undefined;
-    viewScope?: string | undefined;
-  } = {},
+  scope: ResolutionScope = {},
 ): Array<[Resolved, LoadedConnector]> {
-  return servers.map((server) => [
-    resolveItem(rows, "mcp", server.id, {
-      orgId: options.orgId,
-      guildId: options.guildId,
-      agentId: options.agentId,
-      viewScope: options.viewScope,
-    }),
-    server,
-  ]);
+  return servers.map((server) => [resolveItem(rows, "mcp", server.id, scope), server]);
 }
 
 export function toolView(item: Resolved): Record<string, unknown> {
@@ -329,10 +347,11 @@ export type ListedToolFields = {
   input_schema: ToolInputSchema;
 };
 
+/** A listed tool as its view shows it, inheriting its server's source scope when it has none of its own. */
 export function mcpToolView(
   item: Resolved,
   listed: ListedToolFields,
-  options: { serverSource?: string | null } = {},
+  serverSource: string | null,
 ): Record<string, unknown> {
   return {
     name: listed.namespaced_name,
@@ -340,7 +359,7 @@ export function mcpToolView(
     description: listed.description,
     input_schema: listed.input_schema,
     enabled: item.enabled,
-    source_scope: item.source_scope || options.serverSource || null,
+    source_scope: item.source_scope || serverSource || null,
     overlay: item.overlay === null ? null : { enabled: item.overlay.enabled },
   };
 }
@@ -349,7 +368,7 @@ export function mcpView(
   item: Resolved,
   server: LoadedConnector,
   connection: McpConnectionRow | null,
-  options: { tools?: Array<Record<string, unknown>> | null } = {},
+  tools: Array<Record<string, unknown>>,
 ): Record<string, unknown> {
   const overlay =
     item.overlay === null
@@ -377,7 +396,7 @@ export function mcpView(
     account_hint: connection === null ? "" : connection.account_hint,
     connection_owner_scope: connection === null ? null : connection.owner_scope,
     overlay,
-    tools: options.tools ?? [],
+    tools,
     ...connectorFacts(server),
     settings: connection === null ? {} : connection.settings,
     needs_settings: connection !== null && awaitingSettings(connection),
@@ -385,36 +404,22 @@ export function mcpView(
   return view;
 }
 
-export function accessPayload(args: {
-  rows: Array<Record<string, unknown>>;
-  orgId?: string | null | undefined;
-  guildId?: string | null | undefined;
-  agentId?: string | null | undefined;
-  viewScope: string;
-  servers?: LoadedConnector[] | null | undefined;
-  connections?: McpConnectionRow[] | null | undefined;
-  listedTools?: Record<string, unknown[]> | null | undefined;
-}): Record<string, unknown> {
-  const options = {
-    orgId: args.orgId,
-    guildId: args.guildId,
-    agentId: args.agentId,
-    viewScope: args.viewScope,
-  };
-  const tools = resolvedTools(args.rows, options).map(toolView);
+/** The tools and connectors a scope sees, each resolved from `rows` for it. */
+export function accessPayload(
+  rows: ResolvableBinding[],
+  scope: ResolutionScope,
+  connectors: ScopeConnectors,
+): Record<string, unknown> {
+  const tools = resolvedTools(rows, scope).map(toolView);
   const byConnection = new Map<string, McpConnectionRow>();
-  for (const connection of args.connections ?? []) {
+  for (const connection of connectors.connections) {
     byConnection.set(connection.id, connection);
   }
-  const mcp = resolvedMcp(args.rows, args.servers ?? [], options).map(([item, server]) => {
+  const mcp = resolvedMcp(rows, connectors.servers, scope).map(([item, server]) => {
     const connection =
       item.connection_id !== null ? (byConnection.get(item.connection_id) ?? null) : null;
     const listedKey = item.connection_id !== null ? item.connection_id : `catalog:${server.id}`;
-    const listed =
-      args.listedTools
-        ? ((args.listedTools[listedKey] as Array<Record<string, unknown>> | undefined) ?? [])
-        : [];
-    return mcpView(item, server, connection, { tools: listed });
+    return mcpView(item, server, connection, connectors.listedTools[listedKey] ?? []);
   });
   return { tools, mcp };
 }

@@ -18,8 +18,22 @@ import {
 import { recordFileChange } from "../db/file-changes.js";
 import { isUniqueViolation, type Queryable, withTransaction } from "../db/pg.js";
 import type { CollectionColumn, RecordBody } from "../db/schema/index.js";
-import { readableCollectionById, requireReadable, requireWritable } from "./collections.js";
-import { identityFor, recordProblems, recordRejected, uniqueColumn, validateAdd, validatePatch } from "./columns.js";
+import {
+  collectionFacts,
+  readableCollectionById,
+  requireReadable,
+  requireWritable,
+  type CollectionFacts,
+} from "./collections.js";
+import {
+  describeColumn,
+  identityFor,
+  recordProblems,
+  recordRejected,
+  uniqueColumn,
+  validateAdd,
+  validatePatch,
+} from "./columns.js";
 import { ArtifactError } from "./errors.js";
 import { parseLimit, parseOffset, parseOrder, parseRecordId, parseSince, parseWhere, searchBlobFor } from "./search.js";
 import { assertBytes, bodyOf, hashArtifactContent, recordView, type ArtifactStore, type CollectionDescription, type RecordView, rowDisplayPath } from "./store.js";
@@ -44,12 +58,18 @@ async function lockRecord(client: Queryable, collectionId: string, id: number): 
   return row;
 }
 
+/** A live record's new body: its current row, the body it takes, and the identity its unique column gives that body. */
+type RecordRewrite = { current: RecordRow; body: RecordBody; identity: string | null };
+
+/** A record about to be inserted: the id the collection gives it next, its body, and the identity its unique column gives it. */
+type NewRecord = { nextId: number; body: RecordBody; identity: string | null };
+
 /** Writes a record's merged body and logs the update against `actor`; a value its unique column already holds is a 409. */
 async function writeRecordBody(
   client: Queryable,
   actor: ArtifactActor,
   collection: CollectionDescription,
-  record: { current: RecordRow; body: RecordBody; identity: string | null },
+  record: RecordRewrite,
 ): Promise<RecordRow> {
   const { current, body, identity } = record;
   let row: RecordRow;
@@ -88,7 +108,7 @@ async function insertNewRecord(
   client: Queryable,
   actor: ArtifactActor,
   collection: CollectionDescription,
-  record: { nextId: number; body: RecordBody; identity: string | null },
+  record: NewRecord,
 ): Promise<RecordRow> {
   if ((await countLiveRecords(client, collection.id)) >= LIVE_RECORDS_MAX) {
     throw new ArtifactError("record limit reached", 422);
@@ -129,6 +149,15 @@ async function insertNewRecord(
   return written;
 }
 
+/** A record as a writer adds it: the collection it goes to, by name, and its body before validation. */
+export type RecordDraft = { collection: string; body: Record<string, unknown> };
+
+/** One record as a caller names it: its collection, by name, and its id as sent. */
+export type RecordRef = { collection: string; id: unknown };
+
+/** A patch to one record: the record, and the columns it sets or clears before validation. */
+export type RecordPatch = RecordRef & { body: Record<string, unknown> };
+
 /**
  * Adds a record. The body is validated against the columns and rejected
  * with every problem at once; the store assigns the id. When the unique
@@ -138,7 +167,7 @@ async function insertNewRecord(
 export async function addRecord(
   store: ArtifactStore,
   actor: ArtifactActor,
-  args: { collection: string; body: Record<string, unknown> },
+  args: RecordDraft,
 ): Promise<{ record: RecordView; merged: number | null }> {
   const collection = await requireWritable(store, actor, args.collection);
   const checked = validateAdd(collection.columns, args.body);
@@ -172,7 +201,7 @@ export async function addRecord(
 export async function updateRecord(
   store: ArtifactStore,
   actor: ArtifactActor,
-  args: { collection: string; id: unknown; body: Record<string, unknown> },
+  args: RecordPatch,
 ): Promise<{ record: RecordView; warnings: string[] }> {
   const collection = await requireWritable(store, actor, args.collection);
   const id = parseRecordId(args.id);
@@ -203,7 +232,7 @@ export async function updateRecord(
 export async function removeRecord(
   store: ArtifactStore,
   actor: ArtifactActor,
-  args: { collection: string; id: unknown },
+  args: RecordRef,
 ): Promise<number> {
   const collection = await requireWritable(store, actor, args.collection);
   const id = parseRecordId(args.id);
@@ -241,6 +270,19 @@ export async function getRecord(
 }
 
 /**
+ * A listing of one collection's records as a caller sends it, each argument before validation: `where`
+ * a term per column, `since` a moment records changed at or after, `order`, and the page.
+ */
+export type RecordListing = {
+  collection: string;
+  where?: unknown;
+  since?: unknown;
+  order?: unknown;
+  limit?: unknown;
+  offset?: unknown;
+};
+
+/**
  * Records of one collection narrowed by `where` (a term per column, matched
  * by the column's type), `since` (changed at or after a moment), ordered
  * by `order` (default id; with `since`, default oldest change first), and
@@ -250,7 +292,7 @@ export async function getRecord(
 export async function listRecords(
   store: ArtifactStore,
   actor: ArtifactActor,
-  args: { collection: string; where?: unknown; since?: unknown; order?: unknown; limit?: unknown; offset?: unknown },
+  args: RecordListing,
 ): Promise<{ total: number; records: RecordView[]; columns: CollectionColumn[] }> {
   const collection = await requireReadable(store, actor, args.collection);
   const since = parseSince(args.since);
@@ -267,6 +309,9 @@ export async function listRecords(
   return { total: listed.total, records: listed.rows.map(recordView), columns: collection.columns };
 }
 
+/** A text search over records as a caller sends it: the collection to keep, the words, `where` within that collection, and how many. */
+export type RecordSearch = { collection?: string; query: string; where?: unknown; limit?: unknown };
+
 /**
  * Text search over the records the actor can read: whole words through
  * the tsvector with the websearch grammar, a single token also by
@@ -275,7 +320,7 @@ export async function listRecords(
 export async function searchRecords(
   store: ArtifactStore,
   actor: ArtifactActor,
-  args: { collection?: string; query: string; where?: unknown; limit?: unknown },
+  args: RecordSearch,
 ): Promise<{ records: RecordView[] }> {
   const query = (args.query ?? "").trim();
   if (!query) {
@@ -303,4 +348,48 @@ export async function exportRecords(
   }
   const rows = await listAllRecords(store.db, collection.id, LIVE_RECORDS_MAX);
   return { name: collection.name, records: rows.map(recordView) };
+}
+
+/** A listing of one collection's records whose `where` is an object of terms and whose `since` is a moment's text. */
+export type RecordQuery = RecordListing & {
+  where?: Record<string, unknown> | undefined;
+  since?: string | undefined;
+};
+
+/** A page of records, how many match in all, and what a narrowed listing that finds nothing says about its collection. */
+export type RecordList = { total: number; records: RecordView[]; hint: string | null };
+
+/**
+ * Lists a collection's records as `listRecords` does. A listing narrowed by `where` or `since`
+ * that finds nothing carries the hint `recordListHint` writes from the collection's facts.
+ */
+export async function listRecordsWithHint(store: ArtifactStore, actor: ArtifactActor, query: RecordQuery): Promise<RecordList> {
+  const listed = await listRecords(store, actor, query);
+  const narrowed = Boolean(query.where || query.since);
+  const facts = listed.records.length === 0 && narrowed ? await collectionFacts(store, actor, query.collection) : null;
+  return { total: listed.total, records: listed.records, hint: facts ? recordListHint(query, facts) : null };
+}
+
+/**
+ * What a narrowed listing that finds nothing says: what was asked, what the collection holds, and
+ * its columns, so the next call narrows differently instead of asking for a larger limit.
+ */
+export function recordListHint(query: RecordQuery, facts: CollectionFacts): string {
+  const narrowing = [
+    query.since ? `changed at or after ${query.since}` : "",
+    query.where ? `where ${JSON.stringify(query.where)}` : "",
+  ]
+    .filter(Boolean)
+    .join(", ");
+  const holds =
+    facts.count === 0
+      ? `${query.collection} holds no records yet.`
+      : `${query.collection} holds ${facts.count} record${facts.count === 1 ? "" : "s"}; the newest changed at ${facts.newest_updated_at}.`;
+  const columns = facts.columns.length ? `Its columns: ${facts.columns.map(describeColumn).join("; ")}.` : "";
+  const advice = query.since
+    ? "An empty result is the answer; a larger limit will not change it. since is for picking up new work — " +
+      "to check whether something is already recorded, use where on the unique column or record_search."
+    : "An empty result is the answer; a larger limit will not change it. where matches by column type " +
+      "(text or an open array item by substring, a closed list exactly, null a missing value); record_search matches words in the values.";
+  return [`No records in ${query.collection} ${narrowing}.`, holds, columns, advice].filter(Boolean).join(" ");
 }

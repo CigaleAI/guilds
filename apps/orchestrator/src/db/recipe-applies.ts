@@ -72,11 +72,14 @@ export async function latestGuildApply(
   return result.rows[0] ?? null;
 }
 
+/** An apply's progress: its checklist and the warnings it raised. */
+export type ApplyProgress = { checklist: ApplyStep[]; warnings: ApplyWarning[] };
+
 /** Writes the apply's checklist and warnings. */
 export async function setApplyChecklist(
   db: Queryable,
   applyId: string,
-  progress: { checklist: ApplyStep[]; warnings: ApplyWarning[] },
+  progress: ApplyProgress,
   now: Date,
 ): Promise<RecipeApplyRow | null> {
   const result = await db.query<RecipeApplyRow>(

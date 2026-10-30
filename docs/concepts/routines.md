@@ -290,10 +290,15 @@ A proposal writes nothing until the operator applies it
 | --- | --- | --- | --- |
 | `GET /api/agents/:id/schedules` | the agent's schedules | 200 | 404 |
 | `POST /api/agents/:id/schedules` | creates one from `cron` or `window`, `description`, `instruction` | 201 | 422 missing `description` or `instruction`, or an invalid timing, description, or instruction; 404 |
-| `PATCH /api/agents/:id/schedules/:schedule_id` | changes any of `cron` or `window`, `description`, `instruction`, and `paused` ([Changing a routine](#changing-a-routine)) | 200 | 422 an invalid timing, description, or instruction; 404 |
+| `PATCH /api/agents/:id/schedules/:schedule_id` | changes any of `cron` or `window`, `description`, `instruction`, and `paused` ([Changing a routine](#changing-a-routine)) | 200 | 422 an invalid timing, description, or instruction, or a `paused` that is not a boolean; 404 |
 | `DELETE /api/agents/:id/schedules/:schedule_id` | deletes one | 204 | 404 |
 | `GET /api/guilds/:id/schedules` | every schedule in the guild, with its agent | 200 | |
 | `PUT /api/guilds/:id` | `routines_enabled` switches the guild's routines ([Guilds](guilds.md)) | 200 | |
+
+In both bodies `description` and `instruction` are strings, `cron` a
+string or null, and `window` null or an object with string
+`timezone`, `start` and `end` and a number `max_wakes`. A field of
+another type is 422 naming it.
 
 A schedule item carries `id`, `agent_id`, `cron`, `window`, `label`
 (the timing in words), `description`, `instruction`,

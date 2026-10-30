@@ -7,6 +7,7 @@ import {
   DEFAULT_MACHINE_BOX,
   DEFAULT_MACHINE_MAX_WORKSPACE_MIB,
   DEFAULT_MACHINE_NAME,
+  type AgentConfig,
   machines,
 } from "./schema/index.js";
 
@@ -36,7 +37,7 @@ export type MachineAgentQueryRow = {
   slot: number;
   browser: boolean;
   coding: boolean;
-  max_workspace_mib: unknown;
+  max_workspace_mib: AgentConfig["max_workspace_mib"];
 };
 
 export type MachineWithAgentsQueryRow = MachineQueryRow & {
@@ -47,6 +48,9 @@ export type MachineWithAgentsQueryRow = MachineQueryRow & {
 export type MachineSpec = Pick<Machine, "name" | "box" | "memory_mib" | "max_workspace_mib"> & {
   cpu: number | null;
 };
+
+/** A machine, by its organisation and its id. */
+export type MachineKey = Pick<Machine, "org_id" | "id">;
 
 /** What an agent on a machine has on, as its config says. */
 export type HostedNeeds = { browser: boolean; coding: boolean };
@@ -243,8 +247,7 @@ export async function insertMachine(
 /** Writes a machine's name, tier, size, and disk cap. */
 export async function updateMachine(
   db: Queryable,
-  orgId: string,
-  machineId: string,
+  key: MachineKey,
   machine: MachineSpec,
   now: Date,
 ): Promise<MachineQueryRow> {
@@ -254,8 +257,8 @@ export async function updateMachine(
       WHERE org_id = $1 AND id = $2
       RETURNING ${MACHINE_COLUMNS}`,
     [
-      orgId,
-      machineId,
+      key.org_id,
+      key.id,
       machine.name,
       machine.box,
       machine.cpu,

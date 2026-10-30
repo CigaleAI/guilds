@@ -1,107 +1,78 @@
 import OpenAI from "openai";
-import type { AssistantMessage, CompletionMetadata, ReasoningDetail, ToolCall } from "../db/schema/index.js";
+import type { Stream } from "openai/streaming";
+import type { ReasoningDetail } from "../db/schema/index.js";
 import { listMessagesModels, streamMessages } from "./anthropic.js";
 import { modelCatalog } from "./catalog.js";
-import { catalogCostUsd } from "./cost.js";
-import { parseModelId, type ProviderDef } from "./providers.js";
+import {
+  LISTING_TIMEOUT_MS,
+  LLMError,
+  MODEL_USER_AGENT,
+  asLlmError,
+  assistantMetadata,
+  assistantPayload,
+  completionTimeoutMs,
+  providerForModel,
+  reasoningEffortForModel,
+  type ModelEndpoint,
+  type ModelEvent,
+  type ModelListingServices,
+  type ModelRequest,
+  type ProviderUsage,
+} from "./completion.js";
+import { isPlainObject, optionalString } from "./payload.js";
+import type { ProviderDef } from "./providers.js";
 
-export class LLMError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "LLMError";
-  }
-}
-
-export function asLlmError(error: unknown, apiKey?: string | null): LLMError {
-  if (error instanceof LLMError) {
-    error.message = redactApiKey(error.message, apiKey);
-    return error;
-  }
-  const message = error instanceof Error ? error.message : String(error);
-  return new LLMError(redactApiKey(message, apiKey));
-}
-
-export type Completion = {
-  payload: AssistantMessage;
-  metadata: CompletionMetadata;
-};
-
-export type ModelEvent = ["delta", string] | ["reasoning", string] | ["done", Completion];
-
-
-export const MODEL_USER_AGENT = "guilds.run";
-
-export function redactApiKey(text: string, apiKey?: string | null): string {
-  const key = (apiKey ?? "").trim();
-  if (!key) {
-    return text;
-  }
-  return text.split(key).join("[REDACTED:API_KEY]");
-}
-
-/** The provider a stored model id names, and the id the provider knows the model by. */
-export function providerForModel(model: string): { provider: ProviderDef; upstream: string } {
-  const parsed = parseModelId(model);
-  if (!parsed) {
-    throw new LLMError("model must be {provider}/{model}");
-  }
-  return { provider: parsed.provider, upstream: parsed.model };
-}
-
-/** Kimi Code documents `low` / `high` / `max`; the picker is `none` / `low` / `medium` / `high`. */
-export function reasoningEffortForModel(model: string, level: string): string | null {
-  if (!level || level === "none" || level === "off") {
-    return null;
-  }
-  if (model.startsWith("kimi/")) {
-    if (level === "low") {
-      return "low";
-    }
-    if (level === "medium") {
-      return "high";
-    }
-    if (level === "high") {
-      return "max";
-    }
-    return null;
-  }
-  return level;
+/** The ids a `/models` listing names: a list, or OpenAI's `{ data: [...] }`, of ids or of rows with an `id`. */
+function modelIdsOf(body: unknown): string[] {
+  const rows: unknown[] = Array.isArray(body) ? body : isPlainObject(body) && Array.isArray(body.data) ? body.data : [];
+  return rows.flatMap((row) => {
+    const id = isPlainObject(row) ? row.id : row;
+    return typeof id === "string" && id.trim() ? [id.trim()] : [];
+  });
 }
 
 /**
- * The models the key lists: the probe a save runs, and the local endpoint's catalog. A rejected
- * key fails; the listed ids come back.
+ * The models the key at `endpoint` lists: the probe a save runs, and the local endpoint's catalog.
+ * A rejected key fails; the listed ids come back.
  */
 export async function listProviderModels(
   provider: ProviderDef,
-  options: { apiKey: string; baseURL?: string | null; fetch?: typeof fetch; timeoutMs?: number },
+  endpoint: ModelEndpoint,
+  services: ModelListingServices = {},
 ): Promise<string[]> {
-  const key = options.apiKey.trim();
+  const key = endpoint.apiKey.trim();
   if (!key && provider.id !== "local") {
     throw new LLMError("api_key is required");
   }
-  const base = (options.baseURL ?? provider.baseURL ?? "").replace(/\/+$/, "");
+  const base = (endpoint.baseURL ?? provider.baseURL ?? "").replace(/\/+$/, "");
   if (!base) {
     throw new LLMError(`${provider.label} needs a base URL`);
   }
-  const timeoutMs = options.timeoutMs ?? 10_000;
   if (provider.api === "messages") {
-    return listMessagesModels(provider, {
-      apiKey: key,
-      baseURL: base,
-      timeoutMs,
-      ...(options.fetch ? { fetch: options.fetch } : {}),
-    });
+    return listMessagesModels(provider, { apiKey: key, baseURL: base }, services);
   }
-  const fetchFn = options.fetch ?? fetch;
+  return listChatCompletionsModels(provider, `${base}/models`, key, services);
+}
+
+/**
+ * The model ids an OpenAI-style `/models` at `url` lists for `key`, sent as a bearer token when
+ * there is one. A rejected key fails.
+ */
+async function listChatCompletionsModels(
+  provider: ProviderDef,
+  url: string,
+  key: string,
+  services: ModelListingServices,
+): Promise<string[]> {
+  const fetchFn = services.fetch ?? fetch;
   let response: Response;
   try {
-    response = await fetchFn(`${base}/models`, {
+    response = await fetchFn(url, {
       headers: {
         ...(key ? { Authorization: `Bearer ${key}` } : {}),
         "User-Agent": MODEL_USER_AGENT,
       },
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: AbortSignal.timeout(services.timeoutMs ?? LISTING_TIMEOUT_MS),
     });
   } catch (error) {
     throw asLlmError(error, key);
@@ -113,77 +84,22 @@ export async function listProviderModels(
         : `${provider.label} did not accept the key (${response.status})`,
     );
   }
+  // A listing that is not JSON names no models.
+  return (await listedModelIds(response)) ?? [];
+}
+
+/** The ids a `/models` response lists; null when its body is not JSON. */
+async function listedModelIds(response: Response): Promise<string[] | null> {
   let body: unknown;
   try {
     body = await response.json();
   } catch {
-    body = null;
+    return null;
   }
-  const rows = Array.isArray(body)
-    ? body
-    : body && typeof body === "object" && Array.isArray((body as { data?: unknown }).data)
-      ? ((body as { data: unknown[] }).data)
-      : [];
-  return rows.flatMap((row) => {
-    const id = row && typeof row === "object" ? (row as { id?: unknown }).id : row;
-    return typeof id === "string" && id.trim() ? [id.trim()] : [];
-  });
+  return modelIdsOf(body);
 }
 
-function optionalString(value: unknown): string | null {
-  return typeof value === "string" && value ? value : null;
-}
-
-/** The assistant message a completion returns: its text, and its tool calls when it made any. */
-export function assistantPayload(content: string, toolCalls: ToolCall[]): AssistantMessage {
-  return { role: "assistant", content, ...(toolCalls.length ? { tool_calls: toolCalls } : {}) };
-}
-
-export function assistantMetadata(
-  assembled: {
-    id?: unknown;
-    model?: unknown;
-    usage?: {
-      prompt_tokens?: number;
-      completion_tokens?: number;
-      cache_read_input_tokens?: number;
-      prompt_tokens_details?: { cached_tokens?: number };
-      cost?: number;
-    };
-    finish_reason?: unknown;
-    provider_request_id?: unknown;
-    provider_cost?: unknown;
-    reasoning?: string;
-    reasoning_details?: ReasoningDetail[];
-  },
-  options: { latencyMs: number; model: string },
-): CompletionMetadata {
-  const usage = assembled.usage ?? {};
-  const cacheRead = usage.cache_read_input_tokens ?? usage.prompt_tokens_details?.cached_tokens ?? 0;
-  const tokenUsage = {
-    input_tokens: Number(usage.prompt_tokens || 0),
-    output_tokens: Number(usage.completion_tokens || 0),
-    cache_read_tokens: Number(cacheRead || 0),
-  };
-  const providerCost = typeof assembled.provider_cost === "number" ? assembled.provider_cost : usage.cost;
-  const cost =
-    typeof providerCost === "number"
-      ? { cost_usd: providerCost, cost_source: "provider" as const }
-      : catalogCostUsd(options.model, tokenUsage);
-  return {
-    usage: tokenUsage,
-    latency_ms: options.latencyMs,
-    finish_reason: optionalString(assembled.finish_reason) ?? "stop",
-    model: optionalString(assembled.model) ?? "",
-    response_id: optionalString(assembled.id),
-    provider_request_id: optionalString(assembled.provider_request_id),
-    ...cost,
-    ...(assembled.reasoning ? { reasoning: assembled.reasoning } : {}),
-    ...(assembled.reasoning_details?.length ? { reasoning_details: assembled.reasoning_details } : {}),
-  };
-}
-
-const REASONING_TEXT_KEYS = ["text", "summary", "data"] as const;
+const REASONING_TEXT_KEYS: ReadonlySet<string> = new Set(["text", "summary", "data"]);
 
 function reasoningTextOf(detail: ReasoningDetail): string {
   const text = detail.text ?? detail.summary;
@@ -192,17 +108,14 @@ function reasoningTextOf(detail: ReasoningDetail): string {
 
 export function applyReasoningDetailDelta(acc: ReasoningDetail[], delta: ReasoningDetail[]): void {
   for (const part of delta) {
-    if (!part || typeof part !== "object") {
-      continue;
-    }
-    const index = typeof part.index === "number" ? part.index : acc.length;
+    const index = part.index ?? acc.length;
     const current = acc[index];
     if (current === undefined) {
       acc[index] = { ...part };
       continue;
     }
     for (const [key, value] of Object.entries(part)) {
-      if ((REASONING_TEXT_KEYS as readonly string[]).includes(key) && typeof value === "string") {
+      if (REASONING_TEXT_KEYS.has(key) && typeof value === "string") {
         const previous = current[key];
         current[key] = (typeof previous === "string" ? previous : "") + value;
       } else {
@@ -212,44 +125,146 @@ export function applyReasoningDetailDelta(acc: ReasoningDetail[], delta: Reasoni
   }
 }
 
-type ToolCallAcc = {
-  id?: string;
-  type?: string;
-  function?: { name?: string; arguments?: string };
+/** A piece of one tool call, as a stream chunk carries it: the strings are appended to the call at `index`. */
+export type ToolCallDelta = { index: number; id: string; type: string; name: string; arguments: string };
+
+/** One Chat Completions stream chunk, read into the fields a completion assembles. */
+export type CompletionChunk = {
+  id: string | null;
+  model: string | null;
+  text: string;
+  reasoning: string;
+  reasoningDetails: ReasoningDetail[];
+  toolCalls: ToolCallDelta[];
+  finishReason: string | null;
+  usage: ProviderUsage | null;
 };
 
-function applyToolCallDelta(
-  acc: ToolCallAcc[],
-  delta: Array<{ index?: number; id?: string; type?: string; function?: { name?: string; arguments?: string } }>,
-): void {
+type ToolCallAcc = Omit<ToolCallDelta, "index">;
+
+/** What a Chat Completions stream has assembled from the chunks read so far. */
+type StreamedCompletion = {
+  content: string;
+  reasoning: string;
+  reasoningDetails: ReasoningDetail[];
+  toolCalls: ToolCallAcc[];
+  finishReason: string | null;
+  responseId: string | null;
+  servedModel: string | null;
+  usage: ProviderUsage;
+};
+
+function applyToolCallDelta(acc: ToolCallAcc[], delta: ToolCallDelta[]): void {
   for (const part of delta) {
-    const index = part.index ?? 0;
-    const current = acc[index] ?? {};
-    if (part.id) {
-      current.id = part.id;
-    }
-    if (part.type) {
-      current.type = part.type;
-    }
-    if (part.function) {
-      current.function = current.function ?? { name: "", arguments: "" };
-      if (part.function.name) {
-        current.function.name = (current.function.name ?? "") + part.function.name;
-      }
-      if (part.function.arguments) {
-        current.function.arguments = (current.function.arguments ?? "") + part.function.arguments;
-      }
-    }
-    acc[index] = current;
+    const current = acc[part.index] ?? { id: "", type: "", name: "", arguments: "" };
+    current.id = part.id || current.id;
+    current.type = part.type || current.type;
+    current.name += part.name;
+    current.arguments += part.arguments;
+    acc[part.index] = current;
   }
 }
 
-export function completionTimeoutMs(maxTokens: number): number {
-  const tokens = Number.isFinite(maxTokens) && maxTokens > 0 ? maxTokens : 1;
-  return Math.min(600_000, Math.max(120_000, Math.ceil(tokens * 25)));
+function isReasoningDetail(value: unknown): value is ReasoningDetail {
+  return isPlainObject(value) && (value.index === undefined || typeof value.index === "number");
+}
+
+function toolCallDeltaOf(part: unknown): ToolCallDelta[] {
+  if (!isPlainObject(part)) {
+    return [];
+  }
+  const fn = isPlainObject(part.function) ? part.function : {};
+  return [
+    {
+      // A server that streams a single tool call may leave out its index.
+      index: typeof part.index === "number" ? part.index : 0,
+      id: typeof part.id === "string" ? part.id : "",
+      type: typeof part.type === "string" ? part.type : "",
+      name: typeof fn.name === "string" ? fn.name : "",
+      arguments: typeof fn.arguments === "string" ? fn.arguments : "",
+    },
+  ];
+}
+
+/** The usage fields a chunk reports: OpenAI's, and the cache read and cost that OpenRouter adds. */
+function providerUsageOf(usage: Record<string, unknown>): ProviderUsage {
+  const parsed: ProviderUsage = {};
+  if (typeof usage.prompt_tokens === "number") {
+    parsed.prompt_tokens = usage.prompt_tokens;
+  }
+  if (typeof usage.completion_tokens === "number") {
+    parsed.completion_tokens = usage.completion_tokens;
+  }
+  if (typeof usage.cache_read_input_tokens === "number") {
+    parsed.cache_read_input_tokens = usage.cache_read_input_tokens;
+  }
+  const details = usage.prompt_tokens_details;
+  if (isPlainObject(details) && typeof details.cached_tokens === "number") {
+    parsed.prompt_tokens_details = { cached_tokens: details.cached_tokens };
+  }
+  if (typeof usage.cost === "number") {
+    parsed.cost = usage.cost;
+  }
+  return parsed;
+}
+
+/**
+ * The reasoning a delta carries: `reasoning` (OpenRouter), else `reasoning_content` (DeepSeek and
+ * vLLM-style servers), else the text of its reasoning details.
+ */
+function reasoningOfDelta(delta: Record<string, unknown>, details: ReasoningDetail[]): string {
+  const thought = delta.reasoning ?? delta.reasoning_content ?? details.map(reasoningTextOf).join("");
+  return typeof thought === "string" ? thought : "";
+}
+
+/** A stream chunk read into named fields; a field the chunk lacks or holds in another shape is empty. */
+export function parseCompletionChunk(chunk: unknown): CompletionChunk {
+  const root = isPlainObject(chunk) ? chunk : {};
+  const choices: unknown[] = Array.isArray(root.choices) ? root.choices : [];
+  const first = choices[0];
+  const choice = isPlainObject(first) ? first : {};
+  const delta = isPlainObject(choice.delta) ? choice.delta : {};
+  const details: unknown[] = Array.isArray(delta.reasoning_details) ? delta.reasoning_details : [];
+  const reasoningDetails = details.filter(isReasoningDetail);
+  const toolCalls: unknown[] = Array.isArray(delta.tool_calls) ? delta.tool_calls : [];
+  return {
+    id: optionalString(root.id),
+    model: optionalString(root.model),
+    text: typeof delta.content === "string" ? delta.content : "",
+    reasoning: reasoningOfDelta(delta, reasoningDetails),
+    reasoningDetails,
+    toolCalls: toolCalls.flatMap(toolCallDeltaOf),
+    finishReason: optionalString(choice.finish_reason),
+    usage: isPlainObject(root.usage) ? providerUsageOf(root.usage) : null,
+  };
+}
+
+/** Folds a chunk into what the stream has assembled: its text is appended, and a field it carries replaces the last one. */
+function applyChunk(streamed: StreamedCompletion, chunk: CompletionChunk): void {
+  streamed.responseId = chunk.id ?? streamed.responseId;
+  streamed.servedModel = chunk.model ?? streamed.servedModel;
+  applyReasoningDetailDelta(streamed.reasoningDetails, chunk.reasoningDetails);
+  streamed.reasoning += chunk.reasoning;
+  streamed.content += chunk.text;
+  applyToolCallDelta(streamed.toolCalls, chunk.toolCalls);
+  streamed.finishReason = chunk.finishReason ?? streamed.finishReason;
+  streamed.usage = chunk.usage ?? streamed.usage;
 }
 
 const PROMPT_CACHE_CONTROL = { type: "ephemeral" } as const;
+
+/** The parts with their last non-empty text part marked for the prompt cache; null when none is text. */
+function cacheLastTextPart(parts: unknown[]): unknown[] | null {
+  for (let index = parts.length - 1; index >= 0; index -= 1) {
+    const part = parts[index];
+    if (isPlainObject(part) && part.type === "text" && typeof part.text === "string" && part.text) {
+      const next = parts.slice();
+      next[index] = { ...part, cache_control: PROMPT_CACHE_CONTROL };
+      return next;
+    }
+  }
+  return null;
+}
 
 export function applyPromptCacheControl(
   messages: Array<Record<string, unknown>>,
@@ -264,209 +279,150 @@ export function applyPromptCacheControl(
       };
       return next;
     }
-    if (Array.isArray(content)) {
-      for (let partIndex = content.length - 1; partIndex >= 0; partIndex -= 1) {
-        const part = content[partIndex];
-        if (!part || typeof part !== "object" || Array.isArray(part)) {
-          continue;
-        }
-        const row = part as Record<string, unknown>;
-        if (row.type !== "text" || typeof row.text !== "string" || !row.text) {
-          continue;
-        }
-        const parts = content.slice() as Array<Record<string, unknown>>;
-        parts[partIndex] = { ...row, cache_control: PROMPT_CACHE_CONTROL };
-        const next = messages.slice();
-        next[i] = { ...messages[i], content: parts };
-        return next;
-      }
+    const parts = Array.isArray(content) ? cacheLastTextPart(content) : null;
+    if (parts) {
+      const next = messages.slice();
+      next[i] = { ...messages[i], content: parts };
+      return next;
     }
   }
   return messages;
 }
 
-/** The Chat Completions body a provider takes: the fields in its row, and `temperature` only when the catalog says the model takes one. */
-export function completionRequestBody(options: {
+/** The Chat Completions body a call sends: OpenAI's streaming fields, and the ones OpenRouter adds. */
+export type ChatCompletionsBody = {
   model: string;
   messages: Array<Record<string, unknown>>;
-  temperature: number;
-  max_tokens: number;
-  tools?: unknown[] | null;
+  stream: true;
+  stream_options: { include_usage: true };
+  temperature?: number;
+  max_completion_tokens?: number;
+  max_tokens?: number;
+  cache_control?: typeof PROMPT_CACHE_CONTROL;
+  reasoning?: { effort: string };
+  reasoning_effort?: string;
+  tools?: unknown[];
   tool_choice?: unknown;
-  thinking_level?: string;
-}): Record<string, unknown> {
-  const { provider, upstream } = providerForModel(options.model);
+};
+
+/**
+ * The fields of a body that each provider names its own way: the token limit (OpenAI's
+ * `max_completion_tokens`), OpenRouter's prompt cache, and the reasoning effort.
+ */
+function providerFields(provider: ProviderDef, request: ModelRequest): Partial<ChatCompletionsBody> {
   const openrouter = provider.id === "openrouter";
-  const body: Record<string, unknown> = {
+  const fields: Partial<ChatCompletionsBody> =
+    provider.id === "openai" ? { max_completion_tokens: request.max_tokens } : { max_tokens: request.max_tokens };
+  if (openrouter) {
+    fields.cache_control = PROMPT_CACHE_CONTROL;
+  }
+  const effort = reasoningEffortForModel(request.model, request.thinking_level ?? "none");
+  if (effort && openrouter) {
+    fields.reasoning = { effort };
+  } else if (effort) {
+    fields.reasoning_effort = effort;
+  }
+  return fields;
+}
+
+/** The Chat Completions body a provider takes: the fields in its row, and `temperature` only when the catalog says the model takes one. */
+export function completionRequestBody(request: ModelRequest): ChatCompletionsBody {
+  const { provider, upstream } = providerForModel(request.model);
+  const body: ChatCompletionsBody = {
     model: upstream,
-    messages: openrouter ? applyPromptCacheControl(options.messages) : options.messages,
+    messages: provider.id === "openrouter" ? applyPromptCacheControl(request.messages) : request.messages,
     stream: true,
     stream_options: { include_usage: true },
   };
-  if (modelCatalog.entry(options.model)?.temperature !== false) {
-    body.temperature = options.temperature;
+  if (modelCatalog.entry(request.model)?.temperature !== false) {
+    body.temperature = request.temperature;
   }
-  if (provider.id === "openai") {
-    body.max_completion_tokens = options.max_tokens;
-  } else {
-    body.max_tokens = options.max_tokens;
+  Object.assign(body, providerFields(provider, request));
+  if (request.tools && request.tools.length) {
+    body.tools = request.tools;
   }
-  if (openrouter) {
-    body.cache_control = PROMPT_CACHE_CONTROL;
-  }
-  const effort = reasoningEffortForModel(options.model, options.thinking_level ?? "none");
-  if (effort) {
-    if (openrouter) {
-      body.reasoning = { effort };
-    } else {
-      body.reasoning_effort = effort;
-    }
-  }
-  if (options.tools && options.tools.length) {
-    body.tools = options.tools;
-  }
-  if (options.tool_choice !== undefined && options.tool_choice !== null) {
-    body.tool_choice = options.tool_choice;
+  if (request.tool_choice !== undefined && request.tool_choice !== null) {
+    body.tool_choice = request.tool_choice;
   }
   return body;
 }
 
-export async function* streamCompletion(options: {
-  model: string;
-  messages: Array<Record<string, unknown>>;
-  temperature: number;
-  max_tokens: number;
-  tools?: unknown[] | null;
-  tool_choice?: unknown;
-  signal?: AbortSignal;
-  baseURL?: string;
-  apiKey?: string;
-  thinking_level?: string;
-}): AsyncGenerator<ModelEvent> {
-  const { provider } = providerForModel(options.model);
-  const baseURL = options.baseURL ?? provider.baseURL;
+/**
+ * A completion from the provider the model id names, called with the key at `endpoint`, streamed as
+ * text and reasoning deltas and one assembled assistant payload. `signal` aborts the call.
+ */
+export async function* streamCompletion(
+  request: ModelRequest,
+  endpoint: ModelEndpoint,
+  signal?: AbortSignal,
+): AsyncGenerator<ModelEvent> {
+  const { provider } = providerForModel(request.model);
+  const baseURL = endpoint.baseURL || provider.baseURL;
   if (!baseURL) {
     throw new LLMError(`${provider.label} needs a base URL`);
   }
-  if (options.apiKey === undefined) {
-    throw new LLMError(`${provider.label} is not connected`);
-  }
   if (provider.api === "messages") {
-    yield* streamMessages({ ...options, baseURL, apiKey: options.apiKey });
+    yield* streamMessages(request, { apiKey: endpoint.apiKey, baseURL }, signal);
     return;
   }
-  const apiKey = options.apiKey.trim() || "local";
+  const apiKey = endpoint.apiKey.trim() || "local";
   const client = new OpenAI({
     apiKey,
     baseURL,
-    timeout: completionTimeoutMs(options.max_tokens),
+    timeout: completionTimeoutMs(request.max_tokens),
     maxRetries: 0,
     defaultHeaders: { "User-Agent": MODEL_USER_AGENT },
   });
   const started = performance.now();
-  const body = completionRequestBody(options);
-  type StreamUsage = {
-    prompt_tokens?: number;
-    completion_tokens?: number;
-    cache_read_input_tokens?: number;
-    prompt_tokens_details?: { cached_tokens?: number };
-    cost?: number;
+  const body = completionRequestBody(request);
+  let stream: Stream<unknown>;
+  try {
+    // The body carries fields the SDK's request type does not name, so it goes through `post`, which
+    // `chat.completions.create` calls too. `stream: true` makes the SDK answer with a Stream; each
+    // chunk is parsed below.
+    stream = await client.post<Stream<unknown>>("/chat/completions", {
+      body,
+      stream: true,
+      signal,
+    });
+  } catch (error) {
+    throw asLlmError(error, apiKey);
+  }
+  let received = false;
+  const streamed: StreamedCompletion = {
+    content: "",
+    reasoning: "",
+    reasoningDetails: [],
+    toolCalls: [],
+    finishReason: null,
+    responseId: null,
+    servedModel: null,
+    usage: {},
   };
-  let stream: AsyncIterable<{
-    id?: string;
-    model?: string;
-    choices?: Array<{
-      delta?: {
-        content?: string | null;
-        tool_calls?: unknown[];
-        reasoning?: string | null;
-        reasoning_content?: string | null;
-        reasoning_details?: ReasoningDetail[] | null;
-      };
-      finish_reason?: string | null;
-    }>;
-    usage?: StreamUsage;
-  }>;
   try {
-    stream = (await client.chat.completions.create(body as never, {
-      signal: options.signal,
-    })) as unknown as typeof stream;
-  } catch (error) {
-    throw asLlmError(error, apiKey);
-  }
-  const chunks: Array<Record<string, unknown>> = [];
-  let content = "";
-  let reasoning = "";
-  const reasoningDetails: ReasoningDetail[] = [];
-  const toolCalls: ToolCallAcc[] = [];
-  let finishReason: string | null = null;
-  let responseId: string | undefined;
-  let servedModel: string | undefined;
-  let usage: StreamUsage = {};
-  let providerRequestId: string | null = null;
-  try {
-    for await (const chunk of stream) {
-      const raw = chunk as unknown as Record<string, unknown>;
-      chunks.push(raw);
-      if (typeof chunk.id === "string" && chunk.id) {
-        responseId = chunk.id;
+    for await (const raw of stream) {
+      received = true;
+      const chunk = parseCompletionChunk(raw);
+      applyChunk(streamed, chunk);
+      if (chunk.reasoning) {
+        yield ["reasoning", chunk.reasoning];
       }
-      if (typeof chunk.model === "string" && chunk.model) {
-        servedModel = chunk.model;
-      }
-      const choice = chunk.choices?.[0];
-      const delta = choice?.delta;
-      const detailDelta = delta?.reasoning_details;
-      if (Array.isArray(detailDelta) && detailDelta.length) {
-        applyReasoningDetailDelta(reasoningDetails, detailDelta);
-      }
-      const thought =
-        delta?.reasoning ??
-        delta?.reasoning_content ??
-        (Array.isArray(detailDelta) ? detailDelta.map(reasoningTextOf).join("") : "");
-      if (typeof thought === "string" && thought) {
-        reasoning += thought;
-        yield ["reasoning", thought];
-      }
-      const text = delta?.content;
-      if (typeof text === "string" && text) {
-        content += text;
-        yield ["delta", text];
-      }
-      const toolDelta = delta?.tool_calls;
-      if (Array.isArray(toolDelta) && toolDelta.length) {
-        applyToolCallDelta(toolCalls, toolDelta as never);
-      }
-      if (choice?.finish_reason) {
-        finishReason = choice.finish_reason;
-      }
-      if (chunk.usage) {
-        usage = chunk.usage as typeof usage;
+      if (chunk.text) {
+        yield ["delta", chunk.text];
       }
     }
   } catch (error) {
     throw asLlmError(error, apiKey);
   }
-  try {
-    const response = (stream as { response?: Response }).response
-      ?? (stream as { controller?: { response?: Response } }).controller?.response;
-    const headerId = response?.headers?.get("x-request-id")
-      ?? response?.headers?.get("llm_provider-request-id");
-    if (headerId) {
-      providerRequestId = headerId;
-    }
-  } catch {
-    providerRequestId = null;
-  }
-  if (!chunks.length) {
+  if (!received) {
     throw new LLMError("provider returned no chunks");
   }
   const payload = assistantPayload(
-    content,
-    toolCalls.map((call) => ({
-      id: call.id ?? "",
-      type: call.type ?? "function",
-      function: { name: call.function?.name ?? "", arguments: call.function?.arguments ?? "" },
+    streamed.content,
+    streamed.toolCalls.map((call) => ({
+      id: call.id,
+      type: call.type || "function",
+      function: { name: call.name, arguments: call.arguments },
     })),
   );
   const latencyMs = Math.trunc(performance.now() - started);
@@ -476,16 +432,15 @@ export async function* streamCompletion(options: {
       payload,
       metadata: assistantMetadata(
         {
-          id: responseId,
-          model: servedModel,
-          usage,
-          finish_reason: finishReason,
-          provider_request_id: providerRequestId,
-          provider_cost: typeof usage.cost === "number" ? usage.cost : undefined,
-          reasoning,
-          reasoning_details: reasoningDetails.filter((detail) => detail !== undefined),
+          id: streamed.responseId,
+          model: streamed.servedModel,
+          usage: streamed.usage,
+          finish_reason: streamed.finishReason,
+          reasoning: streamed.reasoning,
+          reasoning_details: streamed.reasoningDetails.filter((detail) => detail !== undefined),
         },
-        { latencyMs, model: options.model },
+        request.model,
+        latencyMs,
       ),
     },
   ];

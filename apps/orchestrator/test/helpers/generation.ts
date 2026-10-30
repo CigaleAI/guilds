@@ -1,29 +1,46 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { PLATFORM_SEED_TOOLS } from "../../src/access/runtime.js";
-import type { ArtifactActor } from "../../src/artifacts/index.js";
+import {
+  PLATFORM_SEED_TOOLS,
+  agentLoginsThrough,
+  agentRuntimeThrough,
+  agentSecretsThrough,
+  snapshotEnvValuesThrough,
+} from "../../src/access/runtime.js";
+import type { ArtifactActor } from "../../src/artifacts/types.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import { secretPayload } from "../../src/credentials/validate.js";
 import {
   GenerationLoop,
   LOOP_TIMINGS,
   type GenerationDatabase,
+  type GenerationLoopDeps,
   type GenerationLoopServices,
   type GenerationLoopTimings,
 } from "../../src/generation/index.js";
+import { RunEvents, type RunEventsDatabase } from "../../src/generation/events.js";
 import { type GenerationSandboxes } from "../../src/generation/machines.js";
-import type { Completion } from "../../src/llm/index.js";
+import type { ToolboxDatabase, ToolServices } from "../../src/toolbox/services.js";
+import type { Completion } from "../../src/llm/completion.js";
+import { McpPool } from "../../src/mcp/pool.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { SandboxError, type AgentSeat, type MachineSpec } from "../../src/sandbox/index.js";
+import { MemoryMcpDatabase } from "./mcp-database.js";
+import type { AgentSeat, MachineSpec } from "../../src/sandbox/index.js";
+import { SandboxError } from "../../src/sandbox/sdk.js";
 import { HEX_MASTER_KEY, tempDir } from "./env.js";
 import { templatesRoot } from "./fixtures.js";
 import { TEST_CREDENTIALS } from "./models.js";
-import type { AgentRow, AgentScriptRow, NewAgentScript } from "../../src/db/agents.js";
-import type { ScriptDatabase } from "../../src/scripts/catalog.js";
-import type { NewDirectRun, NewGroupRun, NewMessage, NewScheduleRun } from "../../src/db/runs.js";
+import type { AgentPlaceRow, AgentRow, AgentScriptRow, FoundHarnessLogin, NewAgentScript } from "../../src/db/agents.js";
+import { Scripts, type ScriptDatabase } from "../../src/scripts/catalog.js";
+import { RepositoryTokens } from "../../src/coding/git.js";
+import type { GroupDelivery, NewDirectRun, NewGroupRun, NewMessage, NewScheduleRun } from "../../src/db/runs.js";
 import type { ScheduleRow, PlannedWake } from "../../src/db/schedules.js";
-import type { AgentConfig, CompletionMetadata, RunConfigSnapshot, ToolCall } from "../../src/db/schema/index.js";
-import { validateConfig } from "../../src/agents/validation.js";
+import { Schedules, type ScheduleDatabase } from "../../src/schedules/service.js";
+import { Issues, type IssuesDatabase } from "../../src/issues/index.js";
+import { GroupChat, type GroupChatDatabase } from "../../src/groupchat/index.js";
+import { defaultGroupRouter } from "../../src/typesafe/group.js";
+import type { AgentConfig, CompletionMetadata, RunConfigSnapshot, SecretRef, ToolCall } from "../../src/db/schema/index.js";
+import { validateAgentConfig } from "../../src/agents/config.js";
 
 export const AGENT_CONFIG: AgentConfig = {
   model: "openrouter/openai/gpt-5.6-luna",
@@ -55,7 +72,7 @@ export function runSnapshot(config: AgentConfig = AGENT_CONFIG): RunConfigSnapsh
 
 /** An agent config as a create with these settings stores it: every key, the defaults filling the rest. */
 export function agentConfig(overrides: Record<string, unknown> = {}): AgentConfig {
-  return validateConfig({ model: AGENT_CONFIG.model, ...overrides });
+  return validateAgentConfig({ model: AGENT_CONFIG.model, ...overrides });
 }
 
 export function scheduleRow(
@@ -225,7 +242,7 @@ export class FakeSandboxes {
   /** Agents whose Chrome started, in order. */
   browser_starts: string[] = [];
   /** Agents whose processes stopped, with what stopped. */
-  stopped: Array<{ agentId: string; what: "browser" | "all" | "purge" }> = [];
+  stopped: Array<{ agentId: string; what: "browser" | "purge" }> = [];
   browser_failure: string | null = null;
 
   async ensure(machine: MachineSpec) {
@@ -249,8 +266,8 @@ export class FakeSandboxes {
     this.stopped.push({ agentId: seat.agentId, what: "browser" });
   }
 
-  async stopAgent(_sandbox: unknown, seat: AgentSeat, options: { purge?: boolean } = {}): Promise<void> {
-    this.stopped.push({ agentId: seat.agentId, what: options.purge ? "purge" : "all" });
+  async purgeAgent(_sandbox: unknown, seat: AgentSeat): Promise<void> {
+    this.stopped.push({ agentId: seat.agentId, what: "purge" });
   }
 
   async novncTarget(_sandbox: unknown, _seat: AgentSeat): Promise<[string, Record<string, string>]> {
@@ -340,7 +357,7 @@ export class FakeDB {
 
   async setMachineWorkspaceMib(_machineId: string, _mib: number): Promise<void> {}
 
-  async markHarnessLogin(_agentId: string, _harness: string, _now: Date, _account?: unknown): Promise<void> {}
+  async markHarnessLogin(_agentId: string, _login: FoundHarnessLogin, _now: Date): Promise<void> {}
 
   async clearHarnessLogin(_agentId: string, _harness: string): Promise<void> {}
 
@@ -377,6 +394,23 @@ export class FakeDB {
     return this.secrets.find((item) => item.id === secretId) ?? null;
   }
 
+  /** The agent's tools, secrets, and connections, as core resolves them over these rows. */
+  async agentRuntime(agent: AgentPlaceRow, mcpPool: Pick<McpPool, "syncTools"> | null) {
+    return agentRuntimeThrough(this as never, agent, mcpPool);
+  }
+
+  async agentLogins(agent: AgentPlaceRow) {
+    return agentLoginsThrough(this as never, agent);
+  }
+
+  async agentSecrets(agent: AgentPlaceRow) {
+    return agentSecretsThrough(this as never, agent);
+  }
+
+  async snapshotEnvValues(secretRefs: SecretRef[]) {
+    return snapshotEnvValuesThrough(this as never, secretRefs);
+  }
+
   async listRuns(agentId: string) {
     return this.run.agent_id === agentId ? [this.run] : [];
   }
@@ -411,7 +445,7 @@ export class FakeDB {
     return [this.agent];
   }
 
-  async listMcpServers() {
+  async listServers() {
     return [];
   }
 
@@ -425,6 +459,11 @@ export class FakeDB {
 
   async getMcpConnection(_connectionId: string) {
     return this.mcp_connection;
+  }
+
+  /** A run's repository tokens, minted and recorded through this fake. */
+  repositoryTokens(repositories: Array<Record<string, unknown>>): RepositoryTokens {
+    return new RepositoryTokens(this as never, repositories);
   }
 
   async getMcpServer(_serverId: string) {
@@ -504,7 +543,7 @@ export class FakeDB {
     this.run.updated_at = now;
   }
 
-  async completeGroupDelivery(_runId: string, _agentId: string, _throughSeq: number, _now: Date) {
+  async completeGroupDelivery(_delivery: GroupDelivery, _now: Date) {
     return undefined;
   }
 
@@ -565,7 +604,7 @@ export class RecordingDB {
 
   async setMachineWorkspaceMib(_machineId: string, _mib: number): Promise<void> {}
 
-  async markHarnessLogin(_agentId: string, _harness: string, _now: Date, _account?: unknown): Promise<void> {}
+  async markHarnessLogin(_agentId: string, _login: FoundHarnessLogin, _now: Date): Promise<void> {}
 
   async clearHarnessLogin(_agentId: string, _harness: string): Promise<void> {}
 
@@ -617,7 +656,24 @@ export class RecordingDB {
     return this.secrets.find((item) => item.id === secretId) ?? null;
   }
 
-  async listMcpServers() {
+  /** The agent's tools, secrets, and connections, as core resolves them over these rows. */
+  async agentRuntime(agent: AgentPlaceRow, mcpPool: Pick<McpPool, "syncTools"> | null) {
+    return agentRuntimeThrough(this as never, agent, mcpPool);
+  }
+
+  async agentLogins(agent: AgentPlaceRow) {
+    return agentLoginsThrough(this as never, agent);
+  }
+
+  async agentSecrets(agent: AgentPlaceRow) {
+    return agentSecretsThrough(this as never, agent);
+  }
+
+  async snapshotEnvValues(secretRefs: SecretRef[]) {
+    return snapshotEnvValuesThrough(this as never, secretRefs);
+  }
+
+  async listServers() {
     return [];
   }
 
@@ -631,6 +687,11 @@ export class RecordingDB {
 
   async getMcpConnection(_connectionId: string) {
     return this.mcp_connection;
+  }
+
+  /** A run's repository tokens, minted and recorded through this fake. */
+  repositoryTokens(repositories: Array<Record<string, unknown>>): RepositoryTokens {
+    return new RepositoryTokens(this as never, repositories);
   }
 
   async getMcpServer(_serverId: string) {
@@ -908,8 +969,8 @@ export class RecordingDB {
     this.run.updated_at = now;
   }
 
-  async completeGroupDelivery(runId: string, _agentId: string, _throughSeq: number, now: Date) {
-    await this.completeRun(runId, now);
+  async completeGroupDelivery(delivery: GroupDelivery, now: Date) {
+    await this.completeRun(delivery.id, now);
   }
 
   async listGuilds(_orgId?: string | null) {
@@ -948,7 +1009,10 @@ export function parsedState(system: string): Record<string, unknown> {
 }
 
 /** The services and timings a test loop is built with besides its database, notes, root, and sandboxes. */
-export type LoopOptions = Partial<Omit<GenerationLoopServices, "db" | "notes" | "workspaceRoot" | "sandboxes">> &
+export type LoopOptions = Partial<
+  Omit<GenerationLoopServices, "notes" | "workspaceRoot" | "sandboxes" | "artifacts">
+> &
+  Partial<Pick<GenerationLoopDeps, "artifacts">> &
   Partial<GenerationLoopTimings>;
 
 export function makeLoop(
@@ -958,18 +1022,54 @@ export function makeLoop(
   sandboxes: object,
   options: LoopOptions = {},
 ): GenerationLoop {
-  const { idleTimeoutMs = 0, schedulerTickMs = LOOP_TIMINGS.schedulerTickMs, ...services } = options;
-  return new GenerationLoop(
+  const {
+    idleTimeoutMs = 0,
+    schedulerTickMs = LOOP_TIMINGS.schedulerTickMs,
+    artifacts = null,
+    ...services
+  } = options;
+  const groupRouter = services.groupRouter ?? defaultGroupRouter();
+  const groupChat = new GroupChat(db as GroupChatDatabase, {
+    is_deleting: (guildId) => loop.isDeletingGuild(guildId),
+    router: groupRouter,
+  });
+  const issues = new Issues(db as IssuesDatabase);
+  const schedules = new Schedules(db as ScheduleDatabase);
+  const scripts = new Scripts(db as ScriptDatabase);
+  const events = new RunEvents(db as RunEventsDatabase);
+  const tools: ToolServices = {
+    notes: notes as NotesStore,
+    artifacts,
+    files: services.files ?? null,
+    group_chat: groupChat,
+    issues,
+    schedules,
+    scripts,
+    db: db as ToolboxDatabase,
+    events,
+  };
+  const loop: GenerationLoop = new GenerationLoop(
     {
       db: db as GenerationDatabase,
+      artifacts,
+      groupChat,
+      groupRouter,
+      issues,
+      schedules,
+      scripts,
+      events,
+      tools,
       notes: notes as NotesStore,
       workspaceRoot,
       sandboxes: sandboxes as GenerationSandboxes,
       credentials: TEST_CREDENTIALS,
+      // A loop's runs reach no connector until a test gives them a pool that does.
+      mcp: new McpPool(new MemoryMcpDatabase()),
       ...services,
     },
     { idleTimeoutMs, schedulerTickMs },
   );
+  return loop;
 }
 
 export async function seededLoop(

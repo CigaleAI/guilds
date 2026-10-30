@@ -1,5 +1,9 @@
-import { DEFAULT_AGENT_MESSAGE_LIMIT } from "../db/schema/index.js";
-import { RECIPE_FORMAT, RECIPE_VERSION, type RecipeDocument } from "./schema.js";
+import {
+  DEFAULT_AGENT_MESSAGE_LIMIT,
+  RECIPE_FORMAT,
+  type RecipeDocument,
+} from "../db/schema/index.js";
+import { RECIPE_VERSION } from "./schema.js";
 
 export function emptyRecipe(args: {
   name?: string;

@@ -2,23 +2,23 @@ import assert from "node:assert/strict";
 import type { McpConnectionRow } from "../../src/db/mcp.js";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { test } from "node:test";
-import { agentRuntime, snapshotEnvValues } from "../../src/access/runtime.js";
-import { loadAccessView } from "../../src/access/view.js";
+import { agentRuntimeThrough, snapshotEnvValuesThrough } from "../../src/access/runtime.js";
+import { loadAccessViewThrough } from "../../src/access/view.js";
 import { encryptPayload, environmentFingerprint } from "../../src/credentials/crypto.js";
 import { decodeMasterKey } from "../../src/config/index.js";
-import {
-  CALL_TOOL_TIMEOUT_MS,
-  ListedTool,
-  McpError,
-  McpPool,
-  McpSession,
-  publicOnly,
-} from "../../src/mcp/index.js";
+import { McpError } from "../../src/mcp/errors.js";
+import { CALL_TOOL_TIMEOUT_MS, McpSession, publicOnly } from "../../src/mcp/session.js";
+import { McpPool, OPERATOR_CALLER } from "../../src/mcp/pool.js";
+import { resolveConnectionTool } from "../../src/mcp/service.js";
 import { proxyFetch } from "../../src/net/http.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { serverRow, connectionRow } from "../helpers/servers.js";
-import type { LoadedConnector } from "../../src/connectors/load.js";
+import type { LoadedConnector } from "../../src/connectors/servers.js";
+import { MemoryMcpDatabase, storedTool } from "../helpers/mcp-database.js";
+import { restoreConnectorsAfterEach, runConnectors } from "../helpers/installed.js";
+
+restoreConnectorsAfterEach();
 
 const GMAIL_TOOLS = CONNECTORS.bySlug("gmail")!.manifest.tools!;
 
@@ -35,52 +35,13 @@ type Fixture = {
   close(): Promise<void>;
 };
 
-class MemoryDb {
-  rows: Array<Record<string, unknown>> = [];
-  bindings = new Map<string, Record<string, unknown>>();
+/** The pool's database, and the reads an agent's access and its access view make, on one memory. */
+class MemoryDb extends MemoryMcpDatabase {
   secrets: Array<Record<string, unknown>> = [];
-  servers: LoadedConnector[] = [];
-  connections: Array<Record<string, unknown>> = [];
   ensureCalls = 0;
 
-  async replaceMcpTools(_connectionId: string, tools: ListedTool[], now: Date) {
-    this.rows = tools.map((tool) => ({
-      remote_name: tool.remote_name,
-      namespaced_name: tool.namespaced_name,
-      description: tool.description,
-      input_schema: tool.input_schema,
-      listed_at: now.toISOString(),
-    }));
-  }
-
-  async listMcpTools() {
-    return this.rows;
-  }
-
-  async insertBindingIfAbsent(input: {
-    bindingId: string;
-    catalogKind: string;
-    catalogId: string;
-    scope: string;
-    scopeId: string | null;
-    enabled: boolean;
-  }) {
-    const { bindingId, catalogKind, catalogId, scope, scopeId, enabled } = input;
-    const key = `${catalogKind}:${catalogId}:${scopeId}`;
-    const existing = this.bindings.get(key);
-    if (existing) {
-      return existing;
-    }
-    const row = {
-      id: bindingId,
-      catalog_kind: catalogKind,
-      catalog_id: catalogId,
-      scope,
-      scope_id: scopeId,
-      enabled,
-    };
-    this.bindings.set(key, row);
-    return row;
+  async connectionTools(connection: McpConnectionRow, server: LoadedConnector) {
+    return (await this.listMcpTools(connection.id)).map((row) => resolveConnectionTool(server, row));
   }
 
   async listBindingsCovering() {
@@ -105,16 +66,12 @@ class MemoryDb {
     return this.secrets.find((row) => row.id === secretId) ?? null;
   }
 
-  async listMcpServers() {
+  async listServers() {
     return this.servers;
   }
 
   async listMcpConnections() {
     return this.connections;
-  }
-
-  async getMcpConnection(id: string) {
-    return this.connections.find((row) => row.id === id) ?? null;
   }
 
   async ensure() {
@@ -243,8 +200,8 @@ test("local MCP fixture requires Mcp-Session-Id after initialize", async () => {
 });
 
 /** A pool that reaches the loopback fixture: the default pool refuses private addresses. */
-function localPool(): McpPool {
-  const pool = new McpPool();
+function localPool(database = new MemoryMcpDatabase()): McpPool {
+  const pool = new McpPool(database);
   pool.endpointFetch = proxyFetch("", CALL_TOOL_TIMEOUT_MS);
   return pool;
 }
@@ -255,7 +212,7 @@ test("a session refuses an endpoint that resolves to a private address", async (
   try {
     const server = serverRow("fixture", { id: "mcp_fixture", auth: "token", config: { url: fixture.url } });
     await assert.rejects(
-      () => new McpPool().call(new MemoryDb() as never, connectionOf("mcp-test"), server, "ping", {}),
+      () => new McpPool(new MemoryMcpDatabase()).call(connectionOf("mcp-test"), server, { tool: "ping", arguments: {}, caller: OPERATOR_CALLER }),
       (error: unknown) => error instanceof McpError && error.status === 403 && /private or local/.test(error.message),
     );
     assert.equal(fixture.called, 0);
@@ -272,20 +229,20 @@ test("catalog refresh does not call sandbox ensure", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const fixture = await startFixture();
   try {
-    const pool = localPool();
     const db = new MemoryDb();
+    const pool = localPool(db);
     const connection = connectionOf("mcp-test");
     const server = serverRow("fixture", { id: "mcp_fixture", display_name: "Fixture", auth: "token", config: { url: fixture.url } });
     db.servers = [server];
     db.connections = [connection];
-    const runtime = await agentRuntime(db as never, { id: "a_1", guild_id: "guild_1", org_id: "org_1" }, { mcpPool: pool });
+    const runtime = await agentRuntimeThrough(db as never, { id: "a_1", guild_id: "guild_1", org_id: "org_1" }, pool);
     assert.equal(db.ensureCalls, 0);
     assert.equal(fixture.listed, 1);
     assert.deepEqual(
       (runtime.mcp[0] as { tools: Array<{ name: string }> }).tools.map((tool) => tool.name),
       ["fixture_ping"],
     );
-    await agentRuntime(db as never, { id: "a_1", guild_id: "guild_1", org_id: "org_1" }, { mcpPool: pool });
+    await agentRuntimeThrough(db as never, { id: "a_1", guild_id: "guild_1", org_id: "org_1" }, pool);
     assert.equal(fixture.listed, 1);
     assert.equal(db.ensureCalls, 0);
   } finally {
@@ -297,9 +254,9 @@ test("token rotation does not change the sandbox environment fingerprint", async
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const db = new MemoryDb();
   db.connections = [connectionOf("token-one")];
-  const first = environmentFingerprint(await snapshotEnvValues(db as never, []));
+  const first = environmentFingerprint(await snapshotEnvValuesThrough(db as never, []));
   db.connections = [connectionOf("token-two")];
-  const second = environmentFingerprint(await snapshotEnvValues(db as never, []));
+  const second = environmentFingerprint(await snapshotEnvValuesThrough(db as never, []));
   assert.equal(first, second);
   assert.equal(first, environmentFingerprint({}));
 });
@@ -308,17 +265,16 @@ test("provider error and malformed MCP result surface as McpError", async () => 
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const fixture = await startFixture();
   const pool = localPool();
-  const db = new MemoryDb();
   const connection = connectionOf("mcp-test");
   const server = serverRow("fixture", { id: "mcp_fixture", auth: "token", config: { url: fixture.url } });
   try {
     fixture.mode = "error";
     await assert.rejects(
-      () => pool.call(db as never, connection, server, "ping", {}),
+      () => pool.call(connection, server, { tool: "ping", arguments: {}, caller: OPERATOR_CALLER }),
       (error: unknown) => error instanceof McpError && error.status === 502,
     );
     fixture.mode = "malformed";
-    await assert.rejects(() => pool.call(db as never, connection, server, "ping", {}));
+    await assert.rejects(() => pool.call(connection, server, { tool: "ping", arguments: {}, caller: OPERATOR_CALLER }));
   } finally {
     await fixture.close();
   }
@@ -326,16 +282,16 @@ test("provider error and malformed MCP result surface as McpError", async () => 
 
 test("gmail send stays Off and the sandbox env has no Gmail token", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
-  const pool = new McpPool();
-  pool.connectors = CONNECTORS.withAdapter("gmail", { validate: async () => "ada@example.com" });
   const db = new MemoryDb();
+  const pool = new McpPool(db);
+  runConnectors(CONNECTORS.withAdapter("gmail", { validate: async () => "ada@example.com" }));
   const token = "ya29.gmail-secret";
   const connection = connectionOf(token, { id: "conn_gmail", mcp_server_id: "mcp_gmail" });
   db.servers = [serverRow("gmail", { display_name: "Gmail" })];
   db.connections = [connection];
-  await pool.syncTools(db as never, connection, db.servers[0]!, { force: true });
+  await pool.syncTools(connection, db.servers[0]!, { force: true });
   assert.equal(db.bindings.get("mcp_tool:gmail_send_message:org_1")?.enabled, false);
-  const runtime = await agentRuntime(db as never, { id: "a_1", guild_id: "guild_1", org_id: "org_1" }, { mcpPool: pool });
+  const runtime = await agentRuntimeThrough(db as never, { id: "a_1", guild_id: "guild_1", org_id: "org_1" }, pool);
   const offered = ((runtime.mcp[0] as { tools: Array<{ name: string }> } | undefined)?.tools ?? []).map(
     (tool) => tool.name,
   );
@@ -343,7 +299,7 @@ test("gmail send stays Off and the sandbox env has no Gmail token", async () => 
     offered,
     GMAIL_TOOLS.filter((tool) => tool.name !== "send_message").map((tool) => `gmail_${tool.name}`),
   );
-  const env = await snapshotEnvValues(db as never, runtime.secrets);
+  const env = await snapshotEnvValuesThrough(db as never, runtime.secrets);
   assert.equal(Object.keys(env).length, 0);
   assert.ok(!JSON.stringify(env).includes(token));
 });
@@ -353,16 +309,14 @@ test("a GitHub login's listed tools are offered to its agents like any connector
   const db = new MemoryDb();
   db.servers = [serverRow("github", { id: "mcp_github", display_name: "GitHub", auth: "oauth" })];
   db.connections = [connectionOf("unused", { id: "conn_github", mcp_server_id: "mcp_github" })];
-  db.rows = [
-    {
-      remote_name: "list_issues",
-      namespaced_name: "github_list_issues",
-      description: "List issues",
-      input_schema: { type: "object" },
-      listed_at: new Date().toISOString(),
-    },
+  db.tools = [
+    storedTool(
+      "conn_github",
+      { remote_name: "list_issues", namespaced_name: "github_list_issues", description: "List issues", input_schema: { type: "object" } },
+      new Date().toISOString(),
+    ),
   ];
-  const runtime = await agentRuntime(db as never, { id: "a_1", guild_id: "guild_1", org_id: "org_1" });
+  const runtime = await agentRuntimeThrough(db as never, { id: "a_1", guild_id: "guild_1", org_id: "org_1" }, null);
   assert.deepEqual(
     runtime.mcp.map((entry) => [entry.slug, (entry.tools as Array<{ name: string }>).map((tool) => tool.name)]),
     [["github", ["github_list_issues"]]],
@@ -371,7 +325,8 @@ test("a GitHub login's listed tools are offered to its agents like any connector
 
 test("a run that lists a login's tools for the first time is not offered the ones that start Off", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
-  const pool = new McpPool();
+  const db = new MemoryDb();
+  const pool = new McpPool(db);
   pool.session = async () =>
     ({
       async listTools() {
@@ -381,10 +336,9 @@ test("a run that lists a login's tools for the first time is not offered the one
         ];
       },
     }) as never;
-  const db = new MemoryDb();
   db.servers = [serverRow("fixture", { id: "mcp_fixture", display_name: "Fixture", auth: "token", config: { url: "https://mcp.example.com/mcp" } })];
   db.connections = [connectionOf("mcp-test")];
-  const runtime = await agentRuntime(db as never, { id: "a_1", guild_id: "guild_1", org_id: "org_1" }, { mcpPool: pool });
+  const runtime = await agentRuntimeThrough(db as never, { id: "a_1", guild_id: "guild_1", org_id: "org_1" }, pool);
   assert.equal(db.bindings.get("mcp_tool:fixture_send_ping:org_1")?.enabled, false);
   assert.deepEqual(
     runtime.mcp.map((entry) => (entry.tools as Array<{ name: string }>).map((tool) => tool.name)),
@@ -394,7 +348,8 @@ test("a run that lists a login's tools for the first time is not offered the one
 
 test("the access view that lists a login's tools for the first time shows the ones that start Off as Off", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
-  const pool = new McpPool();
+  const db = new MemoryDb();
+  const pool = new McpPool(db);
   pool.session = async () =>
     ({
       async listTools() {
@@ -404,10 +359,9 @@ test("the access view that lists a login's tools for the first time shows the on
         ];
       },
     }) as never;
-  const db = new MemoryDb();
   db.servers = [serverRow("fixture", { id: "mcp_fixture", display_name: "Fixture", auth: "token", config: { url: "https://mcp.example.com/mcp" } })];
   db.connections = [connectionOf("mcp-test")];
-  const view = await loadAccessView(db as never, { orgId: "org_1", guildId: "guild_1", agentId: "a_1", viewScope: "agent", mcp: pool });
+  const view = await loadAccessViewThrough(db as never, { orgId: "org_1", guildId: "guild_1", agentId: "a_1", viewScope: "agent", mcp: pool });
   const fixture = (view.mcp as Array<{ slug: string; tools: Array<{ name: string; enabled: boolean }> }>).find(
     (server) => server.slug === "fixture",
   );

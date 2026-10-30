@@ -2,14 +2,15 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
-import { generationDatabase, GenerationLoop } from "../../src/generation/index.js";
+import { generationLoop } from "../../src/generation/index.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { ExportSandboxes } from "../helpers/live.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { mcpPool } from "../../src/mcp/pool.js";
 
 const OWNER = {
   "X-Guilds-User": "user_operator",
@@ -31,8 +32,8 @@ test("an operator post may ask to interrupt the runs it targets", { timeout: 60_
   await notes.ensureSystemPrompt();
   const db = database.pool;
   const workspaceRoot = tempDir("guilds-group-interrupt-workspaces-");
-  const generation = new GenerationLoop({
-    db: generationDatabase(db),
+  const generation = generationLoop(db, {
+    mcp: mcpPool(db),
     notes,
     workspaceRoot,
     sandboxes: new ExportSandboxes(workspaceRoot),
@@ -40,8 +41,8 @@ test("an operator post may ask to interrupt the runs it targets", { timeout: 60_
   const app = await buildApp(database, {
     db,
     notes,
-    scripts: new Scripts(scriptDatabase(db)),
-    schedules: new Schedules(scheduleDatabase(db)),
+    scripts: agentScripts(db),
+    schedules: agentSchedules(db),
     generation,
   });
 
@@ -62,6 +63,15 @@ test("an operator post may ask to interrupt the runs it targets", { timeout: 60_
       payload: { content: "stop", interrupt: "yes" },
     });
     assert.equal(refused.statusCode, 422);
+    assert.deepEqual(refused.json().detail[0].loc, ["body", "interrupt"]);
+    const numbered = await app.inject({
+      method: "POST",
+      url: `${base}/messages`,
+      headers: OWNER,
+      payload: { content: 5 },
+    });
+    assert.equal(numbered.statusCode, 422);
+    assert.deepEqual(numbered.json().detail[0].loc, ["body", "content"]);
 
     const posted = await app.inject({
       method: "POST",

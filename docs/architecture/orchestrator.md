@@ -132,7 +132,7 @@ Docker does not SIGKILL during `SHUTDOWN_TIMEOUT`.
 
 From `apps/orchestrator`, `pnpm start` (or
 `pnpm --filter @guildsrun/orchestrator start` from the repo root)
-runs `node --import tsx --import ./src/observability/instrument.ts src/server.ts`.
+runs `node --import tsx --import ./src/instrument.ts src/server.ts`.
 Local Compose uses `make up` or `make dev`.
 
 `server.ts` is core's process entry. It loads `AppConfig` and calls
@@ -172,7 +172,7 @@ sequenceDiagram
 3. construct `NotesStore` and check that `system.md` exists in
    `TEMPLATES_ROOT`
 4. load the registry connectors' code (`registry/code.ts`), derive
-   the connector-declared integrations (`instance/connectors.ts`),
+   the connector-declared integrations (`connectors/instance.ts`),
    load the instance keys into their snapshot (`instance/keys.ts`),
    and sync the platform logins (`connectors/instance.ts`)
 5. build the artifact store (`artifactStore`), `Scripts`, `Schedules`, the model
@@ -247,16 +247,38 @@ CRUD writes PostgreSQL and returns JSON. Runs go through
 their own streams.
 
 A route reads the request, calls its domain, and writes the reply.
+A route declares a TypeBox schema for the body, query and params it
+reads, and Fastify checks the request against it before the handler
+runs. A route with a body schema takes a JSON object, and a request
+without one is refused. The check converts nothing: a value of the
+wrong JSON type is
+refused. A refused request is a 422 whose `detail` lists the problem
+as `{ type, loc, msg, input }`: a missing field is `type: "missing"`,
+`msg: "Field required"`, at `loc` `[part, ...path, field]`, with the
+object it is missing from as `input`; any other problem is the schema
+keyword it broke, at the value's path, with the value as `input`.
+`part` is `body`, `querystring`, `params` or `headers`
+(`validationHttp` in `http/errors.ts`). A route that answers 404 to
+whoever may not use it, such as the instance admin's, refuses them in
+a `preValidation` hook (`instanceAdminOnly` in
+`http/instance-admin.ts`), so the check comes before the schema's and
+a refused caller gets the same 404 whatever they send.
+
 A domain refuses a request with a named error that carries the HTTP
 status it answers with, or with a validation error, which is a 422.
-`domainHttp` in `http/errors.ts` turns either into the reply.
+`domainHttp` in `http/errors.ts` turns either into the reply. A
+refusal of the notes store answers by its message: 409 for a name
+that exists, 422 for a path or change refused, 404 for what is not
+found, and 500 otherwise. A route that reads notes answers every
+refusal of the store with 404, but an invalid path with 422
+(`notesRead`).
 
 ## Generation
 
 ### Work queuing
 
 An agent runs at most one generation at a time (`ActiveGenerations`
-in `generation/admission.ts`). Direct, group, and schedule work all take that same
+in `generation/active-generations.ts`). Direct, group, and schedule work all take that same
 lock. Work waits in that registry, in group dispatch, and in the
 schedule's `next_run_at`, never in a job table.
 
@@ -267,7 +289,7 @@ schedule's `next_run_at`, never in a job table.
 | Due schedule | **Skip** this tick; `next_run_at` stays due |
 
 Studio and Builder take an **organisation** admission slot, not the
-agent lock. They do not make a target agent busy.
+agent lock (`AdmissionCoordinator` in `admission/coordinator.ts`). They do not make a target agent busy.
 
 Group chat **coalesces**. Several unseen messages become **one** run
 with a snapshot through the current `chat_seq`. Schedules do not
@@ -566,8 +588,9 @@ AES-GCM plaintext is compact sorted UTF-8 JSON with non-ASCII
 ```ts
 interface ModelClient {
   streamCompletion(
-    request: CompletionRequest,
-    signal: AbortSignal,
+    request: ModelRequest,
+    endpoint: ModelEndpoint,
+    signal?: AbortSignal,
   ): AsyncIterable<ModelEvent>;
 
   countInputTokens(request: TokenCountRequest): Promise<number>;
@@ -682,10 +705,22 @@ only the fields in its row.
   counts cache reads and writes into `input_tokens`; `stop_reason`
   maps to `finish_reason` (`tool_use` → `tool_calls`, `max_tokens` →
   `length`, `refusal` → `content_filter`, otherwise `stop`). Saving a
-  key probes `GET /v1/models` with `x-api-key`.
+  key probes `GET /v1/models` with `x-api-key`. The call fails with
+  `LLMError` before anything is sent when the history holds a data URL
+  that is not JPEG, PNG, GIF, or WebP, when a tool's parameters are an
+  object that is not an object schema (`type: "object"`, `required` a
+  list of strings), or when the thinking level asks for an effort the
+  API does not take. A tool with no function name is left out, and
+  parameters that are not an object are sent as an empty object
+  schema.
 
 - Streaming emits text deltas, reasoning deltas, and one final
-  assembled assistant payload.
+  assembled assistant payload. A `chat-completions` chunk is read
+  into its id, served model, text, reasoning (`reasoning`, else
+  `reasoning_content`, else the text of `reasoning_details`), tool
+  call pieces, finish reason, and usage; a field that is missing or
+  of another type is read as empty, and a tool call piece without an
+  index belongs to the first call.
 - Final metadata: `usage.input_tokens`, `usage.output_tokens`,
   `usage.cache_read_tokens`, `latency_ms`, `finish_reason`, served
   `model`, `response_id`, `provider_request_id`, `cost_usd`,
@@ -768,7 +803,8 @@ the agent id and the port from its slot. They preserve HTTP streaming,
 WebSocket binary/text forwarding, and the `binary` and `tty`
 subprotocols. The terminal proxy prepends the daemon's secret path
 segment upstream. They decode and strip `content-encoding` before
-streaming to the browser.
+streaming to the browser. A body that is not in the gzip or deflate
+encoding the daemon names answers 502.
 
 Client frames on either socket count as activity and restart the
 machine's idle timer, and the agent's Chrome timer, at most once

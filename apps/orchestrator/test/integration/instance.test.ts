@@ -4,8 +4,8 @@ import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
 import { setInstanceKeys } from "../../src/instance/integrations.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
@@ -39,8 +39,12 @@ test("the instance descriptor lists integrations and their state, never a key", 
   await notes.ensureSystemPrompt();
   const db = database.pool;
   const member = await insertUser(db, { userId: "user_member", name: "member", image: null, email: "member@example.com" }, new Date());
-  await insertMember(db, "org_home", String(member.id), "member", new Date());
-  const deps = { db, notes, scripts: new Scripts(scriptDatabase(db)), schedules: new Schedules(scheduleDatabase(db)) };
+  await insertMember(
+    db,
+    { org_id: "org_home", user_id: String(member.id), role: "member" },
+    new Date(),
+  );
+  const deps = { db, notes, scripts: agentScripts(db), schedules: agentSchedules(db) };
   const core = await buildApp(database, deps);
   const describe = async (headers: Record<string, string>) => {
     const response = await core.inject({ method: "GET", url: "/api/instance", headers });
@@ -73,11 +77,13 @@ test("the instance descriptor lists integrations and their state, never a key", 
     assert.equal(typeof web.set_by, "string");
     assert.ok(web.set_by, "the instance admin sees who wrote the key");
     assert.equal(admin.text.includes(KEY), false);
+    assert.deepEqual(web, stored.json().integration, "the key write answers the integration as the admin's descriptor shows it");
 
     const plain = await describe(MEMBER);
     assert.equal(plain.byId["web-search"]?.state, "on");
     assert.equal(plain.byId["web-search"]?.updated_at, null, "a member sees the state, not the audit");
     assert.equal(plain.byId["web-search"]?.set_by, null);
+    assert.deepEqual(plain.byId["web-search"], { ...web, updated_at: null, set_by: null });
     assert.equal(plain.text.includes(KEY), false);
 
     const stranger = await core.inject({

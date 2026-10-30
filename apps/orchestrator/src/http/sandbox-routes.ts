@@ -1,12 +1,11 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyRequest } from "fastify";
 import type { WebSocket } from "ws";
 import { requireVisibleAgent } from "../agents/access.js";
-import { RunRequestError } from "../generation/index.js";
+import { RunRequestError } from "../generation/errors.js";
 import { generationLoopOf } from "../generation/operator.js";
-import type { AppDeps } from "./deps.js";
+import type { AppDeps, RouteApp } from "./deps.js";
 import { currentUser } from "./identity.js";
-import { identityDatabase } from "../users/identity.js";
-import { filePathParam, param } from "./request.js";
+import { AgentParams, filePathParam } from "./params.js";
 import { proxyHttp, startSandboxWsProxy } from "./sandbox-proxy.js";
 
 /** How often operator input on a proxied sandbox view restarts its idle timer. */
@@ -16,34 +15,27 @@ const SANDBOX_TOUCH_INTERVAL_MS = 30_000;
 type SandboxTarget = (agentId: string) => Promise<[string, Record<string, string>]>;
 
 /** An agent's browser and terminal: started on request, then proxied over HTTP and WebSocket. */
-export async function registerSandboxRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
+export async function registerSandboxRoutes(app: RouteApp, deps: AppDeps): Promise<void> {
   const { db } = deps;
-  const identityDb = identityDatabase(db);
   const loop = () => generationLoopOf({ loop: deps.generation ?? null });
 
-  async function visibleAgentId(request: FastifyRequest): Promise<string> {
-    const user = await currentUser(identityDb, request, deps);
-    return (await requireVisibleAgent(db, param(request, "agent_id"), user.id)).id;
+  async function visibleAgentId(request: FastifyRequest, agentId: string): Promise<string> {
+    const user = await currentUser(db, request, deps);
+    return (await requireVisibleAgent(db, agentId, user.id)).id;
   }
 
-  async function proxySandbox(
+  function proxySandboxWs(
+    socket: WebSocket,
     request: FastifyRequest,
-    reply: FastifyReply,
     target: SandboxTarget,
-    pathPart: string,
-  ): Promise<void> {
-    const [base, headers] = await target(await visibleAgentId(request));
-    await proxyHttp(request, reply, base, headers, pathPart);
-  }
-
-  function proxySandboxWs(socket: WebSocket, request: FastifyRequest, target: SandboxTarget): void {
-    const agentId = param(request, "agent_id");
+    agentId: string,
+  ): void {
     let touchedAt = 0;
     startSandboxWsProxy(
       socket,
       request,
       async () => {
-        const [base, extraHeaders] = await target(await visibleAgentId(request));
+        const [base, extraHeaders] = await target(await visibleAgentId(request, agentId));
         return { base, extraHeaders, pathPart: filePathParam(request) };
       },
       (error) => (error instanceof RunRequestError ? 1013 : 1008),
@@ -67,25 +59,31 @@ export async function registerSandboxRoutes(app: FastifyInstance, deps: AppDeps)
         method: "GET",
         url,
         exposeHeadRoute: false,
+        schema: { params: AgentParams },
         handler: async (request, reply) => {
-          await proxySandbox(request, reply, target, pathOf(request));
+          const agentId = await visibleAgentId(request, request.params.agent_id);
+          const [base, headers] = await target(agentId);
+          await proxyHttp(request, reply, base, headers, pathOf(request));
         },
         wsHandler: (socket, request) => {
-          proxySandboxWs(socket, request, target);
+          proxySandboxWs(socket, request, target, request.params.agent_id);
         },
       });
       app.route({
         method: [...methods],
         url,
+        schema: { params: AgentParams },
         handler: async (request, reply) => {
-          await proxySandbox(request, reply, target, pathOf(request));
+          const agentId = await visibleAgentId(request, request.params.agent_id);
+          const [base, headers] = await target(agentId);
+          await proxyHttp(request, reply, base, headers, pathOf(request));
         },
       });
     }
   }
 
-  app.get("/api/agents/:agent_id/browser", async (request) => {
-    await loop().machines.ensureBrowser(await visibleAgentId(request));
+  app.get("/api/agents/:agent_id/browser", { schema: { params: AgentParams } }, async (request) => {
+    await loop().machines.ensureBrowser(await visibleAgentId(request, request.params.agent_id));
     return { status: "ready" };
   });
 
@@ -93,8 +91,8 @@ export async function registerSandboxRoutes(app: FastifyInstance, deps: AppDeps)
     loop().machines.browserProxyTarget(agentId),
   );
 
-  app.post("/api/agents/:agent_id/cli", async (request) => {
-    await loop().machines.ensureCli(await visibleAgentId(request));
+  app.post("/api/agents/:agent_id/cli", { schema: { params: AgentParams } }, async (request) => {
+    await loop().machines.ensureCli(await visibleAgentId(request, request.params.agent_id));
     return { status: "ready" };
   });
 

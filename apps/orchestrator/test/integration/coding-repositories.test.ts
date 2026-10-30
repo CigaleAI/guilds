@@ -4,10 +4,11 @@ import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { decryptPayload } from "../../src/credentials/crypto.js";
 import { connect } from "../../src/seed/connect.js";
-import { McpPool } from "../../src/mcp/index.js";
+import { mcpPool } from "../../src/mcp/pool.js";
+import { loginRetirement, type LoginFailure } from "../../src/mcp/service.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { setInstanceKeys } from "../../src/instance/integrations.js";
 import { HEX_MASTER_KEY, storeKeys, tempDir } from "../helpers/env.js";
 import { connectModelProvider } from "../helpers/models.js";
@@ -42,6 +43,8 @@ function reply(status: number, body: unknown): Response {
 
 /** The `redirect_uri` of each code GitHub was asked to trade, in order. */
 const exchangedRedirects: Array<string | undefined> = [];
+/** Whether GitHub refuses installation 77, as it does once the App is removed or suspended. */
+let installationGone = false;
 
 /**
  * GitHub as the App sees it: one user who installed the App on `acme` (installation 77), and one
@@ -82,6 +85,9 @@ function github(url: string, init: RequestInit = {}): Response {
       : reply(404, { message: "Not Found" });
   }
   if (parsed.pathname === "/app/installations/77/access_tokens") {
+    if (installationGone) {
+      return reply(404, { message: "Not Found" });
+    }
     return reply(201, { token: "ghs_install", expires_at: "2099-01-01T00:00:00Z" });
   }
   if (parsed.pathname === "/installation/repositories") {
@@ -107,12 +113,21 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
   await notes.ensureSystemPrompt();
   const db = database.pool;
   await connectModelProvider(db, "org_home", "openrouter");
+  // The composed retirement, recording each login it retires.
+  const retired: Array<[string, LoginFailure]> = [];
+  const composed = loginRetirement(null, db);
   const app = await buildApp(database, {
     db,
     notes,
-    scripts: new Scripts(scriptDatabase(db)),
-    schedules: new Schedules(scheduleDatabase(db)),
+    scripts: agentScripts(db),
+    schedules: agentSchedules(db),
     masterKey: Buffer.from(HEX_MASTER_KEY, "hex"),
+    loginRetirement: {
+      retireLogin: async (connection, failure) => {
+        retired.push([connection.id, failure]);
+        await composed.retireLogin(connection, failure);
+      },
+    },
   });
   try {
     const guild = await app.inject({ method: "POST", url: "/api/guilds", headers: JSON_HEADERS, payload: { name: "coders" } });
@@ -173,6 +188,23 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
     assert.equal(twice.statusCode, 409);
     const badName = await app.inject({ method: "POST", url: base, headers: JSON_HEADERS, payload: { name: "Docs", url: "https://x.dev/a" } });
     assert.equal(badName.statusCode, 422);
+    const urlless = await app.inject({ method: "POST", url: base, headers: JSON_HEADERS, payload: { name: "docs-two" } });
+    assert.equal(urlless.statusCode, 422);
+    assert.deepEqual(urlless.json().detail[0].loc, ["body", "url"]);
+
+    const ownerless = await app.inject({
+      method: "POST",
+      url: "/api/mcp/connections",
+      headers: JSON_HEADERS,
+      payload: { mcp_server_id: "mcp_github", owner_scope: "org", owner_id: 5 },
+    });
+    assert.equal(ownerless.statusCode, 422, ownerless.body);
+    assert.deepEqual(ownerless.json().detail[0].loc, ["body", "owner_id"]);
+    const twoCodes = await app.inject({
+      method: "GET",
+      url: "/api/mcp/oauth/callback?code=a&code=b&state=x",
+    });
+    assert.equal(twoCodes.statusCode, 422, twoCodes.body);
 
     // Connect sends the operator to user authorization; the login waits, with no binding.
     const connectRes = await app.inject({
@@ -281,6 +313,19 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
       [[githubId, "acme"]],
     );
 
+    // GitHub refusing the installation while the picker lists it disconnects the login.
+    installationGone = true;
+    const refused = await app.inject({
+      method: "GET",
+      url: `/api/mcp/connections/${githubId}/github/repositories`,
+      headers: OWNER,
+    });
+    installationGone = false;
+    assert.equal(refused.statusCode, 422, refused.body);
+    assert.equal(refused.json().detail, "GitHub refused the installation; the connection is now disconnected");
+    assert.equal((await getMcpConnection(db, githubId))?.status, "disconnected");
+    assert.deepEqual(retired, [[githubId, "installation_gone"]], "the route retires through the composed service");
+
     // Deleting the connection removes the repositories added through it, and leaves the anonymous one.
     assert.equal(
       (await app.inject({ method: "DELETE", url: `/api/mcp/connections/${githubId}`, headers: OWNER })).statusCode,
@@ -322,6 +367,28 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
     });
     assert.equal(
       (await app.inject({ method: "DELETE", url: `/api/mcp/connections/${String(hop.json().id)}`, headers: OWNER })).statusCode,
+      204,
+    );
+
+    // A GitHub callback that lost both its state and its cookie completes the signed-in user's
+    // pending login; a request that signs in nobody, here a user the box does not know, matches none.
+    const lost = await app.inject({
+      method: "POST",
+      url: "/api/mcp/connections",
+      headers: JSON_HEADERS,
+      payload: { mcp_server_id: "mcp_github", owner_scope: "org", owner_id: "org_home" },
+    });
+    assert.equal(lost.statusCode, 201, lost.body);
+    const stateless = "/api/mcp/oauth/callback?code=good-code&setup_action=install";
+    const unsigned = await app.inject({ method: "GET", url: stateless, headers: { "X-Guilds-User": "user_unknown" } });
+    assert.equal(unsigned.statusCode, 404, unsigned.body);
+    assert.match(unsigned.body, /could not be matched to a pending connection/);
+    assert.equal((await getMcpConnection(db, String(lost.json().id)))?.status, "pending");
+    const signedIn = await app.inject({ method: "GET", url: stateless, headers: OWNER });
+    assert.equal(signedIn.statusCode, 200, signedIn.body);
+    assert.equal((await getMcpConnection(db, String(lost.json().id)))?.status, "connected");
+    assert.equal(
+      (await app.inject({ method: "DELETE", url: `/api/mcp/connections/${String(lost.json().id)}`, headers: OWNER })).statusCode,
       204,
     );
 
@@ -373,7 +440,7 @@ test("a second guild reuses the GitHub App and picks its own repositories", { ti
   await notes.ensureSystemPrompt();
   const db = database.pool;
   await connectModelProvider(db, "org_home", "openrouter");
-  const mcp = new McpPool();
+  const mcp = mcpPool(db);
   const dropped: string[] = [];
   mcp.drop = (connectionId: string) => {
     dropped.push(connectionId);
@@ -381,8 +448,8 @@ test("a second guild reuses the GitHub App and picks its own repositories", { ti
   const app = await buildApp(database, {
     db,
     notes,
-    scripts: new Scripts(scriptDatabase(db)),
-    schedules: new Schedules(scheduleDatabase(db)),
+    scripts: agentScripts(db),
+    schedules: agentSchedules(db),
     masterKey: Buffer.from(HEX_MASTER_KEY, "hex"),
     mcp,
   });
@@ -477,6 +544,14 @@ test("a second guild reuses the GitHub App and picks its own repositories", { ti
       account: "acme",
     });
 
+    const unlisted = await app.inject({
+      method: "PUT",
+      url: `/api/mcp/connections/${retryId}/github/selected`,
+      headers: JSON_HEADERS,
+      payload: { repositories: "site" },
+    });
+    assert.equal(unlisted.statusCode, 422, unlisted.body);
+    assert.deepEqual(unlisted.json().detail[0].loc, ["body", "repositories"]);
     const droppedBefore = dropped.length;
     const picked = await app.inject({
       method: "PUT",
@@ -570,8 +645,8 @@ test("several GitHub installations open a picker so a guild can choose the accou
   const app = await buildApp(database, {
     db,
     notes,
-    scripts: new Scripts(scriptDatabase(db)),
-    schedules: new Schedules(scheduleDatabase(db)),
+    scripts: agentScripts(db),
+    schedules: agentSchedules(db),
     masterKey: Buffer.from(HEX_MASTER_KEY, "hex"),
   });
   try {

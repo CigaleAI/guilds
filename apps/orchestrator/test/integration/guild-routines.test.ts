@@ -4,8 +4,8 @@ import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import {
@@ -37,11 +37,11 @@ test("a guild can hold every routine without changing pause", { timeout: 60_000 
   await notes.ensureSystemPrompt();
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
-  const schedules = new Schedules(scheduleDatabase(db));
+  const schedules = agentSchedules(db);
   const app = await buildApp(database, {
     db,
     notes,
-    scripts: new Scripts(scriptDatabase(db)),
+    scripts: agentScripts(db),
     schedules,
   });
 
@@ -83,11 +83,9 @@ test("a guild can hold every routine without changing pause", { timeout: 60_000 
     assert.equal(otherAgent.statusCode, 201, otherAgent.body);
     const otherAgentId = String(otherAgent.json().id);
 
-    const active = await schedules.create(TEST_ACTOR, agentId, { cron: "0 9 * * 1" }, "Weekly", "Do the weekly pass.");
-    const paused = await schedules.create(TEST_ACTOR, agentId, { cron: "0 10 * * 1" }, "Paused weekly", "Stay paused.", {
-      paused: true,
-    });
-    const neighbor = await schedules.create(TEST_ACTOR, otherAgentId, { cron: "0 9 * * 1" }, "Neighbor", "Keep firing.");
+    const active = await schedules.create(TEST_ACTOR, agentId, { when: { cron: "0 9 * * 1" }, description: "Weekly", instruction: "Do the weekly pass." });
+    const paused = await schedules.create(TEST_ACTOR, agentId, { when: { cron: "0 10 * * 1" }, description: "Paused weekly", instruction: "Stay paused.", paused: true });
+    const neighbor = await schedules.create(TEST_ACTOR, otherAgentId, { when: { cron: "0 9 * * 1" }, description: "Neighbor", instruction: "Keep firing." });
     await database.pool.query(`UPDATE schedules SET next_run_at = $2 WHERE id = ANY($1::text[])`, [
       [active.id, paused.id, neighbor.id],
       "2020-01-01T00:00:00.000Z",

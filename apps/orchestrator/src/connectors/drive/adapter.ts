@@ -5,13 +5,14 @@ import {
   DriveFolderError,
   listRecentDriveFiles,
   loadDriveFolder,
-  parseDriveFolderRef,
+  pastedDriveFolderRef,
   searchDriveFolder,
   searchDriveFolders,
+  type ScopedDrive,
 } from "./folder.js";
 import { DRIVE_CREATE_FILE_DESCRIPTION, DRIVE_CREATE_FILE_SCHEMA, createDriveFile } from "./upload.js";
 import type { ToolInputSchema } from "../../db/schema/index.js";
-import { ConnectorError, requiredCredential, type Adapter, type ConnectorContext, type ConnectorTool } from "../types.js";
+import { ConnectorError, requiredCredential, type Adapter, type ConnectorTool } from "../types.js";
 
 /** Listed tools whose description and schema Drive replaces: they take a workspace path, not bytes. */
 const REWRITTEN: Record<string, { description: string; input_schema: ToolInputSchema }> = {
@@ -30,13 +31,12 @@ export function rewriteDescriptions(tools: ConnectorTool[]): ConnectorTool[] {
 async function fileTool(
   name: string,
   args: Record<string, unknown>,
-  scoped: { accessToken: string; folderId: string; client: ConnectorContext["http"] },
-  ctx: ConnectorContext,
+  scoped: ScopedDrive,
+  workspaceDir?: string,
 ): Promise<string | null> {
   const { accessToken, folderId } = scoped;
-  const withWorkspace = { ...scoped, ...(ctx.workspace_dir ? { workspaceDir: ctx.workspace_dir } : {}) };
   if (name === "create_file") {
-    return createDriveFile(accessToken, args, withWorkspace);
+    return createDriveFile(accessToken, args, scoped, workspaceDir);
   }
   if (name === "search_files") {
     return searchDriveFolder(accessToken, folderId, args, scoped);
@@ -44,7 +44,7 @@ async function fileTool(
   if (name === "list_recent_files") {
     return listRecentDriveFiles(accessToken, folderId, args, scoped);
   }
-  return callDriveFileTool(name, args, withWorkspace);
+  return callDriveFileTool(name, args, scoped, workspaceDir);
 }
 
 /** Runs Drive folder code and answers its folder errors as 422s. */
@@ -56,16 +56,6 @@ async function folderWork<T>(work: () => Promise<T>): Promise<T> {
       throw new ConnectorError(error.message, 422);
     }
     throw error;
-  }
-}
-
-/** A pasted folder link or id, or null when the query is a name to search for. */
-function folderRef(query: string): string | null {
-  try {
-    const id = parseDriveFolderRef(query);
-    return /^[a-zA-Z0-9_-]{20,}$/.test(id) || query.includes("drive.google.com") ? id : null;
-  } catch {
-    return null;
   }
 }
 
@@ -86,7 +76,7 @@ const adapter: Adapter = {
       throw new ConnectorError(`Drive has no lookup for ${property}`, 404);
     }
     const accessToken = requiredCredential(creds, "access_token", "Drive access token is missing");
-    const ref = folderRef(query);
+    const ref = pastedDriveFolderRef(query);
     const folders = await folderWork(async () =>
       ref ? [await loadDriveFolder(accessToken, ref, { client: ctx.http })] : searchDriveFolders(accessToken, query, { client: ctx.http }),
     );
@@ -104,7 +94,7 @@ const adapter: Adapter = {
     let handled: string | null;
     try {
       constrained = await constrainDriveTool(name, args, scoped);
-      handled = await fileTool(name, constrained, scoped, ctx);
+      handled = await fileTool(name, constrained, scoped, ctx.workspace_dir);
     } catch (error) {
       if (error instanceof DriveFolderError) {
         throw new ConnectorError(error.message, 422);

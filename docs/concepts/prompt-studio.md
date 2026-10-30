@@ -566,6 +566,28 @@ that takes a display path, and for focus pins.
 | `studio_list_guilds` | The organisation's other guilds the operator can see, private guilds they do not operate left out: each one's id, name, about, and description as evidence. Paged with `cursor` and `limit`; a page also ends before its guilds pass half the 64 KiB result cap |
 | `studio_get_agent_access` | What one member is offered at run start, projected from bindings, the secrets that reach it, and the stored MCP catalog: native tools and the ones withheld, scripts, secret names and descriptions, and each MCP connection with its offered and withheld tools, whether the server is enabled for that agent, and whether this session may read through it. No remote list and no credential decryption |
 
+Every Studio tool that takes arguments checks them against the
+parameters it declares before it does any work
+(`apps/orchestrator/src/studio/arguments.ts`):
+
+- An optional argument sent as `null` counts as left out.
+- For a tool that takes `agent_id`, the agent is the first non-blank
+  of `agent_id`, `agent`, and `agent_name`.
+- A value from a fixed list, such as an `action`, a `level`, a
+  section of `studio_get_agent_context`, a column type, or an access
+  setting or mode, is offered to the model as an enum and checked
+  with the rest.
+- A call whose arguments do not match is refused with the first
+  mismatch, named by its JSON pointer, such as
+  `/limit: Expected integer`,
+  `/run_id: Expected required property`, or
+  `/action: Expected string to match '^(?:create|edit|delete)$'`.
+
+The edit tools' parameters live in
+`apps/orchestrator/src/studio/edit-arguments.ts`. When the operator
+opens, applies, or declines an edit request, the recorded call's
+arguments go through the same check before the edit is reviewed.
+
 ### Storage
 
 `studio_sessions`, `studio_messages`, `studio_drafts`.
@@ -661,6 +683,11 @@ The connection, edit, and login routes are described in
 [Studio proposals](studio-proposals.md#http), and the activity route
 in [Studio activity](studio-activity.md#http).
 
+Every query value is a string. A body field or a query value of
+another JSON type, a query value given more than once, and a body
+that is not a JSON object are 422 naming the field, before the
+request's user is identified.
+
 `GET …/state?hours=&agent=&kind=` returns `{ since, until, items }`.
 `hours` follows the tools route. `kind` is `note`, `table`, `script`, or
 `memory` (another value is 422); `agent` keeps the items that agent
@@ -713,7 +740,9 @@ characters, `status` (`ok` or `error`), `error`, and `duration_ms`.
 `cursor` for the next page; another value is 422.
 
 Create body: `{ "mode": "optimize", "source_guild_id", "coach_config":
-{ model, temperature }, "parent_session_id"? }`. `model` is required:
+{ model, temperature }, "parent_session_id"? }`. `mode`,
+`source_guild_id` and `model` are strings, `temperature` a number, and
+`parent_session_id` a string or null. `model` is required:
 a marketplace model whose provider the organisation has connected,
 else 422.
 
@@ -733,10 +762,16 @@ such a draft through the draft routes, but not discard it (403
 `orphan recovery cannot discard`). The web app does not call this
 route.
 
-Message body: `{ "content", "focus"? }` where `focus` is `{ kind: run |
-memory_version | routine | file | issue, agent_id?, run_id?, seq?,
-call_id?, revision_id?, version_index?, schedule_id?, display_path?,
-change_id?, issue_id? }`.
+Message body: `{ "content", "focus"? }` where `content` is a string and
+`focus` is null or `{ kind: run | memory_version | routine | file |
+issue | tool, agent_id?, run_id?, seq?, call_id?, revision_id?,
+version_index?, schedule_id?, display_path?, change_id?, issue_id?,
+tool_name? }`. `kind` is a string, each id and path a string or null,
+and `seq` and `version_index` a number, its digits, or null.
+
+Revise body: `{ "proposed_content", "expected_head_id"? }`, both
+strings; `expected_head_id` is the draft itself when left out. Target
+body: `{ "agent_id" }`, a string, or null for none.
 
 `POST …/continue` creates a new session from one blocked at its
 input-token limit.
@@ -798,8 +833,15 @@ app also re-reads the session and its messages every 2.5 s
 | Path | What it holds |
 |---|---|
 | `apps/orchestrator/src/studio/system.md` | The coach's system message template |
+| `apps/orchestrator/src/studio/system-message.ts` | The session's stored system message, recomposed from the live roster before each generation |
+| `apps/orchestrator/src/studio/inventory.ts` | The roster as the inventory lists it, with its warnings |
+| `apps/orchestrator/src/studio/inspector.ts` | The agent inspector: an agent's prompt sources, runs, and routines |
 | `apps/orchestrator/src/conversation/` | The shared conversation runner, and the blocks shared with the Builder: prompt placement, content trust, writing, the Task shape, and what every agent already reads |
 | `apps/orchestrator/src/studio/constants.ts` | Core's run limits and caps |
+| `apps/orchestrator/src/studio/tools.ts` | The coach's tool list, and the call each tool runs for |
+| `apps/orchestrator/src/studio/*-tools.ts` | The coach's tools, one file per sub-domain: prompt, task, memory, run, routine, guild, file, collection, access, and connection |
+| `apps/orchestrator/src/studio/arguments.ts`, `edit-arguments.ts` | A tool's arguments: the schema the model is offered and the decode of a call against it; the edit tools' parameters, which a recorded call is read by again |
+| `apps/orchestrator/src/studio/paging.ts`, `source-guild.ts` | What the tools share: paging and byte caps, and the source-guild agent a handle names |
 | `apps/orchestrator/src/studio/focus.ts` | Focus pin resolution |
 | `apps/orchestrator/src/studio/tool-usage.ts` | The Tools list and a tool's calls |
 | `apps/orchestrator/src/toolbox/offered.ts` | Which native tools a run offers under the agent's switches |

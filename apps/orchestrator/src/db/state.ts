@@ -12,6 +12,9 @@ type Run = InferSelectModel<typeof runs>;
 /** A span of time the State list reads. */
 export type StateWindow = { since: Date; until: Date };
 
+/** A window of time and the tools whose calls within it are read. */
+export type ToolCallWindow = { window: StateWindow; tools: string[] };
+
 /** A file change with the agent of the run that made it, when a run did. */
 export type FileChangeEventRow = Pick<
   FileChange,
@@ -119,7 +122,7 @@ export async function listWindowRuns(db: Queryable, guildId: string, window: Sta
 export async function listWindowReadCalls(
   db: Queryable,
   guildId: string,
-  request: { window: StateWindow; tools: string[] },
+  request: ToolCallWindow,
 ): Promise<ReadCallRow[]> {
   const result = await db.query<ReadCallRow>(
     `SELECT m.run_id, r.agent_id, m.created_at, m.metadata->>'tool_name' AS tool_name,

@@ -1,17 +1,21 @@
 import { existsSync, statSync } from "node:fs";
-import { accessDatabase, agentRuntime, type RuntimeAccess } from "../access/runtime.js";
-import { AgentValidationError, memoryOf, validateConfig } from "../agents/validation.js";
-import { ArtifactError, agentActor, collectTaskEmbeds, displayPathFor, inlineTaskEmbeds, operatorActor, snapshotTaskCollections, snapshotTaskEmbeds, taskEmbedActor } from "../artifacts/index.js";
+import { agentLogins, agentRuntime, type RuntimeAccess } from "../access/runtime.js";
+import { validateAgentConfig } from "../agents/config.js";
+import { AgentValidationError } from "../agents/validation.js";
+import { agentActor } from "../artifacts/actors.js";
+import { ArtifactError } from "../artifacts/errors.js";
 import { stateRepositories } from "../coding/repositories.js";
-import type { AgentConfig, RunTaskSource, TaskEmbedSnapshot } from "../db/schema/index.js";
+import type { AgentConfig, RunTaskSource } from "../db/schema/index.js";
 import { FILE_TOOLS, NOTE_TOOLS } from "../seed/catalog.js";
 import { listAgents, type AgentRow } from "../db/agents.js";
 import { listGroupMessages } from "../db/group-chat.js";
-import { bindQuery, type Queryable } from "../db/pg.js";
-import { guildOperators } from "../guilds/validation.js";
-import { McpDisconnectedError, mcpDatabase, type McpPool } from "../mcp/index.js";
+import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
+import type { GroupRouter } from "../groupchat/router.js";
+import { McpDisconnectedError } from "../mcp/errors.js";
+import type { McpPool } from "../mcp/pool.js";
 import { readMemory } from "../memory/index.js";
-import { NotesError, type NotesStore } from "../notes/store.js";
+import { NotesError } from "../notes/errors.js";
+import type { NotesStore } from "../notes/store.js";
 import {
   PromptError,
   composeSystemPrompt,
@@ -20,49 +24,62 @@ import {
   hydrateStanding,
   standingForCapabilities,
 } from "../prompts/index.js";
-import { prepareWorkspace } from "../sandbox/index.js";
+import { prepareBrowserWorkspace, prepareWorkspace } from "../sandbox/index.js";
 import type { Scripts } from "../scripts/catalog.js";
 import { collectRunState, type RunStateInputs } from "../state/index.js";
 import { SCRIPT_TOOLS } from "../toolbox/script.js";
-import { serializeHistoryDecision, type GroupRouter } from "../typesafe/index.js";
-import type { ActiveGenerations } from "./admission.js";
-import { codingRepositoriesDatabase, guildRepositories } from "./coding.js";
+import { serializeHistoryDecision } from "../typesafe/group.js";
+import type { ActiveGenerations } from "./active-generations.js";
+import { codingRepositoriesDatabase, guildRepositories, type CodingRepositoriesDatabase } from "./coding.js";
 import { RunRequestError } from "./errors.js";
 import type { AgentMachines } from "./machines.js";
 import type { PreparedRun } from "./snapshot.js";
 import { collectionCatalog } from "../artifacts/collections.js";
-import { embedSource } from "../artifacts/embeds.js";
-import { readStoredMemory } from "../artifacts/memory.js";
+import { agentTask, taskSnapshot } from "../artifacts/task.js";
 import type { ArtifactStore } from "../artifacts/store.js";
-import { toolArtifacts } from "../toolbox/artifacts.js";
+import { toolArtifacts, type ToolArtifacts } from "../toolbox/artifacts.js";
+
+/** The artifact functions a generation calls: its tools', and the reads of its prompts. */
+export type GenerationArtifacts = ToolArtifacts & {
+  agentTask: BoundQuery<typeof agentTask>;
+  taskSnapshot: BoundQuery<typeof taskSnapshot>;
+  collectionCatalog: BoundQuery<typeof collectionCatalog>;
+};
 
 /** The artifact functions a generation calls: its tools', and the reads of its prompts, on `store`. */
-export function generationArtifacts(store: ArtifactStore) {
+export function generationArtifacts(store: ArtifactStore): GenerationArtifacts {
   return {
     ...toolArtifacts(store),
-    ...embedSource(store),
-    readStoredMemory: bindQuery(store, readStoredMemory),
+    agentTask: bindQuery(store, agentTask),
+    taskSnapshot: bindQuery(store, taskSnapshot),
     collectionCatalog: bindQuery(store, collectionCatalog),
   };
 }
 
-export type GenerationArtifacts = ReturnType<typeof generationArtifacts>;
+/** The db/ functions a run is prepared through. */
+export type RunPreparationDatabase = CodingRepositoriesDatabase & {
+  agentRuntime: BoundQuery<typeof agentRuntime>;
+  agentLogins: BoundQuery<typeof agentLogins>;
+  listAgents: BoundQuery<typeof listAgents>;
+  listGroupMessages: BoundQuery<typeof listGroupMessages>;
+};
 
 /** The db/ functions a run is prepared through, on `db`. */
-export function runPreparationDatabase(db: Queryable) {
+export function runPreparationDatabase(db: Queryable): RunPreparationDatabase {
   return {
-    ...accessDatabase(db),
-    ...mcpDatabase(db),
+    agentRuntime: bindQuery(db, agentRuntime),
+    agentLogins: bindQuery(db, agentLogins),
     ...codingRepositoriesDatabase(db),
     listAgents: bindQuery(db, listAgents),
     listGroupMessages: bindQuery(db, listGroupMessages),
   };
 }
 
-export type RunPreparationDatabase = ReturnType<typeof runPreparationDatabase>;
-
-/** The connector pool generation calls connection tools through; a test pool may lack syncing and connector state. */
-export type ConnectorPool = Pick<McpPool, "call"> & Partial<Pick<McpPool, "syncTools" | "state">>;
+/**
+ * The connector pool generation calls connection tools, lists their tools, and reads connector
+ * State through; `callTool` reads a call's connection and connector through its `database`.
+ */
+export type ConnectorPool = Pick<McpPool, "call" | "database" | "syncTools" | "state">;
 
 /** What runs are prepared with, built once by the loop. */
 export type RunPreparationServices = {
@@ -88,7 +105,7 @@ export type PromptCapabilities = {
 };
 
 function promptCapabilities(config: AgentConfig, tools: string[]): PromptCapabilities {
-  const memory = memoryOf(config);
+  const memory = config.memory;
   return {
     scripts: config.scripting && SCRIPT_TOOLS.some((name) => tools.includes(name)),
     notes: NOTE_TOOLS.some((name) => tools.includes(name)),
@@ -128,7 +145,7 @@ export class RunPreparation {
     await this.prepareHome(agent);
     const state = this.runState(agent, {
       members,
-      operators: guildOperators({ operators: agent.guild_operators }),
+      operators: agent.guild_operators,
       historyRows: history.rows,
       guildAbout: agent.guild_about,
       guildDescription: agent.guild_description,
@@ -158,8 +175,8 @@ export class RunPreparation {
   /** The agent's validated config and the tools, secrets, and connections it is granted; 422 when either fails. */
   private async agentAccess(agent: AgentRow): Promise<{ config: AgentConfig; access: RuntimeAccess }> {
     try {
-      const config = validateConfig(agent.config);
-      const access = await agentRuntime(this.services.db, agent, { mcpPool: this.services.mcp });
+      const config = validateAgentConfig(agent.config);
+      const access = await this.services.db.agentRuntime(agent, this.services.mcp);
       return { config, access };
     } catch (error) {
       if (error instanceof AgentValidationError || error instanceof McpDisconnectedError) {
@@ -220,29 +237,21 @@ export class RunPreparation {
       }
       throw error;
     }
-    const operator = operatorActor({
-      orgId: agent.org_id,
-      actorId: "hydrate",
-      actorName: "operator",
-      guildId: agent.guild_id,
-      agentId: agent.id,
-    });
-    try {
-      const task = await inlineTaskEmbeds(artifacts, taskEmbedActor(agent.org_id, agent), agent.task);
-      const memory = await artifacts.readStoredMemory(operator, agent.id);
-      return [system, task, memory];
-    } catch (error) {
-      if (error instanceof ArtifactError) {
-        throw new RunRequestError(422, error.message);
-      }
-      throw error;
+    const task = await artifacts.agentTask(agent);
+    if (!task.expanded.ok) {
+      throw new RunRequestError(422, task.expanded.error);
     }
+    return [system, task.expanded.text, task.memoryText];
   }
 
   /** The agent's home on its machine, created when it is missing. */
   private async prepareHome(agent: AgentRow): Promise<void> {
     const root = await this.services.machines.workspaceRootFor(agent.machine_id);
-    prepareWorkspace(root, agent.machine_id, agent.id, { browser: Boolean(agent.config.browser) });
+    if (agent.config.browser) {
+      prepareBrowserWorkspace(root, agent.machine_id, agent.id);
+    } else {
+      prepareWorkspace(root, agent.machine_id, agent.id);
+    }
   }
 
   /** The collections the agent can read; none when the box keeps no artifacts or the store refuses. */
@@ -264,7 +273,7 @@ export class RunPreparation {
 
   private async connectorState(agent: AgentRow): Promise<Record<string, unknown>> {
     const { mcp, db } = this.services;
-    return mcp.state ? mcp.state(db, agent) : {};
+    return mcp.state(await db.agentLogins(agent));
   }
 
   /** The guild's state as the run's system prompt shows it; a notes folder it cannot read is a 422. */
@@ -294,31 +303,6 @@ export class RunPreparation {
     if (!artifacts || !agent.org_id) {
       return null;
     }
-    const actor = taskEmbedActor(agent.org_id, agent);
-    let embeds: TaskEmbedSnapshot[] = [];
-    let collections: string[] = [];
-    try {
-      embeds = await snapshotTaskEmbeds(artifacts, actor, agent.task);
-      collections = await snapshotTaskCollections(artifacts, actor, agent.task);
-    } catch (error) {
-      if (!(error instanceof ArtifactError)) {
-        throw error;
-      }
-    }
-    return {
-      version: agent.task_version,
-      hash: agent.task_hash,
-      display_path: displayPathFor({
-        orgId: agent.org_id,
-        level: "agent",
-        ownerId: agent.id,
-        kind: "task",
-        path: "",
-        key: "task.md",
-      }),
-      embeds,
-      collections,
-      has_embeds: collectTaskEmbeds(agent.task).length > 0,
-    };
+    return artifacts.taskSnapshot(agent);
   }
 }

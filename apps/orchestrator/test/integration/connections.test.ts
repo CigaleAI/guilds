@@ -11,11 +11,13 @@ import {
   saveConnectionSettings,
   type ConnectionServices,
 } from "../../src/mcp/connections.js";
-import type { McpPool } from "../../src/mcp/index.js";
+import { ConnectError } from "../../src/mcp/connect-token.js";
+import { McpError } from "../../src/mcp/errors.js";
+import type { McpPool } from "../../src/mcp/pool.js";
 import { ConnectionError } from "../../src/mcp/visibility.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
@@ -50,8 +52,8 @@ test(
     const app = await buildApp(database, {
       db,
       notes,
-      scripts: new Scripts(scriptDatabase(db)),
-      schedules: new Schedules(scheduleDatabase(db)),
+      scripts: agentScripts(db),
+      schedules: agentSchedules(db),
       masterKey,
     });
     const pool = {
@@ -59,7 +61,17 @@ test(
       lookupLogin: async () => ["two"],
       forget: () => {},
     } as unknown as McpPool;
+    const refusing = {
+      lookup: async () => {
+        throw new McpError("Unauthorized", 401);
+      },
+      lookupLogin: async () => {
+        throw new McpError("mcp 503", 503);
+      },
+      forget: () => {},
+    } as unknown as McpPool;
     const withPool: ConnectionServices = { db, mcp: pool, masterKey };
+    const withRefusingPool: ConnectionServices = { db, mcp: refusing, masterKey };
     const withoutPool: ConnectionServices = { db, mcp: null, masterKey };
 
     try {
@@ -135,6 +147,14 @@ test(
         refusedWith(409, /lookups/),
       );
       assert.deepEqual(await lookupWithLogin(withPool, login, lookup), { options: ["two"] });
+      await assert.rejects(
+        lookupWithCredentials(withRefusingPool, "org_home", serverId, lookup),
+        (error: unknown) => error instanceof ConnectError && error.status === 422 && error.message === "api key was rejected",
+      );
+      await assert.rejects(
+        lookupWithLogin(withRefusingPool, login, lookup),
+        (error: unknown) => error instanceof ConnectError && error.status === 502 && /mcp 503/.test(error.message),
+      );
 
       await assert.rejects(
         saveConnectionSettings(withPool, login, {}),

@@ -10,7 +10,7 @@ import {
   recordUpdate,
 } from "./artifacts.js";
 import { isPlainRecord } from "../db/json.js";
-import type { ReportedToolMetadata, ToolCall, ToolMessage, ToolResultMetadata } from "../db/schema/index.js";
+import type { ToolCall, ToolMessage, ToolResultMetadata } from "../db/schema/index.js";
 import { writeLog } from "../observability/log.js";
 import { identityOutput, processOutput } from "./output.js";
 import { browserClick, browserEval, browserFill, browserNavigate, browserScreenshot, browserScroll, browserSnapshot, browserType } from "./browser.js";
@@ -23,7 +23,9 @@ import { reportIssue } from "./report.js";
 import { scheduleCreateCron, scheduleCreateWindow, scheduleDelete, scheduleList, schedulePause, scheduleResume, scheduleUpdate } from "./schedule.js";
 import { scriptCreate, scriptDelete, scriptList, scriptRead, scriptRun } from "./script.js";
 import { secretRequest, secretStore } from "./secret.js";
-import type { Tool, ToolContext } from "./types.js";
+import type { ToolServices } from "./services.js";
+import type { Tool, ToolHooks, ToolInvocation, ToolRun } from "./types.js";
+import { ToolArgumentError } from "./errors.js";
 
 export const REGISTRY: Record<string, Tool> = {};
 
@@ -88,89 +90,88 @@ export function parseArguments(call: ToolCall): Record<string, unknown> {
   }
   const loaded: unknown = JSON.parse(call.function.arguments);
   if (!isPlainRecord(loaded)) {
-    throw new Error("tool arguments must be a JSON object");
+    throw new ToolArgumentError("tool arguments must be a JSON object");
   }
   return loaded;
 }
 
+/**
+ * Runs the model's `call` with the tool it names, and returns its result as the model reads it:
+ * filtered, redacted with the run's secrets, and cut to `TOOL_RESULT_MAX_BYTES`, with its metadata.
+ */
 export async function invokeTool(
-  ctx: ToolContext,
+  services: ToolServices,
+  run: ToolRun,
+  hooks: ToolHooks,
   call: ToolCall,
-  secrets: Record<string, string>,
-  maxBytes: number,
 ): Promise<[ToolMessage, ToolResultMetadata]> {
   const name = call.function.name;
-  const callId = call.id;
   const started = performance.now();
-  ctx.exit_code = null;
-  let error: string | null = null;
-  const registered = REGISTRY[name] ?? ctx.dynamic_tools[name];
-  let reported: ReportedToolMetadata | null = null;
-  let raw: string;
-  let outputFilter = identityOutput;
-  let filterName = "identity";
-  const offered = ctx.offered_tools;
+  const registered = REGISTRY[name] ?? run.dynamic_tools[name];
+  const offered = run.offered_tools;
   const blocked =
-    offered !== null && !offered.has(name) && !(name in ctx.dynamic_tools);
+    offered !== null && !offered.has(name) && !(name in run.dynamic_tools);
   if (registered === undefined || blocked) {
     const message = blocked
       ? `tool ${name} is not offered this run`
       : `unknown tool ${name}`;
-    raw = `ERROR: ${message}`;
-    error = message;
-  } else {
-    outputFilter = registered.output_filter;
-    filterName = registered.filter_name;
-    try {
-      const arguments_ = parseArguments(call);
-      const invocationCtx: ToolContext = {
-        ...ctx,
-        tool_call_id: callId,
-        tool_metadata: null,
-        artifact_actor: ctx.artifact_actor
-          ? { ...ctx.artifact_actor, toolCall: { id: callId, name } }
-          : null,
-      };
-      try {
-        raw = await registered.handler(invocationCtx, arguments_);
-      } finally {
-        ctx.exit_code = invocationCtx.exit_code;
-        reported = invocationCtx.tool_metadata;
-      }
-      if (typeof raw !== "string") {
-        throw new TypeError("tool must return str");
-      }
-    } catch (caught) {
-      const message = caught instanceof Error ? caught.message : String(caught);
-      writeLog("warn", message, {
-        run_id: ctx.run_id,
-        agent_id: ctx.agent_id,
-        guild_id: ctx.guild_id,
-        operation: `tool.${name}`,
-        error_type: caught instanceof Error ? caught.name : "Error",
-      });
-      raw = `ERROR: ${message}`;
-      error = message;
+    return toolResult(run, call, started, { raw: `ERROR: ${message}`, error: message, tool: null, invocation: null });
+  }
+  const invocation: ToolInvocation = { id: call.id, name, arguments: {}, exit_code: null, metadata: null };
+  try {
+    invocation.arguments = parseArguments(call);
+    const raw: unknown = await registered.handler(services, run, hooks, invocation);
+    if (typeof raw !== "string") {
+      throw new TypeError("tool must return str");
     }
+    return toolResult(run, call, started, { raw, error: null, tool: registered, invocation });
+  } catch (caught) {
+    const message = caught instanceof Error ? caught.message : String(caught);
+    writeLog("warn", message, {
+      run_id: run.run_id,
+      agent_id: run.agent_id,
+      guild_id: run.guild_id,
+      operation: `tool.${name}`,
+      error_type: caught instanceof Error ? caught.name : "Error",
+    });
+    return toolResult(run, call, started, { raw: `ERROR: ${message}`, error: message, tool: registered, invocation });
   }
-  const [content, pipeline] = processOutput(raw, outputFilter, secrets, maxBytes);
-  if (pipeline.error) {
-    error = pipeline.error;
-  }
-  const payload: ToolMessage = { role: "tool", tool_call_id: callId, content };
+}
+
+/**
+ * How a tool call ended before its output is kept: the text, why it failed, the tool that ran it
+ * (null when the call named none this run may use), and the invocation the handler reported on.
+ */
+type CallOutcome = {
+  raw: string;
+  error: string | null;
+  tool: Tool | null;
+  invocation: ToolInvocation | null;
+};
+
+/** The call's result as the model reads it, with its metadata; `started` is when the call began, from `performance.now()`. */
+function toolResult(
+  run: ToolRun,
+  call: ToolCall,
+  started: number,
+  outcome: CallOutcome,
+): [ToolMessage, ToolResultMetadata] {
+  const outputFilter = outcome.tool?.output_filter ?? identityOutput;
+  const [content, pipeline] = processOutput(outcome.raw, outputFilter, run.secrets, toolResultMaxBytes());
+  const payload: ToolMessage = { role: "tool", tool_call_id: call.id, content };
   const metadata: ToolResultMetadata = {
-    ...(reported ?? {}),
-    tool_name: name,
-    tool_call_id: callId,
+    ...(outcome.invocation?.metadata ?? {}),
+    tool_name: call.function.name,
+    tool_call_id: call.id,
     duration_ms: Math.trunc(performance.now() - started),
-    output_filter: filterName,
+    output_filter: outcome.tool?.filter_name ?? "identity",
     truncated: pipeline.truncated,
     original_bytes: pipeline.original_bytes,
     stored_bytes: pipeline.stored_bytes,
-    error,
+    error: pipeline.error ?? outcome.error,
   };
-  if (name === "script_run") {
-    metadata.exit_code = ctx.exit_code;
+  if (call.function.name === "script_run") {
+    metadata.exit_code = outcome.invocation?.exit_code ?? null;
   }
   return [payload, metadata];
 }
@@ -180,7 +181,6 @@ export function toolResultMaxBytes(env: NodeJS.ProcessEnv = process.env): number
 }
 
 export {
-  capBytes,
   identityOutput,
   LOW_TOOL_CALL_BUDGET,
   LOW_TOOL_CALL_WRAP_UP,
@@ -189,8 +189,8 @@ export {
   stampToolResult,
   withRemainingToolCalls,
 } from "./output.js";
-export { createToolContext, CancelEvent } from "./types.js";
-export type { Tool, ToolContext } from "./types.js";
+export { createToolHooks, createToolRun, CancelEvent } from "./types.js";
+export type { Tool, ToolHooks, ToolRun } from "./types.js";
 export { encodeSpec, HELPER } from "./browser.js";
-export { formatExecution, runCommand } from "./shell.js";
+export { formatExecution } from "./shell.js";
 export { dynamicScriptTools, firstClassScriptSchemas } from "./script.js";

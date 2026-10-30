@@ -1,6 +1,9 @@
 import { Avatar, Style } from "@dicebear/core";
 import definition from "@dicebear/styles/clay.json" with { type: "json" };
-import { DEFAULT_AVATAR_COLOR, DEFAULT_AVATAR_SHAPE } from "../agents/validation.js";
+
+/** The look an agent has until one is picked: the clay teardrop, in violet. */
+export const DEFAULT_AVATAR_SHAPE = "teardrop";
+export const DEFAULT_AVATAR_COLOR = "#7c5cff";
 
 export const CLAY_BODY_VARIANTS = [
   "bell",

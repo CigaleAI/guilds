@@ -1,9 +1,11 @@
 import { loadToolConfig } from "../config/index.js";
+import { startErrorReporting } from "../error-reporting.js";
 import { connect } from "../seed/connect.js";
 import { seedOperator } from "../seed/operator.js";
 import { seedSystem } from "../seed/system.js";
 import { seedTest } from "../seed/test.js";
 
+startErrorReporting();
 const kind = process.argv[2];
 if (kind !== "system" && kind !== "operator" && kind !== "test") {
   throw new Error("usage: seed.ts system|operator|test");

@@ -7,27 +7,24 @@ import { SCRIPT_TOOLS } from "./script.js";
 // Which native tools a run offers: the names the bindings turn on, less the
 // ones the agent's switches withhold, plus the tools its switches add.
 
-function isBrowserOrCodingToolName(name: string): boolean {
-  return (
-    (BROWSER_TOOLS as readonly string[]).includes(name) ||
-    (CODING_TOOLS as readonly string[]).includes(name) ||
-    (HARNESS_TOOLS as readonly string[]).includes(name)
-  );
-}
+/** The agent's switches that change which native tools a run offers; one left out is the default. */
+export type ToolSwitches = {
+  browser?: boolean;
+  coding?: boolean;
+  scripting?: boolean;
+  memory?: boolean;
+  schedules?: boolean;
+  direct?: boolean;
+};
+
+/** The tools the browser and coding switches offer, whatever the bindings say. */
+const BROWSER_AND_CODING_TOOLS: ReadonlySet<string> = new Set<string>([...BROWSER_TOOLS, ...CODING_TOOLS, ...HARNESS_TOOLS]);
 
 function nameMatchesToolList(name: string, tools: readonly string[] | string): boolean {
   return typeof tools === "string" ? name === tools : tools.includes(name);
 }
 
-function isHiddenByOfferedFlag(
-  name: string,
-  options: {
-    scripting?: boolean;
-    memory?: boolean;
-    schedules?: boolean;
-    direct?: boolean;
-  },
-): boolean {
+function isHiddenByOfferedFlag(name: string, options: ToolSwitches): boolean {
   const gates: Array<[boolean, readonly string[] | string]> = [
     [options.scripting !== false, SCRIPT_TOOLS],
     [options.memory !== false, "memory_write"],
@@ -37,24 +34,16 @@ function isHiddenByOfferedFlag(
   return gates.some(([allowed, tools]) => !allowed && nameMatchesToolList(name, tools));
 }
 
-function offeredNativeNames(
-  names: string[],
-  options: {
-    scripting?: boolean;
-    memory?: boolean;
-    schedules?: boolean;
-    direct?: boolean;
-  },
-): string[] {
+function offeredNativeNames(names: string[], options: ToolSwitches): string[] {
   return names.filter((name) => {
-    if (name === "report_issue" || isBrowserOrCodingToolName(name)) {
+    if (name === "report_issue" || BROWSER_AND_CODING_TOOLS.has(name)) {
       return false;
     }
     return !isHiddenByOfferedFlag(name, options);
   });
 }
 
-function capabilityToolNames(options: { coding?: boolean; browser?: boolean }): string[] {
+function capabilityToolNames(options: ToolSwitches): string[] {
   return [
     ...(options.coding ? [...CODING_TOOLS, ...HARNESS_TOOLS] : []),
     ...(options.browser ? BROWSER_TOOLS : []),
@@ -62,17 +51,7 @@ function capabilityToolNames(options: { coding?: boolean; browser?: boolean }): 
 }
 
 // The browser and code tools follow the agent's flags, not bindings.
-export function offeredToolNames(
-  names: string[],
-  options: {
-    browser?: boolean;
-    coding?: boolean;
-    scripting?: boolean;
-    memory?: boolean;
-    schedules?: boolean;
-    direct?: boolean;
-  } = {},
-): string[] {
+export function offeredToolNames(names: string[], options: ToolSwitches = {}): string[] {
   const offered = offeredNativeNames(names, options);
   for (const name of capabilityToolNames(options)) {
     if (!offered.includes(name)) {

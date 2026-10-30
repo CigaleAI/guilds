@@ -19,6 +19,8 @@ import {
   wrapEvidence,
   wrapUntrustedText,
 } from "../conversation/trust.js";
+import type { StudioSourceGuild } from "../db/schema/index.js";
+import type { StudioDraftRow, StudioInventoryRow } from "../db/studio.js";
 import { STUDIO_OBJECTIVE_EXCERPT_BYTES, STUDIO_TASK_EXCERPT_WORDS } from "./constants.js";
 import { StudioUnprocessableError } from "./errors.js";
 
@@ -54,45 +56,47 @@ export type StudioMemberHydration = {
   focus?: string;
   task_excerpt?: string;
   task_excerpt_truncated?: boolean;
-  task_version?: unknown;
-  task_hash?: unknown;
+  task_version?: StudioInventoryRow["task_version"] | null;
+  task_hash?: StudioInventoryRow["task_hash"] | null;
 };
 
-export function hydrateStudioMember(row: Record<string, unknown>): StudioMemberHydration {
-  const content = String(row.task_content ?? row.task_excerpt ?? "");
-  const excerpt = excerptWords(content, STUDIO_TASK_EXCERPT_WORDS);
+export function hydrateStudioMember(row: StudioInventoryRow): StudioMemberHydration {
+  const excerpt = excerptWords(row.task_content, STUDIO_TASK_EXCERPT_WORDS);
   return {
-    id: String(row.id ?? ""),
-    name: String(row.name ?? ""),
-    focus: String(row.focus ?? ""),
+    id: row.id,
+    name: row.name,
+    focus: row.focus,
     task_excerpt: excerpt.text,
-    task_excerpt_truncated: Boolean(row.task_excerpt_truncated) || excerpt.truncated,
-    task_version: row.task_version ?? null,
-    task_hash: row.task_hash ?? null,
+    task_excerpt_truncated: excerpt.truncated,
+    task_version: row.task_version,
+    task_hash: row.task_hash,
   };
 }
 
-export function renderStudioBaseHydration(args: {
-  sourceGuild: { id: string; name: string; about?: string; objective?: string };
+/** The source guild as the system message shows it: the guild and each of its members. */
+export type StudioBaseHydration = {
+  sourceGuild: StudioSourceGuild;
   members: StudioMemberHydration[];
-}): string {
+};
+
+export function renderStudioBaseHydration(base: StudioBaseHydration): string {
   const lines = [
-    `source_guild_id: ${args.sourceGuild.id}`,
-    `source_guild_name: ${escapeXml(args.sourceGuild.name)}`,
+    `source_guild_id: ${base.sourceGuild.id}`,
+    `source_guild_name: ${escapeXml(base.sourceGuild.name)}`,
   ];
-  const about = (args.sourceGuild.about ?? "").trim();
+  const about = base.sourceGuild.about.trim();
   if (about) {
     lines.push("");
     lines.push(wrapUntrustedText("guild.about", excerptBytes(about, STUDIO_OBJECTIVE_EXCERPT_BYTES).text));
   }
-  const objective = (args.sourceGuild.objective ?? "").trim();
+  const objective = (base.sourceGuild.objective ?? "").trim();
   if (objective) {
     lines.push("");
     lines.push(wrapUntrustedText("guild.objective", excerptBytes(objective, STUDIO_OBJECTIVE_EXCERPT_BYTES).text));
   }
   lines.push("");
-  lines.push(`members: ${args.members.length}`);
-  for (const member of args.members) {
+  lines.push(`members: ${base.members.length}`);
+  for (const member of base.members) {
     const excerpt = excerptWords(member.task_excerpt ?? "", STUDIO_TASK_EXCERPT_WORDS);
     const truncated = Boolean(member.task_excerpt_truncated) || excerpt.truncated;
     lines.push("");
@@ -117,38 +121,32 @@ export function renderStudioBaseHydration(args: {
   return lines.join("\n");
 }
 
-export function composeStudioSystemMessage(args: {
+/** The coach a Studio session runs: its mode and its configuration. */
+export type StudioCoach = {
   mode: string;
-  sourceGuild: {
-    id: string;
-    name: string;
-    about?: string;
-    objective?: string;
-  } | null;
-  members?: StudioMemberHydration[];
   config: Record<string, unknown>;
-  template?: string;
-  now?: Date;
-}): { content: string; hash: string } {
-  const template = args.template ?? readStudioSystemTemplate();
-  const clock = utcClock(args.now);
-  const lines = [template.replace(/\s+$/, ""), "", "## Coach configuration", JSON.stringify(args.config, null, 2)];
-  if (args.sourceGuild) {
+};
+
+/** The system message from its template, the coach, and the source guild when the session has one. */
+export function composeStudioSystemMessage(
+  template: string,
+  coach: StudioCoach,
+  base: StudioBaseHydration | null,
+  now?: Date,
+): { content: string; hash: string } {
+  const clock = utcClock(now);
+  const lines = [template.replace(/\s+$/, ""), "", "## Coach configuration", JSON.stringify(coach.config, null, 2)];
+  if (base) {
     lines.push("");
     lines.push("## Source guild");
-    lines.push(
-      renderStudioBaseHydration({
-        sourceGuild: args.sourceGuild,
-        members: args.members ?? [],
-      }),
-    );
+    lines.push(renderStudioBaseHydration(base));
   }
   lines.push("");
   lines.push("## Session");
-  lines.push(`- mode: ${args.mode}`);
+  lines.push(`- mode: ${coach.mode}`);
   lines.push(`- utc_now: ${clock.utc_now}`);
   lines.push(`- utc_date: ${clock.utc_date}`);
-  if (!args.sourceGuild) {
+  if (!base) {
     lines.push("- source_guild_id: null");
   }
   const content = `${lines.join("\n")}\n`;
@@ -177,32 +175,34 @@ function rosterHeader(agent: RosterAgent): string {
   return `- ${agent.id} ${name}${focusBlock} task_version=${agent.task_version} source_hash=${agent.task_hash} has_embeds=${agent.has_embeds} routines=${agent.routine_count} latest_run=${agent.latest_run?.kind ?? "none"} draft=${agent.draft_id ?? "none"} warnings=${warnings}`;
 }
 
+/** A draft as the generation map heads it. */
+export type StudioDraftHeader = Pick<StudioDraftRow, "id" | "status" | "base_version" | "draft_number" | "rationale">;
+
 /** The per-generation map: roster headers and the open draft. Task excerpts live in the system message only. */
-export function composeGenerationContext(args: {
-  sourceGuild: { id: string };
-  roster: RosterAgent[];
-  draft: Record<string, unknown> | null;
-}): string {
+export function composeGenerationContext(
+  guildId: string,
+  roster: RosterAgent[],
+  draft: StudioDraftHeader | null,
+): string {
   const parts = [
     wrapEvidence({
       source: "studio.generation_map",
-      coordinates: { guild_id: args.sourceGuild.id },
-      body: ["roster_headers:", ...args.roster.map((agent) => rosterHeader(agent))].join("\n"),
+      coordinates: { guild_id: guildId },
+      body: ["roster_headers:", ...roster.map((agent) => rosterHeader(agent))].join("\n"),
     }),
   ];
-  if (args.draft) {
-    const rationale = String(args.draft.rationale ?? "");
+  if (draft) {
     parts.push(
       wrapEvidence({
         source: "studio.draft_header",
-        coordinates: { draft_id: String(args.draft.id ?? "") },
+        coordinates: { draft_id: draft.id },
         body: JSON.stringify(
           {
-            id: args.draft.id,
-            status: args.draft.status,
-            base_version: args.draft.base_version,
-            draft_number: args.draft.draft_number,
-            rationale: rationale ? wrapUntrustedText("draft.rationale", rationale) : "",
+            id: draft.id,
+            status: draft.status,
+            base_version: draft.base_version,
+            draft_number: draft.draft_number,
+            rationale: draft.rationale ? wrapUntrustedText("draft.rationale", draft.rationale) : "",
           },
           null,
           2,

@@ -29,6 +29,30 @@ export type ProjectedRow = {
   metadata: Pick<MessageMetadata, "generation" | "tool_name" | "path" | "range">;
 };
 
+/** A stored tool result, as the projection reads it. */
+export type ProjectedToolRow = ProjectedRow & { payload: ToolMessage };
+
+/** How a stubbed tool result reads: the hint it gives the model, and whether it carries the hash of the body it replaces. */
+export type ToolResultStubFormat = {
+  hint: string;
+  includeContentHash?: boolean;
+};
+
+/**
+ * A stored history as the provider request projects it: the rows, the generation they are seen
+ * from, how many generations keep their tool results live, and the budget the prompt must fit.
+ * `stubbed` collects the seqs the projection stubs.
+ */
+export type ToolResultProjection = ToolResultStubFormat & {
+  history: ProjectedRow[];
+  currentGeneration: number;
+  keepGenerations: number;
+  stubbed?: number[];
+  minUnstubbed?: number;
+  minStubBytes?: number;
+  budget?: ProjectionBudget;
+};
+
 export function generationOf(row: ProjectedRow): number {
   return row.generation ?? row.metadata.generation ?? 0;
 }
@@ -43,20 +67,16 @@ export function keepGenerationFloor(currentGeneration: number, keepGenerations: 
   return currentGeneration - keep + 1;
 }
 
-export function stubToolResultPayload(
-  row: ProjectedRow & { payload: ToolMessage },
-  hint: string,
-  options: { includeContentHash?: boolean } = {},
-): ToolMessage {
+export function stubToolResultPayload(row: ProjectedToolRow, format: ToolResultStubFormat): ToolMessage {
   const { metadata } = row;
   const stub = {
     stub: true,
     source_seq: row.seq,
     tool_name: metadata.tool_name ?? null,
-    hint,
+    hint: format.hint,
     ...(metadata.path ? { path: metadata.path } : {}),
     ...(metadata.range ? { range: metadata.range } : {}),
-    ...(options.includeContentHash ? { content_hash: promptHash(row.payload.content) } : {}),
+    ...(format.includeContentHash ? { content_hash: promptHash(row.payload.content) } : {}),
   };
   return { ...row.payload, content: JSON.stringify(stub) };
 }
@@ -89,47 +109,36 @@ function liveLargeToolRows(
   );
 }
 
-function replaceStubbedToolPayloads(args: {
-  history: ProjectedRow[];
-  stubSeqs: Set<number>;
-  hint: string;
-  stubbed?: number[];
-  includeContentHash?: boolean;
-}): MessagePayload[] {
-  if (args.stubbed) {
-    args.stubbed.length = 0;
+function replaceStubbedToolPayloads(projection: ToolResultProjection, stubSeqs: Set<number>): MessagePayload[] {
+  if (projection.stubbed) {
+    projection.stubbed.length = 0;
   }
-  return args.history.map((row) => {
+  return projection.history.map((row) => {
     const payload = row.payload;
-    if (payload.role !== "tool" || !args.stubSeqs.has(row.seq)) {
+    if (payload.role !== "tool" || !stubSeqs.has(row.seq)) {
       return payload;
     }
-    args.stubbed?.push(row.seq);
-    return stubToolResultPayload(
-      { ...row, payload },
-      args.hint,
-      args.includeContentHash ? { includeContentHash: true } : {},
-    );
+    projection.stubbed?.push(row.seq);
+    return stubToolResultPayload({ ...row, payload }, projection);
   });
 }
 
-function stubOldestLiveRowsUntilPromptFits(args: {
-  budget: ProjectionBudget;
-  liveLarge: ProjectedRow[];
-  minKeep: number;
-  stubSeqs: Set<number>;
-  build: () => MessagePayload[];
-}): MessagePayload[] {
-  let messages = args.build();
-  let tokens = args.budget.countInputTokens(args.budget.model, messages, args.budget.schemas);
-  const maxStub = Math.max(0, args.liveLarge.length - args.minKeep);
-  for (const row of args.liveLarge.slice(0, maxStub)) {
-    if (tokens <= args.budget.maxInput) {
+function stubOldestLiveRowsUntilPromptFits(
+  projection: ToolResultProjection,
+  budget: ProjectionBudget,
+  stubSeqs: Set<number>,
+  liveLarge: ProjectedRow[],
+): MessagePayload[] {
+  let messages = replaceStubbedToolPayloads(projection, stubSeqs);
+  let tokens = budget.countInputTokens(budget.model, messages, budget.schemas);
+  const maxStub = Math.max(0, liveLarge.length - (projection.minUnstubbed ?? MIN_UNSTUBBED_TOOL_RESULTS));
+  for (const row of liveLarge.slice(0, maxStub)) {
+    if (tokens <= budget.maxInput) {
       break;
     }
-    args.stubSeqs.add(row.seq);
-    messages = args.build();
-    tokens = args.budget.countInputTokens(args.budget.model, messages, args.budget.schemas);
+    stubSeqs.add(row.seq);
+    messages = replaceStubbedToolPayloads(projection, stubSeqs);
+    tokens = budget.countInputTokens(budget.model, messages, budget.schemas);
   }
   return messages;
 }
@@ -141,39 +150,14 @@ function stubOldestLiveRowsUntilPromptFits(args: {
  * When `budget` is set and the projected prompt is still over `maxInput`, the oldest
  * live large results are stubbed until `minUnstubbed` remain or the count fits.
  */
-export function projectToolResults(args: {
-  history: ProjectedRow[];
-  currentGeneration: number;
-  keepGenerations: number;
-  hint: string;
-  stubbed?: number[];
-  minUnstubbed?: number;
-  minStubBytes?: number;
-  budget?: ProjectionBudget;
-  includeContentHash?: boolean;
-}): MessagePayload[] {
-  const minKeep = args.minUnstubbed ?? MIN_UNSTUBBED_TOOL_RESULTS;
-  const minStubBytes = args.minStubBytes ?? 0;
-  const floor = keepGenerationFloor(args.currentGeneration, args.keepGenerations);
-  const tools = args.history.filter((row) => row.payload.role === "tool");
+export function projectToolResults(projection: ToolResultProjection): MessagePayload[] {
+  const minStubBytes = projection.minStubBytes ?? 0;
+  const floor = keepGenerationFloor(projection.currentGeneration, projection.keepGenerations);
+  const tools = projection.history.filter((row) => row.payload.role === "tool");
   const stubSeqs = oldGenerationStubSeqs(tools, floor, minStubBytes);
-  const liveLarge = liveLargeToolRows(tools, floor, minStubBytes, stubSeqs);
-  const build = () =>
-    replaceStubbedToolPayloads({
-      history: args.history,
-      stubSeqs,
-      hint: args.hint,
-      ...(args.stubbed !== undefined ? { stubbed: args.stubbed } : {}),
-      ...(args.includeContentHash ? { includeContentHash: true } : {}),
-    });
-  if (!args.budget) {
-    return build();
+  if (!projection.budget) {
+    return replaceStubbedToolPayloads(projection, stubSeqs);
   }
-  return stubOldestLiveRowsUntilPromptFits({
-    budget: args.budget,
-    liveLarge,
-    minKeep,
-    stubSeqs,
-    build,
-  });
+  const liveLarge = liveLargeToolRows(tools, floor, minStubBytes, stubSeqs);
+  return stubOldestLiveRowsUntilPromptFits(projection, projection.budget, stubSeqs, liveLarge);
 }

@@ -1,5 +1,6 @@
 import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
+import { EMPTY_MEMORY } from "../artifacts/memory.js";
 import { formatUtcNow } from "../lib/clock.js";
 
 export {
@@ -12,8 +13,6 @@ export {
 export const MEMORY_FILE = "memory.md";
 export const MEMORY_LIMIT = 12_000;
 export const MEMORY_ARCHIVE_KEEP = 50;
-
-export const EMPTY_MEMORY = "";
 
 export const MEMORY_INTRO = `
 ### Your Memory

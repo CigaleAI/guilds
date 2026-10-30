@@ -1,5 +1,6 @@
 import { COLLECTIONS_SEGMENT } from "../artifacts/paths.js";
-import type { WindowRunRow } from "../db/state.js";
+import { isPlainRecord } from "../db/json.js";
+import type { ConfigChangeEventRow, FileChangeEventRow, ReadCallRow, WindowRunRow } from "../db/state.js";
 import { iso } from "../db/views.js";
 
 // A guild's state as Studio's State list shows it: every note, table,
@@ -66,8 +67,28 @@ export type StateRow = StateItem & {
   flags: StateFlag[];
 };
 
-type Row = Record<string, unknown>;
+/** A stored change from either log: a file change or a config change. */
+type StoredChange = FileChangeEventRow | ConfigChangeEventRow;
+
+/** Who made a stored change, as its log records it. */
+export type ChangeAuthor = Pick<StoredChange, "run_agent_id" | "actor_type" | "actor_id" | "actor_name">;
+
+/** Where a stored change was made: a coach message, or a run's tool call. */
+export type ChangeOrigin = Pick<StoredChange, "studio_session_id" | "studio_seq" | "run_id" | "run_agent_id" | "tool_call_id">;
+
+/** The run step a read happened in. */
+type ReadSource = Pick<ReadCallRow, "run_id" | "agent_id" | "created_at" | "call_id">;
+
+/** A tool call's arguments, as the model wrote them. */
+type CallArguments = Record<string, unknown>;
+
 type Agents = ReadonlyMap<string, string>;
+
+/** The items a window's events land on, and the guild's agents by id. */
+export type StateContext = { items: StateItem[]; agents: Agents };
+
+/** The State list's narrowing: one kind, or the items one agent changed or read. */
+export type StateFilter = { kind: StateKind | null; agentId: string | null };
 
 const OTHER_GUILD: StateActor = { kind: "other_guild", id: "", name: "another guild" };
 
@@ -79,21 +100,21 @@ function agentActor(agentId: string, agents: Agents): StateActor {
 }
 
 /** Who made a stored change: the run's agent, an agent acting on its own, or a person. */
-export function changeActor(row: Row, agents: Agents): StateActor {
-  const agentId = str(row.run_agent_id) ?? (row.actor_type === "agent" ? str(row.actor_id) : null);
+export function changeActor(row: ChangeAuthor, agents: Agents): StateActor {
+  const agentId = row.run_agent_id ?? (row.actor_type === "agent" ? row.actor_id : null);
   if (agentId) return agentActor(agentId, agents);
   if (row.actor_type === "run") return OTHER_GUILD;
-  return { kind: "person", id: String(row.actor_id), name: String(row.actor_name) };
+  return { kind: "person", id: row.actor_id, name: row.actor_name };
 }
 
 /** The run step or coach message a stored change links to. */
-export function changeLink(row: Row): StateLink | null {
-  const session = str(row.studio_session_id);
-  if (session && row.studio_seq !== null && row.studio_seq !== undefined) {
-    return { kind: "coach", session_id: session, seq: Number(row.studio_seq) };
+export function changeLink(row: ChangeOrigin): StateLink | null {
+  if (row.studio_session_id && row.studio_seq !== null) {
+    return { kind: "coach", session_id: row.studio_session_id, seq: row.studio_seq };
   }
-  const runId = str(row.run_id);
-  return runId ? { kind: "run", run_id: runId, agent_id: str(row.run_agent_id), call_id: str(row.tool_call_id) } : null;
+  return row.run_id
+    ? { kind: "run", run_id: row.run_id, agent_id: row.run_agent_id, call_id: row.tool_call_id }
+    : null;
 }
 
 /** A record's path names its table: `org/<org>/collections/<name>/<id>`. */
@@ -118,9 +139,9 @@ function itemConfigKey(item: StateItem): string | null {
  * change counted for its table, and the config log's changes to a table or a note.
  */
 export function changeEvents(
-  fileChanges: Row[],
-  configChanges: Row[],
-  context: { items: StateItem[]; agents: Agents },
+  fileChanges: FileChangeEventRow[],
+  configChanges: ConfigChangeEventRow[],
+  context: StateContext,
 ): StateEvent[] {
   const paths = new Set(context.items.map((item) => item.display_path));
   const configured = new Map(
@@ -130,40 +151,37 @@ export function changeEvents(
     }),
   );
   const files = fileChanges.flatMap((row) => {
-    const own = String(row.display_path);
+    const own = row.display_path;
     const path = paths.has(own) ? own : tablePathOf(own);
     return path && paths.has(path) ? [changeEvent(row, path, own === path ? null : own, context.agents)] : [];
   });
   const shapes = configChanges.flatMap((row) => {
-    const path = configured.get(configKey(String(row.target_kind), String(row.target_id)));
+    const path = configured.get(configKey(row.target_kind, row.target_id));
     return path ? [changeEvent(row, path, null, context.agents)] : [];
   });
   return [...files, ...shapes];
 }
 
-function changeEvent(row: Row, path: string, record: string | null, agents: Agents): StateEvent {
+function changeEvent(row: StoredChange, path: string, record: string | null, agents: Agents): StateEvent {
   return {
     path,
     at: iso(row.created_at),
     what: "change",
-    how: String(row.operation),
+    how: row.operation,
     actor: changeActor(row, agents),
     link: changeLink(row),
     record,
   };
 }
 
-type ReadContext = { items: StateItem[]; agents: Agents };
-
-function readEvent(path: string, row: Row, how: string, context: ReadContext): StateEvent {
-  const agentId = String(row.agent_id);
+function readEvent(path: string, source: ReadSource, how: string, context: StateContext): StateEvent {
   return {
     path,
-    at: iso(row.created_at),
+    at: iso(source.created_at),
     what: "read",
     how,
-    actor: agentActor(agentId, context.agents),
-    link: { kind: "run", run_id: String(row.run_id ?? row.id), agent_id: agentId, call_id: str(row.call_id) },
+    actor: agentActor(source.agent_id, context.agents),
+    link: { kind: "run", run_id: source.run_id, agent_id: source.agent_id, call_id: source.call_id },
     record: null,
   };
 }
@@ -173,33 +191,35 @@ function itemAt(items: StateItem[], test: (item: StateItem) => boolean): string 
 }
 
 /** What one run read by being woken: its Task's embedded notes and tables, and its agent's Memory. */
-function runReads(run: WindowRunRow, context: ReadContext): StateEvent[] {
+function runReads(run: WindowRunRow, context: StateContext): StateEvent[] {
   const embedded = [
     ...(run.task_source?.embeds ?? []).map((embed) => embed.display_path),
     ...(run.task_source?.collections ?? []),
   ].filter((path) => context.items.some((item) => item.display_path === path));
   const memory = itemAt(context.items, (item) => item.kind === "memory" && item.owner_id === run.agent_id);
-  const reads = [...new Set(embedded)].map((path) => readEvent(path, run, "embed", context));
-  return memory ? [...reads, readEvent(memory, run, "memory", context)] : reads;
+  const source: ReadSource = { run_id: run.run_id, agent_id: run.agent_id, created_at: run.created_at, call_id: null };
+  const reads = [...new Set(embedded)].map((path) => readEvent(path, source, "embed", context));
+  return memory ? [...reads, readEvent(memory, source, "memory", context)] : reads;
 }
 
-function parseArguments(raw: unknown): Row {
+function parseArguments(raw: string | null): CallArguments {
+  if (raw === null) return {};
   try {
-    const parsed: unknown = typeof raw === "string" ? JSON.parse(raw) : raw;
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Row) : {};
+    const parsed: unknown = JSON.parse(raw);
+    return isPlainRecord(parsed) ? parsed : {};
   } catch {
     return {};
   }
 }
 
 /** The item one tool call named, by the tool's own argument. */
-const callTargets: Record<string, (args: Row, call: Row, items: StateItem[]) => string | null> = {
+const callTargets: Record<string, (args: CallArguments, call: ReadCallRow, items: StateItem[]) => string | null> = {
   note_get: (args, _call, items) => itemAt(items, (item) => item.display_path === str(args.path)),
   file_fetch: (args, _call, items) => itemAt(items, (item) => item.display_path === str(args.path)),
   record_list: (args, _call, items) => itemAt(items, (item) => item.kind === "table" && item.title === str(args.collection)),
   record_search: (args, _call, items) =>
     itemAt(items, (item) => item.kind === "table" && item.title === str(args.collection)),
-  script_run: (args, call, items) => scriptOf(items, String(call.agent_id), str(args.name)),
+  script_run: (args, call, items) => scriptOf(items, call.agent_id, str(args.name)),
 };
 
 function scriptOf(items: StateItem[], agentId: string, name: string | null): string | null {
@@ -207,18 +227,19 @@ function scriptOf(items: StateItem[], agentId: string, name: string | null): str
 }
 
 /** What one tool call read: the note, table, or script it names, or the script tool it is. */
-function callRead(call: Row, context: ReadContext): StateEvent | null {
-  const name = String(call.tool_name);
+function callRead(call: ReadCallRow, context: StateContext): StateEvent | null {
+  const name = call.tool_name;
+  if (name === null) return null;
   const target = callTargets[name];
   const path = target
     ? target(parseArguments(call.arguments), call, context.items)
-    : scriptOf(context.items, String(call.agent_id), name);
+    : scriptOf(context.items, call.agent_id, name);
   const how = target && name !== "script_run" ? name : "script";
   return path ? readEvent(path, call, how, context) : null;
 }
 
 /** Reads from run history: what each run inlined, its Memory, and the tool calls that named an item. */
-export function readEvents(runs: WindowRunRow[], calls: Row[], context: ReadContext): StateEvent[] {
+export function readEvents(runs: WindowRunRow[], calls: ReadCallRow[], context: StateContext): StateEvent[] {
   const fromCalls = calls.flatMap((call) => {
     const read = callRead(call, context);
     return read ? [read] : [];
@@ -288,11 +309,7 @@ export function stateRow(item: StateItem, events: StateEvent[]): StateRow {
 }
 
 /** The list's rows, narrowed to one kind or to items one agent changed or read when asked. */
-export function stateRows(
-  items: StateItem[],
-  events: StateEvent[],
-  filter: { kind: StateKind | null; agentId: string | null },
-): StateRow[] {
+export function stateRows(items: StateItem[], events: StateEvent[], filter: StateFilter): StateRow[] {
   const touched = (item: StateItem) =>
     item.owner_id === filter.agentId ||
     events.some((event) => event.path === item.display_path && event.actor.id === filter.agentId);

@@ -1,16 +1,23 @@
-import type { FastifyInstance, FastifyRequest } from "fastify";
-import { modelsDatabase, ModelsError, ModelsService } from "../llm/models.js";
-import { coreModelCredentials, modelProviderStore } from "../llm/credentials.js";
+import { Type } from "@sinclair/typebox";
+import type { FastifyRequest } from "fastify";
+import {
+  DefaultModelSchema,
+  modelsService,
+  ProviderConnectionSchema,
+  type ModelsService,
+} from "../llm/models.js";
 import { isProvider } from "../llm/providers.js";
 import { requireMembership, requireOrgManager } from "../organisations/service.js";
-import type { AppDeps } from "./deps.js";
+import type { AppDeps, RouteApp } from "./deps.js";
 import { HttpError } from "./errors.js";
 import { currentUser } from "./identity.js";
-import { identityDatabase } from "../users/identity.js";
-import { bodyOf, param } from "./request.js";
+import { OrgParams } from "./params.js";
+
+/** The path of one model provider of an organisation. */
+const ProviderParams = Type.Object({ org_id: Type.String(), provider: Type.String() });
 
 async function requireMember(deps: AppDeps, request: FastifyRequest, orgId: string): Promise<void> {
-  const user = await currentUser(identityDatabase(deps.db), request, deps);
+  const user = await currentUser(deps.db, request, deps);
   await requireMembership(deps.db, orgId, user.id);
 }
 
@@ -19,12 +26,11 @@ async function requireManager(
   request: FastifyRequest,
   orgId: string,
 ): Promise<void> {
-  const user = await currentUser(identityDatabase(deps.db), request, deps);
+  const user = await currentUser(deps.db, request, deps);
   await requireOrgManager(deps.db, orgId, user.id);
 }
 
-function providerParam(request: FastifyRequest): string {
-  const provider = param(request, "provider");
+function knownProvider(provider: string): string {
   if (!isProvider(provider)) {
     throw new HttpError(422, "unknown model provider");
   }
@@ -35,78 +41,67 @@ function providerParam(request: FastifyRequest): string {
 export function modelsOf(deps: AppDeps): ModelsService {
   return (
     deps.models ??
-    new ModelsService({
-      db: modelsDatabase(deps.db),
-      credentials: deps.modelCredentials ?? coreModelCredentials(modelProviderStore(deps.db), deps.masterKey),
-      masterKey: deps.masterKey,
-    })
+    modelsService(deps.db, { credentials: deps.modelCredentials, masterKey: deps.masterKey })
   );
-}
-
-function mapModelsError(error: unknown): never {
-  if (error instanceof ModelsError) {
-    throw new HttpError(error.status, error.message);
-  }
-  throw error;
 }
 
 /**
  * An organisation's model setup: every member reads what is offered, owners and admins connect
  * providers, choose their models, and name the default.
  */
-export async function registerModelProviderRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
+export async function registerModelProviderRoutes(app: RouteApp, deps: AppDeps): Promise<void> {
   const models = modelsOf(deps);
 
-  app.get("/api/orgs/:org_id/models", async (request) => {
-    const orgId = param(request, "org_id");
+  app.get("/api/orgs/:org_id/models", { schema: { params: OrgParams } }, async (request) => {
+    const orgId = request.params.org_id;
     await requireMember(deps, request, orgId);
     return models.read(orgId);
   });
 
-  app.get("/api/orgs/:org_id/model-providers/:provider/catalog", async (request) => {
-    const orgId = param(request, "org_id");
-    await requireMember(deps, request, orgId);
-    try {
-      return { models: await models.providerCatalog(orgId, providerParam(request)) };
-    } catch (error) {
-      mapModelsError(error);
-    }
-  });
+  app.get(
+    "/api/orgs/:org_id/model-providers/:provider/catalog",
+    { schema: { params: ProviderParams } },
+    async (request) => {
+      const orgId = request.params.org_id;
+      await requireMember(deps, request, orgId);
+      return {
+        models: await models.providerCatalog(orgId, knownProvider(request.params.provider)),
+      };
+    },
+  );
 
-  app.put("/api/orgs/:org_id/model-providers/:provider", async (request) => {
-    const orgId = param(request, "org_id");
-    await requireManager(deps, request, orgId);
-    const provider = providerParam(request);
-    try {
-      return await models.connect(orgId, provider, bodyOf(request));
-    } catch (error) {
-      mapModelsError(error);
-    }
-  });
+  app.put(
+    "/api/orgs/:org_id/model-providers/:provider",
+    { schema: { params: ProviderParams, body: ProviderConnectionSchema } },
+    async (request) => {
+      const orgId = request.params.org_id;
+      await requireManager(deps, request, orgId);
+      const provider = knownProvider(request.params.provider);
+      return await models.connect(orgId, provider, request.body);
+    },
+  );
 
-  app.put("/api/orgs/:org_id/default-model", async (request) => {
-    const orgId = param(request, "org_id");
-    await requireManager(deps, request, orgId);
-    try {
-      return await models.setDefault(orgId, bodyOf(request).model ?? null);
-    } catch (error) {
-      mapModelsError(error);
-    }
-  });
+  app.put(
+    "/api/orgs/:org_id/default-model",
+    { schema: { params: OrgParams, body: DefaultModelSchema } },
+    async (request) => {
+      const orgId = request.params.org_id;
+      await requireManager(deps, request, orgId);
+      return await models.setDefault(orgId, request.body.model ?? null);
+    },
+  );
 
-  app.delete("/api/orgs/:org_id/model-providers/:provider", async (request, reply) => {
-    const orgId = param(request, "org_id");
-    await requireManager(deps, request, orgId);
-    const provider = providerParam(request);
-    let removed: boolean;
-    try {
-      removed = await models.remove(orgId, provider);
-    } catch (error) {
-      mapModelsError(error);
-    }
-    if (!removed) {
-      throw new HttpError(404, "model provider not found");
-    }
-    return reply.code(204).send();
-  });
+  app.delete(
+    "/api/orgs/:org_id/model-providers/:provider",
+    { schema: { params: ProviderParams } },
+    async (request, reply) => {
+      const orgId = request.params.org_id;
+      await requireManager(deps, request, orgId);
+      const removed = await models.remove(orgId, knownProvider(request.params.provider));
+      if (!removed) {
+        throw new HttpError(404, "model provider not found");
+      }
+      return reply.code(204).send();
+    },
+  );
 }

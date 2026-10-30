@@ -9,7 +9,9 @@ import { TEST_MODEL } from "../helpers/models.js";
 import {
   composeBuilderGenerationContext,
   composeBuilderSystemMessage,
+  type CoachSettings,
 } from "../../src/builder/system.js";
+import type { CoachSessionConfig } from "../../src/db/schema/index.js";
 import { RECIPE_WRITE_HINT } from "../../src/builder/constants.js";
 import { builderListCapabilities, builderWriteRecipe } from "../../src/builder/tools.js";
 import {
@@ -18,6 +20,15 @@ import {
 } from "../../src/conversation/templates.js";
 import { emptyRecipe } from "../../src/recipes/minimal.js";
 import { fixtureDeskRecipe } from "../helpers/recipe-docs.js";
+
+const COACH: CoachSettings = {
+  model: TEST_MODEL,
+  temperature: 0.2,
+  max_steps: 24,
+  max_tokens: 25000,
+  max_tool_calls: 40,
+  max_input_tokens: 120000,
+};
 
 test("builder write example is a valid recipe using real field names", () => {
   const example = readBuilderWriteExample();
@@ -132,12 +143,12 @@ test("builder system prompt inlines the configured Guidelines template", () => {
 
 test("builder system message ships the write example only while the recipe has no roles", () => {
   const recipe = parseRecipe(emptyRecipe({ source: { kind: "builder", session_id: "bld_test" } }));
-  const composed = composeBuilderSystemMessage({
-    config: { model: TEST_MODEL, temperature: 0.2 },
-    recipe,
-    expectedBodyVersion: 1,
-    now: new Date("2026-09-18T20:00:00.000Z"),
-  });
+  const composed = composeBuilderSystemMessage(
+    COACH,
+    { body: recipe, body_version: 1 },
+    undefined,
+    new Date("2026-09-18T20:00:00.000Z"),
+  );
   assert.match(composed.content, /Recipe write shape/);
   assert.match(composed.content, /Instance data for this session/);
   assert.match(composed.content, /"role": "scout"/);
@@ -145,12 +156,12 @@ test("builder system message ships the write example only while the recipe has n
   assert.match(composed.content, /## Inputs\\n/);
   assert.doesNotMatch(composed.content, /Start of work/);
   assert.doesNotMatch(composed.content, /"name": "scout"/);
-  const drafted = composeBuilderSystemMessage({
-    config: { model: TEST_MODEL, temperature: 0.2 },
-    recipe: parseRecipe(fixtureDeskRecipe()),
-    expectedBodyVersion: 2,
-    now: new Date("2026-09-18T20:00:00.000Z"),
-  });
+  const drafted = composeBuilderSystemMessage(
+    COACH,
+    { body: parseRecipe(fixtureDeskRecipe()), body_version: 2 },
+    undefined,
+    new Date("2026-09-18T20:00:00.000Z"),
+  );
   assert.doesNotMatch(drafted.content, /Recipe write shape/);
   assert.doesNotMatch(drafted.content, /"role": "scout"/);
   const context = composeBuilderGenerationContext(recipe, 1);
@@ -160,19 +171,17 @@ test("builder system message ships the write example only while the recipe has n
 
 test("builder system message shows only the coach settings, not the session's audit snapshot", () => {
   const recipe = parseRecipe(emptyRecipe({ source: { kind: "builder", session_id: "bld_test" } }));
-  const composed = composeBuilderSystemMessage({
-    config: {
-      model: TEST_MODEL,
-      temperature: 0.2,
-      max_steps: 24,
-      max_tokens: 25000,
-      system_prompt_hash: "abc123",
-      tool_schemas: [{ type: "function", function: { name: "builder_write_recipe" } }],
-    },
-    recipe,
-    expectedBodyVersion: 1,
-    now: new Date("2026-09-18T20:00:00.000Z"),
-  });
+  const snapshot: CoachSessionConfig = {
+    ...COACH,
+    system_prompt_hash: "abc123",
+    tool_schemas: [{ type: "function", function: { name: "builder_write_recipe" } }],
+  };
+  const composed = composeBuilderSystemMessage(
+    snapshot,
+    { body: recipe, body_version: 1 },
+    undefined,
+    new Date("2026-09-18T20:00:00.000Z"),
+  );
   const config = composed.content.slice(composed.content.indexOf("## Coach configuration"));
   assert.match(config, /"max_steps": 24/);
   assert.doesNotMatch(composed.content, /system_prompt_hash|tool_schemas/);
@@ -181,12 +190,12 @@ test("builder system message shows only the coach settings, not the session's au
 test("builder system message keeps the clock last so the static prefix stays cacheable", () => {
   const recipe = parseRecipe(fixtureDeskRecipe());
   const compose = (now: string) =>
-    composeBuilderSystemMessage({
-      config: { model: TEST_MODEL, temperature: 0.2 },
-      recipe,
-      expectedBodyVersion: 3,
-      now: new Date(now),
-    }).content;
+    composeBuilderSystemMessage(
+      COACH,
+      { body: recipe, body_version: 3 },
+      undefined,
+      new Date(now),
+    ).content;
   const first = compose("2026-09-18T20:00:00.000Z");
   const later = compose("2026-09-18T20:05:00.000Z");
   const session = first.indexOf("## Session");
@@ -216,12 +225,12 @@ test("builder system message lists operator access cuts", () => {
     enabled: false,
   });
   applyAccessEdit(recipe, { action: "remove_connection", server: "crm" });
-  const composed = composeBuilderSystemMessage({
-    config: { model: TEST_MODEL, temperature: 0.2 },
-    recipe,
-    expectedBodyVersion: 2,
-    now: new Date("2026-09-18T20:00:00.000Z"),
-  });
+  const composed = composeBuilderSystemMessage(
+    COACH,
+    { body: recipe, body_version: 2 },
+    undefined,
+    new Date("2026-09-18T20:00:00.000Z"),
+  );
   assert.match(composed.content, /Operator access changes/);
   assert.match(composed.content, /tool mail_ping from mail for reader/);
   assert.match(composed.content, /connector crm/);

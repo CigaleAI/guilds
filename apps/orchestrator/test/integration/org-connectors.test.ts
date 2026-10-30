@@ -4,8 +4,8 @@ import { buildApp } from "../../src/app.js";
 import { getMcpServer } from "../../src/connectors/servers.js";
 import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { limitedPolicy } from "../helpers/policy.js";
@@ -30,8 +30,8 @@ test("an organisation adds remote servers of its own that no other organisation 
   const app = await buildApp(database, {
     db,
     notes,
-    scripts: new Scripts(scriptDatabase(db)),
-    schedules: new Schedules(scheduleDatabase(db)),
+    scripts: agentScripts(db),
+    schedules: agentSchedules(db),
     policy: limitedPolicy({ maxMcpServers: 2 }),
     masterKey: Buffer.from(HEX_MASTER_KEY, "hex"),
   });
@@ -39,7 +39,11 @@ test("an organisation adds remote servers of its own that no other organisation 
   await insertOrg(db, { orgId: "org_other", name: "other team", slug: "other-team", userId: String(other.id) }, new Date());
   const OTHER = { "X-Guilds-User": String(other.id), "X-Guilds-Org": "org_other" };
   const member = await insertUser(db, { userId: "user_member", name: "member", image: null, email: "member@example.com" }, new Date());
-  await insertMember(db, "org_home", String(member.id), "member", new Date());
+  await insertMember(
+    db,
+    { org_id: "org_home", user_id: String(member.id), role: "member" },
+    new Date(),
+  );
   const add = (headers: Record<string, string>, org: string, payload: Record<string, unknown>) =>
     app.inject({
       method: "POST",
@@ -65,6 +69,9 @@ test("an organisation adds remote servers of its own that no other organisation 
     assert.match((await add(HOME, "org_home", { slug: "notion", url: "https://mcp.example.com/mcp" })).json().detail, /platform/);
     assert.equal((await add(HOME, "org_home", { slug: "crm", url: "https://mcp.example.com/mcp" })).statusCode, 409);
     assert.equal((await add(HOME, "org_home", { slug: "inside", url: "https://10.0.0.8/mcp" })).statusCode, 422);
+    const urlless = await add(HOME, "org_home", { slug: "nowhere" });
+    assert.equal(urlless.statusCode, 422);
+    assert.deepEqual(urlless.json().detail[0].loc, ["body", "url"]);
     assert.equal(
       (await add(HOME, "org_home", { slug: "own_oauth", url: "https://mcp.example.com/mcp", auth: "oauth", oauth_strategy: "configured" })).statusCode,
       422,
@@ -139,6 +146,14 @@ test("an organisation adds remote servers of its own that no other organisation 
     });
     assert.equal(renamed.statusCode, 200, renamed.body);
     assert.equal(renamed.json().display_name, "Acme CRM");
+    const numbered = await app.inject({
+      method: "PATCH",
+      url: `/api/orgs/org_home/mcp/servers/${crmId}`,
+      headers: { ...HOME, ...JSON_HEADERS },
+      payload: { slug: 7 },
+    });
+    assert.equal(numbered.statusCode, 422);
+    assert.deepEqual(numbered.json().detail[0].loc, ["body", "slug"]);
 
     const removed = await app.inject({ method: "DELETE", url: `/api/orgs/org_home/mcp/servers/${crmId}`, headers: HOME });
     assert.equal(removed.statusCode, 204);

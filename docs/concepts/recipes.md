@@ -238,9 +238,12 @@ What capture writes:
   The first role holding it is `recommended_role` when the scope is
   `agent`. Values are never captured.
 - Notes a Task embeds are always captured as seed notes. Notes listed
-  in `include_notes` are captured too. Memory (`memory.md`) is never
-  captured. Lived agent notes, organisation notes, Memory bodies, and
-  collection records stay out unless the operator includes them.
+  in `include_notes` are captured too. A capture reads notes as the
+  user who captures: a note of a private guild the user does not
+  operate is left out, by display path or by key. Memory (`memory.md`)
+  is never captured. Lived agent notes, organisation notes, Memory
+  bodies, and collection records stay out unless the operator includes
+  them.
 - Each captured note carries its access the way a collection does. A
   guild note is `guild: "write"` with no `writers`. On an organisation
   or agent note, `guild` is the better of the organisation's row and
@@ -391,5 +394,8 @@ POST   /api/recipes/registry/import   { name, version? }
 | `POST /api/recipes/registry/import` | 201 with the imported draft; 404 when the registry has no such recipe; 409 while offline |
 
 A document that does not parse is 422 with the parser's message (see
-[Recipe format](recipe-format.md#parsing)). The apply routes are in
+[Recipe format](recipe-format.md#parsing)). A request field of the
+wrong JSON type, such as a `name` that is not a string or an
+`include_notes` that is not a list of strings, is 422 naming the
+field. The apply routes are in
 [Applying recipes](applying-recipes.md#apply-http).

@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
-import { agentActor, artifactStore, ownerPrefix, snapshotTaskCollections } from "../../src/artifacts/index.js";
+import { addAgent } from "../../src/agents/service.js";
+import { systemActor } from "../helpers/agents.js";
+import { agentActor, operatorActor } from "../../src/artifacts/actors.js";
+import { ownerPrefix } from "../../src/artifacts/paths.js";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { StudioService } from "../../src/studio/index.js";
 import { tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
@@ -19,8 +21,8 @@ import { agentConfig, runSnapshot } from "../helpers/generation.js";
 import { writeNote } from "../../src/artifacts/notes.js";
 import { addRecord, removeRecord } from "../../src/artifacts/records.js";
 import { createCollection } from "../../src/artifacts/collections.js";
-import { operatorContext } from "../../src/artifacts/store.js";
-import { embedSource } from "../../src/artifacts/embeds.js";
+import { artifactStore } from "../../src/artifacts/store.js";
+import { embedSource, snapshotTaskCollections } from "../../src/artifacts/embeds.js";
 
 const AUTH = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 
@@ -71,8 +73,8 @@ test("studio's State lists the guild's items with who changed and read each one"
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = artifactStore(database.pool, templatesRoot());
-  const scripts = new Scripts(scriptDatabase(db));
-  const schedules = new Schedules(scheduleDatabase(db));
+  const scripts = agentScripts(db);
+  const schedules = agentSchedules(db);
   const studio = new StudioService({ db, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
   const app = await buildApp(database, { db, notes, artifacts, scripts, schedules, studio });
   try {
@@ -91,20 +93,19 @@ test("studio's State lists the guild's items with who changed and read each one"
       ["a_far", "far", "guild_far"],
     ];
     for (const [agentId, name, guildId] of agents) {
-      await persistAgent(agentDatabase(db), notes, {
-        agentId,
-        guildId,
-        guildName: guildId === "guild_st" ? "state-guild" : "far-guild",
-        orgSlug: "home",
-        orgId: "org_home",
-        name,
-        focus: "Work",
-        config: CONFIG,
+      await addAgent(
+        { db, notes, artifacts },
+        { agent: { agentId, guildId, name, config: CONFIG, focus: "Work" }, task: "Work", placement: {} },
+        systemActor("org_home", { guildId, agentId }),
         now,
-        artifacts,
-      });
+      );
     }
-    const operator = operatorContext("org_home", "user_operator", "operator", { guildId: "guild_st" });
+    const operator = operatorActor({
+      orgId: "org_home",
+      actorId: "user_operator",
+      actorName: "operator",
+      guildId: "guild_st",
+    });
     const asRun = (agentId: string, name: string, guildId: string, runId: string) => ({
       ...agentActor({ orgId: "org_home", guildId, agentId, agentName: name, runId }),
       toolCall: { id: `call_${runId}`, name: "note_write" },
@@ -134,12 +135,17 @@ test("studio's State lists the guild's items with who changed and read each one"
         now,
       );
 
-    const rules = await writeNote(artifacts, operator, { level: "guild", key: "rules.md", content: "Cite sources.\n" });
+    const { row: rules } = await writeNote(artifacts, operator, { level: "guild", key: "rules.md", content: "Cite sources.\n" });
     const rulesPath = `${ownerPrefix("org_home", "guild", "guild_st")}${rules.key}`;
     await writeNote(artifacts, operator, { level: "guild", key: "idle.md", content: "Nobody reads this.\n" });
-    const farNote = await writeNote(
+    const { row: farNote } = await writeNote(
       artifacts,
-      operatorContext("org_home", "user_operator", "operator", { guildId: "guild_far" }),
+      operatorActor({
+        orgId: "org_home",
+        actorId: "user_operator",
+        actorName: "operator",
+        guildId: "guild_far",
+      }),
       { level: "guild", key: "far.md", content: "Elsewhere.\n" },
     );
     const leads = await createCollection(artifacts, operator, {
@@ -150,7 +156,7 @@ test("studio's State lists the guild's items with who changed and read each one"
     });
     await scripts.create(operator, "a_writer", "tally", "Counts", "print(1)", { type: "object", properties: {} });
     // A run records the tables its Task embeds, directly or through a note it inlines.
-    const viaNote = await writeNote(artifacts, operator, { level: "guild", key: "leads-note.md", content: `![[${leads.display_path}]]\n` });
+    const { row: viaNote } = await writeNote(artifacts, operator, { level: "guild", key: "leads-note.md", content: `![[${leads.display_path}]]\n` });
     assert.deepEqual(
       await snapshotTaskCollections(embedSource(artifacts), operator, `![[${ownerPrefix("org_home", "guild", "guild_st")}${viaNote.key}]]\n`),
       [leads.display_path],

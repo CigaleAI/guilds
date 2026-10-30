@@ -1,13 +1,13 @@
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { DEFAULT_MAX_WORKSPACE_MIB } from "../src/agents/validation.js";
+import { DEFAULT_MAX_WORKSPACE_MIB } from "../src/agents/config.js";
 import { repoRoot } from "../src/lib/paths.js";
 import { installedConnectors } from "../src/connectors/index.js";
-import { loadConnector, manifestTools, type LoadedConnector } from "../src/connectors/load.js";
 import type { ConnectorEntry } from "../src/connectors/registry.js";
-import { connectorFacts } from "../src/connectors/view.js";
-import { serverItem } from "../src/credentials/items.js";
+import { connectorFacts, loadConnector, serverTools, type LoadedConnector } from "../src/connectors/servers.js";
+import { startErrorReporting } from "../src/error-reporting.js";
+import { serverItem } from "../src/mcp/view.js";
 import { oauthSetupState } from "../src/oauth/index.js";
 import { REGISTRY } from "../src/toolbox/index.js";
 
@@ -86,7 +86,7 @@ function withMcpFields(row: Record<string, unknown>): Record<string, unknown> {
   delete next.pinned_prices;
   delete next.github_repositories;
   if (!row.connection_id) {
-    next.tools = manifestTools(server)
+    next.tools = serverTools(server)
       .map((tool) => ({
         name: tool.namespaced_name,
         remote_name: tool.remote_name,
@@ -553,5 +553,6 @@ function walk(value: unknown): unknown {
   return next;
 }
 
+startErrorReporting();
 const parsed = JSON.parse(readFileSync(routesPath, "utf8")) as unknown;
 writeFileSync(routesPath, `${JSON.stringify(walk(parsed), null, 2)}\n`);

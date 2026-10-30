@@ -8,3 +8,15 @@ export class GuildError extends Error {
     this.status = status;
   }
 }
+
+/** Adding agents to a guild past its agent limit, refused with 409. */
+export class GuildAgentLimitError extends Error {
+  readonly status = 409;
+  readonly limit: number;
+
+  constructor(limit: number) {
+    super(`this guild is limited to ${limit} agents`);
+    this.name = "GuildAgentLimitError";
+    this.limit = limit;
+  }
+}

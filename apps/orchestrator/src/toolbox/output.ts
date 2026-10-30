@@ -1,8 +1,8 @@
 import type { ToolMessage, ToolResultMetadata } from "../db/schema/index.js";
+import { capBytes } from "../lib/bytes.js";
 import { writeLog } from "../observability/log.js";
 import { redact } from "../secrets/index.js";
 
-export const TRUNCATION_MARKER = "\n[truncated]";
 export const REMAINING_TOOL_CALLS_PREFIX = "remaining_tool_calls: ";
 export const LOW_TOOL_CALL_BUDGET = 8;
 export const LOW_TOOL_CALL_WRAP_UP =
@@ -12,19 +12,21 @@ export function identityOutput(result: string): string {
   return result;
 }
 
-export function capBytes(text: string, maxBytes: number): [string, boolean] {
-  const encoded = Buffer.from(text, "utf8");
-  if (encoded.length <= maxBytes) {
-    return [text, false];
-  }
-  const marker = Buffer.from(TRUNCATION_MARKER, "utf8");
-  const budget = Math.max(0, maxBytes - marker.length);
-  const cut = encoded.subarray(0, budget).toString("utf8");
-  return [cut + TRUNCATION_MARKER, true];
-}
-
 /** How a tool's output was kept: whether it was cut, its size before and after, and why the filter failed. */
 export type OutputRecord = Pick<ToolResultMetadata, "truncated" | "original_bytes" | "stored_bytes" | "error">;
+
+/** What an output filter made of a tool's output: its text, or what it threw or returned in place of one. */
+type FilteredOutput = { text: string } | { failure: unknown };
+
+function filterOutput(raw: string, outputFilter: (result: string) => string): FilteredOutput {
+  let filtered: unknown;
+  try {
+    filtered = outputFilter(raw);
+  } catch (caught) {
+    return { failure: caught };
+  }
+  return typeof filtered === "string" ? { text: filtered } : { failure: new TypeError("output_filter must return str") };
+}
 
 export function processOutput(
   raw: string,
@@ -34,12 +36,11 @@ export function processOutput(
 ): [string, OutputRecord] {
   let error: string | null = null;
   let filtered: string;
-  try {
-    filtered = outputFilter(raw);
-    if (typeof filtered !== "string") {
-      throw new TypeError("output_filter must return str");
-    }
-  } catch (caught) {
+  const output = filterOutput(raw, outputFilter);
+  if ("text" in output) {
+    filtered = output.text;
+  } else {
+    const caught = output.failure;
     writeLog("error", caught instanceof Error ? caught.message : String(caught), {
       operation: "tool.output_filter",
       error_type: caught instanceof Error ? caught.name : "Error",

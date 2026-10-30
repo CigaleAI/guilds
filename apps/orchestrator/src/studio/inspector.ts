@@ -1,11 +1,16 @@
-import { getAgent } from "../db/agents.js";
+import { Type, type Static } from "@sinclair/typebox";
+import type { ArtifactStore } from "../artifacts/store.js";
+import { agentTask } from "../artifacts/task.js";
+import { getAgent, type AgentRow } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
 import { getRun, listMessages, listRunHeaders, routineRunStats, type RunHeaderRow } from "../db/runs.js";
 import { listSchedules } from "../db/schedules.js";
 import { iso } from "../db/views.js";
 import type { GenerationLoop } from "../generation/index.js";
+import { composeAgentSystemPrompt, hydrateStanding, promptHash, schemasOffer } from "../prompts/index.js";
 import type { Schedules } from "../schedules/service.js";
-import { StudioError } from "./errors.js";
+import { StudioNotFoundError } from "./errors.js";
+import { previewCurrentState, projectOfferedToolSchemas, type PreviewDeps } from "./preview.js";
 
 /** What the Studio inspector reads a guild's runs and routines through, built once from the app's services. */
 export type InspectorServices = {
@@ -15,13 +20,15 @@ export type InspectorServices = {
   generation: Pick<GenerationLoop, "isGenerating"> | null;
 };
 
-/** Which of an agent's runs the inspector lists, as its query asks for them. */
-export type RunHeaderQuery = {
-  taskPromptHash: string;
-  scheduleId: string;
-  kind: string;
-  limit: unknown;
-};
+/** Which of an agent's runs the inspector lists: by prompt, routine, or kind, and how many. */
+export const RunHeaderQuerySchema = Type.Object({
+  task_prompt_hash: Type.Optional(Type.String()),
+  schedule_id: Type.Optional(Type.String()),
+  kind: Type.Optional(Type.String()),
+  limit: Type.Optional(Type.String()),
+});
+
+export type RunHeaderQuery = Static<typeof RunHeaderQuerySchema>;
 
 type Item = Record<string, unknown>;
 
@@ -54,9 +61,9 @@ export async function listAgentRunHeaders(
 ): Promise<Item[]> {
   const limit = Math.min(Math.max(Number(query.limit) || 100, 1), 500);
   const filter = {
-    taskPromptHash: query.taskPromptHash,
-    scheduleId: query.scheduleId,
-    kind: query.kind,
+    taskPromptHash: query.task_prompt_hash ?? "",
+    scheduleId: query.schedule_id ?? "",
+    kind: query.kind ?? "",
     limit,
   };
   return (await listRunHeaders(services.db, agentId, filter)).map((row) =>
@@ -73,7 +80,7 @@ export async function readGuildRun(
   const run = await getRun(services.db, runId);
   const agent = run === null ? null : await getAgent(services.db, run.agent_id);
   if (run === null || agent === null || agent.guild_id !== guildId) {
-    throw new StudioError(404, "run not found");
+    throw new StudioNotFoundError("run not found");
   }
   return {
     run: {
@@ -108,4 +115,103 @@ export async function listAgentRoutines(
     });
   }
   return items;
+}
+
+/** What the agent inspector reads an agent's prompt sources through. */
+export type AgentInspectorDeps = {
+  db: Queryable;
+  artifacts: ArtifactStore;
+  preview: PreviewDeps;
+  notesSystemPath: string;
+  isAgentBusy?: ((agentId: string) => boolean) | undefined;
+};
+
+/** One agent as the inspector shows it: its Guidelines, task, state, Memory, and effective prompt beside its latest run. */
+export async function inspectAgent(deps: AgentInspectorDeps, agent: AgentRow): Promise<Record<string, unknown>> {
+  const task = await agentTask(deps.artifacts, agent);
+  const standing = hydrateStanding({
+    systemPath: deps.notesSystemPath,
+    agentName: agent.name,
+    agentId: agent.id,
+  });
+  const preview = await previewCurrentState(deps.preview, agent);
+  const effectiveTask = task.expanded.ok ? task.expanded.text : task.text;
+  const effectiveHash = promptHash(effectiveTask);
+  const tools = await projectOfferedToolSchemas(deps.preview, agent);
+  const memoryEnabled = agent.config.memory;
+  const composed = composeAgentSystemPrompt(
+    standing,
+    effectiveTask,
+    preview.state,
+    task.memoryText,
+    memoryEnabled,
+    memoryEnabled && schemasOffer(tools.schemas, "memory_write"),
+  );
+  const latestRun = (await listRunHeaders(deps.db, agent.id, { limit: 1 }))[0] ?? null;
+  const guidelinesHash = promptHash(standing);
+  const memoryPromptHash = promptHash(task.memoryText);
+  return {
+    agent: {
+      id: agent.id,
+      name: agent.name,
+      focus: agent.focus,
+      config: agent.config,
+    },
+    guidelines: {
+      ownership: "shared",
+      editable: false,
+      content: standing,
+      content_hash: promptHash(standing),
+    },
+    task: {
+      ownership: "operator-owned",
+      editable: true,
+      display_path: task.displayPath,
+      version: task.version,
+      content: task.text,
+      content_hash: task.hash,
+      effective_hash: effectiveHash,
+      effective_matches_source: task.hash === effectiveHash,
+      has_embeds: task.hasEmbeds,
+      embed_warning: task.expanded.ok ? null : task.expanded.error,
+    },
+    state: {
+      ownership: "derived",
+      editable: false,
+      projected_at: preview.projected_at,
+      content: preview.state,
+    },
+    memory: {
+      ownership: "agent-owned",
+      editable: false,
+      content: task.memory?.content_text ?? "",
+      content_hash: task.memory?.content_hash ?? null,
+      prompt_hash: memoryPromptHash,
+    },
+    effective_prompt: {
+      content: composed,
+      hash: promptHash(composed),
+      task_content: effectiveTask,
+      sections: {
+        guidelines_hash: guidelinesHash,
+        task_hash: effectiveHash,
+        memory_hash: memoryPromptHash,
+      },
+      latest_run: latestRun
+        ? {
+            id: latestRun.id,
+            kind: latestRun.kind,
+            created_at: iso(latestRun.created_at),
+            guidelines_match: String(latestRun.system_prompt_hash ?? "") === guidelinesHash,
+            task_match: String(latestRun.task_prompt_hash ?? "") === effectiveHash,
+            memory_match: String(latestRun.memory_prompt_hash ?? "") === memoryPromptHash,
+          }
+        : null,
+    },
+    offered_tools: {
+      catalog_revision: tools.catalog_revision,
+      count: tools.schemas.length,
+    },
+    generating: deps.isAgentBusy?.(agent.id) ?? false,
+  };
 }

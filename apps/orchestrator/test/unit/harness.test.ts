@@ -14,30 +14,21 @@ import {
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, before, describe, test } from "node:test";
-import { createToolContext, invokeTool } from "../../src/toolbox/index.js";
-import { CancelEvent, type ToolContext } from "../../src/toolbox/types.js";
+import { createToolHooks, invokeTool } from "../../src/toolbox/index.js";
+import { CancelEvent } from "../../src/toolbox/types.js";
+import type { ToolServices } from "../../src/toolbox/services.js";
 import { HARNESS_HELPER, runCodeHelper } from "../../src/toolbox/code.js";
-import {
-  assertHarnessReady,
-  BRIEF_PREAMBLE,
-  buildBrief,
-  checkHarnessOn,
-  codeTaskText,
-  failureDetail,
-  formatDuration,
-  HarnessSetupError,
-  harnessTiming,
-  HARNESS_LOG_MAX_BYTES,
-  notePaths,
-  readHarnessLog,
-  shownProgressLines,
-  timeoutMinutes,
-  type CodeTaskOutcome,
-} from "../../src/toolbox/harness.js";
+import { harnessTiming, notePaths, timeoutMinutes } from "../../src/toolbox/harness.js";
+import { BRIEF_PREAMBLE, buildBrief } from "../../src/toolbox/harness-brief.js";
+import { HARNESS_LOG_MAX_BYTES, readHarnessLog, shownProgressLines } from "../../src/toolbox/harness-ops.js";
+import { codeTaskText, failureDetail, formatDuration, isChangedFile, type CodeTaskOutcome } from "../../src/toolbox/harness-result.js";
+import { assertHarnessReady, checkHarnessOn, HarnessSetupError } from "../../src/toolbox/harness-setup.js";
 import { applySecretAliases } from "../../src/access/runtime.js";
 import { answerOps, HostCodeSandbox } from "../helpers/code-sandbox.js";
 import { tempDir } from "../helpers/env.js";
 import { noteRowAt } from "../helpers/artifacts.js";
+import { fakeToolboxDatabase, fakeToolEvents, toolFixture, type ToolFixture, type ToolFixtureFields } from "../helpers/toolbox.js";
+import { agentActor } from "../../src/artifacts/actors.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const STUB = path.join(HERE, "../helpers/harness/stub-cli");
@@ -109,10 +100,10 @@ function harnessSandbox(binary: string, events: (repo: string) => string[], env:
   return { sandbox, repo, calls, eventsFile };
 }
 
-function context(sandbox: HostCodeSandbox, overrides: Partial<ToolContext> = {}) {
+function context(sandbox: HostCodeSandbox, overrides: Partial<ToolFixtureFields> = {}) {
   const progress: string[] = [];
   const remembered: Array<Record<string, unknown>> = [];
-  const ctx = createToolContext({
+  const ctx = toolFixture({
     run_id: "r_harness",
     agent_id: "a_1",
     guild_id: "g_1",
@@ -120,23 +111,25 @@ function context(sandbox: HostCodeSandbox, overrides: Partial<ToolContext> = {})
     secrets: { CLAUDE_CODE_OAUTH_TOKEN: TOKEN },
     harness: "claude-code",
     code_repositories: ["app"],
-    publish_progress: async (_id, update) => {
-      progress.push(...update.lines);
-    },
-    remember_harness_task: async (task) => {
-      remembered.push(task);
-    },
+    events: fakeToolEvents((_event, data) => {
+      progress.push(...(Array.isArray(data.lines) ? data.lines.map(String) : []));
+    }),
+    db: fakeToolboxDatabase({
+      mergeRunMetadata: async (_runId, extra) => {
+        if (extra.harness_task) {
+          remembered.push(extra.harness_task);
+        }
+      },
+    }),
     ...overrides,
   });
   return { ctx, progress, remembered };
 }
 
-async function codeTask(ctx: ToolContext, args: Record<string, unknown>, callId = "call_task") {
+async function codeTask(ctx: ToolFixture, args: Record<string, unknown>, callId = "call_task") {
   const [payload, metadata] = await invokeTool(
-    ctx,
+    ctx.services, ctx.run, ctx.hooks,
     { id: callId, type: "function", function: { name: "code_task", arguments: JSON.stringify(args) } },
-    ctx.secrets,
-    65536,
   );
   return { text: String(payload.content), metadata };
 }
@@ -210,7 +203,7 @@ describe("code_task with the Claude Code driver", () => {
       "refs/guild/runs/r_harness/tasks/call_task/end",
       "refs/guild/runs/r_harness/tasks/call_task/start",
     ]);
-    const diff = await runCodeHelper(ctx, "diff", { repository: "app", task: "call_task" });
+    const diff = await runCodeHelper(ctx.run, createToolHooks(), { op: "diff", repository: "app", task: "call_task" });
     assert.match(diff.text, /\+print\('hello, guild'\)/);
     assert.ok(existsSync(path.join(sandbox.home, ".runs/r_harness/call_task.harness.jsonl")), "the raw log stays");
     assert.ok(!existsSync(path.join(sandbox.home, ".runs/r_harness/call_task.prompt.md")), "the prompt file goes");
@@ -264,23 +257,27 @@ describe("code_task with the Claude Code driver", () => {
       "org/org_1/guilds/guild_1/large.md": "x".repeat(70 * 1024),
     };
     const fakeStore = {
-      async getByDisplayPath(_actor: unknown, displayPath: string) {
+      async artifactAt(_actor: unknown, displayPath: string) {
         if (!(displayPath in notes)) {
           throw new Error("artifact not found");
         }
-        return { row: noteRowAt(displayPath, notes[displayPath] ?? "") };
+        const text = notes[displayPath] ?? "";
+        return { kind: "row", row: noteRowAt(displayPath, text), href: displayPath, text, deleted: false };
       },
     };
     const { ctx } = context(new HostCodeSandbox(), {
-      artifacts: fakeStore as unknown as ToolContext["artifacts"],
-      artifact_actor: {} as ToolContext["artifact_actor"],
+      artifacts: fakeStore as unknown as ToolServices["artifacts"],
+      artifact_actor: agentActor({ orgId: "org_1", guildId: "guild_1", agentId: "a_1", agentName: "researcher" }),
     });
-    const brief = await buildBrief(ctx, "Tidy greet.py.", Object.keys(notes));
+    const brief = await buildBrief(ctx.services, ctx.run.artifact_actor, "Tidy greet.py.", Object.keys(notes));
     assert.ok(brief.startsWith(BRIEF_PREAMBLE));
     assert.ok(brief.includes("# Task\n\nTidy greet.py."));
     assert.ok(brief.includes("# org/org_1/guilds/guild_1/conventions.md\n\nUse tabs."));
     assert.ok(brief.includes("Not included, past the 64 KiB cap for notes: org/org_1/guilds/guild_1/large.md"));
-    await assert.rejects(() => buildBrief(ctx, "x", ["org/org_1/guilds/guild_1/missing.md"]), /notes: .*missing\.md/);
+    await assert.rejects(
+      () => buildBrief(ctx.services, ctx.run.artifact_actor, "x", ["org/org_1/guilds/guild_1/missing.md"]),
+      /notes: .*missing\.md/,
+    );
   });
 
   test("without a credential the call fails, naming the secret to grant and the login to run", async () => {
@@ -312,26 +309,30 @@ describe("code_task with the Claude Code driver", () => {
     const events: string[] = [];
     const overrides = {
       secrets: {},
-      harness_login_seen: async (harness: string, account: string | null) =>
-        void events.push(`seen ${harness} as ${account ?? "unknown"}`),
-      harness_login_lost: async (harness: string) => void events.push(`lost ${harness}`),
+      db: fakeToolboxDatabase({
+        markHarnessLogin: async (_agentId, login) =>
+          void events.push(`seen ${login.harness} as ${login.account ?? "unknown"}`),
+        clearHarnessLogin: async (_agentId, harness) => void events.push(`lost ${harness}`),
+      }),
     };
-    await assert.rejects(() => assertHarnessReady(context(sandbox, overrides).ctx), (error: unknown) => {
+    const { ctx } = context(sandbox, overrides);
+    await assert.rejects(() => assertHarnessReady(ctx.services, ctx.run), (error: unknown) => {
       assert.ok(error instanceof HarnessSetupError);
       assert.equal(error.code, "harness.credential");
       return true;
     });
     mkdirSync(path.join(sandbox.home, ".claude"), { recursive: true });
     writeFileSync(path.join(sandbox.home, ".claude", ".credentials.json"), "{}");
-    await assertHarnessReady(context(sandbox, overrides).ctx);
+    await assertHarnessReady(ctx.services, ctx.run);
     writeFileSync(path.join(sandbox.home, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: "ada@example.com" } }));
-    await assertHarnessReady(context(sandbox, overrides).ctx);
+    await assertHarnessReady(ctx.services, ctx.run);
     assert.deepEqual(events, ["lost claude-code", "seen claude-code as unknown", "seen claude-code as ada@example.com"]);
   });
 
   test("with no harness picked, the readiness check and code_task both name the agent's Settings", async () => {
     const { sandbox, calls } = harnessSandbox("claude", () => recorded("claude-code"));
-    await assert.rejects(() => assertHarnessReady(context(sandbox, { harness: null }).ctx), (error: unknown) => {
+    const unpicked = context(sandbox, { harness: null }).ctx;
+    await assert.rejects(() => assertHarnessReady(unpicked.services, unpicked.run), (error: unknown) => {
       assert.ok(error instanceof HarnessSetupError);
       assert.equal(error.code, "harness.missing");
       assert.match(error.message, /no harness is picked: choose Claude Code, Codex, Cursor, or Antigravity in the agent's Settings/);
@@ -344,14 +345,14 @@ describe("code_task with the Claude Code driver", () => {
 
   test("checkHarnessOn reports the CLI, its version, and what it would run on", async () => {
     const { sandbox } = harnessSandbox("claude", () => [], { CLAUDE_CODE_OAUTH_TOKEN: TOKEN });
-    assert.deepEqual(await checkHarnessOn(context(sandbox).ctx, "claude-code"), {
+    assert.deepEqual(await checkHarnessOn(context(sandbox).ctx.run, "claude-code"), {
       installed: true,
       version: "9.9.9 (stub)",
       credential: "secret",
       account: null,
     });
     const bare = new HostCodeSandbox("a_1", { PATH: tempDir("harness-empty-bin-") + ":/usr/bin:/bin" });
-    assert.deepEqual(await checkHarnessOn(context(bare).ctx, "claude-code"), {
+    assert.deepEqual(await checkHarnessOn(context(bare).ctx.run, "claude-code"), {
       installed: false,
       version: null,
       credential: null,
@@ -425,12 +426,12 @@ describe("code_task with the Claude Code driver", () => {
     });
     let lost = false;
     const { ctx } = context(sandbox, {
-      publish_progress: async () => {
+      events: fakeToolEvents(() => {
         if (!lost) {
           lost = true;
           restartMachine(sandbox);
         }
-      },
+      }),
     });
     const { text, metadata } = await codeTask(ctx, { brief: "Anything." });
     assert.equal(metadata.status, "interrupted");
@@ -459,9 +460,11 @@ describe("code_task with the Codex driver", () => {
     const { ctx, progress } = context(sandbox, {
       harness: "codex",
       secrets: {},
-      harness_login_seen: async (harness) => {
-        seen.push(harness);
-      },
+      db: fakeToolboxDatabase({
+        markHarnessLogin: async (_agentId, login) => {
+          seen.push(login.harness);
+        },
+      }),
     });
     const { text, metadata } = await codeTask(ctx, { brief: "Make the greeting name the guild." });
     assert.match(text, new RegExp(`^completed · codex · app · session ${THREAD} · `));
@@ -534,10 +537,10 @@ describe("code_task with the Codex driver", () => {
     const { sandbox } = harnessSandbox("codex", () => recorded("codex"));
     const claims = Buffer.from(JSON.stringify({ email: "bob@example.com" }), "utf8").toString("base64url");
     chatgptLogin(sandbox, { tokens: { id_token: `eyJhbGciOiJub25lIn0.${claims}.sig`, refresh_token: "refresh" } });
-    const check = await checkHarnessOn(context(sandbox, { harness: "codex", secrets: {} }).ctx, "codex");
+    const check = await checkHarnessOn(context(sandbox, { harness: "codex", secrets: {} }).ctx.run, "codex");
     assert.deepEqual(check, { installed: true, version: "9.9.9 (stub)", credential: "login", account: "bob@example.com" });
     chatgptLogin(sandbox, { tokens: { id_token: "not-a-jwt", refresh_token: "refresh" } });
-    assert.equal((await checkHarnessOn(context(sandbox, { harness: "codex", secrets: {} }).ctx, "codex")).account, null);
+    assert.equal((await checkHarnessOn(context(sandbox, { harness: "codex", secrets: {} }).ctx.run, "codex")).account, null);
   });
 
   test("an API key login is not a subscription: the call names the login to run", async () => {
@@ -621,10 +624,12 @@ describe("code_task with the Cursor driver", () => {
 
   test("the helper refuses an effort apart from Cursor's model name, and never starts the harness", async () => {
     const { sandbox, calls } = harnessSandbox("agent", () => recorded("cursor"), { CURSOR_API_KEY: "cursor-key" });
-    const ctx = createToolContext({ run_id: "r_harness", agent_id: "a_1", guild_id: "g_1", sandbox, secrets: {} });
-    ctx.tool_call_id = "call_effort";
+    const ctx = toolFixture({ run_id: "r_harness", agent_id: "a_1", guild_id: "g_1", sandbox, secrets: {} });
     const start = { harness: "cursor", repository: "app", prompt: "x", model: "grok-4.7-high", effort: "high" };
-    await assert.rejects(runCodeHelper(ctx, "start", start, { helper: HARNESS_HELPER }), /cursor takes its effort in the model name/);
+    await assert.rejects(
+      runCodeHelper(ctx.run, createToolHooks(), { op: "start", call_id: "call_effort", ...start }, { helper: HARNESS_HELPER }),
+      /cursor takes its effort in the model name/,
+    );
     assert.equal(calls().length, 0);
   });
 
@@ -707,10 +712,9 @@ test("each call first removes the harness's local configuration and memory, neve
 test("a supervisor outlives the call that started it, and stop ends the harness's process group", async () => {
   const lines = recorded("claude-code").slice(0, 2);
   const { sandbox } = harnessSandbox("claude", () => [...lines, JSON.stringify({ stub: "hang" })]);
-  const ctx = createToolContext({ run_id: "r_detached", agent_id: "a_1", guild_id: "g_1", sandbox, secrets: {} });
-  ctx.tool_call_id = "call_detached";
+  const ctx = toolFixture({ run_id: "r_detached", agent_id: "a_1", guild_id: "g_1", sandbox, secrets: {} });
   const op = (name: string, args: Record<string, unknown> = {}) =>
-    runCodeHelper(ctx, name, { harness: "claude-code", ...args }, { helper: HARNESS_HELPER });
+    runCodeHelper(ctx.run, createToolHooks(), { op: name, call_id: "call_detached", harness: "claude-code", ...args }, { helper: HARNESS_HELPER });
   const started = await op("start", { repository: "app", prompt: "Anything." });
   assert.equal(typeof started.meta.pid, "number");
   await new Promise((resolve) => setTimeout(resolve, 400));
@@ -777,9 +781,11 @@ describe("code_task ends every harness it started", () => {
   test("a throw after start stops the harness and clears its state", async () => {
     const { sandbox } = hangingSandbox();
     const { ctx } = context(sandbox, {
-      remember_harness_task: async () => {
-        throw new Error("the database is down");
-      },
+      db: fakeToolboxDatabase({
+        mergeRunMetadata: async () => {
+          throw new Error("the database is down");
+        },
+      }),
     });
     const { text } = await codeTask(ctx, { brief: "Anything." });
     assert.match(text, /^ERROR: the database is down/);
@@ -909,14 +915,14 @@ describe("a kept harness log", () => {
     const folder = path.join(sandbox.home, ".runs", "r_log");
     mkdirSync(folder, { recursive: true });
     writeFileSync(path.join(folder, "call_log.harness.jsonl"), lines.join("\n") + "\n");
-    const ctx = createToolContext({ run_id: "r_log", agent_id: "a_1", guild_id: "g_1", sandbox, secrets: {} });
+    const ctx = toolFixture({ run_id: "r_log", agent_id: "a_1", guild_id: "g_1", sandbox, secrets: {} });
     return ctx;
   }
 
   test("reads as its progress lines and its raw JSONL, both redacted", async () => {
     const events = [...recorded("claude-code"), JSON.stringify({ type: "note", text: `token ${TOKEN}` }), "not json"];
     const ctx = keptLog(events);
-    const log = await readHarnessLog(ctx, "claude-code", "call_log", { CLAUDE_CODE_OAUTH_TOKEN: TOKEN });
+    const log = await readHarnessLog(ctx.run, "claude-code", "call_log", { CLAUDE_CODE_OAUTH_TOKEN: TOKEN });
     assert.ok(log);
     assert.ok(log.lines.includes("Bash: python3 greet.py"), log.lines.join("\n"));
     assert.equal(log.lines_truncated, false);
@@ -931,7 +937,7 @@ describe("a kept harness log", () => {
   test("keeps whole lines from the start of a raw log past its cap", async () => {
     const line = JSON.stringify({ type: "assistant", text: "x".repeat(1000) });
     const ctx = keptLog(Array.from({ length: Math.ceil(HARNESS_LOG_MAX_BYTES / line.length) + 10 }, () => line));
-    const log = await readHarnessLog(ctx, "claude-code", "call_log", {});
+    const log = await readHarnessLog(ctx.run, "claude-code", "call_log", {});
     assert.ok(log);
     assert.equal(log.raw_truncated, true);
     assert.ok(Buffer.byteLength(log.raw) <= HARNESS_LOG_MAX_BYTES);
@@ -940,7 +946,7 @@ describe("a kept harness log", () => {
 
   test("is null once the agent's home no longer keeps it", async () => {
     const ctx = keptLog([]);
-    assert.equal(await readHarnessLog(ctx, "claude-code", "call_gone", {}), null);
+    assert.equal(await readHarnessLog(ctx.run, "claude-code", "call_gone", {}), null);
   });
 });
 
@@ -965,12 +971,19 @@ test("a failed turn names the most telling reason it has", () => {
   assert.equal(detail({ events: 4 }), "error: exited with code unknown");
 });
 
+test("a changed file has a path and line counts, null for a binary file", () => {
+  assert.equal(isChangedFile({ path: "a.ts", insertions: 3, deletions: 1 }), true);
+  assert.equal(isChangedFile({ path: "logo.png", insertions: null, deletions: null }), true);
+  assert.equal(isChangedFile({ path: "a.ts", insertions: "3", deletions: 1 }), false);
+  assert.equal(isChangedFile({ insertions: 3, deletions: 1 }), false);
+  assert.equal(isChangedFile("a.ts"), false);
+});
+
 test("stop kills a harness that ignores SIGTERM once the grace period is over", async () => {
   const { sandbox } = hangingSandbox({ stub: "hang", ignore_term: true });
-  const ctx = createToolContext({ run_id: "r_term", agent_id: "a_1", guild_id: "g_1", sandbox, secrets: {} });
-  ctx.tool_call_id = "call_term";
+  const ctx = toolFixture({ run_id: "r_term", agent_id: "a_1", guild_id: "g_1", sandbox, secrets: {} });
   const op = (name: string, args: Record<string, unknown> = {}) =>
-    runCodeHelper(ctx, name, { harness: "claude-code", ...args }, { helper: HARNESS_HELPER });
+    runCodeHelper(ctx.run, createToolHooks(), { op: name, call_id: "call_term", harness: "claude-code", ...args }, { helper: HARNESS_HELPER });
   await op("start", { repository: "app", prompt: "Anything." });
   await new Promise((resolve) => setTimeout(resolve, 400));
   const began = Date.now();

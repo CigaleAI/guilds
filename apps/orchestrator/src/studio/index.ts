@@ -1,38 +1,24 @@
-import { createHash } from "node:crypto";
-import type { ArtifactStore } from "../artifacts/index.js";
-import {
-  collectTaskEmbeds,
-  displayPathFor,
-  hashArtifactContent,
-  inlineTaskEmbeds,
-  taskEmbedActor,
-} from "../artifacts/index.js";
+import type { ArtifactStore } from "../artifacts/store.js";
 import { memoryHistory } from "../memory/history.js";
-import { canSeeGuild } from "../guilds/validation.js";
+import { canSeeGuild } from "../guilds/operators.js";
 import {
   assertModelConnected,
   coreModelCredentials,
   type ModelCredentialsProvider,
-  ModelNotConnectedError,
-  modelProviderStore,
 } from "../llm/credentials.js";
 import { isMarketplaceModel } from "../llm/providers.js";
 import { newId } from "../lib/ids.js";
 import { EventQueue } from "../lib/event.js";
-import { memoryOf } from "../agents/validation.js";
-import { composeAgentSystemPrompt, hydrateStanding, promptHash, schemasOffer } from "../prompts/index.js";
-import { jsonObj } from "../db/json.js";
-import { iso } from "../db/views.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { Schedules } from "../schedules/service.js";
-import { AdmissionCoordinator } from "../generation/admission.js";
-import { OPEN_POLICY, claimCoachRun, coachRunClaims, type OrgPolicy } from "../policy/index.js";
+import { AdmissionCoordinator } from "../admission/coordinator.js";
+import { OPEN_POLICY, claimCoachRun, type OrgPolicy } from "../policy/index.js";
 import {
   STUDIO_DEFAULT_TEMPERATURE,
   STUDIO_MAX_STEPS,
 } from "./constants.js";
-import { StudioConflictError, StudioError, StudioUnprocessableError } from "./errors.js";
-import { StudioDrafts, viewDraft } from "./drafts.js";
+import { StudioConflictError, StudioNotFoundError, StudioUnprocessableError } from "./errors.js";
+import { StudioDrafts } from "./drafts.js";
 import { StudioRunner } from "./runner.js";
 import { withLockedSession } from "./session-lock.js";
 import {
@@ -40,44 +26,43 @@ import {
   composeStudioSystemMessage,
   hydrateStudioMember,
   readStudioSystemTemplate,
-  studioSystemHash,
-  type RosterAgent,
-  type StudioMemberHydration,
 } from "./system.js";
-import { studioToolSchemas } from "./tools.js";
+import { refreshSystemMessage } from "./system-message.js";
+import { inventoryItem, type StudioInventoryItem } from "./inventory.js";
+import { inspectAgent } from "./inspector.js";
+import { studioToolSchemas, type StudioToolDeps } from "./tools.js";
+import { previewDatabase, type PreviewDeps } from "./preview.js";
 import {
-  previewCurrentState,
-  previewDatabase,
-  projectGuildConnections,
-  projectOfferedToolSchemas,
-  type PreviewDeps,
-} from "./preview.js";
-import {
-  findLoginRecord,
+  answerLoginRequest,
+  grantSessionConnection,
   grantedConnectionIds,
-  loginStatus,
-  reachableConnection,
+  listSessionConnections,
+  withdrawSessionConnection,
   type StudioMcpClient,
 } from "./connections.js";
 import type { StudioFocus } from "../db/schema/index.js";
-import { resolveStudioFocus, STUDIO_FOCUS_SOURCE } from "./focus.js";
+import { resolveStudioFocus, STUDIO_FOCUS_SOURCE, type StudioFocusRequest } from "./focus.js";
 import { isAccessTool } from "./access.js";
-import { applyEdit, editStatus, findEditRecord, markEdit, viewEdit, type EditScope } from "./edits.js";
-import type { RoutineChange } from "./routines.js";
+import {
+  applyEdit,
+  editStatus,
+  findEditRecord,
+  markEdit,
+  viewEdit,
+  type EditDeps,
+  type EditScope,
+} from "./edits.js";
+import type { RoutineChange } from "../schedules/operator.js";
 import { getGuild, type GuildRow } from "../db/guilds.js";
-import { getAgent, getAgentTask } from "../db/agents.js";
-import { listRunHeaders } from "../db/runs.js";
-import type pg from "pg";
+import { getAgent } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
 import {
   type ConversationMessageRow,
   type ConversationUsageRow,
   conversationUsageByOrg,
-  getConversationMessage,
   insertConversationMessage,
   listConversationMessages,
   nextConversationSeq,
-  updateConversationMessage,
 } from "../db/conversations.js";
 import {
   getStudioDraft,
@@ -98,9 +83,7 @@ import type { UserRow } from "../db/users.js";
 import type { AgentRow } from "../db/agents.js";
 import type { OrgMembershipRow } from "../db/orgs.js";
 import type { StudioSourceGuild } from "../db/schema/index.js";
-import { operatorContext } from "../artifacts/store.js";
-import { getMemoryRow, readStoredMemory } from "../artifacts/memory.js";
-import { embedSource } from "../artifacts/embeds.js";
+import { operatorActor } from "../artifacts/actors.js";
 
 export type StudioServiceDeps = {
   db: Queryable;
@@ -127,23 +110,15 @@ function sourceGuildSnapshot(guild: Pick<GuildRow, "id" | "name" | "about" | "de
   return { id: guild.id, name: guild.name, about: guild.about, ...(objective ? { objective } : {}) };
 }
 
-/** An agent as the Studio inventory lists it: its roster header's fields, its avatar, excerpt, and latest run. */
-export type StudioInventoryItem = Omit<RosterAgent, "latest_run"> & {
-  avatar_shape: string;
-  avatar_color: string;
-  scripting: boolean;
-  task_excerpt: StudioMemberHydration["task_excerpt"];
-  task_excerpt_truncated: StudioMemberHydration["task_excerpt_truncated"];
-  task_updated_at: string;
-  paused_count: number;
-  latest_run: {
-    id: string;
-    kind: StudioInventoryRow["latest_run_kind"];
-    status: StudioInventoryRow["latest_run_status"];
-    at: StudioInventoryRow["latest_run_at"];
-    task_prompt_hash: StudioInventoryRow["latest_task_hash"];
-  } | null;
-  draft_status: StudioInventoryRow["draft_status"];
+/** What an operator opens a Studio session with: its mode, source guild, coach model, and the session it continues. */
+export type StudioSessionRequest = {
+  mode: string;
+  sourceGuildId: string;
+  model: string;
+  temperature?: number;
+  parentSessionId?: string | null;
+  summary?: string;
+  selectedTargetAgentId?: string | null;
 };
 
 export class StudioService {
@@ -157,7 +132,7 @@ export class StudioService {
     this.drafts = new StudioDrafts(deps.db, deps.artifacts);
     this.admission = deps.admission ?? new AdmissionCoordinator();
     this.policy = deps.policy ?? OPEN_POLICY;
-    this.credentials = deps.credentials ?? coreModelCredentials(modelProviderStore(deps.db));
+    this.credentials = deps.credentials ?? coreModelCredentials(deps.db);
     this.runner = new StudioRunner({
       db: deps.db,
       admission: this.admission,
@@ -180,42 +155,36 @@ export class StudioService {
     }
   }
 
-  async createSession(args: {
-    user: UserRow;
-    org: OrgMembershipRow;
-    mode: string;
-    sourceGuildId: string;
-    model: string;
-    temperature?: number;
-    parentSessionId?: string | null;
-    summary?: string;
-    selectedTargetAgentId?: string | null;
-  }): Promise<Record<string, unknown>> {
-    if (args.mode !== "optimize") {
+  async createSession(
+    user: UserRow,
+    org: OrgMembershipRow,
+    request: StudioSessionRequest,
+  ): Promise<Record<string, unknown>> {
+    if (request.mode !== "optimize") {
       throw new StudioUnprocessableError("create mode is not available");
     }
-    const guild = await getGuild(this.deps.db, args.sourceGuildId);
+    const guild = await getGuild(this.deps.db, request.sourceGuildId);
     if (
       !guild ||
-      String(guild.org_id) !== String(args.org.id) ||
-      !canSeeGuild(guild, String(args.user.id))
+      guild.org_id !== org.id ||
+      !canSeeGuild(guild, user.id)
     ) {
-      throw new StudioError(404, "guild not found");
+      throw new StudioNotFoundError("guild not found");
     }
-    const model = await this.validateModel(String(args.org.id), args.model);
-    const temperature = this.validateTemperature(args.temperature);
-    if (args.parentSessionId) {
-      const parent = await getStudioSession(this.deps.db, args.parentSessionId);
+    const model = await this.validateModel(org.id, request.model);
+    const temperature = this.validateTemperature(request.temperature);
+    if (request.parentSessionId) {
+      const parent = await getStudioSession(this.deps.db, request.parentSessionId);
       if (
         !parent ||
-        String(parent.org_id) !== String(args.org.id) ||
-        String(parent.created_by_user_id ?? "") !== String(args.user.id)
+        parent.org_id !== org.id ||
+        parent.created_by_user_id !== user.id
       ) {
-        throw new StudioError(404, "parent studio session not found");
+        throw new StudioNotFoundError("parent studio session not found");
       }
     }
     const template = readStudioSystemTemplate({ guidelinesPath: this.deps.notesSystemPath });
-    const limits = (await this.policy.standing(String(args.org.id))).limits.coach.studio;
+    const limits = (await this.policy.standing(org.id)).limits.coach.studio;
     const coachConfig = {
       model,
       temperature,
@@ -224,21 +193,15 @@ export class StudioService {
     };
     const sourceGuild = sourceGuildSnapshot(guild);
     const members = (await studioInventory(this.deps.db, guild.id, null)).map((row) => hydrateStudioMember(row));
-    const system = composeStudioSystemMessage({
-      mode: "optimize",
-      sourceGuild,
-      members,
-      config: coachConfig,
-      template,
-    });
+    const system = composeStudioSystemMessage(template, { mode: "optimize", config: coachConfig }, { sourceGuild, members });
     const now = new Date();
     const session = await insertStudioSession(
       this.deps.db,
       {
         id: newId("stu"),
-        org_id: String(args.org.id),
-        created_by_user_id: String(args.user.id),
-        created_by_name: typeof args.user.name === "string" ? args.user.name : "operator",
+        org_id: org.id,
+        created_by_user_id: user.id,
+        created_by_name: typeof user.name === "string" ? user.name : "operator",
         mode: "optimize",
         source_guild_id: guild.id,
         source_guild_snapshot: sourceGuild,
@@ -247,8 +210,8 @@ export class StudioService {
           system_prompt_hash: system.hash,
           tool_schemas: studioToolSchemas(),
         },
-        parent_session_id: args.parentSessionId ?? null,
-        selected_target_agent_id: args.selectedTargetAgentId ?? null,
+        parent_session_id: request.parentSessionId ?? null,
+        selected_target_agent_id: request.selectedTargetAgentId ?? null,
         status: "active",
       },
       now,
@@ -265,7 +228,7 @@ export class StudioService {
       },
       now,
     );
-    if (args.summary) {
+    if (request.summary) {
       await insertConversationMessage(
         this.deps.db,
         "studio",
@@ -273,7 +236,7 @@ export class StudioService {
           session_id: session.id,
           seq: 1,
           generation: 0,
-          payload: { role: "user", content: args.summary },
+          payload: { role: "user", content: request.summary },
           metadata: { source: "continuation" },
         },
         now,
@@ -291,14 +254,7 @@ export class StudioService {
     if (!isMarketplaceModel(id)) {
       throw new StudioUnprocessableError("the coach needs a marketplace model");
     }
-    try {
-      await assertModelConnected(this.credentials, orgId, id);
-    } catch (error) {
-      if (error instanceof ModelNotConnectedError) {
-        throw new StudioUnprocessableError(error.message);
-      }
-      throw error;
-    }
+    await assertModelConnected(this.credentials, orgId, id);
     return id;
   }
 
@@ -313,32 +269,32 @@ export class StudioService {
   async listSessions(orgId: string, userId: string): Promise<Array<Record<string, unknown>>> {
     const rows = await listStudioSessions(this.deps.db, orgId, userId);
     const hidden = new Set<string>();
-    for (const guildId of new Set(rows.map((row) => String(row.source_guild_id ?? "")).filter(Boolean))) {
+    for (const guildId of new Set(rows.flatMap((row) => (row.source_guild_id ? [row.source_guild_id] : [])))) {
       const guild = await getGuild(this.deps.db, guildId);
       if (guild && !canSeeGuild(guild, userId)) hidden.add(guildId);
     }
     return rows
-      .filter((row) => !hidden.has(String(row.source_guild_id ?? "")))
+      .filter((row) => !hidden.has(row.source_guild_id ?? ""))
       .map((row) => this.viewSession(row));
   }
 
   async getOwnedSession(sessionId: string, user: UserRow, org: OrgMembershipRow): Promise<StudioSessionRow> {
     const session = await getStudioSession(this.deps.db, sessionId);
     if (!session || session.org_id !== org.id) {
-      throw new StudioError(404, "studio session not found");
+      throw new StudioNotFoundError("studio session not found");
     }
     if (session.created_by_user_id && session.created_by_user_id !== user.id) {
-      throw new StudioError(404, "studio session not found");
+      throw new StudioNotFoundError("studio session not found");
     }
     if (!session.created_by_user_id) {
-      throw new StudioError(404, "studio session not found");
+      throw new StudioNotFoundError("studio session not found");
     }
     // Seeing the guild is checked on every request, not only at creation: a
     // user who can no longer see a private guild loses its sessions too.
     if (session.source_guild_id) {
       const guild = await getGuild(this.deps.db, session.source_guild_id);
       if (guild && !canSeeGuild(guild, user.id)) {
-        throw new StudioError(404, "studio session not found");
+        throw new StudioNotFoundError("studio session not found");
       }
     }
     if (!session.source_guild_id && session.status === "active") {
@@ -380,73 +336,23 @@ export class StudioService {
   }
 
   async listConnections(session: StudioSessionRow): Promise<Array<Record<string, unknown>>> {
-    if (!session.source_guild_id) {
-      return [];
-    }
-    const granted = new Set(grantedConnectionIds(session));
-    const projected = await projectGuildConnections(
-      this.previewDeps(),
-      session.org_id,
-      session.source_guild_id,
-    );
-    return projected.map((connection) => ({
-      id: connection.id,
-      server: connection.server,
-      owner_scope: connection.owner_scope,
-      owner_id: connection.owner_id,
-      account_hint: connection.account_hint,
-      status: connection.status,
-      granted: granted.has(connection.id),
-      readable_tools: connection.tools.filter((tool) => tool.read_only).map((tool) => tool.name),
-      tool_count: connection.tools.length,
-    }));
+    return listSessionConnections(this.previewDeps(), session);
   }
 
-  async setConnectionGrant(
+  /** Lets the coach use one login of the source guild in this session. */
+  async grantConnection(
     session: StudioSessionRow,
     connectionId: string,
-    granted: boolean,
   ): Promise<Record<string, unknown>> {
-    const next = await this.grantedAfter(session, connectionId, granted);
-    const updated = await updateStudioSession(
-      this.deps.db,
-      session.id,
-      { granted_connection_ids: next },
-      new Date(),
-    );
-    return this.viewSession(updated ?? { ...session, granted_connection_ids: next });
+    return this.viewSession(await grantSessionConnection(this.deps.db, session, connectionId));
   }
 
-  // The session's granted logins once one is granted or withdrawn. A grant
-  // must name a connected login the source guild can reach.
-  private async grantedAfter(
+  /** Takes one login back from the coach in this session. */
+  async withdrawConnection(
     session: StudioSessionRow,
     connectionId: string,
-    granted: boolean,
-  ): Promise<string[]> {
-    if (session.status !== "active") {
-      throw new StudioConflictError("session is not active");
-    }
-    if (!session.source_guild_id) {
-      throw new StudioUnprocessableError("source guild is gone");
-    }
-    const current = grantedConnectionIds(session);
-    if (!granted) {
-      return current.filter((id) => id !== connectionId);
-    }
-    const reach = await reachableConnection(
-      this.deps.db,
-      session.org_id,
-      session.source_guild_id,
-      connectionId,
-    );
-    if (!reach) {
-      throw new StudioUnprocessableError("connection is not reachable from the source guild");
-    }
-    if (reach.connection.status !== "connected") {
-      throw new StudioUnprocessableError(`connection is ${String(reach.connection.status)}`);
-    }
-    return current.includes(connectionId) ? current : [...current, connectionId];
+  ): Promise<Record<string, unknown>> {
+    return this.viewSession(await withdrawSessionConnection(this.deps.db, session, connectionId));
   }
 
   // Grant or decline one login request from the Studio log. The answer and
@@ -459,31 +365,7 @@ export class StudioService {
     decision: "grant" | "decline",
   ): Promise<Record<string, unknown>> {
     this.assertLive(session);
-    const sessionId = session.id;
-    const updated = await withLockedSession(this.deps.db, sessionId, async (client, locked) => {
-      const record = findLoginRecord(await getConversationMessage(client, "studio", sessionId, seq), seq);
-      const status = loginStatus(record);
-      if (status !== "pending") {
-        throw new StudioConflictError(`login request is already ${status}`);
-      }
-      const now = new Date();
-      await updateConversationMessage(
-        client,
-        "studio",
-        { session_id: sessionId, seq, payload: record.payload, metadata: {
-        ...record.metadata,
-        access_status: decision === "grant" ? "granted" : "declined",
-        access_resolved_at: now.toISOString(),
-        resolved_by_user_id: user.id ?? null,
-      } },
-      );
-      if (decision === "decline") {
-        return locked;
-      }
-      const next = await this.grantedAfter(locked, record.connectionId, true);
-      return (await updateStudioSession(client, sessionId, { granted_connection_ids: next }, now)) ?? locked;
-    });
-    return this.viewSession(updated);
+    return this.viewSession(await answerLoginRequest(this.deps.db, session, { user, seq, decision }));
   }
 
   async archive(session: StudioSessionRow): Promise<Record<string, unknown>> {
@@ -524,165 +406,26 @@ export class StudioService {
   async inventory(session: StudioSessionRow): Promise<Array<Record<string, unknown>>> {
     this.assertLive(session);
     const rows = await studioInventory(this.deps.db, session.source_guild_id, session.id);
-    return rows.map((row) => this.inventoryItem(row));
+    return rows.map((row) => inventoryItem(row));
   }
 
   inventoryItem(row: StudioInventoryRow): StudioInventoryItem {
-    const content = row.task_content;
-    const member = hydrateStudioMember(row);
-    const warnings: string[] = [];
-    if (!content.trim()) warnings.push("empty_task");
-    if (row.latest_run_errors?.length) warnings.push("generation_errors");
-    if (row.draft_id && row.draft_base_version !== row.task_version) {
-      warnings.push("stale_draft");
-    }
-    return {
-      id: row.id,
-      name: row.name,
-      focus: row.focus,
-      avatar_shape: row.avatar_shape,
-      avatar_color: row.avatar_color,
-      scripting: row.config.scripting,
-      task_version: row.task_version,
-      task_hash: row.task_hash,
-      task_excerpt: member.task_excerpt,
-      task_excerpt_truncated: member.task_excerpt_truncated,
-      has_embeds: collectTaskEmbeds(content).length > 0,
-      task_updated_at: row.task_updated_at,
-      routine_count: row.routine_count,
-      paused_count: row.paused_count,
-      latest_run: row.latest_run_id
-        ? {
-            id: row.latest_run_id,
-            kind: row.latest_run_kind,
-            status: row.latest_run_status,
-            at: row.latest_run_at,
-            task_prompt_hash: row.latest_task_hash,
-          }
-        : null,
-      draft_id: row.draft_id,
-      draft_status: row.draft_status,
-      warnings,
-    };
+    return inventoryItem(row);
   }
 
-  async inspector(session: StudioSessionRow, user: UserRow, agentId: string): Promise<Record<string, unknown>> {
+  async inspector(session: StudioSessionRow, agentId: string): Promise<Record<string, unknown>> {
     this.assertLive(session);
     const agent = await this.requireGuildAgent(session, agentId);
-    const actor = operatorContext(
-      session.org_id,
-      user.id,
-      user.name,
-      { guildId: session.source_guild_id, agentId },
+    return inspectAgent(
+      {
+        db: this.deps.db,
+        artifacts: this.deps.artifacts,
+        preview: this.previewDeps(),
+        notesSystemPath: this.deps.notesSystemPath,
+        isAgentBusy: this.deps.isAgentBusy,
+      },
+      agent,
     );
-    const task = await getAgentTask(this.deps.db, session.org_id, agentId);
-    const memory = await getMemoryRow(this.deps.artifacts, actor, agentId);
-    const standing = hydrateStanding({
-      systemPath: this.deps.notesSystemPath,
-      agentName: agent.name,
-      agentId: agent.id,
-    });
-    const preview = await previewCurrentState(this.previewDeps(), agent);
-    let effectiveTask = task?.content_text ?? "";
-    let embedWarning: string | null = null;
-    try {
-      effectiveTask = await inlineTaskEmbeds(
-        embedSource(this.deps.artifacts),
-        taskEmbedActor(session.org_id, agent),
-        task?.content_text ?? "",
-      );
-    } catch (error) {
-      embedWarning = error instanceof Error ? error.message : "embed preflight failed";
-    }
-    const sourceHash = task?.content_hash ?? hashArtifactContent("");
-    const effectiveHash = promptHash(effectiveTask);
-    const tools = await projectOfferedToolSchemas(this.previewDeps(), agent);
-    const memoryText = await readStoredMemory(this.deps.artifacts, actor, agentId);
-    const memoryEnabled = memoryOf(jsonObj(agent.config));
-    const composed = composeAgentSystemPrompt(
-      standing,
-      effectiveTask,
-      preview.state,
-      memoryText,
-      memoryEnabled,
-      memoryEnabled && schemasOffer(tools.schemas, "memory_write"),
-    );
-    const latestRun = (await listRunHeaders(this.deps.db, agentId, { limit: 1 }))[0] ?? null;
-    const guidelinesHash = promptHash(standing);
-    const memoryPromptHash = promptHash(memoryText);
-    return {
-      agent: {
-        id: agent.id,
-        name: agent.name,
-        focus: agent.focus,
-        config: agent.config,
-      },
-      guidelines: {
-        ownership: "shared",
-        editable: false,
-        content: standing,
-        content_hash: promptHash(standing),
-      },
-      task: {
-        ownership: "operator-owned",
-        editable: true,
-        display_path: task
-          ? displayPathFor({
-              orgId: session.org_id,
-              level: "agent",
-              ownerId: agentId,
-              kind: "task",
-              path: "",
-              key: "task.md",
-            })
-          : null,
-        version: task?.version ?? null,
-        content: task?.content_text ?? "",
-        content_hash: sourceHash,
-        effective_hash: effectiveHash,
-        effective_matches_source: sourceHash === effectiveHash,
-        has_embeds: collectTaskEmbeds(task?.content_text ?? "").length > 0,
-        embed_warning: embedWarning,
-      },
-      state: {
-        ownership: "derived",
-        editable: false,
-        projected_at: preview.projected_at,
-        content: preview.state,
-      },
-      memory: {
-        ownership: "agent-owned",
-        editable: false,
-        content: memory?.content_text ?? "",
-        content_hash: memory?.content_hash ?? null,
-        prompt_hash: memoryPromptHash,
-      },
-      effective_prompt: {
-        content: composed,
-        hash: promptHash(composed),
-        task_content: effectiveTask,
-        sections: {
-          guidelines_hash: guidelinesHash,
-          task_hash: effectiveHash,
-          memory_hash: memoryPromptHash,
-        },
-        latest_run: latestRun
-          ? {
-              id: latestRun.id,
-              kind: latestRun.kind,
-              created_at: iso(latestRun.created_at),
-              guidelines_match: String(latestRun.system_prompt_hash ?? "") === guidelinesHash,
-              task_match: String(latestRun.task_prompt_hash ?? "") === effectiveHash,
-              memory_match: String(latestRun.memory_prompt_hash ?? "") === memoryPromptHash,
-            }
-          : null,
-      },
-      offered_tools: {
-        catalog_revision: tools.catalog_revision,
-        count: tools.schemas.length,
-      },
-      generating: this.deps.isAgentBusy?.(agentId) ?? false,
-    };
   }
 
   async memoryTimeline(
@@ -692,61 +435,21 @@ export class StudioService {
   ): Promise<Record<string, unknown>> {
     this.assertLive(session);
     const agent = await this.requireGuildAgent(session, agentId);
-    const actor = operatorContext(
-      session.org_id,
-      user.id,
-      user.name,
-      { guildId: session.source_guild_id, agentId },
-    );
-    return memoryHistory(this.deps, actor, { id: agent.id, name: agent.name });
-  }
-
-  /** The system message for this generation, from the roster rows the caller already read. */
-  composeLiveSystem(
-    session: StudioSessionRow,
-    rows: Array<Record<string, unknown>>,
-  ): { content: string; hash: string } {
-    const config = session.config_snapshot;
-    const members = rows.map((row) => hydrateStudioMember(row));
-    return composeStudioSystemMessage({
-      mode: String(session.mode ?? "optimize"),
-      template: readStudioSystemTemplate({ guidelinesPath: this.deps.notesSystemPath }),
-      sourceGuild: session.source_guild_id ? { ...session.source_guild_snapshot, id: session.source_guild_id } : null,
-      members,
-      config: {
-        model: config.model,
-        temperature: config.temperature,
-        max_tokens: config.max_tokens,
-        max_steps: config.max_steps,
-        max_tool_calls: config.max_tool_calls,
-        max_input_tokens: config.max_input_tokens,
-      },
+    const actor = operatorActor({
+      orgId: session.org_id,
+      actorId: user.id,
+      actorName: user.name,
+      guildId: session.source_guild_id,
+      agentId,
     });
-  }
-
-  async refreshSystemMessage(
-    session: StudioSessionRow,
-    rows: Array<Record<string, unknown>>,
-    client?: pg.PoolClient,
-  ): Promise<string> {
-    const system = this.composeLiveSystem(session, rows);
-    const existing = await getConversationMessage(client ?? this.deps.db, "studio", session.id, 0);
-    if (existing && existing.metadata.system_prompt_hash !== system.hash) {
-      await updateConversationMessage(client ?? this.deps.db, "studio", {
-        session_id: session.id,
-        seq: 0,
-        payload: { role: "system", content: system.content },
-        metadata: { ...existing.metadata, source: "studio_system", system_prompt_hash: system.hash, refreshed: true },
-      });
-    }
-    return system.content;
+    return memoryHistory(this.deps, actor, { id: agent.id, name: agent.name });
   }
 
   async postMessage(
     session: StudioSessionRow,
     user: UserRow,
     content: string,
-    focusInput?: unknown,
+    focusInput?: StudioFocusRequest | null,
   ): Promise<Record<string, unknown>> {
     this.assertLive(session);
     if (!content.trim()) {
@@ -774,10 +477,10 @@ export class StudioService {
         throw new StudioConflictError("studio session is already generating");
       }
       const now = new Date();
-      await claimCoachRun(this.policy, coachRunClaims(client), locked.org_id, now);
+      await claimCoachRun(this.policy, client, locked.org_id, now);
       const rows = await studioInventory(this.deps.db, session.source_guild_id, locked.id);
-      const systemContent = await this.refreshSystemMessage(locked, rows, client);
-      const generation = Number(locked.generation_number) + 1;
+      const systemContent = await refreshSystemMessage(this.deps, locked, rows, client);
+      const generation = locked.generation_number + 1;
       let seq = await nextConversationSeq(client, "studio", locked.id);
       if (focus) {
         // A stored user row, so the pin stays in the projected history of
@@ -823,35 +526,30 @@ export class StudioService {
       return { session: updated ?? locked, generation, systemContent, rows };
     });
     const drafts = await listStudioDraftHeads(this.deps.db, started.session.id);
-    const generationContext = composeGenerationContext({
-      sourceGuild: { id: session.source_guild_id },
-      roster: started.rows.map((row) => this.inventoryItem(row)),
-      draft: drafts[0] ?? null,
-    });
+    const generationContext = composeGenerationContext(
+      session.source_guild_id,
+      started.rows.map((row) => inventoryItem(row)),
+      drafts[0] ?? null,
+    );
     const limits = (await this.policy.standing(started.session.org_id)).limits.coach.studio;
-    this.runner.start({
-      session: {
-        ...started.session,
-        config_snapshot: { ...started.session.config_snapshot, ...limits },
+    this.runner.start(
+      this.toolDeps(),
+      {
+        session: {
+          ...started.session,
+          config_snapshot: { ...started.session.config_snapshot, ...limits },
+        },
+        generation: started.generation,
+        generationContext,
+        systemContent: started.systemContent,
       },
-      user,
-      generation: started.generation,
-      generationContext,
-      systemContent: started.systemContent,
-      toolContext: {
+      {
         session: started.session,
         user,
         orgId: started.session.org_id,
         sourceGuildId: session.source_guild_id,
-        artifacts: this.deps.artifacts,
-        db: this.deps.db,
-        schedules: this.deps.schedules,
-        drafts: this.drafts,
-        preview: this.previewDeps(),
-        notesSystemPath: this.deps.notesSystemPath,
-        mcp: this.deps.mcp ?? null,
       },
-    });
+    );
     return this.viewSession(started.session);
   }
 
@@ -920,34 +618,38 @@ export class StudioService {
     const config = session.config_snapshot;
     const heads = await listStudioDraftHeads(this.deps.db, session.id);
     const summary = `Continue from Studio session ${session.id}. Active draft heads: ${heads.map((row) => row.id).join(", ") || "none"}.`;
-    return this.createSession({
-      user,
-      org,
+    return this.createSession(user, org, {
       mode: "optimize",
       sourceGuildId: session.source_guild_id,
       model: config.model,
       temperature: config.temperature,
       parentSessionId: session.id,
       summary,
-      selectedTargetAgentId: session.selected_target_agent_id ? String(session.selected_target_agent_id) : null,
+      selectedTargetAgentId: session.selected_target_agent_id,
     });
   }
 
+  /** Publishes a draft of the session to its target agent's task, as `user`. */
   async publishDraft(
     session: StudioSessionRow,
     user: UserRow,
     draftId: string,
-    options: { orphan?: boolean } = {},
   ): Promise<Record<string, unknown>> {
-    const result = await this.drafts.publish({
+    const result = await this.drafts.publish(
+      { db: this.deps.db, preview: this.previewDeps(), notesSystemPath: this.deps.notesSystemPath },
       session,
       user,
       draftId,
-      db: this.deps.db,
-      preview: this.previewDeps(),
-      notesSystemPath: this.deps.notesSystemPath,
-      ...(options.orphan ? { orphan: true } : {}),
-    });
+    );
+    return this.announcePublish(session, result);
+  }
+
+  // Tells the source guild its files changed when the draft was published,
+  // and adds whether the target agent is generating to the outcome.
+  private async announcePublish(
+    session: StudioSessionRow,
+    result: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
     if (result.outcome === "published" && this.deps.publishFilesChanged && session.source_guild_id) {
       await this.deps.publishFilesChanged(session.source_guild_id);
     }
@@ -958,15 +660,28 @@ export class StudioService {
     };
   }
 
+  private toolDeps(): StudioToolDeps {
+    return {
+      artifacts: this.deps.artifacts,
+      db: this.deps.db,
+      schedules: this.deps.schedules,
+      drafts: this.drafts,
+      preview: this.previewDeps(),
+      notesSystemPath: this.deps.notesSystemPath,
+      mcp: this.deps.mcp ?? null,
+    };
+  }
+
+  private editDeps(): EditDeps {
+    return { db: this.deps.db, artifacts: this.deps.artifacts, schedules: this.deps.schedules };
+  }
+
   private editScope(session: LiveStudioSession, user: UserRow): EditScope {
     return {
       orgId: session.org_id,
       sourceGuildId: session.source_guild_id,
       sessionId: session.id,
       user,
-      db: this.deps.db,
-      artifacts: this.deps.artifacts,
-      schedules: this.deps.schedules,
     };
   }
 
@@ -980,7 +695,8 @@ export class StudioService {
       throw new StudioUnprocessableError("source guild is gone");
     }
     const record = findEditRecord(await listConversationMessages(this.deps.db, "studio", session.id), seq);
-    return viewEdit(this.editScope({ ...session, source_guild_id: sourceGuildId }, user), record);
+    const scope = this.editScope({ ...session, source_guild_id: sourceGuildId }, user);
+    return viewEdit(this.editDeps(), scope, record);
   }
 
   // Apply or decline one edit request from the Studio log. The session lock
@@ -992,6 +708,7 @@ export class StudioService {
     decision: "apply" | "decline",
   ): Promise<Record<string, unknown>> {
     this.assertLive(session);
+    const deps = this.editDeps();
     const scope = this.editScope(session, user);
     const userId = user.id;
     const outcome = await withLockedSession(this.deps.db, session.id, async () => {
@@ -1003,7 +720,7 @@ export class StudioService {
         await markEdit(this.deps.db, session.id, record, { status: "declined", version: null, userId });
         return { record, applied: null };
       }
-      const applied = await applyEdit(scope, record);
+      const applied = await applyEdit(deps, scope, record);
       await markEdit(this.deps.db, session.id, record, {
         status: "applied",
         version: applied.version,
@@ -1024,7 +741,7 @@ export class StudioService {
       await this.deps.publishFilesChanged(session.source_guild_id);
     }
     const record = findEditRecord(await listConversationMessages(this.deps.db, "studio", session.id), seq);
-    return viewEdit(scope, record);
+    return viewEdit(deps, scope, record);
   }
 
   assertLive(session: StudioSessionRow): asserts session is LiveStudioSession {
@@ -1039,10 +756,8 @@ export class StudioService {
   async requireGuildAgent(session: StudioSessionRow, agentId: string): Promise<AgentRow> {
     const agent = await getAgent(this.deps.db, agentId);
     if (!agent || agent.guild_id !== session.source_guild_id) {
-      throw new StudioError(404, "agent not found");
+      throw new StudioNotFoundError("agent not found");
     }
     return agent;
   }
 }
-
-export { viewDraft, studioSystemHash, createHash };

@@ -75,6 +75,11 @@ export type NewGroupRun = {
   wakeGroupMessageId?: number | null | undefined;
 };
 
+/** A group run whose delivery is done: the run, its agent, and the seq it delivered through. */
+export type GroupDelivery = Pick<Run, "id" | "agent_id"> & {
+  group_chat_through_seq: NonNullable<Run["group_chat_through_seq"]>;
+};
+
 export type NewScheduleRun = {
   runId: string;
   agentId: string;
@@ -479,21 +484,19 @@ export async function reopenRun(pool: Queryable, runId: string, now: Date): Prom
 
 export async function completeGroupDelivery(
   pool: Queryable,
-  runId: string,
-  agentId: string,
-  throughSeq: number,
+  delivery: GroupDelivery,
   now: Date,
 ): Promise<void> {
   await withTransaction(pool, async (client) => {
     await client.query(`UPDATE runs SET status = 'completed', updated_at = $2 WHERE id = $1`, [
-      runId,
+      delivery.id,
       stamp(now),
     ]);
     await client.query(
       `UPDATE agents
        SET group_chat_delivered_through = GREATEST(group_chat_delivered_through, $2)
        WHERE id = $1`,
-      [agentId, throughSeq],
+      [delivery.agent_id, delivery.group_chat_through_seq],
     );
   });
 }

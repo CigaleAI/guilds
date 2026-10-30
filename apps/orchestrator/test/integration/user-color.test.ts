@@ -3,8 +3,8 @@ import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
@@ -30,8 +30,8 @@ test("a person sets, keeps and clears their identity colour", { timeout: 60_000 
   const app = await buildApp(database, {
     db,
     notes,
-    scripts: new Scripts(scriptDatabase(db)),
-    schedules: new Schedules(scheduleDatabase(db)),
+    scripts: agentScripts(db),
+    schedules: agentSchedules(db),
   });
   const json = { ...OWNER, "content-type": "application/json" };
   const patch = (payload: Record<string, unknown>) =>
@@ -65,6 +65,11 @@ test("a person sets, keeps and clears their identity colour", { timeout: 60_000 
     }
     const empty = await patch({});
     assert.equal(empty.statusCode, 422);
+    const mistyped = await patch({ name: 5 });
+    assert.equal(mistyped.statusCode, 422);
+    assert.deepEqual(mistyped.json().detail, [
+      { type: "type", loc: ["body", "name"], msg: "must be string", input: 5 },
+    ]);
 
     const cleared = await patch({ color: null });
     assert.equal(cleared.json().color, null);

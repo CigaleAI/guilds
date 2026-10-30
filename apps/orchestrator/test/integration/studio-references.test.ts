@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { artifactStore } from "../../src/artifacts/index.js";
+import { artifactStore } from "../../src/artifacts/store.js";
 import { unreachableMarker } from "../../src/artifacts/embeds.js";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { StudioService } from "../../src/studio/index.js";
 import type { GuildReferences } from "../../src/studio/references.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
@@ -36,8 +36,8 @@ test(
     const db = database.pool;
     await connectModelProvider(db, "org_home", "deepinfra");
     const artifacts = artifactStore(database.pool, templatesRoot());
-    const scripts = new Scripts(scriptDatabase(db));
-    const schedules = new Schedules(scheduleDatabase(db));
+    const scripts = agentScripts(db);
+    const schedules = agentSchedules(db);
     const studio = new StudioService({
       db,
       artifacts,
@@ -52,7 +52,11 @@ test(
         image: null,
         email: "refs@example.com",
       }, new Date());
-    await insertMember(db, "org_home", String(teammate.id), "member", new Date());
+    await insertMember(
+      db,
+      { org_id: "org_home", user_id: String(teammate.id), role: "member" },
+      new Date(),
+    );
     const TEAMMATE = { "X-Guilds-User": String(teammate.id), "X-Guilds-Org": "org_home" };
 
     const call = async (

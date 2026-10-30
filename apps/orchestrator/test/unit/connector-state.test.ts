@@ -1,36 +1,19 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { agentMcpConnection } from "../../src/access/runtime.js";
+import { agentLoginsThrough } from "../../src/access/runtime.js";
 import { installConnectors } from "../../src/connectors/index.js";
+import type { BindingRow } from "../../src/db/bindings.js";
+import type { McpConnectionRow, ScopedMcpConnectionRow } from "../../src/db/mcp.js";
+import { previewConnectorState } from "../../src/mcp/pool.js";
 import { STATE_INTRO, composeSystemPrompt } from "../../src/prompts/index.js";
 import { collectRunState } from "../../src/state/index.js";
 import { QUOTES } from "../helpers/quotes.js";
+import { connectionRow, serverRow } from "../helpers/servers.js";
 
 installConnectors([QUOTES]);
 
 const QUOTES_INTRO = QUOTES.manifest.state!.intro;
 const PINNED = [{ id: "ethereum", name: "Ethereum" }];
-
-function pinnedDb(options: { serverOff?: boolean; status?: string } = {}) {
-  return {
-    listBindingsCovering: async () => [
-      {
-        catalog_kind: "mcp",
-        catalog_id: "mcp_quotes",
-        scope: "org",
-        scope_id: "org_1",
-        enabled: !options.serverOff,
-        connection_id: "conn_quotes",
-      },
-    ],
-    listAgentSecrets: async () => [],
-    listMcpServers: async () => [{ id: "mcp_quotes", slug: "quotes" }],
-    listMcpConnections: async () => [
-      { id: "conn_quotes", status: options.status ?? "connected", settings: { symbols: PINNED } },
-    ],
-    listMcpTools: async () => [],
-  };
-}
 
 test("collect_run_state adds connector entries beside core's keys", () => {
   const base = { members: [], historyRows: [] };
@@ -49,11 +32,47 @@ test("compose explains a connector's State key only when State carries it", () =
   assert.ok(quoted.includes(`${STATE_INTRO} ${QUOTES_INTRO}`));
 });
 
-test("agentMcpConnection reads a login's settings, and leaves out a server that is off or a login disconnected", async () => {
+/** An organisation's quotes login, bound on for its agents unless `serverOff`. */
+function quotesLogins(options: { serverOff?: boolean; status?: McpConnectionRow["status"] } = {}) {
+  const binding: BindingRow = {
+    id: "bind_quotes",
+    catalog_kind: "mcp",
+    catalog_id: "mcp_quotes",
+    scope: "org",
+    scope_id: "org_1",
+    enabled: !options.serverOff,
+    connection_id: "conn_quotes",
+    created_at: "2026-10-12T09:00:00.000Z",
+    updated_at: "2026-10-12T09:00:00.000Z",
+  };
+  const login: ScopedMcpConnectionRow = {
+    ...connectionRow({ id: "conn_quotes", mcp_server_id: "mcp_quotes", status: options.status ?? "connected", settings: { symbols: PINNED } }),
+    org_id: "org_1",
+    guild_id: null,
+    agent_id: null,
+  };
+  return {
+    listBindingsCovering: async () => [binding],
+    listServers: async () => [serverRow("quotes", { id: "mcp_quotes" })],
+    listMcpConnections: async () => [login],
+  };
+}
+
+test("agentLogins reads a login's settings, and leaves out a server that is off or a login disconnected", async () => {
   const agent = { id: "agent_1", guild_id: "guild_1", org_id: "org_1" };
-  const found = await agentMcpConnection(pinnedDb() as never, agent, "quotes");
-  assert.equal(found?.id, "conn_quotes");
-  assert.deepEqual(found?.settings.symbols, PINNED);
-  assert.equal(await agentMcpConnection(pinnedDb({ serverOff: true }) as never, agent, "quotes"), null);
-  assert.equal(await agentMcpConnection(pinnedDb({ status: "disconnected" }) as never, agent, "quotes"), null);
+  const [found, ...rest] = await agentLoginsThrough(quotesLogins(), agent);
+  assert.equal(found?.connection.id, "conn_quotes");
+  assert.equal(found?.server.slug, "quotes");
+  assert.deepEqual(found?.connection.settings.symbols, PINNED);
+  assert.deepEqual(rest, []);
+  assert.deepEqual(await agentLoginsThrough(quotesLogins({ serverOff: true }), agent), []);
+  assert.deepEqual(await agentLoginsThrough(quotesLogins({ status: "disconnected" }), agent), []);
+});
+
+test("previewConnectorState marks the key of each connector an agent's logins sign into as fetched at run start", async () => {
+  const agent = { id: "agent_1", guild_id: "guild_1", org_id: "org_1" };
+  assert.deepEqual(previewConnectorState(await agentLoginsThrough(quotesLogins(), agent)), {
+    [QUOTES.manifest.state!.key]: { unavailable: "fetched live at run start" },
+  });
+  assert.deepEqual(previewConnectorState([]), {});
 });

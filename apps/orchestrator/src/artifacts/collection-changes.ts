@@ -1,4 +1,5 @@
 import type { ConfigChange } from "../db/config-changes.js";
+import type { ColumnChange } from "./columns.js";
 
 /** The table a change-log entry is about: its id, name, and owning guild. */
 export type CollectionRef = { id: string; name: string; orgId: string; guildId: string | null };
@@ -29,7 +30,7 @@ export function collectionCleared(ref: CollectionRef, removed: number): ConfigCh
 /** A column rename or removal, which rewrites the live records; null when the change does neither. */
 export function collectionColumnsChanged(
   ref: CollectionRef,
-  change: { renamed: Array<{ from: string; to: string }>; removed: string[] },
+  change: Pick<ColumnChange, "renamed" | "removed">,
 ): ConfigChange | null {
   const parts = [
     ...change.renamed.map((item) => `renamed the column ${item.from} to ${item.to}`),

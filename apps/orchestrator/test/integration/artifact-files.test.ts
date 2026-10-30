@@ -3,16 +3,24 @@ import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { after, before, describe, test } from "node:test";
-import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
+import { addAgent } from "../../src/agents/service.js";
+import { systemActor } from "../helpers/agents.js";
 import { ArtifactFiles, fileBlobKey } from "../../src/artifacts/files.js";
-import { agentActor, listFileChanges, operatorActor } from "../../src/artifacts/index.js";
+import { agentActor, operatorActor } from "../../src/artifacts/actors.js";
+import {
+  deleteSharedFile,
+  uploadSharedFile,
+  type SharedFileChange,
+  type SharedFileWriteDeps,
+} from "../../src/artifacts/operator-files.js";
+import { listFileChanges } from "../../src/db/file-changes.js";
 import { artifactStore, type ArtifactStore } from "../../src/artifacts/store.js";
 import type { Database } from "../../src/db/client.js";
 import { connect } from "../../src/seed/connect.js";
 import { listConfigChanges } from "../../src/db/config-changes.js";
 import { MemoryBlobStore } from "../../src/lib/blob-store.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { createToolContext, invokeTool } from "../../src/toolbox/index.js";
+import { invokeTool } from "../../src/toolbox/index.js";
 import { tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
@@ -21,6 +29,7 @@ import { agentConfig } from "../helpers/generation.js";
 import { accessList, grantAccess } from "../../src/artifacts/access-lists.js";
 import { deleteByDisplayPath, listStateArtifacts } from "../../src/artifacts/notes.js";
 import { toolArtifacts } from "../../src/toolbox/artifacts.js";
+import { toolFixture } from "../helpers/toolbox.js";
 
 const dbName = uniqueDbName("agent_platform_files");
 let database: Database;
@@ -52,19 +61,14 @@ after(async () => {
   await dropIsolatedDatabase(dbName);
 });
 
-async function seedAgent(agentId: string, guildId: string, guildName: string, name: string) {
+async function seedAgent(agentId: string, guildId: string, name: string) {
   const notes = new NotesStore(tempDir(`guilds-${name}-notes-`), templatesRoot());
-  await persistAgent(agentDatabase(db), notes, {
-    agentId,
-    guildId,
-    guildName,
-    orgSlug: "home",
-    orgId: "org_home",
-    name,
-    config: CONFIG,
-    now: new Date(),
-    artifacts: store,
-  });
+  await addAgent(
+    { db, notes, artifacts: store },
+    { agent: { agentId, guildId, name, config: CONFIG }, task: "", placement: {} },
+    systemActor("org_home", { guildId, agentId }),
+    new Date(),
+  );
 }
 
 const operator = operatorActor({ orgId: "org_home", actorId: "user_operator", actorName: "operator" });
@@ -82,8 +86,8 @@ describe("shared files", { concurrency: 1 }, () => {
       { guildId: "guild_beta", name: "beta", orgId: "org_home", about: "" },
       now,
     );
-    await seedAgent("a_alpha", "guild_alpha", "alpha", "alpha");
-    await seedAgent("a_beta", "guild_beta", "beta", "beta");
+    await seedAgent("a_alpha", "guild_alpha", "alpha");
+    await seedAgent("a_beta", "guild_beta", "beta");
   });
 
   test("a file is created, replaced version by version, and found by its description", async () => {
@@ -166,8 +170,8 @@ describe("shared files", { concurrency: 1 }, () => {
     await assert.rejects(() => files.loadFile(beta, files.view(own).display_path), /artifact not found/);
 
     await assert.rejects(() => deleteByDisplayPath(store, alpha, files.view(own).display_path), /use file_delete for files/);
-    const ctx = createToolContext({ run_id: "r_1", agent_id: "a_alpha", guild_id: "guild_alpha", sandbox: null, secrets: {}, artifacts: toolArtifacts(store), artifact_actor: alpha });
-    const [got] = await invokeTool(ctx, { id: "c1", type: "function", function: { name: "note_get", arguments: JSON.stringify({ path: files.view(own).display_path }) } }, {}, 32_768);
+    const ctx = toolFixture({ run_id: "r_1", agent_id: "a_alpha", guild_id: "guild_alpha", sandbox: null, secrets: {}, artifacts: toolArtifacts(store), artifact_actor: alpha });
+    const [got] = await invokeTool(ctx.services, ctx.run, ctx.hooks, { id: "c1", type: "function", function: { name: "note_get", arguments: JSON.stringify({ path: files.view(own).display_path }) } });
     assert.match(String(got.content), /use file_fetch for files/);
   });
 
@@ -175,7 +179,7 @@ describe("shared files", { concurrency: 1 }, () => {
     const workspace = path.join(tempDir("guilds-files-"), "a_alpha");
     mkdirSync(path.join(workspace, "out"), { recursive: true });
     writeFileSync(path.join(workspace, "out", "report.pdf"), Buffer.from("%PDF-1.4 fake"));
-    const ctx = createToolContext({
+    const ctx = toolFixture({
       run_id: "r_2",
       agent_id: "a_alpha",
       guild_id: "guild_alpha",
@@ -187,7 +191,7 @@ describe("shared files", { concurrency: 1 }, () => {
       workspace_dir: workspace,
     });
     const call = (name: string, args: Record<string, unknown>) =>
-      invokeTool(ctx, { id: `c_${name}`, type: "function", function: { name, arguments: JSON.stringify(args) } }, {}, 32_768).then(([message]) => String(message.content));
+      invokeTool(ctx.services, ctx.run, ctx.hooks, { id: `c_${name}`, type: "function", function: { name, arguments: JSON.stringify(args) } }).then(([message]) => String(message.content));
 
     const put = await call("file_put", { home_path: "out/report.pdf", level: "guild", description: "The quarterly report" });
     assert.equal(put, "org/org_home/guilds/guild_alpha/files/report.pdf");
@@ -211,5 +215,30 @@ describe("shared files", { concurrency: 1 }, () => {
     assert.equal((await accessList(store, operator, { kind: "file", id: row.id }).catch((error: Error) => error.message)), "file not found");
     const changes = await listFileChanges(database.pool, "org_home", put);
     assert.deepEqual(changes.map((change) => change.operation), ["delete", "create"]);
+  });
+
+  test("an operator's upload and delete are announced to the file's guild, and an organisation file's to none", async () => {
+    const published: Array<[string, SharedFileChange]> = [];
+    const deps: SharedFileWriteDeps = {
+      files,
+      publishSharedFileChanged: async (guildId, change) => {
+        published.push([guildId, change]);
+      },
+    };
+    const upload = { name: "brief.txt", description: "The brief", mime: "", bytes: Buffer.from("brief") };
+    const guildFile = await uploadSharedFile(deps, beta, { level: "guild", ...upload });
+    const agentFile = await uploadSharedFile(deps, beta, { level: "agent", ...upload });
+    const orgFile = await uploadSharedFile(deps, operator, { level: "org", ...upload });
+    await deleteSharedFile(deps, beta, guildFile.id);
+    await deleteSharedFile(deps, operator, orgFile.id);
+    assert.deepEqual(published, [
+      ["guild_beta", { displayPath: "org/org_home/guilds/guild_beta/files/brief.txt" }],
+      ["guild_beta", { displayPath: "org/org_home/agents/a_beta/files/brief.txt" }],
+      ["guild_beta", { displayPath: "org/org_home/guilds/guild_beta/files/brief.txt" }],
+    ]);
+
+    await deleteSharedFile({ files }, beta, agentFile.id);
+    await assert.rejects(() => files.loadFileById(beta, agentFile.id), /artifact not found/);
+    assert.equal(published.length, 3, "a write without a publisher announces nothing");
   });
 });

@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { hereDir } from "../lib/paths.js";
+import { isPlainObject } from "./payload.js";
 import { catalogModelId, type ProviderDef } from "./providers.js";
-import type { CatalogEntry } from "./entries.js";
+import type { CatalogEntry, CatalogRates } from "./entries.js";
 
 // models.dev is the catalog. The feed's providers are keyed by id, each with its models keyed by
 // id. Core keeps the fields the catalog reads; a snapshot of the hosted providers ships in the
@@ -34,10 +35,6 @@ export type ModelsDevSnapshot = { fetched_at: string; providers: ModelsDevFeed }
 
 const SNAPSHOT_FILE = "models-dev.snapshot.json";
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
-}
-
 function asStringList(value: unknown): string[] | undefined {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : undefined;
 }
@@ -46,49 +43,69 @@ function asNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+const TEXT_FIELDS = ["name", "status"] as const;
+const FLAG_FIELDS = ["attachment", "reasoning", "temperature", "tool_call"] as const;
+
+/** A feed row's names and flags, each kept when it has the type the catalog reads. */
+function scalarFieldsOf(row: Record<string, unknown>): Partial<ModelsDevModel> {
+  const fields: Partial<ModelsDevModel> = {};
+  for (const key of TEXT_FIELDS) {
+    const value = row[key];
+    if (typeof value === "string") fields[key] = value;
+  }
+  for (const key of FLAG_FIELDS) {
+    const value = row[key];
+    if (typeof value === "boolean") fields[key] = value;
+  }
+  return fields;
+}
+
+/** A feed row's modalities, each a list of the strings it holds. */
+function modalitiesOf(modalities: Record<string, unknown>): NonNullable<ModelsDevModel["modalities"]> {
+  const input = asStringList(modalities.input);
+  const output = asStringList(modalities.output);
+  return { ...(input ? { input } : {}), ...(output ? { output } : {}) };
+}
+
+/** A feed row's prices per million tokens, each kept when it is a finite number. */
+function costOf(cost: Record<string, unknown>): NonNullable<ModelsDevModel["cost"]> {
+  const input = asNumber(cost.input);
+  const output = asNumber(cost.output);
+  const cacheRead = asNumber(cost.cache_read);
+  return {
+    ...(input !== undefined ? { input } : {}),
+    ...(output !== undefined ? { output } : {}),
+    ...(cacheRead !== undefined ? { cache_read: cacheRead } : {}),
+  };
+}
+
 /** One feed row reduced to the fields the catalog reads; null when it has no id. */
 export function projectModelsDevRow(raw: unknown): ModelsDevModel | null {
-  const row = asRecord(raw);
+  const row = isPlainObject(raw) ? raw : null;
   if (!row || typeof row.id !== "string" || !row.id) {
     return null;
   }
-  const modalities = asRecord(row.modalities);
-  const limit = asRecord(row.limit);
-  const cost = asRecord(row.cost);
-  const projected: ModelsDevModel = { id: row.id };
-  if (typeof row.name === "string") projected.name = row.name;
-  if (typeof row.attachment === "boolean") projected.attachment = row.attachment;
-  if (typeof row.reasoning === "boolean") projected.reasoning = row.reasoning;
-  if (typeof row.temperature === "boolean") projected.temperature = row.temperature;
-  if (typeof row.tool_call === "boolean") projected.tool_call = row.tool_call;
-  if (typeof row.status === "string") projected.status = row.status;
-  if (modalities) {
-    const input = asStringList(modalities.input);
-    const output = asStringList(modalities.output);
-    projected.modalities = { ...(input ? { input } : {}), ...(output ? { output } : {}) };
+  const projected: ModelsDevModel = { id: row.id, ...scalarFieldsOf(row) };
+  if (isPlainObject(row.modalities)) {
+    projected.modalities = modalitiesOf(row.modalities);
   }
-  const context = limit ? asNumber(limit.context) : undefined;
-  if (context !== undefined) projected.limit = { context };
-  if (cost) {
-    const input = asNumber(cost.input);
-    const output = asNumber(cost.output);
-    const cacheRead = asNumber(cost.cache_read);
-    projected.cost = {
-      ...(input !== undefined ? { input } : {}),
-      ...(output !== undefined ? { output } : {}),
-      ...(cacheRead !== undefined ? { cache_read: cacheRead } : {}),
-    };
+  const context = isPlainObject(row.limit) ? asNumber(row.limit.context) : undefined;
+  if (context !== undefined) {
+    projected.limit = { context };
+  }
+  if (isPlainObject(row.cost)) {
+    projected.cost = costOf(row.cost);
   }
   return projected;
 }
 
 /** The feed reduced to the given providers and the fields the catalog reads. */
 export function projectModelsDevFeed(feed: unknown, providerIds: readonly string[]): ModelsDevFeed {
-  const root = asRecord(feed) ?? {};
+  const root = isPlainObject(feed) ? feed : {};
   const projected: ModelsDevFeed = {};
   for (const id of providerIds) {
-    const provider = asRecord(root[id]);
-    const models = asRecord(provider?.models) ?? {};
+    const provider = root[id];
+    const models = isPlainObject(provider) && isPlainObject(provider.models) ? provider.models : {};
     const rows: Record<string, ModelsDevModel> = {};
     for (const [key, raw] of Object.entries(models)) {
       const row = projectModelsDevRow(raw);
@@ -108,16 +125,23 @@ export function keepModelsDevRow(row: ModelsDevModel): boolean {
   return row.tool_call === true && row.status !== "deprecated" && input.includes("text") && output.includes("text");
 }
 
+/**
+ * A row's prices as rates per token, for a billed provider whose row prices input and output; a
+ * cache read without a price of its own costs as input.
+ */
+function ratesOf(provider: ProviderDef, cost: ModelsDevModel["cost"]): CatalogRates | null {
+  if (!provider.billed || typeof cost?.input !== "number" || typeof cost.output !== "number") {
+    return null;
+  }
+  return {
+    input: cost.input / 1_000_000,
+    output: cost.output / 1_000_000,
+    cacheRead: (cost.cache_read ?? cost.input) / 1_000_000,
+  };
+}
+
 export function entryFromModelsDev(provider: ProviderDef, row: ModelsDevModel): CatalogEntry {
-  const cost = row.cost;
-  const rates =
-    provider.billed && cost && typeof cost.input === "number" && typeof cost.output === "number"
-      ? {
-          input: cost.input / 1_000_000,
-          output: cost.output / 1_000_000,
-          cacheRead: (typeof cost.cache_read === "number" ? cost.cache_read : cost.input) / 1_000_000,
-        }
-      : null;
+  const rates = ratesOf(provider, row.cost);
   const context = row.limit?.context;
   return {
     id: catalogModelId(provider.id, row.id),
@@ -137,10 +161,10 @@ export function entryFromModelsDev(provider: ProviderDef, row: ModelsDevModel): 
 
 /** The snapshot shipped beside this module. */
 export function readBundledSnapshot(): ModelsDevSnapshot {
-  const raw = JSON.parse(readFileSync(path.join(hereDir(import.meta.url), SNAPSHOT_FILE), "utf8")) as unknown;
-  const root = asRecord(raw);
-  const fetchedAt = typeof root?.fetched_at === "string" ? root.fetched_at : "unknown";
-  const providers = asRecord(root?.providers) ?? {};
+  const raw: unknown = JSON.parse(readFileSync(path.join(hereDir(import.meta.url), SNAPSHOT_FILE), "utf8"));
+  const root = isPlainObject(raw) ? raw : {};
+  const fetchedAt = typeof root.fetched_at === "string" ? root.fetched_at : "unknown";
+  const providers = isPlainObject(root.providers) ? root.providers : {};
   return { fetched_at: fetchedAt, providers: projectModelsDevFeed(providers, Object.keys(providers)) };
 }
 

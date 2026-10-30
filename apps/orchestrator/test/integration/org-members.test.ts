@@ -5,8 +5,8 @@ import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, r1DatabaseUrl, uniqueDbName } from "../helpers/postgres.js";
@@ -35,8 +35,8 @@ test(
     const app = await buildApp(database, {
       db,
       notes,
-      scripts: new Scripts(scriptDatabase(db)),
-      schedules: new Schedules(scheduleDatabase(db)),
+      scripts: agentScripts(db),
+      schedules: agentSchedules(db),
     });
     const json = { ...OWNER, "content-type": "application/json" };
 
@@ -64,6 +64,19 @@ test(
         payload: { role: "member" },
       });
       assert.equal(neither.statusCode, 422);
+      assert.deepEqual(
+        neither.json().detail.map((problem: { loc: string[] }) => problem.loc),
+        [["body", "name"], ["body", "user_id"], ["body"]],
+        "a member is named by name or by id",
+      );
+      const numberedRole = await app.inject({
+        method: "PATCH",
+        url: `/api/orgs/org_home/members/${userId}`,
+        headers: json,
+        payload: { role: 2 },
+      });
+      assert.equal(numberedRole.statusCode, 422);
+      assert.deepEqual(numberedRole.json().detail[0].loc, ["body", "role"]);
 
       const added = await app.inject({
         method: "POST",
@@ -137,8 +150,8 @@ test(
     const app = await buildApp(database, {
       db,
       notes,
-      scripts: new Scripts(scriptDatabase(db)),
-      schedules: new Schedules(scheduleDatabase(db)),
+      scripts: agentScripts(db),
+      schedules: agentSchedules(db),
     });
     const as = (userId: string) => ({ "X-Guilds-User": userId, "X-Guilds-Org": "org_home" });
     const call = (method: "POST" | "PATCH" | "DELETE" | "PUT", url: string, headers: Record<string, string>, payload?: object) =>
@@ -193,8 +206,8 @@ test("an organisation's slug is unique, and a new slug moves its notes folder", 
   const app = await buildApp(database, {
     db,
     notes,
-    scripts: new Scripts(scriptDatabase(db)),
-    schedules: new Schedules(scheduleDatabase(db)),
+    scripts: agentScripts(db),
+    schedules: agentSchedules(db),
   });
   const json = { ...OWNER, "content-type": "application/json" };
 

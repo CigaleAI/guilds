@@ -274,6 +274,7 @@ Name rule: `^[a-z][a-z0-9_-]{0,62}$`.
 
 Code: `apps/orchestrator/src/artifacts/collections.ts`,
 `apps/orchestrator/src/artifacts/records.ts`,
+`apps/orchestrator/src/artifacts/guild-tables.ts`,
 `apps/orchestrator/src/db/collections.ts`.
 
 ### Columns
@@ -534,6 +535,9 @@ PUT    /api/collections/:id/access               { subjects: [{ type, id, mode }
   and `direction` are accepted in place of `order`.
 - A `query` runs the text search instead of a listing; `total` is
   then the number of hits.
+- `name` and `purpose` are strings, `guild_id` a string or null, a
+  record's `body` an object, and each query value given once. Anything
+  else is 422 naming the field.
 - Records carry `display_path`, so the provenance strip can look them
   up.
 - The routes act as the operator for any organisation member. They

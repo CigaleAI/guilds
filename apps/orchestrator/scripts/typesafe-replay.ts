@@ -7,6 +7,7 @@
 //                                                   hypothetical user post
 //   add --json for the raw report, --min 0.7 to try another confidence gate.
 import { decodeMasterKey, loadToolConfig } from "../src/config/index.js";
+import { startErrorReporting } from "../src/error-reporting.js";
 import { connect } from "../src/seed/connect.js";
 import { InstanceKeys } from "../src/instance/keys.js";
 import { createTypeSafeClient } from "../src/typesafe/client.js";
@@ -73,6 +74,7 @@ function parseArgs(argv: string[]): {
   return out;
 }
 
+startErrorReporting();
 const args = parseArgs(process.argv.slice(2));
 const config = loadToolConfig();
 const database = await connect(config.databaseUrl);
@@ -89,14 +91,14 @@ try {
     process.stderr.write(`guild ${args.guild} not found\n`);
     process.exit(1);
   }
-  const report = await replayRecipients({
-    rows: await listGroupMessages(db, args.guild),
-    members: await listAgents(db, args.guild),
-    client,
-    ...(args.seq !== undefined ? { seq: args.seq } : {}),
-    ...(args.message !== undefined ? { message: args.message } : {}),
-    ...(args.min !== undefined ? { confidenceMin: args.min } : {}),
-  });
+  const report = await replayRecipients(
+    { rows: await listGroupMessages(db, args.guild), members: await listAgents(db, args.guild) },
+    { client, ...(args.min !== undefined ? { confidenceMin: args.min } : {}) },
+    {
+      ...(args.seq !== undefined ? { seq: args.seq } : {}),
+      ...(args.message !== undefined ? { message: args.message } : {}),
+    },
+  );
   process.stdout.write(
     args.json ? `${JSON.stringify(report, null, 2)}\n` : formatRecipientReplay(report),
   );

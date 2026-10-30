@@ -7,8 +7,9 @@ import type { AgentRow } from "../db/agents.js";
 import { bindQuery } from "../db/pg.js";
 import type { TaskEmbedSnapshot } from "../db/schema/index.js";
 import { describeCollection } from "./collections.js";
-import { getByDisplayPath, type DisplayPathRead } from "./notes.js";
-import type { ArtifactRow, ArtifactStore, CollectionDescription } from "./store.js";
+import { getByDisplayPath, type DisplayPathRead, type LiveNote } from "./notes.js";
+import type { ArtifactRow } from "../db/artifacts.js";
+import type { ArtifactStore, CollectionDescription } from "./store.js";
 
 const EMBED_RE = /!\[\[([^\]]+)\]\]/g;
 
@@ -53,7 +54,10 @@ export function taskEmbedActor(orgId: string, agent: Pick<AgentRow, "id" | "guil
   });
 }
 
-function collectionEmbed(href: string): { orgId: string; name: string } | null {
+/** The table an embed names: its organisation and its name. */
+type CollectionEmbed = { orgId: string; name: string };
+
+function collectionEmbed(href: string): CollectionEmbed | null {
   try {
     const parsed = parseDisplayPath(href);
     return parsed.kind === "collection" ? { orgId: parsed.orgId, name: parsed.collectionName } : null;
@@ -179,7 +183,7 @@ async function loadDisplayPath(
 async function readsEmbedCollection(
   source: EmbedSource,
   actor: ArtifactActor,
-  collection: { orgId: string; name: string },
+  collection: CollectionEmbed,
 ): Promise<boolean> {
   return collection.orgId === actor.orgId && (await source.describeCollection(actor, collection.name)) !== null;
 }
@@ -191,7 +195,7 @@ export function noteReader(source: EmbedSource, actor: ArtifactActor): EmbedRead
       return null;
     }
     const note = await readEmbedNote(source, actor, href);
-    return note.row ? String(note.row.content_text ?? "") : null;
+    return note.row ? (note.row.content_text ?? "") : null;
   };
 }
 
@@ -229,6 +233,84 @@ export async function inspectEmbed(source: EmbedSource, actor: ArtifactActor, hr
   return note.row ? { href, ok: true } : { href, ok: false, reason: note.reason };
 }
 
+/** A note or table an embed walk reaches: a note with its text, null where the walk stops reading, or a table's description. */
+export type EmbedTarget =
+  | { kind: "note"; href: string; row: ArtifactRow; text: string | null }
+  | { kind: "collection"; href: string; collection: CollectionDescription };
+
+/** An embed that does not resolve for its reader, and why. */
+export type UnresolvedEmbed = { href: string; reason: string };
+
+/** What an embed walk reaches past the display paths its reader already holds. */
+export type EmbedReach = { targets: EmbedTarget[]; unresolved: UnresolvedEmbed[] };
+
+/**
+ * What `roots` embed as the actor reads them, round by round, one level past what a run inlines:
+ * each note and table in the order the walk first meets it, and each link that does not resolve.
+ * A note met at that last level is not read. The walk neither resolves nor follows `known`.
+ */
+export async function reachEmbeds(
+  source: EmbedSource,
+  actor: ArtifactActor,
+  roots: string[],
+  known: ReadonlySet<string>,
+): Promise<EmbedReach> {
+  const met = new Set(known);
+  const reach: EmbedReach = { targets: [], unresolved: [] };
+  let layer = roots;
+  for (let round = 0; round <= EMBED_DEPTH; round += 1) {
+    const hrefs = [...new Set(layer.flatMap((text) => collectTaskEmbeds(text)))].filter((href) => !met.has(href));
+    hrefs.forEach((href) => met.add(href));
+    const resolved = await Promise.all(hrefs.map((href) => resolveEmbedTarget(source, actor, href)));
+    const targets = resolved.flatMap((item) => (item.target ? [item.target] : []));
+    reach.targets.push(...(round < EMBED_DEPTH ? targets : targets.map(unreadTarget)));
+    reach.unresolved.push(...resolved.flatMap((item) => (item.unresolved ? [item.unresolved] : [])));
+    layer = targets.flatMap((target) => (target.kind === "note" ? [target.text ?? ""] : []));
+  }
+  return reach;
+}
+
+/** The note or table one embed names, as the actor reads it, or why it does not resolve. */
+async function resolveEmbedTarget(
+  source: EmbedSource,
+  actor: ArtifactActor,
+  href: string,
+): Promise<{ target: EmbedTarget; unresolved?: undefined } | { target?: undefined; unresolved: UnresolvedEmbed }> {
+  const collection = collectionEmbed(href);
+  if (collection) {
+    const described = collection.orgId === actor.orgId ? await source.describeCollection(actor, collection.name) : null;
+    return described
+      ? { target: { kind: "collection", href, collection: described } }
+      : { unresolved: { href, reason: NOT_REACHABLE } };
+  }
+  const note = await readEmbedNote(source, actor, href);
+  return note.row
+    ? { target: { kind: "note", href, row: note.row, text: note.row.content_text ?? "" } }
+    : { unresolved: { href, reason: note.reason } };
+}
+
+/** A target as the walk's last level holds it: a note's text is not read there. */
+function unreadTarget(target: EmbedTarget): EmbedTarget {
+  return target.kind === "note" ? { ...target, text: null } : target;
+}
+
+/** What texts embed as a reader reads them, with how many embed levels a run inlines and how many bytes of note text at most. */
+export type EmbedGraph = EmbedReach & { depth: number; budget: number };
+
+/**
+ * What `roots` embed as the actor reads them, followed one level past what a run inlines. The
+ * walk neither resolves nor follows the display paths in `known`.
+ */
+export async function embedGraph(
+  store: ArtifactStore,
+  actor: ArtifactActor,
+  roots: string[],
+  known: ReadonlySet<string>,
+): Promise<EmbedGraph> {
+  const reach = await reachEmbeds(embedSource(store), actor, roots, known);
+  return { ...reach, depth: EMBED_DEPTH, budget: EMBED_BUDGET };
+}
+
 /** The notes a run inlines from a Task, directly or through other notes, as the actor reads them. */
 export async function snapshotTaskEmbeds(
   source: EmbedSource,
@@ -248,9 +330,9 @@ export async function snapshotTaskEmbeds(
 function noteSnapshot(href: string, row: ArtifactRow): TaskEmbedSnapshot {
   return {
     display_path: href,
-    version: Number(row.version),
-    content_hash: String((row as { content_hash?: unknown }).content_hash ?? hashFromRow(row)),
-    kind: String(row.kind),
+    version: row.version,
+    content_hash: hashFromRow(row),
+    kind: row.kind,
   };
 }
 
@@ -270,7 +352,7 @@ export async function snapshotTaskCollections(
   return found;
 }
 
-function hashFromRow(row: { content_text?: string | null; content_json?: unknown }): string {
+function hashFromRow(row: Pick<ArtifactRow, "content_text" | "content_json">): string {
   const body = row.content_text ?? JSON.stringify(row.content_json ?? {});
   return createHash("sha256").update(body, "utf8").digest("hex");
 }
@@ -322,7 +404,7 @@ async function resolveEmbedBlock(context: InlineContext, href: string, depth: nu
 async function resolveCollectionBlock(
   context: InlineContext,
   href: string,
-  collection: { orgId: string; name: string },
+  collection: CollectionEmbed,
 ): Promise<string> {
   if (!(await readsEmbedCollection(context.source, context.actor, collection))) {
     return unreachableMarker(href);
@@ -331,7 +413,7 @@ async function resolveCollectionBlock(
   return collection.name;
 }
 
-async function noteBlock(context: InlineContext, note: { href: string; row: ArtifactRow }, depth: number): Promise<string> {
+async function noteBlock(context: InlineContext, note: LiveNote, depth: number): Promise<string> {
   const { href, row } = note;
   let body = row.content_text ?? "";
   context.budget.used += Buffer.byteLength(body, "utf8");

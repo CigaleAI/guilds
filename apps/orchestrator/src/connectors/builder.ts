@@ -1,6 +1,6 @@
 import { installedConnectors } from "./index.js";
 import type { ConnectorEntry } from "./registry.js";
-import type { LoadedConnector } from "./load.js";
+import type { LoadedConnector } from "./servers.js";
 
 /** The role of a connector that holds the operator's long-lived records. */
 export const SYSTEM_OF_RECORD = "system_of_record";

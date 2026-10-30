@@ -1,7 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "./app.js";
-import { ArtifactFiles, artifactStore } from "./artifacts/index.js";
-import { AttachmentService } from "./attachments/index.js";
+import { ArtifactFiles } from "./artifacts/files.js";
+import { artifactStore } from "./artifacts/store.js";
+import { attachmentService } from "./attachments/index.js";
 import { FileBlobStore, MemoryBlobStore } from "./lib/blob-store.js";
 import { BuilderService } from "./builder/index.js";
 import { CapabilityService } from "./capabilities/index.js";
@@ -17,30 +18,29 @@ import {
   type SandboxProvider,
   type ServerExtension,
 } from "./extension.js";
-import { AdmissionCoordinator } from "./generation/admission.js";
-import { generationDatabase, GenerationLoop } from "./generation/index.js";
-import { coreModelCredentials, modelProviderStore } from "./llm/credentials.js";
-import { modelsDatabase, ModelsService } from "./llm/models.js";
+import { AdmissionCoordinator } from "./admission/coordinator.js";
+import { generationLoop } from "./generation/index.js";
+import { coreModelCredentials } from "./llm/credentials.js";
+import { modelsService } from "./llm/models.js";
 import { layOutAgentHomes } from "./machines/layout.js";
-import { McpPool, TOOLS_TTL_MS } from "./mcp/index.js";
+import { mcpPool, TOOLS_TTL_MS } from "./mcp/pool.js";
+import { loginRetirement } from "./mcp/service.js";
 import { NotesStore } from "./notes/store.js";
 import { startRuntimeMetrics } from "./observability/runtime.js";
 import { OPEN_POLICY } from "./policy/index.js";
 import { recipeApply } from "./recipes/apply.js";
 import { RunSandboxes } from "./sandbox/index.js";
-import { scheduleDatabase, Schedules } from "./schedules/service.js";
-import { scriptDatabase, Scripts } from "./scripts/catalog.js";
+import type { RoutineChange } from "./schedules/operator.js";
+import { agentSchedules } from "./schedules/service.js";
+import { agentScripts } from "./scripts/catalog.js";
 import { StudioService } from "./studio/index.js";
 import { installConnectors } from "./connectors/index.js";
 import { syncCodeConnectors } from "./registry/code.js";
 import { installIntegrations } from "./instance/integrations.js";
-import { refreshConnectorIntegrations } from "./instance/connectors.js";
 import { InstanceKeys } from "./instance/keys.js";
 import { installHarnessesOff } from "./coding/harnesses.js";
-import { syncInstanceLogins } from "./connectors/instance.js";
+import { refreshConnectorIntegrations, syncInstanceLogins } from "./connectors/instance.js";
 import { listMachinePlacements } from "./db/machines.js";
-import { attachmentDatabase } from "./attachments/store.js";
-import { generationArtifacts } from "./generation/prepare.js";
 
 export type Server = {
   app: FastifyInstance;
@@ -92,15 +92,15 @@ export async function createServer(
   // Core caps nothing. An extension supplies the policy that does.
   const policy = extensionPolicy(extensions, { db }) ?? OPEN_POLICY;
   const artifacts = artifactStore(db, config.templatesRoot);
-  const scripts = new Scripts(scriptDatabase(db));
-  const schedules = new Schedules(scheduleDatabase(db));
+  const scripts = agentScripts(db);
+  const schedules = agentSchedules(db);
   // Core reads the key stored for each organisation. An extension can answer with its own.
   const modelCredentials =
-    extensionModelCredentials(extensions, { db }) ?? coreModelCredentials(modelProviderStore(db), masterKey);
-  const models = new ModelsService({ db: modelsDatabase(db), credentials: modelCredentials, masterKey });
+    extensionModelCredentials(extensions, { db }) ?? coreModelCredentials(db, masterKey);
+  const models = modelsService(db, { credentials: modelCredentials, masterKey });
   // Tool lists stay cached for their ttl. Calls go through the forward proxy when one is set,
   // and the policy above caps the ones a platform login makes.
-  const mcp = new McpPool(TOOLS_TTL_MS, process.env.ADAPTER_PROXY_URL ?? "");
+  const mcp = mcpPool(db, TOOLS_TTL_MS, process.env.ADAPTER_PROXY_URL ?? "");
   mcp.policy = policy;
   // An extension's manager, or one OpenSandbox manager for this box. Homes are laid out next,
   // and that step asks the manager to destroy sandboxes still running per agent.
@@ -126,17 +126,16 @@ export async function createServer(
   const blobs =
     extensionBlobStore(extensions, { config }) ??
     (config.attachmentsRoot ? new FileBlobStore(config.attachmentsRoot) : new MemoryBlobStore());
-  const attachments = new AttachmentService(attachmentDatabase(db), blobs);
+  const attachments = attachmentService(db, blobs);
   const files = new ArtifactFiles(artifacts, blobs);
   // Agent runs, Studio sessions and Builder sessions share one cap on the generations in progress.
   const admission = new AdmissionCoordinator(config.maxConcurrentGenerations);
-  const generation = new GenerationLoop({
-    db: generationDatabase(db),
+  const generation = generationLoop(db, {
     notes,
     workspaceRoot: config.workspaceRoot,
     sandboxes,
     mcp,
-    artifacts: generationArtifacts(artifacts),
+    artifacts,
     files,
     attachments,
     admission,
@@ -146,6 +145,15 @@ export async function createServer(
   // Runs the restart cut off are settled before the scheduler can fire.
   await generation.reconcile();
   generation.runs.startScheduler();
+  // A routine an operator writes, through the API or a Studio edit, is published on its guild's
+  // group chat.
+  const publishRoutinesChanged = async (guildId: string, change: RoutineChange): Promise<void> => {
+    await generation.groupChat.publish(guildId, "agent.routines.changed", {
+      agent_id: change.agentId,
+      action: change.action,
+      schedule_id: change.scheduleId,
+    });
+  };
   // An edit is published on the guild's group chat, and a session waits while its agent is
   // already generating.
   const studio = new StudioService({
@@ -164,13 +172,7 @@ export async function createServer(
         path: "task.md",
       });
     },
-    publishRoutinesChanged: async (guildId, change) => {
-      await generation.groupChat.publish(guildId, "agent.routines.changed", {
-        agent_id: change.agentId,
-        action: change.action,
-        schedule_id: change.scheduleId,
-      });
-    },
+    publishRoutinesChanged,
     isAgentBusy: (agentId) => generation.isAgentBusy(agentId),
   });
   // A studio session left generating is continued by this process.
@@ -204,12 +206,37 @@ export async function createServer(
       notes,
       artifacts,
       files,
+      // A shared file an operator uploads or deletes is published on its guild's group chat.
+      publishSharedFileChanged: async (guildId, change) => {
+        await generation.groupChat.publish(guildId, "guild.artifacts.changed", {
+          scope: "files",
+          path: change.displayPath,
+        });
+      },
       scripts,
       schedules,
+      publishRoutinesChanged,
+      // A script an operator writes or deletes is published on its guild's group chat.
+      publishScriptsChanged: async (guildId, change) => {
+        await generation.groupChat.publish(guildId, "agent.scripts.changed", {
+          agent_id: change.agentId,
+          action: change.action,
+          ...(change.name === null ? {} : { name: change.name }),
+        });
+      },
+      // An issue an operator resolves or reopens is published on its guild's group chat.
+      publishIssuesChanged: async (guildId, change) => {
+        await generation.groupChat.publish(guildId, "guild.issues.changed", {
+          action: change.action,
+          ...(change.issueId === null ? {} : { issue_id: change.issueId }),
+        });
+      },
       config,
       masterKey,
       instanceKeys,
       mcp,
+      // A login that stopped working is retired, and the pool forgets it.
+      loginRetirement: loginRetirement(mcp, db),
       generation,
       attachments,
       sandboxes,

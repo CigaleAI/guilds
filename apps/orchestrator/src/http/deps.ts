@@ -1,11 +1,25 @@
-import type { ArtifactFiles, ArtifactStore } from "../artifacts/index.js";
+import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
+import type {
+  FastifyBaseLogger,
+  FastifyInstance,
+  RawReplyDefaultExpression,
+  RawRequestDefaultExpression,
+  RawServerDefault,
+} from "fastify";
+import type { ArtifactFiles } from "../artifacts/files.js";
+import type { SharedFileChange } from "../artifacts/operator-files.js";
+import type { ArtifactStore } from "../artifacts/store.js";
 import type { Database } from "../db/client.js";
 import type { OrgCreatedHook } from "../db/orgs.js";
 import type { NotesStore } from "../notes/store.js";
 import type { Scripts } from "../scripts/catalog.js";
+import type { IssueChange } from "../issues/operator.js";
+import type { RoutineChange } from "../schedules/operator.js";
+import type { ScriptChange } from "../scripts/operator.js";
 import type { Schedules } from "../schedules/service.js";
 import type { AppConfig } from "../config/index.js";
-import type { McpPool } from "../mcp/index.js";
+import type { McpPool } from "../mcp/pool.js";
+import type { LoginRetirement } from "../mcp/service.js";
 import type { GenerationLoop } from "../generation/index.js";
 import type { GenerationSandboxes } from "../generation/machines.js";
 import type { StudioService } from "../studio/index.js";
@@ -23,12 +37,22 @@ import type { OrgPolicy } from "../policy/index.js";
 import type { RegistryClient } from "../registry/client.js";
 import type { Queryable } from "../db/pg.js";
 
+/** The server the routes register on. A route's TypeBox schemas type its request's body, query and params. */
+export type RouteApp = FastifyInstance<
+  RawServerDefault,
+  RawRequestDefaultExpression,
+  RawReplyDefaultExpression,
+  FastifyBaseLogger,
+  TypeBoxTypeProvider
+>;
+
 /** The services the routes run with: the app's, with the ones `buildApp` fills in when its caller leaves them out. */
 export type RouteDeps = AppDeps & {
   artifacts: ArtifactStore;
   instanceKeys: InstanceKeys;
   modelCredentials: ModelCredentialsProvider;
   models: ModelsService;
+  loginRetirement: LoginRetirement;
 };
 
 export type AppDeps = {
@@ -38,11 +62,21 @@ export type AppDeps = {
   artifacts?: ArtifactStore;
   /** The shared files over `artifacts` and the blob store. */
   files?: ArtifactFiles;
+  /** Tells a guild that one of its shared files changed; file writes announce nothing when absent. */
+  publishSharedFileChanged?: (guildId: string, change: SharedFileChange) => Promise<void>;
   scripts: Scripts;
   schedules: Schedules;
+  /** Tells a guild that one of its agents' routines changed; routine writes announce nothing when absent. */
+  publishRoutinesChanged?: (guildId: string, change: RoutineChange) => Promise<void>;
+  /** Tells a guild that one of its agents' scripts changed; script writes announce nothing when absent. */
+  publishScriptsChanged?: (guildId: string, change: ScriptChange) => Promise<void>;
+  /** Tells a guild that its issues changed; issue writes announce nothing when absent. */
+  publishIssuesChanged?: (guildId: string, change: IssueChange) => Promise<void>;
   config?: AppConfig;
   masterKey?: Buffer;
   mcp?: McpPool;
+  /** Retires a login that stopped working; built over `db` and `mcp` when absent. */
+  loginRetirement?: LoginRetirement;
   generation?: GenerationLoop;
   attachments?: AttachmentService;
   sandboxes?: GenerationSandboxes;

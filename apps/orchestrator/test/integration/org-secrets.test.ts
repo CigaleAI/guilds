@@ -8,15 +8,15 @@ import { decryptPayload } from "../../src/credentials/crypto.js";
 import { connect } from "../../src/seed/connect.js";
 import { TEST_MODEL } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { insertUser } from "../../src/db/users.js";
 import { insertMember, insertOrg } from "../../src/db/orgs.js";
 import { deleteGuild, insertGuild } from "../../src/db/guilds.js";
-import { addAgent } from "../../src/agents/persist.js";
+import { addTestAgent } from "../helpers/agents.js";
 import { deleteAgent } from "../../src/db/agents.js";
 import { getSecret, listAgentSecrets } from "../../src/db/secrets.js";
 import { agentConfig } from "../helpers/generation.js";
@@ -64,8 +64,8 @@ before(async () => {
   app = await buildApp(database, {
     db,
     notes,
-    scripts: new Scripts(scriptDatabase(db)),
-    schedules: new Schedules(scheduleDatabase(db)),
+    scripts: agentScripts(db),
+    schedules: agentSchedules(db),
     masterKey: decodeMasterKey(HEX_MASTER_KEY),
     generation: generation as never,
   });
@@ -76,14 +76,18 @@ before(async () => {
       image: null,
       email: "secret-admin@example.com",
     }, now);
-  await insertMember(db, "org_home", "user_secret_admin", "admin", now);
+  await insertMember(db, { org_id: "org_home", user_id: "user_secret_admin", role: "admin" }, now);
   await insertUser(db, {
       userId: "user_secret_member",
       name: "secret-member",
       image: null,
       email: "secret-member@example.com",
     }, now);
-  await insertMember(db, "org_home", "user_secret_member", "member", now);
+  await insertMember(
+    db,
+    { org_id: "org_home", user_id: "user_secret_member", role: "member" },
+    now,
+  );
   await insertGuild(db, { guildId: "guild_open", name: "open-desk", orgId: "org_home" }, now);
   await insertGuild(db, { guildId: "guild_side", name: "side-desk", orgId: "org_home" }, now);
   await insertGuild(db,
@@ -99,13 +103,13 @@ before(async () => {
     now,
   );
   const config = agentConfig({ model: TEST_MODEL });
-  await addAgent(db, { agentId: "a_open", guildId: "guild_open", name: "opener", config }, now);
-  await addAgent(db,
+  await addTestAgent(db, "org_home", { agentId: "a_open", guildId: "guild_open", name: "opener", config }, now);
+  await addTestAgent(db, "org_home",
     { agentId: "a_open_two", guildId: "guild_open", name: "second", config },
     now,
   );
-  await addAgent(db, { agentId: "a_side", guildId: "guild_side", name: "sider", config }, now);
-  await addAgent(db,
+  await addTestAgent(db, "org_home", { agentId: "a_side", guildId: "guild_side", name: "sider", config }, now);
+  await addTestAgent(db, "org_home",
     { agentId: "a_hidden", guildId: "guild_hidden", name: "hider", config },
     now,
   );
@@ -173,6 +177,13 @@ test("a value is stored without the whitespace around it, and one of only whites
   assert.equal(blank.statusCode, 422);
   assert.match(blank.json().detail, /value must contain non-whitespace text/);
   assert.equal((await create(OWNER, { name: "BLANK_TOKEN", org_wide: true, value: "\n" })).statusCode, 422);
+  const numbered = await create(OWNER, { name: "NUMBERED_TOKEN", org_wide: true, value: 42 });
+  assert.equal(numbered.statusCode, 422);
+  assert.deepEqual(numbered.json().detail[0].loc, ["body", "value"]);
+  const textName = await call(OWNER, "PATCH", `/api/secrets/${id}`, { name: ["A", "B"] });
+  assert.equal(textName.statusCode, 422);
+  assert.deepEqual(textName.json().detail[0].loc, ["body", "name"]);
+  assert.equal((await call(OWNER, "GET", "/api/secrets?guild_id=a&guild_id=b")).statusCode, 422);
 });
 
 test("owners and admins write any secret; members write secrets local to their guilds", async () => {
@@ -324,17 +335,20 @@ test("access changes replace the set and refresh the agents they reach", async (
   assert.equal(refused.statusCode, 422);
   const unknown = await call(OWNER, "PUT", `/api/secrets/${id}/access`, { org_wide: false, guild_ids: ["guild_nope"] });
   assert.equal(unknown.statusCode, 422);
+  const listed = await call(OWNER, "PUT", `/api/secrets/${id}/access`, { org_wide: "yes" });
+  assert.equal(listed.statusCode, 422);
+  assert.deepEqual(listed.json().detail[0].loc, ["body", "org_wide"]);
 });
 
 test("a secret goes with the guild or agent that held its last grant", async () => {
   const now = new Date();
   const config = agentConfig({ model: TEST_MODEL });
   await insertGuild(db, { guildId: "guild_doomed", name: "doomed-desk", orgId: "org_home" }, now);
-  await addAgent(db,
+  await addTestAgent(db, "org_home",
     { agentId: "a_doomed", guildId: "guild_doomed", name: "doomed", config },
     now,
   );
-  await addAgent(db, { agentId: "a_gone", guildId: "guild_side", name: "leaver", config }, now);
+  await addTestAgent(db, "org_home", { agentId: "a_gone", guildId: "guild_side", name: "leaver", config }, now);
   const inGuild = (await create(OWNER, { name: "ONLY_DOOMED", guild_ids: ["guild_doomed"], agent_ids: ["a_doomed"] })).json().id;
   const shared = (await create(OWNER, { name: "DOOMED_AND_SIDE", guild_ids: ["guild_doomed", "guild_side"] })).json().id;
   const onlyAgent = (await create(OWNER, { name: "ONLY_LEAVER", agent_ids: ["a_gone"] })).json().id;

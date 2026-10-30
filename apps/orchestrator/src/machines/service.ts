@@ -29,6 +29,7 @@ import {
   sizeLabel,
   sizeMeets,
   validateMachineInput,
+  type MachineBody,
   type MachineInput,
   type MachineRow,
   type MachineWithAgents,
@@ -166,7 +167,12 @@ async function resizeMachine(
           `this machine's agents need at least ${sizeLabel(minimum)}; move them or turn their browser or coding off first`,
         );
       }
-      const after = await updateMachine(client, orgId, machineId, machine, new Date());
+      const after = await updateMachine(
+        client,
+        { org_id: orgId, id: machineId },
+        machine,
+        new Date(),
+      );
       return { before: machineFromRow(current), after: machineFromRow(after) };
     });
   } catch (error) {
@@ -200,7 +206,7 @@ async function dropMachine(db: Queryable, orgId: string, machineId: string): Pro
 export async function createMachine(
   services: MachineServices,
   member: MachineMember,
-  input: Record<string, unknown>,
+  input: MachineBody,
 ): Promise<Record<string, unknown>> {
   assertManagesMachines(member);
   const orgId = member.membership.id;
@@ -218,7 +224,7 @@ export async function changeMachine(
   services: MachineServices,
   member: MachineMember,
   machineId: string,
-  input: Record<string, unknown>,
+  input: MachineBody,
 ): Promise<Record<string, unknown>> {
   assertManagesMachines(member);
   const orgId = member.membership.id;

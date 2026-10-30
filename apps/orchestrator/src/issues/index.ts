@@ -36,7 +36,7 @@ export class IssueError extends Error {
 }
 
 /** The db/ functions a guild's issues are read and written through, on `db`. */
-export function issuesDatabase(db: Queryable) {
+function issuesDatabase(db: Queryable) {
   return {
     getGuild: bindQuery(db, getGuild),
     insertIssue: bindQuery(db, insertIssue),
@@ -187,9 +187,9 @@ export class Issues {
     );
   }
 
-  async listForGuild(guildId: string, status?: unknown): Promise<IssueItem[]> {
+  async listForGuild(guildId: string, status?: string): Promise<IssueItem[]> {
     let filter: string | null = null;
-    if (status !== undefined && status !== null && status !== "" && status !== "all") {
+    if (status !== undefined && status !== "" && status !== "all") {
       filter = oneOf(status, ISSUE_STATUSES, "status");
     }
     const rows = await this.db.listIssuesForGuild(guildId, filter);
@@ -199,7 +199,7 @@ export class Issues {
   async setStatus(
     guildId: string,
     issueId: string,
-    status: unknown,
+    status: string,
     resolvedBy: string | null,
   ): Promise<IssueItem> {
     const token = (issueId || "").trim();
@@ -215,8 +215,7 @@ export class Issues {
     const resolvedAt = next === "resolved" ? now : null;
     const resolver = next === "resolved" ? optionalText(resolvedBy ?? "", "resolved_by", 80) || "user" : null;
     const updated = await this.db.setIssueStatus(
-      guildId,
-      token,
+      { guild_id: guildId, id: token },
       { status: next, resolvedAt, resolvedBy: resolver },
       now,
     );
@@ -230,6 +229,11 @@ export class Issues {
   async resolveOpen(guildId: string, resolvedBy: string | null): Promise<number> {
     const now = new Date();
     const resolver = optionalText(resolvedBy ?? "", "resolved_by", 80) || "user";
-    return this.db.resolveOpenIssues(guildId, now, resolver, now);
+    return this.db.resolveOpenIssues(guildId, resolver, now);
   }
+}
+
+/** The issues of guilds, read and written on `db`. */
+export function guildIssues(db: Queryable): Issues {
+  return new Issues(issuesDatabase(db));
 }

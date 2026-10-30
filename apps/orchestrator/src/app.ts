@@ -4,14 +4,9 @@ import Fastify from "fastify";
 import { Type } from "@sinclair/typebox";
 import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import fastifyWebsocket from "@fastify/websocket";
-import {
-  DEFAULT_AVATAR_COLOR,
-  DEFAULT_AVATAR_SHAPE,
-  validateAvatarColor,
-  validateAvatarShape,
-} from "./agents/validation.js";
-import { artifactStore } from "./artifacts/index.js";
-import { renderAvatarSvg } from "./avatars/index.js";
+import { artifactStore } from "./artifacts/store.js";
+import { DEFAULT_AVATAR_COLOR, DEFAULT_AVATAR_SHAPE } from "./avatars/clay.js";
+import { normalizeAvatarColor, normalizeAvatarShape, renderAvatarSvg } from "./avatars/index.js";
 import type { Database } from "./db/client.js";
 import {
   extensionIdentity,
@@ -23,6 +18,8 @@ import {
   type ServerExtension,
 } from "./extension.js";
 import type { AppDeps } from "./http/deps.js";
+import { registerErrorHandler } from "./http/error-handler.js";
+import { validationHttp } from "./http/errors.js";
 import { registerRequestOrigin } from "./http/origin.js";
 import { registerDomainRoutes } from "./http/routes.js";
 import { sandboxSubprotocol } from "./http/sandbox-proxy.js";
@@ -30,8 +27,9 @@ import { registerWebApp } from "./http/web-app.js";
 import { installIntegrations } from "./instance/integrations.js";
 import { InstanceKeys } from "./instance/keys.js";
 import { repoRoot } from "./lib/paths.js";
-import { coreModelCredentials, modelProviderStore } from "./llm/credentials.js";
-import { modelsDatabase, ModelsService } from "./llm/models.js";
+import { coreModelCredentials } from "./llm/credentials.js";
+import { modelsService } from "./llm/models.js";
+import { loginRetirement } from "./mcp/service.js";
 import { registerClientErrorRoute } from "./observability/client-errors.js";
 import { fastifyRequestIdOptions, registerHttpObservability } from "./observability/http.js";
 
@@ -51,7 +49,7 @@ export async function buildApp(
   extensions: ServerExtension[] = [],
 ): Promise<FastifyInstance> {
   const app = Fastify({
-    // The process logs through registerHttpObservability. Fastify's own logger stays off.
+    // The process logs through registerErrorHandler. Fastify's own logger stays off.
     logger: false,
     // Close sockets still held open, so shutdown finishes while a stream or a pane is connected.
     forceCloseConnections: true,
@@ -59,8 +57,13 @@ export async function buildApp(
     bodyLimit: 10 * 1024 * 1024 + 4096,
     // Keep an incoming X-Request-Id, or mint one. The response echoes it.
     ...fastifyRequestIdOptions(),
+    // A route's schema checks the request as sent: a value of the wrong type is refused, never
+    // converted. Each problem carries the value it found, for the 422 that names it.
+    ajv: { customOptions: { coerceTypes: false, verbose: true } },
+    schemaErrorFormatter: validationHttp,
   }).withTypeProvider<TypeBoxTypeProvider>();
   registerHttpObservability(app);
+  registerErrorHandler(app);
   // File and image uploads are raw bytes. This parser accepts those types and keeps the body
   // as a buffer.
   app.addContentTypeParser(
@@ -126,22 +129,12 @@ export async function buildApp(
     async (request, reply) => {
       const { style } = request.params;
       const query = request.query;
-      let seed = DEFAULT_AVATAR_SHAPE;
-      try {
-        seed = validateAvatarShape(query.seed);
-      } catch {
-        /* keep default */
-      }
-      // A color query may omit the leading '#'. The validator requires it.
+      const seed = normalizeAvatarShape(query.seed) ?? DEFAULT_AVATAR_SHAPE;
+      // A color query may omit the leading '#'. A stored colour has it.
       const rawColor = (query.color ?? "").trim();
-      let color = DEFAULT_AVATAR_COLOR;
-      try {
-        color = validateAvatarColor(
-          rawColor.startsWith("#") || rawColor === "" ? rawColor : `#${rawColor}`,
-        );
-      } catch {
-        /* keep default */
-      }
+      const color =
+        normalizeAvatarColor(rawColor.startsWith("#") || rawColor === "" ? rawColor : `#${rawColor}`) ??
+        DEFAULT_AVATAR_COLOR;
       return reply
         .type("image/svg+xml; charset=utf-8")
         .header("Cache-Control", "public, max-age=31536000, immutable")
@@ -160,15 +153,12 @@ export async function buildApp(
     const modelCredentials =
       deps.modelCredentials ??
       extensionModelCredentials(extensions, deps) ??
-      coreModelCredentials(modelProviderStore(deps.db), deps.masterKey);
+      coreModelCredentials(deps.db, deps.masterKey);
     const models =
       deps.models ??
-      new ModelsService({
-        db: modelsDatabase(deps.db),
-        credentials: modelCredentials,
-        masterKey: deps.masterKey,
-      });
+      modelsService(deps.db, { credentials: modelCredentials, masterKey: deps.masterKey });
     const instanceKeys = deps.instanceKeys ?? new InstanceKeys(database.pool, deps.masterKey);
+    const retirement = deps.loginRetirement ?? loginRetirement(deps.mcp ?? null, deps.db);
     const orgCreated = deps.orgCreated ?? extensionOrgCreated(extensions);
     const full = {
       database,
@@ -177,6 +167,7 @@ export async function buildApp(
       instanceKeys,
       modelCredentials,
       models,
+      loginRetirement: retirement,
       // An absent field is core's own rule: the open policy, core's sign-in modes, core's
       // instance admin.
       ...(policy ? { policy } : {}),

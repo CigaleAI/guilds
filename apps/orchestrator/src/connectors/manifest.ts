@@ -106,6 +106,82 @@ function endpointHeaderProblem(manifest: Manifest): string | null {
   return null;
 }
 
+/** Why the endpoint may not be called, or null when it may: its URL is public HTTPS. */
+function endpointUrlProblem(manifest: Manifest): string | null {
+  if (!manifest.endpoint) {
+    return null;
+  }
+  try {
+    assertPublicHttpsUrl(manifest.endpoint.url);
+  } catch (error) {
+    if (error instanceof EndpointError) {
+      return `connector ${manifest.slug} endpoint: ${error.message}`;
+    }
+    throw error;
+  }
+  return null;
+}
+
+/**
+ * Why the auth block contradicts its kind, or null when it does not: oauth has its block, and
+ * credential fields and a platform key of its own go with token auth.
+ */
+function authKindProblem(manifest: Manifest): string | null {
+  const { auth, slug } = manifest;
+  if (auth.kind === "oauth" && !auth.oauth) {
+    return `connector ${slug} uses oauth with no oauth block`;
+  }
+  if (auth.kind !== "token" && auth.fields) {
+    return `connector ${slug} lists credential fields without token auth`;
+  }
+  if (auth.instance && "own" in auth.instance && auth.kind !== "token") {
+    return `connector ${slug} declares a platform key of its own without token auth`;
+  }
+  return null;
+}
+
+/** Why a configured OAuth client of the connector's own cannot be used, or null: it needs an endpoint to discover its authorization server. */
+function ownClientProblem(manifest: Manifest): string | null {
+  const oauth = manifest.auth.oauth;
+  if (oauth?.strategy === "configured" && !oauth.provider && !manifest.endpoint) {
+    return `connector ${manifest.slug} signs in with a configured client of its own and needs an endpoint to discover its authorization server`;
+  }
+  return null;
+}
+
+/** Why the manifest's tools clash, or null when they do not: each name is listed once, with an object input schema. */
+function toolsProblem(manifest: Manifest): string | null {
+  const names = new Set<string>();
+  for (const tool of manifest.tools ?? []) {
+    if (names.has(tool.name)) {
+      return `connector ${manifest.slug} lists tool ${tool.name} twice`;
+    }
+    names.add(tool.name);
+    if (tool.input_schema.type !== "object") {
+      return `connector ${manifest.slug} tool ${tool.name} input schema must be an object`;
+    }
+  }
+  return null;
+}
+
+/** Why the settings schema cannot describe a settings document, or null when it can: it is an object. */
+function settingsSchemaProblem(manifest: Manifest): string | null {
+  if (manifest.settings_schema && manifest.settings_schema.type !== "object") {
+    return `connector ${manifest.slug} settings schema must be an object`;
+  }
+  return null;
+}
+
+/** What a manifest that matches the schema is checked for next, in order; the first problem found is thrown. */
+const MANIFEST_PROBLEMS: ReadonlyArray<(manifest: Manifest) => string | null> = [
+  endpointUrlProblem,
+  endpointHeaderProblem,
+  authKindProblem,
+  ownClientProblem,
+  toolsProblem,
+  settingsSchemaProblem,
+];
+
 /**
  * Checks a parsed `connector.json` against the schema and, when `folder` is given, its slug against
  * the folder name. Returns the manifest; throws `ManifestError` naming the first problem.
@@ -120,46 +196,11 @@ export function loadManifest(raw: unknown, folder?: string): Manifest {
   if (folder !== undefined && manifest.slug !== folder) {
     throw new ManifestError(`connector slug ${manifest.slug} does not match its folder ${folder}`);
   }
-  if (manifest.endpoint) {
-    try {
-      assertPublicHttpsUrl(manifest.endpoint.url);
-    } catch (error) {
-      if (error instanceof EndpointError) {
-        throw new ManifestError(`connector ${manifest.slug} endpoint: ${error.message}`);
-      }
-      throw error;
+  for (const problemOf of MANIFEST_PROBLEMS) {
+    const problem = problemOf(manifest);
+    if (problem !== null) {
+      throw new ManifestError(problem);
     }
-  }
-  const headerProblem = endpointHeaderProblem(manifest);
-  if (headerProblem !== null) {
-    throw new ManifestError(headerProblem);
-  }
-  if (manifest.auth.kind === "oauth" && !manifest.auth.oauth) {
-    throw new ManifestError(`connector ${manifest.slug} uses oauth with no oauth block`);
-  }
-  if (manifest.auth.kind !== "token" && manifest.auth.fields) {
-    throw new ManifestError(`connector ${manifest.slug} lists credential fields without token auth`);
-  }
-  if (manifest.auth.instance && "own" in manifest.auth.instance && manifest.auth.kind !== "token") {
-    throw new ManifestError(`connector ${manifest.slug} declares a platform key of its own without token auth`);
-  }
-  if (manifest.auth.oauth?.strategy === "configured" && !manifest.auth.oauth.provider && !manifest.endpoint) {
-    throw new ManifestError(
-      `connector ${manifest.slug} signs in with a configured client of its own and needs an endpoint to discover its authorization server`,
-    );
-  }
-  const names = new Set<string>();
-  for (const tool of manifest.tools ?? []) {
-    if (names.has(tool.name)) {
-      throw new ManifestError(`connector ${manifest.slug} lists tool ${tool.name} twice`);
-    }
-    names.add(tool.name);
-    if (tool.input_schema.type !== "object") {
-      throw new ManifestError(`connector ${manifest.slug} tool ${tool.name} input schema must be an object`);
-    }
-  }
-  if (manifest.settings_schema && manifest.settings_schema.type !== "object") {
-    throw new ManifestError(`connector ${manifest.slug} settings schema must be an object`);
   }
   return manifest;
 }

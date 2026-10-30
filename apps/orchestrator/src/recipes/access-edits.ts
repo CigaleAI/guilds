@@ -1,7 +1,7 @@
 import { isPlainRecord } from "../db/json.js";
 import { RecipeError } from "./errors.js";
 import { asBool, asString, assertObject } from "./parse-fields.js";
-import type { RecipeConnection, RecipeDocument } from "./schema.js";
+import type { RecipeConnection, RecipeDocument } from "../db/schema/index.js";
 
 // The operator's cuts to a recipe's connector access: a tool turned off for a role, or a
 // connector removed, which the design then records as refused by the operator.

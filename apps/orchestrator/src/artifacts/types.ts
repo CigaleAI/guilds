@@ -1,7 +1,7 @@
+// The artifact types, limits, and predicates (who acts, what an access list holds, how much a store
+// keeps), imported directly by other domains.
 import { ACCESS_MODES, type AccessMode } from "../db/schema/index.js";
 import type { ChangeActor } from "../lib/change-actor.js";
-
-export { ACCESS_MODES, type AccessMode };
 
 export const ARTIFACT_LEVELS = ["agent", "guild", "org"] as const;
 export type ArtifactLevel = (typeof ARTIFACT_LEVELS)[number];
@@ -38,6 +38,29 @@ export const ACCESS_TARGETS = ["note", "collection", "file"] as const;
 export type AccessTargetKind = (typeof ACCESS_TARGETS)[number];
 export type AccessTarget = { kind: AccessTargetKind; id: string };
 
+/** One row of an item's access list as the operator reads and writes it. */
+export type AccessEntry = {
+  type: AccessSubject;
+  id: string;
+  name: string;
+  mode: AgentAccessMode;
+  /** The guild of a guild subject, or of an agent subject; null for the organisation. */
+  guild_id: string | null;
+  guild_name: string | null;
+};
+
+/** The organisation, guild, or agent one row of an access list names. */
+export type AccessSubjectRef = { type: AccessSubject; id: string };
+
+export type AccessGrant = { type: AccessSubject; id: string; mode: AgentAccessMode };
+
+/**
+ * An item's access list as the operator reads it. `owner_agent_id` is the
+ * agent that owns an agent-level note: it always writes its own note, so the
+ * list takes no row for it. Null for every other item.
+ */
+export type AccessList = { subjects: AccessEntry[]; owner_agent_id: string | null };
+
 export const WRITE_MAX_BYTES = 256 * 1024;
 /** The largest file one put may store. */
 export const FILE_MAX_BYTES = 10 * 1024 * 1024;
@@ -59,33 +82,21 @@ export const TASK_REVISIONS_MAX = 50;
 export const COLLECTION_NAME_RE = /^[a-z][a-z0-9_-]{0,62}$/;
 
 export function isArtifactLevel(value: string): value is ArtifactLevel {
-  return (ARTIFACT_LEVELS as readonly string[]).includes(value);
+  return ARTIFACT_LEVELS.some((level) => level === value);
 }
 
 export function isArtifactKind(value: string): value is ArtifactKind {
-  return (ARTIFACT_KINDS as readonly string[]).includes(value);
+  return ARTIFACT_KINDS.some((kind) => kind === value);
 }
 
 export function isAccessMode(value: unknown): value is AccessMode {
-  return typeof value === "string" && (ACCESS_MODES as readonly string[]).includes(value);
+  return ACCESS_MODES.some((mode) => mode === value);
 }
 
 export function isAgentAccessMode(value: unknown): value is AgentAccessMode {
-  return typeof value === "string" && (AGENT_ACCESS_MODES as readonly string[]).includes(value);
+  return AGENT_ACCESS_MODES.some((mode) => mode === value);
 }
 
 export function isAccessSubject(value: unknown): value is AccessSubject {
-  return typeof value === "string" && (ACCESS_SUBJECTS as readonly string[]).includes(value);
-}
-
-/**
- * The mode an agent ends up with: its own row when it has one, `none` meaning
- * no access, otherwise the base its guild and organisation rows give it.
- * `write` implies `read`; no row is no access.
- */
-export function resolveAccess(base: AccessMode | null, override: AgentAccessMode | null): AccessMode | null {
-  if (override === null || override === undefined) {
-    return base;
-  }
-  return override === "none" ? null : override;
+  return ACCESS_SUBJECTS.some((subject) => subject === value);
 }

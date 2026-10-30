@@ -6,7 +6,8 @@ Public License, version 3 only ([LICENSE](../LICENSE)).
 A contribution is licensed under the same terms by the act of
 submitting it. There is no separate contributor agreement.
 
-- Request a feature: [Feature requests](#feature-requests).
+- Report a bug, request a feature, or propose a chore:
+  [Issues](#issues).
 - Cut a version: [Versions](#versions).
 - Set up a development machine and run the check:
   [Development](contributing/development.md).
@@ -19,34 +20,50 @@ submitting it. There is no separate contributor agreement.
   [Discord](https://discord.gg/aqp5aPq9Uh) or
   [X](https://x.com/guildsrun).
 
-A change is a branch and a pull request against `main`.
-
-`make check` runs what CI runs. The pre-push hook runs it for you.
-A pull request whose check passes is ready for review. What it
+A change is a branch and a pull request against `main`. What it
 contains and what its reviewer checks is in
 [Pull requests](contributing/pull-requests.md).
 
-Keep a change to one thing. Update the documentation page that
-describes what it changes in the same commit. Add a security
-register entry when the change fixes a security issue.
+## Issues
 
-## Feature requests
+An issue is a bug, a feature, or a chore, one per issue, opened
+from its [form](https://github.com/CigaleAI/guilds/issues/new/choose).
+A feature needs only its **Why**; the proposal can stay open.
 
-A feature request is a GitHub issue on this repository with the
-label `feature request`. Open it from the
-[feature request form](https://github.com/CigaleAI/guilds/issues/new?template=feature_request.yml&labels=feature%20request).
-The form applies the label.
+An issue is **ready** when a maintainer has labelled it `ready`,
+and that label is given only when every field holds an answer and
+no field holds a question:
 
-Write the issue in three parts:
+- **Outcome.** One sentence in the imperative. It is the pull
+  request's title.
+- **Why.** The job the operator is doing and what goes wrong today
+  without the change. For a chore, what the broken rule costs.
+  Never the solution. It is the pull request's *Why*.
+- **Where.** The doc page that describes the behaviour today, and
+  the entry point: a route, an agent tool, a Studio view, or a
+  domain directory.
+- **Behaviour.** A bug: the steps, what happens, what should
+  happen. A feature: what the operator sees and does, with the
+  refusals. A chore: the rule broken, named from the
+  [code guidelines](contributing/code-guidelines.md), and the file
+  that breaks it.
+- **Verification.** The test that fails today and passes when done,
+  as suite and assertion. For a view, the steps a person runs in
+  the app and what they see.
+- **Size.** One domain directory under `src/`, with its routes,
+  tests, and docs page; no concept the [glossary](GLOSSARY.md)
+  lacks; no schema change unless the issue is the migration and
+  nothing else; three commits or fewer. A larger need is split into
+  issues each ready on its own before any is labelled.
+- **Out of scope.** What stays as it is.
+- **Breaks.** None, or the route, event, type, export, or storage
+  format that changes.
 
-- **Need.** The job you are trying to do, and what the product
-  does not do for it today.
-- **Proposal.** What an operator should be able to see or do
-  once the feature exists. Leave the implementation out.
-- **Out of scope.** What this request leaves unchanged.
-
-One feature per issue. A need without a proposal is enough; say
-that the proposal is open.
+A ready issue is implemented as one pull request
+([Pull requests](contributing/pull-requests.md)) whose *Why* names
+it. An agent takes only a ready issue, and answers a missing field
+with a comment, not a guess. Security issues never go through this
+path ([Security](#security)).
 
 ## Versions
 

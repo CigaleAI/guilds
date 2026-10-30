@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
-import { artifactStore } from "../../src/artifacts/index.js";
+import { artifactStore } from "../../src/artifacts/store.js";
 import { connect } from "../../src/seed/connect.js";
 import { setInstanceKeys } from "../../src/instance/integrations.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { recipeApply } from "../../src/recipes/apply.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, storeKeys, tempDir } from "../helpers/env.js";
 import { connectModelProvider } from "../helpers/models.js";
 import { templatesRoot } from "../helpers/fixtures.js";
@@ -32,8 +32,8 @@ test("a captured coding guild applies with GitHub and repository steps", { timeo
   await connectModelProvider(db, "org_home", "openrouter");
   await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = artifactStore(database.pool, templatesRoot());
-  const scripts = new Scripts(scriptDatabase(db));
-  const schedules = new Schedules(scheduleDatabase(db));
+  const scripts = agentScripts(db);
+  const schedules = agentSchedules(db);
   const apply = recipeApply({ db, artifacts, notes, scripts, schedules, registry: null });
   const app = await buildApp(database, { db, notes, artifacts, scripts, schedules, apply });
   const call = async (method: "GET" | "POST", url: string, payload?: unknown) =>

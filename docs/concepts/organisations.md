@@ -181,11 +181,13 @@ Cross-organisation reads and writes return 404.
 ### HTTP
 
 `:id` is the organisation id. A caller who is not a member gets 404.
-A route the caller's role does not allow is also 404.
+A route the caller's role does not allow is also 404. Every field
+below is a string; a field of another type is 422 naming it.
 
 - `GET /api/orgs`: the user's organisations, each with their `role`.
 - `POST /api/orgs`: `name` and `slug`. Anyone on `compat-cookie`, the
-  instance admin otherwise. The caller becomes its owner. 201. 422
+  instance admin otherwise, and 404 to anyone else whatever they send.
+  The caller becomes its owner. 201. 422
   for an invalid name or slug. 409 when the slug exists.
 - `GET /api/orgs/:id`: the organisation with the caller's `role`.
 - `PATCH /api/orgs/:id`: `name`, `slug`, or both, for owners and

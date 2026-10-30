@@ -15,26 +15,22 @@ import {
   ping,
   searchTool,
 } from "../../src/connectors/dexpaprika/client.js";
-import { ListedTool, McpError, McpPool } from "../../src/mcp/index.js";
+import { McpError } from "../../src/mcp/errors.js";
+import { McpPool, OPERATOR_CALLER } from "../../src/mcp/pool.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { ConnectorError } from "../../src/connectors/types.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { mockFetch } from "../helpers/http.js";
 import { serverRow } from "../helpers/servers.js";
 import { connectionRow } from "../helpers/servers.js";
+import { MemoryMcpDatabase } from "../helpers/mcp-database.js";
+import { restoreConnectorsAfterEach, runConnectors } from "../helpers/installed.js";
+
+restoreConnectorsAfterEach();
 
 const KEY = decodeMasterKey(HEX_MASTER_KEY);
 const TOOLS = CONNECTORS.bySlug("dexpaprika")!.manifest.tools!;
 
-class MemoryDb {
-  rows: Array<Record<string, unknown>> = [];
-  async replaceMcpTools(_id: string, tools: ListedTool[]) {
-    this.rows = tools.map((tool) => ({ ...tool }));
-  }
-  async listMcpTools() {
-    return this.rows;
-  }
-}
 
 test("formatSearch drops descriptions and caps rows", () => {
   const payload = {
@@ -207,6 +203,24 @@ test("searchTool sends the raw Authorization header", async () => {
   assert.equal(stored, "tokens\nsolana  sol  SOL  Solana  p=100");
 });
 
+test("searchTool refuses a body that is not JSON or does not match its schema", async () => {
+  const answering = (result: { json?: unknown; text?: string }) => ({
+    apiKey: "api_test",
+    client: mockFetch(() => ({ status: 200, ...result })),
+  });
+  await assert.rejects(
+    () => searchTool({ query: "sol" }, answering({ json: { tokens: "none" } })),
+    (error: unknown) =>
+      error instanceof DexPaprikaError &&
+      /^DexPaprika returned an unexpected response at \/tokens: /.test(error.message),
+  );
+  await assert.rejects(
+    () => searchTool({ query: "sol" }, answering({ text: "not json" })),
+    (error: unknown) =>
+      error instanceof DexPaprikaError && error.message === "DexPaprika returned a non-JSON body",
+  );
+});
+
 test("ping rejects keyless and unauthorized", async () => {
   await assert.rejects(
     () => ping("bad", { client: mockFetch(() => ({ status: 200, json: { plan: "keyless" } })) }),
@@ -242,38 +256,37 @@ test("callTool unknown name", async () => {
 test("sync DexPaprika writes the curated catalog", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   let pinged = 0;
-  const pool = new McpPool(10 * 60 * 1000);
-  pool.connectors = CONNECTORS.withAdapter("dexpaprika", {
+  const pool = new McpPool(new MemoryMcpDatabase(), 10 * 60 * 1000);
+  runConnectors(CONNECTORS.withAdapter("dexpaprika", {
     async validate(creds) {
       const apiKey = creds.token;
       pinged += 1;
       assert.equal(apiKey, "api_test");
       return "";
     },
-  });
+  }));
   const [ciphertext, nonce] = encryptPayload({ token: "api_test" }, KEY);
-  const db = new MemoryDb();
   const connection = connectionRow({ id: "conn_dp", status: "connected", ciphertext, nonce });
   const server = serverRow("dexpaprika", { id: "mcp_dexpaprika", auth: "token" });
-  const first = await pool.syncTools(db as never, connection, server, { force: true });
-  const second = await pool.syncTools(db as never, connection, server);
+  const first = await pool.syncTools(connection, server, { force: true });
+  const second = await pool.syncTools(connection, server);
   assert.equal(pinged, 1);
   assert.deepEqual(first.map((tool) => tool.namespaced_name), TOOLS.map((spec) => `dexpaprika_${spec.name}`));
   assert.deepEqual(first, second);
-  assert.deepEqual(first[0], new ListedTool("search", "dexpaprika_search", TOOLS[0]!.description, TOOLS[0]!.input_schema));
+  assert.deepEqual(first[0], { remote_name: "search", namespaced_name: "dexpaprika_search", description: TOOLS[0]!.description, input_schema: TOOLS[0]!.input_schema, read_only_hint: null, destructive_hint: null });
 });
 
 test("sync DexPaprika rejects a bad key", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
-  const pool = new McpPool();
-  pool.connectors = CONNECTORS.withAdapter("dexpaprika", {
+  const pool = new McpPool(new MemoryMcpDatabase());
+  runConnectors(CONNECTORS.withAdapter("dexpaprika", {
     async validate() {
       throw new ConnectorError("invalid key", 401);
     },
-  });
+  }));
   const [ciphertext, nonce] = encryptPayload({ token: "bad" }, KEY);
   await assert.rejects(
-    () => pool.syncTools(new MemoryDb() as never, connectionRow({ id: "conn_dp", status: "connected", ciphertext, nonce }), serverRow("dexpaprika", { id: "mcp_dexpaprika", auth: "token" }), { force: true }),
+    () => pool.syncTools(connectionRow({ id: "conn_dp", status: "connected", ciphertext, nonce }), serverRow("dexpaprika", { id: "mcp_dexpaprika", auth: "token" }), { force: true }),
     (error: unknown) => error instanceof McpError && error.status === 401 && error.message === "invalid key",
   );
 });
@@ -281,22 +294,20 @@ test("sync DexPaprika rejects a bad key", async () => {
 test("call DexPaprika dispatches", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const seen: Record<string, unknown> = {};
-  const pool = new McpPool();
-  pool.connectors = CONNECTORS.withAdapter("dexpaprika", {
+  const pool = new McpPool(new MemoryMcpDatabase());
+  runConnectors(CONNECTORS.withAdapter("dexpaprika", {
     async call(name, arguments_, creds) {
       seen.name = name;
       seen.arguments = arguments_;
       seen.api_key = creds.token;
       return "tokens\nsolana  sol  SOL  Solana  p=100";
     },
-  });
+  }));
   const [ciphertext, nonce] = encryptPayload({ token: "api_test" }, KEY);
   const stored = await pool.call(
-    new MemoryDb() as never,
     connectionRow({ id: "conn_dp", status: "connected", ciphertext, nonce }),
     serverRow("dexpaprika", { id: "mcp_dexpaprika", auth: "token" }),
-    "search",
-    { query: "sol" },
+    { tool: "search", arguments: { query: "sol" }, caller: OPERATOR_CALLER },
   );
   assert.equal(stored, "tokens\nsolana  sol  SOL  Solana  p=100");
   assert.deepEqual(seen, { name: "search", arguments: { query: "sol" }, api_key: "api_test" });

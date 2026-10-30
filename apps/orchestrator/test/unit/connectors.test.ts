@@ -1,15 +1,20 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { decodeMasterKey } from "../../src/config/index.js";
-import { decryptPayload, encryptPayload } from "../../src/credentials/crypto.js";
-import { connect, ConnectError, type ConnectInput } from "../../src/connectors/connect.js";
+import { encryptPayload } from "../../src/credentials/crypto.js";
 import type { ConnectorRow } from "../../src/db/connectors.js";
-import type { McpConnectionLogin, McpConnectionRow, NewMcpConnection } from "../../src/db/mcp.js";
+import type { McpConnectionRow } from "../../src/db/mcp.js";
 import { lookupProperties, settingsComplete, validateSettings } from "../../src/connectors/settings.js";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadConnector, manifestTools, toolStartsOff } from "../../src/connectors/load.js";
+import {
+  effectiveTool,
+  installedManifests,
+  loadConnector,
+  serverTools,
+  type LoadedConnector,
+} from "../../src/connectors/servers.js";
 import { CONNECTORS, installConnectors } from "../../src/connectors/index.js";
 import { defaultSearchServer, isSearchable, storageHint } from "../../src/connectors/builder.js";
 import { readBuilderSystemTemplate } from "../../src/conversation/templates.js";
@@ -21,13 +26,26 @@ import { CORE_STATE_KEYS } from "../../src/state/index.js";
 import { ConnectorError, type ConnectorContext, type ConnectorTool, type RemoteSession } from "../../src/connectors/types.js";
 import drive from "../../src/connectors/drive/adapter.js";
 import opensea from "../../src/connectors/opensea/adapter.js";
-import { isReadOnlyRemote, ListedTool, McpError, McpPool, STATE_TIMEOUT_MS } from "../../src/mcp/index.js";
+import { McpError } from "../../src/mcp/errors.js";
+import { McpPool, STATE_TIMEOUT_MS, type ConnectorLogin } from "../../src/mcp/pool.js";
+import { isReadOnlyRemote } from "../../src/connectors/servers.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { mockFetch } from "../helpers/http.js";
 import { QUOTES, WITH_QUOTES } from "../helpers/quotes.js";
 import { endpointManifest } from "../helpers/registry.js";
 import { serverRow } from "../helpers/servers.js";
 import { connectionRow } from "../helpers/servers.js";
+import { MemoryMcpDatabase } from "../helpers/mcp-database.js";
+import { restoreConnectorsAfterEach, runConnectors } from "../helpers/installed.js";
+
+restoreConnectorsAfterEach();
+
+/** Whether a tool a login of `server` lists starts Off, its listing giving `destructiveHint`. */
+function startsOff(server: LoadedConnector, name: string, destructiveHint: boolean | null = null): boolean {
+  const tool = effectiveTool(server, { name, description: "", input_schema: { type: "object" }, destructive_hint: destructiveHint });
+  assert.ok(tool, name);
+  return !tool.default_enabled;
+}
 
 const KEY = decodeMasterKey(HEX_MASTER_KEY);
 
@@ -122,7 +140,7 @@ test("manifests keep their tools, endpoints, settings, and state within the rule
   }
   for (const entry of CONNECTORS.entries()) {
     const server = serverRow("custom", { id: entry.id, slug: entry.manifest.slug, tool_prefix: entry.manifest.slug });
-    for (const tool of manifestTools(server)) {
+    for (const tool of serverTools(server)) {
       if (tool.mutating) {
         assert.equal(tool.default_enabled, false, `${entry.manifest.slug} ${tool.remote_name}`);
       }
@@ -168,11 +186,11 @@ test("a connector row loads with its overrides applied over the manifest", () =>
   assert.deepEqual(server.config, { url: "https://mcp.notion.com/mcp", oauth_client: { client_id: "c1", client_secret: null, redirect_uris: [] } });
   assert.equal(server.oauth_strategy, "dynamic");
   assert.equal(server.upstream.description, notion.manifest.description);
-  assert.equal(toolStartsOff(server, "notion-search"), false);
-  assert.equal(toolStartsOff(server, "notion-create-pages"), true);
+  assert.equal(startsOff(server, "notion-search"), false);
+  assert.equal(startsOff(server, "notion-create-pages"), true);
   const qonto = loadConnector({ ...row, id: "mcp_qonto", slug: "qonto", manifest: CONNECTORS.bySlug("qonto")!.manifest, overrides: {} });
-  assert.equal(toolStartsOff(qonto, "upload_invoice"), true);
-  assert.equal(toolStartsOff(qonto, "list_bank_accounts"), false);
+  assert.equal(startsOff(qonto, "upload_invoice"), true);
+  assert.equal(startsOff(qonto, "list_bank_accounts"), false);
 });
 
 test("a logo is a 24x24 currentColor mark", () => {
@@ -274,31 +292,30 @@ test("OpenSea's validate rejects a key that lists only the instant-key tool", as
 
 test("a REST adapter's upstream 401 reaches the pool as an McpError", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
-  const pool = new McpPool();
+  const pool = new McpPool(new MemoryMcpDatabase());
   pool.fetchFn = mockFetch(() => ({ status: 401, json: { error: "invalid key" } }));
   const [ciphertext, nonce] = encryptPayload({ token: "bad" }, KEY);
-  const db = { async listMcpTools() { return []; }, async replaceMcpTools() { return; } };
   await assert.rejects(
     () =>
-      pool.syncTools(db as never, connectionRow({ id: "conn_cg", status: "connected", ciphertext, nonce }), serverRow("coingecko", { id: "mcp_coingecko", auth: "token" }), { force: true }),
+      pool.syncTools(connectionRow({ id: "conn_cg", status: "connected", ciphertext, nonce }), serverRow("coingecko", { id: "mcp_coingecko", auth: "token" }), { force: true }),
     (error: unknown) => error instanceof McpError && error.status === 401,
   );
 });
 
 test("validate checks credentials before a login exists", async () => {
-  const pool = new McpPool();
-  pool.connectors = CONNECTORS.withAdapter("qonto", {
+  const pool = new McpPool(new MemoryMcpDatabase());
+  runConnectors(CONNECTORS.withAdapter("qonto", {
     async validate(creds: Record<string, string>) {
       assert.deepEqual(creds, { login: "org", secret_key: "secret" });
       return "Elektro";
     },
-  });
+  }));
   assert.equal(await pool.validate(serverRow("qonto", { id: "mcp_qonto" }), { login: "org", secret_key: "secret" }), "Elektro");
-  pool.connectors = CONNECTORS.withAdapter("qonto", {
+  runConnectors(CONNECTORS.withAdapter("qonto", {
     async validate() {
       throw new ConnectorError("bad key", 401);
     },
-  });
+  }));
   await assert.rejects(
     () => pool.validate(serverRow("qonto", { id: "mcp_qonto" }), {}),
     (error: unknown) => error instanceof McpError && error.status === 401 && error.message === "bad key",
@@ -306,31 +323,31 @@ test("validate checks credentials before a login exists", async () => {
 });
 
 test("lookup runs the adapter's search with the form's credentials", async () => {
-  const pool = new McpPool();
-  pool.connectors = WITH_QUOTES;
+  const pool = new McpPool(new MemoryMcpDatabase());
+  runConnectors(WITH_QUOTES);
   pool.fetchFn = mockFetch((url, init) => {
     assert.match(url, /\/search\?query=eth$/);
     assert.equal((init?.headers as Record<string, string>).Authorization, "Bearer qk");
     return { status: 200, json: { results: [{ id: "ethereum", name: "Ethereum" }] } };
   });
-  const options = await pool.lookup(serverRow("quotes", { id: "mcp_quotes" }), "symbols", "eth", { token: "qk" });
+  const options = await pool.lookup(serverRow("quotes", { id: "mcp_quotes" }), { property: "symbols", q: "eth" }, { token: "qk" });
   assert.deepEqual(options, [{ value: { id: "ethereum", name: "Ethereum" }, label: "Ethereum" }]);
   await assert.rejects(
-    () => pool.lookup(serverRow("qonto", { id: "mcp_qonto" }), "symbols", "eth", {}),
+    () => pool.lookup(serverRow("qonto", { id: "mcp_qonto" }), { property: "symbols", q: "eth" }, {}),
     (error: unknown) => error instanceof McpError && error.status === 404,
   );
 });
 
 test("a listed tool carries the endpoint's annotations", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
-  const pool = new McpPool();
+  const pool = new McpPool(new MemoryMcpDatabase());
   const seen: ConnectorTool[] = [];
-  pool.connectors = CONNECTORS.withAdapter("notion", {
+  runConnectors(CONNECTORS.withAdapter("notion", {
     async list(_creds, ctx) {
       seen.push(...(await ctx.remote.list()));
       return seen;
     },
-  });
+  }));
   pool.session = async () =>
     ({
       async listTools() {
@@ -340,8 +357,7 @@ test("a listed tool carries the endpoint's annotations", async () => {
         ];
       },
     }) as never;
-  const db = { async listMcpTools() { return []; }, async replaceMcpTools() { return; }, async insertBindingIfAbsent() {} };
-  const listed = await pool.syncTools(db as never, connectionRow({ id: "conn_n", status: "connected" }), serverRow("notion", { id: "mcp_notion", auth: "token" }));
+  const listed = await pool.syncTools(connectionRow({ id: "conn_n", status: "connected" }), serverRow("notion", { id: "mcp_notion", auth: "token" }));
   assert.deepEqual(listed.map((tool) => tool.namespaced_name), ["notion_search", "notion_delete_page"]);
   assert.deepEqual(
     seen.map((tool) => [tool.read_only_hint, tool.destructive_hint]),
@@ -349,38 +365,27 @@ test("a listed tool carries the endpoint's annotations", async () => {
   );
 });
 
-function stateDb(connection: Record<string, unknown>) {
-  return {
-    listBindingsCovering: async () => [
-      {
-        catalog_kind: "mcp",
-        catalog_id: "mcp_quotes",
-        scope: "org",
-        scope_id: "org_1",
-        enabled: true,
-        connection_id: "conn_pins",
-      },
-    ],
-    listAgentSecrets: async () => [],
-    listMcpServers: async () => [{ id: "mcp_quotes", slug: "quotes", auth: "token" }],
-    listMcpConnections: async () => [{ id: "conn_pins", status: "connected", settings: {}, ...connection }],
-    listMcpTools: async () => [],
-  };
+/** An agent's one login: a connected token login to the quotes connector, with `connection` over it. */
+function stateLogins(connection: Partial<McpConnectionRow>): ConnectorLogin[] {
+  return [
+    {
+      connection: connectionRow({ id: "conn_pins", mcp_server_id: "mcp_quotes", status: "connected", settings: {}, ...connection }),
+      server: serverRow("quotes", { id: "mcp_quotes", auth: "token" }),
+    },
+  ];
 }
-
-const AGENT = { id: "agent_1", guild_id: "guild_1", org_id: "org_1" };
 const PINNED = [{ id: "ethereum", name: "Ethereum" }];
 
 test("state quotes pinned symbols under the manifest's key and redacts the key", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const [ciphertext, nonce] = encryptPayload({ token: "qk-secret" }, KEY);
-  const pool = new McpPool();
-  pool.connectors = WITH_QUOTES;
+  const pool = new McpPool(new MemoryMcpDatabase());
+  runConnectors(WITH_QUOTES);
   pool.fetchFn = mockFetch(() => ({ status: 200, json: { ethereum: 3200 } }));
-  const state = await pool.state(stateDb({ ciphertext, nonce, settings: { symbols: PINNED } }) as never, AGENT);
+  const state = await pool.state(stateLogins({ ciphertext, nonce, settings: { symbols: PINNED } }));
   assert.deepEqual(state, { quotes: [{ id: "ethereum", price: 3200 }] });
-  pool.connectors = WITH_QUOTES.withAdapter("quotes", { state: async (creds) => ({ leaked: creds.token }) });
-  assert.deepEqual(await pool.state(stateDb({ ciphertext, nonce }) as never, AGENT), {
+  runConnectors(WITH_QUOTES.withAdapter("quotes", { state: async (creds) => ({ leaked: creds.token }) }));
+  assert.deepEqual(await pool.state(stateLogins({ ciphertext, nonce })), {
     quotes: { leaked: "[REDACTED:token]" },
   });
 });
@@ -388,11 +393,11 @@ test("state quotes pinned symbols under the manifest's key and redacts the key",
 test("state is redacted against a login's secrets, not the rest of its payload", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const [ciphertext, nonce] = encryptPayload({ token: "qk-secret", access_token: "at-secret", account: "acme" }, KEY);
-  const pool = new McpPool();
-  pool.connectors = WITH_QUOTES.withAdapter("quotes", {
+  const pool = new McpPool(new MemoryMcpDatabase());
+  runConnectors(WITH_QUOTES.withAdapter("quotes", {
     state: async (creds) => ({ owner: creds.account, token: creds.token, access: creds.access_token }),
-  });
-  assert.deepEqual(await pool.state(stateDb({ ciphertext, nonce }) as never, AGENT), {
+  }));
+  assert.deepEqual(await pool.state(stateLogins({ ciphertext, nonce })), {
     quotes: { owner: "acme", token: "[REDACTED:token]", access: "[REDACTED:access_token]" },
   });
 });
@@ -400,19 +405,20 @@ test("state is redacted against a login's secrets, not the rest of its payload",
 test("state leaves out a login with no value and marks a failing hook unavailable", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const [ciphertext, nonce] = encryptPayload({ token: "qk" }, KEY);
-  const pool = new McpPool();
-  pool.connectors = WITH_QUOTES;
-  assert.deepEqual(await pool.state(stateDb({ ciphertext, nonce }) as never, AGENT), {});
-  pool.connectors = WITH_QUOTES.withAdapter("quotes", {
+  const pool = new McpPool(new MemoryMcpDatabase());
+  runConnectors(WITH_QUOTES);
+  assert.deepEqual(await pool.state(stateLogins({ ciphertext, nonce })), {});
+  runConnectors(WITH_QUOTES.withAdapter("quotes", {
     state: async () => {
       throw new ConnectorError("quota exhausted", 429);
     },
-  });
-  assert.deepEqual(await pool.state(stateDb({ ciphertext, nonce }) as never, AGENT), {
+  }));
+  assert.deepEqual(await pool.state(stateLogins({ ciphertext, nonce })), {
     quotes: { unavailable: "quota exhausted" },
   });
-  pool.connectors = WITH_QUOTES.withAdapter("quotes", { state: async () => "x".repeat(40_000) });
-  const big = await pool.state(stateDb({ ciphertext, nonce }) as never, AGENT);
+  assert.deepEqual(await pool.state([]), {}, "a connector none of the agent's logins signs into adds nothing");
+  runConnectors(WITH_QUOTES.withAdapter("quotes", { state: async () => "x".repeat(40_000) }));
+  const big = await pool.state(stateLogins({ ciphertext, nonce }));
   assert.match(String((big.quotes as { unavailable: string }).unavailable), /exceeds/);
 });
 
@@ -420,152 +426,14 @@ test("a state hook that outlives the budget yields unavailable", async (t) => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const [ciphertext, nonce] = encryptPayload({ token: "qk" }, KEY);
-  const pool = new McpPool();
-  pool.connectors = WITH_QUOTES.withAdapter("quotes", { state: () => new Promise(() => undefined) });
-  const pending = pool.state(stateDb({ ciphertext, nonce }) as never, AGENT);
+  const pool = new McpPool(new MemoryMcpDatabase());
+  runConnectors(WITH_QUOTES.withAdapter("quotes", { state: () => new Promise(() => undefined) }));
+  const pending = pool.state(stateLogins({ ciphertext, nonce }));
   for (let tick = 0; tick < 20; tick += 1) {
     await Promise.resolve();
   }
   t.mock.timers.tick(STATE_TIMEOUT_MS);
   assert.deepEqual(await pending, { quotes: { unavailable: `timed out after ${STATE_TIMEOUT_MS} ms` } });
-});
-
-class ConnectRepoStub {
-  rows = new Map<string, McpConnectionRow>();
-  tools: ListedTool[] = [];
-
-  async getMcpConnectionForOwner(serverId: string, ownerScope: string, ownerId: string | null) {
-    return this.rows.get(`${serverId}:${ownerScope}:${ownerId}`) ?? null;
-  }
-
-  async connectMcp(input: NewMcpConnection, now: Date) {
-    const stamp = now.toISOString();
-    const row = {
-      id: input.connectionId,
-      mcp_server_id: input.serverId,
-      owner_scope: input.ownerScope,
-      owner_id: input.ownerId,
-      ciphertext: input.ciphertext,
-      nonce: input.nonce,
-      status: input.status ?? "pending",
-      account_hint: input.accountHint ?? "",
-      oauth_state: input.oauthState ?? null,
-      settings: input.settings ?? {},
-      created_at: stamp,
-      updated_at: stamp,
-      rotated_at: stamp,
-    };
-    this.rows.set(`${input.serverId}:${input.ownerScope}:${input.ownerId}`, row);
-    return row;
-  }
-
-  async deleteMcpConnection(connectionId: string) {
-    for (const [key, row] of this.rows) {
-      if (row.id === connectionId) this.rows.delete(key);
-    }
-  }
-
-  async saveMcpConnection(connectionId: string, options: Pick<McpConnectionLogin, "status">) {
-    for (const row of this.rows.values()) {
-      if (row.id === connectionId) row.status = options.status;
-    }
-    return null;
-  }
-
-  async listMcpTools() {
-    return [];
-  }
-
-  async replaceMcpTools(_id: string, tools: ListedTool[]) {
-    this.tools = tools;
-  }
-}
-
-const QONTO = serverRow("qonto", { display_name: "Qonto" });
-const X_SERVER = serverRow("x", { display_name: "X" });
-
-test("connect stores a two-field login under the manifest's names with the validated hint", async () => {
-  process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
-  const repo = new ConnectRepoStub();
-  const pool = new McpPool();
-  pool.connectors = CONNECTORS.withAdapter("qonto", { validate: async () => "Elektro" });
-  const { connection, outcome } = await connect(
-    repo as never,
-    pool,
-    { server: QONTO, ownerScope: "org", ownerId: "org_1", credentials: { login: " org ", secret_key: "s3", extra: "x" } },
-    new Date(),
-    { masterKey: KEY },
-  );
-  assert.equal(outcome, "installed");
-  assert.equal(connection.account_hint, "Elektro");
-  assert.deepEqual(decryptPayload(connection.ciphertext, connection.nonce, KEY), {
-    login: "org",
-    secret_key: "s3",
-  });
-  assert.deepEqual(
-    repo.tools.map((tool) => tool.remote_name),
-    CONNECTORS.bySlug("qonto")!.manifest.tools!.map((tool) => tool.name),
-  );
-  await assert.rejects(
-    () => connect(repo as never, pool, { server: QONTO, ownerScope: "org", ownerId: "org_2", credentials: { login: "org" } }),
-    (error: unknown) => error instanceof ConnectError && error.status === 422 && error.message === "secret key is required",
-  );
-});
-
-test("connect refuses, keeps, or replaces an owner's login as asked", async () => {
-  process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
-  const repo = new ConnectRepoStub();
-  const pool = new McpPool();
-  pool.connectors = CONNECTORS.withAdapter("x", { validate: async () => "" });
-  const owner = { server: X_SERVER, ownerScope: "org", ownerId: "org_1" } satisfies Partial<ConnectInput>;
-  const first = await connect(repo as never, pool, { ...owner, credentials: { token: "one" }, accountHint: "plan" }, new Date(), { masterKey: KEY });
-  assert.equal(first.outcome, "installed");
-  await assert.rejects(
-    () => connect(repo as never, pool, { ...owner, credentials: { token: "two" } }, new Date(), { masterKey: KEY }),
-    (error: unknown) => error instanceof ConnectError && error.status === 409,
-  );
-  const kept = await connect(repo as never, pool, { ...owner, credentials: { token: "two" }, onExisting: "keep" }, new Date(), { masterKey: KEY });
-  assert.equal(kept.outcome, "kept");
-  const current = await connect(
-    repo as never,
-    pool,
-    { ...owner, credentials: { token: "one" }, onExisting: { replace_when_hint: "plan" } },
-    new Date(),
-    { masterKey: KEY },
-  );
-  assert.equal(current.outcome, "current");
-  const replaced = await connect(
-    repo as never,
-    pool,
-    { ...owner, credentials: { token: "two" }, onExisting: { replace_when_hint: "plan" }, accountHint: "plan" },
-    new Date(),
-    { masterKey: KEY },
-  );
-  assert.equal(replaced.outcome, "installed");
-  const other = await connect(
-    repo as never,
-    pool,
-    { ...owner, credentials: { token: "three" }, onExisting: { replace_when_hint: "someone else" } },
-    new Date(),
-    { masterKey: KEY },
-  );
-  assert.equal(other.outcome, "kept");
-});
-
-test("connect answers a rejected key with a 422 and stores nothing", async () => {
-  process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
-  const repo = new ConnectRepoStub();
-  const pool = new McpPool();
-  pool.connectors = CONNECTORS.withAdapter("x", {
-    validate: async () => {
-      throw new ConnectorError("Unauthorized", 401);
-    },
-  });
-  await assert.rejects(
-    () => connect(repo as never, pool, { server: X_SERVER, ownerScope: "org", ownerId: "org_1", credentials: { token: "bad" } }),
-    (error: unknown) => error instanceof ConnectError && error.status === 422 && error.message === "api key was rejected",
-  );
-  assert.equal(repo.rows.size, 0);
 });
 
 test("the builder names searchable workspaces and systems of record from manifests", () => {
@@ -594,7 +462,7 @@ test("a connector's prompt guidance renders only when its tools are offered", ()
 });
 
 test("an integration lists the connectors whose manifests require it", () => {
-  const statuses = integrationStatuses(CORE_INTEGRATIONS, {});
+  const statuses = integrationStatuses(CORE_INTEGRATIONS, installedManifests(), {});
   assert.deepEqual(statuses.find((item) => item.id === "google-connectors")?.provides.connectors, ["gmail", "drive"]);
   assert.deepEqual(statuses.find((item) => item.id === "github-app")?.provides.connectors, ["github"]);
 });
@@ -613,68 +481,32 @@ test("settings are checked against the manifest's schema", () => {
   assert.deepEqual(lookupProperties(CONNECTORS.bySlug("drive")!.manifest.settings_schema), ["folder_id"]);
 });
 
-test("connect stores a login that lacks required settings as pending, and one with them as connected", async () => {
-  process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
-  const repo = new ConnectRepoStub();
-  const pool = new McpPool();
-  const seen: Array<Record<string, unknown>> = [];
-  pool.connectors = WITH_QUOTES.withAdapter("quotes", {
-    async validate(_creds, ctx) {
-      seen.push({ ...ctx.settings });
-      return "1 symbol";
-    },
-  });
-  const server = serverRow("quotes", { id: "mcp_quotes", auth: "token", display_name: "Quotes" });
-  const waiting = await connect(repo as never, pool, { server, ownerScope: "org", ownerId: "org_1", credentials: { token: "qk" } }, new Date(), { connectors: WITH_QUOTES });
-  assert.equal(waiting.connection.status, "pending");
-  assert.deepEqual(repo.tools, []);
-  const ready = await connect(repo as never, pool, {
-    server,
-    ownerScope: "org",
-    ownerId: "org_2",
-    credentials: { token: "qk" },
-    settings: { symbols: [{ id: "bitcoin" }] },
-  }, new Date(), { connectors: WITH_QUOTES });
-  assert.equal(ready.connection.status, "connected");
-  assert.deepEqual(seen, [{}, { symbols: [{ id: "bitcoin" }] }]);
-  await assert.rejects(
-    () =>
-      connect(repo as never, pool, {
-        server,
-        ownerScope: "org",
-        ownerId: "org_3",
-        credentials: { token: "qk" },
-        settings: { symbols: "bitcoin" },
-      }, new Date(), { connectors: WITH_QUOTES }),
-    (error: unknown) => error instanceof ConnectError && error.status === 422,
-  );
-});
-
 test("a listed tool the manifest does not name starts by its annotations and its name", () => {
   const server = serverRow("acme", { id: "mcp_acme", tool_prefix: "acme" });
-  assert.equal(toolStartsOff(server, "search_orders"), false);
-  assert.equal(toolStartsOff(server, "search_orders", { destructiveHint: false }), false);
-  assert.equal(toolStartsOff(server, "search_orders", { destructiveHint: true }), true);
-  assert.equal(toolStartsOff(server, "cancelOrder"), true);
-  assert.equal(toolStartsOff(server, "delete-page"), true);
+  assert.equal(startsOff(server, "search_orders"), false);
+  assert.equal(startsOff(server, "search_orders", false), false);
+  assert.equal(startsOff(server, "search_orders", true), true);
+  assert.equal(startsOff(server, "cancelOrder"), true);
+  assert.equal(startsOff(server, "delete-page"), true);
   const edited = serverRow("custom", { ...server, overrides: { tools: { cancelOrder: { default: true }, search_orders: { default: false } } } });
-  assert.equal(toolStartsOff(edited, "cancelOrder"), false);
-  assert.equal(toolStartsOff(edited, "search_orders"), true);
+  assert.equal(startsOff(edited, "cancelOrder"), false);
+  assert.equal(startsOff(edited, "search_orders"), true);
   const opensea = serverRow("opensea", { id: "mcp_opensea", tool_prefix: "opensea" });
-  assert.equal(toolStartsOff(opensea, "get_favorites"), true);
-  assert.equal(toolStartsOff(opensea, "search"), false);
+  assert.equal(startsOff(opensea, "get_favorites"), true);
+  assert.equal(startsOff(opensea, "search"), false);
 });
 
 test("Studio trusts readOnlyHint only on a verified connector", () => {
-  assert.equal(isReadOnlyRemote("acme", "cancel_order", { readOnlyHint: true, verified: true }), true);
-  assert.equal(isReadOnlyRemote("acme", "cancel_order", { readOnlyHint: true, verified: false }), false);
-  assert.equal(isReadOnlyRemote("acme", "list_orders", { readOnlyHint: null, verified: false }), true);
-  assert.equal(isReadOnlyRemote("opensea", "get_favorites", { readOnlyHint: true, verified: true }), false);
+  assert.equal(isReadOnlyRemote(serverRow("acme", { verified: true }), "cancel_order", true), true);
+  assert.equal(isReadOnlyRemote(serverRow("acme", { verified: false }), "cancel_order", true), false);
+  assert.equal(isReadOnlyRemote(serverRow("acme", { verified: false }), "list_orders", null), true);
+  assert.equal(isReadOnlyRemote(serverRow("opensea", { verified: true }), "get_favorites", true), false);
 });
 
 test("a sync keeps each listed tool's annotations", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
-  const pool = new McpPool();
+  const db = new MemoryMcpDatabase();
+  const pool = new McpPool(db);
   pool.session = async () =>
     ({
       async listTools() {
@@ -684,30 +516,15 @@ test("a sync keeps each listed tool's annotations", async () => {
         ];
       },
     }) as never;
-  const stored: ListedTool[] = [];
-  const overlays: string[] = [];
-  const db = {
-    async listMcpTools() {
-      return [];
-    },
-    async replaceMcpTools(_id: string, tools: ListedTool[]) {
-      stored.push(...tools);
-    },
-    async insertBindingIfAbsent(input: { catalogId: string }) {
-      overlays.push(input.catalogId);
-      return {};
-    },
-  };
   await pool.syncTools(
-    db as never,
     connectionRow({ id: "conn_acme", status: "connected", owner_scope: "org", owner_id: "org_1" }),
     serverRow("acme", { id: "mcp_acme", tool_prefix: "acme", auth: "token" }),
   );
   assert.deepEqual(
-    stored.map((tool) => [tool.remote_name, tool.read_only_hint, tool.destructive_hint]),
+    db.tools.map((tool) => [tool.remote_name, tool.read_only_hint, tool.destructive_hint]),
     [["find", true, null], ["wipe", null, true]],
   );
-  assert.deepEqual(overlays, ["acme_wipe"]);
+  assert.deepEqual([...db.bindings.values()].map((binding) => binding.catalog_id), ["acme_wipe"]);
 });
 
 test("GitHub's State names the repositories a login picked as the owner and repo its tools take", async () => {

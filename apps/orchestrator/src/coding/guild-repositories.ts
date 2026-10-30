@@ -1,3 +1,4 @@
+import { Type, type Static } from "@sinclair/typebox";
 import { getMcpServer } from "../connectors/servers.js";
 import type { GuildRow } from "../db/guilds.js";
 import {
@@ -18,7 +19,6 @@ import { getMembership } from "../db/orgs.js";
 import { isUniqueViolation, type Queryable } from "../db/pg.js";
 import type { GithubRepositorySelection } from "../db/schema/index.js";
 import {
-  GITHUB_SERVER_ID,
   GITHUB_SLUG,
   GithubError,
   GithubInstallationGoneError,
@@ -27,15 +27,16 @@ import {
   requireGithubApp,
   type GithubRepository,
 } from "../github/index.js";
+import { githubRepositoriesOf } from "../github/repositories.js";
 import { installationIdOf, RepositoryAccessError } from "../github/tokens.js";
-import { canSeeGuild } from "../guilds/validation.js";
+import { canSeeGuild } from "../guilds/operators.js";
+import { GITHUB_SERVER_ID } from "../instance/integrations.js";
 import { newId } from "../lib/ids.js";
-import { markDisconnected, mcpDatabase, type McpPool } from "../mcp/index.js";
-import { seesConnection } from "../mcp/visibility.js";
+import type { McpPool } from "../mcp/pool.js";
+import type { LoginRetirement } from "../mcp/service.js";
 import {
   DEFAULT_BRANCH,
   githubLoginItem,
-  githubRepositoriesOf,
   repositoryItem,
   RepositoryValidationError,
   validateGithubRepositories,
@@ -45,12 +46,49 @@ import {
 /** What a guild's repositories and the GitHub logins they use are managed through, built once from the app's services. */
 export type RepositoryServices = {
   db: Queryable;
-  /** The pool whose tool sessions hold a login's repository-scoped token; absent on a box that calls none. */
-  mcp: McpPool | null;
+  /** Retires a GitHub login whose installation GitHub no longer knows. */
+  loginRetirement: LoginRetirement;
+  /** The pool that talks to the connectors; absent on a box that calls none. */
+  mcp: Pick<McpPool, "drop"> | null;
   masterKey: Buffer | undefined;
 };
 
+/** Retires a GitHub login whose installation GitHub no longer knows, as `installation_gone`. */
+export async function retireInstallationGone(
+  services: LoginRetirement,
+  connection: McpConnectionRow,
+): Promise<void> {
+  await services.retireLogin(connection, "installation_gone");
+}
+
 type Item = Record<string, unknown>;
+
+/** A repository's fields as a request sends them, before validation: its name, URL and branch. */
+const RepositoryFields = {
+  name: Type.String(),
+  url: Type.String(),
+  default_branch: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+};
+
+/** A repository added to a guild, cloned with a GitHub login when `connection_id` names one. */
+export const RepositoryDraftSchema = Type.Object({
+  ...RepositoryFields,
+  connection_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+});
+
+export type RepositoryDraft = Static<typeof RepositoryDraftSchema>;
+
+/** The repositories a GitHub login's coding agents clone, each with GitHub's id when known. */
+export const GithubSelectionSchema = Type.Object({
+  repositories: Type.Array(
+    Type.Object({
+      ...RepositoryFields,
+      github_id: Type.Optional(Type.Union([Type.Number(), Type.String(), Type.Null()])),
+    }),
+  ),
+});
+
+export type GithubSelection = Static<typeof GithubSelectionSchema>["repositories"];
 
 function proxyUrl(): string {
   return process.env.ADAPTER_PROXY_URL ?? "";
@@ -72,22 +110,10 @@ async function requireGithubConnection(
   return connection;
 }
 
-/** A GitHub login the user sees and that is not the platform's; any other is a 404. */
-export async function requireVisibleGithubConnection(
-  db: Queryable,
-  connectionId: string,
-  userId: string,
-): Promise<McpConnectionRow> {
-  const connection = await requireGithubConnection(db, connectionId);
-  if (connection.owner_scope === "platform" || !(await seesConnection(db, connection, userId))) {
-    throw new RepositoryValidationError("connection not found", 404);
-  }
-  return connection;
-}
-
 /**
- * Every repository the installation behind a connected GitHub login reaches. An installation
- * GitHub no longer knows disconnects the login.
+ * Every repository the installation behind a connected GitHub login reaches. A login whose
+ * installation GitHub no longer knows is retired as `installation_gone`, and the listing is a
+ * 422 saying so.
  */
 export async function reachableRepositories(
   services: RepositoryServices,
@@ -106,7 +132,7 @@ export async function reachableRepositories(
     );
   } catch (error) {
     if (error instanceof GithubInstallationGoneError) {
-      await markDisconnected(mcpDatabase(services.db), connection);
+      await retireInstallationGone(services.loginRetirement, connection);
       throw new RepositoryValidationError(
         "GitHub refused the installation; the connection is now disconnected",
       );
@@ -201,7 +227,7 @@ export async function addGuildRepository(
   services: RepositoryServices,
   guild: GuildRow,
   userId: string,
-  body: Item,
+  body: RepositoryDraft,
 ): Promise<Item> {
   const { db } = services;
   const input = validateRepositoryInput(body);
@@ -296,30 +322,37 @@ function matchSelection(
 }
 
 /**
- * Replaces the repositories a GitHub login picks, among those its installation reaches. A guild's
- * own login replaces the guild's repositories with them too.
+ * Replaces the repositories a GitHub login picks, among those its installation reaches, and
+ * returns them. The login's tool session, whose token is scoped to its previous pick, is
+ * dropped, and a guild's own login replaces that guild's repositories with the pick.
  */
-export async function selectGithubRepositories(
+export async function pickGithubRepositories(
   services: RepositoryServices,
   connection: McpConnectionRow,
-  repositories: unknown,
-): Promise<{ repositories: GithubRepositorySelection[] }> {
+  repositories: GithubSelection,
+): Promise<GithubRepositorySelection[]> {
   const { db } = services;
+  const now = new Date();
   const validated = validateGithubRepositories(repositories);
   const reached = await reachableRepositories(services, connection);
-  const selected = matchSelection(
-    validated,
-    reached,
-    Array.isArray(repositories) ? repositories : [],
-  );
-  const now = new Date();
+  const selected = matchSelection(validated, reached, repositories);
   if ((await updateMcpConnectionGithubRepositories(db, connection.id, selected, now)) === null) {
     throw new RepositoryValidationError("connection not found", 404);
   }
-  // The login's tool session holds a token scoped to the repositories it picked before.
   services.mcp?.drop(connection.id);
+  await replaceLoginGuildRepositories(db, connection, selected, now);
+  return selected;
+}
+
+/** Replaces a guild's repositories with the ones its own GitHub login picks; another login changes none. */
+async function replaceLoginGuildRepositories(
+  db: Queryable,
+  connection: McpConnectionRow,
+  selected: GithubRepositorySelection[],
+  now: Date,
+): Promise<void> {
   if (connection.owner_scope !== "guild" || !connection.owner_id) {
-    return { repositories: selected };
+    return;
   }
   const rows = selected.map((item) => ({
     id: newId("repo"),
@@ -329,11 +362,15 @@ export async function selectGithubRepositories(
     githubId: item.github_id ?? null,
   }));
   try {
-    await replaceConnectionGuildRepositories(db, connection.id, connection.owner_id, rows, now);
+    await replaceConnectionGuildRepositories(
+      db,
+      { connection_id: connection.id, guild_id: connection.owner_id },
+      rows,
+      now,
+    );
   } catch (error) {
     throw isUniqueViolation(error)
       ? new RepositoryValidationError("a guild repository already uses one of those names", 409)
       : error;
   }
-  return { repositories: selected };
 }

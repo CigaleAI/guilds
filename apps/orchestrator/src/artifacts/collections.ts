@@ -26,17 +26,17 @@ import {
 import { recordChangeIfAny, recordConfigChange } from "../db/config-changes.js";
 import { getGuild } from "../db/guilds.js";
 import { isUniqueViolation, type Queryable, withTransaction } from "../db/pg.js";
-import type { CollectionColumn } from "../db/schema/index.js";
-import { defaultGrants, reachedMode } from "./access.js";
+import type { CollectionColumn, AccessMode } from "../db/schema/index.js";
+import { type AccessRaise, accessRaises, defaultGrants, reachedMode } from "./access.js";
 import {
   collectionCleared,
   collectionColumnsChanged,
   collectionDeleted,
   type CollectionRef,
 } from "./collection-changes.js";
-import { columnCatalog, normalizeIdentity, parseColumnChange, parseColumns, uniqueColumn } from "./columns.js";
+import { columnCatalog, normalizeIdentity, parseColumnChange, parseColumns, uniqueColumn, type ColumnChange, type ColumnRename } from "./columns.js";
 import { ArtifactError } from "./errors.js";
-import { writeGrants } from "./grants.js";
+import { collectionAccessItem, setAccessRow, writeGrants } from "./grants.js";
 import { collectionDisplayPath } from "./paths.js";
 import type { ArtifactStore, CollectionDescription, CollectionView } from "./store.js";
 import {
@@ -44,13 +44,25 @@ import {
   LIVE_COLLECTIONS_MAX,
   PURPOSE_MAX,
   STATE_COLLECTIONS_MAX,
-  type AccessMode,
   type ArtifactActor,
 } from "./types.js";
 
 
 /** What a collection's update may change; a field left out keeps its value. */
 export type CollectionChanges = { name?: string; purpose?: string; columns?: unknown; guildId?: string | null };
+
+/**
+ * A collection as the operator defines it: its name, purpose and columns, the guild that owns it,
+ * none for an organisation table, and the access list it is raised to as it is created, when one
+ * is given.
+ */
+export type NewCollection = {
+  name: string;
+  purpose: string;
+  columns?: unknown;
+  guildId?: string | null;
+  access?: AccessRaise;
+};
 
 export function validateCollectionName(name: string): string {
   const text = (name || "").trim();
@@ -157,7 +169,7 @@ export async function accessibleCollections(
 export async function createCollection(
   store: ArtifactStore,
   actor: ArtifactActor,
-  args: { name: string; purpose: string; columns?: unknown; guildId?: string | null },
+  args: NewCollection,
 ): Promise<CollectionView> {
   assertOperator(actor);
   const name = validateCollectionName(args.name);
@@ -177,6 +189,9 @@ export async function createCollection(
       );
       const grants = guildId ? defaultGrants("guild", guildId) : defaultGrants("org", actor.orgId);
       await writeGrants(client, actor, { kind: "collection", id: created.id }, grants);
+      for (const row of args.access ? accessRaises(grants, args.access) : []) {
+        await setAccessRow(client, actor, collectionAccessItem(created), row);
+      }
       return collectionView(created, "write", 0);
     });
   } catch (error) {
@@ -220,7 +235,7 @@ async function reindexIdentity(client: Queryable, collectionId: string, unique: 
 function uniqueChanged(
   previous: CollectionColumn | null,
   next: CollectionColumn,
-  renamed: Array<{ from: string; to: string }>,
+  renamed: ColumnRename[],
 ): boolean {
   return (
     !previous ||
@@ -234,7 +249,7 @@ function uniqueChanged(
 async function applyColumnChange(
   client: Queryable,
   current: CollectionQueryRow,
-  change: NonNullable<ReturnType<typeof parseColumnChange>>,
+  change: ColumnChange,
 ): Promise<void> {
   for (const rename of change.renamed) {
     await renameRecordKey(client, current.id, rename);
@@ -444,15 +459,14 @@ export async function requireWritable(store: ArtifactStore, actor: ArtifactActor
   return described;
 }
 
+/** How many live records a collection holds, when the newest changed, and its columns. */
+export type CollectionFacts = { name: string; count: number; newest_updated_at: string | null; columns: CollectionColumn[] };
+
 /**
  * What an empty search should say about a collection the actor can read:
  * how many records it holds, when the newest changed, and its columns.
  */
-export async function collectionFacts(
-  store: ArtifactStore,
-  actor: ArtifactActor,
-  name: string,
-): Promise<{ name: string; count: number; newest_updated_at: string | null; columns: CollectionColumn[] } | null> {
+export async function collectionFacts(store: ArtifactStore, actor: ArtifactActor, name: string): Promise<CollectionFacts | null> {
   const described = await describeCollection(store, actor, name);
   if (!described) {
     return null;
@@ -464,4 +478,36 @@ export async function collectionFacts(
     newest_updated_at: facts.newest ? formatOperationalTimestamp(facts.newest) : null,
     columns: described.columns,
   };
+}
+
+/** A new collection checked before anything writes it: its name, purpose and columns as stored, and the display path it takes. */
+export type CheckedCollection = { name: string; purpose: string; columns: CollectionColumn[]; href: string };
+
+/**
+ * Checks a new collection's name, purpose and columns, in that order, before anything writes it.
+ * ArtifactError on the first that fails.
+ */
+export function planCollection(orgId: string, draft: Pick<NewCollection, "name" | "purpose" | "columns">): CheckedCollection {
+  const name = validateCollectionName(draft.name);
+  const purpose = validatePurpose(draft.purpose);
+  const columns = parseColumns(draft.columns ?? []);
+  return { name, purpose, columns, href: collectionDisplayPath(orgId, name) };
+}
+
+/** A change to a collection's definition checked before anything writes it: the name and purpose it leaves, and its column change when it replaces the columns. */
+export type CheckedCollectionChange = { name: string; purpose: string; columns: ColumnChange | null };
+
+/**
+ * Checks a change's name, purpose and columns, in that order, against the collection it changes,
+ * before anything writes it. A field the change leaves out keeps the collection's. ArtifactError on
+ * the first that fails.
+ */
+export function planCollectionChange(
+  current: Pick<CollectionView, "name" | "purpose" | "columns">,
+  changes: CollectionChanges,
+): CheckedCollectionChange {
+  const name = changes.name === undefined ? current.name : validateCollectionName(changes.name);
+  const purpose = changes.purpose === undefined ? current.purpose : validatePurpose(changes.purpose);
+  const columns = changes.columns === undefined ? null : parseColumnChange(current.columns, changes.columns);
+  return { name, purpose, columns };
 }

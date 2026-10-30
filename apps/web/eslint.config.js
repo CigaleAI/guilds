@@ -3,6 +3,7 @@ import reactHooks from "eslint-plugin-react-hooks";
 import globals from "globals";
 import tseslint from "typescript-eslint";
 import { boundary } from "../../eslint.boundary.js";
+import { limits } from "../../eslint.limits.js";
 
 // The hosted packages, which nothing in this package may import, and the repository its relative
 // imports must stay inside (docs/architecture/extension-points.md).
@@ -27,25 +28,25 @@ export default tseslint.config(
       ],
     },
   },
+  limits({ files: ["src/**/*.ts", "src/**/*.tsx"] }),
   {
-    // The function and file limits of docs/contributing/code-guidelines.md. Existing violations
-    // are listed in eslint-suppressions.json; that list only shrinks.
-    files: ["src/**/*.ts", "src/**/*.tsx"],
-    ignores: ["**/*.test.ts", "**/*.test.tsx", "**/*.stories.tsx", "test/**", "scripts/**"],
+    // A shared directory never imports from a feature (docs/contributing/code-guidelines.md, Shared
+    // code): api/ and app/ import nothing under features/. The router is the composition root that
+    // mounts the features, and the exception.
+    files: ["src/api/**", "src/app/**"],
+    ignores: ["src/app/router.tsx"],
     rules: {
-      complexity: ["error", 11],
-      "max-depth": ["error", 3],
-      "max-params": ["warn", 4],
-      "@typescript-eslint/max-params": ["error", { max: 5 }],
-      "max-lines": ["error", { max: 800, skipBlankLines: false, skipComments: false }],
-    },
-  },
-  {
-    // A cast creates no knowledge (docs/contributing/code-guidelines.md, Types and errors).
-    files: ["src/**/*.ts", "src/**/*.tsx"],
-    ignores: ["**/*.test.ts", "**/*.test.tsx", "**/*.stories.tsx", "test/**", "scripts/**"],
-    rules: {
-      "@typescript-eslint/consistent-type-assertions": ["error", { assertionStyle: "never" }],
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              regex: "^(\\.\\./)+features(/|$)",
+              message: "A shared directory never imports from a feature.",
+            },
+          ],
+        },
+      ],
     },
   },
   boundary({

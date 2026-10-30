@@ -2,8 +2,6 @@
 // box, the fields it takes, where their values come from, and what it switches on. A module that
 // needs an instance key asks here, so one list says what the box can be given and what it has.
 
-import { installedConnectors } from "../connectors/index.js";
-import type { ConnectorRegistry } from "../connectors/registry.js";
 import type { Manifest } from "../db/schema/index.js";
 
 /** Where an integration's values come from: the encrypted `instance_keys` store, or the process environment. */
@@ -72,23 +70,12 @@ export type IntegrationSources = { env?: NodeJS.ProcessEnv; keys?: InstanceKeySn
 
 type FieldName<I extends Integration> = I["fields"][number]["name"];
 
-function integration<const F extends readonly IntegrationField[]>(definition: {
-  id: string;
-  label: string;
-  enables: string;
-  source: IntegrationSource;
-  fields: F;
-  provides?: IntegrationProvides;
-  setup?: IntegrationSetup;
-}): {
-  id: string;
-  label: string;
-  enables: string;
-  source: IntegrationSource;
-  fields: F;
-  provides?: IntegrationProvides;
-  setup?: IntegrationSetup;
-} {
+/** An integration as it is declared: its fields keep the names they are written with, so readers are typed by them. */
+type IntegrationDefinition<F extends readonly IntegrationField[]> = Omit<Integration, "fields"> & { fields: F };
+
+function integration<const F extends readonly IntegrationField[]>(
+  definition: IntegrationDefinition<F>,
+): IntegrationDefinition<F> {
   return definition;
 }
 
@@ -110,6 +97,9 @@ export const GROUP_ROUTING = integration({
     { name: "model", label: "Model", optional: true, placeholder: "jev-next" },
   ],
 });
+
+/** The `github` connector's server id: its connections are installations of the GitHub App. */
+export const GITHUB_SERVER_ID = "mcp_github";
 
 export const GITHUB_APP = integration({
   id: "github-app",
@@ -260,6 +250,14 @@ export function integrationState(integration: Integration, sources?: Integration
   return missing.length === required.length ? "off" : "incomplete";
 }
 
+/** Whether `values` holds a value under the name of every field of the integration. */
+function holdsEveryField<const I extends Integration>(
+  integration: I,
+  values: Record<string, string>,
+): values is Record<FieldName<I>, string> {
+  return integration.fields.every((field) => typeof values[field.name] === "string");
+}
+
 /** Every field's trimmed value while the integration is on, else null. */
 export function integrationValues<const I extends Integration>(
   integration: I,
@@ -268,9 +266,31 @@ export function integrationValues<const I extends Integration>(
   if (integrationState(integration, sources) !== "on") {
     return null;
   }
-  return Object.fromEntries(
+  const values: Record<string, string> = Object.fromEntries(
     integration.fields.map((field) => [field.name, fieldValue(integration, field, sources)]),
-  ) as Record<FieldName<I>, string>;
+  );
+  return holdsEveryField(integration, values) ? values : null;
+}
+
+/** The parts of a connector's manifest that name its integration: its slug, what it requires, and how it signs in. */
+export type ConnectorRequirements = Pick<Manifest, "slug" | "requires" | "auth">;
+
+/**
+ * The id of the integration a connector's manifest requires, takes its platform key from, or
+ * declares of its own (a key, or an OAuth client with no provider), when it names one.
+ */
+function integrationIdForConnector(manifest: ConnectorRequirements): string | null {
+  const { instance, oauth } = manifest.auth;
+  if (manifest.requires?.integration) {
+    return manifest.requires.integration;
+  }
+  if (instance) {
+    return "integration" in instance ? instance.integration : connectorIntegrationId(manifest.slug);
+  }
+  if (manifest.auth.kind === "oauth" && oauth?.strategy === "configured" && !oauth.provider) {
+    return connectorIntegrationId(manifest.slug);
+  }
+  return null;
 }
 
 /**
@@ -278,61 +298,66 @@ export function integrationValues<const I extends Integration>(
  * its own (a key, or an OAuth client with no provider), when it names one.
  */
 export function integrationForConnector(
-  manifest: Pick<Manifest, "slug" | "requires" | "auth">,
+  manifest: ConnectorRequirements,
   integrations: readonly Integration[] = installedIntegrations(),
 ): Integration | null {
-  const instance = manifest.auth.instance;
-  const oauth = manifest.auth.oauth;
-  let id = manifest.requires?.integration ?? null;
-  if (!id && instance) {
-    id = "integration" in instance ? instance.integration : connectorIntegrationId(manifest.slug);
+  const id = integrationIdForConnector(manifest);
+  if (!id) {
+    return null;
   }
-  if (!id && manifest.auth.kind === "oauth" && oauth?.strategy === "configured" && !oauth.provider) {
-    id = connectorIntegrationId(manifest.slug);
-  }
-  return id ? (integrations.find((item) => item.id === id) ?? null) : null;
+  return integrations.find((item) => item.id === id) ?? null;
 }
 
 /**
  * What the box has, for the operator: each integration's state and which fields are set, never
- * a value. Its connectors are the installed ones whose manifest requires it or takes its key.
- * `audit` adds when and by whom a store row was written, for the instance admin.
+ * a value, and no audit. Its connectors are those of `connectors` whose manifest requires it or
+ * takes its key.
  */
 export function integrationStatuses(
   integrations: readonly Integration[],
+  connectors: readonly ConnectorRequirements[],
   sources?: IntegrationSources,
-  connectors: ConnectorRegistry = installedConnectors(),
-  options: { audit?: boolean } = {},
 ): IntegrationStatus[] {
-  const { keys } = sourcesOf(sources);
   const connectorsOf = (id: string) =>
     connectors
-      .entries()
-      .filter((entry) => integrationForConnector(entry.manifest, integrations)?.id === id)
-      .map((entry) => entry.manifest.slug);
-  return integrations.map((integration) => {
-    const row = integration.source === "store" && options.audit ? (keys[integration.id] ?? null) : null;
-    return {
-      id: integration.id,
-      label: integration.label,
-      enables: integration.enables,
-      source: integration.source,
-      state: integrationState(integration, sources),
-      fields: integration.fields.map((field) => ({
-        name: field.name,
-        label: field.label,
-        optional: Boolean(field.optional),
-        secret: Boolean(field.secret),
-        multiline: Boolean(field.multiline),
-        set: fieldSet(integration, field, sources),
-      })),
-      setup: integration.setup ?? null,
-      updated_at: row?.updated_at ?? null,
-      set_by: row?.set_by ?? null,
-      provides: {
-        native_tools: [...(integration.provides?.nativeTools ?? [])],
-        connectors: [...new Set([...(integration.provides?.connectors ?? []), ...connectorsOf(integration.id)])],
-      },
-    };
+      .filter((manifest) => integrationForConnector(manifest, integrations)?.id === id)
+      .map((manifest) => manifest.slug);
+  return integrations.map((integration) => ({
+    id: integration.id,
+    label: integration.label,
+    enables: integration.enables,
+    source: integration.source,
+    state: integrationState(integration, sources),
+    fields: integration.fields.map((field) => ({
+      name: field.name,
+      label: field.label,
+      optional: Boolean(field.optional),
+      secret: Boolean(field.secret),
+      multiline: Boolean(field.multiline),
+      set: fieldSet(integration, field, sources),
+    })),
+    setup: integration.setup ?? null,
+    updated_at: null,
+    set_by: null,
+    provides: {
+      native_tools: [...(integration.provides?.nativeTools ?? [])],
+      connectors: [...new Set([...(integration.provides?.connectors ?? []), ...connectorsOf(integration.id)])],
+    },
+  }));
+}
+
+/**
+ * What the box has, for the instance admin: each integration's status, and when and by whom a
+ * store integration's row was last written. The environment has no audit.
+ */
+export function auditedIntegrationStatuses(
+  integrations: readonly Integration[],
+  connectors: readonly ConnectorRequirements[],
+  sources?: IntegrationSources,
+): IntegrationStatus[] {
+  const { keys } = sourcesOf(sources);
+  return integrationStatuses(integrations, connectors, sources).map((status) => {
+    const row = status.source === "store" ? keys[status.id] : undefined;
+    return { ...status, updated_at: row?.updated_at ?? null, set_by: row?.set_by ?? null };
   });
 }

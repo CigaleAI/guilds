@@ -8,16 +8,17 @@ import { createsWritable, defaultGrants } from "./access.js";
 import { ArtifactError } from "./errors.js";
 import { recordFileChange } from "../db/file-changes.js";
 import { FILES_SEGMENT, normalizeFileName, parseDisplayPath } from "./paths.js";
-import { artifactMode, assertLiveCount, assertRead, assertWrite, ownerFor, type ArtifactRow, type ArtifactStore, rowDisplayPath } from "./store.js";
+import { artifactMode, assertLiveCount, assertRead, assertWrite, ownerFor, type ArtifactStore, rowDisplayPath } from "./store.js";
+import type { ArtifactRow } from "../db/artifacts.js";
 import {
   FILE_DESCRIPTION_MAX,
   FILE_MAX_BYTES,
   ORG_FILE_BYTES_MAX,
   SEARCH_TEXT_MAX,
-  type AccessMode,
   type ArtifactActor,
   type ArtifactLevel,
 } from "./types.js";
+import type { AccessMode } from "../db/schema/index.js";
 import { writeGrants } from "./grants.js";
 import { deleteAccessList } from "../db/artifact-access.js";
 import {
@@ -51,6 +52,22 @@ export type FileView = {
 type Owner = { orgId: string; ownerId: string; guildId: string | null; agentId: string | null };
 
 type FileContent = { description: string; mime: string; bytes: Buffer };
+
+/** A file as a writer sends it: the level it goes to, its name, description, media type and bytes, and the version it replaces when the writer read one. */
+export type FileUpload = {
+  level: ArtifactLevel;
+  name: string;
+  description: string;
+  mime: string;
+  bytes: Buffer;
+  expectedVersion?: number;
+};
+
+/** A search of the files an actor reads: the words to match, the level to keep, and how many to return. */
+export type FileSearch = { query?: string; level?: ArtifactLevel; limit: number };
+
+/** Where a new file is created: its level, its owner, and its name. */
+type FileTarget = { level: ArtifactLevel; owner: Owner; name: string };
 
 const MIME_RE = /^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/i;
 
@@ -136,7 +153,7 @@ export class ArtifactFiles {
    */
   async putFile(
     actor: ArtifactActor,
-    args: { level: ArtifactLevel; name: string; description: string; mime: string; bytes: Buffer; expectedVersion?: number },
+    args: FileUpload,
   ): Promise<ArtifactRow> {
     const name = normalizeFileName(args.name);
     const content: FileContent = {
@@ -190,7 +207,7 @@ export class ArtifactFiles {
   /** The files the actor may read, searched by `query` over name and description, or listed. */
   async findFiles(
     actor: ArtifactActor,
-    args: { query?: string; level?: ArtifactLevel; limit: number },
+    args: FileSearch,
   ): Promise<FileView[]> {
     const query = (args.query ?? "").trim();
     const rows = query
@@ -254,7 +271,7 @@ export class ArtifactFiles {
 
   private async createFile(
     actor: ArtifactActor,
-    target: { level: ArtifactLevel; owner: Owner; name: string },
+    target: FileTarget,
     content: FileContent,
   ): Promise<ArtifactRow> {
     if (!actor.operator && !createsWritable(target.level)) {

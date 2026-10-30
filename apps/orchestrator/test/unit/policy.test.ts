@@ -5,13 +5,13 @@ import {
   OPEN_POLICY,
   PolicyError,
   UNLIMITED,
-  assertCanCreateAgent,
-  assertCanCreateAgents,
-  assertCanCreateGuild,
-  assertCanEnableBrowser,
-  assertCanEnableCoding,
-  assertCanPlaceAgents,
-  claimCoachRun,
+  assertCanCreateAgentThrough,
+  assertCanCreateAgentsThrough,
+  assertCanCreateGuildThrough,
+  assertCanEnableBrowserThrough,
+  assertCanEnableCodingThrough,
+  assertCanPlaceAgentsThrough,
+  claimCoachRunThrough,
   machineCap,
   remaining,
   type OrgCounts,
@@ -48,44 +48,44 @@ test("the open policy caps nothing and bars no one", async () => {
   assert.equal(limits.source, "instance");
   assert.equal(limits.maxAgents, null);
   const full = countsOf({ agents: 10_000, browsers: 10_000, coders: 10_000, guilds: 10_000 });
-  await assertCanCreateAgents(OPEN_POLICY, full, "org_1", { agents: 50, browserAgents: 50, codingAgents: 50 });
-  await assertCanCreateGuild(OPEN_POLICY, full, "org_1");
-  await assertCanEnableBrowser(OPEN_POLICY, full, "org_1", false);
-  await assertCanEnableCoding(OPEN_POLICY, full, "org_1");
+  await assertCanCreateAgentsThrough(OPEN_POLICY, full, "org_1", { agents: 50, browserAgents: 50, codingAgents: 50 });
+  await assertCanCreateGuildThrough(OPEN_POLICY, full, "org_1");
+  await assertCanEnableBrowserThrough(OPEN_POLICY, full, "org_1", false);
+  await assertCanEnableCodingThrough(OPEN_POLICY, full, "org_1");
 });
 
 test("agent caps count what is being added", async () => {
   const policy = policyOf({ maxAgents: 3, maxBrowserAgents: 1, maxCodingAgents: 1 });
-  await assertCanCreateAgent(policy, countsOf({ agents: 2 }), "org_1", { browser: false, coding: false });
+  await assertCanCreateAgentThrough(policy, countsOf({ agents: 2 }), "org_1", { browser: false, coding: false });
   await assert.rejects(
-    () => assertCanCreateAgent(policy, countsOf({ agents: 3 }), "org_1", { browser: false, coding: false }),
+    () => assertCanCreateAgentThrough(policy, countsOf({ agents: 3 }), "org_1", { browser: false, coding: false }),
     limitOn("agents"),
   );
   await assert.rejects(
-    () => assertCanCreateAgents(policy, countsOf({ agents: 1 }), "org_1", { agents: 3, browserAgents: 0, codingAgents: 0 }),
+    () => assertCanCreateAgentsThrough(policy, countsOf({ agents: 1 }), "org_1", { agents: 3, browserAgents: 0, codingAgents: 0 }),
     limitOn("agents"),
   );
   await assert.rejects(
-    () => assertCanCreateAgent(policy, countsOf({ browsers: 1 }), "org_1", { browser: true, coding: false }),
+    () => assertCanCreateAgentThrough(policy, countsOf({ browsers: 1 }), "org_1", { browser: true, coding: false }),
     limitOn("browser-enabled agents"),
   );
   await assert.rejects(
-    () => assertCanCreateAgent(policy, countsOf({ coders: 1 }), "org_1", { browser: false, coding: true }),
+    () => assertCanCreateAgentThrough(policy, countsOf({ coders: 1 }), "org_1", { browser: false, coding: true }),
     limitOn("coding agents"),
   );
   // A full browser cap does not stop an agent without a browser.
-  await assertCanCreateAgent(policy, countsOf({ browsers: 1 }), "org_1", { browser: false, coding: false });
+  await assertCanCreateAgentThrough(policy, countsOf({ browsers: 1 }), "org_1", { browser: false, coding: false });
 });
 
 test("enabling browser or coding on an agent takes one more of the cap", async () => {
   const policy = policyOf({ maxBrowserAgents: 1, maxCodingAgents: 1 });
-  await assertCanEnableBrowser(policy, countsOf({ browsers: 0 }), "org_1", false);
-  await assertCanEnableBrowser(policy, countsOf({ browsers: 1 }), "org_1", true);
+  await assertCanEnableBrowserThrough(policy, countsOf({ browsers: 0 }), "org_1", false);
+  await assertCanEnableBrowserThrough(policy, countsOf({ browsers: 1 }), "org_1", true);
   await assert.rejects(
-    () => assertCanEnableBrowser(policy, countsOf({ browsers: 1 }), "org_1", false),
+    () => assertCanEnableBrowserThrough(policy, countsOf({ browsers: 1 }), "org_1", false),
     limitOn("browser-enabled agents"),
   );
-  await assert.rejects(() => assertCanEnableCoding(policy, countsOf({ coders: 1 }), "org_1"), limitOn("coding agents"));
+  await assert.rejects(() => assertCanEnableCodingThrough(policy, countsOf({ coders: 1 }), "org_1"), limitOn("coding agents"));
 });
 
 test("a barred organisation is refused before any cap, except for guilds and coach runs", async () => {
@@ -94,19 +94,19 @@ test("a barred organisation is refused before any cap, except for guilds and coa
   const counts = countsOf({ guilds: 1 });
   const isBarred = (error: unknown) => error === barred;
   await assert.rejects(
-    () => assertCanCreateAgent(policy, counts, "org_1", { browser: false, coding: false }),
+    () => assertCanCreateAgentThrough(policy, counts, "org_1", { browser: false, coding: false }),
     isBarred,
   );
-  await assert.rejects(() => assertCanEnableBrowser(policy, counts, "org_1", false), isBarred);
-  await assert.rejects(() => assertCanEnableCoding(policy, counts, "org_1"), isBarred);
-  await assertCanCreateGuild(policy, counts, "org_1");
-  await claimCoachRun(policy, { claimMonthlyStudioBuilderRun: async () => 1 }, "org_1");
+  await assert.rejects(() => assertCanEnableBrowserThrough(policy, counts, "org_1", false), isBarred);
+  await assert.rejects(() => assertCanEnableCodingThrough(policy, counts, "org_1"), isBarred);
+  await assertCanCreateGuildThrough(policy, counts, "org_1");
+  await claimCoachRunThrough(policy, { claimMonthlyStudioBuilderRun: async () => 1 }, "org_1");
 });
 
 test("the guild cap counts live guilds", async () => {
   const policy = policyOf({ maxGuilds: 2 });
-  await assertCanCreateGuild(policy, countsOf({ guilds: 1 }), "org_1");
-  await assert.rejects(() => assertCanCreateGuild(policy, countsOf({ guilds: 2 }), "org_1"), limitOn("guilds"));
+  await assertCanCreateGuildThrough(policy, countsOf({ guilds: 1 }), "org_1");
+  await assert.rejects(() => assertCanCreateGuildThrough(policy, countsOf({ guilds: 2 }), "org_1"), limitOn("guilds"));
 });
 
 test("a coach run is counted, and refused once the month's cap is spent", async () => {
@@ -117,13 +117,13 @@ test("a coach run is counted, and refused once the month's cap is spent", async 
       return claimed;
     },
   });
-  await claimCoachRun(policyOf({ monthlyCoachRuns: 3 }), store(1), "org_1");
+  await claimCoachRunThrough(policyOf({ monthlyCoachRuns: 3 }), store(1), "org_1");
   await assert.rejects(
-    () => claimCoachRun(policyOf({ monthlyCoachRuns: 3 }), store(null), "org_1"),
+    () => claimCoachRunThrough(policyOf({ monthlyCoachRuns: 3 }), store(null), "org_1"),
     limitOn("studio and builder runs"),
   );
   // Uncapped: the run is still counted, and a store that claims nothing is not a refusal.
-  await claimCoachRun(policyOf({ monthlyCoachRuns: null }), store(null), "org_1");
+  await claimCoachRunThrough(policyOf({ monthlyCoachRuns: null }), store(null), "org_1");
   assert.deepEqual(seen, [3, 3, null]);
 });
 
@@ -141,16 +141,16 @@ test("the per-machine cap counts the agents on the machine plus those being plac
       return count;
     },
   });
-  assert.equal(await assertCanPlaceAgents(policyOf({}), countsOn(1_000), "org_1", "mach_1", 50), null);
+  assert.equal(await assertCanPlaceAgentsThrough(policyOf({}), countsOn(1_000), "org_1", { machineId: "mach_1", agents: 50 }), null);
   const policy = policyOf({ maxAgentsPerMachine: 4 });
-  assert.equal(await assertCanPlaceAgents(policy, countsOn(2), "org_1", "mach_1", 1), 4);
-  assert.equal(await assertCanPlaceAgents(policy, countsOn(2), "org_1", "mach_1", 2), 4);
+  assert.equal(await assertCanPlaceAgentsThrough(policy, countsOn(2), "org_1", { machineId: "mach_1", agents: 1 }), 4);
+  assert.equal(await assertCanPlaceAgentsThrough(policy, countsOn(2), "org_1", { machineId: "mach_1", agents: 2 }), 4);
   await assert.rejects(
-    () => assertCanPlaceAgents(policy, countsOn(3), "org_1", "mach_2", 2),
+    () => assertCanPlaceAgentsThrough(policy, countsOn(3), "org_1", { machineId: "mach_2", agents: 2 }),
     limitOn("agents per machine"),
   );
   await assert.rejects(
-    () => assertCanPlaceAgents(policy, countsOn(4), "org_1", "mach_2", 1),
+    () => assertCanPlaceAgentsThrough(policy, countsOn(4), "org_1", { machineId: "mach_2", agents: 1 }),
     limitOn("agents per machine"),
   );
   assert.deepEqual(seen, ["mach_1", "mach_1", "mach_2", "mach_2"]);

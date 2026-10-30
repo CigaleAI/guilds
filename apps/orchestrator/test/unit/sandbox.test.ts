@@ -8,7 +8,6 @@ import { repoRoot } from "../../src/lib/paths.js";
 import { agentDirectory, slotPorts } from "../../src/machines/index.js";
 import {
   RunSandboxes,
-  SandboxError,
   agentSandbox,
   applyRunScripts,
   connectionConfig,
@@ -18,14 +17,15 @@ import {
   machineMetadata,
   machineResource,
   machineSpec,
+  prepareBrowserWorkspace,
   prepareWorkspace,
   seatEnvironment,
   splitRunning,
-  wrapOpenSandbox,
   browserNeedsBlankReset,
   type AgentSeat,
   type MachineSpec,
 } from "../../src/sandbox/index.js";
+import { openSandboxSdk, SandboxError, wrapOpenSandbox } from "../../src/sandbox/sdk.js";
 
 const STANDARD: MachineSpec = { id: "mach_1", orgId: "org_1", box: "standard", cpu: 1, memoryMib: 2048 };
 const SEAT: AgentSeat = { agentId: "a_1", machineId: "mach_1", slot: 2, browserLanguage: "fr-FR" };
@@ -100,15 +100,20 @@ test("a container of another tier, size, or image is not the machine's", () => {
   assert.equal(machineMatches(null, STANDARD), false);
 });
 
-test("prepareWorkspace lays the agent's home out in its machine's directory", () => {
+test("prepareBrowserWorkspace lays the agent's home out in its machine's directory and keeps its profile", () => {
   const root = mkdtempSync(path.join(tmpdir(), "guilds-sandbox-"));
-  const home = prepareWorkspace(root, "mach_1", "a_1", { browser: true });
+  const home = prepareBrowserWorkspace(root, "mach_1", "a_1");
   assert.equal(home, path.join(root, "mach_1", "a_1"));
   assert.equal(home, agentDirectory(root, "mach_1", "a_1"));
   writeFileSync(path.join(home, ".browser", "cookies"), "keep");
-  assert.equal(prepareWorkspace(root, "mach_1", "a_1", { browser: true }), home);
+  assert.equal(prepareBrowserWorkspace(root, "mach_1", "a_1"), home);
   assert.equal(readFileSync(path.join(home, ".browser", "cookies"), "utf8"), "keep");
+});
+
+test("prepareWorkspace lays the agent's home out without a browser profile", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "guilds-sandbox-"));
   const plain = prepareWorkspace(root, "mach_1", "a_2");
+  assert.equal(plain, agentDirectory(root, "mach_1", "a_2"));
   assert.equal(existsSync(path.join(plain, "scripts")), true);
   assert.equal(existsSync(path.join(plain, ".browser")), false);
 });
@@ -163,8 +168,7 @@ test("waitForBrowser includes the start log", async () => {
     image: "agent-runtime:0.4",
     workspaceRoot: root,
     readySeconds: 1,
-    sleep: async () => undefined,
-  });
+  }, { sleep: async () => undefined });
   const fake = {
     id: "sbx_fake",
     commands: {
@@ -206,8 +210,7 @@ test("waitForBrowser navigates off guilds.run onto about:blank", async () => {
     image: "agent-runtime:0.4",
     workspaceRoot: root,
     readySeconds: 1,
-    sleep: async () => undefined,
-  });
+  }, { sleep: async () => undefined });
   const commands: string[] = [];
   const fake = {
     id: "sbx_fake",
@@ -327,6 +330,46 @@ test("wrapOpenSandbox maps JS SDK signatures onto the Python-used surface", asyn
   assert.equal(connectCall[1].sandboxId, "sbx_1");
 });
 
+test("wrapOpenSandbox refuses a manager or a sandbox the SDK returns in another shape", async () => {
+  const wrapped = wrapOpenSandbox({
+    SandboxManager: {
+      create() {
+        return null;
+      },
+    },
+    Sandbox: {
+      async create() {
+        return { id: 1, commands: {} };
+      },
+      async connect() {
+        return { id: "sbx_1", commands: { async run() { return {}; } }, kill: "now" };
+      },
+    },
+  });
+  const config = connectionConfig("http://opensandbox:8080", "guilds-dev");
+  await assert.rejects(async () => wrapped.SandboxManager.create(config), SandboxError);
+  await assert.rejects(() => wrapped.Sandbox.create("agent-runtime:0.4", {}), SandboxError);
+  await assert.rejects(() => wrapped.Sandbox.connect("sbx_1", {}), SandboxError);
+});
+
+test("openSandboxSdk refuses a module that does not export the SDK's calls", async () => {
+  const saved = process.env.OPENSANDBOX_SDK_MODULE;
+  process.env.OPENSANDBOX_SDK_MODULE = "node:path";
+  try {
+    await assert.rejects(openSandboxSdk, (error: unknown) => {
+      assert.ok(error instanceof SandboxError);
+      assert.match(error.message, /does not export SandboxManager\.create, Sandbox\.create and Sandbox\.connect/);
+      return true;
+    });
+  } finally {
+    if (saved === undefined) {
+      delete process.env.OPENSANDBOX_SDK_MODULE;
+    } else {
+      process.env.OPENSANDBOX_SDK_MODULE = saved;
+    }
+  }
+});
+
 test("runtime desktop is HD", () => {
   const text = readFileSync(path.join(repoRoot(import.meta.url), "runtime/agent-browser-start"), "utf8");
   assert.match(text, /GEOMETRY="\$\{BROWSER_GEOMETRY:-1280x720\}"/);
@@ -392,8 +435,7 @@ test("ensure runs one container per machine, at its size, with its directory at 
     apiKey: "test",
     image: "agent-runtime:0.4",
     workspaceRoot: root,
-    sdk: wrapped,
-  });
+  }, { sdk: wrapped });
   await sandboxes.start();
   const custom: MachineSpec = { id: "mach_2", orgId: "org_1", box: "custom", cpu: 3, memoryMib: 6144 };
   await sandboxes.ensure(STANDARD);
@@ -453,8 +495,7 @@ test("destroyAgentSandboxes kills the sandboxes that ran one agent, and no machi
     apiKey: "test",
     image: "agent-runtime:0.4",
     workspaceRoot: mkdtempSync(path.join(tmpdir(), "guilds-sandbox-")),
-    sdk: wrapped,
-  });
+  }, { sdk: wrapped });
   await sandboxes.start();
   assert.equal(await sandboxes.destroyAgentSandboxes(), 1);
   assert.deepEqual(killed, ["sbx_agent"]);
@@ -469,8 +510,7 @@ test("each agent's browser starts and stops on its own slot", async () => {
     image: "agent-runtime:0.4",
     workspaceRoot: mkdtempSync(path.join(tmpdir(), "guilds-sandbox-")),
     readySeconds: 1,
-    sleep: async () => undefined,
-  });
+  }, { sleep: async () => undefined });
   const fake = {
     id: "sbx_fake",
     commands: {
@@ -482,7 +522,7 @@ test("each agent's browser starts and stops on its own slot", async () => {
   };
   await sandboxes.startBrowser(fake, SEAT);
   await sandboxes.stopBrowser(fake, SEAT);
-  await sandboxes.stopAgent(fake, SEAT, { purge: true });
+  await sandboxes.purgeAgent(fake, SEAT);
   const ports = slotPorts(2);
   assert.equal(
     commands[0],
@@ -512,7 +552,7 @@ test("stopping an agent whose processes outlive the stop fails", async () => {
       },
     },
   };
-  await assert.rejects(() => sandboxes.stopAgent(stuck, SEAT, { purge: true }), SandboxError);
+  await assert.rejects(() => sandboxes.purgeAgent(stuck, SEAT), SandboxError);
   await assert.rejects(() => sandboxes.stopBrowser(stuck, SEAT), SandboxError);
 });
 

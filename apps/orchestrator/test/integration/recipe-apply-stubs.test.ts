@@ -1,17 +1,17 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { artifactStore } from "../../src/artifacts/index.js";
 import { buildApp } from "../../src/app.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import { connect } from "../../src/seed/connect.js";
 import { newId } from "../../src/lib/ids.js";
-import { CALL_TOOL_TIMEOUT_MS, mcpDatabase, McpPool } from "../../src/mcp/index.js";
+import { CALL_TOOL_TIMEOUT_MS } from "../../src/mcp/session.js";
+import { mcpPool } from "../../src/mcp/pool.js";
 import { proxyFetch } from "../../src/net/http.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { recipeApply } from "../../src/recipes/apply.js";
 import { operatorAuthor } from "../../src/recipes/schema.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { connectModelProvider } from "../helpers/models.js";
 import { templatesRoot } from "../helpers/fixtures.js";
@@ -23,13 +23,14 @@ import {
 } from "../helpers/postgres.js";
 import { fixtureDeskRecipe, fixtureHuskDeskRecipe, inboxQueueColumns } from "../helpers/recipe-docs.js";
 import { insertConnector } from "../../src/db/connectors.js";
-import { loadConnector } from "../../src/connectors/load.js";
+import { loadConnector } from "../../src/connectors/servers.js";
 import { getAgentTask, listAgentTaskRevisions, listAgents } from "../../src/db/agents.js";
 import { connectMcp } from "../../src/db/mcp.js";
 import { listSchedules } from "../../src/db/schedules.js";
 import { listBindingsCovering } from "../../src/db/bindings.js";
 import { getByDisplayPath } from "../../src/artifacts/notes.js";
-import { operatorContext } from "../../src/artifacts/store.js";
+import { artifactStore } from "../../src/artifacts/store.js";
+import { operatorActor } from "../../src/artifacts/actors.js";
 
 const AUTH = {
   "X-Guilds-User": "user_operator",
@@ -63,10 +64,10 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = artifactStore(database.pool, templatesRoot());
-  const scripts = new Scripts(scriptDatabase(db));
-  const schedules = new Schedules(scheduleDatabase(db));
+  const scripts = agentScripts(db);
+  const schedules = agentSchedules(db);
   const apply = recipeApply({ db, artifacts, notes, scripts, schedules, registry: null });
-  const mcp = new McpPool();
+  const mcp = mcpPool(db);
   // The stub servers listen on loopback, which the pool refuses by default.
   mcp.endpointFetch = proxyFetch("", CALL_TOOL_TIMEOUT_MS);
   const app = await buildApp(database, {
@@ -252,6 +253,14 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
 
     const disconnectedId = await importReady(fixtureDeskRecipe());
     const disconnectedApply = await applyRecipe(disconnectedId, "fixture-husk-unconnected");
+    const twice = await app.inject({
+      method: "POST",
+      url: `/api/recipes/${disconnectedId}/apply`,
+      headers: { ...AUTH, "content-type": "application/json" },
+      payload: { guild_name: "fixture-husk-twice" },
+    });
+    assert.equal(twice.statusCode, 409, twice.body);
+    assert.match(String(twice.json().detail), /^agent names already exist: /);
     const verifyMail = await app.inject({
       method: "POST",
       url: `/api/applies/${disconnectedApply.id}/steps/${encodeURIComponent("conn:mail")}/verify`,
@@ -282,7 +291,7 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
         },
         now,
       );
-      const listed = await mcp.syncTools(mcpDatabase(db), connection, server, { force: true });
+      const listed = await mcp.syncTools(connection, server, { force: true });
       assert.deepEqual(
         listed.map((tool) => tool.namespaced_name),
         [`${server.slug}_ping`],
@@ -503,7 +512,10 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
     assert.ok(mixedWriterTask?.content_text.includes(`Then note_get ${rulesPath}.`));
     const mixedWriterSchedules = await listSchedules(db, String(mixedWriter.id));
     assert.ok(mixedWriterSchedules.some((row) => String(row.instruction).includes(`Read ${mapPath} first.`)));
-    const noteReader = operatorContext("org_home", "user_operator", "operator", {
+    const noteReader = operatorActor({
+      orgId: "org_home",
+      actorId: "user_operator",
+      actorName: "operator",
       guildId: mixedApply.guild_id,
       agentId: String(mixedWriter.id),
     });

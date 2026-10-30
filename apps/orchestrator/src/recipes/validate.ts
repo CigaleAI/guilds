@@ -1,6 +1,12 @@
-import { HARNESSES, EFFORTS } from "../db/schema/index.js";
+import {
+  HARNESSES,
+  EFFORTS,
+  type RecipeFinding,
+  type RecipeDocument,
+  type RecipeRole,
+} from "../db/schema/index.js";
 import { parseModelId, providerLabel } from "../llm/providers.js";
-import { CONFIG_KEYS, secretAliasesOf } from "../agents/validation.js";
+import { CONFIG_KEYS, isValidSecretAliases } from "../agents/config.js";
 import { credentialFix, HARNESS_INFO, harnessModelOf, isHarness, isHarnessOff } from "../coding/harnesses.js";
 import { harnessEffortsFor, isEffort } from "../coding/harness-models.js";
 import { validateTiming } from "../schedules/timing.js";
@@ -10,9 +16,7 @@ import { collectTaskEmbeds } from "../artifacts/embeds.js";
 import { isDisplayPath } from "../artifacts/paths.js";
 import { operatorAccessCuts } from "./access-edits.js";
 import { collectRecipeNotePaths, recipeNotePath } from "./rewrite.js";
-import type { RecipeFinding } from "../db/schema/index.js";
 import { browserRoles, finding, type RecipeRule, type ValidationContext } from "./findings.js";
-import type { RecipeDocument, RecipeRole } from "./schema.js";
 import { validateDesign } from "./validate-design.js";
 
 /** A check of one role of the recipe. */
@@ -90,12 +94,7 @@ function harnessEffortFinding(role: RecipeRole): RecipeFinding | null {
 /** Secret aliases apply cannot use: not a map of variable names to secret names. */
 function secretAliasesFinding(role: RecipeRole): RecipeFinding | null {
   const raw = role.config.secret_aliases;
-  if (raw === undefined || raw === null) {
-    return null;
-  }
-  const kept = Object.keys(secretAliasesOf(role.config)).length;
-  const given = typeof raw === "object" && !Array.isArray(raw) ? Object.keys(raw).length : -1;
-  if (kept === given) {
+  if (raw === undefined || raw === null || isValidSecretAliases(raw)) {
     return null;
   }
   return finding(

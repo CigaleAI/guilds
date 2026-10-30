@@ -13,6 +13,7 @@ import {
   rowLimit,
   tsSec,
 } from "../format.js";
+import type { ApiGet } from "../types.js";
 import {
   ChartResponse,
   CoinResponse,
@@ -218,8 +219,8 @@ function chartSeries(series: string): Set<string> {
   return wanted.size ? wanted : new Set(["price"]);
 }
 
-export function formatChart(payload: ChartResponse, options: { title: string; series?: string }): string {
-  const wanted = chartSeries(options.series ?? "price");
+export function formatChart(payload: ChartResponse, title: string, series = "price"): string {
+  const wanted = chartSeries(series);
   const price = pairs(payload.prices);
   const mcap = pairs(payload.market_caps);
   const volume = pairs(payload.total_volumes);
@@ -232,9 +233,9 @@ export function formatChart(payload: ChartResponse, options: { title: string; se
   if (wanted.has("vol")) columns.push(["v", values(volume)]);
   const width = Math.min(...columns.map((column) => column[1].length));
   if (width === 0) {
-    return `${options.title} n=0\nno results`;
+    return `${title} n=0\nno results`;
   }
-  const header = `${options.title} n=${width}`;
+  const header = `${title} n=${width}`;
   const labels = columns.map(([name]) => name).join("  ");
   const rows = Array.from({ length: width }, (_, index) => columns.map((column) => column[1][index]).join("  "));
   return [header, labels, ...rows].join("\n");
@@ -325,7 +326,7 @@ function unexpected(problem: string): CoinGeckoError {
 
 /** The response at `path` with `params`, as `schema` describes it. */
 async function getJson<T extends TSchema>(
-  request: { path: string; params: Record<string, string>; schema: T },
+  request: ApiGet<T>,
   apiKey: string,
   options: CoinGeckoOptions = {},
 ): Promise<Static<T>> {
@@ -350,25 +351,22 @@ async function getJson<T extends TSchema>(
   return decode(request.schema, payload, unexpected);
 }
 
-function idOrContract(
-  arguments_: Record<string, unknown>,
-  options: { required?: boolean; idKey?: string } = {},
-): [string, string, string] {
-  const required = options.required ?? true;
-  const idKey = options.idKey ?? "id";
-  const coinId = argStr(arguments_, idKey);
-  const platform = argStr(arguments_, "platform");
-  const address = argStr(arguments_, "address");
+/** The coin the arguments name, as `[id, platform, address]`: by `id`, else by `platform` and `address`, each empty when not given. */
+function coinRef(arguments_: Record<string, unknown>): [string, string, string] {
+  const coinId = argStr(arguments_, "id");
   if (coinId) {
     return [coinId, "", ""];
   }
-  if (platform && address) {
-    return ["", platform, address];
+  return ["", argStr(arguments_, "platform"), argStr(arguments_, "address")];
+}
+
+/** The coin the arguments name, as `coinRef` reads it; throws when they name none. */
+function requiredCoinRef(arguments_: Record<string, unknown>): [string, string, string] {
+  const [coinId, platform, address] = coinRef(arguments_);
+  if (!coinId && !(platform && address)) {
+    throw new CoinGeckoError("id, or platform and address, is required");
   }
-  if (required) {
-    throw new CoinGeckoError(`${idKey}, or platform and address, is required`);
-  }
-  return ["", platform, address];
+  return [coinId, platform, address];
 }
 
 const PING = Type.Unknown();
@@ -389,7 +387,7 @@ export async function searchTool(arguments_: Record<string, unknown>, options: T
 }
 
 export async function coinTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
-  const [coinId, platform, address] = idOrContract(arguments_);
+  const [coinId, platform, address] = requiredCoinRef(arguments_);
   const params = {
     localization: "false",
     tickers: "false",
@@ -448,12 +446,18 @@ type ChartRequest = {
   series: string;
 };
 
-function chartRequest(arguments_: Record<string, unknown>): ChartRequest {
-  const [coinId, platform, address] = idOrContract(arguments_, { required: false });
+/** The chart the arguments ask for: `price` when they name none; throws on any other kind. */
+function chartKind(arguments_: Record<string, unknown>): ChartRequest["kind"] {
   const kind = argStr(arguments_, "kind", "price") || "price";
   if (kind !== "price" && kind !== "ohlc") {
     throw new CoinGeckoError("kind must be price or ohlc");
   }
+  return kind;
+}
+
+function chartRequest(arguments_: Record<string, unknown>): ChartRequest {
+  const [coinId, platform, address] = coinRef(arguments_);
+  const kind = chartKind(arguments_);
   if (kind === "ohlc" && !coinId) {
     throw new CoinGeckoError("ohlc requires coin id");
   }
@@ -481,7 +485,7 @@ export async function chartTool(arguments_: Record<string, unknown>, options: To
   const path = coinId ? `/coins/${coinId}/market_chart` : `/coins/${platform}/contract/${address}/market_chart`;
   const title = coinId ? `${coinId} ${vs} ${days}d` : `${platform}:${address} ${vs} ${days}d`;
   const payload = await getJson({ path, params, schema: ChartResponse }, options.apiKey, options);
-  return formatChart(payload, { title, series });
+  return formatChart(payload, title, series);
 }
 
 export async function trendingTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
@@ -566,10 +570,7 @@ export function formatPrices(ids: string[], prices: Record<string, CoinPrice>): 
   return rows.length ? rows.join("\n") : "no results";
 }
 
-export async function pricesTool(
-  arguments_: Record<string, unknown>,
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-): Promise<string> {
+export async function pricesTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
   const ids = [
     ...new Set(
       argStr(arguments_, "ids")
@@ -587,13 +588,7 @@ export async function pricesTool(
   return formatPrices(ids, await simplePrices(ids, options));
 }
 
-const HANDLERS: Record<
-  string,
-  (
-    arguments_: Record<string, unknown>,
-    options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-  ) => Promise<string>
-> = {
+const HANDLERS: Record<string, (arguments_: Record<string, unknown>, options: ToolOptions) => Promise<string>> = {
   search: searchTool,
   coin: coinTool,
   prices: pricesTool,
@@ -607,7 +602,7 @@ const HANDLERS: Record<
 export async function callTool(
   name: string,
   arguments_: Record<string, unknown>,
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
+  options: ToolOptions,
 ): Promise<string> {
   const handler = HANDLERS[name];
   if (!handler) {

@@ -9,17 +9,11 @@ import {
   searchConnectedWorkspace,
 } from "../../src/builder/connected.js";
 import { builderAskConnection, builderAskOrgConnection, builderAskQuestion, builderSearchConnected } from "../../src/builder/tools.js";
+import { MemoryMcpDatabase } from "../helpers/mcp-database.js";
+import { connectionRow, serverRow } from "../helpers/servers.js";
 
 function notionServer() {
-  return {
-    id: "mcp_notion",
-    slug: "notion",
-    display_name: "Notion",
-    publication_state: "published",
-    auth: "oauth",
-    config: {},
-    setup_hint: "Connect Notion",
-  };
+  return serverRow("notion", { id: "mcp_notion", display_name: "Notion", auth: "oauth", config: {}, setup_hint: "Connect Notion" });
 }
 
 function repoStub(options: {
@@ -42,10 +36,18 @@ function repoStub(options: {
     async listMcpTools() {
       return options.tools ?? [{ remote_name: "search" }];
     },
-    async listMcpServers() {
+    async listServers() {
       return options.servers ?? (server ? [server] : []);
     },
   };
+}
+
+/** The pool's database holding the organisation's connected Notion login `conn_1`. */
+function notionLogin(): MemoryMcpDatabase {
+  const database = new MemoryMcpDatabase();
+  database.connections = [connectionRow({ id: "conn_1", mcp_server_id: "mcp_notion" })];
+  database.servers = [serverRow("notion", { id: "mcp_notion" })];
+  return database;
 }
 
 test("parseWorkspaceHits prefers Notion databases and unwraps MCP text", () => {
@@ -87,28 +89,31 @@ test("builder_search_connected asks for an org widget when Notion is missing", a
 });
 
 test("builder_search_connected returns databases from the org workspace", async () => {
-  const result = await searchConnectedWorkspace({
-    db: repoStub({
-      connections: [
-        {
-          id: "conn_1",
-          mcp_server_id: "mcp_notion",
-          owner_scope: "org",
-          status: "connected",
+  const result = await searchConnectedWorkspace(
+    {
+      db: repoStub({
+        connections: [
+          {
+            id: "conn_1",
+            mcp_server_id: "mcp_notion",
+            owner_scope: "org",
+            status: "connected",
+          },
+        ],
+      }) as never,
+      mcp: {
+        database: notionLogin(),
+        async call() {
+          return JSON.stringify({
+            results: [{ id: "db1", title: "Projects", object: "database" }],
+          });
         },
-      ],
-    }) as never,
-    mcp: {
-      async call() {
-        return JSON.stringify({
-          results: [{ id: "db1", title: "Projects", object: "database" }],
-        });
       },
     },
-    orgId: "org_1",
-    serverRef: "notion",
-    query: "projects",
-  });
+    "org_1",
+    "notion",
+    "projects",
+  );
   assert.equal(result.connected, true);
   assert.equal(result.databases.length, 1);
   assert.equal(result.databases[0]?.title, "Projects");

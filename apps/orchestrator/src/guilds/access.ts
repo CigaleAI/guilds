@@ -2,7 +2,7 @@ import { getGuild, type GuildRow } from "../db/guilds.js";
 import { getMembership } from "../db/orgs.js";
 import type { Queryable } from "../db/pg.js";
 import { GuildError } from "./errors.js";
-import { canSeeGuild, guildRole } from "./validation.js";
+import { canSeeGuild, guildRole } from "./operators.js";
 
 /** A guild the user sees: one of their organisation's, and private only to its operators. Any other is a 404. */
 export async function requireVisibleGuild(

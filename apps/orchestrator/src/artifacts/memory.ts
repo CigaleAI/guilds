@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   getMemoryRow as loadMemoryRow,
   insertMemoryRevision,
@@ -8,14 +9,16 @@ import {
   type ArtifactRow,
   type HashedArtifactRow,
 } from "../db/artifacts.js";
-import { formatColumnTimestamp } from "../db/codecs.js";
+import { compareColumnTimestamps, formatColumnTimestamp } from "../db/codecs.js";
 import { recordFileChange } from "../db/file-changes.js";
 import { type Queryable, stamp, withTransaction } from "../db/pg.js";
-import { EMPTY_MEMORY } from "../memory/index.js";
 import { ArtifactError } from "./errors.js";
-import { HISTORY_ARCHIVE_SEGMENT, MEMORY_KEY, revisionDisplayPath } from "./paths.js";
+import { displayPathFor, HISTORY_ARCHIVE_SEGMENT, MEMORY_KEY, revisionDisplayPath } from "./paths.js";
 import { assertBytes, hashArtifactContent, reachesOwner, type ArtifactStore, rowDisplayPath } from "./store.js";
 import { MEMORY_REVISIONS_MAX, type ArtifactActor } from "./types.js";
+
+/** The text an agent's Memory holds before anything writes it. */
+export const EMPTY_MEMORY = "";
 
 /** A previous Memory version as the operator reads it, with the file name the archive gives it. */
 export type MemoryRevisionView = {
@@ -30,15 +33,15 @@ export type MemoryRevisionView = {
 /** A Memory write: the new text, why it changed, and the version it replaces when the writer read one. */
 export type MemoryWrite = { content: string; detail: string; expectedVersion?: number };
 
+/** A Memory as written: its display path and its row. */
+export type WrittenMemory = { href: string; row: ArtifactRow };
+
 /** Where an agent's Memory sits: its organisation, its guild, and the agent. */
-type MemoryOwner = { orgId: string; guildId: string; agentId: string };
+export type MemoryOwner = { orgId: string; guildId: string; agentId: string };
 
 /** The rows a new agent starts with: its empty Memory. */
-export async function ensureAgentRows(
-  store: ArtifactStore,
-  args: MemoryOwner & { actor: ArtifactActor },
-): Promise<void> {
-  await createMemory(store, args.actor, args);
+export async function ensureAgentRows(store: ArtifactStore, actor: ArtifactActor, owner: MemoryOwner): Promise<void> {
+  await createMemory(store, actor, owner);
 }
 
 /** Creates an agent's empty Memory, logging its creation against `actor`; a Memory it already has stays. */
@@ -71,8 +74,8 @@ async function createMemory(store: ArtifactStore, actor: ArtifactActor, owner: M
   });
 }
 
-export async function readStoredMemory(store: ArtifactStore, actor: ArtifactActor, agentId: string): Promise<string> {
-  const row = await loadMemoryRow(store.db, actor.orgId, agentId);
+/** The Memory text a prompt reads from the agent's Memory row: empty when it has none. */
+export function storedMemoryText(row: HashedArtifactRow | null): string {
   return row?.content_text || EMPTY_MEMORY;
 }
 
@@ -86,16 +89,30 @@ export async function getMemoryRow(
   return loadMemoryRow(client ?? store.db, actor.orgId, agentId);
 }
 
+/** An agent's Memory as an actor reads it: the live version and its text. */
+export type MemoryVersion = { version: number; content: string };
+
+/** The agent's Memory as `actor` reads it in its organisation; version 0 and the empty text when the agent has no Memory row. */
+export async function readMemoryVersion(
+  store: ArtifactStore,
+  actor: ArtifactActor,
+  agentId: string,
+): Promise<MemoryVersion> {
+  const row = await getMemoryRow(store, actor, agentId);
+  return { version: row?.version ?? 0, content: storedMemoryText(row) };
+}
+
 /**
- * Replaces the agent's Memory with `content`, archiving the text it replaces with `detail`. An
- * agent writes its own Memory; the operator writes any it reaches.
+ * Replaces the agent's Memory with `content`, archiving the text it replaces with `detail`, and
+ * returns its display path with its row. An agent writes its own Memory; the operator writes any
+ * it reaches.
  */
 export async function writeMemory(
   store: ArtifactStore,
   actor: ArtifactActor,
   agentId: string,
   write: MemoryWrite,
-): Promise<ArtifactRow> {
+): Promise<WrittenMemory> {
   if (!actor.operator && actor.agentId !== agentId) {
     throw new ArtifactError("memory is not writable", 422);
   }
@@ -116,14 +133,15 @@ export async function writeMemory(
       { id: live.id, content_text: write.content, search_text: MEMORY_KEY, content_hash: hash, written_at: writtenAt },
       actor,
     );
+    const href = rowDisplayPath(row);
     await recordFileChange(client, actor, {
       orgId: row.org_id,
       artifactId: row.id,
-      displayPath: rowDisplayPath(row),
+      displayPath: href,
       operation: "update",
       version: row.version,
     });
-    return row;
+    return { href, row };
   });
 }
 
@@ -144,11 +162,14 @@ async function liveMemory(store: ArtifactStore, actor: ArtifactActor, agentId: s
   return created;
 }
 
+/** The Memory a write replaces: its live row, its agent, and why it changed. */
+type ReplacedMemory = { live: HashedArtifactRow; agentId: string; detail: string };
+
 /** Archives the Memory text `live` holds, keeping the newest revisions; returns the stamp it is archived at. */
 async function archiveMemory(
   client: Queryable,
   actor: ArtifactActor,
-  replaced: { live: HashedArtifactRow; agentId: string; detail: string },
+  replaced: ReplacedMemory,
   now: Date,
 ): Promise<string> {
   const { live, agentId, detail } = replaced;
@@ -197,7 +218,177 @@ function revisionActorType(value: string): MemoryRevisionView["replaced_by"]["ty
 /** The archive file name of a revision: its UTC stamp and who replaced it. */
 export function archiveStamp(replacedAt: string, source: string): string {
   const date = new Date(replacedAt);
-  const stampName = date.toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z").replace("T", "T");
+  const stampName = date.toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
   const token = source.trim().replaceAll("/", "-").replaceAll(":", "-") || "unknown";
   return `${stampName}-${token}.md`;
+}
+
+// A memory timeline is the ordered list of versions an agent's memory has
+// held. Revision rows archive the outgoing body and record who replaced it,
+// so revision k holds version k-1 and names the author and time of version
+// k. The live row is the newest version. The oldest archived version has no
+// recorded author.
+
+export type MemoryTimelineActor = {
+  type: "user" | "agent" | "run" | "unknown";
+  id: string | null;
+  name: string | null;
+  detail: string | null;
+};
+
+export type MemoryTimelineRevision = {
+  id: string;
+  content: string;
+  display_path: string;
+  replaced_at: string;
+  replaced_by: { type: "user" | "agent" | "run"; id: string; name: string; detail: string };
+};
+
+export type MemoryTimelineEntry = {
+  index: number;
+  revision_id: string | null;
+  archive_display_path: string | null;
+  written_at: string | null;
+  actor: MemoryTimelineActor;
+  run_id: string | null;
+  content: string;
+  content_hash: string;
+  previous_content: string | null;
+  stats: { added: number; removed: number };
+};
+
+const UNKNOWN_ACTOR: MemoryTimelineActor = { type: "unknown", id: null, name: null, detail: null };
+
+function hashText(text: string): string {
+  return createHash("sha256").update(text, "utf8").digest("hex");
+}
+
+function nonBlankMemoryLines(text: string): string[] {
+  return text
+    .replaceAll("\r\n", "\n")
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim() !== "");
+}
+
+function lineMultisetDelta(before: string, after: string): { added: number; removed: number } {
+  const counts = new Map<string, number>();
+  for (const line of nonBlankMemoryLines(before)) counts.set(line, (counts.get(line) ?? 0) - 1);
+  for (const line of nonBlankMemoryLines(after)) counts.set(line, (counts.get(line) ?? 0) + 1);
+  let added = 0;
+  let removed = 0;
+  for (const delta of counts.values()) {
+    if (delta > 0) added += delta;
+    else if (delta < 0) removed -= delta;
+  }
+  return { added, removed };
+}
+
+export function lineChangeStats(before: string, after: string): { added: number; removed: number } {
+  return lineMultisetDelta(before, after);
+}
+
+function chronologicalRevisions(revisions: MemoryTimelineRevision[]): MemoryTimelineRevision[] {
+  return [...revisions].sort((left, right) => {
+    const byTime = compareColumnTimestamps(left.replaced_at, right.replaced_at);
+    return byTime !== 0 ? byTime : left.id.localeCompare(right.id);
+  });
+}
+
+function actorWhoWroteVersion(writer: MemoryTimelineRevision | null): MemoryTimelineActor {
+  if (!writer) {
+    return UNKNOWN_ACTOR;
+  }
+  return {
+    type: writer.replaced_by.type,
+    id: writer.replaced_by.id,
+    name: writer.replaced_by.name,
+    detail: writer.replaced_by.detail,
+  };
+}
+
+function runIdOfActor(actor: MemoryTimelineActor): string | null {
+  return actor.type === "run" ? actor.id : null;
+}
+
+function changeStatsFromPrevious(previous: string | null, content: string): { added: number; removed: number } {
+  if (previous === null) {
+    return { added: 0, removed: 0 };
+  }
+  return lineChangeStats(previous, content);
+}
+
+/** One version a Memory has held: its text, and the revision that archives it; null for the live version. */
+type TimelineVersion = { content: string; revision: MemoryTimelineRevision | null };
+
+/** The timeline entry of the version at `index`, against the version before it and the revision that names its writer. */
+function timelineEntryAt(
+  index: number,
+  version: TimelineVersion,
+  previousVersion: TimelineVersion | null,
+  writer: MemoryTimelineRevision | null,
+): MemoryTimelineEntry {
+  const actor = actorWhoWroteVersion(writer);
+  const previous = previousVersion?.content ?? null;
+  return {
+    index,
+    revision_id: version.revision?.id ?? null,
+    archive_display_path: version.revision?.display_path ?? null,
+    written_at: writer?.replaced_at ?? null,
+    actor,
+    run_id: runIdOfActor(actor),
+    content: version.content,
+    content_hash: hashText(version.content),
+    previous_content: previous,
+    stats: changeStatsFromPrevious(previous, version.content),
+  };
+}
+
+/** What a Memory has held: its live text, and the revisions archived before it. */
+export type MemoryHistory = { live: { content: string }; revisions: MemoryTimelineRevision[] };
+
+export function buildMemoryTimeline(args: MemoryHistory): MemoryTimelineEntry[] {
+  const chronological = chronologicalRevisions(args.revisions);
+  const versions: TimelineVersion[] = [
+    ...chronological.map((revision) => ({ content: revision.content, revision })),
+    { content: args.live.content, revision: null },
+  ];
+  const entries = versions.map((version, index) =>
+    timelineEntryAt(
+      index,
+      version,
+      index > 0 ? versions[index - 1]! : null,
+      index > 0 ? chronological[index - 1]! : null,
+    ),
+  );
+  return entries.reverse();
+}
+
+// A compact account of what a version changed: removed lines prefixed with
+// "-", added lines with "+".
+export function memoryDiffText(before: string, after: string): string {
+  const prev = nonBlankMemoryLines(before);
+  const next = nonBlankMemoryLines(after);
+  const removed = prev.filter((line) => !next.includes(line));
+  const added = next.filter((line) => !prev.includes(line));
+  return [...removed.map((line) => `- ${line}`), ...added.map((line) => `+ ${line}`)].join("\n");
+}
+
+/** Every version an agent's Memory has held, newest first, with its display path and the live version and hash. */
+export type MemoryTimeline = {
+  displayPath: string;
+  /** The live Memory's version and the hash of its text; null when the agent has no Memory. */
+  live: { version: number; contentHash: string } | null;
+  entries: MemoryTimelineEntry[];
+};
+
+/** The agent's Memory as the actor reads its versions: the archived ones only reach an operator. */
+export async function memoryTimeline(store: ArtifactStore, actor: ArtifactActor, agentId: string): Promise<MemoryTimeline> {
+  const live = await getMemoryRow(store, actor, agentId);
+  const revisions = await listRevisions(store, actor, agentId);
+  return {
+    displayPath: displayPathFor({ orgId: actor.orgId, level: "agent", ownerId: agentId, kind: "memory", path: "", key: MEMORY_KEY }),
+    live: live ? { version: live.version, contentHash: live.content_hash } : null,
+    entries: buildMemoryTimeline({ live: { content: live?.content_text ?? "" }, revisions }),
+  };
 }

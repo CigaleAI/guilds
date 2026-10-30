@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { encryptPayload } from "../../src/credentials/crypto.js";
-import { McpDisconnectedError, McpError } from "../../src/mcp/index.js";
+import { McpDisconnectedError, McpError } from "../../src/mcp/errors.js";
 import {
   OPERATOR_TOOL_RESULT_MAX_BYTES,
   OperatorCallError,
@@ -9,6 +9,7 @@ import {
 } from "../../src/mcp/operator-call.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { serverRow, connectionRow } from "../helpers/servers.js";
+import { MemoryMcpDatabase, storedTool } from "../helpers/mcp-database.js";
 import type { McpConnectionRow } from "../../src/db/mcp.js";
 
 const masterKey = Buffer.from(HEX_MASTER_KEY, "hex");
@@ -41,11 +42,12 @@ function call(args: {
   tools?: Array<ReturnType<typeof listed>>;
   mcp?: (remoteName: string, arguments_: Record<string, unknown>) => Promise<string>;
 }) {
+  const database = new MemoryMcpDatabase();
+  database.tools = (args.tools ?? [listed()]).map((tool) => storedTool("conn_1", tool));
   return callOwnedConnectionTool({
-    db: { listMcpTools: async () => args.tools ?? [listed()] } as never,
     mcp: {
-      call: async (_db, _connection, _server, remoteName, arguments_) =>
-        (args.mcp ?? (async () => "ok"))(remoteName, arguments_),
+      database,
+      call: async (_connection, _server, call) => (args.mcp ?? (async () => "ok"))(call.tool, call.arguments),
     },
     connection: args.connection ?? connection(),
     server: serverRow("coingecko"),

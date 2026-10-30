@@ -26,7 +26,7 @@ export class AgentSecretError extends Error {
 }
 
 /** The db/ functions the secrets an agent creates are written through, on `db`. */
-export function agentSecretsDatabase(db: Queryable) {
+function agentSecretsDatabase(db: Queryable) {
   return {
     getSecretByName: bindQuery(db, getSecretByName),
     countSecretsCreatedByAgent: bindQuery(db, countSecretsCreatedByAgent),
@@ -36,6 +36,12 @@ export function agentSecretsDatabase(db: Queryable) {
 }
 
 export type AgentSecretsDatabase = ReturnType<typeof agentSecretsDatabase>;
+
+/** The agent a secret is stored for: its id and its organisation's. */
+export type SecretAgent = { id: string; orgId: string };
+
+/** A secret an agent stores: its name and description as the agent gave them, and its value. */
+export type AgentSecretInput = { name: unknown; description: unknown; value: string };
 
 /** What `secret_store` changed, for the caller to refresh environments with. */
 export type StoredSecret = {
@@ -83,13 +89,26 @@ export async function readSecretFile(workspaceDir: string, file: string): Promis
 }
 
 /**
- * Saves a value as a secret granted to the agent that produced it. A taken name is
+ * Saves a value as a secret granted to the agent that produced it, on `db`. A taken name is
  * rotated when this agent created that secret and is its only grant; otherwise refused.
  */
 export async function storeAgentSecret(
+  db: Queryable,
+  agent: SecretAgent,
+  input: AgentSecretInput,
+  now: Date = new Date(),
+): Promise<StoredSecret> {
+  return storeAgentSecretThrough(agentSecretsDatabase(db), agent, input, now);
+}
+
+/**
+ * Saves a value as a secret granted to the agent that produced it, through `db`, the
+ * dependencies object a unit test fakes.
+ */
+export async function storeAgentSecretThrough(
   db: AgentSecretsDatabase,
-  agent: { id: string; orgId: string },
-  input: { name: unknown; description: unknown; value: string },
+  agent: SecretAgent,
+  input: AgentSecretInput,
   now: Date = new Date(),
 ): Promise<StoredSecret> {
   let name: string;

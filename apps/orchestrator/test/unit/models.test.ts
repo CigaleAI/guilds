@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ModelCatalog } from "../../src/llm/catalog.js";
-import { coreModelCredentials, type ModelCredentialsProvider } from "../../src/llm/credentials.js";
+import { coreModelCredentialsThrough, type ModelCredentialsProvider } from "../../src/llm/credentials.js";
 import { ModelsError, ModelsService, type ModelsDatabase } from "../../src/llm/models.js";
 import { projectModelsDevFeed } from "../../src/llm/models-dev.js";
 import type { NewOrgModelProvider, OrgModelProviderRow } from "../../src/db/orgs.js";
@@ -74,7 +74,7 @@ const feed = projectModelsDevFeed(
 
 function service(
   probe: Record<string, string[] | number> = {},
-  credentialsOf: (repo: MemoryRepo) => ModelCredentialsProvider = (repo) => coreModelCredentials(repo, TEST_MASTER_KEY),
+  credentialsOf: (repo: MemoryRepo) => ModelCredentialsProvider = (repo) => coreModelCredentialsThrough(repo, TEST_MASTER_KEY),
 ) {
   const repo = new MemoryRepo();
   const requests: string[] = [];
@@ -200,7 +200,7 @@ test("the default is one of the chosen marketplace models, and clears when that 
 
 test("a provider the platform serves is marked so, offers its models, and is not the organisation's to remove", async () => {
   const { models, repo } = service({ "https://api.openai.com/v1/models": ["gpt-5"] }, (store) => {
-    const own = coreModelCredentials(store, TEST_MASTER_KEY);
+    const own = coreModelCredentialsThrough(store, TEST_MASTER_KEY);
     return {
       async modelCredentials(orgId, provider) {
         return (await own.modelCredentials(orgId, provider)) ?? (provider === "openai" ? { apiKey: "platform-key" } : null);

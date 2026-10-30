@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { EMPTY_MEMORY, renderMemorySection } from "../../src/memory/index.js";
+import { EMPTY_MEMORY } from "../../src/artifacts/memory.js";
+import { renderMemorySection } from "../../src/memory/index.js";
 import {
   PromptError,
   STATE_INTRO,

@@ -1,0 +1,56 @@
+name: Bug report
+description: Report something guilds.run does wrong
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        One bug per issue. What makes it ready is in [Issues](https://github.com/CigaleAI/guilds/blob/main/docs/CONTRIBUTING.md#issues). A security issue is reported privately instead ([SECURITY.md](https://github.com/CigaleAI/guilds/blob/main/SECURITY.md)).
+  - type: input
+    id: outcome
+    attributes:
+      label: Outcome
+      description: One sentence in the imperative. It is the pull request's title.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: The job you were doing and what the bug costs you.
+    validations:
+      required: true
+  - type: textarea
+    id: where
+    attributes:
+      label: Where
+      description: The doc page that describes the behaviour today, and the entry point (route, agent tool, Studio view, or domain directory).
+    validations:
+      required: true
+  - type: textarea
+    id: behaviour
+    attributes:
+      label: Behaviour
+      description: The steps, what happens, and what should happen.
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: The test that fails today and passes when done, as suite and assertion. For a view, the steps a person runs in the app and what they see.
+  - type: textarea
+    id: size
+    attributes:
+      label: Size
+      description: The one domain directory under src/ it touches, with its routes, tests, and docs page. Three commits or fewer, or split it.
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: What stays as it is.
+  - type: textarea
+    id: breaks
+    attributes:
+      label: Breaks
+      description: None, or the route, event, type, export, or storage format that changes.

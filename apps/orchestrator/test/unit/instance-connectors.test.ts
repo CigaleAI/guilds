@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { instanceCredentials, instanceKey } from "../../src/connectors/instance.js";
 import { loadManifest } from "../../src/connectors/manifest.js";
-import { connectorIntegration, ownInstanceKind } from "../../src/instance/connectors.js";
+import { connectorIntegration, ownInstanceKind } from "../../src/connectors/instance.js";
 import { CORE_INTEGRATIONS, connectorIntegrationId, integrationForConnector } from "../../src/instance/integrations.js";
 import { storeKeys } from "../helpers/env.js";
 import { endpointManifest } from "../helpers/registry.js";

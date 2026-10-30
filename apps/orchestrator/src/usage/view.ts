@@ -4,8 +4,7 @@ import { listGuilds, type GuildRow } from "../db/guilds.js";
 import type { Queryable } from "../db/pg.js";
 import { listOrgs, type OrgRow } from "../db/orgs.js";
 import { getUsage, listUsageCounters } from "../db/usage.js";
-import { maxWorkspaceMibOf } from "../agents/validation.js";
-import { canSeeGuild } from "../guilds/validation.js";
+import { canSeeGuild } from "../guilds/operators.js";
 import { usageCounterKey, usageFields, usageTree, type UsageSource } from "./index.js";
 
 /** A coach whose conversations spend tokens, by organisation. */
@@ -112,7 +111,7 @@ export async function usageForAgent(
     guild_id: agent.guild_id,
     guild_name: agent.guild_name,
     workspace_mib: mibOrNull(agent.workspace_mib),
-    max_workspace_mib: maxWorkspaceMibOf(agent.config),
+    max_workspace_mib: agent.config.max_workspace_mib,
     machine: {
       id: agent.machine_id,
       name: agent.machine_name,

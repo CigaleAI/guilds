@@ -1,9 +1,9 @@
-import type { ArtifactStore } from "../artifacts/index.js";
-import { listMcpServers } from "../connectors/servers.js";
+import { Type, type Static } from "@sinclair/typebox";
+import type { ArtifactStore } from "../artifacts/store.js";
+import { listServers } from "../connectors/servers.js";
 import { countOrgAgents, countOrgBrowserAgents, countOrgCodingAgents } from "../db/orgs.js";
 import type { Queryable } from "../db/pg.js";
-import { coreModelCredentials, modelProviderStore } from "../llm/credentials.js";
-import { modelsDatabase, ModelsService } from "../llm/models.js";
+import { modelsService, type ModelsService } from "../llm/models.js";
 import type { NotesStore } from "../notes/store.js";
 import { OPEN_POLICY, remaining, type OrgPolicy } from "../policy/index.js";
 import { registryClient, type RegistryClient } from "../registry/client.js";
@@ -11,8 +11,7 @@ import { pickEntry, type RegistryIndex } from "../registry/index.js";
 import type { Schedules } from "../schedules/service.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { ValidationContext } from "./findings.js";
-import type { NameDecision } from "../db/schema/index.js";
-import type { RecipeDocument } from "./schema.js";
+import type { RecipeDocument } from "../db/schema/index.js";
 
 // What applying a recipe needs, and what the operator chooses on its preview. The apply itself
 // is planned in plan.ts, created in skeleton.ts, walked through in checklist.ts, and closed in
@@ -52,41 +51,57 @@ export function recipeApply(deps: ApplyDeps): RecipeApply {
     schedules: deps.schedules,
     policy: deps.policy ?? OPEN_POLICY,
     registry: deps.registry === undefined ? registryClient() : deps.registry,
-    models:
-      deps.models ??
-      new ModelsService({ db: modelsDatabase(deps.db), credentials: coreModelCredentials(modelProviderStore(deps.db)) }),
+    models: deps.models ?? modelsService(deps.db),
   };
 }
 
-export type ConnectionDecision = {
-  server: string;
-  action: "reuse" | "create";
-  scope: "guild" | "agent";
-  role?: string;
-  connection_id?: string;
-};
+/** How a connector a role needs is met: a login reused, or one created at the guild or the agent. */
+const ConnectionDecisionSchema = Type.Object({
+  server: Type.String(),
+  action: Type.Union([Type.Literal("reuse"), Type.Literal("create")]),
+  scope: Type.Union([Type.Literal("guild"), Type.Literal("agent")]),
+  role: Type.Optional(Type.String()),
+  connection_id: Type.Optional(Type.String()),
+});
 
-export type SecretDecision = { name: string; action: "reuse" | "rename" | "skip"; dest_name?: string };
+export type ConnectionDecision = Static<typeof ConnectionDecisionSchema>;
+
+/** What becomes of a secret the recipe carries: reused, renamed, or skipped. */
+const SecretDecisionSchema = Type.Object({
+  name: Type.String(),
+  action: Type.Union([Type.Literal("reuse"), Type.Literal("rename"), Type.Literal("skip")]),
+  dest_name: Type.Optional(Type.String()),
+});
+
+export type SecretDecision = Static<typeof SecretDecisionSchema>;
 
 /** The model the operator picked for a role on the apply preview. */
-export type ModelDecision = { role: string; model: string };
+const ModelDecisionSchema = Type.Object({ role: Type.String(), model: Type.String() });
+
+export type ModelDecision = Static<typeof ModelDecisionSchema>;
 
 /** The harness the operator picked for a coding role on the apply preview. */
-export type HarnessDecision = { role: string; harness: string };
+const HarnessDecisionSchema = Type.Object({ role: Type.String(), harness: Type.String() });
 
-export type ApplyChoices = {
-  guild_name?: string;
-  guild_id?: string;
-  names?: NameDecision[];
-  models?: ModelDecision[];
+export type HarnessDecision = Static<typeof HarnessDecisionSchema>;
+
+/** What the operator decided on the apply preview; a choice left out takes the preview's default. */
+export const ApplyChoicesSchema = Type.Object({
+  guild_name: Type.Optional(Type.String()),
+  guild_id: Type.Optional(Type.String()),
+  /** The name of each role's agent. */
+  names: Type.Optional(Type.Array(Type.Object({ role: Type.String(), name: Type.String() }))),
+  models: Type.Optional(Type.Array(ModelDecisionSchema)),
   /** The harness of each coding role. */
-  harnesses?: HarnessDecision[];
-  connections?: ConnectionDecision[];
-  secrets?: SecretDecision[];
-  activate_keys?: string[];
+  harnesses: Type.Optional(Type.Array(HarnessDecisionSchema)),
+  connections: Type.Optional(Type.Array(ConnectionDecisionSchema)),
+  secrets: Type.Optional(Type.Array(SecretDecisionSchema)),
+  activate_keys: Type.Optional(Type.Array(Type.String())),
   /** The machine every role goes on; the organisation's only one when absent. */
-  machine_id?: string;
-};
+  machine_id: Type.Optional(Type.String()),
+});
+
+export type ApplyChoices = Static<typeof ApplyChoicesSchema>;
 
 type RegistryOffer = { version: string; verified: boolean };
 
@@ -131,7 +146,7 @@ export async function validationContext(
   const agents = await countOrgAgents(apply.db, orgId);
   const browsers = await countOrgBrowserAgents(apply.db, orgId);
   const coders = await countOrgCodingAgents(apply.db, orgId);
-  const servers = (await listMcpServers(apply.db, orgId)).filter((row) => row.enabled !== false).map((row) => row.slug);
+  const servers = (await listServers(apply.db, { owner: { visibleTo: orgId }, enabled: true })).map((row) => row.slug);
   return {
     publishedServers: new Set(servers),
     ...(recipe ? { registryConnectors: await registryOffers(apply, recipe, servers) } : {}),

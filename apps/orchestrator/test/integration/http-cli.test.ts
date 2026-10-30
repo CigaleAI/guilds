@@ -3,18 +3,17 @@ import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { decodeMasterKey } from "../../src/config/index.js";
 import { connect } from "../../src/seed/connect.js";
-import { generationDatabase, GenerationLoop, LOOP_TIMINGS } from "../../src/generation/index.js";
+import { generationLoop, LOOP_TIMINGS } from "../../src/generation/index.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
-import { McpPool } from "../../src/mcp/index.js";
-import { artifactStore } from "../../src/artifacts/index.js";
+import { mcpPool } from "../../src/mcp/pool.js";
+import { artifactStore } from "../../src/artifacts/store.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, testEnv } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { ExportSandboxes, openWs, startSandboxUpstream, wsRecv } from "../helpers/live.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
-import { generationArtifacts } from "../../src/generation/prepare.js";
 
 const AUTH = {
   "X-Guilds-User": "user_operator",
@@ -46,14 +45,14 @@ test(
     const upstream = await startSandboxUpstream({ subprotocol: "tty" });
     sandboxes.cliBase = upstream.base;
     const secret = `/t/${sandboxes.cliToken}`;
-    const generation = new GenerationLoop(
+    const generation = generationLoop(
+      db,
       {
-        db: generationDatabase(db),
         notes,
         workspaceRoot: env.WORKSPACE_ROOT ?? "",
         sandboxes,
-        mcp: new McpPool(),
-        artifacts: generationArtifacts(artifacts),
+        mcp: mcpPool(db),
+        artifacts,
       },
       { ...LOOP_TIMINGS, idleTimeoutMs: 5 * 60 * 1000 },
     );
@@ -61,10 +60,10 @@ test(
       db,
       notes,
       artifacts,
-      scripts: new Scripts(scriptDatabase(db)),
-      schedules: new Schedules(scheduleDatabase(db)),
+      scripts: agentScripts(db),
+      schedules: agentSchedules(db),
       masterKey: decodeMasterKey(HEX_MASTER_KEY),
-      mcp: new McpPool(),
+      mcp: mcpPool(db),
       generation,
     });
     try {

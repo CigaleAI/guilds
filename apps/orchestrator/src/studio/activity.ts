@@ -1,10 +1,10 @@
+import { Type, type Static } from "@sinclair/typebox";
 import type { ScheduleRow } from "../db/schedules.js";
-import { jsonObj } from "../db/json.js";
 import { iso } from "../db/views.js";
 import { rowDescription } from "../schedules/item.js";
 import { describeTiming, rowTiming } from "../schedules/timing.js";
 import { StudioUnprocessableError } from "./errors.js";
-import { listAgents } from "../db/agents.js";
+import { listAgents, type AgentSummaryRow } from "../db/agents.js";
 import {
   listGuildActivityRuns,
   listRunActivityStats,
@@ -14,13 +14,17 @@ import {
   listRunGroupPosts,
   listRunOpenings,
   type GuildActivityRunRow,
+  type RunActivityStatsRow,
   type RunActivityStepRow,
+  type RunFileChangeRow,
   type RunGroupDeliveryRow,
+  type RunGroupPostRow,
+  type RunOpeningRow,
 } from "../db/activity.js";
 import type { RunError, RunMetadata } from "../db/schema/index.js";
 import { listSchedulesForGuild } from "../db/schedules.js";
 import type { MessageMetadata } from "../db/schema/index.js";
-import { listGroupMessagesForActivity } from "../db/group-chat.js";
+import { listGroupMessagesForActivity, type ActivityGroupMessageRow } from "../db/group-chat.js";
 import type { Queryable } from "../db/pg.js";
 
 // The guild activity ledger: one row per wake (a run of any kind) with what
@@ -42,12 +46,10 @@ const TRIGGER_SCAN_MAX = 500;
 
 export type ActivityWindow = { since: Date; until: Date };
 
-export type ActivityAgent = {
-  id: string;
-  name: string;
-  avatar_color: string;
-  avatar_shape: string;
-};
+/** The window a guild's activity is read over, the time it counts as now, and which runs are still generating. */
+export type GuildActivityWindow = ActivityWindow & { now?: Date; generating?: (runId: string) => boolean };
+
+export type ActivityAgent = Pick<AgentSummaryRow, "id" | "name" | "avatar_color" | "avatar_shape">;
 
 // `label` is the timing in words; `instruction` is what each firing tells the agent.
 export type ActivityRoutine = { id: string; agent_id: string; description: string; label: string; instruction: string };
@@ -158,21 +160,29 @@ export type ActivityInput = {
   since: Date;
   until: Date;
   now: Date;
-  agents: Array<Record<string, unknown>>;
+  agents: ActivityAgent[];
   runs: GuildActivityRunRow[];
-  stats: Array<Record<string, unknown>>;
+  stats: RunActivityStatsRow[];
   deliveries: RunGroupDeliveryRow[];
-  posts: Array<Record<string, unknown>>;
-  changes: Array<Record<string, unknown>>;
+  posts: RunGroupPostRow[];
+  changes: RunFileChangeRow[];
   steps: RunActivityStepRow[];
-  openings: Array<Record<string, unknown>>;
-  messages: Array<Record<string, unknown>>;
+  openings: RunOpeningRow[];
+  messages: ActivityGroupMessageRow[];
   schedules: ScheduleRow[];
   generating: (runId: string) => boolean;
 };
 
+/** The window a Studio query asks for: how many hours back, and until when, both as query text. */
+export const ActivityWindowQuerySchema = Type.Object({
+  hours: Type.Optional(Type.String()),
+  until: Type.Optional(Type.String()),
+});
+
+export type ActivityWindowQuery = Static<typeof ActivityWindowQuerySchema>;
+
 // `hours` back from `until` (default now, never later than now).
-export function activityWindow(query: { hours?: unknown; until?: unknown }, now: Date): ActivityWindow {
+export function activityWindow(query: ActivityWindowQuery, now: Date): ActivityWindow {
   const rawHours = query.hours === undefined || query.hours === "" ? ACTIVITY_DEFAULT_HOURS : Number(query.hours);
   if (!Number.isFinite(rawHours) || rawHours <= 0) {
     throw new StudioUnprocessableError("hours must be a positive number");
@@ -180,7 +190,7 @@ export function activityWindow(query: { hours?: unknown; until?: unknown }, now:
   const hours = Math.min(rawHours, ACTIVITY_MAX_HOURS);
   let until = now;
   if (query.until !== undefined && query.until !== "") {
-    const parsed = new Date(String(query.until));
+    const parsed = new Date(query.until);
     if (Number.isNaN(parsed.getTime())) {
       throw new StudioUnprocessableError("until must be an ISO timestamp");
     }
@@ -189,33 +199,24 @@ export function activityWindow(query: { hours?: unknown; until?: unknown }, now:
   return { since: new Date(until.getTime() - hours * 3_600_000), until };
 }
 
-function ms(value: unknown): number | null {
-  if (value === null || value === undefined) {
-    return null;
-  }
-  const time = value instanceof Date ? value.getTime() : new Date(String(value)).getTime();
+/** The `hours` up to now, as a query names them; the default window when it names none. */
+export function hoursWindow(hours: string | undefined, now: Date): ActivityWindow {
+  return activityWindow(hours === undefined ? {} : { hours }, now);
+}
+
+/** A stored timestamp as milliseconds, or null when it is not a time. */
+function ms(value: string): number | null {
+  const time = new Date(value).getTime();
   return Number.isNaN(time) ? null : time;
 }
 
-function num(value: unknown): number | null {
+/** A numeric column the driver returns as text, as a number, or null when it holds none. */
+function num(value: string | null | undefined): number | null {
   if (value === null || value === undefined || value === "") {
     return null;
   }
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
-}
-
-function list(value: unknown): unknown[] {
-  const parsed = jsonObj(value);
-  return Array.isArray(parsed) ? parsed : [];
-}
-
-function names(value: unknown): string[] {
-  return list(value).map((item) => String(item));
-}
-
-function text(value: unknown): string | null {
-  return typeof value === "string" && value ? value : null;
 }
 
 function preview(content: string, chars: number): string {
@@ -240,8 +241,8 @@ export function classifyWrite(displayPath: string, toolName: string | null): { k
 }
 
 // `group_post` answers "posted id=<id> seq=<seq>".
-export function groupPostSeq(content: unknown): number | null {
-  const match = typeof content === "string" ? /\bseq=(\d+)/.exec(content) : null;
+export function groupPostSeq(content: string | null): number | null {
+  const match = content === null ? null : /\bseq=(\d+)/.exec(content);
   return match ? Number(match[1]) : null;
 }
 
@@ -257,8 +258,8 @@ function routingOf(runMetadata: RunMetadata): ActivityRouting | null {
   };
 }
 
-function agentTags(message: Record<string, unknown> | undefined): string[] {
-  return message ? names(message.tagged_names).filter((name) => name !== "user") : [];
+function agentTags(message: ActivityGroupMessageRow | undefined): string[] {
+  return message ? message.tagged_names.filter((name) => name !== "user") : [];
 }
 
 function isJevPick(routing: ActivityRouting | null, agentName: string): boolean {
@@ -280,7 +281,7 @@ type WakeReason = { reason: ActivityTriggerReason; agentName: string };
 // The reasons whose waking row a tag scan finds; the others woke on the snapshot's last row.
 const SCANNED_REASONS = new Set<ActivityTriggerReason>(["tag", "rules"]);
 
-function wokeOn(message: Record<string, unknown> | undefined, why: WakeReason): boolean {
+function wokeOn(message: ActivityGroupMessageRow | undefined, why: WakeReason): boolean {
   if (!message) {
     return false;
   }
@@ -299,7 +300,7 @@ function scanFloor(run: GuildActivityRunRow, throughSeq: number): number {
 function inferWakeSeq(
   run: GuildActivityRunRow,
   why: WakeReason,
-  messagesBySeq: Map<number, Record<string, unknown>>,
+  messagesBySeq: Map<number, ActivityGroupMessageRow>,
 ): number | null {
   const throughSeq = run.group_chat_through_seq;
   if (throughSeq === null || !SCANNED_REASONS.has(why.reason)) {
@@ -315,7 +316,7 @@ function messageTrigger(
   run: GuildActivityRunRow,
   agentName: string,
   delivery: MessageMetadata,
-  messagesBySeq: Map<number, Record<string, unknown>>,
+  messagesBySeq: Map<number, ActivityGroupMessageRow>,
 ): ActivityTrigger {
   const routing = routingOf(run.metadata);
   const reason = triggerReason(delivery.you_were_tagged === true, routing, agentName);
@@ -381,16 +382,10 @@ function stepsByRun(rows: RunActivityStepRow[]): Map<string, WakeSteps> {
 export function projectActivity(input: ActivityInput): ActivityView {
   const sinceMs = input.since.getTime();
   const nowIso = input.now.toISOString();
-  const agentsById = new Map(input.agents.map((agent) => [String(agent.id), agent]));
-  const statsByRun = new Map(input.stats.map((row) => [String(row.run_id), row]));
+  const agentsById = new Map(input.agents.map((agent) => [agent.id, agent]));
+  const statsByRun = new Map(input.stats.map((row) => [row.run_id, row]));
   const deliveryByRun = new Map(input.deliveries.map((row) => [row.run_id, row.metadata]));
-  const messagesBySeq = new Map<number, Record<string, unknown>>();
-  for (const message of input.messages) {
-    const seq = num(message.seq);
-    if (seq !== null) {
-      messagesBySeq.set(seq, message);
-    }
-  }
+  const messagesBySeq = new Map(input.messages.map((message) => [message.seq, message]));
 
   const postsByRun = new Map<string, ActivityWake["posts"]>();
   for (const row of input.posts) {
@@ -399,41 +394,38 @@ export function projectActivity(input: ActivityInput): ActivityView {
     if (seq === null || atMs === null || atMs < sinceMs) {
       continue;
     }
-    const runId = String(row.run_id);
-    const posts = postsByRun.get(runId) ?? [];
-    posts.push({ seq, call_id: text(row.call_id), at: iso(row.created_at) });
-    postsByRun.set(runId, posts);
+    const posts = postsByRun.get(row.run_id) ?? [];
+    posts.push({ seq, call_id: row.call_id, at: iso(row.created_at) });
+    postsByRun.set(row.run_id, posts);
   }
 
   const writesByRun = new Map<string, ActivityWrite[]>();
   for (const row of input.changes) {
     const atMs = ms(row.created_at);
-    if (atMs === null || atMs < sinceMs) {
+    if (row.run_id === null || atMs === null || atMs < sinceMs) {
       continue;
     }
-    const runId = String(row.run_id);
-    const displayPath = String(row.display_path);
-    const toolName = text(row.tool_name);
-    const { kind, target } = classifyWrite(displayPath, toolName);
-    const writes = writesByRun.get(runId) ?? [];
+    const toolName = row.tool_name;
+    const { kind, target } = classifyWrite(row.display_path, toolName);
+    const writes = writesByRun.get(row.run_id) ?? [];
     writes.push({
       kind,
       target,
-      display_path: displayPath,
-      operation: String(row.operation),
+      display_path: row.display_path,
+      operation: row.operation,
       tool_name: toolName,
-      call_id: text(row.tool_call_id),
+      call_id: row.tool_call_id,
       at: iso(row.created_at),
     });
-    writesByRun.set(runId, writes);
+    writesByRun.set(row.run_id, writes);
   }
 
   const stepsOf = stepsByRun(input.steps);
   const openingByRun = new Map<string, string>();
   for (const row of input.openings) {
-    const said = typeof row.text === "string" ? row.text.trim() : "";
+    const said = row.text?.trim() ?? "";
     if (said) {
-      openingByRun.set(String(row.run_id), preview(said, ACTIVITY_PREVIEW_CHARS));
+      openingByRun.set(row.run_id, preview(said, ACTIVITY_PREVIEW_CHARS));
     }
   }
 
@@ -455,7 +447,7 @@ export function projectActivity(input: ActivityInput): ActivityView {
     const endedAt = running ? nowIso : iso(lastAt);
     let trigger: ActivityTrigger;
     if (kind === "group") {
-      trigger = messageTrigger(run, String(agent?.name ?? ""), deliveryByRun.get(runId) ?? {}, messagesBySeq);
+      trigger = messageTrigger(run, agent?.name ?? "", deliveryByRun.get(runId) ?? {}, messagesBySeq);
     } else if (kind === "schedule") {
       trigger = { type: "routine", schedule_id: run.schedule_id };
     } else {
@@ -483,37 +475,34 @@ export function projectActivity(input: ActivityInput): ActivityView {
       tool_call_count: steps?.count ?? 0,
       reply: steps?.reply ?? null,
       opening: kind === "direct" ? (openingByRun.get(runId) ?? null) : null,
-      last_seq: num(stats?.last_seq),
+      last_seq: stats?.last_seq ?? null,
       cost_usd: num(stats?.cost_usd) ?? 0,
     });
   }
   wakes.sort((left, right) => (ms(left.started_at) ?? 0) - (ms(right.started_at) ?? 0));
 
-  const messages: ActivityMessage[] = input.messages.map((row) => {
-    const content = String(row.content ?? "");
-    return {
-      seq: Number(row.seq),
-      created_at: iso(row.created_at),
-      author_type: row.author_type === "user" ? "user" : "agent",
-      author_name: String(row.author_name ?? ""),
-      author_agent_id: text(row.author_agent_id),
-      author_user_id: text(row.author_user_id),
-      source_run_id: text(row.source_run_id),
-      tagged: names(row.tagged_names),
-      preview: preview(content, ACTIVITY_PREVIEW_CHARS),
-      length: content.length,
-    };
-  });
+  const messages: ActivityMessage[] = input.messages.map((row) => ({
+    seq: row.seq,
+    created_at: iso(row.created_at),
+    author_type: row.author_type,
+    author_name: row.author_name,
+    author_agent_id: row.author_agent_id,
+    author_user_id: row.author_user_id,
+    source_run_id: row.source_run_id,
+    tagged: row.tagged_names,
+    preview: preview(row.content, ACTIVITY_PREVIEW_CHARS),
+    length: row.content.length,
+  }));
 
   return {
     guild_id: input.guildId,
     since: input.since.toISOString(),
     until: input.until.toISOString(),
     agents: input.agents.map((agent) => ({
-      id: String(agent.id),
-      name: String(agent.name),
-      avatar_color: String(agent.avatar_color ?? ""),
-      avatar_shape: String(agent.avatar_shape ?? ""),
+      id: agent.id,
+      name: agent.name,
+      avatar_color: agent.avatar_color,
+      avatar_shape: agent.avatar_shape,
     })),
     routines: input.schedules.map((row) => ({
       id: row.id,
@@ -564,7 +553,7 @@ export function messageFloor(run: GuildActivityRunRow): number | null {
 export async function loadGuildActivity(
   db: Queryable,
   guildId: string,
-  window: ActivityWindow & { now?: Date; generating?: (runId: string) => boolean },
+  window: GuildActivityWindow,
 ): Promise<ActivityView> {
   const { since, until } = window;
   const [agents, runs, schedules] = await Promise.all([
@@ -584,7 +573,7 @@ export async function loadGuildActivity(
     listRunFileChanges(db, runIds),
     listRunActivitySteps(db, runIds, since),
     listRunOpenings(db, directRunIds, since),
-    listGroupMessagesForActivity(db, guildId, since, until, afterSeq),
+    listGroupMessagesForActivity(db, guildId, { since, until, afterSeq }),
   ]);
   return projectActivity({
     guildId,

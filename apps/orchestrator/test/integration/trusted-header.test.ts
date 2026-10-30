@@ -5,8 +5,8 @@ import type { AppConfig } from "../../src/config/index.js";
 import { connect } from "../../src/seed/connect.js";
 import { setOperatorEmail } from "../../src/seed/operator.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
@@ -23,7 +23,7 @@ test("behind an authenticating proxy, a user is whoever holds the email it sends
   const notes = new NotesStore(tempDir("guilds-trusted-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const db = database.pool;
-  const deps = { db, notes, scripts: new Scripts(scriptDatabase(db)), schedules: new Schedules(scheduleDatabase(db)) };
+  const deps = { db, notes, scripts: agentScripts(db), schedules: agentSchedules(db) };
   const config = {
     authMode: "trusted-header",
     publicBaseUrl: "https://box.tailnet.test",
@@ -103,6 +103,12 @@ test("behind an authenticating proxy, a user is whoever holds the email it sends
     assert.equal((await patch(ada, { email: "operator@example.com" })).statusCode, 409);
     assert.equal((await patch(ada, { email: "nope" })).statusCode, 422);
     assert.equal((await patch(ada, {})).statusCode, 422);
+    const numbered = await patch(ada, { email: 7 });
+    assert.equal(numbered.statusCode, 422);
+    assert.deepEqual(numbered.json().detail[0].loc, ["body", "email"]);
+    const unnamed = await post({ email: "grace@example.com" });
+    assert.equal(unnamed.statusCode, 422);
+    assert.deepEqual(unnamed.json().detail[0].loc, ["body", "name"]);
     assert.equal((await patch("user_missing", { email: null })).statusCode, 404);
     assert.equal((await patch(ada, { email: null })).json().email, null);
     assert.equal((await me(as("ada@new.example"))).statusCode, 401);

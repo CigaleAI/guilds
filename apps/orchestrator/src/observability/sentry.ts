@@ -1,6 +1,5 @@
 import * as Sentry from "@sentry/node";
 import type { Scope } from "@sentry/node";
-import { ERROR_REPORTING, integrationValue } from "../instance/integrations.js";
 import type { LogFields, LogLevel } from "./log.js";
 
 function sampleRate(name: string, fallback: number): number {
@@ -15,19 +14,24 @@ function sampleRate(name: string, fallback: number): number {
   return value;
 }
 
-export function initSentry(): boolean {
+/** The box's error reporting: where Sentry receives this process's errors, traces and logs. */
+export type ErrorReporting = {
+  /** Empty leaves error reporting off. */
+  dsn: string;
+};
+
+export function initSentry(reporting: ErrorReporting): boolean {
   if (Sentry.getClient()) {
     return true;
   }
   if (process.env.NODE_TEST_CONTEXT) {
     return false;
   }
-  const dsn = integrationValue(ERROR_REPORTING, "SENTRY_DSN");
-  if (!dsn) {
+  if (!reporting.dsn) {
     return false;
   }
   Sentry.init({
-    dsn,
+    dsn: reporting.dsn,
     environment:
       (process.env.SENTRY_ENVIRONMENT ?? process.env.NODE_ENV ?? "development").trim() || "development",
     tracesSampleRate: sampleRate("SENTRY_TRACES_SAMPLE_RATE", 1),
@@ -75,7 +79,6 @@ export const sentryCapture = {
     if (level !== "error") {
       return;
     }
-    initSentry();
     if (!Sentry.getClient()) {
       return;
     }
@@ -150,5 +153,3 @@ export async function flushSentry(timeoutMs = 2000): Promise<void> {
     /* shutdown continues */
   }
 }
-
-initSentry();

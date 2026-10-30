@@ -2,13 +2,14 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { agentActor } from "../../src/artifacts/index.js";
+import { agentActor } from "../../src/artifacts/actors.js";
 import { Scripts, scriptItem } from "../../src/scripts/catalog.js";
 import { SCRIPT_ARGS_ENV, launcherCommand } from "../../src/scripts/materialise.js";
 import { scriptSourceHash } from "../../src/scripts/validation.js";
-import { createToolContext, dynamicScriptTools, invokeTool } from "../../src/toolbox/index.js";
+import { dynamicScriptTools, invokeTool } from "../../src/toolbox/index.js";
 import { tempDir } from "../helpers/env.js";
 import { MemoryScriptDB } from "../helpers/generation.js";
+import { fakeToolboxDatabase, toolFixture, type ToolFixture } from "../helpers/toolbox.js";
 
 
 class MemoryFiles {
@@ -42,15 +43,13 @@ class MemoryFiles {
 }
 
 async function invoke(
-  ctx: ReturnType<typeof createToolContext>,
+  ctx: ToolFixture,
   name: string,
   arguments_: Record<string, unknown>,
 ) {
   const [payload, metadata] = await invokeTool(
-    ctx,
+    ctx.services, ctx.run, ctx.hooks,
     { id: "call_1", type: "function", function: { name, arguments: JSON.stringify(arguments_) } },
-    {},
-    1024,
   );
   return { content: String(payload.content), metadata };
 }
@@ -64,7 +63,7 @@ function toolCtx(
     published?: Array<[string, string, Record<string, unknown>]>;
   } = {},
 ) {
-  return createToolContext({
+  return toolFixture({
     run_id: "r_1",
     agent_id: "a_1",
     guild_id: "guild_1",
@@ -173,7 +172,7 @@ test("script create on a name this run started with says the new version waits",
   const files = new MemoryFiles();
   const ctx = toolCtx(scripts, { files });
   await invoke(ctx, "script_create", { name: "ping", description: "old why", source: "print(1)\n" });
-  ctx.run_scripts = await scripts.snapshot("a_1");
+  ctx.run.run_scripts = await scripts.snapshot("a_1");
   const replaced = await invoke(ctx, "script_create", {
     name: "ping",
     description: "new why",
@@ -192,23 +191,25 @@ test("script delete drops the name from this run so script_run stops", async () 
   const files = new MemoryFiles();
   let persisted: unknown[] | null = null;
   const ctx = toolCtx(scripts, { files });
-  ctx.persist_run_scripts = async (rows) => {
-    persisted = rows;
-  };
+  ctx.services.db = fakeToolboxDatabase({
+    updateRunScripts: async (_runId, rows) => {
+      persisted = rows;
+    },
+  });
   await invoke(ctx, "script_create", {
     name: "send_usdc",
     description: "Sign and send USDC",
     source: "print('snap')\n",
     parameters: { type: "object", properties: { to: { type: "string" } }, required: ["to"] },
   });
-  ctx.run_scripts = await scripts.snapshot("a_1");
-  ctx.dynamic_tools = dynamicScriptTools(ctx.run_scripts);
-  assert.ok(ctx.dynamic_tools.send_usdc);
+  ctx.run.run_scripts = await scripts.snapshot("a_1");
+  ctx.run.dynamic_tools = dynamicScriptTools(ctx.run.run_scripts);
+  assert.ok(ctx.run.dynamic_tools.send_usdc);
   const deleted = await invoke(ctx, "script_delete", { name: "send_usdc" });
   assert.equal(deleted.content, "deleted send_usdc");
   assert.equal(files.files.has("/home/a_1/scripts/send_usdc.py"), false);
-  assert.equal(ctx.run_scripts.length, 0);
-  assert.equal(ctx.dynamic_tools.send_usdc, undefined);
+  assert.equal(ctx.run.run_scripts.length, 0);
+  assert.equal(ctx.run.dynamic_tools.send_usdc, undefined);
   assert.deepEqual(persisted, []);
   const ran = await invoke(ctx, "script_run", { name: "send_usdc" });
   assert.equal(ran.metadata.error, "script not found");
@@ -268,7 +269,7 @@ test("script create replaces existing", async () => {
 test("script create refuses a new name past max_scripts", async () => {
   const scripts = new Scripts(new MemoryScriptDB());
   const ctx = toolCtx(scripts);
-  ctx.max_scripts = 1;
+  ctx.run.max_scripts = 1;
   await invoke(ctx, "script_create", {
     name: "one",
     description: "first",

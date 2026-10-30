@@ -2,17 +2,17 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
-import { coreModelCredentials, modelProviderStore } from "../../src/llm/credentials.js";
-import { ModelsService, modelsDatabase } from "../../src/llm/models.js";
+import { coreModelCredentials } from "../../src/llm/credentials.js";
+import { modelsService } from "../../src/llm/models.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { TEST_MASTER_KEY } from "../helpers/models.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { insertUser } from "../../src/db/users.js";
-import { insertMember } from "../../src/db/orgs.js";
+import { insertMember, upsertOrgModelProvider } from "../../src/db/orgs.js";
 
 const OWNER = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 const MEMBER = { "X-Guilds-User": "user_member", "X-Guilds-Org": "org_home" };
@@ -30,7 +30,11 @@ test("an organisation connects providers, chooses models, and names a default", 
   await notes.ensureSystemPrompt();
   const db = database.pool;
   const member = await insertUser(db, { userId: "user_member", name: "member", image: null, email: "member@example.com" }, new Date());
-  await insertMember(db, "org_home", String(member.id), "member", new Date());
+  await insertMember(
+    db,
+    { org_id: "org_home", user_id: String(member.id), role: "member" },
+    new Date(),
+  );
   const probed: string[] = [];
   const fetchFn = (async (url: string | URL | Request, init?: RequestInit) => {
     const key = String((init?.headers as Record<string, string> | undefined)?.Authorization ?? "");
@@ -43,15 +47,15 @@ test("an organisation connects providers, chooses models, and names a default", 
       headers: { "content-type": "application/json" },
     });
   }) as typeof fetch;
-  const credentials = coreModelCredentials(modelProviderStore(db), TEST_MASTER_KEY);
+  const credentials = coreModelCredentials(db, TEST_MASTER_KEY);
   const app = await buildApp(database, {
     db,
     notes,
-    scripts: new Scripts(scriptDatabase(db)),
-    schedules: new Schedules(scheduleDatabase(db)),
+    scripts: agentScripts(db),
+    schedules: agentSchedules(db),
     masterKey: TEST_MASTER_KEY,
     modelCredentials: credentials,
-    models: new ModelsService({ db: modelsDatabase(db), credentials, fetch: fetchFn, masterKey: TEST_MASTER_KEY }),
+    models: modelsService(db, { credentials, fetch: fetchFn, masterKey: TEST_MASTER_KEY }),
   });
   const base = "/api/orgs/org_home";
   const put = (headers: Record<string, string>, path: string, payload: Record<string, unknown>) =>
@@ -116,9 +120,16 @@ test("an organisation connects providers, chooses models, and names a default", 
     assert.equal((await put(OWNER, "/model-providers/openrouter", { api_key: "   " })).statusCode, 422);
     assert.equal((await put(OWNER, "/model-providers/openrouter", {})).statusCode, 422);
     assert.equal((await put(OWNER, "/model-providers/deepinfra", { models: ["openai/gpt-5"] })).statusCode, 422);
+    const listedAsText = await put(OWNER, "/model-providers/deepinfra", { models: "deepinfra/zai-org/GLM-5.3-Flash" });
+    assert.equal(listedAsText.statusCode, 422);
+    assert.deepEqual(listedAsText.json().detail[0].loc, ["body", "models"]);
+    const numberedDefault = await put(OWNER, "/default-model", { model: 5 });
+    assert.equal(numberedDefault.statusCode, 422);
+    assert.deepEqual(numberedDefault.json().detail[0].loc, ["body", "model"]);
 
     const wrongKind = await put(OWNER, "/default-model", { model: "kimi/k3" });
     assert.equal(wrongKind.statusCode, 422, wrongKind.body);
+    assert.deepEqual(wrongKind.json(), { detail: "the default must be a marketplace model" });
     const unchosen = await put(OWNER, "/default-model", { model: "deepinfra/zai-org/GLM-5.3" });
     assert.equal(unchosen.statusCode, 422, unchosen.body);
     const chosen = await put(OWNER, "/default-model", { model: "deepinfra/zai-org/GLM-5.3-Flash" });
@@ -131,6 +142,14 @@ test("an organisation connects providers, chooses models, and names a default", 
     assert.equal(retick.statusCode, 200, retick.body);
     assert.equal(retick.json().key_hint, "abcd", "the key is kept when the save carries none");
     assert.equal((await app.inject({ method: "GET", url: `${base}/models`, headers: OWNER })).json().default, null);
+
+    const unsaved = await app.inject({
+      method: "GET",
+      url: `${base}/model-providers/local/catalog`,
+      headers: OWNER,
+    });
+    assert.equal(unsaved.statusCode, 422, unsaved.body);
+    assert.deepEqual(unsaved.json(), { detail: "save the local endpoint's URL first" });
 
     const local = await put(OWNER, "/model-providers/local", { base_url: "http://127.0.0.1:11434/v1", models: ["local/k3"] });
     assert.equal(local.statusCode, 200, local.body);
@@ -151,6 +170,27 @@ test("an organisation connects providers, chooses models, and names a default", 
     const after = await app.inject({ method: "GET", url: `${base}/models`, headers: OWNER });
     assert.deepEqual(after.json().models.map((item: { id: string }) => item.id), ["local/k3"]);
     assert.equal(await credentials.modelCredentials("org_home", "deepinfra"), null);
+
+    await upsertOrgModelProvider(
+      db,
+      {
+        providerId: "mp_platform_openai",
+        orgId: "org_home",
+        provider: "openai",
+        ciphertext: null,
+        nonce: null,
+        keyHint: null,
+        models: [],
+      },
+      new Date(),
+    );
+    const platform = await app.inject({
+      method: "DELETE",
+      url: `${base}/model-providers/openai`,
+      headers: OWNER,
+    });
+    assert.equal(platform.statusCode, 409, platform.body);
+    assert.deepEqual(platform.json(), { detail: "OpenAI is provided by the platform" });
   } finally {
     await app.close();
     await database.close();

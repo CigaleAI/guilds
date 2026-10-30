@@ -4,9 +4,9 @@ import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
-import { createToolContext, REGISTRY } from "../../src/toolbox/index.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
+import { agentSchedules } from "../../src/schedules/service.js";
+import { REGISTRY } from "../../src/toolbox/index.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import {
@@ -15,9 +15,11 @@ import {
   uniqueDbName,
 } from "../helpers/postgres.js";
 import { userActor } from "../../src/lib/change-actor.js";
+import type { RoutineChange } from "../../src/schedules/operator.js";
 import { getSchedule } from "../../src/db/schedules.js";
 import { createRun } from "../../src/db/runs.js";
 import { runSnapshot } from "../helpers/generation.js";
+import { toolInvocation, toolFixture } from "../helpers/toolbox.js";
 
 const TEST_ACTOR = userActor({ id: "user_operator", name: "operator" });
 
@@ -43,8 +45,17 @@ test("an operator and an agent can change a routine in place", { timeout: 60_000
   await notes.ensureSystemPrompt();
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
-  const schedules = new Schedules(scheduleDatabase(db));
-  const app = await buildApp(database, { db, notes, scripts: new Scripts(scriptDatabase(db)), schedules });
+  const schedules = agentSchedules(db);
+  const published: Array<[string, RoutineChange]> = [];
+  const app = await buildApp(database, {
+    db,
+    notes,
+    scripts: agentScripts(db),
+    schedules,
+    publishRoutinesChanged: async (guildId, change) => {
+      published.push([guildId, change]);
+    },
+  });
 
   try {
     const guild = await app.inject({
@@ -63,7 +74,7 @@ test("an operator and an agent can change a routine in place", { timeout: 60_000
     assert.equal(agent.statusCode, 201, agent.body);
     const agentId = String(agent.json().id);
 
-    const routine = await schedules.create(TEST_ACTOR, agentId, { cron: "0 9 * * 1" }, "Weekly", "Do the pass.");
+    const routine = await schedules.create(TEST_ACTOR, agentId, { when: { cron: "0 9 * * 1" }, description: "Weekly", instruction: "Do the pass." });
     const scheduleId = String(routine.id);
     const url = `/api/agents/${agentId}/schedules/${scheduleId}`;
     const plannedAt = async () => {
@@ -110,6 +121,16 @@ test("an operator and an agent can change a routine in place", { timeout: 60_000
       payload: { description: "Nothing" },
     });
     assert.equal(missing.statusCode, 404);
+    const guildId = String(guild.json().id);
+    const announced = (action: RoutineChange["action"], id: string): [string, RoutineChange] => [
+      guildId,
+      { agentId, action, scheduleId: id },
+    ];
+    assert.deepEqual(
+      published,
+      [announced("edit", scheduleId), announced("edit", scheduleId), announced("pause", scheduleId)],
+      "each change an operator makes is announced once; a refused one is not",
+    );
 
     await createRun(db,
       {
@@ -125,7 +146,7 @@ test("an operator and an agent can change a routine in place", { timeout: 60_000
       },
       new Date(),
     );
-    const ctx = createToolContext({
+    const ctx = toolFixture({
       run_id: "r_edit",
       agent_id: agentId,
       guild_id: String(guild.json().id),
@@ -133,13 +154,13 @@ test("an operator and an agent can change a routine in place", { timeout: 60_000
       secrets: {},
       schedules,
       agent_name: "editor",
-      tool_call_id: "call_edit",
     });
-    const output = await REGISTRY.schedule_update!.handler(ctx, {
-      schedule_id: scheduleId,
-      cron: "30 7 * * *",
-      instruction: "Write the morning digest.",
-    });
+    const call = toolInvocation(
+      "schedule_update",
+      { schedule_id: scheduleId, cron: "30 7 * * *", instruction: "Write the morning digest." },
+      "call_edit",
+    );
+    const output = await REGISTRY.schedule_update!.handler(ctx.services, ctx.run, ctx.hooks, call);
     assert.match(String(output), new RegExp(`^updated ${scheduleId} `));
     const updated = await getSchedule(db, agentId, scheduleId);
     assert.equal(updated?.cron, "30 7 * * *");
@@ -165,6 +186,34 @@ test("an operator and an agent can change a routine in place", { timeout: 60_000
     );
     assert.equal(log.rows.at(-1)?.actor_type, "run");
     assert.equal(log.rows.at(-1)?.tool_name, "schedule_update");
+
+    published.length = 0;
+    const created = await app.inject({
+      method: "POST",
+      url: `/api/agents/${agentId}/schedules`,
+      headers: OWNER,
+      payload: { cron: "0 8 * * *", description: "Daily", instruction: "Do the daily pass." },
+    });
+    assert.equal(created.statusCode, 201, created.body);
+    const createdId = String(created.json().id);
+    const resumed = await app.inject({
+      method: "PATCH",
+      url: `/api/agents/${agentId}/schedules/${createdId}`,
+      headers: OWNER,
+      payload: { paused: false },
+    });
+    assert.equal(resumed.statusCode, 200, resumed.body);
+    const deleted = await app.inject({
+      method: "DELETE",
+      url: `/api/agents/${agentId}/schedules/${createdId}`,
+      headers: { "X-Guilds-User": OWNER["X-Guilds-User"], "X-Guilds-Org": OWNER["X-Guilds-Org"] },
+    });
+    assert.equal(deleted.statusCode, 204);
+    assert.deepEqual(published, [
+      announced("create", createdId),
+      announced("resume", createdId),
+      announced("delete", createdId),
+    ]);
   } finally {
     await app.close();
     await database.close();

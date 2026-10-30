@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
-import { addAgent } from "../../src/agents/persist.js";
+import { addTestAgent } from "../helpers/agents.js";
 import { insertGuild } from "../../src/db/guilds.js";
 import { insertIssue } from "../../src/db/issues.js";
+import type { IssueChange } from "../../src/issues/operator.js";
 import { insertMember } from "../../src/db/orgs.js";
 import { insertRun } from "../../src/db/runs.js";
 import { insertUser } from "../../src/db/users.js";
@@ -12,8 +13,9 @@ import { NotesStore } from "../../src/notes/store.js";
 import { StudioError } from "../../src/studio/errors.js";
 import { readGuildRun } from "../../src/studio/inspector.js";
 import { usageForOrg, usageForPlatform } from "../../src/usage/view.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
+import type { ScriptChange } from "../../src/scripts/operator.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
@@ -37,19 +39,28 @@ test(
     const notes = new NotesStore(tempDir("guilds-agent-items-"), templatesRoot());
     await notes.ensureSystemPrompt();
     const db = database.pool;
+    const issuesChanged: Array<[string, IssueChange]> = [];
+    const scriptsChanged: Array<[string, ScriptChange]> = [];
     const app = await buildApp(database, {
       db,
       notes,
-      scripts: new Scripts(scriptDatabase(db)),
-      schedules: new Schedules(scheduleDatabase(db)),
+      scripts: agentScripts(db),
+      schedules: agentSchedules(db),
+      publishScriptsChanged: async (guildId, change) => {
+        scriptsChanged.push([guildId, change]);
+      },
+      publishIssuesChanged: async (guildId, change) => {
+        issuesChanged.push([guildId, change]);
+      },
     });
     await insertGuild(
       db,
       { guildId: "guild_items", name: "items-desk", orgId: "org_home" },
       new Date(),
     );
-    await addAgent(
+    await addTestAgent(
       db,
+      "org_home",
       { agentId: "a_items", guildId: "guild_items", name: "keeper", config: agentConfig({}) },
       new Date(),
     );
@@ -67,18 +78,24 @@ test(
         });
         assert.equal(created.statusCode, 201, created.body);
       }
+      const sourceless = await app.inject({
+        method: "POST",
+        url: `${agent}/scripts`,
+        headers: JSON_OWNER,
+        payload: { ...script, name: "lines", source: ["print(1)"] },
+      });
+      assert.equal(sourceless.statusCode, 422);
+      assert.deepEqual(sourceless.json().detail[0].loc, ["body", "source"]);
       const listed = await app.inject({ method: "GET", url: `${agent}/scripts`, headers: OWNER });
+      assert.equal(listed.statusCode, 200, listed.body);
       assert.deepEqual(
-        listed
-          .json()
-          .map((row: { name: string; display_path: string }) => [
-            row.name,
-            row.display_path.endsWith(`/scripts/${row.name}`),
-          ]),
-        [
-          ["sum", true],
-          ["tally", true],
-        ],
+        listed.json(),
+        ["sum", "tally"].map((name) => ({
+          ...script,
+          name,
+          parameters: null,
+          display_path: `org/org_home/agents/a_items/scripts/${name}`,
+        })),
       );
       assert.equal(
         (await app.inject({ method: "DELETE", url: `${agent}/scripts/tally`, headers: OWNER }))
@@ -103,6 +120,16 @@ test(
       assert.deepEqual(
         (await app.inject({ method: "GET", url: `${agent}/scripts`, headers: OWNER })).json(),
         [],
+      );
+      assert.deepEqual(
+        scriptsChanged,
+        [
+          ["guild_items", { agentId: "a_items", action: "create", name: "tally" }],
+          ["guild_items", { agentId: "a_items", action: "create", name: "sum" }],
+          ["guild_items", { agentId: "a_items", action: "delete", name: "tally" }],
+          ["guild_items", { agentId: "a_items", action: "clear", name: null }],
+        ],
+        "each script write an operator makes is announced once; a refused one is not",
       );
 
       const patched = await app.inject({
@@ -158,6 +185,20 @@ test(
         payload: {},
       });
       assert.equal(unsaid.statusCode, 422);
+      assert.deepEqual(unsaid.json().detail[0].loc, ["body", "status"]);
+      const numbered = await app.inject({
+        method: "PATCH",
+        url: `${guild}/issues/${issue.id}`,
+        headers: JSON_OWNER,
+        payload: { status: 1 },
+      });
+      assert.equal(numbered.statusCode, 422);
+      const twice = await app.inject({
+        method: "GET",
+        url: `${guild}/issues?status=open&status=resolved`,
+        headers: OWNER,
+      });
+      assert.equal(twice.statusCode, 422);
       const missing = await app.inject({
         method: "PATCH",
         url: `${guild}/issues/iss_missing`,
@@ -173,6 +214,26 @@ test(
       });
       assert.equal(resolved.statusCode, 200, resolved.body);
       assert.equal(resolved.json().status, "resolved");
+      const reopened = await app.inject({
+        method: "PATCH",
+        url: `${guild}/issues/${issue.id}`,
+        headers: JSON_OWNER,
+        payload: { status: "open" },
+      });
+      assert.equal(reopened.statusCode, 200, reopened.body);
+      assert.deepEqual(
+        (await app.inject({ method: "POST", url: `${guild}/issues/resolve`, headers: OWNER })).json(),
+        { resolved: 1 },
+      );
+      assert.deepEqual(
+        issuesChanged,
+        [
+          ["guild_items", { action: "resolved", issueId: "iss_items" }],
+          ["guild_items", { action: "open", issueId: "iss_items" }],
+          ["guild_items", { action: "resolved", issueId: null }],
+        ],
+        "each status an operator sets is announced once; a refused one, or resolving none, is not",
+      );
 
       const runs = `${agent}/runs`;
       const start = (payload: object) =>
@@ -184,6 +245,9 @@ test(
         "ids that are not a list",
       );
       assert.equal((await start({ attachment_ids: [" "] })).statusCode, 422, "a blank id");
+      const numberedMessage = await start({ message: 7 });
+      assert.equal(numberedMessage.statusCode, 422, "a message that is not text");
+      assert.deepEqual(numberedMessage.json().detail[0].loc, ["body", "message"]);
       const images = await start({ attachment_ids: ["att_1"] });
       assert.equal(images.statusCode, 503, "a box without an image store takes no images");
       assert.match(String(images.json().detail), /attachments/);
@@ -214,7 +278,12 @@ test(
           headers: JSON_OWNER,
           payload,
         });
-      assert.equal((await say({})).statusCode, 422, "a message needs content or images");
+      const contentless = await say({});
+      assert.equal(contentless.statusCode, 422, "a message needs content or images");
+      assert.equal(contentless.json().detail, "content must not be empty");
+      const listedContent = await say({ content: ["more"] });
+      assert.equal(listedContent.statusCode, 422, "content that is not text");
+      assert.deepEqual(listedContent.json().detail[0].loc, ["body", "content"]);
       assert.equal((await say({ content: " " })).statusCode, 422, "blank content");
       assert.equal((await say({ content: "more" })).statusCode, 503);
       const messages = await app.inject({
@@ -260,6 +329,14 @@ test(
         payload: { harness: "abacus" },
       });
       assert.equal(check.statusCode, 422);
+      const numberedHarness = await app.inject({
+        method: "POST",
+        url: `${agent}/harness/check`,
+        headers: JSON_OWNER,
+        payload: { harness: 3 },
+      });
+      assert.equal(numberedHarness.statusCode, 422);
+      assert.deepEqual(numberedHarness.json().detail[0].loc, ["body", "harness"]);
       assert.deepEqual(
         (
           await app.inject({ method: "GET", url: "/api/runs/run_items/changes", headers: OWNER })
@@ -280,7 +357,11 @@ test(
         { userId: "user_items_member", name: "items-member" },
         new Date(),
       );
-      await insertMember(db, "org_home", member.id, "member", new Date());
+      await insertMember(
+        db,
+        { org_id: "org_home", user_id: member.id, role: "member" },
+        new Date(),
+      );
       const MEMBER = {
         "X-Guilds-User": member.id,
         "X-Guilds-Org": "org_home",
@@ -304,7 +385,7 @@ test(
         headers: MEMBER,
       });
       assert.equal(orphans.statusCode, 403, "only an owner or admin sees drafts nobody holds");
-      const inspector = { db, schedules: new Schedules(scheduleDatabase(db)), generation: null };
+      const inspector = { db, schedules: agentSchedules(db), generation: null };
       const read = await readGuildRun(inspector, "guild_items", "run_items");
       assert.deepEqual(
         [read.run, read.messages].map((part) => typeof part),
@@ -340,6 +421,9 @@ test(
       const platform = await bind({ ...tool, scope: "platform" });
       assert.equal(platform.statusCode, 400, platform.body);
       assert.equal((await bind({ ...tool, scope: "galaxy", scope_id: "x" })).statusCode, 422);
+      const mistyped = await bind({ ...tool, enabled: "no", scope: "agent", scope_id: "a_items" });
+      assert.equal(mistyped.statusCode, 422);
+      assert.deepEqual(mistyped.json().detail[0].loc, ["body", "enabled"]);
       const bound = await bind({ ...tool, scope: "agent", scope_id: "a_items" });
       assert.equal(bound.statusCode, 200, bound.body);
       assert.equal(bound.json().enabled, false);
@@ -349,6 +433,14 @@ test(
           url: `/api/bindings?catalog_kind=native_tool&catalog_id=script_list&${query}`,
           headers: OWNER,
         });
+      const unscoped = await unbind("scope_id=a_items");
+      assert.equal(unscoped.statusCode, 422);
+      assert.deepEqual(unscoped.json().detail[0], {
+        type: "missing",
+        loc: ["querystring", "scope"],
+        msg: "Field required",
+        input: { catalog_kind: "native_tool", catalog_id: "script_list", scope_id: "a_items" },
+      });
       assert.equal((await unbind("scope=agent&scope_id=a_items")).statusCode, 204);
       assert.equal(
         (await unbind("scope=agent&scope_id=a_items")).statusCode,
@@ -375,6 +467,27 @@ test(
         payload: { body: { who: "Ada" } },
       });
       assert.equal(added.statusCode, 201, added.body);
+      const listedValues = await app.inject({
+        method: "POST",
+        url: records,
+        headers: JSON_OWNER,
+        payload: { body: ["Ada"] },
+      });
+      assert.equal(listedValues.statusCode, 422, listedValues.body);
+      assert.deepEqual(listedValues.json().detail[0].loc, ["body", "body"]);
+      const numberedPurpose = await app.inject({
+        method: "PATCH",
+        url: `/api/collections/${String(table.json().id)}`,
+        headers: JSON_OWNER,
+        payload: { purpose: 4 },
+      });
+      assert.equal(numberedPurpose.statusCode, 422, numberedPurpose.body);
+      assert.deepEqual(numberedPurpose.json().detail[0].loc, ["body", "purpose"]);
+      assert.equal(
+        (await app.inject({ method: "GET", url: `${records}?limit=1&limit=2`, headers: OWNER }))
+          .statusCode,
+        422,
+      );
       const recordId = String(added.json().record.id);
       const changed = await app.inject({
         method: "PATCH",
@@ -423,6 +536,12 @@ test(
       const brief = "/api/org/notes/brief.md";
       const written = await put(brief, { content: "# Brief\n" });
       assert.equal(written.statusCode, 200, written.body);
+      const numberedOrgNote = await put(brief, { content: 5 });
+      assert.equal(numberedOrgNote.statusCode, 422);
+      assert.deepEqual(numberedOrgNote.json().detail[0].loc, ["body", "content"]);
+      const numberedGuildNote = await put(`${guild}/notes/brief.md`, { content: 5 });
+      assert.equal(numberedGuildNote.statusCode, 422);
+      assert.deepEqual(numberedGuildNote.json().detail[0].loc, ["body", "content"]);
       const displayPath = String(written.json().display_path);
       assert.equal((await get(brief)).json().content, "# Brief\n");
       assert.deepEqual(
@@ -448,6 +567,7 @@ test(
       const log = `${agent}/notes/log.md`;
       const stale = await put(log, { content: "day one\n", expected_version: "first" });
       assert.equal(stale.statusCode, 422, "an expected version is a number");
+      assert.deepEqual(stale.json().detail[0].loc, ["body", "expected_version"]);
       assert.equal((await put(log, { content: "day one\n" })).statusCode, 200);
       assert.equal((await remove(log)).statusCode, 204);
       assert.equal((await get(`${agent}/memory`)).statusCode, 200);

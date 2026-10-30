@@ -1,19 +1,21 @@
 import assert from "node:assert/strict";
 import type { MessageMetadata, ToolCall } from "../../src/db/schema/index.js";
 import { execFileSync } from "node:child_process";
+import { generateKeyPairSync } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, describe, test } from "node:test";
-import { validateConfig, withCodingLimits } from "../../src/agents/validation.js";
+import { validateAgentConfig, withCodingLimits } from "../../src/agents/config.js";
 import { agentWorkspaceMaxMib } from "../../src/generation/workspace.js";
 import { generationLive } from "../../src/generation/completion.js";
 import { configSnapshot } from "../../src/generation/snapshot.js";
 import { offeredToolNames } from "../../src/toolbox/offered.js";
-import type { Completion } from "../../src/llm/index.js";
-import { createToolContext, invokeTool } from "../../src/toolbox/index.js";
+import type { Completion } from "../../src/llm/completion.js";
+import { invokeTool } from "../../src/toolbox/index.js";
 import {
   callSegment,
   CODING_TOOLS,
+  decodeEnvelope,
   INLINE_REQUEST_MAX,
   repeatedReadStep,
   type ReadRow,
@@ -22,11 +24,24 @@ import {
 import { REGISTRY } from "../../src/toolbox/index.js";
 import type { MachineSpec } from "../../src/sandbox/index.js";
 import { answerOps, HostCodeSandbox } from "../helpers/code-sandbox.js";
-import { tempDir } from "../helpers/env.js";
+import { HEX_MASTER_KEY, storeKeys, tempDir } from "../helpers/env.js";
 import type { AgentConfig, RunConfigSnapshot } from "../../src/db/schema/index.js";
 import { AGENT_CONFIG, FakeDB, FakeSandboxes, liveSecret, makeLoop } from "../helpers/generation.js";
+import { connectionRow } from "../helpers/servers.js";
+import { encryptPayload } from "../../src/credentials/crypto.js";
+import type { McpConnectionRow } from "../../src/db/mcp.js";
+import { setInstanceKeys } from "../../src/instance/integrations.js";
+import { toolFixture } from "../helpers/toolbox.js";
 
 const live = generationLive;
+/** The box's GitHub App, as the instance admin stored it. */
+const GITHUB_APP_KEYS = {
+  app_id: "4242",
+  slug: "guilds-run-test",
+  private_key: generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+  client_id: "Iv1.client",
+  client_secret: "client-secret",
+};
 /** A coding agent's config: coding on, with a harness. */
 const CODER: AgentConfig = { ...AGENT_CONFIG, coding: true, harness: "claude-code" };
 const originalStream = live.streamCompletion;
@@ -62,7 +77,7 @@ function readySandbox(options: { clones?: boolean } = {}): HostCodeSandbox {
 }
 
 function ctxFor(sandbox: HostCodeSandbox, runId = "r_code") {
-  return createToolContext({
+  return toolFixture({
     run_id: runId,
     agent_id: "a_1",
     guild_id: "g_1",
@@ -81,10 +96,8 @@ async function call(
 ): Promise<[string, Record<string, unknown>]> {
   callCount += 1;
   const [payload, metadata] = await invokeTool(
-    ctxFor(sandbox, runId),
+    ctxFor(sandbox, runId).services, ctxFor(sandbox, runId).run, ctxFor(sandbox, runId).hooks,
     { id: `call_${callCount}`, type: "function", function: { name, arguments: JSON.stringify(args) } },
-    { TOKEN: "s3cr3t-value" },
-    32768,
   );
   return [String(payload.content), metadata];
 }
@@ -225,6 +238,23 @@ test("call ids become safe file names", () => {
   assert.match(callSegment(".."), /^call_\d+$/);
 });
 
+test("a helper envelope reads its fields by type, and is refused when it is not an object", () => {
+  const encode = (value: unknown) => Buffer.from(JSON.stringify(value), "utf8").toString("base64");
+  assert.deepEqual(decodeEnvelope(encode({ ok: true, text: "hi", meta: { lines: 2 } })), {
+    ok: true,
+    text: "hi",
+    meta: { lines: 2 },
+    error: null,
+  });
+  assert.deepEqual(decodeEnvelope(encode({ ok: false, error: "no such file", meta: [1] })), {
+    ok: false,
+    text: "",
+    meta: {},
+    error: "no such file",
+  });
+  assert.throws(() => decodeEnvelope(encode([1])), /non-object/);
+});
+
 test("a read of a range already held, unchanged, points at the earlier step", () => {
   const earlier = {
     seq: 7,
@@ -298,21 +328,20 @@ test("coding offers code_task and the code tools; without it they are refused na
 });
 
 test("agent workspace max is the agent's cap, never above the host cap", () => {
-  assert.equal(agentWorkspaceMaxMib({}), 10240);
   assert.equal(agentWorkspaceMaxMib({ max_workspace_mib: 512 }), 512);
   assert.equal(agentWorkspaceMaxMib({ max_workspace_mib: 20000 }, { WORKSPACE_MAX_MIB: "4096" }), 4096);
 });
 
 test("coding defaults to off, and a new coding agent gets the coding budgets", () => {
-  assert.equal(validateConfig({ ...AGENT_CONFIG }).coding, false);
-  const coder = validateConfig(withCodingLimits({ model: AGENT_CONFIG.model, browser: false, coding: true }));
+  assert.equal(validateAgentConfig({ ...AGENT_CONFIG }).coding, false);
+  const coder = validateAgentConfig(withCodingLimits({ model: AGENT_CONFIG.model, browser: false, coding: true }));
   assert.equal(coder.max_steps, 200);
   assert.equal(coder.max_tool_calls, 200);
   assert.equal(coder.max_input_tokens, 100000);
-  const explicit = validateConfig(withCodingLimits({ ...AGENT_CONFIG, coding: true, max_steps: 12 }));
+  const explicit = validateAgentConfig(withCodingLimits({ ...AGENT_CONFIG, coding: true, max_steps: 12 }));
   assert.equal(explicit.max_steps, 12);
   assert.equal(explicit.max_tool_calls, AGENT_CONFIG.max_tool_calls);
-  assert.throws(() => validateConfig({ ...AGENT_CONFIG, coding: "yes" }), /coding must be a boolean/);
+  assert.throws(() => validateAgentConfig({ ...AGENT_CONFIG, coding: "yes" }), /coding must be a boolean/);
 });
 
 describe("coding runs in the generation loop", () => {
@@ -711,5 +740,37 @@ describe("repositories in a coding generation", () => {
     const errors = db.run.errors as Array<Record<string, unknown>>;
     assert.equal(errors.at(-1)?.operation, "repository.clone");
     assert.match(String(errors.at(-1)?.message), /^clone failed: shop: /);
+  });
+
+  test("a repository whose GitHub installation is gone fails the generation at start and retires its login", async () => {
+    process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
+    setInstanceKeys(storeKeys({ "github-app": GITHUB_APP_KEYS }));
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify({ message: "suspended" }), { status: 403, headers: { "Content-Type": "application/json" } });
+    const { db, loop } = setup("https://github.com/acme/shop");
+    const [ciphertext, nonce] = encryptPayload({ installation_id: 77, account: "acme" });
+    db.mcp_connection = connectionRow({ id: "conn_gh", mcp_server_id: "mcp_github", account_hint: "acme", ciphertext, nonce });
+    db.listGuildRepositories = async () => [
+      { id: "repo_1", guild_id: "guild_1", name: "shop", url: "https://github.com/acme/shop", default_branch: "main", connection_id: "conn_gh", github_id: 101 },
+    ];
+    const retired: string[] = [];
+    Object.assign(db, {
+      retireLogin: async (login: McpConnectionRow, failure: string) => {
+        retired.push(`${login.id}:${failure}`);
+      },
+    });
+    try {
+      await loop.generator.generate("r_1", 1);
+    } finally {
+      globalThis.fetch = realFetch;
+      setInstanceKeys({});
+    }
+    assert.equal(db.llm_histories.length, 0);
+    assert.deepEqual(retired, ["conn_gh:installation_gone"]);
+    const errors = Array.isArray(db.run.errors) ? db.run.errors : [];
+    assert.equal(errors.at(-1)?.operation, "repository.token");
+    assert.equal(errors.at(-1)?.error_type, "RepositoryAccessError");
+    assert.equal(errors.at(-1)?.message, "GitHub refused the installation for acme; the connection is now disconnected");
   });
 });

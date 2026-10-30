@@ -1,5 +1,4 @@
 import { Cron } from "croner";
-import { isPlainRecord } from "../db/json.js";
 import type { PlannedWake } from "../db/schedules.js";
 import type { WakeWindow } from "../db/schema/index.js";
 import { MIN_GAP_MS, ScheduleError } from "./cron.js";
@@ -10,15 +9,15 @@ export const JITTER = 0.5;
 const CLOCK_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const WINDOW_KEYS = ["timezone", "start", "end", "max_wakes"];
 
-function validateClock(value: unknown, field: string): string {
-  if (typeof value !== "string" || !CLOCK_RE.test(value.trim())) {
+function validateClock(value: string, field: string): string {
+  if (!CLOCK_RE.test(value.trim())) {
     throw new ScheduleError(`window.${field} must be a 24-hour HH:MM time`);
   }
   return value.trim();
 }
 
-export function validateTimezone(value: unknown, field = "timezone"): string {
-  if (typeof value !== "string" || !value.trim()) {
+export function validateTimezone(value: string, field = "timezone"): string {
+  if (!value.trim()) {
     throw new ScheduleError(`${field} must be an IANA timezone such as Europe/Paris`);
   }
   try {
@@ -33,10 +32,7 @@ function clockMinutes(value: string): number {
   return hour! * 60 + minute!;
 }
 
-export function validateWindow(value: unknown): WakeWindow {
-  if (!isPlainRecord(value)) {
-    throw new ScheduleError("window must be an object with timezone, start, end, and max_wakes");
-  }
+export function validateWindow(value: WakeWindow): WakeWindow {
   const extra = Object.keys(value).filter((key) => !WINDOW_KEYS.includes(key));
   if (extra.length) {
     throw new ScheduleError(`window has unknown field ${extra[0]}`);
@@ -48,7 +44,7 @@ export function validateWindow(value: unknown): WakeWindow {
     throw new ScheduleError("window.start and window.end must differ");
   }
   const maxWakes = value.max_wakes;
-  if (typeof maxWakes !== "number" || !Number.isInteger(maxWakes) || maxWakes < 1) {
+  if (!Number.isInteger(maxWakes) || maxWakes < 1) {
     throw new ScheduleError("window.max_wakes must be a positive integer");
   }
   const span = (clockMinutes(end) - clockMinutes(start) + 1440) % 1440;
@@ -114,15 +110,14 @@ export function planWindowWake(
 }
 
 /**
- * Plan the wake-up after a fire at `firedAt` of a wake that was due at
- * `dueAt` with `windowFires` earlier wake-ups in its window. A fire that lands
- * outside any window (a late fire after the window closed) does not count
- * toward the next window.
+ * Plan the wake-up after a fire at `firedAt` of the wake `due`, planned with
+ * `due.windowFires` earlier wake-ups in its window. A fire that lands outside
+ * any window (a late fire after the window closed) does not count toward the
+ * next window.
  */
 export function planWindowAfterFire(
   win: WakeWindow,
-  dueAt: Date,
-  windowFires: number,
+  due: PlannedWake,
   firedAt: Date,
   random: () => number = Math.random,
 ): PlannedWake {
@@ -130,8 +125,8 @@ export function planWindowAfterFire(
   if (end === null) {
     return planWindowWake(win, firedAt, 0, random);
   }
-  const dueEnd = windowEndAt(win, dueAt);
-  const prior = dueEnd !== null && dueEnd.getTime() === end.getTime() ? windowFires : 0;
+  const dueEnd = windowEndAt(win, due.at);
+  const prior = dueEnd !== null && dueEnd.getTime() === end.getTime() ? due.windowFires : 0;
   return planWindowWake(win, firedAt, prior + 1, random);
 }
 

@@ -1,10 +1,23 @@
 import { parseColumns } from "../artifacts/columns.js";
 import { ArtifactError } from "../artifacts/errors.js";
 import { normalizeNoteKey } from "../artifacts/paths.js";
-import { COLLECTION_NAME_RE, PURPOSE_MAX, isAccessMode, type AccessMode } from "../artifacts/types.js";
+import { COLLECTION_NAME_RE, PURPOSE_MAX, isAccessMode } from "../artifacts/types.js";
 import { loadManifest, ManifestError, recipeManifestProblem } from "../connectors/manifest.js";
-import type { CollectionColumn } from "../db/schema/index.js";
-import type { ConnectionResource, Manifest } from "../db/schema/index.js";
+import {
+  SYSTEM_RESOLUTIONS,
+  type CollectionColumn,
+  type AccessMode,
+  type ConnectionResource,
+  type Manifest,
+  type DesignDecision,
+  type RecipeCollection,
+  type RecipeConnection,
+  type RecipeDesign,
+  type RecipeExternal,
+  type RecipeNote,
+  type RecipeRepository,
+  type RecipeSecret,
+} from "../db/schema/index.js";
 import { RecipeError } from "./errors.js";
 import {
   asBool,
@@ -20,23 +33,7 @@ import {
   parseWriters,
   textList,
 } from "./parse-fields.js";
-import {
-  builderAuthor,
-  operatorAuthor,
-  RECIPE_HINT_MAX,
-  RECIPE_LIST_MAX,
-  RECIPE_NOTE_MAX_BYTES,
-  RECIPE_SETUP_MAX,
-  SYSTEM_RESOLUTIONS,
-  type DesignDecision,
-  type RecipeCollection,
-  type RecipeConnection,
-  type RecipeDesign,
-  type RecipeExternal,
-  type RecipeNote,
-  type RecipeRepository,
-  type RecipeSecret,
-} from "./schema.js";
+import { builderAuthor, operatorAuthor, RECIPE_HINT_MAX, RECIPE_LIST_MAX, RECIPE_NOTE_MAX_BYTES, RECIPE_SETUP_MAX } from "./schema.js";
 
 // The sections of a recipe beside its roles: collections, notes, connections, secrets, external
 // setup cards, repositories, and the design record.

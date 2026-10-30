@@ -1,16 +1,8 @@
 import { operatorActor } from "../artifacts/actors.js";
 import { listCollections } from "../artifacts/collections.js";
-import type { ArtifactActor, CollectionColumn } from "../artifacts/index.js";
-import { harnessesOn, harnessOffMessage, harnessOf, isHarness, isHarnessOff } from "../coding/harnesses.js";
-import { serverManifest } from "../connectors/load.js";
-import { listMcpServers } from "../connectors/servers.js";
-import { agentNameTaken, listAgents } from "../db/agents.js";
-import { getGuild } from "../db/guilds.js";
-import { listMachines } from "../db/machines.js";
-import { listMcpConnections } from "../db/mcp.js";
-import type { OrgMembershipRow } from "../db/orgs.js";
-import type { RecipeRow } from "../db/recipes.js";
+import type { ArtifactActor } from "../artifacts/types.js";
 import type {
+  CollectionColumn,
   ApplyInventory,
   ApplyPreview,
   CollectionPlan,
@@ -25,7 +17,17 @@ import type {
   RecipeFinding,
   RoleHarness,
   RoleModel,
+  RecipeDocument,
+  RecipeRole,
 } from "../db/schema/index.js";
+import { harnessesOn, harnessOffMessage, harnessOf, isHarness, isHarnessOff } from "../coding/harnesses.js";
+import { listServers } from "../connectors/servers.js";
+import { agentNameTaken, listAgents } from "../db/agents.js";
+import { getGuild } from "../db/guilds.js";
+import { listMachines } from "../db/machines.js";
+import { listMcpConnections } from "../db/mcp.js";
+import type { OrgMembershipRow } from "../db/orgs.js";
+import type { RecipeRow } from "../db/recipes.js";
 import { listSecrets } from "../db/secrets.js";
 import type { UserRow } from "../db/users.js";
 import { GITHUB_SLUG } from "../github/index.js";
@@ -61,7 +63,6 @@ import { RecipeError } from "./errors.js";
 import type { ValidationContext } from "./findings.js";
 import { prepareRecipeForApply, roleBrowses, roleCodes, roleTaskText, schedulesForRole } from "./prepare.js";
 import { unreviewedFields } from "./review.js";
-import type { RecipeDocument, RecipeRole } from "./schema.js";
 import { applyBlockingErrors, validateRecipe } from "./validate.js";
 
 // The preview of an apply: what it creates from the recipe, what it reuses of the organisation,
@@ -270,7 +271,7 @@ async function planConnections(
   decisions: ConnectionDecision[],
 ): Promise<PlannedConnection[]> {
   const connections = await listMcpConnections(apply.db, { orgId });
-  const servers = await listMcpServers(apply.db, orgId);
+  const servers = await listServers(apply.db, { owner: { visibleTo: orgId } });
   const bySlug = new Map(servers.map((row) => [row.slug, row]));
   const chosen = new Map(decisions.map((item) => [item.server, item]));
   return recipe.connections.map((connection) => {
@@ -353,16 +354,15 @@ async function setupsNeeded(apply: RecipeApply, orgId: string, recipe: RecipeDoc
   if (recipe.repositories.length) {
     wanted.add(GITHUB_SLUG);
   }
-  const rows = (await listMcpServers(apply.db, orgId)).filter(
-    (row) => row.enabled !== false && wanted.has(row.slug) && oauthSetupState(row) === "unsupported",
+  const rows = (await listServers(apply.db, { owner: { visibleTo: orgId }, enabled: true })).filter(
+    (row) => wanted.has(row.slug) && oauthSetupState(row) === "unsupported",
   );
   return rows.map((row) => {
-    const manifest = serverManifest(row);
-    const integration = manifest ? integrationForConnector(manifest) : null;
+    const integration = integrationForConnector(row.manifest);
     return {
       server: row.slug,
       integration: integration?.id ?? null,
-      label: integration?.label ?? manifest?.display_name ?? row.slug,
+      label: integration?.label ?? row.manifest.display_name,
     };
   });
 }

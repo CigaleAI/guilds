@@ -48,7 +48,7 @@ as a JSON document beside the box's state for it.
 
 At boot, every installed folder replaces its row's manifest and
 source, with or without a version bump. The switch, the OAuth client,
-and the overrides are kept. One loader (`connectors/load.ts`) applies
+and the overrides are kept. One loader (`connectors/servers.ts`) applies
 `overrides` to the manifest for every reader. A server added by hand
 is a `local` row with no folder, and its row is its source of truth.
 
@@ -112,7 +112,7 @@ guild, or an agent.
 ### Token logins
 
 Every token connector connects through one operation, `connect`
-(`src/connectors/connect.ts`):
+(`src/mcp/connect-token.ts`):
 
 1. It reads the inputs `auth.fields` names. A missing required one is
    a 422 naming it.
@@ -245,7 +245,7 @@ resolves it. The first rule that applies wins:
 3. Off when a `policy.default_off` pattern matches it.
 4. For a listed tool the manifest does not name: Off when its listing
    marks it `destructiveHint`, or its name carries a writing verb
-   (`src/mcp/verbs.ts`: create, update, delete, send, merge, push,
+   (`src/connectors/naming.ts`: create, update, delete, send, merge, push,
    and the like).
 5. On.
 
@@ -405,6 +405,11 @@ up**, with a **Set up** link to Platform keys.
   `local` row on public HTTPS, `auth` `none`, `token`, or `oauth`
   (`dynamic` or `configured`), its tool prefix generated from the
   slug.
+- In these bodies `slug`, `url` and `auth` are strings;
+  `display_name`, `oauth_strategy`, `description`, `limitations`,
+  `setup_hint` and a tool's `description` are a string or `null`;
+  `enabled` is a boolean and a tool's `default` a boolean or `null`.
+  A create needs `slug` and `url`. A field of another type is 422.
 
 A disabled connector is out of the builder and refuses Connect (422).
 Its existing logins keep showing.
@@ -424,6 +429,8 @@ An organisation's owners and admins add remote MCP servers under
   organisation adds. Core's open policy sets none.
 - `PATCH` and `DELETE /api/orgs/{org}/mcp/servers/{id}` edit the
   server, or remove it with its logins and the bindings that name it.
+- The bodies take the fields and types of the instance admin's
+  connector bodies; a field of another type is 422.
 
 A slug is unique per owner. Two organisations may each use one slug.
 An organisation's slug may not be a platform connector's, and a
@@ -457,7 +464,10 @@ display name and description from the server's `initialize` reply
 | `GET /api/mcp/oauth/callback` | The OAuth callback, for every browser login |
 
 A lookup answers `{ options: [{ value, label, detail, image }] }`,
-where `value` is what the setting stores.
+where `value` is what the setting stores. `tool`, `property`, `q` and
+the query's ids are strings, as are Connect's `mcp_server_id` and
+`owner_scope`; its `owner_id` is a string or null. Another type, or a
+query value given more than once, is 422 naming it.
 
 `PUT .../settings` checks the document against the schema (422 naming
 the first problem), runs the adapter's `validate` with it, stores it,

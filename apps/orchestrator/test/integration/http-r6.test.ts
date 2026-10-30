@@ -4,13 +4,13 @@ import { buildApp } from "../../src/app.js";
 import { decodeMasterKey } from "../../src/config/index.js";
 import { connect } from "../../src/seed/connect.js";
 import { generationLive } from "../../src/generation/completion.js";
-import { generationDatabase, GenerationLoop } from "../../src/generation/index.js";
+import { generationLoop } from "../../src/generation/index.js";
 import { AsyncEvent, sleep } from "../../src/lib/event.js";
-import { McpPool } from "../../src/mcp/index.js";
-import { artifactStore } from "../../src/artifacts/index.js";
+import { mcpPool } from "../../src/mcp/pool.js";
+import { artifactStore } from "../../src/artifacts/store.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, clearInstanceKeys, testEnv } from "../helpers/env.js";
 import { connectModelProvider } from "../helpers/models.js";
 import { loadJsonFixture, loadTextFixture, templatesRoot } from "../helpers/fixtures.js";
@@ -28,7 +28,6 @@ import {
   dropIsolatedDatabase,
   uniqueDbName,
 } from "../helpers/postgres.js";
-import { generationArtifacts } from "../../src/generation/prepare.js";
 
 const live = generationLive;
 const originalStream = live.streamCompletion;
@@ -86,22 +85,20 @@ test("R6 HTTP SSE and WS recordings replay over real HTTP", { timeout: 180_000 }
   const db = database.pool;
   await connectModelProvider(db, "org_home", "openrouter");
   const artifacts = artifactStore(database.pool, notes.templates);
-  const scripts = new Scripts(scriptDatabase(db));
-  const schedules = new Schedules(scheduleDatabase(db));
+  const scripts = agentScripts(db);
+  const schedules = agentSchedules(db);
   const upstream = await startSandboxUpstream();
   const sandboxes = new ExportSandboxes(env.WORKSPACE_ROOT ?? "");
   sandboxes.novncBase = upstream.base;
   sandboxes.novncHeaders = { "OPEN-SANDBOX-API-KEY": "compat-test" };
   const stream = new StreamScript();
-  live.streamCompletion = ((options: Parameters<typeof originalStream>[0]) =>
-    stream.run(options)) as typeof live.streamCompletion;
-  const generation = new GenerationLoop({
-    db: generationDatabase(db),
+  live.streamCompletion = (request, _endpoint, signal) => stream.run(request.model, signal);
+  const generation = generationLoop(db, {
     notes,
     workspaceRoot: env.WORKSPACE_ROOT ?? "",
     sandboxes,
-    mcp: new McpPool(),
-    artifacts: generationArtifacts(artifacts),
+    mcp: mcpPool(db),
+    artifacts,
   });
   await generation.reconcile();
   const app = await buildApp(database, {
@@ -111,8 +108,22 @@ test("R6 HTTP SSE and WS recordings replay over real HTTP", { timeout: 180_000 }
     scripts,
     schedules,
     masterKey: decodeMasterKey(HEX_MASTER_KEY),
-    mcp: new McpPool(),
+    mcp: mcpPool(db),
     generation,
+    publishRoutinesChanged: async (guildId, change) => {
+      await generation.groupChat.publish(guildId, "agent.routines.changed", {
+        agent_id: change.agentId,
+        action: change.action,
+        schedule_id: change.scheduleId,
+      });
+    },
+    publishScriptsChanged: async (guildId, change) => {
+      await generation.groupChat.publish(guildId, "agent.scripts.changed", {
+        agent_id: change.agentId,
+        action: change.action,
+        ...(change.name === null ? {} : { name: change.name }),
+      });
+    },
   });
   await app.listen({ host: "127.0.0.1", port: 0 });
   const address = app.server.address();

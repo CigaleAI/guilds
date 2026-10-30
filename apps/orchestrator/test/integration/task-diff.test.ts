@@ -4,15 +4,15 @@ import { buildApp } from "../../src/app.js";
 import { decodeMasterKey } from "../../src/config/index.js";
 import { connect } from "../../src/seed/connect.js";
 import type { GenerationLoop } from "../../src/generation/index.js";
-import { McpPool } from "../../src/mcp/index.js";
-import { artifactStore } from "../../src/artifacts/index.js";
+import { mcpPool } from "../../src/mcp/pool.js";
+import { artifactStore } from "../../src/artifacts/store.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, testEnv } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
-import { addAgent } from "../../src/agents/persist.js";
+import { addTestAgent } from "../helpers/agents.js";
 import { createRun, insertMessage } from "../../src/db/runs.js";
 import { agentConfig, runSnapshot } from "../helpers/generation.js";
 
@@ -53,17 +53,17 @@ test("a code_task's diff and log are read from its own checkpoints and log, and 
     db,
     notes,
     artifacts: artifactStore(database.pool, notes.templates),
-    scripts: new Scripts(scriptDatabase(db)),
-    schedules: new Schedules(scheduleDatabase(db)),
+    scripts: agentScripts(db),
+    schedules: agentSchedules(db),
     masterKey: decodeMasterKey(HEX_MASTER_KEY),
-    mcp: new McpPool(),
+    mcp: mcpPool(db),
     generation,
   });
   try {
     const guild = await app.inject({ method: "POST", url: "/api/guilds", headers: JSON_AUTH, payload: { name: "diff-desk" } });
     assert.equal(guild.statusCode, 201, guild.body);
     const now = new Date();
-    await addAgent(db,
+    await addTestAgent(db, "org_home",
       {
         agentId: "a_diff",
         guildId: String(guild.json().id),

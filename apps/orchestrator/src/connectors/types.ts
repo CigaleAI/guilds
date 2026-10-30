@@ -1,5 +1,9 @@
+import type { TSchema } from "@sinclair/typebox";
 import type { ConnectionSettings, ToolInputSchema } from "../db/schema/index.js";
 import type { FetchFn } from "../net/http.js";
+
+/** One GET a connector's API client sends: `path` on its API with the query `params`, the JSON body decoded with `schema`. */
+export type ApiGet<T extends TSchema> = { path: string; params: Record<string, string>; schema: T };
 
 /** A login's decrypted credentials, keyed by the manifest's field names. Values are trimmed strings. */
 export type Credentials = Readonly<Record<string, string>>;
@@ -80,8 +84,11 @@ export function isConnectorError(error: unknown): error is ConnectorError {
   if (error instanceof ConnectorError) {
     return true;
   }
-  const status = (error as { status?: unknown } | null)?.status;
-  return error instanceof Error && error.name === "ConnectorError" && (status === null || typeof status === "number");
+  if (!(error instanceof Error) || error.name !== "ConnectorError") {
+    return false;
+  }
+  const status = "status" in error ? error.status : undefined;
+  return status === null || typeof status === "number";
 }
 
 type StatusError = Error & { status: number | null };

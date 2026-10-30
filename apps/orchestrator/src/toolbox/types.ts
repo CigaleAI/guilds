@@ -1,25 +1,14 @@
-import { DEFAULT_MAX_SCRIPTS } from "../agents/validation.js";
-import type { Harness, Effort, ReportedToolMetadata, RunHarnessTask } from "../db/schema/index.js";
+import { DEFAULT_MAX_SCRIPTS } from "../agents/config.js";
+import type { Harness, Effort, ReportedToolMetadata } from "../db/schema/index.js";
 import { agentHome } from "../lib/agent-file.js";
 import type { ArtifactActor } from "../artifacts/types.js";
-import type { ArtifactFiles } from "../artifacts/files.js";
-import type { NotesStore } from "../notes/store.js";
-import type { Issues } from "../issues/index.js";
-import type { Schedules } from "../schedules/service.js";
-import type { Scripts } from "../scripts/catalog.js";
 import type { RunScriptSnapshot } from "../db/schema/index.js";
-import type { ToolArtifacts } from "./artifacts.js";
+import type { CommandResult } from "../sandbox/sdk.js";
+import type { ToolServices } from "./services.js";
 
 export type GroupChat = {
   publish?(guildId: string, event: string, data: Record<string, unknown>): Promise<void>;
   postFromRun?(
-    runId: string,
-    agentId: string,
-    guildId: string,
-    agentName: string,
-    content: string,
-  ): Promise<string>;
-  post_from_run?(
     runId: string,
     agentId: string,
     guildId: string,
@@ -70,21 +59,14 @@ export class CancelEvent {
   }
 }
 
-export type CommandResult = {
-  id?: string;
-  exit_code?: number | null;
-  exitCode?: number | null;
-  logs?: {
-    stdout?: Array<{ text?: string }>;
-    stderr?: Array<{ text?: string }>;
-  };
-};
+/** What a sandbox command reports once it starts: its execution id, which interrupts it. */
+export type CommandInit = { id?: string };
 
 export type SandboxCommands = {
   run(
     command: string,
     opts?: Record<string, unknown>,
-    handlers?: { onInit?: (init: { id?: string }) => Promise<void> | void; on_init?: (init: { id?: string }) => Promise<void> | void },
+    handlers?: { onInit?: (init: CommandInit) => Promise<void> | void; on_init?: (init: CommandInit) => Promise<void> | void },
   ): Promise<CommandResult>;
   interrupt?(executionId: string): Promise<void>;
 };
@@ -112,127 +94,116 @@ export type AgentSecretStore = {
   }>;
 };
 
-export type ToolContext = {
+/** What a run's tools work with, the same for every call: whose run it is, where its commands run, and what it offers. */
+export type ToolRun = {
   run_id: string;
   agent_id: string;
   guild_id: string;
-  sandbox: SandboxHandle | null;
-  secrets: Record<string, string>;
-  exit_code: number | null;
-  notes: NotesStore | null;
-  artifacts: ToolArtifacts | null;
-  artifact_actor: ArtifactActor | null;
-  /** The shared files, reached with `artifact_actor`. */
-  files: ArtifactFiles | null;
-  /** The agent's home on the orchestrator's host, where the file tools read and write. */
-  workspace_dir: string | null;
   guild_name: string;
   agent_name: string;
   org_slug: string;
-  cancel_event: CancelEvent | null;
-  track_command: ((executionId: string | null) => void) | null;
-  group_chat: GroupChat | null;
-  issues: Issues | null;
-  schedules: Schedules | null;
-  scripts: Scripts | null;
   run_kind: string;
+  /** The agent's container on its machine, with the run's environment; null without one. */
+  sandbox: SandboxHandle | null;
+  /** The values of the run's secrets, which its tool results are redacted with. */
+  secrets: Record<string, string>;
   /** Names of the secrets in this generation's environment. */
   secret_names: string[];
-  secret_store: AgentSecretStore | null;
+  /** The run's secret aliases, from its snapshot: which secret each aliased variable reads. */
+  secret_aliases: Record<string, string>;
+  /** Who the run is in the artifact store; null when its agent has no organisation. */
+  artifact_actor: ArtifactActor | null;
+  /** The agent's home on the orchestrator's host, where the file tools read and write. */
+  workspace_dir: string | null;
+  /** The agent's home in its machine, where its commands run: `/home/<agent id>`. */
+  agent_home: string;
+  /** Chrome's DevTools port for the agent's browser, from its slot; null without one. */
+  cdp_port: number | null;
+  /** What a cancel of the run sets; null when nothing cancels the work. */
+  cancel_event: CancelEvent | null;
   memory_replaced_by: string;
   run_scripts: RunScriptSnapshot[];
-  /** Writes `run_scripts` onto this run's config snapshot so later generations keep the drop. */
-  persist_run_scripts: ((scripts: RunScriptSnapshot[]) => Promise<void>) | null;
   /** How many scripts this agent may keep; `script_create` of a new name is refused past it. */
   max_scripts: number;
   connection_tool_names: string[];
   dynamic_tools: Record<string, Tool>;
   /** When set, only these names plus `dynamic_tools` may run. `null` skips the check. */
   offered_tools: Set<string> | null;
-  /** The provider id of the call being invoked. */
-  tool_call_id: string;
-  /** Fields a handler reports for the call's metadata row (exit code, path, line counts). */
-  tool_metadata: ReportedToolMetadata | null;
-  /** The agent's home in its machine, where its commands run: `/home/<agent id>`. */
-  agent_home: string;
-  /** Chrome's DevTools port for the agent's browser, from its slot; null without one. */
-  cdp_port: number | null;
-  /** Starts the agent's Chrome when it is not up and keeps it from its idle stop; null without a browser. */
-  ensure_browser: (() => Promise<void>) | null;
-  /** Where a coding run's working directory starts, relative to the agent's home; empty for its root. */
-  code_default_cwd: string;
-  /** Runs before each `shell` command and harness poll: replaces repository tokens close to expiry. */
-  before_command: (() => Promise<void>) | null;
   /** The run's coding harness, from its snapshot; null without one. */
   harness: Harness | null;
   /** The model the run's harness runs, from its snapshot; null for its subscription's default. */
   harness_model: string | null;
   /** The effort the run's harness runs its model at, from its snapshot; null for the harness's default. */
   harness_effort: Effort | null;
-  /** The run's secret aliases, from its snapshot: which secret each aliased variable reads. */
-  secret_aliases: Record<string, string>;
   /** The guild repositories a coding run works on, by their folder under `repos/`. */
   code_repositories: string[];
-  /** Publishes a running tool call's progress on the run's stream. */
-  publish_progress:
-    | ((toolCallId: string, update: { lines: string[]; session_id: string | null }) => Promise<void>)
-    | null;
-  /** Keeps the running harness call with its run, so a restart can stop it and name its session. */
-  remember_harness_task: ((task: RunHarnessTask) => Promise<void>) | null;
-  /** Records that the harness found a login in the agent's home, and whose it is when known. */
-  harness_login_seen: ((harness: Harness, account: string | null) => Promise<void>) | null;
-  /** Records that the harness found no credential at all, so no login is left in the agent's home. */
-  harness_login_lost: ((harness: Harness) => Promise<void>) | null;
+  /** Where a coding run's working directory starts, relative to the agent's home; empty for its root. */
+  code_default_cwd: string;
 };
 
-export function createToolContext(
-  partial: Pick<ToolContext, "run_id" | "agent_id" | "guild_id" | "sandbox" | "secrets"> &
-    Partial<ToolContext>,
-): ToolContext {
+/** The hooks the loop composes for one run, each bound to what the run record does not hold. */
+export type ToolHooks = {
+  /** Keeps the command the run waits on, so a cancel interrupts it; null when the run's commands are not tracked. */
+  track_command: ((executionId: string | null) => void) | null;
+  /** Starts the agent's Chrome when it is not up and keeps it from its idle stop; null without a browser. */
+  ensure_browser: (() => Promise<void>) | null;
+  /** Runs before each `shell` command and harness poll: replaces repository tokens close to expiry. */
+  before_command: (() => Promise<void>) | null;
+  /** Saves values the agent produced as secrets of its organisation; null where the run cannot. */
+  secret_store: AgentSecretStore | null;
+};
+
+/** The run record of `partial`, every field it leaves out at its default. */
+export function createToolRun(
+  partial: Pick<ToolRun, "run_id" | "agent_id" | "guild_id" | "sandbox" | "secrets"> & Partial<ToolRun>,
+): ToolRun {
   return {
-    exit_code: null,
-    notes: null,
-    artifacts: null,
-    artifact_actor: null,
-    files: null,
-    workspace_dir: null,
     guild_name: "",
     agent_name: "",
     org_slug: "",
-    cancel_event: null,
-    track_command: null,
-    group_chat: null,
-    issues: null,
-    schedules: null,
-    scripts: null,
     run_kind: "direct",
     secret_names: [],
-    secret_store: null,
+    secret_aliases: {},
+    artifact_actor: null,
+    workspace_dir: null,
+    agent_home: agentHome(partial.agent_id),
+    cdp_port: null,
+    cancel_event: null,
     memory_replaced_by: "",
     run_scripts: [],
-    persist_run_scripts: null,
     max_scripts: DEFAULT_MAX_SCRIPTS,
     connection_tool_names: [],
     dynamic_tools: {},
     offered_tools: null,
-    tool_call_id: "",
-    tool_metadata: null,
-    agent_home: agentHome(partial.agent_id),
-    cdp_port: null,
-    ensure_browser: null,
-    code_default_cwd: "",
-    before_command: null,
     harness: null,
     harness_model: null,
     harness_effort: null,
-    secret_aliases: {},
     code_repositories: [],
-    publish_progress: null,
-    remember_harness_task: null,
-    harness_login_seen: null,
-    harness_login_lost: null,
+    code_default_cwd: "",
     ...partial,
   };
+}
+
+/** One call the model made to a tool: its id, its name, its arguments, and what its handler reports of it. */
+export type ToolInvocation = {
+  /** The provider id of the call. */
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+  /** The exit code of the command the call ran; null when it ran none. */
+  exit_code: number | null;
+  /** Fields the handler reports for the call's metadata row (exit code, path, line counts). */
+  metadata: ReportedToolMetadata | null;
+};
+
+/** The run's artifact actor as it makes `call`; null when the run has none. */
+export function callActor(actor: ArtifactActor | null, call: ToolInvocation): ArtifactActor | null {
+  return actor ? { ...actor, toolCall: { id: call.id, name: call.name } } : null;
+}
+
+/** Hooks that do nothing: the run's commands untracked, no browser to start, nothing run first, no secret store. */
+export function createToolHooks(partial: Partial<ToolHooks> = {}): ToolHooks {
+  return { track_command: null, ensure_browser: null, before_command: null, secret_store: null, ...partial };
 }
 
 export type Tool = {
@@ -240,6 +211,6 @@ export type Tool = {
   description: string;
   output_filter: (result: string) => string;
   filter_name: string;
-  handler: (ctx: ToolContext, args: Record<string, unknown>) => Promise<string>;
+  handler: (services: ToolServices, run: ToolRun, hooks: ToolHooks, call: ToolInvocation) => Promise<string>;
   schema: Record<string, unknown>;
 };

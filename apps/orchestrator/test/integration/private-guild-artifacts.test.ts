@@ -3,8 +3,8 @@ import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
@@ -28,14 +28,18 @@ test("organisation-wide note, table, and change routes keep a private guild to i
   await notes.ensureSystemPrompt();
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
-  const app = await buildApp(database, { db, notes, scripts: new Scripts(scriptDatabase(db)), schedules: new Schedules(scheduleDatabase(db)) });
+  const app = await buildApp(database, { db, notes, scripts: agentScripts(db), schedules: agentSchedules(db) });
   const teammate = await insertUser(db, {
       userId: "user_teammate_vault",
       name: "teammate-vault",
       image: null,
       email: "vault@example.com",
     }, new Date());
-  await insertMember(db, "org_home", String(teammate.id), "member", new Date());
+  await insertMember(
+    db,
+    { org_id: "org_home", user_id: String(teammate.id), role: "member" },
+    new Date(),
+  );
   const TEAMMATE = { "X-Guilds-User": String(teammate.id), "X-Guilds-Org": "org_home" };
 
   try {
@@ -119,6 +123,14 @@ test("organisation-wide note, table, and change routes keep a private guild to i
       payload: { display_paths: [notePath] },
     });
     assert.deepEqual(memberLatest.json(), {});
+    const unlisted = await app.inject({
+      method: "POST",
+      url: "/api/file-changes/latest",
+      headers: { ...TEAMMATE, ...JSON_BODY },
+      payload: { display_paths: notePath },
+    });
+    assert.equal(unlisted.statusCode, 422);
+    assert.deepEqual(unlisted.json().detail[0].loc, ["body", "display_paths"]);
 
     const ownerTable = await app.inject({ method: "GET", url: `/api/collections/${tableId}`, headers: OWNER });
     assert.equal(ownerTable.statusCode, 200);

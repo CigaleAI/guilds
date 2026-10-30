@@ -18,7 +18,7 @@ import { getAttachment, insertAttachment, listAttachmentsByIds } from "../db/att
 import { bindQuery, type Queryable } from "../db/pg.js";
 
 /** The db/ functions attachment rows are read and written through, on `db`. */
-export function attachmentDatabase(db: Queryable) {
+function attachmentDatabase(db: Queryable) {
   return {
     insertAttachment: bindQuery(db, insertAttachment),
     getAttachment: bindQuery(db, getAttachment),
@@ -142,6 +142,11 @@ export class AttachmentService {
     }
     return refs;
   }
+}
+
+/** Uploaded attachments, their rows on `db` and their bytes in `blobs`. */
+export function attachmentService(db: Queryable, blobs: BlobStore): AttachmentService {
+  return new AttachmentService(attachmentDatabase(db), blobs);
 }
 
 export function attachmentPayload(row: AttachmentRow): Record<string, unknown> {

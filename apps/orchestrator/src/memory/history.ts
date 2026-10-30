@@ -1,12 +1,10 @@
 import type { ArtifactStore } from "../artifacts/store.js";
 import type { ArtifactActor } from "../artifacts/types.js";
 import { listFileChanges } from "../db/file-changes.js";
-import { displayPathFor, MEMORY_KEY } from "../artifacts/paths.js";
 import { iso } from "../db/views.js";
-import { buildMemoryTimeline, type MemoryTimelineEntry } from "./timeline.js";
+import { memoryTimeline, type MemoryTimelineEntry } from "../artifacts/memory.js";
 import { getRun } from "../db/runs.js";
 import type { Queryable } from "../db/pg.js";
-import { getMemoryRow, listRevisions } from "../artifacts/memory.js";
 
 export type MemoryWriteCall = { call_id: string; name: string | null };
 
@@ -87,28 +85,18 @@ export async function memoryHistory(
   actor: ArtifactActor,
   agent: { id: string; name: string },
 ): Promise<Record<string, unknown>> {
-  const live = await getMemoryRow(deps.artifacts, actor, agent.id);
-  const revisions = await listRevisions(deps.artifacts, actor, agent.id);
-  const entries = buildMemoryTimeline({ live: { content: live?.content_text ?? "" }, revisions });
-  const memoryPath = displayPathFor({
-    orgId: actor.orgId,
-    level: "agent",
-    ownerId: agent.id,
-    kind: "memory",
-    path: "",
-    key: MEMORY_KEY,
-  });
-  const changes = await listFileChanges(deps.db, actor.orgId, memoryPath);
+  const timeline = await memoryTimeline(deps.artifacts, actor, agent.id);
+  const changes = await listFileChanges(deps.db, actor.orgId, timeline.displayPath);
   const callByRun = firstMemoryWriteByRun(changes);
-  const runIds = [...new Set(entries.flatMap((entry) => (entry.run_id ? [entry.run_id] : [])))];
+  const runIds = [...new Set(timeline.entries.flatMap((entry) => (entry.run_id ? [entry.run_id] : [])))];
   const runs = await runsById(deps.db, runIds);
   return {
     agent: { id: agent.id, name: agent.name },
-    display_path: memoryPath,
+    display_path: timeline.displayPath,
     live: {
-      version: live?.version ?? null,
-      content_hash: live?.content_hash ?? null,
+      version: timeline.live?.version ?? null,
+      content_hash: timeline.live?.contentHash ?? null,
     },
-    entries: attachRunsToMemoryEntries(entries, runs, callByRun),
+    entries: attachRunsToMemoryEntries(timeline.entries, runs, callByRun),
   };
 }

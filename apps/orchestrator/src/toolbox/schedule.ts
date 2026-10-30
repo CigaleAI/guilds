@@ -1,11 +1,15 @@
+import type { Static, TSchema } from "@sinclair/typebox";
 import { type ChangeActor, runActor } from "../lib/change-actor.js";
+import { decode } from "../lib/decode.js";
 import { ScheduleError } from "../schedules/cron.js";
+import { RoutineChangeInput, RoutineTimingInput, WakeWindowInput } from "../schedules/input.js";
 import { formatScheduleStamp, timingText } from "../schedules/item.js";
 import { scheduleChanges } from "../schedules/service.js";
 import { rowTiming } from "../schedules/timing.js";
 import { argString, functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
-import type { Tool, ToolContext } from "./types.js";
+import type { ToolServices } from "./services.js";
+import type { Tool, ToolInvocation, ToolRun } from "./types.js";
 
 export const SCHEDULE_TOOLS = [
   "schedule_create_cron",
@@ -17,25 +21,30 @@ export const SCHEDULE_TOOLS = [
   "schedule_delete",
 ] as const;
 
-function schedules(ctx: ToolContext) {
-  if (ctx.run_kind !== "direct" && ctx.run_kind !== "group") {
+function schedules(services: ToolServices, run: ToolRun) {
+  if (run.run_kind !== "direct" && run.run_kind !== "group") {
     throw new ScheduleError("schedule tools are only available in chat");
   }
-  if (ctx.schedules === null) {
+  if (services.schedules === null) {
     throw new ScheduleError("schedules are not available");
   }
-  return ctx.schedules;
+  return services.schedules;
 }
 
 /** The run making the call, as the routine's change log names it. */
-function callActor(ctx: ToolContext, toolName: string): ChangeActor {
-  return runActor({ runId: ctx.run_id, agentName: ctx.agent_name }, { id: ctx.tool_call_id, name: toolName });
+function routineActor(run: ToolRun, call: ToolInvocation): ChangeActor {
+  return runActor({ runId: run.run_id, agentName: run.agent_name }, { id: call.id, name: call.name });
 }
 
-async function publish(ctx: ToolContext, action: string, scheduleId: string): Promise<void> {
-  if (ctx.group_chat !== null && ctx.guild_id && ctx.group_chat.publish) {
-    await ctx.group_chat.publish(ctx.guild_id, "agent.routines.changed", {
-      agent_id: ctx.agent_id,
+/** The arguments `values` name as `schema` describes them; a mismatch is a ScheduleError naming it. */
+function routineArguments<T extends TSchema>(schema: T, values: unknown): Static<T> {
+  return decode(schema, values, (problem) => new ScheduleError(problem));
+}
+
+async function publish(services: ToolServices, run: ToolRun, action: string, scheduleId: string): Promise<void> {
+  if (services.group_chat !== null && run.guild_id && services.group_chat.publish) {
+    await services.group_chat.publish(run.guild_id, "agent.routines.changed", {
+      agent_id: run.agent_id,
       action,
       schedule_id: scheduleId,
     });
@@ -43,18 +52,18 @@ async function publish(ctx: ToolContext, action: string, scheduleId: string): Pr
 }
 
 async function createAndPublish(
-  ctx: ToolContext,
-  call: { tool: string; when: { cron?: unknown; window?: unknown } },
-  args: Record<string, unknown>,
+  services: ToolServices,
+  run: ToolRun,
+  call: ToolInvocation,
+  when: RoutineTimingInput,
 ): Promise<string> {
-  const row = await schedules(ctx).create(
-    callActor(ctx, call.tool),
-    ctx.agent_id,
-    call.when,
-    argString(args, "description"),
-    argString(args, "instruction"),
-  );
-  await publish(ctx, "create", String(row.id));
+  const args = call.arguments;
+  const row = await schedules(services, run).create(routineActor(run, call), run.agent_id, {
+    when,
+    description: argString(args, "description"),
+    instruction: argString(args, "instruction"),
+  });
+  await publish(services, run, "create", String(row.id));
   return `created ${row.id}  ${timingText(rowTiming(row))}\n${row.description}`;
 }
 
@@ -99,8 +108,9 @@ export const scheduleCreateCron: Tool = {
     },
     ["cron", "description", "instruction"],
   ),
-  async handler(ctx, args) {
-    return createAndPublish(ctx, { tool: "schedule_create_cron", when: { cron: args.cron } }, args);
+  async handler(services, run, _hooks, call) {
+    const when = routineArguments(RoutineTimingInput, { cron: call.arguments.cron });
+    return createAndPublish(services, run, call, when);
   },
 };
 
@@ -131,22 +141,10 @@ export const scheduleCreateWindow: Tool = {
     },
     ["timezone", "start", "end", "max_wakes", "description", "instruction"],
   ),
-  async handler(ctx, args) {
-    return createAndPublish(
-      ctx,
-      {
-        tool: "schedule_create_window",
-        when: {
-          window: {
-            timezone: args.timezone,
-            start: args.start,
-            end: args.end,
-            max_wakes: args.max_wakes,
-          },
-        },
-      },
-      args,
-    );
+  async handler(services, run, _hooks, call) {
+    const { timezone, start, end, max_wakes } = call.arguments;
+    const window = routineArguments(WakeWindowInput, { timezone, start, end, max_wakes });
+    return createAndPublish(services, run, call, { window });
   },
 };
 
@@ -162,8 +160,8 @@ export const scheduleList: Tool = {
     {},
     [],
   ),
-  async handler(ctx) {
-    return schedules(ctx).listForAgent(ctx.agent_id);
+  async handler(services, run) {
+    return schedules(services, run).listForAgent(run.agent_id);
   },
 };
 
@@ -213,15 +211,16 @@ export const scheduleUpdate: Tool = {
     },
     ["schedule_id"],
   ),
-  async handler(ctx, args) {
+  async handler(services, run, _hooks, call) {
+    const args = call.arguments;
     const { cron, window, description, instruction } = args;
-    const row = await schedules(ctx).update(
-      callActor(ctx, "schedule_update"),
-      ctx.agent_id,
+    const row = await schedules(services, run).update(
+      routineActor(run, call),
+      run.agent_id,
       argString(args, "schedule_id"),
-      scheduleChanges({ cron, window, description, instruction }),
+      scheduleChanges(routineArguments(RoutineChangeInput, { cron, window, description, instruction })),
     );
-    await publish(ctx, "edit", String(row.id));
+    await publish(services, run, "edit", String(row.id));
     const next = row.paused ? "paused" : `next ${formatScheduleStamp(row.next_run_at)}`;
     return `updated ${row.id}  ${timingText(rowTiming(row))}  ${next}\n${row.description}`;
   },
@@ -240,14 +239,15 @@ export const schedulePause: Tool = {
     },
     ["schedule_id"],
   ),
-  async handler(ctx, args) {
-    const row = await schedules(ctx).setPaused(
-      callActor(ctx, "schedule_pause"),
-      ctx.agent_id,
+  async handler(services, run, _hooks, call) {
+    const args = call.arguments;
+    const row = await schedules(services, run).setPaused(
+      routineActor(run, call),
+      run.agent_id,
       argString(args, "schedule_id"),
       true,
     );
-    await publish(ctx, "pause", String(row.id));
+    await publish(services, run, "pause", String(row.id));
     return `paused ${row.id}`;
   },
 };
@@ -265,14 +265,15 @@ export const scheduleResume: Tool = {
     },
     ["schedule_id"],
   ),
-  async handler(ctx, args) {
-    const row = await schedules(ctx).setPaused(
-      callActor(ctx, "schedule_resume"),
-      ctx.agent_id,
+  async handler(services, run, _hooks, call) {
+    const args = call.arguments;
+    const row = await schedules(services, run).setPaused(
+      routineActor(run, call),
+      run.agent_id,
       argString(args, "schedule_id"),
       false,
     );
-    await publish(ctx, "resume", String(row.id));
+    await publish(services, run, "resume", String(row.id));
     return `resumed ${row.id}  next ${formatScheduleStamp(row.next_run_at)}`;
   },
 };
@@ -290,13 +291,14 @@ export const scheduleDelete: Tool = {
     },
     ["schedule_id"],
   ),
-  async handler(ctx, args) {
-    const row = await schedules(ctx).delete(
-      callActor(ctx, "schedule_delete"),
-      ctx.agent_id,
+  async handler(services, run, _hooks, call) {
+    const args = call.arguments;
+    const row = await schedules(services, run).delete(
+      routineActor(run, call),
+      run.agent_id,
       argString(args, "schedule_id"),
     );
-    await publish(ctx, "delete", String(row.id));
+    await publish(services, run, "delete", String(row.id));
     return `deleted ${row.id}`;
   },
 };

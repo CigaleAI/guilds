@@ -1,24 +1,32 @@
-import { agentActor, type ArtifactStore } from "../artifacts/index.js";
+import { agentActor } from "../artifacts/actors.js";
+import { ArtifactError } from "../artifacts/errors.js";
+import type { ArtifactActor } from "../artifacts/types.js";
+import type { ArtifactStore } from "../artifacts/store.js";
 import { enabledToolNames, resolvedMcp, resolvedTools } from "../access/index.js";
-import { accessDatabase, agentSecrets, resolveMcpTool } from "../access/runtime.js";
+import { agentLogins, agentSecrets, resolveMcpTool } from "../access/runtime.js";
 import { listAgents, type AgentPlaceRow, type AgentRow } from "../db/agents.js";
+import { listBindingsCovering } from "../db/bindings.js";
 import { listGroupMessages } from "../db/group-chat.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
-import { isReadOnlyRemote, listedFromRows, mcpSchema, previewConnectorState } from "../mcp/index.js";
+import { previewConnectorState } from "../mcp/pool.js";
 import { collectRunState } from "../state/index.js";
-import { guildOperators } from "../guilds/validation.js";
-import { memoryOf } from "../agents/validation.js";
 import { schemasFor } from "../toolbox/index.js";
 import { CONTEXT_HISTORY_LIMIT } from "../groupchat/history.js";
 import type { Scripts } from "../scripts/catalog.js";
-import type { LoadedConnector } from "../connectors/load.js";
-import type { McpConnectionRow } from "../db/mcp.js";
+import { listServers, type LoadedConnector } from "../connectors/servers.js";
+import { listMcpConnections, type McpConnectionRow } from "../db/mcp.js";
+import { connectionTools } from "../mcp/service.js";
 import { listCollections } from "../artifacts/collections.js";
 
-/** The db/ functions a preview of an agent's run state reads, on `db`. */
+/** The db/ functions an agent's run state preview reads, and its secrets and logins, on `db`. */
 export function previewDatabase(db: Queryable) {
   return {
-    ...accessDatabase(db),
+    agentSecrets: bindQuery(db, agentSecrets),
+    agentLogins: bindQuery(db, agentLogins),
+    listBindingsCovering: bindQuery(db, listBindingsCovering),
+    listServers: bindQuery(db, listServers),
+    listMcpConnections: bindQuery(db, listMcpConnections),
+    connectionTools: bindQuery(db, connectionTools),
     listAgents: bindQuery(db, listAgents),
     listGroupMessages: bindQuery(db, listGroupMessages),
   };
@@ -30,6 +38,18 @@ export type PreviewDeps = {
   scripts: Scripts;
 };
 
+/** The collections the agent reaches, or none when artifacts refuses to list them, as a run reads them. */
+async function previewCollections(store: ArtifactStore, actor: ArtifactActor): Promise<unknown[]> {
+  try {
+    return await listCollections(store, actor);
+  } catch (error) {
+    if (error instanceof ArtifactError) {
+      return [];
+    }
+    throw error;
+  }
+}
+
 export async function previewCurrentState(
   deps: PreviewDeps,
   agent: AgentRow,
@@ -38,20 +58,15 @@ export async function previewCurrentState(
   const orgId = agent.org_id;
   const guildId = agent.guild_id;
   const agentId = agent.id;
-  const secrets = await agentSecrets(deps.db, agent);
+  const secrets = await deps.db.agentSecrets(agent);
   const members = await deps.db.listAgents(guildId);
   const historyRows = await deps.db.listGroupMessages(guildId);
   const actor = agentActor({ orgId, guildId, agentId, agentName: agent.name });
-  let collections: unknown[] = [];
-  try {
-    collections = await listCollections(deps.artifacts, actor);
-  } catch {
-    /* keep empty collections */
-  }
+  const collections = await previewCollections(deps.artifacts, actor);
   const config = agent.config;
   const state = collectRunState(null, agent.org_slug, agent.guild_name, agent.name, {
     members,
-    operators: guildOperators({ operators: agent.guild_operators }),
+    operators: agent.guild_operators,
     historyRows: historyRows.slice(-CONTEXT_HISTORY_LIMIT),
     guildAbout: agent.guild_about,
     guildDescription: agent.guild_description,
@@ -59,7 +74,7 @@ export async function previewCurrentState(
     secrets,
     scripts: await deps.scripts.catalog(agentId),
     maxToolCalls: Number(config.max_tool_calls ?? 50),
-    connectors: await previewConnectorState(deps.db, agent),
+    connectors: previewConnectorState(await deps.db.agentLogins(agent)),
   });
   return { state, projected_at: projectedAt };
 }
@@ -78,7 +93,7 @@ function serverSummary(server: LoadedConnector): ProjectedConnection["server"] {
   return {
     id: server.id,
     slug: server.slug,
-    display_name: String(server.display_name || server.slug),
+    display_name: server.display_name || server.slug,
   };
 }
 
@@ -87,23 +102,19 @@ export async function projectConnection(
   connection: McpConnectionRow,
   server: LoadedConnector,
 ): Promise<ProjectedConnection> {
-  const slug = server.slug;
-  const listed = listedFromRows(await deps.db.listMcpTools(connection.id));
+  const listed = await deps.db.connectionTools(connection, server);
   return {
     id: connection.id,
     server: serverSummary(server),
     owner_scope: connection.owner_scope,
-    owner_id: connection.owner_id === null || connection.owner_id === undefined ? null : String(connection.owner_id),
-    account_hint: String(connection.account_hint ?? ""),
+    owner_id: connection.owner_id,
+    account_hint: connection.account_hint,
     status: connection.status,
     tools: listed.map((tool) => ({
       name: tool.namespaced_name,
       remote_name: tool.remote_name,
       description: tool.description,
-      read_only: isReadOnlyRemote(slug, tool.remote_name, {
-        readOnlyHint: tool.read_only_hint,
-        verified: server.verified,
-      }),
+      read_only: tool.read_only,
     })),
   };
 }
@@ -116,12 +127,12 @@ export async function projectGuildConnections(
   guildId: string,
 ): Promise<ProjectedConnection[]> {
   const servers = new Map<string, LoadedConnector>();
-  for (const server of await deps.db.listMcpServers(orgId)) {
+  for (const server of await deps.db.listServers({ owner: { visibleTo: orgId } })) {
     servers.set(server.id, server);
   }
   const members = await deps.db.listAgents(guildId);
   const seen = new Map<string, McpConnectionRow>();
-  const scopes: Array<{ agentId: string | null }> = [{ agentId: null }, ...members.map((row) => ({ agentId: String(row.id) }))];
+  const scopes: Array<{ agentId: string | null }> = [{ agentId: null }, ...members.map((row) => ({ agentId: row.id }))];
   for (const scope of scopes) {
     for (const connection of await deps.db.listMcpConnections({ orgId, guildId, agentId: scope.agentId })) {
       seen.set(connection.id, connection);
@@ -155,7 +166,7 @@ export async function projectAgentAccess(
   const rows = await deps.db.listBindingsCovering({ orgId, guildId, agentId });
   const scope = { orgId, guildId, agentId };
   const nativeTools = enabledToolNames(resolvedTools(rows, scope));
-  const secrets = (await agentSecrets(deps.db, agent)).map((row) => ({
+  const secrets = (await deps.db.agentSecrets(agent)).map((row) => ({
     name: row.name ?? "",
     description: row.description ?? "",
   }));
@@ -164,7 +175,7 @@ export async function projectAgentAccess(
     connections.set(connection.id, connection);
   }
   const projected: Array<ProjectedConnection & { server_enabled: boolean; offered_tools: string[] }> = [];
-  for (const [item, server] of resolvedMcp(rows, await deps.db.listMcpServers(scope.orgId), scope)) {
+  for (const [item, server] of resolvedMcp(rows, await deps.db.listServers({ owner: { visibleTo: scope.orgId } }), scope)) {
     if (item.connection_id === null) {
       continue;
     }
@@ -175,7 +186,7 @@ export async function projectAgentAccess(
     const base = await projectConnection(deps, connection, server);
     const offered = item.enabled && connection.status === "connected"
       ? base.tools
-          .filter((tool) => resolveMcpTool(rows, tool.name, { serverEnabled: true, ...scope }).enabled)
+          .filter((tool) => resolveMcpTool(rows, tool.name, scope, true).enabled)
           .map((tool) => tool.name)
       : [];
     projected.push({ ...base, server_enabled: item.enabled, offered_tools: offered });
@@ -201,20 +212,19 @@ export async function projectOfferedToolSchemas(
   const agentId = agent.id;
   const rows = await deps.db.listBindingsCovering({ orgId, guildId, agentId });
   const nativeNames = enabledToolNames(resolvedTools(rows, { orgId, guildId, agentId })).filter(
-    (name) => memoryOf(agent.config as Record<string, unknown> | undefined) || name !== "memory_write",
+    (name) => agent.config.memory || name !== "memory_write",
   );
   const schemas = [...schemasFor(nativeNames)];
-  const servers = await deps.db.listMcpServers(orgId);
+  const servers = await deps.db.listServers({ owner: { visibleTo: orgId } });
   const connections = new Map<string, McpConnectionRow>();
   let latest: string | null = null;
   for (const connection of await deps.db.listMcpConnections({ orgId, guildId, agentId })) {
     connections.set(connection.id, connection);
-    const stamp = String(connection.updated_at ?? connection.created_at ?? "");
-    if (stamp && (!latest || stamp > latest)) {
-      latest = stamp;
+    if (!latest || connection.updated_at > latest) {
+      latest = connection.updated_at;
     }
   }
-  for (const [item] of resolvedMcp(rows, servers, { orgId, guildId, agentId })) {
+  for (const [item, server] of resolvedMcp(rows, servers, { orgId, guildId, agentId })) {
     if (!item.enabled || item.connection_id === null) {
       continue;
     }
@@ -222,21 +232,16 @@ export async function projectOfferedToolSchemas(
     if (!connection) {
       continue;
     }
-    const listed = listedFromRows(await deps.db.listMcpTools(connection.id));
+    const listed = await deps.db.connectionTools(connection, server);
     for (const tool of listed) {
-      const resolved = resolveMcpTool(rows, tool.namespaced_name, {
-        serverEnabled: true,
-        orgId,
-        guildId,
-        agentId,
-      });
+      const resolved = resolveMcpTool(rows, tool.namespaced_name, { orgId, guildId, agentId }, true);
       if (!resolved.enabled) {
         continue;
       }
-      schemas.push(mcpSchema(tool));
+      schemas.push(tool.schema);
     }
   }
-  const config = JSON.stringify(agent.config ?? {});
+  const config = JSON.stringify(agent.config);
   return {
     schemas,
     catalog_revision: latest,

@@ -1,3 +1,4 @@
+import { Type, type Static } from "@sinclair/typebox";
 import { isoOrNull } from "../db/views.js";
 import { jsonObj } from "../db/json.js";
 
@@ -7,6 +8,22 @@ export type SecretAccess = {
   guild_ids: string[];
   agent_ids: string[];
 };
+
+/** Who gets a secret as a request names it: organisation-wide, or the guilds and agents granted. */
+export const SecretAccessSchema = Type.Object({
+  org_wide: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
+  guild_ids: Type.Optional(Type.Union([Type.Array(Type.String()), Type.Null()])),
+  agent_ids: Type.Optional(Type.Union([Type.Array(Type.String()), Type.Null()])),
+});
+
+/** Who gets a secret, as a request names it, before its ids are checked; null is none. */
+export type SecretAccessRequest = Static<typeof SecretAccessSchema>;
+
+/** A change to who gets a secret, which names `org_wide`. */
+export const SecretAccessChangeSchema = Type.Composite([
+  Type.Omit(SecretAccessSchema, ["org_wide"]),
+  Type.Object({ org_wide: Type.Union([Type.Boolean(), Type.Null()]) }),
+]);
 
 /** One grant row as the repository reads it: its target, that target's name, and the guild it sits in. */
 export type SecretGrantRow = {
@@ -34,25 +51,21 @@ export function managesOrgSecrets(role: string): boolean {
   return role === "owner" || role === "admin";
 }
 
-function idList(value: unknown, field: string): string[] {
+function idList(value: string[] | null | undefined, field: string): string[] {
   if (value === undefined || value === null) {
     return [];
   }
-  if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || !item.trim())) {
+  if (value.some((item) => !item.trim())) {
     throw new SecretAccessError(`${field} must be a list of ids`);
   }
-  return [...new Set((value as string[]).map((item) => item.trim()))];
+  return [...new Set(value.map((item) => item.trim()))];
 }
 
 /** Access from a request body. Organisation-wide clears the grants. */
-export function validateSecretAccess(body: Record<string, unknown>): SecretAccess {
-  const raw = body.org_wide;
-  if (raw !== undefined && raw !== null && typeof raw !== "boolean") {
-    throw new SecretAccessError("org_wide must be a boolean");
-  }
+export function validateSecretAccess(body: SecretAccessRequest): SecretAccess {
   const guildIds = idList(body.guild_ids, "guild_ids");
   const agentIds = idList(body.agent_ids, "agent_ids");
-  if (raw === true) {
+  if (body.org_wide === true) {
     return { org_wide: true, guild_ids: [], agent_ids: [] };
   }
   return { org_wide: false, guild_ids: guildIds, agent_ids: agentIds };

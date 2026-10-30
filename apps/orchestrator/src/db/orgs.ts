@@ -47,6 +47,9 @@ export type NewOrg = {
   userId: string;
 };
 
+/** A user joining an organisation, with their role in it. */
+export type NewOrgMember = Pick<OrgMember, "org_id" | "user_id" | "role">;
+
 export type NewOrgModelProvider = {
   providerId: string;
   orgId: string;
@@ -161,11 +164,14 @@ export async function insertOrg(
   });
 }
 
+/** An organisation's new name and slug; an absent or null one keeps its value. */
+export type OrgRowPatch = { name?: string | null; slug?: string | null };
+
 export async function updateOrg(
   pool: Queryable,
   orgId: string,
   now: Date,
-  options: { name?: string | null; slug?: string | null },
+  options: OrgRowPatch,
 ): Promise<OrgRow | null> {
   const result = await pool.query<OrgRow>(
     `UPDATE orgs
@@ -193,16 +199,14 @@ export async function listMembers(pool: Queryable, orgId: string): Promise<OrgMe
 
 export async function insertMember(
   pool: Queryable,
-  orgId: string,
-  userId: string,
-  role: string,
+  member: NewOrgMember,
   now: Date,
 ): Promise<OrgMemberRecordRow | null> {
   const result = await pool.query<OrgMemberRecordRow>(
     `INSERT INTO org_members (org_id, user_id, role, created_at)
      VALUES ($1, $2, $3, $4)
      RETURNING org_id, user_id, role, created_at`,
-    [orgId, userId, role, stamp(now)],
+    [member.org_id, member.user_id, member.role, stamp(now)],
   );
   return result.rows[0] ?? null;
 }

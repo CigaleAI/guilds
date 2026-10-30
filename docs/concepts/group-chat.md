@@ -286,7 +286,10 @@ that has a tag there ([Inbox and issues](inbox.md)).
 
 ### Code
 
-- `apps/orchestrator/src/groupchat/`: tags, recipients, dispatcher
+- `apps/orchestrator/src/groupchat/`: the group chat and its dispatcher
+  (`index.ts`), history (`history.ts`), tags (`tags.ts`), recipients
+  (`recipients.ts`, `router.ts`), deliveries and interruptions
+  (`delivery.ts`), and the message a woken run reads (`wake.ts`)
 - `apps/orchestrator/src/typesafe/`: the Jev recipient Choice and
   history filter
 - `apps/orchestrator/src/generation/`: `deliverGroupRun`, the busy
@@ -574,12 +577,16 @@ no row.
 | Route | Does | Success | Refusals |
 | --- | --- | --- | --- |
 | `GET /api/guilds/:id/group-chat` | the chat state (below) and the caller's `seen_through_seq`, `null` without a row | 200 | 404 |
-| `PUT /api/guilds/:id/group-chat` | sets `agent_message_limit` | 200 | 422 not a positive integer; 409 guild being deleted; 404 |
-| `PUT /api/guilds/:id/group-chat/read` | advances the caller's cursor to `seen_through_seq` | 200 | 422 not a non-negative integer; 404 |
+| `PUT /api/guilds/:id/group-chat` | sets `agent_message_limit`, a number | 200 | 422 not a positive integer; 409 guild being deleted; 404 |
+| `PUT /api/guilds/:id/group-chat/read` | advances the caller's cursor to `seen_through_seq`, a number | 200 | 422 not a non-negative integer; 404 |
 | `GET /api/guilds/:id/group-chat/messages` | every public message | 200 | 404 |
 | `DELETE /api/guilds/:id/group-chat/messages` | clears the chat; returns the chat state | 200 | 403 not a guild admin; 409 guild being deleted; 404 |
-| `POST /api/guilds/:id/group-chat/messages` | posts `content` as the caller; `interrupt: true` then cancels the group runs it targets | 202 | 422 missing or empty content, or `interrupt` not a boolean; 409 guild being deleted; 404 |
+| `POST /api/guilds/:id/group-chat/messages` | posts `content`, a string, as the caller; `interrupt: true` then cancels the group runs it targets | 202 | 422 missing or empty content, or `interrupt` not a boolean; 409 guild being deleted; 404 |
 | `GET /api/guilds/:id/group-chat/stream` | the guild's SSE stream | 200 | |
+
+A body that is not a JSON object, a missing field, or a field of
+another JSON type is 422 naming the field, before the caller is
+identified.
 
 The chat state carries `guild_id`, `chat_seq`, `agent_message_count`,
 `agent_message_limit`, `limit_reached`, `dispatching`,

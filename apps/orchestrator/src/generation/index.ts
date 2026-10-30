@@ -1,8 +1,8 @@
 import type { AttachmentRef, AttachmentService } from "../attachments/index.js";
-import type { ArtifactFiles } from "../artifacts/index.js";
+import type { ArtifactFiles } from "../artifacts/files.js";
+import type { ArtifactStore } from "../artifacts/store.js";
 import { deleteAgent, getAgent, listAgents } from "../db/agents.js";
 import { deleteGuild, getGuild } from "../db/guilds.js";
-import { getOrgModelProvider } from "../db/orgs.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import {
   appendRunError,
@@ -18,33 +18,39 @@ import {
   type RunRow,
 } from "../db/runs.js";
 import { runItem } from "../db/views.js";
-import { GroupChat, groupChatDatabase, type GroupDelivery, type GroupRunner } from "../groupchat/index.js";
-import { Issues, issuesDatabase } from "../issues/index.js";
+import { guildGroupChat, type GroupChat } from "../groupchat/index.js";
+import type { GroupDelivery, GroupRunner } from "../groupchat/delivery.js";
+import type { GroupRouter } from "../groupchat/router.js";
+import { guildIssues, type Issues } from "../issues/index.js";
 import { sleep } from "../lib/event.js";
 import { coreModelCredentials, type ModelCredentialsProvider } from "../llm/credentials.js";
-import { McpPool } from "../mcp/index.js";
 import type { NotesStore } from "../notes/store.js";
 import { errorMessage, errorName, writeLog } from "../observability/log.js";
 import { OPEN_POLICY, type OrgPolicy } from "../policy/index.js";
-import { Schedules, scheduleDatabase } from "../schedules/service.js";
-import { Scripts, scriptDatabase } from "../scripts/catalog.js";
-import { defaultGroupRouter, type GroupRouter } from "../typesafe/index.js";
-import { ActiveGenerations, activeGenerationsDatabase, AdmissionCoordinator } from "./admission.js";
+import { agentSchedules, type Schedules } from "../schedules/service.js";
+import { agentScripts, type Scripts } from "../scripts/catalog.js";
+import { defaultGroupRouter } from "../typesafe/group.js";
+import { AdmissionCoordinator } from "../admission/coordinator.js";
+import { ActiveGenerations, activeGenerationsDatabase } from "./active-generations.js";
 import { continuedBy, RunChains, runChainsDatabase } from "./chain.js";
 import { CodingRuns, codingRunsDatabase } from "./coding.js";
 import { generationLive, ModelCompletion, modelCompletionDatabase } from "./completion.js";
-import { ConflictError, RunRequestError } from "./errors.js";
+import { ConflictError, logOperationFailure, RunRequestError, type OperationFailure } from "./errors.js";
 import { RunEvents, runEventsDatabase } from "./events.js";
 import { RunGenerator, runGeneratorDatabase, runWasResumed } from "./generate.js";
 import { AgentMachines, agentMachinesDatabase, type GenerationSandboxes } from "./machines.js";
-import { RunPreparation, runPreparationDatabase, type ConnectorPool } from "./prepare.js";
+import {
+  generationArtifacts,
+  RunPreparation,
+  runPreparationDatabase,
+  type ConnectorPool,
+} from "./prepare.js";
 import { RunSecrets, runSecretsDatabase } from "./run-secrets.js";
 import { Runs, runsDatabase } from "./runs.js";
 import { ToolCalls, toolCallsDatabase } from "./tool-calls.js";
+import { toolServices, type ToolServices } from "../toolbox/services.js";
 import { WorkspaceLimits, workspaceLimitsDatabase } from "./workspace.js";
 import type { GenerationArtifacts } from "./prepare.js";
-
-export { RunRequestError } from "./errors.js";
 
 /** How long a loop's machines wait idle before they stop, and how often its scheduler wakes the due schedules. */
 export type GenerationLoopTimings = { idleTimeoutMs: number; schedulerTickMs: number };
@@ -80,17 +86,12 @@ function loopDatabase(db: Queryable) {
     completeGroupDelivery: bindQuery(db, completeGroupDelivery),
     deleteAgent: bindQuery(db, deleteAgent),
     deleteGuild: bindQuery(db, deleteGuild),
-    getOrgModelProvider: bindQuery(db, getOrgModelProvider),
   };
 }
 
 /** The db/ functions a generation loop and each of its parts read and write through, on `db`. */
-export function generationDatabase(db: Queryable) {
+function generationDatabase(db: Queryable) {
   return {
-    ...groupChatDatabase(db),
-    ...issuesDatabase(db),
-    ...scheduleDatabase(db),
-    ...scriptDatabase(db),
     ...activeGenerationsDatabase(db),
     ...runEventsDatabase(db),
     ...agentMachinesDatabase(db),
@@ -110,17 +111,18 @@ export function generationDatabase(db: Queryable) {
 export type GenerationDatabase = ReturnType<typeof generationDatabase>;
 
 /**
- * What a generation loop runs with, built once at composition: its database, notes, and
- * machines, and the services its runs call. A service left out takes core's own.
+ * What a generation loop runs with beside its database, built once at composition: its notes
+ * and machines, and the services its runs call. A service left out takes core's own.
  */
 export type GenerationLoopServices = {
-  db: GenerationDatabase;
   notes: NotesStore;
   /** Where machine directories are kept when the provider names no host for a machine. */
   workspaceRoot: string;
   sandboxes: GenerationSandboxes;
-  mcp?: ConnectorPool;
-  artifacts?: GenerationArtifacts | null;
+  /** The pool runs list and call connection tools through. */
+  mcp: ConnectorPool;
+  /** Where the runs' tools and prompts read and write artifacts; none when the box keeps none. */
+  artifacts?: ArtifactStore | null;
   files?: ArtifactFiles | null;
   attachments?: AttachmentService | null;
   /** The cap on generations this loop shares with Studio and Builder sessions. */
@@ -129,6 +131,27 @@ export type GenerationLoopServices = {
   /** What a model provider is called with; core's own rows over `db` when absent. */
   credentials?: ModelCredentialsProvider;
   groupRouter?: GroupRouter;
+};
+
+/**
+ * What a generation loop is built from: its services, the db/ functions it and its parts go
+ * through, and the other domains its runs read and write through.
+ */
+export type GenerationLoopDeps = Omit<GenerationLoopServices, "artifacts"> & {
+  db: GenerationDatabase;
+  /** The artifact functions the runs' prompts are read through, on the loop's store. */
+  artifacts: GenerationArtifacts | null;
+  credentials: ModelCredentialsProvider;
+  /** The chat the loop delivers group runs from; it asks the loop whether a guild is being deleted. */
+  groupChat: GroupChat;
+  groupRouter: GroupRouter;
+  issues: Issues;
+  schedules: Schedules;
+  scripts: Scripts;
+  /** The runs' streams, which the tools publish on too. */
+  events: RunEvents;
+  /** What the runs' tools call. */
+  tools: ToolServices;
 };
 
 /**
@@ -161,28 +184,25 @@ export class GenerationLoop implements GroupRunner {
   chains: RunChains;
   generator: RunGenerator;
   runs: Runs;
-  constructor(services: GenerationLoopServices, timings: GenerationLoopTimings = LOOP_TIMINGS) {
+  constructor(services: GenerationLoopDeps, timings: GenerationLoopTimings = LOOP_TIMINGS) {
     const { db, notes, workspaceRoot, sandboxes } = services;
     this.db = db;
     this.notes = notes;
-    this.mcp = services.mcp ?? new McpPool();
-    this.artifacts = services.artifacts ?? null;
+    this.mcp = services.mcp;
+    this.artifacts = services.artifacts;
     this.files = services.files ?? null;
     this.attachments = services.attachments ?? null;
     this.policy = services.policy ?? OPEN_POLICY;
     this.generations = new ActiveGenerations(db, services.admission ?? new AdmissionCoordinator(), this.policy);
-    this.events = new RunEvents(db);
-    this.credentials = services.credentials ?? coreModelCredentials(db);
+    this.events = services.events;
+    this.credentials = services.credentials;
     this.machines = new AgentMachines({ db, sandboxes, workspaceRoot, generations: this.generations }, timings.idleTimeoutMs);
-    const groupRouter = services.groupRouter ?? defaultGroupRouter();
-    this.groupChat = new GroupChat(db, {
-      is_deleting: (guildId) => this.isDeletingGuild(guildId),
-      router: groupRouter,
-    });
+    const { groupRouter } = services;
+    this.groupChat = services.groupChat;
     this.groupChat.bind(this);
-    this.issues = new Issues(db);
-    this.schedules = new Schedules(db);
-    this.scripts = new Scripts(db);
+    this.issues = services.issues;
+    this.schedules = services.schedules;
+    this.scripts = services.scripts;
     this.preparation = new RunPreparation({
       db,
       notes,
@@ -202,7 +222,8 @@ export class GenerationLoop implements GroupRunner {
       attachments: this.attachments,
     });
     this.secrets = new RunSecrets(db, this.machines);
-    this.coding = new CodingRuns({ db, generations: this.generations, machines: this.machines, events: this.events });
+    const { tools } = services;
+    this.coding = new CodingRuns({ db, generations: this.generations, machines: this.machines, events: this.events, tools });
     this.workspace = new WorkspaceLimits(db, this.events);
     this.toolCalls = new ToolCalls({
       db,
@@ -211,6 +232,7 @@ export class GenerationLoop implements GroupRunner {
       generations: this.generations,
       machines: this.machines,
       coding: this.coding,
+      tools,
     });
     this.runs = new Runs(
       {
@@ -225,12 +247,6 @@ export class GenerationLoop implements GroupRunner {
     this.chains = new RunChains({ db, events: this.events, completion: this.completion, runs: this.runs });
     this.generator = new RunGenerator({
       db,
-      notes,
-      artifacts: this.artifacts,
-      files: this.files,
-      groupChat: this.groupChat,
-      issues: this.issues,
-      schedules: this.schedules,
       scripts: this.scripts,
       events: this.events,
       generations: this.generations,
@@ -265,7 +281,7 @@ export class GenerationLoop implements GroupRunner {
     const runIds = this.generations.runIds();
     for (const runId of runIds) {
       this.generations.cancelEvent(runId)?.set();
-      await this.interruptCommand(runId);
+      logOperationFailure(await this.interruptCommand(runId));
     }
     const tasks = runIds.flatMap((runId) => {
       const task = this.generations.task(runId);
@@ -281,26 +297,24 @@ export class GenerationLoop implements GroupRunner {
     }
   }
 
-  /** Interrupts the command the run waits on in its sandbox, when there is one. */
-  private async interruptCommand(runId: string): Promise<void> {
+  /**
+   * Interrupts the command the run waits on in its sandbox, when there is one; returns the
+   * failure of an interrupt that did not go through.
+   */
+  private async interruptCommand(runId: string): Promise<OperationFailure | null> {
     const command = this.generations.command(runId);
     if (command === null) {
-      return;
+      return null;
     }
     try {
       await command[0].commands.interrupt?.(command[1]);
+      return null;
     } catch (error) {
-      writeLog(
-        "error",
-        "command.interrupt failed",
-        {
-          run_id: runId,
-          agent_id: this.generations.agentOf(runId),
-          operation: "command.interrupt",
-          error_type: errorName(error),
-        },
+      return {
+        message: "command.interrupt failed",
+        fields: { run_id: runId, agent_id: this.generations.agentOf(runId), operation: "command.interrupt" },
         error,
-      );
+      };
     }
   }
 
@@ -336,7 +350,7 @@ export class GenerationLoop implements GroupRunner {
     }
     this.generations.holdAgent(agentId);
     try {
-      await this.machines.removeAgent(agent);
+      logOperationFailure(await this.machines.removeAgent(agent));
       await this.notes.deleteAgent(agent.org_slug, agent.guild_name, agent.name);
       await this.db.deleteAgent(agentId);
     } finally {
@@ -352,7 +366,7 @@ export class GenerationLoop implements GroupRunner {
     if (this.generations.isDeletingGuild(guildId)) {
       throw new RunRequestError(409, "guild is already being deleted");
     }
-    if (this.groupChat.is_dispatching(guildId)) {
+    if (this.groupChat.isDispatching(guildId)) {
       throw new RunRequestError(409, "guild group chat is delivering");
     }
     const agentIds = (await this.db.listAgents(guildId)).map((row) => row.id);
@@ -361,7 +375,7 @@ export class GenerationLoop implements GroupRunner {
       for (const agentId of agentIds) {
         const agent = await this.db.getAgent(agentId);
         if (agent !== null) {
-          await this.machines.removeAgent(agent);
+          logOperationFailure(await this.machines.removeAgent(agent));
         }
       }
       await this.notes.deleteGuild(guild.org_slug, guild.name);
@@ -474,7 +488,7 @@ export class GenerationLoop implements GroupRunner {
       return null;
     }
     this.generations.cancelEvent(runId)?.set();
-    await this.interruptCommand(runId);
+    logOperationFailure(await this.interruptCommand(runId));
     const task = this.generations.task(runId);
     if (task) {
       const abortWait = new AbortController();
@@ -503,12 +517,15 @@ export class GenerationLoop implements GroupRunner {
       await this.db.appendRunError(run.id, entry, now);
       if (run.kind === "group") {
         const through = run.group_chat_through_seq;
-        await this.db.completeGroupDelivery(run.id, run.agent_id, through || 0, now);
+        await this.db.completeGroupDelivery(
+          { id: run.id, agent_id: run.agent_id, group_chat_through_seq: through || 0 },
+          now,
+        );
       } else {
         await this.db.completeRun(run.id, now);
       }
     }
-    await this.groupChat.resume_all();
+    await this.groupChat.resumeAll();
     await this.machines.armIdleForRunning();
   }
 
@@ -562,4 +579,51 @@ export class GenerationLoop implements GroupRunner {
     );
   };
 
+}
+
+/** The generation loop of the runs on `db`, run with `services` and `timings`. */
+export function generationLoop(
+  db: Queryable,
+  services: GenerationLoopServices,
+  timings: GenerationLoopTimings = LOOP_TIMINGS,
+): GenerationLoop {
+  const groupRouter = services.groupRouter ?? defaultGroupRouter();
+  // The chat is called after the loop below is built, and asks it whether a guild is being deleted.
+  const groupChat = guildGroupChat(db, {
+    is_deleting: (guildId) => loop.isDeletingGuild(guildId),
+    router: groupRouter,
+  });
+  const database = generationDatabase(db);
+  const events = new RunEvents(database);
+  const issues = guildIssues(db);
+  const schedules = agentSchedules(db);
+  const scripts = agentScripts(db);
+  const artifacts = services.artifacts ? generationArtifacts(services.artifacts) : null;
+  const tools = toolServices(db, {
+    notes: services.notes,
+    artifacts,
+    files: services.files ?? null,
+    group_chat: groupChat,
+    issues,
+    schedules,
+    scripts,
+    events,
+  });
+  const loop = new GenerationLoop(
+    {
+      ...services,
+      db: database,
+      artifacts,
+      credentials: services.credentials ?? coreModelCredentials(db),
+      groupChat,
+      groupRouter,
+      issues,
+      schedules,
+      scripts,
+      events,
+      tools,
+    },
+    timings,
+  );
+  return loop;
 }

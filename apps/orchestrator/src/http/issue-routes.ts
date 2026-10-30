@@ -1,57 +1,59 @@
-import type { FastifyInstance } from "fastify";
+import { Type } from "@sinclair/typebox";
 import { requireVisibleGuild } from "../guilds/access.js";
-import { Issues, issuesDatabase } from "../issues/index.js";
-import type { AppDeps } from "./deps.js";
-import { HttpError } from "./errors.js";
+import { guildIssues } from "../issues/index.js";
+import { changeIssueStatus, resolveGuildIssues, type IssueWriteDeps } from "../issues/operator.js";
+import type { AppDeps, RouteApp } from "./deps.js";
 import { currentUser } from "./identity.js";
-import { identityDatabase } from "../users/identity.js";
-import { publishGroup } from "./publish.js";
-import { bodyOf, param, queryOf } from "./request.js";
+import { GuildParams } from "./params.js";
 import type { UserRow } from "../db/users.js";
+
+/** Which of a guild's issues to list: `open`, `resolved`, or every one when left out or `all`. */
+const IssueListQuery = Type.Object({ status: Type.Optional(Type.String()) });
+
+/** The path of one issue of a guild. */
+const IssueParams = Type.Object({ guild_id: Type.String(), issue_id: Type.String() });
+
+/** The status an issue is set to. */
+const IssueStatusBody = Type.Object({ status: Type.String() });
 
 function resolverOf(user: UserRow): string {
   return typeof user.name === "string" ? user.name : "user";
 }
 
 /** A guild's issues: listed, resolved together, and set open or resolved one at a time. */
-export async function registerIssueRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
+export async function registerIssueRoutes(app: RouteApp, deps: AppDeps): Promise<void> {
   const { db } = deps;
-  const identityDb = identityDatabase(db);
-  const issues = new Issues(issuesDatabase(db));
+  const issues = guildIssues(db);
+  const writes: IssueWriteDeps = { ...deps, issues };
 
-  app.get("/api/guilds/:guild_id/issues", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
-    return issues.listForGuild(guild.id, queryOf(request).status);
-  });
+  app.get(
+    "/api/guilds/:guild_id/issues",
+    { schema: { params: GuildParams, querystring: IssueListQuery } },
+    async (request) => {
+      const user = await currentUser(db, request, deps);
+      const guild = await requireVisibleGuild(db, request.params.guild_id, user.id);
+      return issues.listForGuild(guild.id, request.query.status);
+    },
+  );
 
-  app.post("/api/guilds/:guild_id/issues/resolve", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
-    const resolved = await issues.resolveOpen(guild.id, resolverOf(user));
-    if (resolved > 0) {
-      await publishGroup(deps, guild.id, "guild.issues.changed", { action: "resolved" });
-    }
-    return { resolved };
-  });
+  app.post(
+    "/api/guilds/:guild_id/issues/resolve",
+    { schema: { params: GuildParams } },
+    async (request) => {
+      const user = await currentUser(db, request, deps);
+      const guild = await requireVisibleGuild(db, request.params.guild_id, user.id);
+      return { resolved: await resolveGuildIssues(writes, guild.id, resolverOf(user)) };
+    },
+  );
 
-  app.patch("/api/guilds/:guild_id/issues/:issue_id", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
-    const status = bodyOf(request).status;
-    if (status === undefined) {
-      throw new HttpError(422, "status is required");
-    }
-    const row = await issues.setStatus(
-      guild.id,
-      param(request, "issue_id"),
-      status,
-      resolverOf(user),
-    );
-    await publishGroup(deps, guild.id, "guild.issues.changed", {
-      action: String(status),
-      issue_id: row.id,
-    });
-    return row;
-  });
+  app.patch(
+    "/api/guilds/:guild_id/issues/:issue_id",
+    { schema: { params: IssueParams, body: IssueStatusBody } },
+    async (request) => {
+      const user = await currentUser(db, request, deps);
+      const guild = await requireVisibleGuild(db, request.params.guild_id, user.id);
+      const issue = { guildId: guild.id, issueId: request.params.issue_id };
+      return changeIssueStatus(writes, issue, request.body.status, resolverOf(user));
+    },
+  );
 }

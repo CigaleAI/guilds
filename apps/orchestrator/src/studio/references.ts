@@ -1,10 +1,17 @@
-import { EMBED_BUDGET, EMBED_DEPTH, collectTaskEmbeds, inspectEmbed, parseDisplayPath, noteReader, taskEmbedActor, walkTaskEmbeds, withoutEmbeds, type ArtifactActor, type ArtifactLevel, type ArtifactRow, type ArtifactStore, type CollectionView, type EmbedStep } from "../artifacts/index.js";
-import { taskDisplayPath } from "../agents/task.js";
+import type { ArtifactActor, ArtifactLevel } from "../artifacts/types.js";
+import type { ArtifactRow } from "../db/artifacts.js";
+import type { ArtifactStore, CollectionView } from "../artifacts/store.js";
+import { taskDisplayPath, taskEmbedRun, type TaskEmbedRun } from "../artifacts/task.js";
 import { listAgents, type AgentRow } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
-import { describeCollection, listCollections } from "../artifacts/collections.js";
-import { getByDisplayPath, listOwnerNotes } from "../artifacts/notes.js";
-import { embedSource } from "../artifacts/embeds.js";
+import { listGuildCollections } from "../artifacts/guild-tables.js";
+import { readStateNotes, type StateOwners } from "../artifacts/notes.js";
+import {
+  collectTaskEmbeds,
+  embedGraph,
+  type EmbedGraph,
+  withoutEmbeds,
+} from "../artifacts/embeds.js";
 
 export type ReferenceNodeKind = "task" | "note" | "table" | "unresolved";
 
@@ -77,10 +84,12 @@ export type ReferenceInput = {
   tasks: ReferenceTask[];
   files: ReferenceFile[];
   unresolved: UnresolvedLink[];
-  /** Each agent's walk of its Task as that agent reads, by agent id, one level past what a run inlines. */
-  walks: Map<string, EmbedStep[]>;
-  /** The embeds each agent's run inlines but cannot read, by agent id. */
-  unreachable: Map<string, Set<string>>;
+  /** Each agent's run of its Task as that agent reads, by agent id. */
+  runs: Map<string, TaskEmbedRun>;
+  /** How many embed levels a run inlines. */
+  depth: number;
+  /** The bytes of note text a run inlines at most. */
+  budget: number;
 };
 
 type EdgeContext = {
@@ -88,6 +97,8 @@ type EdgeContext = {
   unresolved: Set<string>;
   /** The agents that cannot read each target, by display path. */
   blocked: Map<string, string[]>;
+  /** How many embed levels a run inlines. */
+  depth: number;
 };
 
 // A display path as prose names it: `org/<org_id>/…` up to a space, quote, or bracket.
@@ -99,22 +110,23 @@ const byteSize = (text: string | null): number => Buffer.byteLength(text ?? "", 
 /** What each Task and file embeds or names, how deep each run meets it, and what does not resolve. */
 export function buildReferences(input: ReferenceInput): GuildReferences {
   const hops = hopsByTarget(input);
-  const blocked = blockedAgents(input.unreachable);
+  const blocked = blockedAgents(input.runs);
   const texts = noteTexts(input.files);
   const nodes = new Map<string, ReferenceNode>();
   for (const item of input.unresolved) nodes.set(item.href, unresolvedNode(item, hops));
   for (const file of input.files) nodes.set(file.display_path, fileNode(file, hops));
-  for (const task of input.tasks) nodes.set(task.display_path, taskNode(task, input, texts));
+  for (const task of input.tasks) nodes.set(task.display_path, taskNode(task, input.runs.get(task.agent_id), texts));
   for (const node of nodes.values()) node.unreachable_for = blocked.get(node.id) ?? [];
   const edges = referenceEdges(input, [...nodes.values()], {
     hops,
     unresolved: new Set(input.unresolved.map((item) => item.href)),
     blocked,
+    depth: input.depth,
   });
   return {
     guild_id: input.guild_id,
-    budget: EMBED_BUDGET,
-    depth: EMBED_DEPTH,
+    budget: input.budget,
+    depth: input.depth,
     nodes: withDepths([...nodes.values()], edges),
     edges,
   };
@@ -137,30 +149,24 @@ function hopsByTarget(input: ReferenceInput): Map<string, Record<string, number>
     hops.set(id, met);
   };
   for (const task of input.tasks) meet(task.display_path, task.agent_id, 0);
-  for (const [agentId, steps] of input.walks) {
-    for (const step of steps) meet(step.href, agentId, step.depth);
+  for (const [agentId, run] of input.runs) {
+    for (const step of run.steps) meet(step.href, agentId, step.depth);
   }
   return hops;
 }
 
 /** The agents that cannot read each embed target their runs inline, by target. */
-function blockedAgents(unreachable: Map<string, Set<string>>): Map<string, string[]> {
+function blockedAgents(runs: Map<string, TaskEmbedRun>): Map<string, string[]> {
   const blocked = new Map<string, string[]>();
-  for (const [agentId, hrefs] of unreachable) {
-    for (const href of hrefs) blocked.set(href, [...(blocked.get(href) ?? []), agentId]);
+  for (const [agentId, run] of runs) {
+    for (const href of run.unreachable) blocked.set(href, [...(blocked.get(href) ?? []), agentId]);
   }
   return blocked;
 }
 
-function taskNode(
-  task: ReferenceTask,
-  input: Pick<ReferenceInput, "walks" | "unreachable">,
-  texts: Map<string, string>,
-): ReferenceNode {
-  const unreachable = input.unreachable.get(task.agent_id) ?? new Set<string>();
-  const inlined = (input.walks.get(task.agent_id) ?? []).filter(
-    (step) => step.inlined && !unreachable.has(step.href),
-  );
+function taskNode(task: ReferenceTask, run: TaskEmbedRun | undefined, texts: Map<string, string>): ReferenceNode {
+  const unreachable = run?.unreachable ?? new Set<string>();
+  const inlined = (run?.steps ?? []).filter((step) => step.inlined && !unreachable.has(step.href));
   return {
     id: task.display_path,
     kind: "task",
@@ -248,7 +254,7 @@ function embedEdge(context: EdgeContext, from: string, to: string): ReferenceEdg
 function embedStatus(context: EdgeContext, from: string, to: string): ReferenceEdgeStatus {
   if (context.unresolved.has(to) || isBlockedEmbed(context, from, to)) return "broken";
   const hops = Object.values(context.hops.get(from) ?? {});
-  if (hops.some((hop) => hop < EMBED_DEPTH)) return "inlined";
+  if (hops.some((hop) => hop < context.depth)) return "inlined";
   return hops.length ? "too_deep" : "unreached";
 }
 
@@ -256,7 +262,7 @@ function embedStatus(context: EdgeContext, from: string, to: string): ReferenceE
 function isBlockedEmbed(context: EdgeContext, from: string, to: string): boolean {
   const blocked = context.blocked.get(to) ?? [];
   return Object.entries(context.hops.get(from) ?? {}).some(
-    ([agentId, hop]) => hop < EMBED_DEPTH && blocked.includes(agentId),
+    ([agentId, hop]) => hop < context.depth && blocked.includes(agentId),
   );
 }
 
@@ -301,9 +307,6 @@ function deepen(
 
 export type ReferenceDeps = { db: Queryable; artifacts: ArtifactStore };
 
-type Reached = { files: ReferenceFile[]; unresolved: UnresolvedLink[] };
-type Resolved = { file?: ReferenceFile; unresolved?: UnresolvedLink };
-
 /**
  * What every Task and file in a guild's state embeds or names, read as `actor`: the guild's
  * agents' notes, the guild's and organisation's notes and tables, and what their embeds reach.
@@ -320,21 +323,34 @@ export async function loadGuildReferences(
     guildId,
     agentIds: tasks.map((task) => task.agent_id),
   });
-  const reached = await resolveReached(deps.artifacts, actor, {
-    texts: [
-      ...tasks.map((task) => task.text),
-      ...state.flatMap((file) => (file.text === null ? [] : [file.text])),
-    ],
-    known: new Set(state.map((file) => file.display_path)),
-  });
-  const runs = await walkAgentRuns(deps.artifacts, actor.orgId, agents);
+  const graph = await embedGraph(
+    deps.artifacts,
+    actor,
+    [...tasks.map((task) => task.text), ...state.flatMap((file) => (file.text === null ? [] : [file.text]))],
+    new Set(state.map((file) => file.display_path)),
+  );
+  const runs = new Map<string, TaskEmbedRun>();
+  for (const agent of agents) {
+    runs.set(agent.id, await taskEmbedRun(deps.artifacts, agent));
+  }
   return buildReferences({
     guild_id: guildId,
     tasks,
-    files: [...state, ...reached.files],
-    unresolved: reached.unresolved,
-    ...runs,
+    files: [...state, ...graph.targets.map(reachedFile)],
+    unresolved: graph.unresolved,
+    runs,
+    depth: graph.depth,
+    budget: graph.budget,
   });
+}
+
+/** A note or table the guild's state reaches outside it: a note's text only where the walk read it. */
+function reachedFile(target: EmbedGraph["targets"][number]): ReferenceFile {
+  if (target.kind === "note") {
+    return { ...noteFile(target.href, target.row), text: target.text };
+  }
+  const scope = target.collection.guild_id ? "guild" : "org";
+  return tableFile({ id: target.collection.id, name: target.collection.name, display_path: target.href, scope }, false);
 }
 
 function referenceTask(orgId: string, agent: Pick<AgentRow, "id" | "name" | "task">): ReferenceTask {
@@ -343,47 +359,21 @@ function referenceTask(orgId: string, agent: Pick<AgentRow, "id" | "name" | "tas
     agent_id: agentId,
     label: agent.name,
     display_path: taskDisplayPath(orgId, agentId),
-    text: String(agent.task ?? ""),
+    text: agent.task,
   };
 }
 
 async function loadStateFiles(
   store: ArtifactStore,
   actor: ArtifactActor,
-  scope: { guildId: string; agentIds: string[] },
+  scope: StateOwners,
 ): Promise<ReferenceFile[]> {
-  const owners: Array<[ArtifactLevel, string]> = [
-    ...scope.agentIds.map((id): [ArtifactLevel, string] => ["agent", id]),
-    ["guild", scope.guildId],
-    ["org", actor.orgId],
-  ];
-  const listed = await Promise.all(
-    owners.map(([level, ownerId]) => listOwnerNotes(store, actor, level, ownerId)),
-  );
-  const notes = await Promise.all(
-    listed.flat().map((item) => loadNoteFile(store, actor, String(item.display_path))),
-  );
-  const tables = (await listCollections(store, actor)).filter(
-    (table) => table.guild === null || table.guild.id === scope.guildId,
-  );
+  const notes = await readStateNotes(store, actor, scope);
+  const tables = await listGuildCollections(store, actor, scope.guildId);
   return [
-    ...notes.flatMap((note) => (note ? [{ ...note, in_state: true }] : [])),
+    ...notes.map((note) => ({ ...noteFile(note.href, note.row), in_state: true })),
     ...tables.map((table) => tableFile(table, true)),
   ];
-}
-
-async function loadNoteFile(
-  store: ArtifactStore,
-  actor: ArtifactActor,
-  displayPath: string,
-): Promise<ReferenceFile | null> {
-  try {
-    const loaded = await getByDisplayPath(store, actor, displayPath);
-    const row = loaded.tombstone ? undefined : loaded.row;
-    return row?.kind === "note" ? noteFile(displayPath, row) : null;
-  } catch {
-    return null;
-  }
 }
 
 function noteFile(displayPath: string, row: ArtifactRow): ReferenceFile {
@@ -413,97 +403,4 @@ function tableFile(
     in_state: inState,
     text: null,
   };
-}
-
-/**
- * The embed targets outside the guild's state: notes and tables the actor can read, followed as
- * far as a run could inline them, and the links that do not resolve, with why.
- */
-async function resolveReached(
-  store: ArtifactStore,
-  actor: ArtifactActor,
-  start: { texts: string[]; known: Set<string> },
-): Promise<Reached> {
-  const { known } = start;
-  const reached: Reached = { files: [], unresolved: [] };
-  let layer = start.texts;
-  for (let round = 0; round <= EMBED_DEPTH; round += 1) {
-    const hrefs = [...new Set(layer.flatMap((text) => collectTaskEmbeds(text)))].filter(
-      (href) => !known.has(href),
-    );
-    hrefs.forEach((href) => known.add(href));
-    const resolved = await Promise.all(
-      hrefs.map((href) => resolveHref(store, actor, { href, readText: round < EMBED_DEPTH })),
-    );
-    const files = resolved.flatMap((item) => (item.file ? [item.file] : []));
-    reached.files.push(...files);
-    reached.unresolved.push(
-      ...resolved.flatMap((item) => (item.unresolved ? [item.unresolved] : [])),
-    );
-    layer = files.flatMap((file) => (file.text === null ? [] : [file.text]));
-  }
-  return reached;
-}
-
-async function resolveHref(
-  store: ArtifactStore,
-  actor: ArtifactActor,
-  target: { href: string; readText: boolean },
-): Promise<Resolved> {
-  const inspection = await inspectEmbed(embedSource(store), actor, target.href);
-  if (!inspection.ok)
-    return { unresolved: { href: target.href, reason: inspection.reason ?? "missing" } };
-  const parsed = parseDisplayPath(target.href);
-  const file =
-    parsed.kind === "collection"
-      ? await reachedTable(store, actor, { href: target.href, name: parsed.collectionName })
-      : await loadNoteFile(store, actor, target.href);
-  if (!file) return {};
-  return { file: target.readText ? file : { ...file, text: null } };
-}
-
-async function reachedTable(
-  store: ArtifactStore,
-  actor: ArtifactActor,
-  table: { href: string; name: string },
-): Promise<ReferenceFile | null> {
-  const described = await describeCollection(store, actor, table.name);
-  if (!described) return null;
-  const scope = described.guild_id ? "guild" : "org";
-  return tableFile(
-    { id: described.id, name: described.name, display_path: table.href, scope },
-    false,
-  );
-}
-
-type AgentRuns = Pick<ReferenceInput, "walks" | "unreachable">;
-
-/** Each agent's walk of its Task as that agent reads, and the inlined embeds it cannot read. */
-async function walkAgentRuns(
-  store: ArtifactStore,
-  orgId: string,
-  agents: Array<Pick<AgentRow, "id" | "guild_id" | "name" | "task">>,
-): Promise<AgentRuns> {
-  const runs: AgentRuns = { walks: new Map(), unreachable: new Map() };
-  for (const agent of agents) {
-    const actor = taskEmbedActor(orgId, agent);
-    const steps = await walkTaskEmbeds(
-      String(agent.task ?? ""),
-      noteReader(embedSource(store), actor),
-      EMBED_DEPTH + 1,
-    );
-    runs.walks.set(agent.id, steps);
-    runs.unreachable.set(agent.id, await unreachableEmbeds(store, actor, steps));
-  }
-  return runs;
-}
-
-async function unreachableEmbeds(
-  store: ArtifactStore,
-  actor: ArtifactActor,
-  steps: EmbedStep[],
-): Promise<Set<string>> {
-  const hrefs = [...new Set(steps.filter((step) => step.inlined).map((step) => step.href))];
-  const inspected = await Promise.all(hrefs.map((href) => inspectEmbed(embedSource(store), actor, href)));
-  return new Set(inspected.filter((item) => !item.ok).map((item) => item.href));
 }

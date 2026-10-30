@@ -43,6 +43,9 @@ export type NewIssue = {
   toolName: string | null;
 };
 
+/** An issue, by its guild and its id. */
+export type IssueKey = Pick<IssueRow, "guild_id" | "id">;
+
 /** An issue's status, and when and by whom it was resolved. */
 export type IssueStatusChange = {
   status: IssueRow["status"];
@@ -121,8 +124,7 @@ export async function getIssue(
 /** Sets an issue's status and returns it hydrated; null when the guild has no such issue. */
 export async function setIssueStatus(
   pool: Queryable,
-  guildId: string,
-  issueId: string,
+  issue: IssueKey,
   change: IssueStatusChange,
   now: Date,
 ): Promise<GuildIssueRow | null> {
@@ -132,8 +134,8 @@ export async function setIssueStatus(
      WHERE guild_id = $1 AND id = $2
      RETURNING id`,
     [
-      guildId,
-      issueId,
+      issue.guild_id,
+      issue.id,
       change.status,
       change.resolvedAt ? stamp(change.resolvedAt) : null,
       change.resolvedBy,
@@ -143,26 +145,26 @@ export async function setIssueStatus(
   if (!result.rows[0]) {
     return null;
   }
-  const hydrated = await getIssue(pool, guildId, issueId);
+  const hydrated = await getIssue(pool, issue.guild_id, issue.id);
   if (!hydrated) {
     throw new RowMissing("issue status update failed: the updated issue was not found");
   }
   return hydrated;
 }
 
+/** Resolves every open issue of the guild in `resolvedBy`'s name at `now`, and counts them. */
 export async function resolveOpenIssues(
   pool: Queryable,
   guildId: string,
-  resolvedAt: Date,
   resolvedBy: string,
   now: Date,
 ): Promise<number> {
   const result = await pool.query<{ id: string }>(
     `UPDATE guild_issues
-     SET status = 'resolved', resolved_at = $2, resolved_by = $3, updated_at = $4
+     SET status = 'resolved', resolved_at = $2, resolved_by = $3, updated_at = $2
      WHERE guild_id = $1 AND status = 'open'
      RETURNING id`,
-    [guildId, stamp(resolvedAt), resolvedBy, stamp(now)],
+    [guildId, stamp(now), resolvedBy],
   );
   return result.rows.length;
 }
@@ -237,7 +239,11 @@ export async function markInboxMentionsRead(
   );
   const guildIds: string[] = [];
   for (const row of result.rows) {
-    await markGroupChatSeen(pool, row.guild_id, userId, row.group_chat_seq, now);
+    await markGroupChatSeen(
+      pool,
+      { guild_id: row.guild_id, user_id: userId, seen_through_seq: row.group_chat_seq },
+      now,
+    );
     guildIds.push(row.guild_id);
   }
   return guildIds;

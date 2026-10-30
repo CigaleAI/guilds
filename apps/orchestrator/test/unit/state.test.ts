@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { CONTEXT_HISTORY_LIMIT } from "../../src/groupchat/history.js";
-import { STATE_PREFIX, attachState, collectRunState } from "../../src/state/index.js";
+import { STATE_PREFIX, attachState } from "../../src/prompts/index.js";
+import { collectRunState } from "../../src/state/index.js";
 import { loadJsonFixture } from "../helpers/fixtures.js";
 
 const fixture = loadJsonFixture<{
@@ -17,8 +18,12 @@ class FakeNotes {
     public shared: string[],
   ) {}
 
-  listNotes(scope: string, _orgSlug: string, _guildName: string, _agentName: string, _prefix: string): string[] {
-    return scope === "private" ? this.privateNotes : this.shared;
+  listPrivateNotes(_orgSlug: string, _guildName: string, _agentName: string, _prefix: string): string[] {
+    return this.privateNotes;
+  }
+
+  listSharedNotes(_orgSlug: string, _guildName: string, _prefix: string): string[] {
+    return this.shared;
   }
 }
 

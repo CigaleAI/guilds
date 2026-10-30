@@ -190,6 +190,8 @@ A repository payload carries `id`, `guild_id`, `name`, `url`,
 `POST` takes `{ name, url, default_branch?, connection_id? }` and
 returns 201 with the repository.
 
+- `name` and `url` are strings, `default_branch` and `connection_id`
+  a string or null; another type is 422 naming the field.
 - A bad name, URL, or branch is 422. `default_branch` must be a valid
   branch name.
 - A name the guild already has is 409.
@@ -294,7 +296,13 @@ list), `apps/orchestrator/src/coding/git.ts` (the agent's tokens,
 identity, clone errors), `apps/orchestrator/src/github/tokens.ts`
 (minting a login's installation token),
 `apps/orchestrator/src/coding/guild-repositories.ts` (a guild's
-repositories and the GitHub logins they use),
+repositories and the GitHub logins they use, and
+`retireInstallationGone`, which retires a login whose installation
+GitHub refused, while its repositories are listed and while a run's
+tokens are minted),
+`apps/orchestrator/src/generation/coding.ts` (a coding run's tokens),
+`apps/orchestrator/src/mcp/connections.ts` (the GitHub login an
+operator sees),
 `apps/orchestrator/src/http/coding-routes.ts` (routes),
 `apps/web/src/features/guild/pages/GuildRepositories.tsx`, and
 `apps/web/src/features/agent/CodingRepositories.tsx`.

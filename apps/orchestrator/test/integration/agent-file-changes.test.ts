@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
-import { addAgent } from "../../src/agents/persist.js";
-import { hashTaskContent, writeAgentTask } from "../../src/agents/task.js";
+import { hashTaskContent, writeAgentTask } from "../../src/artifacts/task.js";
 import { operatorActor } from "../../src/artifacts/actors.js";
 import type { Database } from "../../src/db/client.js";
 import { insertGuild } from "../../src/db/guilds.js";
 import { removeAgentScript, writeAgentScript } from "../../src/scripts/catalog.js";
 import { connect } from "../../src/seed/connect.js";
+import { addTestAgent } from "../helpers/agents.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { agentConfig } from "../helpers/generation.js";
 
@@ -22,7 +22,7 @@ before(async () => {
   database = await connect(await createIsolatedDatabase(dbName));
   const now = new Date();
   await insertGuild(database.pool, { guildId: GUILD, name: "changes", orgId: ORG }, now);
-  await addAgent(database.pool, { agentId: AGENT, guildId: GUILD, name: "scribe", config: agentConfig({}) }, now, ACTOR);
+  await addTestAgent(database.pool, ORG, { agentId: AGENT, guildId: GUILD, name: "scribe", config: agentConfig({}) }, now);
 });
 
 after(async () => {
@@ -39,7 +39,7 @@ async function changes(): Promise<Array<{ display_path: string; operation: strin
 }
 
 test("an agent's task and scripts log each create, update, and delete", async () => {
-  const task = await writeAgentTask(database.pool, ACTOR, AGENT, "Keep the notes tidy.\n");
+  const task = await writeAgentTask(database.pool, ACTOR, AGENT, { content: "Keep the notes tidy.\n" });
   assert.equal(task.content_hash, hashTaskContent("Keep the notes tidy.\n"));
   const script = {
     scriptId: "scr_tidy",
@@ -58,6 +58,7 @@ test("an agent's task and scripts log each create, update, and delete", async ()
   const logged = (await changes()).map((row) => [row.operation, row.version]);
   assert.deepEqual(logged, [
     ["create", 1],
+    ["create", 1],
     ["update", 2],
     ["create", 1],
     ["update", 2],
@@ -65,5 +66,5 @@ test("an agent's task and scripts log each create, update, and delete", async ()
     ["create", 3],
   ]);
   const paths = new Set((await changes()).map((row) => row.display_path));
-  assert.equal(paths.size, 2);
+  assert.equal(paths.size, 3, "the task, the Memory the agent was created with, and the script");
 });

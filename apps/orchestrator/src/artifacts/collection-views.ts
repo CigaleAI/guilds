@@ -1,8 +1,46 @@
 // Collections and their records as the Tables page and the settings surfaces show them.
-import { isPlainRecord } from "../db/json.js";
-import { ArtifactError, type ArtifactActor, type ArtifactStore } from "./index.js";
+import { Type, type Static } from "@sinclair/typebox";
+import { ArtifactError } from "./errors.js";
+import type { ArtifactActor } from "./types.js";
+import type { ArtifactStore } from "./store.js";
 import * as collections from "./collections.js";
 import * as recordStore from "./records.js";
+
+/** A new collection: its name and purpose, its columns (checked by the collection), and its guild. */
+export const CollectionDraftSchema = Type.Object({
+  name: Type.String(),
+  purpose: Type.String(),
+  columns: Type.Optional(Type.Unknown()),
+  guild_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+});
+
+export type CollectionDraft = Static<typeof CollectionDraftSchema>;
+
+/** A change to a collection; a field left out keeps its value. */
+export const CollectionPatchSchema = Type.Partial(CollectionDraftSchema);
+
+export type CollectionPatch = Static<typeof CollectionPatchSchema>;
+
+/** Which records to list: a search, or a filter, an order and a page, each as the query sends it. */
+export const RecordListQuerySchema = Type.Object({
+  query: Type.Optional(Type.String()),
+  where: Type.Optional(Type.String()),
+  since: Type.Optional(Type.String()),
+  order: Type.Optional(Type.String()),
+  order_by: Type.Optional(Type.String()),
+  direction: Type.Optional(Type.String()),
+  limit: Type.Optional(Type.String()),
+  offset: Type.Optional(Type.String()),
+});
+
+export type RecordListQuery = Static<typeof RecordListQuerySchema>;
+
+/** A record's values by column, which the collection's columns check. */
+export const RecordValuesSchema = Type.Object({
+  body: Type.Record(Type.String(), Type.Unknown()),
+});
+
+export type RecordValues = Static<typeof RecordValuesSchema>["body"];
 
 export async function listCollections(
   store: ArtifactStore,
@@ -14,15 +52,13 @@ export async function listCollections(
 export async function createCollection(
   store: ArtifactStore,
   actor: ArtifactActor,
-  body: Record<string, unknown>,
+  body: CollectionDraft,
 ): Promise<Record<string, unknown>> {
   return collections.createCollection(store, actor, {
-    name: String(body.name ?? ""),
-    purpose: String(body.purpose ?? ""),
+    name: body.name,
+    purpose: body.purpose,
     columns: body.columns ?? [],
-    ...(body.guild_id !== undefined
-      ? { guildId: body.guild_id === null ? null : String(body.guild_id) }
-      : {}),
+    ...(body.guild_id !== undefined ? { guildId: body.guild_id } : {}),
   });
 }
 
@@ -38,15 +74,13 @@ export async function updateCollection(
   store: ArtifactStore,
   actor: ArtifactActor,
   collectionId: string,
-  body: Record<string, unknown>,
+  body: CollectionPatch,
 ): Promise<Record<string, unknown>> {
   return collections.updateCollection(store, actor, collectionId, {
-    ...(body.name !== undefined ? { name: String(body.name) } : {}),
-    ...(body.purpose !== undefined ? { purpose: String(body.purpose) } : {}),
+    ...(body.name !== undefined ? { name: body.name } : {}),
+    ...(body.purpose !== undefined ? { purpose: body.purpose } : {}),
     ...(body.columns !== undefined ? { columns: body.columns } : {}),
-    ...(body.guild_id !== undefined
-      ? { guildId: body.guild_id === null ? null : String(body.guild_id) }
-      : {}),
+    ...(body.guild_id !== undefined ? { guildId: body.guild_id } : {}),
   });
 }
 
@@ -85,7 +119,7 @@ export async function listRecords(
   store: ArtifactStore,
   actor: ArtifactActor,
   collectionId: string,
-  query: Record<string, string>,
+  query: RecordListQuery,
 ): Promise<Record<string, unknown>> {
   const collection = await collections.getCollection(store, actor, collectionId);
   const text = (query.query ?? "").trim();
@@ -146,13 +180,10 @@ export async function addRecord(
   store: ArtifactStore,
   actor: ArtifactActor,
   collectionId: string,
-  body: unknown,
+  body: RecordValues,
 ): Promise<Record<string, unknown>> {
   const collection = await collections.getCollection(store, actor, collectionId);
-  const result = await recordStore.addRecord(store, actor, {
-    collection: collection.name,
-    body: asRecord(body),
-  });
+  const result = await recordStore.addRecord(store, actor, { collection: collection.name, body });
   return {
     record: withDisplayPath(actor.orgId, collection.name, result.record),
     merged: result.merged,
@@ -166,13 +197,13 @@ export async function updateRecord(
   store: ArtifactStore,
   actor: ArtifactActor,
   key: RecordKey,
-  body: unknown,
+  body: RecordValues,
 ): Promise<Record<string, unknown>> {
   const collection = await collections.getCollection(store, actor, key.collectionId);
   const result = await recordStore.updateRecord(store, actor, {
     collection: collection.name,
     id: key.recordId,
-    body: asRecord(body),
+    body,
   });
   return {
     record: withDisplayPath(actor.orgId, collection.name, result.record),
@@ -203,9 +234,3 @@ export async function exportCollection(
   return { name: exported.name, body: lines.join("\n") + (lines.length ? "\n" : "") };
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
-  if (isPlainRecord(value)) {
-    return value;
-  }
-  throw new ArtifactError("body must be an object of column: value", 422);
-}

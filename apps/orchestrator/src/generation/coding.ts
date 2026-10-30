@@ -1,51 +1,57 @@
 import { Type } from "@sinclair/typebox";
-import { accessDatabase, agentSecrets, snapshotEnvValues } from "../access/runtime.js";
-import { agentGitIdentity, cloneFailures, repositoryTokenDatabase, RepositoryTokens } from "../coding/git.js";
+import { agentSecrets, snapshotEnvValues } from "../access/runtime.js";
+import {
+  agentGitIdentity,
+  cloneFailures,
+  repositoryTokens,
+  RepositoryTokenInstallationGoneError,
+} from "../coding/git.js";
+import { retireInstallationGone } from "../coding/guild-repositories.js";
 import { codingRepositories } from "../coding/repositories.js";
 import { clearHarnessLogin, getAgent, markHarnessLogin, type AgentRow } from "../db/agents.js";
 import { getGuild, listGuildRepositories } from "../db/guilds.js";
 import { isPlainRecord } from "../db/json.js";
 import { getMcpConnectionForOwner, type McpConnectionRow } from "../db/mcp.js";
-import { bindQuery, type Queryable } from "../db/pg.js";
+import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import { getRun, mergeRunMetadata, type RunRow } from "../db/runs.js";
-import { RunRepositoryChangeSchema, type Harness, type RunRepositoryChange, type ToolCall, type ToolMessage, type ToolResultMetadata } from "../db/schema/index.js";
+import { RunRepositoryChangeSchema, type Harness, type RunRepositoryChange, type ToolCall } from "../db/schema/index.js";
 import { decode } from "../lib/decode.js";
-import { GITHUB_SERVER_ID } from "../github/index.js";
 import { RepositoryAccessError } from "../github/tokens.js";
+import { GITHUB_SERVER_ID } from "../instance/integrations.js";
+import { retireLogin, type LoginFailure } from "../mcp/service.js";
 import { errorMessage, errorName, writeLog } from "../observability/log.js";
-import { agentRunDir, type SandboxHandle } from "../sandbox/index.js";
+import { agentRunDir } from "../sandbox/index.js";
+import type { SandboxHandle } from "../sandbox/sdk.js";
 import { redact } from "../secrets/index.js";
 import { callSegment, runCodeHelper } from "../toolbox/code.js";
-import {
-  assertHarnessReady,
-  checkHarnessOn,
-  endLostTurn,
-  HarnessSetupError,
-  interruptedText,
-  readHarnessLog,
-  type HarnessCheck,
-  type HarnessLog,
-  type LostTurnEnd,
-} from "../toolbox/harness.js";
-import type { ToolContext } from "../toolbox/index.js";
-import type { ActiveGenerations } from "./admission.js";
+import { endLostTurn, type LostTurnEnd } from "../toolbox/harness.js";
+import { readHarnessLog, type HarnessLog } from "../toolbox/harness-ops.js";
+import { interruptedText } from "../toolbox/harness-result.js";
+import { assertHarnessReady, checkHarnessOn, HarnessSetupError, type HarnessCheck } from "../toolbox/harness-setup.js";
+import { createToolHooks, type ToolRun } from "../toolbox/index.js";
+import type { ToolServices } from "../toolbox/services.js";
+import type { ActiveGenerations } from "./active-generations.js";
 import { RunRequestError } from "./errors.js";
 import type { RunEvents, RunGeneration } from "./events.js";
 import type { AgentMachines } from "./machines.js";
-import { lostCodeTask, type LostCodeTask } from "./tool-calls.js";
-import { maintenanceContext } from "./workspace.js";
+import { lostCodeTask, type GenerationTools, type InterruptedToolRecord, type LostCodeTask } from "./tool-calls.js";
+import { maintenanceRun } from "./workspace.js";
 
 export const RUN_DIFF_MAX_BYTES = 256 * 1024;
 
+/** The db/ functions a coding run's repositories are read through. */
+export type CodingRepositoriesDatabase = {
+  listGuildRepositories: BoundQuery<typeof listGuildRepositories>;
+  getMcpConnectionForOwner: BoundQuery<typeof getMcpConnectionForOwner>;
+};
+
 /** The db/ functions a coding run's repositories are read through, on `db`. */
-export function codingRepositoriesDatabase(db: Queryable) {
+export function codingRepositoriesDatabase(db: Queryable): CodingRepositoriesDatabase {
   return {
     listGuildRepositories: bindQuery(db, listGuildRepositories),
     getMcpConnectionForOwner: bindQuery(db, getMcpConnectionForOwner),
   };
 }
-
-export type CodingRepositoriesDatabase = ReturnType<typeof codingRepositoriesDatabase>;
 
 /** The GitHub connection a coding run of the agent clones with: the agent's, else its guild's, else its organisation's. */
 async function githubConnectionOf(
@@ -73,22 +79,37 @@ export async function guildRepositories(
   return codingRepositories(await db.listGuildRepositories(agent.guild_id), await githubConnectionOf(db, agent));
 }
 
-/** The db/ functions coding runs read and keep their repositories, logins and checkpoints through, on `db`. */
-export function codingRunsDatabase(db: Queryable) {
+/** The db/ functions coding runs read and keep their repositories, logins and checkpoints through, the retiring of a login, and the minting of a run's repository tokens. */
+export type CodingRunsDatabase = CodingRepositoriesDatabase & {
+  agentSecrets: BoundQuery<typeof agentSecrets>;
+  snapshotEnvValues: BoundQuery<typeof snapshotEnvValues>;
+  /** Retires a login that stopped working (`retireLogin`, with no pool to forget it). */
+  retireLogin: (connection: McpConnectionRow, failure: LoginFailure) => ReturnType<typeof retireLogin>;
+  getAgent: BoundQuery<typeof getAgent>;
+  getGuild: BoundQuery<typeof getGuild>;
+  getRun: BoundQuery<typeof getRun>;
+  mergeRunMetadata: BoundQuery<typeof mergeRunMetadata>;
+  markHarnessLogin: BoundQuery<typeof markHarnessLogin>;
+  clearHarnessLogin: BoundQuery<typeof clearHarnessLogin>;
+  repositoryTokens: BoundQuery<typeof repositoryTokens>;
+};
+
+/** The db/ functions coding runs read and keep their repositories, logins and checkpoints through, the retiring of a login, and the minting of a run's repository tokens, on `db`. */
+export function codingRunsDatabase(db: Queryable): CodingRunsDatabase {
   return {
-    ...accessDatabase(db),
-    ...repositoryTokenDatabase(db),
+    agentSecrets: bindQuery(db, agentSecrets),
+    snapshotEnvValues: bindQuery(db, snapshotEnvValues),
     ...codingRepositoriesDatabase(db),
+    retireLogin: (connection: McpConnectionRow, failure: LoginFailure) => retireLogin(null, db, connection, failure),
     getAgent: bindQuery(db, getAgent),
     getGuild: bindQuery(db, getGuild),
     getRun: bindQuery(db, getRun),
     mergeRunMetadata: bindQuery(db, mergeRunMetadata),
     markHarnessLogin: bindQuery(db, markHarnessLogin),
     clearHarnessLogin: bindQuery(db, clearHarnessLogin),
+    repositoryTokens: bindQuery(db, repositoryTokens),
   };
 }
-
-export type CodingRunsDatabase = ReturnType<typeof codingRunsDatabase>;
 
 /** What coding runs are run with, built once by the loop. */
 export type CodingRunsServices = {
@@ -96,6 +117,8 @@ export type CodingRunsServices = {
   generations: ActiveGenerations;
   machines: AgentMachines;
   events: RunEvents;
+  /** The toolbox's services, which a harness check records the agent's logins through. */
+  tools: ToolServices;
 };
 
 /** The repositories the helper's `git_setup` could not clone, with why. */
@@ -119,9 +142,9 @@ export class CodingRuns {
   constructor(private readonly services: CodingRunsServices) {}
 
   /** Whether the run's harness is installed and has a credential; a run that cannot delegate code work fails here. */
-  async harnessReady(turn: RunGeneration, ctx: ToolContext): Promise<boolean> {
+  async harnessReady(turn: RunGeneration, run: ToolRun): Promise<boolean> {
     try {
-      await assertHarnessReady(ctx);
+      await assertHarnessReady(this.services.tools, run);
       return true;
     } catch (error) {
       await this.services.events.recordError(turn, error instanceof HarnessSetupError ? error.code : "harness.check", error);
@@ -131,7 +154,8 @@ export class CodingRuns {
 
   /**
    * A coding generation's repositories: installation tokens for those with a GitHub
-   * connection (written under /run/guilds and added to the run's redaction values), the
+   * connection (written under /run/guilds and added to the run's redaction values; a login
+   * whose installation GitHub refuses is retired as `installation_gone`), the
    * agent's git identity, a clone of each one missing from the workspace, and the run's start
    * checkpoint. The working directory starts in the repository when there is one.
    */
@@ -139,13 +163,20 @@ export class CodingRuns {
     turn: RunGeneration,
     agent: AgentRow,
     sandbox: SandboxHandle,
-    tools: { ctx: ToolContext; secrets: Record<string, string> },
+    tools: GenerationTools,
   ): Promise<boolean> {
     const { db, events } = this.services;
     const repositories = await guildRepositories(db, agent);
-    const tokens = new RepositoryTokens(db, repositories);
+    const tokens = db.repositoryTokens(repositories);
     const mint = async () => {
-      await tokens.mint();
+      try {
+        await tokens.mint();
+      } catch (error) {
+        if (error instanceof RepositoryTokenInstallationGoneError) {
+          await retireInstallationGone(db, error.connection);
+        }
+        throw error;
+      }
       tokens.values.forEach((value, index) => {
         tools.secrets[`GITHUB_TOKEN_${index + 1}`] = value;
       });
@@ -160,14 +191,15 @@ export class CodingRuns {
       await events.recordError(turn, "repository.token", error);
       return false;
     }
-    const maintenance = maintenanceContext(turn.runId, agent, sandbox);
+    const maintenance = maintenanceRun(turn.runId, agent, sandbox);
     let failed: Array<{ name: string; error: string }>;
     try {
       const guild = await db.getGuild(agent.guild_id);
       const setup = await runCodeHelper(
         maintenance,
-        "git_setup",
+        createToolHooks(),
         {
+          op: "git_setup",
           identity: agentGitIdentity(agent, { email: guild?.git_author_email ?? "" }),
           repositories: repositories.map((row) => ({ name: row.name, url: row.url })),
         },
@@ -184,12 +216,12 @@ export class CodingRuns {
       return false;
     }
     await this.checkpoint(maintenance, "start", agent);
-    tools.ctx.code_repositories = repositories.map((row) => String(row.name));
+    tools.run.code_repositories = repositories.map((row) => String(row.name));
     if (repositories.length === 1) {
-      tools.ctx.code_default_cwd = `repos/${String(repositories[0]?.name)}`;
+      tools.run.code_default_cwd = `repos/${String(repositories[0]?.name)}`;
     }
     if (tokens.connected.length) {
-      tools.ctx.before_command = async () => {
+      tools.hooks.before_command = async () => {
         if (!tokens.needsRefresh()) {
           return;
         }
@@ -204,7 +236,7 @@ export class CodingRuns {
 
   /** The end checkpoint of every working tree, and what the run changed since its start. */
   async recordCheckpoints(runId: string, agent: AgentRow, sandbox: SandboxHandle): Promise<void> {
-    const repos = await this.checkpoint(maintenanceContext(runId, agent, sandbox), "end", agent);
+    const repos = await this.checkpoint(maintenanceRun(runId, agent, sandbox), "end", agent);
     if (repos.length) {
       await this.services.db.mergeRunMetadata(runId, { repos }, new Date());
     }
@@ -223,8 +255,8 @@ export class CodingRuns {
     const { agent, sandbox } = await this.runAgent(runId);
     let result;
     try {
-      const args = task === null ? { repository } : { repository, task: callSegment(task) };
-      result = await runCodeHelper(maintenanceContext(runId, agent, sandbox), "diff", args, {
+      const request = task === null ? { op: "diff", repository } : { op: "diff", repository, task: callSegment(task) };
+      result = await runCodeHelper(maintenanceRun(runId, agent, sandbox), createToolHooks(), request, {
         maxBytes: RUN_DIFF_MAX_BYTES,
       });
     } catch (error) {
@@ -243,7 +275,7 @@ export class CodingRuns {
     const secrets = await this.secretValues(agent);
     let log: HarnessLog | null;
     try {
-      log = await readHarnessLog(maintenanceContext(runId, agent, sandbox), harness, callSegment(callId), secrets);
+      log = await readHarnessLog(maintenanceRun(runId, agent, sandbox), harness, callSegment(callId), secrets);
     } catch (error) {
       throw new RunRequestError(503, errorMessage(error));
     }
@@ -269,12 +301,12 @@ export class CodingRuns {
     const sandbox = await machines.wakeSandbox(agentId);
     let check: HarnessCheck;
     try {
-      check = await checkHarnessOn(maintenanceContext("", agent, sandbox), harness);
+      check = await checkHarnessOn(maintenanceRun("", agent, sandbox), harness);
     } catch (error) {
       throw new RunRequestError(503, errorMessage(error));
     }
     if (check.credential === "login") {
-      await db.markHarnessLogin(agentId, harness, new Date(), check.account);
+      await db.markHarnessLogin(agentId, { harness, account: check.account }, new Date());
     } else if (check.installed) {
       await db.clearHarnessLogin(agentId, harness);
     }
@@ -289,8 +321,8 @@ export class CodingRuns {
   async interruptedCodeTask(
     run: RunRow,
     call: ToolCall,
-    record: [ToolMessage, ToolResultMetadata & { generation: number }],
-  ): Promise<[ToolMessage, ToolResultMetadata & { generation: number }]> {
+    record: InterruptedToolRecord,
+  ): Promise<InterruptedToolRecord> {
     const harness = run.config_snapshot.harness;
     if (harness === null) {
       return record;
@@ -326,9 +358,7 @@ export class CodingRuns {
       if (agent === null || sandbox === null) {
         return { stopped: true, session_id: null, start_sha: null, end_sha: null };
       }
-      const ctx = maintenanceContext(task.run_id, agent, sandbox);
-      ctx.tool_call_id = task.call_id;
-      return await endLostTurn(ctx, task.harness, task.repository);
+      return await endLostTurn(maintenanceRun(task.run_id, agent, sandbox), task.call_id, task.harness, task.repository);
     } catch (error) {
       writeLog("warn", errorMessage(error), {
         run_id: task.run_id,
@@ -344,15 +374,15 @@ export class CodingRuns {
    * Takes a checkpoint of every working tree; the end one lists what each repository changed since
    * the start. One that fails, or reports repositories in another shape, is logged and lists none.
    */
-  private async checkpoint(ctx: ToolContext, which: "start" | "end", agent: AgentRow): Promise<RunRepositoryChange[]> {
+  private async checkpoint(run: ToolRun, which: "start" | "end", agent: AgentRow): Promise<RunRepositoryChange[]> {
     try {
-      const result = await runCodeHelper(ctx, "checkpoint", { which }, { timeoutSeconds: 300 });
+      const result = await runCodeHelper(run, createToolHooks(), { op: "checkpoint", which }, { timeoutSeconds: 300 });
       return which === "end"
         ? decode(Type.Array(RunRepositoryChangeSchema), result.meta.repositories, (problem) => new Error(`checkpoint ${problem}`))
         : [];
     } catch (error) {
       writeLog("warn", errorMessage(error), {
-        run_id: ctx.run_id,
+        run_id: run.run_id,
         agent_id: agent.id,
         operation: "repository.checkpoint",
         error_type: errorName(error),
@@ -379,7 +409,7 @@ export class CodingRuns {
   private async secretValues(agent: AgentRow): Promise<Record<string, string>> {
     const { db } = this.services;
     try {
-      return await snapshotEnvValues(db, await agentSecrets(db, agent));
+      return await db.snapshotEnvValues(await db.agentSecrets(agent));
     } catch (error) {
       throw new RunRequestError(503, `the agent's secrets cannot be read to redact this: ${errorMessage(error)}`);
     }

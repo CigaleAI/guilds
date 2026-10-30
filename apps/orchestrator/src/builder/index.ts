@@ -13,34 +13,42 @@ import {
   coreModelCredentials,
   type ModelCredentialsProvider,
   ModelNotConnectedError,
-  modelProviderStore,
 } from "../llm/credentials.js";
 import { isMarketplaceModel } from "../llm/providers.js";
 import { newId } from "../lib/ids.js";
 import { EventQueue } from "../lib/event.js";
-import { AdmissionCoordinator } from "../generation/admission.js";
-import { OPEN_POLICY, claimCoachRun, coachRunClaims, type OrgPolicy } from "../policy/index.js";
+import { AdmissionCoordinator } from "../admission/coordinator.js";
+import { OPEN_POLICY, claimCoachRun, type OrgPolicy } from "../policy/index.js";
 import { ConversationRunner } from "../conversation/runner.js";
 import type { CapabilityService } from "../capabilities/index.js";
 import { assignGuildLooks } from "../avatars/looks.js";
-import { applyAccessEdits, operatorAccessCuts, parseAccessEdits } from "../recipes/access-edits.js";
+import { parseAccessEdits } from "../recipes/access-edits.js";
 import { emptyRecipe } from "../recipes/minimal.js";
-import { addRecipeDraft, linkRecipeToBuilder, markRecipeReady, writeRecipe } from "../recipes/library.js";
+import {
+  addRecipeDraft,
+  editRecipeAccess,
+  linkRecipeToBuilder,
+  publishRecipe,
+  reviewRecipe,
+  validateLibraryRecipe,
+  writeRecipe,
+  writeRecipeDocument,
+  type RecipeValidation,
+} from "../recipes/library.js";
 import { getRecipe, type RecipeRow } from "../db/recipes.js";
-import { validationContext, type ApplyChoices, type RecipeApply } from "../recipes/apply.js";
-import { parseRecipe } from "../recipes/parse.js";
-import { applyReview, unreviewedFields, type ReviewAction } from "../recipes/review.js";
+import type { ApplyChoices, RecipeApply } from "../recipes/apply.js";
+import type { RecipeApplyRow } from "../db/recipe-applies.js";
+import type { ReviewAction } from "../recipes/review.js";
 import { createSkeleton } from "../recipes/skeleton.js";
-import { blockingErrors, validateRecipe } from "../recipes/validate.js";
 import {
   BUILDER_DEFAULT_TEMPERATURE,
   BUILDER_MAX_STEPS,
   BUILDER_TOOL_RESULT_STUB_HINT,
 } from "./constants.js";
-import { BuilderConflictError, BuilderError } from "./errors.js";
+import { ConversationConflictError, ConversationError } from "../conversation/errors.js";
 import { builderConversationTools, builderToolSchemas, type BuilderToolContext } from "./tools.js";
 import type { BuilderMcpClient } from "./connected.js";
-import { composeBuilderGenerationContext, composeBuilderSystemMessage } from "./system.js";
+import { composeBuilderGenerationContext, composeBuilderSystemMessage, type CoachSettings } from "./system.js";
 import { connectedDatabase } from "./connected.js";
 import { type Queryable, withTransaction } from "../db/pg.js";
 import type { UserRow } from "../db/users.js";
@@ -68,7 +76,7 @@ export class BuilderService {
   constructor(public deps: BuilderServiceDeps) {
     this.admission = deps.admission ?? new AdmissionCoordinator();
     this.policy = deps.policy ?? OPEN_POLICY;
-    this.credentials = deps.credentials ?? coreModelCredentials(modelProviderStore(deps.db));
+    this.credentials = deps.credentials ?? coreModelCredentials(deps.db);
     this.runner = new ConversationRunner({
       db: deps.db,
       kind: "builder",
@@ -90,7 +98,7 @@ export class BuilderService {
     }
   }
 
-  viewSession(
+  private viewSession(
     session: BuilderSessionRow,
     recipe?: Record<string, unknown> | null,
   ): Record<string, unknown> {
@@ -115,10 +123,10 @@ export class BuilderService {
   ): Promise<BuilderSessionRow> {
     const session = await getBuilderSession(this.deps.db, sessionId);
     if (!session || session.org_id !== org.id) {
-      throw new BuilderError(404, "builder session not found");
+      throw new ConversationError(404, "builder session not found");
     }
     if (session.created_by_user_id && session.created_by_user_id !== user.id) {
-      throw new BuilderError(404, "builder session not found");
+      throw new ConversationError(404, "builder session not found");
     }
     return session;
   }
@@ -138,31 +146,31 @@ export class BuilderService {
   async validateModel(orgId: string, model: string): Promise<string> {
     const id = model.trim();
     if (!id) {
-      throw new BuilderError(422, "model is required");
+      throw new ConversationError(422, "model is required");
     }
     if (!isMarketplaceModel(id)) {
-      throw new BuilderError(422, "the coach needs a marketplace model");
+      throw new ConversationError(422, "the coach needs a marketplace model");
     }
     try {
       await assertModelConnected(this.credentials, orgId, id);
     } catch (error) {
       if (error instanceof ModelNotConnectedError) {
-        throw new BuilderError(422, error.message);
+        throw new ConversationError(422, error.message);
       }
       throw error;
     }
     return id;
   }
 
-  async createSession(args: {
-    user: UserRow;
-    org: OrgMembershipRow;
-    model: string;
-    temperature?: number;
-  }): Promise<Record<string, unknown>> {
-    const model = await this.validateModel(String(args.org.id), args.model);
-    const temperature =
-      typeof args.temperature === "number" ? args.temperature : BUILDER_DEFAULT_TEMPERATURE;
+  /** A session on a new draft recipe, coached by `model` at `temperature` (the Builder default when undefined). */
+  async createSession(
+    user: UserRow,
+    org: OrgMembershipRow,
+    modelRef: string,
+    temperature: number | undefined,
+  ): Promise<Record<string, unknown>> {
+    const model = await this.validateModel(String(org.id), modelRef);
+    const coachTemperature = typeof temperature === "number" ? temperature : BUILDER_DEFAULT_TEMPERATURE;
     const now = new Date();
     const recipeId = newId("rcp");
     const sessionId = newId("bld");
@@ -170,27 +178,26 @@ export class BuilderService {
       source: { kind: "builder", session_id: sessionId },
       now,
     });
-    const limits = (await this.policy.standing(String(args.org.id))).limits.coach.builder;
-    const coachConfig = {
+    const limits = (await this.policy.standing(String(org.id))).limits.coach.builder;
+    const coachConfig: CoachSettings = {
       model,
-      temperature,
+      temperature: coachTemperature,
       max_steps: BUILDER_MAX_STEPS,
       ...limits,
     };
-    const system = composeBuilderSystemMessage({
-      config: coachConfig,
-      recipe: recipeBody,
-      expectedBodyVersion: 1,
-      guidelinesPath: this.deps.guidelinesPath,
+    const system = composeBuilderSystemMessage(
+      coachConfig,
+      { body: recipeBody, body_version: 1 },
+      this.deps.guidelinesPath,
       now,
-    });
+    );
     const session = await withTransaction(this.deps.db, async (client) => {
       await addRecipeDraft(
         client,
         {
           recipeId,
-          orgId: String(args.org.id),
-          createdByUserId: String(args.user.id),
+          orgId: String(org.id),
+          createdByUserId: String(user.id),
           name: recipeBody.meta.name,
           description: "",
           body: recipeBody,
@@ -202,9 +209,9 @@ export class BuilderService {
         client,
         {
           sessionId,
-          orgId: String(args.org.id),
-          createdByUserId: String(args.user.id),
-          createdByName: typeof args.user.name === "string" ? args.user.name : "operator",
+          orgId: String(org.id),
+          createdByUserId: String(user.id),
+          createdByName: typeof user.name === "string" ? user.name : "operator",
           recipeId,
           configSnapshot: {
             ...coachConfig,
@@ -233,12 +240,17 @@ export class BuilderService {
     return this.viewSession(session, recipe);
   }
 
-  async recipeFor(session: BuilderSessionRow): Promise<RecipeRow> {
+  private async recipeFor(session: BuilderSessionRow): Promise<RecipeRow> {
     const recipe = await getRecipe(this.deps.db, String(session.recipe_id));
     if (!recipe) {
-      throw new BuilderError(404, "recipe not found");
+      throw new ConversationError(404, "recipe not found");
     }
     return recipe;
+  }
+
+  /** The session as the operator sees it, with its recipe row. */
+  async loadSessionView(session: BuilderSessionRow): Promise<Record<string, unknown>> {
+    return this.viewSession(session, await this.recipeFor(session));
   }
 
   toolContext(session: BuilderSessionRow): BuilderToolContext {
@@ -250,7 +262,7 @@ export class BuilderService {
       recipeId: String(session.recipe_id),
       connection: this.deps.db,
       coachModel: session.config_snapshot.model,
-      validationContext: () => validationContext(this.deps.apply, session.org_id),
+      apply: this.deps.apply,
     };
   }
 
@@ -260,33 +272,27 @@ export class BuilderService {
     content: string,
   ): Promise<Record<string, unknown>> {
     if (!content.trim()) {
-      throw new BuilderError(422, "content must not be empty");
+      throw new ConversationError(422, "content must not be empty");
     }
     if (session.status !== "active") {
-      throw new BuilderConflictError("session cannot generate");
+      throw new ConversationConflictError("session cannot generate");
     }
     const started = await withTransaction(this.deps.db, async (client) => {
       const locked = await lockBuilderSession(client, session.id);
       if (!locked) {
-        throw new BuilderError(404, "builder session not found");
+        throw new ConversationError(404, "builder session not found");
       }
       if (locked.generation_state !== "idle") {
-        throw new BuilderConflictError("builder session is already generating");
+        throw new ConversationConflictError("builder session is already generating");
       }
       const now = new Date();
-      await claimCoachRun(this.policy, coachRunClaims(client), locked.org_id, now);
+      await claimCoachRun(this.policy, client, locked.org_id, now);
       const recipe = await getRecipe(client, String(locked.recipe_id));
       if (!recipe) {
-        throw new BuilderError(404, "recipe not found");
+        throw new ConversationError(404, "recipe not found");
       }
       const expectedBodyVersion = recipe.body_version;
-      const config = locked.config_snapshot;
-      const system = composeBuilderSystemMessage({
-        config,
-        recipe: recipe.body,
-        expectedBodyVersion,
-        guidelinesPath: this.deps.guidelinesPath,
-      });
+      const system = composeBuilderSystemMessage(locked.config_snapshot, recipe, this.deps.guidelinesPath);
       await updateConversationMessage(client, "builder", {
         session_id: locked.id,
         seq: 0,
@@ -332,6 +338,7 @@ export class BuilderService {
     });
     const limits = (await this.policy.standing(started.session.org_id)).limits.coach
       .builder;
+    const toolContext = this.toolContext(started.session);
     this.runner.start({
       session: started.session,
       user,
@@ -341,14 +348,14 @@ export class BuilderService {
         started.expectedBodyVersion,
       ),
       systemContent: started.system.content,
-      tools: builderConversationTools(),
-      toolContext: this.toolContext(started.session),
+      tools: builderConversationTools(toolContext),
+      toolContext,
       maxTokens: limits.max_tokens,
       maxSteps: BUILDER_MAX_STEPS,
       maxToolCalls: limits.max_tool_calls,
       maxInput: limits.max_input_tokens,
     });
-    return this.viewSession(started.session, await this.recipeFor(started.session));
+    return this.loadSessionView(started.session);
   }
 
   async cancel(session: BuilderSessionRow): Promise<Record<string, unknown>> {
@@ -380,13 +387,7 @@ export class BuilderService {
     expectedVersion: number,
     body: unknown,
   ): Promise<Record<string, unknown>> {
-    const parsed = parseRecipe(body);
-    return writeRecipe(
-      this.deps.db,
-      { id: String(session.recipe_id), body_version: expectedVersion },
-      { body: parsed, name: parsed.meta.name, description: parsed.meta.description },
-      new Date(),
-    );
+    return writeRecipeDocument(this.deps.db, { id: String(session.recipe_id), body_version: expectedVersion }, body);
   }
 
   async reviewField(
@@ -394,10 +395,7 @@ export class BuilderService {
     path: string,
     review: ReviewAction,
   ): Promise<Record<string, unknown>> {
-    const row = await this.recipeFor(session);
-    const recipe = row.body;
-    applyReview(recipe, path, review);
-    return writeRecipe(this.deps.db, row, { body: recipe }, new Date());
+    return reviewRecipe(this.deps.db, await this.recipeFor(session), path, review);
   }
 
   async editAccess(
@@ -405,28 +403,14 @@ export class BuilderService {
     input: unknown,
   ): Promise<Record<string, unknown>> {
     const row = await this.recipeFor(session);
-    const recipe = row.body;
-    const cuts = applyAccessEdits(recipe, parseAccessEdits(input));
-    const written = await writeRecipe(this.deps.db, row, { body: recipe }, new Date());
-    return { ...written, access_cuts: cuts };
+    return editRecipeAccess(this.deps.db, row, parseAccessEdits(input));
   }
 
-  async validate(session: BuilderSessionRow): Promise<Record<string, unknown>> {
-    const row = await this.recipeFor(session);
-    const recipe = row.body;
-    const ctx = await validationContext(this.deps.apply, session.org_id);
-    ctx.groupLimit = recipe.guild.group_agent_message_limit;
-    const findings = validateRecipe(recipe, ctx);
-    return {
-      findings,
-      errors: blockingErrors(findings),
-      unreviewed: unreviewedFields(recipe),
-      access_cuts: operatorAccessCuts(recipe),
-      body_version: row.body_version,
-      status: row.status,
-    };
+  async validate(session: BuilderSessionRow): Promise<RecipeValidation> {
+    return validateLibraryRecipe(this.deps.apply, await this.recipeFor(session));
   }
 
+  /** Gives each role a look of the guild's when it has none, then publishes the recipe. */
   async publish(session: BuilderSessionRow): Promise<Record<string, unknown>> {
     const row = await this.recipeFor(session);
     const recipe = row.body;
@@ -434,13 +418,7 @@ export class BuilderService {
     if (assignGuildLooks(recipe.roles)) {
       current = await writeRecipe(this.deps.db, row, { body: recipe }, new Date());
     }
-    const ctx = await validationContext(this.deps.apply, session.org_id);
-    ctx.groupLimit = recipe.guild.group_agent_message_limit;
-    const errors = blockingErrors(validateRecipe(recipe, ctx));
-    if (errors.length) {
-      throw new BuilderError(422, errors.map((item) => item.message).join("; "));
-    }
-    return markRecipeReady(this.deps.db, current, new Date());
+    return publishRecipe(this.deps.apply, current);
   }
 
   async deploy(
@@ -448,7 +426,7 @@ export class BuilderService {
     org: OrgMembershipRow,
     user: UserRow,
     choices: ApplyChoices = {},
-  ) {
+  ): Promise<RecipeApplyRow> {
     const recipe = await this.recipeFor(session);
     return createSkeleton(this.deps.apply, { org, user, recipeRow: recipe }, choices);
   }

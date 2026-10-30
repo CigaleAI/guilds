@@ -1,33 +1,16 @@
+import { Type, type Static } from "@sinclair/typebox";
+import { isPlainRecord } from "../db/json.js";
 import { ArtifactError } from "./errors.js";
 import {
   isAccessMode,
   isAccessSubject,
   isAgentAccessMode,
-  type AccessMode,
-  type AccessSubject,
+  type AccessGrant,
+  type AccessSubjectRef,
   type AgentAccessMode,
   type ArtifactLevel,
 } from "./types.js";
-
-/** One row of an item's access list as the operator reads and writes it. */
-export type AccessEntry = {
-  type: AccessSubject;
-  id: string;
-  name: string;
-  mode: AgentAccessMode;
-  /** The guild of a guild subject, or of an agent subject; null for the organisation. */
-  guild_id: string | null;
-  guild_name: string | null;
-};
-
-export type AccessGrant = { type: AccessSubject; id: string; mode: AgentAccessMode };
-
-/**
- * An item's access list as the operator reads it. `owner_agent_id` is the
- * agent that owns an agent-level note: it always writes its own note, so the
- * list takes no row for it. Null for every other item.
- */
-export type AccessList = { subjects: AccessEntry[]; owner_agent_id: string | null };
+import type { AccessMode } from "../db/schema/index.js";
 
 /** A mode read back from SQL: `read` or `write`, null for `none` or no row. */
 export function reachedMode(value: unknown): AccessMode | null {
@@ -59,7 +42,7 @@ export function createsWritable(level: ArtifactLevel): boolean {
  * `where` prefixes each error, naming the grant's place in a list.
  */
 export function parseGrant(value: unknown, where = ""): AccessGrant {
-  const item = value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  const item: Record<string, unknown> = isPlainRecord(value) ? value : {};
   if (!isAccessSubject(item.type)) {
     throw new ArtifactError(`${where}type must be org, guild, or agent`, 422);
   }
@@ -67,11 +50,12 @@ export function parseGrant(value: unknown, where = ""): AccessGrant {
   if (!id) {
     throw new ArtifactError(`${where}id is required`, 422);
   }
-  if (item.type === "agent" ? !isAgentAccessMode(item.mode) : !isAccessMode(item.mode)) {
+  const mode = item.mode;
+  if (!isAgentAccessMode(mode) || (item.type !== "agent" && !isAccessMode(mode))) {
     const modes = item.type === "agent" ? "none, read, or write" : "read or write";
     throw new ArtifactError(`${where}mode must be ${modes}`, 422);
   }
-  return { type: item.type, id, mode: item.mode as AgentAccessMode };
+  return { type: item.type, id, mode };
 }
 
 /** The error prefix naming the grant at `index` of the list the operator sends. */
@@ -79,11 +63,16 @@ export function subjectAt(index: number): string {
   return `subjects[${index}]: `;
 }
 
+/** An item's access list as the operator sends it: the full list, one entry per subject. */
+export const AccessListSchema = Type.Object({
+  subjects: Type.Array(Type.Object({ type: Type.String(), id: Type.String(), mode: Type.String() })),
+});
+
+/** One subject of an access list as the operator sends it, before its type and mode are checked. */
+export type SubjectEntry = Static<typeof AccessListSchema>["subjects"][number];
+
 /** The full list the operator sends, one row per subject. */
-export function parseGrants(value: unknown): AccessGrant[] {
-  if (!Array.isArray(value)) {
-    throw new ArtifactError("subjects must be a list", 422);
-  }
+export function parseGrants(value: SubjectEntry[]): AccessGrant[] {
   const grants = value.map((item, index) => parseGrant(item, subjectAt(index)));
   const seen = new Set<string>();
   grants.forEach((grant, index) => {
@@ -95,7 +84,7 @@ export function parseGrants(value: unknown): AccessGrant[] {
   return grants;
 }
 
-export function grantKey(grant: { type: AccessSubject; id: string }): string {
+export function grantKey(grant: AccessSubjectRef): string {
   return `${grant.type}:${grant.id}`;
 }
 
@@ -120,4 +109,52 @@ export function grantSummary(subject: string, item: string, mode: AgentAccessMod
     return `Removed ${subject} from the access of ${item}`;
   }
   return `Gave ${subject} ${MODE_WORDS[mode]} on ${item}`;
+}
+
+/** Who an access list is read for: a guild, or one agent of that guild. */
+export type AccessReader = { guildId: string; agentId: string | null };
+
+/**
+ * The mode an item's access list gives `reader`: an agent's own row when it has one, `none`
+ * meaning no access; otherwise the better of its guild's row and the organisation's, `write`
+ * implying `read`. Null when no row reaches it.
+ */
+export function effectiveAccess(entries: AccessGrant[], reader: AccessReader): AccessMode | null {
+  const own =
+    reader.agentId === null
+      ? undefined
+      : entries.find((entry) => entry.type === "agent" && entry.id === reader.agentId);
+  if (own) {
+    return isAccessMode(own.mode) ? own.mode : null;
+  }
+  const guild = entries.find(
+    (entry) => entry.type === "guild" && entry.id === reader.guildId,
+  )?.mode;
+  const org = entries.find((entry) => entry.type === "org")?.mode;
+  if (guild === "write" || org === "write") {
+    return "write";
+  }
+  return isAccessMode(guild) || isAccessMode(org) ? "read" : null;
+}
+
+/** What an item's access list is raised to: a guild to at least `mode` when one is named, and each of `writerIds`, agents of that guild, to write. */
+export type AccessRaise = { guildId: string; mode: AccessMode | null; writerIds: string[] };
+
+/**
+ * The rows that bring the guild up to `raise.mode` and each writer up to write, guild first. A
+ * subject that already holds as much, its guild's row once raised included, gets no row, so a row
+ * is never lowered.
+ */
+export function accessRaises(entries: AccessGrant[], raise: AccessRaise): AccessGrant[] {
+  const held = effectiveAccess(entries, { guildId: raise.guildId, agentId: null });
+  const wanted = raise.mode;
+  const raisesGuild = wanted !== null && (wanted === "write" ? held !== "write" : held === null);
+  const guildRows: AccessGrant[] = raisesGuild
+    ? [{ type: "guild", id: raise.guildId, mode: wanted }]
+    : [];
+  const raised = [...guildRows, ...entries];
+  const writers: AccessGrant[] = raise.writerIds
+    .filter((agentId) => effectiveAccess(raised, { guildId: raise.guildId, agentId }) !== "write")
+    .map((agentId) => ({ type: "agent", id: agentId, mode: "write" }));
+  return [...guildRows, ...writers];
 }

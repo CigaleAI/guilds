@@ -2,29 +2,8 @@ import { NAME_RE } from "../lib/names.js";
 import type { FieldAuthor } from "../db/schema/index.js";
 
 // The `guilds.recipe` document's caps and author helpers. Its schema and types sit beside the
-// `recipes` table (db/schema/recipe-document.ts); the box reads a document into them in parse.ts.
-
-export {
-  RECIPE_FORMAT,
-  RECIPE_NAME_MAX,
-  RecipeSchema,
-  SYSTEM_RESOLUTIONS,
-  type DesignDecision,
-  type FieldAuthor,
-  type RecipeCollection,
-  type RecipeConnection,
-  type RecipeConnectionResource,
-  type RecipeDesign,
-  type RecipeDocument,
-  type RecipeExternal,
-  type RecipeNote,
-  type RecipeRepository,
-  type RecipeRole,
-  type RecipeSchedule,
-  type RecipeScript,
-  type RecipeSecret,
-  type SystemResolution,
-} from "../db/schema/index.js";
+// `recipes` table (db/schema/recipe-document.ts), and code imports them from db/schema; the box
+// reads a document into them in parse.ts.
 
 export const RECIPE_VERSION = 2;
 export const RECIPE_BODY_MAX_BYTES = 4 * 1024 * 1024;

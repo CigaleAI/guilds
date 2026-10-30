@@ -3,6 +3,12 @@ import reactHooks from "eslint-plugin-react-hooks";
 import storybook from "eslint-plugin-storybook";
 import globals from "globals";
 import tseslint from "typescript-eslint";
+import { boundary } from "../../eslint.boundary.js";
+import { limits } from "../../eslint.limits.js";
+
+// The repository this package's relative imports must stay inside
+// (docs/architecture/extension-points.md). It names no hosted package: none depends on it.
+const REPOSITORY = "../..";
 
 export default tseslint.config(
   eslint.configs.recommended,
@@ -23,25 +29,10 @@ export default tseslint.config(
       ],
     },
   },
-  {
-    // The function and file limits of docs/contributing/code-guidelines.md. Existing violations
-    // are listed in eslint-suppressions.json; that list only shrinks.
-    files: ["src/**/*.ts", "src/**/*.tsx"],
-    ignores: ["**/*.test.ts", "**/*.test.tsx", "**/*.stories.tsx", "test/**", "scripts/**"],
-    rules: {
-      complexity: ["error", 11],
-      "max-depth": ["error", 3],
-      "max-params": ["warn", 4],
-      "@typescript-eslint/max-params": ["error", { max: 5 }],
-      "max-lines": ["error", { max: 800, skipBlankLines: false, skipComments: false }],
-    },
-  },
-  {
-    // A cast creates no knowledge (docs/contributing/code-guidelines.md, Types and errors).
-    files: ["src/**/*.ts", "src/**/*.tsx"],
-    ignores: ["**/*.test.ts", "**/*.test.tsx", "**/*.stories.tsx", "test/**", "scripts/**"],
-    rules: {
-      "@typescript-eslint/consistent-type-assertions": ["error", { assertionStyle: "never" }],
-    },
-  },
+  limits({ files: ["src/**/*.ts", "src/**/*.tsx"] }),
+  boundary({
+    files: ["**/*.{ts,tsx}"],
+    source: ".",
+    repository: REPOSITORY,
+  }),
 );

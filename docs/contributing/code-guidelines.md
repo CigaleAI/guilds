@@ -1,20 +1,24 @@
 # Code guidelines
 
 These rules apply to everyone who writes code here, humans and
-agents alike.
+agents alike. The goal is code a reader can trust without opening
+it: a function's name and signature say what it does, what it
+needs, and what it returns, and behaviour lives next to the code
+that uses it.
 
-The goal is code a reader can trust without opening it. A reader
-sees a function's name and signature and knows exactly what it
-does, what it needs, and what it returns. The body can be as long
-as that contract needs. Behaviour lives next to the code that uses
-it.
-
-ESLint enforces the complexity, nesting, parameter, and file-size
-limits below, the boundary rule, and the rest of what it covers.
-Violations that predate the rules are listed per package in
-`eslint-suppressions.json`; that list only shrinks. The other rules
-are checked in review. The tooling is in
-[Development](development.md#lint-and-format).
+ESLint and the import-cycle check
+([Lint](development.md#lint-and-format)) enforce these rules:
+cyclomatic complexity, nesting depth, parameter count, file length,
+type assertions, a `catch` that neither throws nor returns a value,
+a throw of a plain `Error`, an object type written inline in a
+parameter, explicit types on what an orchestrator module exports,
+an export whose return type is `unknown` or
+`Record<string, unknown>`, imports of `fastify`, `http/` importing
+`db/`, what `db/` and `lib/` import, a shared directory of the
+operator app importing a feature, re-exports, imports of hosted
+code, and import cycles. Every other
+rule on this page is checked in review
+([Pull requests](pull-requests.md)).
 
 ---
 
@@ -25,8 +29,7 @@ everything it does. Nothing happens inside that the name does not
 promise, including side effects. If the name needs an "and", it is
 two functions.
 
-- A function has at most **4 parameters**. ESLint warns at 5 and
-  fails at 6.
+- A function has at most **4 parameters**. ESLint fails at 5.
 - An object parameter is one of two kinds, and its type is always
   a named type:
   - A **record** names a thing that exists in the application
@@ -34,9 +37,14 @@ two functions.
     session) and holds only that thing's fields. A settings type is
     a record when several callers and instances share it.
   - A **dependencies object** holds the services a module needs. It
-    could be built once at composition and reused by every call, so
-    it never holds a per-call value such as the user or the actor.
+    is built once in a composition root, or faked in a test, and
+    reused by every call, so it never holds a per-call value: the
+    user, the actor, an org id, a guild id, and the clock are never
+    its fields. A `Queryable` that is the application's connection
+    pool is the same for every call, so it may be a field. A
+    transaction client is call context, not the pool.
 
+  A React component's props object is the component's record.
   Every other object parameter is an argument bag and is not
   allowed. That includes an inline object type of optional settings,
   and a type named after its function that bundles the call's
@@ -44,12 +52,13 @@ two functions.
   Call context (the clock, the actor, a transaction client, a hook)
   is a parameter of its own, never a field of a record or a
   dependencies object.
-- A function has a **cyclomatic complexity of 11 or less**. A flat
-  body with many early returns is fine; the limit exists to keep one
-  function from holding several contracts.
-- Nesting goes at most **3 levels** deep, and a `try` block counts
-  as a level. Use early returns to stay flat. Nesting is what makes
-  a body hard to read, so this limit is the strict one.
+- A function has a **cyclomatic complexity of 11 or less**, as
+  ESLint counts it. The limit keeps one function from holding
+  several contracts.
+- Nesting goes at most **3 levels** deep. A `try` block counts as
+  a level, and ESLint counts it with the others. Use early returns
+  to stay flat. Nesting is what makes a body hard to read, so this
+  limit is the strict one.
 - Parameters are typed for what they are. A function does not take
   `Record<string, unknown>` or `unknown` when the caller has a type.
 - A function does not take a flag that selects between behaviours.
@@ -59,28 +68,29 @@ two functions.
   such as a field of a patch, is not.
 
 **What counts towards complexity:** `if`, `else if`, `case`, loops,
-`&&`, `||`, `??`, ternaries (`a ? b : c`), and `catch`. A JSX
-conditional (`cond && <X />`) counts like any other `&&`.
+`&&`, `||`, `??`, ternaries (`a ? b : c`), and `catch`. An `if` that
+returns early counts like any other `if`. A JSX conditional
+(`cond && <X />`) counts like any other `&&`.
 
 A function has no line limit. A long body with one contract is
 better than a short body that calls six helpers a reader has to
-chase. A
-nested condition, a loop with a branch inside, or a second `switch`
-becomes a named function only when that piece has a contract of
-its own that a reader would want to know by name. A chain of `if`s
-over a value is a lookup table.
+chase. A nested condition, a loop with a branch inside, or a second
+`switch` becomes a named function only when that piece has a
+contract of its own that a reader would want to know by name. A
+chain of `if`s over a value is a lookup table.
 
 A private helper exists because it names a real step, not to make
 its caller shorter. A helper called from one place, whose name is
-only meaningful inside its caller, is inlined.
+only meaningful inside its caller, is inlined. A function over the
+complexity limit is split along a step a reader would want to know
+by name, never along a line count.
 
 ## Tests
 
 Every branch in new code has a unit test. Test names describe
 behaviour (`returns_empty_list_when_no_orders`). A good test
-suite reads like a description of what the code does.
-
-Where the tests live is [Development](development.md#tests).
+suite reads like a description of what the code does. Where the
+tests live is [Development](development.md#tests).
 
 ## Names
 
@@ -104,10 +114,8 @@ function; it is a block of its caller.
 - Booleans read as a question (`isReadOnlyRemote`).
 
 One concept has one name. Do not use `getUser` in one place and
-`fetchUser` in another for the same thing.
-
-Search before you write. Look for an existing function before you
-create a new one.
+`fetchUser` in another for the same thing. Search before you
+write: look for an existing function before you create a new one.
 
 Abbreviations are the domain's own (`org`, `id`, `mcp`) and
 nothing else. A name that needs a comment to be understood is the
@@ -116,125 +124,125 @@ wrong name.
 ## Locality
 
 Code lives next to the code that uses it. A reader understands one
-behaviour from one file. A jump to another file is a cost, and the
-reader pays it only to reach a contract worth knowing by name.
+behaviour from one file, and pays a jump to another file only to
+reach a contract worth knowing by name.
 
 Two pieces of code are the same function only when they have the
 **same contract**: same inputs, same output, same promise. Then
 there is one function, with one name, and both callers use it.
+Two pieces that look alike but promise different things are two
+functions, each with a specific name that says how it differs, and
+the body is repeated. Repeating most of a body is cheaper than a
+shared helper that needs a flag, a mode string, or a loose type to
+serve both callers: that helper has no contract of its own, and it
+couples two behaviours that will change apart.
 
-Two pieces of code that look alike but promise different things
-are two functions. Each gets a specific name that says how it
-differs, and the body is repeated. Repeating most of a body is
-cheaper than a shared helper that needs a flag, a mode string, or a
-loose type to serve both callers. That helper has no contract of
-its own, and it couples two behaviours that will change apart.
+Code moves to a shared directory (`lib/` in the orchestrator,
+`api/` or `app/` in the operator app) when a second feature calls
+it with the identical contract, not before. Shared code holds no
+feature-specific knowledge, is a pure function where possible, and
+has a name easy to find by search. A shared directory never imports
+from a feature.
 
-Code moves out of a feature into a shared directory when a second
-caller with the identical contract exists, not before.
+A composition root assembles the application: in the orchestrator
+`src/compose.ts` and `src/app.ts`, in the operator app
+`src/app/router.tsx`. A composition root imports every feature it
+assembles, so the rule that a shared directory never imports from a
+feature excludes it, even where it sits in a shared directory.
 
 ## Scaffolding
 
-We group files by feature, not by type. One directory per
-feature, flat inside it.
+Files are grouped by feature, not by type: one directory per
+feature, flat inside it. In the orchestrator each domain is a
+directory under `src/` (`schedules/`, `secrets/`, `recipes/`) whose
+files are named for what they hold (`service.ts`, `timing.ts`,
+`access.ts`). In the operator app each screen is a directory under
+`src/features/`, and the code the screens share is `src/api/` (the
+HTTP client, queries, streams, and the API types) and `src/app/`
+(the app root, the router, extension slots, and formatting). There
+is no `utils/`, `helpers/`, or `common/`. A sub-directory is a
+sub-domain, never a type (`components/`, `hooks/`).
 
-In the orchestrator each domain is a directory under `src/`
-(`schedules/`, `secrets/`, `recipes/`). It holds the files for
-that domain named for what they hold (`service.ts`, `timing.ts`,
-`access.ts`). Nothing goes deeper unless the domain has a
-sub-domain of its own.
-
-A file holds one concern and stays under **800 lines**. A file
-that grows past that is split by sub-domain (`routes/agents.ts`,
-`routes/schedules.ts`), never by type (`helpers.ts`, `types.ts`).
-A reader, human or agent, loads one file to understand one
-behaviour, and a file that holds every behaviour of a layer costs
-the whole layer to read and makes every edit collide.
-
-In the operator app each screen is a directory under
-`src/features/`. Code the screens share lives in two directories:
-`src/api/` (the HTTP client, queries, streams, and the API types) and
-`src/app/` (the app root, the router, extension slots, and formatting).
-There is no `utils/`, `helpers/`, or `common/`.
-
-```
-src/
-  api/
-    ...
-  app/
-    ...
-  features/
-    recipes/
-      ...
-    studio/
-      ...
-```
-
-- Each feature lives in its own folder.
-- Folders stay flat: `features/<name>/<file>`. A sub-folder is a
-  sub-domain, not a type (`components/`, `hooks/`).
-- Code two domains share goes in the shared directory (`lib/` in the
-  orchestrator, `api/` or `app/` in the operator app) and says which
-  two.
+A file holds one concern and stays under **800 lines**. ESLint
+warns past 800 and fails at 1,000. A file that grows past the limit
+is split by sub-domain (`http/agent-routes.ts`,
+`http/run-routes.ts`), never by type (`helpers.ts`, `utils.ts`). A
+domain's `types.ts` is not such a split: it is the shapes the domain
+shows to others, and other domains import it directly. A reader
+loads one file to understand one behaviour, and a file that holds
+every behaviour of a layer costs the whole layer to read and makes
+every edit collide.
 
 HTTP stays thin in `http/`. A route handler reads the request,
-calls one domain function, and writes the reply. It does not
-import `db/` and does not validate, decide, or query on its own.
-The domain module owns the logic and the validation. A feature's
-tests are named for the feature.
-
-The inside of a feature can change freely. Other code reaches it
-through what that feature exports.
-
-## Shared code
-
-A shared directory (`lib/` in the orchestrator, `api/` and `app/` in
-the operator app) holds code shared across features. It must stay
-clean, or it becomes a junk drawer.
-
-Code belongs there only if:
-
-- It is used by **at least two features**.
-- It contains **no feature-specific knowledge**.
-- It does one very specific thing.
-- It is a **pure function** where possible.
-- Every branch has a test.
-- Its name says exactly what it does and is easy to find by search.
-
-A shared directory never imports from a feature.
+including who makes it, calls one domain function, and writes the
+reply in its wire shape. It does not import `db/` and does not
+validate, decide, or query on its own. A rule several routes would
+repeat, such as who may see a resource or what happens after a
+named error, is one function in the domain that owns it. A route
+that calls several domain functions in turn is the domain missing
+one.
 
 ## Boundaries
 
 A module reaches another through what that module exports. A
-package is reached through its `exports` list.
+package is reached through its `exports` list. A module exports
+what it declares and does not hand on another module's exports,
+except an index a tool requires, such as the schema mirror's.
 
-A feature may import from a shared directory. Prefer not to import
-from another feature; when two features must share behaviour, move
-that behaviour to a shared directory or keep a thin call at the composition
-root (`compose.ts`, the router, a page that mounts both).
+In the orchestrator the domains form a stack of value imports: a
+domain imports no value from a domain above it, and `db/` and
+`lib/` are the bottom. A type imported from above is not a cycle,
+but it is a shape the lower domain speaks in and a sign that the
+concept may belong to it. A domain that reaches another calls one
+named function of the module that owns the behaviour. A file or a
+domain that enters an import cycle fails the check
+([Lint](development.md#lint-and-format)).
+
+An import that points up the stack is a leak. The fix moves what
+leaked, not the import:
+
+- **Wiring**: a caller binds a domain's `db/` functions for it. The
+  domain binds its own from the `Queryable` it holds.
+- **Rule**: a caller re-derives a domain's rule from its data. The
+  domain exports the rule as one named function.
+- **Ownership**: a concept sits in the wrong domain, so both import
+  each other. The concept moves to the domain that owns it.
+- **Shape**: a caller parses a representation. It is parsed once, at
+  the boundary, into a named type.
+- **Callback**: a caller passes a function in so the domain need not
+  import it. The domain imports what it calls. A function arrives
+  only as a service in a dependencies object, built in a
+  composition root (`src/compose.ts`, `src/app.ts`,
+  `src/app/router.tsx`) or faked in a test.
 
 Core imports nothing from an extension built on it.
 `eslint.boundary.js` fails the file that tries.
 
 A domain module imports the `db/` modules it reads and writes
-through, and takes a `Queryable` as its connection. Where a unit
-test fakes the database, the module takes a dependencies object of
-the `db/` functions it calls instead, each bound to the connection
-with `bindQuery`; writes that commit together run in a transaction
-bound beside them with `bindTransaction`. Nothing else stands
-between a domain module and `db/`: no facade, no class that forwards
-every query. Only `http/` is kept out of `db/`.
+through, and holds a `Queryable` as its connection: a parameter of
+its public functions, or the application's connection pool as a
+field of its dependencies object. Where a unit test fakes the
+database, the domain binds its own object of the `db/` functions it
+calls, each bound to that `Queryable` with `bindQuery`, and writes
+that commit together run in a transaction bound beside them with
+`bindTransaction`. That bound object is built inside the domain,
+from the `Queryable` it holds; a caller never builds it. A
+dependencies object built in a composition root holds the services
+a domain needs, such as a blob store, a policy, or the connection
+pool. A transaction client is call context: it is a parameter of
+its own, never a field of a dependencies object. Nothing else
+stands between a domain module and `db/`: no facade, no class that
+forwards every query. Only `http/` is kept out of `db/`.
 
 `db/` imports nothing outside `db/` and `lib/`, and `lib/` nothing
 outside `lib/`. `db/` holds the queries and the types and defaults
 of what it stores. The validation, the decisions, and the change
 records a write needs belong to the domain module that calls it,
-which opens the transaction they share. ESLint fails the file that
-imports across either line.
+which opens the transaction they share.
 
 A domain module imports nothing from the HTTP framework. Only
-`http/`, the app and composition roots, the extension points and
-the observability hooks import `fastify`.
+`http/`, the orchestrator's composition roots, the extension points
+and the observability hooks import `fastify`.
 
 Custom code attaches through the
 [extension points](../architecture/extension-points.md). A need
@@ -243,22 +251,18 @@ default, not a branch.
 
 ## Pure core, side effects at the edges
 
-Business logic lives in **pure functions**. Same input, same
-output, no side effects.
-
-Side effects (database, network, files, time, randomness) live in
-**thin outer functions**. The outer functions call the pure ones.
-
-A pure function is easy to test and its contract is complete: the
-signature is the whole promise.
+Business logic lives in **pure functions**: same input, same
+output, no side effects. Side effects (database, network, files,
+time, randomness) live in **thin outer functions** that call the
+pure ones. A pure function is easy to test and its contract is
+complete: the signature is the whole promise.
 
 ## Types and errors
 
 TypeScript is strict everywhere. Input is validated at the edge,
 once: TypeBox schemas on routes, a validation module per domain
-for what arrives from the operator or the model.
-
-Inside the domain the types are trusted. `any` does not appear.
+for what arrives from the operator or the model. Inside the domain
+the types are trusted. `any` does not appear.
 
 A repository returns typed rows. Row types are derived from the
 Drizzle schema in `db/schema/`, never written out by hand: a table's
@@ -277,10 +281,9 @@ because the type is the contract.
 Public functions have **explicit types** for inputs and outputs.
 Types are documentation that cannot go out of date.
 
-A cast creates no knowledge. `as Type` appears only after a check
-that proves the type, or as `as const`. `as unknown as` and
-`as never` do not appear. A value whose shape is unknown is
-validated or narrowed with a type guard, never asserted.
+A cast creates no knowledge. The only type assertion is `as const`.
+A value whose shape is unknown is validated or narrowed with a type
+guard, never asserted.
 
 Use **one error-handling pattern**. A domain throws a named
 error class (`RecipeError`, `MachineConflict`). HTTP maps that
@@ -298,73 +301,17 @@ failure, does not appear.
 - No dead code.
 - No commented-out code. Version control remembers it.
 - Do not change files that are unrelated to your task.
+- If a rule seems to block the task, ask. Do not work around the
+  rule.
 
 ## Comments and documentation
 
 A comment says why, not what. The code says what.
 
-Every page under `docs/` describes what the code does today,
-in the present tense, with no history, roadmap, or record of a
-discussion. The
-[security register](../architecture/security-register.md) keeps
-the history of each security issue. Release history is the
-[changelog](../../CHANGELOG.md).
-
-A change to behaviour updates the page that describes it in the
-same commit.
-
-Write in **simple, short sentences**. Explain it like you would
-to a beginner.
-
-A page under `docs/getting-started/`, listed under **Get started**
-in the [index](../README.md#get-started), is a tutorial. It is
-written for someone who has never seen the product:
-
-- The subject comes first, then the verb. One action per sentence.
-- Steps are in the imperative: open, click, paste, type.
-- Each step ends with what the reader sees.
-- A word the reader has not met is defined in a sentence of its own,
-  or linked, before it is used.
-- A sentence says what is, not what is not.
-- No parentheses, no chained colons, no file paths, no HTTP verbs.
-  Depth lives on a concept page, reached by a link.
-
-A page under **Concepts** explains one concept. One concept has one
-page. It teaches first and keeps the exact detail at the bottom,
-under these headings, in this order:
-
-1. The title, then one or two plain paragraphs: what it is, and how
-   it relates to the concepts next to it. No column names, routes, or
-   file paths.
-2. **Why it exists** or **When you use it**.
-3. **How it works**: the mental model. A diagram where a flow or a
-   hierarchy is easier seen than read.
-4. **In the app**: where the operator sees and changes it.
-5. **Rules and limits**: a short table of defaults, caps, and
-   refusals.
-6. **Reference**: complete and exact. Fields, configuration keys,
-   HTTP routes, storage, and edge cases.
-
-A heading with nothing to say is left out. Everything above
-**Reference** reads on its own.
-
-Every other page is reference, `docs/operations/` included. It is
-complete and exact, and it follows the same sentence rules where
-they do not cost precision.
-
-## Changes
-
-One change does one thing. The commit message is one sentence in
-the imperative that states the outcome for the reader of
-`git log`. A short body is used only when the why is not obvious.
-
-Before you call a task done, run `make check`
-([Development](development.md#check)). It runs lint and the tests.
-
-If a rule seems to block the task, ask. Do not work around the
-rule.
-
-The pre-push hook runs the whole check on what is pushed.
+Every page under `docs/` describes what the code does today, in
+the present tense, with no history, roadmap, or record of a
+discussion. How a page is written is
+[Documentation](development.md#documentation).
 
 ---
 
@@ -376,18 +323,20 @@ Before you submit a change, check:
       No flag parameters, complexity of 11 or less, nesting of 3 or
       less, 4 parameters or fewer, object parameters only for
       records and dependencies objects.
+- [ ] A dependencies object holds services and at most the
+      connection pool; a transaction client and every per-call value
+      are parameters of their own.
 - [ ] Every file is under 800 lines and holds one concern.
 - [ ] Rows leave `db/` typed; route handlers call one domain
       function and never touch `db/`.
-- [ ] No cast asserts a shape; every `catch` throws a named error
-      or returns an expected absence.
+- [ ] No import points up the stack, and no function is passed in
+      to avoid one.
+- [ ] No type assertion but `as const`; every `catch` throws a
+      named error or returns an expected absence.
 - [ ] No helper exists only to shorten its caller.
 - [ ] Every new branch has a test.
 - [ ] I searched for existing code before writing new code.
 - [ ] Names are clear and do not overlap with existing names.
 - [ ] Code shared between callers has one contract; code that
       differs has two names.
-- [ ] Shared code meets the shared-code rules.
 - [ ] Side effects are at the edges.
-- [ ] Docs are updated in the same change.
-- [ ] Lint and tests pass.

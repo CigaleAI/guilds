@@ -5,18 +5,17 @@ import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { decodeMasterKey } from "../../src/config/index.js";
 import { connect } from "../../src/seed/connect.js";
-import { generationDatabase, GenerationLoop, LOOP_TIMINGS } from "../../src/generation/index.js";
+import { generationLoop, LOOP_TIMINGS } from "../../src/generation/index.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
-import { McpPool } from "../../src/mcp/index.js";
-import { artifactStore } from "../../src/artifacts/index.js";
+import { mcpPool } from "../../src/mcp/pool.js";
+import { artifactStore } from "../../src/artifacts/store.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, testEnv } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { ExportSandboxes } from "../helpers/live.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
-import { generationArtifacts } from "../../src/generation/prepare.js";
 
 const AUTH = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 const JSON_AUTH = { ...AUTH, "content-type": "application/json" };
@@ -40,14 +39,14 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
   const artifacts = artifactStore(database.pool, notes.templates);
   const workspaceRoot = env.WORKSPACE_ROOT ?? "";
   const sandboxes = new ExportSandboxes(workspaceRoot);
-  const generation = new GenerationLoop(
+  const generation = generationLoop(
+    db,
     {
-      db: generationDatabase(db),
       notes,
       workspaceRoot,
       sandboxes,
-      mcp: new McpPool(),
-      artifacts: generationArtifacts(artifacts),
+      mcp: mcpPool(db),
+      artifacts,
     },
     { ...LOOP_TIMINGS, idleTimeoutMs: 5 * 60 * 1000 },
   );
@@ -55,10 +54,10 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
     db,
     notes,
     artifacts,
-    scripts: new Scripts(scriptDatabase(db)),
-    schedules: new Schedules(scheduleDatabase(db)),
+    scripts: agentScripts(db),
+    schedules: agentSchedules(db),
     masterKey: decodeMasterKey(HEX_MASTER_KEY),
-    mcp: new McpPool(),
+    mcp: mcpPool(db),
     generation,
   });
   let guildId = "";
@@ -129,6 +128,14 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
       payload: { name: "sized", box: "custom" },
     });
     assert.equal(unsized.statusCode, 422, unsized.body);
+    const textSize = await app.inject({
+      method: "POST",
+      url: "/api/orgs/org_home/machines",
+      headers: JSON_AUTH,
+      payload: { name: "sized", box: "custom", cpu: "2", memory_mib: 4096 },
+    });
+    assert.equal(textSize.statusCode, 422, textSize.body);
+    assert.deepEqual(textSize.json().detail[0].loc, ["body", "cpu"]);
 
     // With two machines, an agent names its machine.
     const unplaced = await createAgent("unplaced", {});
@@ -276,6 +283,14 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
     });
     assert.equal(downgrade.statusCode, 409, downgrade.body);
     assert.match(downgrade.json().detail, /this machine's agents need at least 2 CPUs and 4 GiB/);
+    const nullCap = await app.inject({
+      method: "PATCH",
+      url: `/api/orgs/org_home/machines/${codeId}`,
+      headers: JSON_AUTH,
+      payload: { max_workspace_mib: null },
+    });
+    assert.equal(nullCap.statusCode, 422, nullCap.body);
+    assert.deepEqual(nullCap.json().detail[0].loc, ["body", "max_workspace_mib"]);
 
     // A running machine resized gets a new container; its directory stays.
     const started = await app.inject({ method: "POST", url: `/api/agents/${coderId}/cli`, headers: AUTH });
@@ -322,6 +337,30 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
     assert.equal(moved.json().machine_id, codeId);
     assert.equal(readFileSync(path.join(workspaceRoot, codeId, scripterId, "notes.txt"), "utf8"), "keep");
     assert.equal(existsSync(home), false);
+    const numberedMachine = await app.inject({
+      method: "PUT",
+      url: `/api/agents/${scripterId}/machine`,
+      headers: JSON_AUTH,
+      payload: { machine_id: 7 },
+    });
+    assert.equal(numberedMachine.statusCode, 422, numberedMachine.body);
+    assert.deepEqual(numberedMachine.json().detail[0].loc, ["body", "machine_id"]);
+    const numberedFocus = await app.inject({
+      method: "PUT",
+      url: `/api/agents/${scripterId}/config`,
+      headers: JSON_AUTH,
+      payload: { focus: 3 },
+    });
+    assert.equal(numberedFocus.statusCode, 422, numberedFocus.body);
+    assert.deepEqual(numberedFocus.json().detail[0].loc, ["body", "focus"]);
+    const configless = await app.inject({
+      method: "POST",
+      url: `/api/guilds/${guildId}/agents`,
+      headers: JSON_AUTH,
+      payload: { name: "configless" },
+    });
+    assert.equal(configless.statusCode, 422, configless.body);
+    assert.deepEqual(configless.json().detail[0].loc, ["body", "config"]);
 
     // The settings save moves an agent too, checked against the machine it goes to.
     const detail = await app.inject({ method: "GET", url: `/api/agents/${scripterId}`, headers: AUTH });

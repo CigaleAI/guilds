@@ -1,16 +1,17 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
+import { addAgent } from "../../src/agents/service.js";
+import { systemActor } from "../helpers/agents.js";
 import { getMcpServer, saveOauthClient } from "../../src/connectors/servers.js";
-import { guildDatabase, persistGuild } from "../../src/guilds/persist.js";
+import { addGuild } from "../../src/guilds/service.js";
 import { buildApp } from "../../src/app.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import { connect } from "../../src/seed/connect.js";
 import { seedSystem } from "../../src/seed/system.js";
 import { newId } from "../../src/lib/ids.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { limitedPolicy } from "../helpers/policy.js";
@@ -45,13 +46,17 @@ test("admin catalog, overrides, seed preservation, listed tools, and leaks", { t
   const app = await buildApp(database, {
     db,
     notes,
-    scripts: new Scripts(scriptDatabase(db)),
-    schedules: new Schedules(scheduleDatabase(db)),
+    scripts: agentScripts(db),
+    schedules: agentSchedules(db),
     policy: limitedPolicy({ maxAgents: 25, maxBrowserAgents: 10, maxCodingAgents: 10 }),
   });
 
   const outsider = await insertUser(db, { userId: "user_other", name: "other", image: null, email: "other@example.com" }, new Date());
-  await insertMember(db, "org_home", String(outsider.id), "member", new Date());
+  await insertMember(
+    db,
+    { org_id: "org_home", user_id: String(outsider.id), role: "member" },
+    new Date(),
+  );
 
   const denied = await app.inject({
     method: "GET",
@@ -59,6 +64,13 @@ test("admin catalog, overrides, seed preservation, listed tools, and leaks", { t
     headers: { "X-Guilds-User": String(outsider.id), "X-Guilds-Org": "org_home" },
   });
   assert.equal(denied.statusCode, 404);
+  const deniedInvalid = await app.inject({
+    method: "POST",
+    url: "/api/admin/mcp/servers",
+    headers: { "X-Guilds-User": String(outsider.id), "X-Guilds-Org": "org_home", "content-type": "application/json" },
+    payload: {},
+  });
+  assert.equal(deniedInvalid.statusCode, 404, "an invalid body from a non-admin is the same 404");
 
   const listed = await app.inject({ method: "GET", url: "/api/admin/mcp/servers", headers: AUTH });
   assert.equal(listed.statusCode, 200);
@@ -90,6 +102,14 @@ test("admin catalog, overrides, seed preservation, listed tools, and leaks", { t
     payload: { url: "https://example.com/mcp" },
   });
   assert.equal(endpoint.statusCode, 422);
+  const mistyped = await app.inject({
+    method: "PATCH",
+    url: `/api/admin/mcp/servers/${notion.id}`,
+    headers: { ...AUTH, "content-type": "application/json" },
+    payload: { enabled: "no" },
+  });
+  assert.equal(mistyped.statusCode, 422);
+  assert.deepEqual(mistyped.json().detail[0].loc, ["body", "enabled"]);
 
   await saveOauthClient(db, String(notion.id), { client_id: "keep-me", client_secret: null, redirect_uris: [] }, new Date());
   await seedSystem(database.pool);
@@ -143,6 +163,14 @@ test("admin catalog, overrides, seed preservation, listed tools, and leaks", { t
     },
   });
   assert.equal(rejected.statusCode, 422);
+  const unnamed = await app.inject({
+    method: "POST",
+    url: "/api/admin/mcp/servers",
+    headers: { ...AUTH, "content-type": "application/json" },
+    payload: { display_name: "Nameless", url: "https://example.com/mcp" },
+  });
+  assert.equal(unnamed.statusCode, 422);
+  assert.deepEqual(unnamed.json().detail[0].loc, ["body", "slug"]);
 
   const reserved = await app.inject({
     method: "POST",
@@ -164,6 +192,14 @@ test("admin catalog, overrides, seed preservation, listed tools, and leaks", { t
     payload: { default: true, description: "List Linear issues." },
   });
   assert.equal(tool.statusCode, 200, tool.body);
+  const textDefault = await app.inject({
+    method: "PATCH",
+    url: `/api/admin/mcp/servers/${created.json().id}/tools/list_issues`,
+    headers: { ...AUTH, "content-type": "application/json" },
+    payload: { default: "on" },
+  });
+  assert.equal(textDefault.statusCode, 422);
+  assert.deepEqual(textDefault.json().detail[0].loc, ["body", "default"]);
   const issues = (tool.json().tools as Array<Record<string, unknown>>).find((row) => row.remote_name === "list_issues");
   assert.equal(issues?.namespaced_name, "linear_list_issues");
   assert.equal(issues?.default_enabled, true);
@@ -188,6 +224,14 @@ test("admin catalog, overrides, seed preservation, listed tools, and leaks", { t
     (linkedin.json().hits as Array<Record<string, unknown>>).some((hit) => hit.server === "linkedin"),
     false,
   );
+
+  const twice = await app.inject({
+    method: "GET",
+    url: "/api/builder/capabilities/search?q=linear&q=linkedin",
+    headers: AUTH,
+  });
+  assert.equal(twice.statusCode, 422);
+  assert.deepEqual(twice.json().detail[0].loc, ["querystring", "q"]);
 
   const overview = await app.inject({ method: "GET", url: "/api/builder/capabilities", headers: AUTH });
   assert.equal(overview.statusCode, 200);
@@ -282,34 +326,29 @@ test("admin catalog, overrides, seed preservation, listed tools, and leaks", { t
   const remaining = body.remaining as { agents: number; browser_agents: number };
   assert.equal(remaining.agents, 25);
   const now = new Date();
-  await persistGuild(guildDatabase(db), notes, {
-    guildId: "guild_catalog",
-    name: "catalog-guild",
+  await addGuild(
+    { db, notes },
+    {
+      guild: { guildId: "guild_catalog", name: "catalog-guild", orgId: "org_home", about: "", creatorUserId: "user_operator" },
+      orgSlug: "home",
+    },
     now,
-    orgId: "org_home",
-    orgSlug: "home",
-    about: "",
-    creatorUserId: "user_operator",
+  );
+  const config = agentConfig({
+    model: "openrouter/openai/gpt-5.6-luna",
+    temperature: 1,
+    max_tokens: 8192,
+    max_steps: 30,
+    max_tool_calls: 50,
+    max_input_tokens: 100000,
+    browser: false,
   });
-  await persistAgent(agentDatabase(db), notes, {
-    agentId: "a_catalog",
-    guildId: "guild_catalog",
-    guildName: "catalog-guild",
-    orgSlug: "home",
-    orgId: "org_home",
-    name: "catalog-agent",
-    focus: "",
-    config: agentConfig({
-      model: "openrouter/openai/gpt-5.6-luna",
-      temperature: 1,
-      max_tokens: 8192,
-      max_steps: 30,
-      max_tool_calls: 50,
-      max_input_tokens: 100000,
-      browser: false,
-    }),
+  await addAgent(
+    { db, notes, artifacts: null },
+    { agent: { agentId: "a_catalog", guildId: "guild_catalog", name: "catalog-agent", config, focus: "" }, task: "", placement: {} },
+    systemActor("org_home", { guildId: "guild_catalog", agentId: "a_catalog" }),
     now,
-  });
+  );
   const afterAgent = await app.inject({ method: "GET", url: "/api/builder/capabilities", headers: AUTH });
   assert.equal((afterAgent.json().remaining as { agents: number }).agents, 24);
 

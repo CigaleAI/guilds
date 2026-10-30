@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
-import { artifactStore } from "../../src/artifacts/index.js";
+import { addAgent } from "../../src/agents/service.js";
+import { systemActor } from "../helpers/agents.js";
+import { artifactStore } from "../../src/artifacts/store.js";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { resolveStudioFocus } from "../../src/studio/focus.js";
 import { StudioService } from "../../src/studio/index.js";
 import { TOOL_CALLS_PAGE } from "../../src/studio/tool-usage.js";
@@ -77,8 +78,8 @@ test("studio lists the guild's tools with who is offered each and how their call
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = artifactStore(database.pool, templatesRoot());
-  const scripts = new Scripts(scriptDatabase(db));
-  const schedules = new Schedules(scheduleDatabase(db));
+  const scripts = agentScripts(db);
+  const schedules = agentSchedules(db);
   const studio = new StudioService({ db, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
   const app = await buildApp(database, { db, notes, artifacts, scripts, schedules, studio });
   try {
@@ -91,18 +92,12 @@ test("studio lists the guild's tools with who is offered each and how their call
       ["a_scout", "scout"],
       ["a_writer", "writer"],
     ]) {
-      await persistAgent(agentDatabase(db), notes, {
-        agentId: String(agentId),
-        guildId: "guild_tl",
-        guildName: "tools-guild",
-        orgSlug: "home",
-        orgId: "org_home",
-        name: String(name),
-        focus: "Work",
-        config: CONFIG,
+      await addAgent(
+        { db, notes, artifacts },
+        { agent: { agentId: String(agentId), guildId: "guild_tl", name: String(name), config: CONFIG, focus: "Work" }, task: "Work", placement: {} },
+        systemActor("org_home", { guildId: "guild_tl", agentId: String(agentId) }),
         now,
-        artifacts,
-      });
+      );
     }
     const run = (id: string, agentId: string, calls: Call[]) =>
       createScheduleRun(db,

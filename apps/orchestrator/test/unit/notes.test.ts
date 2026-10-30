@@ -3,7 +3,8 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "no
 import path from "node:path";
 import { test } from "node:test";
 import { pythonQuote } from "../../src/lib/contain.js";
-import { NotesError, NotesStore } from "../../src/notes/store.js";
+import { NotesError } from "../../src/notes/errors.js";
+import { NotesStore } from "../../src/notes/store.js";
 import { loadJsonFixture, templatesRoot } from "../helpers/fixtures.js";
 import { tempDir } from "../helpers/env.js";
 
@@ -136,6 +137,33 @@ test("shared and private path confinement", async () => {
   }
 });
 
+test("list private and shared notes under a prefix", async () => {
+  const notes = notesStore();
+  await notes.createGuild("acme", "research");
+  await notes.createAgent("acme", "research", "researcher");
+  const shared = path.join(notes.root, "orgs", "acme", "guilds", "research", "shared");
+  mkdirSync(path.join(shared, "nested"));
+  writeFileSync(path.join(shared, "nested", "deep.md"), "nested");
+  assert.deepEqual(notes.listSharedNotes("acme", "research", "nested/"), [
+    "orgs/acme/guilds/research/shared/nested/deep.md",
+  ]);
+  assert.deepEqual(notes.listSharedNotes("acme", "research", "nested/deep.md"), [
+    "orgs/acme/guilds/research/shared/nested/deep.md",
+  ]);
+  assert.throws(() => notes.listSharedNotes("acme", "research", "../agents/"), /invalid path/);
+  await notes.writePrivateNote("acme", "research", "researcher", "ideas/first.md", "idea");
+  writeFileSync(path.join(notes.agentDir("acme", "research", "researcher"), "routines", "sch_1.md"), "Check Gmail.");
+  const root = notes.listPrivateNotes("acme", "research", "researcher", "");
+  assert.ok(root.includes("orgs/acme/guilds/research/agents/researcher/notes/ideas/first.md"));
+  assert.ok(root.includes("orgs/acme/guilds/research/agents/researcher/routines/sch_1.md"));
+  assert.deepEqual(notes.listPrivateNotes("acme", "research", "researcher", "ideas"), [
+    "orgs/acme/guilds/research/agents/researcher/notes/ideas/first.md",
+  ]);
+  assert.equal(notes.readPrivateNote("acme", "research", "researcher", "ideas/first.md")[1], "idea");
+  assert.throws(() => notes.readPrivateNote("acme", "research", "researcher", "ideas/first.txt"), /path must end in .md/);
+  assert.throws(() => notes.listPrivateNotes("acme", "research", "researcher", "../../../shared"), /invalid path/);
+});
+
 test("write existing markdown files", async () => {
   const notes = notesStore();
   await notes.createGuild("acme", "research");
@@ -186,7 +214,7 @@ test("operator can edit a routine note through the files pane", async () => {
   assert.equal(repo, "orgs/acme/guilds/research/agents/researcher/routines/sch_1.md");
   assert.equal(notes.readAgentFile("acme", "research", "researcher", "routines/sch_1.md"), "Read shared notes.");
   await assert.rejects(
-    () => notes.writeNote("private", "acme", "research", "researcher", "routines/sch_1.md", "nope"),
+    () => notes.writePrivateNote("acme", "research", "researcher", "routines/sch_1.md", "nope"),
     /cannot be overwritten/,
   );
 });
@@ -260,7 +288,7 @@ test("delete rejects protected agent files", async () => {
     replacedBy: "run r_1 (direct)",
   });
   writeFileSync(path.join(notes.agentDir("acme", "research", "researcher"), "routines", "sch_1.md"), "Check Gmail.");
-  const listed = notes.listNotes("private", "acme", "research", "researcher", "history-archive/");
+  const listed = notes.listPrivateNotes("acme", "research", "researcher", "history-archive/");
   const archive = listed.find((item) => item.endsWith(".md"));
   const archiveRel = (archive ?? "").split("/agents/researcher/")[1] ?? "";
   await assert.rejects(

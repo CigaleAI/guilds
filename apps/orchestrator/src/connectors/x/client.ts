@@ -3,6 +3,7 @@ import { Value } from "@sinclair/typebox/value";
 import { decode } from "../../lib/decode.js";
 import { proxyFetch, withQuery, type FetchFn } from "../../net/http.js";
 import { LIST_DEFAULT, argStr, clipRows, clipText, fmtNum, joinParts, rowLimit } from "../format.js";
+import type { ApiGet } from "../types.js";
 import {
   ErrorBody,
   ErrorEntry,
@@ -138,8 +139,7 @@ export function formatUser(payload: UserResponse): string {
   return [head, bio].filter(Boolean).join("\n") || "no results";
 }
 
-export function formatPosts(payload: PostsResponse, options: { limit?: number } = {}): string {
-  const limit = options.limit ?? LIST_DEFAULT;
+export function formatPosts(payload: PostsResponse, limit = LIST_DEFAULT): string {
   const users = usersById(payload);
   const rows = dataList(payload.data).map((item) => postRow(item, users));
   const body = clipRows(rows.filter(Boolean), limit);
@@ -154,12 +154,12 @@ export function formatPosts(payload: PostsResponse, options: { limit?: number } 
   return parts.join("\n");
 }
 
-export function formatSearch(payload: PostsResponse, options: { query: string; limit?: number }): string {
-  const body = options.limit === undefined ? formatPosts(payload) : formatPosts(payload, { limit: options.limit });
+export function formatSearch(payload: PostsResponse, query: string, limit = LIST_DEFAULT): string {
+  const body = formatPosts(payload, limit);
   if (body === "no results") {
     return body;
   }
-  return [joinParts(options.query, `n=${resultCount(payload)}`), body].join("\n");
+  return [joinParts(query, `n=${resultCount(payload)}`), body].join("\n");
 }
 
 export function formatPost(payload: PostsResponse): string {
@@ -234,7 +234,7 @@ function unexpected(problem: string): XError {
 
 /** The response at `path` with `params`, as `schema` describes it. */
 async function getJson<T extends TSchema>(
-  request: { path: string; params: Record<string, string>; schema: T },
+  request: ApiGet<T>,
   apiKey: string,
   options: XOptions = {},
 ): Promise<Static<T>> {
@@ -291,7 +291,7 @@ export async function searchTool(arguments_: Record<string, unknown>, options: T
     options.apiKey,
     options,
   );
-  return formatSearch(payload, { query, limit });
+  return formatSearch(payload, query, limit);
 }
 
 export async function userTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
@@ -323,7 +323,7 @@ export async function postsTool(arguments_: Record<string, unknown>, options: To
     options,
   );
   const page = userId in usersById(payload) ? payload : withAuthor(payload, item);
-  return formatPosts(page, { limit });
+  return formatPosts(page, limit);
 }
 
 export async function postTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {

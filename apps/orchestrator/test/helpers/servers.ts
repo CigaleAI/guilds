@@ -1,16 +1,16 @@
-import { CONNECTORS } from "../../src/connectors/index.js";
-import { loadConnector, type LoadedConnector } from "../../src/connectors/load.js";
+import { loadConnector, type LoadedConnector } from "../../src/connectors/servers.js";
 import type { McpConnectionRow } from "../../src/db/mcp.js";
 import type { Manifest } from "../../src/db/schema/index.js";
+import { WITH_QUOTES } from "./quotes.js";
 
 const STAMP = "2026-10-12T09:00:00.000Z";
 
 /**
- * A connector as `getMcpServer` loads it: core's installed connector of `slug` when there is one,
- * else a hand-made token connector of that slug. `overrides` replaces fields after loading.
+ * A connector as `getMcpServer` loads it: core's connector of `slug`, or the Quotes test connector,
+ * when there is one, else a hand-made token connector of that slug. `overrides` replaces fields after loading.
  */
 export function serverRow(slug: string, overrides: Partial<LoadedConnector> = {}): LoadedConnector {
-  const entry = CONNECTORS.bySlug(slug);
+  const entry = WITH_QUOTES.bySlug(slug);
   const manifest: Manifest = entry?.manifest ?? {
     slug,
     display_name: slug,

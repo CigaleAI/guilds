@@ -2,10 +2,12 @@ import { createHash } from "node:crypto";
 import type { ScheduleDefinition, ScheduleTiming } from "../db/schedules.js";
 import { ScheduleError } from "../schedules/cron.js";
 import { timingText } from "../schedules/item.js";
+import type { RoutineChange } from "../schedules/operator.js";
 import { changedFields, scheduleChanges, type ScheduleChanges } from "../schedules/service.js";
-import { argString } from "../toolbox/schema.js";
 import type { EditAction } from "./actions.js";
-import type { EditScope } from "./edits.js";
+import type { EditRoutineArguments } from "./edit-arguments.js";
+import type { RoutineTarget } from "./edit-request.js";
+import type { EditDeps, EditScope } from "./edits.js";
 import { editActor } from "./actor.js";
 import { StudioUnprocessableError } from "./errors.js";
 import { getGuild } from "../db/guilds.js";
@@ -18,10 +20,6 @@ import { listSchedulesForGuild } from "../db/schedules.js";
 
 export const STUDIO_ROUTINE_TOOL = "studio_edit_routine";
 export type RoutineAction = EditAction;
-
-export function isRoutineTool(name: string): boolean {
-  return name === STUDIO_ROUTINE_TOOL;
-}
 
 /** What a routine is: when it wakes, its label, what it tells the agent, and whether it fires. */
 type Definition = {
@@ -36,6 +34,7 @@ type Member = { id: string; name: string };
 type Routine = { id: string; agent: Member; definition: Definition };
 
 type RoutineContext = {
+  deps: EditDeps;
   scope: EditScope;
   guildName: string;
   routinesEnabled: boolean;
@@ -55,7 +54,7 @@ export type RoutinePlan =
 export type RoutineReview = {
   action: RoutineAction;
   title: string;
-  target: Record<string, unknown>;
+  target: RoutineTarget;
   baseHash: string;
   proposedHash: string;
   live: string;
@@ -65,38 +64,35 @@ export type RoutineReview = {
 };
 
 /** The tool call under review, and the agent a create names: its handle resolved, or its request's record. */
-export type RoutineCall = { args: Record<string, unknown>; agentId: string | null };
+export type RoutineCall = { args: EditRoutineArguments; agentId: string | null };
 
-/** What an applied routine edit changed, for the guild's listeners. */
-export type RoutineChange = { agentId: string; action: RoutineAction; scheduleId: string };
 
 function hashOf(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value), "utf8").digest("hex");
 }
 
-function scheduleFailure(error: unknown): never {
-  if (error instanceof ScheduleError) {
-    throw new StudioUnprocessableError(error.message);
-  }
-  throw error;
+/** A schedules refusal as a value Studio cannot use; any other error as it is. */
+function scheduleRefusal(error: unknown): unknown {
+  return error instanceof ScheduleError ? new StudioUnprocessableError(error.message) : error;
 }
 
 function valid<T>(read: () => T): T {
   try {
     return read();
   } catch (error) {
-    scheduleFailure(error);
+    throw scheduleRefusal(error);
   }
 }
 
-async function routineContext(scope: EditScope): Promise<RoutineContext> {
-  const guild = await getGuild(scope.db, scope.sourceGuildId);
-  const agents = await listAgents(scope.db, scope.sourceGuildId);
+async function routineContext(deps: EditDeps, scope: EditScope): Promise<RoutineContext> {
+  const guild = await getGuild(deps.db, scope.sourceGuildId);
+  const agents = await listAgents(deps.db, scope.sourceGuildId);
   return {
+    deps,
     scope,
-    guildName: String(guild?.name ?? "this guild"),
+    guildName: guild?.name ?? "this guild",
     routinesEnabled: guild?.routines_enabled !== false,
-    members: agents.map((row) => ({ id: String(row.id), name: String(row.name) })),
+    members: agents.map((row) => ({ id: row.id, name: row.name })),
   };
 }
 
@@ -109,14 +105,14 @@ function requireMember(rc: RoutineContext, agentId: string | null): Member {
 }
 
 async function loadRoutine(rc: RoutineContext, scheduleId: string): Promise<Routine> {
-  const rows = await listSchedulesForGuild(rc.scope.db, rc.scope.sourceGuildId);
-  const row = rows.find((item) => String(item.id) === scheduleId);
+  const rows = await listSchedulesForGuild(rc.deps.db, rc.scope.sourceGuildId);
+  const row = rows.find((item) => item.id === scheduleId);
   if (!row) {
     throw new StudioUnprocessableError(
       `unknown routine ${scheduleId || "(none named)"}; list the routines with studio_list_routines`,
     );
   }
-  const agent = rc.members.find((member) => member.id === String(row.agent_id));
+  const agent = rc.members.find((member) => member.id === row.agent_id);
   if (!agent) {
     throw new StudioUnprocessableError("the routine's agent is not in the source guild");
   }
@@ -148,7 +144,7 @@ function targetOf(
   agent: Member,
   scheduleId: string | null,
   description: string,
-): Record<string, unknown> {
+): RoutineTarget {
   return { agent_id: agent.id, agent_name: agent.name, schedule_id: scheduleId, description };
 }
 
@@ -246,45 +242,56 @@ function reviewDelete(routine: Routine): RoutineReview {
 }
 
 /**
- * Checks what a routine proposal does against the live guild. A create names
- * its agent through `call.agentId`; an edit or delete names the routine by
+ * Checks what a routine proposal's action does against the live guild. A create
+ * names its agent through `call.agentId`; an edit or delete names the routine by
  * `schedule_id`, which stays the same from request to apply.
  */
 export async function reviewRoutine(
+  deps: EditDeps,
   scope: EditScope,
-  action: RoutineAction,
   call: RoutineCall,
 ): Promise<RoutineReview> {
-  const rc = await routineContext(scope);
+  const rc = await routineContext(deps, scope);
+  const { action } = call.args;
   if (action === "create") {
     return reviewCreate(rc, call);
   }
-  const routine = await loadRoutine(rc, argString(call.args, "schedule_id").trim());
+  const routine = await loadRoutine(rc, (call.args.schedule_id ?? "").trim());
   return action === "edit" ? reviewEdit(rc, routine, call) : reviewDelete(routine);
 }
 
 /** Writes a reviewed proposal as the operator. */
-export async function applyRoutine(scope: EditScope, plan: RoutinePlan): Promise<RoutineChange> {
+export async function applyRoutine(
+  deps: EditDeps,
+  scope: EditScope,
+  plan: RoutinePlan,
+): Promise<RoutineChange> {
   try {
-    return await writeRoutine(scope, plan);
+    return await writeRoutine(deps, scope, plan);
   } catch (error) {
-    scheduleFailure(error);
+    throw scheduleRefusal(error);
   }
 }
 
-async function writeRoutine(scope: EditScope, plan: RoutinePlan): Promise<RoutineChange> {
+async function writeRoutine(
+  deps: EditDeps,
+  scope: EditScope,
+  plan: RoutinePlan,
+): Promise<RoutineChange> {
   if (plan.action === "create") {
     const { timing, description, instruction, paused } = plan.definition;
-    const when = { cron: timing.cron, window: timing.window };
-    const row = await scope.schedules.create(editActor(scope), plan.agentId, when, description, instruction, {
+    const row = await deps.schedules.create(editActor(scope), plan.agentId, {
+      when: timing,
+      description,
+      instruction,
       paused,
     });
-    return { agentId: plan.agentId, action: "create", scheduleId: String(row.id) };
+    return { agentId: plan.agentId, action: "create", scheduleId: row.id };
   }
   if (plan.action === "edit") {
-    await scope.schedules.update(editActor(scope), plan.agentId, plan.scheduleId, plan.changes);
+    await deps.schedules.update(editActor(scope), plan.agentId, plan.scheduleId, plan.changes);
   } else {
-    await scope.schedules.delete(editActor(scope), plan.agentId, plan.scheduleId);
+    await deps.schedules.delete(editActor(scope), plan.agentId, plan.scheduleId);
   }
   return { agentId: plan.agentId, action: plan.action, scheduleId: plan.scheduleId };
 }

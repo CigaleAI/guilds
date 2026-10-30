@@ -22,5 +22,5 @@ services:
       - --include
       - drizzle/**
       - --import
-      - ./src/observability/instrument.ts
+      - ./src/instrument.ts
       - src/server.ts

@@ -17,26 +17,22 @@ import {
   simplePrices,
 } from "../../src/connectors/coingecko/client.js";
 import { agentToolConnection } from "../../src/access/runtime.js";
-import { ListedTool, McpError, McpPool } from "../../src/mcp/index.js";
+import { McpError } from "../../src/mcp/errors.js";
+import { McpPool, OPERATOR_CALLER } from "../../src/mcp/pool.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { ConnectorError } from "../../src/connectors/types.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { mockFetch } from "../helpers/http.js";
 import { serverRow } from "../helpers/servers.js";
 import { connectionRow } from "../helpers/servers.js";
+import { MemoryMcpDatabase } from "../helpers/mcp-database.js";
+import { restoreConnectorsAfterEach, runConnectors } from "../helpers/installed.js";
+
+restoreConnectorsAfterEach();
 
 const KEY = decodeMasterKey(HEX_MASTER_KEY);
 const TOOLS = CONNECTORS.bySlug("coingecko")!.manifest.tools!;
 
-class MemoryDb {
-  rows: Array<Record<string, unknown>> = [];
-  async replaceMcpTools(_id: string, tools: ListedTool[]) {
-    this.rows = tools.map((tool) => ({ ...tool }));
-  }
-  async listMcpTools() {
-    return this.rows;
-  }
-}
 
 test("formatSearch drops images and exchanges", () => {
   const payload = {
@@ -149,7 +145,7 @@ test("formatChart downsamples and keeps price only", () => {
       market_caps: prices.map(([ts]) => [ts, 1e12]),
       total_volumes: prices.map(([ts]) => [ts, 2e10]),
     },
-    { title: "bitcoin usd 7d" },
+    "bitcoin usd 7d",
   );
   const lines = stored.split("\n");
   assert.equal(lines[0], "bitcoin usd 7d n=48");
@@ -201,6 +197,24 @@ test("search uses the pro key header", async () => {
   assert.equal(stored, "coins\nbitcoin  btc  Bitcoin");
 });
 
+test("search refuses a body that is not JSON or does not match its schema", async () => {
+  const answering = (result: { json?: unknown; text?: string }) => ({
+    apiKey: "cg-test",
+    client: mockFetch(() => ({ status: 200, ...result })),
+  });
+  await assert.rejects(
+    () => searchTool({ query: "bitcoin" }, answering({ json: { coins: "none" } })),
+    (error: unknown) =>
+      error instanceof CoinGeckoError &&
+      /^CoinGecko returned an unexpected response at \/coins: /.test(error.message),
+  );
+  await assert.rejects(
+    () => searchTool({ query: "bitcoin" }, answering({ text: "not json" })),
+    (error: unknown) =>
+      error instanceof CoinGeckoError && error.message === "CoinGecko returned a non-JSON body",
+  );
+});
+
 test("ping rejects unauthorized", async () => {
   await assert.rejects(
     () => ping("bad", { client: mockFetch(() => ({ status: 401, json: { error: "invalid key" } })) }),
@@ -215,38 +229,37 @@ test("callTool unknown name", async () => {
 test("sync CoinGecko writes the curated catalog", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   let pinged = 0;
-  const pool = new McpPool(10 * 60 * 1000);
-  pool.connectors = CONNECTORS.withAdapter("coingecko", {
+  const pool = new McpPool(new MemoryMcpDatabase(), 10 * 60 * 1000);
+  runConnectors(CONNECTORS.withAdapter("coingecko", {
     async validate(creds) {
       const apiKey = creds.token;
       pinged += 1;
       assert.equal(apiKey, "cg-test");
       return "";
     },
-  });
+  }));
   const [ciphertext, nonce] = encryptPayload({ token: "cg-test" }, KEY);
-  const db = new MemoryDb();
   const connection = connectionRow({ id: "conn_cg", status: "connected", ciphertext, nonce });
   const server = serverRow("coingecko", { id: "mcp_coingecko", auth: "token" });
-  const first = await pool.syncTools(db as never, connection, server, { force: true });
-  const second = await pool.syncTools(db as never, connection, server);
+  const first = await pool.syncTools(connection, server, { force: true });
+  const second = await pool.syncTools(connection, server);
   assert.equal(pinged, 1);
   assert.deepEqual(first.map((tool) => tool.namespaced_name), TOOLS.map((spec) => `coingecko_${spec.name}`));
   assert.deepEqual(first, second);
-  assert.deepEqual(first[0], new ListedTool("search", "coingecko_search", TOOLS[0]!.description, TOOLS[0]!.input_schema));
+  assert.deepEqual(first[0], { remote_name: "search", namespaced_name: "coingecko_search", description: TOOLS[0]!.description, input_schema: TOOLS[0]!.input_schema, read_only_hint: null, destructive_hint: null });
 });
 
 test("sync CoinGecko rejects a bad key", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
-  const pool = new McpPool();
-  pool.connectors = CONNECTORS.withAdapter("coingecko", {
+  const pool = new McpPool(new MemoryMcpDatabase());
+  runConnectors(CONNECTORS.withAdapter("coingecko", {
     async validate() {
       throw new ConnectorError("invalid key", 401);
     },
-  });
+  }));
   const [ciphertext, nonce] = encryptPayload({ token: "bad" }, KEY);
   await assert.rejects(
-    () => pool.syncTools(new MemoryDb() as never, connectionRow({ id: "conn_cg", status: "connected", ciphertext, nonce }), serverRow("coingecko", { id: "mcp_coingecko", auth: "token" }), { force: true }),
+    () => pool.syncTools(connectionRow({ id: "conn_cg", status: "connected", ciphertext, nonce }), serverRow("coingecko", { id: "mcp_coingecko", auth: "token" }), { force: true }),
     (error: unknown) => error instanceof McpError && error.status === 401 && error.message === "invalid key",
   );
 });
@@ -254,22 +267,20 @@ test("sync CoinGecko rejects a bad key", async () => {
 test("call CoinGecko dispatches", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const seen: Record<string, unknown> = {};
-  const pool = new McpPool();
-  pool.connectors = CONNECTORS.withAdapter("coingecko", {
+  const pool = new McpPool(new MemoryMcpDatabase());
+  runConnectors(CONNECTORS.withAdapter("coingecko", {
     async call(name, arguments_, creds) {
       seen.name = name;
       seen.arguments = arguments_;
       seen.api_key = creds.token;
       return "coins\nbitcoin  btc  Bitcoin";
     },
-  });
+  }));
   const [ciphertext, nonce] = encryptPayload({ token: "cg-test" }, KEY);
   const stored = await pool.call(
-    new MemoryDb() as never,
     connectionRow({ id: "conn_cg", status: "connected", ciphertext, nonce }),
     serverRow("coingecko", { id: "mcp_coingecko", auth: "token" }),
-    "search",
-    { query: "bitcoin" },
+    { tool: "search", arguments: { query: "bitcoin" }, caller: OPERATOR_CALLER },
   );
   assert.equal(stored, "coins\nbitcoin  btc  Bitcoin");
   assert.deepEqual(seen, { name: "search", arguments: { query: "bitcoin" }, api_key: "cg-test" });
@@ -369,9 +380,9 @@ function toolDb(options: { toolOff?: boolean; serverOff?: boolean; status?: stri
   return {
     listBindingsCovering: async () => bindings,
     listAgentSecrets: async () => [],
-    listMcpServers: async () => [{ id: "mcp_coingecko", slug: "coingecko" }],
+    listServers: async () => [{ id: "mcp_coingecko", slug: "coingecko" }],
     listMcpConnections: async () => [{ id: "conn_1", status: options.status ?? "connected" }],
-    listMcpTools: async () =>
+    connectionTools: async () =>
       options.listed === false
         ? [{ remote_name: "search", namespaced_name: "coingecko_search" }]
         : [{ remote_name: "prices", namespaced_name: "coingecko_prices" }],

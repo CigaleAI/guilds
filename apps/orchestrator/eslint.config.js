@@ -1,11 +1,15 @@
 import eslint from "@eslint/js";
 import tseslint from "typescript-eslint";
 import { boundary } from "../../eslint.boundary.js";
+import { limits } from "../../eslint.limits.js";
 
 // The hosted packages, which nothing in this package may import, and the repository its relative
 // imports must stay inside (docs/architecture/extension-points.md).
 const HOSTED_PACKAGES = ["@guildsrun/hosted-server"];
 const REPOSITORY = "../..";
+// The re-export modules a tool requires: drizzle-kit reads the schema mirror from its index
+// (drizzle.config.ts).
+const INDEXES = ["src/db/schema/index.ts"];
 
 export default tseslint.config(
   eslint.configs.recommended,
@@ -21,25 +25,14 @@ export default tseslint.config(
       ],
     },
   },
+  limits({ files: ["src/**/*.ts"], commands: ["src/cli/**/*.ts"] }),
   {
-    // The function and file limits of docs/contributing/code-guidelines.md. Existing violations
-    // are listed in eslint-suppressions.json; that list only shrinks.
+    // Public functions have explicit types for inputs and outputs
+    // (docs/contributing/code-guidelines.md, Types and errors).
     files: ["src/**/*.ts"],
     ignores: ["**/*.test.ts", "**/*.test.tsx", "**/*.stories.tsx", "test/**", "scripts/**"],
     rules: {
-      complexity: ["error", 11],
-      "max-depth": ["error", 3],
-      "max-params": ["warn", 4],
-      "@typescript-eslint/max-params": ["error", { max: 5 }],
-      "max-lines": ["error", { max: 800, skipBlankLines: false, skipComments: false }],
-    },
-  },
-  {
-    // A cast creates no knowledge (docs/contributing/code-guidelines.md, Types and errors).
-    files: ["src/**/*.ts"],
-    ignores: ["**/*.test.ts", "**/*.test.tsx", "**/*.stories.tsx", "test/**", "scripts/**"],
-    rules: {
-      "@typescript-eslint/consistent-type-assertions": ["error", { assertionStyle: "never" }],
+      "@typescript-eslint/explicit-module-boundary-types": "error",
     },
   },
   {
@@ -114,5 +107,6 @@ export default tseslint.config(
     source: ".",
     packages: HOSTED_PACKAGES,
     repository: REPOSITORY,
+    indexes: INDEXES,
   }),
 );

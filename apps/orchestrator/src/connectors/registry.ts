@@ -1,7 +1,7 @@
 import type { Manifest } from "../db/schema/index.js";
 import { loadManifest, serverIdOf } from "./manifest.js";
 import type { Adapter } from "./types.js";
-import type { LoadedConnector } from "./load.js";
+import type { LoadedConnector } from "./servers.js";
 
 /** Where an installed connector came from: shipped with core, pulled from a registry, or added on this box. */
 export type ConnectorSource = "core" | "registry" | "local";
@@ -29,14 +29,9 @@ export class ConnectorRegistryError extends Error {
 
 /**
  * An entry for a connector folder shipped in the image, by core or by an extension: its
- * `connector.json`, checked against the folder name, and its adapter.
+ * `connector.json`, checked against the folder name, its adapter, and who publishes it.
  */
-export function folderEntry(
-  raw: unknown,
-  adapter: Adapter,
-  folder: string,
-  options: { publisher?: string } = {},
-): ConnectorEntry {
+export function folderEntry(raw: unknown, adapter: Adapter, folder: string, publisher = "guilds"): ConnectorEntry {
   const name = folder.replace(/\/+$/, "").split("/").pop() ?? "";
   const manifest = loadManifest(raw, name);
   return {
@@ -45,7 +40,7 @@ export function folderEntry(
     adapter,
     source: "core",
     verified: true,
-    publisher: options.publisher ?? "guilds",
+    publisher,
     folder,
   };
 }

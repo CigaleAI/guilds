@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { operatorActor } from "../../src/artifacts/index.js";
+import { operatorActor } from "../../src/artifacts/actors.js";
 import { repoRoot } from "../../src/lib/paths.js";
 import {
   SCRIPT_ARGS_ENV,
@@ -24,13 +24,13 @@ import { type AgentScript, Scripts } from "../../src/scripts/catalog.js";
 import { NATIVE_TOOL_NAMES, ScriptError, scriptSourceHash } from "../../src/scripts/validation.js";
 import {
   REGISTRY,
-  createToolContext,
   dynamicScriptTools,
   firstClassScriptSchemas,
   invokeTool,
 } from "../../src/toolbox/index.js";
 import { loadJsonFixture } from "../helpers/fixtures.js";
 import { MemoryScriptDB } from "../helpers/generation.js";
+import { toolFixture, type ToolFixture } from "../helpers/toolbox.js";
 
 function liveScript(fields: Omit<AgentScript, "agent_id" | "source_hash">): AgentScript {
   return { ...fields, agent_id: "a_1", source_hash: scriptSourceHash(fields.source) };
@@ -103,15 +103,13 @@ function caseById(id: string): Record<string, unknown> {
 }
 
 async function invoke(
-  ctx: ReturnType<typeof createToolContext>,
+  ctx: ToolFixture,
   name: string,
   arguments_: Record<string, unknown>,
 ) {
   const [payload, metadata] = await invokeTool(
-    ctx,
+    ctx.services, ctx.run, ctx.hooks,
     { id: "call_1", type: "function", function: { name, arguments: JSON.stringify(arguments_) } },
-    {},
-    32_768,
   );
   return { content: String(payload.content), metadata };
 }
@@ -158,7 +156,7 @@ test("snapshot-pin-ignores-live-edit", async () => {
   );
   assert.equal(files.files.get(`${SCRIPTS}/send_usdc.py`), "print('snap')\n");
   const commands: string[] = [];
-  const ctx = createToolContext({
+  const ctx = toolFixture({
     run_id: "r_1",
     agent_id: "a_1",
     guild_id: "guild_1",
@@ -178,7 +176,7 @@ test("snapshot-pin-ignores-live-edit", async () => {
   const ran = await invoke(ctx, "script_run", { name: "send_usdc" });
   assert.equal(ran.content, "snap");
   assert.deepEqual(commands, [launcherCommand(HOME, "send_usdc")]);
-  assert.ok(ctx.dynamic_tools.send_usdc);
+  assert.ok(ctx.run.dynamic_tools.send_usdc);
 });
 
 test("deleted-live-row-still-executable", async () => {
@@ -194,7 +192,7 @@ test("deleted-live-row-still-executable", async () => {
   const db = new MemoryScriptDB();
   const scripts = new Scripts(db);
   const commands: string[] = [];
-  const ctx = createToolContext({
+  const ctx = toolFixture({
     run_id: "r_1",
     agent_id: "a_1",
     guild_id: "guild_1",
@@ -222,7 +220,7 @@ test("live-extra-same-generation", async () => {
   const db = new MemoryScriptDB();
   const scripts = new Scripts(db);
   const snapshot: RunScriptSnapshot[] = [];
-  const ctx = createToolContext({
+  const ctx = toolFixture({
     run_id: "r_1",
     agent_id: "a_1",
     guild_id: "guild_1",
@@ -257,7 +255,7 @@ test("parameterised-next-run-only", async () => {
   const db = new MemoryScriptDB();
   const scripts = new Scripts(db);
   const snapshot: RunScriptSnapshot[] = [];
-  const ctx = createToolContext({
+  const ctx = toolFixture({
     run_id: "r_1",
     agent_id: "a_1",
     guild_id: "guild_1",
@@ -279,7 +277,7 @@ test("parameterised-next-run-only", async () => {
     source: "import json,sys; print(json.load(sys.stdin)['symbol'])\n",
     parameters: schema,
   });
-  assert.equal(Object.keys(ctx.dynamic_tools).length, 0);
+  assert.equal(Object.keys(ctx.run.dynamic_tools).length, 0);
   const next = snapshotAgentScripts(await scripts.listForAgent("a_1"));
   assert.equal(firstClassSnapshots(next).length, 1);
   assert.ok(dynamicScriptTools(next).priced);
@@ -417,7 +415,7 @@ test("json-stdin-launcher", async () => {
     })),
   ];
   let envs: Record<string, string> | undefined;
-  const ctx = createToolContext({
+  const ctx = toolFixture({
     run_id: "r_1",
     agent_id: "a_1",
     guild_id: "guild_1",

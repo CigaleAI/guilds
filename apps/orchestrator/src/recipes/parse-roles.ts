@@ -1,5 +1,5 @@
 import { WAKE_TRIGGERS_MAX } from "../agents/validation.js";
-import type { WakeWindow } from "../db/schema/index.js";
+import type { WakeWindow, RecipeRole, RecipeSchedule, RecipeScript } from "../db/schema/index.js";
 import { RecipeError } from "./errors.js";
 import {
   asBool,
@@ -12,16 +12,7 @@ import {
   parseBoolMap,
   textList,
 } from "./parse-fields.js";
-import {
-  builderAuthor,
-  RECIPE_SETUP_MAX,
-  RECIPE_TASK_MAX_BYTES,
-  ROLE_RE,
-  ROUTINE_KEY_RE,
-  type RecipeRole,
-  type RecipeSchedule,
-  type RecipeScript,
-} from "./schema.js";
+import { builderAuthor, RECIPE_SETUP_MAX, RECIPE_TASK_MAX_BYTES, ROLE_RE, ROUTINE_KEY_RE } from "./schema.js";
 
 // A recipe's roles: each with its config, task, scripts, routines, native tools and browser login.
 

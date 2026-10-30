@@ -57,4 +57,4 @@ EXPOSE 8080
 # node is PID 1 so Docker SIGTERM reaches the Fastify process (SHUTDOWN_TIMEOUT 15s).
 # --import instrument.ts before server.ts so Sentry hooks pg/http/fastify.
 # Hosted/GCP compose must not bind-mount src over this image.
-CMD ["node", "--import", "tsx", "--import", "./src/observability/instrument.ts", "src/server.ts"]
+CMD ["node", "--import", "tsx", "--import", "./src/instrument.ts", "src/server.ts"]

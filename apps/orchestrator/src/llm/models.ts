@@ -1,9 +1,12 @@
+import { Type, type Static } from "@sinclair/typebox";
 import { encryptPayload } from "../credentials/crypto.js";
 import { newId } from "../lib/ids.js";
 import { PolicyError } from "../policy/index.js";
 import { modelCatalog, type ModelCatalog } from "./catalog.js";
-import { LLMError, listProviderModels } from "./client.js";
+import { listProviderModels } from "./client.js";
+import { LLMError } from "./completion.js";
 import {
+  coreModelCredentials,
   decryptProviderRow,
   keyHint,
   type ModelCredentialsProvider,
@@ -11,7 +14,6 @@ import {
 import { defaultEntry, entryPayload, type CatalogEntry } from "./entries.js";
 import {
   PROVIDERS,
-  catalogModelId,
   parseModelId,
   providerById,
   providerLabel,
@@ -43,7 +45,7 @@ export class ModelsError extends Error {
 }
 
 /** The db/ functions an organisation's providers and default model are read and written through, on `db`. */
-export function modelsDatabase(db: Queryable) {
+function modelsDatabase(db: Queryable) {
   return {
     listOrgModelProviders: bindQuery(db, listOrgModelProviders),
     getOrgModelProvider: bindQuery(db, getOrgModelProvider),
@@ -59,6 +61,14 @@ export type ModelsDatabase = ReturnType<typeof modelsDatabase>;
 export type ModelsServiceDeps = {
   db: ModelsDatabase;
   credentials: ModelCredentialsProvider;
+  catalog?: ModelCatalog;
+  fetch?: typeof fetch;
+  masterKey?: Buffer | undefined;
+};
+
+/** What `modelsService` runs with beside `db`; credentials are core's over its rows when absent. */
+export type ModelsServices = {
+  credentials?: ModelCredentialsProvider | undefined;
   catalog?: ModelCatalog;
   fetch?: typeof fetch;
   masterKey?: Buffer | undefined;
@@ -86,14 +96,18 @@ export type OrgModelsPayload = {
 
 const MAX_CHOSEN_MODELS = 500;
 
+function isStringList(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
 function stringList(value: unknown, field: string): string[] {
   if (value === undefined) {
     return [];
   }
-  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+  if (!isStringList(value)) {
     throw new ModelsError(422, `${field} must be a list of model ids`);
   }
-  return value as string[];
+  return value;
 }
 
 /** The chosen ids of a provider: `{provider}/{model}`, trimmed, deduplicated, in the order given. */
@@ -116,11 +130,8 @@ export function validateChosenModels(provider: ProviderDef, value: unknown): str
   return chosen;
 }
 
-function localEntry(model: string): CatalogEntry {
-  const local = providerById("local");
-  if (!local) {
-    throw new Error("local provider missing");
-  }
+/** A model the local endpoint lists: thinking and temperature on, attachments off. */
+function localEntry(local: ProviderDef, model: string): CatalogEntry {
   return { ...defaultEntry(local, model), thinking: true, temperature: true, attachments: false, listed: true };
 }
 
@@ -131,6 +142,54 @@ function requireProvider(id: string): ProviderDef {
   }
   return provider;
 }
+
+/** A provider connected for an organisation: its key, a local endpoint, and the models chosen on it. */
+export const ProviderConnectionSchema = Type.Object({
+  api_key: Type.Optional(Type.String()),
+  base_url: Type.Optional(Type.String()),
+  models: Type.Optional(Type.Array(Type.String())),
+});
+
+export type ProviderConnection = Static<typeof ProviderConnectionSchema>;
+
+/** The key and base URL a provider is connected with; the base URL is the local endpoint's, null for any other provider. */
+type ProviderAccess = { apiKey: string; baseURL: string | null };
+
+/** A field a connection gives, else the one stored: a blank given field keeps what is stored. */
+function givenOrStored(given: string | undefined, stored: string | null | undefined): string {
+  return given?.trim() || stored || "";
+}
+
+/**
+ * The key and base URL a connection writes: the given ones, else the stored ones. A local endpoint
+ * needs an http(s) URL and any other provider a key.
+ */
+function connectionAccess(
+  provider: ProviderDef,
+  input: ProviderConnection,
+  stored: ProviderAccess | null,
+): ProviderAccess {
+  const apiKey = givenOrStored(input.api_key, stored?.apiKey);
+  if (provider.id !== "local") {
+    if (!apiKey) {
+      throw new ModelsError(422, "api_key is required");
+    }
+    return { apiKey, baseURL: null };
+  }
+  const baseURL = givenOrStored(input.base_url, stored?.baseURL);
+  if (!baseURL) {
+    throw new ModelsError(422, "base_url is required");
+  }
+  if (!/^https?:\/\//.test(baseURL)) {
+    throw new ModelsError(422, "base_url must start with http:// or https://");
+  }
+  return { apiKey, baseURL };
+}
+
+/** The organisation's default model; null or empty names none. */
+export const DefaultModelSchema = Type.Object({
+  model: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+});
 
 export class ModelsService {
   private readonly catalog: ModelCatalog;
@@ -146,7 +205,9 @@ export class ModelsService {
       if (!parsed) {
         return null;
       }
-      return provider.id === "local" ? localEntry(parsed.model) : (this.catalog.entry(id) ?? defaultEntry(provider, parsed.model));
+      return provider.id === "local"
+        ? localEntry(provider, parsed.model)
+        : (this.catalog.entry(id) ?? defaultEntry(provider, parsed.model));
     });
     return entries
       .filter((entry): entry is CatalogEntry => entry !== null)
@@ -220,16 +281,12 @@ export class ModelsService {
       throw new ModelsError(422, "save the local endpoint's URL first");
     }
     const ids = await this.listModels(provider, secret.apiKey, secret.baseURL);
-    return ids.map((id) => entryPayload(localEntry(id)));
+    return ids.map((id) => entryPayload(localEntry(provider, id)));
   }
 
   private async listModels(provider: ProviderDef, apiKey: string, baseURL: string | null): Promise<string[]> {
     try {
-      return await listProviderModels(provider, {
-        apiKey,
-        baseURL,
-        ...(this.deps.fetch ? { fetch: this.deps.fetch } : {}),
-      });
+      return await listProviderModels(provider, { apiKey, baseURL }, this.deps.fetch ? { fetch: this.deps.fetch } : {});
     } catch (error) {
       throw new ModelsError(422, error instanceof LLMError ? error.message : "couldn't reach the provider");
     }
@@ -243,25 +300,12 @@ export class ModelsService {
   async connect(
     orgId: string,
     providerId: string,
-    input: { api_key?: unknown; base_url?: unknown; models?: unknown },
+    input: ProviderConnection,
   ): Promise<ProviderItem> {
     const provider = requireProvider(providerId);
     const existing = await this.deps.db.getOrgModelProvider(orgId, provider.id);
     const stored = existing ? decryptProviderRow(existing, this.deps.masterKey) : null;
-    const givenKey = typeof input.api_key === "string" ? input.api_key.trim() : "";
-    const apiKey = givenKey || stored?.apiKey || "";
-    const givenURL = typeof input.base_url === "string" ? input.base_url.trim() : "";
-    const baseURL = provider.id === "local" ? givenURL || stored?.baseURL || "" : null;
-    if (provider.id === "local") {
-      if (!baseURL) {
-        throw new ModelsError(422, "base_url is required");
-      }
-      if (!/^https?:\/\//.test(baseURL)) {
-        throw new ModelsError(422, "base_url must start with http:// or https://");
-      }
-    } else if (!apiKey) {
-      throw new ModelsError(422, "api_key is required");
-    }
+    const { apiKey, baseURL } = connectionAccess(provider, input, stored);
     const models =
       input.models === undefined && existing
         ? validateChosenModels(provider, existing.models)
@@ -285,10 +329,7 @@ export class ModelsService {
       },
       now,
     );
-    const current = await this.deps.db.getOrgDefaultModel(orgId);
-    if (current && parseModelId(current)?.provider.id === provider.id && !models.includes(current)) {
-      await this.deps.db.setOrgDefaultModel(orgId, null, now);
-    }
+    await this.clearDefaultLeftOut(orgId, provider, models, now);
     return {
       id: provider.id,
       label: provider.label,
@@ -300,15 +341,20 @@ export class ModelsService {
     };
   }
 
+  /** Clears the organisation's default when it is a model of `provider` that `models` leaves out. */
+  private async clearDefaultLeftOut(orgId: string, provider: ProviderDef, models: string[], now: Date): Promise<void> {
+    const current = await this.deps.db.getOrgDefaultModel(orgId);
+    if (current && parseModelId(current)?.provider.id === provider.id && !models.includes(current)) {
+      await this.deps.db.setOrgDefaultModel(orgId, null, now);
+    }
+  }
+
   /** Names the organisation's default: one of its chosen models on a connected marketplace provider, or none. */
-  async setDefault(orgId: string, model: unknown): Promise<{ default: string | null }> {
+  async setDefault(orgId: string, model: string | null): Promise<{ default: string | null }> {
     const now = new Date();
-    if (model === null || model === undefined || model === "") {
+    if (model === null || model === "") {
       await this.deps.db.setOrgDefaultModel(orgId, null, now);
       return { default: null };
-    }
-    if (typeof model !== "string") {
-      throw new ModelsError(422, "model must be a string or null");
     }
     const id = model.trim();
     const parsed = parseModelId(id);
@@ -352,4 +398,10 @@ export class ModelsService {
   }
 }
 
-export { catalogModelId };
+/** The organisation's model setup, read and written on `db` and run with `services`. */
+export function modelsService(db: Queryable, services: ModelsServices = {}): ModelsService {
+  const credentials =
+    services.credentials ?? coreModelCredentials(db, services.masterKey);
+  return new ModelsService({ ...services, db: modelsDatabase(db), credentials });
+}
+

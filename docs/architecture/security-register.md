@@ -9,6 +9,9 @@ risk is kept by design), or **Fixed** with its date.
 
 | Id | Issue | Status |
 |---|---|---|
+| [SEC-52](#sec-52--the-sandbox-proxy-sent-a-request-to-any-host-a-proxied-path-named) | The sandbox proxy sent a request to any host a proxied path named | Fixed 2026-10-29 |
+| [SEC-51](#sec-51--a-recipe-capture-copies-the-notes-of-private-guilds-its-operator-does-not-operate) | A recipe capture copies the notes of private guilds its operator does not operate | Fixed 2026-10-28 |
+| [SEC-50](#sec-50--an-operators-read-of-a-memory-revision-path-is-not-limited-to-its-organisation) | An operator's read of a Memory revision path is not limited to its organisation | Fixed 2026-10-28 |
 | [SEC-49](#sec-49--a-runs-diff-and-a-code-tasks-log-were-served-unredacted-when-the-agents-secrets-could-not-be-read) | A run's diff and a code task's log were served unredacted when the agent's secrets could not be read | Fixed 2026-10-27 |
 | [SEC-48](#sec-48--a-run-that-listed-a-logins-tools-for-the-first-time-was-offered-the-ones-that-start-off) | A run that listed a login's tools for the first time was offered the ones that start Off | Fixed 2026-10-26 |
 | [SEC-47](#sec-47--github-content-an-agent-reads-through-its-tools-can-steer-its-writes-to-the-logins-repositories) | GitHub content an agent reads through its tools can steer its writes to the login's repositories | Open |
@@ -58,6 +61,114 @@ risk is kept by design), or **Fixed** with its date.
 | [SEC-3](#sec-3--check-then-open-race-on-agent-workspace-paths) | Check-then-open race on agent workspace paths | Open |
 | [SEC-2](#sec-2--any-organisation-member-could-write-organisation-wide-secrets) | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | [SEC-1](#sec-1--links-planted-in-an-agent-workspace-redirect-orchestrator-file-access) | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-52 — The sandbox proxy sent a request to any host a proxied path named
+
+**Status:** fixed 2026-10-29.
+
+**Found:** 2026-10-29, from a code-scanning alert (CWE-918) on the
+proxy's URL construction.
+
+**Where:** `joinUpstream` in `apps/orchestrator/src/http/sandbox-proxy.ts`,
+reached by `/api/agents/{id}/browser/vnc/*` and
+`/api/agents/{id}/cli/tty/*` over HTTP and WebSocket
+(`src/http/sandbox-routes.ts`).
+
+**Exposure:** the proxy resolved the requested path against the sandbox
+daemon's base URL with `new URL(path, base)`. A path that was itself a
+URL (`http://host/…`) or began with two backslashes replaced the base
+entirely, so the orchestrator sent the request to that host from its own
+network position, with the client's headers and the sandbox seat's
+authorization header, and returned the response to the client. Any user
+who could see an agent whose sandbox was running could reach any
+address the orchestrator can, internal services and the cloud metadata
+endpoint included. `..` segments were already refused by
+`filePathParam` (`src/http/request.ts`), and a path starting with `//`
+stayed on the daemon.
+
+**Fix:** `joinUpstream` keeps the daemon's origin and sets only the
+URL's pathname from the base path and the requested path, so a path
+written as a URL is a path on the daemon; a result that leaves the base
+path is a 404. `test/unit/sandbox-proxy.test.ts` pins the three forms
+against a second server, which receives nothing.
+
+**Residual risk:** none known. Every path under the daemon's base stays
+reachable to a user who can see the agent, as the browser and terminal
+views need.
+
+## SEC-51 — A recipe capture copies the notes of private guilds its operator does not operate
+
+**Status:** fixed 2026-10-28.
+
+**Found:** 2026-10-28, giving `artifacts/` one function for the notes a
+capture names with their access lists.
+
+**Where:** `captureGuild` in `apps/orchestrator/src/recipes/capture.ts`,
+which builds its operator actor without hidden guilds (line 563) and
+reads the notes it includes through `notesNamed` (line 445);
+`notesNamed` in `apps/orchestrator/src/artifacts/notes.ts` (line 292);
+`POST /api/guilds/:guild_id/recipes` in
+`apps/orchestrator/src/http/recipe-routes.ts`, which passes the
+request's `include_notes` through as they are (line 189).
+
+**Exposure:** a capture acts as an operator actor that carries no
+hidden guilds, so it reads every live note of the organisation, the
+guild and agent notes of private guilds included. It keeps each note
+whose display path or file name is one of `include_notes` or one of the
+roles' Task embeds, and copies its text into the recipe draft the
+route returns and stores. A user who can see one guild and names a
+private guild's note in `include_notes`, by its display path or only by
+its file name, gets that note's text in the draft. A file name also
+takes every other note of that name in the organisation.
+
+**Control in place:** the route captures only a guild the user can see
+(`requireVisibleGuild`). A Task cannot embed a private guild's note
+(SEC-42), so the embeds alone do not reach one. Tables are captured
+only when they are the guild's own or the organisation's.
+
+**Fix:** the route builds the capture's actor with `loadOperatorActor`
+(`apps/orchestrator/src/artifacts/actors.ts`), which carries the private
+guilds the user does not operate, and `captureGuild` in
+`apps/orchestrator/src/recipes/capture.ts` takes that actor, so
+`notesNamed` leaves their notes out, by display path and by file name.
+
+**Residual risk:** none known. A capture carries a private guild's note
+only for a user who operates that guild.
+
+## SEC-50 — An operator's read of a Memory revision path is not limited to its organisation
+
+**Status:** fixed 2026-10-28.
+
+**Found:** 2026-10-28, giving `artifacts/` one function for what a
+display path holds.
+
+**Where:** `readRevision` in `apps/orchestrator/src/artifacts/notes.ts`
+(lines 308-316), which `getByDisplayPath` calls for a
+`history-archive` path (line 280).
+
+**Exposure:** `readRevision` lets an operator actor through when
+`reachesOwner` says it reaches the agent. That check only looks at the
+actor's hidden guilds, not at its organisation. It then reads the
+revision with the organisation id the path names. An operator actor of
+one organisation that is handed another organisation's revision path,
+with that agent's id and the revision's stamp, gets that agent's
+archived Memory text.
+
+**Control in place:** no caller passes such a path through today.
+`artifactAt` in `apps/orchestrator/src/artifacts/notes.ts` refuses a
+path outside the actor's organisation before it reads, and the Studio
+reads through it. `readEmbeddableNotes` and `lastSavedRow` in
+`apps/orchestrator/src/artifacts/host-files.ts` drop a revision and keep
+only a live row. An agent actor never reaches `readRevision`'s read:
+the archive is the operator's.
+
+**Fix:** `readRevision` in `apps/orchestrator/src/artifacts/notes.ts`
+refuses a revision path whose organisation is not the actor's with 404
+(`artifact is not in this organisation`) before any other check, so
+`getByDisplayPath` reads a revision only in the actor's organisation,
+whatever its caller checked.
+
+**Residual risk:** none known.
 
 ## SEC-49 — A run's diff and a code task's log were served unredacted when the agent's secrets could not be read
 
@@ -118,7 +229,7 @@ it wrote stands, so later runs are not.
 
 **Where:** `apps/orchestrator/src/connectors/github/connector.json`,
 `mintLoginToken` in `apps/orchestrator/src/github/tokens.ts`, and the
-pool's GitHub App session in `apps/orchestrator/src/mcp/index.ts`.
+pool's GitHub App session in `apps/orchestrator/src/mcp/login-auth.ts`.
 
 **Exposure:** any agent a GitHub login's connector is on for, coding
 or not, reads issues, pull requests, comments, files, and CI logs
@@ -521,7 +632,7 @@ for one guild its caller can see.
 **Found:** 2026-10-18, adding routine requests to Prompt Studio.
 
 **Where:** `studio_edit_routine` (actions `create` and `edit`) in
-`apps/orchestrator/src/studio/tools.ts` and
+`apps/orchestrator/src/studio/routine-tools.ts` and
 `apps/orchestrator/src/studio/routines.ts`.
 
 **Exposure:** the coach reads run transcripts, notes, Memory, group
@@ -560,7 +671,7 @@ leaving them to the Routine tab.
 
 **Found:** 2026-10-17, adding access requests to Prompt Studio.
 
-**Where:** `studio_edit_access` in `apps/orchestrator/src/studio/tools.ts`
+**Where:** `studio_edit_access` in `apps/orchestrator/src/studio/access-tools.ts`
 and `apps/orchestrator/src/studio/access.ts`.
 
 **Exposure:** the coach reads run transcripts, notes, Memory, group
@@ -651,7 +762,7 @@ name lookups to the instance admin.
 **Where:** `GET /api/runs/:id/tasks/:call_id/log`
 (`apps/orchestrator/src/http/coding-routes.ts`), `harnessLog` in
 `apps/orchestrator/src/generation/coding.ts`, `readHarnessLog` in
-`apps/orchestrator/src/toolbox/harness.ts`, and the `log` op of
+`apps/orchestrator/src/toolbox/harness-ops.ts`, and the `log` op of
 `runtime/guilds-harness`.
 
 **Exposure:** a harness's event log is stored unredacted in the
@@ -977,7 +1088,7 @@ integrations shipped.
 to every registry install with or without code
 (`endpointOnlyProblem` there, `codeManifestProblem` in
 `src/registry/client.ts`), and `refreshConnectorIntegrations`
-(`src/instance/connectors.ts`).
+(`src/connectors/instance.ts`).
 
 **Exposure:** a registry connector's manifest now asks the instance
 admin for a credential: a platform key for its platform login, or
@@ -1007,7 +1118,8 @@ names receives what the login sends (SEC-17).
 shipped.
 
 **Where:** `GET /api/admin/instance/keys/github-app/manifest/callback`
-(`src/http/admin-instance-routes.ts`, `src/github/manifest.ts`).
+(`src/http/admin-instance-routes.ts`, `src/mcp/github-app-manifest.ts`,
+`src/github/manifest.ts`).
 
 **Exposure:** after the admin confirms the App on GitHub, GitHub
 sends their browser back to the box with a `code`, and the box
@@ -1038,7 +1150,7 @@ is trusted to post the manifest it was given.
 moved from the environment into the store.
 
 **Where:** `PUT` and `DELETE /api/admin/instance/keys/:integration`
-(`src/http/admin-instance-routes.ts`), the store
+(`src/http/admin-instance-routes.ts`, `src/connectors/instance-keys.ts`), the store
 (`src/instance/keys.ts`), and the `instance_keys` table.
 
 **Exposure:** the box's own credentials (the GitHub App, the Google
@@ -1163,7 +1275,7 @@ SEC-17's exposure: the orchestrator calls the URL the manifest names.
 **Status:** open, accepted, by design since 2026-10-09; mitigated.
 
 **Where:** `POST /api/orgs/{id}/mcp/servers` (`src/http/org-connector-routes.ts`)
-and the MCP sessions the pool opens (`src/mcp/index.ts`).
+and the MCP sessions the pool opens (`src/mcp/pool.ts`, `src/mcp/session.ts`).
 
 **Exposure:** an owner or admin of any organisation adds a remote
 MCP server by URL. The orchestrator then sends requests to that
@@ -1197,7 +1309,7 @@ are not resolved this way.
 
 **Status:** open, accepted, by design since 2026-10-09; mitigated.
 
-**Where:** `toolStartsOff` (`src/connectors/load.ts`), applied when
+**Where:** `toolStartsOff` (`src/connectors/servers.ts`), applied when
 a login's tools are listed (`McpPool.syncTools`).
 
 **Exposure:** a tool a remote server lists, and its connector's
@@ -1208,7 +1320,7 @@ operator turned it on. A server can name a writing tool so it
 reads as a read (`lookup_orders` that also cancels one) and an
 agent with that server on can call it on its first run.
 
-**Mitigation:** the writing-verb list (`src/mcp/verbs.ts`) and
+**Mitigation:** the writing-verb list (`src/connectors/naming.ts`) and
 `destructiveHint` keep a tool Off; `readOnlyHint` never turns one
 On. A connector's manifest names default-off tools with
 `policy.default_off` and marks its own tools `mutating`, and the

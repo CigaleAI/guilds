@@ -5,19 +5,21 @@ import {
   resolvedMcp,
   resolvedTools,
   validateCatalog,
+  type ResolvableBinding,
   type Resolved,
 } from "../access/index.js";
 import { resolveMcpTool } from "../access/runtime.js";
-import { listMcpServers } from "../connectors/servers.js";
 import { newId } from "../lib/ids.js";
-import { isReadOnlyRemote, listedFromRows } from "../mcp/index.js";
-import type { EditScope } from "./edits.js";
+import { connectionTools } from "../mcp/service.js";
+import type { AccessSetting, EditAccessArguments } from "./edit-arguments.js";
+import type { AgentTarget } from "./edit-request.js";
+import type { EditDeps, EditScope } from "./edits.js";
 import { editActor } from "./actor.js";
 import { StudioConflictError, StudioUnprocessableError } from "./errors.js";
 import { getAgent } from "../db/agents.js";
-import { getBinding, listBindingsCovering } from "../db/bindings.js";
-import { listMcpConnections, listMcpTools } from "../db/mcp.js";
-import type { LoadedConnector } from "../connectors/load.js";
+import { getBinding, listBindingsCovering, type BindingRow } from "../db/bindings.js";
+import { listMcpConnections } from "../db/mcp.js";
+import { listServers, type LoadedConnector } from "../connectors/servers.js";
 
 // One agent's access as the coach proposes to narrow or widen it: the native
 // tools, and the connections and connection tools it is offered. A change is an agent-level overlay; the guild's and the
@@ -31,12 +33,9 @@ export function isAccessTool(name: string): name is StudioAccessTool {
   return (STUDIO_ACCESS_TOOLS as readonly string[]).includes(name);
 }
 
-const SETTINGS = ["on", "off", "inherit"] as const;
-type Setting = (typeof SETTINGS)[number];
+type CatalogKind = BindingRow["catalog_kind"];
 
-type CatalogKind = "native_tool" | "mcp" | "mcp_tool";
-
-type Change = { kind: CatalogKind; id: string; label: string; setting: Setting };
+type Change = { kind: CatalogKind; id: string; label: string; setting: AccessSetting };
 
 type ListedTool = { name: string; readOnly: boolean };
 
@@ -53,7 +52,7 @@ type Snapshot = {
   agentId: string;
   agentName: string;
   scope: { orgId: string; guildId: string; agentId: string };
-  rows: Array<Record<string, unknown>>;
+  rows: ResolvableBinding[];
   servers: LoadedConnector[];
   connections: Map<string, AgentConnection>;
 };
@@ -65,7 +64,7 @@ type Snapshot = {
  */
 export type AccessReview = {
   title: string;
-  target: Record<string, unknown>;
+  target: AgentTarget;
   baseHash: string;
   proposedHash: string;
   live: string;
@@ -80,39 +79,33 @@ function hashOf(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value), "utf8").digest("hex");
 }
 
-async function loadSnapshot(scope: EditScope, agentId: string): Promise<Snapshot> {
-  const agent = await getAgent(scope.db, agentId);
-  if (!agent || String(agent.guild_id) !== scope.sourceGuildId || String(agent.org_id) !== scope.orgId) {
+async function loadSnapshot(deps: EditDeps, scope: EditScope, agentId: string): Promise<Snapshot> {
+  const agent = await getAgent(deps.db, agentId);
+  if (!agent || agent.guild_id !== scope.sourceGuildId || agent.org_id !== scope.orgId) {
     throw new StudioUnprocessableError("agent is not in the source guild");
   }
   const resolveScope = { orgId: scope.orgId, guildId: scope.sourceGuildId, agentId };
-  const rows = await listBindingsCovering(scope.db, resolveScope);
-  const servers = await listMcpServers(scope.db, scope.orgId);
+  const rows = await listBindingsCovering(deps.db, resolveScope);
+  const servers = await listServers(deps.db, { owner: { visibleTo: scope.orgId } });
   const serverById = new Map(servers.map((server) => [server.id, server]));
   const connections = new Map<string, AgentConnection>();
-  for (const connection of await listMcpConnections(scope.db, resolveScope)) {
-    const server = serverById.get(String(connection.mcp_server_id));
+  for (const connection of await listMcpConnections(deps.db, resolveScope)) {
+    const server = serverById.get(connection.mcp_server_id);
     if (!server) continue;
-    const listed = listedFromRows(await listMcpTools(scope.db, String(connection.id)));
-    const name = String(server.display_name || server.slug);
-    const account = String(connection.account_hint ?? "");
-    connections.set(String(connection.id), {
-      id: String(connection.id),
+    const listed = await connectionTools(deps.db, connection, server);
+    const name = server.display_name || server.slug;
+    const account = connection.account_hint;
+    connections.set(connection.id, {
+      id: connection.id,
       serverId: server.id,
       label: `${name} (${connection.owner_scope} login${account ? `, ${account}` : ""})`,
-      status: String(connection.status),
-      tools: listed.map((tool) => ({
-        name: tool.namespaced_name,
-        readOnly: isReadOnlyRemote(server.slug, tool.remote_name, {
-          readOnlyHint: tool.read_only_hint,
-          verified: server.verified,
-        }),
-      })),
+      status: connection.status,
+      tools: listed.map((tool) => ({ name: tool.namespaced_name, readOnly: tool.read_only })),
     });
   }
   return {
     agentId,
-    agentName: String(agent.name),
+    agentName: agent.name,
     scope: resolveScope,
     rows,
     servers,
@@ -121,7 +114,7 @@ async function loadSnapshot(scope: EditScope, agentId: string): Promise<Snapshot
 }
 
 /** The connections the agent's bindings resolve, with the server each one serves. */
-function agentConnections(snapshot: Snapshot, rows: Array<Record<string, unknown>>): Array<{ item: Resolved; connection: AgentConnection }> {
+function agentConnections(snapshot: Snapshot, rows: ResolvableBinding[]): Array<{ item: Resolved; connection: AgentConnection }> {
   const found: Array<{ item: Resolved; connection: AgentConnection }> = [];
   for (const [item] of resolvedMcp(rows, snapshot.servers, snapshot.scope)) {
     const connection = item.connection_id === null ? undefined : snapshot.connections.get(item.connection_id);
@@ -135,7 +128,7 @@ function stateOf(item: Resolved): string {
 }
 
 /** The access as the operator reads it in a diff: one line per tool and connection. */
-function render(snapshot: Snapshot, rows: Array<Record<string, unknown>>): string {
+function render(snapshot: Snapshot, rows: ResolvableBinding[]): string {
   const lines = [`${snapshot.agentName} · access`, "", "native tools"];
   for (const item of resolvedTools(rows, snapshot.scope)) {
     lines.push(`- ${item.catalog_id}: ${stateOf(item)}`);
@@ -147,25 +140,30 @@ function render(snapshot: Snapshot, rows: Array<Record<string, unknown>>): strin
     const status = connection.status === "connected" ? "" : `, ${connection.status}`;
     lines.push(`- ${connection.label}: ${stateOf(item)}${status}`);
     for (const tool of connection.tools) {
-      const resolved = resolveMcpTool(rows, tool.name, { serverEnabled: item.enabled, ...snapshot.scope });
+      const resolved = resolveMcpTool(rows, tool.name, snapshot.scope, item.enabled);
       lines.push(`  - ${tool.name}: ${stateOf(resolved)}${tool.readOnly ? "" : ", changes data"}`);
     }
   }
   return lines.join("\n");
 }
 
-function agentRow(snapshot: Snapshot, rows: Array<Record<string, unknown>>, kind: CatalogKind, id: string) {
+function agentRow(
+  snapshot: Snapshot,
+  rows: ResolvableBinding[],
+  kind: CatalogKind,
+  id: string,
+): ResolvableBinding | undefined {
   return rows.find(
     (row) =>
       row.catalog_kind === kind &&
       row.catalog_id === id &&
       row.scope === "agent" &&
-      String(row.scope_id) === snapshot.agentId,
+      row.scope_id === snapshot.agentId,
   );
 }
 
 /** The bindings as they stand once each change is written. */
-function rowsAfter(snapshot: Snapshot, changes: Change[]): Array<Record<string, unknown>> {
+function rowsAfter(snapshot: Snapshot, changes: Change[]): ResolvableBinding[] {
   let rows = [...snapshot.rows];
   for (const change of changes) {
     const existing = agentRow(snapshot, rows, change.kind, change.id);
@@ -184,20 +182,9 @@ function rowsAfter(snapshot: Snapshot, changes: Change[]): Array<Record<string, 
   return rows;
 }
 
-function settingOf(raw: unknown, field: string, name: string): Setting {
-  if (!(SETTINGS as readonly unknown[]).includes(raw)) {
-    throw new StudioUnprocessableError(`${field}.${name} must be on, off, or inherit`);
-  }
-  return raw as Setting;
-}
-
-function entries(args: Record<string, unknown>, field: string): Array<[string, Setting]> {
-  const raw = args[field];
-  if (raw === undefined || raw === null) return [];
-  if (typeof raw !== "object" || Array.isArray(raw)) {
-    throw new StudioUnprocessableError(`${field} must be an object of name to on, off, or inherit`);
-  }
-  return Object.entries(raw as Record<string, unknown>).map(([name, value]) => [name.trim(), settingOf(value, field, name)]);
+/** The settings `settings` gives, each name trimmed; none when it is left out. */
+function entries(settings: Record<string, AccessSetting> | undefined): Array<[string, AccessSetting]> {
+  return Object.entries(settings ?? {}).map(([name, setting]) => [name.trim(), setting]);
 }
 
 function nativeToolId(name: string): string {
@@ -210,7 +197,7 @@ function nativeToolId(name: string): string {
 }
 
 /** The overlays a proposal asks for; a setting the agent already has is not a change. */
-function parseChanges(snapshot: Snapshot, args: Record<string, unknown>): Change[] {
+function parseChanges(snapshot: Snapshot, args: EditAccessArguments): Change[] {
   const changes: Change[] = [];
   const seen = new Set<string>();
   const add = (change: Change) => {
@@ -221,15 +208,17 @@ function parseChanges(snapshot: Snapshot, args: Record<string, unknown>): Change
     seen.add(key);
     const existing = agentRow(snapshot, snapshot.rows, change.kind, change.id);
     const unchanged =
-      change.setting === "inherit" ? !existing : Boolean(existing) && Boolean(existing?.enabled) === (change.setting === "on");
+      change.setting === "inherit"
+        ? !existing
+        : existing !== undefined && existing.enabled === (change.setting === "on");
     if (!unchanged) changes.push(change);
   };
-  for (const [name, setting] of entries(args, "native_tools")) {
+  for (const [name, setting] of entries(args.native_tools)) {
     const id = nativeToolId(name);
     add({ kind: "native_tool", id, label: id, setting });
   }
   const connections = agentConnections(snapshot, snapshot.rows).map((item) => item.connection);
-  for (const [id, setting] of entries(args, "connections")) {
+  for (const [id, setting] of entries(args.connections)) {
     const connection = connections.find((item) => item.id === id);
     if (!connection) {
       throw new StudioUnprocessableError(
@@ -238,7 +227,7 @@ function parseChanges(snapshot: Snapshot, args: Record<string, unknown>): Change
     }
     add({ kind: "mcp", id: connection.serverId, label: connection.label, setting });
   }
-  for (const [name, setting] of entries(args, "connection_tools")) {
+  for (const [name, setting] of entries(args.connection_tools)) {
     if (!connections.some((connection) => connection.tools.some((tool) => tool.name === name))) {
       throw new StudioUnprocessableError(
         `connection_tools.${name} is not a tool of ${snapshot.agentName}'s connections; use a name from studio_get_agent_access`,
@@ -249,7 +238,7 @@ function parseChanges(snapshot: Snapshot, args: Record<string, unknown>): Change
   return changes;
 }
 
-function accessEffects(snapshot: Snapshot, after: Array<Record<string, unknown>>, changes: Change[]): string[] {
+function accessEffects(snapshot: Snapshot, after: ResolvableBinding[], changes: Change[]): string[] {
   const name = snapshot.agentName;
   const effects = [`Takes effect from ${name}'s next run; a run already going keeps what it started with.`];
   const before = new Map(agentConnections(snapshot, snapshot.rows).map(({ item, connection }) => [connection.serverId, item.enabled]));
@@ -269,11 +258,9 @@ function accessEffects(snapshot: Snapshot, after: Array<Record<string, unknown>>
   for (const { item, connection } of now) {
     for (const tool of connection.tools) {
       if (tool.readOnly) continue;
-      const was = resolveMcpTool(snapshot.rows, tool.name, {
-        serverEnabled: before.get(connection.serverId) ?? false,
-        ...snapshot.scope,
-      }).enabled;
-      const is = resolveMcpTool(after, tool.name, { serverEnabled: item.enabled, ...snapshot.scope }).enabled;
+      const wasServerEnabled = before.get(connection.serverId) ?? false;
+      const was = resolveMcpTool(snapshot.rows, tool.name, snapshot.scope, wasServerEnabled).enabled;
+      const is = resolveMcpTool(after, tool.name, snapshot.scope, item.enabled).enabled;
       if (is && !was) {
         effects.push(`Lets ${name} call ${tool.name}, which can change data in ${connection.label}.`);
       }
@@ -283,20 +270,20 @@ function accessEffects(snapshot: Snapshot, after: Array<Record<string, unknown>>
 }
 
 /** Everything the agent can use under these bindings, one key per tool and connection. */
-function enabledAccess(snapshot: Snapshot, rows: Array<Record<string, unknown>>): Set<string> {
+function enabledAccess(snapshot: Snapshot, rows: ResolvableBinding[]): Set<string> {
   const on = (prefix: string, items: Resolved[]) =>
     items.filter((item) => item.enabled).map((item) => `${prefix}:${item.catalog_id}`);
   const keys = on("tool", resolvedTools(rows, snapshot.scope));
   for (const { item, connection } of agentConnections(snapshot, rows)) {
     keys.push(...on("mcp", [item]));
-    const tools = connection.tools.map((tool) => resolveMcpTool(rows, tool.name, { serverEnabled: item.enabled, ...snapshot.scope }));
+    const tools = connection.tools.map((tool) => resolveMcpTool(rows, tool.name, snapshot.scope, item.enabled));
     keys.push(...on("mcp_tool", tools));
   }
   return new Set(keys);
 }
 
 /** Whether the bindings after a proposal let the agent use something it cannot use before. */
-function widensAccess(snapshot: Snapshot, after: Array<Record<string, unknown>>): boolean {
+function widensAccess(snapshot: Snapshot, after: ResolvableBinding[]): boolean {
   const before = enabledAccess(snapshot, snapshot.rows);
   return [...enabledAccess(snapshot, after)].some((key) => !before.has(key));
 }
@@ -305,8 +292,8 @@ function widensAccess(snapshot: Snapshot, after: Array<Record<string, unknown>>)
  * Reviews a new access request against the live bindings. The request must
  * change something, or it is rejected as unprocessable.
  */
-export async function reviewAccessRequest(scope: EditScope, agentId: string, args: Record<string, unknown>): Promise<AccessReview> {
-  const review = await reviewAccess(scope, agentId, args);
+export async function reviewAccessRequest(deps: EditDeps, scope: EditScope, agentId: string, args: EditAccessArguments): Promise<AccessReview> {
+  const review = await reviewAccess(deps, scope, agentId, args);
   if (!review.changes.length) {
     throw new StudioUnprocessableError(`the proposal matches ${review.target.agent_name}'s live access; nothing to change`);
   }
@@ -317,8 +304,8 @@ export async function reviewAccessRequest(scope: EditScope, agentId: string, arg
  * Recomputes what an access proposal asks for against the live bindings, so a
  * binding that moved since the proposal shows as a changed base.
  */
-export async function reviewAccess(scope: EditScope, agentId: string, args: Record<string, unknown>): Promise<AccessReview> {
-  const snapshot = await loadSnapshot(scope, agentId);
+export async function reviewAccess(deps: EditDeps, scope: EditScope, agentId: string, args: EditAccessArguments): Promise<AccessReview> {
+  const snapshot = await loadSnapshot(deps, scope, agentId);
   const changes = parseChanges(snapshot, args);
   const after = rowsAfter(snapshot, changes);
   const live = render(snapshot, snapshot.rows);
@@ -337,7 +324,7 @@ export async function reviewAccess(scope: EditScope, agentId: string, args: Reco
 }
 
 /** Writes a reviewed proposal as agent-level overlays. */
-export async function applyAccess(scope: EditScope, agentId: string, review: AccessReview): Promise<void> {
+export async function applyAccess(deps: EditDeps, scope: EditScope, agentId: string, review: AccessReview): Promise<void> {
   if (!review.changes.length) {
     throw new StudioConflictError("the agent's access already matches this proposal");
   }
@@ -345,23 +332,20 @@ export async function applyAccess(scope: EditScope, agentId: string, review: Acc
   const actor = editActor(scope, { agentId });
   for (const change of review.changes) {
     if (change.setting === "inherit") {
-      await resetBinding(scope.db,
+      await resetBinding(deps.db,
         { catalogKind: change.kind, catalogId: change.id, scope: "agent", scopeId: agentId },
         actor,
       );
       continue;
     }
-    const existing = await getBinding(scope.db, {
+    const existing = await getBinding(deps.db, {
       catalogKind: change.kind,
       catalogId: change.id,
       scope: "agent",
       scopeId: agentId,
     });
-    const connectionId =
-      change.kind === "mcp" && existing?.connection_id !== null && existing?.connection_id !== undefined
-        ? String(existing.connection_id)
-        : null;
-    await writeBinding(scope.db,
+    const connectionId = change.kind === "mcp" ? (existing?.connection_id ?? null) : null;
+    await writeBinding(deps.db,
       {
         bindingId: newId("bind"),
         catalogKind: change.kind,

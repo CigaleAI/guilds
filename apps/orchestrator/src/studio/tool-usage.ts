@@ -1,5 +1,3 @@
-import { memoryOf } from "../agents/validation.js";
-import { jsonObj } from "../db/json.js";
 import { iso } from "../db/views.js";
 import { REGISTRY } from "../toolbox/index.js";
 import { offeredToolNames } from "../toolbox/offered.js";
@@ -7,7 +5,7 @@ import { StudioUnprocessableError } from "./errors.js";
 import { projectAgentAccess, type PreviewDeps } from "./preview.js";
 import type { ActivityWindow } from "./activity.js";
 import { listAgents, type AgentRow } from "../db/agents.js";
-import { listGuildToolCallStats, listGuildToolCalls } from "../db/activity.js";
+import { listGuildToolCallStats, listGuildToolCalls, type GuildToolCallRow } from "../db/activity.js";
 import type { Queryable } from "../db/pg.js";
 
 // The guild's tools as Studio's Tools section lists them: what each agent is
@@ -69,12 +67,12 @@ export function nativeGroup(name: string): string {
 type AgentAccess = Awaited<ReturnType<typeof projectAgentAccess>>;
 
 function nativeEntries(agent: Pick<AgentRow, "id" | "config">, access: AgentAccess): ToolEntry[] {
-  const config = (jsonObj(agent.config) as Record<string, unknown> | null) ?? {};
+  const { config } = agent;
   const offered = offeredToolNames(access.native_tools, {
-    browser: Boolean(config.browser),
-    coding: Boolean(config.coding),
-    scripting: config.scripting !== false,
-    memory: memoryOf(config),
+    browser: config.browser,
+    coding: config.coding,
+    scripting: config.scripting,
+    memory: config.memory,
     schedules: true,
     direct: true,
   });
@@ -119,10 +117,9 @@ function connectorEntries(agent: Pick<AgentRow, "id">, access: AgentAccess): Too
 
 /** Every tool one agent is offered now, and every script or connection tool it is withheld. */
 export function agentToolEntries(agent: Pick<AgentRow, "id" | "config">, access: AgentAccess): ToolEntry[] {
-  const config = (jsonObj(agent.config) as Record<string, unknown> | null) ?? {};
   return [
     ...nativeEntries(agent, access),
-    ...scriptEntries(agent, access, config.scripting !== false),
+    ...scriptEntries(agent, access, agent.config.scripting),
     ...connectorEntries(agent, access),
   ];
 }
@@ -181,9 +178,15 @@ export function buildToolRows(entries: ToolEntry[], stats: StatRow[]): ToolRow[]
   );
 }
 
+/** What the guild's tools are read through: its calls from `db`, each agent's offer from `preview`. */
+export type GuildToolsDeps = {
+  db: Queryable;
+  preview: PreviewDeps;
+};
+
 /** The guild's tools: what each agent is offered now, and their calls in the window. */
 export async function loadGuildTools(
-  deps: { db: Queryable; preview: PreviewDeps },
+  deps: GuildToolsDeps,
   guildId: string,
   window: ActivityWindow,
 ): Promise<{ since: string; until: string; tools: ToolRow[] }> {
@@ -195,8 +198,8 @@ export async function loadGuildTools(
   return { since: iso(window.since), until: iso(window.until), tools: buildToolRows(entries, stats) };
 }
 
-/** Which calls a page lists: only failed ones or all, after the cursor the previous page returned. */
-export type ToolCallsQuery = { errorsOnly: boolean; cursor: string | null };
+/** Which calls a page lists: those in the window, only failed ones or all, after the cursor the previous page returned. */
+export type ToolCallsQuery = ActivityWindow & { errorsOnly: boolean; cursor: string | null };
 
 /** A page cursor names the last call shown: its time and message id. */
 export function parseToolCursor(cursor: string | null): { at: Date; id: number } | null {
@@ -209,20 +212,32 @@ export function parseToolCursor(cursor: string | null): { at: Date; id: number }
   return { at: date, id: Number(id) };
 }
 
-function argumentsPreview(raw: unknown): string {
-  const text = typeof raw === "string" ? raw : "";
+function argumentsPreview(raw: GuildToolCallRow["arguments"]): string {
+  const text = raw ?? "";
   return text.length > TOOL_ARGUMENT_CHARS ? `${text.slice(0, TOOL_ARGUMENT_CHARS).trimEnd()}…` : text;
 }
 
 /** One stored call as the call list shows it. */
-export function viewToolCall(row: Record<string, unknown>): Record<string, unknown> {
-  const error = typeof row.error === "string" && row.error ? row.error : null;
+export type ToolCallView = {
+  at: string;
+  agent_id: GuildToolCallRow["agent_id"];
+  run_id: GuildToolCallRow["run_id"];
+  call_id: GuildToolCallRow["call_id"];
+  seq: GuildToolCallRow["seq"];
+  arguments: string;
+  status: "error" | "ok";
+  error: string | null;
+  duration_ms: number | null;
+};
+
+export function viewToolCall(row: GuildToolCallRow): ToolCallView {
+  const error = row.error || null;
   return {
     at: iso(row.created_at),
-    agent_id: String(row.agent_id),
-    run_id: String(row.run_id),
-    call_id: row.call_id ?? null,
-    seq: num(row.seq),
+    agent_id: row.agent_id,
+    run_id: row.run_id,
+    call_id: row.call_id,
+    seq: row.seq,
     arguments: argumentsPreview(row.arguments),
     status: error ? "error" : "ok",
     error,
@@ -234,18 +249,20 @@ export function viewToolCall(row: Record<string, unknown>): Record<string, unkno
 export async function loadToolCalls(
   db: Queryable,
   guildId: string,
-  request: { tool: string; window: ActivityWindow; query: ToolCallsQuery },
-): Promise<{ calls: Array<Record<string, unknown>>; next_cursor: string | null }> {
-  const rows = await listGuildToolCalls(db, guildId, request.tool, {
-    ...request.window,
-    errorsOnly: request.query.errorsOnly,
-    before: parseToolCursor(request.query.cursor),
+  tool: string,
+  query: ToolCallsQuery,
+): Promise<{ calls: ToolCallView[]; next_cursor: string | null }> {
+  const rows = await listGuildToolCalls(db, guildId, tool, {
+    since: query.since,
+    until: query.until,
+    errorsOnly: query.errorsOnly,
+    before: parseToolCursor(query.cursor),
     limit: TOOL_CALLS_PAGE + 1,
   });
   const page = rows.slice(0, TOOL_CALLS_PAGE);
   const last = page.at(-1);
   return {
     calls: page.map(viewToolCall),
-    next_cursor: rows.length > TOOL_CALLS_PAGE && last ? `${iso(last.created_at)}~${String(last.id)}` : null,
+    next_cursor: rows.length > TOOL_CALLS_PAGE && last ? `${iso(last.created_at)}~${last.id}` : null,
   };
 }

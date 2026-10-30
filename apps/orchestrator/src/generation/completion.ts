@@ -7,7 +7,7 @@ import {
   projectToolResults,
 } from "../conversation/projection.js";
 import type { AgentRow } from "../db/agents.js";
-import { bindQuery, type Queryable } from "../db/pg.js";
+import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import type { RunConfigSnapshot } from "../db/schema/index.js";
 import { listMessages, type MessageRow } from "../db/runs.js";
 import { modelCatalog } from "../llm/catalog.js";
@@ -19,10 +19,12 @@ import {
   type ModelCredentials,
   type ModelCredentialsProvider,
 } from "../llm/credentials.js";
-import { LLMError, countInputTokens, streamCompletion, type Completion, type ModelEvent } from "../llm/index.js";
+import { streamCompletion } from "../llm/client.js";
+import { LLMError, type Completion, type ModelEvent } from "../llm/completion.js";
+import { countInputTokens } from "../llm/tokens.js";
 import { PolicyError, type OrgPolicy } from "../policy/index.js";
 import type { CancelEvent } from "../toolbox/index.js";
-import type { ActiveGenerations } from "./admission.js";
+import type { ActiveGenerations } from "./active-generations.js";
 import { GenerationCancelled, RunLimitError } from "./errors.js";
 import type { RunEvents, RunGeneration } from "./events.js";
 
@@ -37,15 +39,17 @@ export const generationLive = {
   shutdownTimeoutMs: SHUTDOWN_TIMEOUT_MS,
 };
 
-export const countInputTokensImpl = (...args: Parameters<typeof countInputTokens>) =>
-  generationLive.countInputTokens(...args);
+export const countInputTokensImpl = (
+  ...args: Parameters<typeof countInputTokens>
+): ReturnType<typeof countInputTokens> => generationLive.countInputTokens(...args);
+
+/** The db/ functions a model call reads the run's history through. */
+export type ModelCompletionDatabase = { listMessages: BoundQuery<typeof listMessages> };
 
 /** The db/ functions a model call reads the run's history through, on `db`. */
-export function modelCompletionDatabase(db: Queryable) {
+export function modelCompletionDatabase(db: Queryable): ModelCompletionDatabase {
   return { listMessages: bindQuery(db, listMessages) };
 }
-
-export type ModelCompletionDatabase = ReturnType<typeof modelCompletionDatabase>;
 
 /** What model calls are made with, built once by the loop. */
 export type ModelCompletionServices = {
@@ -205,12 +209,7 @@ export class ModelCompletion {
     const credentials = await this.modelCredentials(orgId ?? "", request.model);
     void modelCatalog.ensureFresh();
     const abort = new AbortController();
-    const stream = generationLive.streamCompletion({
-      ...request,
-      signal: abort.signal,
-      apiKey: credentials.apiKey,
-      ...(credentials.baseURL ? { baseURL: credentials.baseURL } : {}),
-    });
+    const stream = generationLive.streamCompletion(request, credentials, abort.signal);
     const iterator = stream[Symbol.asyncIterator]();
     const cancelEvent = generations.cancelEvent(runId);
     let completion: Completion | null = null;

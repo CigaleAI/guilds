@@ -9,18 +9,24 @@ import { listMcpTools } from "../db/mcp.js";
 import { getMembership } from "../db/orgs.js";
 import { getRecipe } from "../db/recipes.js";
 import { setApplyChecklist, type RecipeApplyRow } from "../db/recipe-applies.js";
-import type { ApplyPlan, ApplyStep, ApplyWarning, PlannedAgent } from "../db/schema/index.js";
+import type {
+  ApplyPlan,
+  ApplyStep,
+  ApplyWarning,
+  PlannedAgent,
+  RecipeConnection,
+  RecipeDocument,
+  RecipeRole,
+} from "../db/schema/index.js";
 import { getSecretByName, listAgentSecrets, setSecretAccess } from "../db/secrets.js";
 import type { UserRow } from "../db/users.js";
 import { GITHUB_SLUG } from "../github/index.js";
 import { type ChangeActor, userActor } from "../lib/change-actor.js";
 import { newId } from "../lib/ids.js";
-import { mcpDatabase } from "../mcp/index.js";
 import { accessOf, managesOrgSecrets } from "../secrets/access.js";
 import type { RecipeApply } from "./apply.js";
 import { RecipeError } from "./errors.js";
 import { prepareRecipeForApply, roleBrowses } from "./prepare.js";
-import type { RecipeConnection, RecipeDocument, RecipeRole } from "./schema.js";
 
 // An apply's checklist: the steps its skeleton leaves open, the server's checks of the steps it
 // verifies, and the operator's confirmations and skips of the rest.
@@ -204,7 +210,7 @@ export function deferLaunchSteps(checklist: ApplyStep[], now = new Date()): Appl
 }
 
 /** The guild an apply fills. */
-export function applyGuild(apply: Pick<RecipeApplyRow, "id" | "guild_id">): string {
+function applyGuild(apply: Pick<RecipeApplyRow, "id" | "guild_id">): string {
   if (!apply.guild_id) {
     throw new RecipeError(`apply ${apply.id} has no guild`);
   }
@@ -222,6 +228,9 @@ export async function appliedRecipe(apply: RecipeApply, recipeId: string): Promi
 
 /** Where overlays are bound: the apply's recipe and guild, and the agents its roles became. */
 export type OverlayTarget = Pick<RecipeApplyRow, "recipe_id" | "org_id"> & { guild_id: string; names: PlannedAgent[] };
+
+/** The server whose overlays are bound, and the connection they are bound on. */
+export type OverlayConnection = { server: string; connectionId: string };
 
 /** Whether every role is enabled on the connection with the same tools, so one guild binding covers them. */
 function bindsAtGuild(connection: RecipeConnection, recipe: RecipeDocument): boolean {
@@ -272,7 +281,7 @@ async function bindOverlay(apply: RecipeApply, binding: OverlayBinding, known: S
 export async function writeOverlays(
   apply: RecipeApply,
   target: OverlayTarget,
-  connection: { server: string; connectionId: string },
+  connection: OverlayConnection,
   actor: ChangeActor,
 ): Promise<void> {
   const recipe = await appliedRecipe(apply, target.recipe_id);
@@ -297,6 +306,16 @@ export async function writeOverlays(
   }
 }
 
+/** Binds the overlays of the apply's recipe for a connection the operator picked on its checklist, in the guild the apply fills. */
+export function writeApplyOverlays(
+  apply: RecipeApply,
+  row: RecipeApplyRow,
+  connection: OverlayConnection,
+  actor: ChangeActor,
+): Promise<void> {
+  return writeOverlays(apply, { ...row, guild_id: applyGuild(row), names: row.plan.names }, connection, actor);
+}
+
 type StepCheck = { ok: true } | { ok: false; reason: string };
 
 const PASSED: StepCheck = { ok: true };
@@ -308,7 +327,7 @@ const AccessServers = Type.Array(
 
 /** The connection the guild reaches `slug` through, when it is connected. */
 async function guildConnection(apply: RecipeApply, row: RecipeApplyRow, slug: string): Promise<string | null> {
-  const access = await loadAccessView(mcpDatabase(apply.db), {
+  const access = await loadAccessView(apply.db, {
     orgId: row.org_id,
     guildId: applyGuild(row),
     viewScope: "guild",

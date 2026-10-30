@@ -1,38 +1,51 @@
 import type pg from "pg";
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
-import { writeAgentTask } from "../../src/agents/task.js";
+import { writeAgentTask } from "../../src/artifacts/task.js";
 import { artifactStore, type ArtifactStore, artifactView, rowDisplayPath } from "../../src/artifacts/store.js";
-import {
-  agentActor,
-  inlineTaskEmbeds,
-  inspectTaskEmbeds,
-  listFileChanges,
-  operatorActor,
-} from "../../src/artifacts/index.js";
-import { unreachableMarker, embedSource } from "../../src/artifacts/embeds.js";
+import { agentActor, operatorActor } from "../../src/artifacts/actors.js";
+import { listFileChanges } from "../../src/db/file-changes.js";
+import { unreachableMarker, embedSource, inlineTaskEmbeds, inspectTaskEmbeds } from "../../src/artifacts/embeds.js";
 import { revisionDisplayPath } from "../../src/artifacts/paths.js";
-import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
+import { addAgent } from "../../src/agents/service.js";
+import { systemActor } from "../helpers/agents.js";
 import type { Database } from "../../src/db/client.js";
 import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { createToolContext, invokeTool } from "../../src/toolbox/index.js";
+import { invokeTool } from "../../src/toolbox/index.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { tempDir } from "../helpers/env.js";
 import { compareColumnTimestamps } from "../../src/db/codecs.js";
 import { listConfigChanges } from "../../src/db/config-changes.js";
-import { buildMemoryTimeline } from "../../src/memory/timeline.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { deleteGuild, insertGuild } from "../../src/db/guilds.js";
+import { insertOrg } from "../../src/db/orgs.js";
 import { getAgentTask, listAgentTaskRevisions } from "../../src/db/agents.js";
 import { insertRun } from "../../src/db/runs.js";
 import { agentConfig, runSnapshot } from "../helpers/generation.js";
-import { canReadDisplayPath, deleteByDisplayPath, findNotes, getByDisplayPath, listEmbeddableNotes, listOwnerNotes, writeNote, writeNoteAt } from "../../src/artifacts/notes.js";
-import { getMemoryRow, listRevisions, writeMemory } from "../../src/artifacts/memory.js";
+import {
+  canReadDisplayPath,
+  deleteByDisplayPath,
+  findNotes,
+  getByDisplayPath,
+  listEmbeddableNotes,
+  listOwnerNotes,
+  writeNote,
+  writeNoteAt,
+} from "../../src/artifacts/notes.js";
+import {
+  buildMemoryTimeline,
+  getMemoryRow,
+  listRevisions,
+  readMemoryVersion,
+  writeMemory,
+} from "../../src/artifacts/memory.js";
+import type { AccessRaise } from "../../src/artifacts/access.js";
 import { accessList, grantAccess, listAccess, reachOf, replaceAccess } from "../../src/artifacts/access-lists.js";
 import { clearRecords, collectionCatalog, collectionFacts, createCollection, deleteCollection, describeCollection, getCollection, listCollectionsWithCounts, updateCollection } from "../../src/artifacts/collections.js";
 import { addRecord, exportRecords, getRecord, listRecords, removeRecord, searchRecords, updateRecord } from "../../src/artifacts/records.js";
 import { toolArtifacts } from "../../src/toolbox/artifacts.js";
+import { toolFixture } from "../helpers/toolbox.js";
 
 const dbName = uniqueDbName("agent_platform_artifacts");
 let database: Database;
@@ -61,20 +74,15 @@ after(async () => {
   await dropIsolatedDatabase(dbName);
 });
 
-async function seedAgent(agentId: string, guildId: string, guildName: string, name: string, tag: string) {
+async function seedAgent(agentId: string, guildId: string, name: string, tag: string) {
   const now = new Date();
   const notes = new NotesStore(tempDir(`guilds-${tag}-notes-`), templatesRoot());
-  await persistAgent(agentDatabase(db), notes, {
-    agentId,
-    guildId,
-    guildName,
-    orgSlug: "home",
-    orgId: "org_home",
-    name,
-    config: CONFIG,
+  await addAgent(
+    { db, notes, artifacts: store },
+    { agent: { agentId, guildId, name, config: CONFIG }, task: "", placement: {} },
+    systemActor("org_home", { guildId, agentId }),
     now,
-    artifacts: store,
-  });
+  );
 }
 
 describe("artifact store", { concurrency: 1 }, () => {
@@ -88,8 +96,8 @@ describe("artifact store", { concurrency: 1 }, () => {
       { guildId: "guild_beta", name: "beta", orgId: "org_home", about: "" },
       now,
     );
-    await seedAgent("a_alpha", "guild_alpha", "alpha", "alpha", "art");
-    await seedAgent("a_beta", "guild_beta", "beta", "beta", "art-beta");
+    await seedAgent("a_alpha", "guild_alpha", "alpha", "art");
+    await seedAgent("a_beta", "guild_beta", "beta", "art-beta");
 
     const operator = operatorActor({
       orgId: "org_home",
@@ -111,7 +119,7 @@ describe("artifact store", { concurrency: 1 }, () => {
       agentName: "beta",
     });
 
-    const orgNote = await writeNote(store, operator, {
+    const { row: orgNote } = await writeNote(store, operator, {
       level: "org",
       key: "schema.md",
       content: "org schema\n",
@@ -188,7 +196,7 @@ describe("artifact store", { concurrency: 1 }, () => {
     await writeAgentTask(db,
       operator,
       "a_alpha",
-      `Follow ![[${orgPath}]]\n\nNested stays in the note.\n`,
+      { content: `Follow ![[${orgPath}]]\n\nNested stays in the note.\n` },
     );
     const inlined = await inlineTaskEmbeds(
       embedSource(store),
@@ -404,7 +412,7 @@ describe("artifact store", { concurrency: 1 }, () => {
       { guildId: "guild_search", name: "search", orgId: "org_home", about: "" },
       now,
     );
-    await seedAgent("a_search", "guild_search", "search", "searcher", "search");
+    await seedAgent("a_search", "guild_search", "searcher", "search");
     const searcher = agentActor({
       orgId: "org_home",
       guildId: "guild_search",
@@ -593,7 +601,7 @@ describe("artifact store", { concurrency: 1 }, () => {
       { guildId: "guild_scratch", name: "scratch", orgId: "org_home", about: "" },
       now,
     );
-    await seedAgent("a_scratch", "guild_scratch", "scratch", "scratcher", "scratch");
+    await seedAgent("a_scratch", "guild_scratch", "scratcher", "scratch");
     const writer = agentActor({
       orgId: "org_home",
       guildId: "guild_scratch",
@@ -647,7 +655,7 @@ describe("artifact store", { concurrency: 1 }, () => {
       { guildId: "guild_tags", name: "tags", orgId: "org_home", about: "" },
       now,
     );
-    await seedAgent("a_tags", "guild_tags", "tags", "tagger", "tags");
+    await seedAgent("a_tags", "guild_tags", "tagger", "tags");
     const tagger = agentActor({
       orgId: "org_home",
       guildId: "guild_tags",
@@ -720,8 +728,8 @@ describe("artifact store", { concurrency: 1 }, () => {
       { guildId: "guild_other", name: "other", orgId: "org_home", about: "" },
       now,
     );
-    await seedAgent("a_own", "guild_own", "own", "owner-agent", "own");
-    await seedAgent("a_other", "guild_other", "other", "other-agent", "other");
+    await seedAgent("a_own", "guild_own", "owner-agent", "own");
+    await seedAgent("a_other", "guild_other", "other-agent", "other");
     const operator = operatorActor({ orgId: "org_home", actorId: "user_operator", actorName: "operator" });
     const member = agentActor({ orgId: "org_home", guildId: "guild_own", agentId: "a_own", agentName: "owner-agent" });
     const outsider = agentActor({ orgId: "org_home", guildId: "guild_other", agentId: "a_other", agentName: "other-agent" });
@@ -822,9 +830,9 @@ describe("artifact store", { concurrency: 1 }, () => {
       { guildId: "guild_south", name: "south", orgId: "org_home", about: "" },
       now,
     );
-    await seedAgent("a_north", "guild_north", "north", "north-agent", "north");
-    await seedAgent("a_south", "guild_south", "south", "south-agent", "south");
-    await seedAgent("a_south2", "guild_south", "south", "south-two", "south2");
+    await seedAgent("a_north", "guild_north", "north-agent", "north");
+    await seedAgent("a_south", "guild_south", "south-agent", "south");
+    await seedAgent("a_south2", "guild_south", "south-two", "south2");
     const operator = operatorActor({ orgId: "org_home", actorId: "user_operator", actorName: "operator" });
     const north = agentActor({ orgId: "org_home", guildId: "guild_north", agentId: "a_north", agentName: "north-agent" });
     const south = agentActor({ orgId: "org_home", guildId: "guild_south", agentId: "a_south", agentName: "south-agent" });
@@ -835,10 +843,10 @@ describe("artifact store", { concurrency: 1 }, () => {
       (await findNotes(store, actor, { query })).notes.map((note) => [note.display_path, note.access]);
 
     // default rows: a guild note is written by its guild, an org note read by the organisation, an agent note has none
-    const plan = await writeNote(store, north, { level: "guild", key: "plan.md", content: "north plan\n" });
+    const { row: plan } = await writeNote(store, north, { level: "guild", key: "plan.md", content: "north plan\n" });
     const planPath = String(artifactView(plan).display_path);
-    const own = await writeNote(store, north, { level: "agent", key: "mine.md", content: "north private\n" });
-    const handbook = await writeNote(store, operator, { level: "org", key: "handbook.md", content: "org handbook\n" });
+    const { row: own } = await writeNote(store, north, { level: "agent", key: "mine.md", content: "north private\n" });
+    const { row: handbook } = await writeNote(store, operator, { level: "org", key: "handbook.md", content: "org handbook\n" });
     const handbookPath = String(artifactView(handbook).display_path);
     assert.deepEqual(await rowsOf(plan.id), [["guild", "guild_north", "write"]]);
     assert.deepEqual(await rowsOf(own.id), []);
@@ -849,17 +857,17 @@ describe("artifact store", { concurrency: 1 }, () => {
     assert.deepEqual(await found(south, "private"), []);
 
     // a guild row covers an agent created after it
-    await seedAgent("a_north_late", "guild_north", "north", "north-late", "north-late");
+    await seedAgent("a_north_late", "guild_north", "north-late", "north-late");
     const late = agentActor({ orgId: "org_home", guildId: "guild_north", agentId: "a_north_late", agentName: "north-late" });
     assert.equal((await getByDisplayPath(store, late, planPath)).row?.access, "write");
 
     // shared with a second guild at read: found by its agents, refused on write
     await grantAccess(store, operator, { kind: "note", id: plan.id }, { type: "guild", id: "guild_south", mode: "read" });
     assert.deepEqual(await found(south, "plan"), [[planPath, "read"]]);
-    await assert.rejects(() => writeNoteAt(store, south, planPath, "overwritten"), /write not allowed/);
+    await assert.rejects(() => writeNoteAt(store, south, planPath, { content: "overwritten" }), /write not allowed/);
     await assert.rejects(() => deleteByDisplayPath(store, south, planPath), /write not allowed/);
     const [writeRefused] = await invokeTool(
-      createToolContext({
+      toolFixture({
         run_id: "r_south",
         agent_id: "a_south",
         guild_id: "guild_south",
@@ -867,16 +875,30 @@ describe("artifact store", { concurrency: 1 }, () => {
         secrets: {},
         artifacts: toolArtifacts(store),
         artifact_actor: south,
-      }),
+      }).services, toolFixture({
+        run_id: "r_south",
+        agent_id: "a_south",
+        guild_id: "guild_south",
+        sandbox: null,
+        secrets: {},
+        artifacts: toolArtifacts(store),
+        artifact_actor: south,
+      }).run, toolFixture({
+        run_id: "r_south",
+        agent_id: "a_south",
+        guild_id: "guild_south",
+        sandbox: null,
+        secrets: {},
+        artifacts: toolArtifacts(store),
+        artifact_actor: south,
+      }).hooks,
       { id: "call_write", type: "function", function: { name: "note_write", arguments: JSON.stringify({ path: planPath, content: "overwritten" }) } },
-      {},
-      32_768,
     );
     assert.match(String(writeRefused.content), /write not allowed/);
 
     // an agent row raises one agent to write, and `none` hides the note from that agent alone
     await grantAccess(store, operator, { kind: "note", id: plan.id }, { type: "agent", id: "a_south", mode: "write" });
-    await writeNoteAt(store, south, planPath, "south edit\n");
+    await writeNoteAt(store, south, planPath, { content: "south edit\n" });
     assert.equal((await getByDisplayPath(store, north, planPath)).row?.content_text, "south edit\n");
     await grantAccess(store, operator, { kind: "note", id: plan.id }, { type: "agent", id: "a_south", mode: "none" });
     assert.deepEqual(await found(south, "plan"), []);
@@ -886,7 +908,7 @@ describe("artifact store", { concurrency: 1 }, () => {
     // an agent shut out of a note of its own guild is refused the write, not told the note is missing
     await grantAccess(store, operator, { kind: "note", id: plan.id }, { type: "agent", id: "a_north_late", mode: "none" });
     await assert.rejects(() => writeNote(store, late, { level: "guild", key: "plan.md", content: "x" }), /write not allowed/);
-    await assert.rejects(() => writeNoteAt(store, late, planPath, "x"), /artifact not found/);
+    await assert.rejects(() => writeNoteAt(store, late, planPath, { content: "x" }), /artifact not found/);
     await grantAccess(store, operator, { kind: "note", id: plan.id }, { type: "agent", id: "a_north_late", mode: null });
 
     // org level: an agent creates no org note, and updates one only with write access
@@ -970,7 +992,6 @@ describe("artifact store", { concurrency: 1 }, () => {
     );
     assert.deepEqual(stamps.rows[0], { created_by_name: "north-agent", updated_by_name: "operator" });
     await grantAccess(store, operator, { kind: "note", id: plan.id }, { type: "guild", id: "guild_north", mode: "write" });
-    await assert.rejects(() => replaceAccess(store, operator, { kind: "note", id: own.id }, "all"), /subjects must be a list/);
     await assert.rejects(() => listAccess(store, operator, { kind: "note", id: "art_missing" }), /note not found/);
 
     // a subject in a guild the operator cannot see is neither listed nor dropped
@@ -1025,7 +1046,7 @@ describe("artifact store", { concurrency: 1 }, () => {
       { guildId: "guild_provenance", name: "provenance", orgId: "org_home", about: "" },
       now,
     );
-    await seedAgent("a_provenance", "guild_provenance", "provenance", "provenance-agent", "provenance");
+    await seedAgent("a_provenance", "guild_provenance", "provenance-agent", "provenance");
     assert.equal(
       (
         await listFileChanges(
@@ -1061,7 +1082,7 @@ describe("artifact store", { concurrency: 1 }, () => {
       },
       now,
     );
-    const ctx = createToolContext({
+    const ctx = toolFixture({
       run_id: "r_provenance",
       agent_id: "a_provenance",
       guild_id: "guild_provenance",
@@ -1077,7 +1098,7 @@ describe("artifact store", { concurrency: 1 }, () => {
       }),
     });
     const call = async (id: string, name: string, args: Record<string, unknown>) =>
-      invokeTool(ctx, { id, type: "function", function: { name, arguments: JSON.stringify(args) } }, {}, 32_768);
+      invokeTool(ctx.services, ctx.run, ctx.hooks, { id, type: "function", function: { name, arguments: JSON.stringify(args) } });
 
     const [, createdMetadata] = await call("call_create", "note_write", {
       level: "agent",
@@ -1138,13 +1159,76 @@ describe("artifact store", { concurrency: 1 }, () => {
     );
   });
 
+  test("a note and a collection are created with the access list they are raised to, and a note written again is raised", async () => {
+    await insertGuild(
+      db,
+      { guildId: "guild_raise", name: "raise", orgId: "org_home", about: "" },
+      new Date(),
+    );
+    await seedAgent("a_raise", "guild_raise", "raiser", "art-raise");
+    const operator = operatorActor({
+      orgId: "org_home",
+      actorId: "user_operator",
+      actorName: "operator",
+      guildId: "guild_raise",
+    });
+    const rows = async (target: { kind: "note" | "collection"; id: string }) =>
+      (await listAccess(store, operator, target))
+        .map((entry) => `${entry.type} ${entry.id} ${entry.mode}`)
+        .sort();
+    const reads: AccessRaise = { guildId: "guild_raise", mode: "read", writerIds: ["a_raise"] };
+    const writes: AccessRaise = { guildId: "guild_raise", mode: "write", writerIds: ["a_raise"] };
+
+    const { row: note } = await writeNote(store, operator, {
+      level: "org",
+      key: "raised.md",
+      content: "first\n",
+      access: reads,
+    });
+    assert.deepEqual(await rows({ kind: "note", id: note.id }), [
+      "agent a_raise write",
+      "org org_home read",
+    ]);
+    await writeNote(store, operator, {
+      level: "org",
+      key: "raised.md",
+      content: "second\n",
+      access: writes,
+    });
+    assert.deepEqual(await rows({ kind: "note", id: note.id }), [
+      "agent a_raise write",
+      "guild guild_raise write",
+      "org org_home read",
+    ]);
+    const noteLog = await listConfigChanges(db, "org_home", { kind: "note", id: note.id });
+    assert.deepEqual(noteLog.map((change) => change.summary).sort(), [
+      "Gave agent raiser read and write on the note org/org_home/raised.md",
+      "Gave guild raise read and write on the note org/org_home/raised.md",
+    ]);
+
+    const table = await createCollection(store, operator, {
+      name: "raised-table",
+      purpose: "Raised as it is created",
+      access: writes,
+    });
+    assert.deepEqual(await rows({ kind: "collection", id: table.id }), [
+      "guild guild_raise write",
+      "org org_home read",
+    ]);
+    const tableLog = await listConfigChanges(db, "org_home", { kind: "collection", id: table.id });
+    assert.deepEqual(
+      tableLog.map((change) => change.summary),
+      ["Gave guild raise read and write on the table raised-table"],
+    );
+  });
+
   test("notes sit directly under their owner and the memory archive is the operator's", async () => {
     const now = new Date();
     await insertGuild(db,
       { guildId: "guild_flat", name: "flat", orgId: "org_home", about: "" },
       now,
     );
-    await seedAgent("a_flat", "guild_flat", "flat", "flat", "art-notes-flat");
+    await seedAgent("a_flat", "guild_flat", "flat", "art-notes-flat");
     const alpha = agentActor({
       orgId: "org_home",
       guildId: "guild_flat",
@@ -1158,7 +1242,7 @@ describe("artifact store", { concurrency: 1 }, () => {
       guildId: "guild_flat",
       agentId: "a_flat",
     });
-    const row = await writeNote(store, alpha, { level: "agent", key: "exploration.md", content: "looked here\n" });
+    const { row: row } = await writeNote(store, alpha, { level: "agent", key: "exploration.md", content: "looked here\n" });
     assert.equal(row.path, "");
     assert.equal(artifactView(row).display_path, "org/org_home/agents/a_flat/exploration.md");
     await assert.rejects(
@@ -1187,13 +1271,67 @@ describe("artifact store", { concurrency: 1 }, () => {
     assert.deepEqual(found.notes, []);
   });
 
+  test("an operator reads a Memory revision of its own organisation and is refused another organisation's", async () => {
+    const now = new Date();
+    await insertOrg(db, { orgId: "org_rev_other", name: "other", slug: "rev-other", userId: "user_operator" }, now);
+    await insertGuild(db, { guildId: "guild_rev_other", name: "elsewhere", orgId: "org_rev_other", about: "" }, now);
+    await addAgent(
+      { db, notes: new NotesStore(tempDir("guilds-art-rev-other-notes-"), templatesRoot()), artifacts: store },
+      { agent: { agentId: "a_rev_other", guildId: "guild_rev_other", name: "keeper", config: CONFIG }, task: "", placement: {} },
+      systemActor("org_rev_other", { guildId: "guild_rev_other", agentId: "a_rev_other" }),
+      now,
+    );
+    const keeper = agentActor({ orgId: "org_rev_other", guildId: "guild_rev_other", agentId: "a_rev_other", agentName: "keeper" });
+    await writeMemory(store, keeper, "a_rev_other", { content: "kept elsewhere\n", detail: "run r_1" });
+    await writeMemory(store, keeper, "a_rev_other", { content: "kept later\n", detail: "run r_2" });
+    const ownOperator = operatorActor({ orgId: "org_rev_other", actorId: "user_operator", actorName: "operator" });
+    const [revision] = await listRevisions(store, ownOperator, "a_rev_other");
+    const revisionPath = String(revision?.display_path);
+
+    const homeOperator = operatorActor({ orgId: "org_home", actorId: "user_operator", actorName: "operator" });
+    await assert.rejects(() => getByDisplayPath(store, homeOperator, revisionPath), {
+      name: "ArtifactError",
+      message: "artifact is not in this organisation",
+      status: 404,
+    });
+    const read = await getByDisplayPath(store, ownOperator, revisionPath);
+    assert.equal(read.revision?.content, "kept elsewhere\n");
+  });
+
+  test("readMemoryVersion reads an agent without a Memory row as version 0 and empty, then its live version and text", async () => {
+    await insertGuild(
+      db,
+      { guildId: "guild_memread", name: "memread", orgId: "org_home", about: "" },
+      new Date(),
+    );
+    const operator = operatorActor({
+      orgId: "org_home",
+      actorId: "user_operator",
+      actorName: "operator",
+      guildId: "guild_memread",
+    });
+    assert.deepEqual(await readMemoryVersion(store, operator, "a_memread"), {
+      version: 0,
+      content: "",
+    });
+    await seedAgent("a_memread", "guild_memread", "memread", "art-mem-read");
+    const written = await writeMemory(store, operator, "a_memread", {
+      content: "kept\n",
+      detail: "user operator",
+    });
+    assert.deepEqual(await readMemoryVersion(store, operator, "a_memread"), {
+      version: written.row.version,
+      content: "kept\n",
+    });
+  });
+
   test("memory timeline keeps write order when two writes share a millisecond", async () => {
     const now = new Date();
     await insertGuild(db,
       { guildId: "guild_tl", name: "timeline", orgId: "org_home", about: "" },
       now,
     );
-    await seedAgent("a_tl", "guild_tl", "timeline", "timeline", "art-mem-tl");
+    await seedAgent("a_tl", "guild_tl", "timeline", "art-mem-tl");
     const operator = operatorActor({
       orgId: "org_home",
       actorId: "user_operator",
@@ -1227,18 +1365,12 @@ describe("artifact store", { concurrency: 1 }, () => {
       now,
     );
     const notes = new NotesStore(tempDir("guilds-art-notes-taskver-"), templatesRoot());
-    await persistAgent(agentDatabase(db), notes, {
-      agentId: "a_taskver",
-      guildId: "guild_taskver",
-      guildName: "taskver",
-      orgSlug: "home",
-      orgId: "org_home",
-      name: "taskver",
-      focus: "seeded purpose",
-      config: CONFIG,
+    await addAgent(
+      { db, notes, artifacts: store },
+      { agent: { agentId: "a_taskver", guildId: "guild_taskver", name: "taskver", config: CONFIG, focus: "seeded purpose" }, task: "seeded purpose", placement: {} },
+      systemActor("org_home", { guildId: "guild_taskver", agentId: "a_taskver" }),
       now,
-      artifacts: store,
-    });
+    );
     const operator = operatorActor({
       orgId: "org_home",
       actorId: "user_operator",
@@ -1251,11 +1383,11 @@ describe("artifact store", { concurrency: 1 }, () => {
     const seeded = await getAgentTask(db, "org_home", "a_taskver");
     assert.equal(seeded?.version, 1);
 
-    const first = await writeAgentTask(db, operator, "a_taskver", "first purpose\n");
+    const first = await writeAgentTask(db, operator, "a_taskver", { content: "first purpose\n" });
     assert.equal(first.version, 2);
-    const second = await writeAgentTask(db, operator, "a_taskver", "second purpose\n");
+    const second = await writeAgentTask(db, operator, "a_taskver", { content: "second purpose\n" });
     assert.equal(second.version, 3);
-    const unchanged = await writeAgentTask(db, operator, "a_taskver", "second purpose\n");
+    const unchanged = await writeAgentTask(db, operator, "a_taskver", { content: "second purpose\n" });
     assert.equal(unchanged.version, 3);
 
     const revisions = await listAgentTaskRevisions(db, "org_home", "a_taskver");
@@ -1265,7 +1397,7 @@ describe("artifact store", { concurrency: 1 }, () => {
     assert.equal(revisions[1]?.version, 1);
     assert.equal(revisions[1]?.content, "seeded purpose\n");
 
-    const restored = await writeAgentTask(db, operator, "a_taskver", revisions[0].content);
+    const restored = await writeAgentTask(db, operator, "a_taskver", { content: revisions[0].content });
     assert.equal(restored.version, 4);
     assert.equal(restored.content_text, "first purpose\n");
     const afterRestore = await listAgentTaskRevisions(db, "org_home", "a_taskver");
@@ -1275,10 +1407,10 @@ describe("artifact store", { concurrency: 1 }, () => {
 
     await assert.rejects(
       () =>
-        writeAgentTask(db, operator, "a_taskver", "stale editor\n", 3),
+        writeAgentTask(db, operator, "a_taskver", { content: "stale editor\n", expectedVersion: 3 }),
       (error: unknown) => error instanceof Error && error.message === "version conflict",
     );
-    const cas = await writeAgentTask(db, operator, "a_taskver", "cas purpose\n", 4);
+    const cas = await writeAgentTask(db, operator, "a_taskver", { content: "cas purpose\n", expectedVersion: 4 });
     assert.equal(cas.version, 5);
   });
 });

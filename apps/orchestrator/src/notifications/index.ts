@@ -1,5 +1,4 @@
 import { iso } from "../db/views.js";
-import { guildOperators } from "../guilds/validation.js";
 import { issueItem } from "../issues/index.js";
 import { EventQueue } from "../lib/event.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
@@ -25,7 +24,7 @@ export const NOTICE_PREVIEW_LENGTH = 300;
 const EVENT_QUEUE_LIMIT = 256;
 
 /** The db/ functions a user's inbox is read through, on `db`. */
-export function notificationsDatabase(db: Queryable) {
+function notificationsDatabase(db: Queryable) {
   return {
     getAgent: bindQuery(db, getAgent),
     getGuild: bindQuery(db, getGuild),
@@ -204,7 +203,12 @@ export class Notifications {
     }
     if (event === "guild.issues.changed" && this._subs.size) {
       const guild = await this.db.getGuild(guildId);
-      await this.ping(guild ? guildOperators(guild).map((operator) => operator.user_id) : []);
+      await this.ping(guild ? guild.operators.map((operator) => operator.user_id) : []);
     }
   }
+}
+
+/** Operators' inboxes and their streams, read on `db`. */
+export function operatorNotifications(db: Queryable): Notifications {
+  return new Notifications(notificationsDatabase(db));
 }

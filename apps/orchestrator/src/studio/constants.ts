@@ -1,7 +1,4 @@
-export const STUDIO_MAX_TOKENS = 8192;
 export const STUDIO_MAX_STEPS = 24;
-export const STUDIO_MAX_TOOL_CALLS = 40;
-export const STUDIO_MAX_INPUT_TOKENS = 100_000;
 export const STUDIO_TOOL_RESULT_MAX_BYTES = 64 * 1024;
 export const STUDIO_TOTAL_RETURNED_BYTES = 64 * 1024;
 export const STUDIO_DEFAULT_TEMPERATURE = 0.2;

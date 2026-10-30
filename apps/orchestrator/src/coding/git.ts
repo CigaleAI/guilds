@@ -7,9 +7,8 @@ import {
   githubRepositoryRecorder,
   type RepositoryToken,
 } from "../github/tokens.js";
-import { getMcpConnection, saveMcpConnection, type McpConnectionRow } from "../db/mcp.js";
+import { getMcpConnection, type McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
-import { markDisconnected } from "../mcp/index.js";
 import type { FetchFn } from "../net/http.js";
 import type { SandboxFiles } from "../toolbox/types.js";
 import type { AgentRow } from "../db/agents.js";
@@ -34,15 +33,28 @@ export function agentGitIdentity(
 export type TokenEntry = { token: string; expires_at: string; host: string; path: string };
 
 /** The db/ functions a run's repository tokens are minted and stored through, on `db`. */
-export function repositoryTokenDatabase(db: Queryable) {
+function repositoryTokenDatabase(db: Queryable) {
   return {
     ...githubRepositoryRecorder(db),
     getMcpConnection: bindQuery(db, getMcpConnection),
-    saveMcpConnection: bindQuery(db, saveMcpConnection),
   };
 }
 
 export type RepositoryTokenDb = ReturnType<typeof repositoryTokenDatabase>;
+
+/**
+ * GitHub refused the installation behind `connection` while a run's repository token was minted.
+ * Its caller retires the login with `retireInstallationGone`, as the message tells the run. The error keeps the name
+ * `RepositoryAccessError`, the type a run's error record shows for every token failure.
+ */
+export class RepositoryTokenInstallationGoneError extends RepositoryAccessError {
+  readonly connection: McpConnectionRow;
+
+  constructor(connection: McpConnectionRow) {
+    super(`GitHub refused the installation for ${loginAccount(connection)}; the connection is now disconnected`);
+    this.connection = connection;
+  }
+}
 
 /**
  * The installation tokens of a run's guild repositories, one per GitHub connection, each
@@ -114,7 +126,7 @@ export class RepositoryTokens {
     return connection;
   }
 
-  /** The login's token for its repositories here. GitHub refusing the installation marks the login disconnected. */
+  /** The login's token for its repositories here. GitHub refusing the installation throws a `RepositoryTokenInstallationGoneError`. */
   private async mintCodingToken(
     connection: McpConnectionRow,
     rows: Array<Record<string, unknown>>,
@@ -129,10 +141,7 @@ export class RepositoryTokens {
       if (!(error instanceof GithubInstallationGoneError)) {
         throw error;
       }
-      await markDisconnected(this.db, connection);
-      throw new RepositoryAccessError(
-        `GitHub refused the installation for ${loginAccount(connection)}; the connection is now disconnected`,
-      );
+      throw new RepositoryTokenInstallationGoneError(connection);
     }
   }
 
@@ -140,6 +149,11 @@ export class RepositoryTokens {
   async write(files: SandboxFiles, agentId: string): Promise<void> {
     await files.writeFiles([{ path: gitTokensPath(agentId), data: JSON.stringify({ repositories: this.entries }) }]);
   }
+}
+
+/** The installation tokens of a run's `repositories`, minted and recorded on `db`. */
+export function repositoryTokens(db: Queryable, repositories: Array<Record<string, unknown>>): RepositoryTokens {
+  return new RepositoryTokens(repositoryTokenDatabase(db), repositories);
 }
 
 const CREDENTIAL_FAILURE = /could not read (username|password)|authentication failed|terminal prompts disabled/i;

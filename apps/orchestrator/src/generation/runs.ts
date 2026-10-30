@@ -1,5 +1,5 @@
 import type { AttachmentRef } from "../attachments/index.js";
-import { bindQuery, type Queryable } from "../db/pg.js";
+import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import {
   completeGroupDelivery,
   createGroupRun,
@@ -11,22 +11,16 @@ import {
 import type { RunMetadata } from "../db/schema/index.js";
 import { listDueSchedules, markScheduleFired, type ScheduleRow } from "../db/schedules.js";
 import { iso, runItem } from "../db/views.js";
-import {
-  DeliveryBusyError,
-  DeliveryCreateError,
-  groupChatUserMessage,
-  wakeMessage,
-  type GroupDelivery,
-} from "../groupchat/index.js";
+import { DeliveryBusyError, DeliveryCreateError, type GroupDelivery } from "../groupchat/delivery.js";
+import { groupChatUserMessage, wakeMessage } from "../groupchat/wake.js";
 import { newId } from "../lib/ids.js";
 import { sleep } from "../lib/event.js";
-import { errorName, writeLog } from "../observability/log.js";
 import { instructionHash, scheduleWakeUserMessage } from "../schedules/item.js";
 import type { Schedules } from "../schedules/service.js";
 import { planAfterFire, rowTiming } from "../schedules/timing.js";
-import type { ActiveGenerations } from "./admission.js";
+import type { ActiveGenerations } from "./active-generations.js";
 import { continuationMessage, type ChainPosition } from "./chain.js";
-import { ConflictError, RunRequestError } from "./errors.js";
+import { ConflictError, logOperationFailure, RunRequestError, type OperationFailure } from "./errors.js";
 import type { RunPreparation } from "./prepare.js";
 import {
   preparedPromptHashes,
@@ -35,8 +29,19 @@ import {
   type PreparedRun,
 } from "./snapshot.js";
 
+/** The db/ functions runs are created and delivered through. */
+export type RunsDatabase = {
+  getRun: BoundQuery<typeof getRun>;
+  createRun: BoundQuery<typeof createRun>;
+  createGroupRun: BoundQuery<typeof createGroupRun>;
+  createScheduleRun: BoundQuery<typeof createScheduleRun>;
+  completeGroupDelivery: BoundQuery<typeof completeGroupDelivery>;
+  listDueSchedules: BoundQuery<typeof listDueSchedules>;
+  markScheduleFired: BoundQuery<typeof markScheduleFired>;
+};
+
 /** The db/ functions runs are created and delivered through, on `db`. */
-export function runsDatabase(db: Queryable) {
+export function runsDatabase(db: Queryable): RunsDatabase {
   return {
     getRun: bindQuery(db, getRun),
     createRun: bindQuery(db, createRun),
@@ -48,7 +53,11 @@ export function runsDatabase(db: Queryable) {
   };
 }
 
-export type RunsDatabase = ReturnType<typeof runsDatabase>;
+/**
+ * How a due schedule's wake-up went: its run started, its agent became busy and the schedule
+ * stays due, or the run could not be created and the schedule moves on.
+ */
+type ScheduleWake = { outcome: "started" } | { outcome: "busy" } | { outcome: "failed"; failure: OperationFailure };
 
 /** How a created run starts generating: the loop admits it, ends it, and generates it. */
 export type GenerationStarter = {
@@ -175,7 +184,10 @@ export class Runs {
       ),
     );
     await this.generations.task(runId);
-    await this.db.completeGroupDelivery(runId, agentId, throughSeq, new Date());
+    await this.db.completeGroupDelivery(
+      { id: runId, agent_id: agentId, group_chat_through_seq: throughSeq },
+      new Date(),
+    );
   }
 
   /** Creates and starts the run a due schedule wakes its agent with. */
@@ -221,31 +233,31 @@ export class Runs {
       if (this.generations.isAgentBusy(row.agent_id)) {
         continue;
       }
-      try {
-        await this.deliverScheduleRun(row);
-      } catch (error) {
-        if (error instanceof DeliveryBusyError) {
-          continue;
-        }
-        if (error instanceof DeliveryCreateError) {
-          writeLog("error", error.message, {
-            agent_id: row.agent_id,
-            operation: "schedule.fire",
-          });
-        } else {
-          writeLog(
-            "error",
-            "schedule wake-up failed",
-            {
-              agent_id: row.agent_id,
-              operation: "schedule.fire",
-              error_type: errorName(error),
-            },
-            error,
-          );
-        }
+      const wake = await this.wakeSchedule(row);
+      if (wake.outcome === "busy") {
+        continue;
+      }
+      if (wake.outcome === "failed") {
+        logOperationFailure(wake.failure);
       }
       await this.db.markScheduleFired(row.id, when, planAfterFire(row, when));
+    }
+  }
+
+  /** Delivers the run a due schedule wakes its agent with, and says how the wake-up went. */
+  private async wakeSchedule(schedule: ScheduleRow): Promise<ScheduleWake> {
+    try {
+      await this.deliverScheduleRun(schedule);
+      return { outcome: "started" };
+    } catch (error) {
+      if (error instanceof DeliveryBusyError) {
+        return { outcome: "busy" };
+      }
+      const message = error instanceof DeliveryCreateError ? error.message : "schedule wake-up failed";
+      return {
+        outcome: "failed",
+        failure: { message, fields: { agent_id: schedule.agent_id, operation: "schedule.fire" }, error },
+      };
     }
   }
 
@@ -366,16 +378,17 @@ export class Runs {
       if (signal.aborted) {
         return;
       }
-      try {
-        await this.fireDueSchedules();
-      } catch (error) {
-        writeLog(
-          "error",
-          "schedule tick failed",
-          { operation: "schedule.tick", error_type: errorName(error) },
-          error,
-        );
-      }
+      logOperationFailure(await this.fireTick());
+    }
+  }
+
+  /** Fires the due schedules of one tick; returns the failure of a tick that did not go through, after which the next tick still runs. */
+  private async fireTick(): Promise<OperationFailure | null> {
+    try {
+      await this.fireDueSchedules();
+      return null;
+    } catch (error) {
+      return { message: "schedule tick failed", fields: { operation: "schedule.tick" }, error };
     }
   }
 }

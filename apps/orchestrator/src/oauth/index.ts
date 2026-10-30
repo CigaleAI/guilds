@@ -1,9 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
-import { saveOauthClient } from "../connectors/servers.js";
 import { proxyFetch, type FetchFn } from "../net/http.js";
-import { encryptPayload } from "../credentials/crypto.js";
+import { decryptPayload, encryptPayload } from "../credentials/crypto.js";
 import { githubAppConfig } from "../github/index.js";
 import {
   GOOGLE_CONNECTORS,
@@ -11,11 +10,12 @@ import {
   type Integration,
   type IntegrationSources,
 } from "../instance/integrations.js";
-import { serverManifest, type LoadedConnector } from "../connectors/load.js";
+import { saveOauthClient, type LoadedConnector } from "../connectors/servers.js";
+import { isPlainRecord } from "../db/json.js";
 import { saveMcpConnection, type McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import type { Manifest, OAuthClient, OAuthClientCredentials } from "../db/schema/index.js";
-import { connectorIntegration } from "../instance/connectors.js";
+import { connectorIntegration } from "../connectors/instance.js";
 
 /** An instance integration that holds an OAuth client: its fields, and how its provider authorizes. */
 type OAuthProvider = {
@@ -46,7 +46,7 @@ const OAUTH_PROVIDERS: Readonly<Record<string, OAuthProvider>> = {
 
 /** The effective manifest's OAuth block for a server, or null for a non-OAuth one. */
 function manifestOauth(server: LoadedConnector): NonNullable<Manifest["auth"]["oauth"]> | null {
-  return serverManifest(server)?.auth.oauth ?? null;
+  return server.manifest.auth.oauth ?? null;
 }
 
 /**
@@ -54,9 +54,9 @@ function manifestOauth(server: LoadedConnector): NonNullable<Manifest["auth"]["o
  * names, or, for a configured client with no provider, the connector's own.
  */
 function providerOf(server: LoadedConnector): OAuthProvider | null {
-  const manifest = serverManifest(server);
-  const oauth = manifest?.auth.oauth;
-  if (!manifest || !oauth) {
+  const manifest = server.manifest;
+  const oauth = manifest.auth.oauth;
+  if (!oauth) {
     return null;
   }
   if (oauth.provider) {
@@ -97,6 +97,56 @@ export type OAuthDiscovery = {
   registration_endpoint: string | null;
   scopes: string[];
   access_type: string | null;
+};
+
+/**
+ * How OAuth requests reach a provider: through `client`, or else through the proxy at
+ * `proxyUrl`, or directly when neither is set.
+ */
+export type OAuthHttp = {
+  client?: FetchFn | undefined;
+  proxyUrl?: string | undefined;
+};
+
+/** The services a login's OAuth client is resolved and registered through: the network, and the instance's integration values. */
+export type OAuthClientServices = OAuthHttp & {
+  sources?: IntegrationSources | undefined;
+};
+
+/** The services a login's tokens are refreshed through: the network, and the cipher of its stored payload. */
+export type TokenRefreshServices = OAuthHttp & {
+  decrypt: (ciphertext: Buffer, nonce: Buffer) => Record<string, unknown>;
+  encrypt?: typeof encryptPayload;
+};
+
+/** The request a login started from, as far as its callback URL needs it: its protocol and Host header. */
+export type RequestOrigin = {
+  protocol: string;
+  headers: { host?: string | string[] | undefined };
+};
+
+/** The parameters of an authorization request a login sends the operator's browser to. */
+export type AuthorizationRequest = {
+  clientId: string;
+  redirectUri: string;
+  codeChallenge: string;
+  state: string;
+};
+
+/** An authorization code grant: the code, the PKCE verifier it was requested with, and the client that trades it. */
+export type AuthorizationCodeGrant = {
+  code: string;
+  codeVerifier: string;
+  clientId: string;
+  clientSecret?: string | null | undefined;
+  redirectUri: string;
+};
+
+/** A refresh token grant: the refresh token and the client that trades it. */
+export type RefreshTokenGrant = {
+  refreshToken: string;
+  clientId: string;
+  clientSecret?: string | null | undefined;
 };
 
 export class OAuthUnsupportedError extends OAuthError {
@@ -146,16 +196,6 @@ function urlsafe(raw: Buffer): string {
   return raw.toString("base64url").replace(/=+$/, "");
 }
 
-function omitUndefined<T extends Record<string, unknown>>(value: T): T {
-  const out: Record<string, unknown> = {};
-  for (const [key, item] of Object.entries(value)) {
-    if (item !== undefined) {
-      out[key] = item;
-    }
-  }
-  return out as T;
-}
-
 export function pkcePair(): [string, string] {
   const verifier = urlsafe(randomBytes(32));
   const digest = createHash("sha256").update(verifier, "ascii").digest();
@@ -168,7 +208,7 @@ export function newState(): string {
 
 export function oauthCallbackUrl(
   publicBaseUrl: string,
-  request: { protocol: string; headers: { host?: string | string[] | undefined } },
+  request: RequestOrigin,
 ): string {
   const base = publicBaseUrl.trim().replace(/\/+$/, "");
   if (base) {
@@ -180,7 +220,7 @@ export function oauthCallbackUrl(
 
 export function authorizationUrl(
   discovery: OAuthDiscovery,
-  options: { clientId: string; redirectUri: string; codeChallenge: string; state: string },
+  options: AuthorizationRequest,
 ): string {
   const params = new URLSearchParams();
   params.set("response_type", "code");
@@ -216,7 +256,7 @@ export function providerClient(
   if (provider === null) {
     return null;
   }
-  const values = integrationValues(provider.integration, sources) as Record<string, string> | null;
+  const values = integrationValues(provider.integration, sources);
   if (values === null) {
     return null;
   }
@@ -234,33 +274,42 @@ export function clientCoversRedirect(client: OAuthClient, redirectUri: string): 
   return client.redirect_uris.includes(redirectUri);
 }
 
+/** The account fields a token response may leave out, kept from the payload it replaces. */
+const ACCOUNT_FIELDS: readonly string[] = ["user_id", "workspace_id", "email_domain"];
+
+/** The instant a token response's `expires_in` ends, counted from `now`, or null when it names none. */
+function expiryOf(tokens: Record<string, unknown>, now: Date): string | null {
+  const expiresIn = tokens.expires_in;
+  if (typeof expiresIn !== "number" || !Number.isInteger(expiresIn)) {
+    return null;
+  }
+  return new Date(now.getTime() + expiresIn * 1000).toISOString();
+}
+
+/**
+ * The payload a login stores from a token response received at `now`: the fields the response
+ * leaves out are kept from `existing`, the payload it replaces.
+ */
 export function tokenPayload(
   tokens: Record<string, unknown>,
-  options: { now: Date; existing?: Record<string, unknown> | null },
+  now: Date,
+  existing: Record<string, unknown> = {},
 ): Record<string, unknown> {
   const access = tokens.access_token;
   if (typeof access !== "string" || !access) {
     throw new OAuthError("token response is missing access_token");
   }
-  const previous = options.existing ?? {};
   let refresh = tokens.refresh_token;
   if (typeof refresh !== "string" || !refresh) {
-    refresh = previous.refresh_token;
-  }
-  let expiresAt = previous.expires_at;
-  const expiresIn = tokens.expires_in;
-  if (typeof expiresIn === "number" && Number.isInteger(expiresIn)) {
-    expiresAt = new Date(options.now.getTime() + expiresIn * 1000).toISOString();
+    refresh = existing.refresh_token;
   }
   const payload: Record<string, unknown> = {
     access_token: access,
     refresh_token: typeof refresh === "string" ? refresh : null,
     token_type: tokens.token_type || "Bearer",
-    expires_at: expiresAt,
-    user_id: tokens.user_id || previous.user_id,
-    workspace_id: tokens.workspace_id || previous.workspace_id,
-    email_domain: tokens.email_domain || previous.email_domain,
-    oauth_replaces: tokens.oauth_replaces === true || previous.oauth_replaces === true ? true : undefined,
+    expires_at: expiryOf(tokens, now) ?? existing.expires_at,
+    ...Object.fromEntries(ACCOUNT_FIELDS.map((field) => [field, tokens[field] || existing[field]])),
+    oauth_replaces: tokens.oauth_replaces === true || existing.oauth_replaces === true ? true : undefined,
   };
   return Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== null && value !== undefined));
 }
@@ -302,10 +351,20 @@ export function tokenRedactions(payload: Record<string, unknown>, connectionId: 
   return values;
 }
 
-export function accessExpired(
-  payload: Record<string, unknown>,
-  options: { now: Date; skewMs?: number },
-): boolean {
+/**
+ * The tokens a connection stores, as redaction values, decrypted with `masterKey` or the
+ * environment's key; a payload that cannot be read holds none.
+ */
+export function storedTokenRedactions(connection: McpConnectionRow, masterKey?: Buffer): Record<string, string> {
+  try {
+    return tokenRedactions(decryptPayload(connection.ciphertext, connection.nonce, masterKey), connection.id);
+  } catch {
+    return {};
+  }
+}
+
+/** Whether a login's access token has expired at `now`, or expires within `skewMs` of it. */
+export function accessExpired(payload: Record<string, unknown>, now: Date, skewMs = 60_000): boolean {
   const raw = payload.expires_at;
   if (typeof raw !== "string" || !raw) {
     return false;
@@ -314,8 +373,7 @@ export function accessExpired(
   if (Number.isNaN(expires)) {
     return false;
   }
-  const skew = options.skewMs ?? 60_000;
-  return options.now.getTime() + skew >= expires;
+  return now.getTime() + skewMs >= expires;
 }
 
 export function pendingOauthPayload(codeVerifier: string, redirectUri: string, replaces = false): Record<string, unknown> {
@@ -333,16 +391,16 @@ export function pendingReplaces(payload: Record<string, unknown>): boolean {
     return true;
   }
   const oauth = payload.oauth;
-  return Boolean(oauth && typeof oauth === "object" && !Array.isArray(oauth) && (oauth as { replaces?: unknown }).replaces === true);
+  return isPlainRecord(oauth) && oauth.replaces === true;
 }
 
 export function pendingOauth(payload: Record<string, unknown>): [string, string] {
   const oauth = payload.oauth;
-  if (!oauth || typeof oauth !== "object" || Array.isArray(oauth)) {
+  if (!isPlainRecord(oauth)) {
     throw new OAuthError("connection is missing oauth state");
   }
-  const verifier = (oauth as { code_verifier?: unknown }).code_verifier;
-  const redirectUri = (oauth as { redirect_uri?: unknown }).redirect_uri;
+  const verifier = oauth.code_verifier;
+  const redirectUri = oauth.redirect_uri;
   if (typeof verifier !== "string" || typeof redirectUri !== "string") {
     throw new OAuthError("connection is missing oauth state");
   }
@@ -374,6 +432,17 @@ function authServerMetadataUrl(issuer: string): string {
   return `${parsed.origin}/.well-known/oauth-authorization-server`;
 }
 
+/** The JSON object `text` holds, or null when it is not JSON or holds anything else. */
+function parseJsonObject(text: string): Record<string, unknown> | null {
+  try {
+    const payload: unknown = JSON.parse(text);
+    return isPlainRecord(payload) ? payload : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The first JSON object one of `urls` answers, tried in order. */
 async function getJson(fetchFn: FetchFn, urls: string[]): Promise<Record<string, unknown>> {
   let last = "discovery failed";
   for (const url of urls) {
@@ -382,19 +451,38 @@ async function getJson(fetchFn: FetchFn, urls: string[]): Promise<Record<string,
       last = `discovery failed: ${response.status}`;
       continue;
     }
-    let payload: unknown;
-    try {
-      payload = JSON.parse(await response.text());
-    } catch {
-      last = "discovery returned a non-object";
-      continue;
-    }
-    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
-      return payload as Record<string, unknown>;
+    const payload = parseJsonObject(await response.text());
+    if (payload !== null) {
+      return payload;
     }
     last = "discovery returned a non-object";
   }
   throw new OAuthError(last);
+}
+
+/** The fetch OAuth requests go through: `http.client`, or else the proxy, or else a direct fetch. */
+function oauthFetch(http: OAuthHttp): FetchFn {
+  return http.client ?? proxyFetch(http.proxyUrl ?? "");
+}
+
+/** What a login reads of a protected resource's metadata: the resource it names, and its first authorization server. */
+type ProtectedResource = {
+  resource: string;
+  authorizationServer: string;
+};
+
+/** The protected resource `metadata` describes, the resource defaulting to `mcpUrl`. */
+function protectedResourceOf(metadata: Record<string, unknown>, mcpUrl: string): ProtectedResource {
+  const resource = metadata.resource;
+  const servers = metadata.authorization_servers;
+  const first: unknown = Array.isArray(servers) ? servers[0] : undefined;
+  if (typeof first !== "string") {
+    throw new OAuthError("protected resource metadata is missing authorization_servers");
+  }
+  return {
+    resource: typeof resource === "string" && resource.trim() ? resource.trim() : mcpUrl,
+    authorizationServer: first,
+  };
 }
 
 function scopedDiscovery(server: LoadedConnector, discovery: OAuthDiscovery): OAuthDiscovery {
@@ -415,7 +503,7 @@ function scopedDiscovery(server: LoadedConnector, discovery: OAuthDiscovery): OA
  */
 export async function serverDiscovery(
   server: LoadedConnector,
-  options: { client?: FetchFn | undefined; proxyUrl?: string | undefined } = {},
+  options: OAuthHttp = {},
 ): Promise<OAuthDiscovery> {
   const url = server.config.url?.trim();
   if (url) {
@@ -430,18 +518,12 @@ export async function serverDiscovery(
 
 export async function discover(
   mcpUrl: string,
-  options: { client?: FetchFn | undefined; proxyUrl?: string | undefined } = {},
+  options: OAuthHttp = {},
 ): Promise<OAuthDiscovery> {
-  const fetchFn = options.client ?? proxyFetch(options.proxyUrl ?? "");
+  const fetchFn = oauthFetch(options);
   const resourceMeta = await getJson(fetchFn, resourceMetadataUrls(mcpUrl));
-  const resource = resourceMeta.resource;
-  const resourceUrl =
-    typeof resource === "string" && resource.trim() ? resource.trim() : mcpUrl;
-  const servers = resourceMeta.authorization_servers;
-  if (!Array.isArray(servers) || !servers.length || typeof servers[0] !== "string") {
-    throw new OAuthError("protected resource metadata is missing authorization_servers");
-  }
-  const asMeta = await getJson(fetchFn, [authServerMetadataUrl(servers[0])]);
+  const { resource, authorizationServer } = protectedResourceOf(resourceMeta, mcpUrl);
+  const asMeta = await getJson(fetchFn, [authServerMetadataUrl(authorizationServer)]);
   const authorization = asMeta.authorization_endpoint;
   const token = asMeta.token_endpoint;
   if (typeof authorization !== "string" || typeof token !== "string") {
@@ -450,7 +532,7 @@ export async function discover(
   const registration = asMeta.registration_endpoint;
   const scopes = resourceMeta.scopes_supported ?? asMeta.scopes_supported ?? [];
   return {
-    resource: resourceUrl,
+    resource,
     authorization_endpoint: authorization.trim(),
     token_endpoint: token.trim(),
     registration_endpoint:
@@ -466,13 +548,12 @@ const Registration = Type.Object({ client_id: Type.String(), client_secret: Type
 export async function registerClient(
   discovery: OAuthDiscovery,
   redirectUri: string,
-  options: { client?: FetchFn | undefined; proxyUrl?: string | undefined } = {},
+  options: OAuthHttp = {},
 ): Promise<OAuthClient> {
   if (!discovery.registration_endpoint) {
     throw new OAuthError("authorization server does not support dynamic client registration");
   }
-  const fetchFn = options.client ?? proxyFetch(options.proxyUrl ?? "");
-  const response = await fetchFn(discovery.registration_endpoint, {
+  const response = await oauthFetch(options)(discovery.registration_endpoint, {
     method: "POST",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -502,28 +583,21 @@ export async function registerClient(
 }
 
 async function tokenError(response: Response, text: string): Promise<string | null> {
-  try {
-    const payload: unknown = text ? JSON.parse(text) : {};
-    if (payload && typeof payload === "object" && !Array.isArray(payload) && typeof (payload as { error?: unknown }).error === "string") {
-      return (payload as { error: string }).error;
-    }
-  } catch {
-    return null;
-  }
-  return null;
+  const error = parseJsonObject(text)?.error;
+  return typeof error === "string" ? error : null;
 }
 
 async function tokenRequest(
   discovery: OAuthDiscovery,
   fields: Record<string, string>,
-  options: { clientSecret?: string | null | undefined; client?: FetchFn | undefined; proxyUrl?: string | undefined },
+  clientSecret: string | null | undefined,
+  http: OAuthHttp,
 ): Promise<Record<string, unknown>> {
   const params = new URLSearchParams(fields);
-  if (options.clientSecret) {
-    params.set("client_secret", options.clientSecret);
+  if (clientSecret) {
+    params.set("client_secret", clientSecret);
   }
-  const fetchFn = options.client ?? proxyFetch(options.proxyUrl ?? "");
-  const response = await fetchFn(discovery.token_endpoint, {
+  const response = await oauthFetch(http)(discovery.token_endpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
@@ -540,62 +614,52 @@ async function tokenRequest(
     throw new OAuthError(`token request failed: ${response.status}`);
   }
   const payload: unknown = text ? JSON.parse(text) : {};
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+  if (!isPlainRecord(payload)) {
     throw new OAuthError("token response is not an object");
   }
-  return payload as Record<string, unknown>;
+  return payload;
 }
 
 export async function exchangeCode(
   discovery: OAuthDiscovery,
-  options: {
-    code: string;
-    codeVerifier: string;
-    clientId: string;
-    clientSecret?: string | null | undefined;
-    redirectUri: string;
-    client?: FetchFn | undefined;
-    proxyUrl?: string | undefined;
-  },
+  grant: AuthorizationCodeGrant,
+  http: OAuthHttp = {},
 ): Promise<Record<string, unknown>> {
   return tokenRequest(
     discovery,
     {
       grant_type: "authorization_code",
-      code: options.code,
-      client_id: options.clientId,
-      redirect_uri: options.redirectUri,
-      code_verifier: options.codeVerifier,
+      code: grant.code,
+      client_id: grant.clientId,
+      redirect_uri: grant.redirectUri,
+      code_verifier: grant.codeVerifier,
       ...(discovery.resource ? { resource: discovery.resource } : {}),
     },
-    omitUndefined({ clientSecret: options.clientSecret, client: options.client, proxyUrl: options.proxyUrl }),
+    grant.clientSecret,
+    http,
   );
 }
 
 export async function refreshTokens(
   discovery: OAuthDiscovery,
-  options: {
-    refreshToken: string;
-    clientId: string;
-    clientSecret?: string | null | undefined;
-    client?: FetchFn | undefined;
-    proxyUrl?: string | undefined;
-  },
+  grant: RefreshTokenGrant,
+  http: OAuthHttp = {},
 ): Promise<Record<string, unknown>> {
   return tokenRequest(
     discovery,
     {
       grant_type: "refresh_token",
-      refresh_token: options.refreshToken,
-      client_id: options.clientId,
+      refresh_token: grant.refreshToken,
+      client_id: grant.clientId,
       ...(discovery.resource ? { resource: discovery.resource } : {}),
     },
-    omitUndefined({ clientSecret: options.clientSecret, client: options.client, proxyUrl: options.proxyUrl }),
+    grant.clientSecret,
+    http,
   );
 }
 
 /** The db/ functions a login's OAuth client and tokens are saved through, on `db`. */
-export function oauthDatabase(db: Queryable) {
+function oauthDatabase(db: Queryable) {
   return {
     saveOauthClient: bindQuery(db, saveOauthClient),
     saveMcpConnection: bindQuery(db, saveMcpConnection),
@@ -604,22 +668,40 @@ export function oauthDatabase(db: Queryable) {
 
 export type OauthDatabase = ReturnType<typeof oauthDatabase>;
 
+/**
+ * The provider's discovery and the OAuth client a login to `server` signs in with at
+ * `redirectUri`: the stored, the provided, or the configured client, or one registered now and
+ * saved on `db`.
+ */
 export async function ensureClient(
+  db: Queryable,
+  server: LoadedConnector,
+  redirectUri: string,
+): Promise<[OAuthDiscovery, OAuthClientCredentials]> {
+  return ensureClientThrough(oauthDatabase(db), server, redirectUri);
+}
+
+/**
+ * The provider's discovery and the OAuth client a login to `server` signs in with at
+ * `redirectUri`, saved through `db`, the dependencies object a unit test fakes, and fetched
+ * and read through `services`.
+ */
+export async function ensureClientThrough(
   db: OauthDatabase,
   server: LoadedConnector,
   redirectUri: string,
-  options: { client?: FetchFn | undefined; proxyUrl?: string | undefined; sources?: IntegrationSources | undefined } = {},
+  services: OAuthClientServices = {},
 ): Promise<[OAuthDiscovery, OAuthClientCredentials]> {
   const strategy = oauthStrategy(server);
   if (strategy === "none" || server.auth !== "oauth") {
     throw new OAuthUnsupportedError("connector is not oauth");
   }
-  const discovery = await serverDiscovery(server, omitUndefined({ client: options.client, proxyUrl: options.proxyUrl }));
+  const discovery = await serverDiscovery(server, services);
   const current = storedClient(server);
   if (current !== null && clientCoversRedirect(current, redirectUri)) {
     return [discovery, current];
   }
-  const provided = providerClient(server, options.sources);
+  const provided = providerClient(server, services.sources);
   if (provided !== null) {
     return [discovery, provided];
   }
@@ -631,43 +713,36 @@ export async function ensureClient(
       "authorization server does not support dynamic client registration and no client is configured",
     );
   }
-  const registered = await registerClient(discovery, redirectUri, options);
+  const registered = await registerClient(discovery, redirectUri, services);
   await db.saveOauthClient(server.id, registered, new Date());
   return [discovery, registered];
 }
 
+/** Refreshes a login's tokens at its provider and saves them, encrypted, through `db`. */
 export async function refreshConnection(
   db: OauthDatabase,
   connection: McpConnectionRow,
   server: LoadedConnector,
-  options: {
-    client?: FetchFn | undefined;
-    proxyUrl?: string | undefined;
-    now?: Date;
-    decrypt: (ciphertext: Buffer, nonce: Buffer) => Record<string, unknown>;
-    encrypt?: typeof encryptPayload;
-  },
+  services: TokenRefreshServices,
 ): Promise<McpConnectionRow> {
-  const now = options.now ?? new Date();
-  const payload = options.decrypt(connection.ciphertext, connection.nonce);
+  const now = new Date();
+  const payload = services.decrypt(connection.ciphertext, connection.nonce);
   const refresh = payload.refresh_token;
   if (typeof refresh !== "string" || !refresh) {
     throw new OAuthReauthError("connection has no refresh token");
   }
-  const discovery = await serverDiscovery(server, options);
+  const discovery = await serverDiscovery(server, services);
   const client = configuredClient(server);
   if (client === null) {
     throw new OAuthError("mcp server is missing an oauth client");
   }
-  const tokens = await refreshTokens(discovery, omitUndefined({
-    refreshToken: refresh,
-    clientId: client.client_id,
-    clientSecret: client.client_secret,
-    client: options.client,
-    proxyUrl: options.proxyUrl,
-  }));
-  const stored = tokenPayload(tokens, { now, existing: payload });
-  const [ciphertext, nonce] = (options.encrypt ?? encryptPayload)(stored);
+  const tokens = await refreshTokens(
+    discovery,
+    { refreshToken: refresh, clientId: client.client_id, clientSecret: client.client_secret },
+    services,
+  );
+  const stored = tokenPayload(tokens, now, payload);
+  const [ciphertext, nonce] = (services.encrypt ?? encryptPayload)(stored);
   const row = await db.saveMcpConnection(
     connection.id,
     {
@@ -684,5 +759,3 @@ export async function refreshConnection(
   }
   return row;
 }
-
-export { githubInstallationPickerHtml, oauthCallbackHtml } from "./html.js";

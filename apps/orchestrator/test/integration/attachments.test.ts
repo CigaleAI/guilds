@@ -1,23 +1,22 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { AttachmentService } from "../../src/attachments/index.js";
+import { attachmentService } from "../../src/attachments/index.js";
 import { MemoryBlobStore } from "../../src/lib/blob-store.js";
 import { buildApp } from "../../src/app.js";
-import { artifactStore } from "../../src/artifacts/index.js";
+import { artifactStore } from "../../src/artifacts/store.js";
 import { connect } from "../../src/seed/connect.js";
-import { generationDatabase, GenerationLoop } from "../../src/generation/index.js";
+import { generationLoop } from "../../src/generation/index.js";
 import { newId } from "../../src/lib/ids.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { ExportSandboxes } from "../helpers/live.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { insertOrg } from "../../src/db/orgs.js";
-import { attachmentDatabase } from "../../src/attachments/store.js";
-import { generationArtifacts } from "../../src/generation/prepare.js";
+import { mcpPool } from "../../src/mcp/pool.js";
 
 const OWNER = {
   "X-Guilds-User": "user_operator",
@@ -45,24 +44,24 @@ test("operators upload images, attach them to a run, and cannot read another org
   await connectModelProvider(db, "org_home", "deepinfra", {
     models: [TEST_MODEL, "deepinfra/Qwen/Qwen3.8-2.4T-A95B"],
   });
-  const attachments = new AttachmentService(attachmentDatabase(db), new MemoryBlobStore());
+  const attachments = attachmentService(db, new MemoryBlobStore());
   const artifacts = artifactStore(database.pool, notes.templates);
   const workspaceRoot = tempDir("guilds-attachments-workspaces-");
-  const generation = new GenerationLoop({
-    db: generationDatabase(db),
+  const generation = generationLoop(db, {
+    mcp: mcpPool(db),
     notes,
     workspaceRoot,
     sandboxes: new ExportSandboxes(workspaceRoot),
     attachments,
-    artifacts: generationArtifacts(artifacts),
+    artifacts,
   });
   generation.generateInBackground = () => undefined;
   const app = await buildApp(database, {
     db,
     notes,
     artifacts,
-    scripts: new Scripts(scriptDatabase(db)),
-    schedules: new Schedules(scheduleDatabase(db)),
+    scripts: agentScripts(db),
+    schedules: agentSchedules(db),
     attachments,
     generation,
   });

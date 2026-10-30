@@ -1,12 +1,33 @@
 {
+  "src/components/actions/CopyButton.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
   "src/components/content/DiffView.tsx": {
     "complexity": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 4
     }
   },
   "src/components/content/JsonTree.tsx": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/components/content/OfferedTools.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/components/content/PromptSections.tsx": {
+    "no-restricted-syntax": {
+      "count": 4
     }
   },
   "src/components/content/TaskEditor.tsx": {
@@ -24,6 +45,11 @@
       "count": 1
     }
   },
+  "src/components/content/mentions.ts": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
   "src/components/content/promptBlocks.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
@@ -37,10 +63,18 @@
   "src/components/controls/FormField.tsx": {
     "complexity": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 1
     }
   },
   "src/components/controls/Segmented.tsx": {
     "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    }
+  },
+  "src/components/controls/Select.tsx": {
+    "no-restricted-syntax": {
       "count": 1
     }
   },
@@ -94,6 +128,11 @@
       "count": 1
     }
   },
+  "src/components/navigation/AgentRow.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
   "src/components/navigation/GuildHeader.tsx": {
     "complexity": {
       "count": 1
@@ -112,6 +151,14 @@
   "src/components/overlays/ConfirmDialog.tsx": {
     "complexity": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/components/overlays/Toaster.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
     }
   },
   "src/components/runs/FlowTimeline.tsx": {
@@ -125,10 +172,18 @@
   "src/components/runs/GenerationHeader.tsx": {
     "complexity": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 1
     }
   },
   "src/components/runs/GenerationHero.tsx": {
     "complexity": {
+      "count": 1
+    }
+  },
+  "src/components/runs/RunTrace.tsx": {
+    "no-restricted-syntax": {
       "count": 1
     }
   },
@@ -138,11 +193,27 @@
     },
     "complexity": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 3
+    }
+  },
+  "src/index.ts": {
+    "boundary/no-reexport-modules": {
+      "count": 1
+    }
+  },
+  "src/primitives/Divider.tsx": {
+    "no-restricted-syntax": {
+      "count": 2
     }
   },
   "src/primitives/Mark.tsx": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 2
     }
   },
   "src/writeDesignSystemDoc.ts": {
@@ -150,6 +221,9 @@
       "count": 3
     },
     "max-depth": {
+      "count": 1
+    },
+    "no-restricted-syntax": {
       "count": 1
     }
   }

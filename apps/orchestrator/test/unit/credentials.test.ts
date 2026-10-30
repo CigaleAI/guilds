@@ -6,7 +6,8 @@ import type { OrgModelProviderRow } from "../../src/db/orgs.js";
 import {
   ModelNotConnectedError,
   assertModelConnected,
-  coreModelCredentials,
+  coreModelCredentialsThrough,
+  deliverModelUsage,
   keyHint,
   modelUsageOf,
   reportModelUsage,
@@ -41,7 +42,7 @@ test("core's credentials are the organisation's row: its key, and a local endpoi
     ["org_1/local", row({ api_key: "", base_url: "http://127.0.0.1:11434/v1" })],
     ["org_1/xai", row({ api_key: "" })],
   ]);
-  const credentials = coreModelCredentials(
+  const credentials = coreModelCredentialsThrough(
     { getOrgModelProvider: async (orgId, provider) => rows.get(`${orgId}/${provider}`) ?? null },
     TEST_MASTER_KEY,
   );
@@ -106,4 +107,23 @@ test("usage is read from a completion's metadata and the callback's failure is s
   );
   assert.deepEqual(heard, ["r_1"]);
   await reportModelUsage({ apiKey: "k" }, usage);
+});
+
+test("delivering usage answers what the callback threw, and null when it took the usage or there is none", async () => {
+  const usage = modelUsageOf("r_1", "openai/gpt-5", completionMetadata());
+  const down = new Error("accounting is down");
+  const failure = await deliverModelUsage(
+    {
+      apiKey: "k",
+      onUsage: async () => {
+        throw down;
+      },
+    },
+    usage,
+  );
+  assert.equal(failure?.error, down);
+  const heard: string[] = [];
+  assert.equal(await deliverModelUsage({ apiKey: "k", onUsage: async (item) => void heard.push(item.run_id) }, usage), null);
+  assert.deepEqual(heard, ["r_1"]);
+  assert.equal(await deliverModelUsage({ apiKey: "k" }, usage), null);
 });

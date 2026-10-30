@@ -191,6 +191,7 @@ Seven tools manage the agent's own schedules
 - `description` is a one-line label, at most 400 characters.
 - `instruction` is markdown, at most 2,000 characters. It is stored on
   the schedule and passed on the wake-up message.
+- An argument of the wrong type is refused, and nothing is written.
 
 ## Scripts
 

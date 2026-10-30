@@ -1,15 +1,10 @@
 import assert from "node:assert/strict";
 import http from "node:http";
 import { test } from "node:test";
-import {
-  MODEL_USER_AGENT,
-  listProviderModels,
-  messagesFromHistory,
-  messagesRequestBody,
-  providerById,
-  streamCompletion,
-  type ModelEvent,
-} from "../../src/llm/index.js";
+import { messagesFromHistory, messagesRequestBody } from "../../src/llm/anthropic.js";
+import { listProviderModels, streamCompletion } from "../../src/llm/client.js";
+import { LLMError, MODEL_USER_AGENT, type ModelEvent } from "../../src/llm/completion.js";
+import { providerById } from "../../src/llm/providers.js";
 
 function anthropic() {
   const definition = providerById("anthropic");
@@ -99,6 +94,54 @@ test("messagesFromHistory lifts the system prompt, pairs tool calls with their r
       ],
     },
   ]);
+});
+
+test("messagesFromHistory skips parts and tool calls that are not objects of the OpenAI shape", () => {
+  const { messages } = messagesFromHistory([
+    { role: "user", content: [null, "text", { type: "text", text: 5 }, { type: "image_url", image_url: "x" }, { type: "text", text: "kept" }] },
+    {
+      role: "assistant",
+      content: "",
+      tool_calls: [null, { id: 1, function: { name: "read" } }, { id: "call_1", function: "read" }, { id: "call_2", function: { name: "read", arguments: "[1]" } }],
+    },
+  ]);
+  assert.deepEqual(messages, [
+    { role: "user", content: [{ type: "text", text: "kept" }] },
+    { role: "assistant", content: [{ type: "tool_use", id: "call_2", name: "read", input: {} }] },
+  ]);
+});
+
+test("messagesFromHistory fails on an inline image of a media type the Messages API does not take", () => {
+  assert.throws(
+    () =>
+      messagesFromHistory([
+        { role: "user", content: [{ type: "image_url", image_url: { url: "data:image/svg+xml;base64,AAAA" } }] },
+      ]),
+    (error: unknown) => error instanceof LLMError && /does not take image\/svg\+xml images/.test(error.message),
+  );
+});
+
+test("messagesRequestBody fails on a tool whose parameters are not an object schema, and on an effort the API does not take", () => {
+  const base = { model: "anthropic/claude-opus-5-5", messages: [{ role: "user", content: "hi" }], temperature: 0, max_tokens: 64 };
+  const tool = (parameters: unknown) => [{ type: "function", function: { name: "read", parameters } }];
+  assert.deepEqual(messagesRequestBody({ ...base, tools: tool("none") }).tools, [
+    { name: "read", input_schema: { type: "object", properties: {} } },
+  ]);
+  assert.deepEqual(messagesRequestBody({ ...base, tools: [null, { function: { name: 5 } }] }).tools, undefined);
+  for (const parameters of [{ type: "string" }, { type: "object", required: ["path", 1] }]) {
+    assert.throws(
+      () => messagesRequestBody({ ...base, tools: tool(parameters) }),
+      (error: unknown) => error instanceof LLMError && /tool read has parameters that are not an object schema/.test(error.message),
+    );
+  }
+  assert.deepEqual(messagesRequestBody({ ...base, tools: tool({ type: "object", required: null }) }).tools, [
+    { name: "read", input_schema: { type: "object", required: null } },
+  ]);
+  assert.throws(
+    () => messagesRequestBody({ ...base, thinking_level: "minimal" }),
+    (error: unknown) => error instanceof LLMError && /does not take the minimal effort/.test(error.message),
+  );
+  assert.equal(messagesRequestBody({ ...base, tool_choice: { function: "read" } }).tool_choice, undefined);
 });
 
 test("messagesRequestBody asks for adaptive thinking at the level's effort, and a temperature only without it", () => {
@@ -198,16 +241,17 @@ test("streamCompletion speaks the Messages API to Anthropic and assembles an Ope
     },
     async (baseURL) => {
       const events: ModelEvent[] = [];
-      for await (const event of streamCompletion({
-        model: "anthropic/claude-opus-5-5",
-        messages: [{ role: "user", content: "hi" }],
-        temperature: 0,
-        max_tokens: 64,
-        tools: [{ type: "function", function: { name: "read", parameters: { type: "object" } } }],
-        apiKey: "sk-ant-test",
-        baseURL,
-        thinking_level: "medium",
-      })) {
+      for await (const event of streamCompletion(
+        {
+          model: "anthropic/claude-opus-5-5",
+          messages: [{ role: "user", content: "hi" }],
+          temperature: 0,
+          max_tokens: 64,
+          tools: [{ type: "function", function: { name: "read", parameters: { type: "object" } } }],
+          thinking_level: "medium",
+        },
+        { apiKey: "sk-ant-test", baseURL },
+      )) {
         events.push(event);
       }
       assert.deepEqual(events.slice(0, 2), [["reasoning", "plan"], ["delta", "reading"]]);
@@ -243,14 +287,15 @@ test("streamCompletion redacts the Anthropic key from a provider error", async (
     async (baseURL) => {
       await assert.rejects(
         async () => {
-          for await (const _event of streamCompletion({
-            model: "anthropic/claude-opus-5-5",
-            messages: [{ role: "user", content: "hi" }],
-            temperature: 0,
-            max_tokens: 8,
-            apiKey: "sk-ant-secret",
-            baseURL,
-          })) {
+          for await (const _event of streamCompletion(
+            {
+              model: "anthropic/claude-opus-5-5",
+              messages: [{ role: "user", content: "hi" }],
+              temperature: 0,
+              max_tokens: 8,
+            },
+            { apiKey: "sk-ant-secret", baseURL },
+          )) {
             // drained
           }
         },

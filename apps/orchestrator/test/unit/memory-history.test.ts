@@ -5,7 +5,7 @@ import {
   firstMemoryWriteByRun,
   historyRunPayload,
 } from "../../src/memory/history.js";
-import type { MemoryTimelineEntry } from "../../src/memory/timeline.js";
+import type { MemoryTimelineEntry } from "../../src/artifacts/memory.js";
 
 function entry(overrides: Partial<MemoryTimelineEntry> = {}): MemoryTimelineEntry {
   return {

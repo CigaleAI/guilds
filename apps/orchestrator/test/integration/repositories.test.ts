@@ -1,17 +1,18 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
-import { writeAgentTask } from "../../src/agents/task.js";
+import { writeAgentTask } from "../../src/artifacts/task.js";
 import type { Database } from "../../src/db/client.js";
 import { connect } from "../../src/seed/connect.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
 import { newId } from "../../src/lib/ids.js";
-import { listFileChanges, operatorActor } from "../../src/artifacts/index.js";
+import { listFileChanges } from "../../src/db/file-changes.js";
+import { operatorActor } from "../../src/artifacts/actors.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { insertUser } from "../../src/db/users.js";
 import { listUsersInSeedOrder } from "../../src/users/directory.js";
 import { getMembership, listOrgsForUser } from "../../src/db/orgs.js";
 import { insertGuild } from "../../src/db/guilds.js";
-import { addAgent } from "../../src/agents/persist.js";
+import { addTestAgent } from "../helpers/agents.js";
 import { createRun, insertMessage, nextSeq } from "../../src/db/runs.js";
 import { getUsage } from "../../src/db/usage.js";
 import { agentConfig, runSnapshot } from "../helpers/generation.js";
@@ -57,7 +58,7 @@ describe("repositories", { concurrency: 1 }, () => {
       { guildId: "guild_scripts", name: "scripts-guild", orgId: "org_home", about: "" },
       new Date(),
     );
-    await addAgent(db,
+    await addTestAgent(db, "org_home",
       {
         agentId: "a_scripts",
         guildId: "guild_scripts",
@@ -74,7 +75,7 @@ describe("repositories", { concurrency: 1 }, () => {
       },
       new Date(),
     );
-    const scripts = new Scripts(scriptDatabase(db));
+    const scripts = agentScripts(db);
     const actor = operatorActor({
       orgId: "org_home",
       actorId: "user_operator",
@@ -98,7 +99,7 @@ describe("repositories", { concurrency: 1 }, () => {
       name: "operator",
     });
 
-    await writeAgentTask(db, actor, "a_scripts", "Updated task");
+    await writeAgentTask(db, actor, "a_scripts", { content: "Updated task" });
     const taskChanges = await listFileChanges(
       database.pool,
       "org_home",
@@ -115,7 +116,7 @@ describe("repositories", { concurrency: 1 }, () => {
       { guildId: "guild_usage", name: "usage-guild", orgId: "org_home", about: "" },
       now,
     );
-    await addAgent(db,
+    await addTestAgent(db, "org_home",
       {
         agentId: "a_usage",
         guildId: "guild_usage",

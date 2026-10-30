@@ -1,20 +1,29 @@
-import type { FastifyInstance } from "fastify";
-import { changeUserEmail, createUser, listDirectoryUsers, removeUser } from "../users/directory.js";
-import type { AppDeps } from "./deps.js";
-import { HttpError, missingBodyFields } from "./errors.js";
+import { Type } from "@sinclair/typebox";
+import {
+  changeUserEmail,
+  createUser,
+  listDirectoryUsers,
+  removeUser,
+  UserDraftSchema,
+  UserEmailSchema,
+} from "../users/directory.js";
+import type { AppDeps, RouteApp } from "./deps.js";
+import { HttpError } from "./errors.js";
 import { currentUser, type IdentityRequest } from "./identity.js";
-import { identityDatabase } from "../users/identity.js";
 import { isInstanceAdmin } from "./instance-admin.js";
-import { bodyOf, param } from "./request.js";
+
+/** The path of one user of the directory. */
+const UserParams = Type.Object({ user_id: Type.String() });
 
 /** The user directory: every user of the box, created and removed by whoever may manage it. */
-export async function registerUserRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
+export async function registerUserRoutes(app: RouteApp, deps: AppDeps): Promise<void> {
   const { db } = deps;
-  const identityDb = identityDatabase(db);
 
   /**
    * On a compat-cookie box whoever reaches the directory may act as any user, so it is open; behind
    * an authenticating proxy it is the instance administrator's; a mode an extension adds has none.
+   * Each route runs it as its `preValidation` hook, so whoever is refused gets the same 404 whatever
+   * they send.
    */
   async function requireUserDirectory(request: IdentityRequest): Promise<void> {
     const mode = deps.config?.authMode ?? "compat-cookie";
@@ -22,7 +31,7 @@ export async function registerUserRoutes(app: FastifyInstance, deps: AppDeps): P
       return;
     }
     if (mode === "trusted-header" && !deps.identity) {
-      const user = await currentUser(identityDb, request, deps);
+      const user = await currentUser(db, request, deps);
       if (await isInstanceAdmin(deps, user.id)) {
         return;
       }
@@ -30,38 +39,29 @@ export async function registerUserRoutes(app: FastifyInstance, deps: AppDeps): P
     throw new HttpError(404, "Not Found");
   }
 
-  app.get("/api/users", async (request) => {
-    await requireUserDirectory(request);
-    return listDirectoryUsers(db);
-  });
+  const preValidation = requireUserDirectory;
 
-  app.post("/api/users", async (request, reply) => {
-    await requireUserDirectory(request);
-    const missing = missingBodyFields(request.body, ["name"]);
-    if (missing) {
-      throw missing;
-    }
-    const body = bodyOf(request);
-    const user = await createUser(
-      db,
-      { name: String(body.name ?? ""), email: body.email ?? null },
-      deps.orgCreated,
-    );
-    return reply.code(201).send(user);
-  });
+  app.get("/api/users", { preValidation }, async () => listDirectoryUsers(db));
 
-  app.patch("/api/users/:user_id", async (request) => {
-    await requireUserDirectory(request);
-    const body = bodyOf(request);
-    if (!("email" in body)) {
-      throw new HttpError(422, "email is required");
-    }
-    return changeUserEmail(db, param(request, "user_id"), body.email);
-  });
+  app.post(
+    "/api/users",
+    { preValidation, schema: { body: UserDraftSchema } },
+    async (request, reply) =>
+      reply.code(201).send(await createUser(db, request.body, deps.orgCreated)),
+  );
 
-  app.delete("/api/users/:user_id", async (request, reply) => {
-    await requireUserDirectory(request);
-    await removeUser(db, param(request, "user_id"));
-    return reply.code(204).send();
-  });
+  app.patch(
+    "/api/users/:user_id",
+    { preValidation, schema: { params: UserParams, body: UserEmailSchema } },
+    async (request) => changeUserEmail(db, request.params.user_id, request.body.email),
+  );
+
+  app.delete(
+    "/api/users/:user_id",
+    { preValidation, schema: { params: UserParams } },
+    async (request, reply) => {
+      await removeUser(db, request.params.user_id);
+      return reply.code(204).send();
+    },
+  );
 }

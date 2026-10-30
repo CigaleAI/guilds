@@ -1,18 +1,30 @@
 import { createSign } from "node:crypto";
+import { Value } from "@sinclair/typebox/value";
 import {
   GITHUB_APP,
   integrationValues,
   missingFields,
   type IntegrationSources,
 } from "../instance/integrations.js";
+import { decode } from "../lib/decode.js";
 import { proxyFetch, readJson, type FetchFn } from "../net/http.js";
+import {
+  ErrorReply,
+  InstallationReply,
+  InstallationsPage,
+  InstallationTokenReply,
+  OAuthErrorReply,
+  RepositoriesPage,
+  RepositoryReply,
+  TokenRepositoryReply,
+  UserTokenReply,
+} from "./responses.js";
 
 /**
  * The deployment's GitHub App: the `github` connection installs it on an account and the
  * orchestrator mints installation tokens from it. The private key never leaves this process.
  */
 export const GITHUB_SLUG = "github";
-export const GITHUB_SERVER_ID = "mcp_github";
 export const GITHUB_API = "https://api.github.com";
 const GITHUB_WEB = "https://github.com";
 const API_VERSION = "2022-11-28";
@@ -136,10 +148,24 @@ export function clearGithubOauthStateCookie(secure: boolean): string {
   return parts.join("; ");
 }
 
-type Options = { fetch?: FetchFn | undefined; proxyUrl?: string | undefined };
+/**
+ * How this module reaches GitHub: the fetch it calls, or the proxy it sends requests through, and
+ * how long a lookup waits before it lists a user's installations again (GitHub can list a new
+ * installation a moment after its callback).
+ */
+export type GithubServices = {
+  fetch?: FetchFn | undefined;
+  proxyUrl?: string | undefined;
+  retryDelayMs?: number | undefined;
+};
 
-function fetcher(options: Options): FetchFn {
-  return options.fetch ?? proxyFetch(options.proxyUrl ?? "");
+function fetcher(services: GithubServices): FetchFn {
+  return services.fetch ?? proxyFetch(services.proxyUrl ?? "");
+}
+
+/** The error a GitHub reply raises when it does not have the shape GitHub documents. */
+export function unexpectedGithubReply(problem: string): GithubError {
+  return new GithubError(`GitHub returned an unexpected reply at ${problem}`);
 }
 
 function apiHeaders(authorization: string): Record<string, string> {
@@ -151,14 +177,20 @@ function apiHeaders(authorization: string): Record<string, string> {
   };
 }
 
-async function apiError(response: Response, what: string): Promise<GithubError> {
-  let message: string;
+/** What the body of a refused call says went wrong, or null when it is not GitHub's JSON error. */
+async function refusalMessage(response: Response): Promise<string | null> {
+  let body: unknown;
   try {
-    const body = (await readJson(response)) as { message?: unknown };
-    message = typeof body.message === "string" ? body.message : "";
+    body = await readJson(response);
   } catch {
-    message = "";
+    return null;
   }
+  return Value.Check(ErrorReply, body) ? body.message : null;
+}
+
+/** The error a refused call raises: `what` failed, with GitHub's status and the reason it gives. */
+export async function githubApiError(response: Response, what: string): Promise<GithubError> {
+  const message = await refusalMessage(response);
   return new GithubError(`${what}: ${response.status}${message ? ` ${message}` : ""}`, response.status);
 }
 
@@ -166,36 +198,36 @@ async function apiError(response: Response, what: string): Promise<GithubError> 
 export async function exchangeUserCode(
   config: GithubAppConfig,
   code: string,
-  options: Options & { redirectUri?: string } = {},
+  redirectUri: string | undefined,
+  services: GithubServices = {},
 ): Promise<string> {
   const payload: Record<string, string> = { client_id: config.clientId, client_secret: config.clientSecret, code };
-  if (options.redirectUri) {
-    payload.redirect_uri = options.redirectUri;
+  if (redirectUri) {
+    payload.redirect_uri = redirectUri;
   }
-  const response = await fetcher(options)(`${GITHUB_WEB}/login/oauth/access_token`, {
+  const response = await fetcher(services)(`${GITHUB_WEB}/login/oauth/access_token`, {
     method: "POST",
     headers: { Accept: "application/json", "Content-Type": "application/json", "User-Agent": "guilds.run" },
     body: JSON.stringify(payload),
   });
   if (response.status >= 400) {
-    throw await apiError(response, "GitHub code exchange failed");
+    throw await githubApiError(response, "GitHub code exchange failed");
   }
-  const body = (await readJson(response)) as { access_token?: unknown; error?: unknown };
-  if (typeof body.access_token !== "string" || !body.access_token) {
-    throw new GithubError(`GitHub code exchange failed: ${typeof body.error === "string" ? body.error : "no token"}`);
+  const body = await readJson(response);
+  if (Value.Check(UserTokenReply, body)) {
+    return body.access_token;
   }
-  return body.access_token;
+  throw new GithubError(`GitHub code exchange failed: ${Value.Check(OAuthErrorReply, body) ? body.error : "no token"}`);
 }
 
 export type GithubInstallation = { id: number; account: string; appId: number | null; updatedAt: string };
 
-function installationFrom(row: Record<string, unknown>): GithubInstallation {
-  const account = row.account && typeof row.account === "object" ? (row.account as Record<string, unknown>) : {};
+function installationFrom(reply: InstallationReply): GithubInstallation {
   return {
-    id: Number(row.id),
-    account: String(account.login ?? ""),
-    appId: typeof row.app_id === "number" ? row.app_id : typeof row.app_id === "string" ? Number(row.app_id) : null,
-    updatedAt: typeof row.updated_at === "string" ? row.updated_at : "",
+    id: reply.id,
+    account: reply.account?.login ?? "",
+    appId: typeof reply.app_id === "string" ? Number(reply.app_id) : (reply.app_id ?? null),
+    updatedAt: reply.updated_at ?? "",
   };
 }
 
@@ -216,9 +248,9 @@ function wait(ms: number): Promise<void> {
 export async function appInstallationsForUser(
   config: GithubAppConfig,
   userToken: string,
-  options: Options = {},
+  services: GithubServices = {},
 ): Promise<GithubInstallation[]> {
-  return (await userInstallations(userToken, options)).filter((item) => ofThisApp(item, config.appId));
+  return (await userInstallations(userToken, services)).filter((item) => ofThisApp(item, config.appId));
 }
 
 export type GithubInstallationChoice =
@@ -235,11 +267,11 @@ export async function resolveGithubInstallation(
   config: GithubAppConfig,
   userToken: string,
   rawInstallationId?: string | number,
-  options: Options & { retryDelayMs?: number } = {},
+  services: GithubServices = {},
 ): Promise<GithubInstallationChoice> {
   const wanted = parseInstallationId(rawInstallationId);
   if (wanted !== null) {
-    return { action: "use", installation: await installationForUser(config, userToken, wanted, options) };
+    return { action: "use", installation: await installationForUser(config, userToken, wanted, services) };
   }
   const pick = async (rows: GithubInstallation[]): Promise<GithubInstallationChoice | null> => {
     if (rows.length === 1) {
@@ -250,31 +282,30 @@ export async function resolveGithubInstallation(
     }
     return null;
   };
-  const first = await pick(await appInstallationsForUser(config, userToken, options));
+  const first = await pick(await appInstallationsForUser(config, userToken, services));
   if (first) {
     return first;
   }
-  const delay = options.retryDelayMs ?? 400;
+  const delay = services.retryDelayMs ?? 400;
   if (delay > 0) {
     await wait(delay);
   }
-  return (await pick(await appInstallationsForUser(config, userToken, options))) ?? { action: "install" };
+  return (await pick(await appInstallationsForUser(config, userToken, services))) ?? { action: "install" };
 }
 
 /** The installations of this App that the user behind `userToken` can reach. */
-export async function userInstallations(userToken: string, options: Options = {}): Promise<GithubInstallation[]> {
-  const fetchFn = fetcher(options);
+export async function userInstallations(userToken: string, services: GithubServices = {}): Promise<GithubInstallation[]> {
+  const fetchFn = fetcher(services);
   const installations: GithubInstallation[] = [];
   for (let page = 1; page <= 10; page += 1) {
     const response = await fetchFn(`${GITHUB_API}/user/installations?per_page=100&page=${page}`, {
       headers: apiHeaders(`Bearer ${userToken}`),
     });
     if (response.status >= 400) {
-      throw await apiError(response, "listing GitHub installations failed");
+      throw await githubApiError(response, "listing GitHub installations failed");
     }
-    const body = (await readJson(response)) as { installations?: unknown };
-    const rows = Array.isArray(body.installations) ? body.installations : [];
-    for (const row of rows as Array<Record<string, unknown>>) {
+    const rows = decode(InstallationsPage, await readJson(response), unexpectedGithubReply).installations;
+    for (const row of rows) {
       installations.push(installationFrom(row));
     }
     if (rows.length < 100) {
@@ -288,27 +319,28 @@ export async function userInstallations(userToken: string, options: Options = {}
 export async function appInstallation(
   config: GithubAppConfig,
   installationId: number,
-  options: Options & { now?: Date } = {},
+  services: GithubServices = {},
+  now = new Date(),
 ): Promise<GithubInstallation | null> {
-  const response = await fetcher(options)(`${GITHUB_API}/app/installations/${installationId}`, {
-    headers: apiHeaders(`Bearer ${appJwt(config, options.now)}`),
+  const response = await fetcher(services)(`${GITHUB_API}/app/installations/${installationId}`, {
+    headers: apiHeaders(`Bearer ${appJwt(config, now)}`),
   });
   if (response.status === 404) {
     return null;
   }
   if (response.status >= 400) {
-    throw await apiError(response, "reading the GitHub installation failed");
+    throw await githubApiError(response, "reading the GitHub installation failed");
   }
-  return installationFrom((await readJson(response)) as Record<string, unknown>);
+  return installationFrom(decode(InstallationReply, await readJson(response), unexpectedGithubReply));
 }
 
 /** Whether the user token can see this installation (SEC-11). */
 export async function userReachesInstallation(
   userToken: string,
   installationId: number,
-  options: Options = {},
+  services: GithubServices = {},
 ): Promise<boolean> {
-  const response = await fetcher(options)(
+  const response = await fetcher(services)(
     `${GITHUB_API}/user/installations/${installationId}/repositories?per_page=1`,
     { headers: apiHeaders(`Bearer ${userToken}`) },
   );
@@ -316,7 +348,7 @@ export async function userReachesInstallation(
     return false;
   }
   if (response.status >= 400) {
-    throw await apiError(response, "checking the GitHub installation failed");
+    throw await githubApiError(response, "checking the GitHub installation failed");
   }
   return true;
 }
@@ -330,18 +362,18 @@ export async function installationForUser(
   config: GithubAppConfig,
   userToken: string,
   rawInstallationId?: string | number,
-  options: Options & { retryDelayMs?: number } = {},
+  services: GithubServices = {},
 ): Promise<GithubInstallation> {
   const wanted = parseInstallationId(rawInstallationId);
-  const listed = await userInstallations(userToken, options);
+  const listed = await userInstallations(userToken, services);
   const ours = listed.filter((item) => ofThisApp(item, config.appId));
   if (wanted !== null) {
     const found = ours.find((item) => item.id === wanted);
     if (found) {
       return found;
     }
-    if (await userReachesInstallation(userToken, wanted, options)) {
-      const fromApp = await appInstallation(config, wanted, options);
+    if (await userReachesInstallation(userToken, wanted, services)) {
+      const fromApp = await appInstallation(config, wanted, services);
       if (fromApp && ofThisApp(fromApp, config.appId)) {
         return fromApp;
       }
@@ -354,11 +386,11 @@ export async function installationForUser(
   if (first) {
     return first;
   }
-  const delay = options.retryDelayMs ?? 400;
+  const delay = services.retryDelayMs ?? 400;
   if (delay > 0) {
     await wait(delay);
   }
-  const again = (await userInstallations(userToken, options)).filter((item) => ofThisApp(item, config.appId));
+  const again = (await userInstallations(userToken, services)).filter((item) => ofThisApp(item, config.appId));
   const retry = pick(again);
   if (retry) {
     return retry;
@@ -375,45 +407,58 @@ export type InstallationToken = { token: string; expiresAt: string; repositories
 export type TokenPermissions = Readonly<Record<string, "read" | "write">>;
 
 /**
- * An installation access token, valid one hour. With `repositoryIds` it reaches only those
- * repositories and lists them under their current names: an id survives a rename of the
- * repository or its owner, a name does not. With `permissions` it holds only those.
+ * The token an installation is asked for: with `repositoryIds` it reaches only those
+ * repositories, with `permissions` it holds only those.
+ */
+export type InstallationTokenRequest = {
+  installationId: number;
+  repositoryIds?: number[] | undefined;
+  permissions?: TokenPermissions | undefined;
+};
+
+function isTokenRepository(row: unknown): row is TokenRepository {
+  return Value.Check(TokenRepositoryReply, row);
+}
+
+/**
+ * An installation access token, valid one hour. Scoped to repository ids, it lists them under
+ * their current names: an id survives a rename of the repository or its owner, a name does not.
  */
 export async function installationToken(
   config: GithubAppConfig,
-  installationId: number,
-  options: Options & { repositoryIds?: number[]; permissions?: TokenPermissions; now?: Date } = {},
+  request: InstallationTokenRequest,
+  services: GithubServices = {},
+  now = new Date(),
 ): Promise<InstallationToken> {
   const body: Record<string, unknown> = {};
-  if (options.repositoryIds) {
-    body.repository_ids = options.repositoryIds;
+  if (request.repositoryIds) {
+    body.repository_ids = request.repositoryIds;
   }
-  if (options.permissions) {
-    body.permissions = options.permissions;
+  if (request.permissions) {
+    body.permissions = request.permissions;
   }
-  const response = await fetcher(options)(`${GITHUB_API}/app/installations/${installationId}/access_tokens`, {
+  const response = await fetcher(services)(`${GITHUB_API}/app/installations/${request.installationId}/access_tokens`, {
     method: "POST",
-    headers: { ...apiHeaders(`Bearer ${appJwt(config, options.now)}`), "Content-Type": "application/json" },
+    headers: { ...apiHeaders(`Bearer ${appJwt(config, now)}`), "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   if (response.status === 404 || response.status === 403) {
-    const error = await apiError(response, "GitHub refused the installation");
+    const error = await githubApiError(response, "GitHub refused the installation");
     throw new GithubInstallationGoneError(error.message, response.status);
   }
   if (response.status >= 400) {
-    throw await apiError(response, "minting a GitHub token failed");
+    throw await githubApiError(response, "minting a GitHub token failed");
   }
-  const parsed = (await readJson(response)) as { token?: unknown; expires_at?: unknown; repositories?: unknown };
-  if (typeof parsed.token !== "string" || typeof parsed.expires_at !== "string") {
+  const parsed = await readJson(response);
+  if (!Value.Check(InstallationTokenReply, parsed)) {
     throw new GithubError("GitHub returned no installation token");
   }
-  const listed = Array.isArray(parsed.repositories) ? (parsed.repositories as Array<Record<string, unknown>>) : [];
   return {
     token: parsed.token,
     expiresAt: parsed.expires_at,
-    repositories: listed
-      .filter((row) => Number.isInteger(row.id) && typeof row.full_name === "string")
-      .map((row) => ({ id: Number(row.id), full_name: String(row.full_name) })),
+    repositories: (parsed.repositories ?? [])
+      .filter(isTokenRepository)
+      .map((row) => ({ id: row.id, full_name: row.full_name })),
   };
 }
 
@@ -427,35 +472,38 @@ export type GithubRepository = {
   url: string;
 };
 
+function repositoryFrom(reply: RepositoryReply): GithubRepository {
+  return {
+    id: reply.id,
+    name: reply.name ?? "",
+    full_name: reply.full_name ?? "",
+    owner: reply.owner?.login ?? "",
+    private: reply.private === true,
+    default_branch: reply.default_branch ?? "main",
+    url: `${GITHUB_WEB}/${reply.full_name ?? ""}`,
+  };
+}
+
 /** Every repository the installation reaches. */
 export async function installationRepositories(
   config: GithubAppConfig,
   installationId: number,
-  options: Options = {},
+  services: GithubServices = {},
+  now = new Date(),
 ): Promise<GithubRepository[]> {
-  const { token } = await installationToken(config, installationId, options);
-  const fetchFn = fetcher(options);
+  const { token } = await installationToken(config, { installationId }, services, now);
+  const fetchFn = fetcher(services);
   const repositories: GithubRepository[] = [];
   for (let page = 1; page <= 20; page += 1) {
     const response = await fetchFn(`${GITHUB_API}/installation/repositories?per_page=100&page=${page}`, {
       headers: apiHeaders(`Bearer ${token}`),
     });
     if (response.status >= 400) {
-      throw await apiError(response, "listing GitHub repositories failed");
+      throw await githubApiError(response, "listing GitHub repositories failed");
     }
-    const body = (await readJson(response)) as { repositories?: unknown };
-    const rows = Array.isArray(body.repositories) ? body.repositories : [];
-    for (const row of rows as Array<Record<string, unknown>>) {
-      const owner = row.owner && typeof row.owner === "object" ? (row.owner as Record<string, unknown>) : {};
-      repositories.push({
-        id: Number(row.id),
-        name: String(row.name ?? ""),
-        full_name: String(row.full_name ?? ""),
-        owner: String(owner.login ?? ""),
-        private: row.private === true,
-        default_branch: String(row.default_branch ?? "main"),
-        url: `${GITHUB_WEB}/${String(row.full_name ?? "")}`,
-      });
+    const rows = decode(RepositoriesPage, await readJson(response), unexpectedGithubReply).repositories;
+    for (const row of rows) {
+      repositories.push(repositoryFrom(row));
     }
     if (rows.length < 100) {
       break;
@@ -472,19 +520,17 @@ export async function installationRepositories(
 export async function installationRepository(
   token: string,
   path: string,
-  options: Options = {},
+  services: GithubServices = {},
 ): Promise<TokenRepository | null> {
-  const response = await fetcher(options)(`${GITHUB_API}/repos/${path}`, { headers: apiHeaders(`Bearer ${token}`) });
+  const response = await fetcher(services)(`${GITHUB_API}/repos/${path}`, { headers: apiHeaders(`Bearer ${token}`) });
   if (response.status === 404 || response.status === 403) {
     return null;
   }
   if (response.status >= 400) {
-    throw await apiError(response, "reading a GitHub repository failed");
+    throw await githubApiError(response, "reading a GitHub repository failed");
   }
-  const body = (await readJson(response)) as { id?: unknown; full_name?: unknown };
-  return Number.isInteger(body.id) && typeof body.full_name === "string"
-    ? { id: Number(body.id), full_name: body.full_name }
-    : null;
+  const body = await readJson(response);
+  return isTokenRepository(body) ? { id: body.id, full_name: body.full_name } : null;
 }
 
 /** `owner` and `repository` of an `https://github.com/<owner>/<repository>` URL, or null. */

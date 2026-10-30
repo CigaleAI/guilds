@@ -1,24 +1,38 @@
 import { listAgents } from "../db/agents.js";
-import { userActor } from "../lib/change-actor.js";
-import { getGuild, listGuildsForUser, type GuildPatch, type GuildRow } from "../db/guilds.js";
-import { isUniqueViolation, type Queryable } from "../db/pg.js";
+import { recordChangeIfAny, type ConfigChange } from "../db/config-changes.js";
+import {
+  countGuildAgents,
+  deleteGuild as deleteGuildRow,
+  getGuild,
+  insertGuild,
+  listGuildsForUser,
+  lockGuildText,
+  updateGuild,
+  type GuildPatch,
+  type GuildRow,
+  type GuildTextRow,
+  type NewGuild,
+} from "../db/guilds.js";
+import { isUniqueViolation, type Queryable, withTransaction } from "../db/pg.js";
+import { DEFAULT_GUILD_AGENTS } from "../db/schema/index.js";
 import type { GenerationLoop } from "../generation/index.js";
+import { userActor, type ChangeActor } from "../lib/change-actor.js";
 import { newId } from "../lib/ids.js";
 import type { NotesStore } from "../notes/store.js";
-import { assertCanCreateGuild, orgCounts, type OrgPolicy } from "../policy/index.js";
+import { assertCanCreateGuild, type OrgPolicy } from "../policy/index.js";
 import type { Schedules } from "../schedules/service.js";
 import { requireAdministeredGuild } from "./access.js";
-import { changeGuild } from "./changes.js";
-import { GuildError } from "./errors.js";
-import { guildDatabase, persistGuild } from "./persist.js";
+import { GuildAgentLimitError, GuildError } from "./errors.js";
 import {
   validateAbout,
   validateGitAuthorEmail,
   validateGuildDescription,
   validateGuildName,
+  validateGuildTextPatch,
   validateMaxAgents,
   validateRoutinesEnabled,
   validateVisibility,
+  type GuildTextPatch,
 } from "./validation.js";
 
 /** What guilds are created, changed and deleted through, built once from the app's services. */
@@ -32,17 +46,25 @@ export type GuildServices = {
 };
 
 /** A new guild as it is asked for, before validation. */
-export type GuildDraft = { name: string; about: string; description: string; visibility: unknown };
+export type GuildRequest = {
+  name: string;
+  about: string;
+  description: string;
+  visibility: string | null | undefined;
+};
+
+/** A new guild as it is written: its row, and the slug of the organisation its notes folder goes under. */
+export type GuildDraft = { guild: NewGuild; orgSlug: string };
 
 /** A guild's settings as a patch asks for them, before validation; an absent field stays as it is. */
 export type GuildSettingsPatch = {
   name?: string;
   about?: string;
   description?: string;
-  maxAgents?: unknown;
-  gitAuthorEmail?: unknown;
-  visibility?: unknown;
-  routinesEnabled?: unknown;
+  maxAgents?: number;
+  gitAuthorEmail?: string | null;
+  visibility?: string | null;
+  routinesEnabled?: boolean;
 };
 
 /** The organisation a guild is created in. */
@@ -55,6 +77,22 @@ function nameConflict(error: unknown): unknown {
   return isUniqueViolation(error) ? new GuildError(409, "guild name already exists") : error;
 }
 
+/** A guild as the API answers it. */
+export function guildItem(row: GuildRow): Record<string, unknown> {
+  return {
+    id: row.id,
+    name: row.name,
+    about: row.about,
+    description: row.description,
+    max_agents: row.max_agents,
+    git_author_email: row.git_author_email,
+    database: false,
+    visibility: row.visibility,
+    operators: row.operators,
+    routines_enabled: row.routines_enabled,
+  };
+}
+
 export async function listUserGuilds(
   db: Queryable,
   orgId: string,
@@ -63,41 +101,122 @@ export async function listUserGuilds(
   return listGuildsForUser(db, orgId, userId);
 }
 
+/** Adds a guild with its notes folder; a folder that cannot be made takes the guild back out. */
+export async function addGuild(
+  services: Pick<GuildServices, "db" | "notes">,
+  draft: GuildDraft,
+  now: Date,
+): Promise<GuildRow> {
+  const { db, notes } = services;
+  const { guild } = draft;
+  await insertGuild(db, guild, now);
+  try {
+    await notes.createGuild(draft.orgSlug, guild.name);
+  } catch (error) {
+    await deleteGuildRow(db, guild.guildId);
+    throw error;
+  }
+  const created = await getGuild(db, guild.guildId);
+  if (created === null) {
+    throw new Error("guild not found after create");
+  }
+  return created;
+}
+
 /** Creates a guild in the organisation within its policy's guild cap, with the creator as its admin. */
 export async function createGuild(
   services: GuildServices,
   org: GuildOrg,
   creator: GuildActor,
-  draft: GuildDraft,
+  request: GuildRequest,
 ): Promise<GuildRow> {
-  const { db, notes, policy } = services;
-  const name = validateGuildName(draft.name);
-  const about = validateAbout(draft.about);
-  const description = validateGuildDescription(draft.description);
-  const visibility = validateVisibility(draft.visibility);
-  await assertCanCreateGuild(policy, orgCounts(db), org.id);
-  const guildId = newId("guild");
+  const { db, policy } = services;
+  const name = validateGuildName(request.name);
+  const about = validateAbout(request.about);
+  const description = validateGuildDescription(request.description);
+  const visibility = validateVisibility(request.visibility);
+  await assertCanCreateGuild(policy, db, org.id);
   const guild = {
-    guildId,
+    guildId: newId("guild"),
     name,
-    now: new Date(),
     orgId: org.id,
-    orgSlug: org.slug,
     about,
     description,
     visibility,
     creatorUserId: creator.id,
   };
   try {
-    await persistGuild(guildDatabase(db), notes, guild);
+    return await addGuild(services, { guild, orgSlug: org.slug }, new Date());
   } catch (error) {
     throw nameConflict(error);
   }
-  const created = await getGuild(db, guildId);
-  if (created === null) {
-    throw new Error("guild not found after create");
+}
+
+/** Refuses adding `adding` agents to the guild past its agent limit; no guild has the default limit and no agents. */
+export async function assertGuildAgentRoom(
+  db: Queryable,
+  guildId: string | null,
+  adding: number,
+): Promise<void> {
+  if (adding <= 0) {
+    return;
   }
-  return created;
+  const row = guildId ? await getGuild(db, guildId) : null;
+  const limit = Number(row?.max_agents ?? DEFAULT_GUILD_AGENTS);
+  const cap = Number.isInteger(limit) && limit > 0 ? limit : DEFAULT_GUILD_AGENTS;
+  const count = guildId ? await countGuildAgents(db, guildId) : 0;
+  if (count + adding > cap) {
+    throw new GuildAgentLimitError(cap);
+  }
+}
+
+/** The change-log entry for a guild's about and description going from `before` to `after`; null when neither changed. */
+export function guildTextChange(
+  guildId: string,
+  before: GuildTextRow,
+  after: GuildTextRow,
+): ConfigChange | null {
+  const fields = (["about", "description"] as const).filter(
+    (field) => before[field] !== after[field],
+  );
+  if (!fields.length) {
+    return null;
+  }
+  return {
+    guildId,
+    targetKind: "guild_text",
+    targetId: guildId,
+    operation: "update",
+    summary: `Changed the ${fields.join(" and ")}`,
+  };
+}
+
+/** Changes a guild's settings; a change to its about or description is logged against `actor`. Null when there is no such guild. */
+async function changeGuild(
+  db: Queryable,
+  guildId: string,
+  patch: GuildPatch,
+  actor: ChangeActor,
+): Promise<GuildRow | null> {
+  const updated = await withTransaction(db, async (client) => {
+    const before = await lockGuildText(client, guildId);
+    const after = await updateGuild(client, guildId, new Date(), patch);
+    if (before && after) {
+      await recordChangeIfAny(client, actor, guildTextChange(guildId, before, after));
+    }
+    return after;
+  });
+  return updated ? getGuild(db, guildId) : null;
+}
+
+/** Changes a guild's about and description, each validated, logged against `actor`. Null when there is no such guild. */
+export async function updateGuildText(
+  db: Queryable,
+  guildId: string,
+  patch: GuildTextPatch,
+  actor: ChangeActor,
+): Promise<GuildRow | null> {
+  return changeGuild(db, guildId, validateGuildTextPatch(patch), actor);
 }
 
 /** Refuses a rename while the guild is being deleted or one of its agents is generating. */

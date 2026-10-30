@@ -115,6 +115,7 @@ extension_steps() {
 orchestrator_lane() {
   step typecheck pnpm -r typecheck &&
     step lint pnpm -r lint &&
+    step import-cycles pnpm --filter @guildsrun/orchestrator cycles &&
     step compat-verify pnpm --filter @guildsrun/orchestrator compat:verify &&
     step test-orchestrator pnpm --filter @guildsrun/orchestrator test &&
     extension_steps orchestrator
@@ -123,6 +124,7 @@ orchestrator_lane() {
 web_lane() {
   step test-ui pnpm --filter @guildsrun/ui test &&
     step test-web pnpm --filter @guildsrun/web test &&
+    step import-cycles-web pnpm --filter @guildsrun/web cycles &&
     step build-web pnpm --filter @guildsrun/web build &&
     step build-storybook pnpm --filter @guildsrun/ui build-storybook &&
     extension_steps web

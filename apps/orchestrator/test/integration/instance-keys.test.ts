@@ -5,12 +5,12 @@ import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import { connect } from "../../src/seed/connect.js";
-import { GITHUB_SERVER_ID } from "../../src/github/index.js";
 import { GITHUB_MANIFEST_STATE_COOKIE, MANIFEST_CALLBACK_PATH } from "../../src/github/manifest.js";
-import { setInstanceKeys } from "../../src/instance/integrations.js";
+import { GITHUB_SERVER_ID, instanceKeys, setInstanceKeys } from "../../src/instance/integrations.js";
+import { InstanceKeys } from "../../src/instance/keys.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
@@ -28,10 +28,12 @@ const APP = { app_id: "4242", slug: "guilds-run-test", private_key: PEM, client_
 
 const keysDb = uniqueDbName("agent_platform_instance_keys");
 const manifestDb = uniqueDbName("agent_platform_instance_manifest");
+const loadDb = uniqueDbName("agent_platform_instance_load");
 
 after(async () => {
   await dropIsolatedDatabase(keysDb);
   await dropIsolatedDatabase(manifestDb);
+  await dropIsolatedDatabase(loadDb);
 });
 
 type App = Awaited<ReturnType<typeof buildApp>>;
@@ -47,8 +49,8 @@ async function bootstrap(dbName: string, prefix: string): Promise<{ database: Aw
   const app = await buildApp(database, {
     db,
     notes,
-    scripts: new Scripts(scriptDatabase(db)),
-    schedules: new Schedules(scheduleDatabase(db)),
+    scripts: agentScripts(db),
+    schedules: agentSchedules(db),
     masterKey: MASTER,
   });
   return { database, db, app };
@@ -166,6 +168,9 @@ test("instance keys switch platform logins and the GitHub connector; replacing t
       connections: 1,
     });
     assert.equal(await connectionStatus(seeded), "connected");
+    const textConfirm = await put("github-app", { values: { ...APP, app_id: "9999" }, confirm_replace: "yes" });
+    assert.equal(textConfirm.statusCode, 422, textConfirm.body);
+    assert.deepEqual(textConfirm.json().detail[0].loc, ["body", "confirm_replace"]);
     const confirmed = await put("github-app", { values: { ...APP, app_id: "9999" }, confirm_replace: true });
     assert.equal(confirmed.statusCode, 200, confirmed.body);
     assert.equal(confirmed.json().disconnected, 1);
@@ -251,6 +256,9 @@ test("the GitHub App registers from a manifest: the box posts it, GitHub calls b
     assert.equal((await start({ name: "x".repeat(35) })).statusCode, 400);
     assert.equal((await start({ name: "x".repeat(34) })).statusCode, 200);
     assert.equal((await start({ owner: "not a login" })).statusCode, 400);
+    const numberedOwner = await start({ owner: 7 });
+    assert.equal(numberedOwner.statusCode, 422, numberedOwner.body);
+    assert.deepEqual(numberedOwner.json().detail[0].loc, ["body", "owner"]);
     assert.equal((await start({ owner: "acme/org" })).statusCode, 400);
 
     // A callback whose cookie does not match its state is refused before GitHub is asked; the flow is spent.
@@ -316,6 +324,32 @@ test("the GitHub App registers from a manifest: the box posts it, GitHub calls b
     globalThis.fetch = realFetch;
     setInstanceKeys({});
     await app.close();
+    await database.close();
+  }
+});
+
+test("loading the keys skips one that does not decrypt under the master key and keeps the others", async () => {
+  setInstanceKeys({});
+  const database = await connect(await createIsolatedDatabase(loadDb));
+  const db = database.pool;
+  const insert = async (integration: string, values: Record<string, string>, key: Buffer) => {
+    const [ciphertext, nonce] = encryptPayload(values, key);
+    await db.query(
+      `INSERT INTO instance_keys (integration, ciphertext, nonce, set_by_user_id, created_at, updated_at)
+       VALUES ($1, $2, $3, NULL, $4, $4)`,
+      [integration, ciphertext, nonce, "2026-10-09T08:00:00.000Z"],
+    );
+  };
+  try {
+    await insert("web-search", { api_key: " tvly-key " }, MASTER);
+    await insert("group-routing", { api_key: "routing-key" }, Buffer.alloc(32, 7));
+    const snapshot = await new InstanceKeys(db, MASTER).load();
+    assert.deepEqual(snapshot, {
+      "web-search": { values: { api_key: "tvly-key" }, updated_at: "2026-10-09T08:00:00.000Z", set_by: null },
+    });
+    assert.deepEqual(instanceKeys(), snapshot);
+  } finally {
+    setInstanceKeys({});
     await database.close();
   }
 });

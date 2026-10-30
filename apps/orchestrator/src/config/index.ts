@@ -1,7 +1,6 @@
 import { existsSync, statSync } from "node:fs";
 import path from "node:path";
-import { parseHarnessesOff } from "../coding/harnesses.js";
-import type { Harness } from "../db/schema/index.js";
+import { HARNESSES, type Harness } from "../db/schema/index.js";
 import { normalizeEmail } from "../lib/email.js";
 import { orchestratorRoot } from "../lib/paths.js";
 
@@ -38,18 +37,43 @@ export type AppConfig = {
   harnessesOff: Harness[];
 };
 
+/** What an extension adds to core's settings: the modes it identifies requests in. */
+export type ConfigExtension = {
+  authModes?: readonly string[];
+};
+
+/** A setting the configuration refuses; `setting` is the variable it concerns. */
+export class ConfigError extends Error {
+  readonly setting: string;
+
+  constructor(setting: string, message: string) {
+    super(message);
+    this.name = "ConfigError";
+    this.setting = setting;
+  }
+}
+
 function readRequired(env: NodeJS.ProcessEnv, name: string): string {
   const value = env[name];
   if (!value) {
-    throw new Error(`${name} is required`);
+    throw new ConfigError(name, `${name} is required`);
   }
   return value;
 }
 
+/** An optional setting's value, trimmed; empty when it is unset. */
+function readTrimmed(env: NodeJS.ProcessEnv, name: string): string {
+  return (env[name] ?? "").trim();
+}
+
+function isDirectory(value: string): boolean {
+  return existsSync(value) && statSync(value).isDirectory();
+}
+
 function readDir(env: NodeJS.ProcessEnv, name: string): string {
   const value = readRequired(env, name);
-  if (!existsSync(value) || !statSync(value).isDirectory()) {
-    throw new Error(`${name} must be an existing directory: ${value}`);
+  if (!isDirectory(value)) {
+    throw new ConfigError(name, `${name} must be an existing directory: ${value}`);
   }
   return path.resolve(value);
 }
@@ -61,7 +85,7 @@ export function defaultTemplatesRoot(metaUrl = import.meta.url): string {
 export function decodeMasterKey(raw: string): Buffer {
   const trimmed = raw.trim();
   if (!trimmed) {
-    throw new Error("SECRETS_MASTER_KEY is required");
+    throw new ConfigError("SECRETS_MASTER_KEY", "SECRETS_MASTER_KEY is required");
   }
   const std = decodeValidatedBase64(trimmed, "standard");
   if (std?.length === 32) {
@@ -81,7 +105,7 @@ export function decodeMasterKey(raw: string): Buffer {
       return ascii;
     }
   }
-  throw new Error("SECRETS_MASTER_KEY must be 32 bytes (base64 or hex)");
+  throw new ConfigError("SECRETS_MASTER_KEY", "SECRETS_MASTER_KEY must be 32 bytes (base64 or hex)");
 }
 
 function decodeValidatedBase64(raw: string, alphabet: "standard" | "url"): Buffer | null {
@@ -118,57 +142,108 @@ function decodeHexBytes(raw: string): Buffer | null {
 }
 
 /**
- * Core's settings from the environment. `authModes` are the modes an extension identifies requests
- * in, accepted beside core's.
+ * The harnesses a `HARNESSES_OFF` value names, separated by commas or spaces; throws on a name
+ * that is not a harness, so a typo fails boot.
  */
-export function loadConfig(
-  env: NodeJS.ProcessEnv = process.env,
-  options: { authModes?: readonly string[] } = {},
-): AppConfig {
-  const databaseUrl = readRequired(env, "DATABASE_URL");
-  const notesRoot = readDir(env, "NOTES_ROOT");
-  const workspaceRoot = readDir(env, "WORKSPACE_ROOT");
-  const templatesRoot = env.TEMPLATES_ROOT
-    ? readDir(env, "TEMPLATES_ROOT")
-    : defaultTemplatesRoot();
-  if (!existsSync(templatesRoot) || !statSync(templatesRoot).isDirectory()) {
-    throw new Error(`agent templates missing: ${templatesRoot}`);
+export function parseHarnessesOff(value: string | undefined): Harness[] {
+  const names = (value ?? "").split(/[\s,]+/).filter(Boolean);
+  const harnesses = names.map((name) => {
+    const harness = HARNESSES.find((known) => known === name);
+    if (harness === undefined) {
+      throw new ConfigError("HARNESSES_OFF", `HARNESSES_OFF names an unknown harness ${name}: use ${HARNESSES.join(", ")}`);
+    }
+    return harness;
+  });
+  return [...new Set(harnesses)];
+}
+
+/** `TEMPLATES_ROOT`, or the templates the package ships; either must be a directory. */
+function readTemplatesRoot(env: NodeJS.ProcessEnv): string {
+  const templatesRoot = env.TEMPLATES_ROOT ? readDir(env, "TEMPLATES_ROOT") : defaultTemplatesRoot();
+  if (!isDirectory(templatesRoot)) {
+    throw new ConfigError("TEMPLATES_ROOT", `agent templates missing: ${templatesRoot}`);
   }
-  const authModes = [...AUTH_MODES, ...(options.authModes ?? [])];
+  return templatesRoot;
+}
+
+/** `AUTH_MODE`, one of `authModes`; `compat-cookie` when it is unset. */
+function readAuthMode(env: NodeJS.ProcessEnv, authModes: readonly string[]): AuthMode {
   const authMode = env.AUTH_MODE ?? "compat-cookie";
   if (!authModes.includes(authMode)) {
-    throw new Error(`AUTH_MODE must be ${authModes.join(", ")}`);
+    throw new ConfigError("AUTH_MODE", `AUTH_MODE must be ${authModes.join(", ")}`);
   }
+  return authMode;
+}
+
+/** `SECRETS_MASTER_KEY`, which may be the all-zero development key only with `ALLOW_ZERO_MASTER_KEY=1`. */
+function readSecretsMasterKey(env: NodeJS.ProcessEnv): string {
   const secretsMasterKey = readRequired(env, "SECRETS_MASTER_KEY");
   if (decodeMasterKey(secretsMasterKey).every((byte) => byte === 0) && env[ALLOW_ZERO_MASTER_KEY] !== "1") {
-    throw new Error(
+    throw new ConfigError(
+      "SECRETS_MASTER_KEY",
       `SECRETS_MASTER_KEY is the all-zero development key: set 32 random bytes (${ALLOW_ZERO_MASTER_KEY}=1 accepts it on a development stack)`,
     );
   }
+  return secretsMasterKey;
+}
+
+function readMaxConcurrentGenerations(env: NodeJS.ProcessEnv): number {
   const maxConcurrentGenerations = Number(env.MAX_CONCURRENT_GENERATIONS ?? "0");
   if (!Number.isInteger(maxConcurrentGenerations) || maxConcurrentGenerations < 0) {
-    throw new Error("MAX_CONCURRENT_GENERATIONS must be a non-negative integer");
+    throw new ConfigError("MAX_CONCURRENT_GENERATIONS", "MAX_CONCURRENT_GENERATIONS must be a non-negative integer");
   }
-  const publicBaseUrl = (env.PUBLIC_BASE_URL ?? "").trim();
-  const trustedProxySecret = (env.TRUSTED_PROXY_SECRET ?? "").trim();
+  return maxConcurrentGenerations;
+}
+
+/** `OPERATOR_EMAIL` normalised, or null when it is unset or blank. */
+function readOperatorEmail(env: NodeJS.ProcessEnv): string | null {
+  const raw = readTrimmed(env, "OPERATOR_EMAIL");
+  const operatorEmail = normalizeEmail(raw);
+  if (raw && operatorEmail === null) {
+    throw new ConfigError("OPERATOR_EMAIL", "OPERATOR_EMAIL must be an email address");
+  }
+  return operatorEmail;
+}
+
+/** The settings `AUTH_MODE=trusted-header` cannot run without. */
+function requireTrustedHeaderSettings(
+  trustedProxySecret: string,
+  publicBaseUrl: string,
+  operatorEmail: string | null,
+): void {
+  if (!trustedProxySecret) {
+    throw new ConfigError("TRUSTED_PROXY_SECRET", "TRUSTED_PROXY_SECRET is required when AUTH_MODE=trusted-header");
+  }
+  if (!publicBaseUrl) {
+    // The proxy forwards its own hostname, which is served only when it is PUBLIC_BASE_URL's.
+    throw new ConfigError("PUBLIC_BASE_URL", "PUBLIC_BASE_URL is required when AUTH_MODE=trusted-header");
+  }
+  if (operatorEmail === null) {
+    // A user is identified by their email, and a box starts with a user who has none.
+    throw new ConfigError("OPERATOR_EMAIL", "OPERATOR_EMAIL is required when AUTH_MODE=trusted-header");
+  }
+}
+
+/**
+ * Core's settings from the environment. `extension.authModes` are the modes an extension
+ * identifies requests in, accepted beside core's. A setting it refuses throws a `ConfigError`.
+ */
+export function loadConfig(env: NodeJS.ProcessEnv = process.env, extension: ConfigExtension = {}): AppConfig {
+  const databaseUrl = readRequired(env, "DATABASE_URL");
+  const notesRoot = readDir(env, "NOTES_ROOT");
+  const workspaceRoot = readDir(env, "WORKSPACE_ROOT");
+  const templatesRoot = readTemplatesRoot(env);
+  const authMode = readAuthMode(env, [...AUTH_MODES, ...(extension.authModes ?? [])]);
+  const secretsMasterKey = readSecretsMasterKey(env);
+  const maxConcurrentGenerations = readMaxConcurrentGenerations(env);
+  const publicBaseUrl = readTrimmed(env, "PUBLIC_BASE_URL");
+  const trustedProxySecret = readTrimmed(env, "TRUSTED_PROXY_SECRET");
   const sandboxImage = readRequired(env, "SANDBOX_IMAGE");
-  const operatorEmail = normalizeEmail(env.OPERATOR_EMAIL ?? "");
-  if ((env.OPERATOR_EMAIL ?? "").trim() && operatorEmail === null) {
-    throw new Error("OPERATOR_EMAIL must be an email address");
-  }
+  const operatorEmail = readOperatorEmail(env);
   if (authMode === "trusted-header") {
-    if (!trustedProxySecret) {
-      throw new Error("TRUSTED_PROXY_SECRET is required when AUTH_MODE=trusted-header");
-    }
-    if (!publicBaseUrl) {
-      // The proxy forwards its own hostname, which is served only when it is PUBLIC_BASE_URL's.
-      throw new Error("PUBLIC_BASE_URL is required when AUTH_MODE=trusted-header");
-    }
-    if (operatorEmail === null) {
-      // A user is identified by their email, and a box starts with a user who has none.
-      throw new Error("OPERATOR_EMAIL is required when AUTH_MODE=trusted-header");
-    }
+    requireTrustedHeaderSettings(trustedProxySecret, publicBaseUrl, operatorEmail);
   }
+  const attachmentsRoot = readTrimmed(env, "ATTACHMENTS_ROOT");
   return {
     databaseUrl,
     notesRoot,
@@ -183,11 +258,11 @@ export function loadConfig(
     port: Number(env.PORT ?? "8080"),
     toolResultMaxBytes: Number(env.TOOL_RESULT_MAX_BYTES ?? "65536"),
     publicBaseUrl,
-    trustedHeaderName: (env.TRUSTED_HEADER_EMAIL ?? "X-Forwarded-Email").trim() || "X-Forwarded-Email",
+    trustedHeaderName: readTrimmed(env, "TRUSTED_HEADER_EMAIL") || "X-Forwarded-Email",
     trustedProxySecret,
     operatorEmail: operatorEmail ?? "",
     maxConcurrentGenerations,
-    attachmentsRoot: (env.ATTACHMENTS_ROOT ?? "").trim() ? path.resolve((env.ATTACHMENTS_ROOT ?? "").trim()) : "",
+    attachmentsRoot: attachmentsRoot ? path.resolve(attachmentsRoot) : "",
     harnessesOff: parseHarnessesOff(env.HARNESSES_OFF),
   };
 }

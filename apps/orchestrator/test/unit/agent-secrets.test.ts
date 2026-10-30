@@ -11,13 +11,14 @@ import {
   AGENT_SECRET_CAP,
   AgentSecretError,
   readSecretFile,
-  storeAgentSecret,
+  storeAgentSecretThrough,
   type AgentSecretsDatabase,
 } from "../../src/secrets/agent.js";
-import { createToolContext, invokeTool, type Tool } from "../../src/toolbox/index.js";
+import { invokeTool, type Tool } from "../../src/toolbox/index.js";
 
 import { agentRow, FakeDB, FakeSandboxes, makeLoop } from "../helpers/generation.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
+import { toolFixture } from "../helpers/toolbox.js";
 
 process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
 
@@ -114,7 +115,7 @@ test("readSecretFile refuses paths out of the workspace, links out of it, and ba
 
 test("storeAgentSecret grants a new secret to the agent that stored it", async () => {
   const db = new SecretsDb();
-  const stored = await storeAgentSecret(db as never, AGENT, { name: "ACME_KEY", description: "Calls Acme", value: "v1" });
+  const stored = await storeAgentSecretThrough(db as never, AGENT, { name: "ACME_KEY", description: "Calls Acme", value: "v1" });
   assert.equal(stored.rotated, false);
   const row = db.rows[0]!;
   assert.equal(row.name, "ACME_KEY");
@@ -125,7 +126,7 @@ test("storeAgentSecret grants a new secret to the agent that stored it", async (
 
 test("storeAgentSecret stores and returns the value without the whitespace around it", async () => {
   const db = new SecretsDb();
-  const stored = await storeAgentSecret(db as never, AGENT, { name: "ACME_KEY", description: "Calls Acme", value: " v1 \n" });
+  const stored = await storeAgentSecretThrough(db as never, AGENT, { name: "ACME_KEY", description: "Calls Acme", value: " v1 \n" });
   assert.equal(stored.value, "v1");
   const ciphertext = db.rows[0]!.ciphertext as Buffer;
   assert.deepEqual(decryptPayload(ciphertext, db.rows[0]!.nonce as Buffer), { value: "v1" });
@@ -133,16 +134,16 @@ test("storeAgentSecret stores and returns the value without the whitespace aroun
 
 test("storeAgentSecret rotates its own secret and refuses a name held otherwise", async () => {
   const db = new SecretsDb();
-  await storeAgentSecret(db as never, AGENT, { name: "ACME_KEY", description: "Calls Acme", value: "v1" });
+  await storeAgentSecretThrough(db as never, AGENT, { name: "ACME_KEY", description: "Calls Acme", value: "v1" });
   const before = db.rows[0]!.ciphertext;
-  const rotated = await storeAgentSecret(db as never, AGENT, { name: "ACME_KEY", description: "Calls Acme v2", value: "v2" });
+  const rotated = await storeAgentSecretThrough(db as never, AGENT, { name: "ACME_KEY", description: "Calls Acme v2", value: "v2" });
   assert.equal(rotated.rotated, true);
   assert.equal(db.rows.length, 1);
   assert.notDeepEqual(db.rows[0]!.ciphertext, before);
   assert.equal(db.rows[0]!.description, "Calls Acme v2");
 
   await assert.rejects(
-    () => storeAgentSecret(db as never, { id: "a_2", orgId: "org_1" }, { name: "ACME_KEY", description: "d", value: "x" }),
+    () => storeAgentSecretThrough(db as never, { id: "a_2", orgId: "org_1" }, { name: "ACME_KEY", description: "d", value: "x" }),
     /ACME_KEY is taken in this organisation; choose another name/,
   );
   db.rows[0]!.grants = [
@@ -150,36 +151,36 @@ test("storeAgentSecret rotates its own secret and refuses a name held otherwise"
     { guild_id: "g", agent_id: null, name: "g", in_guild_id: "g" },
   ];
   await assert.rejects(
-    () => storeAgentSecret(db as never, AGENT, { name: "ACME_KEY", description: "d", value: "x" }),
+    () => storeAgentSecretThrough(db as never, AGENT, { name: "ACME_KEY", description: "d", value: "x" }),
     /is taken in this organisation/,
   );
   db.rows.push({ id: "sec_op", name: "OPERATOR_KEY", org_wide: true, grants: [], created_by_agent_id: null });
   await assert.rejects(
-    () => storeAgentSecret(db as never, AGENT, { name: "OPERATOR_KEY", description: "d", value: "x" }),
+    () => storeAgentSecretThrough(db as never, AGENT, { name: "OPERATOR_KEY", description: "d", value: "x" }),
     /is taken in this organisation/,
   );
 });
 
 test("storeAgentSecret validates its input and stops at the per-agent cap", async () => {
   const db = new SecretsDb();
-  await assert.rejects(() => storeAgentSecret(db as never, AGENT, { name: "1BAD", description: "d", value: "x" }), AgentSecretError);
-  await assert.rejects(() => storeAgentSecret(db as never, AGENT, { name: "OK", description: "", value: "x" }), AgentSecretError);
+  await assert.rejects(() => storeAgentSecretThrough(db as never, AGENT, { name: "1BAD", description: "d", value: "x" }), AgentSecretError);
+  await assert.rejects(() => storeAgentSecretThrough(db as never, AGENT, { name: "OK", description: "", value: "x" }), AgentSecretError);
   await assert.rejects(
-    () => storeAgentSecret(db as never, AGENT, { name: "OK", description: "d", value: " \n" }),
+    () => storeAgentSecretThrough(db as never, AGENT, { name: "OK", description: "d", value: " \n" }),
     /value must contain non-whitespace text/,
   );
   await assert.rejects(
-    () => storeAgentSecret(db as never, AGENT, { name: "OK", description: "d".repeat(401), value: "x" }),
+    () => storeAgentSecretThrough(db as never, AGENT, { name: "OK", description: "d".repeat(401), value: "x" }),
     /at most 400/,
   );
   for (let index = 0; index < AGENT_SECRET_CAP; index += 1) {
-    await storeAgentSecret(db as never, AGENT, { name: `KEY_${index}`, description: "d", value: "x" });
+    await storeAgentSecretThrough(db as never, AGENT, { name: `KEY_${index}`, description: "d", value: "x" });
   }
   await assert.rejects(
-    () => storeAgentSecret(db as never, AGENT, { name: "ONE_TOO_MANY", description: "d", value: "x" }),
+    () => storeAgentSecretThrough(db as never, AGENT, { name: "ONE_TOO_MANY", description: "d", value: "x" }),
     /already stored 20 secrets/,
   );
-  await storeAgentSecret(db as never, AGENT, { name: "KEY_0", description: "rotating is not a new secret", value: "y" });
+  await storeAgentSecretThrough(db as never, AGENT, { name: "KEY_0", description: "rotating is not a new secret", value: "y" });
 });
 
 function call(name: string, args: Record<string, unknown>): ToolCall {
@@ -197,7 +198,7 @@ test("secret_store redacts the stored value from later results in the generation
     handler: async () => "the key is sk-live-999",
   };
   const stores: Array<Record<string, unknown>> = [];
-  const ctx = createToolContext({
+  const ctx = toolFixture({
     run_id: "r_1",
     agent_id: "a_1",
     guild_id: "g_1",
@@ -211,17 +212,17 @@ test("secret_store redacts the stored value from later results in the generation
       },
     },
   });
-  const [stored] = await invokeTool(ctx, call("secret_store", { name: "ACME_KEY", description: "d", file: "key.txt" }), redactions, 32768);
+  const [stored] = await invokeTool(ctx.services, ctx.run, ctx.hooks, call("secret_store", { name: "ACME_KEY", description: "d", file: "key.txt" }));
   assert.deepEqual(stores, [{ name: "ACME_KEY", description: "d", file: "key.txt" }]);
   assert.match(String(stored.content), /\{"stored":"ACME_KEY","rotated":false\}/);
   assert.match(String(stored.content), /in your environment from the next generation/);
   assert.equal(String(stored.content).includes("sk-live-999"), false);
-  const [echoed] = await invokeTool(ctx, call("echo_value", {}), redactions, 32768);
+  const [echoed] = await invokeTool(ctx.services, ctx.run, ctx.hooks, call("echo_value", {}));
   assert.match(String(echoed.content), /the key is \[REDACTED:ACME_KEY\]/);
 });
 
 test("secret_request asks in a direct chat and writes nothing", async () => {
-  const ctx = createToolContext({
+  const ctx = toolFixture({
     run_id: "r_1",
     agent_id: "a_1",
     guild_id: "g_1",
@@ -230,16 +231,16 @@ test("secret_request asks in a direct chat and writes nothing", async () => {
     secret_names: ["ALREADY_SET"],
   });
   const args = { name: "ACME_KEY", description: "Calls Acme", reason: "The report needs Acme data." };
-  const [asked] = await invokeTool(ctx, call("secret_request", args), {}, 32768);
+  const [asked] = await invokeTool(ctx.services, ctx.run, ctx.hooks, call("secret_request", args));
   const [first, line] = String(asked.content).split("\n");
   assert.deepEqual(JSON.parse(first!), { widget: "secret_request", name: "ACME_KEY", status: "asked" });
   assert.match(String(line), /End your turn now/);
-  const [available] = await invokeTool(ctx, call("secret_request", { ...args, name: "ALREADY_SET" }), {}, 32768);
+  const [available] = await invokeTool(ctx.services, ctx.run, ctx.hooks, call("secret_request", { ...args, name: "ALREADY_SET" }));
   assert.match(String(available.content), /^\{"status":"available"\}/);
-  const [noReason] = await invokeTool(ctx, call("secret_request", { ...args, reason: " " }), {}, 32768);
+  const [noReason] = await invokeTool(ctx.services, ctx.run, ctx.hooks, call("secret_request", { ...args, reason: " " }));
   assert.match(String(noReason.content), /reason must contain/);
-  const groupCtx = { ...ctx, run_kind: "group" };
-  const [group] = await invokeTool(groupCtx, call("secret_request", args), {}, 32768);
+  const groupCtx = { ...ctx, run: { ...ctx.run, run_kind: "group" } };
+  const [group] = await invokeTool(groupCtx.services, groupCtx.run, groupCtx.hooks, call("secret_request", args));
   assert.match(String(group.content), /only available in a direct chat/);
 });
 
@@ -253,10 +254,10 @@ test("secret_request is offered on direct runs only; secret_store on every run",
 test("the generation's secret store removes the value file and resyncs the agent's active runs", async () => {
   const secrets = new SecretsDb();
   const db = Object.assign(new FakeDB({ secrets: [] }), {
-    getSecretByName: secrets.getSecretByName.bind(secrets),
-    countSecretsCreatedByAgent: secrets.countSecretsCreatedByAgent.bind(secrets),
-    insertSecret: secrets.insertSecret.bind(secrets),
-    updateSecret: secrets.updateSecret.bind(secrets),
+    storeAgentSecret: (
+      agent: { id: string; orgId: string },
+      input: { name: unknown; description: unknown; value: string },
+    ) => storeAgentSecretThrough(secrets as never, agent, input),
   });
   const root = tempDir("guilds-secret-loop-");
   mkdirSync(path.join(root, "mach_1", "a_1"), { recursive: true });

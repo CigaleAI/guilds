@@ -170,7 +170,7 @@ Apply re-reads the live content and refuses with 409 when its hash no
 longer matches the base. Otherwise it writes as the operator under the
 session lock:
 
-- Memory and notes go through `writeMemory` / `writeNote` with the
+- Memory and notes go through `writeMemory` / `writeNoteAt` with the
   expected version, so they produce a memory revision and a
   `file_changes` row that carries the edit tool's call id and name.
 - The guild goes through `updateGuild` and refreshes the session's
@@ -264,6 +264,8 @@ with `kind: "collection"` and that `action`:
   row). Those subjects are the source guild and its live members. The
   organisation's row and the rows of other guilds and their agents
   are shown and never changed.
+- `scope` and `access` are read before anything else the request
+  names is checked.
 - An edit must carry the `updated_at` the coach read and change
   something. A name already taken is refused.
 - On an organisation collection, an edit keeps the name, the purpose,
@@ -336,7 +338,7 @@ answer. Discarding stores `discarded_by_user_id`; publishing stores
 `studio_call_connection_tool(connection_id, tool, arguments)` proxies
 one call through the orchestrator's MCP pool on a granted, connected
 login. The tool must be listed on that connection and pass
-`isReadOnlyRemote` (`apps/orchestrator/src/mcp/policy.ts`):
+`isReadOnlyRemote` (`apps/orchestrator/src/connectors/servers.ts`):
 
 - default-off tools are refused
 - a tool the connector's manifest lists is readable unless it is
@@ -370,24 +372,41 @@ PUT    /api/studio/sessions/:id/connections/:connection_id   { granted: true | f
   not a login request is 404; an answered request is 409.
 - `GET …/connections` lists every login reachable from the source
   guild: platform, organisation, guild, and live-member scope.
-- `PUT …/connections/:connection_id` grants or revokes one. The
-  connection must be reachable from the source guild and `connected`.
+- `PUT …/connections/:connection_id` grants or revokes one: `granted`
+  is a boolean, and left out grants. The connection must be reachable
+  from the source guild and `connected`.
+- A body that is not a JSON object, or a field of another type, is 422
+  naming the field, before the request's user is identified.
 
 ### Storage
 
 An edit or login request is a `studio_messages` tool row whose
 resolution is in its metadata.
 
+Reading an edit request back checks the row's content once against
+the widget's schema: one shape per `edit.kind` (`memory`, `note`,
+`guild`, `collection`, `routine`, `access`), and for `note` one for a
+body edit and one for a create or delete, which carries `action`. A
+row whose content does not match is not an edit request (404). Viewing
+and applying read the target, hashes, and action from the parsed
+request. A login request is read back the same way: its content is a
+`studio_connection_access` widget whose `connection` carries a string
+`id`, or the row is not a login request (404).
+
 ### Code paths
 
 | Path | What it holds |
 |---|---|
-| `apps/orchestrator/src/studio/edits.ts` | Edit, note, and guild requests: review and apply |
+| `apps/orchestrator/src/studio/edits.ts` | Memory, note body, and guild requests, and reading and applying every edit request |
+| `apps/orchestrator/src/studio/edit-request.ts` | The request an edit tool returns instead of writing: its reason, content limit, line counts, and widget, with the widget's schema keyed on `edit.kind` and its parse from a tool row |
+| `apps/orchestrator/src/studio/note-edits.ts` | Note requests: the note a body edit replaces, and notes created or deleted |
 | `apps/orchestrator/src/studio/access.ts` | Access requests |
-| `apps/orchestrator/src/studio/tables.ts` | Collection requests and collection evidence |
+| `apps/orchestrator/src/studio/tables.ts` | Collection requests read from the coach's arguments, their review and its wording, and collection evidence |
+| `apps/orchestrator/src/artifacts/guild-tables.ts` | `planGuildTableChange`: the rules a collection request follows and what it writes; `guildTableEditEffects`: what a collection edit does to its records and readers |
+| `apps/orchestrator/src/artifacts/access-lists.ts` | `planGuildAccess`: the access rows a collection request changes |
 | `apps/orchestrator/src/studio/routines.ts` | Routine requests |
 | `apps/orchestrator/src/studio/connections.ts` | Connection grants and the read-only proxy |
-| `apps/orchestrator/src/mcp/policy.ts` | `isReadOnlyRemote` |
+| `apps/orchestrator/src/connectors/servers.ts` | `isReadOnlyRemote` |
 | `apps/web/src/features/studio/pendingModel.ts` | The turn's requests: where each lands and what was answered |
 | `apps/web/src/features/studio/approvals.ts` | Deciding requests from anywhere and the reply that continues the coach |
 | `apps/web/src/features/studio/ProposalCards.tsx`, `ApprovalTray.tsx`, `chatModel.ts` | The cards and the header tray |

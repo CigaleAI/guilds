@@ -1,13 +1,15 @@
-import { DEFAULT_MAX_WORKSPACE_MIB, maxWorkspaceMibOf } from "../agents/validation.js";
+import { DEFAULT_MAX_WORKSPACE_MIB } from "../agents/config.js";
 import { setAgentWorkspaceMib, type AgentRow } from "../db/agents.js";
 import { setMachineWorkspaceMib } from "../db/machines.js";
-import { bindQuery, type Queryable } from "../db/pg.js";
-import { DEFAULT_MACHINE_MAX_WORKSPACE_MIB } from "../db/schema/index.js";
+import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
+import { DEFAULT_MACHINE_MAX_WORKSPACE_MIB, type AgentConfig } from "../db/schema/index.js";
 import { agentHome } from "../lib/agent-file.js";
-import { errorMessage, errorName, writeLog } from "../observability/log.js";
-import { agentSandbox, seatEnvironment, type SandboxHandle } from "../sandbox/index.js";
+import { errorMessage } from "../observability/log.js";
+import { agentSandbox, seatEnvironment } from "../sandbox/index.js";
+import type { SandboxHandle } from "../sandbox/sdk.js";
 import { measureMachine, measureWorkspace } from "../toolbox/code.js";
-import { createToolContext, type ToolContext } from "../toolbox/index.js";
+import { createToolHooks, createToolRun, type ToolRun } from "../toolbox/index.js";
+import type { OperationFailure } from "./errors.js";
 import type { RunEvents, RunGeneration } from "./events.js";
 import { agentSeat } from "./machines.js";
 
@@ -21,16 +23,16 @@ export function workspaceMaxMib(env: NodeJS.ProcessEnv = process.env): number {
 
 /** The workspace cap this agent is held to: its own max, and never above the host cap. */
 export function agentWorkspaceMaxMib(
-  config: Record<string, unknown> | null | undefined,
+  config: Pick<AgentConfig, "max_workspace_mib">,
   env: NodeJS.ProcessEnv = process.env,
 ): number {
-  return Math.min(maxWorkspaceMibOf(config), workspaceMaxMib(env));
+  return Math.min(config.max_workspace_mib, workspaceMaxMib(env));
 }
 
-/** A tool context for platform work in the sandbox: not cancellable, not tracked, no secrets. */
-export function maintenanceContext(runId: string, agent: AgentRow, sandbox: SandboxHandle): ToolContext {
+/** A run record for platform work in the sandbox: not cancellable, no secrets; its commands run untracked. */
+export function maintenanceRun(runId: string, agent: AgentRow, sandbox: SandboxHandle): ToolRun {
   const seat = agentSeat(agent);
-  return createToolContext({
+  return createToolRun({
     run_id: runId,
     agent_id: agent.id,
     guild_id: agent.guild_id,
@@ -39,15 +41,19 @@ export function maintenanceContext(runId: string, agent: AgentRow, sandbox: Sand
   });
 }
 
+/** The db/ functions the workspace sizes are kept through. */
+export type WorkspaceLimitsDatabase = {
+  setAgentWorkspaceMib: BoundQuery<typeof setAgentWorkspaceMib>;
+  setMachineWorkspaceMib: BoundQuery<typeof setMachineWorkspaceMib>;
+};
+
 /** The db/ functions the workspace sizes are kept through, on `db`. */
-export function workspaceLimitsDatabase(db: Queryable) {
+export function workspaceLimitsDatabase(db: Queryable): WorkspaceLimitsDatabase {
   return {
     setAgentWorkspaceMib: bindQuery(db, setAgentWorkspaceMib),
     setMachineWorkspaceMib: bindQuery(db, setMachineWorkspaceMib),
   };
 }
-
-export type WorkspaceLimitsDatabase = ReturnType<typeof workspaceLimitsDatabase>;
 
 /** A size the workspace check holds to its limit: the agent's home, or its machine's directory. */
 type WorkspaceCheck = {
@@ -74,7 +80,7 @@ export class WorkspaceLimits {
    * generation that may not start records why.
    */
   async hasRoom(turn: RunGeneration, agent: AgentRow, sandbox: SandboxHandle): Promise<boolean> {
-    for (const check of this.checks(maintenanceContext(turn.runId, agent, sandbox), agent)) {
+    for (const check of this.checks(maintenanceRun(turn.runId, agent, sandbox), agent)) {
       if (check.stored === null || check.stored <= check.limit) {
         continue;
       }
@@ -95,34 +101,38 @@ export class WorkspaceLimits {
     return true;
   }
 
-  /** Measures the agent's home and its machine's directory and stores both sizes; a failure is logged. */
-  async recordSize(runId: string, agent: AgentRow, sandbox: SandboxHandle): Promise<void> {
-    const ctx = maintenanceContext(runId, agent, sandbox);
+  /**
+   * Measures the agent's home and its machine's directory and stores both sizes; returns the
+   * failure of a measure that did not go through, which leaves the sizes stored before.
+   */
+  async recordSize(runId: string, agent: AgentRow, sandbox: SandboxHandle): Promise<OperationFailure | null> {
+    const run = maintenanceRun(runId, agent, sandbox);
     try {
-      await this.db.setAgentWorkspaceMib(agent.id, await measureWorkspace(ctx));
-      await this.db.setMachineWorkspaceMib(agent.machine_id, await measureMachine(ctx));
+      await this.db.setAgentWorkspaceMib(agent.id, await measureWorkspace(run, createToolHooks()));
+      await this.db.setMachineWorkspaceMib(agent.machine_id, await measureMachine(run, createToolHooks()));
+      return null;
     } catch (error) {
-      writeLog(
-        "warn",
-        errorMessage(error),
-        { run_id: runId, agent_id: agent.id, operation: "workspace.measure", error_type: errorName(error) },
-      );
+      return {
+        message: errorMessage(error),
+        fields: { run_id: runId, agent_id: agent.id, operation: "workspace.measure" },
+        error,
+      };
     }
   }
 
-  private checks(ctx: ToolContext, agent: AgentRow): WorkspaceCheck[] {
+  private checks(run: ToolRun, agent: AgentRow): WorkspaceCheck[] {
     return [
       {
         limit: agentWorkspaceMaxMib(agent.config),
         stored: agent.workspace_mib,
-        measure: () => measureWorkspace(ctx),
+        measure: () => measureWorkspace(run, createToolHooks()),
         store: (mib) => this.db.setAgentWorkspaceMib(agent.id, mib),
         what: "the agent's home",
       },
       {
         limit: agent.machine_max_workspace_mib ?? DEFAULT_MACHINE_MAX_WORKSPACE_MIB,
         stored: agent.machine_workspace_mib,
-        measure: () => measureMachine(ctx),
+        measure: () => measureMachine(run, createToolHooks()),
         store: (mib) => this.db.setMachineWorkspaceMib(agent.machine_id, mib),
         what: `machine ${agent.machine_name ?? agent.machine_id}`,
       },

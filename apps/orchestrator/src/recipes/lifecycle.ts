@@ -13,8 +13,10 @@ import { schedulesForRole } from "./prepare.js";
 // An apply from its open checklist to its close: activated, which unpauses its routines, or
 // aborted, which removes the guild it created.
 
-export async function getApply(apply: RecipeApply, applyId: string): Promise<RecipeApplyRow | null> {
-  return getRecipeApply(apply.db, applyId);
+/** The apply when it belongs to the organisation, otherwise null. */
+export async function orgApply(apply: RecipeApply, orgId: string, applyId: string): Promise<RecipeApplyRow | null> {
+  const row = await getRecipeApply(apply.db, applyId);
+  return row && row.org_id === orgId ? row : null;
 }
 
 /** The open checklist, and agents whose recipe login was deferred until after activate. */

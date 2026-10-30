@@ -14,26 +14,22 @@ import {
   postsTool,
   searchTool,
 } from "../../src/connectors/x/client.js";
-import { ListedTool, McpError, McpPool } from "../../src/mcp/index.js";
+import { McpError } from "../../src/mcp/errors.js";
+import { McpPool, OPERATOR_CALLER } from "../../src/mcp/pool.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { ConnectorError } from "../../src/connectors/types.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { mockFetch } from "../helpers/http.js";
 import { serverRow } from "../helpers/servers.js";
 import { connectionRow } from "../helpers/servers.js";
+import { MemoryMcpDatabase } from "../helpers/mcp-database.js";
+import { restoreConnectorsAfterEach, runConnectors } from "../helpers/installed.js";
+
+restoreConnectorsAfterEach();
 
 const KEY = decodeMasterKey(HEX_MASTER_KEY);
 const TOOLS = CONNECTORS.bySlug("x")!.manifest.tools!;
 
-class MemoryDb {
-  rows: Array<Record<string, unknown>> = [];
-  async replaceMcpTools(_id: string, tools: ListedTool[]) {
-    this.rows = tools.map((tool) => ({ ...tool }));
-  }
-  async listMcpTools() {
-    return this.rows;
-  }
-}
 
 test("formatSearch is compact TSV", () => {
   const payload = {
@@ -49,7 +45,7 @@ test("formatSearch is compact TSV", () => {
     },
     meta: { result_count: 1, next_token: "page-2" },
   };
-  const stored = formatSearch(payload, { query: "from:elonmusk" });
+  const stored = formatSearch(payload, "from:elonmusk");
   assert.equal(
     stored,
     "from:elonmusk  n=1\n"
@@ -70,7 +66,7 @@ test("formatPosts caps rows and clips text", () => {
     })),
     includes: { users: [{ id: "1", username: "x", name: "X" }] },
   };
-  const stored = formatPosts(payload, { limit: 3 });
+  const stored = formatPosts(payload, 3);
   const lines = stored.split("\n");
   assert.equal(lines.length, 4);
   assert.equal(lines.at(-1), "+17 more");
@@ -154,6 +150,23 @@ test("search sends a bearer token", async () => {
   assert.equal(stored, "from:x  n=1\n1  @x  X  likes=-  rts=-  replies=-  quotes=-  hi");
 });
 
+test("search refuses a body that is not JSON or does not match its schema", async () => {
+  const answering = (result: { json?: unknown; text?: string }) => ({
+    apiKey: "tok-test",
+    client: mockFetch(() => ({ status: 200, ...result })),
+  });
+  await assert.rejects(
+    () => searchTool({ query: "from:x" }, answering({ json: { meta: "none" } })),
+    (error: unknown) =>
+      error instanceof XError &&
+      /^X returned an unexpected response at \/meta: /.test(error.message),
+  );
+  await assert.rejects(
+    () => searchTool({ query: "from:x" }, answering({ text: "not json" })),
+    (error: unknown) => error instanceof XError && error.message === "X returned a non-JSON body",
+  );
+});
+
 test("posts resolves username then timeline", async () => {
   const seen: string[] = [];
   const stored = await postsTool(
@@ -191,38 +204,37 @@ test("callTool unknown name", async () => {
 test("sync X writes the curated catalog", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   let pinged = 0;
-  const pool = new McpPool(10 * 60 * 1000);
-  pool.connectors = CONNECTORS.withAdapter("x", {
+  const pool = new McpPool(new MemoryMcpDatabase(), 10 * 60 * 1000);
+  runConnectors(CONNECTORS.withAdapter("x", {
     async validate(creds) {
       const apiKey = creds.token;
       pinged += 1;
       assert.equal(apiKey, "tok-test");
       return "";
     },
-  });
+  }));
   const [ciphertext, nonce] = encryptPayload({ token: "tok-test" }, KEY);
-  const db = new MemoryDb();
   const connection = connectionRow({ id: "conn_x", status: "connected", ciphertext, nonce });
   const server = serverRow("x", { id: "mcp_x", auth: "token" });
-  const first = await pool.syncTools(db as never, connection, server, { force: true });
-  const second = await pool.syncTools(db as never, connection, server);
+  const first = await pool.syncTools(connection, server, { force: true });
+  const second = await pool.syncTools(connection, server);
   assert.equal(pinged, 1);
   assert.deepEqual(first.map((tool) => tool.namespaced_name), TOOLS.map((spec) => `x_${spec.name}`));
   assert.deepEqual(first, second);
-  assert.deepEqual(first[0], new ListedTool("search", "x_search", TOOLS[0]!.description, TOOLS[0]!.input_schema));
+  assert.deepEqual(first[0], { remote_name: "search", namespaced_name: "x_search", description: TOOLS[0]!.description, input_schema: TOOLS[0]!.input_schema, read_only_hint: null, destructive_hint: null });
 });
 
 test("sync X rejects a bad key", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
-  const pool = new McpPool();
-  pool.connectors = CONNECTORS.withAdapter("x", {
+  const pool = new McpPool(new MemoryMcpDatabase());
+  runConnectors(CONNECTORS.withAdapter("x", {
     async validate() {
       throw new ConnectorError("Unauthorized", 401);
     },
-  });
+  }));
   const [ciphertext, nonce] = encryptPayload({ token: "bad" }, KEY);
   await assert.rejects(
-    () => pool.syncTools(new MemoryDb() as never, connectionRow({ id: "conn_x", status: "connected", ciphertext, nonce }), serverRow("x", { id: "mcp_x", auth: "token" }), { force: true }),
+    () => pool.syncTools(connectionRow({ id: "conn_x", status: "connected", ciphertext, nonce }), serverRow("x", { id: "mcp_x", auth: "token" }), { force: true }),
     (error: unknown) => error instanceof McpError && error.status === 401,
   );
 });
@@ -230,22 +242,20 @@ test("sync X rejects a bad key", async () => {
 test("call X dispatches", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const seen: Record<string, unknown> = {};
-  const pool = new McpPool();
-  pool.connectors = CONNECTORS.withAdapter("x", {
+  const pool = new McpPool(new MemoryMcpDatabase());
+  runConnectors(CONNECTORS.withAdapter("x", {
     async call(name, arguments_, creds) {
       seen.name = name;
       seen.arguments = arguments_;
       seen.api_key = creds.token;
       return "from:x  n=0";
     },
-  });
+  }));
   const [ciphertext, nonce] = encryptPayload({ token: "tok-test" }, KEY);
   const stored = await pool.call(
-    new MemoryDb() as never,
     connectionRow({ id: "conn_x", status: "connected", ciphertext, nonce }),
     serverRow("x", { id: "mcp_x", auth: "token" }),
-    "search",
-    { query: "from:x" },
+    { tool: "search", arguments: { query: "from:x" }, caller: OPERATOR_CALLER },
   );
   assert.equal(stored, "from:x  n=0");
   assert.deepEqual(seen, { name: "search", arguments: { query: "from:x" }, api_key: "tok-test" });

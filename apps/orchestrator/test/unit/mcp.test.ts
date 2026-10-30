@@ -5,23 +5,21 @@ import { test } from "node:test";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import { decodeMasterKey } from "../../src/config/index.js";
-import {
-  CALL_TOOL_TIMEOUT_MS,
-  ListedTool,
-  McpDisconnectedError,
-  McpError,
-  McpPool,
-  McpSession,
-  authHeaders,
-  isReadOnlyRemote,
-  mcpSchema,
-  rpcPayload,
-} from "../../src/mcp/index.js";
+import { McpDisconnectedError, McpError } from "../../src/mcp/errors.js";
+import { mcpSchema } from "../../src/mcp/tools.js";
+import { CALL_TOOL_TIMEOUT_MS, McpSession, rpcPayload } from "../../src/mcp/session.js";
+import { authHeaders } from "../../src/mcp/login-auth.js";
+import { McpPool, OPERATOR_CALLER, relistTools, type ToolListing } from "../../src/mcp/pool.js";
+import { isReadOnlyRemote } from "../../src/connectors/servers.js";
 import { TOKEN_REFRESH_MS } from "../../src/github/tokens.js";
 import { setInstanceKeys } from "../../src/instance/integrations.js";
 import { HEX_MASTER_KEY, storeKeys } from "../helpers/env.js";
 import { serverRow, connectionRow } from "../helpers/servers.js";
 import type { GithubRepositorySelection, Manifest } from "../../src/db/schema/index.js";
+import { MemoryMcpDatabase, storedTool } from "../helpers/mcp-database.js";
+import { restoreConnectorsAfterEach, runConnectors } from "../helpers/installed.js";
+
+restoreConnectorsAfterEach();
 
 const KEY = decodeMasterKey(HEX_MASTER_KEY);
 
@@ -30,50 +28,6 @@ function connectionOf(token: string, extra: Partial<McpConnectionRow> = {}): Mcp
   return connectionRow({ id: "conn_1", status: "connected", ciphertext, nonce, ...extra });
 }
 
-class MemoryDb {
-  rows: Array<Record<string, unknown>> = [];
-  bindings = new Map<string, Record<string, unknown>>();
-
-  async replaceMcpTools(_connectionId: string, tools: ListedTool[], now: Date) {
-    this.rows = tools.map((tool) => ({
-      remote_name: tool.remote_name,
-      namespaced_name: tool.namespaced_name,
-      description: tool.description,
-      input_schema: tool.input_schema,
-      listed_at: now.toISOString(),
-    }));
-  }
-
-  async listMcpTools() {
-    return this.rows;
-  }
-
-  async insertBindingIfAbsent(input: {
-    bindingId: string;
-    catalogKind: string;
-    catalogId: string;
-    scope: string;
-    scopeId: string | null;
-    enabled: boolean;
-  }) {
-    const { bindingId, catalogKind, catalogId, scope, scopeId, enabled } = input;
-    const key = `${catalogKind}:${catalogId}:${scopeId}`;
-    const existing = this.bindings.get(key);
-    if (existing) {
-      return existing;
-    }
-    const row = {
-      id: bindingId,
-      catalog_kind: catalogKind,
-      catalog_id: catalogId,
-      scope,
-      scope_id: scopeId,
-      enabled,
-    };
-    this.bindings.set(key, row);
-    return row;
-  }
-}
 
 test("hosted MCP tool calls wait longer than adapter HTTP", () => {
   assert.equal(CALL_TOOL_TIMEOUT_MS, 90_000);
@@ -81,7 +35,8 @@ test("hosted MCP tool calls wait longer than adapter HTTP", () => {
 
 test("hosted MCP calls drop empty optional strings only", async () => {
   const seen: Array<Record<string, unknown>> = [];
-  const pool = new McpPool();
+  const db = new MemoryMcpDatabase();
+  const pool = new McpPool(db);
   pool.session = async () =>
     ({
       async callTool(_name: string, arguments_: Record<string, unknown>) {
@@ -89,9 +44,8 @@ test("hosted MCP calls drop empty optional strings only", async () => {
         return "ok";
       },
     }) as never;
-  const db = new MemoryDb();
-  db.rows = [
-    {
+  db.tools = [
+    storedTool("conn_1", {
       remote_name: "generate_reply_options",
       namespaced_name: "cigale_generate_reply_options",
       description: "Draft replies",
@@ -105,18 +59,20 @@ test("hosted MCP calls drop empty optional strings only", async () => {
         },
         required: ["tweetId", "agentId"],
       },
-    },
+    }),
   ];
   const result = await pool.call(
-    db as never,
     connectionRow({ id: "conn_1", status: "connected", ciphertext: Buffer.alloc(0), nonce: Buffer.alloc(0) }),
     serverRow("cigale", { auth: "token", config: { url: "https://api.cigale.ai/api/v1/public/mcp" } }),
-    "generate_reply_options",
     {
-      tweetId: "",
-      agentId: "11111111-1111-1111-1111-111111111111",
-      campaignId: "",
-      prompt: "Reply",
+      tool: "generate_reply_options",
+      arguments: {
+        tweetId: "",
+        agentId: "11111111-1111-1111-1111-111111111111",
+        campaignId: "",
+        prompt: "Reply",
+      },
+      caller: OPERATOR_CALLER,
     },
   );
   assert.equal(result, "ok");
@@ -129,9 +85,66 @@ test("hosted MCP calls drop empty optional strings only", async () => {
   ]);
 });
 
+test("a call whose login's stored listing cannot be read fails and calls nothing", async () => {
+  const seen: Array<Record<string, unknown>> = [];
+  const db = new MemoryMcpDatabase();
+  const unreadable = new Error("connection terminated");
+  db.listMcpTools = async () => {
+    throw unreadable;
+  };
+  const pool = new McpPool(db);
+  pool.session = async () =>
+    ({
+      async callTool(_name: string, arguments_: Record<string, unknown>) {
+        seen.push(arguments_);
+        return "ok";
+      },
+    }) as never;
+  await assert.rejects(
+    pool.call(connectionOf("tok"), serverRow("cigale", { auth: "token", config: { url: "https://api.cigale.ai/mcp" } }), {
+      tool: "generate_reply_options",
+      arguments: { prompt: "" },
+      caller: OPERATOR_CALLER,
+    }),
+    unreadable,
+  );
+  assert.deepEqual(seen, []);
+});
+
+test("relisting a login's tools answers the listing, or null when it fails", async () => {
+  const listing = [
+    {
+      remote_name: "search",
+      namespaced_name: "notion_search",
+      description: "Search",
+      input_schema: { type: "object" },
+      read_only_hint: null,
+      destructive_hint: null,
+    },
+  ];
+  const asked: ToolListing[] = [];
+  const listingPool = {
+    syncTools: async (_connection: McpConnectionRow, _server: unknown, options: ToolListing = {}) => {
+      asked.push(options);
+      return listing;
+    },
+  };
+  const server = serverRow("notion");
+  assert.deepEqual(await relistTools(listingPool, connectionOf("tok"), server, { force: true }), listing);
+  assert.deepEqual(asked, [{ force: true }]);
+  const failing = {
+    syncTools: async () => {
+      throw new McpError("mcp 503", 503);
+    },
+  };
+  assert.equal(await relistTools(failing, connectionOf("tok"), server, { force: true, validate: false }), null);
+});
+
 test("offered Cigale schema marks optional strings for omit", () => {
-  const schema = mcpSchema(
-    new ListedTool("generate_reply_options", "cigale_generate_reply_options", "Draft replies", {
+  const schema = mcpSchema({
+    namespaced_name: "cigale_generate_reply_options",
+    description: "Draft replies",
+    input_schema: {
       type: "object",
       properties: {
         tweetId: { type: "string", minLength: 1 },
@@ -141,8 +154,8 @@ test("offered Cigale schema marks optional strings for omit", () => {
       },
       required: ["tweetId", "agentId"],
       additionalProperties: false,
-    }),
-  );
+    },
+  });
   const parameters = (schema.function as { parameters: Record<string, unknown> }).parameters;
   const properties = parameters.properties as {
     campaignId: Record<string, unknown>;
@@ -157,8 +170,10 @@ test("offered Cigale schema marks optional strings for omit", () => {
 });
 
 test("mcpSchema drops format uuid from optional properties", () => {
-  const schema = mcpSchema(
-    new ListedTool("generate_reply_options", "cigale_generate_reply_options", "Draft replies", {
+  const schema = mcpSchema({
+    namespaced_name: "cigale_generate_reply_options",
+    description: "Draft replies",
+    input_schema: {
       type: "object",
       properties: {
         tweetId: { type: "string" },
@@ -179,8 +194,8 @@ test("mcpSchema drops format uuid from optional properties", () => {
       },
       required: ["tweetId", "agentId"],
       additionalProperties: false,
-    }),
-  );
+    },
+  });
   const parameters = (schema.function as { parameters: Record<string, unknown> }).parameters;
   const properties = parameters.properties as {
     agentId: Record<string, unknown>;
@@ -200,8 +215,10 @@ test("mcpSchema drops format uuid from optional properties", () => {
 });
 
 test("mcpSchema drops format on nullable required properties", () => {
-  const schema = mcpSchema(
-    new ListedTool("generate_reply_options", "cigale_generate_reply_options", "Draft replies", {
+  const schema = mcpSchema({
+    namespaced_name: "cigale_generate_reply_options",
+    description: "Draft replies",
+    input_schema: {
       type: "object",
       properties: {
         tweetId: { type: "string" },
@@ -215,8 +232,8 @@ test("mcpSchema drops format on nullable required properties", () => {
         },
       },
       required: ["tweetId", "campaignId", "window"],
-    }),
-  );
+    },
+  });
   const properties = (
     schema.function as {
       parameters: {
@@ -232,38 +249,38 @@ test("mcpSchema drops format on nullable required properties", () => {
 });
 
 test("isReadOnlyRemote classifies tools Studio may proxy", () => {
-  assert.equal(isReadOnlyRemote("notion", "notion-search"), true);
-  assert.equal(isReadOnlyRemote("notion", "notion-fetch"), true);
-  assert.equal(isReadOnlyRemote("notion", "notion-get-users"), true);
-  assert.equal(isReadOnlyRemote("notion", "notion-create-pages"), false);
-  assert.equal(isReadOnlyRemote("notion", "notion-update-page"), false);
-  assert.equal(isReadOnlyRemote("notion", "notion-move-pages"), false);
-  assert.equal(isReadOnlyRemote("gmail", "search_messages"), true);
-  assert.equal(isReadOnlyRemote("gmail", "send_message"), false);
-  assert.equal(isReadOnlyRemote("drive", "search_files"), true);
-  assert.equal(isReadOnlyRemote("drive", "read_file_content"), true);
-  assert.equal(isReadOnlyRemote("drive", "create_file"), false);
-  assert.equal(isReadOnlyRemote("drive", "copy_file"), false);
-  assert.equal(isReadOnlyRemote("gmail", "createDraft"), false);
-  assert.equal(isReadOnlyRemote("gmail", "trash_message"), false);
-  assert.equal(isReadOnlyRemote("x", "post"), true);
-  assert.equal(isReadOnlyRemote("twitterapiio", "replies"), true);
-  assert.equal(isReadOnlyRemote("coingecko", "search"), true);
-  assert.equal(isReadOnlyRemote("wallet", "get_balance"), true);
-  assert.equal(isReadOnlyRemote("wallet", "send"), false);
-  assert.equal(isReadOnlyRemote("wallet", "swap"), false);
-  assert.equal(isReadOnlyRemote("wallet", "uniswap_swap"), false);
-  assert.equal(isReadOnlyRemote("opensea", "search_collections"), true);
-  assert.equal(isReadOnlyRemote("opensea", "manage_wallets"), false);
-  assert.equal(isReadOnlyRemote("etherscan", "get_transaction"), true);
-  assert.equal(isReadOnlyRemote("qonto", "list_bank_accounts"), true);
-  assert.equal(isReadOnlyRemote("qonto", "list_missing_invoices"), true);
-  assert.equal(isReadOnlyRemote("qonto", "get_transaction"), true);
-  assert.equal(isReadOnlyRemote("qonto", "upload_invoice"), false);
-  assert.equal(isReadOnlyRemote("github", "push_files"), false);
-  assert.equal(isReadOnlyRemote("github", "merge_pull_request"), false);
-  assert.equal(isReadOnlyRemote("github", "actions_run_trigger"), false);
-  assert.equal(isReadOnlyRemote("github", "pull_request_read"), true);
+  assert.equal(isReadOnlyRemote(serverRow("notion"), "notion-search", null), true);
+  assert.equal(isReadOnlyRemote(serverRow("notion"), "notion-fetch", null), true);
+  assert.equal(isReadOnlyRemote(serverRow("notion"), "notion-get-users", null), true);
+  assert.equal(isReadOnlyRemote(serverRow("notion"), "notion-create-pages", null), false);
+  assert.equal(isReadOnlyRemote(serverRow("notion"), "notion-update-page", null), false);
+  assert.equal(isReadOnlyRemote(serverRow("notion"), "notion-move-pages", null), false);
+  assert.equal(isReadOnlyRemote(serverRow("gmail"), "search_messages", null), true);
+  assert.equal(isReadOnlyRemote(serverRow("gmail"), "send_message", null), false);
+  assert.equal(isReadOnlyRemote(serverRow("drive"), "search_files", null), true);
+  assert.equal(isReadOnlyRemote(serverRow("drive"), "read_file_content", null), true);
+  assert.equal(isReadOnlyRemote(serverRow("drive"), "create_file", null), false);
+  assert.equal(isReadOnlyRemote(serverRow("drive"), "copy_file", null), false);
+  assert.equal(isReadOnlyRemote(serverRow("gmail"), "createDraft", null), false);
+  assert.equal(isReadOnlyRemote(serverRow("gmail"), "trash_message", null), false);
+  assert.equal(isReadOnlyRemote(serverRow("x"), "post", null), true);
+  assert.equal(isReadOnlyRemote(serverRow("twitterapiio"), "replies", null), true);
+  assert.equal(isReadOnlyRemote(serverRow("coingecko"), "search", null), true);
+  assert.equal(isReadOnlyRemote(serverRow("wallet"), "get_balance", null), true);
+  assert.equal(isReadOnlyRemote(serverRow("wallet"), "send", null), false);
+  assert.equal(isReadOnlyRemote(serverRow("wallet"), "swap", null), false);
+  assert.equal(isReadOnlyRemote(serverRow("wallet"), "uniswap_swap", null), false);
+  assert.equal(isReadOnlyRemote(serverRow("opensea"), "search_collections", null), true);
+  assert.equal(isReadOnlyRemote(serverRow("opensea"), "manage_wallets", null), false);
+  assert.equal(isReadOnlyRemote(serverRow("etherscan"), "get_transaction", null), true);
+  assert.equal(isReadOnlyRemote(serverRow("qonto"), "list_bank_accounts", null), true);
+  assert.equal(isReadOnlyRemote(serverRow("qonto"), "list_missing_invoices", null), true);
+  assert.equal(isReadOnlyRemote(serverRow("qonto"), "get_transaction", null), true);
+  assert.equal(isReadOnlyRemote(serverRow("qonto"), "upload_invoice", null), false);
+  assert.equal(isReadOnlyRemote(serverRow("github"), "push_files", null), false);
+  assert.equal(isReadOnlyRemote(serverRow("github"), "merge_pull_request", null), false);
+  assert.equal(isReadOnlyRemote(serverRow("github"), "actions_run_trigger", null), false);
+  assert.equal(isReadOnlyRemote(serverRow("github"), "pull_request_read", null), true);
 });
 
 type Reply = { status: number; body: string; type?: string };
@@ -375,17 +392,16 @@ test("syncTools uses stored catalog within TTL", async () => {
     this.listed += 1;
     return [{ name: "search", description: "Search", inputSchema: {} }];
   } };
-  const pool = new McpPool(10 * 60 * 1000);
+  const pool = new McpPool(new MemoryMcpDatabase(), 10 * 60 * 1000);
   pool.session = async () => session as never;
-  const db = new MemoryDb();
   const connection = connectionRow({ id: "conn_1", status: "connected", ciphertext: Buffer.alloc(0), nonce: Buffer.alloc(0) });
   const server = serverRow("notion", { id: "mcp_notion", auth: "oauth" });
-  const first = await pool.syncTools(db as never, connection, server);
-  const second = await pool.syncTools(db as never, connection, server);
+  const first = await pool.syncTools(connection, server);
+  const second = await pool.syncTools(connection, server);
   assert.equal(session.listed, 1);
   assert.deepEqual(first, second);
-  assert.deepEqual(first, [new ListedTool("search", "notion_search", "Search", { type: "object" })]);
-  await pool.syncTools(db as never, connection, server, { force: true });
+  assert.deepEqual(first, [{ remote_name: "search", namespaced_name: "notion_search", description: "Search", input_schema: { type: "object" }, read_only_hint: null, destructive_hint: null }]);
+  await pool.syncTools(connection, server, { force: true });
   assert.equal(session.listed, 2);
 });
 
@@ -394,15 +410,15 @@ test("syncTools treats listed_at as fresh across a new pool", async () => {
     this.listed += 1;
     return [{ name: "search", description: "Search", inputSchema: {} }];
   } };
-  const db = new MemoryDb();
   const connection = connectionRow({ id: "conn_1", status: "connected", ciphertext: Buffer.alloc(0), nonce: Buffer.alloc(0) });
   const server = serverRow("notion", { id: "mcp_notion", auth: "oauth" });
-  const firstPool = new McpPool(10 * 60 * 1000);
+  const db = new MemoryMcpDatabase();
+  const firstPool = new McpPool(db, 10 * 60 * 1000);
   firstPool.session = async () => session as never;
-  await firstPool.syncTools(db as never, connection, server);
-  const secondPool = new McpPool(10 * 60 * 1000);
+  await firstPool.syncTools(connection, server);
+  const secondPool = new McpPool(db, 10 * 60 * 1000);
   secondPool.session = async () => session as never;
-  await secondPool.syncTools(db as never, connection, server);
+  await secondPool.syncTools(connection, server);
   assert.equal(session.listed, 1);
 });
 
@@ -411,20 +427,17 @@ test("syncTools re-lists when listed_at is older than the TTL", async () => {
     this.listed += 1;
     return [{ name: "search", description: "Search", inputSchema: {} }];
   } };
-  const db = new MemoryDb();
-  db.rows = [
-    {
-      remote_name: "search",
-      namespaced_name: "notion_search",
-      description: "Search",
-      input_schema: { type: "object" },
-      listed_at: new Date(Date.now() - 11 * 60 * 1000).toISOString(),
-    },
+  const db = new MemoryMcpDatabase();
+  db.tools = [
+    storedTool(
+      "conn_1",
+      { remote_name: "search", namespaced_name: "notion_search", description: "Search", input_schema: { type: "object" } },
+      new Date(Date.now() - 11 * 60 * 1000).toISOString(),
+    ),
   ];
-  const pool = new McpPool(10 * 60 * 1000);
+  const pool = new McpPool(db, 10 * 60 * 1000);
   pool.session = async () => session as never;
   await pool.syncTools(
-    db as never,
     connectionRow({ id: "conn_1", status: "connected", ciphertext: Buffer.alloc(0), nonce: Buffer.alloc(0) }),
     serverRow("notion", { id: "mcp_notion", auth: "oauth" }),
   );
@@ -497,7 +510,8 @@ test("an endpoint session sends a login's first credential field when it is not 
 
 test("sync OpenSea writes default-off and destructive tools Off, and reads On", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
-  const pool = new McpPool(10 * 60 * 1000);
+  const db = new MemoryMcpDatabase();
+  const pool = new McpPool(db, 10 * 60 * 1000);
   pool.session = async () => ({
     async listTools() {
       return [
@@ -507,16 +521,15 @@ test("sync OpenSea writes default-off and destructive tools Off, and reads On", 
       ];
     },
   }) as never;
-  const db = new MemoryDb();
   const server = serverRow("opensea", { id: "mcp_opensea", auth: "token" });
-  const first = await pool.syncTools(db as never, connectionOf("os-test", { owner_scope: "guild", owner_id: "guild_1" }), server, { force: true });
-  const second = await pool.syncTools(db as never, connectionOf("os-test", { owner_scope: "guild", owner_id: "guild_1" }), server);
+  const first = await pool.syncTools(connectionOf("os-test", { owner_scope: "guild", owner_id: "guild_1" }), server, { force: true });
+  const second = await pool.syncTools(connectionOf("os-test", { owner_scope: "guild", owner_id: "guild_1" }), server);
   assert.deepEqual(
     first.map((tool) => tool.namespaced_name),
     ["opensea_search", "opensea_get_favorites", "opensea_get_instant_api_key"],
   );
   assert.deepEqual(first, second);
-  assert.deepEqual(first[0], new ListedTool("search", "opensea_search", "Search", { type: "object" }));
+  assert.deepEqual(first[0], { remote_name: "search", namespaced_name: "opensea_search", description: "Search", input_schema: { type: "object" }, read_only_hint: null, destructive_hint: null });
   assert.equal(db.bindings.get("mcp_tool:opensea_get_favorites:guild_1")?.enabled, false);
   assert.equal(db.bindings.get("mcp_tool:opensea_get_instant_api_key:guild_1")?.enabled, false);
   assert.equal(db.bindings.has("mcp_tool:opensea_search:guild_1"), false);
@@ -524,14 +537,14 @@ test("sync OpenSea writes default-off and destructive tools Off, and reads On", 
 
 test("sync OpenSea rejects an unauthenticated catalog", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
-  const pool = new McpPool();
+  const pool = new McpPool(new MemoryMcpDatabase());
   pool.session = async () => ({
     async listTools() {
       return [{ name: "get_instant_api_key", description: "Mint key", inputSchema: {} }];
     },
   }) as never;
   await assert.rejects(
-    () => pool.syncTools(new MemoryDb() as never, connectionOf("bad"), serverRow("opensea", { id: "mcp_opensea", auth: "token" }), { force: true }),
+    () => pool.syncTools(connectionOf("bad"), serverRow("opensea", { id: "mcp_opensea", auth: "token" }), { force: true }),
     (error: unknown) => error instanceof McpError && error.status === 401 && /api key was rejected/.test(error.message),
   );
 });
@@ -579,12 +592,13 @@ function githubPool(options: {
   refuse?: (token: string) => boolean;
   mint?: () => Response;
   tools?: Array<Record<string, unknown>>;
-}): { pool: McpPool; fakes: GithubFakes } {
+}): { pool: McpPool; fakes: GithubFakes; db: MemoryMcpDatabase } {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   setInstanceKeys(storeKeys({ "github-app": GITHUB_APP_KEYS }));
   const fakes: GithubFakes = { minted: [], called: [], sent: [] };
-  const pool = new McpPool();
-  pool.connectors = CONNECTORS;
+  const db = new MemoryMcpDatabase();
+  const pool = new McpPool(db);
+  runConnectors(CONNECTORS);
   pool.fetchFn = async (url, init = {}) => {
     assert.equal(url, "https://api.github.com/app/installations/77/access_tokens");
     if (options.mint) {
@@ -621,7 +635,7 @@ function githubPool(options: {
       headers: { "content-type": "application/json" },
     });
   };
-  return { pool, fakes };
+  return { pool, fakes, db };
 }
 
 test("a GitHub App login's session sends a token for its picked repositories, minted again near expiry", async () => {
@@ -629,9 +643,8 @@ test("a GitHub App login's session sends a token for its picked repositories, mi
     expiry: (n) => Date.now() + (n === 1 ? TOKEN_REFRESH_MS - 1000 : 3_600_000),
   });
   try {
-    const db = new MemoryDb();
-    for (let index = 0; index < 3; index += 1) {
-      assert.equal(await pool.call(db as never, githubLogin(PICKED), GITHUB_SERVER, "list_issues", {}), "ok");
+      for (let index = 0; index < 3; index += 1) {
+      assert.equal(await pool.call(githubLogin(PICKED), GITHUB_SERVER, { tool: "list_issues", arguments: {}, caller: OPERATOR_CALLER }), "ok");
     }
     assert.deepEqual(fakes.minted, [{ repository_ids: [101] }, { repository_ids: [101] }], "every permission the installation grants");
     assert.deepEqual(fakes.called, ["Bearer ghs_1", "Bearer ghs_2", "Bearer ghs_2"]);
@@ -641,42 +654,28 @@ test("a GitHub App login's session sends a token for its picked repositories, mi
 });
 
 test("a GitHub App login whose token the endpoint refuses gets a new one and stays connected", async () => {
-  const { pool, fakes } = githubPool({ expiry: () => Date.now() + 3_600_000, refuse: (token) => token === "ghs_1" });
-  const saved: string[] = [];
-  const db = Object.assign(new MemoryDb(), {
-    saveMcpConnection: async (_id: string, options: { status: string }) => {
-      saved.push(options.status);
-      return null;
-    },
-  });
+  const { pool, fakes, db } = githubPool({ expiry: () => Date.now() + 3_600_000, refuse: (token) => token === "ghs_1" });
   try {
-    assert.equal(await pool.call(db as never, githubLogin(PICKED), GITHUB_SERVER, "list_issues", {}), "ok");
+    assert.equal(await pool.call(githubLogin(PICKED), GITHUB_SERVER, { tool: "list_issues", arguments: {}, caller: OPERATOR_CALLER }), "ok");
     assert.equal(fakes.minted.length, 2);
     assert.deepEqual(fakes.called, ["Bearer ghs_2"]);
-    assert.deepEqual(saved, []);
+    assert.deepEqual(db.saved, []);
   } finally {
     setInstanceKeys({});
   }
 });
 
 test("GitHub refusing a GitHub App login's installation disconnects the login", async () => {
-  const { pool } = githubPool({
+  const { pool, db } = githubPool({
     expiry: () => Date.now() + 3_600_000,
     mint: () => new Response(JSON.stringify({ message: "Not Found" }), { status: 404 }),
   });
-  const saved: string[] = [];
-  const db = Object.assign(new MemoryDb(), {
-    saveMcpConnection: async (id: string, options: { status: string }) => {
-      saved.push(`${id}:${options.status}`);
-      return null;
-    },
-  });
   try {
     await assert.rejects(
-      pool.call(db as never, githubLogin(PICKED), GITHUB_SERVER, "list_issues", {}),
+      pool.call(githubLogin(PICKED), GITHUB_SERVER, { tool: "list_issues", arguments: {}, caller: OPERATOR_CALLER }),
       McpDisconnectedError,
     );
-    assert.deepEqual(saved, ["conn_gh:disconnected"]);
+    assert.deepEqual(db.saved, ["conn_gh:disconnected"]);
   } finally {
     setInstanceKeys({});
   }
@@ -689,7 +688,7 @@ test("a GitHub App login lists the connector's toolsets, without the tools its m
     inputSchema: { type: "object" },
     annotations: readOnly ? { readOnlyHint: true } : {},
   });
-  const { pool, fakes } = githubPool({
+  const { pool, fakes, db } = githubPool({
     expiry: () => Date.now() + 3_600_000,
     tools: [
       listed("list_issues", true),
@@ -699,9 +698,8 @@ test("a GitHub App login lists the connector's toolsets, without the tools its m
       listed("fork_repository", false),
     ],
   });
-  const db = new MemoryDb();
   try {
-    const tools = await pool.syncTools(db as never, githubLogin(PICKED), GITHUB_SERVER, { force: true });
+    const tools = await pool.syncTools(githubLogin(PICKED), GITHUB_SERVER, { force: true });
     assert.deepEqual(
       tools.map((tool) => tool.namespaced_name),
       ["github_list_issues", "github_issue_write", "github_merge_pull_request"],
@@ -723,7 +721,7 @@ test("a GitHub App login with no repositories picked gets no token", async () =>
   const { pool, fakes } = githubPool({ expiry: () => Date.now() + 3_600_000 });
   try {
     await assert.rejects(
-      pool.call(new MemoryDb() as never, githubLogin([]), GITHUB_SERVER, "list_issues", {}),
+      pool.call(githubLogin([]), GITHUB_SERVER, { tool: "list_issues", arguments: {}, caller: OPERATOR_CALLER }),
       (error: unknown) => error instanceof McpError && /GitHub login for acme has no repositories picked/.test(error.message),
     );
     assert.deepEqual(fakes.minted, []);

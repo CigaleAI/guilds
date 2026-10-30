@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { AdmissionConflictError, AdmissionCoordinator } from "../../src/generation/admission.js";
+import { AdmissionConflictError, AdmissionCoordinator } from "../../src/admission/coordinator.js";
 
 test("admission counts agent and studio workloads against the same org ceiling", async () => {
   const admission = new AdmissionCoordinator();

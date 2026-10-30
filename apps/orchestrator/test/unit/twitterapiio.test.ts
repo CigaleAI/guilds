@@ -19,7 +19,8 @@ import {
   postsTool,
   searchTool,
 } from "../../src/connectors/twitterapiio/client.js";
-import { ListedTool, McpError, McpPool } from "../../src/mcp/index.js";
+import { McpError } from "../../src/mcp/errors.js";
+import { McpPool, OPERATOR_CALLER } from "../../src/mcp/pool.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { ConnectorError } from "../../src/connectors/types.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
@@ -27,6 +28,10 @@ import { loadJsonFixture } from "../helpers/fixtures.js";
 import { mockFetch } from "../helpers/http.js";
 import { serverRow } from "../helpers/servers.js";
 import { connectionRow } from "../helpers/servers.js";
+import { MemoryMcpDatabase } from "../helpers/mcp-database.js";
+import { restoreConnectorsAfterEach, runConnectors } from "../helpers/installed.js";
+
+restoreConnectorsAfterEach();
 
 const fixture = loadJsonFixture<{
   search: string;
@@ -39,15 +44,6 @@ const fixture = loadJsonFixture<{
 const KEY = decodeMasterKey(HEX_MASTER_KEY);
 const TOOLS = CONNECTORS.bySlug("twitterapiio")!.manifest.tools!;
 
-class MemoryDb {
-  rows: Array<Record<string, unknown>> = [];
-  async replaceMcpTools(_id: string, tools: ListedTool[]) {
-    this.rows = tools.map((tool) => ({ ...tool }));
-  }
-  async listMcpTools() {
-    return this.rows;
-  }
-}
 
 test("formatSearch is compact TSV", () => {
   const stored = formatSearch(
@@ -70,7 +66,7 @@ test("formatSearch is compact TSV", () => {
       has_next_page: true,
       next_cursor: "page-2",
     },
-    { query: "from:elonmusk" },
+    "from:elonmusk",
   );
   assert.equal(stored, fixture.search);
   assert.ok(!stored.includes("example.com"));
@@ -87,7 +83,7 @@ test("formatPosts caps rows and clips text", () => {
       })),
     },
   };
-  const stored = formatPosts(payload, { limit: 3 });
+  const stored = formatPosts(payload, 3);
   const lines = stored.split("\n");
   assert.equal(lines.length, 4);
   assert.equal(lines.at(-1), "+17 more");
@@ -178,6 +174,25 @@ test("search sends x-api-key", async () => {
   assert.equal(stored, `from:x ${SEARCH_WINDOW}  n=1\n1  @x  X  likes=-  rts=-  replies=-  quotes=-  hi`);
 });
 
+test("search refuses a body that is not JSON or does not match its schema", async () => {
+  const answering = (result: { json?: unknown; text?: string }) => ({
+    apiKey: "tok-test",
+    client: mockFetch(() => ({ status: 200, ...result })),
+  });
+  await assert.rejects(
+    () => searchTool({ query: "from:x" }, answering({ json: { tweets: "none" } })),
+    (error: unknown) =>
+      error instanceof TwitterApiIoError &&
+      /^TwitterAPI.io returned an unexpected response at \/tweets: /.test(error.message),
+  );
+  await assert.rejects(
+    () => searchTool({ query: "from:x" }, answering({ text: "not json" })),
+    (error: unknown) =>
+      error instanceof TwitterApiIoError &&
+      error.message === "TwitterAPI.io returned a non-JSON body",
+  );
+});
+
 test("posts resolves username then last tweets", async () => {
   let url = "";
   const stored = await postsTool(
@@ -214,41 +229,39 @@ test("callTool unknown name", async () => {
 test("sync TwitterAPI.io writes the curated catalog", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   let pinged = 0;
-  const pool = new McpPool(10 * 60 * 1000);
-  pool.connectors = CONNECTORS.withAdapter("twitterapiio", {
+  const pool = new McpPool(new MemoryMcpDatabase(), 10 * 60 * 1000);
+  runConnectors(CONNECTORS.withAdapter("twitterapiio", {
     async validate(creds) {
       const apiKey = creds.token;
       pinged += 1;
       assert.equal(apiKey, "tok-test");
       return "";
     },
-  });
+  }));
   const [ciphertext, nonce] = encryptPayload({ token: "tok-test" }, KEY);
-  const db = new MemoryDb();
   const connection = connectionRow({ id: "conn_twitterapiio", status: "connected", ciphertext, nonce });
   const server = serverRow("twitterapiio", { id: "mcp_twitterapiio", auth: "token" });
-  const first = await pool.syncTools(db as never, connection, server, { force: true });
-  const second = await pool.syncTools(db as never, connection, server);
+  const first = await pool.syncTools(connection, server, { force: true });
+  const second = await pool.syncTools(connection, server);
   assert.equal(pinged, 1);
   assert.deepEqual(first.map((tool) => tool.namespaced_name), TOOLS.map((spec) => `twitterapiio_${spec.name}`));
   assert.deepEqual(first, second);
-  assert.deepEqual(first[0], new ListedTool("search", "twitterapiio_search", TOOLS[0]!.description, TOOLS[0]!.input_schema));
+  assert.deepEqual(first[0], { remote_name: "search", namespaced_name: "twitterapiio_search", description: TOOLS[0]!.description, input_schema: TOOLS[0]!.input_schema, read_only_hint: null, destructive_hint: null });
   assert.ok(!("sort" in (TOOLS[0]!.input_schema.properties as Record<string, unknown>)));
 });
 
 test("sync TwitterAPI.io rejects a bad key", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
-  const pool = new McpPool();
-  pool.connectors = CONNECTORS.withAdapter("twitterapiio", {
+  const pool = new McpPool(new MemoryMcpDatabase());
+  runConnectors(CONNECTORS.withAdapter("twitterapiio", {
     async validate() {
       throw new ConnectorError("Unauthorized", 401);
     },
-  });
+  }));
   const [ciphertext, nonce] = encryptPayload({ token: "bad" }, KEY);
   await assert.rejects(
     () =>
       pool.syncTools(
-        new MemoryDb() as never,
         connectionRow({ id: "conn_twitterapiio", status: "connected", ciphertext, nonce }),
         serverRow("twitterapiio", { id: "mcp_twitterapiio", auth: "token" }),
         { force: true },
@@ -260,22 +273,20 @@ test("sync TwitterAPI.io rejects a bad key", async () => {
 test("call TwitterAPI.io dispatches", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const seen: Record<string, unknown> = {};
-  const pool = new McpPool();
-  pool.connectors = CONNECTORS.withAdapter("twitterapiio", {
+  const pool = new McpPool(new MemoryMcpDatabase());
+  runConnectors(CONNECTORS.withAdapter("twitterapiio", {
     async call(name, arguments_, creds) {
       seen.name = name;
       seen.arguments = arguments_;
       seen.api_key = creds.token;
       return "from:x  n=0";
     },
-  });
+  }));
   const [ciphertext, nonce] = encryptPayload({ token: "tok-test" }, KEY);
   const stored = await pool.call(
-    new MemoryDb() as never,
     connectionRow({ id: "conn_twitterapiio", status: "connected", ciphertext, nonce }),
     serverRow("twitterapiio", { id: "mcp_twitterapiio", auth: "token" }),
-    "search",
-    { query: "from:x" },
+    { tool: "search", arguments: { query: "from:x" }, caller: OPERATOR_CALLER },
   );
   assert.equal(stored, "from:x  n=0");
   assert.deepEqual(seen, { name: "search", arguments: { query: "from:x" }, api_key: "tok-test" });

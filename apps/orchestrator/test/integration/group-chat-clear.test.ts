@@ -3,17 +3,17 @@ import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
 import { GroupChatCleared } from "../../src/db/errors.js";
-import { generationDatabase, GenerationLoop } from "../../src/generation/index.js";
+import { generationLoop } from "../../src/generation/index.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { ExportSandboxes } from "../helpers/live.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { insertUser } from "../../src/db/users.js";
 import { insertMember } from "../../src/db/orgs.js";
-import { addAgent } from "../../src/agents/persist.js";
+import { addTestAgent } from "../helpers/agents.js";
 import { createRun } from "../../src/db/runs.js";
 import {
   markGroupChatSeen,
@@ -21,6 +21,7 @@ import {
   postUserGroupMessage,
 } from "../../src/db/group-chat.js";
 import { agentConfig, runSnapshot } from "../helpers/generation.js";
+import { mcpPool } from "../../src/mcp/pool.js";
 
 const OWNER = {
   "X-Guilds-User": "user_operator",
@@ -46,8 +47,8 @@ test(
     await notes.ensureSystemPrompt();
     const db = database.pool;
     const workspaceRoot = tempDir("guilds-group-clear-workspaces-");
-    const generation = new GenerationLoop({
-      db: generationDatabase(db),
+    const generation = generationLoop(db, {
+      mcp: mcpPool(db),
       notes,
       workspaceRoot,
       sandboxes: new ExportSandboxes(workspaceRoot),
@@ -55,8 +56,8 @@ test(
     const app = await buildApp(database, {
       db,
       notes,
-      scripts: new Scripts(scriptDatabase(db)),
-      schedules: new Schedules(scheduleDatabase(db)),
+      scripts: agentScripts(db),
+      schedules: agentSchedules(db),
       generation,
     });
 
@@ -66,7 +67,11 @@ test(
         image: null,
         email: "teammate-clear@example.com",
       }, new Date());
-    await insertMember(db, "org_home", String(teammate.id), "member", new Date());
+    await insertMember(
+      db,
+      { org_id: "org_home", user_id: String(teammate.id), role: "member" },
+      new Date(),
+    );
     const TEAMMATE = {
       "X-Guilds-User": String(teammate.id),
       "X-Guilds-Org": "org_home",
@@ -82,9 +87,17 @@ test(
       assert.equal(created.statusCode, 201);
       const guildId = String(created.json().id);
       const base = `/api/guilds/${guildId}/group-chat`;
+      const textLimit = await app.inject({
+        method: "PUT",
+        url: base,
+        headers: { ...OWNER, "content-type": "application/json" },
+        payload: { agent_message_limit: "8" },
+      });
+      assert.equal(textLimit.statusCode, 422);
+      assert.deepEqual(textLimit.json().detail[0].loc, ["body", "agent_message_limit"]);
 
       const started = new Date(Date.now() - 60_000);
-      await addAgent(db, { agentId: "a_clear", guildId, name: "scout", config: agentConfig({}) }, started);
+      await addTestAgent(db, "org_home", { agentId: "a_clear", guildId, name: "scout", config: agentConfig({}) }, started);
       await createRun(db,
         {
           runId: "r_before",
@@ -118,7 +131,11 @@ test(
         { guildId, content: "third", taggedNames: [], taggedAgentIds: [], taggedUserIds: [] },
         started,
       );
-      await markGroupChatSeen(db, guildId, "user_operator", 2, started);
+      await markGroupChatSeen(
+        db,
+        { guild_id: guildId, user_id: "user_operator", seen_through_seq: 2 },
+        started,
+      );
 
       const denied = await app.inject({
         method: "DELETE",

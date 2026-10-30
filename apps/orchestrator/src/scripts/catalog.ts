@@ -1,4 +1,4 @@
-import { DEFAULT_MAX_SCRIPTS } from "../agents/validation.js";
+import { DEFAULT_MAX_SCRIPTS } from "../agents/config.js";
 import { AsyncLock } from "../lib/lock.js";
 import { newId } from "../lib/ids.js";
 import { displayPathFor } from "../artifacts/paths.js";
@@ -66,8 +66,8 @@ export function scriptItem(script: AgentScript): ScriptItem {
   };
 }
 
-/** Where an agent's script shows in the file-change log. */
-function scriptDisplayPath(orgId: string, agentId: string, name: string): string {
+/** Where an agent's script shows in the agent's files and the file-change log. */
+export function scriptDisplayPath(orgId: string, agentId: string, name: string): string {
   return displayPathFor({ orgId, level: "agent", ownerId: agentId, kind: "script", path: "scripts", key: name });
 }
 
@@ -117,7 +117,7 @@ export async function removeAgentScript(
 }
 
 /** The db/ functions an agent's scripts are read and written through, on `db`. */
-export function scriptDatabase(db: Queryable) {
+function scriptDatabase(db: Queryable) {
   return {
     getAgentScript: bindQuery(db, getAgentScript),
     writeAgentScript: bindQuery(db, writeAgentScript),
@@ -231,4 +231,9 @@ export class Scripts {
     }
     return rows.map((row) => `${row.name}  ${row.description}`).join("\n");
   }
+}
+
+/** The scripts of agents, read and written on `db`. */
+export function agentScripts(db: Queryable): Scripts {
+  return new Scripts(scriptDatabase(db));
 }

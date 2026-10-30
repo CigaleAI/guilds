@@ -1,13 +1,20 @@
 import { rmSync } from "node:fs";
-import { loadConnector, type LoadedConnector } from "../connectors/load.js";
-import { getMcpServerBySlug, listMcpServers } from "../connectors/servers.js";
+import { getMcpServerBySlug, listServers, loadConnector, type LoadedConnector } from "../connectors/servers.js";
 import { connectorIntegrationId } from "../instance/integrations.js";
 import { serverIdOf } from "../connectors/manifest.js";
 import { assertSlugFree, CatalogError } from "../mcp/catalog.js";
 import { generateToolPrefix, isReservedToolPrefix } from "../mcp/policy.js";
 import type { ConnectorPackage, RegistryClient } from "./client.js";
 import { codeEntry, codeFolder, removeCodePackage, writeCodePackage } from "./code.js";
-import { compareVersions, pickEntry, RegistryError, type RegistryConnectorEntry, type RegistryIndex } from "./index.js";
+import {
+  compareVersions,
+  pickEntry,
+  RegistryError,
+  RegistryNotFoundError,
+  RegistryPackageError,
+  type RegistryConnectorEntry,
+  type RegistryIndex,
+} from "./index.js";
 import { deleteConnector, insertConnector, listTakenToolPrefixes, updateConnector } from "../db/connectors.js";
 import { expireMcpTools } from "../db/mcp.js";
 import { deleteInstanceKey } from "../db/orgs.js";
@@ -30,12 +37,24 @@ function entriesFor(index: RegistryIndex, slug: string): RegistryConnectorEntry[
 }
 
 /** What an install accepts beyond a verified, stable entry. */
-type Acceptance = { unverified?: boolean; experimental?: boolean };
+export type Acceptance = { unverified?: boolean | undefined; experimental?: boolean | undefined };
+
+/** A registry connector an install asks for: its slug, a version (the newest when left out), and what it accepts. */
+export type ConnectorPick = Acceptance & { slug: string; version?: string | undefined };
+
+/** The registry connectors an update moves, `slug` alone or every one when it is left out, and what it accepts. */
+export type ConnectorUpdate = Acceptance & { slug?: string | undefined };
+
+/**
+ * Where the box keeps connector code: the code tier's root, where a package carrying code is
+ * written, null while the tier is off; and the root code connectors live in.
+ */
+export type CodeRoots = { codeTier: string | null; connectors: string | null };
 
 function chosenEntry(index: RegistryIndex, slug: string, version: string | undefined, accept: Acceptance): RegistryConnectorEntry {
   const entry = pickEntry(entriesFor(index, slug), version);
   if (entry === null) {
-    throw new RegistryError(version ? `the registry has no ${slug}@${version}` : `the registry has no connector ${slug}`, 404);
+    throw new RegistryNotFoundError(version ? `the registry has no ${slug}@${version}` : `the registry has no connector ${slug}`);
   }
   if (!entry.verified && accept.unverified !== true) {
     throw new RegistryError(`${slug}@${entry.version} is unverified; install it with --unverified to accept that`, 409);
@@ -76,31 +95,26 @@ async function placeCode(
     await codeEntry(codeRoot, slug, entry.version, { verified: entry.verified, publisher: entry.publisher });
   } catch (error) {
     rmSync(codeFolder(codeRoot, slug, entry.version), { recursive: true, force: true });
-    throw new RegistryError(`${slug}@${entry.version} does not load: ${error instanceof Error ? error.message : String(error)}`, 422);
+    throw new RegistryPackageError(`${slug}@${entry.version} does not load: ${error instanceof Error ? error.message : String(error)}`);
   }
   return true;
 }
 
-export type InstallOptions = Acceptance & {
-  version?: string;
-  now?: Date;
-  /** The code tier's root while it is on: a package carrying code installs there. */
-  codeRoot?: string | null;
-};
-
 /**
- * Installs a connector from the registry as a platform row: `registry` source, on at install,
- * its tool prefix generated against every prefix on the box. A slug any server holds is refused.
- * A package carrying code is written under the code tier's root; `code` says so, and the process
- * serves it once `syncCodeConnectors` runs.
+ * Installs the connector `pick` names from the registry as a platform row: `registry` source, on
+ * at install, its tool prefix generated against every prefix on the box. A slug any server holds
+ * is refused. A package carrying code is written under `codeRoot`, the code tier's root, and
+ * refused while it is null; `code` says so, and the process serves it once `syncCodeConnectors`
+ * runs.
  */
 export async function installConnector(
   db: Queryable,
   client: RegistryClient,
-  slug: string,
-  options: InstallOptions = {},
+  pick: ConnectorPick,
+  codeRoot: string | null,
 ): Promise<{ row: LoadedConnector; code: boolean }> {
-  const entry = chosenEntry(await client.index(), slug, options.version, options);
+  const slug = pick.slug;
+  const entry = chosenEntry(await client.index(), slug, pick.version, pick);
   try {
     await assertSlugFree(db, slug, null);
   } catch (error) {
@@ -114,7 +128,7 @@ export async function installConnector(
   if (isReservedToolPrefix(toolPrefix)) {
     throw new RegistryError(`the tool prefix for ${slug} is reserved`);
   }
-  const code = await placeCode(client, entry, pkg, options.codeRoot);
+  const code = await placeCode(client, entry, pkg, codeRoot);
   try {
     const row = await insertConnector(db,
       {
@@ -130,12 +144,12 @@ export async function installConnector(
         publisher: entry.publisher,
         enabled: true,
       },
-      options.now ?? new Date(),
+      new Date(),
     );
     return { row: loadConnector(row), code };
   } catch (error) {
-    if (code && options.codeRoot) {
-      removeCodePackage(options.codeRoot, slug);
+    if (code && codeRoot) {
+      removeCodePackage(codeRoot, slug);
     }
     throw error;
   }
@@ -144,7 +158,7 @@ export async function installConnector(
 async function registryRow(db: Queryable, slug: string): Promise<Record<string, unknown>> {
   const row = await getMcpServerBySlug(db, slug, null);
   if (row === null || row.owner_org_id) {
-    throw new RegistryError(`connector ${slug} is not installed`, 404);
+    throw new RegistryNotFoundError(`connector ${slug} is not installed`);
   }
   if (row.source !== "registry") {
     throw new RegistryError(`connector ${slug} is ${String(row.source)}, not a registry install`, 409);
@@ -152,22 +166,27 @@ async function registryRow(db: Queryable, slug: string): Promise<Record<string, 
   return row;
 }
 
+/** A registry connector moved from one version to another; `code` says the new version carries code. */
+export type ConnectorMove = { slug: string; from: string; to: string; code: boolean };
+
 /**
- * Moves registry connectors to the newest version the index offers, or `slug` alone. The row keeps
- * its switch, its OAuth client, the admin's overrides, its logins, and its bindings; its tools are
- * listed again on each login's next use. A connector with code keeps only the new version's folder,
- * served once `syncCodeConnectors` runs. Returns what moved.
+ * Moves the registry connectors `update` names to the newest version the index offers. The row
+ * keeps its switch, its OAuth client, the admin's overrides, its logins, and its bindings; its
+ * tools are listed again on each login's next use. A package carrying code is written under the
+ * code tier's root, and a connector with code keeps only the new version's folder, served once
+ * `syncCodeConnectors` runs. Returns what moved.
  */
 export async function updateConnectors(
   db: Queryable,
   client: RegistryClient,
-  options: Acceptance & { slug?: string; now?: Date; codeRoot?: string | null; connectorsRoot?: string | null } = {},
-): Promise<Array<{ slug: string; from: string; to: string; code: boolean }>> {
+  update: ConnectorUpdate,
+  roots: CodeRoots,
+): Promise<ConnectorMove[]> {
   const index = await client.index();
-  const rows = options.slug
-    ? [await registryRow(db, options.slug)]
-    : (await listMcpServers(db)).filter((row) => !row.owner_org_id && row.source === "registry");
-  const moved: Array<{ slug: string; from: string; to: string; code: boolean }> = [];
+  const rows = update.slug
+    ? [await registryRow(db, update.slug)]
+    : await listServers(db, { owner: "platform", source: "registry" });
+  const moved: ConnectorMove[] = [];
   for (const row of rows) {
     const slug = String(row.slug);
     const latest = pickEntry(entriesFor(index, slug));
@@ -175,9 +194,9 @@ export async function updateConnectors(
     if (latest === null || (current && compareVersions(latest.version, current) <= 0)) {
       continue;
     }
-    const entry = chosenEntry(index, slug, latest.version, options);
+    const entry = chosenEntry(index, slug, latest.version, update);
     const pkg = await client.connectorPackage(entry);
-    const code = await placeCode(client, entry, pkg, options.codeRoot);
+    const code = await placeCode(client, entry, pkg, roots.codeTier);
     await updateConnector(db,
       String(row.id),
       {
@@ -187,11 +206,11 @@ export async function updateConnectors(
         experimental: entry.experimental === true,
         publisher: entry.publisher,
       },
-      options.now ?? new Date(),
+      new Date(),
     );
     await expireMcpTools(db, String(row.id));
-    if (options.connectorsRoot) {
-      removeCodePackage(options.connectorsRoot, slug, code ? entry.version : null);
+    if (roots.connectors) {
+      removeCodePackage(roots.connectors, slug, code ? entry.version : null);
     }
     moved.push({ slug, from: current, to: entry.version, code });
   }
@@ -210,7 +229,7 @@ export async function removeConnector(db: Queryable, slug: string, connectorsRoo
 
 /** The box's platform connectors, each with the newest version the index offers when one is given. */
 export async function listConnectors(db: Queryable, index: RegistryIndex | null): Promise<InstalledConnector[]> {
-  const rows = (await listMcpServers(db)).filter((row) => !row.owner_org_id);
+  const rows = await listServers(db, { owner: "platform" });
   return rows
     .map((row) => {
       const slug = String(row.slug);

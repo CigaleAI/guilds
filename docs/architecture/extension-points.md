@@ -132,7 +132,7 @@ and `trusted-header`. Paths below are under
   `connectRunning`, `destroy`, `listRunningMachineIds`, and an
   optional `harnessesOf(machineId)` (the harness CLIs the machine's
   container carries). On an agent's seat (agent id, machine id, slot,
-  browser language): `startBrowser`, `stopBrowser`, `stopAgent`,
+  browser language): `startBrowser`, `stopBrowser`, `purgeAgent`,
   `novncTarget`, `startCli`, and `cliTarget`. An optional
   `machineHost(machineId)` gives the host, workspace root, and proxy
   URL a machine runs with. `SandboxProvider` adds `start`, `close`,
@@ -148,7 +148,7 @@ and `trusted-header`. Paths below are under
   `GET /api/instance`, and its store integrations are written through
   the same admin routes.
 - **Connectors.** Each is built from a connector folder with
-  `folderEntry(manifest, adapter, folder, { publisher })`. An
+  `folderEntry(manifest, adapter, folder, publisher)`. An
   extension's are installed after core's, before the seed runs, and are
   listed and seeded like core's. A slug core already has fails boot.
 - **Database.** An extension's migrations and seeds run after core's,
@@ -182,8 +182,8 @@ operator app.
 - **Boundary lint.** `eslint.boundary.js` is a lint rule a core
   package loads from its `eslint.config.js` with the packages it
   may not import and the repository its relative imports must stay
-  inside. It fails any orchestrator or web file, tests and scripts
-  included, that imports one of those packages or a relative path
+  inside. It fails any orchestrator, web or design-system file,
+  tests and scripts included, that imports one of those packages or a relative path
   that leaves core's repository. No file is excepted. Core's
   repository holds nothing of an extension and passes its own check
   alone.
@@ -232,14 +232,15 @@ does; an optional field tunes it and never switches it off.
 - A `store` integration's values are entered by a platform admin on
   Admin's Platform keys tab, through
   `PUT /api/admin/instance/keys/:integration`, and removed with
-  `DELETE` on the same path (`http/admin-instance-routes.ts`; anyone
-  but an instance admin gets 404). The store (`instance/keys.ts`)
+  `DELETE` on the same path (`http/admin-instance-routes.ts` over
+  `connectors/instance-keys.ts`; anyone but an instance admin gets
+  404). The store (`instance/keys.ts`)
   keeps one row per integration in `instance_keys`, encrypted with
   AES-GCM under `SECRETS_MASTER_KEY`, with who wrote it and when.
   It is decrypted into a process snapshot at boot and again after
   every write, and a reader resolves a field from that snapshot at
   call time, so a change takes effect without a restart. A write's
-  effects (`instance/changes.ts`) sync the platform logins, and a
+  effects (`connectors/instance.ts`) sync the platform logins, and a
   GitHub App replaced by one with another App ID, or removed,
   disconnects every GitHub login installed with it, after the admin
   confirms with the count. No route returns a value.
@@ -260,7 +261,7 @@ does; an optional field tunes it and never switches it off.
   `connector:<slug>`: a platform key (`auth.instance: { "own": true }`
   on a token connector; its fields are the login fields) or an OAuth
   client (`configured` with no provider; `client_id` and
-  `client_secret`). `instance/connectors.ts` derives these from the
+  `client_secret`). `connectors/instance.ts` derives these from the
   platform connector rows at boot and after a connector is
   installed, updated, removed, reloaded, created, or patched, and
   `installedIntegrations()` lists core's, an extension's, then these.

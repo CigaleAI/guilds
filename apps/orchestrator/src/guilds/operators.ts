@@ -3,7 +3,20 @@ import { setGuildOperator, soleAdminGuilds, type GuildRow } from "../db/guilds.j
 import { getMembership } from "../db/orgs.js";
 import type { Queryable } from "../db/pg.js";
 import { GuildError } from "./errors.js";
-import { guildOperators, validateGuildOperatorRole, type GuildOperatorRole } from "./validation.js";
+import { validateGuildOperatorRole, type GuildOperatorRole } from "./validation.js";
+
+/** The user's operator role on the guild; null when they are not one of its operators. */
+export function guildRole(guild: Pick<GuildRow, "operators">, userId: string): GuildOperatorRole | null {
+  return guild.operators.find((operator) => operator.user_id === userId)?.role ?? null;
+}
+
+/** An org guild is visible to every organisation member; a private one to its operators. */
+export function canSeeGuild(guild: Pick<GuildRow, "visibility" | "operators">, userId: string): boolean {
+  if (guild.visibility !== "private") {
+    return true;
+  }
+  return guildRole(guild, userId) !== null;
+}
 
 /**
  * Refuses while the user is the only admin of a guild, in the organisation or in any when `orgId`
@@ -30,7 +43,7 @@ async function writeOperator(
 ): Promise<GuildRow> {
   let row;
   try {
-    row = await setGuildOperator(db, guildId, userId, role, new Date());
+    row = await setGuildOperator(db, { guild_id: guildId, user_id: userId, role }, new Date());
   } catch (error) {
     const refused = error instanceof LastGuildAdmin || error instanceof GuildNameTaken;
     throw refused ? new GuildError(409, error.message) : error;
@@ -61,7 +74,7 @@ export async function removeOperator(
   guild: GuildRow,
   userId: string,
 ): Promise<GuildRow> {
-  if (!guildOperators(guild).some((operator) => operator.user_id === userId)) {
+  if (!guild.operators.some((operator) => operator.user_id === userId)) {
     throw new GuildError(404, "operator not found");
   }
   return writeOperator(db, guild.id, userId, null);

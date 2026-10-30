@@ -1,4 +1,5 @@
-import type { ArtifactActor, ArtifactStore } from "../artifacts/index.js";
+import type { ArtifactActor } from "../artifacts/types.js";
+import type { ArtifactStore } from "../artifacts/store.js";
 import type { Queryable } from "../db/pg.js";
 import {
   listItemChanges,
@@ -9,22 +10,26 @@ import {
   type ItemChangeRow,
 } from "../db/state.js";
 import type { ActivityWindow } from "./activity.js";
-import { StudioError, StudioUnprocessableError } from "./errors.js";
+import { StudioNotFoundError, StudioUnprocessableError } from "./errors.js";
 import {
   changeActor,
   changeEvents,
   changeLink,
   counts,
   readEvents,
+  stateRow,
   stateRows,
   tallyBy,
+  type StateActor,
   type StateEvent,
+  type StateFilter,
   type StateItem,
   type StateKind,
+  type StateLink,
   type StateRow,
 } from "./state-list.js";
 import { listAgents } from "../db/agents.js";
-import { listStateArtifacts } from "../artifacts/notes.js";
+import { listStateArtifacts, type StateOwners } from "../artifacts/notes.js";
 import { listCollectionsWithCounts } from "../artifacts/collections.js";
 
 // The loaders behind Studio's State list: the items a guild's state holds,
@@ -37,6 +42,32 @@ export type StateDeps = { db: Queryable; artifacts: ArtifactStore };
 const READ_TOOLS = ["note_get", "file_fetch", "record_list", "record_search", "script_run"];
 
 export const STATE_HISTORY_PAGE = 50;
+
+/** One entry of an item's history: the change, who made it, and where it was made. */
+export type StateHistoryEntry = {
+  at: string;
+  operation: ItemChangeRow["operation"];
+  actor: StateActor;
+  link: StateLink | null;
+  /** For a record change, the record's own path. */
+  record: string | null;
+  summary: string | null;
+};
+
+/** The guild whose state is read, and the window of a list or an item's numbers. */
+type StateScope = { actor: ArtifactActor; guildId: string; window: ActivityWindow };
+
+/** The guild whose state an item's history is read from. */
+type StateHistoryScope = Omit<StateScope, "window">;
+
+/** The page of an item's history a request asks for: the item, an operation, and a cursor. */
+export type StateHistoryRequest = { path: string; op: string | null; cursor: string | null };
+
+/** The guild's agents' names, by id. */
+async function agentNames(deps: StateDeps, guildId: string): Promise<Map<string, string>> {
+  const agentRows = await listAgents(deps.db, guildId);
+  return new Map(agentRows.map((agent) => [agent.id, agent.name]));
+}
 
 /** The tables of the guild's state: its own and the organisation's. */
 async function stateTables(deps: StateDeps, actor: ArtifactActor, guildId: string): Promise<StateItem[]> {
@@ -59,22 +90,15 @@ async function stateTables(deps: StateDeps, actor: ArtifactActor, guildId: strin
 }
 
 /** Every item of the guild's state the actor can open. */
-export async function loadStateItems(
-  deps: StateDeps,
-  actor: ArtifactActor,
-  guild: { guildId: string; agentIds: string[] },
-): Promise<StateItem[]> {
+export async function loadStateItems(deps: StateDeps, actor: ArtifactActor, guild: StateOwners): Promise<StateItem[]> {
   const files = await listStateArtifacts(deps.artifacts, actor, guild);
   const tables = await stateTables(deps, actor, guild.guildId);
   return [...files.map((file) => ({ ...file, collection_id: null })), ...tables];
 }
 
-type StateScope = { actor: ArtifactActor; guildId: string; window: ActivityWindow };
-
 /** The items and every change and read of them in the window. */
 async function loadStateEvents(deps: StateDeps, scope: StateScope): Promise<{ items: StateItem[]; events: StateEvent[] }> {
-  const agentRows = await listAgents(deps.db, scope.guildId);
-  const agents = new Map(agentRows.map((agent) => [String(agent.id), String(agent.name)]));
+  const agents = await agentNames(deps, scope.guildId);
   const items = await loadStateItems(deps, scope.actor, { guildId: scope.guildId, agentIds: [...agents.keys()] });
   const scripts = items.filter((item) => item.kind === "script").map((item) => item.title);
   const [files, configs, runs, calls] = await Promise.all([
@@ -90,8 +114,8 @@ async function loadStateEvents(deps: StateDeps, scope: StateScope): Promise<{ it
 const STATE_KINDS: readonly StateKind[] = ["note", "memory", "script", "file", "table"];
 
 /** A kind filter from the query: one of the item kinds, or none. */
-export function parseStateKind(value: unknown): StateKind | null {
-  if (value === undefined || value === null || value === "") return null;
+export function parseStateKind(value: string | undefined): StateKind | null {
+  if (value === undefined || value === "") return null;
   const kind = STATE_KINDS.find((entry) => entry === value);
   if (!kind) throw new StudioUnprocessableError("kind must be note, memory, script, file, or table");
   return kind;
@@ -101,7 +125,7 @@ export function parseStateKind(value: unknown): StateKind | null {
 export async function loadStateList(
   deps: StateDeps,
   scope: StateScope,
-  filter: { kind: StateKind | null; agentId: string | null },
+  filter: StateFilter,
 ): Promise<{ since: string; until: string; items: StateRow[] }> {
   const { items, events } = await loadStateEvents(deps, scope);
   return {
@@ -119,10 +143,10 @@ export async function loadStateItem(
 ): Promise<{ item: StateRow; changes: ReturnType<typeof tallyBy>; reads: ReturnType<typeof tallyBy> }> {
   const { items, events } = await loadStateEvents(deps, scope);
   const item = items.find((entry) => entry.display_path === path);
-  if (!item) throw new StudioError(404, "item not found");
+  if (!item) throw new StudioNotFoundError("item not found");
   const own = events.filter((event) => event.path === path && counts(event.actor));
   return {
-    item: stateRows([item], events, { kind: null, agentId: null })[0] as StateRow,
+    item: stateRow(item, events),
     changes: tallyBy(own.filter((event) => event.what === "change")),
     reads: tallyBy(own.filter((event) => event.what === "read")),
   };
@@ -142,23 +166,22 @@ export function parseHistoryCursor(cursor: string | null): { at: string; id: str
 const OPERATIONS = ["create", "update", "delete"];
 
 /** An operation filter from the query: create, update, delete, or none. */
-export function parseOperation(value: unknown): string | null {
-  if (value === undefined || value === null || value === "") return null;
-  if (!OPERATIONS.includes(String(value))) throw new StudioUnprocessableError("op must be create, update, or delete");
-  return String(value);
+export function parseOperation(value: string | undefined): string | null {
+  if (value === undefined || value === "") return null;
+  if (!OPERATIONS.includes(value)) throw new StudioUnprocessableError("op must be create, update, or delete");
+  return value;
 }
 
 /** One item's history, a page at a time, each entry with the step or coach message that made it. */
 export async function loadStateHistory(
   deps: StateDeps,
-  scope: { actor: ArtifactActor; guildId: string },
-  request: { path: string; op: string | null; cursor: string | null },
-): Promise<{ history: Array<Record<string, unknown>>; next_cursor: string | null }> {
-  const agentRows = await listAgents(deps.db, scope.guildId);
-  const agents = new Map(agentRows.map((agent) => [String(agent.id), String(agent.name)]));
+  scope: StateHistoryScope,
+  request: StateHistoryRequest,
+): Promise<{ history: StateHistoryEntry[]; next_cursor: string | null }> {
+  const agents = await agentNames(deps, scope.guildId);
   const items = await loadStateItems(deps, scope.actor, { guildId: scope.guildId, agentIds: [...agents.keys()] });
   const item = items.find((entry) => entry.display_path === request.path);
-  if (!item) throw new StudioError(404, "item not found");
+  if (!item) throw new StudioNotFoundError("item not found");
   const rows = await listItemChanges(deps.db, scope.actor.orgId, {
     displayPath: item.display_path,
     collectionId: item.collection_id,
@@ -172,18 +195,17 @@ export async function loadStateHistory(
   return {
     history: page.map((row) => historyEntry(row, item, agents)),
     next_cursor:
-      rows.length > STATE_HISTORY_PAGE && last ? `${new Date(String(last.created_at)).toISOString()}~${String(last.id)}` : null,
+      rows.length > STATE_HISTORY_PAGE && last ? `${new Date(last.created_at).toISOString()}~${last.id}` : null,
   };
 }
 
-function historyEntry(row: ItemChangeRow, item: StateItem, agents: ReadonlyMap<string, string>): Record<string, unknown> {
-  const own = String(row.display_path);
+function historyEntry(row: ItemChangeRow, item: StateItem, agents: ReadonlyMap<string, string>): StateHistoryEntry {
   return {
-    at: new Date(String(row.created_at)).toISOString(),
-    operation: String(row.operation),
+    at: new Date(row.created_at).toISOString(),
+    operation: row.operation,
     actor: changeActor(row, agents),
     link: changeLink(row),
-    record: own === item.display_path ? null : own,
-    summary: row.summary ?? null,
+    record: row.display_path === item.display_path ? null : row.display_path,
+    summary: row.summary,
   };
 }

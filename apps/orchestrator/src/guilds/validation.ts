@@ -1,8 +1,4 @@
 import { NAME_RE } from "../lib/names.js";
-import { jsonObj } from "../db/json.js";
-import { countGuildAgents, getGuild } from "../db/guilds.js";
-import { bindQuery, type Queryable } from "../db/pg.js";
-import { DEFAULT_GUILD_AGENTS } from "../db/schema/index.js";
 
 export const ABOUT_MAX = 200;
 export const DESCRIPTION_MAX = 8000;
@@ -11,6 +7,9 @@ export const GUILD_VISIBILITIES = ["org", "private"] as const;
 export type GuildVisibility = (typeof GUILD_VISIBILITIES)[number];
 export const GUILD_OPERATOR_ROLES = ["admin", "operator"] as const;
 export type GuildOperatorRole = (typeof GUILD_OPERATOR_ROLES)[number];
+
+/** A guild's about and description as a change asks for them; an absent field stays as it is. */
+export type GuildTextPatch = { about?: string; description?: string };
 
 export class GuildValidationError extends Error {
   constructor(message: string) {
@@ -40,6 +39,14 @@ export function validateGuildDescription(description: string | null | undefined)
     throw new GuildValidationError(`description must be at most ${DESCRIPTION_MAX} characters`);
   }
   return text;
+}
+
+/** The fields a guild text patch sets, each validated, the about first. */
+export function validateGuildTextPatch(patch: GuildTextPatch): GuildTextPatch {
+  return {
+    ...(patch.about === undefined ? {} : { about: validateAbout(patch.about) }),
+    ...(patch.description === undefined ? {} : { description: validateGuildDescription(patch.description) }),
+  };
 }
 
 function trimmedOptionalEmail(raw: unknown): string {
@@ -103,43 +110,6 @@ export function validateMaxAgents(raw: unknown): number {
   return value;
 }
 
-export class GuildAgentLimitError extends Error {
-  readonly limit: number;
-
-  constructor(limit: number) {
-    super(`this guild is limited to ${limit} agents`);
-    this.name = "GuildAgentLimitError";
-    this.limit = limit;
-  }
-}
-
-/** The db/ functions a guild's agent cap is checked through, on `db`. */
-export function guildAgentRoom(db: Queryable) {
-  return {
-    getGuild: bindQuery(db, getGuild),
-    countGuildAgents: bindQuery(db, countGuildAgents),
-  };
-}
-
-export type GuildAgentRoom = ReturnType<typeof guildAgentRoom>;
-
-export async function assertGuildAgentRoom(
-  db: GuildAgentRoom,
-  guildId: string | null,
-  adding: number,
-): Promise<void> {
-  if (adding <= 0) {
-    return;
-  }
-  const row = guildId ? await db.getGuild(guildId) : null;
-  const limit = Number(row?.max_agents ?? DEFAULT_GUILD_AGENTS);
-  const cap = Number.isInteger(limit) && limit > 0 ? limit : DEFAULT_GUILD_AGENTS;
-  const count = guildId ? await db.countGuildAgents(guildId) : 0;
-  if (count + adding > cap) {
-    throw new GuildAgentLimitError(cap);
-  }
-}
-
 export function validateRoutinesEnabled(raw: unknown): boolean {
   if (typeof raw !== "boolean") {
     throw new GuildValidationError("routines_enabled must be a boolean");
@@ -147,59 +117,26 @@ export function validateRoutinesEnabled(raw: unknown): boolean {
   return raw;
 }
 
+function isGuildVisibility(value: string): value is GuildVisibility {
+  return GUILD_VISIBILITIES.some((visibility) => visibility === value);
+}
+
 export function validateVisibility(raw: unknown): GuildVisibility {
   const value = raw === undefined || raw === null || raw === "" ? "org" : String(raw);
-  if (!(GUILD_VISIBILITIES as readonly string[]).includes(value)) {
+  if (!isGuildVisibility(value)) {
     throw new GuildValidationError("visibility must be org or private");
   }
-  return value as GuildVisibility;
+  return value;
 }
 
-export type GuildOperator = { user_id: string; name: string; role: GuildOperatorRole };
-
-/** The operators on a guild row (`operators` from the repository), oldest first. */
-export function guildOperators(guild: { operators?: unknown }): GuildOperator[] {
-  const raw = jsonObj(guild.operators ?? []);
-  if (!Array.isArray(raw)) {
-    return [];
-  }
-  const operators: GuildOperator[] = [];
-  for (const item of raw) {
-    if (!item || typeof item !== "object") {
-      continue;
-    }
-    const record = item as Record<string, unknown>;
-    const role = String(record.role);
-    if ((GUILD_OPERATOR_ROLES as readonly string[]).includes(role)) {
-      operators.push({
-        user_id: String(record.user_id),
-        name: String(record.name),
-        role: role as GuildOperatorRole,
-      });
-    }
-  }
-  return operators;
-}
-
-export function guildRole(guild: { operators?: unknown }, userId: string): GuildOperatorRole | null {
-  return guildOperators(guild).find((operator) => operator.user_id === userId)?.role ?? null;
-}
-
-/** An org guild is visible to every organisation member; a private one to its operators. */
-export function canSeeGuild(
-  guild: { visibility?: unknown; operators?: unknown },
-  userId: string,
-): boolean {
-  if (String(guild.visibility ?? "org") !== "private") {
-    return true;
-  }
-  return guildRole(guild, userId) !== null;
+function isGuildOperatorRole(value: string): value is GuildOperatorRole {
+  return GUILD_OPERATOR_ROLES.some((role) => role === value);
 }
 
 export function validateGuildOperatorRole(raw: unknown): GuildOperatorRole {
   const value = String(raw ?? "");
-  if (!(GUILD_OPERATOR_ROLES as readonly string[]).includes(value)) {
+  if (!isGuildOperatorRole(value)) {
     throw new GuildValidationError("role must be admin or operator");
   }
-  return value as GuildOperatorRole;
+  return value;
 }

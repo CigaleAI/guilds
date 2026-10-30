@@ -3,17 +3,15 @@ import { PLATFORM_SEED_TOOLS } from "../../src/access/runtime.js";
 import { existsSync, mkdirSync, readFileSync as _readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { after, describe, test } from "node:test";
-import { DeliveryBusyError } from "../../src/groupchat/index.js";
+import { DeliveryBusyError } from "../../src/groupchat/delivery.js";
 import { CONTEXT_HISTORY_LIMIT } from "../../src/groupchat/history.js";
-import { ArtifactError, operatorActor } from "../../src/artifacts/index.js";
-import { unreachableMarker } from "../../src/artifacts/embeds.js";
+import { operatorActor } from "../../src/artifacts/actors.js";
 import * as generationMod from "../../src/generation/index.js";
 import { generationLive } from "../../src/generation/completion.js";
 import { PolicyError } from "../../src/policy/index.js";
-import { ConflictError, RunLimitError } from "../../src/generation/errors.js";
+import { ConflictError, RunLimitError, RunRequestError } from "../../src/generation/errors.js";
 import { pendingToolCalls } from "../../src/generation/tool-calls.js";
-import { RunRequestError } from "../../src/generation/index.js";
-import { LLMError } from "../../src/llm/index.js";
+import { LLMError, type ModelEndpoint, type ModelRequest } from "../../src/llm/completion.js";
 import { sleep } from "../../src/lib/event.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { nextRunAt } from "../../src/schedules/cron.js";
@@ -21,7 +19,8 @@ import { NOTE_TOOLS } from "../../src/seed/catalog.js";
 import { schemasFor, withRemainingToolCalls } from "../../src/toolbox/index.js";
 import { SCRIPT_TOOLS } from "../../src/toolbox/script.js";
 import { SCRIPT_ARGS_ENV, launcherCommand } from "../../src/scripts/materialise.js";
-import { createGroupRouter, createTypeSafeClient } from "../../src/typesafe/index.js";
+import { createTypeSafeClient } from "../../src/typesafe/client.js";
+import { createGroupRouter } from "../../src/typesafe/group.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { helperAnswer, helperRequest } from "../helpers/code-sandbox.js";
@@ -48,6 +47,10 @@ import {
 } from "../helpers/generation.js";
 import { limitedPolicy } from "../helpers/policy.js";
 import { noteRowAt } from "../helpers/artifacts.js";
+import { MemoryMcpDatabase } from "../helpers/mcp-database.js";
+import { connectionRow, serverRow } from "../helpers/servers.js";
+import type { McpConnectionRow } from "../../src/db/mcp.js";
+import { McpPool, type RemoteCall } from "../../src/mcp/pool.js";
 
 const HOME = "/home/a_1";
 
@@ -88,6 +91,16 @@ function restoreBindings(): void {
   live.countInputTokens = originalCount;
   live.cancelGraceMs = originalGrace;
   live.shutdownTimeoutMs = originalShutdown;
+}
+
+/** A pool whose database holds the connected Notion login `conn_u`, answering each remote call with `answer`. */
+function notionPool(answer: (connection: McpConnectionRow, call: RemoteCall) => Promise<string>): McpPool {
+  const database = new MemoryMcpDatabase();
+  database.connections = [connectionRow({ id: "conn_u", mcp_server_id: "mcp_notion" })];
+  database.servers = [serverRow("notion", { id: "mcp_notion" })];
+  const pool = new McpPool(database);
+  pool.call = async (connection, _server, call) => answer(connection, call);
+  return pool;
 }
 
 function withoutWorkspaceMeasure(commands: unknown): string[] {
@@ -441,18 +454,10 @@ describe("generation", { concurrency: 1 }, () => {
     db.mcp_connection = { id: "conn_u", mcp_server_id: "mcp_notion", status: "connected" };
     db.mcp_server = { id: "mcp_notion", slug: "notion" };
     const calls: Array<[string, string, Record<string, unknown>]> = [];
-    const pool = {
-      async call(
-        _db: unknown,
-        connection: Record<string, unknown>,
-        _server: Record<string, unknown>,
-        remoteName: string,
-        arguments_: Record<string, unknown>,
-      ) {
-        calls.push([String(connection.id), remoteName, arguments_]);
-        return "page found";
-      },
-    };
+    const pool = notionPool(async (connection, call) => {
+      calls.push([connection.id, call.tool, call.arguments]);
+      return "page found";
+    });
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), new FakeSandboxes(), { mcp: pool });
     live.streamCompletion = fakeStream(db, [
       { id: "call_1", type: "function" as const, function: { name: "notion_search", arguments: '{"query":"notes"}' } },
@@ -505,11 +510,7 @@ describe("generation", { concurrency: 1 }, () => {
       nonce,
     };
     db.mcp_server = { id: "mcp_notion", slug: "notion" };
-    const pool = {
-      async call() {
-        return "token is tok-access and tok-refresh";
-      },
-    };
+    const pool = notionPool(async () => "token is tok-access and tok-refresh");
     const sandboxes = new FakeSandboxes();
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes, { mcp: pool });
     live.streamCompletion = fakeStream(db, [
@@ -650,7 +651,7 @@ describe("generation", { concurrency: 1 }, () => {
     const db = {
       async getAgent(agentId: string) {
         return agentId === "a_1"
-          ? { id: "a_1", name: "researcher", guild_name: "research", org_slug: "acme", ...AGENT_MACHINE }
+          ? { id: "a_1", name: "researcher", guild_name: "research", org_slug: "acme", config: AGENT_CONFIG, ...AGENT_MACHINE }
           : null;
       },
       async deleteAgent(agentId: string) {
@@ -934,7 +935,8 @@ describe("generation", { concurrency: 1 }, () => {
     ];
     const artifacts = {
       async writeNote(actor: { orgId: string; agentId: string | null }, args: { key: string; content: string }) {
-        return noteRowAt(`org/${actor.orgId}/agents/${actor.agentId}/${args.key}`, args.content);
+        const href = `org/${actor.orgId}/agents/${actor.agentId}/${args.key}`;
+        return { href, row: noteRowAt(href, args.content) };
       },
     };
     const loop = makeLoop(db, notes, path.join(tmp, "workspaces"), new FakeSandboxes(), {
@@ -1365,7 +1367,7 @@ describe("generation", { concurrency: 1 }, () => {
     const created = await loop.runs.createRun("a_1", "hello");
     const opening = parsedState(String(db.create_args?.system_content));
     loop.endGeneration(String(created.id));
-    await notes.writeNote("private", "acme", "research", "researcher", "hello.md", "note");
+    await notes.writePrivateNote("acme", "research", "researcher", "hello.md", "note");
     await loop.addMessage(String(created.id), "again");
     assert.deepEqual(
       db.messages.map((row) => (row.metadata as Record<string, unknown>).source),
@@ -1431,9 +1433,9 @@ describe("generation", { concurrency: 1 }, () => {
     restoreBindings();
     const { loop, db } = await seededLoop();
     const started = deferred();
-    live.streamCompletion = async function* hang(options: { signal?: AbortSignal }) {
+    live.streamCompletion = async function* hang(_request: ModelRequest, _endpoint: ModelEndpoint, signal?: AbortSignal) {
       started.resolve();
-      await hangForever(options.signal);
+      await hangForever(signal);
       yield ["done", completionReply("nope")];
     };
     const created = await loop.runs.createRun("a_1", "hello");
@@ -2338,8 +2340,8 @@ describe("generation", { concurrency: 1 }, () => {
     const db = new FakeDB({});
     const heard: Array<Record<string, unknown>> = [];
     const seen: Array<Record<string, unknown>> = [];
-    live.streamCompletion = async function* stream(options: { apiKey?: string; baseURL?: string }) {
-      seen.push({ apiKey: options.apiKey, baseURL: options.baseURL });
+    live.streamCompletion = async function* stream(_request: ModelRequest, endpoint: ModelEndpoint) {
+      seen.push({ apiKey: endpoint.apiKey, baseURL: endpoint.baseURL });
       yield ["delta", "hi"];
       yield ["done", completionReply("hi")];
     };
@@ -2396,29 +2398,40 @@ describe("generation", { concurrency: 1 }, () => {
     );
   });
 
-  test("hydrate_inlines_task_embeds_as_the_agent_and_marks_what_it_cannot_read", async () => {
+  test("hydrate_runs_with_the_inlined_task_and_the_memory_the_store_gives_the_agent", async () => {
     const { notes, tmp } = await seededLoop();
-    const rules = "org/org_1/guilds/guild_1/rules.md";
-    const shut = "org/org_1/shut.md";
-    const readers: boolean[] = [];
+    const asked: string[] = [];
     const artifacts = {
-      async getByDisplayPath(actor: { operator: boolean }, href: string) {
-        readers.push(actor.operator);
-        if (actor.operator || href === rules) {
-          return { row: { kind: "note", level: "guild", key: "rules.md", content_text: "Cite sources." } };
-        }
-        throw new ArtifactError("artifact not found", 404);
-      },
-      async readStoredMemory() {
-        return "";
+      async agentTask(agent: { id: string }) {
+        asked.push(agent.id);
+        return { expanded: { ok: true, text: "Follow the inlined rules." }, memoryText: "- remembered" };
       },
     };
     const loop = makeLoop(new FakeDB({}), notes, path.join(tmp, "workspaces"), new FakeSandboxes(), {
       artifacts: artifacts as never,
     });
-    const [, task] = await loop.preparation.prompts(agentRow({ task: `![[${rules}]] then ![[${shut}]]` }));
-    assert.equal(task, `<rules path="${rules}" level="guild">\nCite sources.\n</rules> then ${unreachableMarker(shut)}`);
-    assert.deepEqual(readers, [false, false]);
+    const [, task, memory] = await loop.preparation.prompts(agentRow({ task: "Follow ![[org/org_1/rules.md]]" }));
+    assert.equal(task, "Follow the inlined rules.");
+    assert.equal(memory, "- remembered");
+    assert.deepEqual(asked, ["a_1"]);
+  });
+
+  test("hydrate_refuses_a_run_whose_task_embeds_the_store_refuses", async () => {
+    const { notes, tmp } = await seededLoop();
+    const artifacts = {
+      async agentTask() {
+        return { expanded: { ok: false, error: "embed budget exceeded" }, memoryText: "" };
+      },
+    };
+    const loop = makeLoop(new FakeDB({}), notes, path.join(tmp, "workspaces"), new FakeSandboxes(), {
+      artifacts: artifacts as never,
+    });
+    await assert.rejects(loop.preparation.prompts(agentRow({})), (error: unknown) => {
+      assert.ok(error instanceof RunRequestError);
+      assert.equal(error.status, 422);
+      assert.equal(error.message, "embed budget exceeded");
+      return true;
+    });
   });
 
   test("event bus drops stalled subscribers", async () => {

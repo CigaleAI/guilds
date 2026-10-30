@@ -1,6 +1,8 @@
+import { Type, type Static } from "@sinclair/typebox";
 import { RecipeError } from "./errors.js";
 import { roleBrowses } from "./prepare.js";
-import { builderAuthor, markReviewed, operatorAuthor, type FieldAuthor, type RecipeDocument, type RecipeRole } from "./schema.js";
+import type { FieldAuthor, RecipeDocument, RecipeRole } from "../db/schema/index.js";
+import { builderAuthor, markReviewed, operatorAuthor } from "./schema.js";
 
 // Who wrote each reviewable field of a recipe, and the operator's review of it: a Builder write
 // keeps a reviewed field reviewed only while its content stays the same.
@@ -203,11 +205,20 @@ function reviewField(recipe: RecipeDocument, path: string): ReviewField | null {
 export type ReviewAction = { action: "confirm" } | { action: "edit"; value?: string | undefined };
 
 /** The review a request asks for: `{ action: "edit", value }` edits, anything else confirms. */
-export function parseReviewAction(body: Record<string, unknown>): ReviewAction {
+/** A review of one recipe field: its path, and whether it is confirmed or edited to a value. */
+export const ReviewSchema = Type.Object({
+  path: Type.Optional(Type.String()),
+  action: Type.Optional(Type.String()),
+  value: Type.Optional(Type.String()),
+});
+
+export type ReviewRequest = Static<typeof ReviewSchema>;
+
+export function parseReviewAction(body: ReviewRequest): ReviewAction {
   if (body.action !== "edit") {
     return { action: "confirm" };
   }
-  return { action: "edit", value: typeof body.value === "string" ? body.value : undefined };
+  return { action: "edit", value: body.value };
 }
 
 export function applyReview(recipe: RecipeDocument, path: string, review: ReviewAction): void {

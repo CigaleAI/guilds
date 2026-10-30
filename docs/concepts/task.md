@@ -194,8 +194,10 @@ Each save that changes the text archives the previous text to
 newest 50. An empty previous text is not archived. Each save appends
 a `file_changes` row ([Artifacts](artifacts.md#file-provenance)).
 
-A new agent's Task is its focus, or the template
-`apps/orchestrator/src/prompts/task.md`.
+A new agent's Task is its focus, or the template `task.md` in
+`TEMPLATES_ROOT` (`apps/orchestrator/src/prompts/task.md` by default),
+or a one-line default Task when that file does not exist. A `task.md`
+that exists but cannot be read fails the agent's creation.
 
 The run's system row metadata records `task_source`: the Task's
 `version`, `hash`, and `display_path`, `has_embeds`, `embeds`, each

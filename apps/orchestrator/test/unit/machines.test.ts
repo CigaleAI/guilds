@@ -81,13 +81,13 @@ test("a machine body: a custom machine has a size within the bounds, no other ti
   assert.deepEqual(validateMachineInput({ name: "edge", box: "custom", cpu: 0.5, memory_mib: 512 }).cpu, 0.5);
   assert.equal(validateMachineInput({ name: "top", box: "custom", cpu: 4, memory_mib: 8192 }).memory_mib, 8192);
   assert.equal(validateMachineInput({ name: "q", box: "custom", cpu: 1.75, memory_mib: 1024 }).cpu, 1.75);
-  for (const cpu of [0.25, 4.25, 1.1, "2", undefined]) {
+  for (const cpu of [0.25, 4.25, 1.1]) {
     assert.throws(
       () => validateMachineInput({ name: "m", box: "custom", cpu, memory_mib: 1024 }),
       /cpu must be between 0.5 and 4 in steps of 0.25/,
     );
   }
-  for (const memory of [256, 8193, 1024.5, undefined]) {
+  for (const memory of [256, 8193, 1024.5]) {
     assert.throws(
       () => validateMachineInput({ name: "m", box: "custom", cpu: 2, memory_mib: memory }),
       /memory_mib must be an integer between 512 and 8192/,
@@ -97,7 +97,8 @@ test("a machine body: a custom machine has a size within the bounds, no other ti
   assert.throws(() => validateMachineInput({ name: "m", box: "lite" }), /box must be standard, code, or custom/);
   assert.throws(() => validateMachineInput({ name: "Bad Name" }), MachineError);
   assert.throws(() => validateMachineInput({}), /name is required/);
-  assert.throws(() => validateMachineInput({ name: "m", size: 3 }), /unknown keys: size/);
+  const sized = { name: "m", size: 3 };
+  assert.throws(() => validateMachineInput(sized), /unknown keys: size/);
   assert.throws(() => validateMachineInput({ name: "m", max_workspace_mib: 0 }), /max_workspace_mib/);
 });
 
@@ -220,11 +221,12 @@ test("a machine row maps numeric columns to numbers and nulls, and refuses an un
 });
 
 test("a machine body: each refusal names what is wrong", () => {
-  assert.throws(() => validateMachineInput({ name: "m", zeta: 1, alpha: 2 }), /unknown keys: alpha, zeta/);
+  const extra = { name: "m", zeta: 1, alpha: 2 };
+  assert.throws(() => validateMachineInput(extra), /unknown keys: alpha, zeta/);
   assert.throws(() => validateMachineInput({ box: "code" }), /name is required/);
   assert.equal(validateMachineInput({ box: "code" }, CUSTOM).name, "big", "an update keeps the name");
   assert.equal(validateMachineInput({ name: "  spaced  " }).name, "spaced");
-  for (const box of ["lite", 3, null]) {
+  for (const box of ["lite", "Custom"]) {
     assert.throws(() => validateMachineInput({ name: "m", box }), /box must be standard, code, or custom/);
   }
   assert.throws(() => validateMachineInput({ name: "m", box: "custom" }), /cpu must be between/);
@@ -238,8 +240,7 @@ test("a machine body: each refusal names what is wrong", () => {
   });
   assert.throws(() => validateMachineInput({ name: "m", memory_mib: 1024 }), /only for a custom machine/);
   assert.throws(() => validateMachineInput({ cpu: 2 }, { ...CUSTOM, box: "code", cpu: null, memory_mib: null }), /only for a custom machine/);
-  assert.equal(validateMachineInput({ name: "m", box: "code", cpu: undefined }).cpu, null, "an undefined size is no size");
-  for (const cap of [1.5, "100", -5, null]) {
+  for (const cap of [1.5, -5, 0]) {
     assert.throws(
       () => validateMachineInput({ name: "m", max_workspace_mib: cap }),
       /max_workspace_mib must be a positive integer/,

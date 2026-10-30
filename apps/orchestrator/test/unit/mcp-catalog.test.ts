@@ -3,13 +3,14 @@ import { test } from "node:test";
 import { assertPublicHttpsUrl, EndpointError } from "../../src/net/endpoints.js";
 import {
   generateToolPrefix,
-  isDefaultOffRemote,
   isReservedSlug,
   RESERVED_MCP_SLUGS,
 } from "../../src/mcp/policy.js";
-import { namespacedName } from "../../src/mcp/names.js";
+import { namespacedName } from "../../src/connectors/naming.js";
+import { effectiveTool } from "../../src/connectors/servers.js";
 import { oauthSetupState, oauthStrategy, startsBrowserOauth } from "../../src/oauth/index.js";
-import { LIST_TOOLS_MAX, McpError, McpSession } from "../../src/mcp/index.js";
+import { McpError } from "../../src/mcp/errors.js";
+import { LIST_TOOLS_MAX, McpSession } from "../../src/mcp/session.js";
 import { storeKeys } from "../helpers/env.js";
 import { serverRow } from "../helpers/servers.js";
 
@@ -23,16 +24,17 @@ test("reserved slugs and generated prefixes stay collision-proof", () => {
   assert.equal(namespacedName("coingecko", "search"), "coingecko_search");
 });
 
-test("default-off remotes match gmail send, drive writes, and opensea management", () => {
-  assert.equal(isDefaultOffRemote("gmail", "send_message"), true);
-  assert.equal(isDefaultOffRemote("qonto", "upload_invoice"), true);
-  assert.equal(isDefaultOffRemote("opensea", "get_instant_api_key"), true);
-  assert.equal(isDefaultOffRemote("custom", "send"), false);
-  assert.equal(isDefaultOffRemote("gmail", "list_messages"), false);
-  assert.equal(isDefaultOffRemote("drive", "create_file"), true);
-  assert.equal(isDefaultOffRemote("drive", "copy_file"), true);
-  assert.equal(isDefaultOffRemote("drive", "search_files"), false);
-  assert.equal(isDefaultOffRemote("opensea", "manage_wallets"), true);
+test("listed tools start Off for gmail send, drive writes, and opensea management", () => {
+  const startsOff = (slug: string, name: string) =>
+    effectiveTool(serverRow(slug), { name, description: "", input_schema: { type: "object" } })?.default_enabled === false;
+  assert.equal(startsOff("gmail", "send_message"), true);
+  assert.equal(startsOff("qonto", "upload_invoice"), true);
+  assert.equal(startsOff("opensea", "get_instant_api_key"), true);
+  assert.equal(startsOff("gmail", "list_messages"), false);
+  assert.equal(startsOff("drive", "create_file"), true);
+  assert.equal(startsOff("drive", "copy_file"), true);
+  assert.equal(startsOff("drive", "search_files"), false);
+  assert.equal(startsOff("opensea", "manage_wallets"), true);
 });
 
 test("public https endpoints reject private and local networks", () => {

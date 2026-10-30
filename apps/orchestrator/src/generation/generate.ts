@@ -1,46 +1,39 @@
-import { accessDatabase } from "../access/runtime.js";
-import { maxScriptsOf } from "../agents/validation.js";
-import { agentActor, type ArtifactFiles } from "../artifacts/index.js";
+import { agentActor } from "../artifacts/actors.js";
 import { REPOSITORIES_MISSING, REPOSITORIES_MISSING_MESSAGE } from "../coding/harnesses.js";
-import { clearHarnessLogin, getAgent, markHarnessLogin, type AgentRow } from "../db/agents.js";
+import { getAgent, type AgentRow } from "../db/agents.js";
+import { listBindingsCovering } from "../db/bindings.js";
 import { isPlainRecord } from "../db/json.js";
-import { bindQuery, type Queryable } from "../db/pg.js";
-import {
-  completeRun,
-  getRun,
-  listMessages,
-  mergeRunMetadata,
-  updateRunScripts,
-  type MessageRow,
-  type RunRow,
-} from "../db/runs.js";
-import type { GroupChat } from "../groupchat/index.js";
-import type { Issues } from "../issues/index.js";
+import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
+import { completeRun, getRun, listMessages, mergeRunMetadata, type MessageRow, type RunRow } from "../db/runs.js";
 import { agentHome } from "../lib/agent-file.js";
-import { INPUT_TOKEN_LIMIT_MESSAGE } from "../llm/index.js";
+import { INPUT_TOKEN_LIMIT_MESSAGE } from "../llm/tokens.js";
 import { slotPorts } from "../machines/index.js";
-import type { NotesStore } from "../notes/store.js";
-import { errorName, writeLog } from "../observability/log.js";
-import { agentSandbox, applyRunScripts, prepareWorkspace, seatEnvironment, type SandboxHandle } from "../sandbox/index.js";
-import type { Schedules } from "../schedules/service.js";
+import { agentSandbox, applyRunScripts, prepareBrowserWorkspace, prepareWorkspace, seatEnvironment } from "../sandbox/index.js";
+import type { SandboxHandle } from "../sandbox/sdk.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { RunConfigSnapshot, RunScriptSnapshot } from "../db/schema/index.js";
-import { harnessMissingError, shownProgressLines } from "../toolbox/harness.js";
-import { createToolContext, type ToolContext } from "../toolbox/index.js";
-import { dynamicScriptTools, liveExtraForAgent, SCRIPT_TOOLS } from "../toolbox/script.js";
-import type { ActiveGenerations } from "./admission.js";
+import { harnessMissingError } from "../toolbox/harness-setup.js";
+import { createToolRun, type ToolHooks, type ToolRun } from "../toolbox/index.js";
+import { dynamicScriptTools, liveExtraForAgent } from "../toolbox/script.js";
+import type { ActiveGenerations } from "./active-generations.js";
 import { chainOf, completeIfActive, HANDOFF_FRACTION, type RunChains } from "./chain.js";
-import { codingRepositoriesDatabase, guildRepositories, type CodingRuns } from "./coding.js";
+import { codingRepositoriesDatabase, guildRepositories, type CodingRepositoriesDatabase, type CodingRuns } from "./coding.js";
 import { completionRequest, historyTokens, type ModelCompletion } from "./completion.js";
-import { GenerationCancelled, RunLimitError } from "./errors.js";
+import { GenerationCancelled, logOperationFailure, RunLimitError, type OperationFailure } from "./errors.js";
 import type { RunEvents, RunGeneration } from "./events.js";
 import { agentSeat, type AgentMachines } from "./machines.js";
-import { liveOfferedNames, mcpIndex, snapshotOfferedNames, toolSchemaName, withFirstClassScriptTools } from "./offered-tools.js";
+import {
+  liveOfferedNames,
+  mcpIndex,
+  snapshotOfferedNames,
+  toolSchemaName,
+  withFirstClassScriptTools,
+  type ToolBindingScope,
+} from "./offered-tools.js";
 import type { GenerationSecrets, RunSecrets } from "./run-secrets.js";
 import type { GenerationStarter } from "./runs.js";
 import { executedToolCalls, toolCallsOf, type GenerationTools, type ToolCalls } from "./tool-calls.js";
 import type { WorkspaceLimits } from "./workspace.js";
-import type { GenerationArtifacts } from "./prepare.js";
 
 const TOOL_CALL_LIMIT_MESSAGE = "Tool call limit reached. Start a new run to continue.";
 const SCHEDULE_WAKE_PREFIX = "Schedule wake-up: ";
@@ -100,23 +93,28 @@ function groupTagsOf(rows: MessageRow[]): string[] {
   return tagged.filter((item) => item);
 }
 
+/** The db/ functions a generation reads its run and keeps its progress through. */
+export type RunGeneratorDatabase = CodingRepositoriesDatabase & {
+  listBindingsCovering: BoundQuery<typeof listBindingsCovering>;
+  getRun: BoundQuery<typeof getRun>;
+  getAgent: BoundQuery<typeof getAgent>;
+  listMessages: BoundQuery<typeof listMessages>;
+  completeRun: BoundQuery<typeof completeRun>;
+  mergeRunMetadata: BoundQuery<typeof mergeRunMetadata>;
+};
+
 /** The db/ functions a generation reads its run and keeps its progress through, on `db`. */
-export function runGeneratorDatabase(db: Queryable) {
+export function runGeneratorDatabase(db: Queryable): RunGeneratorDatabase {
   return {
-    ...accessDatabase(db),
+    listBindingsCovering: bindQuery(db, listBindingsCovering),
     ...codingRepositoriesDatabase(db),
     getRun: bindQuery(db, getRun),
     getAgent: bindQuery(db, getAgent),
     listMessages: bindQuery(db, listMessages),
     completeRun: bindQuery(db, completeRun),
     mergeRunMetadata: bindQuery(db, mergeRunMetadata),
-    updateRunScripts: bindQuery(db, updateRunScripts),
-    markHarnessLogin: bindQuery(db, markHarnessLogin),
-    clearHarnessLogin: bindQuery(db, clearHarnessLogin),
   };
 }
-
-export type RunGeneratorDatabase = ReturnType<typeof runGeneratorDatabase>;
 
 /** What a memory write in this run names as its source: the run, and what woke it. */
 async function memoryReplacedBy(db: Pick<RunGeneratorDatabase, "listMessages">, run: RunRow): Promise<string> {
@@ -140,12 +138,6 @@ async function memoryReplacedBy(db: Pick<RunGeneratorDatabase, "listMessages">, 
 /** What generations run with, built once by the loop. */
 export type RunGeneratorServices = {
   db: RunGeneratorDatabase;
-  notes: NotesStore;
-  artifacts: GenerationArtifacts | null;
-  files: ArtifactFiles | null;
-  groupChat: GroupChat;
-  issues: Issues;
-  schedules: Schedules;
   scripts: Scripts;
   events: RunEvents;
   generations: ActiveGenerations;
@@ -230,7 +222,7 @@ export class RunGenerator {
   private async finish(turn: RunGeneration, cancelled: boolean): Promise<void> {
     const { db, events } = this.services;
     if (cancelled) {
-      await this.settleCancel(turn);
+      logOperationFailure(await this.settleCancel(turn));
     }
     await events.publish(turn.runId, "generation.finished", { generation: turn.generation });
     const finished = await db.getRun(turn.runId);
@@ -239,17 +231,20 @@ export class RunGenerator {
     }
   }
 
-  /** Records the cancel once, however many times it is settled; a settlement that fails is logged. */
-  private async settleCancel(turn: RunGeneration): Promise<void> {
+  /**
+   * Records the cancel once, however many times it is settled; returns the failure of a
+   * settlement that did not go through, after which the generation still finishes.
+   */
+  private async settleCancel(turn: RunGeneration): Promise<OperationFailure | null> {
     try {
       await this.services.generations.settlement(turn.runId, () => this.recordCancel(turn));
+      return null;
     } catch (error) {
-      writeLog(
-        "error",
-        "cancel settlement failed",
-        { ...turn.log, operation: "generation.cancelled", error_type: errorName(error) },
+      return {
+        message: "cancel settlement failed",
+        fields: { ...turn.log, operation: "generation.cancelled" },
         error,
-      );
+      };
     }
   }
 
@@ -291,7 +286,7 @@ export class RunGenerator {
         await coding.recordCheckpoints(gen.runId, gen.agent, ready.sandbox);
       }
       if (!generations.isCancelled(gen.runId)) {
-        await workspace.recordSize(gen.runId, gen.agent, ready.sandbox);
+        logOperationFailure(await workspace.recordSize(gen.runId, gen.agent, ready.sandbox), "warn");
       }
     }
   }
@@ -346,7 +341,11 @@ export class RunGenerator {
         gen.log.host_id = host.hostId;
         await db.mergeRunMetadata(gen.runId, { host_id: host.hostId }, new Date());
       }
-      prepareWorkspace(root, machineId, gen.agent.id, { browser: Boolean(gen.snapshot.browser) });
+      if (gen.snapshot.browser) {
+        prepareBrowserWorkspace(root, machineId, gen.agent.id);
+      } else {
+        prepareWorkspace(root, machineId, gen.agent.id);
+      }
       return true;
     } catch (error) {
       await events.recordError(gen, "workspace.create", error);
@@ -393,7 +392,7 @@ export class RunGenerator {
     if (!gen.snapshot.coding) {
       return true;
     }
-    return (await coding.harnessReady(gen, tools.ctx)) && (await coding.prepareRepositories(gen, gen.agent, sandbox, tools));
+    return (await coding.harnessReady(gen, tools.run)) && (await coding.prepareRepositories(gen, gen.agent, sandbox, tools));
   }
 
   /** The tools the generation calls: those its snapshot froze that the agent's live bindings and settings still offer. */
@@ -409,7 +408,8 @@ export class RunGenerator {
       connections: mcpIndex(gen.snapshot.mcp),
     };
     return {
-      ctx: await this.toolContext(gen, sandboxes, secrets, offer),
+      run: await this.toolRun(gen, sandboxes, secrets, offer),
+      hooks: this.toolHooks(gen, sandboxes),
       schemas: withFirstClassScriptTools(
         frozen.filter((tool) => offer.names.has(toolSchemaName(tool))),
         offer.scripts,
@@ -423,11 +423,10 @@ export class RunGenerator {
 
   private async offeredNames(gen: Generation, frozen: RunConfigSnapshot["tools"]): Promise<Set<string>> {
     const { agent, run } = gen;
-    const scope = { orgId: agent.org_id || null, guildId: agent.guild_id, agentId: agent.id };
+    const scope: ToolBindingScope = { orgId: agent.org_id || null, guildId: agent.guild_id, agentId: agent.id };
     const rows = await this.services.db.listBindingsCovering(scope);
     const live = agent.config;
-    return liveOfferedNames(snapshotOfferedNames(frozen), rows, {
-      ...scope,
+    return liveOfferedNames(snapshotOfferedNames(frozen), rows, scope, {
       browser: live.browser,
       coding: live.coding,
       scripting: live.scripting,
@@ -437,25 +436,22 @@ export class RunGenerator {
     });
   }
 
-  private async toolContext(
+  /** The generation's run record: whose run it is, where its commands run, and what it offers. */
+  private async toolRun(
     gen: Generation,
     sandboxes: RunSandboxes,
     secrets: GenerationSecrets,
     offer: ToolOffer,
-  ): Promise<ToolContext> {
-    const { db, notes, artifacts, files, groupChat, issues, schedules, scripts, events, generations, machines } =
-      this.services;
+  ): Promise<ToolRun> {
+    const { db, generations, machines } = this.services;
     const { runId, agent, snapshot } = gen;
     const seat = agentSeat(agent);
-    return createToolContext({
+    return createToolRun({
       run_id: runId,
       agent_id: agent.id,
       guild_id: agent.guild_id,
       sandbox: sandboxes.agent,
       secrets: secrets.values,
-      notes,
-      artifacts,
-      files,
       workspace_dir: await machines.agentWorkspace(agent),
       artifact_actor: agent.org_id
         ? agentActor({ orgId: agent.org_id, guildId: agent.guild_id, agentId: agent.id, agentName: agent.name, runId })
@@ -464,23 +460,13 @@ export class RunGenerator {
       agent_name: agent.name,
       org_slug: agent.org_slug,
       cancel_event: generations.cancelEvent(runId),
-      track_command: (executionId) => generations.trackCommand(runId, sandboxes.agent, executionId),
       agent_home: agentHome(seat.agentId),
       cdp_port: snapshot.browser ? slotPorts(seat.slot).cdp : null,
-      ensure_browser: snapshot.browser ? () => machines.ensureRunBrowser(agent, sandboxes.machine) : null,
-      group_chat: groupChat,
-      issues,
-      schedules,
-      scripts: SCRIPT_TOOLS.some((name) => offer.names.has(name)) ? scripts : null,
       run_kind: gen.run.kind,
       secret_names: secrets.refs.map((ref) => ref.name),
-      secret_store: this.services.secrets.secretStore(agent),
       memory_replaced_by: await memoryReplacedBy(db, gen.run),
       run_scripts: offer.scripts,
-      persist_run_scripts: async (runScripts) => {
-        await db.updateRunScripts(runId, runScripts, new Date());
-      },
-      max_scripts: maxScriptsOf(agent.config),
+      max_scripts: agent.config.max_scripts,
       dynamic_tools: offer.names.has("script_run") ? dynamicScriptTools(offer.scripts) : {},
       connection_tool_names: Object.keys(offer.connections),
       offered_tools: offer.names,
@@ -488,25 +474,23 @@ export class RunGenerator {
       harness_model: snapshot.harness_model,
       harness_effort: snapshot.harness_effort,
       secret_aliases: snapshot.secret_aliases,
-      // `secrets.values` holds the run's values and, once minted, its GitHub tokens.
-      publish_progress: async (toolCallId, update) => {
-        await events.publish(runId, "tool.progress", {
-          run_id: runId,
-          tool_call_id: toolCallId,
-          lines: shownProgressLines(update.lines, secrets.values),
-          session_id: update.session_id,
-        });
-      },
-      remember_harness_task: async (task) => {
-        await db.mergeRunMetadata(runId, { harness_task: task }, new Date());
-      },
-      harness_login_seen: async (harness, account) => {
-        await db.markHarnessLogin(agent.id, harness, new Date(), account);
-      },
-      harness_login_lost: async (harness) => {
-        await db.clearHarnessLogin(agent.id, harness);
-      },
     });
+  }
+
+  /**
+   * The hooks the generation's tools call, each bound to what its run record does not hold: the
+   * agent's container to track a command in, its machine to start Chrome on, and its row to store
+   * a secret for.
+   */
+  private toolHooks(gen: Generation, sandboxes: RunSandboxes): ToolHooks {
+    const { generations, machines, secrets } = this.services;
+    const { runId, agent, snapshot } = gen;
+    return {
+      track_command: (executionId) => generations.trackCommand(runId, sandboxes.agent, executionId),
+      ensure_browser: snapshot.browser ? () => machines.ensureRunBrowser(agent, sandboxes.machine) : null,
+      before_command: null,
+      secret_store: secrets.secretStore(agent),
+    };
   }
 
   /** Model steps until the model stops calling tools, or the step, tool-call, or input limit ends the run. */

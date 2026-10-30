@@ -1,4 +1,6 @@
-import type { CommandResult, ToolContext } from "./types.js";
+import { exitCodeOf, type CommandResult } from "../sandbox/sdk.js";
+import type { CommandInit, ToolHooks, ToolInvocation, ToolRun } from "./types.js";
+import { SandboxCommandError, ToolUnavailableError } from "./errors.js";
 
 export const COMMAND_TIMEOUT_SECONDS = 120;
 
@@ -7,70 +9,76 @@ export function formatExecution(execution: CommandResult): string {
   const stderr = (execution.logs?.stderr ?? []).map((message) => message.text ?? "").join("\n");
   const chunks = [stdout, stderr].filter((part) => part);
   const text = chunks.join("\n");
-  const code = execution.exit_code ?? execution.exitCode;
-  if (code !== 0 && code !== null && code !== undefined) {
+  const code = exitCodeOf(execution);
+  if (code !== 0 && code !== undefined) {
     const suffix = `exit_code: ${code}`;
     return text ? `${text}\n${suffix}` : suffix;
   }
   return text;
 }
 
-export async function runCommand(ctx: ToolContext, command: string, options: {
-  timeoutSeconds?: number;
-  envs?: Record<string, string>;
-} = {}): Promise<string> {
-  const execution = await executeCommand(ctx, command, options);
-  ctx.exit_code = execution.exit_code ?? execution.exitCode ?? null;
+/** How a sandbox command runs: how long it may take, and the variables its environment gains. */
+export type CommandSettings = { timeoutSeconds?: number; envs?: Record<string, string> };
+
+/** The output of the command `call` ran, as the agent reads it; the command's exit code is kept on the call. */
+export function commandOutput(call: ToolInvocation, execution: CommandResult): string {
+  call.exit_code = exitCodeOf(execution) ?? null;
   return formatExecution(execution);
 }
 
-/** Runs one sandbox command, interruptible by the run's cancel event, and returns it unformatted. */
-export async function executeCommand(ctx: ToolContext, command: string, options: {
-  timeoutSeconds?: number;
-  envs?: Record<string, string>;
-} = {}): Promise<CommandResult> {
-  if (!ctx.sandbox) {
-    throw new Error("sandbox is not available");
+/**
+ * Runs one sandbox command of `run`, interruptible by the run's cancel event and tracked with
+ * the run's `track_command` hook, and returns it unformatted.
+ */
+export async function executeCommand(
+  run: ToolRun,
+  hooks: ToolHooks,
+  command: string,
+  options: CommandSettings = {},
+): Promise<CommandResult> {
+  if (!run.sandbox) {
+    throw new ToolUnavailableError("sandbox is not available");
   }
   const timeoutSeconds = options.timeoutSeconds ?? COMMAND_TIMEOUT_SECONDS;
   const opts: Record<string, unknown> = {
-    workingDirectory: ctx.agent_home,
-    working_directory: ctx.agent_home,
+    workingDirectory: run.agent_home,
+    working_directory: run.agent_home,
     timeout: timeoutSeconds,
     timeoutSeconds,
   };
   if (options.envs) {
     opts.envs = options.envs;
   }
+  const track = hooks.track_command;
   const handlers =
-    ctx.cancel_event !== null && ctx.track_command !== null
+    run.cancel_event !== null && track !== null
       ? {
-          onInit: async (init: { id?: string }) => {
+          onInit: async (init: CommandInit) => {
             const executionId = init.id;
             if (typeof executionId === "string" && executionId) {
-              ctx.track_command!(executionId);
+              track(executionId);
             }
           },
         }
       : undefined;
-  const runPromise = ctx.sandbox.commands.run(command, opts, handlers);
+  const runPromise = run.sandbox.commands.run(command, opts, handlers);
   try {
     let execution: CommandResult;
-    if (ctx.cancel_event === null) {
+    if (run.cancel_event === null) {
       execution = await runPromise;
     } else {
       const waitAbort = new AbortController();
       try {
         const winner = await Promise.race([
           runPromise.then((result) => ({ kind: "run" as const, result })),
-          ctx.cancel_event.wait(waitAbort.signal).then(
+          run.cancel_event.wait(waitAbort.signal).then(
             () => ({ kind: "cancel" as const }),
             () => ({ kind: "wait-aborted" as const }),
           ),
         ]);
         if (winner.kind === "cancel") {
           void runPromise.catch(() => undefined);
-          throw new Error("execution interrupted");
+          throw new SandboxCommandError("execution interrupted");
         }
         if (winner.kind === "wait-aborted") {
           execution = await runPromise;
@@ -83,8 +91,8 @@ export async function executeCommand(ctx: ToolContext, command: string, options:
     }
     return execution;
   } finally {
-    if (ctx.track_command !== null) {
-      ctx.track_command(null);
+    if (track !== null) {
+      track(null);
     }
   }
 }

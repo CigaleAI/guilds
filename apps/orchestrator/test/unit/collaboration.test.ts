@@ -3,7 +3,7 @@ import { groupMessageRow } from "../helpers/group-chat.js";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { groupChatUserMessage } from "../../src/groupchat/index.js";
+import { groupChatUserMessage } from "../../src/groupchat/wake.js";
 import { repoRoot } from "../../src/lib/paths.js";
 import { CASES } from "../helpers/collaboration-cases.js";
 

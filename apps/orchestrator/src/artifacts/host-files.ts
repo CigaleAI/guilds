@@ -1,11 +1,21 @@
 // The files an operator's pages list, read and write at each level, and their provenance.
-import { ArtifactError, type ArtifactStore, hostFileDisplayPath, listFileChanges, listLatestFileChanges, normalizeNoteKey, parseDisplayPath, type ArtifactActor, type ArtifactLevel, MEMORY_KEY, TASK_KEY } from "./index.js";
-import { taskDisplayPath, writeAgentTask } from "../agents/task.js";
+import { ArtifactError } from "./errors.js";
+import { hostFileDisplayPath, normalizeNoteKey, parseDisplayPath, MEMORY_KEY, TASK_KEY } from "./paths.js";
+import { listFileChanges, listLatestFileChanges } from "../db/file-changes.js";
+import type { ArtifactActor, ArtifactLevel } from "./types.js";
+import { taskDisplayPath, writeAgentTask } from "./task.js";
 import { formatColumnTimestamp } from "../db/codecs.js";
 import { getAgentTask, listAgentTaskRevisions, type AgentRow } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
-import { canReadDisplayPath, deleteByDisplayPath, getByDisplayPath, listEmbeddableNotes, listOwnerNotes, writeNote } from "./notes.js";
-import { artifactView } from "./store.js";
+import {
+  canReadDisplayPath,
+  deleteByDisplayPath,
+  getByDisplayPath,
+  listEmbeddableNotes,
+  listOwnerNotes,
+  writeNote,
+} from "./notes.js";
+import { artifactView, type ArtifactStore } from "./store.js";
 import { ensureAgentRows, writeMemory } from "./memory.js";
 
 /** What host files are read and written through: the artifact store, and the database an agent's Task lives in. */
@@ -40,11 +50,10 @@ export async function ensureAgentArtifacts(
   actor: ArtifactActor,
   agent: Pick<AgentRow, "id" | "guild_id" | "org_id">,
 ): Promise<void> {
-  await ensureAgentRows(store, {
+  await ensureAgentRows(store, actor, {
     orgId: agent.org_id,
     guildId: agent.guild_id,
     agentId: agent.id,
-    actor,
   });
 }
 
@@ -246,7 +255,7 @@ export async function writeHostFile(
   const name = hostFileName(write.path);
   const { content } = write;
   if (owner.level === "agent" && name === TASK_KEY) {
-    const row = await writeAgentTask(db, actor, owner.ownerId, content, write.expectedVersion);
+    const row = await writeAgentTask(db, actor, owner.ownerId, { content, expectedVersion: write.expectedVersion });
     const payload = {
       path: name,
       content,
@@ -255,16 +264,16 @@ export async function writeHostFile(
     return withFileMeta(services, actor, owner, { payload, kind: "task", version: row.version });
   }
   if (owner.level === "agent" && name === MEMORY_KEY) {
-    const row = await writeMemory(store, actor, owner.ownerId, { content: content, detail: `host ${actor.actorName}` });
-    const payload = { path: name, content, display_path: String(artifactView(row).display_path) };
+    const { row, href } = await writeMemory(store, actor, owner.ownerId, { content: content, detail: `host ${actor.actorName}` });
+    const payload = { path: name, content, display_path: href };
     return withFileMeta(services, actor, owner, { payload, kind: "memory", version: row.version });
   }
-  const row = await writeNote(store, actor, { level: owner.level, key: name, content });
+  const { row, href } = await writeNote(store, actor, { level: owner.level, key: name, content });
   const payload = {
     id: row.id,
     path: name,
     content,
-    display_path: String(artifactView(row).display_path),
+    display_path: href,
   };
   return withFileMeta(services, actor, owner, { payload, kind: row.kind, version: row.version });
 }

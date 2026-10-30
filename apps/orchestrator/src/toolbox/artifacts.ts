@@ -1,24 +1,40 @@
-import { ArtifactError, type ArtifactStore, describeColumn, isArtifactLevel, parseDisplayPath, type ArtifactActor } from "../artifacts/index.js";
+import { ArtifactError } from "../artifacts/errors.js";
+import { isArtifactLevel, type ArtifactActor } from "../artifacts/types.js";
 import { argInteger, argRecord, argString, functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
-import type { Tool, ToolContext } from "./types.js";
-import { addRecord, listRecords, removeRecord, searchRecords, updateRecord } from "../artifacts/records.js";
-import { collectionFacts } from "../artifacts/collections.js";
-import { deleteByDisplayPath, findNotes, getByDisplayPath, writeNote, writeNoteAt, type DisplayPathRead } from "../artifacts/notes.js";
-import { artifactView } from "../artifacts/store.js";
+import type { ToolServices } from "./services.js";
+import { callActor, type Tool, type ToolInvocation, type ToolRun } from "./types.js";
+import {
+  addRecord,
+  listRecordsWithHint,
+  removeRecord,
+  searchRecords,
+  updateRecord,
+} from "../artifacts/records.js";
+import {
+  artifactAt,
+  type ArtifactView,
+  deleteByDisplayPath,
+  findNotes,
+  parseActorPath,
+  writeNote,
+  writeNoteAt,
+} from "../artifacts/notes.js";
+import type { ArtifactStore } from "../artifacts/store.js";
 import { writeMemory } from "../artifacts/memory.js";
+import type { ArtifactRow } from "../db/artifacts.js";
+import { isPlainRecord } from "../db/json.js";
 import { bindQuery } from "../db/pg.js";
 
 /** The artifact functions the note, record, and Memory tools call, on `store`. */
 export function toolArtifacts(store: ArtifactStore) {
   return {
     findNotes: bindQuery(store, findNotes),
-    getByDisplayPath: bindQuery(store, getByDisplayPath),
+    artifactAt: bindQuery(store, artifactAt),
     writeNote: bindQuery(store, writeNote),
     writeNoteAt: bindQuery(store, writeNoteAt),
     deleteByDisplayPath: bindQuery(store, deleteByDisplayPath),
-    collectionFacts: bindQuery(store, collectionFacts),
-    listRecords: bindQuery(store, listRecords),
+    listRecordsWithHint: bindQuery(store, listRecordsWithHint),
     searchRecords: bindQuery(store, searchRecords),
     addRecord: bindQuery(store, addRecord),
     updateRecord: bindQuery(store, updateRecord),
@@ -29,25 +45,29 @@ export function toolArtifacts(store: ArtifactStore) {
 
 export type ToolArtifacts = ReturnType<typeof toolArtifacts>;
 
-function store(ctx: ToolContext): ToolArtifacts {
-  if (!ctx.artifacts) {
+function store(services: ToolServices): ToolArtifacts {
+  if (!services.artifacts) {
     throw new ArtifactError("artifact store is not available", 500);
   }
-  return ctx.artifacts;
+  return services.artifacts;
 }
 
-function actor(ctx: ToolContext): ArtifactActor {
-  if (!ctx.artifact_actor) {
+function requiredActor(actor: ArtifactActor | null): ArtifactActor {
+  if (!actor) {
     throw new ArtifactError("artifact store is not available", 500);
   }
-  return ctx.artifact_actor;
+  return actor;
 }
 
-async function publish(ctx: ToolContext, path: string): Promise<void> {
-  if (ctx.group_chat !== null && ctx.guild_id && ctx.group_chat.publish) {
-    await ctx.group_chat.publish(ctx.guild_id, "guild.artifacts.changed", {
+function actor(run: ToolRun, call: ToolInvocation): ArtifactActor {
+  return requiredActor(callActor(run.artifact_actor, call));
+}
+
+async function publish(services: ToolServices, run: ToolRun, path: string): Promise<void> {
+  if (services.group_chat !== null && run.guild_id && services.group_chat.publish) {
+    await services.group_chat.publish(run.guild_id, "guild.artifacts.changed", {
       path,
-      agent_id: ctx.agent_id,
+      agent_id: run.agent_id,
     });
   }
 }
@@ -72,74 +92,53 @@ function findArgs(args: Record<string, unknown>): {
   return find;
 }
 
-/**
- * A display path an agent may name: a note, its Task or Memory, a record. The memory archive is
- * the operator's, so a revision path is unknown to an agent.
- */
-function agentPath(path: string): ReturnType<typeof parseDisplayPath> {
-  const parsed = parseDisplayPath(path);
-  if (parsed.kind === "revision") {
-    throw new ArtifactError("unknown artifact path", 404);
-  }
-  return parsed;
-}
-
 /** A row `note_get` may show: a script or a file is read with its own family's tool. */
-function assertReadableNote(row: { kind: string } | undefined): void {
-  if (row?.kind === "script") {
+function assertReadableNote(row: ArtifactRow): void {
+  if (row.kind === "script") {
     throw new ArtifactError("use script_read for scripts", 422);
   }
-  if (row?.kind === "file") {
+  if (row.kind === "file") {
     throw new ArtifactError("use file_fetch for files", 422);
   }
 }
 
 /** A row `note_delete` may delete: a script or a file is deleted with its own family's tool. */
-function assertDeletableNote(row: { kind: string } | undefined): void {
-  if (row?.kind === "script") {
+function assertDeletableNote(row: ArtifactRow): void {
+  if (row.kind === "script") {
     throw new ArtifactError("use script_delete for scripts", 422);
   }
-  if (row?.kind === "file") {
+  if (row.kind === "file") {
     throw new ArtifactError("use file_delete for files", 422);
   }
 }
 
-function renderGet(
-  artifacts: ToolArtifacts,
-  path: string,
-  loaded: DisplayPathRead,
-): string {
-  if (loaded.tombstone && loaded.row) {
-    return `${path}\n\ntombstone: this artifact was deleted`;
-  }
-  if (!loaded.row) {
+/** What a display path holds as a row; a Memory revision is none a note tool reads. */
+function viewedRow(view: ArtifactView): Extract<ArtifactView, { kind: "row" }> {
+  if (view.kind === "revision") {
     throw new ArtifactError("artifact not found", 404);
   }
-  const view = artifactView(loaded.row);
-  return `${view.display_path}\n\n${String(view.content ?? "")}`;
+  return view;
 }
 
 /**
- * A note's or a collection record's content as text, read with the agent's access, the
+ * A note's or a collection record's content as text, read with `reader`'s access, the
  * way `note_get` and the record tools read it. A record is its JSON view.
  */
-export async function readArtifactText(ctx: ToolContext, path: string): Promise<{ path: string; text: string }> {
-  const parsed = agentPath(path);
+export async function readArtifactText(
+  services: ToolServices,
+  reader: ArtifactActor | null,
+  path: string,
+): Promise<{ path: string; text: string }> {
+  const parsed = parseActorPath(requiredActor(reader), path);
   if (parsed.kind === "collection") {
     throw new ArtifactError(`${path} is a collection; name one of its records`, 422);
   }
-  const artifacts = store(ctx);
-  const loaded = await artifacts.getByDisplayPath(actor(ctx), path);
-  if (!loaded.row || loaded.tombstone) {
+  const view = viewedRow(await store(services).artifactAt(requiredActor(reader), path));
+  if (view.deleted) {
     throw new ArtifactError("artifact not found", 404);
   }
-  assertReadableNote(loaded.row);
-  const view = artifactView(loaded.row);
-  const shown = typeof view.display_path === "string" ? view.display_path : path;
-  if (parsed.kind === "record") {
-    return { path: shown, text: JSON.stringify(view, null, 2) };
-  }
-  return { path: shown, text: String(view.content ?? "") };
+  assertReadableNote(view.row);
+  return { path: view.href, text: view.text };
 }
 
 const RECORD_TOOLS_HINT = "Use record_search or record_list for collection records.";
@@ -161,8 +160,9 @@ export const noteFind: Tool = {
     },
     [],
   ),
-  async handler(ctx, args) {
-    const result = await store(ctx).findNotes(actor(ctx), findArgs(args));
+  async handler(services, run, _hooks, call) {
+    const args = call.arguments;
+    const result = await store(services).findNotes(actor(run, call), findArgs(args));
     return JSON.stringify({ notes: result.notes });
   },
 };
@@ -178,16 +178,16 @@ export const noteGet: Tool = {
     { path: { type: "string" } },
     ["path"],
   ),
-  async handler(ctx, args) {
+  async handler(services, run, _hooks, call) {
+    const args = call.arguments;
     const path = argString(args, "path");
-    const parsed = agentPath(path);
+    const parsed = parseActorPath(actor(run, call), path);
     if (parsed.kind === "collection" || parsed.kind === "record") {
       throw new ArtifactError(RECORD_TOOLS_HINT, 422);
     }
-    const artifacts = store(ctx);
-    const loaded = await artifacts.getByDisplayPath(actor(ctx), path);
-    assertReadableNote(loaded.row);
-    return renderGet(artifacts, path, loaded);
+    const view = viewedRow(await store(services).artifactAt(actor(run, call), path));
+    assertReadableNote(view.row);
+    return view.deleted ? `${path}\n\ntombstone: this artifact was deleted` : `${view.href}\n\n${view.text}`;
   },
 };
 
@@ -199,17 +199,18 @@ const NOTE_WRITE_DESCRIPTION =
   "Do not pass org, guild, or agent ids.";
 
 /** The note `note_write` names: an existing note by display path, or a level and key. */
-async function writeNoteArgs(ctx: ToolContext, args: Record<string, unknown>) {
+async function writeNoteArgs(services: ToolServices, run: ToolRun, call: ToolInvocation) {
+  const args = call.arguments;
   const content = argString(args, "content");
   const path = argString(args, "path").trim();
   if (path) {
-    return store(ctx).writeNoteAt(actor(ctx), path, content);
+    return store(services).writeNoteAt(actor(run, call), path, { content });
   }
   const levelRaw = argString(args, "level");
   if (!isArtifactLevel(levelRaw)) {
     throw new ArtifactError("level must be agent, guild, or org", 422);
   }
-  return store(ctx).writeNote(actor(ctx), { level: levelRaw, key: argString(args, "key"), content });
+  return store(services).writeNote(actor(run, call), { level: levelRaw, key: argString(args, "key"), content });
 }
 
 export const noteWrite: Tool = {
@@ -228,11 +229,10 @@ export const noteWrite: Tool = {
     },
     ["content"],
   ),
-  async handler(ctx, args) {
-    const row = await writeNoteArgs(ctx, args);
-    const display = String(artifactView(row).display_path);
-    await publish(ctx, display);
-    return display;
+  async handler(services, run, _hooks, call) {
+    const { href } = await writeNoteArgs(services, run, call);
+    await publish(services, run, href);
+    return href;
   },
 };
 
@@ -249,30 +249,33 @@ export const noteDelete: Tool = {
     { path: { type: "string" } },
     ["path"],
   ),
-  async handler(ctx, args) {
+  async handler(services, run, _hooks, call) {
+    const args = call.arguments;
     const path = argString(args, "path");
-    const parsed = agentPath(path);
+    const parsed = parseActorPath(actor(run, call), path);
     if (parsed.kind === "collection") {
       throw new ArtifactError("collections are managed by the operator", 422);
     }
     if (parsed.kind === "record") {
       throw new ArtifactError("use record_remove for collection records", 422);
     }
-    const artifacts = store(ctx);
-    const loaded = await artifacts.getByDisplayPath(actor(ctx), path);
-    assertDeletableNote(loaded.row);
-    await artifacts.deleteByDisplayPath(actor(ctx), path);
-    await publish(ctx, path);
+    const artifacts = store(services);
+    const view = await artifacts.artifactAt(actor(run, call), path);
+    if (view.kind === "row") {
+      assertDeletableNote(view.row);
+    }
+    await artifacts.deleteByDisplayPath(actor(run, call), path);
+    await publish(services, run, path);
     return path;
   },
 };
 
 function bodyArg(args: Record<string, unknown>): Record<string, unknown> {
   const body = args.body;
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
+  if (!isPlainRecord(body)) {
     throw new ArtifactError("body must be a JSON object of column: value", 422);
   }
-  return body as Record<string, unknown>;
+  return body;
 }
 
 function optional<T>(value: T | undefined | null): T | undefined {
@@ -310,8 +313,9 @@ export const recordSearch: Tool = {
     },
     ["query"],
   ),
-  async handler(ctx, args) {
-    const result = await store(ctx).searchRecords(actor(ctx), {
+  async handler(services, run, _hooks, call) {
+    const args = call.arguments;
+    const result = await store(services).searchRecords(actor(run, call), {
       ...(argString(args, "collection").trim() ? { collection: argString(args, "collection").trim() } : {}),
       query: argString(args, "query"),
       where: optional(argRecord(args, "where")),
@@ -351,63 +355,23 @@ export const recordList: Tool = {
     },
     ["collection"],
   ),
-  async handler(ctx, args) {
-    const artifacts = store(ctx);
-    const collection = argString(args, "collection").trim();
-    const where = optional(argRecord(args, "where"));
-    const since = argString(args, "since").trim() || undefined;
-    const result = await artifacts.listRecords(actor(ctx), {
-      collection,
-      where,
-      since,
+  async handler(services, run, _hooks, call) {
+    const args = call.arguments;
+    const result = await store(services).listRecordsWithHint(actor(run, call), {
+      collection: argString(args, "collection").trim(),
+      where: optional(argRecord(args, "where")),
+      since: argString(args, "since").trim() || undefined,
       order: optional(args.order),
       limit: optional(args.limit),
       offset: optional(args.offset),
     });
-    const narrowed = Boolean(where || since);
-    const facts = result.records.length === 0 && narrowed ? await artifacts.collectionFacts(actor(ctx), collection) : null;
-    const hint = facts
-      ? emptyListHint({ collection, ...(where ? { where } : {}), ...(since ? { since } : {}) }, facts)
-      : null;
     return JSON.stringify({
       total: result.total,
       records: result.records,
-      ...(hint ? { hint } : {}),
+      ...(result.hint ? { hint: result.hint } : {}),
     });
   },
 };
-
-/**
- * A narrowed listing that finds nothing explains itself: what was asked, what
- * the collection holds, and its columns, so the next call narrows
- * differently instead of asking for a larger limit.
- */
-function emptyListHint(
-  asked: { collection: string; where?: Record<string, unknown>; since?: string },
-  facts: {
-    count: number;
-    newest_updated_at: string | null;
-    columns: Array<Parameters<typeof describeColumn>[0]>;
-  },
-): string {
-  const narrowing = [
-    asked.since ? `changed at or after ${asked.since}` : "",
-    asked.where ? `where ${JSON.stringify(asked.where)}` : "",
-  ]
-    .filter(Boolean)
-    .join(", ");
-  const holds =
-    facts.count === 0
-      ? `${asked.collection} holds no records yet.`
-      : `${asked.collection} holds ${facts.count} record${facts.count === 1 ? "" : "s"}; the newest changed at ${facts.newest_updated_at}.`;
-  const columns = facts.columns.length ? `Its columns: ${facts.columns.map(describeColumn).join("; ")}.` : "";
-  const advice = asked.since
-    ? "An empty result is the answer; a larger limit will not change it. since is for picking up new work — " +
-      "to check whether something is already recorded, use where on the unique column or record_search."
-    : "An empty result is the answer; a larger limit will not change it. where matches by column type " +
-      "(text or an open array item by substring, a closed list exactly, null a missing value); record_search matches words in the values.";
-  return [`No records in ${asked.collection} ${narrowing}.`, holds, columns, advice].filter(Boolean).join(" ");
-}
 
 export const recordAdd: Tool = {
   name: "record_add",
@@ -428,12 +392,13 @@ export const recordAdd: Tool = {
     },
     ["collection", "body"],
   ),
-  async handler(ctx, args) {
-    const result = await store(ctx).addRecord(actor(ctx), {
+  async handler(services, run, _hooks, call) {
+    const args = call.arguments;
+    const result = await store(services).addRecord(actor(run, call), {
       collection: argString(args, "collection").trim(),
       body: bodyArg(args),
     });
-    await publish(ctx, `org/${actor(ctx).orgId}/collections/${String(result.record.collection)}`);
+    await publish(services, run, `org/${actor(run, call).orgId}/collections/${String(result.record.collection)}`);
     return JSON.stringify({
       record: result.record,
       ...(result.merged !== null ? { note: `merged into existing record ${result.merged}` } : {}),
@@ -460,13 +425,14 @@ export const recordUpdate: Tool = {
     },
     ["collection", "id", "body"],
   ),
-  async handler(ctx, args) {
-    const result = await store(ctx).updateRecord(actor(ctx), {
+  async handler(services, run, _hooks, call) {
+    const args = call.arguments;
+    const result = await store(services).updateRecord(actor(run, call), {
       collection: argString(args, "collection").trim(),
       id: args.id,
       body: bodyArg(args),
     });
-    await publish(ctx, `org/${actor(ctx).orgId}/collections/${String(result.record.collection)}/${String(result.record.id)}`);
+    await publish(services, run, `org/${actor(run, call).orgId}/collections/${String(result.record.collection)}/${String(result.record.id)}`);
     return JSON.stringify({
       record: result.record,
       ...(result.warnings.length ? { warnings: result.warnings } : {}),
@@ -488,10 +454,11 @@ export const recordRemove: Tool = {
     },
     ["collection", "id"],
   ),
-  async handler(ctx, args) {
+  async handler(services, run, _hooks, call) {
+    const args = call.arguments;
     const collection = argString(args, "collection").trim();
-    const removed = await store(ctx).removeRecord(actor(ctx), { collection, id: args.id });
-    await publish(ctx, `org/${actor(ctx).orgId}/collections/${collection}/${removed}`);
+    const removed = await store(services).removeRecord(actor(run, call), { collection, id: args.id });
+    await publish(services, run, `org/${actor(run, call).orgId}/collections/${collection}/${removed}`);
     return JSON.stringify({ removed });
   },
 };

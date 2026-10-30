@@ -386,13 +386,13 @@ broken:
    `max_agents`: the destination guild's, or the default for a new
    guild (see [Guilds](guilds.md))
 2. create the guild (or attach an empty one)
-3. create guild- and org-level seed notes
-4. create the agents on the chosen machine, each with empty Memory and
+3. create the agents on the chosen machine, each with empty Memory and
    a first Task whose `@{role}` tags already name the new agents
-5. create agent-level seed notes (a note without a role goes to the
-   first agent), then raise each seed note's access list to the
-   recipe's `guild` and `writers` (see [Access](#access))
-6. for each role in turn:
+4. create guild- and org-level seed notes, then agent-level seed notes
+   (a note without a role goes to the first agent). Each seed note's
+   access list is raised to the recipe's `guild` and `writers` as it is
+   written (see [Access](#access))
+5. for each role in turn:
    - rewrite the Task's note links
      ([embeds and note paths](recipe-format.md#embeds-and-tags)) to
      live display paths, and write the Task again over the first one.
@@ -403,16 +403,16 @@ broken:
      same way. An empty instruction takes the role's Task. Each
      instruction is cut to 2,000 characters, the routine limit
    - write its native-tool bindings at agent scope
-7. create each `create` collection with the recipe's columns. A
+6. create each `create` collection with the recipe's columns. A
    collection that appeared under that name since preview is a
    conflict: preview again (409). A `scope: "guild"` collection is
    created for the new guild, with the guild at `write` as its
    starting row. A created `org` collection starts with the
-   organisation at `read`. Every created or reused collection's access
-   list is then raised to the recipe's `guild` and `writers` (see
-   [Access](#access))
-8. write the tool overlays of each reused login
-9. save the apply row with its checklist
+   organisation at `read`. A created collection's access list is
+   raised to the recipe's `guild` and `writers` as it is created, and a
+   reused collection's then (see [Access](#access))
+7. write the tool overlays of each reused login
+8. save the apply row with its checklist
 
 Failure deletes the agents the apply created, a guild apply created
 (`created_guild`), and the collections this apply created. Reused

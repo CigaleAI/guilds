@@ -1,14 +1,13 @@
-import { ArtifactError, listFileChanges, parseDisplayPath, type ArtifactStore, type FileChangeView } from "../artifacts/index.js";
+import { Type, type Static } from "@sinclair/typebox";
+import { ArtifactError } from "../artifacts/errors.js";
+import { memoryDiffText, memoryTimeline, type MemoryTimelineEntry } from "../artifacts/memory.js";
+import { artifactAt, parseActorPath } from "../artifacts/notes.js";
+import { listFileChanges, type FileChangeView } from "../db/file-changes.js";
 import { wrapEvidence } from "../conversation/trust.js";
 import { isoOrNull } from "../db/views.js";
-import {
-  buildMemoryTimeline,
-  memoryDiffText,
-  type MemoryTimelineEntry,
-} from "../memory/timeline.js";
 import { issueItem } from "../issues/index.js";
 import { scheduleItem } from "../schedules/item.js";
-import { capBytes } from "../toolbox/output.js";
+import { capBytes } from "../lib/bytes.js";
 import { STUDIO_FOCUS_EXCERPT_BYTES } from "./constants.js";
 import { ACTIVITY_MAX_HOURS } from "./activity.js";
 import { StudioUnprocessableError } from "./errors.js";
@@ -17,13 +16,17 @@ import { getAgent, getAgentTask, type AgentRow } from "../db/agents.js";
 import { getRun, listMessages, type MessageRow } from "../db/runs.js";
 import { getSchedule } from "../db/schedules.js";
 import { getIssue } from "../db/issues.js";
-import { listGuildToolCallStats, listGuildToolCalls } from "../db/activity.js";
+import {
+  listGuildToolCallStats,
+  listGuildToolCalls,
+  type GuildToolCallRow,
+  type GuildToolCallStatRow,
+} from "../db/activity.js";
 import type { Queryable } from "../db/pg.js";
 import type { StudioFocus, StudioFocusKind, ToolCall } from "../db/schema/index.js";
 import type { UserRow } from "../db/users.js";
-import { getByDisplayPath } from "../artifacts/notes.js";
-import { operatorContext } from "../artifacts/store.js";
-import { getMemoryRow, listRevisions } from "../artifacts/memory.js";
+import { type ArtifactStore } from "../artifacts/store.js";
+import { operatorActor } from "../artifacts/actors.js";
 
 // A focus pin names one piece of evidence the operator is asking about: a
 // run (optionally one step of it), a memory version, a routine, a file, an
@@ -32,6 +35,31 @@ import { getMemoryRow, listRevisions } from "../artifacts/memory.js";
 // fills in what it can, and writes the evidence block the coach reads.
 
 export const STUDIO_FOCUS_SOURCE = "studio_focus";
+
+/** An id or path a focus pin names, or null when it names none. */
+const FocusText = Type.Optional(Type.Union([Type.String(), Type.Null()]));
+
+/** A step or version a focus pin names: a non-negative integer, as a number or its digits. */
+const FocusIndex = Type.Optional(Type.Union([Type.Number(), Type.String(), Type.Null()]));
+
+/** The evidence an operator pins to a Studio message: its kind and the ids that name it. */
+export const StudioFocusRequestSchema = Type.Object({
+  kind: Type.String(),
+  agent_id: FocusText,
+  run_id: FocusText,
+  seq: FocusIndex,
+  call_id: FocusText,
+  revision_id: FocusText,
+  version_index: FocusIndex,
+  schedule_id: FocusText,
+  display_path: FocusText,
+  change_id: FocusText,
+  issue_id: FocusText,
+  tool_name: FocusText,
+});
+
+export type StudioFocusRequest = Static<typeof StudioFocusRequestSchema>;
+
 export type StudioFocusDeps = {
   db: Queryable;
   artifacts: ArtifactStore;
@@ -40,11 +68,11 @@ export type StudioFocusDeps = {
   user: UserRow;
 };
 
-function trimmedText(value: unknown): string {
-  return typeof value === "string" ? value.trim() : "";
+function trimmedText(value: string | null | undefined): string {
+  return (value ?? "").trim();
 }
 
-function nonNegativeInt(value: unknown): number | null {
+function nonNegativeInt(value: number | string | null | undefined): number | null {
   if (typeof value === "number" && Number.isInteger(value) && value >= 0) {
     return value;
   }
@@ -68,7 +96,7 @@ function emptyFocus(kind: StudioFocusKind, agent: Pick<AgentRow, "id" | "name">)
   return {
     kind,
     agent_id: agent.id,
-    agent_name: String(agent.name ?? ""),
+    agent_name: agent.name,
     label: "",
     run_id: null,
     seq: null,
@@ -118,13 +146,16 @@ function callRequest(rows: MessageRow[], callId: string): { row: MessageRow; cal
   return undefined;
 }
 
+/** Where in a run a focus points: a step by its sequence, or a tool call by its id. */
+type RunPoint = { seq: number | null; callId: string };
+
 /**
  * The message a run focus names: by call id, the call's result and the message that made the
  * call, at least one of which must exist; else the message at `seq`.
  */
 function focusedMessages(
   rows: MessageRow[],
-  at: { seq: number | null; callId: string },
+  at: RunPoint,
 ): { target: MessageRow | undefined; request: { row: MessageRow; call: ToolCall } | undefined } {
   if (at.callId) {
     const target = rows.find((row) => row.payload.role === "tool" && row.payload.tool_call_id === at.callId);
@@ -143,7 +174,7 @@ function focusedMessages(
 
 async function resolveRun(
   deps: StudioFocusDeps,
-  input: Record<string, unknown>,
+  input: StudioFocusRequest,
 ): Promise<{ focus: StudioFocus; content: string }> {
   const runId = trimmedText(input.run_id);
   const run = runId ? await getRun(deps.db, runId) : null;
@@ -216,7 +247,7 @@ async function resolveRun(
 
 function findEntry(
   entries: MemoryTimelineEntry[],
-  input: Record<string, unknown>,
+  input: StudioFocusRequest,
 ): MemoryTimelineEntry | undefined {
   const revisionId = trimmedText(input.revision_id);
   if (revisionId && revisionId !== "live") {
@@ -231,21 +262,17 @@ function findEntry(
 
 async function resolveMemoryVersion(
   deps: StudioFocusDeps,
-  input: Record<string, unknown>,
+  input: StudioFocusRequest,
 ): Promise<{ focus: StudioFocus; content: string }> {
   const agent = await guildAgent(deps, trimmedText(input.agent_id));
-  const actor = operatorContext(
-    deps.orgId,
-    String(deps.user.id),
-    String(deps.user.name ?? "operator"),
-    {
-      guildId: deps.sourceGuildId,
-      agentId: agent.id,
-    },
-  );
-  const live = await getMemoryRow(deps.artifacts, actor, agent.id);
-  const revisions = await listRevisions(deps.artifacts, actor, agent.id);
-  const entries = buildMemoryTimeline({ live: { content: live?.content_text ?? "" }, revisions });
+  const actor = operatorActor({
+    orgId: deps.orgId,
+    actorId: deps.user.id,
+    actorName: deps.user.name,
+    guildId: deps.sourceGuildId,
+    agentId: agent.id,
+  });
+  const { entries } = await memoryTimeline(deps.artifacts, actor, agent.id);
   const entry = findEntry(entries, input);
   if (!entry) {
     throw new StudioUnprocessableError("focus memory version not found");
@@ -307,7 +334,7 @@ async function resolveMemoryVersion(
 
 async function resolveRoutine(
   deps: StudioFocusDeps,
-  input: Record<string, unknown>,
+  input: StudioFocusRequest,
 ): Promise<{ focus: StudioFocus; content: string }> {
   const agent = await guildAgent(deps, trimmedText(input.agent_id));
   const scheduleId = trimmedText(input.schedule_id);
@@ -318,15 +345,15 @@ async function resolveRoutine(
   const item = scheduleItem(row);
   const focus = emptyFocus("routine", agent);
   focus.schedule_id = scheduleId;
-  focus.label = `Routine · ${String(item.description || item.label)}`;
-  const timing = item.cron ? `${String(item.cron)} (${String(item.label)})` : String(item.label);
+  focus.label = `Routine · ${item.description || item.label}`;
+  const timing = item.cron ? `${item.cron} (${item.label})` : item.label;
   const body = [
     `Routine ${scheduleId} of ${agent.name}: ${timing}, ${item.paused ? "paused" : "active"}.`,
-    `Description: ${String(item.description || "")}`,
-    `Next fire: ${String(item.next_run_at ?? "—")}. Last fire: ${String(item.last_run_at ?? "never")}.`,
+    `Description: ${item.description}`,
+    `Next fire: ${item.next_run_at}. Last fire: ${item.last_run_at ?? "never"}.`,
     "",
     "Instruction:",
-    excerpt(String(item.instruction ?? "")),
+    excerpt(item.instruction),
   ];
   return {
     focus,
@@ -357,79 +384,61 @@ async function loadFileForFocus(
   version: number | null;
   content: string;
 }> {
-  let parsed;
+  const actor = operatorActor({
+    orgId: deps.orgId,
+    actorId: deps.user.id,
+    actorName: deps.user.name,
+    guildId: deps.sourceGuildId,
+  });
   try {
-    parsed = parseDisplayPath(displayPath);
-  } catch (error) {
-    if (error instanceof ArtifactError) {
-      throw new StudioUnprocessableError(error.message);
+    const parsed = parseActorPath(actor, displayPath);
+    if (parsed.kind === "collection") {
+      throw new StudioUnprocessableError("focus on a collection is not supported; pick a record");
     }
-    throw error;
-  }
-  if (parsed.orgId !== deps.orgId) {
-    throw new StudioUnprocessableError("focus file is not in this organisation");
-  }
-  if (parsed.kind === "collection") {
-    throw new StudioUnprocessableError("focus on a collection is not supported; pick a record");
-  }
-  let agent: AgentRow | null = null;
-  if (parsed.kind === "revision" || (parsed.kind === "artifact" && parsed.level === "agent")) {
-    agent = await guildAgent(deps, parsed.kind === "revision" ? parsed.agentId : parsed.ownerId);
-  } else if (!(await studioReachesParsed(deps, parsed))) {
-    throw new StudioUnprocessableError(
-      "focus file is not in the source guild or the organisation's shared files",
-    );
-  }
-  const actor = operatorContext(
-    deps.orgId,
-    String(deps.user.id),
-    String(deps.user.name ?? "operator"),
-    {
-      guildId: deps.sourceGuildId,
-      ...(agent ? { agentId: agent.id } : {}),
-    },
-  );
-  if (
-    parsed.kind === "artifact" &&
-    parsed.level === "agent" &&
-    parsed.path === "" &&
-    parsed.key === "task.md" &&
-    agent
-  ) {
-    const task = await getAgentTask(deps.db, deps.orgId, agent.id);
+    let agent: AgentRow | null = null;
+    if (parsed.kind === "revision" || (parsed.kind === "artifact" && parsed.level === "agent")) {
+      agent = await guildAgent(deps, parsed.kind === "revision" ? parsed.agentId : parsed.ownerId);
+    } else if (!(await studioReachesParsed(deps, deps, parsed))) {
+      throw new StudioUnprocessableError(
+        "focus file is not in the source guild or the organisation's shared files",
+      );
+    }
+    if (
+      parsed.kind === "artifact" &&
+      parsed.level === "agent" &&
+      parsed.path === "" &&
+      parsed.key === "task.md" &&
+      agent
+    ) {
+      const task = await getAgentTask(deps.db, deps.orgId, agent.id);
+      return {
+        agent,
+        kind: "task",
+        version: task?.version ?? null,
+        content: task?.content_text ?? "",
+      };
+    }
+    const view = await artifactAt(deps.artifacts, actor, displayPath);
+    if (view.kind === "revision") {
+      return { agent, kind: "memory_revision", version: null, content: view.content };
+    }
+    const row = view.row;
+    const content =
+      row.kind === "object"
+        ? JSON.stringify(row.content_json ?? {}, null, 2)
+        : (row.content_text ?? "");
     return {
       agent,
-      kind: "task",
-      version: task?.version ?? null,
-      content: task?.content_text ?? "",
+      kind: view.deleted ? `${row.kind} (deleted)` : row.kind,
+      version: row.version,
+      content,
     };
-  }
-  let loaded;
-  try {
-    loaded = await getByDisplayPath(deps.artifacts, actor, displayPath);
   } catch (error) {
     if (error instanceof ArtifactError) {
       throw new StudioUnprocessableError(error.message);
     }
     throw error;
   }
-  if (loaded.revision) {
-    return { agent, kind: "memory_revision", version: null, content: loaded.revision.content };
-  }
-  if (!loaded.row) {
-    throw new StudioUnprocessableError("focus file not found");
-  }
-  const row = loaded.row;
-  const content =
-    row.kind === "object"
-      ? JSON.stringify(row.content_json ?? {}, null, 2)
-      : String(row.content_text ?? "");
-  return {
-    agent,
-    kind: loaded.tombstone ? `${row.kind} (deleted)` : String(row.kind),
-    version: row.version,
-    content,
-  };
 }
 
 function changeSummary(change: FileChangeView): string {
@@ -442,7 +451,7 @@ function changeSummary(change: FileChangeView): string {
 
 async function resolveFile(
   deps: StudioFocusDeps,
-  input: Record<string, unknown>,
+  input: StudioFocusRequest,
 ): Promise<{ focus: StudioFocus; content: string }> {
   const displayPath = trimmedText(input.display_path);
   if (!displayPath) {
@@ -510,7 +519,7 @@ async function resolveFile(
 
 async function resolveIssue(
   deps: StudioFocusDeps,
-  input: Record<string, unknown>,
+  input: StudioFocusRequest,
 ): Promise<{ focus: StudioFocus; content: string }> {
   const issueId = trimmedText(input.issue_id);
   const row = issueId ? await getIssue(deps.db, deps.sourceGuildId, issueId) : null;
@@ -518,23 +527,22 @@ async function resolveIssue(
     throw new StudioUnprocessableError("focus issue not found");
   }
   const issue = issueItem(row);
-  const agentId = issue.agent_id ? String(issue.agent_id) : "";
-  const agent = agentId ? await guildAgent(deps, agentId).catch(() => null) : null;
-  const runId = issue.run_id ? String(issue.run_id) : null;
+  const agent = issue.agent_id ? await guildAgent(deps, issue.agent_id).catch(() => null) : null;
+  const runId = issue.run_id || null;
   const focus: StudioFocus = {
     ...emptyFocus("issue", agent ?? { id: "", name: issue.agent_name }),
     issue_id: issueId,
     run_id: runId,
-    tool_name: issue.tool_name ? String(issue.tool_name) : null,
+    tool_name: issue.tool_name || null,
   };
-  focus.label = `Issue · ${String(issue.summary)}`;
+  focus.label = `Issue · ${issue.summary}`;
   const body = [
-    `Issue ${issueId} reported by ${String(issue.agent_name)} at ${String(issue.created_at)}: ${String(issue.kind)}, severity ${String(issue.severity)}, ${String(issue.status)}.`,
-    issue.tool_name ? `Failing tool: ${String(issue.tool_name)}.` : "",
-    `Summary: ${String(issue.summary)}`,
+    `Issue ${issueId} reported by ${issue.agent_name} at ${issue.created_at}: ${issue.kind}, severity ${issue.severity}, ${issue.status}.`,
+    issue.tool_name ? `Failing tool: ${issue.tool_name}.` : "",
+    `Summary: ${issue.summary}`,
     "",
     "Detail:",
-    excerpt(String(issue.detail ?? "")),
+    excerpt(issue.detail ?? ""),
   ].filter((line, index, all) => line !== "" || all[index - 1] !== "");
   const tail = runId
     ? `The reporting run: studio_get_run(run_id="${runId}", tool_name="report_issue") returns the report; load the steps before it with seq_start and seq_end to find the failure.`
@@ -565,20 +573,16 @@ const TOOL_NAME = /^[A-Za-z0-9_.:-]{1,128}$/;
 // The latest failed calls a tool pin quotes.
 const TOOL_FOCUS_FAILURES = 5;
 
-function toolUsageLines(stats: Array<Record<string, unknown>>): string[] {
-  const lines = stats
-    .filter((stat) => stat.agent_id !== null)
-    .map(
-      (stat) =>
-        `- ${String(stat.agent_id)}: ${String(stat.calls)} calls, ${String(stat.errors)} failed`,
-    );
+function toolUsageLines(stats: GuildToolCallStatRow[]): string[] {
+  const lines = stats.flatMap((stat) =>
+    stat.agent_id === null ? [] : [`- ${stat.agent_id}: ${stat.calls} calls, ${stat.errors} failed`],
+  );
   return lines.length ? lines : ["- no agent called it"];
 }
 
-function toolFailureLines(rows: Array<Record<string, unknown>>): string[] {
+function toolFailureLines(rows: GuildToolCallRow[]): string[] {
   return rows.map(
-    (row) =>
-      `- run ${String(row.run_id)}, call ${String(row.call_id ?? "?")} (${String(row.agent_id)}): ${excerpt(String(row.error ?? ""))}`,
+    (row) => `- run ${row.run_id}, call ${row.call_id ?? "?"} (${row.agent_id}): ${excerpt(row.error ?? "")}`,
   );
 }
 
@@ -586,7 +590,7 @@ function toolFailureLines(rows: Array<Record<string, unknown>>): string[] {
 // and its latest failures, with where to read further.
 async function resolveTool(
   deps: StudioFocusDeps,
-  input: Record<string, unknown>,
+  input: StudioFocusRequest,
 ): Promise<{ focus: StudioFocus; content: string }> {
   const name = trimmedText(input.tool_name).trim();
   if (!TOOL_NAME.test(name)) {
@@ -627,29 +631,21 @@ async function resolveTool(
 
 export async function resolveStudioFocus(
   deps: StudioFocusDeps,
-  input: unknown,
+  input: StudioFocusRequest,
 ): Promise<{ focus: StudioFocus; content: string }> {
-  const raw =
-    input && typeof input === "object" && !Array.isArray(input)
-      ? (input as Record<string, unknown>)
-      : null;
-  if (!raw) {
-    throw new StudioUnprocessableError("focus must be an object");
-  }
-  const kind = trimmedText(raw.kind) as StudioFocusKind;
-  switch (kind) {
+  switch (input.kind.trim()) {
     case "run":
-      return resolveRun(deps, raw);
+      return resolveRun(deps, input);
     case "memory_version":
-      return resolveMemoryVersion(deps, raw);
+      return resolveMemoryVersion(deps, input);
     case "routine":
-      return resolveRoutine(deps, raw);
+      return resolveRoutine(deps, input);
     case "file":
-      return resolveFile(deps, raw);
+      return resolveFile(deps, input);
     case "issue":
-      return resolveIssue(deps, raw);
+      return resolveIssue(deps, input);
     case "tool":
-      return resolveTool(deps, raw);
+      return resolveTool(deps, input);
     default:
       throw new StudioUnprocessableError(
         "focus kind must be run, memory_version, routine, file, issue, or tool",

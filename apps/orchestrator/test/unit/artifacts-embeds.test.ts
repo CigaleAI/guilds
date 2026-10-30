@@ -6,6 +6,7 @@ import {
   inspectEmbed,
   inspectTaskEmbeds,
   inlineTaskEmbeds,
+  reachEmbeds,
   snapshotTaskCollections,
   snapshotTaskEmbeds,
   unreachableMarker,
@@ -17,6 +18,7 @@ import { ArtifactError } from "../../src/artifacts/errors.js";
 import { EMBED_BUDGET } from "../../src/artifacts/types.js";
 import { agentActor, operatorActor } from "../../src/artifacts/actors.js";
 import type { EmbedSource } from "../../src/artifacts/embeds.js";
+import { noteRowAt } from "../helpers/artifacts.js";
 
 test("collectTaskEmbeds keeps unique hrefs in order", () => {
   assert.deepEqual(
@@ -439,4 +441,81 @@ test("inspectEmbed names why a link does not resolve", async () => {
     ].map(async (href) => (await inspectEmbed(store, actor, href)).reason),
   );
   assert.deepEqual(reasons, ["not a file path", "not a note", "not reachable", "not reachable", "not reachable"]);
+});
+
+/** An embed source over notes by display path and collections by name, the guild each belongs to; anything else is absent. */
+function fakeSource(notes: Record<string, string>, collections: Record<string, string | null> = {}): EmbedSource {
+  return {
+    async getByDisplayPath(_actor, href) {
+      const content = notes[href];
+      if (content === undefined) throw new ArtifactError("artifact not found", 404);
+      return { row: noteRowAt(href, content) };
+    },
+    async describeCollection(_actor, name) {
+      if (!(name in collections)) return null;
+      return { id: `col_${name}`, name, purpose: "", columns: [], guild_id: collections[name] ?? null, access: "read" };
+    },
+  };
+}
+
+const reader = operatorActor({ orgId: "org_1", actorId: "u", actorName: "op" });
+
+test("reachEmbeds meets each note and table once, round by round, in the order the roots embed them", async () => {
+  const source = fakeSource(
+    { "org/org_1/a.md": "![[org/org_1/b.md]] ![[org/org_1/collections/leads]]", "org/org_1/b.md": "end" },
+    { leads: "guild_1" },
+  );
+  const reach = await reachEmbeds(source, reader, ["![[org/org_1/a.md]] ![[org/org_1/a.md]]", "![[org/org_1/b.md]]"], new Set());
+  assert.deepEqual(
+    reach.targets.map((target) => [target.kind, target.href]),
+    [
+      ["note", "org/org_1/a.md"],
+      ["note", "org/org_1/b.md"],
+      ["collection", "org/org_1/collections/leads"],
+    ],
+  );
+  const leads = reach.targets.find((target) => target.kind === "collection");
+  assert.equal(leads?.kind === "collection" ? leads.collection.guild_id : null, "guild_1");
+  assert.deepEqual(reach.unresolved, []);
+});
+
+test("reachEmbeds reads notes within the inlined levels and leaves the next level unread and unfollowed", async () => {
+  const source = fakeSource({
+    "org/org_1/one.md": "![[org/org_1/two.md]]",
+    "org/org_1/two.md": "![[org/org_1/three.md]]",
+    "org/org_1/three.md": "![[org/org_1/four.md]]",
+    "org/org_1/four.md": "end",
+  });
+  const reach = await reachEmbeds(source, reader, ["![[org/org_1/one.md]]"], new Set());
+  assert.deepEqual(
+    reach.targets.map((target) => [target.href, target.kind === "note" ? target.text : "table"]),
+    [
+      ["org/org_1/one.md", "![[org/org_1/two.md]]"],
+      ["org/org_1/two.md", "![[org/org_1/three.md]]"],
+      ["org/org_1/three.md", null],
+    ],
+  );
+});
+
+test("reachEmbeds neither resolves nor follows a display path its reader already holds", async () => {
+  const source = fakeSource({ "org/org_1/held.md": "![[org/org_1/beyond.md]]", "org/org_1/beyond.md": "end" });
+  const reach = await reachEmbeds(source, reader, ["![[org/org_1/held.md]]"], new Set(["org/org_1/held.md"]));
+  assert.deepEqual(reach, { targets: [], unresolved: [] });
+});
+
+test("reachEmbeds names why each link it cannot resolve does not resolve", async () => {
+  const source = fakeSource({}, { leads: null });
+  const reach = await reachEmbeds(
+    source,
+    reader,
+    ["![[recipe:desk]] ![[org/org_1/missing.md]] ![[org/org_1/collections/gone]] ![[org/org_2/collections/leads]]"],
+    new Set(),
+  );
+  assert.deepEqual(reach.targets, []);
+  assert.deepEqual(reach.unresolved, [
+    { href: "recipe:desk", reason: "recipe link was not rewritten to a file path" },
+    { href: "org/org_1/missing.md", reason: "not reachable" },
+    { href: "org/org_1/collections/gone", reason: "not reachable" },
+    { href: "org/org_2/collections/leads", reason: "not reachable" },
+  ]);
 });

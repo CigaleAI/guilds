@@ -1,58 +1,45 @@
 import { Type } from "@sinclair/typebox";
 import { getMcpServerBySlug } from "../connectors/servers.js";
-import { HARNESSES } from "../db/schema/index.js";
-import { decode } from "../lib/decode.js";
-import { newId } from "../lib/ids.js";
-import { operatorActor } from "../artifacts/actors.js";
-import { collectTaskEmbeds } from "../artifacts/index.js";
-import type { AccessEntry, ArtifactActor, ArtifactStore } from "../artifacts/index.js";
-import { rowDisplayPath, type ArtifactRow } from "../artifacts/store.js";
-import { loadAccessView } from "../access/view.js";
-import type { Scripts } from "../scripts/catalog.js";
-import type { Schedules } from "../schedules/service.js";
-import { rowTiming } from "../schedules/timing.js";
-import { describeWindow } from "../schedules/window.js";
 import {
-  CONFIG_KEYS,
-  addMissingBrowser,
-  addMissingBrowserLanguage,
-  addMissingScriptingAndMemory,
-  addMissingRunLimits,
-  addMissingTemperatureAndStepLimits,
-  addMissingThinkingLevel,
-  secretAliasesOf,
-} from "../agents/validation.js";
-import { HARNESS_INFO, harnessSecretSource } from "../coding/harnesses.js";
-import { emptyRecipe } from "./minimal.js";
-import { parseRecipe } from "./parse.js";
-import {
-  operatorAuthor,
-  RECIPE_HINT_MAX,
+  HARNESSES,
+  type AgentConfig,
   type RecipeConnection,
   type RecipeDocument,
   type RecipeNote,
   type RecipeRole,
   type RecipeSecret,
-} from "./schema.js";
+} from "../db/schema/index.js";
+import { decode } from "../lib/decode.js";
+import { newId } from "../lib/ids.js";
+import { collectTaskEmbeds } from "../artifacts/embeds.js";
+import { guildTables } from "../artifacts/guild-tables.js";
+import { notesNamed } from "../artifacts/notes.js";
+import type { ArtifactActor } from "../artifacts/types.js";
+import type { ArtifactStore } from "../artifacts/store.js";
+import type { ArtifactRow } from "../db/artifacts.js";
+import { loadAccessView } from "../access/view.js";
+import type { Scripts } from "../scripts/catalog.js";
+import type { Schedules } from "../schedules/service.js";
+import { rowTiming } from "../schedules/timing.js";
+import { describeWindow } from "../schedules/window.js";
+import { HARNESS_INFO, harnessSecretSource } from "../coding/harnesses.js";
+import { emptyRecipe } from "./minimal.js";
+import { parseRecipe } from "./parse.js";
+import { operatorAuthor, RECIPE_HINT_MAX } from "./schema.js";
 import { recipeNotePath, rewriteGuildTextToRecipeRefs } from "./rewrite.js";
 import { RecipeError } from "./errors.js";
 import { capturedNoteAccess, capturedTableAccess, type CapturedGuild } from "./access.js";
 import { exportManifest } from "../mcp/catalog.js";
-import { mcpDatabase } from "../mcp/index.js";
 import { getAgentTask, listAgents, type GuildAgentRow } from "../db/agents.js";
 import { listSchedules } from "../db/schedules.js";
 import { listSecrets, type SecretRow } from "../db/secrets.js";
 import { listGuildRepositories, type GuildRow } from "../db/guilds.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
-import type { UserRow } from "../db/users.js";
-import { getByDisplayPath, listEmbeddableNotes } from "../artifacts/notes.js";
-import { listAccess } from "../artifacts/access-lists.js";
-import { listCollections } from "../artifacts/collections.js";
 
-/** The db/ functions a guild is captured into a recipe through, on `db`. */
+/** The db/ functions a guild is captured into a recipe through, and the access view it reads, on `db`. */
 export function captureDatabase(db: Queryable) {
   return {
-    ...mcpDatabase(db),
+    loadAccessView: bindQuery(db, loadAccessView),
     listAgents: bindQuery(db, listAgents),
     getAgentTask: bindQuery(db, getAgentTask),
     listSchedules: bindQuery(db, listSchedules),
@@ -65,10 +52,8 @@ export function captureDatabase(db: Queryable) {
 /** The artifact functions a capture reads notes, tables, and their access lists through, on `store`. */
 export function captureArtifacts(store: ArtifactStore) {
   return {
-    getByDisplayPath: bindQuery(store, getByDisplayPath),
-    listAccess: bindQuery(store, listAccess),
-    listCollections: bindQuery(store, listCollections),
-    listEmbeddableNotes: bindQuery(store, listEmbeddableNotes),
+    guildTables: bindQuery(store, guildTables),
+    notesNamed: bindQuery(store, notesNamed),
   };
 }
 
@@ -100,9 +85,6 @@ function secretRecipeScope(secret: SecretRow, guildId: string): "org" | "guild" 
   return secret.grants.some((grant) => grant.guild_id === guildId) ? "guild" : "agent";
 }
 
-/** The harness keys a role leaves out while unset. */
-const HARNESS_KEYS = new Set(["harness", "harness_model", "harness_effort"]);
-
 /** The variables the harnesses read their subscription tokens from. */
 const HARNESS_TOKEN_VARIABLES = new Set(
   HARNESSES.flatMap((harness) => HARNESS_INFO[harness].secret ?? []),
@@ -113,70 +95,51 @@ const HARNESS_TOKEN_VARIABLES = new Set(
  * operator's own subscription, so a recipe leaves them out: the applying operator sets one up
  * for the harness they pick.
  */
-function harnessTokenSecrets(config: Record<string, unknown>): Set<string> {
-  if (config.coding !== true) return new Set();
-  const aliases = secretAliasesOf(config);
-  return new Set(HARNESSES.flatMap((harness) => harnessSecretSource(harness, aliases) ?? []));
+function harnessTokenSecrets(config: AgentConfig): Set<string> {
+  if (!config.coding) return new Set();
+  return new Set(HARNESSES.flatMap((harness) => harnessSecretSource(harness, config.secret_aliases) ?? []));
 }
 
 /** The role's secret aliases a recipe carries: a coding role's harness token aliases stay behind. */
-function portableSecretAliases(config: Record<string, unknown>): Record<string, string> {
-  const aliases = secretAliasesOf(config);
-  if (config.coding !== true) return aliases;
-  return Object.fromEntries(Object.entries(aliases).filter(([variable]) => !HARNESS_TOKEN_VARIABLES.has(variable)));
+function portableSecretAliases(config: AgentConfig): Record<string, string> {
+  if (!config.coding) return config.secret_aliases;
+  return Object.fromEntries(
+    Object.entries(config.secret_aliases).filter(([variable]) => !HARNESS_TOKEN_VARIABLES.has(variable)),
+  );
 }
 
 function clippedHint(value: string | null | undefined): string {
   return (value ?? "").slice(0, RECIPE_HINT_MAX);
 }
 
-/** The access list of the live note at `displayPath`; empty when there is none. */
-async function noteAccessEntries(artifacts: CaptureArtifacts, actor: ArtifactActor, displayPath: string): Promise<AccessEntry[]> {
-  const found = await artifacts.getByDisplayPath(actor, displayPath);
-  return found.row ? artifacts.listAccess(actor, { kind: "note", id: found.row.id }) : [];
-}
-
-export function portableRoleConfig(
-  config: Record<string, unknown>,
-  browserRequired: boolean,
-): Record<string, unknown> {
-  const filled = addMissingScriptingAndMemory(
-    addMissingThinkingLevel(
-      addMissingBrowserLanguage(
-        addMissingRunLimits(
-          addMissingTemperatureAndStepLimits(
-            addMissingBrowser({
-              ...config,
-              browser: browserRequired || Boolean(config.browser),
-            }),
-          ),
-        ),
-      ),
-    ),
-  );
-  const out: Record<string, unknown> = {};
-  for (const key of CONFIG_KEYS) {
-    // A recipe carries the flags alone: at apply the box follows them, and a custom size stays behind.
-    if (key === "box" || key === "cpu" || key === "memory_mib") {
-      continue;
-    }
-    // A role without a harness, or on its harness's default model or effort, leaves the key out; apply settles it.
-    if (HARNESS_KEYS.has(key) && filled[key] == null) {
-      continue;
-    }
-    // A role left without secret aliases leaves the key out.
-    if (key === "secret_aliases") {
-      const aliases = portableSecretAliases(filled);
-      if (Object.keys(aliases).length) {
-        out.secret_aliases = aliases;
-      }
-      continue;
-    }
-    if (key in filled) {
-      out[key] = filled[key];
-    }
-  }
-  return out;
+/**
+ * The config a role carries for an agent: its settings, in the order of `CONFIG_KEYS`. A harness,
+ * harness model or harness effort left unset, and secret aliases a recipe carries none of, leave
+ * their key out; apply settles them.
+ */
+export function portableRoleConfig(config: AgentConfig): RecipeRole["config"] {
+  const aliases = portableSecretAliases(config);
+  return {
+    model: config.model,
+    temperature: config.temperature,
+    max_tokens: config.max_tokens,
+    max_steps: config.max_steps,
+    max_tool_calls: config.max_tool_calls,
+    max_input_tokens: config.max_input_tokens,
+    keep_tool_result_generations: config.keep_tool_result_generations,
+    max_scripts: config.max_scripts,
+    max_workspace_mib: config.max_workspace_mib,
+    browser: config.browser,
+    browser_language: config.browser_language,
+    coding: config.coding,
+    ...(config.harness === null ? {} : { harness: config.harness }),
+    ...(config.harness_model === null ? {} : { harness_model: config.harness_model }),
+    ...(config.harness_effort === null ? {} : { harness_effort: config.harness_effort }),
+    ...(Object.keys(aliases).length ? { secret_aliases: aliases } : {}),
+    scripting: config.scripting,
+    memory: config.memory,
+    thinking_level: config.thinking_level,
+  };
 }
 
 /** A tool as the access view lists it: its name, and whether the agent has it on. */
@@ -241,16 +204,13 @@ function guildRecipe(guild: CapturedGuildRow): RecipeDocument {
  */
 async function captureCollections(capture: Capture): Promise<void> {
   const { deps, recipe, actor, guildId } = capture;
-  for (const collection of await deps.artifacts.listCollections(actor)) {
+  for (const { collection, access } of await deps.artifacts.guildTables(actor, guildId)) {
     const table = { name: collection.name, purpose: collection.purpose, columns: collection.columns };
     if (collection.scope === "guild") {
-      if (collection.guild?.id === guildId) {
-        recipe.collections.push({ ...table, scope: "guild", guild: "write", writers: [] });
-      }
+      recipe.collections.push({ ...table, scope: "guild", guild: "write", writers: [] });
       continue;
     }
-    const entries = await deps.artifacts.listAccess(actor, { kind: "collection", id: collection.id });
-    const reach = capturedTableAccess(entries, capture.captured);
+    const reach = capturedTableAccess(access, capture.captured);
     if (reach !== null) {
       recipe.collections.push({ ...table, scope: "org", ...reach });
     }
@@ -286,14 +246,11 @@ async function captureSchedules(capture: Capture, agentId: string, role: string)
 /** The role an agent becomes: its config made portable, its task, scripts, routines and native tools. */
 async function captureRole(capture: Capture, agent: GuildAgentRow, access: AgentAccess): Promise<RecipeRole> {
   const role = agent.name;
-  const config: Record<string, unknown> = agent.config;
+  const { config } = agent;
   const taskBody = (await capture.deps.db.getAgentTask(capture.orgId, agent.id))?.content_text ?? "";
   const scripts = await captureScripts(capture, agent.id);
-  const browserRequired = Boolean(config.browser);
-  const portable = portableRoleConfig(config, browserRequired);
-  if (scripts.length > Number(portable.max_scripts ?? 0)) {
-    portable.max_scripts = scripts.length;
-  }
+  const browserRequired = config.browser;
+  const portable = portableRoleConfig({ ...config, max_scripts: Math.max(config.max_scripts, scripts.length) });
   return {
     role,
     name_suggestion: role,
@@ -411,7 +368,7 @@ async function captureSecrets(capture: Capture, agent: GuildAgentRow): Promise<v
 
 /** An agent as a role, with the connections and secrets it reaches. */
 async function captureAgent(capture: Capture, agent: GuildAgentRow): Promise<void> {
-  const view = await loadAccessView(capture.deps.db, {
+  const view = await capture.deps.db.loadAccessView({
     orgId: capture.orgId,
     guildId: capture.guildId,
     agentId: agent.id,
@@ -455,16 +412,13 @@ async function captureNotes(capture: Capture, includeNotes: string[]): Promise<M
   const { deps, actor } = capture;
   const include = new Set([...includeNotes, ...capture.recipe.roles.flatMap((role) => role.task.embeds)]);
   const hrefToNoteId = new Map<string, string>();
-  for (const note of await deps.artifacts.listEmbeddableNotes(actor)) {
-    const displayPath = rowDisplayPath(note);
-    const wanted = include.has(displayPath) || include.has(note.key);
-    if (!wanted || note.key === "memory.md" || note.kind !== "note") {
+  for (const note of await deps.artifacts.notesNamed(actor, include)) {
+    if (note.row.key === "memory.md" || note.row.kind !== "note") {
       continue;
     }
-    const seed = seedNote(capture, note);
-    const entries = await noteAccessEntries(deps.artifacts, actor, displayPath);
-    Object.assign(seed, capturedNoteAccess(entries, seed, capture.captured));
-    hrefToNoteId.set(displayPath, recipeNotePath(seed));
+    const seed = seedNote(capture, note.row);
+    Object.assign(seed, capturedNoteAccess(note.access, seed, capture.captured));
+    hrefToNoteId.set(note.href, recipeNotePath(seed));
     capture.recipe.notes.push(seed);
   }
   return hrefToNoteId;
@@ -560,13 +514,15 @@ function captureDesign(recipe: RecipeDocument): void {
 
 /**
  * A portable recipe of a live guild: its roles with their tasks, scripts, routines and access, the
- * tables and notes it reaches, its connections, secrets and repositories, and the design it runs by.
+ * tables and notes it reaches as `actor` reads them, its connections, secrets and repositories, and
+ * the design it runs by. `includeNotes` names further notes by display path or file name.
  */
 export async function captureGuild(
   deps: CaptureDeps,
-  source: { guild: CapturedGuildRow; user: UserRow; includeNotes?: string[] },
+  actor: ArtifactActor,
+  guild: CapturedGuildRow,
+  includeNotes: string[],
 ): Promise<RecipeDocument> {
-  const { guild, user } = source;
   const agents = await deps.db.listAgents(guild.id);
   if (!agents.length) {
     throw new RecipeError("guild has no agents to capture");
@@ -576,7 +532,7 @@ export async function captureGuild(
     recipe: guildRecipe(guild),
     orgId: guild.org_id,
     guildId: guild.id,
-    actor: operatorActor({ orgId: guild.org_id, actorId: user.id, actorName: user.name, guildId: guild.id }),
+    actor,
     agents,
     captured: { guildId: guild.id, members: new Map(agents.map((agent) => [agent.id, agent.name])) },
   };
@@ -585,7 +541,7 @@ export async function captureGuild(
     await captureAgent(capture, agent);
   }
   await captureRepositories(capture);
-  const hrefToNoteId = await captureNotes(capture, source.includeNotes ?? []);
+  const hrefToNoteId = await captureNotes(capture, includeNotes);
   rewriteRefs(capture.recipe, { nameToRole: new Map(agents.map((agent) => [agent.name, agent.name])), hrefToNoteId });
   captureDesign(capture.recipe);
   return parseRecipe(capture.recipe);

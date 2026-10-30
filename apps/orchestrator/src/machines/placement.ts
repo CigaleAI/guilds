@@ -1,6 +1,6 @@
 import { listMachineSlots, lockAgentPlacement, lockOrgMachines, setAgentMachine } from "../db/machines.js";
 import { type Queryable, withTransaction } from "../db/pg.js";
-import { assertCanPlaceAgents, machineCounts, type OrgPolicy } from "../policy/index.js";
+import { assertCanPlaceAgents, type OrgPolicy } from "../policy/index.js";
 import { assertCanPlaceOn } from "./access.js";
 import {
   agentMinimum,
@@ -146,12 +146,6 @@ export async function placeAgent(
     return { machine, maxAgentsPerMachine: null, moves: false };
   }
   await assertCanPlaceOn(db, orgId, machine.id, userId);
-  const maxAgentsPerMachine = await assertCanPlaceAgents(
-    policy,
-    machineCounts(db),
-    orgId,
-    machine.id,
-    1,
-  );
+  const maxAgentsPerMachine = await assertCanPlaceAgents(policy, db, orgId, { machineId: machine.id, agents: 1 });
   return { machine, maxAgentsPerMachine, moves: true };
 }

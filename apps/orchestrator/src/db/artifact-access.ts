@@ -12,6 +12,9 @@ export type ArtifactMode = Exclude<AccessRow["mode"], "none">;
 /** What an access list row names: a note, a file, or a collection. */
 export type AccessTargetRef = { kind: AccessRow["target_kind"]; id: string };
 
+/** An item an access list row names, with the organisation it belongs to. */
+export type OrgAccessTargetRef = AccessTargetRef & { orgId: string };
+
 /** One row of an access list as written: its subject and the mode it gives. */
 export type AccessGrantRow = { type: AccessRow["subject_type"]; id: string; mode: AccessRow["mode"] };
 
@@ -98,7 +101,7 @@ export async function listAccessEntries(db: Queryable, target: AccessTargetRef):
 /** Writes one subject's row on an item's access list, replacing the mode a row of it already gives. */
 export async function upsertAccessRow(
   db: Queryable,
-  target: AccessTargetRef & { orgId: string },
+  target: OrgAccessTargetRef,
   grant: AccessGrantRow,
   actor: ChangeActor,
 ): Promise<void> {

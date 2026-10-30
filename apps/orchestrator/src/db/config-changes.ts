@@ -27,6 +27,9 @@ export type ConfigChange = {
 
 export type ChangeLink = { session_id: string; seq: number };
 
+/** What a change was made to: the target's kind and id. */
+export type ConfigTargetRef = { kind: ConfigTargetKind; id: string };
+
 export type ConfigChangeView = {
   id: string;
   guild_id: string | null;
@@ -149,7 +152,7 @@ const CONFIG_CHANGE_COLUMNS = pickColumns(configChanges, [
 export async function listConfigChanges(
   db: Queryable,
   orgId: string,
-  target: { kind: ConfigTargetKind; id: string },
+  target: ConfigTargetRef,
 ): Promise<ConfigChangeView[]> {
   const result = await db.query<ConfigChangeRow>(
     `SELECT ${CONFIG_CHANGE_COLUMNS}

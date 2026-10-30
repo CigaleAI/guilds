@@ -1,72 +1,38 @@
-import { Buffer } from "node:buffer";
-import { credentialFix, HARNESS_INFO, harnessesOn, harnessOffMessage, isHarnessOff } from "../coding/harnesses.js";
 import { harnessLaunch } from "../coding/harness-models.js";
 import type { Harness } from "../db/schema/index.js";
-import { writeLog } from "../observability/log.js";
-import { redact } from "../secrets/index.js";
-import { readArtifactText } from "./artifacts.js";
-import { callSegment, codeResultMaxBytes, HARNESS_HELPER, runCodeHelper, type CodeResult } from "./code.js";
+import { errorMessage, writeLog } from "../observability/log.js";
+import { callSegment, type CodeResult } from "./code.js";
+import { buildBrief } from "./harness-brief.js";
+import { checkpoint, harnessOp, numberOrZero, opsRun, shownProgressLines, stringOrNull } from "./harness-ops.js";
+import { codeTaskText, failureDetail, isChangedFile, type CodeTaskOutcome, type CodeTaskStatus } from "./harness-result.js";
+import { checkHarness, requiredHarness } from "./harness-setup.js";
 import { functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
-import type { CancelEvent, Tool, ToolContext } from "./types.js";
+import type { ToolServices } from "./services.js";
+import {
+  callActor,
+  type CancelEvent,
+  type Tool,
+  type ToolHooks,
+  type ToolInvocation,
+  type ToolRun,
+} from "./types.js";
+import { ToolArgumentError, ToolUnavailableError } from "./errors.js";
 
 export const HARNESS_TOOLS = ["code_task"] as const;
 export const CODE_TASK_DEFAULT_MINUTES = 30;
 export const CODE_TASK_MAX_MINUTES = 60;
 /** How often a running call is polled, and how long its minutes are; tests shorten both. */
 export const harnessTiming = { pollMs: 3000, minuteMs: 60_000 };
-/** The content of `notes` appended to a brief, at most. */
-export const BRIEF_NOTES_MAX_BYTES = 64 * 1024;
-const HARNESS_OP_TIMEOUT_SECONDS = 60;
-const CHECKPOINT_TIMEOUT_SECONDS = 300;
 /** Consecutive failed polls after which the harness is stopped and the call ends `interrupted`. */
 const POLL_FAILURES_MAX = 3;
-const FILES_SHOWN = 30;
-const PROGRESS_LINE_CHARS = 240;
-
-export type CodeTaskStatus = "completed" | "failed" | "timed_out" | "cancelled" | "interrupted";
-
-/** What every brief starts with: the harness works alone and never publishes. */
-export const BRIEF_PREAMBLE = [
-  "You are working on a task delegated to you by an agent. You cannot reach its operator, and",
-  "nobody answers questions while you work. When you are blocked or need a decision, stop and",
-  "ask in your final message, saying exactly what you need. You may commit on the current",
-  "branch. Never push and never open pull requests. End with what you changed and what you ran.",
-].join("\n");
-
-function stringOrNull(value: unknown): string | null {
-  return typeof value === "string" && value ? value : null;
-}
-
-function count(value: unknown): number {
-  return Number(value ?? 0) || 0;
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-/** The tool-call context the harness ops run under: not interrupted mid-exec; the poll loop stops the harness itself. */
-function opsContext(ctx: ToolContext): ToolContext {
-  const callId = callSegment(ctx.tool_call_id || `code_task_${Date.now()}`);
-  return { ...ctx, cancel_event: null, track_command: null, tool_call_id: callId };
-}
-
-/** The context a check outside a `code_task` call runs under, named for the check. */
-function checkContext(ctx: ToolContext): ToolContext {
-  return opsContext({ ...ctx, tool_call_id: `harness_check_${Date.now()}` });
-}
-
-async function harnessOp(ctx: ToolContext, op: string, args: Record<string, unknown>): Promise<CodeResult> {
-  return runCodeHelper(ctx, op, args, { helper: HARNESS_HELPER, timeoutSeconds: HARNESS_OP_TIMEOUT_SECONDS });
-}
 
 // --- the call's arguments ---------------------------------------------------
 
-function repositoryFor(ctx: ToolContext, args: Record<string, unknown>): string {
-  const names = ctx.code_repositories;
+function repositoryFor(run: ToolRun, args: Record<string, unknown>): string {
+  const names = run.code_repositories;
   if (!names.length) {
-    throw new Error("this guild has no repositories; the operator adds them in the guild's Repositories");
+    throw new ToolUnavailableError("this guild has no repositories; the operator adds them in the guild's Repositories");
   }
   const named = typeof args.repo === "string" ? args.repo.trim() : "";
   if (named) {
@@ -75,12 +41,12 @@ function repositoryFor(ctx: ToolContext, args: Record<string, unknown>): string 
   if (names.length === 1) {
     return names[0]!;
   }
-  throw new Error(`repo is required: the guild's repositories are ${names.join(", ")}`);
+  throw new ToolArgumentError(`repo is required: the guild's repositories are ${names.join(", ")}`);
 }
 
 function knownRepository(names: string[], named: string): string {
   if (!names.includes(named)) {
-    throw new Error(`unknown repository ${named}; the guild's repositories are ${names.join(", ")}`);
+    throw new ToolArgumentError(`unknown repository ${named}; the guild's repositories are ${names.join(", ")}`);
   }
   return named;
 }
@@ -98,227 +64,18 @@ export function notePaths(args: Record<string, unknown>): string[] {
   if (raw === undefined || raw === null) {
     return [];
   }
-  if (!Array.isArray(raw) || raw.some((item) => typeof item !== "string")) {
-    throw new Error("notes must be a list of display paths");
+  if (!Array.isArray(raw) || !raw.every((item): item is string => typeof item === "string")) {
+    throw new ToolArgumentError("notes must be a list of display paths");
   }
-  return [...new Set((raw as string[]).map((item) => item.trim()).filter(Boolean))];
+  return [...new Set(raw.map((item) => item.trim()).filter(Boolean))];
 }
 
 function requiredBrief(args: Record<string, unknown>): string {
   const brief = typeof args.brief === "string" ? args.brief : "";
   if (!brief.trim()) {
-    throw new Error("brief is required");
+    throw new ToolArgumentError("brief is required");
   }
   return brief;
-}
-
-function requiredHarness(ctx: ToolContext): Harness {
-  if (ctx.harness === null) {
-    throw harnessMissingError();
-  }
-  if (isHarnessOff(ctx.harness)) {
-    throw new HarnessSetupError("harness.off", harnessOffMessage(ctx.harness));
-  }
-  return ctx.harness;
-}
-
-// --- the brief ----------------------------------------------------------------
-
-type NoteSection = { path: string; section: string };
-type FittedNotes = { used: number; included: string[]; left: string[] };
-
-async function loadNote(ctx: ToolContext, path: string): Promise<NoteSection> {
-  try {
-    const loaded = await readArtifactText(ctx, path);
-    return { path: loaded.path, section: `# ${loaded.path}\n\n${loaded.text.trim()}` };
-  } catch (error) {
-    throw new Error(`notes: ${path}: ${errorText(error)}`, { cause: error });
-  }
-}
-
-function addNote(fitted: FittedNotes, note: NoteSection): void {
-  const size = Buffer.byteLength(note.section, "utf8");
-  if (fitted.used + size > BRIEF_NOTES_MAX_BYTES) {
-    fitted.left.push(note.path);
-    return;
-  }
-  fitted.used += size;
-  fitted.included.push(note.section);
-}
-
-/** The fixed preamble, the brief, and each note in order while the notes fit their cap. */
-export function briefText(brief: string, notes: NoteSection[]): string {
-  const fitted: FittedNotes = { used: 0, included: [], left: [] };
-  notes.forEach((note) => addNote(fitted, note));
-  const parts = [BRIEF_PREAMBLE, `# Task\n\n${brief.trim()}`, ...fitted.included];
-  if (fitted.left.length) {
-    parts.push(`Not included, past the ${BRIEF_NOTES_MAX_BYTES / 1024} KiB cap for notes: ${fitted.left.join(", ")}`);
-  }
-  return parts.join("\n\n") + "\n";
-}
-
-/** The brief the harness reads, with each note under its display path; a note that does not load fails the call. */
-export async function buildBrief(ctx: ToolContext, brief: string, paths: string[]): Promise<string> {
-  const notes: NoteSection[] = [];
-  for (const path of paths) {
-    notes.push(await loadNote(ctx, path));
-  }
-  return briefText(brief, notes);
-}
-
-// --- checks before the harness starts --------------------------------------
-
-/** Why a harness cannot run: none is picked, its CLI is missing from the image, or it has no credential. */
-export class HarnessSetupError extends Error {
-  constructor(
-    readonly code: "harness.missing" | "harness.off" | "harness.not_installed" | "harness.credential",
-    message: string,
-  ) {
-    super(message);
-    this.name = "HarnessSetupError";
-  }
-}
-
-/** What a coding run or a `code_task` call of an agent with no harness picked fails with. */
-export function harnessMissingError(): HarnessSetupError {
-  const labels = harnessesOn().map((harness) => HARNESS_INFO[harness].label);
-  const choices = labels.length > 1 ? `${labels.slice(0, -1).join(", ")}, or ${labels.at(-1)}` : labels.join("");
-  return new HarnessSetupError("harness.missing", `no harness is picked: choose ${choices} in the agent's Settings`);
-}
-
-function assertInstalled(harness: Harness, meta: Record<string, unknown>): void {
-  if (meta.installed === true) {
-    return;
-  }
-  const fix =
-    harness === "codex"
-      ? "rebuild the runtime image, which always installs it"
-      : `build the runtime image with HARNESSES naming ${harness}`;
-  throw new HarnessSetupError(
-    "harness.not_installed",
-    `${HARNESS_INFO[harness].label} is not installed in this machine's image: ${fix}`,
-  );
-}
-
-async function assertCredential(ctx: ToolContext, harness: Harness, meta: Record<string, unknown>): Promise<void> {
-  if (meta.credential === "login") {
-    await ctx.harness_login_seen?.(harness, stringOrNull(meta.account));
-  } else if (meta.credential !== "secret") {
-    await ctx.harness_login_lost?.(harness);
-    throw new HarnessSetupError(
-      "harness.credential",
-      `${HARNESS_INFO[harness].label} has no credential: ${credentialFix(harness, ctx.secret_aliases)}`,
-    );
-  }
-}
-
-/** Checks the harness's CLI is installed and has a credential; returns its version. */
-async function checkHarness(ctx: ToolContext, ops: ToolContext, harness: Harness): Promise<string | null> {
-  const check = await harnessOp(ops, "check", { harness });
-  assertInstalled(harness, check.meta);
-  await assertCredential(ctx, harness, check.meta);
-  return stringOrNull(check.meta.version);
-}
-
-/**
- * Checks, before a coding generation calls its model, that the run's harness is installed and
- * has a credential, so a run that cannot delegate code work fails at start. Throws
- * `HarnessSetupError` naming the fix.
- */
-export async function assertHarnessReady(ctx: ToolContext): Promise<void> {
-  const harness = requiredHarness(ctx);
-  await checkHarness(ctx, checkContext(ctx), harness);
-}
-
-/** What a harness check found on the agent's machine. */
-export type HarnessCheck = {
-  installed: boolean;
-  version: string | null;
-  /** What the harness would run on: a granted secret, a login in the home, or nothing. */
-  credential: "secret" | "login" | null;
-  /** Whose the login is, as the harness recorded it; null without a login or when unknown. */
-  account: string | null;
-};
-
-/** The raw event log the app reads of one `code_task` call, at most this much of it. */
-export const HARNESS_LOG_MAX_BYTES = 256 * 1024;
-
-/** One `code_task` call's kept event log: its progress lines, and its raw JSONL from the start. */
-export type HarnessLog = {
-  lines: string[];
-  lines_truncated: boolean;
-  raw: string;
-  raw_truncated: boolean;
-  /** The log's whole size in bytes. */
-  bytes: number;
-  events: number;
-  /** Lines of the log that were not JSON. */
-  unparsed: number;
-};
-
-/**
- * Reads the kept log of call `callId` of `ctx`'s run with `guilds-harness log`, redacted with
- * `secrets`; null once the agent's home no longer keeps it.
- */
-export async function readHarnessLog(
-  ctx: ToolContext,
-  harness: Harness,
-  callId: string,
-  secrets: Record<string, string>,
-): Promise<HarnessLog | null> {
-  ctx.tool_call_id = callId;
-  const result = await runCodeHelper(
-    ctx,
-    "log",
-    { harness },
-    { helper: HARNESS_HELPER, timeoutSeconds: HARNESS_OP_TIMEOUT_SECONDS, maxBytes: HARNESS_LOG_MAX_BYTES },
-  );
-  const meta = result.meta;
-  if (meta.missing === true) {
-    return null;
-  }
-  const lines = Array.isArray(meta.lines) ? meta.lines.map(String) : [];
-  return {
-    lines: shownProgressLines(lines, secrets),
-    lines_truncated: meta.lines_truncated === true,
-    raw: redact(result.text, secrets),
-    raw_truncated: meta.raw_truncated === true,
-    bytes: Number(meta.bytes) || 0,
-    events: Number(meta.events) || 0,
-    unparsed: Number(meta.unparsed) || 0,
-  };
-}
-
-/** Runs `guilds-harness check` for `harness` under `ctx`, outside any tool call. */
-export async function checkHarnessOn(ctx: ToolContext, harness: Harness): Promise<HarnessCheck> {
-  const check = await harnessOp(checkContext(ctx), "check", { harness });
-  const credential = check.meta.credential;
-  return {
-    installed: check.meta.installed === true,
-    version: stringOrNull(check.meta.version),
-    credential: credential === "secret" || credential === "login" ? credential : null,
-    account: stringOrNull(check.meta.account),
-  };
-}
-
-async function checkpoint(
-  ctx: ToolContext,
-  which: "start" | "end",
-  repository: string,
-): Promise<Record<string, unknown>> {
-  try {
-    const result = await runCodeHelper(
-      ctx,
-      "checkpoint",
-      { which, task: ctx.tool_call_id, repositories: [repository] },
-      { timeoutSeconds: CHECKPOINT_TIMEOUT_SECONDS },
-    );
-    const records = Array.isArray(result.meta.repositories) ? result.meta.repositories : [];
-    return (records[0] as Record<string, unknown> | undefined) ?? {};
-  } catch (error) {
-    writeLog("warn", errorText(error), { run_id: ctx.run_id, agent_id: ctx.agent_id, operation: "code_task.checkpoint" });
-    return {};
-  }
 }
 
 // --- one turn of the harness -----------------------------------------------
@@ -330,8 +87,12 @@ type HarnessTurn = {
   minutes: number;
   prompt: string;
   version: string | null;
-  /** The harness ops' context, whose tool call id names the call's state on the machine. */
-  ops: ToolContext;
+  /** The run the harness ops run under. */
+  ops: ToolRun;
+  /** The id that names the call's state on the machine. */
+  call_id: string;
+  /** The provider id of the call, which its progress is published under. */
+  tool_call_id: string;
   log_path: string;
   start_sha: string | null;
   started: number;
@@ -375,33 +136,37 @@ const SETTLED_DETAIL: Record<TurnEnding["settled"], (minutes: number) => string>
   timed_out: (minutes) => `Stopped after ${minutes} minutes. Resume the session to continue.`,
 };
 
-type CheckedCall = Pick<HarnessTurn, "harness" | "repository" | "prompt" | "version" | "ops">;
+type CheckedCall = Pick<HarnessTurn, "harness" | "repository" | "prompt" | "version" | "ops" | "call_id">;
 
 function sessionIdOf(args: Record<string, unknown>): string | null {
   return typeof args.session_id === "string" ? stringOrNull(args.session_id.trim()) : null;
 }
 
 /** Validates the call's arguments, checks its harness, and builds the brief. */
-async function checkedCall(ctx: ToolContext, args: Record<string, unknown>): Promise<CheckedCall> {
-  const harness = requiredHarness(ctx);
+async function checkedCall(services: ToolServices, run: ToolRun, call: ToolInvocation): Promise<CheckedCall> {
+  const args = call.arguments;
+  const harness = requiredHarness(run);
   const brief = requiredBrief(args);
-  const repository = repositoryFor(ctx, args);
+  const repository = repositoryFor(run, args);
   const notes = notePaths(args);
-  const ops = opsContext(ctx);
-  const version = await checkHarness(ctx, ops, harness);
-  return { harness, repository, prompt: await buildBrief(ctx, brief, notes), version, ops };
+  const callId = callSegment(call.id || `code_task_${Date.now()}`);
+  const version = await checkHarness(services, run, callId, harness);
+  const prompt = await buildBrief(services, callActor(run.artifact_actor, call), brief, notes);
+  return { harness, repository, prompt, version, ops: opsRun(run), call_id: callId };
 }
 
 /** A checked call, with the task's start checkpoint taken and its clock started. */
-async function openHarnessTurn(ctx: ToolContext, args: Record<string, unknown>): Promise<HarnessTurn> {
-  const call = await checkedCall(ctx, args);
-  const start = await checkpoint(call.ops, "start", call.repository);
+async function openHarnessTurn(services: ToolServices, run: ToolRun, call: ToolInvocation): Promise<HarnessTurn> {
+  const args = call.arguments;
+  const checked = await checkedCall(services, run, call);
+  const start = await checkpoint(checked.ops, checked.call_id, "start", checked.repository);
   const minutes = timeoutMinutes(args);
   const started = Date.now();
   return {
-    ...call,
+    ...checked,
+    tool_call_id: call.id,
     minutes,
-    log_path: displayLogPath(ctx.run_id, call.ops.tool_call_id),
+    log_path: displayLogPath(run.run_id, checked.call_id),
     start_sha: stringOrNull(start.start_sha),
     started,
     deadline: started + minutes * harnessTiming.minuteMs,
@@ -411,23 +176,24 @@ async function openHarnessTurn(ctx: ToolContext, args: Record<string, unknown>):
   };
 }
 
-async function rememberTurn(ctx: ToolContext, turn: HarnessTurn): Promise<void> {
-  await ctx.remember_harness_task?.({
-    call_id: turn.ops.tool_call_id,
+async function rememberTurn(services: ToolServices, run: ToolRun, turn: HarnessTurn): Promise<void> {
+  const task = {
+    call_id: turn.call_id,
     harness: turn.harness,
     repository: turn.repository,
     session_id: turn.session,
     log_path: turn.log_path,
-  });
+  };
+  await services.db?.mergeRunMetadata(run.run_id, { harness_task: task }, new Date());
 }
 
-async function startHarness(ctx: ToolContext, turn: HarnessTurn): Promise<void> {
+async function startHarness(services: ToolServices, run: ToolRun, hooks: ToolHooks, turn: HarnessTurn): Promise<void> {
   const resume = turn.session ? { session_id: turn.session } : {};
-  await ctx.before_command?.();
-  const launch = harnessLaunch(turn.harness, ctx.harness_model, ctx.harness_effort);
+  await hooks.before_command?.();
+  const launch = harnessLaunch(turn.harness, run.harness_model, run.harness_effort);
   const model = launch.model ? { model: launch.model } : {};
   const effort = launch.effort ? { effort: launch.effort } : {};
-  await harnessOp(turn.ops, "start", {
+  await harnessOp(turn.ops, turn.call_id, "start", {
     harness: turn.harness,
     repository: turn.repository,
     prompt: turn.prompt,
@@ -435,7 +201,7 @@ async function startHarness(ctx: ToolContext, turn: HarnessTurn): Promise<void> 
     ...model,
     ...effort,
   });
-  await rememberTurn(ctx, turn);
+  await rememberTurn(services, run, turn);
 }
 
 /** Waits `ms`, or until the run is cancelled. */
@@ -457,8 +223,8 @@ async function pause(ms: number, cancel: CancelEvent | null): Promise<void> {
   }
 }
 
-function interruption(ctx: ToolContext, turn: HarnessTurn): Settled | null {
-  if (ctx.cancel_event?.aborted) {
+function interruption(run: ToolRun, turn: HarnessTurn): Settled | null {
+  if (run.cancel_event?.aborted) {
     return "cancelled";
   }
   return Date.now() >= turn.deadline ? "timed_out" : null;
@@ -469,72 +235,83 @@ function countFailedPoll(turn: HarnessTurn, error: unknown): Settled | null {
   if (turn.failures < POLL_FAILURES_MAX) {
     return null;
   }
-  writeLog("warn", errorText(error), { run_id: turn.ops.run_id, agent_id: turn.ops.agent_id, operation: "code_task.poll" });
+  writeLog("warn", errorMessage(error), { run_id: turn.ops.run_id, agent_id: turn.ops.agent_id, operation: "code_task.poll" });
   return "unresponsive";
 }
 
-async function noteSession(ctx: ToolContext, turn: HarnessTurn, seen: unknown): Promise<void> {
+async function noteSession(services: ToolServices, run: ToolRun, turn: HarnessTurn, seen: unknown): Promise<void> {
   if (typeof seen !== "string" || !seen || seen === turn.session) {
     return;
   }
   turn.session = seen;
-  await rememberTurn(ctx, turn);
+  await rememberTurn(services, run, turn);
 }
 
-async function publishLines(ctx: ToolContext, turn: HarnessTurn, lines: unknown): Promise<void> {
+async function publishLines(services: ToolServices, run: ToolRun, turn: HarnessTurn, lines: unknown): Promise<void> {
   if (!Array.isArray(lines) || !lines.length) {
     return;
   }
-  await ctx.publish_progress?.(ctx.tool_call_id, { lines: lines.map(String), session_id: turn.session });
+  await services.events?.publish(run.run_id, "tool.progress", {
+    run_id: run.run_id,
+    tool_call_id: turn.tool_call_id,
+    lines: shownProgressLines(lines.map(String), run.secrets),
+    session_id: turn.session,
+  });
 }
 
-async function applyPoll(ctx: ToolContext, turn: HarnessTurn, meta: Record<string, unknown>): Promise<Settled | null> {
+async function applyPoll(
+  services: ToolServices,
+  run: ToolRun,
+  turn: HarnessTurn,
+  meta: Record<string, unknown>,
+): Promise<Settled | null> {
   if (meta.missing === true) {
     return "missing";
   }
   turn.offset = typeof meta.offset === "number" ? meta.offset : turn.offset;
-  await noteSession(ctx, turn, meta.session_id);
-  await publishLines(ctx, turn, meta.lines);
+  await noteSession(services, run, turn, meta.session_id);
+  await publishLines(services, run, turn, meta.lines);
   return meta.exited === true ? "exited" : null;
 }
 
-async function pollOnce(ctx: ToolContext, turn: HarnessTurn): Promise<Settled | null> {
+async function pollOnce(services: ToolServices, run: ToolRun, hooks: ToolHooks, turn: HarnessTurn): Promise<Settled | null> {
   let poll: CodeResult;
   try {
-    await ctx.before_command?.();
-    poll = await harnessOp(turn.ops, "poll", { harness: turn.harness, offset: turn.offset });
+    await hooks.before_command?.();
+    poll = await harnessOp(turn.ops, turn.call_id, "poll", { harness: turn.harness, offset: turn.offset });
   } catch (error) {
     return countFailedPoll(turn, error);
   }
   turn.failures = 0;
-  return applyPoll(ctx, turn, poll.meta);
+  return applyPoll(services, run, turn, poll.meta);
 }
 
 /** Polls the harness, publishing its progress, until it exits, is lost, or must be stopped. */
-async function pollUntilSettled(ctx: ToolContext, turn: HarnessTurn): Promise<Settled> {
+async function pollUntilSettled(services: ToolServices, run: ToolRun, hooks: ToolHooks, turn: HarnessTurn): Promise<Settled> {
   for (;;) {
-    const settled = interruption(ctx, turn) ?? (await pollOnce(ctx, turn));
+    const settled = interruption(run, turn) ?? (await pollOnce(services, run, hooks, turn));
     if (settled !== null) {
       return settled;
     }
-    await pause(Math.min(harnessTiming.pollMs, Math.max(0, turn.deadline - Date.now())), ctx.cancel_event);
+    await pause(Math.min(harnessTiming.pollMs, Math.max(0, turn.deadline - Date.now())), run.cancel_event);
   }
 }
 
 /** The `result` op's meta, which also clears the call's state once the harness exited; null when unread. */
-async function readResult(ops: ToolContext, harness: Harness): Promise<Record<string, unknown> | null> {
-  const result = await harnessOp(ops, "result", { harness }).catch(() => null);
+async function readResult(ops: ToolRun, callId: string, harness: Harness): Promise<Record<string, unknown> | null> {
+  const result = await harnessOp(ops, callId, "result", { harness }).catch(() => null);
   return result === null || result.meta.missing === true ? null : result.meta;
 }
 
 /** Stops the harness and, once it has exited, reads its result. A call with no state left has nothing to stop. */
 async function stopHarness(
-  ops: ToolContext,
+  ops: ToolRun,
+  callId: string,
   harness: Harness,
 ): Promise<{ stopped: boolean; result: Record<string, unknown> | null }> {
-  const stop = await harnessOp(ops, "stop", { harness }).catch(() => null);
+  const stop = await harnessOp(ops, callId, "stop", { harness }).catch(() => null);
   const stopped = stop !== null && stop.meta.exited !== false;
-  return { stopped, result: stopped ? await readResult(ops, harness) : null };
+  return { stopped, result: stopped ? await readResult(ops, callId, harness) : null };
 }
 
 async function endTurn(turn: HarnessTurn, settled: Settled): Promise<TurnEnding> {
@@ -542,20 +319,20 @@ async function endTurn(turn: HarnessTurn, settled: Settled): Promise<TurnEnding>
     return { settled, stopped: null, result: null };
   }
   if (settled === "exited") {
-    const result = await readResult(turn.ops, turn.harness);
+    const result = await readResult(turn.ops, turn.call_id, turn.harness);
     return { settled: result === null ? "unreadable" : "exited", stopped: null, result };
   }
-  return { settled, ...(await stopHarness(turn.ops, turn.harness)) };
+  return { settled, ...(await stopHarness(turn.ops, turn.call_id, turn.harness)) };
 }
 
 /** Starts the harness and polls it to the end; from `start` on, any way out but a clean exit or lost state stops it. */
-async function runHarnessTurn(ctx: ToolContext, turn: HarnessTurn): Promise<TurnEnding> {
+async function runHarnessTurn(services: ToolServices, run: ToolRun, hooks: ToolHooks, turn: HarnessTurn): Promise<TurnEnding> {
   let settled: Settled;
   try {
-    await startHarness(ctx, turn);
-    settled = await pollUntilSettled(ctx, turn);
+    await startHarness(services, run, hooks, turn);
+    settled = await pollUntilSettled(services, run, hooks, turn);
   } catch (error) {
-    await stopHarness(turn.ops, turn.harness);
+    await stopHarness(turn.ops, turn.call_id, turn.harness);
     throw error;
   }
   return endTurn(turn, settled);
@@ -571,11 +348,16 @@ export type LostTurnEnd = {
 
 /**
  * Stops a call the orchestrator lost track of, clears its state once the harness exited, and
- * takes the task's end checkpoint in `repository` when it is known. `ctx` names the call.
+ * takes the task's end checkpoint in `repository` when it is known. `callId` names the call.
  */
-export async function endLostTurn(ctx: ToolContext, harness: Harness, repository: string | null): Promise<LostTurnEnd> {
-  const { stopped, result } = await stopHarness(ctx, harness);
-  const end = repository ? await checkpoint(ctx, "end", repository) : {};
+export async function endLostTurn(
+  run: ToolRun,
+  callId: string,
+  harness: Harness,
+  repository: string | null,
+): Promise<LostTurnEnd> {
+  const { stopped, result } = await stopHarness(run, callId, harness);
+  const end = repository ? await checkpoint(run, callId, "end", repository) : {};
   return {
     stopped,
     session_id: stringOrNull(result?.session_id),
@@ -584,130 +366,8 @@ export async function endLostTurn(ctx: ToolContext, harness: Harness, repository
   };
 }
 
-// --- the result ---------------------------------------------------------------
-
-function clipProgressLine(line: string): string {
-  return line.length <= PROGRESS_LINE_CHARS ? line : `${line.slice(0, PROGRESS_LINE_CHARS - 1)}…`;
-}
-
-/** Progress lines as the run view shows them: redacted, then clipped, so no secret is cut in two. */
-export function shownProgressLines(lines: string[], secrets: Record<string, string>): string[] {
-  return lines.map((line) => clipProgressLine(redact(line, secrets)));
-}
-
-export function formatDuration(ms: number): string {
-  const seconds = Math.max(0, Math.round(ms / 1000));
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  if (hours) {
-    return `${hours}h${String(minutes % 60).padStart(2, "0")}m`;
-  }
-  return minutes ? `${minutes}m${String(seconds % 60).padStart(2, "0")}s` : `${seconds}s`;
-}
-
-type ChangedFile = { path: string; insertions: number | null; deletions: number | null };
-
-export type CodeTaskOutcome = {
-  status: CodeTaskStatus;
-  harness: Harness;
-  repository: string;
-  session_id: string | null;
-  duration_ms: number;
-  files_changed: number;
-  insertions: number;
-  deletions: number;
-  files: ChangedFile[];
-  detail: string;
-  message: string;
-  log_path: string;
-};
-
-/** Keeps the end of `text` within `budget` bytes: questions and summaries come last. */
-function keepEnd(text: string, budget: number): string {
-  const data = Buffer.from(text, "utf8");
-  if (data.length <= budget) {
-    return text;
-  }
-  const marker = `[… ${data.length - budget} bytes cut from the start of the message]\n`;
-  const room = Math.max(0, budget - Buffer.byteLength(marker, "utf8"));
-  return marker + data.subarray(data.length - room).toString("utf8").replace(/^�+/, "");
-}
-
-function changeSummary(outcome: CodeTaskOutcome): string {
-  if (!outcome.files_changed) {
-    return "no files changed";
-  }
-  const plural = outcome.files_changed === 1 ? "" : "s";
-  return `${outcome.files_changed} file${plural} changed, +${outcome.insertions} −${outcome.deletions}`;
-}
-
-function fileLine(file: ChangedFile): string {
-  const counts = file.insertions === null ? "binary" : `+${file.insertions} −${file.deletions ?? 0}`;
-  return `${file.path} (${counts})`;
-}
-
-/** The first changed files, and how many more there are. */
-function fileLines(outcome: CodeTaskOutcome): string[] {
-  const shown = outcome.files.slice(0, FILES_SHOWN).map(fileLine);
-  const more = outcome.files_changed - shown.length;
-  return more > 0 ? [...shown, `… ${more} more files`] : shown;
-}
-
-/** The result the agent reads, within `maxBytes`; the final message gives way first, from its start. */
-export function codeTaskText(outcome: CodeTaskOutcome, maxBytes = codeResultMaxBytes()): string {
-  const title = `${outcome.status} · ${outcome.harness} · ${outcome.repository} · session ${outcome.session_id ?? "none"} · ${formatDuration(outcome.duration_ms)}`;
-  const head = [title, changeSummary(outcome), ...fileLines(outcome), outcome.detail].filter(Boolean).join("\n");
-  const tail = `log: ${outcome.log_path}`;
-  const budget = maxBytes - Buffer.byteLength(`${head}\n\n\n\n${tail}`, "utf8") - 16;
-  const message = keepEnd(outcome.message.trim() || "(no final message)", Math.max(0, budget));
-  return `${head}\n\n${message}\n\n${tail}`;
-}
-
-/** The result of a call the orchestrator never saw finish: it restarted while the harness ran. */
-export function interruptedText(task: {
-  harness: Harness;
-  repository: string | null;
-  session_id: string | null;
-  log_path: string | null;
-  run_id: string;
-  call_id: string;
-  stopped: boolean;
-}): string {
-  const resume = task.session_id ? " Resume the session to finish the work." : "";
-  return [
-    `interrupted · ${task.harness} · ${task.repository ?? "unknown"} · session ${task.session_id ?? "none"}`,
-    task.stopped
-      ? "The harness was stopped before it finished: the orchestrator or the machine restarted."
-      : "The orchestrator restarted, and the harness did not stop: it may still be running.",
-    "The working tree holds whatever it wrote, and the task's start checkpoint stays at",
-    `refs/guild/runs/${task.run_id}/tasks/${task.call_id}/start.${resume}`,
-    "",
-    `log: ${task.log_path ?? "none"}`,
-  ].join("\n");
-}
-
 function displayLogPath(runId: string, callId: string): string {
   return `.runs/${runId}/${callId}.harness.jsonl`;
-}
-
-function stderrTail(value: unknown): string {
-  return typeof value === "string" ? value.trim().split("\n").slice(-5).join("\n") : "";
-}
-
-function firstLine(value: unknown): string {
-  return typeof value === "string" ? (value.split("\n")[0] ?? "") : "";
-}
-
-/** Why a turn failed. A CLI that printed no event, such as one refusing to start without a login, says why on stderr. */
-export function failureDetail(harness: Harness, result: Record<string, unknown>, version: string | null): string {
-  const events = count(result.events);
-  if (events === 0 && count(result.unparsed) > 0) {
-    return `error: the ${harness} driver does not parse this CLI's output (${version ?? "unknown version"})`;
-  }
-  const stderr = stderrTail(result.stderr);
-  const error = firstLine(result.error);
-  const reasons = events === 0 ? [stderr, error] : [error, stderr];
-  return `error: ${reasons.find(Boolean) ?? `exited with code ${String(result.exit_code ?? "unknown")}`}`;
 }
 
 function endingStatus(ending: TurnEnding): CodeTaskStatus {
@@ -735,10 +395,10 @@ function turnOutcome(turn: HarnessTurn, ending: TurnEnding, changed: Record<stri
     repository: turn.repository,
     session_id: stringOrNull(ending.result?.session_id) ?? turn.session,
     duration_ms: Date.now() - turn.started,
-    files_changed: count(changed.files_changed),
-    insertions: count(changed.insertions),
-    deletions: count(changed.deletions),
-    files: Array.isArray(changed.files) ? (changed.files as ChangedFile[]) : [],
+    files_changed: numberOrZero(changed.files_changed),
+    insertions: numberOrZero(changed.insertions),
+    deletions: numberOrZero(changed.deletions),
+    files: Array.isArray(changed.files) ? changed.files.filter(isChangedFile) : [],
     detail: endingDetail(turn, ending, status),
     message: stringOrNull(ending.result?.message) ?? "",
     log_path: turn.log_path,
@@ -746,12 +406,12 @@ function turnOutcome(turn: HarnessTurn, ending: TurnEnding, changed: Record<stri
 }
 
 /** Takes the task's end checkpoint, and records and returns what the agent reads. */
-async function finishHarnessTurn(ctx: ToolContext, turn: HarnessTurn, ending: TurnEnding): Promise<string> {
-  const end = await checkpoint(turn.ops, "end", turn.repository);
+async function finishHarnessTurn(call: ToolInvocation, turn: HarnessTurn, ending: TurnEnding): Promise<string> {
+  const end = await checkpoint(turn.ops, turn.call_id, "end", turn.repository);
   const outcome = turnOutcome(turn, ending, end);
   const exitCode = typeof ending.result?.exit_code === "number" ? ending.result.exit_code : null;
-  ctx.exit_code = exitCode;
-  ctx.tool_metadata = {
+  call.exit_code = exitCode;
+  call.metadata = {
     harness: turn.harness,
     status: outcome.status,
     session_id: outcome.session_id,
@@ -796,9 +456,9 @@ export const codeTask: Tool = {
     },
     ["brief"],
   ),
-  async handler(ctx, args) {
-    const turn = await openHarnessTurn(ctx, args);
-    const ending = ctx.cancel_event?.aborted ? NOT_STARTED : await runHarnessTurn(ctx, turn);
-    return finishHarnessTurn(ctx, turn, ending);
+  async handler(services, run, hooks, call) {
+    const turn = await openHarnessTurn(services, run, call);
+    const ending = run.cancel_event?.aborted ? NOT_STARTED : await runHarnessTurn(services, run, hooks, turn);
+    return finishHarnessTurn(call, turn, ending);
   },
 };

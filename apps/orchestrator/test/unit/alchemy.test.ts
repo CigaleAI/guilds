@@ -13,26 +13,22 @@ import {
   nftTool,
   ping,
 } from "../../src/connectors/alchemy/client.js";
-import { ListedTool, McpError, McpPool } from "../../src/mcp/index.js";
+import { McpError } from "../../src/mcp/errors.js";
+import { McpPool, OPERATOR_CALLER } from "../../src/mcp/pool.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { ConnectorError } from "../../src/connectors/types.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { mockFetch } from "../helpers/http.js";
 import { serverRow } from "../helpers/servers.js";
 import { connectionRow } from "../helpers/servers.js";
+import { MemoryMcpDatabase } from "../helpers/mcp-database.js";
+import { restoreConnectorsAfterEach, runConnectors } from "../helpers/installed.js";
+
+restoreConnectorsAfterEach();
 
 const KEY = decodeMasterKey(HEX_MASTER_KEY);
 const TOOLS = CONNECTORS.bySlug("alchemy")!.manifest.tools!;
 
-class MemoryDb {
-  rows: Array<Record<string, unknown>> = [];
-  async replaceMcpTools(_id: string, tools: ListedTool[]) {
-    this.rows = tools.map((tool) => ({ ...tool }));
-  }
-  async listMcpTools() {
-    return this.rows;
-  }
-}
 
 test("formatHoldings drops images and descriptions", () => {
   const payload = {
@@ -56,7 +52,7 @@ test("formatHoldings drops images and descriptions", () => {
     totalCount: 12,
     pageKey: "next-page",
   };
-  const stored = formatHoldings(payload, { owner: "0xd8da6bf26964af9d7eed9e03e53415d37aa96045", chain: "ethereum" });
+  const stored = formatHoldings(payload, "0xd8da6bf26964af9d7eed9e03e53415d37aa96045", "ethereum");
   assert.equal(
     stored,
     "0xd8da6bf26964af9d7eed9e03e53415d37aa96045  ethereum  total=12\n"
@@ -79,7 +75,7 @@ test("formatHoldings caps rows and marks spam", () => {
     })),
     totalCount: 20,
   };
-  const stored = formatHoldings(payload, { owner: "0xabc", chain: "base", limit: 3 });
+  const stored = formatHoldings(payload, "0xabc", "base", 3);
   assert.ok(stored.startsWith("0xabc  base  total=20"));
   assert.equal(stored.split("\n").length - 1, 4);
   assert.ok(stored.includes("+17 more"));
@@ -245,6 +241,35 @@ test("nft solana uses mint", async () => {
   assert.equal(stored, "Mad1111111111111111111111111111111111111111  MAD  Mad Lads #1  V1_NFT");
 });
 
+test("holdings and nft refuse a body that is not JSON or does not match its schema", async () => {
+  const answering = (result: { json?: unknown; text?: string }) => ({
+    apiKey: "alc-test",
+    client: mockFetch(() => ({ status: 200, ...result })),
+  });
+  const unexpectedAt = (path: string) => (error: unknown) =>
+    error instanceof AlchemyError &&
+    error.message.startsWith(`Alchemy returned an unexpected response at ${path}: `);
+  await assert.rejects(
+    () =>
+      holdingsTool({ owner: "0xd8da", chain: "base" }, answering({ json: { ownedNfts: "none" } })),
+    unexpectedAt("/ownedNfts"),
+  );
+  const mint = "Mad1111111111111111111111111111111111111111";
+  await assert.rejects(
+    () =>
+      nftTool(
+        { contract: mint, chain: "solana" },
+        answering({ json: { result: { id: mint, content: "none" } } }),
+      ),
+    unexpectedAt("/content"),
+  );
+  await assert.rejects(
+    () => holdingsTool({ owner: "0xd8da", chain: "base" }, answering({ text: "not json" })),
+    (error: unknown) =>
+      error instanceof AlchemyError && error.message === "Alchemy returned a non-JSON body",
+  );
+});
+
 test("ping rejects unauthorized", async () => {
   await assert.rejects(
     () => ping("bad", { client: mockFetch(() => ({ status: 401, json: { message: "Must be authenticated!" } })) }),
@@ -259,38 +284,37 @@ test("callTool unknown name", async () => {
 test("sync Alchemy writes the curated catalog", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   let pinged = 0;
-  const pool = new McpPool(10 * 60 * 1000);
-  pool.connectors = CONNECTORS.withAdapter("alchemy", {
+  const pool = new McpPool(new MemoryMcpDatabase(), 10 * 60 * 1000);
+  runConnectors(CONNECTORS.withAdapter("alchemy", {
     async validate(creds) {
       const apiKey = creds.token;
       pinged += 1;
       assert.equal(apiKey, "alc-test");
       return "";
     },
-  });
+  }));
   const [ciphertext, nonce] = encryptPayload({ token: "alc-test" }, KEY);
-  const db = new MemoryDb();
   const connection = connectionRow({ id: "conn_alc", status: "connected", ciphertext, nonce });
   const server = serverRow("alchemy", { id: "mcp_alchemy", auth: "token" });
-  const first = await pool.syncTools(db as never, connection, server, { force: true });
-  const second = await pool.syncTools(db as never, connection, server);
+  const first = await pool.syncTools(connection, server, { force: true });
+  const second = await pool.syncTools(connection, server);
   assert.equal(pinged, 1);
   assert.deepEqual(first.map((tool) => tool.namespaced_name), TOOLS.map((spec) => `alchemy_${spec.name}`));
   assert.deepEqual(first, second);
-  assert.deepEqual(first[0], new ListedTool("holdings", "alchemy_holdings", TOOLS[0]!.description, TOOLS[0]!.input_schema));
+  assert.deepEqual(first[0], { remote_name: "holdings", namespaced_name: "alchemy_holdings", description: TOOLS[0]!.description, input_schema: TOOLS[0]!.input_schema, read_only_hint: null, destructive_hint: null });
 });
 
 test("sync Alchemy rejects a bad key", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
-  const pool = new McpPool();
-  pool.connectors = CONNECTORS.withAdapter("alchemy", {
+  const pool = new McpPool(new MemoryMcpDatabase());
+  runConnectors(CONNECTORS.withAdapter("alchemy", {
     async validate() {
       throw new ConnectorError("invalid key", 401);
     },
-  });
+  }));
   const [ciphertext, nonce] = encryptPayload({ token: "bad" }, KEY);
   await assert.rejects(
-    () => pool.syncTools(new MemoryDb() as never, connectionRow({ id: "conn_alc", status: "connected", ciphertext, nonce }), serverRow("alchemy", { id: "mcp_alchemy", auth: "token" }), { force: true }),
+    () => pool.syncTools(connectionRow({ id: "conn_alc", status: "connected", ciphertext, nonce }), serverRow("alchemy", { id: "mcp_alchemy", auth: "token" }), { force: true }),
     (error: unknown) => error instanceof McpError && error.status === 401,
   );
 });
@@ -298,22 +322,20 @@ test("sync Alchemy rejects a bad key", async () => {
 test("call Alchemy dispatches", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const seen: Record<string, unknown> = {};
-  const pool = new McpPool();
-  pool.connectors = CONNECTORS.withAdapter("alchemy", {
+  const pool = new McpPool(new MemoryMcpDatabase());
+  runConnectors(CONNECTORS.withAdapter("alchemy", {
     async call(name, arguments_, creds) {
       seen.name = name;
       seen.arguments = arguments_;
       seen.api_key = creds.token;
       return "0xd8da  ethereum  total=0";
     },
-  });
+  }));
   const [ciphertext, nonce] = encryptPayload({ token: "alc-test" }, KEY);
   const stored = await pool.call(
-    new MemoryDb() as never,
     connectionRow({ id: "conn_alc", status: "connected", ciphertext, nonce }),
     serverRow("alchemy", { id: "mcp_alchemy", auth: "token" }),
-    "holdings",
-    { owner: "0xd8da" },
+    { tool: "holdings", arguments: { owner: "0xd8da" }, caller: OPERATOR_CALLER },
   );
   assert.equal(stored, "0xd8da  ethereum  total=0");
   assert.deepEqual(seen, { name: "holdings", arguments: { owner: "0xd8da" }, api_key: "alc-test" });

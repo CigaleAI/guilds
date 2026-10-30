@@ -1,7 +1,4 @@
-export const BUILDER_MAX_TOKENS = 25000;
 export const BUILDER_MAX_STEPS = 24;
-export const BUILDER_MAX_TOOL_CALLS = 40;
-export const BUILDER_MAX_INPUT_TOKENS = 200_000;
 export const BUILDER_DEFAULT_TEMPERATURE = 0.2;
 export const BUILDER_TOOL_RESULT_STUB_HINT =
   "Older tool result stubbed to save context. Call the same tool again. The current recipe is in the system message.";

@@ -1,13 +1,21 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 import { writeBinding } from "../../src/access/bindings.js";
-import { operatorActor } from "../../src/artifacts/index.js";
+import { operatorActor } from "../../src/artifacts/actors.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
-import { addAgent } from "../../src/agents/persist.js";
+import { addTestAgent } from "../helpers/agents.js";
 import { insertAgent, upsertAgentScript } from "../../src/db/agents.js";
+import {
+  insertFile,
+  insertNote,
+  updateMemoryContent,
+  updateNoteContent,
+  type ArtifactAddress,
+} from "../../src/db/artifacts.js";
 import { insertAttachment } from "../../src/db/attachments.js";
 import { insertBindingIfAbsent, upsertPlatformBinding } from "../../src/db/bindings.js";
 import type { Database } from "../../src/db/client.js";
+import { insertCollection, insertRecord, updateRecordBody } from "../../src/db/collections.js";
 import { connect } from "../../src/seed/connect.js";
 import type { ChangeActor } from "../../src/lib/change-actor.js";
 import { insertConnector } from "../../src/db/connectors.js";
@@ -56,6 +64,15 @@ const AGENT_CONFIG = agentConfig({
   max_input_tokens: 100000,
   browser: false,
 });
+
+const NOTE_AT: ArtifactAddress = {
+  org_id: "org_home",
+  level: "guild",
+  owner_id: GUILD,
+  path: "",
+  key: "skipped.md",
+};
+const NOTE_OWNER = { guild_id: GUILD, agent_id: null, origin_guild_id: GUILD };
 
 function newIssue(issueId: string): NewIssue {
   return {
@@ -138,8 +155,9 @@ before(async () => {
     { guildId: GUILD, name: "errors-guild", orgId: "org_home" },
     now,
   );
-  await addAgent(
+  await addTestAgent(
     database.pool,
+    "org_home",
     { agentId: AGENT, guildId: GUILD, name: "errors-agent", config: AGENT_CONFIG },
     now,
   );
@@ -191,8 +209,9 @@ describe("RowMissing", { concurrency: 1 }, () => {
     {
       name: "adding an agent to a missing guild raises RowMissing",
       write: () =>
-        addAgent(
+        addTestAgent(
           database.pool,
+          "org_home",
           { agentId: "a_orphan", guildId: "guild_missing", name: "orphan", config: AGENT_CONFIG },
           new Date(),
         ),
@@ -276,7 +295,13 @@ describe("RowMissing", { concurrency: 1 }, () => {
       name: "a machine update that writes no row raises RowMissing",
       table: "machines",
       event: "UPDATE",
-      write: () => updateMachine(database.pool, "org_home", machineId, MACHINE_INPUT, new Date()),
+      write: () =>
+        updateMachine(
+          database.pool,
+          { org_id: "org_home", id: machineId },
+          MACHINE_INPUT,
+          new Date(),
+        ),
       message: "machine update failed",
     },
     {
@@ -544,6 +569,128 @@ describe("RowMissing", { concurrency: 1 }, () => {
       write: () => insertIssue(database.pool, newIssue("iss_skipped"), new Date()),
       message: "issue insert failed",
     },
+    {
+      name: "a note insert that writes no row raises RowMissing",
+      table: "artifacts",
+      event: "INSERT",
+      write: () =>
+        insertNote(
+          database.pool,
+          {
+            ...NOTE_AT,
+            ...NOTE_OWNER,
+            title: "Skipped",
+            content_text: "",
+            search_text: "",
+            content_hash: "hash",
+          },
+          ACTOR,
+          new Date(),
+        ),
+      message: "note insert returned no row",
+    },
+    {
+      name: "a file insert that writes no row raises RowMissing",
+      table: "artifacts",
+      event: "INSERT",
+      write: () =>
+        insertFile(
+          database.pool,
+          {
+            ...NOTE_AT,
+            ...NOTE_OWNER,
+            id: "art_skipped",
+            key: "skipped.txt",
+            title: "",
+            search_text: "",
+            mime: "text/plain",
+            bytes: 1,
+            content_hash: "hash",
+          },
+          ACTOR,
+          new Date(),
+        ),
+      message: "file insert returned no row",
+    },
+    {
+      name: "a note write to a missing note raises RowMissing",
+      write: () =>
+        updateNoteContent(
+          database.pool,
+          {
+            id: "art_missing",
+            content_text: "",
+            search_text: "",
+            title: null,
+            content_hash: "hash",
+          },
+          ACTOR,
+          new Date(),
+        ),
+      message: "note row vanished during its write",
+    },
+    {
+      name: "a Memory write to a missing Memory raises RowMissing",
+      write: () =>
+        updateMemoryContent(
+          database.pool,
+          {
+            id: "art_missing",
+            content_text: "",
+            search_text: "",
+            content_hash: "hash",
+            written_at: new Date().toISOString(),
+          },
+          ACTOR,
+        ),
+      message: "memory row vanished during its write",
+    },
+    {
+      name: "a collection insert that writes no row raises RowMissing",
+      table: "artifact_collections",
+      event: "INSERT",
+      write: () =>
+        insertCollection(
+          database.pool,
+          { org_id: "org_home", guild_id: GUILD, name: "skipped", purpose: "", columns: [] },
+          ACTOR,
+          new Date(),
+        ),
+      message: "collection insert returned no row",
+    },
+    {
+      name: "a record insert that writes no row raises RowMissing",
+      table: "artifacts",
+      event: "INSERT",
+      write: () =>
+        insertRecord(
+          database.pool,
+          {
+            org_id: "org_home",
+            origin_guild_id: GUILD,
+            collection_id: "acol_skipped",
+            key: "1",
+            content_hash: "hash",
+            search_blob: "",
+            identity: null,
+            body: {},
+          },
+          ACTOR,
+          new Date(),
+        ),
+      message: "record insert returned no row",
+    },
+    {
+      name: "a record write to a missing record raises RowMissing",
+      write: () =>
+        updateRecordBody(
+          database.pool,
+          { id: "art_missing", content_hash: "hash", search_blob: "", identity: null, body: {} },
+          ACTOR,
+          new Date(),
+        ),
+      message: "record row vanished during its write",
+    },
   ];
 
   for (const item of cases) {
@@ -605,8 +752,7 @@ describe("RowMissing", { concurrency: 1 }, () => {
     const resolvedAt = new Date();
     const row = await setIssueStatus(
       database.pool,
-      GUILD,
-      "iss_resolved",
+      { guild_id: GUILD, id: "iss_resolved" },
       { status: "resolved", resolvedAt, resolvedBy: "operator" },
       resolvedAt,
     );
@@ -621,8 +767,7 @@ describe("RowMissing", { concurrency: 1 }, () => {
     const now = new Date();
     const row = await setIssueStatus(
       database.pool,
-      GUILD,
-      "iss_missing",
+      { guild_id: GUILD, id: "iss_missing" },
       { status: "resolved", resolvedAt: now, resolvedBy: "operator" },
       now,
     );
@@ -636,8 +781,7 @@ describe("RowMissing", { concurrency: 1 }, () => {
       withDeletedAfterUpdate("guild_issues", () =>
         setIssueStatus(
           database.pool,
-          GUILD,
-          "iss_vanishing",
+          { guild_id: GUILD, id: "iss_vanishing" },
           { status: "resolved", resolvedAt: now, resolvedBy: "operator" },
           now,
         ),

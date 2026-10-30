@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { ArtifactFiles } from "../../src/artifacts/files.js";
+import type { SharedFileChange } from "../../src/artifacts/operator-files.js";
 import { artifactStore } from "../../src/artifacts/store.js";
 import { connect } from "../../src/seed/connect.js";
 import { MemoryBlobStore } from "../../src/lib/blob-store.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
@@ -35,13 +36,17 @@ test("operators upload, list, download, share, and delete files per level", { ti
   const artifacts = artifactStore(database.pool, templatesRoot());
   const blobs = new MemoryBlobStore();
   const files = new ArtifactFiles(artifacts, blobs);
+  const published: Array<[string, SharedFileChange]> = [];
   const app = await buildApp(database, {
     db,
     notes,
     artifacts,
     files,
-    scripts: new Scripts(scriptDatabase(db)),
-    schedules: new Schedules(scheduleDatabase(db)),
+    publishSharedFileChanged: async (guildId, change) => {
+      published.push([guildId, change]);
+    },
+    scripts: agentScripts(db),
+    schedules: agentSchedules(db),
   });
   const teammate = await insertUser(db, {
       userId: "user_teammate_files",
@@ -49,7 +54,11 @@ test("operators upload, list, download, share, and delete files per level", { ti
       image: null,
       email: "files@example.com",
     }, new Date());
-  await insertMember(db, "org_home", String(teammate.id), "member", new Date());
+  await insertMember(
+    db,
+    { org_id: "org_home", user_id: String(teammate.id), role: "member" },
+    new Date(),
+  );
   const TEAMMATE = { "X-Guilds-User": String(teammate.id), "X-Guilds-Org": "org_home" };
 
   try {
@@ -102,6 +111,7 @@ test("operators upload, list, download, share, and delete files per level", { ti
     assert.equal(download.statusCode, 200);
     assert.equal(download.headers["content-type"], "application/pdf");
     assert.equal(download.headers["x-content-type-options"], "nosniff");
+    assert.equal(download.headers["cache-control"], "private, no-store");
     assert.match(String(download.headers["content-disposition"]), /^attachment; filename="Q3 report\.pdf"/);
     assert.equal(download.rawPayload.toString(), "%PDF-1.4");
 
@@ -115,6 +125,9 @@ test("operators upload, list, download, share, and delete files per level", { ti
     const page = await app.inject({ method: "GET", url: `/api/files/${String(html.json().id)}`, headers: OWNER });
     assert.equal(page.headers["content-type"], "text/html");
     assert.match(String(page.headers["content-disposition"]), /^attachment;/);
+    const orgFiles = await app.inject({ method: "GET", url: `/api/org/files`, headers: OWNER });
+    assert.equal(orgFiles.statusCode, 200);
+    assert.deepEqual((orgFiles.json() as Array<{ id: string }>).map((item) => item.id), [html.json().id]);
 
     // A member who cannot see the private guild does not see its file, by list or by id.
     const hiddenList = await app.inject({ method: "GET", url: `/api/guilds/${guildId}/files`, headers: TEAMMATE });
@@ -137,6 +150,22 @@ test("operators upload, list, download, share, and delete files per level", { ti
       payload: { subjects: [{ type: "guild", id: guildId, mode: "write" }, { type: "org", id: "org_home", mode: "read" }] },
     });
     assert.equal(replaced.statusCode, 200, replaced.body);
+    const unlisted = await app.inject({
+      method: "PUT",
+      url: `/api/files/${file.id}/access`,
+      headers: { ...OWNER, ...JSON_BODY },
+      payload: { subjects: "all" },
+    });
+    assert.equal(unlisted.statusCode, 422);
+    assert.deepEqual(unlisted.json().detail[0].loc, ["body", "subjects"]);
+    const unmoded = await app.inject({
+      method: "PUT",
+      url: `/api/files/${file.id}/access`,
+      headers: { ...OWNER, ...JSON_BODY },
+      payload: { subjects: [{ type: "guild", id: guildId }] },
+    });
+    assert.equal(unmoded.statusCode, 422);
+    assert.deepEqual(unmoded.json().detail[0].loc, ["body", "subjects", "0", "mode"]);
 
     const replacedFile = await app.inject({
       method: "POST",
@@ -153,6 +182,25 @@ test("operators upload, list, download, share, and delete files per level", { ti
     const gone = await app.inject({ method: "GET", url: `/api/files/${file.id}`, headers: OWNER });
     assert.equal(gone.statusCode, 404);
     assert.equal(blobs.objects.size, 1, "only the organisation file's bytes remain");
+
+    const agentUpload = await app.inject({
+      method: "POST",
+      url: `/api/agents/${agentId}/files`,
+      headers: { ...OWNER, ...BYTES, "x-filename": "notes.txt", "x-description": "Working notes" },
+      payload: Buffer.from("notes"),
+    });
+    assert.equal(agentUpload.statusCode, 201, agentUpload.body);
+    const guildPath = file.display_path;
+    assert.deepEqual(
+      published,
+      [
+        [guildId, { displayPath: guildPath }],
+        [guildId, { displayPath: guildPath }],
+        [guildId, { displayPath: guildPath }],
+        [guildId, { displayPath: `org/org_home/agents/${agentId}/files/notes.txt` }],
+      ],
+      "a guild or agent file's upload, replacement and deletion are each announced once to its guild; an organisation file's are not",
+    );
   } finally {
     await app.close();
     await database.close();

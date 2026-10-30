@@ -4,8 +4,8 @@ import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import {
@@ -38,8 +38,8 @@ test("guild admins manage operators, and private guilds show only to operators",
   const app = await buildApp(database, {
     db,
     notes,
-    scripts: new Scripts(scriptDatabase(db)),
-    schedules: new Schedules(scheduleDatabase(db)),
+    scripts: agentScripts(db),
+    schedules: agentSchedules(db),
   });
 
   const teammate = await insertUser(db, {
@@ -48,7 +48,11 @@ test("guild admins manage operators, and private guilds show only to operators",
       image: null,
       email: "teammate-ops@example.com",
     }, new Date());
-  await insertMember(db, "org_home", String(teammate.id), "member", new Date());
+  await insertMember(
+    db,
+    { org_id: "org_home", user_id: String(teammate.id), role: "member" },
+    new Date(),
+  );
   const outsider = await insertUser(db, {
       userId: "user_outsider_ops",
       name: "outsider-ops",
@@ -118,6 +122,22 @@ test("guild admins manage operators, and private guilds show only to operators",
       payload: { about: "anyone who sees an org guild can still edit it" },
     });
     assert.equal(memberAbout.statusCode, 200);
+    const textCap = await app.inject({
+      method: "PUT",
+      url: `/api/guilds/${privateId}`,
+      headers: { ...OWNER, ...json },
+      payload: { max_agents: "3" },
+    });
+    assert.equal(textCap.statusCode, 422);
+    assert.deepEqual(textCap.json().detail[0].loc, ["body", "max_agents"]);
+    const numberedName = await app.inject({
+      method: "POST",
+      url: "/api/guilds",
+      headers: { ...OWNER, ...json },
+      payload: { name: 5 },
+    });
+    assert.equal(numberedName.statusCode, 422);
+    assert.deepEqual(numberedName.json().detail[0].loc, ["body", "name"]);
 
     const notMember = await app.inject({
       method: "PUT",
@@ -133,6 +153,14 @@ test("guild admins manage operators, and private guilds show only to operators",
       payload: { role: "owner" },
     });
     assert.equal(badRole.statusCode, 422);
+    const roleless = await app.inject({
+      method: "PUT",
+      url: `/api/guilds/${privateId}/operators/${String(teammate.id)}`,
+      headers: { ...OWNER, ...json },
+      payload: {},
+    });
+    assert.equal(roleless.statusCode, 422);
+    assert.deepEqual(roleless.json().detail[0].loc, ["body", "role"]);
 
     const invited = await app.inject({
       method: "PUT",
@@ -204,7 +232,11 @@ test("guild admins manage operators, and private guilds show only to operators",
     });
     assert.equal(renamed.statusCode, 409, renamed.body);
     assert.equal(renamed.json().detail, "outsider-ops is already an agent in a guild you operate");
-    await insertMember(db, "org_home", String(outsider.id), "member", new Date());
+    await insertMember(
+      db,
+      { org_id: "org_home", user_id: String(outsider.id), role: "member" },
+      new Date(),
+    );
     const operatorClash = await app.inject({
       method: "PUT",
       url: `/api/guilds/${sharedId}/operators/${String(outsider.id)}`,

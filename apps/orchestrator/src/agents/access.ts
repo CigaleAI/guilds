@@ -3,7 +3,7 @@ import { getGuild } from "../db/guilds.js";
 import { getMembership } from "../db/orgs.js";
 import type { Queryable } from "../db/pg.js";
 import { getRun, type RunRow } from "../db/runs.js";
-import { canSeeGuild } from "../guilds/validation.js";
+import { canSeeGuild } from "../guilds/operators.js";
 import { AgentError } from "./errors.js";
 
 /** Whether the user is in the organisation and sees the guild. */

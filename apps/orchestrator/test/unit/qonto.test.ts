@@ -12,12 +12,16 @@ import {
   ping,
   readInvoiceFile,
 } from "../../src/connectors/qonto/client.js";
-import { ListedTool, McpPool } from "../../src/mcp/index.js";
+import { McpPool } from "../../src/mcp/pool.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { mockFetch } from "../helpers/http.js";
 import { serverRow } from "../helpers/servers.js";
 import { connectionRow } from "../helpers/servers.js";
+import { MemoryMcpDatabase } from "../helpers/mcp-database.js";
+import { restoreConnectorsAfterEach, runConnectors } from "../helpers/installed.js";
+
+restoreConnectorsAfterEach();
 
 /** A temporary host directory named after agent a_1, as its home sits on its machine. */
 async function agentWorkspace(prefix: string): Promise<string> {
@@ -96,6 +100,24 @@ test("list_bank_accounts maps fields and sends secret-key auth", async () => {
   );
   assert.equal(authorization, "org-login:org-secret");
   assert.equal(stored, "acc-1  Main  FR76  EUR  active");
+});
+
+test("list_bank_accounts refuses a body that is not JSON or does not match its schema", async () => {
+  const answering = (result: { json?: unknown; text?: string }) => ({
+    ...CREDS,
+    client: mockFetch(() => ({ status: 200, ...result })),
+  });
+  await assert.rejects(
+    () => callTool("list_bank_accounts", {}, answering({ json: { organization: "none" } })),
+    (error: unknown) =>
+      error instanceof QontoError &&
+      /^Qonto returned an unexpected response at \/organization: /.test(error.message),
+  );
+  await assert.rejects(
+    () => callTool("list_bank_accounts", {}, answering({ text: "not json" })),
+    (error: unknown) =>
+      error instanceof QontoError && error.message === "Qonto returned a non-JSON body",
+  );
 });
 
 test("list_missing_invoices paginates, filters, and skips closed accounts", async () => {
@@ -278,8 +300,8 @@ test("upload_invoice posts, reuses the idempotency key, and polls", async () => 
 test("sync Qonto writes the curated catalog", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   let pinged = 0;
-  const pool = new McpPool(10 * 60 * 1000);
-  pool.connectors = CONNECTORS.withAdapter("qonto", {
+  const pool = new McpPool(new MemoryMcpDatabase(), 10 * 60 * 1000);
+  runConnectors(CONNECTORS.withAdapter("qonto", {
     async validate(stored) {
       const creds = { login: stored.login, secretKey: stored.secret_key };
       pinged += 1;
@@ -287,33 +309,23 @@ test("sync Qonto writes the curated catalog", async () => {
       assert.equal(creds.secretKey, "org-secret");
       return "Elektro";
     },
-  });
+  }));
   const [ciphertext, nonce] = encryptPayload({ login: "org-login", secret_key: "org-secret" }, KEY);
-  const db = {
-    rows: [] as Array<Record<string, unknown>>,
-    async replaceMcpTools(_id: string, tools: ListedTool[]) {
-      this.rows = tools.map((tool) => ({ ...tool }));
-    },
-    async listMcpTools() {
-      return this.rows;
-    },
-    async insertBindingIfAbsent() {},
-  };
   const connection = connectionRow({ id: "conn_qonto", status: "connected", ciphertext, nonce });
   const server = serverRow("qonto", { id: "mcp_qonto", auth: "token" });
-  const first = await pool.syncTools(db as never, connection, server, { force: true });
-  const second = await pool.syncTools(db as never, connection, server);
+  const first = await pool.syncTools(connection, server, { force: true });
+  const second = await pool.syncTools(connection, server);
   assert.equal(pinged, 1);
   assert.deepEqual(first.map((tool) => tool.namespaced_name), TOOLS.map((spec) => `qonto_${spec.name}`));
   assert.deepEqual(first, second);
-  assert.deepEqual(first[0], new ListedTool("list_bank_accounts", "qonto_list_bank_accounts", TOOLS[0]!.description, TOOLS[0]!.input_schema));
+  assert.deepEqual(first[0], { remote_name: "list_bank_accounts", namespaced_name: "qonto_list_bank_accounts", description: TOOLS[0]!.description, input_schema: TOOLS[0]!.input_schema, read_only_hint: null, destructive_hint: null });
 });
 
 test("call Qonto dispatches with stored login and secret", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const seen: Record<string, unknown> = {};
-  const pool = new McpPool();
-  pool.connectors = CONNECTORS.withAdapter("qonto", {
+  const pool = new McpPool(new MemoryMcpDatabase());
+  runConnectors(CONNECTORS.withAdapter("qonto", {
     async call(name, arguments_, creds, ctx) {
       seen.name = name;
       seen.arguments = arguments_;
@@ -322,15 +334,12 @@ test("call Qonto dispatches with stored login and secret", async () => {
       seen.workspace = ctx.workspace_dir;
       return "count=0  total=0";
     },
-  });
+  }));
   const [ciphertext, nonce] = encryptPayload({ login: "org-login", secret_key: "org-secret" }, KEY);
   const stored = await pool.call(
-    { async listMcpTools() { return []; }, async replaceMcpTools() { return; } } as never,
     connectionRow({ id: "conn_qonto", status: "connected", ciphertext, nonce }),
     serverRow("qonto", { id: "mcp_qonto", auth: "token" }),
-    "list_missing_invoices",
-    { side: "debit" },
-    { workspaceDir: "/tmp/ws" },
+    { tool: "list_missing_invoices", arguments: { side: "debit" }, caller: { orgId: null, workspaceDir: "/tmp/ws" } },
   );
   assert.equal(stored, "count=0  total=0");
   assert.deepEqual(seen, {

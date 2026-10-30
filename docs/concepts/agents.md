@@ -407,6 +407,11 @@ Choice.
 | `DELETE /api/agents/:id` | deletes the agent | 204 | 409 generating; 404 |
 | `GET /api/guilds/:id/embed-status` | each agent's `broken_embeds` | 200 | |
 
+`name`, `focus`, `wake_triggers`, `avatar_shape` and `avatar_color`
+are strings, and `machine_id` a string or null; a field of another
+type is 422 naming it. `config` is checked by the agent's config
+rules.
+
 `machine_id` on create or update places or moves the agent
 ([Machines](machines.md)). Placement refuses a full machine (409
 `machine <name> is full`) and a machine below what the agent needs
@@ -420,7 +425,9 @@ policy refusal is 409 `<source> limit reached: <cap>`.
 Creating an agent writes PostgreSQL. A new agent gets:
 
 - a `task` column, from the focus when one was given, otherwise from
-  `apps/orchestrator/src/prompts/task.md`;
+  `task.md` in `TEMPLATES_ROOT` (`apps/orchestrator/src/prompts/task.md`
+  by default), or a one-line default Task when that file does not
+  exist; a `task.md` that exists but cannot be read fails the create;
 - a `memory` artifact row;
 - a group-chat cursor at the guild's current sequence, so it does not
   replay old chat.
@@ -466,9 +473,12 @@ The name may be reused.
 
 ### Code
 
-- `apps/orchestrator/src/agents/validation.ts`: configuration keys,
-  defaults, and name, focus, and avatar rules
-- `apps/orchestrator/src/agents/persist.ts`: create
+- `apps/orchestrator/src/agents/config.ts`: configuration keys,
+  defaults, and their checks
+- `apps/orchestrator/src/agents/validation.ts`: name, focus, wake
+  triggers, and avatar rules
+- `apps/orchestrator/src/avatars/`: the default look, the stored shape
+  and colour formats, and the renderer
 - `apps/orchestrator/src/agents/service.ts`: create, configure, move,
   and delete
 - `apps/orchestrator/src/http/agent-routes.ts`: agent routes

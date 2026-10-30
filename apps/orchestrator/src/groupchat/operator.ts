@@ -1,6 +1,8 @@
+import { Type, type Static } from "@sinclair/typebox";
 import { getGroupChatSeenThrough, markGroupChatSeen } from "../db/group-chat.js";
 import type { Queryable } from "../db/pg.js";
-import { GroupChatError, type GroupChat } from "./index.js";
+import type { GroupMessageView } from "../db/views.js";
+import { GroupChatError, type GroupChat, type MessageAuthor } from "./index.js";
 
 /** What an operator reads and posts a guild's group chat through, built once from the app's services. */
 export type GroupChatOperatorServices = {
@@ -11,11 +13,13 @@ export type GroupChatOperatorServices = {
   inbox: { ping(userIds: string[]): Promise<void> };
 };
 
-/** An operator's message to the group chat, before validation. */
-export type OperatorMessage = { content: string; interrupt: unknown };
+/** An operator's message to the group chat, and whether it interrupts the runs it targets. */
+export const OperatorMessageSchema = Type.Object({
+  content: Type.String(),
+  interrupt: Type.Optional(Type.Boolean()),
+});
 
-/** The operator posting: the user the message is written as. */
-export type MessageAuthor = { id: string; name: string };
+export type OperatorMessage = Static<typeof OperatorMessageSchema>;
 
 /** The guilds' group chat; a box without a generation loop has none (503). */
 export function groupChatOf(services: GroupChatOperatorServices): GroupChat {
@@ -40,12 +44,16 @@ export async function markGroupChatRead(
   services: GroupChatOperatorServices,
   guildId: string,
   userId: string,
-  seq: unknown,
+  seq: number,
 ): Promise<{ seen_through_seq: number }> {
-  if (typeof seq !== "number" || !Number.isInteger(seq) || seq < 0) {
+  if (!Number.isInteger(seq) || seq < 0) {
     throw new GroupChatError(422, "seen_through_seq must be a non-negative integer");
   }
-  const seen = await markGroupChatSeen(services.db, guildId, userId, seq, new Date());
+  const seen = await markGroupChatSeen(
+    services.db,
+    { guild_id: guildId, user_id: userId, seen_through_seq: seq },
+    new Date(),
+  );
   await services.inbox.ping([userId]);
   return { seen_through_seq: seen };
 }
@@ -56,16 +64,17 @@ export async function postOperatorMessage(
   guildId: string,
   author: MessageAuthor,
   message: OperatorMessage,
-): Promise<Record<string, unknown>> {
-  if (message.interrupt !== undefined && typeof message.interrupt !== "boolean") {
-    throw new GroupChatError(422, "interrupt must be a boolean");
-  }
-  const posted = await groupChatOf(services).post_user(guildId, message.content, {
-    author_name: author.name,
-    author_user_id: author.id,
-    interrupt: message.interrupt === true,
-  });
-  await markGroupChatSeen(services.db, guildId, author.id, Number(posted.seq), new Date());
+): Promise<GroupMessageView> {
+  const chat = groupChatOf(services);
+  const posted =
+    message.interrupt === true
+      ? await chat.postUserInterruption(guildId, message.content, author)
+      : await chat.postUser(guildId, message.content, author);
+  await markGroupChatSeen(
+    services.db,
+    { guild_id: guildId, user_id: author.id, seen_through_seq: posted.seq },
+    new Date(),
+  );
   await services.inbox.ping([author.id]);
   return posted;
 }

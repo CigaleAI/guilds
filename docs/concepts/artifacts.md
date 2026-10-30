@@ -238,6 +238,11 @@ GET  /api/file-changes/latest?display_paths=a,b   the newest change per path, co
 POST /api/file-changes/latest                     the same, with { display_paths: [...] } in the body
 ```
 
+`display_path` and `display_paths` in the query are strings, and
+`display_paths` in the body a list of strings. A query value given
+more than once, a body that is not a JSON object, or a field of
+another type is 422 naming the field, before the caller is identified.
+
 A run-owned change in the history expands to the run's agent,
 guild, kind, status, and routine. Each change carries `studio`:
 `{ session_id, seq }` for a change applied from a Studio card, or

@@ -2,8 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { renderMemorySection } from "../memory/index.js";
-import { STATE_PREFIX } from "../state/index.js";
-import { installedConnectors } from "../connectors/index.js";
+import { installedManifests } from "../connectors/servers.js";
 import { agentHome } from "../lib/agent-file.js";
 
 export class PromptError extends Error {
@@ -57,6 +56,9 @@ function memoryWriteOn(caps?: StandingCaps): boolean {
 export function taskIntroForCapabilities(caps?: StandingCaps): string {
   return memoryWriteOn(caps) ? TASK_INTRO : TASK_INTRO_NO_MEMORY;
 }
+
+/** What precedes the State snapshot's JSON in a prompt. */
+export const STATE_PREFIX = "State: ";
 
 export const STATE_INTRO =
   "A snapshot of the guild at the start of this run. Use it instead of an " +
@@ -217,9 +219,9 @@ export function composeAgentSystemPrompt(
 /** The `prompt.guidance` of each connector whose tools the run offers, in catalog order. */
 export function connectorGuidance(offeredSlugs: Iterable<string>): string[] {
   const offered = new Set(offeredSlugs);
-  return installedConnectors()
-    .entries()
-    .flatMap((entry) => (offered.has(entry.manifest.slug) && entry.manifest.prompt ? [entry.manifest.prompt.guidance] : []));
+  return installedManifests().flatMap((manifest) =>
+    offered.has(manifest.slug) && manifest.prompt ? [manifest.prompt.guidance] : [],
+  );
 }
 
 export function composeSystemPrompt(
@@ -234,8 +236,8 @@ export function composeSystemPrompt(
   const introBase = caps ? stateIntroForCapabilities(caps) : STATE_INTRO;
   const intro = [
     introBase,
-    ...installedConnectors().entries().map((entry) =>
-      entry.manifest.state && entry.manifest.state.key in state ? entry.manifest.state.intro : null,
+    ...installedManifests().map((manifest) =>
+      manifest.state && manifest.state.key in state ? manifest.state.intro : null,
     ),
     "repositories" in state ? REPOSITORIES_INTRO : null,
   ]
@@ -251,6 +253,10 @@ export function composeSystemPrompt(
     parts.push(renderMemorySection(memory, memoryWriteOn(caps)).replace(/\s+$/, ""));
   }
   return `${parts.join("\n\n")}\n`;
+}
+
+export function attachState(system: string, state: Record<string, unknown>): string {
+  return `${system.replace(/\s+$/, "")}\n\n${STATE_PREFIX}${JSON.stringify(state, null, 2)}\n`;
 }
 
 function attachIdentity(system: string, agentName: string, agentId: string): string {

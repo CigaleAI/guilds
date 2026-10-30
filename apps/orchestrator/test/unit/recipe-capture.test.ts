@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { TEST_MODEL } from "../helpers/models.js";
+import { CONFIG_KEYS, validateAgentConfig } from "../../src/agents/config.js";
+import { loadAccessViewThrough } from "../../src/access/view.js";
+import { isPlainRecord } from "../../src/db/json.js";
 import { captureGuild,
   portableRoleConfig,
   preferRecipeScope,
@@ -9,9 +12,12 @@ import { captureGuild,
 import type { Scripts } from "../../src/scripts/catalog.js";
 import type { Schedules } from "../../src/schedules/service.js";
 import { userRow } from "../helpers/users.js";
-import { rowDisplayPath, type ArtifactRow } from "../../src/artifacts/store.js";
-import type { ArtifactLevel } from "../../src/artifacts/index.js";
+import { operatorActor } from "../../src/artifacts/actors.js";
+import { rowDisplayPath } from "../../src/artifacts/store.js";
+import type { ArtifactRow } from "../../src/db/artifacts.js";
+import type { ArtifactLevel } from "../../src/artifacts/types.js";
 import { artifactRow, noteRowAt } from "../helpers/artifacts.js";
+import { serverRow } from "../helpers/servers.js";
 
 const GUILD = {
   id: "guild_live",
@@ -23,6 +29,7 @@ const GUILD = {
 };
 
 const USER = userRow();
+const ACTOR = operatorActor({ orgId: GUILD.org_id, actorId: USER.id, actorName: USER.name, guildId: GUILD.id });
 
 const SEEN_MAIL_COLUMNS = [
   { name: "thread_id", type: "text", description: "mail thread id", required: true, unique: true },
@@ -58,6 +65,11 @@ const DEFAULT_ACCESS: Record<string, AccessRow[]> = {
     { type: "agent", id: "a_elsewhere", name: "elsewhere", mode: "write", guild_id: "guild_other", guild_name: "other" },
   ],
 };
+
+/** An agent's config as the box stores it: every setting, with the fixture's own over the defaults. */
+function storedConfig(config: unknown): Record<string, unknown> {
+  return { ...validateAgentConfig({ model: TEST_MODEL }), ...(isPlainRecord(config) ? config : {}) };
+}
 
 function captureDeps(options: {
   agents?: Array<Record<string, unknown>>;
@@ -102,9 +114,17 @@ function captureDeps(options: {
       config: { model: TEST_MODEL, browser: true },
     },
   ];
+  const accessReads = {
+    listBindingsCovering: async () => options.bindings ?? [],
+    listMcpConnections: async () => options.connections ?? [],
+    listServers: async () => options.servers ?? [],
+    connectionTools: async () => options.tools ?? [],
+  };
   return {
     db: {
-      listAgents: async () => agents,
+      loadAccessView: (view: Parameters<typeof loadAccessViewThrough>[1]) =>
+        loadAccessViewThrough(accessReads as never, view),
+      listAgents: async () => agents.map((agent) => ({ ...agent, config: storedConfig(agent.config) })),
       getAgentTask: async (_orgId: string, agentId: string) =>
         agentId === "a_scout"
           ? { content_text: options.task ?? "Ping @scout and keep @user. See ![[org/org_1/guilds/guild_live/playbook.md]]" }
@@ -120,7 +140,6 @@ function captureDeps(options: {
               },
             ])
           : [],
-      listBindingsCovering: async () => options.bindings ?? [],
       listSecrets: async (_orgId: string, filter: { agentId?: string }) =>
         (options.secrets ?? []).filter(
           (secret) =>
@@ -129,30 +148,30 @@ function captureDeps(options: {
               (grant) => grant.guild_id === GUILD.id || grant.agent_id === filter.agentId,
             ),
         ),
-      listMcpConnections: async () => options.connections ?? [],
       listGuildRepositories: async () => options.repositories ?? [],
-      listMcpServers: async () => options.servers ?? [],
-      listMcpTools: async () => options.tools ?? [],
       listMcpCatalogTools: async () => options.tools ?? [],
     } as never,
     artifacts: {
-      getByDisplayPath: async (_actor: unknown, displayPath: string) => {
-        const note = (options.notes ?? []).find((item) => rowDisplayPath(item) === displayPath);
-        return note ? { row: { id: note.id } } : {};
-      },
-      listCollections: async () =>
-        options.collections ?? [
-          { id: "acol_seen", name: "seen-mail", purpose: "Dedupe", columns: SEEN_MAIL_COLUMNS },
-          { id: "acol_leads", name: "leads", purpose: "Qualified leads", columns: LEADS_COLUMNS },
-          { id: "acol_other", name: "other-desk", purpose: "Another guild's table", columns: LEADS_COLUMNS },
-        ],
-      listAccess: async (_actor: unknown, target: { kind: string; id: string }) =>
-        (options.access ?? DEFAULT_ACCESS)[target.id] ?? [],
-      listEmbeddableNotes: async () =>
-        options.notes ?? [
-          noteRowAt("org/org_1/guilds/guild_live/playbook.md", "Hand off to @writer."),
-          noteRowAt("org/org_1/agents/a_scout/memory.md", "lived memory"),
-        ],
+      guildTables: async () =>
+        (
+          options.collections ?? [
+            { id: "acol_seen", name: "seen-mail", purpose: "Dedupe", columns: SEEN_MAIL_COLUMNS },
+            { id: "acol_leads", name: "leads", purpose: "Qualified leads", columns: LEADS_COLUMNS },
+            { id: "acol_other", name: "other-desk", purpose: "Another guild's table", columns: LEADS_COLUMNS },
+          ]
+        ).map((collection) => ({
+          collection: { scope: "org", guild: null, ...collection },
+          access: (options.access ?? DEFAULT_ACCESS)[String(collection.id)] ?? [],
+        })),
+      notesNamed: async (_actor: unknown, names: ReadonlySet<string>) =>
+        (
+          options.notes ?? [
+            noteRowAt("org/org_1/guilds/guild_live/playbook.md", "Hand off to @writer."),
+            noteRowAt("org/org_1/agents/a_scout/memory.md", "lived memory"),
+          ]
+        )
+          .filter((row) => names.has(rowDisplayPath(row)) || names.has(row.key))
+          .map((row) => ({ href: rowDisplayPath(row), row, access: (options.access ?? DEFAULT_ACCESS)[row.id] ?? [] })),
     } as unknown as CaptureArtifacts,
     scripts: {
       listForAgent: async (agentId: string) =>
@@ -171,16 +190,41 @@ function captureDeps(options: {
   };
 }
 
-test("portable role config keeps generation keys and drops local ids", () => {
-  const config = portableRoleConfig(
-    { model: TEST_MODEL, browser: true, connection_id: "conn_1", sandbox_id: "sbx" },
-    true,
-  );
+test("portable role config carries every setting in the order of the config keys", () => {
+  const stored = validateAgentConfig({ model: TEST_MODEL, browser: true });
+  const config = portableRoleConfig(stored);
+  assert.deepEqual(Object.keys(config), [...CONFIG_KEYS].filter((key) => !key.startsWith("harness") && key !== "secret_aliases"));
   assert.equal(config.browser, true);
   assert.equal(config.model, TEST_MODEL);
   assert.equal(config.browser_language, "en-US");
-  assert.equal("connection_id" in config, false);
-  assert.equal("sandbox_id" in config, false);
+});
+
+test("portable role config leaves out a harness, model and effort left unset, and no secret aliases", () => {
+  const config = portableRoleConfig(validateAgentConfig({ model: TEST_MODEL }));
+  assert.equal("harness" in config, false);
+  assert.equal("harness_model" in config, false);
+  assert.equal("harness_effort" in config, false);
+  assert.equal("secret_aliases" in config, false);
+});
+
+test("portable role config keeps a coding role's harness and its aliases but its harness tokens", () => {
+  const stored = validateAgentConfig({
+    model: TEST_MODEL,
+    coding: true,
+    harness: "claude-code",
+    harness_model: "opus",
+    secret_aliases: { CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN", GH_PAT: "BOB_GH" },
+  });
+  const config = portableRoleConfig(stored);
+  assert.equal(config.harness, "claude-code");
+  assert.equal(config.harness_model, "opus");
+  assert.deepEqual(config.secret_aliases, { GH_PAT: "BOB_GH" });
+});
+
+test("portable role config of a role without coding keeps every secret alias", () => {
+  const aliases = { CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN" };
+  const config = portableRoleConfig(validateAgentConfig({ model: TEST_MODEL, secret_aliases: aliases }));
+  assert.deepEqual(config.secret_aliases, aliases);
 });
 
 test("recipe scope prefers organisation reuse", () => {
@@ -193,7 +237,7 @@ test("recipe scope prefers organisation reuse", () => {
 });
 
 test("captureGuild writes a portable snapshot from a live guild", async () => {
-  const recipe = await captureGuild(captureDeps(), { guild: GUILD, user: USER });
+  const recipe = await captureGuild(captureDeps(), ACTOR, GUILD, []);
   assert.equal(recipe.format, "guilds.recipe");
   assert.equal(recipe.meta.source.kind, "guild");
   assert.equal(recipe.meta.source.guild_id, "guild_live");
@@ -252,7 +296,9 @@ test("captureGuild takes the better of the organisation's and the guild's rows a
         acol_shut: [memberRow("a_scout", "scout", "none")],
       },
     }),
-    { guild: GUILD, user: USER },
+    ACTOR,
+    GUILD,
+    [],
   );
   assert.deepEqual(
     recipe.collections.map((item) => [item.name, item.guild, item.writers]),
@@ -292,7 +338,9 @@ test("captureGuild carries what each note's access list gives the guild and its 
         n_own: [],
       },
     }),
-    { guild: GUILD, user: USER, includeNotes: ["glossary.md", "open.md", "rules.md", "map.md", "own.md"] },
+    ACTOR,
+    GUILD,
+    ["glossary.md", "open.md", "rules.md", "map.md", "own.md"],
   );
   const access = Object.fromEntries(recipe.notes.map((item) => [item.key, [item.guild ?? null, item.writers]]));
   assert.deepEqual(access, {
@@ -319,7 +367,9 @@ test("captureGuild lists the guild's repositories by name, without their URLs", 
         { name: "api", url: "https://github.com/acme/api", default_branch: "main", connection_id: "conn_gh" },
       ],
     }),
-    { guild: GUILD, user: USER },
+    ACTOR,
+    GUILD,
+    [],
   );
   assert.deepEqual(recipe.repositories, [{ name: "api", purpose: "" }]);
   assert.equal(JSON.stringify(recipe).includes("acme"), false);
@@ -338,16 +388,14 @@ test("captureGuild records a single-role specialization and org connector scope"
         },
       ],
       servers: [
-        {
+        serverRow("notion", {
           id: "mcp_notion",
-          slug: "notion",
           display_name: "Notion",
-          publication_state: "published",
           auth: "oauth",
           config: {},
           description: "Workspace",
           setup_hint: "Connect Notion at organisation scope.",
-        },
+        }),
       ],
       connections: [
         {
@@ -379,7 +427,9 @@ test("captureGuild records a single-role specialization and org connector scope"
       ],
       tools: [{ namespaced_name: "notion.search", name: "notion.search", enabled: true }],
     }),
-    { guild: GUILD, user: USER },
+    ACTOR,
+    GUILD,
+    [],
   );
   assert.equal(recipe.roles.length, 1);
   assert.equal(recipe.design.specialization[0]?.role, "scout");
@@ -405,7 +455,9 @@ test("captureGuild takes each secret's scope from how the role gets it", async (
         { id: "sec_mail", name: "MAIL_KEY", description: "Mail key", org_wide: false, grants: [grant({ agent_id: "a_writer" })] },
       ],
     }),
-    { guild: GUILD, user: USER },
+    ACTOR,
+    GUILD,
+    [],
   );
   const desk = recipe.secrets.find((item) => item.name === "DESK_KEY");
   assert.equal(desk?.recommended_scope, "guild");
@@ -442,7 +494,9 @@ test("captureGuild leaves a coding role's harness tokens and their aliases behin
         { id: "sec_writer", name: "CLAUDE_CODE_OAUTH_TOKEN", description: "writer", org_wide: false, grants: [grant("a_writer")] },
       ],
     }),
-    { guild: GUILD, user: USER },
+    ACTOR,
+    GUILD,
+    [],
   );
   const coder = recipe.roles.find((role) => role.role === "coder");
   assert.deepEqual(coder?.config.secret_aliases, { DEPLOY_KEY: "PROD_DEPLOY" });
@@ -468,7 +522,9 @@ test("captureGuild keeps a coding role's harness model and effort, and leaves th
         { id: "a_plain", name: "plain", focus: "Code", config: { model: TEST_MODEL, coding: true, harness: "codex" } },
       ],
     }),
-    { guild: GUILD, user: USER },
+    ACTOR,
+    GUILD,
+    [],
   );
   const coder = recipe.roles.find((role) => role.role === "coder");
   assert.equal(coder?.config.harness_model, "gpt-6-luna");
@@ -484,7 +540,9 @@ test("captureGuild keeps a random window and labels its design cadence", async (
     captureDeps({
       schedules: [{ cron: null, wake_window: window, description: "Wander", instruction: "Look around." }],
     }),
-    { guild: GUILD, user: USER },
+    ACTOR,
+    GUILD,
+    [],
   );
   const scout = recipe.roles.find((role) => role.schedules.length);
   assert.ok(scout);
@@ -496,7 +554,7 @@ test("captureGuild keeps a random window and labels its design cadence", async (
 
 test("captureGuild refuses an empty roster", async () => {
   await assert.rejects(
-    () => captureGuild(captureDeps({ agents: [] }), { guild: GUILD, user: USER }),
+    () => captureGuild(captureDeps({ agents: [] }), ACTOR, GUILD, []),
     /no agents/,
   );
 });
@@ -506,15 +564,13 @@ test("captureGuild records an enabled GitHub login as a connection like any othe
     captureDeps({
       agents: [{ id: "a_triage", name: "triage", focus: "Triage issues", config: { model: TEST_MODEL, browser: false } }],
       servers: [
-        {
+        serverRow("github", {
           id: "mcp_github",
-          slug: "github",
           display_name: "GitHub",
-          publication_state: "published",
           auth: "oauth",
           description: "Issues and pull requests",
           setup_hint: "Pick this login's repositories on the GitHub card.",
-        },
+        }),
       ],
       connections: [
         { id: "conn_gh", mcp_server_id: "mcp_github", status: "connected", owner_scope: "org", account_hint: "acme" },
@@ -531,7 +587,9 @@ test("captureGuild records an enabled GitHub login as a connection like any othe
       ],
       tools: [{ namespaced_name: "github_list_issues", name: "github_list_issues", enabled: true }],
     }),
-    { guild: GUILD, user: USER },
+    ACTOR,
+    GUILD,
+    [],
   );
   assert.deepEqual(
     recipe.connections.map((connection) => [connection.server, connection.recommended_scope]),

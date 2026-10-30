@@ -1,14 +1,16 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { artifactStore } from "../../src/artifacts/index.js";
+import { artifactStore } from "../../src/artifacts/store.js";
 import { buildApp } from "../../src/app.js";
+import { builderValidateRecipe } from "../../src/builder/tools.js";
+import { CapabilityService } from "../../src/capabilities/index.js";
 import { connectorCommand } from "../../src/cli/connector.js";
 import { getMcpServerBySlug } from "../../src/connectors/servers.js";
 import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { recipeApply } from "../../src/recipes/apply.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
@@ -20,7 +22,8 @@ import { fileURLToPath } from "node:url";
 import { connectorFiles } from "../../scripts/build-connector.js";
 import { installedConnectors } from "../../src/connectors/index.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
-import { McpError, McpPool, type McpDatabase } from "../../src/mcp/index.js";
+import { McpError } from "../../src/mcp/errors.js";
+import { mcpPool, OPERATOR_CALLER } from "../../src/mcp/pool.js";
 import { syncCodeConnectors } from "../../src/registry/code.js";
 import { updateConnector } from "../../src/db/connectors.js";
 import { insertUser } from "../../src/db/users.js";
@@ -82,8 +85,8 @@ test("the CLI, the admin routes, recipe import, and apply preview read the regis
     const notes = new NotesStore(tempDir("guilds-registry-notes-"), templatesRoot());
     await notes.ensureSystemPrompt();
     const artifacts = artifactStore(database.pool, templatesRoot());
-    const scripts = new Scripts(scriptDatabase(db));
-    const schedules = new Schedules(scheduleDatabase(db));
+    const scripts = agentScripts(db);
+    const schedules = agentSchedules(db);
     const apply = recipeApply({ db, artifacts, notes, scripts, schedules, registry: registry.client });
     const app = await buildApp(database, { db, notes, artifacts, scripts, schedules, apply, registry: registry.client });
     try {
@@ -104,6 +107,20 @@ test("the CLI, the admin routes, recipe import, and apply preview read the regis
       assert.equal(created.json().slug, "crm");
       const removed = await app.inject({ method: "DELETE", url: "/api/admin/registry/connectors/crm", headers: AUTH });
       assert.equal(removed.statusCode, 204);
+      const absent = await app.inject({
+        method: "DELETE",
+        url: "/api/admin/registry/connectors/crm",
+        headers: AUTH,
+      });
+      assert.equal(absent.statusCode, 404);
+      assert.deepEqual(absent.json(), { detail: "connector crm is not installed" });
+      const core = await app.inject({
+        method: "DELETE",
+        url: "/api/admin/registry/connectors/tavily",
+        headers: AUTH,
+      });
+      assert.equal(core.statusCode, 409);
+      assert.deepEqual(core.json(), { detail: "connector tavily is core, not a registry install" });
       const refused = await app.inject({
         method: "POST",
         url: "/api/admin/registry/connectors",
@@ -111,15 +128,34 @@ test("the CLI, the admin routes, recipe import, and apply preview read the regis
         payload: { slug: "shady" },
       });
       assert.equal(refused.statusCode, 409);
+      const textVerified = await app.inject({
+        method: "POST",
+        url: "/api/admin/registry/connectors",
+        headers: AUTH,
+        payload: { slug: "shady", unverified: "yes" },
+      });
+      assert.equal(textVerified.statusCode, 422, textVerified.body);
+      assert.deepEqual(textVerified.json().detail[0].loc, ["body", "unverified"]);
 
       const outsider = await insertUser(db, { userId: "user_registry_other", name: "other", image: null, email: "other@example.com" }, new Date());
-      await insertMember(db, "org_home", String(outsider.id), "member", new Date());
+      await insertMember(
+        db,
+        { org_id: "org_home", user_id: String(outsider.id), role: "member" },
+        new Date(),
+      );
       const hidden = await app.inject({
         method: "GET",
         url: "/api/admin/registry",
         headers: { "X-Guilds-User": "user_registry_other", "X-Guilds-Org": "org_home" },
       });
       assert.equal(hidden.statusCode, 404);
+      const hiddenInvalid = await app.inject({
+        method: "POST",
+        url: "/api/admin/registry/connectors",
+        headers: { "X-Guilds-User": "user_registry_other", "X-Guilds-Org": "org_home", "content-type": "application/json" },
+        payload: { unverified: "yes" },
+      });
+      assert.equal(hiddenInvalid.statusCode, 404, "an invalid body from a non-admin is the same 404");
 
       // A recipe from the registry lands in the organisation's library as a draft.
       const desk = linkedInNotionRecipe(operatorAuthor());
@@ -138,6 +174,22 @@ test("the CLI, the admin routes, recipe import, and apply preview read the regis
       assert.equal(imported.statusCode, 201);
       assert.equal(imported.json().status, "draft");
       assert.equal(imported.json().name, desk.meta.name);
+      const unknown = await app.inject({
+        method: "POST",
+        url: "/api/recipes/registry/import",
+        headers: AUTH,
+        payload: { name: "no-such-desk" },
+      });
+      assert.equal(unknown.statusCode, 404);
+      assert.deepEqual(unknown.json(), { detail: "the registry has no recipe no-such-desk" });
+      const numberedName = await app.inject({
+        method: "POST",
+        url: "/api/recipes/registry/import",
+        headers: AUTH,
+        payload: { name: 5 },
+      });
+      assert.equal(numberedName.statusCode, 422, numberedName.body);
+      assert.deepEqual(numberedName.json().detail[0].loc, ["body", "name"]);
 
       // Apply preview lists what the box lacks: a registry connector, or a server the recipe carries.
       registry.connector("notion_crm", "1.0.0", { "connector.json": JSON.stringify(endpointManifest("notion_crm")) });
@@ -176,6 +228,32 @@ test("the CLI, the admin routes, recipe import, and apply preview read the regis
         assert.deepEqual(preview.json().installs, [expected]);
         const codes = (preview.json().findings as Array<{ code: string }>).map((item) => item.code);
         assert.ok(codes.includes(expected.from === "registry" ? "server.registry" : "server.organisation"));
+      }
+
+      // The coach's validate tool names the registry's offer for a connector the box lacks, as the library's Validate does.
+      const drafted = await app.inject({ method: "POST", url: "/api/recipes/import", headers: AUTH, payload: { recipe: missing } });
+      const coached = await builderValidateRecipe.handler({
+        orgId: "org_home",
+        capabilities: new CapabilityService(db),
+        recipeId: String(drafted.json().id),
+        connection: db,
+        apply,
+      });
+      assert.ok("findings" in coached);
+      assert.ok(coached.findings.some((item) => item.code === "server.registry"));
+      const validated = await app.inject({
+        method: "POST",
+        url: `/api/recipes/${String(drafted.json().id)}/validate`,
+        headers: AUTH,
+      });
+      assert.deepEqual(coached.findings, validated.json().findings);
+
+      // A malformed index is the registry's failure, answered as a bad gateway.
+      registry.index.generated_at = "";
+      for (const url of ["/api/admin/registry", "/api/recipes/registry"]) {
+        const broken = await app.inject({ method: "GET", url, headers: AUTH });
+        assert.equal(broken.statusCode, 502, url);
+        assert.match(String(broken.json().detail), /^registry index \/generated_at: /);
       }
     } finally {
       await app.close();
@@ -226,12 +304,12 @@ test("code connectors install from a verified, signed index and swap in without 
     process.env.CONNECTORS_ROOT = root;
     const notes = new NotesStore(tempDir("guilds-registry-code-notes-"), templatesRoot());
     await notes.ensureSystemPrompt();
-    const pool = new McpPool();
+    const pool = mcpPool(db);
     const app = await buildApp(database, {
       db,
       notes,
-      scripts: new Scripts(scriptDatabase(db)),
-      schedules: new Schedules(scheduleDatabase(db)),
+      scripts: agentScripts(db),
+      schedules: agentSchedules(db),
       registry: signed.client,
       mcp: pool,
     });
@@ -243,11 +321,10 @@ test("code connectors install from a verified, signed index and swap in without 
       const server = (await getMcpServerBySlug(db, "echo", null))!;
       const [ciphertext, nonce] = encryptPayload({}, Buffer.from(HEX_MASTER_KEY, "hex"));
       const connection = connectionRow({ id: "conn_echo", mcp_server_id: server.id, owner_scope: "org", owner_id: "org_home", status: "connected", ciphertext, nonce });
-      // The connection is not stored, so its tools are neither read nor written.
-      const tools = { listMcpTools: async () => [], replaceMcpTools: async () => {} } as unknown as McpDatabase;
-      assert.equal(await pool.call(tools, connection, server, "say", { text: "hi" }), "echo: hi");
+      // The connection is not stored, so it lists no tools.
+      assert.equal(await pool.call(connection, server, { tool: "say", arguments: { text: "hi" }, caller: OPERATOR_CALLER }), "echo: hi");
       await assert.rejects(
-        () => pool.call(tools, connection, server, "refuse", {}),
+        () => pool.call(connection, server, { tool: "refuse", arguments: {}, caller: OPERATOR_CALLER }),
         (error: unknown) => error instanceof McpError && error.status === 422 && /echo refuses refuse/.test(error.message),
       );
 
@@ -264,7 +341,7 @@ test("code connectors install from a verified, signed index and swap in without 
         payload: { experimental: true },
       });
       assert.equal(updated.statusCode, 200);
-      assert.equal(await pool.call(tools, connection, server, "say", { text: "hi" }), "ECHO: hi");
+      assert.equal(await pool.call(connection, server, { tool: "say", arguments: { text: "hi" }, caller: OPERATOR_CALLER }), "ECHO: hi");
       assert.equal(existsSync(path.join(root, "echo", "1.0.0")), false);
       assert.equal((await getMcpServerBySlug(db, "echo", null))?.experimental, true);
 

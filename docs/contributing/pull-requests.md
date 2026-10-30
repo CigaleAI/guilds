@@ -16,11 +16,11 @@ line limit; its commits do.
 
 A commit is the unit a reviewer reads. Each commit does one step
 of the pull request, reads as one sentence in `git log`, passes
-the check on its own, and stays under **400 lines that change
-meaning**. Lines that only move (a file split, a rename, a move
-between modules), generated files, fixtures, lockfiles, and
-migrations do not count. A step that needs more is split into
-commits that land one after the other:
+the check on its own, and is small enough to hold in mind: a few
+hundred lines that change meaning. Lines that only move (a file
+split, a rename, a move between modules), generated files,
+fixtures, lockfiles, and migrations do not count. A step that
+needs more is split into commits that land one after the other:
 
 - A rename or a move is its own commit, before the change that
   needs it.
@@ -29,6 +29,8 @@ commits that land one after the other:
 - A new feature is its store, then its tools or routes, then its
   views, when each commit is useful or at least harmless on its
   own.
+- A refactor adds the new function beside the old, moves one
+  caller per commit, and deletes the old last.
 
 A pull request is not rebased or squashed before review; its
 commits are what the reviewer reads.
@@ -36,7 +38,8 @@ commits are what the reviewer reads.
 ## Content
 
 - **Title**: one sentence in the imperative that states the
-  outcome, as the commit message does.
+  outcome, as the commit message does. A commit body is used only
+  when the why is not obvious.
 - **Description**: three parts, for a reader who has not seen the
   conversation that produced the change.
   - *Why*: the problem, the request, or the issue the pull request
@@ -45,7 +48,9 @@ commits are what the reviewer reads.
     request whose reason cannot be stated is not opened.
   - *What*: what changes, and what is deliberately left out.
   - *Breaks*: anything that is not backward compatible: a changed
-    route, event, type, or storage format.
+    route, event, type, export, or storage format. Nothing is kept
+    backward compatible by default; a break is listed here and the
+    operator chooses how to handle it.
 - **End-to-end tests**: every service the change touches has a
   test that drives the changed behaviour through that service's
   edge, as its callers use it: an HTTP route through `app.inject`,
@@ -57,11 +62,12 @@ commits are what the reviewer reads.
   tests live is [Tests](development.md#tests).
 - **Suppressions**: a fix to code listed in a package's
   `eslint-suppressions.json` ends with the prune, so the diff shows
-  the entries leaving ([Lint](development.md#lint-and-format)). No
-  entry is ever added.
+  the entries leaving ([Lint](development.md#lint-and-format)). The
+  only commit that adds entries is one that adds a rule, and it adds
+  nothing else.
 - **Docs**: the page that describes what the change touches is
-  updated in the same pull request, and describes the new state
-  only ([Documentation](development.md#documentation)).
+  updated in the same commit, and describes the new state only
+  ([Documentation](development.md#documentation)).
 - **Changelog**: a user-visible change has a line under
   `Unreleased` in `CHANGELOG.md`.
 - **Security register**: a change that fixes or introduces a
@@ -84,7 +90,7 @@ The reviewer reads the diff, not the description, and checks:
    assert behaviour, not implementation. A refactor's named suites
    do reach the moved code.
 4. **Guidelines**: the [checklist](code-guidelines.md#checklist)
-   holds. The suppressions diff removes entries and adds none.
+   holds.
 5. **Boundaries**: routes call one domain function; `db/` rows
    leave typed; no package reaches into another's internals.
 6. **Docs**: every page that names the changed behaviour is

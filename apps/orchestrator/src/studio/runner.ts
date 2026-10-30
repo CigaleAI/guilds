@@ -1,5 +1,5 @@
 import { EventQueue } from "../lib/event.js";
-import { AdmissionCoordinator } from "../generation/admission.js";
+import { AdmissionCoordinator } from "../admission/coordinator.js";
 import type { OrgPolicy } from "../policy/index.js";
 import {
   ConversationRunner,
@@ -13,11 +13,23 @@ import {
 } from "./constants.js";
 import type { ModelCredentialsProvider } from "../llm/credentials.js";
 import type { Queryable } from "../db/pg.js";
-import { studioToolMap, type StudioTool, type StudioToolContext } from "./tools.js";
-import type { UserRow } from "../db/users.js";
+import {
+  studioToolMap,
+  type StudioTool,
+  type StudioToolCall,
+  type StudioToolDeps,
+} from "./tools.js";
 import type { StudioSessionRow } from "../db/studio.js";
 
 export { generationLive };
+
+/** A generation a Studio session starts: its number, the context composed for it, and the system message it runs under. */
+export type StudioGeneration = {
+  session: StudioSessionRow;
+  generation: number;
+  generationContext: string;
+  systemContent?: string;
+};
 
 export type StudioRunnerDeps = {
   db: Queryable;
@@ -26,14 +38,17 @@ export type StudioRunnerDeps = {
   policy?: OrgPolicy;
 };
 
-function conversationTools(tools: Map<string, StudioTool>): Map<string, ConversationTool> {
+function conversationTools(
+  tools: Map<string, StudioTool>,
+  deps: StudioToolDeps,
+): Map<string, ConversationTool> {
   return new Map(
     [...tools.entries()].map(([name, tool]) => [
       name,
       {
         name: tool.name,
         schema: tool.schema,
-        handler: (ctx, args) => tool.handler(ctx as StudioToolContext, args),
+        handler: (call, args) => tool.handler(deps, call as StudioToolCall, args),
       },
     ]),
   );
@@ -80,29 +95,22 @@ export class StudioRunner {
     await this.inner.wait(sessionId);
   }
 
-  start(args: {
-    session: StudioSessionRow;
-    user: UserRow;
-    toolContext: Omit<StudioToolContext, "generation">;
-    generation: number;
-    generationContext: string;
-    systemContent?: string;
-  }): void {
-    const config = args.session.config_snapshot;
+  /** Starts the generation as the operator `toolCall` names, its tools reading through `toolDeps`. */
+  start(toolDeps: StudioToolDeps, started: StudioGeneration, toolCall: Omit<StudioToolCall, "generation">): void {
+    const config = started.session.config_snapshot;
     this.inner.start({
-      session: args.session,
-      user: args.user,
-      generation: args.generation,
-      generationContext: args.generationContext,
-      ...(args.systemContent ? { systemContent: args.systemContent } : {}),
-      tools: conversationTools(studioToolMap()),
-      toolContext: args.toolContext,
-      bindToolContext: (upcoming) =>
-        ({
-          ...args.toolContext,
-          generation: args.generation,
-          nextMessageSeq: upcoming,
-        }) as StudioToolContext,
+      session: started.session,
+      user: toolCall.user,
+      generation: started.generation,
+      generationContext: started.generationContext,
+      ...(started.systemContent ? { systemContent: started.systemContent } : {}),
+      tools: conversationTools(studioToolMap(), toolDeps),
+      toolContext: toolCall,
+      bindToolContext: (upcoming): StudioToolCall => ({
+        ...toolCall,
+        generation: started.generation,
+        nextMessageSeq: upcoming,
+      }),
       maxTokens: config.max_tokens,
       maxSteps: config.max_steps,
       maxToolCalls: config.max_tool_calls,

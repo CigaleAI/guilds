@@ -1,0 +1,60 @@
+name: Chore
+description: Bring code back under a rule it breaks
+labels: ["chore"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        One rule, one place, per issue. What makes it ready is in [Issues](https://github.com/CigaleAI/guilds/blob/main/docs/CONTRIBUTING.md#issues).
+  - type: input
+    id: outcome
+    attributes:
+      label: Outcome
+      description: One sentence in the imperative. It is the pull request's title.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: What the broken rule costs, such as the read that is hard, the edit that collides, or the leak that hides a dependency.
+    validations:
+      required: true
+  - type: textarea
+    id: where
+    attributes:
+      label: Where
+      description: The domain directory, and the doc page that describes it.
+    validations:
+      required: true
+  - type: textarea
+    id: behaviour
+    attributes:
+      label: Behaviour
+      description: The rule broken, named from the code guidelines, and the file that breaks it. Behaviour does not change.
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: The suites that reach the moved code, and the suppression or cycle entries that leave.
+    validations:
+      required: true
+  - type: textarea
+    id: size
+    attributes:
+      label: Size
+      description: The one domain directory under src/ it touches. Three commits or fewer, or split it.
+    validations:
+      required: true
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: What stays as it is.
+  - type: textarea
+    id: breaks
+    attributes:
+      label: Breaks
+      description: None, or the export, type, or storage format that changes.

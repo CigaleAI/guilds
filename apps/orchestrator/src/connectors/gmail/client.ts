@@ -15,8 +15,10 @@ import {
   SentResponse,
   ThreadListResponse,
   ThreadResponse,
+  type DraftSummary,
   type Header,
   type MessagePart,
+  type ThreadSummary,
 } from "./responses.js";
 
 export const API_BASE = "https://gmail.googleapis.com/gmail/v1";
@@ -78,11 +80,11 @@ export function stripTags(html: string): string {
     .replace(/<\/p>/gi, "\n")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&")
     .replace(/[ \t]+\n/g, "\n")
     .replace(/[ \t]+/g, " ")
     .trim();
@@ -101,7 +103,10 @@ function textData(part: MessagePart): string {
   return typeof data === "string" ? data : "";
 }
 
-function collectText(part: MessagePart, into: { plain: string; html: string }): void {
+/** A message's text, as its plain and its HTML parts carry it. */
+type MessageText = { plain: string; html: string };
+
+function collectText(part: MessagePart, into: MessageText): void {
   const mime = String(part.mimeType ?? "");
   const data = textData(part);
   if (data && mime.startsWith("text/plain")) {
@@ -163,7 +168,7 @@ export function messageBody(payload: MessagePart | null | undefined): string {
   if (!payload) {
     return "";
   }
-  const collected = { plain: "", html: "" };
+  const collected: MessageText = { plain: "", html: "" };
   collectText(payload, collected);
   if (collected.plain.trim()) {
     return clipText(collected.plain, BODY_CAP);
@@ -181,13 +186,10 @@ function encodeSubject(subject: string): string {
   return `=?UTF-8?B?${Buffer.from(subject, "utf8").toString("base64")}?=`;
 }
 
-export function rfc2822Raw(fields: {
-  to: string;
-  subject: string;
-  body: string;
-  cc?: string;
-  bcc?: string;
-}): string {
+/** A plain-text message to send: its recipients, subject and body. */
+export type OutgoingMessage = { to: string; subject: string; body: string; cc?: string; bcc?: string };
+
+export function rfc2822Raw(fields: OutgoingMessage): string {
   const lines = [`To: ${fields.to}`];
   if (fields.cc) {
     lines.push(`Cc: ${fields.cc}`);
@@ -203,8 +205,8 @@ export function rfc2822Raw(fields: {
   return Buffer.from(lines.join("\r\n"), "utf8").toString("base64url");
 }
 
-function pageToken(payload: { nextPageToken?: unknown }): string {
-  const token = payload.nextPageToken;
+/** A listing's next page token, trimmed; empty on the last page. */
+function pageToken(token: unknown): string {
   return typeof token === "string" && token.trim() ? token.trim() : "";
 }
 
@@ -253,12 +255,17 @@ async function jsonBody(response: Response): Promise<unknown> {
   }
 }
 
+/** One Gmail API call: `method` on `path` with its query and JSON body, the JSON response decoded with `schema`. */
+type GmailRequest<T extends TSchema> = {
+  method: string;
+  path: string;
+  schema: T;
+  params?: Record<string, string | string[] | undefined>;
+  body?: unknown;
+};
+
 /** The response of `method` on `path`, as `schema` describes it; an empty body reads as `{}`. */
-async function gmailRequest<T extends TSchema>(
-  request: { method: string; path: string; schema: T },
-  options: GmailOptions,
-  extra: { params?: Record<string, string | string[] | undefined>; body?: unknown } = {},
-): Promise<Static<T>> {
+async function gmailRequest<T extends TSchema>(request: GmailRequest<T>, options: GmailOptions): Promise<Static<T>> {
   const token = options.accessToken.trim();
   if (!token) {
     throw new GmailError("Gmail access token is missing", 401);
@@ -269,35 +276,25 @@ async function gmailRequest<T extends TSchema>(
     Accept: "application/json",
   };
   const init: RequestInit = { method: request.method, headers };
-  if (extra.body !== undefined) {
+  if (request.body !== undefined) {
     headers["Content-Type"] = "application/json";
-    init.body = JSON.stringify(extra.body);
+    init.body = JSON.stringify(request.body);
   }
-  const response = await fetchFn(gmailUrl(request.path, extra.params), init);
+  const response = await fetchFn(gmailUrl(request.path, request.params), init);
   if (response.status >= 400) {
     throw new GmailError(await errorDetail(response), response.status);
   }
   return decode(request.schema, await jsonBody(response), unexpected);
 }
 
-function composeFields(arguments_: Record<string, unknown>): {
-  to: string;
-  subject: string;
-  body: string;
-  cc?: string;
-  bcc?: string;
-} {
+function composeFields(arguments_: Record<string, unknown>): OutgoingMessage {
   const to = argStr(arguments_, "to");
   const subject = argStr(arguments_, "subject");
   const body = argStr(arguments_, "body");
   if (!to) {
     throw new GmailError("to is required");
   }
-  const fields: { to: string; subject: string; body: string; cc?: string; bcc?: string } = {
-    to,
-    subject,
-    body,
-  };
+  const fields: OutgoingMessage = { to, subject, body };
   const cc = argStr(arguments_, "cc");
   const bcc = argStr(arguments_, "bcc");
   if (cc) {
@@ -382,15 +379,20 @@ export async function ping(accessToken: string, options: Omit<GmailOptions, "acc
 }
 
 /** A thread's row: its id, the first message's sender, subject and date, and a snippet. */
-async function threadRow(thread: { id?: unknown; snippet?: unknown }, options: GmailOptions): Promise<string | null> {
+async function threadRow(thread: ThreadSummary, options: GmailOptions): Promise<string | null> {
   const id = String(thread.id ?? "").trim();
   if (!id) {
     return null;
   }
-  const request = { method: "GET", path: `/users/me/threads/${encodeURIComponent(id)}`, schema: ThreadResponse };
-  const detail = await gmailRequest(request, options, {
-    params: { format: "metadata", metadataHeaders: METADATA_HEADERS },
-  });
+  const detail = await gmailRequest(
+    {
+      method: "GET",
+      path: `/users/me/threads/${encodeURIComponent(id)}`,
+      schema: ThreadResponse,
+      params: { format: "metadata", metadataHeaders: METADATA_HEADERS },
+    },
+    options,
+  );
   const first = detail.messages?.[0] ?? {};
   const headers = headerMap(first.payload?.headers);
   return joinParts(id, headers.from, headers.subject, headers.date, clipText(first.snippet ?? thread.snippet, SNIPPET_CAP));
@@ -405,13 +407,15 @@ export async function searchThreadsTool(
     throw new GmailError("query is required");
   }
   const limit = rowLimit(arguments_);
-  const listed = await gmailRequest({ method: "GET", path: "/users/me/threads", schema: ThreadListResponse }, options, {
-    params: {
-      q: query,
-      maxResults: String(limit),
-      pageToken: argStr(arguments_, "page_key") || undefined,
+  const listed = await gmailRequest(
+    {
+      method: "GET",
+      path: "/users/me/threads",
+      schema: ThreadListResponse,
+      params: { q: query, maxResults: String(limit), pageToken: argStr(arguments_, "page_key") || undefined },
     },
-  });
+    options,
+  );
   const rows: string[] = [];
   for (const thread of (listed.threads ?? []).slice(0, limit)) {
     const row = await threadRow(thread, options);
@@ -426,7 +430,7 @@ export async function searchThreadsTool(
     return joinParts(query, `n=${count}`);
   }
   const parts = [joinParts(query, `n=${count}`), body];
-  const token = pageToken(listed);
+  const token = pageToken(listed.nextPageToken);
   if (token) {
     parts.push(`page=${token}`);
   }
@@ -441,8 +445,8 @@ export async function getThreadTool(
   if (!threadId) {
     throw new GmailError("thread_id is required");
   }
-  const request = { method: "GET", path: `/users/me/threads/${encodeURIComponent(threadId)}`, schema: ThreadResponse };
-  const payload = await gmailRequest(request, options, { params: { format: "full" } });
+  const path = `/users/me/threads/${encodeURIComponent(threadId)}`;
+  const payload = await gmailRequest({ method: "GET", path, schema: ThreadResponse, params: { format: "full" } }, options);
   const messages = payload.messages ?? [];
   const blocks = messages.map(formatMessage);
   const intro = joinParts(payload.id ?? threadId, `messages=${messages.length}`);
@@ -450,8 +454,8 @@ export async function getThreadTool(
 }
 
 async function fullMessage(messageId: string, options: GmailOptions): Promise<Message> {
-  const request = { method: "GET", path: `/users/me/messages/${encodeURIComponent(messageId)}`, schema: Message };
-  return gmailRequest(request, options, { params: { format: "full" } });
+  const path = `/users/me/messages/${encodeURIComponent(messageId)}`;
+  return gmailRequest({ method: "GET", path, schema: Message, params: { format: "full" } }, options);
 }
 
 export async function getMessageTool(
@@ -498,15 +502,20 @@ export async function listLabelsTool(
 }
 
 /** A draft's row: its id, its message's id, and the message's recipient and subject. */
-async function draftRow(draft: { id?: unknown }, options: GmailOptions): Promise<string | null> {
+async function draftRow(draft: DraftSummary, options: GmailOptions): Promise<string | null> {
   const id = String(draft.id ?? "").trim();
   if (!id) {
     return null;
   }
-  const request = { method: "GET", path: `/users/me/drafts/${encodeURIComponent(id)}`, schema: DraftResponse };
-  const detail = await gmailRequest(request, options, {
-    params: { format: "metadata", metadataHeaders: METADATA_HEADERS },
-  });
+  const detail = await gmailRequest(
+    {
+      method: "GET",
+      path: `/users/me/drafts/${encodeURIComponent(id)}`,
+      schema: DraftResponse,
+      params: { format: "metadata", metadataHeaders: METADATA_HEADERS },
+    },
+    options,
+  );
   const message = detail.message ?? {};
   const headers = headerMap(message.payload?.headers);
   return joinParts(id, message.id, headers.to, headers.subject);
@@ -517,12 +526,15 @@ export async function listDraftsTool(
   options: GmailOptions,
 ): Promise<string> {
   const limit = rowLimit(arguments_);
-  const listed = await gmailRequest({ method: "GET", path: "/users/me/drafts", schema: DraftListResponse }, options, {
-    params: {
-      maxResults: String(limit),
-      pageToken: argStr(arguments_, "page_key") || undefined,
+  const listed = await gmailRequest(
+    {
+      method: "GET",
+      path: "/users/me/drafts",
+      schema: DraftListResponse,
+      params: { maxResults: String(limit), pageToken: argStr(arguments_, "page_key") || undefined },
     },
-  });
+    options,
+  );
   const rows: string[] = [];
   for (const draft of (listed.drafts ?? []).slice(0, limit)) {
     const row = await draftRow(draft, options);
@@ -531,7 +543,7 @@ export async function listDraftsTool(
     }
   }
   const body = clipRows(rows, limit);
-  const token = pageToken(listed);
+  const token = pageToken(listed.nextPageToken);
   if (body === "no results") {
     return body;
   }
@@ -542,9 +554,8 @@ export async function createDraftTool(
   arguments_: Record<string, unknown>,
   options: GmailOptions,
 ): Promise<string> {
-  const payload = await gmailRequest({ method: "POST", path: "/users/me/drafts", schema: DraftResponse }, options, {
-    body: { message: { raw: rfc2822Raw(composeFields(arguments_)) } },
-  });
+  const body = { message: { raw: rfc2822Raw(composeFields(arguments_)) } };
+  const payload = await gmailRequest({ method: "POST", path: "/users/me/drafts", schema: DraftResponse, body }, options);
   return joinParts(`draft=${payload.id ?? ""}`, `message=${payload.message?.id ?? ""}`) || "ok";
 }
 
@@ -552,10 +563,8 @@ export async function sendMessageTool(
   arguments_: Record<string, unknown>,
   options: GmailOptions,
 ): Promise<string> {
-  const request = { method: "POST", path: "/users/me/messages/send", schema: SentResponse };
-  const payload = await gmailRequest(request, options, {
-    body: { raw: rfc2822Raw(composeFields(arguments_)) },
-  });
+  const body = { raw: rfc2822Raw(composeFields(arguments_)) };
+  const payload = await gmailRequest({ method: "POST", path: "/users/me/messages/send", schema: SentResponse, body }, options);
   return joinParts(`id=${payload.id ?? ""}`, `thread=${payload.threadId ?? ""}`) || "ok";
 }
 

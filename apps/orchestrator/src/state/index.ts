@@ -1,11 +1,9 @@
-import { DEFAULT_MAX_TOOL_CALLS } from "../agents/validation.js";
+import { DEFAULT_MAX_TOOL_CALLS } from "../agents/config.js";
 import { collectDirectoryListing, type DirectoryNotes } from "../directories/index.js";
 import { CONTEXT_HISTORY_LIMIT, groupChatHistory } from "../groupchat/history.js";
-import type { GuildOperator } from "../guilds/validation.js";
+import type { GuildOperatorRow } from "../db/guilds.js";
 import { utcClock } from "../lib/clock.js";
 import { environmentCatalog } from "../scripts/validation.js";
-
-export const STATE_PREFIX = "State: ";
 
 function memberEntry(member: unknown): Record<string, string> {
   if (typeof member === "string") {
@@ -69,7 +67,7 @@ export const CORE_STATE_KEYS: ReadonlySet<string> = new Set([
 /** What a run's State is built from, besides the agent's notes. */
 export type RunStateInputs = {
   members: unknown[];
-  operators?: GuildOperator[];
+  operators?: GuildOperatorRow[];
   historyRows: Array<Record<string, unknown>>;
   guildAbout?: string;
   guildDescription?: string;
@@ -132,8 +130,4 @@ export function collectRunState(
     }
   }
   return state;
-}
-
-export function attachState(system: string, state: Record<string, unknown>): string {
-  return `${system.replace(/\s+$/, "")}\n\n${STATE_PREFIX}${JSON.stringify(state, null, 2)}\n`;
 }

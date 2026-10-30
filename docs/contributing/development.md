@@ -155,8 +155,8 @@ log.
 
 | Lane | Steps |
 | --- | --- |
-| orchestrator | `typecheck`, `lint`, `compat-verify`, `test-orchestrator` |
-| web | `test-ui`, `test-web`, `build-web`, `build-storybook` |
+| orchestrator | `typecheck`, `lint`, `import-cycles`, `compat-verify`, `test-orchestrator` |
+| web | `test-ui`, `test-web`, `import-cycles-web`, `build-web`, `build-storybook` |
 | core stack | `smoke-core-stack`: `./setup.sh` and `docker compose up` on a copy of the checkout, under its own Compose project, port, image tag, and state directory. It checks that the box is healthy, serves the app on loopback alone, holds one operator, and refuses a request from another web origin |
 
 `scripts/check.sh <commit>` (or `make check COMMIT=<rev>`)
@@ -295,37 +295,92 @@ typescript-eslint rules. Unused names are allowed when they start
 with `_`. The operator app and the design system also run the
 recommended React Hooks rules.
 
-The orchestrator and the operator app also run the boundary rule
+Every package also runs the boundary rule
 (`eslint.boundary.js`). It fails any file that imports a package
-of an extension or a relative path that leaves this repository.
+of an extension or a relative path that leaves this repository. It
+also fails a module that holds a re-export (`export * from`,
+`export { x } from`, or `export { x }` and `export default x` of a
+name the module imports), except an index a tool requires, which
+the package names: the orchestrator's `src/db/schema/index.ts`,
+which drizzle-kit reads.
 
 Every package also runs the limits of the
 [code guidelines](code-guidelines.md#functions) on its source,
-tests and stories excepted: `complexity` at 11, `max-depth` at 3,
-`max-lines` at 800, a warning from `max-params` above 4 parameters
-and an error from `@typescript-eslint/max-params` above 5. It
-refuses every type assertion except `as const`. The orchestrator
-also refuses an import of `fastify` outside `http/`, the roots, the
+tests and stories excepted (`eslint.limits.js`): `complexity`,
+`max-depth`, an error at five parameters, a
+warning past 800 lines and an error past 1,000, a refusal of
+every type assertion except `as const`, and a refusal of a silent
+catch: a `catch` that neither throws nor returns, a `catch` whose
+only exit is a bare `return;`, and a promise's `.catch()` whose
+handler returns nothing, `undefined` or `null`. It also refuses a
+throw of a plain `Error`, an object type written inline in a
+function's parameter, and an erased return type: `unknown` or
+`Record<string, unknown>`, alone or as the element of an array or
+the value of a promise, returned by an exported function, an
+exported const's function, or a public method. A
+package names its command-line modules, which may throw a plain
+`Error`: the orchestrator's `cli/`. The operator app refuses an
+import from `src/features/` in its shared directories, `src/api/`
+and `src/app/`, except in `src/app/router.tsx`, the composition
+root that mounts the features. The orchestrator also requires
+explicit parameter and return types on what a module exports
+(`@typescript-eslint/explicit-module-boundary-types`). It refuses an
+import of `fastify` outside `http/`, the roots, the
 extension points and the observability hooks; a value import of
-`db/` from `http/`; an import from `db/` of anything outside `db/`
-and `lib/`; and an import from `lib/` of anything outside `lib/`.
-Errors that predate
+`db/` from `http/`;
+an import from `db/` of anything outside `db/` and `lib/`; and an
+import from `lib/` of anything outside `lib/`. Errors that predate
 the rules are recorded in the package's `eslint-suppressions.json`
-(ESLint bulk suppressions). Suppressions cover errors only, so a
-suppressed function with 6 or more parameters still shows the
-warning. Lint fails on an error that is not in the file, and on an
-entry that no longer matches an error, so a file can only improve.
-Warnings do not fail lint. After a fix,
+(ESLint bulk suppressions). Lint fails on an error that is not in
+the file, and on an entry that no longer matches an error, so the
+list only shrinks; after a fix,
 `pnpm exec eslint <lint args> --prune-suppressions` removes the
-cleared entries.
+cleared entries. Warnings do not fail lint.
 
 Prettier formats with semicolons, double quotes, trailing
 commas, and a width of 100 (`pnpm --filter <package> format`).
+
+The import graphs of the orchestrator and the operator app gain no
+cycle: `pnpm --filter <package> cycles`, the `import-cycles` and
+`import-cycles-web` steps of the check, fails when a file or a
+domain sits in a cycle of value imports and the package's
+`import-cycles.json` does not list it. A domain is a directory under
+`src/`, and in the operator app each directory under `src/features/`
+is a domain of its own. Tests and stories are not scanned. The
+file's `compositionRoots` names the package's
+[composition roots](code-guidelines.md#locality): their own imports
+are left out of the graph, and an import of one is still an edge.
+`cycles --write` rewrites the cycles from the tree as it is and
+keeps `compositionRoots`; like `eslint-suppressions.json`, the
+cycles only shrink.
 
 ## Documentation
 
 The documentation is Markdown under `docs/`, published at
 [docs.guilds.run](https://docs.guilds.run). `docs/README.md` is the
-index and the one place the structure is kept. GitHub shows it on
+index and the one place the structure is kept; GitHub shows it on
 the repository page. `docs/philosophy.md` is the motivation and the
-principles.
+principles. Every page describes the current state only, in short,
+simple sentences, and a change to behaviour updates the page that
+describes it in the same commit.
+
+A page under `docs/getting-started/` is a tutorial for someone who
+has never seen the product: steps in the imperative, one action per
+sentence, each step ending with what the reader sees, every new
+word defined or linked before it is used, and no parentheses, file
+paths, or HTTP verbs. Depth lives on a concept page, reached by a
+link.
+
+A page under **Concepts** explains one concept. It opens with one
+or two plain paragraphs on what it is and how it relates to the
+concepts next to it, then **Why it exists** or **When you use it**,
+**How it works** (the mental model, with a diagram where a flow is
+easier seen than read), **In the app**, **Rules and limits** (a
+short table), and **Reference** (complete and exact: fields, keys,
+routes, storage, edge cases), in that order. A heading with nothing
+to say is left out, and everything above **Reference** reads on its
+own.
+
+Every other page is reference, `docs/operations/` included:
+complete and exact, in the same sentence style where it does not
+cost precision.

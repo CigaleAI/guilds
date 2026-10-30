@@ -191,7 +191,11 @@ export async function addOrgMember(
     throw new OrgError(404, "user not found");
   }
   try {
-    await insertMember(db, membership.id, target.id, granted, new Date());
+    await insertMember(
+      db,
+      { org_id: membership.id, user_id: target.id, role: granted },
+      new Date(),
+    );
   } catch (error) {
     throw isUniqueViolation(error) ? new OrgError(409, "member already exists") : error;
   }

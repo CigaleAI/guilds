@@ -24,7 +24,8 @@ test("truncated builder_write_recipe JSON is not treated as a version conflict",
   const recovered = parseToolArgs(truncatedWrite);
   assert.equal(recovered.recipe, undefined);
   const result = await builderWriteRecipe.handler({} as never, recovered);
-  assert.match(String(result.error), /truncated|incomplete/i);
+  assert.ok("error" in result);
+  assert.match(result.error, /truncated|incomplete/i);
   assert.notEqual(result.code, "conflict");
 });
 
@@ -33,7 +34,7 @@ test("builder_write_recipe receipt does not echo the recipe body", () => {
   const result = builderWriteToolResult({ body_version: 4 }, recipe);
   assert.equal(result.ok, true);
   assert.equal(result.body_version, 4);
-  assert.equal(result.recipe, undefined);
+  assert.equal("recipe" in result, false);
   assert.ok(Array.isArray(result.roles));
   assert.ok(result.roles.length > 0);
 });

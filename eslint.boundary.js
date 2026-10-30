@@ -2,6 +2,9 @@
 // hosted code. A core package names the hosted packages, the repository its relative imports must
 // stay inside, the hosted paths still inside it, and the core files that still cross the boundary;
 // that last list only shrinks, and an entry a file no longer needs is an error.
+//
+// The same block fails a module that re-exports another's exports (docs/contributing/code-guidelines.md,
+// Boundaries). A core package names the indexes a tool requires, which are the exceptions.
 import path from "node:path";
 
 const EXTENSION = /\.(js|ts|tsx)$/;
@@ -108,13 +111,94 @@ const noHostedImports = {
   },
 };
 
+/** The local names a module's imports bind. */
+function importedNames(program) {
+  return new Set(
+    program.body
+      .filter((statement) => statement.type === "ImportDeclaration")
+      .flatMap((statement) => statement.specifiers.map((specifier) => specifier.local.name)),
+  );
+}
+
+/** Whether an exported value is a name an import binds. */
+function isImported(imported, node) {
+  return node.type === "Identifier" && imported.has(node.name);
+}
+
+/**
+ * A statement that hands on another module's exports: `export * from`, `export { x } from`, or
+ * `export { x }` and `export default x` of a name an import binds.
+ */
+function isReexport(statement, imported) {
+  if (statement.type === "ExportAllDeclaration") {
+    return true;
+  }
+  if (statement.type === "ExportDefaultDeclaration") {
+    return isImported(imported, statement.declaration);
+  }
+  return (
+    statement.type === "ExportNamedDeclaration" &&
+    (statement.source !== null ||
+      statement.specifiers.some((specifier) => isImported(imported, specifier.local)))
+  );
+}
+
+const noReexportModules = {
+  meta: {
+    type: "problem",
+    schema: [
+      {
+        type: "object",
+        properties: {
+          source: { type: "string" },
+          indexes: { type: "array", items: { type: "string" } },
+        },
+        required: ["source", "indexes"],
+        additionalProperties: false,
+      },
+    ],
+    messages: {
+      reexport:
+        "A module exports what it declares and does not hand on another module's exports. See docs/contributing/code-guidelines.md, Boundaries.",
+    },
+  },
+  create(context) {
+    const { source, indexes } = context.options[0];
+    const file = underSource(path.resolve(context.cwd, source), context.filename);
+    if (file === null || indexes.includes(file)) {
+      return {};
+    }
+    return {
+      Program(node) {
+        const imported = importedNames(node);
+        if (node.body.some((statement) => isReexport(statement, imported))) {
+          context.report({ node, messageId: "reexport" });
+        }
+      },
+    };
+  },
+};
+
 /** A flat-config block that holds `files` to the boundary. */
-export function boundary({ files, source, hosted = [], leaks = {}, packages = [], repository }) {
+export function boundary({
+  files,
+  source,
+  hosted = [],
+  leaks = {},
+  packages = [],
+  repository,
+  indexes = [],
+}) {
   return {
     files,
-    plugins: { boundary: { rules: { "no-hosted-imports": noHostedImports } } },
+    plugins: {
+      boundary: {
+        rules: { "no-hosted-imports": noHostedImports, "no-reexport-modules": noReexportModules },
+      },
+    },
     rules: {
       "boundary/no-hosted-imports": ["error", { source, hosted, leaks, packages, repository }],
+      "boundary/no-reexport-modules": ["error", { source, indexes }],
     },
   };
 }

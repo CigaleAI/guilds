@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { decodeMasterKey, loadConfig, loadToolConfig } from "../../src/config/index.js";
+import { ConfigError, decodeMasterKey, loadConfig, loadToolConfig, parseHarnessesOff } from "../../src/config/index.js";
 import { HEX_MASTER_KEY, tempDir, testEnv } from "../helpers/env.js";
 
 test("loadConfig requires env, existing dirs, and a 32-byte master key", () => {
@@ -30,6 +30,24 @@ test("loadConfig rejects missing required values and missing directories", () =>
       ),
     /WORKSPACE_ROOT must be an existing directory/,
   );
+});
+
+test("a refused setting throws a ConfigError that names the setting", () => {
+  const base = { NOTES_ROOT: tempDir("guilds-notes-"), WORKSPACE_ROOT: tempDir("guilds-workspaces-") };
+  const refusals: [NodeJS.ProcessEnv, string][] = [
+    [{}, "DATABASE_URL"],
+    [testEnv("postgresql://example", { ...base, TEMPLATES_ROOT: "/no/such/templates" }), "TEMPLATES_ROOT"],
+    [testEnv("postgresql://example", { ...base, MAX_CONCURRENT_GENERATIONS: "-1" }), "MAX_CONCURRENT_GENERATIONS"],
+    [testEnv("postgresql://example", { ...base, SECRETS_MASTER_KEY: "short" }), "SECRETS_MASTER_KEY"],
+    [testEnv("postgresql://example", { ...base, AUTH_MODE: "trusted-header" }), "TRUSTED_PROXY_SECRET"],
+  ];
+  for (const [env, setting] of refusals) {
+    assert.throws(
+      () => loadConfig(env),
+      (error: unknown) => error instanceof ConfigError && error.setting === setting,
+      setting,
+    );
+  }
 });
 
 test("loadConfig rejects unknown AUTH_MODE", () => {
@@ -140,4 +158,27 @@ test("decodeMasterKey accepts hex, base64, url-safe base64, and 32-byte ASCII", 
   assert.deepEqual(decodeMasterKey(url), Buffer.alloc(32, 9));
   assert.throws(() => decodeMasterKey("short"), /32 bytes/);
   assert.throws(() => decodeMasterKey(""), /required/);
+});
+
+test("HARNESSES_OFF names harnesses separated by commas or spaces, each once, in order", () => {
+  assert.deepEqual(parseHarnessesOff("codex, cursor  codex,antigravity"), ["codex", "cursor", "antigravity"]);
+  assert.deepEqual(
+    loadConfig(testEnv("postgresql://example", { HARNESSES_OFF: "cursor" })).harnessesOff,
+    ["cursor"],
+  );
+});
+
+test("an unset or blank HARNESSES_OFF turns no harness off", () => {
+  assert.deepEqual(parseHarnessesOff(undefined), []);
+  assert.deepEqual(parseHarnessesOff(" , "), []);
+});
+
+test("a name in HARNESSES_OFF that is not a harness fails the configuration", () => {
+  assert.throws(() => parseHarnessesOff("codex claude"), {
+    message: "HARNESSES_OFF names an unknown harness claude: use claude-code, codex, cursor, antigravity",
+  });
+  assert.throws(
+    () => loadConfig(testEnv("postgresql://example", { HARNESSES_OFF: "claude" })),
+    /HARNESSES_OFF names an unknown harness claude/,
+  );
 });

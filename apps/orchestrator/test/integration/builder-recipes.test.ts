@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
-import { writeAgentTask } from "../../src/agents/task.js";
-import { artifactStore } from "../../src/artifacts/index.js";
+import { addAgent } from "../../src/agents/service.js";
+import { systemActor } from "../helpers/agents.js";
+import { writeAgentTask } from "../../src/artifacts/task.js";
 import { buildApp } from "../../src/app.js";
 import { BuilderService } from "../../src/builder/index.js";
 import { CapabilityService } from "../../src/capabilities/index.js";
@@ -10,10 +10,10 @@ import { generationLive } from "../../src/conversation/runner.js";
 import { connect } from "../../src/seed/connect.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { guildDatabase, persistGuild } from "../../src/guilds/persist.js";
+import { addGuild } from "../../src/guilds/service.js";
 import { recipeApply } from "../../src/recipes/apply.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import { tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { completionReply } from "../helpers/generation.js";
@@ -34,7 +34,8 @@ import { agentConfig } from "../helpers/generation.js";
 import { grantAccess } from "../../src/artifacts/access-lists.js";
 import { writeNote } from "../../src/artifacts/notes.js";
 import { createCollection } from "../../src/artifacts/collections.js";
-import { operatorContext } from "../../src/artifacts/store.js";
+import { artifactStore } from "../../src/artifacts/store.js";
+import { operatorActor } from "../../src/artifacts/actors.js";
 
 const AUTH = {
   "X-Guilds-User": "user_operator",
@@ -67,8 +68,8 @@ test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => 
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = artifactStore(database.pool, templatesRoot());
-  const scripts = new Scripts(scriptDatabase(db));
-  const schedules = new Schedules(scheduleDatabase(db));
+  const scripts = agentScripts(db);
+  const schedules = agentSchedules(db);
   const caps = { maxAgents: 25 };
   const policy = limitedPolicy(caps);
   const capabilities = new CapabilityService(db, policy);
@@ -94,6 +95,22 @@ test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => 
   const guildsBefore = await listGuilds(db, "org_home");
 
   try {
+    const modelless = await app.inject({
+      method: "POST",
+      url: "/api/builder/sessions",
+      headers: AUTH,
+      payload: {},
+    });
+    assert.equal(modelless.statusCode, 422, modelless.body);
+    assert.deepEqual(modelless.json(), { detail: "model is required" });
+    const textTemperature = await app.inject({
+      method: "POST",
+      url: "/api/builder/sessions",
+      headers: AUTH,
+      payload: { model: TEST_MODEL, temperature: "hot" },
+    });
+    assert.equal(textTemperature.statusCode, 422, textTemperature.body);
+    assert.deepEqual(textTemperature.json().detail[0].loc, ["body", "temperature"]);
     const created = await app.inject({
       method: "POST",
       url: "/api/builder/sessions",
@@ -108,6 +125,9 @@ test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => 
     assert.equal(session.recipe.body_version, 1);
     const guildsAfterCreate = await listGuilds(db, "org_home");
     assert.equal(guildsAfterCreate.length, guildsBefore.length);
+    const fetched = await app.inject({ method: "GET", url: `/api/builder/sessions/${session.id}`, headers: AUTH });
+    assert.equal(fetched.statusCode, 200, fetched.body);
+    assert.deepEqual(fetched.json(), session);
     const listedSessions = await app.inject({ method: "GET", url: "/api/builder/sessions", headers: AUTH });
     assert.equal(listedSessions.statusCode, 200, listedSessions.body);
     const listedRow = (listedSessions.json() as Array<Record<string, unknown>>).find((row) => row.id === session.id);
@@ -119,13 +139,18 @@ test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => 
         image: null,
         email: "teammate-b@example.com",
       }, now);
-    await insertMember(db, "org_home", String(teammate.id), "member", now);
+    await insertMember(
+      db,
+      { org_id: "org_home", user_id: String(teammate.id), role: "member" },
+      now,
+    );
     const denied = await app.inject({
       method: "GET",
       url: `/api/builder/sessions/${session.id}`,
       headers: { "X-Guilds-User": String(teammate.id), "X-Guilds-Org": "org_home" },
     });
     assert.equal(denied.statusCode, 404);
+    assert.deepEqual(denied.json(), { detail: "builder session not found" });
 
     const stale = await app.inject({
       method: "PUT",
@@ -134,7 +159,17 @@ test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => 
       payload: { expected_body_version: 0, recipe: linkedInNotionRecipe() },
     });
     assert.equal(stale.statusCode, 409);
-    assert.equal((stale.json().detail as { body_version?: number }).body_version, 1);
+    assert.deepEqual(stale.json(), {
+      detail: { message: "recipe body_version conflict", body_version: 1 },
+    });
+    const unversioned = await app.inject({
+      method: "PUT",
+      url: `/api/builder/sessions/${session.id}/recipe`,
+      headers: { ...AUTH, "content-type": "application/json" },
+      payload: { recipe: linkedInNotionRecipe() },
+    });
+    assert.equal(unversioned.statusCode, 422, unversioned.body);
+    assert.deepEqual(unversioned.json().detail[0].loc, ["body", "expected_body_version"]);
 
     const written = await app.inject({
       method: "PUT",
@@ -219,6 +254,15 @@ test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => 
     });
     assert.equal(republished.statusCode, 200, republished.body);
     assert.equal(republished.json().status, "ready");
+
+    const textNames = await app.inject({
+      method: "POST",
+      url: `/api/builder/sessions/${session.id}/deploy`,
+      headers: { ...AUTH, "content-type": "application/json" },
+      payload: { names: "lead" },
+    });
+    assert.equal(textNames.statusCode, 422, textNames.body);
+    assert.deepEqual(textNames.json().detail[0].loc, ["body", "names"]);
 
     caps.maxAgents = 1;
     const blocked = await app.inject({
@@ -353,38 +397,39 @@ test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => 
     });
     assert.equal(huskAbort.statusCode, 200, huskAbort.body);
 
-    await persistGuild(guildDatabase(db), notes, {
-      guildId: "guild_capture",
-      name: "capture-src",
+    await addGuild(
+      { db, notes },
+      {
+        guild: { guildId: "guild_capture", name: "capture-src", orgId: "org_home", about: "source", creatorUserId: "user_operator" },
+        orgSlug: "home",
+      },
       now,
+    );
+    await addAgent(
+      { db, notes, artifacts },
+      { agent: { agentId: "a_capture", guildId: "guild_capture", name: "scout", config: CONFIG, focus: "Watch" }, task: "Watch", placement: {} },
+      systemActor("org_home", { guildId: "guild_capture", agentId: "a_capture" }),
+      now,
+    );
+    await writeAgentTask(db, operatorActor({
       orgId: "org_home",
-      orgSlug: "home",
-      about: "source",
-      creatorUserId: "user_operator",
-    });
-    await persistAgent(agentDatabase(db), notes, {
+      actorId: "user_operator",
+      actorName: "operator",
+      guildId: "guild_capture",
       agentId: "a_capture",
-      guildId: "guild_capture",
-      guildName: "capture-src",
-      orgSlug: "home",
+    }), "a_capture", { content: "Ping @scout and keep @user." });
+    const captureActor = operatorActor({
       orgId: "org_home",
-      name: "scout",
-      focus: "Watch",
-      config: CONFIG,
-      now,
-      artifacts,
+      actorId: "user_operator",
+      actorName: "operator",
+      guildId: "guild_capture",
     });
-    await writeAgentTask(db, operatorContext("org_home", "user_operator", "operator", {
-        guildId: "guild_capture",
-        agentId: "a_capture",
-      }), "a_capture", "Ping @scout and keep @user.");
-    const captureActor = operatorContext("org_home", "user_operator", "operator", { guildId: "guild_capture" });
     await createCollection(artifacts, captureActor, {
       name: "capture-shared",
       purpose: "One record per lead the organisation shares.",
       columns: [{ name: "email", type: "text", description: "the lead's email", required: true, unique: true }],
     });
-    const glossary = await writeNote(artifacts, captureActor, {
+    const { row: glossary } = await writeNote(artifacts, captureActor, {
       level: "org",
       key: "capture-glossary.md",
       content: "Lead: a person worth a reply.\n",
@@ -397,6 +442,14 @@ test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => 
       payload: { include_notes: ["capture-glossary.md"] },
     });
     assert.equal(captured.statusCode, 201, captured.body);
+    const namedAsText = await app.inject({
+      method: "POST",
+      url: "/api/guilds/guild_capture/recipes",
+      headers: { ...AUTH, "content-type": "application/json" },
+      payload: { include_notes: "capture-glossary.md" },
+    });
+    assert.equal(namedAsText.statusCode, 422, namedAsText.body);
+    assert.deepEqual(namedAsText.json().detail[0].loc, ["body", "include_notes"]);
     const captureBody = JSON.stringify(captured.json());
     assert.equal(captureBody.includes("ciphertext"), false);
     assert.equal(captureBody.includes("oauth_client"), false);
@@ -432,6 +485,20 @@ test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => 
       headers: AUTH,
     });
     assert.equal(draftExport.statusCode, 409);
+    assert.deepEqual(draftExport.json(), { detail: "export refused while draft" });
+    const staleLibrary = await app.inject({
+      method: "PUT",
+      url: `/api/recipes/${imported.json().id}`,
+      headers: { ...AUTH, "content-type": "application/json" },
+      payload: { expected_body_version: 0, recipe: linkedInNotionRecipe() },
+    });
+    assert.equal(staleLibrary.statusCode, 409, staleLibrary.body);
+    assert.deepEqual(staleLibrary.json(), {
+      detail: {
+        message: "recipe body_version conflict",
+        body_version: imported.json().body_version,
+      },
+    });
 
     const listed = await app.inject({ method: "GET", url: "/api/recipes", headers: AUTH });
     assert.ok((listed.json() as unknown[]).length >= 2);

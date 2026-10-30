@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
-import { agentActor, artifactStore } from "../../src/artifacts/index.js";
+import { addAgent } from "../../src/agents/service.js";
+import { systemActor } from "../helpers/agents.js";
+import { agentActor } from "../../src/artifacts/actors.js";
+import { artifactStore } from "../../src/artifacts/store.js";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
-import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
+import { agentScripts } from "../../src/scripts/catalog.js";
+import { agentSchedules } from "../../src/schedules/service.js";
 import type { ActivityView } from "../../src/studio/activity.js";
 import { StudioService } from "../../src/studio/index.js";
 import { tempDir } from "../helpers/env.js";
@@ -60,8 +62,8 @@ test("studio activity lists each wake with what started it and what it produced"
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = artifactStore(database.pool, templatesRoot());
-  const scripts = new Scripts(scriptDatabase(db));
-  const schedules = new Schedules(scheduleDatabase(db));
+  const scripts = agentScripts(db);
+  const schedules = agentSchedules(db);
   const studio = new StudioService({ db, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
   const app = await buildApp(database, { db, notes, artifacts, scripts, schedules, studio });
 
@@ -74,18 +76,12 @@ test("studio activity lists each wake with what started it and what it produced"
     ["a_scout", "scout"],
     ["a_desk", "desk"],
   ] as const) {
-    await persistAgent(agentDatabase(db), notes, {
-      agentId,
-      guildId: "guild_act",
-      guildName: "activity-guild",
-      orgSlug: "home",
-      orgId: "org_home",
-      name,
-      focus: "",
-      config: CONFIG,
+    await addAgent(
+      { db, notes, artifacts },
+      { agent: { agentId, guildId: "guild_act", name, config: CONFIG, focus: "" }, task: "", placement: {} },
+      systemActor("org_home", { guildId: "guild_act", agentId }),
       now,
-      artifacts,
-    });
+    );
   }
 
   // The operator tags scout; scout's wake posts a row that tags desk.
@@ -204,7 +200,7 @@ test("studio activity lists each wake with what started it and what it produced"
   );
 
   // A routine wake for desk that changes nothing.
-  const routine = await schedules.create(TEST_ACTOR, "a_desk", { cron: "0 * * * *" }, "Hourly check", "Check the leads.");
+  const routine = await schedules.create(TEST_ACTOR, "a_desk", { when: { cron: "0 * * * *" }, description: "Hourly check", instruction: "Check the leads." });
   const scheduleId = String(routine.id);
   await createScheduleRun(db,
     {

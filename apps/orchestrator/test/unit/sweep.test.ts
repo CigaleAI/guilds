@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, utimesSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { applyWorkspaceSweep, parseSweepArgs, planWorkspaceSweep } from "../../src/sandbox/sweep.js";
+import { applyWorkspaceSweep, parseSweepArgs, planWorkspaceSweep, SweepUsageError } from "../../src/sandbox/sweep.js";
 import { tempDir } from "../helpers/env.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -81,6 +81,10 @@ test("the sweep takes --age-days N, a non-negative integer, and --apply", () => 
   assert.deepEqual(parseSweepArgs(["--age-days", "7"]), { ageDays: 7, apply: false });
   assert.deepEqual(parseSweepArgs(["--apply", "--age-days", "0"]), { ageDays: 0, apply: true });
   for (const argv of [[], ["--apply"], ["--age-days"], ["--age-days", "-1"], ["--age-days", "1.5"], ["--age-days", "x"], ["--age-days", "3", "--force"]]) {
-    assert.throws(() => parseSweepArgs(argv), /usage: sweep-workspaces\.ts --age-days N \[--apply\]/, argv.join(" "));
+    assert.throws(
+      () => parseSweepArgs(argv),
+      (error: unknown) => error instanceof SweepUsageError && /^usage: sweep-workspaces\.ts --age-days N \[--apply\]$/.test(error.message),
+      argv.join(" "),
+    );
   }
 });

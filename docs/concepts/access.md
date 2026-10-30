@@ -507,13 +507,16 @@ replaces its mode and its `updated_*` columns. Rows are indexed by
 subject.
 
 An agent's mode on an item is one SQL expression
-(`agentModeSql` in `apps/orchestrator/src/artifacts/access.ts`): the
+(`agentModeSql` in `apps/orchestrator/src/db/artifact-access.ts`): the
 agent's own row; when there is none, the greater of its guild's row
 and the organisation's row; when there is neither, no access. `none`
 and no row both mean no access. Every note, file, and record tool,
 State, and every listing an agent gets apply it. An operator actor skips it
 and reaches every item except those of the private guilds it does
-not operate.
+not operate. The same rule over an item's listed rows
+(`effectiveAccess` in `apps/orchestrator/src/artifacts/access.ts`)
+gives the modes Studio shows for a table and the access a recipe
+captures and raises.
 
 An agent reaches its own agent-level notes and files, its Memory, and
 its scripts without a row. Memory and scripts never have rows. An
@@ -563,8 +566,8 @@ list, `subjects[<index>]: `.
 
 | Case | Answer |
 | --- | --- |
-| No `subjects` field | 422 |
-| `subjects` is not a list | 422 `subjects must be a list` |
+| No `subjects` field | 422 `Field required` at `body.subjects` |
+| `subjects` is not a list, or an entry without a string `type`, `id` and `mode` | 422 naming the field, such as `body.subjects.0.mode` |
 | A `type` other than `org`, `guild`, or `agent` | 422 `type must be org, guild, or agent` |
 | An empty `id` | 422 `id is required` |
 | An `org` or `guild` row whose mode is not `read` or `write` | 422 `mode must be read or write` |
@@ -611,5 +614,6 @@ required.
 
 Code: `apps/orchestrator/src/artifacts/access.ts`,
 `apps/orchestrator/src/artifacts/access-lists.ts`,
+`apps/orchestrator/src/artifacts/grants.ts`,
 `apps/orchestrator/src/db/artifact-access.ts`,
 `apps/orchestrator/src/http/artifact-access-routes.ts`.

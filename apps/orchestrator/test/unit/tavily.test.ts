@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { agentRuntime } from "../../src/access/runtime.js";
+import { agentRuntimeThrough } from "../../src/access/runtime.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import { decodeMasterKey } from "../../src/config/index.js";
 import { NATIVE_TOOLS } from "../../src/seed/catalog.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { instanceCredentials, instanceKey, instanceRedactions } from "../../src/connectors/instance.js";
 import { TavilyError, formatSearch, search } from "../../src/connectors/tavily/client.js";
-import { McpPool } from "../../src/mcp/index.js";
+import { McpPool, OPERATOR_CALLER } from "../../src/mcp/pool.js";
 import { UNLIMITED, type OrgPolicy } from "../../src/policy/index.js";
 import { REGISTRY } from "../../src/toolbox/index.js";
 import { identityOutput, processOutput } from "../../src/toolbox/output.js";
@@ -17,6 +17,7 @@ import { loadJsonFixture } from "../helpers/fixtures.js";
 import { mockFetch } from "../helpers/http.js";
 import { serverRow, connectionRow } from "../helpers/servers.js";
 import type { McpConnectionRow } from "../../src/db/mcp.js";
+import { MemoryMcpDatabase } from "../helpers/mcp-database.js";
 
 const fixture = loadJsonFixture<{ results: string; empty: string }>("adapters/tavily.json");
 
@@ -55,23 +56,8 @@ function login(
   });
 }
 
-class MeterDb {
-  calls = new Map<string, number>();
-  async replaceMcpTools() {}
-  async listMcpTools() {
-    return [];
-  }
-  async countConnectorCalls(orgId: string, connectorId: string, month: string) {
-    return this.calls.get(`${orgId}:${connectorId}:${month}`) ?? 0;
-  }
-  async recordConnectorCall(orgId: string, connectorId: string, month: string) {
-    const key = `${orgId}:${connectorId}:${month}`;
-    this.calls.set(key, (this.calls.get(key) ?? 0) + 1);
-  }
-}
-
-function searchPool(seen: string[]): McpPool {
-  const pool = new McpPool();
+function searchPool(seen: string[], database = new MemoryMcpDatabase()): McpPool {
+  const pool = new McpPool(database);
   pool.fetchFn = mockFetch((_url, init) => {
     seen.push(String((init?.headers as Record<string, string> | undefined)?.Authorization ?? ""));
     return { status: 200, json: { results: [{ title: "Messi", url: "https://example.com/messi", content: "Footballer" }] } };
@@ -123,6 +109,24 @@ test("search posts an advanced query with the key", async () => {
   assert.equal(stored, "Messi\nhttps://example.com/messi\nFootballer");
 });
 
+test("search refuses a body that is not JSON or does not match its schema", async () => {
+  const answering = (result: { json?: unknown; text?: string }) => ({
+    apiKey: "tvly-test",
+    client: mockFetch(() => ({ status: 200, ...result })),
+  });
+  await assert.rejects(
+    () => search("messi", answering({ json: { results: "none" } })),
+    (error: unknown) =>
+      error instanceof TavilyError &&
+      /^Tavily returned an unexpected response at \/results: /.test(error.message),
+  );
+  await assert.rejects(
+    () => search("messi", answering({ text: "not json" })),
+    (error: unknown) =>
+      error instanceof TavilyError && error.message === "Tavily returned a non-JSON body",
+  );
+});
+
 test("search HTTP error", async () => {
   await assert.rejects(
     () =>
@@ -167,9 +171,9 @@ test("a platform login calls with the instance key; an organisation's login with
   const seen: string[] = [];
   const pool = searchPool(seen);
   await withInstanceKey("tvly-instance", async () => {
-    const result = await pool.call(new MeterDb() as never, login("platform", {}), SERVER, "search", { query: "messi" });
+    const result = await pool.call(login("platform", {}), SERVER, { tool: "search", arguments: { query: "messi" }, caller: OPERATOR_CALLER });
     assert.equal(result, "Messi\nhttps://example.com/messi\nFootballer");
-    await pool.call(new MeterDb() as never, login("org", { token: "tvly-own" }), SERVER, "search", { query: "messi" });
+    await pool.call(login("org", { token: "tvly-own" }), SERVER, { tool: "search", arguments: { query: "messi" }, caller: OPERATOR_CALLER });
   });
   assert.deepEqual(seen, ["Bearer tvly-instance", "Bearer tvly-own"]);
 });
@@ -177,27 +181,27 @@ test("a platform login calls with the instance key; an organisation's login with
 test("a plan's monthly cap refuses platform-login calls past it and leaves an organisation's own key alone", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const seen: string[] = [];
-  const pool = searchPool(seen);
+  const db = new MemoryMcpDatabase();
+  const pool = searchPool(seen, db);
   const policy: OrgPolicy = {
     async standing() {
       return { limits: { ...UNLIMITED, source: "plan", monthlyConnectorCalls: { tavily: 2 } }, blocked: null };
     },
   };
   pool.policy = policy;
-  const db = new MeterDb();
   await withInstanceKey("tvly-instance", async () => {
     const platform = login("platform", {});
     const results = [];
     for (let index = 0; index < 3; index += 1) {
-      results.push(await pool.call(db as never, platform, SERVER, "search", { query: "q" }, { orgId: "org_1" }));
+      results.push(await pool.call(platform, SERVER, { tool: "search", arguments: { query: "q" }, caller: { orgId: "org_1", workspaceDir: null } }));
     }
     assert.equal(results[2], "ERROR: plan limit reached: tavily calls this month");
     assert.equal(seen.length, 2);
     assert.equal(
-      await pool.call(db as never, platform, SERVER, "search", { query: "q" }, { orgId: "org_2" }),
+      await pool.call(platform, SERVER, { tool: "search", arguments: { query: "q" }, caller: { orgId: "org_2", workspaceDir: null } }),
       "Messi\nhttps://example.com/messi\nFootballer",
     );
-    await pool.call(db as never, login("org", { token: "tvly-own" }), SERVER, "search", { query: "q" }, { orgId: "org_1" });
+    await pool.call(login("org", { token: "tvly-own" }), SERVER, { tool: "search", arguments: { query: "q" }, caller: { orgId: "org_1", workspaceDir: null } });
   });
   assert.equal(seen.length, 4);
   assert.deepEqual([...db.calls.values()], [2, 1]);
@@ -213,13 +217,13 @@ test("a disconnected platform login is left out of a run, not an error", async (
     async listAgentSecrets() {
       return [];
     },
-    async listMcpServers() {
+    async listServers() {
       return [SERVER];
     },
     async listMcpConnections() {
       return [platform];
     },
   };
-  const runtime = await agentRuntime(db as never, { id: "a_1", guild_id: "guild_1", org_id: "org_1" });
+  const runtime = await agentRuntimeThrough(db as never, { id: "a_1", guild_id: "guild_1", org_id: "org_1" }, null);
   assert.deepEqual(runtime.mcp, []);
 });

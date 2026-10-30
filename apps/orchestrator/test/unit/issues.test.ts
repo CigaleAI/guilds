@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { GuildIssueRow, IssueStatusChange, NewIssue } from "../../src/db/issues.js";
+import type { GuildIssueRow, IssueKey, IssueStatusChange, NewIssue } from "../../src/db/issues.js";
 import { Issues, IssueError, ISSUE_OPEN_CAP, issueItem } from "../../src/issues/index.js";
-import { createToolContext, invokeTool } from "../../src/toolbox/index.js";
+import { invokeTool } from "../../src/toolbox/index.js";
 import { validateCatalog, BindingError } from "../../src/access/index.js";
+import { toolFixture } from "../helpers/toolbox.js";
 
 class MemoryIssuesDB {
   guilds: Record<string, { id: string; org_id: string; name: string }> = {
@@ -64,9 +65,9 @@ class MemoryIssuesDB {
     return this.rows.find((row) => row.guild_id === guildId && row.id === issueId) ?? null;
   }
 
-  async setIssueStatus(guildId: string, issueId: string, change: IssueStatusChange, now: Date) {
+  async setIssueStatus(issue: IssueKey, change: IssueStatusChange, now: Date) {
     const { status, resolvedAt, resolvedBy } = change;
-    const row = await this.getIssue(guildId, issueId);
+    const row = await this.getIssue(issue.guild_id, issue.id);
     if (!row) {
       return null;
     }
@@ -77,14 +78,14 @@ class MemoryIssuesDB {
     return row;
   }
 
-  async resolveOpenIssues(guildId: string, resolvedAt: Date, resolvedBy: string, now: Date) {
+  async resolveOpenIssues(guildId: string, resolvedBy: string, now: Date) {
     let resolved = 0;
     for (const row of this.rows) {
       if (row.guild_id !== guildId || row.status !== "open") {
         continue;
       }
       row.status = "resolved";
-      row.resolved_at = resolvedAt.toISOString();
+      row.resolved_at = now.toISOString();
       row.resolved_by = resolvedBy;
       row.updated_at = now.toISOString();
       resolved += 1;
@@ -101,7 +102,7 @@ test("report_issue_tool_writes_an_open_row", async () => {
   const db = new MemoryIssuesDB();
   const issues = new Issues(db as never);
   const published: Array<[string, string, Record<string, unknown>]> = [];
-  const ctx = createToolContext({
+  const ctx = toolFixture({
     run_id: "r_1",
     agent_id: "a_1",
     guild_id: "guild_1",
@@ -116,7 +117,7 @@ test("report_issue_tool_writes_an_open_row", async () => {
     },
   });
   const [payload, metadata] = await invokeTool(
-    ctx,
+    ctx.services, ctx.run, ctx.hooks,
     {
       id: "call_1",
       type: "function",
@@ -131,8 +132,6 @@ test("report_issue_tool_writes_an_open_row", async () => {
         }),
       },
     },
-    {},
-    1024,
   );
   assert.equal(metadata.error, null);
   assert.match(String(payload.content), /^reported iss_/);
@@ -145,7 +144,7 @@ test("report_issue_tool_writes_an_open_row", async () => {
 
 test("report_issue_rejects_unknown_kind", async () => {
   const issues = new Issues(new MemoryIssuesDB() as never);
-  const ctx = createToolContext({
+  const ctx = toolFixture({
     run_id: "r_1",
     agent_id: "a_1",
     guild_id: "guild_1",
@@ -155,7 +154,7 @@ test("report_issue_rejects_unknown_kind", async () => {
     issues,
   });
   const [, metadata] = await invokeTool(
-    ctx,
+    ctx.services, ctx.run, ctx.hooks,
     {
       id: "call_1",
       type: "function",
@@ -168,8 +167,6 @@ test("report_issue_rejects_unknown_kind", async () => {
         }),
       },
     },
-    {},
-    1024,
   );
   assert.match(String(metadata.error), /kind must be/);
 });

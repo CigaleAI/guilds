@@ -1,16 +1,43 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import { HARNESS_LIST, isHarness } from "../coding/harnesses.js";
 import type { Harness } from "../db/schema/index.js";
+import { isPlainRecord } from "../db/json.js";
 import { agentHome } from "../lib/agent-file.js";
 import { writeLog } from "../observability/log.js";
-import { orchestratorRoot } from "../lib/paths.js";
-import { agentDirectory, machineDirectory, machineSize, slotPorts, type MachineBox, type SlotPorts } from "../machines/index.js";
+import {
+  agentDirectory,
+  machineDirectory,
+  machineSize,
+  slotPorts,
+  type MachineBox,
+  type MachineRow,
+  type SlotPorts,
+} from "../machines/index.js";
+import type { AgentScript } from "../scripts/catalog.js";
 import { SCRIPTS_DIR } from "../scripts/validation.js";
 import { materialiseScripts } from "../scripts/materialise.js";
 import type { RunScriptSnapshot } from "../db/schema/index.js";
+import {
+  commandOptions,
+  createdAtOf,
+  endpointHeaders,
+  exitCodeOf,
+  killSandbox,
+  listSandboxes,
+  openSandboxSdk,
+  SandboxError,
+  stdoutOf,
+  type CommandResult,
+  type ConnectionConfig,
+  type OpenSandboxModule,
+  type SandboxCommands,
+  type SandboxEndpoint,
+  type SandboxHandle,
+  type SandboxInfo,
+  type SandboxManagerHandle,
+} from "./sdk.js";
 
 export const BROWSER_PROFILE = ".browser";
 export const BROWSER_START = "/usr/local/bin/agent-browser-start";
@@ -38,153 +65,48 @@ export function browserNeedsBlankReset(pagesJson: string): boolean {
     return HOST_HOME_RE.test(pagesJson);
   }
   const list = Array.isArray(pages) ? pages : [pages];
-  return list.some((page) => {
-    if (!page || typeof page !== "object") {
+  return list.some((page: unknown) => {
+    if (!isPlainRecord(page)) {
       return false;
     }
-    const record = page as { url?: unknown; title?: unknown };
-    return HOST_HOME_RE.test(String(record.url ?? "")) || HOST_HOME_RE.test(String(record.title ?? ""));
+    return HOST_HOME_RE.test(String(page.url ?? "")) || HOST_HOME_RE.test(String(page.title ?? ""));
   });
 }
 
-export class SandboxError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "SandboxError";
-  }
-}
-
-export type ConnectionConfig = {
-  domain: string;
-  protocol: string;
-  apiKey: string;
-  requestTimeoutSeconds: number;
-  useServerProxy: boolean;
-  disableMetrics: boolean;
-};
-
-type SandboxInfo = {
-  id: string;
-  created_at?: Date | string | number;
-  createdAt?: Date | string | number;
-  metadata?: unknown;
-};
-
-type SandboxEndpoint = {
-  endpoint: string;
-  headers?: Record<string, string>;
-  build_request_headers?: (config: ConnectionConfig) => Record<string, string>;
-  buildRequestHeaders?: (config: ConnectionConfig) => Record<string, string>;
-};
-
-type CommandResult = {
-  id?: string;
-  exit_code?: number;
-  exitCode?: number;
-  logs?: { stdout?: Array<{ text?: string }> };
-};
-
-type SandboxCommands = {
-  run(
-    command: string,
-    opts?: {
-      timeoutSeconds?: number;
-      timeout?: number;
-      workingDirectory?: string;
-      background?: boolean;
-      envs?: Record<string, string>;
-    },
-    handlers?: unknown,
-  ): Promise<CommandResult>;
-  createSession?(workingDirectory?: string | { workingDirectory?: string; working_directory?: string }): Promise<string>;
-  runInSession?(sessionId: string, command: string): Promise<CommandResult>;
-  deleteSession?(sessionId: string): Promise<void>;
-  interrupt?(executionId: string): Promise<void>;
-  getCommandStatus?(executionId: string): Promise<{ running?: boolean }>;
-};
-
-export type SandboxHandle = {
-  id: string;
-  commands: SandboxCommands;
-  files?: SandboxFiles;
-  getEndpoint?(port: number): Promise<SandboxEndpoint>;
-  close?(): Promise<void>;
-  destroy?(): Promise<void>;
-};
-
-type SandboxFiles = {
-  writeFiles(entries: Array<{ path: string; data?: string | Uint8Array | ArrayBuffer }>): Promise<void>;
-  moveFiles(entries: Array<{ src: string; dest: string }>): Promise<void>;
-  listDirectory?(entry: { path: string; depth?: number }): Promise<Array<{ path: string; type?: string }>>;
-  deleteFiles(paths: string[]): Promise<void>;
-  write_files?(entries: Array<{ path: string; data?: string | Uint8Array | ArrayBuffer }>): Promise<void>;
-  move_files?(entries: Array<{ src: string; dest: string }>): Promise<void>;
-  list_directory?(entry: { path: string; depth?: number }): Promise<Array<{ path: string; type?: string }>>;
-  delete_files?(paths: string[]): Promise<void>;
-};
-
-type ListMatches = {
-  sandbox_infos?: SandboxInfo[];
-  sandboxInfos?: SandboxInfo[];
-  items?: SandboxInfo[];
-};
-
-type SandboxManagerHandle = {
-  listSandboxInfos?(filter: Record<string, unknown>): Promise<ListMatches>;
-  list_sandbox_infos?(filter: Record<string, unknown>): Promise<ListMatches>;
-  killSandbox?(id: string): Promise<void>;
-  kill_sandbox?(id: string): Promise<void>;
-  getSandboxInfo?(id: string): Promise<{
-    id: string;
-    expires_at?: unknown;
-    expiresAt?: unknown;
-    created_at?: Date | string | number;
-    createdAt?: Date | string | number;
-  }>;
-  close?(): Promise<void>;
-};
-
-type OpenSandboxModule = {
-  SandboxManager: {
-    create(config: ConnectionConfig): SandboxManagerHandle | Promise<SandboxManagerHandle>;
-  };
-  Sandbox: {
-    create(image: string, options: Record<string, unknown>): Promise<SandboxHandle>;
-    connect(id: string, options: Record<string, unknown>): Promise<SandboxHandle>;
-  };
-};
 
 /** An agent's runtime files in its machine: `/run/guilds/<agent id>`. */
 export function agentRunDir(agentId: string): string {
   return `${AGENT_RUN_ROOT}/${agentId}`;
 }
 
-/** The agent's home with its scripts directory, and the browser profile when it has a browser. */
-export function prepareWorkspace(
-  workspaceRoot: string,
-  machineId: string,
-  agentId: string,
-  options: { browser?: boolean } = {},
-): string {
+/** The agent's home with its scripts directory. */
+export function prepareWorkspace(workspaceRoot: string, machineId: string, agentId: string): string {
   const workspace = agentDirectory(workspaceRoot, machineId, agentId);
-  if (options.browser) {
-    mkdirSync(path.join(workspace, BROWSER_PROFILE), { recursive: true });
-  }
   mkdirSync(path.join(workspace, SCRIPTS_DIR), { recursive: true });
   return workspace;
 }
+
+/** The home of an agent with a browser: its scripts directory and its browser profile. */
+export function prepareBrowserWorkspace(workspaceRoot: string, machineId: string, agentId: string): string {
+  const workspace = prepareWorkspace(workspaceRoot, machineId, agentId);
+  mkdirSync(path.join(workspace, BROWSER_PROFILE), { recursive: true });
+  return workspace;
+}
+
+/** A script the agent saved during its run, by its name and source. */
+export type LiveScript = Pick<AgentScript, "name" | "source">;
 
 export async function applyRunScripts(
   sandbox: SandboxHandle,
   home: string,
   snapshot: RunScriptSnapshot[] = [],
-  liveExtra: Array<{ name: unknown; source: unknown } | Record<string, unknown>> = [],
+  liveExtra: LiveScript[] = [],
 ): Promise<void> {
   const files = sandbox.files;
   if (!files) {
     return;
   }
-  await materialiseScripts(files, home, snapshot, liveExtra as Array<{ name: unknown; source: unknown }>);
+  await materialiseScripts(files, home, snapshot, liveExtra);
 }
 
 /** The machine a container runs: its id, organisation, tier, and size. */
@@ -197,13 +119,7 @@ export type MachineSpec = {
 };
 
 /** A machine row as the container it runs. */
-export function machineSpec(machine: {
-  id: string;
-  org_id: string;
-  box: MachineBox;
-  cpu: number | null;
-  memory_mib: number | null;
-}): MachineSpec {
+export function machineSpec(machine: Pick<MachineRow, "id" | "org_id" | "box" | "cpu" | "memory_mib">): MachineSpec {
   const size = machineSize(machine);
   return { id: machine.id, orgId: machine.org_id, box: machine.box, cpu: size.cpu, memoryMib: size.memory_mib };
 }
@@ -243,15 +159,13 @@ export function seatEnvironment(seat: AgentSeat): Record<string, string> {
 export function agentSandbox(sandbox: SandboxHandle, home: string, envs: Record<string, string>): SandboxHandle {
   const commands: SandboxCommands = {
     run: async (command, opts, handlers) => {
-      const body = (opts ?? {}) as Record<string, unknown>;
-      const extra = (body.envs ?? body.env) as Record<string, string> | undefined;
-      const merged: Record<string, unknown> = { ...body, envs: { ...envs, ...(extra ?? {}) } };
-      delete merged.env;
-      if (merged.workingDirectory === undefined && merged.working_directory === undefined) {
-        merged.workingDirectory = home;
-        merged.working_directory = home;
-      }
-      return sandbox.commands.run(command, merged as never, handlers);
+      const options = commandOptions(opts);
+      const merged = {
+        ...options,
+        workingDirectory: options.workingDirectory ?? home,
+        envs: { ...envs, ...options.envs },
+      };
+      return sandbox.commands.run(command, merged, handlers);
     },
   };
   if (sandbox.commands.interrupt) {
@@ -287,26 +201,11 @@ export function connectionConfig(url: string, apiKey: string): ConnectionConfig 
   };
 }
 
-function createdStamp(item: SandboxInfo): number {
-  const raw = item.created_at ?? item.createdAt;
-  if (raw instanceof Date) {
-    return raw.getTime();
-  }
-  if (typeof raw === "number" && Number.isFinite(raw)) {
-    return raw;
-  }
-  if (typeof raw === "string") {
-    const parsed = Date.parse(raw);
-    return Number.isNaN(parsed) ? 0 : parsed;
-  }
-  return 0;
-}
-
 export function splitRunning(infos: SandboxInfo[]): [SandboxInfo | null, SandboxInfo[]] {
   if (!infos.length) {
     return [null, []];
   }
-  const ordered = [...infos].sort((left, right) => createdStamp(left) - createdStamp(right));
+  const ordered = [...infos].sort((left, right) => createdAtOf(left) - createdAtOf(right));
   return [ordered[0] ?? null, ordered.slice(1)];
 }
 
@@ -315,11 +214,11 @@ export function imageFingerprint(image: string): string {
   return createHash("sha256").update(image).digest("hex").slice(0, 16);
 }
 
+/** Where a machine's container comes from: the host that created it and the image it runs. */
+export type ContainerOrigin = { hostId?: string | undefined; image?: string };
+
 /** The labels a machine's container carries. */
-export function machineMetadata(
-  machine: MachineSpec,
-  options: { hostId?: string | undefined; image?: string } = {},
-): Record<string, string> {
+export function machineMetadata(machine: MachineSpec, origin: ContainerOrigin = {}): Record<string, string> {
   const resource = machineResource(machine);
   const metadata: Record<string, string> = {
     machine_id: machine.id,
@@ -327,11 +226,11 @@ export function machineMetadata(
     cpu: resource.cpu,
     memory: resource.memory,
   };
-  if (options.hostId) {
-    metadata.host_id = options.hostId;
+  if (origin.hostId) {
+    metadata.host_id = origin.hostId;
   }
-  if (options.image) {
-    metadata.image = imageFingerprint(options.image);
+  if (origin.image) {
+    metadata.image = imageFingerprint(origin.image);
   }
   return metadata;
 }
@@ -348,18 +247,17 @@ export function machineResource(machine: Pick<MachineSpec, "cpu" | "memoryMib">)
  * with `image`, the same image, since the helpers the tools call are part of it.
  */
 export function machineMatches(metadata: unknown, machine: MachineSpec, image?: string): boolean {
-  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+  if (!isPlainRecord(metadata)) {
     return false;
   }
-  const body = metadata as Record<string, unknown>;
-  if (image !== undefined && body.image !== imageFingerprint(image)) {
+  if (image !== undefined && metadata.image !== imageFingerprint(image)) {
     return false;
   }
   const resource = machineResource(machine);
-  return body.kind === machine.box && body.cpu === resource.cpu && body.memory === resource.memory;
+  return metadata.kind === machine.box && metadata.cpu === resource.cpu && metadata.memory === resource.memory;
 }
 
-export function endpointUrl(endpoint: { endpoint: string }): string {
+export function endpointUrl(endpoint: Pick<SandboxEndpoint, "endpoint">): string {
   let raw = endpoint.endpoint.trim();
   if (!raw.includes("://")) {
     raw = `http://${raw}`;
@@ -368,334 +266,42 @@ export function endpointUrl(endpoint: { endpoint: string }): string {
 }
 
 export function requestHeaders(endpoint: SandboxEndpoint, config: ConnectionConfig): Record<string, string> {
-  if (typeof endpoint.build_request_headers === "function") {
-    return endpoint.build_request_headers(config);
-  }
-  if (typeof endpoint.buildRequestHeaders === "function") {
-    return endpoint.buildRequestHeaders(config);
-  }
-  return { ...(endpoint.headers ?? {}) };
+  return endpointHeaders(endpoint, config);
 }
 
-function infosOf(matches: ListMatches | null | undefined): SandboxInfo[] {
-  if (!matches) {
-    return [];
-  }
-  const list = matches.sandbox_infos ?? matches.sandboxInfos ?? matches.items ?? [];
-  return Array.isArray(list) ? list : [];
-}
 
-async function listInfos(manager: SandboxManagerHandle, filter: Record<string, unknown>): Promise<SandboxInfo[]> {
-  const listed = manager.listSandboxInfos ?? manager.list_sandbox_infos;
-  if (!listed) {
-    throw new SandboxError("sandbox manager cannot list sandboxes");
-  }
-  return infosOf(await listed.call(manager, filter));
-}
-
-async function killSandbox(manager: SandboxManagerHandle, id: string): Promise<void> {
-  const kill = manager.killSandbox ?? manager.kill_sandbox;
-  if (!kill) {
-    throw new SandboxError("sandbox manager cannot kill sandboxes");
-  }
-  await kill.call(manager, id);
-}
-
-function stdoutText(execution: CommandResult | null | undefined): string {
-  const messages = execution?.logs?.stdout ?? [];
-  return messages.map((item) => item.text ?? "").join("\n").trim();
-}
-
-function exitCode(execution: CommandResult | null | undefined): number | undefined {
-  return execution?.exit_code ?? execution?.exitCode;
-}
-
-export type RawSdk = {
-  SandboxManager: { create: (opts?: unknown) => unknown };
-  Sandbox: {
-    create: (opts: unknown) => Promise<unknown>;
-    connect: (opts: unknown) => Promise<unknown>;
-  };
-};
-
-function connectionOf(value: unknown): unknown {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return value;
-  }
-  const body = value as Record<string, unknown>;
-  return body.connectionConfig ?? body.connection_config ?? value;
-}
-
-function normalizeVolumes(value: unknown): unknown {
-  if (!Array.isArray(value)) {
-    return value;
-  }
-  return value.map((item) => {
-    if (!item || typeof item !== "object" || Array.isArray(item)) {
-      return item;
-    }
-    const volume = item as Record<string, unknown>;
-    return {
-      ...volume,
-      mountPath: volume.mountPath ?? volume.mount_path,
-      readOnly: volume.readOnly ?? volume.read_only ?? false,
-    };
-  });
-}
-
-function commandOpts(opts: unknown): Record<string, unknown> | undefined {
-  if (!opts || typeof opts !== "object" || Array.isArray(opts)) {
-    return undefined;
-  }
-  const body = opts as Record<string, unknown>;
-  const timeout = body.timeoutSeconds ?? body.timeout;
-  const out: Record<string, unknown> = {};
-  const workingDirectory = body.workingDirectory ?? body.working_directory;
-  if (workingDirectory !== undefined) {
-    out.workingDirectory = workingDirectory;
-  }
-  if (body.background !== undefined) {
-    out.background = body.background;
-  }
-  if (typeof timeout === "number") {
-    out.timeoutSeconds = timeout;
-  }
-  const envs = body.envs ?? body.env;
-  if (envs !== undefined) {
-    out.envs = envs;
-  }
-  return out;
-}
-
-function commandHandlers(opts: unknown, handlers: unknown): unknown {
-  const fromOpts =
-    opts && typeof opts === "object" && !Array.isArray(opts)
-      ? (opts as { onInit?: unknown; on_init?: unknown })
-      : {};
-  const fromHandlers =
-    handlers && typeof handlers === "object" && !Array.isArray(handlers)
-      ? (handlers as { onInit?: unknown; on_init?: unknown })
-      : {};
-  const onInit = fromHandlers.onInit ?? fromHandlers.on_init ?? fromOpts.onInit ?? fromOpts.on_init;
-  if (!onInit && handlers) {
-    return handlers;
-  }
-  if (!onInit) {
-    return undefined;
-  }
-  return { ...(typeof handlers === "object" && handlers ? handlers : {}), onInit };
-}
-
-function wrapCommands(commands: SandboxCommands): SandboxCommands {
-  const wrapped: SandboxCommands = {
-    run: async (command, opts, handlers) => {
-      const run = commands.run.bind(commands);
-      return run(command, commandOpts(opts) as never, commandHandlers(opts, handlers) as never);
-    },
-  };
-  if (commands.createSession) {
-    wrapped.createSession = async (workingDirectory) => {
-      const create = commands.createSession!.bind(commands);
-      if (typeof workingDirectory === "string") {
-        return create({ workingDirectory } as never);
-      }
-      const body =
-        workingDirectory && typeof workingDirectory === "object"
-          ? (workingDirectory as { workingDirectory?: string; working_directory?: string })
-          : {};
-      const directory = body.workingDirectory ?? body.working_directory;
-      return create((directory ? { workingDirectory: directory } : workingDirectory) as never);
-    };
-  }
-  if (commands.runInSession) {
-    wrapped.runInSession = commands.runInSession.bind(commands);
-  }
-  if (commands.deleteSession) {
-    wrapped.deleteSession = commands.deleteSession.bind(commands);
-  }
-  if (commands.interrupt) {
-    wrapped.interrupt = commands.interrupt.bind(commands);
-  }
-  if (commands.getCommandStatus) {
-    wrapped.getCommandStatus = commands.getCommandStatus.bind(commands);
-  }
-  return wrapped;
-}
-
-function wrapFiles(files: SandboxFiles): SandboxFiles {
-  const write = files.writeFiles ?? files.write_files;
-  const move = files.moveFiles ?? files.move_files;
-  const list = files.listDirectory ?? files.list_directory;
-  const remove = files.deleteFiles ?? files.delete_files;
-  const wrapped: SandboxFiles = {
-    writeFiles: async (entries) => {
-      if (!write) {
-        throw new SandboxError("sandbox files API cannot write");
-      }
-      await write.call(files, entries);
-    },
-    moveFiles: async (entries) => {
-      if (!move) {
-        throw new SandboxError("sandbox files API cannot move");
-      }
-      await move.call(files, entries);
-    },
-    deleteFiles: async (paths) => {
-      if (!remove) {
-        throw new SandboxError("sandbox files API cannot delete");
-      }
-      await remove.call(files, paths);
-    },
-  };
-  if (list) {
-    wrapped.listDirectory = async (entry) => list.call(files, entry);
-  }
-  wrapped.write_files = wrapped.writeFiles;
-  wrapped.move_files = wrapped.moveFiles;
-  wrapped.delete_files = wrapped.deleteFiles;
-  if (wrapped.listDirectory) {
-    wrapped.list_directory = wrapped.listDirectory;
-  }
-  return wrapped;
-}
-
-function wrapHandle(sandbox: SandboxHandle & { kill?: () => Promise<void>; files?: SandboxFiles }): SandboxHandle {
-  const handle: SandboxHandle = {
-    id: sandbox.id,
-    commands: wrapCommands(sandbox.commands),
-  };
-  if (sandbox.files) {
-    handle.files = wrapFiles(sandbox.files);
-  }
-  if (sandbox.getEndpoint) {
-    handle.getEndpoint = async (port: number) => {
-      const endpoint = await sandbox.getEndpoint!(port);
-      const headers = () => ({ ...(endpoint.headers ?? {}) });
-      return {
-        ...endpoint,
-        build_request_headers: headers,
-        buildRequestHeaders: headers,
-      };
-    };
-  }
-  if (sandbox.close) {
-    handle.close = sandbox.close.bind(sandbox);
-  }
-  const destroy = sandbox.destroy ?? sandbox.kill;
-  if (destroy) {
-    handle.destroy = destroy.bind(sandbox);
-  }
-  return handle;
-}
-
-function wrapManager(manager: SandboxManagerHandle): SandboxManagerHandle {
-  const list = manager.listSandboxInfos ?? manager.list_sandbox_infos;
-  const kill = manager.killSandbox ?? manager.kill_sandbox;
-  const getInfo = manager.getSandboxInfo;
-  const listSandboxInfos = async (filter: Record<string, unknown>) => {
-    if (!list) {
-      throw new SandboxError("sandbox manager cannot list sandboxes");
-    }
-    const body = filter as { pageSize?: unknown; page_size?: unknown };
-    return list.call(manager, {
-      ...filter,
-      pageSize: body.pageSize ?? body.page_size ?? 100,
-    });
-  };
-  const killSandbox = async (id: string) => {
-    if (!kill) {
-      throw new SandboxError("sandbox manager cannot kill sandboxes");
-    }
-    await kill.call(manager, id);
-  };
-  const wrapped: SandboxManagerHandle = {
-    listSandboxInfos,
-    killSandbox,
-    list_sandbox_infos: listSandboxInfos,
-    kill_sandbox: killSandbox,
-  };
-  if (manager.close) {
-    wrapped.close = manager.close.bind(manager);
-  }
-  if (getInfo) {
-    wrapped.getSandboxInfo = async (id: string) => {
-      const info = await getInfo.call(manager, id);
-      const created = info.created_at ?? info.createdAt;
-      const expires = info.expires_at ?? info.expiresAt ?? null;
-      const mapped: {
-        id: string;
-        expires_at?: unknown;
-        expiresAt?: unknown;
-        created_at?: Date | string | number;
-        createdAt?: Date | string | number;
-      } = { ...info, expires_at: expires };
-      if (created !== undefined) {
-        mapped.created_at = created;
-      }
-      return mapped;
-    };
-  }
-  return wrapped;
-}
-
-export function wrapOpenSandbox(raw: RawSdk): OpenSandboxModule {
-  return {
-    SandboxManager: {
-      create(config: ConnectionConfig) {
-        const created = raw.SandboxManager.create({ connectionConfig: connectionOf(config) });
-        return Promise.resolve(created).then((manager) => wrapManager(manager as SandboxManagerHandle));
-      },
-    },
-    Sandbox: {
-      async create(image: string, options: Record<string, unknown> = {}) {
-        const timeoutSeconds =
-          options.timeoutSeconds === undefined ? options.timeout : options.timeoutSeconds;
-        const created = await raw.Sandbox.create({
-          image,
-          timeoutSeconds,
-          env: options.env,
-          metadata: options.metadata,
-          resource: options.resource,
-          volumes: normalizeVolumes(options.volumes),
-          entrypoint: options.entrypoint,
-          connectionConfig: connectionOf(options),
-        });
-        return wrapHandle(created as SandboxHandle & { kill?: () => Promise<void> });
-      },
-      async connect(id: string, options: Record<string, unknown> = {}) {
-        const connected = await raw.Sandbox.connect({
-          sandboxId: id,
-          connectionConfig: connectionOf(options),
-        });
-        return wrapHandle(connected as SandboxHandle & { kill?: () => Promise<void> });
-      },
-    },
-  };
-}
-
-async function loadRawOpenSandbox(): Promise<RawSdk> {
-  const specifier = process.env.OPENSANDBOX_SDK_MODULE ?? "@alibaba-group/opensandbox";
+/** The command's result; null when the sandbox could not run it. */
+async function runOrNull(sandbox: SandboxHandle, command: string, timeoutSeconds: number): Promise<CommandResult | null> {
   try {
-    return (await import(specifier)) as RawSdk;
-  } catch (error) {
-    const src = path.join(
-      orchestratorRoot(import.meta.url),
-      "node_modules/@alibaba-group/opensandbox/src/index.ts",
-    );
-    if (existsSync(src)) {
-      return (await import(pathToFileURL(src).href)) as RawSdk;
-    }
-    throw error;
+    return await sandbox.commands.run(command, { timeoutSeconds });
+  } catch {
+    return null;
   }
-}
-
-export async function openSandboxSdk(): Promise<OpenSandboxModule> {
-  return wrapOpenSandbox(await loadRawOpenSandbox());
 }
 
 async function loadOpenSandbox(): Promise<OpenSandboxModule> {
   return openSandboxSdk();
 }
+
+/**
+ * The OpenSandbox server a manager drives and what it runs there: the image every machine runs,
+ * the root of the machines' directories, the host labelled on each container, and how many
+ * seconds a browser has to answer.
+ */
+export type SandboxHostSettings = {
+  url: string;
+  apiKey: string;
+  image: string;
+  workspaceRoot: string;
+  hostId?: string | undefined;
+  readySeconds?: number | undefined;
+};
+
+/** What a manager calls: the SDK, loaded on first use when absent, and the wait between browser probes. */
+export type SandboxDependencies = {
+  sdk?: OpenSandboxModule | undefined;
+  sleep?: ((ms: number) => Promise<void>) | undefined;
+};
 
 export class RunSandboxes {
   /** The image every machine runs: Chromium and the coding toolchains. */
@@ -710,23 +316,14 @@ export class RunSandboxes {
   /** The harness CLIs of each container this process created, by machine. */
   private carried = new Map<string, Harness[]>();
 
-  constructor(options: {
-    url: string;
-    apiKey: string;
-    image: string;
-    workspaceRoot: string;
-    hostId?: string | undefined;
-    sdk?: OpenSandboxModule | undefined;
-    sleep?: ((ms: number) => Promise<void>) | undefined;
-    readySeconds?: number | undefined;
-  }) {
-    this.image = options.image;
-    this.workspaceRoot = options.workspaceRoot;
-    this.hostId = options.hostId;
-    this.config = connectionConfig(options.url, options.apiKey);
-    this.sdk = options.sdk ?? null;
-    this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
-    this.readySeconds = options.readySeconds ?? BROWSER_READY_SECONDS;
+  constructor(settings: SandboxHostSettings, dependencies: SandboxDependencies = {}) {
+    this.image = settings.image;
+    this.workspaceRoot = settings.workspaceRoot;
+    this.hostId = settings.hostId;
+    this.config = connectionConfig(settings.url, settings.apiKey);
+    this.readySeconds = settings.readySeconds ?? BROWSER_READY_SECONDS;
+    this.sdk = dependencies.sdk ?? null;
+    this.sleep = dependencies.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   }
 
   private async module(): Promise<OpenSandboxModule> {
@@ -758,7 +355,7 @@ export class RunSandboxes {
 
   private async connect(id: string): Promise<SandboxHandle> {
     const sdk = await this.module();
-    return sdk.Sandbox.connect(id, { connectionConfig: this.config, connection_config: this.config });
+    return sdk.Sandbox.connect(id, { connectionConfig: this.config });
   }
 
   /**
@@ -768,7 +365,7 @@ export class RunSandboxes {
   async ensure(machine: MachineSpec): Promise<SandboxHandle> {
     const manager = this.requireManager();
     const sdk = await this.module();
-    const matches = await listInfos(manager, {
+    const matches = await listSandboxes(manager, {
       states: ["Running"],
       metadata: { machine_id: machine.id },
       pageSize: 100,
@@ -788,7 +385,6 @@ export class RunSandboxes {
     const directory = machineDirectory(this.workspaceRoot, machine.id);
     mkdirSync(directory, { recursive: true });
     const created = await sdk.Sandbox.create(this.image, {
-      timeout: null,
       timeoutSeconds: null,
       metadata: machineMetadata(machine, { hostId: this.hostId, image: this.image }),
       resource: machineResource(machine),
@@ -796,31 +392,30 @@ export class RunSandboxes {
         {
           name: "machine",
           host: { path: directory },
-          mount_path: MACHINE_MOUNT,
           mountPath: MACHINE_MOUNT,
-          read_only: false,
           readOnly: false,
         },
       ],
-      connection_config: this.config,
       connectionConfig: this.config,
     });
     await this.readHarnesses(machine.id, created);
     return created;
   }
 
-  /** The harness CLIs a new container's image lists; an image without the list carries none. */
+  /**
+   * The harness CLIs a new container's image lists; an image without the list carries none. A
+   * container that cannot run the read leaves them unknown, and the warning names the machine.
+   */
   private async readHarnesses(machineId: string, sandbox: SandboxHandle): Promise<void> {
-    try {
-      const execution = await sandbox.commands.run(`cat ${HARNESS_LIST} 2>/dev/null || true`, { timeoutSeconds: 10 });
-      const listed = (execution.logs?.stdout ?? []).map((message) => message.text ?? "").join("\n");
-      this.carried.set(machineId, [...new Set(listed.split(/\s+/).filter(isHarness))]);
-    } catch (error) {
-      writeLog("warn", error instanceof Error ? error.message : String(error), {
+    const execution = await runOrNull(sandbox, `cat ${HARNESS_LIST} 2>/dev/null || true`, 10);
+    if (execution === null) {
+      writeLog("warn", "the container could not run the harness list read", {
         operation: "machine.harnesses",
         machine_id: machineId,
       });
+      return;
     }
+    this.carried.set(machineId, [...new Set(stdoutOf(execution).split(/\s+/).filter(isHarness))]);
   }
 
   /** The harness CLIs the container this process last created for the machine carries. */
@@ -830,7 +425,7 @@ export class RunSandboxes {
 
   async connectRunning(machineId: string): Promise<SandboxHandle | null> {
     const manager = this.requireManager();
-    const matches = await listInfos(manager, {
+    const matches = await listSandboxes(manager, {
       states: ["Running"],
       metadata: { machine_id: machineId },
       pageSize: 100,
@@ -845,11 +440,8 @@ export class RunSandboxes {
     const command =
       `${BROWSER_START} ${seat.agentId} ${ports.display} ${ports.vnc} ${ports.cdp} ${ports.novnc} `
       + seat.browserLanguage;
-    try {
-      await sandbox.commands.run(command, { timeoutSeconds: this.readySeconds + 5 });
-    } catch {
-      /* the wait below reports why the browser is not answering */
-    }
+    // A start the sandbox cannot run is not reported here: the wait reports why the browser does not answer.
+    await runOrNull(sandbox, command, this.readySeconds + 5);
     await this.waitForBrowser(sandbox, seat);
   }
 
@@ -859,17 +451,17 @@ export class RunSandboxes {
   }
 
   /**
-   * Stops every process the agent has on its machine: its browser, its terminal, and its
-   * background commands. With `purge`, its runtime files under /run/guilds go too. Throws when a
-   * process outlives the stop, since it would still hold the slot's ports.
+   * Stops every process the agent has on its machine, its browser, its terminal, and its
+   * background commands, and removes its runtime files under /run/guilds. Throws when a process
+   * outlives the stop, since it would still hold the slot's ports.
    */
-  async stopAgent(sandbox: SandboxHandle, seat: AgentSeat, options: { purge?: boolean } = {}): Promise<void> {
-    await this.runStop(sandbox, seat, options.purge ? "purge" : "all");
+  async purgeAgent(sandbox: SandboxHandle, seat: AgentSeat): Promise<void> {
+    await this.runStop(sandbox, seat, "purge");
   }
 
-  private async runStop(sandbox: SandboxHandle, seat: AgentSeat, mode: "browser" | "all" | "purge"): Promise<void> {
+  private async runStop(sandbox: SandboxHandle, seat: AgentSeat, mode: "browser" | "purge"): Promise<void> {
     const result = await sandbox.commands.run(`${AGENT_STOP} ${seat.agentId} ${mode}`, { timeoutSeconds: 30 });
-    const code = exitCode(result);
+    const code = exitCodeOf(result);
     if (code !== undefined && code !== 0) {
       throw new SandboxError(`agent ${seat.agentId} processes did not stop (${mode}, exit ${code})`);
     }
@@ -900,9 +492,9 @@ export class RunSandboxes {
       const message = error instanceof Error ? error.message : String(error);
       throw new SandboxError(`terminal failed to start: ${message}`);
     }
-    const lines = stdoutText(result).split("\n");
+    const lines = stdoutOf(result).split("\n");
     const token = (lines[lines.length - 1] ?? "").trim();
-    if (exitCode(result) !== 0 || !CLI_TOKEN_RE.test(token)) {
+    if (exitCodeOf(result) !== 0 || !CLI_TOKEN_RE.test(token)) {
       throw new SandboxError("terminal failed to start");
     }
     return token;
@@ -927,13 +519,7 @@ export class RunSandboxes {
       `curl -sf -o /dev/null http://127.0.0.1:${ports.novnc}/vnc.html `
       + `&& curl -sf -o /dev/null http://127.0.0.1:${ports.cdp}/json/version`;
     for (let attempt = 0; attempt < this.readySeconds; attempt += 1) {
-      let result: CommandResult | null;
-      try {
-        result = await sandbox.commands.run(command, { timeoutSeconds: 5 });
-      } catch {
-        result = null;
-      }
-      if (result !== null && exitCode(result) === 0) {
+      if (exitCodeOf(await runOrNull(sandbox, command, 5)) === 0) {
         await this.resetHostHomePage(sandbox, ports.cdp);
         return;
       }
@@ -952,11 +538,8 @@ export class RunSandboxes {
     if (!browserNeedsBlankReset(pages)) {
       return;
     }
-    try {
-      await sandbox.commands.run(blankNavigate(cdpPort), { timeoutSeconds: 20 });
-    } catch {
-      /* error page is still visible in noVNC; do not fail pane open */
-    }
+    // A navigation the sandbox cannot run leaves the error page in noVNC; the pane still opens.
+    await runOrNull(sandbox, blankNavigate(cdpPort), 20);
   }
 
   private async browserFailureDetail(sandbox: SandboxHandle, seat: AgentSeat): Promise<string> {
@@ -977,27 +560,18 @@ export class RunSandboxes {
     return parts.join("\n");
   }
 
+  /** What the command printed; empty when it printed nothing or the sandbox could not run it. */
   private async runText(sandbox: SandboxHandle, command: string): Promise<string> {
-    try {
-      const result = await sandbox.commands.run(command, { timeoutSeconds: 5 });
-      return stdoutText(result);
-    } catch {
-      return "";
-    }
+    return stdoutOf(await runOrNull(sandbox, command, 5));
   }
 
   async listRunningMachineIds(): Promise<Set<string>> {
     const manager = this.requireManager();
-    const matches = await listInfos(manager, { states: ["Running"], pageSize: 100 });
+    const matches = await listSandboxes(manager, { states: ["Running"], pageSize: 100 });
     const machineIds = new Set<string>();
-    for (const info of matches) {
-      const metadata = info.metadata;
-      if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
-        continue;
-      }
-      const machineId = (metadata as { machine_id?: unknown }).machine_id;
-      if (typeof machineId === "string") {
-        machineIds.add(machineId);
+    for (const { metadata } of matches) {
+      if (isPlainRecord(metadata) && typeof metadata.machine_id === "string") {
+        machineIds.add(metadata.machine_id);
       }
     }
     return machineIds;
@@ -1005,7 +579,7 @@ export class RunSandboxes {
 
   async destroy(machineId: string): Promise<void> {
     const manager = this.requireManager();
-    const matches = await listInfos(manager, { metadata: { machine_id: machineId }, pageSize: 100 });
+    const matches = await listSandboxes(manager, { metadata: { machine_id: machineId }, pageSize: 100 });
     for (const info of matches) {
       await killSandbox(manager, info.id);
     }
@@ -1015,9 +589,8 @@ export class RunSandboxes {
   async destroyAgentSandboxes(): Promise<number> {
     const manager = this.requireManager();
     let count = 0;
-    for (const info of await listInfos(manager, { pageSize: 100 })) {
-      const metadata = info.metadata;
-      if (metadata && typeof metadata === "object" && !Array.isArray(metadata) && "agent_id" in metadata) {
+    for (const info of await listSandboxes(manager, { pageSize: 100 })) {
+      if (isPlainRecord(info.metadata) && "agent_id" in info.metadata) {
         await killSandbox(manager, info.id);
         count += 1;
       }

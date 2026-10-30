@@ -1,34 +1,20 @@
-import { accessDatabase, agentSecrets, applySecretAliases, snapshotEnvValues } from "../access/runtime.js";
+import { agentSecrets, applySecretAliases, snapshotEnvValues } from "../access/runtime.js";
 import { instanceRedactions } from "../connectors/instance.js";
-import { decryptPayload } from "../credentials/crypto.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
 import { getMcpConnection, type McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import { listActiveRuns, listRuns, updateRunSecrets } from "../db/runs.js";
 import type { RunConfigSnapshot, SecretRef } from "../db/schema/index.js";
 import { listActiveRunAgentIdsForSecret } from "../db/secrets.js";
-import { tokenRedactions } from "../oauth/index.js";
-import { agentSecretsDatabase, readSecretFile, removeSecretFile, storeAgentSecret } from "../secrets/agent.js";
+import { storedTokenRedactions } from "../oauth/index.js";
+import { readSecretFile, removeSecretFile, storeAgentSecret } from "../secrets/agent.js";
 import type { AgentSecretStore } from "../toolbox/types.js";
 import type { AgentMachines } from "./machines.js";
 
 /** Where a run's connection tokens are read from to redact them. */
 export type ConnectionPayloads = {
-  getMcpConnection(connectionId: string): Promise<Pick<McpConnectionRow, "ciphertext" | "nonce"> | null>;
+  getMcpConnection(connectionId: string): Promise<McpConnectionRow | null>;
 };
-
-/** The tokens of one connection, as redaction values; a payload that cannot be read holds none the run can use. */
-async function connectionRedactions(db: ConnectionPayloads, connectionId: string): Promise<Record<string, string>> {
-  const connection = await db.getMcpConnection(connectionId);
-  if (connection === null) {
-    return {};
-  }
-  try {
-    return tokenRedactions(decryptPayload(connection.ciphertext, connection.nonce), connectionId);
-  } catch {
-    return {};
-  }
-}
 
 /** The tokens of every connection the run's snapshot names, as redaction values. */
 export async function mcpRedactions(
@@ -37,22 +23,26 @@ export async function mcpRedactions(
 ): Promise<Record<string, string>> {
   const values: Record<string, string> = {};
   for (const group of snapshot.mcp) {
-    Object.assign(values, await connectionRedactions(db, group.connection_id));
+    const connection = await db.getMcpConnection(group.connection_id);
+    if (connection !== null) {
+      Object.assign(values, storedTokenRedactions(connection));
+    }
   }
   return values;
 }
 
-/** The db/ functions a run's secrets are read, refreshed, and stored through, on `db`. */
+/** The db/ functions a run's secrets are read and refreshed through, and the store of an agent's secret, on `db`. */
 export function runSecretsDatabase(db: Queryable) {
   return {
-    ...accessDatabase(db),
-    ...agentSecretsDatabase(db),
+    agentSecrets: bindQuery(db, agentSecrets),
+    snapshotEnvValues: bindQuery(db, snapshotEnvValues),
     getAgent: bindQuery(db, getAgent),
     getMcpConnection: bindQuery(db, getMcpConnection),
     listRuns: bindQuery(db, listRuns),
     listActiveRuns: bindQuery(db, listActiveRuns),
     listActiveRunAgentIdsForSecret: bindQuery(db, listActiveRunAgentIdsForSecret),
     updateRunSecrets: bindQuery(db, updateRunSecrets),
+    storeAgentSecret: bindQuery(db, storeAgentSecret),
   };
 }
 
@@ -94,7 +84,7 @@ export class RunSecrets {
 
   /** Writes the agent's current secret references into each of its active runs that holds others. */
   async sync(agent: AgentRow): Promise<SecretRef[]> {
-    const refs = await agentSecrets(this.db, agent);
+    const refs = await this.db.agentSecrets(agent);
     const now = new Date();
     for (const run of await this.db.listRuns(agent.id)) {
       if (run.status !== "active" || JSON.stringify(run.config_snapshot.secrets) === JSON.stringify(refs)) {
@@ -110,7 +100,7 @@ export class RunSecrets {
   async resolve(agent: AgentRow, snapshot: RunConfigSnapshot): Promise<GenerationSecrets> {
     const refs = await this.sync(agent);
     snapshot.secrets = refs;
-    const env = applySecretAliases(await snapshotEnvValues(this.db, refs), snapshot.secret_aliases);
+    const env = applySecretAliases(await this.db.snapshotEnvValues(refs), snapshot.secret_aliases);
     return { refs, env, values: { ...env, ...(await mcpRedactions(this.db, snapshot)), ...instanceRedactions() } };
   }
 
@@ -122,8 +112,7 @@ export class RunSecrets {
     return {
       store: async (input) => {
         const file = await readSecretFile(await this.machines.agentWorkspace(agent), input.file);
-        const stored = await storeAgentSecret(
-          this.db,
+        const stored = await this.db.storeAgentSecret(
           { id: agent.id, orgId: agent.org_id },
           { name: input.name, description: input.description, value: file.value },
         );

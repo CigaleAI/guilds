@@ -1,4 +1,4 @@
-import { enabledToolNames, resolvedTools } from "../access/index.js";
+import { enabledToolNames, resolvedTools, type ResolvableBinding } from "../access/index.js";
 import { isPlainRecord } from "../db/json.js";
 import type { RunMcpConnection, RunScriptSnapshot } from "../db/schema/index.js";
 import { REGISTRY } from "../toolbox/index.js";
@@ -46,35 +46,41 @@ export function withFirstClassScriptTools(
   return [...kept, ...firstClassScriptSchemas(runScripts)];
 }
 
+/** The organisation, guild, and agent whose bindings decide which tools a generation offers. */
+export type ToolBindingScope = {
+  orgId?: string | null;
+  guildId?: string | null;
+  agentId?: string | null;
+};
+
+/**
+ * What decides a generation's offer beside its bindings: the agent's live settings, whether its
+ * run may set schedules, and whether it is a direct run.
+ */
+export type OfferedToolSettings = {
+  browser: boolean;
+  coding: boolean;
+  scripting: boolean;
+  memory: boolean;
+  schedules: boolean;
+  direct: boolean;
+};
+
+/**
+ * The snapshot's tool names that the live bindings of `scope`, in `rows`, still grant under
+ * `settings`; connection tools and names no native tool owns stay offered.
+ */
 export function liveOfferedNames(
   snapshotNames: Set<string>,
-  rows: Array<Record<string, unknown>>,
-  options: {
-    orgId?: string | null;
-    guildId?: string | null;
-    agentId?: string | null;
-    browser: boolean;
-    coding: boolean;
-    scripting: boolean;
-    memory: boolean;
-    schedules: boolean;
-    direct: boolean;
-  },
+  rows: ResolvableBinding[],
+  scope: ToolBindingScope,
+  settings: OfferedToolSettings,
 ): Set<string> {
   const nativeRows = rows.filter((row) => row.catalog_kind === "native_tool");
   if (!nativeRows.length) {
     return snapshotNames;
   }
-  const liveNative = new Set(
-    offeredToolNames(enabledToolNames(resolvedTools(rows, options)), {
-      browser: options.browser,
-      coding: options.coding,
-      scripting: options.scripting,
-      memory: options.memory,
-      schedules: options.schedules,
-      direct: options.direct,
-    }),
-  );
+  const liveNative = new Set(offeredToolNames(enabledToolNames(resolvedTools(rows, scope)), settings));
   const offered = new Set<string>();
   for (const name of snapshotNames) {
     if (name in REGISTRY && !liveNative.has(name)) {
