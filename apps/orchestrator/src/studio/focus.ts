@@ -16,7 +16,12 @@ import { getAgent, getAgentTask, type AgentRow } from "../db/agents.js";
 import { getRun, listMessages, type MessageRow } from "../db/runs.js";
 import { getSchedule } from "../db/schedules.js";
 import { getIssue } from "../db/issues.js";
-import { listGuildToolCallStats, listGuildToolCalls } from "../db/activity.js";
+import {
+  listGuildToolCallStats,
+  listGuildToolCalls,
+  type GuildToolCallRow,
+  type GuildToolCallStatRow,
+} from "../db/activity.js";
 import type { Queryable } from "../db/pg.js";
 import type { StudioFocus, StudioFocusKind, ToolCall } from "../db/schema/index.js";
 import type { UserRow } from "../db/users.js";
@@ -91,7 +96,7 @@ function emptyFocus(kind: StudioFocusKind, agent: Pick<AgentRow, "id" | "name">)
   return {
     kind,
     agent_id: agent.id,
-    agent_name: String(agent.name ?? ""),
+    agent_name: agent.name,
     label: "",
     run_id: null,
     seq: null,
@@ -141,13 +146,16 @@ function callRequest(rows: MessageRow[], callId: string): { row: MessageRow; cal
   return undefined;
 }
 
+/** Where in a run a focus points: a step by its sequence, or a tool call by its id. */
+type RunPoint = { seq: number | null; callId: string };
+
 /**
  * The message a run focus names: by call id, the call's result and the message that made the
  * call, at least one of which must exist; else the message at `seq`.
  */
 function focusedMessages(
   rows: MessageRow[],
-  at: { seq: number | null; callId: string },
+  at: RunPoint,
 ): { target: MessageRow | undefined; request: { row: MessageRow; call: ToolCall } | undefined } {
   if (at.callId) {
     const target = rows.find((row) => row.payload.role === "tool" && row.payload.tool_call_id === at.callId);
@@ -259,8 +267,8 @@ async function resolveMemoryVersion(
   const agent = await guildAgent(deps, trimmedText(input.agent_id));
   const actor = operatorActor({
     orgId: deps.orgId,
-    actorId: String(deps.user.id),
-    actorName: String(deps.user.name ?? "operator"),
+    actorId: deps.user.id,
+    actorName: deps.user.name,
     guildId: deps.sourceGuildId,
     agentId: agent.id,
   });
@@ -337,15 +345,15 @@ async function resolveRoutine(
   const item = scheduleItem(row);
   const focus = emptyFocus("routine", agent);
   focus.schedule_id = scheduleId;
-  focus.label = `Routine · ${String(item.description || item.label)}`;
-  const timing = item.cron ? `${String(item.cron)} (${String(item.label)})` : String(item.label);
+  focus.label = `Routine · ${item.description || item.label}`;
+  const timing = item.cron ? `${item.cron} (${item.label})` : item.label;
   const body = [
     `Routine ${scheduleId} of ${agent.name}: ${timing}, ${item.paused ? "paused" : "active"}.`,
-    `Description: ${String(item.description || "")}`,
-    `Next fire: ${String(item.next_run_at ?? "—")}. Last fire: ${String(item.last_run_at ?? "never")}.`,
+    `Description: ${item.description}`,
+    `Next fire: ${item.next_run_at}. Last fire: ${item.last_run_at ?? "never"}.`,
     "",
     "Instruction:",
-    excerpt(String(item.instruction ?? "")),
+    excerpt(item.instruction),
   ];
   return {
     focus,
@@ -378,8 +386,8 @@ async function loadFileForFocus(
 }> {
   const actor = operatorActor({
     orgId: deps.orgId,
-    actorId: String(deps.user.id),
-    actorName: String(deps.user.name ?? "operator"),
+    actorId: deps.user.id,
+    actorName: deps.user.name,
     guildId: deps.sourceGuildId,
   });
   try {
@@ -418,10 +426,10 @@ async function loadFileForFocus(
     const content =
       row.kind === "object"
         ? JSON.stringify(row.content_json ?? {}, null, 2)
-        : String(row.content_text ?? "");
+        : (row.content_text ?? "");
     return {
       agent,
-      kind: view.deleted ? `${row.kind} (deleted)` : String(row.kind),
+      kind: view.deleted ? `${row.kind} (deleted)` : row.kind,
       version: row.version,
       content,
     };
@@ -519,23 +527,22 @@ async function resolveIssue(
     throw new StudioUnprocessableError("focus issue not found");
   }
   const issue = issueItem(row);
-  const agentId = issue.agent_id ? String(issue.agent_id) : "";
-  const agent = agentId ? await guildAgent(deps, agentId).catch(() => null) : null;
-  const runId = issue.run_id ? String(issue.run_id) : null;
+  const agent = issue.agent_id ? await guildAgent(deps, issue.agent_id).catch(() => null) : null;
+  const runId = issue.run_id || null;
   const focus: StudioFocus = {
     ...emptyFocus("issue", agent ?? { id: "", name: issue.agent_name }),
     issue_id: issueId,
     run_id: runId,
-    tool_name: issue.tool_name ? String(issue.tool_name) : null,
+    tool_name: issue.tool_name || null,
   };
-  focus.label = `Issue · ${String(issue.summary)}`;
+  focus.label = `Issue · ${issue.summary}`;
   const body = [
-    `Issue ${issueId} reported by ${String(issue.agent_name)} at ${String(issue.created_at)}: ${String(issue.kind)}, severity ${String(issue.severity)}, ${String(issue.status)}.`,
-    issue.tool_name ? `Failing tool: ${String(issue.tool_name)}.` : "",
-    `Summary: ${String(issue.summary)}`,
+    `Issue ${issueId} reported by ${issue.agent_name} at ${issue.created_at}: ${issue.kind}, severity ${issue.severity}, ${issue.status}.`,
+    issue.tool_name ? `Failing tool: ${issue.tool_name}.` : "",
+    `Summary: ${issue.summary}`,
     "",
     "Detail:",
-    excerpt(String(issue.detail ?? "")),
+    excerpt(issue.detail ?? ""),
   ].filter((line, index, all) => line !== "" || all[index - 1] !== "");
   const tail = runId
     ? `The reporting run: studio_get_run(run_id="${runId}", tool_name="report_issue") returns the report; load the steps before it with seq_start and seq_end to find the failure.`
@@ -566,20 +573,16 @@ const TOOL_NAME = /^[A-Za-z0-9_.:-]{1,128}$/;
 // The latest failed calls a tool pin quotes.
 const TOOL_FOCUS_FAILURES = 5;
 
-function toolUsageLines(stats: Array<Record<string, unknown>>): string[] {
-  const lines = stats
-    .filter((stat) => stat.agent_id !== null)
-    .map(
-      (stat) =>
-        `- ${String(stat.agent_id)}: ${String(stat.calls)} calls, ${String(stat.errors)} failed`,
-    );
+function toolUsageLines(stats: GuildToolCallStatRow[]): string[] {
+  const lines = stats.flatMap((stat) =>
+    stat.agent_id === null ? [] : [`- ${stat.agent_id}: ${stat.calls} calls, ${stat.errors} failed`],
+  );
   return lines.length ? lines : ["- no agent called it"];
 }
 
-function toolFailureLines(rows: Array<Record<string, unknown>>): string[] {
+function toolFailureLines(rows: GuildToolCallRow[]): string[] {
   return rows.map(
-    (row) =>
-      `- run ${String(row.run_id)}, call ${String(row.call_id ?? "?")} (${String(row.agent_id)}): ${excerpt(String(row.error ?? ""))}`,
+    (row) => `- run ${row.run_id}, call ${row.call_id ?? "?"} (${row.agent_id}): ${excerpt(row.error ?? "")}`,
   );
 }
 

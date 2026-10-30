@@ -1216,10 +1216,7 @@
   },
   "src/studio/focus.ts": {
     "complexity": {
-      "count": 5
-    },
-    "no-restricted-syntax": {
-      "count": 1
+      "count": 4
     }
   },
   "src/studio/index.ts": {
