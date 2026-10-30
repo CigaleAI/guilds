@@ -91,7 +91,7 @@ async function requestBody(request: FastifyRequest): Promise<Buffer> {
   if (typeof body === "string") {
     return Buffer.from(body);
   }
-  if (body && typeof body === "object" && !Array.isArray(body) && Object.keys(body as object).length === 0) {
+  if (body && typeof body === "object" && !Array.isArray(body) && Object.keys(body).length === 0) {
     return Buffer.alloc(0);
   }
   if (body !== undefined && body !== null && typeof body === "object") {
@@ -152,34 +152,19 @@ export async function proxyHttp(
   pathPart: string,
 ): Promise<void> {
   const url = joinUpstream(base, pathPart, rawQuery(request));
-  const incoming: Record<string, string | string[] | undefined> = {};
-  for (const [key, value] of Object.entries(request.headers)) {
-    incoming[key] = value as string | string[] | undefined;
-  }
-  const outgoing = filterHeaders(incoming, HOP_REQ);
+  const outgoing = filterHeaders(request.headers, HOP_REQ);
   Object.assign(outgoing, extraHeaders);
   const body = await requestBody(request);
   const method = request.method.toUpperCase();
-  const init: {
-    method: "GET";
-    headers: Record<string, string>;
-    body?: Buffer;
-  } = {
-    method: method as "GET",
+  const upstream = await undiciRequest(url, {
+    method,
     headers: outgoing,
-  };
-  if (method !== "GET" && method !== "HEAD") {
-    init.body = body;
-  }
-  const upstream = await undiciRequest(url, init);
-  const rawHeaders: Record<string, string | string[] | undefined> = {};
-  for (const [key, value] of Object.entries(upstream.headers)) {
-    rawHeaders[key] = value as string | string[] | undefined;
-  }
+    body: method === "GET" || method === "HEAD" ? null : body,
+  });
   const encoding = Array.isArray(upstream.headers["content-encoding"])
     ? upstream.headers["content-encoding"][0]
     : upstream.headers["content-encoding"];
-  const headers = filterHeaders(rawHeaders, HOP_RESP);
+  const headers = filterHeaders(upstream.headers, HOP_RESP);
   reply.code(upstream.statusCode);
   for (const [key, value] of Object.entries(headers)) {
     reply.header(key, value);
@@ -220,29 +205,32 @@ export function requestedSubprotocol(request: FastifyRequest): string | null {
   return sandboxSubprotocol(requested) || null;
 }
 
-function sendUpstream(upstream: WebSocket, data: WebSocket.RawData, binary: boolean): void {
-  if (upstream.readyState !== WebSocket.OPEN) {
-    return;
+/** The bytes of a frame as ws delivers it: one buffer, the fragments of one, or an ArrayBuffer. */
+function frameBytes(data: WebSocket.RawData): Buffer {
+  if (Buffer.isBuffer(data)) {
+    return data;
   }
-  if (binary) {
-    const buf = Buffer.isBuffer(data)
-      ? data
-      : Array.isArray(data)
-        ? Buffer.concat(data)
-        : Buffer.from(data as ArrayBuffer);
-    upstream.send(buf, { binary: true });
-    return;
+  if (Array.isArray(data)) {
+    return Buffer.concat(data);
   }
-  const text =
-    typeof data === "string"
-      ? data
-      : Buffer.isBuffer(data)
-        ? data.toString("utf8")
-        : Array.isArray(data)
-          ? Buffer.concat(data).toString("utf8")
-          : Buffer.from(data as ArrayBuffer).toString("utf8");
-  upstream.send(text, { binary: false });
+  return Buffer.from(data);
 }
+
+/** Sends a frame on as binary or as UTF-8 text; a frame for a socket that is not open is dropped. */
+function sendFrame(target: WebSocket, data: WebSocket.RawData, binary: boolean): void {
+  if (target.readyState !== WebSocket.OPEN) {
+    return;
+  }
+  const bytes = frameBytes(data);
+  target.send(binary ? bytes : bytes.toString("utf8"), { binary });
+}
+
+/** The daemon a sandbox WebSocket is bridged to: its base URL, the headers it takes, and the path under it. */
+export type SandboxProxyTarget = {
+  base: string;
+  extraHeaders: Record<string, string>;
+  pathPart: string;
+};
 
 /**
  * Bridges a client WebSocket to a sandbox port. Client frames sent before the
@@ -252,7 +240,7 @@ function sendUpstream(upstream: WebSocket, data: WebSocket.RawData, binary: bool
 export function startSandboxWsProxy(
   socket: WebSocket,
   request: FastifyRequest,
-  resolve: () => Promise<{ base: string; extraHeaders: Record<string, string>; pathPart: string }>,
+  resolve: () => Promise<SandboxProxyTarget>,
   closeCode: (error: unknown) => number | undefined,
   onClientMessage?: () => void,
 ): void {
@@ -274,7 +262,7 @@ export function startSandboxWsProxy(
   void (async () => {
     try {
       const target = await resolve();
-      sendUp = connectUpstream(socket, request, target.base, target.extraHeaders, target.pathPart, pending);
+      sendUp = connectUpstream(socket, request, target, pending);
     } catch (error) {
       socket.close(closeCode(error));
     }
@@ -284,35 +272,28 @@ export function startSandboxWsProxy(
 function connectUpstream(
   socket: WebSocket,
   request: FastifyRequest,
-  base: string,
-  extraHeaders: Record<string, string>,
-  pathPart: string,
+  target: SandboxProxyTarget,
   pending: Array<[WebSocket.RawData, boolean]>,
 ): (data: WebSocket.RawData, binary: boolean) => void {
   const subprotocol = requestedSubprotocol(request);
-  const url = wsUrl(joinUpstream(base, pathPart, rawQuery(request)));
+  const url = wsUrl(joinUpstream(target.base, target.pathPart, rawQuery(request)));
   const upstream = new WebSocket(url, subprotocol ? [subprotocol] : undefined, {
-    headers: extraHeaders,
+    headers: target.extraHeaders,
   });
   const sendUp = (data: WebSocket.RawData, binary: boolean) => {
     if (upstream.readyState !== WebSocket.OPEN) {
       pending.push([data, binary]);
       return;
     }
-    sendUpstream(upstream, data, binary);
+    sendFrame(upstream, data, binary);
   };
   upstream.on("open", () => {
     for (const [data, binary] of pending.splice(0)) {
-      sendUpstream(upstream, data, binary);
+      sendFrame(upstream, data, binary);
     }
   });
   upstream.on("message", (data, isBinary) => {
-    const payload = Array.isArray(data) ? Buffer.concat(data) : data;
-    if (isBinary) {
-      socket.send(payload, { binary: true });
-      return;
-    }
-    socket.send(typeof payload === "string" ? payload : payload.toString(), { binary: false });
+    sendFrame(socket, data, isBinary);
   });
   upstream.on("error", () => {
     socket.close();

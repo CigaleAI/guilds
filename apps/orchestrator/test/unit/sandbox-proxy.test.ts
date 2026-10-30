@@ -29,6 +29,18 @@ let base = "";
 
 before(async () => {
   upstream = createServer((request, response) => {
+    if (request.url === "/echo") {
+      const chunks: Buffer[] = [];
+      request.on("data", (chunk: Buffer) => chunks.push(chunk));
+      request.on("end", () => {
+        response.writeHead(200, {
+          "x-method": request.method ?? "",
+          "x-forward": String(request.headers["x-forward"]),
+        });
+        response.end(Buffer.concat(chunks));
+      });
+      return;
+    }
     const encoded = ENCODED[request.url ?? ""];
     if (encoded) {
       response.writeHead(200, encoded[0]);
@@ -54,8 +66,14 @@ after(async () => {
 function proxyApp(): FastifyInstance {
   const app = Fastify();
   registerErrorHandler(app);
-  app.get("/vnc/*", async (request, reply) => {
-    await proxyHttp(request, reply, base, {}, (request.params as { "*": string })["*"]);
+  app.addContentTypeParser("*", { parseAs: "buffer" }, (_request, body, done) => done(null, body));
+  app.route({
+    method: ["GET", "HEAD", "POST"],
+    url: "/vnc/*",
+    exposeHeadRoute: false,
+    handler: async (request, reply) => {
+      await proxyHttp(request, reply, base, { "x-forward": "daemon" }, (request.params as { "*": string })["*"]);
+    },
   });
   return app;
 }
@@ -69,6 +87,28 @@ test("proxied sandbox responses are never cached by the browser", async () => {
     assert.equal(response.headers["last-modified"], "Mon, 01 Jan 2024 00:00:00 GMT");
     assert.equal(response.headers["cache-control"], "no-store");
     assert.equal(response.body, "<!doctype html>/vnc.html?autoconnect=1");
+  } finally {
+    await app.close();
+  }
+});
+
+test("the proxy forwards the method, the body, and its own headers to the daemon", async () => {
+  const app = proxyApp();
+  try {
+    const posted = await app.inject({
+      method: "POST",
+      url: "/vnc/echo",
+      headers: { "content-type": "application/octet-stream" },
+      payload: Buffer.from("typed"),
+    });
+    assert.equal(posted.statusCode, 200);
+    assert.equal(posted.headers["x-method"], "POST");
+    assert.equal(posted.headers["x-forward"], "daemon");
+    assert.equal(posted.body, "typed");
+    const head = await app.inject({ method: "HEAD", url: "/vnc/echo" });
+    assert.equal(head.statusCode, 200);
+    assert.equal(head.headers["x-method"], "HEAD");
+    assert.equal(head.body, "");
   } finally {
     await app.close();
   }
@@ -179,7 +219,11 @@ const MAX_PAYLOAD = 64;
 type Bridge = { url: string; app: FastifyInstance };
 
 /** An app whose `/ws` socket the sandbox proxy bridges to the daemon at `daemonBase`. */
-async function startBridge(daemonBase: () => Promise<string>, refusedCode: number): Promise<Bridge> {
+async function startBridge(
+  daemonBase: () => Promise<string>,
+  refusedCode: number,
+  onClientMessage?: () => void,
+): Promise<Bridge> {
   const app = Fastify();
   await app.register(fastifyWebsocket, { options: { maxPayload: MAX_PAYLOAD } });
   app.get("/ws", { websocket: true }, (socket, request) => {
@@ -188,6 +232,7 @@ async function startBridge(daemonBase: () => Promise<string>, refusedCode: numbe
       request,
       async () => ({ base: await daemonBase(), extraHeaders: {}, pathPart: "" }),
       () => refusedCode,
+      onClientMessage,
     );
   });
   await app.listen({ port: 0, host: "127.0.0.1" });
@@ -214,6 +259,75 @@ async function closeCodeOf(socket: WebSocket): Promise<number> {
   const [code] = (await once(socket, "close")) as [number];
   return code;
 }
+
+test("frames cross the bridge both ways as binary or text, those sent before the daemon opens included", async () => {
+  const daemon = await startDaemon();
+  const received: Array<[string, boolean]> = [];
+  const allReceived = new Promise<void>((resolve) => {
+    daemon.server.on("connection", (socket) => {
+      socket.on("message", (data, isBinary) => {
+        received.push([data.toString(), isBinary]);
+        if (received.length === 2) {
+          socket.send("text back");
+          socket.send(Buffer.from("binary back"));
+        }
+        if (received.length === 3) {
+          resolve();
+        }
+      });
+    });
+  });
+  // The daemon is resolved only once the bridge holds the first two frames, so both are queued.
+  let framesSeen = 0;
+  let releaseDaemon = () => {};
+  const twoFramesQueued = new Promise<void>((resolve) => {
+    releaseDaemon = resolve;
+  });
+  const bridge = await startBridge(
+    async () => {
+      await twoFramesQueued;
+      return daemon.base;
+    },
+    1013,
+    () => {
+      framesSeen += 1;
+      if (framesSeen === 2) {
+        releaseDaemon();
+      }
+    },
+  );
+  try {
+    const client = new WebSocket(bridge.url);
+    const replies: Array<[string, boolean]> = [];
+    const bothBack = new Promise<void>((resolve) => {
+      client.on("message", (data, isBinary) => {
+        replies.push([data.toString(), isBinary]);
+        if (replies.length === 2) {
+          resolve();
+        }
+      });
+    });
+    await once(client, "open");
+    client.send("typed");
+    client.send(Buffer.from("pasted"));
+    await bothBack;
+    client.send("typed after open");
+    await allReceived;
+    assert.deepEqual(received, [
+      ["typed", false],
+      ["pasted", true],
+      ["typed after open", false],
+    ]);
+    assert.deepEqual(replies, [
+      ["text back", false],
+      ["binary back", true],
+    ]);
+    client.close();
+  } finally {
+    await bridge.app.close();
+    daemon.server.close();
+  }
+});
 
 test("a sandbox target that cannot be resolved closes the client with the refusal's code", async () => {
   const bridge = await startBridge(async () => {

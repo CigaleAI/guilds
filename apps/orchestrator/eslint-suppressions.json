@@ -643,17 +643,6 @@
       "count": 1
     }
   },
-  "src/http/sandbox-proxy.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 6
-    },
-    "@typescript-eslint/max-params": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
   "src/http/sse.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
