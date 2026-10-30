@@ -173,21 +173,6 @@
       "count": 1
     }
   },
-  "src/features/studio/activity/ActivityLedger.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/features/studio/activity/ActivityMap.tsx": {
-    "complexity": {
-      "count": 2
-    }
-  },
-  "src/features/studio/activity/AgentActivity.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/features/studio/activity/ChainList.tsx": {
     "complexity": {
       "count": 1

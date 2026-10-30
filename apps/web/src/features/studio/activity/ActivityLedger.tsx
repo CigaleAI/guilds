@@ -77,11 +77,6 @@ export function ActivityLedger() {
     writeStored(tabKey, next);
   };
 
-  const wakes = data?.view.wakes ?? [];
-  const counts = emptyCounts();
-  for (const wake of wakes) counts[wakeBucket(wake)] += 1;
-  const cost = wakes.reduce((sum, wake) => sum + wake.cost_usd, 0);
-
   return (
     <section
       aria-label="Activity"
@@ -105,18 +100,7 @@ export function ActivityLedger() {
             label: windowLabel(value),
           }))}
         />
-        <span className="min-w-0 flex-1 truncate text-xs text-muted">
-          {data && wakes.length
-            ? [
-                plural(data.chains.length, "chain"),
-                plural(wakes.length, "wake"),
-                ...WAKE_BUCKETS.filter((outcome) => counts[outcome]).map(
-                  (outcome) => `${counts[outcome]} ${wakeOutcomeLabel[outcome]}`,
-                ),
-                formatUsd(cost),
-              ].join(" · ")
-            : ""}
-        </span>
+        <ActivityTotals data={data} />
         <IconButton
           icon={RefreshCw}
           label="Refresh"
@@ -131,7 +115,7 @@ export function ActivityLedger() {
         <Banner tone="error" title="Couldn't load the activity" meta={activity.error.message} />
       ) : !data ? (
         <SkeletonRows rows={5} label="Loading activity" />
-      ) : !wakes.length && !data.map.sources.length ? (
+      ) : !data.view.wakes.length && !data.map.sources.length ? (
         <p className="rounded-lg bg-surface px-4 py-6 text-center text-sm text-muted">
           Nothing ran in the last {windowLabel(hours)}. Pick a longer window.
         </p>
@@ -177,5 +161,29 @@ export function ActivityLedger() {
         </Tabs>
       )}
     </section>
+  );
+}
+
+type ActivityTotalsProps = { data: ActivityData | null };
+
+/** The window's chains and wakes, its wakes by outcome, and what they cost; empty with no wake. */
+function ActivityTotals({ data }: ActivityTotalsProps) {
+  const wakes = data?.view.wakes ?? [];
+  const counts = emptyCounts();
+  for (const wake of wakes) counts[wakeBucket(wake)] += 1;
+  const cost = wakes.reduce((sum, wake) => sum + wake.cost_usd, 0);
+  return (
+    <span className="min-w-0 flex-1 truncate text-xs text-muted">
+      {data && wakes.length
+        ? [
+            plural(data.chains.length, "chain"),
+            plural(wakes.length, "wake"),
+            ...WAKE_BUCKETS.filter((outcome) => counts[outcome]).map(
+              (outcome) => `${counts[outcome]} ${wakeOutcomeLabel[outcome]}`,
+            ),
+            formatUsd(cost),
+          ].join(" · ")
+        : ""}
+    </span>
   );
 }

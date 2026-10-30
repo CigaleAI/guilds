@@ -19,6 +19,7 @@ import {
   reasonLabel,
   formatUsd,
   plural,
+  type ActivityIndex,
   type AgentInput,
   type MapSelection,
 } from "./activityModel";
@@ -175,22 +176,29 @@ type InputRowProps = {
   onShow: () => void;
 };
 
-function InputRow({ data, input, share, onShow }: InputRowProps) {
-  const { index } = data;
+/**
+ * The line under an input's name: its routine's timing and whether it fired, an agent's posts or
+ * direct chats, and why its message wakes reached the agent.
+ */
+function inputDetail(index: ActivityIndex, input: AgentInput): string {
   const routine = input.kind === "routine" ? index.routines.get(input.id.slice(8)) : undefined;
   const reasons = Object.entries(input.reasons)
     .flatMap(([reason, count]) =>
       isActivityTriggerReason(reason) ? [`${count} ${reasonLabel[reason]}`] : [],
     )
     .join(" · ");
-  const detail =
-    input.kind === "routine"
-      ? `${routine?.label ?? "routine"}${input.count ? "" : " · didn't fire"}`
-      : input.kind === "agent"
-        ? `its posts · ${reasons}`
-        : input.kind === "direct"
-          ? "private chats"
-          : reasons;
+  return input.kind === "routine"
+    ? `${routine?.label ?? "routine"}${input.count ? "" : " · didn't fire"}`
+    : input.kind === "agent"
+      ? `its posts · ${reasons}`
+      : input.kind === "direct"
+        ? "private chats"
+        : reasons;
+}
+
+function InputRow({ data, input, share, onShow }: InputRowProps) {
+  const { index } = data;
+  const detail = inputDetail(index, input);
   const outcomes = WAKE_BUCKETS.filter((outcome) => input.counts[outcome] > 0)
     .map((outcome) => `${input.counts[outcome]} ${wakeOutcomeLabel[outcome]}`)
     .join(", ");
