@@ -5,9 +5,11 @@ import {
   guildEventGuards,
   inboxEventGuards,
   parseFrameData,
+  runEventGuards,
   type GuildEvents,
   type InboxEvents,
   type LiveEventHandlers,
+  type RunEvents,
 } from "./liveEvents";
 import { applyLiveDelta, type LiveTurn } from "./liveTurn";
 import { agentKeys } from "./queries/agents";
@@ -166,16 +168,7 @@ export function useInboxStream(onMessage?: (notice: MessageNotice) => void): voi
   });
 }
 
-const runEvents = [
-  "generation.started",
-  "assistant.reasoning.delta",
-  "assistant.delta",
-  "message.committed",
-  "tool.progress",
-  "run.error",
-  "generation.finished",
-  "run.continued",
-] as const;
+const runEvents = Object.keys(runEventGuards);
 
 /** What a run's stream shows before it is committed: the turn being written, and running calls' progress. */
 export type RunStreamState = { live: LiveTurn | null; progress: ToolProgress };
@@ -208,54 +201,52 @@ export function useRunStream(
     void client.invalidateQueries({ queryKey: agentKeys.agent(agentId) });
   };
 
+  const showGenerationEnded = () => {
+    setLive(null);
+    setProgress({});
+    refreshRun();
+  };
+
   useEventStream(runId ? `/api/runs/${encodeURIComponent(runId)}/stream` : null, {
     events: runEvents,
     onOpen: refreshRun,
     onEvent: (name, data) => {
       if (!runId) return;
-      if (name === "assistant.reasoning.delta" || name === "assistant.delta") {
-        setLive((turn) => applyLiveDelta(turn, name, data));
-        return;
-      }
-      if (name === "generation.started") {
-        client.setQueryData<Run>(runKeys.run(runId), (run) =>
-          run ? { ...run, generating: true } : run,
-        );
-        client.setQueryData<Run[]>(runKeys.agentRuns(agentId), (runs) =>
-          runs?.map((run) => (run.id === runId ? { ...run, generating: true } : run)),
-        );
-        return;
-      }
-      if (name === "message.committed") {
-        const message = data as RunMessage;
-        client.setQueryData<RunMessage[]>(runKeys.runMessages(runId), (messages) =>
-          messages && !messages.some((known) => known.seq === message.seq)
-            ? [...messages, message].sort((a, b) => a.seq - b.seq)
-            : messages,
-        );
-        if (message.payload.role === "assistant") setLive(null);
-        // Files, scripts and routines follow the guild's stream; records follow the run's tools.
-        if (message.payload.role === "tool") {
-          setProgress((current) => dropToolProgress(current, message.payload.tool_call_id));
-          void client.invalidateQueries({ queryKey: tableKeys.databases });
-        }
-        return;
-      }
-      if (name === "tool.progress") {
-        setProgress((current) => applyToolProgress(current, data));
-        return;
-      }
-      if (name === "generation.finished" || name === "run.error") {
-        setLive(null);
-        setProgress({});
-        refreshRun();
-        return;
-      }
-      if (name === "run.continued") {
-        const next = (data as { run_id?: string } | null)?.run_id;
-        refreshRun();
-        if (next) onContinued?.(next);
-      }
+      const handlers: LiveEventHandlers<RunEvents> = {
+        "generation.started": () => {
+          client.setQueryData<Run>(runKeys.run(runId), (run) =>
+            run ? { ...run, generating: true } : run,
+          );
+          client.setQueryData<Run[]>(runKeys.agentRuns(agentId), (runs) =>
+            runs?.map((run) => (run.id === runId ? { ...run, generating: true } : run)),
+          );
+        },
+        "assistant.reasoning.delta": (delta) =>
+          setLive((turn) => applyLiveDelta(turn, "assistant.reasoning.delta", delta)),
+        "assistant.delta": (delta) =>
+          setLive((turn) => applyLiveDelta(turn, "assistant.delta", delta)),
+        "message.committed": (message) => {
+          client.setQueryData<RunMessage[]>(runKeys.runMessages(runId), (messages) =>
+            messages && !messages.some((known) => known.seq === message.seq)
+              ? [...messages, message].sort((a, b) => a.seq - b.seq)
+              : messages,
+          );
+          if (message.payload.role === "assistant") setLive(null);
+          // Files, scripts and routines follow the guild's stream; records follow the run's tools.
+          if (message.payload.role === "tool") {
+            setProgress((current) => dropToolProgress(current, message.payload.tool_call_id));
+            void client.invalidateQueries({ queryKey: tableKeys.databases });
+          }
+        },
+        "tool.progress": (event) => setProgress((current) => applyToolProgress(current, event)),
+        "run.error": showGenerationEnded,
+        "generation.finished": showGenerationEnded,
+        "run.continued": (continuation) => {
+          refreshRun();
+          onContinued?.(continuation.run_id);
+        },
+      };
+      dispatchLiveEvent(runEventGuards, handlers, name, data);
     },
   });
 

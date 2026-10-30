@@ -9,10 +9,10 @@
   },
   "src/api/streams.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 5
+      "count": 3
     },
     "complexity": {
-      "count": 2
+      "count": 1
     }
   },
   "src/app/identity.tsx": {
