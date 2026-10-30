@@ -305,10 +305,10 @@ drizzle-kit reads.
 
 Every package also runs the limits of the
 [code guidelines](code-guidelines.md#functions) on its source,
-tests and stories excepted, as `complexity`, `max-depth`,
-`max-lines`, `max-params` (a warning) and
-`@typescript-eslint/max-params`, and refuses every type assertion
-except `as const`. The orchestrator also requires explicit
+tests and stories excepted (`eslint.limits.js`): `complexity`,
+`max-depth`, a warning at five parameters and an error at six, a
+warning past 800 lines and an error past 1,000, and a refusal of
+every type assertion except `as const`. The orchestrator also requires explicit
 parameter and return types on what a module exports
 (`@typescript-eslint/explicit-module-boundary-types`). It refuses an
 empty `catch`; a throw of a plain `Error` outside the commands in

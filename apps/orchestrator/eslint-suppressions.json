@@ -598,7 +598,7 @@
     "complexity": {
       "count": 1
     },
-    "max-lines": {
+    "limits/file-lines": {
       "count": 1
     },
     "no-restricted-syntax": {
@@ -916,9 +916,6 @@
     "max-depth": {
       "count": 2
     },
-    "max-lines": {
-      "count": 1
-    },
     "no-restricted-syntax": {
       "count": 3
     }
@@ -1103,7 +1100,7 @@
     "complexity": {
       "count": 1
     },
-    "max-lines": {
+    "limits/file-lines": {
       "count": 1
     },
     "no-restricted-syntax": {
@@ -1236,9 +1233,6 @@
     "complexity": {
       "count": 6
     },
-    "max-lines": {
-      "count": 1
-    },
     "no-restricted-syntax": {
       "count": 3
     }
@@ -1258,7 +1252,7 @@
     "complexity": {
       "count": 2
     },
-    "max-lines": {
+    "limits/file-lines": {
       "count": 1
     },
     "no-restricted-syntax": {
@@ -1323,7 +1317,7 @@
     "complexity": {
       "count": 1
     },
-    "max-lines": {
+    "limits/file-lines": {
       "count": 1
     }
   },
@@ -1354,9 +1348,6 @@
   "src/toolbox/harness.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 3
-    },
-    "max-lines": {
-      "count": 1
     },
     "no-restricted-syntax": {
       "count": 7

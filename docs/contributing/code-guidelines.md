@@ -141,8 +141,9 @@ HTTP client, queries, streams, and the API types) and `src/app/`
 is no `utils/`, `helpers/`, or `common/`. A sub-directory is a
 sub-domain, never a type (`components/`, `hooks/`).
 
-A file holds one concern and stays under **800 lines**. A file
-that grows past that is split by sub-domain (`http/agent-routes.ts`,
+A file holds one concern and stays under **800 lines**. ESLint
+warns past 800 and fails at 1,000. A file that grows past the limit
+is split by sub-domain (`http/agent-routes.ts`,
 `http/run-routes.ts`), never by type (`helpers.ts`, `utils.ts`). A
 domain's `types.ts` is not such a split: it is the shapes the domain
 shows to others, and other domains import it directly. A reader
@@ -151,17 +152,20 @@ every behaviour of a layer costs the whole layer to read and makes
 every edit collide.
 
 HTTP stays thin in `http/`. A route handler reads the request,
-calls one domain function, and writes the reply. It does not
-import `db/` and does not validate, decide, or query on its own. A
-rule several routes would repeat, such as what happens after a
-named error, is one function in the domain that owns it.
+including who makes it, calls one domain function, and writes the
+reply in its wire shape. It does not import `db/` and does not
+validate, decide, or query on its own. A rule several routes would
+repeat, such as who may see a resource or what happens after a
+named error, is one function in the domain that owns it. A route
+that calls several domain functions in turn is the domain missing
+one.
 
 ## Boundaries
 
 A module reaches another through what that module exports. A
-package is reached through its `exports` list. A module that only
-re-exports others does not exist, except an index a tool requires,
-such as the schema mirror's.
+package is reached through its `exports` list. A module exports
+what it declares and does not hand on another module's exports,
+except an index a tool requires, such as the schema mirror's.
 
 In the orchestrator the domains form a stack of value imports: a
 domain imports no value from a domain above it, and `db/` and
@@ -175,8 +179,8 @@ domain that enters an import cycle fails the check
 An import that points up the stack is a leak. The fix moves what
 leaked, not the import:
 
-- **Wiring**: a caller builds a domain's dependencies object. The
-  domain's public functions take a `Queryable` instead.
+- **Wiring**: a caller binds a domain's `db/` functions for it. The
+  domain's public functions take a `Queryable` and bind their own.
 - **Rule**: a caller re-derives a domain's rule from its data. The
   domain exports the rule as one named function.
 - **Ownership**: a concept sits in the wrong domain, so both import
@@ -199,7 +203,10 @@ bound to the connection with `bindQuery`, and writes that commit
 together run in a transaction bound beside them with
 `bindTransaction`. That object is built inside the domain, from the
 `Queryable` its public function received; a caller never builds it.
-Nothing else stands between a domain module and `db/`: no facade,
+A dependencies object built at composition holds the services a
+domain needs besides `db/`, such as a blob store or a policy; the
+connection is never one of them. Nothing else stands between a
+domain module and `db/`: no facade,
 no class that forwards every query. Only `http/` is kept out of
 `db/`.
 

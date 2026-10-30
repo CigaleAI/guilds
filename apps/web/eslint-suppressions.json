@@ -26,7 +26,7 @@
     "@typescript-eslint/consistent-type-assertions": {
       "count": 2
     },
-    "max-lines": {
+    "limits/file-lines": {
       "count": 1
     }
   },
@@ -44,7 +44,7 @@
     }
   },
   "src/api/types.ts": {
-    "max-lines": {
+    "limits/file-lines": {
       "count": 1
     }
   },
@@ -303,9 +303,6 @@
     },
     "complexity": {
       "count": 2
-    },
-    "max-lines": {
-      "count": 1
     }
   },
   "src/features/builder/BuilderWidgets.tsx": {
@@ -416,9 +413,6 @@
   "src/features/recipes/plan/PlanView.tsx": {
     "complexity": {
       "count": 3
-    },
-    "max-lines": {
-      "count": 1
     }
   },
   "src/features/recipes/plan/planModel.ts": {
@@ -428,7 +422,7 @@
     "complexity": {
       "count": 6
     },
-    "max-lines": {
+    "limits/file-lines": {
       "count": 1
     }
   },
@@ -504,9 +498,6 @@
   "src/features/studio/activity/ChainList.tsx": {
     "complexity": {
       "count": 3
-    },
-    "max-lines": {
-      "count": 1
     }
   },
   "src/features/studio/activity/activityModel.ts": {
@@ -515,9 +506,6 @@
     },
     "complexity": {
       "count": 4
-    },
-    "max-lines": {
-      "count": 1
     }
   },
   "src/features/studio/approvals.ts": {
