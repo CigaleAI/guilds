@@ -1,11 +1,10 @@
 import { defaultSearchServer, isSearchable, storageHint } from "../connectors/builder.js";
 import { getMcpServer, getMcpServerBySlug, listServers, type LoadedConnector } from "../connectors/servers.js";
-import { McpError } from "../mcp/errors.js";
 import { OPERATOR_CALLER, type McpPool } from "../mcp/pool.js";
 import { callTool } from "../mcp/service.js";
-import { listMcpConnections, listMcpTools, type McpConnectionRow } from "../db/mcp.js";
-import { bindQuery, type Queryable } from "../db/pg.js";
-
+import { listMcpConnections, listMcpTools, type McpConnectionRow, type McpToolRow } from "../db/mcp.js";
+import { isPlainRecord } from "../db/json.js";
+import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 
 const SEARCH_REMOTES = ["search", "notion-search", "Search"];
 const MAX_HITS = 20;
@@ -15,8 +14,24 @@ const MAX_RAW = 4_000;
 /** The pool the Builder searches a connected workspace through. */
 export type BuilderMcpClient = Pick<McpPool, "call" | "database">;
 
+/** The db/ functions the Builder's connected-workspace tools read through. */
+export type ConnectedDatabase = {
+  getMcpServer: BoundQuery<typeof getMcpServer>;
+  getMcpServerBySlug: BoundQuery<typeof getMcpServerBySlug>;
+  listServers: BoundQuery<typeof listServers>;
+  listMcpConnections: BoundQuery<typeof listMcpConnections>;
+  listMcpTools: BoundQuery<typeof listMcpTools>;
+};
+
+/** The services a connected-workspace search reads and calls through. */
+export type ConnectedWorkspaceDeps = {
+  db: ConnectedDatabase;
+  /** The pool the search tool is called through; the search is unavailable when null. */
+  mcp: BuilderMcpClient | null;
+};
+
 /** The db/ functions the Builder's connected-workspace tools read through, on `db`. */
-export function connectedDatabase(db: Queryable) {
+export function connectedDatabase(db: Queryable): ConnectedDatabase {
   return {
     getMcpServer: bindQuery(db, getMcpServer),
     getMcpServerBySlug: bindQuery(db, getMcpServerBySlug),
@@ -25,8 +40,6 @@ export function connectedDatabase(db: Queryable) {
     listMcpTools: bindQuery(db, listMcpTools),
   };
 }
-
-export type ConnectedDatabase = ReturnType<typeof connectedDatabase>;
 
 export type WorkspaceHit = {
   kind: "database" | "page" | "other";
@@ -84,8 +97,8 @@ export async function findReusableOrgConnection(
   );
 }
 
-export function pickSearchRemote(tools: Array<Record<string, unknown>>): string {
-  const names = tools.map((tool) => String(tool.remote_name || ""));
+export function pickSearchRemote(tools: Array<Pick<McpToolRow, "remote_name">>): string {
+  const names = tools.map((tool) => tool.remote_name);
   for (const candidate of SEARCH_REMOTES) {
     if (names.includes(candidate)) {
       return candidate;
@@ -95,9 +108,7 @@ export function pickSearchRemote(tools: Array<Record<string, unknown>>): string 
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
+  return isPlainRecord(value) ? value : null;
 }
 
 function firstString(...values: unknown[]): string {
@@ -171,13 +182,30 @@ export function hitFromUnknown(value: unknown): WorkspaceHit | null {
   };
 }
 
+/** What the text parts of a tool result carry: a single part's JSON (or its text), the parts joined, or `fallback` when there are none. */
+function payloadOfTexts(texts: string[], fallback: unknown): unknown {
+  const [only, ...rest] = texts;
+  if (only === undefined) {
+    return fallback;
+  }
+  if (rest.length) {
+    return texts.join("\n");
+  }
+  try {
+    const parsed: unknown = JSON.parse(only);
+    return parsed;
+  } catch {
+    return only;
+  }
+}
+
 function unwrapMcpPayload(raw: string): unknown {
   const trimmed = raw.trim();
   if (!trimmed) {
     return "";
   }
   try {
-    const parsed = JSON.parse(trimmed) as unknown;
+    const parsed: unknown = JSON.parse(trimmed);
     if (Array.isArray(parsed)) {
       const texts = parsed
         .map((part) => {
@@ -185,17 +213,7 @@ function unwrapMcpPayload(raw: string): unknown {
           return row && row.type === "text" ? firstString(row.text) : "";
         })
         .filter(Boolean);
-      if (texts.length === 1) {
-        try {
-          return JSON.parse(texts[0] as string);
-        } catch {
-          return texts[0];
-        }
-      }
-      if (texts.length) {
-        return texts.join("\n");
-      }
-      return parsed;
+      return payloadOfTexts(texts, parsed);
     }
     const record = asRecord(parsed);
     if (record && Array.isArray(record.content)) {
@@ -205,16 +223,7 @@ function unwrapMcpPayload(raw: string): unknown {
           return row ? firstString(row.text) : "";
         })
         .filter(Boolean);
-      if (texts.length === 1) {
-        try {
-          return JSON.parse(texts[0] as string);
-        } catch {
-          return texts[0];
-        }
-      }
-      if (texts.length) {
-        return texts.join("\n");
-      }
+      return payloadOfTexts(texts, parsed);
     }
     return parsed;
   } catch {
@@ -231,14 +240,18 @@ function collectCandidateArrays(value: unknown): unknown[] {
     return [];
   }
   for (const key of ["results", "hits", "databases", "pages", "items"]) {
-    if (Array.isArray(record[key])) {
-      return record[key] as unknown[];
+    const candidates = record[key];
+    if (Array.isArray(candidates)) {
+      return candidates;
     }
   }
   return [];
 }
 
-export function parseWorkspaceHits(raw: string): { hits: WorkspaceHit[]; raw_excerpt?: string } {
+/** The hits a search tool's result names, or an excerpt of the result when it names none. */
+export type WorkspaceHits = { hits: WorkspaceHit[]; raw_excerpt?: string };
+
+export function parseWorkspaceHits(raw: string): WorkspaceHits {
   const payload = unwrapMcpPayload(raw);
   const hits: WorkspaceHit[] = [];
   const seen = new Set<string>();
@@ -263,23 +276,23 @@ export function parseWorkspaceHits(raw: string): { hits: WorkspaceHit[]; raw_exc
   };
 }
 
-export async function searchConnectedWorkspace(args: {
-  db: ConnectedDatabase;
-  mcp?: BuilderMcpClient | null | undefined;
-  orgId: string;
-  serverRef: string;
-  query: string;
-}): Promise<ConnectedSearchResult> {
-  const serverRef = args.serverRef.trim() || defaultSearchServer();
-  const query = args.query.trim();
-  const hint = isSearchable(serverRef)
+/** Searches `orgId`'s connected workspace `serverRef` (the default searchable one when blank) for `phrase`. */
+export async function searchConnectedWorkspace(
+  deps: ConnectedWorkspaceDeps,
+  orgId: string,
+  serverRef: string,
+  phrase: string,
+): Promise<ConnectedSearchResult> {
+  const ref = serverRef.trim() || defaultSearchServer();
+  const query = phrase.trim();
+  const hint = isSearchable(ref)
     ? storageHint()
     : "Prefer local notes and collections unless this connector is the operator's durable system of record.";
-  const server = await resolvePublishedServer(args.db, serverRef, args.orgId);
+  const server = await resolvePublishedServer(deps.db, ref, orgId);
   if (!server) {
     return {
-      server: serverRef,
-      display_name: serverRef,
+      server: ref,
+      display_name: ref,
       connected: false,
       query,
       hits: [],
@@ -290,7 +303,7 @@ export async function searchConnectedWorkspace(args: {
   }
   const slug = server.slug;
   const displayName = String(server.display_name || slug);
-  const connection = await findReusableOrgConnection(args.db, args.orgId, server);
+  const connection = await findReusableOrgConnection(deps.db, orgId, server);
   if (!connection) {
     return {
       server: slug,
@@ -304,7 +317,7 @@ export async function searchConnectedWorkspace(args: {
       recommended_widget: "builder_ask_org_connection",
     };
   }
-  if (!args.mcp) {
+  if (!deps.mcp) {
     return {
       server: slug,
       display_name: displayName,
@@ -317,10 +330,10 @@ export async function searchConnectedWorkspace(args: {
       error: "connected workspace search is unavailable",
     };
   }
-  const tools = await args.db.listMcpTools(connection.id);
+  const tools = await deps.db.listMcpTools(connection.id);
   const remoteName = pickSearchRemote(tools);
   try {
-    const raw = await callTool(args.mcp, {
+    const raw = await callTool(deps.mcp, {
       connectionId: connection.id,
       tool: remoteName,
       arguments: query ? { query } : {},
@@ -340,7 +353,7 @@ export async function searchConnectedWorkspace(args: {
       ...(parsed.raw_excerpt ? { raw_excerpt: parsed.raw_excerpt } : {}),
     };
   } catch (error) {
-    const message = error instanceof McpError || error instanceof Error ? error.message : "search failed";
+    const message = error instanceof Error ? error.message : "search failed";
     return {
       server: slug,
       display_name: displayName,

@@ -37,6 +37,7 @@ import {
 } from "../recipes/library.js";
 import { getRecipe, type RecipeRow } from "../db/recipes.js";
 import type { ApplyChoices, RecipeApply } from "../recipes/apply.js";
+import type { RecipeApplyRow } from "../db/recipe-applies.js";
 import type { ReviewAction } from "../recipes/review.js";
 import { createSkeleton } from "../recipes/skeleton.js";
 import {
@@ -44,10 +45,10 @@ import {
   BUILDER_MAX_STEPS,
   BUILDER_TOOL_RESULT_STUB_HINT,
 } from "./constants.js";
-import { BuilderConflictError, BuilderError } from "./errors.js";
+import { ConversationConflictError, ConversationError } from "../conversation/errors.js";
 import { builderConversationTools, builderToolSchemas, type BuilderToolContext } from "./tools.js";
 import type { BuilderMcpClient } from "./connected.js";
-import { composeBuilderGenerationContext, composeBuilderSystemMessage } from "./system.js";
+import { composeBuilderGenerationContext, composeBuilderSystemMessage, type CoachSettings } from "./system.js";
 import { connectedDatabase } from "./connected.js";
 import { type Queryable, withTransaction } from "../db/pg.js";
 import type { UserRow } from "../db/users.js";
@@ -122,10 +123,10 @@ export class BuilderService {
   ): Promise<BuilderSessionRow> {
     const session = await getBuilderSession(this.deps.db, sessionId);
     if (!session || session.org_id !== org.id) {
-      throw new BuilderError(404, "builder session not found");
+      throw new ConversationError(404, "builder session not found");
     }
     if (session.created_by_user_id && session.created_by_user_id !== user.id) {
-      throw new BuilderError(404, "builder session not found");
+      throw new ConversationError(404, "builder session not found");
     }
     return session;
   }
@@ -145,31 +146,31 @@ export class BuilderService {
   async validateModel(orgId: string, model: string): Promise<string> {
     const id = model.trim();
     if (!id) {
-      throw new BuilderError(422, "model is required");
+      throw new ConversationError(422, "model is required");
     }
     if (!isMarketplaceModel(id)) {
-      throw new BuilderError(422, "the coach needs a marketplace model");
+      throw new ConversationError(422, "the coach needs a marketplace model");
     }
     try {
       await assertModelConnected(this.credentials, orgId, id);
     } catch (error) {
       if (error instanceof ModelNotConnectedError) {
-        throw new BuilderError(422, error.message);
+        throw new ConversationError(422, error.message);
       }
       throw error;
     }
     return id;
   }
 
-  async createSession(args: {
-    user: UserRow;
-    org: OrgMembershipRow;
-    model: string;
-    temperature?: number;
-  }): Promise<Record<string, unknown>> {
-    const model = await this.validateModel(String(args.org.id), args.model);
-    const temperature =
-      typeof args.temperature === "number" ? args.temperature : BUILDER_DEFAULT_TEMPERATURE;
+  /** A session on a new draft recipe, coached by `model` at `temperature` (the Builder default when undefined). */
+  async createSession(
+    user: UserRow,
+    org: OrgMembershipRow,
+    modelRef: string,
+    temperature: number | undefined,
+  ): Promise<Record<string, unknown>> {
+    const model = await this.validateModel(String(org.id), modelRef);
+    const coachTemperature = typeof temperature === "number" ? temperature : BUILDER_DEFAULT_TEMPERATURE;
     const now = new Date();
     const recipeId = newId("rcp");
     const sessionId = newId("bld");
@@ -177,27 +178,26 @@ export class BuilderService {
       source: { kind: "builder", session_id: sessionId },
       now,
     });
-    const limits = (await this.policy.standing(String(args.org.id))).limits.coach.builder;
-    const coachConfig = {
+    const limits = (await this.policy.standing(String(org.id))).limits.coach.builder;
+    const coachConfig: CoachSettings = {
       model,
-      temperature,
+      temperature: coachTemperature,
       max_steps: BUILDER_MAX_STEPS,
       ...limits,
     };
-    const system = composeBuilderSystemMessage({
-      config: coachConfig,
-      recipe: recipeBody,
-      expectedBodyVersion: 1,
-      guidelinesPath: this.deps.guidelinesPath,
+    const system = composeBuilderSystemMessage(
+      coachConfig,
+      { body: recipeBody, body_version: 1 },
+      this.deps.guidelinesPath,
       now,
-    });
+    );
     const session = await withTransaction(this.deps.db, async (client) => {
       await addRecipeDraft(
         client,
         {
           recipeId,
-          orgId: String(args.org.id),
-          createdByUserId: String(args.user.id),
+          orgId: String(org.id),
+          createdByUserId: String(user.id),
           name: recipeBody.meta.name,
           description: "",
           body: recipeBody,
@@ -209,9 +209,9 @@ export class BuilderService {
         client,
         {
           sessionId,
-          orgId: String(args.org.id),
-          createdByUserId: String(args.user.id),
-          createdByName: typeof args.user.name === "string" ? args.user.name : "operator",
+          orgId: String(org.id),
+          createdByUserId: String(user.id),
+          createdByName: typeof user.name === "string" ? user.name : "operator",
           recipeId,
           configSnapshot: {
             ...coachConfig,
@@ -243,7 +243,7 @@ export class BuilderService {
   private async recipeFor(session: BuilderSessionRow): Promise<RecipeRow> {
     const recipe = await getRecipe(this.deps.db, String(session.recipe_id));
     if (!recipe) {
-      throw new BuilderError(404, "recipe not found");
+      throw new ConversationError(404, "recipe not found");
     }
     return recipe;
   }
@@ -272,33 +272,27 @@ export class BuilderService {
     content: string,
   ): Promise<Record<string, unknown>> {
     if (!content.trim()) {
-      throw new BuilderError(422, "content must not be empty");
+      throw new ConversationError(422, "content must not be empty");
     }
     if (session.status !== "active") {
-      throw new BuilderConflictError("session cannot generate");
+      throw new ConversationConflictError("session cannot generate");
     }
     const started = await withTransaction(this.deps.db, async (client) => {
       const locked = await lockBuilderSession(client, session.id);
       if (!locked) {
-        throw new BuilderError(404, "builder session not found");
+        throw new ConversationError(404, "builder session not found");
       }
       if (locked.generation_state !== "idle") {
-        throw new BuilderConflictError("builder session is already generating");
+        throw new ConversationConflictError("builder session is already generating");
       }
       const now = new Date();
       await claimCoachRun(this.policy, client, locked.org_id, now);
       const recipe = await getRecipe(client, String(locked.recipe_id));
       if (!recipe) {
-        throw new BuilderError(404, "recipe not found");
+        throw new ConversationError(404, "recipe not found");
       }
       const expectedBodyVersion = recipe.body_version;
-      const config = locked.config_snapshot;
-      const system = composeBuilderSystemMessage({
-        config,
-        recipe: recipe.body,
-        expectedBodyVersion,
-        guidelinesPath: this.deps.guidelinesPath,
-      });
+      const system = composeBuilderSystemMessage(locked.config_snapshot, recipe, this.deps.guidelinesPath);
       await updateConversationMessage(client, "builder", {
         session_id: locked.id,
         seq: 0,
@@ -344,6 +338,7 @@ export class BuilderService {
     });
     const limits = (await this.policy.standing(started.session.org_id)).limits.coach
       .builder;
+    const toolContext = this.toolContext(started.session);
     this.runner.start({
       session: started.session,
       user,
@@ -353,8 +348,8 @@ export class BuilderService {
         started.expectedBodyVersion,
       ),
       systemContent: started.system.content,
-      tools: builderConversationTools(),
-      toolContext: this.toolContext(started.session),
+      tools: builderConversationTools(toolContext),
+      toolContext,
       maxTokens: limits.max_tokens,
       maxSteps: BUILDER_MAX_STEPS,
       maxToolCalls: limits.max_tool_calls,
@@ -431,7 +426,7 @@ export class BuilderService {
     org: OrgMembershipRow,
     user: UserRow,
     choices: ApplyChoices = {},
-  ) {
+  ): Promise<RecipeApplyRow> {
     const recipe = await this.recipeFor(session);
     return createSkeleton(this.deps.apply, { org, user, recipeRow: recipe }, choices);
   }

@@ -6,7 +6,7 @@ import { ConnectError } from "../mcp/connect-token.js";
 import { SettingsError } from "../connectors/settings.js";
 import { CredentialError } from "../credentials/validate.js";
 import { AgentError } from "../agents/errors.js";
-import { BuilderError } from "../builder/errors.js";
+import { ConversationError } from "../conversation/errors.js";
 import { AgentValidationError } from "../agents/validation.js";
 import { BindingError } from "../access/index.js";
 import { RunRequestError } from "../generation/errors.js";
@@ -173,7 +173,7 @@ const REFUSALS = [
   InstanceKeyError,
   RepositoryValidationError,
   StudioError,
-  BuilderError,
+  ConversationError,
   RecipeError,
   ModelsError,
   RegistryError,
