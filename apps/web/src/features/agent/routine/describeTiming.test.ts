@@ -23,6 +23,20 @@ test("cron reads as the server's label", () => {
   assert.equal(describeCron("not cron"), "not cron");
 });
 
+test("minute steps, minutes past the hour and clock times read in words", () => {
+  assert.equal(describeCron("*/1 * * * *"), "Every minute (UTC)");
+  assert.equal(describeCron("*/15 9,17 * * *"), "Every 15 minutes during 09:00 and 17:00 (UTC)");
+  assert.equal(describeCron("15 * * * *"), "At minute 15 past every hour (UTC)");
+  assert.equal(describeCron("15,45 */2 * * *"), "At minute 15 and 45 past every 2 hours (UTC)");
+  assert.equal(describeCron("0 9 * 1-3 *"), "At 09:00 in January through March (UTC)");
+});
+
+test("time fields the describer has no words for read as the expression itself", () => {
+  assert.equal(describeCron("* 9 * * *"), "* 9 * * *");
+  assert.equal(describeCron("*/5 */2 * * *"), "*/5 */2 * * *");
+  assert.equal(describeCron("0,30 1-5 * * *"), "0,30 1-5 * * *");
+});
+
 test("an expression of more or fewer than five fields reads as itself", () => {
   assert.equal(describeCron("0 9 * *"), "0 9 * *");
   assert.equal(describeCron("0  9 * * 1 2026"), "0 9 * * 1 2026");
