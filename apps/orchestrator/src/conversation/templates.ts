@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { builderGuidance, searchableNames, systemOfRecordNames } from "../connectors/builder.js";
+import { isPlainRecord } from "../db/json.js";
 import { hereDir } from "../lib/paths.js";
 import { MEMORY_INTRO } from "../memory/index.js";
 import {
@@ -81,11 +82,11 @@ export function readBuilderWriteExample(metaUrl = import.meta.url): Record<strin
   if (!existsSync(filePath)) {
     throw new ConversationError(422, `${BUILDER_WRITE_EXAMPLE} not found`);
   }
-  const parsed = JSON.parse(readFileSync(filePath, "utf8")) as unknown;
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+  const parsed: unknown = JSON.parse(readFileSync(filePath, "utf8"));
+  if (!isPlainRecord(parsed)) {
     throw new ConversationError(422, `${BUILDER_WRITE_EXAMPLE} must be a JSON object`);
   }
-  return parsed as Record<string, unknown>;
+  return parsed;
 }
 
 export function readBuilderSystemTemplate(options: CoachTemplateOptions = {}, metaUrl = import.meta.url): string {

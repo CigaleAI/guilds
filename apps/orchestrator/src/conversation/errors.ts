@@ -14,3 +14,11 @@ export class ConversationConflictError extends ConversationError {
     this.name = "ConversationConflictError";
   }
 }
+
+/** The operator cancelled the generation while the model was answering. */
+export class ConversationCancelled extends Error {
+  constructor() {
+    super("cancelled");
+    this.name = "ConversationCancelled";
+  }
+}
