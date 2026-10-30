@@ -1,5 +1,5 @@
 import type { SelectOption, SelectOptionGroup } from "@guildsrun/ui";
-import type { ModelProvider, OrgModels } from "../../api/types/models";
+import type { ModelProvider, OrgModelProvider, OrgModels } from "../../api/types/models";
 
 /**
  * Which models a model picker offers: `current` is the value it holds, `coding` whether the agent
@@ -103,6 +103,21 @@ export function setupProgress(models: OrgModels | undefined): SetupStep[] {
     { id: "models", label: "Choose the models to offer", done: chosen },
     { id: "default", label: "Mark one as the default", done: Boolean(models?.default) },
   ];
+}
+
+/** The line under a provider's name: the endpoint and key it is connected with, or how to connect it. */
+export function formatProviderState(provider: OrgModelProvider): string {
+  const local = provider.id === "local";
+  if (provider.source === "own" && local) {
+    const key = provider.key_hint ? ` · key ends in ${provider.key_hint}` : "";
+    return `Connected · ${provider.base_url ?? ""}${key}`;
+  }
+  if (provider.source === "own") return `Connected · key ends in ${provider.key_hint ?? "…"}`;
+  if (local) return "Not connected. Save the endpoint's URL, and a key when it needs one.";
+  if (provider.source === "platform") {
+    return "Provided by the platform. Paste the organisation's key to run on it instead.";
+  }
+  return "Not connected. Paste the organisation's key.";
 }
 
 /** What a provider is for, and where its key comes from, as the setup shows them. */

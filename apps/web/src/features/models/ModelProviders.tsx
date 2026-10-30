@@ -24,7 +24,7 @@ import {
   toast,
 } from "@guildsrun/ui";
 import { ProviderLogo } from "./ProviderLogo";
-import { PROVIDER_META } from "./models";
+import { formatProviderState, PROVIDER_META } from "./models";
 
 const tokens = new Intl.NumberFormat("en", { notation: "compact" });
 
@@ -217,41 +217,9 @@ type ProviderCardProps = {
 
 /** One provider: its state, the connect form, and once connected the catalog to choose from. */
 function ProviderCard({ provider, models, canManage, onRemove, onDefault }: ProviderCardProps) {
-  const { org } = useIdentity();
-  const connect = useConnectModelProvider(org.id);
-  const [key, setKey] = useState("");
-  const [url, setUrl] = useState(provider.base_url ?? "");
   const [choosing, setChoosing] = useState(false);
-  const local = provider.id === "local";
   const own = provider.source === "own";
   const chosen = models.models.filter((model) => model.provider === provider.id);
-  const state = own
-    ? local
-      ? `Connected · ${provider.base_url ?? ""}${provider.key_hint ? ` · key ends in ${provider.key_hint}` : ""}`
-      : `Connected · key ends in ${provider.key_hint ?? "…"}`
-    : local
-      ? "Not connected. Save the endpoint's URL, and a key when it needs one."
-      : provider.source === "platform"
-        ? "Provided by the platform. Paste the organisation's key to run on it instead."
-        : "Not connected. Paste the organisation's key.";
-
-  const save = () => {
-    const body = {
-      provider: provider.id,
-      ...(key.trim() ? { api_key: key.trim() } : {}),
-      ...(local ? { base_url: url.trim() } : {}),
-    };
-    connect.mutate(body, {
-      onSuccess: () => {
-        setKey("");
-        toast({ kind: "success", title: `${provider.label} connected` });
-        setChoosing(true);
-      },
-      onError: (error) =>
-        toast({ kind: "error", title: `Couldn't connect ${provider.label}`, description: error.message }),
-    });
-  };
-  const canSave = local ? Boolean(url.trim()) && (Boolean(key.trim()) || url.trim() !== (provider.base_url ?? "")) : Boolean(key.trim());
 
   return (
     <section className="flex flex-col gap-3 rounded-xl bg-surface p-4">
@@ -259,7 +227,7 @@ function ProviderCard({ provider, models, canManage, onRemove, onDefault }: Prov
         <ProviderLogo provider={provider.id} size={44} />
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="text-md font-semibold">{provider.label}</span>
-          <span className="text-sm text-muted">{state}</span>
+          <span className="text-sm text-muted">{formatProviderState(provider)}</span>
           <span className="text-xs text-muted">{PROVIDER_META[provider.id].blurb}</span>
         </div>
         {own && canManage ? (
@@ -274,36 +242,7 @@ function ProviderCard({ provider, models, canManage, onRemove, onDefault }: Prov
         ) : null}
       </div>
       {canManage ? (
-        <form
-          className="flex flex-wrap items-end gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (canSave) save();
-          }}
-        >
-          {local ? (
-            <TextField
-              tone="paper"
-              label="Base URL"
-              placeholder="http://127.0.0.1:11434/v1"
-              className="min-w-60 flex-1"
-              value={url}
-              onChange={(event) => setUrl(event.currentTarget.value)}
-            />
-          ) : null}
-          <TextField
-            tone="paper"
-            label={local ? "API key (optional)" : "API key"}
-            type="password"
-            autoComplete="off"
-            className="min-w-60 flex-1"
-            value={key}
-            onChange={(event) => setKey(event.currentTarget.value)}
-          />
-          <Button type="submit" size="xl" disabled={!canSave || connect.isPending}>
-            {own ? "Replace" : "Connect"}
-          </Button>
-        </form>
+        <ProviderKeyForm provider={provider} onConnected={() => setChoosing(true)} />
       ) : (
         <p className="text-sm text-muted">Owners and admins manage model keys.</p>
       )}
@@ -324,6 +263,72 @@ function ProviderCard({ provider, models, canManage, onRemove, onDefault }: Prov
         />
       ) : null}
     </section>
+  );
+}
+
+type ProviderKeyFormProps = {
+  provider: OrgModelProvider;
+  /** After the provider is connected, to choose its models next. */
+  onConnected: () => void;
+};
+
+/** Connects a provider with the organisation's key, or replaces it; a local endpoint also takes its URL. */
+function ProviderKeyForm({ provider, onConnected }: ProviderKeyFormProps) {
+  const { org } = useIdentity();
+  const connect = useConnectModelProvider(org.id);
+  const [key, setKey] = useState("");
+  const [url, setUrl] = useState(provider.base_url ?? "");
+  const local = provider.id === "local";
+
+  const save = () => {
+    const body = {
+      provider: provider.id,
+      ...(key.trim() ? { api_key: key.trim() } : {}),
+      ...(local ? { base_url: url.trim() } : {}),
+    };
+    connect.mutate(body, {
+      onSuccess: () => {
+        setKey("");
+        toast({ kind: "success", title: `${provider.label} connected` });
+        onConnected();
+      },
+      onError: (error) =>
+        toast({ kind: "error", title: `Couldn't connect ${provider.label}`, description: error.message }),
+    });
+  };
+  const canSave = local ? Boolean(url.trim()) && (Boolean(key.trim()) || url.trim() !== (provider.base_url ?? "")) : Boolean(key.trim());
+
+  return (
+    <form
+      className="flex flex-wrap items-end gap-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (canSave) save();
+      }}
+    >
+      {local ? (
+        <TextField
+          tone="paper"
+          label="Base URL"
+          placeholder="http://127.0.0.1:11434/v1"
+          className="min-w-60 flex-1"
+          value={url}
+          onChange={(event) => setUrl(event.currentTarget.value)}
+        />
+      ) : null}
+      <TextField
+        tone="paper"
+        label={local ? "API key (optional)" : "API key"}
+        type="password"
+        autoComplete="off"
+        className="min-w-60 flex-1"
+        value={key}
+        onChange={(event) => setKey(event.currentTarget.value)}
+      />
+      <Button type="submit" size="xl" disabled={!canSave || connect.isPending}>
+        {provider.source === "own" ? "Replace" : "Connect"}
+      </Button>
+    </form>
   );
 }
 
