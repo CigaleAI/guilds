@@ -69,7 +69,9 @@ export function BuilderWorkspace() {
   return <Workspace key={sessionId} session={session.data} />;
 }
 
-function Workspace({ session }: { session: BuilderSession }) {
+type WorkspaceProps = { session: BuilderSession };
+
+function Workspace({ session }: WorkspaceProps) {
   const navigate = useNavigate();
   const messages = useBuilderMessages(session.id, session.generation_state !== "idle");
   const live = useBuilderStream(session.id, (detail) =>

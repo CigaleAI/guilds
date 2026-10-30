@@ -512,9 +512,6 @@
     },
     "complexity": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 3
     }
   },
   "src/features/builder/BuilderWorkspace.tsx": {
@@ -522,7 +519,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 2
+      "count": 1
     }
   },
   "src/features/builder/widgets.ts": {

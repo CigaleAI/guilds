@@ -20,17 +20,14 @@ const scopeLabel: Record<ConnectScope, string> = {
   agent: "Agent · at apply",
 };
 
-function WidgetCard({
-  kicker,
-  title,
-  children,
-  settled,
-}: {
+type WidgetCardProps = {
   kicker: string;
   title: string;
   children: ReactNode;
   settled: boolean;
-}) {
+};
+
+function WidgetCard({ kicker, title, children, settled }: WidgetCardProps) {
   return (
     <article
       className={cn(
@@ -55,13 +52,10 @@ type WidgetProps = {
   onReply: (message: string) => void;
 };
 
+type ConnectCardProps = WidgetProps & { widget: ConnectWidget };
+
 /** The coach asks for a login: connect it to the organisation now, or plan it for apply, or skip it. */
-export function ConnectCard({
-  widget,
-  answered,
-  live,
-  onReply,
-}: WidgetProps & { widget: ConnectWidget }) {
+export function ConnectCard({ widget, answered, live, onReply }: ConnectCardProps) {
   const { org } = useIdentity();
   const [picked, setPicked] = useState<string>(widget.server?.id ?? widget.servers[0]?.id ?? "");
   const [scope, setScope] = useState<ConnectScope>(widget.recommendedScope);
@@ -182,14 +176,10 @@ export function ConnectCard({
   );
 }
 
+type QuestionCardProps = WidgetProps & { widget: QuestionWidget; kicker?: string };
+
 /** The coach's questions: pick options or write an answer, then send them all at once. */
-export function QuestionCard({
-  widget,
-  answered,
-  live,
-  onReply,
-  kicker,
-}: WidgetProps & { widget: QuestionWidget; kicker?: string }) {
+export function QuestionCard({ widget, answered, live, onReply, kicker }: QuestionCardProps) {
   const [answers, setAnswers] = useState<Record<string, Answer>>({});
   const [sent, setSent] = useState(false);
   const settled = answered || sent;
