@@ -35,17 +35,12 @@ export type Approvals = {
  * One set of answers for the whole workspace: a request decided in the tray, a tab, the chat or
  * the Logins popover counts the same, and the coach continues as soon as the last one is decided.
  */
-export function useApprovals({
-  sessionId,
-  session,
-  messages,
-  drafts,
-}: {
-  sessionId: string;
-  session: StudioSession | undefined;
-  messages: readonly StudioMessage[] | undefined;
-  drafts: readonly StudioDraft[] | undefined;
-}): Approvals {
+export function useApprovals(
+  sessionId: string,
+  session: StudioSession | undefined,
+  messages: readonly StudioMessage[] | undefined,
+  drafts: readonly StudioDraft[] | undefined,
+): Approvals {
   const decideEdit = useDecideEdit(sessionId);
   const resolveLogin = useResolveStudioLogin(sessionId);
   const draftAction = useDraftAction(sessionId);
@@ -68,13 +63,7 @@ export function useApprovals({
           toast({ kind: "error", title: "Couldn't message the coach", description: error.message }),
       },
     );
-  useCarryOnWhenSettled({
-    proposals,
-    open: open.length,
-    reply,
-    ready: live && !post.isPending,
-    carryOn,
-  });
+  useCarryOnWhenSettled(proposals, reply, live && !post.isPending, carryOn);
 
   const decide = async (proposal: Proposal, accept: boolean) => {
     const widget = proposal.widget;
@@ -133,28 +122,28 @@ function partition<T>(items: readonly T[], test: (item: T) => boolean): [T[], T[
  * Sends the reply once the turn's last open request is decided while this page watches. A turn
  * that was already settled when the page opened waits for **Continue** instead.
  */
-function useCarryOnWhenSettled(turn: {
-  proposals: Proposal[];
-  open: number;
-  reply: string | null;
-  ready: boolean;
-  carryOn: () => void;
-}) {
-  const key = turn.proposals[0]?.seq ?? null;
+function useCarryOnWhenSettled(
+  proposals: readonly Proposal[],
+  reply: string | null,
+  ready: boolean,
+  carryOn: () => void,
+) {
+  const key = proposals[0]?.seq ?? null;
+  const open = proposals.filter((proposal) => proposal.state === "open").length;
   const seen = useRef<{ key: number | null; open: number; sent: boolean }>({
     key,
-    open: turn.open,
+    open,
     sent: false,
   });
   useEffect(() => {
     const previous = seen.current;
     const sameTurn = previous.key === key;
-    const settledNow = sameTurn && previous.open > 0 && turn.open === 0;
-    const send = settledNow && !previous.sent && turn.reply !== null && turn.ready;
-    if (send) turn.carryOn();
+    const settledNow = sameTurn && previous.open > 0 && open === 0;
+    const send = settledNow && !previous.sent && reply !== null && ready;
+    if (send) carryOn();
     seen.current = {
       key,
-      open: send || !settledNow ? turn.open : previous.open,
+      open: send || !settledNow ? open : previous.open,
       sent: (sameTurn && previous.sent) || send,
     };
   });

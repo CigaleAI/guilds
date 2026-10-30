@@ -55,7 +55,9 @@ export function ApprovalTray() {
   );
 }
 
-function TrayGroup({ place, proposals }: { place: ProposalPlace; proposals: Proposal[] }) {
+type TrayGroupProps = { place: ProposalPlace; proposals: Proposal[] };
+
+function TrayGroup({ place, proposals }: TrayGroupProps) {
   if (!proposals.length) return null;
   return (
     <section className="flex flex-col gap-1.5">
@@ -69,7 +71,9 @@ function TrayGroup({ place, proposals }: { place: ProposalPlace; proposals: Prop
   );
 }
 
-function TrayRow({ proposal }: { proposal: Proposal }) {
+type TrayRowProps = { proposal: Proposal };
+
+function TrayRow({ proposal }: TrayRowProps) {
   const { approvals, go } = useStudio();
   const disabled = !approvals.live || approvals.busy;
   const where = proposal.location;

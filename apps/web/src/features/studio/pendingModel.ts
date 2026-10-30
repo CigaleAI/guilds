@@ -180,10 +180,11 @@ function placeOf(widget: StudioWidget): Placed & Pick<Proposal, "label" | "alone
 function settle(
   widget: StudioWidget,
   metadata: Record<string, unknown>,
-  context: { drafts: readonly StudioDraft[]; granted: readonly string[] },
+  drafts: readonly StudioDraft[],
+  granted: readonly string[],
 ): Settled {
-  if (widget.kind === "draft") return draftState(widget, context.drafts);
-  if (widget.kind === "access") return loginState(widget, metadata, context.granted);
+  if (widget.kind === "draft") return draftState(widget, drafts);
+  if (widget.kind === "access") return loginState(widget, metadata, granted);
   return editState(widget, metadata);
 }
 
@@ -203,17 +204,17 @@ export function turnProposals(
   drafts: readonly StudioDraft[],
   granted: readonly string[],
 ): Proposal[] {
-  return proposalsOf(turnRequests(messages), { drafts, granted });
+  return proposalsOf(turnRequests(messages), drafts, granted);
 }
 
 /** Requests with where each is decided and what the operator answered. */
 export function proposalsOf(
   requests: readonly ProposalRequest[],
-  context: { drafts: readonly StudioDraft[]; granted: readonly string[] },
+  drafts: readonly StudioDraft[],
+  granted: readonly string[],
 ): Proposal[] {
-  const { drafts, granted } = context;
   return requests.map(({ seq, widget, metadata }) => {
-    const settled = settle(widget, metadata, { drafts, granted });
+    const settled = settle(widget, metadata, drafts, granted);
     return {
       seq,
       widget,

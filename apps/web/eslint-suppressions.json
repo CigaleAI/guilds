@@ -545,40 +545,16 @@
   "src/features/studio/AgentsSection.tsx": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 5
-    }
-  },
-  "src/features/studio/ApprovalTray.tsx": {
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
-  "src/features/studio/LoginsPopover.tsx": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/features/studio/MasterDetail.tsx": {
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/features/studio/ProposalCards.tsx": {
     "complexity": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 9
     }
   },
   "src/features/studio/StudioChat.tsx": {
     "complexity": {
       "count": 2
-    },
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/features/studio/StudioContext.tsx": {
@@ -599,7 +575,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 3
+      "count": 1
     }
   },
   "src/features/studio/activity/ActivityLedger.tsx": {
@@ -644,7 +620,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 3
+      "count": 1
     }
   },
   "src/features/studio/chatModel.ts": {
@@ -666,11 +642,6 @@
   "src/features/studio/location.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
-    }
-  },
-  "src/features/studio/pendingModel.ts": {
-    "no-restricted-syntax": {
-      "count": 2
     }
   },
   "src/features/studio/state/ReferencesMap.tsx": {

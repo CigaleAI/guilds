@@ -30,8 +30,10 @@ export function ProposalCard(props: CardProps) {
   return <EditCard {...props} widget={widget} />;
 }
 
+type ProposalPanelProps = { proposals: readonly Proposal[] };
+
 /** The requests that change what is open here, decided in place. */
-export function ProposalPanel({ proposals }: { proposals: readonly Proposal[] }) {
+export function ProposalPanel({ proposals }: ProposalPanelProps) {
   if (!proposals.length) return null;
   return (
     <div className="flex max-h-[45vh] shrink-0 flex-col gap-3 overflow-y-auto border-b border-line bg-surface px-4 py-3">
@@ -42,11 +44,13 @@ export function ProposalPanel({ proposals }: { proposals: readonly Proposal[] })
   );
 }
 
+type SettleAllProps = { open: readonly Proposal[]; disabled: boolean };
+
 /**
  * Apply all and Decline all over the open requests. Apply all leaves a login grant or an access
  * change that widens to be decided on its own, and says how many it left.
  */
-export function SettleAll({ open, disabled }: { open: readonly Proposal[]; disabled: boolean }) {
+export function SettleAll({ open, disabled }: SettleAllProps) {
   const { approvals } = useStudio();
   const together = open.filter((proposal) => !proposal.alone).length;
   const applyAll = async () => {
@@ -76,17 +80,14 @@ export function SettleAll({ open, disabled }: { open: readonly Proposal[]; disab
   );
 }
 
-function RequestCard({
-  title,
-  reason,
-  show,
-  children,
-}: {
+type RequestCardProps = {
   title: string;
   reason: string | undefined;
   show: ReactNode;
   children: ReactNode;
-}) {
+};
+
+function RequestCard({ title, reason, show, children }: RequestCardProps) {
   return (
     <article className="flex flex-col gap-3 self-start rounded-xl bg-t-sig p-4 text-fg">
       <div className="flex items-start gap-3">
@@ -101,8 +102,10 @@ function RequestCard({
   );
 }
 
+type ShowButtonProps = { proposal: Proposal; showable: boolean | undefined };
+
 /** Opens a request where it is decided: the agent's tab, the State item, Tools, or the guild. */
-function ShowButton({ proposal, showable }: { proposal: Proposal; showable: boolean | undefined }) {
+function ShowButton({ proposal, showable }: ShowButtonProps) {
   const { go } = useStudio();
   const where = proposal.location;
   if (!showable || !where) return null;
@@ -130,7 +133,9 @@ function useAnswer(proposal: Proposal) {
   };
 }
 
-function Outcome({ accepted, children }: { accepted: boolean; children: ReactNode }) {
+type OutcomeProps = { accepted: boolean; children: ReactNode };
+
+function Outcome({ accepted, children }: OutcomeProps) {
   return (
     <Tag tone={accepted ? "tide" : "well"} font="sans" className="self-start">
       {children}
@@ -138,7 +143,9 @@ function Outcome({ accepted, children }: { accepted: boolean; children: ReactNod
   );
 }
 
-function EditCard({ proposal, actionable, showable, widget }: CardProps & { widget: EditWidget }) {
+type EditCardProps = CardProps & { widget: EditWidget };
+
+function EditCard({ proposal, actionable, showable, widget }: EditCardProps) {
   const { session } = useStudio();
   const view = useStudioEdits(session.id, [proposal.seq])[0]?.data;
   const { disabled, answer } = useAnswer(proposal);
@@ -200,11 +207,13 @@ function EditCard({ proposal, actionable, showable, widget }: CardProps & { widg
   );
 }
 
+type EditDiffProps = { view: StudioEdit };
+
 /**
  * What a pending edit changes: the live text beside the proposal, per guild field for guild edits;
  * a table's definition and access written out line by line.
  */
-function EditDiff({ view }: { view: StudioEdit }) {
+function EditDiff({ view }: EditDiffProps) {
   if (view.error) return <p className="text-sm text-plum-t">{view.error}</p>;
   const { live, proposed } = view;
   if (typeof live === "string" || typeof proposed === "string" || !live || !proposed) {
@@ -235,7 +244,9 @@ function EditDiff({ view }: { view: StudioEdit }) {
   );
 }
 
-function AccessCard({ proposal, actionable, widget }: CardProps & { widget: AccessWidget }) {
+type AccessCardProps = CardProps & { widget: AccessWidget };
+
+function AccessCard({ proposal, actionable, widget }: AccessCardProps) {
   const { disabled, answer } = useAnswer(proposal);
   const connection = widget.connection;
   const decision = proposal.decision;
@@ -271,8 +282,10 @@ const draftOutcomeLabel: Record<string, string> = {
   superseded: "Replaced by a later draft",
 };
 
+type DraftCardProps = CardProps & { widget: DraftWidget };
+
 /** A Task draft: decided in its agent's Draft tab, where its diff, Publish, Edit and Discard are. */
-function DraftCard({ proposal, showable, widget }: CardProps & { widget: DraftWidget }) {
+function DraftCard({ proposal, showable, widget }: DraftCardProps) {
   const status = proposal.draft?.status;
   return (
     <RequestCard

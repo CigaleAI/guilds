@@ -24,8 +24,10 @@ import { DraftTab, openDraft, PromptTab } from "./tabs/TaskTabs";
 import { VersionsTab } from "./tabs/VersionsTab";
 import { warningLabel } from "./warnings";
 
+type AgentsSectionProps = { drafts: StudioDraft[] };
+
 /** The guild's topology, then one inspector per agent. */
-export function AgentsSection({ drafts }: { drafts: StudioDraft[] }) {
+export function AgentsSection({ drafts }: AgentsSectionProps) {
   const { agents, search } = useStudio();
   const agent = agents.find((item) => item.id === search.agent) ?? null;
   return (
@@ -47,8 +49,10 @@ export function AgentsSection({ drafts }: { drafts: StudioDraft[] }) {
   );
 }
 
+type AgentStripProps = { current: StudioAgent | null };
+
 /** Topology and each of the guild's agents, to point the inspector at. */
-function AgentStrip({ current }: { current: StudioAgent | null }) {
+function AgentStrip({ current }: AgentStripProps) {
   const { agents, go, approvals } = useStudio();
   const counts = countOpen(approvals.proposals, (proposal) =>
     proposal.place === "agents" ? proposal.agentId : null,
@@ -72,7 +76,9 @@ function AgentStrip({ current }: { current: StudioAgent | null }) {
   );
 }
 
-function AgentMarks({ agent, pending }: { agent: StudioAgent; pending: number }) {
+type AgentMarksProps = { agent: StudioAgent; pending: number };
+
+function AgentMarks({ agent, pending }: AgentMarksProps) {
   return (
     <>
       {pending ? <PillCount aria-label={`${pending} to approve`}>{pending}</PillCount> : null}
@@ -100,8 +106,10 @@ const stateLinks: { label: string; search: (agentId: string) => StudioSearch }[]
   },
 ];
 
+type AgentInspectorProps = { agent: StudioAgent; drafts: StudioDraft[] };
+
 /** One agent's tabs and the open tab's view. */
-function AgentInspector({ agent, drafts }: { agent: StudioAgent; drafts: StudioDraft[] }) {
+function AgentInspector({ agent, drafts }: AgentInspectorProps) {
   const { session, search, approvals } = useStudio();
   const waiting = countOpen(approvals.proposals, (proposal) =>
     proposal.agentId === agent.id && proposal.place === "agents"
@@ -174,14 +182,12 @@ const agentViews: Record<
   versions: ({ agent }) => <VersionsTab agent={agent} />,
 };
 
-function AgentView({
-  agent,
-  tab,
-  drafts,
-}: {
+type AgentViewProps = {
   agent: StudioAgent;
   tab: StudioAgentTab;
   drafts: StudioDraft[];
-}) {
+};
+
+function AgentView({ agent, tab, drafts }: AgentViewProps) {
   return agentViews[tab]({ agent, drafts });
 }

@@ -54,7 +54,9 @@ export function StudioWorkspace() {
   return <Workspace key={sessionId} sessionId={sessionId} />;
 }
 
-function Workspace({ sessionId }: { sessionId: string }) {
+type WorkspaceProps = { sessionId: string };
+
+function Workspace({ sessionId }: WorkspaceProps) {
   const search = useSearch({ from: "/studio/$sessionId" });
   const navigate = useNavigate();
   const session = useStudioSession(sessionId);
@@ -70,12 +72,7 @@ function Workspace({ sessionId }: { sessionId: string }) {
   const split = useMediaQuery(splitScreen);
   const [pane, setPane] = useState<"inspect" | "coach">("inspect");
   const [share, setShare] = useSplitShare(splitKey, 0.65);
-  const approvals = useApprovals({
-    sessionId,
-    session: session.data,
-    messages: messages.data,
-    drafts: drafts.data,
-  });
+  const approvals = useApprovals(sessionId, session.data, messages.data, drafts.data);
 
   const agents = inventory.data ?? [];
 
@@ -278,8 +275,10 @@ function Workspace({ sessionId }: { sessionId: string }) {
   );
 }
 
+type InspectorProps = { drafts: StudioDraft[]; pending: StudioDraft[] };
+
 /** The open section's view, under the coach's requests that wait in it. */
-function Inspector({ drafts, pending }: { drafts: StudioDraft[]; pending: StudioDraft[] }) {
+function Inspector({ drafts, pending }: InspectorProps) {
   const { search, approvals } = useStudio();
   if (search.section === "agents") return <AgentsSection drafts={drafts} />;
   return (

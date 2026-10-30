@@ -50,7 +50,9 @@ export function DetailHeader({ title, meta, actions, className }: DetailHeaderPr
   );
 }
 
+type EmptyProps = { children: ReactNode };
+
 /** Text shown where a list or its selection is empty. */
-export function Empty({ children }: { children: ReactNode }) {
+export function Empty({ children }: EmptyProps) {
   return <p className="px-2 py-6 text-center text-sm text-muted">{children}</p>;
 }

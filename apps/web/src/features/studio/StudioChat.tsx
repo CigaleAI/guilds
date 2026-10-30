@@ -171,21 +171,21 @@ export function StudioChat({ session, messages, live, pin, onUnpin }: StudioChat
   );
 }
 
+type RequestBatchProps = {
+  requests: ProposalRequest[];
+  answered: boolean;
+};
+
 /**
  * The requests one coach turn made, each on its own card, with Apply all and Decline all while
  * several are open. The coach continues with one reply once every request is answered.
  */
-function RequestBatch({
-  requests,
-  answered: done,
-}: {
-  requests: ProposalRequest[];
-  answered: boolean;
-}) {
+function RequestBatch({ requests, answered: done }: RequestBatchProps) {
   const { approvals } = useStudio();
   const seqs = new Set(requests.map((request) => request.seq));
   const current = approvals.proposals.filter((proposal) => seqs.has(proposal.seq));
-  const proposals = !done && current.length ? current : proposalsOf(requests, approvals);
+  const proposals =
+    !done && current.length ? current : proposalsOf(requests, approvals.drafts, approvals.granted);
   const open = done ? [] : proposals.filter((proposal) => proposal.state === "open");
   const idle = approvals.live && !approvals.busy;
 
