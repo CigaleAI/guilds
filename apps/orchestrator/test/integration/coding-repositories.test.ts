@@ -5,6 +5,7 @@ import { buildApp } from "../../src/app.js";
 import { decryptPayload } from "../../src/credentials/crypto.js";
 import { connect } from "../../src/seed/connect.js";
 import { mcpPool } from "../../src/mcp/pool.js";
+import { loginRetirement, type LoginFailure } from "../../src/mcp/service.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
 import { agentSchedules } from "../../src/schedules/service.js";
@@ -112,12 +113,21 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
   await notes.ensureSystemPrompt();
   const db = database.pool;
   await connectModelProvider(db, "org_home", "openrouter");
+  // The composed retirement, recording each login it retires.
+  const retired: Array<[string, LoginFailure]> = [];
+  const composed = loginRetirement(null, db);
   const app = await buildApp(database, {
     db,
     notes,
     scripts: agentScripts(db),
     schedules: agentSchedules(db),
     masterKey: Buffer.from(HEX_MASTER_KEY, "hex"),
+    loginRetirement: {
+      retireLogin: async (connection, failure) => {
+        retired.push([connection.id, failure]);
+        await composed.retireLogin(connection, failure);
+      },
+    },
   });
   try {
     const guild = await app.inject({ method: "POST", url: "/api/guilds", headers: JSON_HEADERS, payload: { name: "coders" } });
@@ -314,6 +324,7 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
     assert.equal(refused.statusCode, 422, refused.body);
     assert.equal(refused.json().detail, "GitHub refused the installation; the connection is now disconnected");
     assert.equal((await getMcpConnection(db, githubId))?.status, "disconnected");
+    assert.deepEqual(retired, [[githubId, "installation_gone"]], "the route retires through the composed service");
 
     // Deleting the connection removes the repositories added through it, and leaves the anonymous one.
     assert.equal(

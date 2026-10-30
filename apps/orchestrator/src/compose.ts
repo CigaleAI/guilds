@@ -24,6 +24,7 @@ import { coreModelCredentials } from "./llm/credentials.js";
 import { modelsService } from "./llm/models.js";
 import { layOutAgentHomes } from "./machines/layout.js";
 import { mcpPool, TOOLS_TTL_MS } from "./mcp/pool.js";
+import { loginRetirement } from "./mcp/service.js";
 import { NotesStore } from "./notes/store.js";
 import { startRuntimeMetrics } from "./observability/runtime.js";
 import { OPEN_POLICY } from "./policy/index.js";
@@ -234,6 +235,8 @@ export async function createServer(
       masterKey,
       instanceKeys,
       mcp,
+      // A login that stopped working is retired, and the pool forgets it.
+      loginRetirement: loginRetirement(mcp, db),
       generation,
       attachments,
       sandboxes,
