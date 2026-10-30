@@ -411,11 +411,6 @@
       "count": 1
     }
   },
-  "src/features/settings/SettingsPage.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/features/studio/AgentsSection.tsx": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
