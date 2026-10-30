@@ -23,6 +23,12 @@ test("cron reads as the server's label", () => {
   assert.equal(describeCron("not cron"), "not cron");
 });
 
+test("an expression of more or fewer than five fields reads as itself", () => {
+  assert.equal(describeCron("0 9 * *"), "0 9 * *");
+  assert.equal(describeCron("0  9 * * 1 2026"), "0 9 * * 1 2026");
+  assert.equal(describeCron(""), "");
+});
+
 test("a cron the describer has no words for reads as the expression itself", () => {
   assert.equal(describeCron("0 9 * * moon"), "0 9 * * moon");
   assert.equal(describeCron("0 9 32 * *"), "0 9 32 * *");

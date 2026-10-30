@@ -311,13 +311,24 @@ function describeCalendar(day: string, month: string, weekday: string): string {
   return days || mon || "";
 }
 
+/** The five fields of a cron expression, minute first. */
+type CronFields = { minute: string; hour: string; day: string; month: string; weekday: string };
+
+/** A cron expression's fields; null when it has more or fewer than five. */
+function cronFields(text: string): CronFields | null {
+  const [minute, hour, day, month, weekday, ...rest] = text.split(" ");
+  if (minute === undefined || hour === undefined || day === undefined) return null;
+  if (month === undefined || weekday === undefined || rest.length > 0) return null;
+  return { minute, hour, day, month, weekday };
+}
+
 export function describeCron(value: string): string {
   const text = value.split(/\s+/).filter(Boolean).join(" ");
-  const parts = text.split(" ");
-  if (parts.length !== 5) {
+  const fields = cronFields(text);
+  if (!fields) {
     return text;
   }
-  const [minute, hour, day, month, weekday] = parts as [string, string, string, string, string];
+  const { minute, hour, day, month, weekday } = fields;
   try {
     let label = describeTime(minute, hour);
     let when = describeCalendar(day, month, weekday);

@@ -35,11 +35,21 @@ import {
   harnessSubscriptionNote,
   listedHarnessModel,
   isHarness,
+  isHarnessEffort,
   showsHarnessImageNote,
 } from "../harness";
 import { HarnessReadiness } from "./HarnessReadiness";
 import { HarnessLogo } from "../HarnessLogo";
 import { BrowserFields, withBrowser } from "./BrowserFields";
+
+const THINKING_LEVELS = ["none", "low", "medium", "high"] as const satisfies ThinkingLevel[];
+
+/** Whether a value is a thinking level a model reasons at. */
+export function isThinkingLevel(value: unknown): value is ThinkingLevel {
+  const levels: readonly unknown[] = THINKING_LEVELS;
+  return levels.includes(value);
+}
+
 /** A new agent's settings, as the server defaults them; the model is the organisation's default, or the operator's choice. */
 export const defaultAgentConfig: AgentConfig = {
   model: "",
@@ -342,7 +352,9 @@ export function ModelFields({ form, onChange, errors }: FieldsProps) {
         }
         value={thinkingOff ? "none" : form.thinking}
         disabled={thinkingOff}
-        onValueChange={(value) => onChange({ thinking: value as ThinkingLevel })}
+        onValueChange={(value) => {
+          if (isThinkingLevel(value)) onChange({ thinking: value });
+        }}
         options={[
           { value: "none", label: "Off" },
           { value: "low", label: "Low" },
@@ -493,7 +505,7 @@ export function withCoding(
       ? { scripting: true }
       : { harness: "" as const, harness_model: "", harness_effort: "" as const }),
     ...(!coding && isCodingOnlyModel(form.model, models)
-      ? { model: models?.default ?? "", thinking: "none" as ThinkingLevel }
+      ? { model: models?.default ?? "", thinking: "none" as const }
       : {}),
     max_steps: form.max_steps === String(from.max_steps) ? String(to.max_steps) : form.max_steps,
     max_tool_calls:
@@ -595,12 +607,10 @@ function HarnessEffortField({ form, entry, onChange }: HarnessEffortFieldProps) 
       label="Effort"
       hint="How hard the model reasons before it answers."
       value={form.harness_effort || DEFAULT_EFFORT}
-      onValueChange={(value) =>
-        onChange({
-          ...form,
-          harness_effort: value === DEFAULT_EFFORT ? "" : (value as HarnessEffort),
-        })
-      }
+      onValueChange={(value) => {
+        if (value === DEFAULT_EFFORT) onChange({ ...form, harness_effort: "" });
+        else if (isHarnessEffort(value)) onChange({ ...form, harness_effort: value });
+      }}
       options={[
         { value: DEFAULT_EFFORT, label: defaultEffortLabel(listedHarnessModel(entry, model)) },
         ...efforts.map((effort) => ({ value: effort, label: effortLabels[effort] })),

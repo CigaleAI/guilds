@@ -1,7 +1,6 @@
 import { Link, useLocation } from "@tanstack/react-router";
 import { useAccess } from "../../api/queries/access";
 import { useGuildRepositories } from "../../api/queries/guilds";
-import type { GithubSelectedRepository } from "../../api/types/access";
 import { DocsLink } from "../../app/docs";
 import { useIdentity } from "../../app/identity";
 import { Button } from "@guildsrun/ui";
@@ -69,8 +68,8 @@ export function useGuildHasRepositories(guildId: string): boolean | null {
   const access = useAccess({ scope: "guild", id: guildId });
   if (!listed.data || !access.data) return null;
   const github = access.data.mcp.find((server) => server.slug === "github");
-  const picked = (github?.settings.repositories as GithubSelectedRepository[] | undefined) ?? [];
-  return listed.data.repositories.length > 0 || picked.length > 0;
+  const picked = github?.settings.repositories;
+  return listed.data.repositories.length > 0 || (Array.isArray(picked) && picked.length > 0);
 }
 
 type CodingRepositoriesProps = {

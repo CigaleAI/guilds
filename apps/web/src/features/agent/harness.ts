@@ -18,13 +18,17 @@ export const harnessLabels: Readonly<Record<Harness, string>> = Object.freeze({
 });
 
 /** The harnesses a coding agent can run, as select options. */
-export const harnessOptions = (Object.keys(harnessLabels) as Harness[]).map((harness) => ({
-  value: harness,
-  label: harnessLabels[harness],
-}));
+export const harnessOptions = Object.keys(harnessLabels)
+  .filter(isHarness)
+  .map((harness) => ({ value: harness, label: harnessLabels[harness] }));
 
 export function isHarness(value: unknown): value is Harness {
   return typeof value === "string" && Object.hasOwn(harnessLabels, value);
+}
+
+/** Whether a value is a reasoning effort a harness runs a model at. */
+export function isHarnessEffort(value: unknown): value is HarnessEffort {
+  return typeof value === "string" && Object.hasOwn(effortLabels, value);
 }
 
 /** A harness's label; the value itself when the app does not know it. */

@@ -24,7 +24,21 @@ type Rfb = {
   _clipboardServerCapabilitiesActions?: Record<number, boolean>;
 };
 
-type NovncWindow = Window & { guildsNovnc?: { rfb?: Rfb } };
+const RFB_METHODS = ["focus", "sendKey", "clipboardPasteFrom", "addEventListener"] as const;
+
+/** Whether a value is noVNC's RFB connection: it has every method the clipboard bridge calls. */
+export function isRfb(value: unknown): value is Rfb {
+  if (typeof value !== "object" || value === null) return false;
+  return RFB_METHODS.every((method) => typeof Reflect.get(value, method) === "function");
+}
+
+/** The RFB connection noVNC's UI exposes on the viewer's window once it connects; null before. */
+function novncConnection(viewer: Window): Rfb | null {
+  const ui: unknown = Reflect.get(viewer, "guildsNovnc");
+  if (typeof ui !== "object" || ui === null) return null;
+  const connection: unknown = Reflect.get(ui, "rfb");
+  return isRfb(connection) ? connection : null;
+}
 
 /** Hides noVNC's own controls so the desktop fills the pane. */
 const embedStyle = `
@@ -207,7 +221,7 @@ function Viewer({ agentId, name, nonce }: ViewerProps) {
   /** Hides noVNC's controls and exposes its RFB connection for the clipboard. */
   const onLoad = () => {
     const doc = frame.current?.contentDocument;
-    const win = frame.current?.contentWindow as NovncWindow | null | undefined;
+    const win = frame.current?.contentWindow;
     if (!doc || !win) return;
     if (!doc.getElementById("guilds-novnc-embed")) {
       const style = doc.createElement("style");
@@ -221,7 +235,7 @@ function Viewer({ agentId, name, nonce }: ViewerProps) {
     }
     const started = Date.now();
     const poll = () => {
-      const found = win.guildsNovnc?.rfb;
+      const found = novncConnection(win);
       if (found) {
         rfb.current = found;
         found.addEventListener("clipboard", (event) => setClip(event.detail.text ?? ""));

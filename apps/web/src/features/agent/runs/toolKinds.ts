@@ -239,7 +239,8 @@ export function isScriptRun(info: ToolCallInfo): boolean {
 }
 
 function isToolKind(value: unknown): value is ToolKind {
-  return (TOOL_KINDS as readonly unknown[]).includes(value);
+  const kinds: readonly unknown[] = TOOL_KINDS;
+  return kinds.includes(value);
 }
 
 /** The kind to show for any value: itself when it is a known kind, `unknown` otherwise. */

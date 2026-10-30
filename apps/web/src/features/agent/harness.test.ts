@@ -14,12 +14,29 @@ import {
   harnessEffortsFor,
   harnessLabel,
   harnessOffered,
+  harnessOptions,
+  isHarnessEffort,
   listedHarnessModel,
   NO_TOKEN_ALIAS,
   showsHarnessImageNote,
   tokenOptions,
   withTokenAlias,
 } from "./harness";
+
+test("a reasoning effort a harness runs at is an effort; any other value is not", () => {
+  assert.equal(isHarnessEffort("xhigh"), true);
+  assert.equal(isHarnessEffort("extreme"), false);
+  assert.equal(isHarnessEffort("toString"), false);
+  assert.equal(isHarnessEffort(3), false);
+});
+
+test("every harness is offered as an option under its label", () => {
+  assert.deepEqual(
+    harnessOptions.map((option) => option.value),
+    ["claude-code", "codex", "cursor", "antigravity"],
+  );
+  assert.equal(harnessOptions[0]?.label, "Claude Code");
+});
 
 test("a harness the machine's image lacks is unavailable; before the machine starts, none is", () => {
   assert.equal(harnessCarried(["codex"], "codex"), true);

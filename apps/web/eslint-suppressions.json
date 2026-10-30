@@ -15,9 +15,6 @@
     }
   },
   "src/features/agent/CodingRepositories.tsx": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
     "complexity": {
       "count": 1
     }
@@ -28,9 +25,6 @@
     }
   },
   "src/features/agent/browser/AgentBrowser.tsx": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
     "complexity": {
       "count": 1
     }
@@ -57,11 +51,6 @@
   },
   "src/features/agent/chat/runContext.ts": {
     "complexity": {
-      "count": 1
-    }
-  },
-  "src/features/agent/harness.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     }
   },
@@ -96,9 +85,6 @@
     }
   },
   "src/features/agent/routine/describeTiming.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
     "complexity": {
       "count": 1
     },
@@ -120,9 +106,6 @@
     }
   },
   "src/features/agent/runs/toolKinds.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
     "complexity": {
       "count": 1
     }
@@ -138,9 +121,6 @@
     }
   },
   "src/features/agent/settings/configForm.tsx": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 3
-    },
     "complexity": {
       "count": 2
     }
