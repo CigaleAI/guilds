@@ -25,7 +25,7 @@ import {
   type AgentSeat,
   type MachineSpec,
 } from "../../src/sandbox/index.js";
-import { SandboxError, wrapOpenSandbox } from "../../src/sandbox/sdk.js";
+import { openSandboxSdk, SandboxError, wrapOpenSandbox } from "../../src/sandbox/sdk.js";
 
 const STANDARD: MachineSpec = { id: "mach_1", orgId: "org_1", box: "standard", cpu: 1, memoryMib: 2048 };
 const SEAT: AgentSeat = { agentId: "a_1", machineId: "mach_1", slot: 2, browserLanguage: "fr-FR" };
@@ -168,8 +168,7 @@ test("waitForBrowser includes the start log", async () => {
     image: "agent-runtime:0.4",
     workspaceRoot: root,
     readySeconds: 1,
-    sleep: async () => undefined,
-  });
+  }, { sleep: async () => undefined });
   const fake = {
     id: "sbx_fake",
     commands: {
@@ -211,8 +210,7 @@ test("waitForBrowser navigates off guilds.run onto about:blank", async () => {
     image: "agent-runtime:0.4",
     workspaceRoot: root,
     readySeconds: 1,
-    sleep: async () => undefined,
-  });
+  }, { sleep: async () => undefined });
   const commands: string[] = [];
   const fake = {
     id: "sbx_fake",
@@ -332,6 +330,46 @@ test("wrapOpenSandbox maps JS SDK signatures onto the Python-used surface", asyn
   assert.equal(connectCall[1].sandboxId, "sbx_1");
 });
 
+test("wrapOpenSandbox refuses a manager or a sandbox the SDK returns in another shape", async () => {
+  const wrapped = wrapOpenSandbox({
+    SandboxManager: {
+      create() {
+        return null;
+      },
+    },
+    Sandbox: {
+      async create() {
+        return { id: 1, commands: {} };
+      },
+      async connect() {
+        return { id: "sbx_1", commands: { async run() { return {}; } }, kill: "now" };
+      },
+    },
+  });
+  const config = connectionConfig("http://opensandbox:8080", "guilds-dev");
+  await assert.rejects(async () => wrapped.SandboxManager.create(config), SandboxError);
+  await assert.rejects(() => wrapped.Sandbox.create("agent-runtime:0.4", {}), SandboxError);
+  await assert.rejects(() => wrapped.Sandbox.connect("sbx_1", {}), SandboxError);
+});
+
+test("openSandboxSdk refuses a module that does not export the SDK's calls", async () => {
+  const saved = process.env.OPENSANDBOX_SDK_MODULE;
+  process.env.OPENSANDBOX_SDK_MODULE = "node:path";
+  try {
+    await assert.rejects(openSandboxSdk, (error: unknown) => {
+      assert.ok(error instanceof SandboxError);
+      assert.match(error.message, /does not export SandboxManager\.create, Sandbox\.create and Sandbox\.connect/);
+      return true;
+    });
+  } finally {
+    if (saved === undefined) {
+      delete process.env.OPENSANDBOX_SDK_MODULE;
+    } else {
+      process.env.OPENSANDBOX_SDK_MODULE = saved;
+    }
+  }
+});
+
 test("runtime desktop is HD", () => {
   const text = readFileSync(path.join(repoRoot(import.meta.url), "runtime/agent-browser-start"), "utf8");
   assert.match(text, /GEOMETRY="\$\{BROWSER_GEOMETRY:-1280x720\}"/);
@@ -397,8 +435,7 @@ test("ensure runs one container per machine, at its size, with its directory at 
     apiKey: "test",
     image: "agent-runtime:0.4",
     workspaceRoot: root,
-    sdk: wrapped,
-  });
+  }, { sdk: wrapped });
   await sandboxes.start();
   const custom: MachineSpec = { id: "mach_2", orgId: "org_1", box: "custom", cpu: 3, memoryMib: 6144 };
   await sandboxes.ensure(STANDARD);
@@ -458,8 +495,7 @@ test("destroyAgentSandboxes kills the sandboxes that ran one agent, and no machi
     apiKey: "test",
     image: "agent-runtime:0.4",
     workspaceRoot: mkdtempSync(path.join(tmpdir(), "guilds-sandbox-")),
-    sdk: wrapped,
-  });
+  }, { sdk: wrapped });
   await sandboxes.start();
   assert.equal(await sandboxes.destroyAgentSandboxes(), 1);
   assert.deepEqual(killed, ["sbx_agent"]);
@@ -474,8 +510,7 @@ test("each agent's browser starts and stops on its own slot", async () => {
     image: "agent-runtime:0.4",
     workspaceRoot: mkdtempSync(path.join(tmpdir(), "guilds-sandbox-")),
     readySeconds: 1,
-    sleep: async () => undefined,
-  });
+  }, { sleep: async () => undefined });
   const fake = {
     id: "sbx_fake",
     commands: {

@@ -17,6 +17,14 @@ export type SweepEntry = {
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
+/** Arguments the sweep does not take; the message is its usage line. */
+export class SweepUsageError extends Error {
+  constructor() {
+    super("usage: sweep-workspaces.ts --age-days N [--apply]");
+    this.name = "SweepUsageError";
+  }
+}
+
 export function parseSweepArgs(argv: string[]): SweepArgs {
   let ageDays: number | undefined;
   let apply = false;
@@ -31,15 +39,15 @@ export function parseSweepArgs(argv: string[]): SweepArgs {
       index += 1;
       const parsed = raw ? Number(raw) : Number.NaN;
       if (!Number.isFinite(parsed) || parsed < 0 || !Number.isInteger(parsed)) {
-        throw new Error("usage: sweep-workspaces.ts --age-days N [--apply]");
+        throw new SweepUsageError();
       }
       ageDays = parsed;
       continue;
     }
-    throw new Error("usage: sweep-workspaces.ts --age-days N [--apply]");
+    throw new SweepUsageError();
   }
   if (ageDays === undefined) {
-    throw new Error("usage: sweep-workspaces.ts --age-days N [--apply]");
+    throw new SweepUsageError();
   }
   return { ageDays, apply };
 }

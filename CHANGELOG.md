@@ -8,6 +8,21 @@ commands for each effect are in
 
 ## Unreleased
 
+**Breaking for extensions.** `RunSandboxes` (`sandbox/index.js`)
+takes its server settings and what it calls as two arguments, a
+`SandboxHostSettings`, `{ url, apiKey, image, workspaceRoot, hostId,
+readySeconds }`, and an optional `SandboxDependencies`, `{ sdk, sleep
+}`, which `sandbox/index.js` exports:
+`new RunSandboxes({ url, apiKey, image, workspaceRoot }, { sdk })`.
+`applyRunScripts` takes the scripts saved during the run as
+`LiveScript` records, `{ name, source }` with both strings. A
+`sweep-workspaces` argument it does not take throws `SweepUsageError`
+(`sandbox/sweep.js`), whose message is the usage line. An OpenSandbox
+SDK module that does not export `SandboxManager.create`,
+`Sandbox.create` and `Sandbox.connect`, or a manager or sandbox it
+returns without its methods, throws `SandboxError` when it is loaded
+or returned.
+
 **No impact.** The agent's schedule tools refuse a `cron`, a window
 field, or a `schedule_update` `description` or `instruction` of the
 wrong type before anything is written, with the first mismatch named

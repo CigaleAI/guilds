@@ -3,9 +3,19 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { HARNESS_LIST, isHarness } from "../coding/harnesses.js";
 import type { Harness } from "../db/schema/index.js";
+import { isPlainRecord } from "../db/json.js";
 import { agentHome } from "../lib/agent-file.js";
 import { writeLog } from "../observability/log.js";
-import { agentDirectory, machineDirectory, machineSize, slotPorts, type MachineBox, type SlotPorts } from "../machines/index.js";
+import {
+  agentDirectory,
+  machineDirectory,
+  machineSize,
+  slotPorts,
+  type MachineBox,
+  type MachineRow,
+  type SlotPorts,
+} from "../machines/index.js";
+import type { AgentScript } from "../scripts/catalog.js";
 import { SCRIPTS_DIR } from "../scripts/validation.js";
 import { materialiseScripts } from "../scripts/materialise.js";
 import type { RunScriptSnapshot } from "../db/schema/index.js";
@@ -55,12 +65,11 @@ export function browserNeedsBlankReset(pagesJson: string): boolean {
     return HOST_HOME_RE.test(pagesJson);
   }
   const list = Array.isArray(pages) ? pages : [pages];
-  return list.some((page) => {
-    if (!page || typeof page !== "object") {
+  return list.some((page: unknown) => {
+    if (!isPlainRecord(page)) {
       return false;
     }
-    const record = page as { url?: unknown; title?: unknown };
-    return HOST_HOME_RE.test(String(record.url ?? "")) || HOST_HOME_RE.test(String(record.title ?? ""));
+    return HOST_HOME_RE.test(String(page.url ?? "")) || HOST_HOME_RE.test(String(page.title ?? ""));
   });
 }
 
@@ -84,17 +93,20 @@ export function prepareBrowserWorkspace(workspaceRoot: string, machineId: string
   return workspace;
 }
 
+/** A script the agent saved during its run, by its name and source. */
+export type LiveScript = Pick<AgentScript, "name" | "source">;
+
 export async function applyRunScripts(
   sandbox: SandboxHandle,
   home: string,
   snapshot: RunScriptSnapshot[] = [],
-  liveExtra: Array<{ name: unknown; source: unknown } | Record<string, unknown>> = [],
+  liveExtra: LiveScript[] = [],
 ): Promise<void> {
   const files = sandbox.files;
   if (!files) {
     return;
   }
-  await materialiseScripts(files, home, snapshot, liveExtra as Array<{ name: unknown; source: unknown }>);
+  await materialiseScripts(files, home, snapshot, liveExtra);
 }
 
 /** The machine a container runs: its id, organisation, tier, and size. */
@@ -107,13 +119,7 @@ export type MachineSpec = {
 };
 
 /** A machine row as the container it runs. */
-export function machineSpec(machine: {
-  id: string;
-  org_id: string;
-  box: MachineBox;
-  cpu: number | null;
-  memory_mib: number | null;
-}): MachineSpec {
+export function machineSpec(machine: Pick<MachineRow, "id" | "org_id" | "box" | "cpu" | "memory_mib">): MachineSpec {
   const size = machineSize(machine);
   return { id: machine.id, orgId: machine.org_id, box: machine.box, cpu: size.cpu, memoryMib: size.memory_mib };
 }
@@ -208,11 +214,11 @@ export function imageFingerprint(image: string): string {
   return createHash("sha256").update(image).digest("hex").slice(0, 16);
 }
 
+/** Where a machine's container comes from: the host that created it and the image it runs. */
+export type ContainerOrigin = { hostId?: string | undefined; image?: string };
+
 /** The labels a machine's container carries. */
-export function machineMetadata(
-  machine: MachineSpec,
-  options: { hostId?: string | undefined; image?: string } = {},
-): Record<string, string> {
+export function machineMetadata(machine: MachineSpec, origin: ContainerOrigin = {}): Record<string, string> {
   const resource = machineResource(machine);
   const metadata: Record<string, string> = {
     machine_id: machine.id,
@@ -220,11 +226,11 @@ export function machineMetadata(
     cpu: resource.cpu,
     memory: resource.memory,
   };
-  if (options.hostId) {
-    metadata.host_id = options.hostId;
+  if (origin.hostId) {
+    metadata.host_id = origin.hostId;
   }
-  if (options.image) {
-    metadata.image = imageFingerprint(options.image);
+  if (origin.image) {
+    metadata.image = imageFingerprint(origin.image);
   }
   return metadata;
 }
@@ -241,18 +247,17 @@ export function machineResource(machine: Pick<MachineSpec, "cpu" | "memoryMib">)
  * with `image`, the same image, since the helpers the tools call are part of it.
  */
 export function machineMatches(metadata: unknown, machine: MachineSpec, image?: string): boolean {
-  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+  if (!isPlainRecord(metadata)) {
     return false;
   }
-  const body = metadata as Record<string, unknown>;
-  if (image !== undefined && body.image !== imageFingerprint(image)) {
+  if (image !== undefined && metadata.image !== imageFingerprint(image)) {
     return false;
   }
   const resource = machineResource(machine);
-  return body.kind === machine.box && body.cpu === resource.cpu && body.memory === resource.memory;
+  return metadata.kind === machine.box && metadata.cpu === resource.cpu && metadata.memory === resource.memory;
 }
 
-export function endpointUrl(endpoint: { endpoint: string }): string {
+export function endpointUrl(endpoint: Pick<SandboxEndpoint, "endpoint">): string {
   let raw = endpoint.endpoint.trim();
   if (!raw.includes("://")) {
     raw = `http://${raw}`;
@@ -269,6 +274,26 @@ async function loadOpenSandbox(): Promise<OpenSandboxModule> {
   return openSandboxSdk();
 }
 
+/**
+ * The OpenSandbox server a manager drives and what it runs there: the image every machine runs,
+ * the root of the machines' directories, the host labelled on each container, and how many
+ * seconds a browser has to answer.
+ */
+export type SandboxHostSettings = {
+  url: string;
+  apiKey: string;
+  image: string;
+  workspaceRoot: string;
+  hostId?: string | undefined;
+  readySeconds?: number | undefined;
+};
+
+/** What a manager calls: the SDK, loaded on first use when absent, and the wait between browser probes. */
+export type SandboxDependencies = {
+  sdk?: OpenSandboxModule | undefined;
+  sleep?: ((ms: number) => Promise<void>) | undefined;
+};
+
 export class RunSandboxes {
   /** The image every machine runs: Chromium and the coding toolchains. */
   image: string;
@@ -282,23 +307,14 @@ export class RunSandboxes {
   /** The harness CLIs of each container this process created, by machine. */
   private carried = new Map<string, Harness[]>();
 
-  constructor(options: {
-    url: string;
-    apiKey: string;
-    image: string;
-    workspaceRoot: string;
-    hostId?: string | undefined;
-    sdk?: OpenSandboxModule | undefined;
-    sleep?: ((ms: number) => Promise<void>) | undefined;
-    readySeconds?: number | undefined;
-  }) {
-    this.image = options.image;
-    this.workspaceRoot = options.workspaceRoot;
-    this.hostId = options.hostId;
-    this.config = connectionConfig(options.url, options.apiKey);
-    this.sdk = options.sdk ?? null;
-    this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
-    this.readySeconds = options.readySeconds ?? BROWSER_READY_SECONDS;
+  constructor(settings: SandboxHostSettings, dependencies: SandboxDependencies = {}) {
+    this.image = settings.image;
+    this.workspaceRoot = settings.workspaceRoot;
+    this.hostId = settings.hostId;
+    this.config = connectionConfig(settings.url, settings.apiKey);
+    this.readySeconds = settings.readySeconds ?? BROWSER_READY_SECONDS;
+    this.sdk = dependencies.sdk ?? null;
+    this.sleep = dependencies.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   }
 
   private async module(): Promise<OpenSandboxModule> {
@@ -558,14 +574,9 @@ export class RunSandboxes {
     const manager = this.requireManager();
     const matches = await listSandboxes(manager, { states: ["Running"], pageSize: 100 });
     const machineIds = new Set<string>();
-    for (const info of matches) {
-      const metadata = info.metadata;
-      if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
-        continue;
-      }
-      const machineId = (metadata as { machine_id?: unknown }).machine_id;
-      if (typeof machineId === "string") {
-        machineIds.add(machineId);
+    for (const { metadata } of matches) {
+      if (isPlainRecord(metadata) && typeof metadata.machine_id === "string") {
+        machineIds.add(metadata.machine_id);
       }
     }
     return machineIds;
@@ -584,8 +595,7 @@ export class RunSandboxes {
     const manager = this.requireManager();
     let count = 0;
     for (const info of await listSandboxes(manager, { pageSize: 100 })) {
-      const metadata = info.metadata;
-      if (metadata && typeof metadata === "object" && !Array.isArray(metadata) && "agent_id" in metadata) {
+      if (isPlainRecord(info.metadata) && "agent_id" in info.metadata) {
         await killSandbox(manager, info.id);
         count += 1;
       }
