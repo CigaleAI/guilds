@@ -3,6 +3,7 @@ import { useGithubRepositories, useSetGithubRepositories } from "../../api/queri
 import type { GithubSelectedRepository, McpServerAccess } from "../../api/types/access";
 import { IconButton, Select, Tag, toast } from "@guildsrun/ui";
 import { repositoryNameFrom } from "../guild/repositories";
+import { selectedRepositories } from "./githubSettings";
 
 type GithubSettingsProps = {
   server: McpServerAccess;
@@ -18,9 +19,7 @@ export function GithubSettings({ server, owned }: GithubSettingsProps) {
   const save = useSetGithubRepositories(connectionId);
   const reachable = useGithubRepositories(connectionId || null);
   const selected =
-    (save.isPending ? save.variables : undefined) ??
-    (server.settings.repositories as GithubSelectedRepository[] | undefined) ??
-    [];
+    (save.isPending ? save.variables : undefined) ?? selectedRepositories(server.settings);
   const added = new Set(selected.map((item) => item.url.toLowerCase()));
   const pickable = (reachable.data ?? []).filter((item) => !added.has(item.url.toLowerCase()));
 

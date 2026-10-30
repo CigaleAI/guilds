@@ -1,20 +1,22 @@
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { LookupOption } from "../../api/types/access";
+import type { ConnectorFacts, LookupOption, McpServerAccess } from "../../api/types/access";
 import { Icon, SearchField, Select, TextField } from "@guildsrun/ui";
+import { isPlainObject } from "./toolArgs";
 
 const searchDelayMs = 300;
 
-type Schema = Record<string, unknown>;
+/** A connector's `settings_schema`: the JSON Schema of what a login stores beside its credentials. */
+type SettingsSchema = NonNullable<ConnectorFacts["settings_schema"]>;
 
 /** A login's settings, the document its connector's `settings_schema` describes. */
-export type SettingsValue = Record<string, unknown>;
+export type SettingsValue = McpServerAccess["settings"];
 
 /** Finds values for a property marked `x-lookup`; throws with the reason when it can't search. */
 export type SettingsSearch = (property: string, query: string) => Promise<LookupOption[]>;
 
 type SettingsFormProps = {
-  schema: Schema;
+  schema: SettingsSchema;
   value: SettingsValue;
   /** Omit for an inherited login's settings, which this scope can only read. */
   onChange?: (next: SettingsValue) => void;
@@ -22,8 +24,9 @@ type SettingsFormProps = {
   disabled?: boolean;
 };
 
-function record(value: unknown): Schema {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Schema) : {};
+/** A JSON value's fields: an object's own, none for any other value. */
+function record(value: unknown): Record<string, unknown> {
+  return isPlainObject(value) ? value : {};
 }
 
 /** What a stored value shows as: an object's name or symbol, else the value itself. */
@@ -63,7 +66,8 @@ export function SettingsForm({ schema, value, onChange, search, disabled }: Sett
           search: (query: string) => search(name, query),
         };
         if (property["x-lookup"] === true && property.type === "array") {
-          const items = Array.isArray(value[name]) ? (value[name] as unknown[]) : [];
+          const stored = value[name];
+          const items: unknown[] = Array.isArray(stored) ? stored : [];
           const max = typeof property.maxItems === "number" ? property.maxItems : undefined;
           return (
             <LookupList
