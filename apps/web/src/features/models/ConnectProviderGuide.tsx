@@ -2,8 +2,10 @@ import { Link } from "@tanstack/react-router";
 import { KeyRound } from "lucide-react";
 import { Button, EmptyState } from "@guildsrun/ui";
 
+type ConnectProviderGuideProps = { what?: string };
+
 /** Shown in place of a model picker while the organisation has no provider connected. */
-export function ConnectProviderGuide({ what = "an agent" }: { what?: string }) {
+export function ConnectProviderGuide({ what = "an agent" }: ConnectProviderGuideProps) {
   return (
     <EmptyState
       icon={KeyRound}

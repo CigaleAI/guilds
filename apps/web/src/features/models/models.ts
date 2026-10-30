@@ -2,13 +2,19 @@ import type { SelectOption, SelectOptionGroup } from "@guildsrun/ui";
 import type { ModelProvider, OrgModels } from "../../api/types/models";
 
 /**
+ * Which models a model picker offers: `current` is the value it holds, `coding` whether the agent
+ * it picks for has coding on, and `marketplaceOnly` whether it offers marketplace models alone.
+ */
+export type ModelPickerScope = { current?: string; coding?: boolean; marketplaceOnly?: boolean };
+
+/**
  * The picker's options: the organisation's chosen models grouped by provider. Coding rows appear
  * only for an agent with coding on; `marketplaceOnly` leaves them out whatever the agent. A
  * current value the organisation no longer offers stays listed as it is.
  */
 export function modelOptions(
   models: OrgModels | undefined,
-  options: { current?: string; coding?: boolean; marketplaceOnly?: boolean } = {},
+  options: ModelPickerScope = {},
 ): SelectOptionGroup[] {
   const current = options.current ?? "";
   if (!models) {
@@ -47,7 +53,7 @@ export function modelLabel(models: OrgModels | undefined, modelId: string): stri
 /** The organisation's default when the picker may list it, else nothing. */
 export function preselectedModel(
   models: OrgModels | undefined,
-  options: { coding?: boolean; marketplaceOnly?: boolean } = {},
+  options: Omit<ModelPickerScope, "current"> = {},
 ): string {
   const chosen = models?.default ?? "";
   if (!chosen) return "";

@@ -38,12 +38,14 @@ export function modelFacts(model: CatalogModel): string {
   return facts.join(" · ");
 }
 
+type ModelProvidersProps = { models: OrgModels; canManage: boolean };
+
 /**
  * The models the platform provides, then every provider split into marketplace and coding APIs.
  * The organisation connects a provider with its own key, ticks the models it offers from the
  * provider's catalog, and marks one marketplace model, its own or the platform's, as its default.
  */
-export function ModelProviders({ models, canManage }: { models: OrgModels; canManage: boolean }) {
+export function ModelProviders({ models, canManage }: ModelProvidersProps) {
   const { org } = useIdentity();
   const removeProvider = useRemoveModelProvider(org.id);
   const setDefault = useSetDefaultModel(org.id);
@@ -136,15 +138,7 @@ export function ModelProviders({ models, canManage }: { models: OrgModels; canMa
   );
 }
 
-function ProviderSection({
-  title,
-  intro,
-  providers,
-  models,
-  canManage,
-  onRemove,
-  onDefault,
-}: {
+type ProviderSectionProps = {
   title: string;
   intro: string;
   providers: OrgModelProvider[];
@@ -153,7 +147,17 @@ function ProviderSection({
   onRemove: (provider: ModelProvider) => void;
   /** Marks a chosen model as the default, or clears it with null; absent for providers that cannot hold it. */
   onDefault: ((model: string | null) => void) | null;
-}) {
+};
+
+function ProviderSection({
+  title,
+  intro,
+  providers,
+  models,
+  canManage,
+  onRemove,
+  onDefault,
+}: ProviderSectionProps) {
   return (
     <>
       <p className="text-sm text-fg-2">
@@ -174,18 +178,15 @@ function ProviderSection({
   );
 }
 
-/** A provider the platform provides: the models it offers the organisation, each one a possible default. */
-function PlatformCard({
-  provider,
-  models,
-  canManage,
-  onDefault,
-}: {
+type PlatformCardProps = {
   provider: OrgModelProvider;
   models: OrgModels;
   canManage: boolean;
   onDefault: (model: string | null) => void;
-}) {
+};
+
+/** A provider the platform provides: the models it offers the organisation, each one a possible default. */
+function PlatformCard({ provider, models, canManage, onDefault }: PlatformCardProps) {
   return (
     <section className="flex flex-col gap-3 rounded-xl bg-surface p-4">
       <div className="flex flex-wrap items-start gap-3">
@@ -206,20 +207,16 @@ function PlatformCard({
   );
 }
 
-/** One provider: its state, the connect form, and once connected the catalog to choose from. */
-function ProviderCard({
-  provider,
-  models,
-  canManage,
-  onRemove,
-  onDefault,
-}: {
+type ProviderCardProps = {
   provider: OrgModelProvider;
   models: OrgModels;
   canManage: boolean;
   onRemove: (provider: ModelProvider) => void;
   onDefault: ((model: string | null) => void) | null;
-}) {
+};
+
+/** One provider: its state, the connect form, and once connected the catalog to choose from. */
+function ProviderCard({ provider, models, canManage, onRemove, onDefault }: ProviderCardProps) {
   const { org } = useIdentity();
   const connect = useConnectModelProvider(org.id);
   const [key, setKey] = useState("");
@@ -330,20 +327,16 @@ function ProviderCard({
   );
 }
 
-/** The models a connected provider offers, with the default marked. */
-function ChosenModels({
-  provider,
-  chosen,
-  defaultModel,
-  canManage,
-  onDefault,
-}: {
+type ChosenModelsProps = {
   provider: OrgModelProvider;
   chosen: CatalogModel[];
   defaultModel: string | null;
   canManage: boolean;
   onDefault: ((model: string | null) => void) | null;
-}) {
+};
+
+/** The models a connected provider offers, with the default marked. */
+function ChosenModels({ provider, chosen, defaultModel, canManage, onDefault }: ChosenModelsProps) {
   if (!chosen.length) {
     return (
       <p className="text-sm text-muted">
@@ -381,14 +374,7 @@ function ChosenModels({
   );
 }
 
-/** The provider's catalog with a search over label and id; ticked rows become the chosen models. */
-export function CatalogPicker({
-  provider,
-  chosen,
-  onSaved,
-  saveLabel = "Save models",
-  requireOne = false,
-}: {
+type CatalogPickerProps = {
   provider: OrgModelProvider;
   chosen: string[];
   /** After the chosen models are saved, with what was saved. */
@@ -396,7 +382,16 @@ export function CatalogPicker({
   saveLabel?: string;
   /** Whether the save waits for at least one ticked row. */
   requireOne?: boolean;
-}) {
+};
+
+/** The provider's catalog with a search over label and id; ticked rows become the chosen models. */
+export function CatalogPicker({
+  provider,
+  chosen,
+  onSaved,
+  saveLabel = "Save models",
+  requireOne = false,
+}: CatalogPickerProps) {
   const { org } = useIdentity();
   const catalog = useProviderCatalog(org.id, provider.id, true);
   const connect = useConnectModelProvider(org.id);

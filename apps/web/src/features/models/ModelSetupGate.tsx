@@ -150,8 +150,10 @@ export function ModelSetupGate() {
   );
 }
 
+type StepHeaderProps = { provider: OrgModelProvider; step: Step; title: string };
+
 /** The three steps after picking a provider, with the current one marked. */
-function StepHeader({ provider, step, title }: { provider: OrgModelProvider; step: Step; title: string }) {
+function StepHeader({ provider, step, title }: StepHeaderProps) {
   return (
     <DialogHeader
       title={
@@ -180,13 +182,12 @@ function StepHeader({ provider, step, title }: { provider: OrgModelProvider; ste
   );
 }
 
-function PickProvider({
-  providers,
-  onPick,
-}: {
+type PickProviderProps = {
   providers: OrgModelProvider[];
   onPick: (provider: ModelProvider) => void;
-}) {
+};
+
+function PickProvider({ providers, onPick }: PickProviderProps) {
   const marketplace = providers.filter((item) => item.kind === "marketplace");
   const coding = providers.filter((item) => item.kind === "coding");
   const tile = (provider: OrgModelProvider) => (
@@ -228,15 +229,13 @@ function PickProvider({
   );
 }
 
-function ConnectProvider({
-  provider,
-  onBack,
-  onConnected,
-}: {
+type ConnectProviderProps = {
   provider: OrgModelProvider;
   onBack: () => void;
   onConnected: () => void;
-}) {
+};
+
+function ConnectProvider({ provider, onBack, onConnected }: ConnectProviderProps) {
   const { org } = useIdentity();
   const connect = useConnectModelProvider(org.id);
   const [key, setKey] = useState("");
@@ -314,15 +313,13 @@ function ConnectProvider({
   );
 }
 
-function PickDefault({
-  provider,
-  chosen,
-  onFinished,
-}: {
+type PickDefaultProps = {
   provider: OrgModelProvider;
   chosen: string[];
   onFinished: () => void;
-}) {
+};
+
+function PickDefault({ provider, chosen, onFinished }: PickDefaultProps) {
   const { org } = useIdentity();
   const models = useOrgModels(org.id);
   const setDefault = useSetDefaultModel(org.id);
