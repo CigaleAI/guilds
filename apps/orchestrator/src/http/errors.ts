@@ -34,6 +34,7 @@ import { SecretError } from "../secrets/service.js";
 import { StudioError } from "../studio/errors.js";
 import { UserError } from "../users/directory.js";
 import { UserValidationError } from "../users/index.js";
+import { SandboxProxyError } from "./sandbox-proxy.js";
 
 export class HttpError extends Error {
   status: number;
@@ -185,6 +186,7 @@ const REFUSALS = [
   RecipeError,
   ModelsError,
   RegistryError,
+  SandboxProxyError,
 ] as const;
 
 /** Domain errors for a value a validator refused, each a 422. */

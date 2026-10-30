@@ -2,7 +2,20 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import { inflateSync, gunzipSync } from "node:zlib";
 import { request as undiciRequest } from "undici";
 import WebSocket from "ws";
-import { HttpError } from "./errors.js";
+
+/**
+ * A request the sandbox proxy refuses, with the status it answers: a path outside the daemon's
+ * base is a 404, and a body the daemon marks with an encoding it is not in is a 502.
+ */
+export class SandboxProxyError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "SandboxProxyError";
+    this.status = status;
+  }
+}
 
 export const HOP_REQ = new Set([
   "host",
@@ -36,7 +49,7 @@ export function joinUpstream(base: string, pathPart: string, query: string): str
   const url = new URL(root);
   url.pathname = `${root.pathname}${pathPart}`;
   if (!url.pathname.startsWith(root.pathname)) {
-    throw new HttpError(404, "Not Found");
+    throw new SandboxProxyError("Not Found", 404);
   }
   if (query) {
     url.search = query.startsWith("?") ? query : `?${query}`;
@@ -78,7 +91,7 @@ async function requestBody(request: FastifyRequest): Promise<Buffer> {
   if (typeof body === "string") {
     return Buffer.from(body);
   }
-  if (body && typeof body === "object" && !Array.isArray(body) && Object.keys(body as object).length === 0) {
+  if (body && typeof body === "object" && !Array.isArray(body) && Object.keys(body).length === 0) {
     return Buffer.alloc(0);
   }
   if (body !== undefined && body !== null && typeof body === "object") {
@@ -87,28 +100,46 @@ async function requestBody(request: FastifyRequest): Promise<Buffer> {
   return Buffer.alloc(0);
 }
 
+/** The decoder for each `content-encoding` the proxy decodes. */
+const DECODERS = new Map<string, (body: Buffer) => Buffer>([
+  ["gzip", (body) => gunzipSync(body)],
+  ["x-gzip", (body) => gunzipSync(body)],
+  ["deflate", (body) => inflateSync(body)],
+]);
+
+/** `body` decoded by `decode`, or null when `body` is not in that encoding. */
+function decodedOrNull(body: Buffer, decode: (body: Buffer) => Buffer): Buffer | null {
+  try {
+    return decode(body);
+  } catch {
+    return null;
+  }
+}
+
+function looksGzipped(body: Buffer): boolean {
+  return body.length >= 2 && body[0] === 0x1f && body[1] === 0x8b;
+}
+
+/**
+ * The body a daemon sent, without its `content-encoding`. A body in an encoding the proxy decodes
+ * that does not decode is a `SandboxProxyError` 502. Any other body that starts as gzip does is
+ * gunzipped when it is gzip, and passed on as it is when it is not.
+ */
 function decodeUpstreamBody(body: Buffer, encoding: string | undefined): Buffer {
-  const enc = (encoding ?? "").toLowerCase();
-  if (enc === "gzip" || enc === "x-gzip") {
-    try {
-      return gunzipSync(body);
-    } catch {
-      return body;
-    }
+  if (body.length === 0) {
+    return body;
   }
-  if (enc === "deflate") {
-    try {
-      return inflateSync(body);
-    } catch {
-      return body;
+  const name = (encoding ?? "").toLowerCase();
+  const decode = DECODERS.get(name);
+  if (decode) {
+    const decoded = decodedOrNull(body, decode);
+    if (!decoded) {
+      throw new SandboxProxyError(`The sandbox daemon sent a body that is not valid ${name}`, 502);
     }
+    return decoded;
   }
-  if (body.length >= 2 && body[0] === 0x1f && body[1] === 0x8b) {
-    try {
-      return gunzipSync(body);
-    } catch {
-      return body;
-    }
+  if (looksGzipped(body)) {
+    return decodedOrNull(body, (gzipped) => gunzipSync(gzipped)) ?? body;
   }
   return body;
 }
@@ -121,34 +152,19 @@ export async function proxyHttp(
   pathPart: string,
 ): Promise<void> {
   const url = joinUpstream(base, pathPart, rawQuery(request));
-  const incoming: Record<string, string | string[] | undefined> = {};
-  for (const [key, value] of Object.entries(request.headers)) {
-    incoming[key] = value as string | string[] | undefined;
-  }
-  const outgoing = filterHeaders(incoming, HOP_REQ);
+  const outgoing = filterHeaders(request.headers, HOP_REQ);
   Object.assign(outgoing, extraHeaders);
   const body = await requestBody(request);
   const method = request.method.toUpperCase();
-  const init: {
-    method: "GET";
-    headers: Record<string, string>;
-    body?: Buffer;
-  } = {
-    method: method as "GET",
+  const upstream = await undiciRequest(url, {
+    method,
     headers: outgoing,
-  };
-  if (method !== "GET" && method !== "HEAD") {
-    init.body = body;
-  }
-  const upstream = await undiciRequest(url, init);
-  const rawHeaders: Record<string, string | string[] | undefined> = {};
-  for (const [key, value] of Object.entries(upstream.headers)) {
-    rawHeaders[key] = value as string | string[] | undefined;
-  }
+    body: method === "GET" || method === "HEAD" ? null : body,
+  });
   const encoding = Array.isArray(upstream.headers["content-encoding"])
     ? upstream.headers["content-encoding"][0]
     : upstream.headers["content-encoding"];
-  const headers = filterHeaders(rawHeaders, HOP_RESP);
+  const headers = filterHeaders(upstream.headers, HOP_RESP);
   reply.code(upstream.statusCode);
   for (const [key, value] of Object.entries(headers)) {
     reply.header(key, value);
@@ -189,29 +205,32 @@ export function requestedSubprotocol(request: FastifyRequest): string | null {
   return sandboxSubprotocol(requested) || null;
 }
 
-function sendUpstream(upstream: WebSocket, data: WebSocket.RawData, binary: boolean): void {
-  if (upstream.readyState !== WebSocket.OPEN) {
-    return;
+/** The bytes of a frame as ws delivers it: one buffer, the fragments of one, or an ArrayBuffer. */
+function frameBytes(data: WebSocket.RawData): Buffer {
+  if (Buffer.isBuffer(data)) {
+    return data;
   }
-  if (binary) {
-    const buf = Buffer.isBuffer(data)
-      ? data
-      : Array.isArray(data)
-        ? Buffer.concat(data)
-        : Buffer.from(data as ArrayBuffer);
-    upstream.send(buf, { binary: true });
-    return;
+  if (Array.isArray(data)) {
+    return Buffer.concat(data);
   }
-  const text =
-    typeof data === "string"
-      ? data
-      : Buffer.isBuffer(data)
-        ? data.toString("utf8")
-        : Array.isArray(data)
-          ? Buffer.concat(data).toString("utf8")
-          : Buffer.from(data as ArrayBuffer).toString("utf8");
-  upstream.send(text, { binary: false });
+  return Buffer.from(data);
 }
+
+/** Sends a frame on as binary or as UTF-8 text; a frame for a socket that is not open is dropped. */
+function sendFrame(target: WebSocket, data: WebSocket.RawData, binary: boolean): void {
+  if (target.readyState !== WebSocket.OPEN) {
+    return;
+  }
+  const bytes = frameBytes(data);
+  target.send(binary ? bytes : bytes.toString("utf8"), { binary });
+}
+
+/** The daemon a sandbox WebSocket is bridged to: its base URL, the headers it takes, and the path under it. */
+export type SandboxProxyTarget = {
+  base: string;
+  extraHeaders: Record<string, string>;
+  pathPart: string;
+};
 
 /**
  * Bridges a client WebSocket to a sandbox port. Client frames sent before the
@@ -221,7 +240,7 @@ function sendUpstream(upstream: WebSocket, data: WebSocket.RawData, binary: bool
 export function startSandboxWsProxy(
   socket: WebSocket,
   request: FastifyRequest,
-  resolve: () => Promise<{ base: string; extraHeaders: Record<string, string>; pathPart: string }>,
+  resolve: () => Promise<SandboxProxyTarget>,
   closeCode: (error: unknown) => number | undefined,
   onClientMessage?: () => void,
 ): void {
@@ -236,24 +255,16 @@ export function startSandboxWsProxy(
     }
     pending.push([data, binary]);
   });
+  // ws makes close() a no-op on a socket already closing or closed, so no close here is guarded.
   socket.on("error", () => {
-    try {
-      socket.close();
-    } catch {
-      /* already closed */
-    }
+    socket.close();
   });
   void (async () => {
     try {
       const target = await resolve();
-      sendUp = connectUpstream(socket, request, target.base, target.extraHeaders, target.pathPart, pending);
+      sendUp = connectUpstream(socket, request, target, pending);
     } catch (error) {
-      const code = closeCode(error);
-      try {
-        socket.close(code);
-      } catch {
-        /* already closed */
-      }
+      socket.close(closeCode(error));
     }
   })();
 }
@@ -261,64 +272,38 @@ export function startSandboxWsProxy(
 function connectUpstream(
   socket: WebSocket,
   request: FastifyRequest,
-  base: string,
-  extraHeaders: Record<string, string>,
-  pathPart: string,
+  target: SandboxProxyTarget,
   pending: Array<[WebSocket.RawData, boolean]>,
 ): (data: WebSocket.RawData, binary: boolean) => void {
   const subprotocol = requestedSubprotocol(request);
-  const url = wsUrl(joinUpstream(base, pathPart, rawQuery(request)));
+  const url = wsUrl(joinUpstream(target.base, target.pathPart, rawQuery(request)));
   const upstream = new WebSocket(url, subprotocol ? [subprotocol] : undefined, {
-    headers: extraHeaders,
+    headers: target.extraHeaders,
   });
-  const closeBoth = (code?: number) => {
-    try {
-      socket.close(code);
-    } catch {
-      /* already closed */
-    }
-    try {
-      upstream.close();
-    } catch {
-      /* already closed */
-    }
-  };
   const sendUp = (data: WebSocket.RawData, binary: boolean) => {
     if (upstream.readyState !== WebSocket.OPEN) {
       pending.push([data, binary]);
       return;
     }
-    sendUpstream(upstream, data, binary);
+    sendFrame(upstream, data, binary);
   };
   upstream.on("open", () => {
     for (const [data, binary] of pending.splice(0)) {
-      sendUpstream(upstream, data, binary);
+      sendFrame(upstream, data, binary);
     }
   });
   upstream.on("message", (data, isBinary) => {
-    const payload = Array.isArray(data) ? Buffer.concat(data) : data;
-    if (isBinary) {
-      socket.send(payload, { binary: true });
-      return;
-    }
-    socket.send(typeof payload === "string" ? payload : payload.toString(), { binary: false });
+    sendFrame(socket, data, isBinary);
   });
   upstream.on("error", () => {
-    closeBoth();
+    socket.close();
+    upstream.close();
   });
   upstream.on("close", () => {
-    try {
-      socket.close();
-    } catch {
-      /* already closed */
-    }
+    socket.close();
   });
   socket.on("close", () => {
-    try {
-      upstream.close();
-    } catch {
-      /* already closed */
-    }
+    upstream.close();
   });
   return sendUp;
 }

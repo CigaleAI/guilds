@@ -797,7 +797,8 @@ the agent id and the port from its slot. They preserve HTTP streaming,
 WebSocket binary/text forwarding, and the `binary` and `tty`
 subprotocols. The terminal proxy prepends the daemon's secret path
 segment upstream. They decode and strip `content-encoding` before
-streaming to the browser.
+streaming to the browser. A body that is not in the gzip or deflate
+encoding the daemon names answers 502.
 
 Client frames on either socket count as activity and restart the
 machine's idle timer, and the agent's Chrome timer, at most once
