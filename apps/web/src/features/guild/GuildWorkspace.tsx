@@ -78,7 +78,9 @@ export function GuildWorkspace() {
   const members = agents.data ?? noAgents;
   useSendQueuedMessages(guildId, members, state.data);
 
-  useEffect(() => writeStored(lastGuildKey, guildId), [guildId]);
+  useEffect(() => {
+    writeStored(lastGuildKey, guildId);
+  }, [guildId]);
 
   if (guild.isError) return <GuildLoadError error={guild.error} />;
 

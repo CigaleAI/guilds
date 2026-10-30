@@ -4,11 +4,6 @@
       "count": 2
     }
   },
-  "src/app/storage.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
   "src/features/coach/CoachLog.tsx": {
     "complexity": {
       "count": 1
