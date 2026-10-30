@@ -70,17 +70,20 @@ export function scheduleItem(row: ScheduleRow | AgentScheduleRow): ScheduleItem 
   };
 }
 
-export function scheduleWakeUserMessage(row: {
+/** A routine waking its agent: the routine's id and timing, the instruction it fires with, and when it last ran. */
+export type ScheduleWake = {
   id: string;
   timing: ScheduleTiming;
   instruction: string;
   previousRunAt: string | null;
-}): [UserMessage, ScheduleWakeMetadata] {
+};
+
+export function scheduleWakeUserMessage(wake: ScheduleWake): [UserMessage, ScheduleWakeMetadata] {
   const info = {
-    id: row.id,
-    ...(row.timing.cron ? { cron: row.timing.cron } : { window: row.timing.window }),
-    instruction: row.instruction,
-    previous_run_at: row.previousRunAt,
+    id: wake.id,
+    ...(wake.timing.cron ? { cron: wake.timing.cron } : { window: wake.timing.window }),
+    instruction: wake.instruction,
+    previous_run_at: wake.previousRunAt,
   };
   return [
     {
@@ -90,8 +93,8 @@ export function scheduleWakeUserMessage(row: {
     {
       generation: 1,
       source: "schedule",
-      schedule_id: row.id,
-      instruction_hash: instructionHash(row.instruction),
+      schedule_id: wake.id,
+      instruction_hash: instructionHash(wake.instruction),
     },
   ];
 }

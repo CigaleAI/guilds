@@ -1,7 +1,7 @@
 import type { AgentRow } from "../db/agents.js";
 import type { ScheduleRow } from "../db/schedules.js";
 import type { ChangeActor } from "../lib/change-actor.js";
-import type { ScheduleChanges, Schedules } from "./service.js";
+import type { RoutineDraft, ScheduleChanges, Schedules } from "./service.js";
 
 /** How a routine changed: created, edited, paused, resumed, or deleted. */
 export type RoutineChangeAction = "create" | "edit" | "pause" | "resume" | "delete";
@@ -14,13 +14,6 @@ export type RoutineWriteDeps = {
   schedules: Schedules;
   /** Tells the agent's guild that a routine changed; absent on a box with no guild stream. */
   publishRoutinesChanged?: (guildId: string, change: RoutineChange) => Promise<void>;
-};
-
-/** A new routine as an operator writes it: when it runs, what it is for, and what the agent is told. */
-export type RoutineDraft = {
-  when: { cron?: unknown; window?: unknown };
-  description: string;
-  instruction: string;
 };
 
 /** The agent whose routines an operator writes: its id, and the guild a change is announced to. */
@@ -45,7 +38,7 @@ export async function createRoutine(
   agent: RoutineAgent,
   draft: RoutineDraft,
 ): Promise<ScheduleRow> {
-  const row = await deps.schedules.create(actor, agent.id, draft.when, draft.description, draft.instruction);
+  const row = await deps.schedules.create(actor, agent.id, draft);
   await deps.publishRoutinesChanged?.(agent.guild_id, { agentId: agent.id, action: "create", scheduleId: row.id });
   return row;
 }

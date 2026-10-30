@@ -34,16 +34,17 @@ test("validateWindow normalises and bounds the window", () => {
     end: "02:00",
     max_wakes: 48,
   });
-  const cases: Array<[unknown, RegExp]> = [
+  const jittered = { ...PARIS, jitter: 1 };
+  const cases: Array<[WakeWindow, RegExp]> = [
     [{ ...PARIS, timezone: "Mars/Olympus" }, /IANA timezone/],
+    [{ ...PARIS, timezone: " " }, /IANA timezone/],
     [{ ...PARIS, start: "8:00" }, /window.start must be a 24-hour HH:MM time/],
     [{ ...PARIS, end: "24:00" }, /window.end must be a 24-hour HH:MM time/],
     [{ ...PARIS, end: "08:00" }, /must differ/],
     [{ ...PARIS, max_wakes: 0 }, /positive integer/],
     [{ ...PARIS, max_wakes: 2.5 }, /positive integer/],
     [{ ...PARIS, max_wakes: 145 }, /at most 144/],
-    [{ ...PARIS, jitter: 1 }, /unknown field jitter/],
-    ["08:00-20:00", /must be an object/],
+    [jittered, /unknown field jitter/],
   ];
   for (const [input, message] of cases) {
     assert.throws(
@@ -110,15 +111,15 @@ test("wakes stay at least five minutes apart", () => {
 });
 
 test("fires count within the window they land in", () => {
-  const due = new Date("2026-09-25T08:00:00Z");
+  const due = { at: new Date("2026-09-25T08:00:00Z"), windowFires: 5 };
   // Same window: the fire is the sixth.
-  const same = planWindowAfterFire(PARIS, due, 5, new Date("2026-09-25T08:00:05Z"), fixed(0.5));
+  const same = planWindowAfterFire(PARIS, due, new Date("2026-09-25T08:00:05Z"), fixed(0.5));
   assert.equal(same.windowFires, 6);
   // Late fire after the window closed: plan the next window from scratch.
-  const late = planWindowAfterFire(PARIS, due, 5, new Date("2026-09-25T19:00:00Z"), fixed(0));
+  const late = planWindowAfterFire(PARIS, due, new Date("2026-09-25T19:00:00Z"), fixed(0));
   assert.deepEqual(late, { at: new Date("2026-09-26T06:00:00Z"), windowFires: 0 });
   // Late fire that lands in the next day's window counts as its first.
-  const nextDay = planWindowAfterFire(PARIS, due, 5, new Date("2026-09-26T07:00:00Z"), fixed(0.5));
+  const nextDay = planWindowAfterFire(PARIS, due, new Date("2026-09-26T07:00:00Z"), fixed(0.5));
   assert.equal(nextDay.windowFires, 1);
 });
 

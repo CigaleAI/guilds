@@ -22,10 +22,7 @@ function collapseWs(value: string): string {
   return value.split(/\s+/).filter(Boolean).join(" ");
 }
 
-export function validateCron(value: unknown): string {
-  if (typeof value !== "string") {
-    throw new ScheduleError("cron must be a string");
-  }
+export function validateCron(value: string): string {
   const text = collapseWs(value);
   if (!text) {
     throw new ScheduleError("cron must contain a 5-field expression");
@@ -74,8 +71,9 @@ function timesOfDay(cron: string): number[] {
   return fires;
 }
 
-export function validateScheduleDescription(description: unknown): string {
-  if (typeof description !== "string") {
+/** A routine's description, whitespace collapsed; a missing one is refused. */
+export function validateScheduleDescription(description: string | undefined): string {
+  if (description === undefined) {
     throw new ScheduleError("description must be a string");
   }
   const text = collapseWs(description);
@@ -88,8 +86,9 @@ export function validateScheduleDescription(description: unknown): string {
   return text;
 }
 
-export function validateInstruction(instruction: unknown): string {
-  if (typeof instruction !== "string") {
+/** A routine's instruction, trimmed; a missing one is refused. */
+export function validateInstruction(instruction: string | undefined): string {
+  if (instruction === undefined) {
     throw new ScheduleError("instruction must be a string");
   }
   const text = instruction.trim();

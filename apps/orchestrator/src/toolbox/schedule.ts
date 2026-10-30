@@ -1,5 +1,8 @@
+import type { Static, TSchema } from "@sinclair/typebox";
 import { type ChangeActor, runActor } from "../lib/change-actor.js";
+import { decode } from "../lib/decode.js";
 import { ScheduleError } from "../schedules/cron.js";
+import { RoutineChangeInput, RoutineTimingInput, WakeWindowInput } from "../schedules/input.js";
 import { formatScheduleStamp, timingText } from "../schedules/item.js";
 import { scheduleChanges } from "../schedules/service.js";
 import { rowTiming } from "../schedules/timing.js";
@@ -33,8 +36,10 @@ function routineActor(run: ToolRun, call: ToolInvocation): ChangeActor {
   return runActor({ runId: run.run_id, agentName: run.agent_name }, { id: call.id, name: call.name });
 }
 
-/** What a new routine wakes on: a fixed UTC clock, or random times inside a daily window. */
-type RoutineTiming = { cron?: unknown; window?: unknown };
+/** The arguments `values` name as `schema` describes them; a mismatch is a ScheduleError naming it. */
+function routineArguments<T extends TSchema>(schema: T, values: unknown): Static<T> {
+  return decode(schema, values, (problem) => new ScheduleError(problem));
+}
 
 async function publish(services: ToolServices, run: ToolRun, action: string, scheduleId: string): Promise<void> {
   if (services.group_chat !== null && run.guild_id && services.group_chat.publish) {
@@ -50,16 +55,14 @@ async function createAndPublish(
   services: ToolServices,
   run: ToolRun,
   call: ToolInvocation,
-  when: RoutineTiming,
+  when: RoutineTimingInput,
 ): Promise<string> {
   const args = call.arguments;
-  const row = await schedules(services, run).create(
-    routineActor(run, call),
-    run.agent_id,
+  const row = await schedules(services, run).create(routineActor(run, call), run.agent_id, {
     when,
-    argString(args, "description"),
-    argString(args, "instruction"),
-  );
+    description: argString(args, "description"),
+    instruction: argString(args, "instruction"),
+  });
   await publish(services, run, "create", String(row.id));
   return `created ${row.id}  ${timingText(rowTiming(row))}\n${row.description}`;
 }
@@ -106,7 +109,8 @@ export const scheduleCreateCron: Tool = {
     ["cron", "description", "instruction"],
   ),
   async handler(services, run, _hooks, call) {
-    return createAndPublish(services, run, call, { cron: call.arguments.cron });
+    const when = routineArguments(RoutineTimingInput, { cron: call.arguments.cron });
+    return createAndPublish(services, run, call, when);
   },
 };
 
@@ -138,15 +142,9 @@ export const scheduleCreateWindow: Tool = {
     ["timezone", "start", "end", "max_wakes", "description", "instruction"],
   ),
   async handler(services, run, _hooks, call) {
-    const args = call.arguments;
-    return createAndPublish(services, run, call, {
-      window: {
-        timezone: args.timezone,
-        start: args.start,
-        end: args.end,
-        max_wakes: args.max_wakes,
-      },
-    });
+    const { timezone, start, end, max_wakes } = call.arguments;
+    const window = routineArguments(WakeWindowInput, { timezone, start, end, max_wakes });
+    return createAndPublish(services, run, call, { window });
   },
 };
 
@@ -220,7 +218,7 @@ export const scheduleUpdate: Tool = {
       routineActor(run, call),
       run.agent_id,
       argString(args, "schedule_id"),
-      scheduleChanges({ cron, window, description, instruction }),
+      scheduleChanges(routineArguments(RoutineChangeInput, { cron, window, description, instruction })),
     );
     await publish(services, run, "edit", String(row.id));
     const next = row.paused ? "paused" : `next ${formatScheduleStamp(row.next_run_at)}`;

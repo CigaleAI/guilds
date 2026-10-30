@@ -200,7 +200,7 @@ test("studio activity lists each wake with what started it and what it produced"
   );
 
   // A routine wake for desk that changes nothing.
-  const routine = await schedules.create(TEST_ACTOR, "a_desk", { cron: "0 * * * *" }, "Hourly check", "Check the leads.");
+  const routine = await schedules.create(TEST_ACTOR, "a_desk", { when: { cron: "0 * * * *" }, description: "Hourly check", instruction: "Check the leads." });
   const scheduleId = String(routine.id);
   await createScheduleRun(db,
     {

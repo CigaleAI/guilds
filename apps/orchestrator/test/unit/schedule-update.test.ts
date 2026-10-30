@@ -4,6 +4,7 @@ import { ScheduleError } from "../../src/schedules/cron.js";
 import {
   Schedules,
   changedFields,
+  scheduleChanges,
   type ScheduleDatabase,
   type ScheduleQueries,
 } from "../../src/schedules/service.js";
@@ -92,7 +93,17 @@ test("changed_fields_validates_each_field_it_changes", () => {
   assert.equal(next.paused, true);
   assert.throws(() => changedFields(ROW, { when: {} }), /exactly one of cron or window/);
   assert.throws(() => changedFields(ROW, { description: "" }), ScheduleError);
-  assert.throws(() => changedFields(ROW, { instruction: 4 }), ScheduleError);
+  assert.throws(() => changedFields(ROW, { instruction: "   " }), ScheduleError);
+});
+
+test("schedule_changes_names_only_the_fields_the_input_gives", () => {
+  assert.deepEqual(scheduleChanges({}), {});
+  assert.deepEqual(scheduleChanges({ description: "Daily", paused: false }), { description: "Daily", paused: false });
+  assert.deepEqual(scheduleChanges({ cron: "0 8 * * *", instruction: "Look." }), {
+    when: { cron: "0 8 * * *", window: null },
+    instruction: "Look.",
+  });
+  assert.deepEqual(scheduleChanges({ cron: null }), { when: { cron: null, window: null } });
 });
 
 test("row_timing_reads_a_cron_row_as_cron_timing", () => {
@@ -178,7 +189,7 @@ test("update_plans_a_new_wake_on_resume_and_none_while_paused", async () => {
 
 test("create_logs_the_new_routine", async () => {
   const { db, changes } = storeWith(ROW);
-  await new Schedules(db).create(ACTOR, "a_1", { cron: "0 9 * * 1" }, "Weekly sweep", "Sweep the feed.");
+  await new Schedules(db).create(ACTOR, "a_1", { when: { cron: "0 9 * * 1" }, description: "Weekly sweep", instruction: "Sweep the feed." });
   assert.equal(changes[0]?.operation, "create");
 });
 

@@ -74,7 +74,7 @@ test("an operator and an agent can change a routine in place", { timeout: 60_000
     assert.equal(agent.statusCode, 201, agent.body);
     const agentId = String(agent.json().id);
 
-    const routine = await schedules.create(TEST_ACTOR, agentId, { cron: "0 9 * * 1" }, "Weekly", "Do the pass.");
+    const routine = await schedules.create(TEST_ACTOR, agentId, { when: { cron: "0 9 * * 1" }, description: "Weekly", instruction: "Do the pass." });
     const scheduleId = String(routine.id);
     const url = `/api/agents/${agentId}/schedules/${scheduleId}`;
     const plannedAt = async () => {
