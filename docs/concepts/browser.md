@@ -59,11 +59,14 @@ the machine's public IP address, not from a setting.
 
 ### The browser tools
 
-With the browser on, the agent's runs offer eight browser tools. They
-drive the agent's Chrome through Playwright
-([Native tools](../tools-and-connectors/native.md)). The browser is
-not a binding: the switch alone decides whether these tools are
-offered, whatever the bindings say.
+With the browser on, the agent's runs offer the browser tools of its
+mode ([Native tools](../tools-and-connectors/native.md#browser)): the
+eight step-by-step tools, which drive the agent's Chrome through
+Playwright, or, with the agent-optimized browser on and the System One
+platform key on, `browse` and `browser_eval`. The agent's standing
+prompt describes the tools of that mode. The browser is not a binding:
+the switches alone decide which of these tools are offered, whatever
+the bindings say.
 
 ### Machine size
 
@@ -104,6 +107,18 @@ button. **Browser language** shows while the browser is on; changing
 it restarts the browser. The button is greyed out while off on a
 machine below the browser minimum, with a line naming both sizes.
 
+Under **Browser language**, **Agent-optimized browser** switches
+browsing to the `browse` tool. While the System One platform key is
+not on, the switch cannot be turned on and a **Not set up** line says
+what the key lacks; a platform admin gets **Set up**, which opens it
+under Admin, Platform keys. With the switch on, **Browser model** picks
+the model `browse` runs among the organisation's models that are not
+for coding agents only, starting on the organisation's default when it
+is one of them, else on the first. Turning the switch or the browser
+off clears the model. While the switch and the System One key are on,
+the agent's Tools tab lists `browse` and `browser_eval` under Browser
+in place of the step-by-step tools, as new runs offer them.
+
 **Browser login needed** strip: after a recipe apply that required a
 browser login, that agent's inspector shows a strip that says to take
 control of the agent's browser and log in to its site before it can
@@ -133,10 +148,11 @@ show it.
 ### Config keys
 
 - `browser` is whether this agent has its own Chrome on its machine.
-  Default false. It selects the Browser tab and the eight browser
-  tools: `browser_navigate`, `browser_snapshot`, `browser_click`,
+  Default false. It selects the Browser tab and the browser tools:
+  `browser_navigate`, `browser_snapshot`, `browser_click`,
   `browser_type`, `browser_fill`, `browser_scroll`,
-  `browser_screenshot`, and `browser_eval`.
+  `browser_screenshot`, and `browser_eval`, or `browse` and
+  `browser_eval` while the agent-optimized browser is on.
 - `browser_language` is Chrome's UI and Accept-Language when `browser`
   is on. Stored default `en-US`. It is one of these tags, else 422
   (`browser_language must be a supported Chrome language`): `ar`,
@@ -146,6 +162,18 @@ show it.
   `ro`, `ru`, `sk`, `sl`, `sr`, `sv`, `th`, `tr`, `uk`, `vi`, `zh-CN`,
   `zh-TW`. A stored config with a missing or unknown tag runs Chrome in
   `en-US`.
+- `browser_optimized` is whether browsing runs through the
+  agent-optimized `browse` tool instead of the step-by-step browser
+  tools. Default false; on without `browser` it is 422
+  (`browser_optimized requires browser`). A create with it on, or an
+  update that turns it on or changes `browser_model`, is 422 while the
+  System One platform key is not on. An update that leaves both as
+  they were saves whatever the key has become.
+- `browser_model` is the `provider/model` the agent-optimized browser
+  plans and reads with: not for coding agents only while
+  `browser_optimized` is on, else null, a 422 otherwise. On the same
+  create or update that checks the key, its provider must be connected
+  under Model keys, else 422.
 
 Turning `browser` on, on create or on update, is 422 when the agent's
 machine is below the browser minimum
@@ -158,7 +186,7 @@ Core sets no cap.
 ### Starting Chrome
 
 The orchestrator computes the slot's display and ports and runs
-`agent-browser-start <agent id> <display> <vnc port> <devtools port> <novnc port> <language>`
+`agent-browser-start <agent id> <display> <vnc port> <devtools port> <cdp relay port> <novnc port> <language>`
 on the machine. The helper starts, when they are not already
 answering:
 
@@ -169,9 +197,17 @@ answering:
   `--user-data-dir=/home/<agent id>/.browser`, and CDP on
   `127.0.0.1:<9300+slot>`
 - websockify serving noVNC on port `6100+slot`
+- gost relaying port `9400+slot` on every interface to Chrome's
+  loopback DevTools port, so the orchestrator reaches the agent's
+  Chrome over CDP through the sandbox host's endpoint; it sets the
+  Host of every request, the WebSocket upgrade included, to Chrome's
+  loopback address, because the sandbox host's proxy rebuilds the
+  Host from its own upstream address and Chrome serves only an IP
+  address or `localhost`
 
-It prints the two ports once both answer. Playwright in the image
-attaches to the agent's Chrome over its CDP port.
+It prints the noVNC and DevTools ports once noVNC, DevTools, and the
+relay answer. Playwright in the image attaches to the agent's Chrome
+over its loopback CDP port.
 
 `browser_screenshot` writes `screenshots/latest.jpg` in the agent's
 home.

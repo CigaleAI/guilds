@@ -1,6 +1,7 @@
 import type {
   AccessBinding,
   AgentAccess,
+  AgentConfig,
   BindingScope,
   CatalogKind,
   Instance,
@@ -94,6 +95,15 @@ export const BROWSER_NATIVE_TOOLS = [
   "browser_eval",
 ] as const;
 
+/**
+ * The agent-optimized browser's tools: offered in place of the step tools when the agent's browser
+ * runs that way.
+ */
+export const OPTIMIZED_BROWSER_NATIVE_TOOLS = ["browse", "browser_eval"] as const;
+
+/** Every browser tool, in either mode. */
+const ANY_BROWSER_NATIVE_TOOLS: readonly string[] = [...BROWSER_NATIVE_TOOLS, "browse"];
+
 /** Code tools: offered when the agent's coding capability is on; not bindings. */
 export const CODING_NATIVE_TOOLS = [
   "code_task",
@@ -107,15 +117,38 @@ export const CODING_NATIVE_TOOLS = [
 export const ALWAYS_NATIVE_TOOLS = ["report_issue"] as const;
 
 const CAPABILITY_NATIVE_TOOLS: readonly string[] = [
-  ...BROWSER_NATIVE_TOOLS,
+  ...ANY_BROWSER_NATIVE_TOOLS,
   ...CODING_NATIVE_TOOLS,
   ...ALWAYS_NATIVE_TOOLS,
 ];
 
 export type AgentNativeCapabilities = {
   browser?: boolean;
+  /** Whether the agent's browser runs as the agent-optimized browser. */
+  browser_optimized?: boolean;
   coding?: boolean;
 };
+
+/**
+ * Whether an agent's runs offer `browse`: its config turns the agent-optimized browser on and the
+ * integration `browse` waits for is on, as the server decides; otherwise they offer the
+ * step-by-step browser tools.
+ */
+export function offersOptimizedBrowser(
+  config: Pick<AgentConfig, "browser_optimized"> | undefined,
+  instance: Instance | undefined,
+): boolean {
+  return config?.browser_optimized === true && toolIntegrationGap(instance, "browse") === null;
+}
+
+/**
+ * The browser tools a Tools tab lists: those of the agent's browser mode, or every one where no
+ * agent's capabilities are in view.
+ */
+export function listedBrowserTools(capabilities?: AgentNativeCapabilities): readonly string[] {
+  if (!capabilities) return ANY_BROWSER_NATIVE_TOOLS;
+  return capabilities.browser_optimized ? OPTIMIZED_BROWSER_NATIVE_TOOLS : BROWSER_NATIVE_TOOLS;
+}
 
 /** Native tools by what they work on, in the platform's order. */
 const toolFamilies: { label: string; matches: (name: string) => boolean }[] = [
@@ -127,7 +160,7 @@ const toolFamilies: { label: string; matches: (name: string) => boolean }[] = [
   { label: "Routines", matches: (name) => name.startsWith("schedule_") },
   { label: "Group chat", matches: (name) => name.startsWith("group_") },
   { label: "Secrets", matches: (name) => name.startsWith("secret_") },
-  { label: "Browser", matches: (name) => name.startsWith("browser_") },
+  { label: "Browser", matches: (name) => name === "browse" || name.startsWith("browser_") },
   {
     label: "Coding",
     matches: (name) =>
@@ -143,17 +176,30 @@ export function isCapabilityNativeTool(name: string): boolean {
   return CAPABILITY_NATIVE_TOOLS.includes(name);
 }
 
-/** Bindable native tools plus the capability-gated ones the access payload omits. */
-export function withCapabilityNativeTools(tools: readonly AccessBinding[]): AccessBinding[] {
-  const names = new Set(tools.map((tool) => tool.name));
+/**
+ * Bindable native tools plus the capability-gated ones the access payload omits; of the browser
+ * tools, only those `listedBrowserTools` lists for the capabilities.
+ */
+export function withCapabilityNativeTools(
+  tools: readonly AccessBinding[],
+  capabilities?: AgentNativeCapabilities,
+): AccessBinding[] {
+  const browser = listedBrowserTools(capabilities);
+  const listed = tools.filter(
+    (tool) => !ANY_BROWSER_NATIVE_TOOLS.includes(tool.name) || browser.includes(tool.name),
+  );
+  const names = new Set(listed.map((tool) => tool.name));
+  const gated = [...browser, ...CODING_NATIVE_TOOLS, ...ALWAYS_NATIVE_TOOLS];
   return [
-    ...tools,
-    ...CAPABILITY_NATIVE_TOOLS.filter((name) => !names.has(name)).map((name) => ({
-      name,
-      enabled: true,
-      source_scope: null,
-      overlay: null,
-    })),
+    ...listed,
+    ...gated
+      .filter((name) => !names.has(name))
+      .map((name) => ({
+        name,
+        enabled: true,
+        source_scope: null,
+        overlay: null,
+      })),
   ];
 }
 
@@ -174,8 +220,9 @@ export function nativeToolDisplay(
       bindable: false,
     };
   }
-  if ((BROWSER_NATIVE_TOOLS as readonly string[]).includes(item.name)) {
+  if (ANY_BROWSER_NATIVE_TOOLS.includes(item.name)) {
     const on = capabilities?.browser;
+    const mode = item.name === "browse" ? "the agent-optimized browser" : "browser";
     return {
       enabled: on ?? true,
       caption:
@@ -183,7 +230,7 @@ export function nativeToolDisplay(
           ? on
             ? "Active via browser"
             : "Offered when browser is on"
-          : "Offered when an agent has browser on",
+          : `Offered when an agent has ${mode} on`,
       bindable: false,
     };
   }

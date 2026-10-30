@@ -6,10 +6,23 @@ import { GLOBAL_SCOPE, GLOBAL_SCOPE_ID } from "../db/usage.js";
 
 /**
  * What a usage row counts: a counter's, a month's, or a coach's conversations', each in its
- * columns' own form; a source without a column counts none of it.
+ * columns' own form; a source without a column counts none of it. The `browser_*` columns count
+ * `browse` calls, whose cost is also part of `cost_usd`.
  */
 export type UsageSource = Partial<
-  Record<"input_tokens" | "output_tokens" | "cache_read_tokens" | "cost_usd" | "calls" | "updated_at", unknown>
+  Record<
+    | "input_tokens"
+    | "output_tokens"
+    | "cache_read_tokens"
+    | "cost_usd"
+    | "calls"
+    | "browser_input_tokens"
+    | "browser_output_tokens"
+    | "browser_cost_usd"
+    | "browser_calls"
+    | "updated_at",
+    unknown
+  >
 >;
 
 /** Usage rows by key: a counter's scope key, or an organisation id. */
@@ -35,6 +48,16 @@ function formatUpdatedAt(value: unknown): unknown {
   return value;
 }
 
+/** A counted column's value as a number; 0 when the column is absent or null. */
+function countedValue(value: unknown): number {
+  return Number(value || 0);
+}
+
+/** A cost in dollars, rounded to the 8 decimal places a cost is recorded with. */
+function roundedCost(value: number): number {
+  return Number(value.toFixed(8));
+}
+
 export function usageFields(row: UsageSource | null | undefined): Record<string, unknown> {
   if (row === null || row === undefined) {
     return {
@@ -44,20 +67,26 @@ export function usageFields(row: UsageSource | null | undefined): Record<string,
       total_tokens: 0,
       cost_usd: 0.0,
       calls: 0,
+      browser_input_tokens: 0,
+      browser_output_tokens: 0,
+      browser_cost_usd: 0.0,
+      browser_calls: 0,
       updated_at: null,
     };
   }
-  const inputTokens = Number(row.input_tokens || 0);
-  const outputTokens = Number(row.output_tokens || 0);
-  const cacheRead = Number(row.cache_read_tokens || 0);
-  const cost = row.cost_usd;
+  const inputTokens = countedValue(row.input_tokens);
+  const outputTokens = countedValue(row.output_tokens);
   return {
     input_tokens: inputTokens,
     output_tokens: outputTokens,
-    cache_read_tokens: cacheRead,
+    cache_read_tokens: countedValue(row.cache_read_tokens),
     total_tokens: inputTokens + outputTokens,
-    cost_usd: Number(Number(cost || 0).toFixed(8)),
-    calls: Number(row.calls || 0),
+    cost_usd: roundedCost(countedValue(row.cost_usd)),
+    calls: countedValue(row.calls),
+    browser_input_tokens: countedValue(row.browser_input_tokens),
+    browser_output_tokens: countedValue(row.browser_output_tokens),
+    browser_cost_usd: roundedCost(countedValue(row.browser_cost_usd)),
+    browser_calls: countedValue(row.browser_calls),
     updated_at: formatUpdatedAt(row.updated_at),
   };
 }
@@ -66,18 +95,20 @@ export function addUsageFields(
   left: Record<string, unknown>,
   right: Record<string, unknown>,
 ): Record<string, unknown> {
-  const inputTokens = Number(left.input_tokens || 0) + Number(right.input_tokens || 0);
-  const outputTokens = Number(left.output_tokens || 0) + Number(right.output_tokens || 0);
-  const cacheRead = Number(left.cache_read_tokens || 0) + Number(right.cache_read_tokens || 0);
+  const sum = (key: string) => countedValue(left[key]) + countedValue(right[key]);
   const leftUpdated = left.updated_at;
   const rightUpdated = right.updated_at;
   return {
-    input_tokens: inputTokens,
-    output_tokens: outputTokens,
-    cache_read_tokens: cacheRead,
-    total_tokens: inputTokens + outputTokens,
-    cost_usd: Number((Number(left.cost_usd || 0) + Number(right.cost_usd || 0)).toFixed(8)),
-    calls: Number(left.calls || 0) + Number(right.calls || 0),
+    input_tokens: sum("input_tokens"),
+    output_tokens: sum("output_tokens"),
+    cache_read_tokens: sum("cache_read_tokens"),
+    total_tokens: sum("input_tokens") + sum("output_tokens"),
+    cost_usd: roundedCost(sum("cost_usd")),
+    calls: sum("calls"),
+    browser_input_tokens: sum("browser_input_tokens"),
+    browser_output_tokens: sum("browser_output_tokens"),
+    browser_cost_usd: roundedCost(sum("browser_cost_usd")),
+    browser_calls: sum("browser_calls"),
     updated_at: !leftUpdated ? rightUpdated : !rightUpdated ? leftUpdated : String(leftUpdated) >= String(rightUpdated) ? leftUpdated : rightUpdated,
   };
 }
@@ -87,25 +118,37 @@ export function subtractUsageFields(
   parts: Array<Record<string, unknown>>,
 ): Record<string, unknown> {
   const summed = parts.reduce((acc, part) => addUsageFields(acc, part), usageFields(null));
+  const rest = (key: string) => Math.max(0, countedValue(total[key]) - countedValue(summed[key]));
   return {
-    input_tokens: Math.max(0, Number(total.input_tokens || 0) - Number(summed.input_tokens || 0)),
-    output_tokens: Math.max(0, Number(total.output_tokens || 0) - Number(summed.output_tokens || 0)),
-    cache_read_tokens: Math.max(0, Number(total.cache_read_tokens || 0) - Number(summed.cache_read_tokens || 0)),
-    total_tokens: Math.max(0, Number(total.total_tokens || 0) - Number(summed.total_tokens || 0)),
-    cost_usd: Number(Math.max(0, Number(total.cost_usd || 0) - Number(summed.cost_usd || 0)).toFixed(8)),
-    calls: Math.max(0, Number(total.calls || 0) - Number(summed.calls || 0)),
+    input_tokens: rest("input_tokens"),
+    output_tokens: rest("output_tokens"),
+    cache_read_tokens: rest("cache_read_tokens"),
+    total_tokens: rest("total_tokens"),
+    cost_usd: roundedCost(rest("cost_usd")),
+    calls: rest("calls"),
+    browser_input_tokens: rest("browser_input_tokens"),
+    browser_output_tokens: rest("browser_output_tokens"),
+    browser_cost_usd: roundedCost(rest("browser_cost_usd")),
+    browser_calls: rest("browser_calls"),
     updated_at: total.updated_at ?? null,
   };
 }
 
+/** The fields whose being above zero means a usage line counted something. */
+const COUNTED_FIELDS = [
+  "input_tokens",
+  "output_tokens",
+  "cache_read_tokens",
+  "cost_usd",
+  "calls",
+  "browser_input_tokens",
+  "browser_output_tokens",
+  "browser_cost_usd",
+  "browser_calls",
+];
+
 function hasUsage(fields: Record<string, unknown>): boolean {
-  return (
-    Number(fields.input_tokens || 0) > 0 ||
-    Number(fields.output_tokens || 0) > 0 ||
-    Number(fields.cache_read_tokens || 0) > 0 ||
-    Number(fields.cost_usd || 0) > 0 ||
-    Number(fields.calls || 0) > 0
-  );
+  return COUNTED_FIELDS.some((key) => countedValue(fields[key]) > 0);
 }
 
 /** The row `key` has in `rows`, when the rows were given. */

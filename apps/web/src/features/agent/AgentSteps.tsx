@@ -146,6 +146,7 @@ export function ModelStep({
           form={form}
           onChange={setConfig}
           models={models}
+          errors={errors}
           machine={machine}
           codingToggle={codingToggle}
           savedCoding={savedCoding}

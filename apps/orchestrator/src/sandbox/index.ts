@@ -434,12 +434,15 @@ export class RunSandboxes {
     return keeper === null ? null : this.connect(keeper.id);
   }
 
-  /** Starts the agent's display, Chrome, and noVNC when they are not up, and waits until they answer. */
+  /**
+   * Starts the agent's display, Chrome, noVNC, and DevTools relay when they are not up, and waits
+   * until they answer.
+   */
   async startBrowser(sandbox: SandboxHandle, seat: AgentSeat): Promise<void> {
     const ports = seatPorts(seat);
     const command =
-      `${BROWSER_START} ${seat.agentId} ${ports.display} ${ports.vnc} ${ports.cdp} ${ports.novnc} `
-      + seat.browserLanguage;
+      `${BROWSER_START} ${seat.agentId} ${ports.display} ${ports.vnc} ${ports.cdp} ${ports.cdpRelay} `
+      + `${ports.novnc} ${seat.browserLanguage}`;
     // A start the sandbox cannot run is not reported here: the wait reports why the browser does not answer.
     await runOrNull(sandbox, command, this.readySeconds + 5);
     await this.waitForBrowser(sandbox, seat);
@@ -472,6 +475,18 @@ export class RunSandboxes {
       throw new SandboxError("sandbox cannot resolve endpoints");
     }
     const endpoint = await sandbox.getEndpoint(seatPorts(seat).novnc);
+    return [endpointUrl(endpoint), requestHeaders(endpoint, this.config)];
+  }
+
+  /**
+   * The upstream base and the host's headers for the agent's DevTools relay, which forwards to
+   * its Chrome's loopback DevTools port.
+   */
+  async cdpTarget(sandbox: SandboxHandle, seat: AgentSeat): Promise<[string, Record<string, string>]> {
+    if (!sandbox.getEndpoint) {
+      throw new SandboxError("sandbox cannot resolve endpoints");
+    }
+    const endpoint = await sandbox.getEndpoint(seatPorts(seat).cdpRelay);
     return [endpointUrl(endpoint), requestHeaders(endpoint, this.config)];
   }
 
@@ -517,7 +532,8 @@ export class RunSandboxes {
     const ports = seatPorts(seat);
     const command =
       `curl -sf -o /dev/null http://127.0.0.1:${ports.novnc}/vnc.html `
-      + `&& curl -sf -o /dev/null http://127.0.0.1:${ports.cdp}/json/version`;
+      + `&& curl -sf -o /dev/null http://127.0.0.1:${ports.cdp}/json/version `
+      + `&& curl -sf -o /dev/null http://127.0.0.1:${ports.cdpRelay}/json/version`;
     for (let attempt = 0; attempt < this.readySeconds; attempt += 1) {
       if (exitCodeOf(await runOrNull(sandbox, command, 5)) === 0) {
         await this.resetHostHomePage(sandbox, ports.cdp);
@@ -552,8 +568,12 @@ export class RunSandboxes {
       sandbox,
       `curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:${ports.cdp}/json/version || echo down`,
     );
+    const relay = await this.runText(
+      sandbox,
+      `curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:${ports.cdpRelay}/json/version || echo down`,
+    );
     const log = await this.runText(sandbox, `tail -n 80 ${agentRunDir(seat.agentId)}/browser.log || true`);
-    const parts = [`vnc=${vnc || "down"}`, `cdp=${cdp || "down"}`];
+    const parts = [`vnc=${vnc || "down"}`, `cdp=${cdp || "down"}`, `relay=${relay || "down"}`];
     if (log) {
       parts.push(log);
     }

@@ -39,7 +39,9 @@ export const SCHEDULE_TOOLS = [
   "schedule_resume",
   "schedule_delete",
 ] as const;
-export const BROWSER_TOOLS = [
+/** The browser-mode tools: what the browser switch offers in either of its modes, which no binding may name. */
+export const BROWSER_CAPABILITY_TOOLS = [
+  "browse",
   "browser_navigate",
   "browser_snapshot",
   "browser_click",
@@ -157,7 +159,7 @@ export function validateCatalog(catalogKind: string, catalogId: string): [string
     if (id === "report_issue") {
       throw new BindingError(`${id} is not a binding`);
     }
-    if (isOneOf(BROWSER_TOOLS, id)) {
+    if (isOneOf(BROWSER_CAPABILITY_TOOLS, id)) {
       throw new BindingError(`${id} is not a binding`);
     }
     if (!isOneOf(NATIVE_TOOLS, id)) {

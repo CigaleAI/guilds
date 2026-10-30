@@ -1,4 +1,5 @@
 import type { RuntimeAccess } from "../access/runtime.js";
+import { isOptimizedBrowserOn } from "../agents/config.js";
 import { RUN_PROJECTION_POLICY_VERSION } from "../conversation/projection.js";
 import type { GroupMessageRow } from "../db/group-chat.js";
 import type { AgentRow } from "../db/agents.js";
@@ -32,6 +33,7 @@ export function configSnapshot(
   const native = schemasFor(
     offeredToolNames(access.tools, {
       browser: config.browser,
+      browserOptimized: isOptimizedBrowserOn(config),
       coding: config.coding,
       scripting: config.scripting,
       memory: config.memory,

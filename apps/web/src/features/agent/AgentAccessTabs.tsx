@@ -1,6 +1,7 @@
 import { useParams } from "@tanstack/react-router";
-import { useAgent } from "../../api/queries";
+import { useAgent, useInstance } from "../../api/queries";
 import { AccessSecrets } from "../access/AccessSecrets";
+import { offersOptimizedBrowser } from "../access/access";
 import { AccessTools } from "../access/AccessTools";
 import { ReachList } from "../access/ReachList";
 import { capabilityOn } from "./settings/configForm";
@@ -9,12 +10,14 @@ import { capabilityOn } from "./settings/configForm";
 export function AgentToolsTab() {
   const { agentId } = useParams({ from: "/guilds/$guildId/agents/$agentId" });
   const agent = useAgent(agentId);
+  const instance = useInstance();
   return (
     <AccessTools
       owner={{ scope: "agent", id: agentId }}
       panes={["connections", "builtin"]}
       capabilities={{
         browser: capabilityOn(agent.data?.config, "browser"),
+        browser_optimized: offersOptimizedBrowser(agent.data?.config, instance.data),
         coding: capabilityOn(agent.data?.config, "coding"),
       }}
     />

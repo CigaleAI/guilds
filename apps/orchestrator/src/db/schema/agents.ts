@@ -61,6 +61,10 @@ export type AgentConfig = {
   max_workspace_mib: number;
   browser: boolean;
   browser_language: string;
+  /** Whether browsing runs through the agent-optimized `browse` tool instead of the step-by-step browser tools. */
+  browser_optimized: boolean;
+  /** The `{provider}/{model}` the agent-optimized browser plans and reads with; null unless `browser_optimized`. */
+  browser_model: string | null;
   coding: boolean;
   harness: Harness | null;
   /** The model the harness runs; null leaves it to the harness's subscription. */
@@ -207,6 +211,8 @@ export type RunMetadata = {
   host_id?: string;
   harness_task?: RunHarnessTask;
   resumed_at?: string;
+  /** When the run first generated with the agent-optimized browser on and the System One key not set. */
+  browse_integration_off_at?: string;
 };
 
 export const agents = pgTable(

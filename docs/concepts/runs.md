@@ -309,7 +309,9 @@ The complete tool schemas offered to the model:
 - `report_issue`, always;
 - the six schedule tools, when bound, on direct and group chat runs;
 - `group_post` when that binding is on;
-- the eight browser tools when `browser` is true;
+- the browser tools of its mode when `browser` is true: the eight
+  step-by-step tools, or `browse` and `browser_eval` while
+  `browser_optimized` and the System One platform key are on;
 - the five code tools when `coding` is true;
 - enabled MCP schemas, including curated lists from the CoinGecko,
   Alchemy, X, TwitterAPI.io, Qonto, and DexPaprika adapters, and a
@@ -442,7 +444,8 @@ stops the chain. The run payload carries `chain` and
 
 Committed assistant and tool rows are published over SSE after the
 database transaction. Reasoning and token deltas may stream first, and
-a running `code_task` streams its progress lines as `tool.progress`.
+a running `code_task` streams its progress lines, and a running
+`browse` call each of its steps, as `tool.progress`.
 History is the committed row. On reconnect the UI reloads ordered
 history, then consumes new events.
 

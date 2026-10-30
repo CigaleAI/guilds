@@ -8,8 +8,8 @@ import { formatCost } from "../runs/toolFormat";
 const count = new Intl.NumberFormat();
 
 /**
- * What the agent's model calls have used since it was made, and its disk: its home against its own
- * cap, and every home on its machine against the machine's cap.
+ * What the agent's model and browse calls have used since it was made, and its disk: its home
+ * against its own cap, and every home on its machine against the machine's cap.
  */
 export function AgentUsage() {
   const { agentId } = useParams({ from: "/guilds/$guildId/agents/$agentId" });
@@ -45,6 +45,14 @@ export function AgentUsage() {
                 { label: "Output tokens", value: count.format(usage.data.output_tokens) },
                 { label: "Total tokens", value: count.format(usage.data.total_tokens) },
                 { label: "Cache reads", value: count.format(usage.data.cache_read_tokens) },
+                ...(usage.data.browser_calls > 0
+                  ? [
+                      {
+                        label: `Browser, ${count.format(usage.data.browser_calls)} calls`,
+                        value: formatCost(usage.data.browser_cost_usd),
+                      },
+                    ]
+                  : []),
               ]}
             />
             <p className="text-xs text-muted">

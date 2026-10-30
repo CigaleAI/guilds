@@ -1,11 +1,13 @@
 #!/bin/bash
-# Usage: agent-browser-start <agent id> <display> <vnc port> <devtools port> <novnc port> <language>
+# Usage: agent-browser-start <agent id> <display> <vnc port> <devtools port> <cdp relay port> <novnc port> <language>
 #
 # Starts one agent's browser on its machine when it is not already answering: an Xtigervnc
-# display, Chrome with the agent's profile and DevTools port, and websockify serving noVNC. The
+# display, Chrome with the agent's profile and DevTools port on loopback, websockify serving
+# noVNC, and gost relaying the DevTools port from every interface on the relay port, with the
+# Host of each request set to Chrome's loopback address so Chrome serves it. The
 # orchestrator passes the display and ports its slot sets, so every agent on the machine has its
-# own. Prints the noVNC and DevTools ports once both answer. Idempotent: a second call on a live
-# browser prints the same; two calls at once take turns.
+# own. Prints the noVNC and DevTools ports once noVNC, DevTools, and the relay answer.
+# Idempotent: a second call on a live browser prints the same; two calls at once take turns.
 set -euo pipefail
 source "${BASH_SOURCE[0]%/*}/../lib/guilds/agent-lib.sh"
 
@@ -13,11 +15,13 @@ AGENT="${1:-}"
 DISPLAY_NUM="${2:-}"
 VNC_PORT="${3:-}"
 CDP_PORT="${4:-}"
-NOVNC_PORT="${5:-}"
-LANGUAGE="${6:-en-US}"
+RELAY_PORT="${5:-}"
+NOVNC_PORT="${6:-}"
+LANGUAGE="${7:-en-US}"
 if ! valid_agent "$AGENT" || ! valid_display "$DISPLAY_NUM" || ! valid_port "$VNC_PORT" \
-  || ! valid_port "$CDP_PORT" || ! valid_port "$NOVNC_PORT" || [[ ! "$LANGUAGE" =~ ^[A-Za-z0-9-]{2,16}$ ]]; then
-  echo "usage: agent-browser-start <agent id> <display> <vnc port> <devtools port> <novnc port> <language>" >&2
+  || ! valid_port "$CDP_PORT" || ! valid_port "$RELAY_PORT" || ! valid_port "$NOVNC_PORT" \
+  || [[ ! "$LANGUAGE" =~ ^[A-Za-z0-9-]{2,16}$ ]]; then
+  echo "usage: agent-browser-start <agent id> <display> <vnc port> <devtools port> <cdp relay port> <novnc port> <language>" >&2
   exit 2
 fi
 
@@ -32,7 +36,8 @@ READY_TENTHS=600
 
 ready() {
   curl -sf -o /dev/null "http://127.0.0.1:${NOVNC_PORT}/vnc.html" \
-    && curl -sf -o /dev/null "http://127.0.0.1:${CDP_PORT}/json/version"
+    && curl -sf -o /dev/null "http://127.0.0.1:${CDP_PORT}/json/version" \
+    && curl -sf -o /dev/null "http://127.0.0.1:${RELAY_PORT}/json/version"
 }
 
 resolve_chrome() {
@@ -82,7 +87,8 @@ clear_stale_display_lock() {
   rm -f "$lock" "/tmp/.X11-unix/X${DISPLAY_NUM}"
 }
 
-# The supervisor: the display, the window manager, noVNC, and Chrome, restarted when it exits.
+# The supervisor: the display, the window manager, noVNC, the DevTools relay, and Chrome,
+# restarted when it exits.
 # It leads its own process group, which agent-stop ends as one.
 supervise() {
   export DISPLAY=":${DISPLAY_NUM}"
@@ -107,6 +113,13 @@ supervise() {
 
   matchbox-window-manager -use_titlebar no >/dev/null 2>&1 &
   websockify --web "$NOVNC_ROOT" "$NOVNC_PORT" "127.0.0.1:${VNC_PORT}" &
+  # The sandbox host's proxy rebuilds the Host header from its own upstream address, and Chrome
+  # refuses a DevTools request whose Host is not an IP address or localhost, so gost sniffs each
+  # HTTP request, the WebSocket upgrade included, and sets its Host to Chrome's.
+  local relay_config
+  printf -v relay_config '{"services":[{"name":"cdp-relay","addr":":%s","handler":{"type":"tcp","metadata":{"sniffing":true}},"listener":{"type":"tcp"},"forwarder":{"nodes":[{"name":"chrome","addr":"127.0.0.1:%s","http":{"host":"127.0.0.1:%s"}}]}}]}' \
+    "$RELAY_PORT" "$CDP_PORT" "$CDP_PORT"
+  gost -C "$relay_config" &
 
   eval "$(python3 /usr/local/bin/guilds-locale --write-profile "$PROFILE")"
   export TZ LANG LANGUAGE CHROME_LANG CHROME_ACCEPT_LANG

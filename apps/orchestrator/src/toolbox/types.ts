@@ -2,6 +2,7 @@ import { DEFAULT_MAX_SCRIPTS } from "../agents/config.js";
 import type { Harness, Effort, ReportedToolMetadata } from "../db/schema/index.js";
 import { agentHome } from "../lib/agent-file.js";
 import type { ArtifactActor } from "../artifacts/types.js";
+import type { CdpTarget } from "../browse/bridge.js";
 import type { RunScriptSnapshot } from "../db/schema/index.js";
 import type { CommandResult } from "../sandbox/sdk.js";
 import type { ToolServices } from "./services.js";
@@ -147,6 +148,10 @@ export type ToolHooks = {
   track_command: ((executionId: string | null) => void) | null;
   /** Starts the agent's Chrome when it is not up and keeps it from its idle stop; null without a browser. */
   ensure_browser: (() => Promise<void>) | null;
+  /** Counts browser work under way as activity: the idle stops of the agent's Chrome and machine restart; null without a browser. */
+  touch_browser: (() => void) | null;
+  /** The upstream base and headers of the agent's DevTools relay; null without a browser. */
+  cdp_target: (() => Promise<CdpTarget>) | null;
   /** Runs before each `shell` command and harness poll: replaces repository tokens close to expiry. */
   before_command: (() => Promise<void>) | null;
   /** Saves values the agent produced as secrets of its organisation; null where the run cannot. */
@@ -201,9 +206,17 @@ export function callActor(actor: ArtifactActor | null, call: ToolInvocation): Ar
   return actor ? { ...actor, toolCall: { id: call.id, name: call.name } } : null;
 }
 
-/** Hooks that do nothing: the run's commands untracked, no browser to start, nothing run first, no secret store. */
+/** Hooks that do nothing: the run's commands untracked, no browser to start or reach, nothing run first, no secret store. */
 export function createToolHooks(partial: Partial<ToolHooks> = {}): ToolHooks {
-  return { track_command: null, ensure_browser: null, before_command: null, secret_store: null, ...partial };
+  return {
+    track_command: null,
+    ensure_browser: null,
+    touch_browser: null,
+    cdp_target: null,
+    before_command: null,
+    secret_store: null,
+    ...partial,
+  };
 }
 
 export type Tool = {

@@ -49,7 +49,7 @@ A repository that extends core holds this one as a submodule
 | `src/app.ts` | The Fastify app: the web build, `/storybook`, `/health`, `/avatars/:style.svg`, client-error intake, domain routes |
 | `drizzle/` | `0001_baseline` (with `0001.notes.md`), then numbered migrations ([PostgreSQL](orchestrator.md#postgresql)) |
 | `test/` | `unit/`, `integration/`, `contract/`, `helpers/` ([Tests](orchestrator.md#tests)) |
-| `scripts/` | `compat-verify`, `compat-digest`, `dump-baseline-schema`, `patch-http-mcp-catalog`, `build-connector`, `models-dev-snapshot`, `sweep-workspaces`, `typesafe-replay` |
+| `scripts/` | `compat-verify`, `compat-digest`, `dump-baseline-schema`, `patch-http-mcp-catalog`, `build-connector`, `models-dev-snapshot`, `sweep-workspaces`, `typesafe-replay`, `browse-spike` (one fastbrowse task on an agent's sandbox Chrome through the CDP bridge) |
 | `Dockerfile` | The core image: a `web` stage builds `apps/web` and Storybook; the final stage copies `src`, `scripts`, `drizzle`, and the web build |
 | `package.json` | `exports`: the modules another package may import |
 
@@ -59,7 +59,7 @@ A repository that extends core holds this one as a submodule
 | --- | --- |
 | `http/` | One `*-routes.ts` file per domain, registered in `routes.ts`; the `AUTH_MODE` seam (`identity.ts`), the host and origin check (`origin.ts`), the mapping of domain errors to HTTP (`errors.ts`), SSE, the sandbox proxies (`sandbox-proxy.ts`), and the web build (`web-app.ts`) |
 | `generation/` | `GenerationLoop`, a run's config snapshot and the prepared run it is created from (`snapshot.ts`), the tools a generation offers (`offered-tools.ts`), the tool calls of a run, run in order and resolved when a generation stops without their results (`tool-calls.ts`), its named errors and the failures it logs and carries on past (`errors.ts`), a run's event stream (`events.ts`), the machines' containers with their idle stops and each agent's Chrome and terminal (`machines.ts`), the preparation of a run's prompts and State (`prepare.ts`), the model calls with their history projection and cancel (`completion.ts`), the steps of a coding run and the diffs, logs, and harness checks read outside one (`coding.ts`), a coding agent's harness view and a run's changes as an operator reviews them (`run-review.ts`), the disk limits of an agent's home and its machine (`workspace.ts`), the secrets of the runs under way and the values their output is redacted with (`run-secrets.ts`), the creation of direct, group, schedule, and continuation runs and the scheduler (`runs.ts`), a generation from its setup through its model steps to its end (`generate.ts`), run chains and their hand-off (`chain.ts`), the generations in progress (`active-generations.ts`), idle stops (`idle.ts`), and the runs an operator opens and talks to (`operator.ts`) ([Generation](orchestrator.md#generation)) |
-| `toolbox/` | Native tools, their named errors (`errors.ts`), the sandbox command runner (`shell.ts`), the result pipeline (`output.ts`), and `code_task`: the call and its poll loop (`harness.ts`), the brief (`harness-brief.ts`), the harness checks (`harness-setup.ts`), the `guilds-harness` ops with the checkpoints and the kept log (`harness-ops.ts`), and the result the agent reads (`harness-result.ts`) ([Native tools](../tools-and-connectors/native.md)) |
+| `toolbox/` | Native tools, their named errors (`errors.ts`), the sandbox command runner (`shell.ts`), the result pipeline (`output.ts`), `browse` and its arguments (`browse.ts`), and `code_task`: the call and its poll loop (`harness.ts`), the brief (`harness-brief.ts`), the harness checks (`harness-setup.ts`), the `guilds-harness` ops with the checkpoints and the kept log (`harness-ops.ts`), and the result the agent reads (`harness-result.ts`) ([Native tools](../tools-and-connectors/native.md)) |
 | `connectors/` | One folder per connector, the manifest schema, the adapter contract, the connector registry, the servers configured from them and the tools each offers (`servers.ts`), the naming of their tools (`naming.ts`), the platform logins and integrations they bring and each integration's status as an operator or the instance admin sees it (`instance.ts`), and the instance admin's writes and removals of a store integration's values (`instance-keys.ts`) ([Connectors](../tools-and-connectors/connectors.md)) |
 | `registry/` | Installing connectors from a registry, the code tier, and the instance admin's registry view and changes, each served in this process without a restart (`admin.ts`) ([Connector registry](../tools-and-connectors/connector-registry.md)) |
 | `mcp/` | `McpPool`, the catalog and its policy, the catalog's servers as the instance admin and an organisation's managers change them (`servers.ts`), an operator's direct tool call (`operator-call.ts`), the logins an operator reads, uses and sets up, with the GitHub login an operator sees (`connections.ts`), a server, a login and a binding as the API shows them (`view.ts`), who sees a connector and a login (`visibility.ts`), and the connect flows: a token login connected (`connect-token.ts`), a login started (`connect-start.ts`), the provider's callback (`connect-callback.ts`), a GitHub App installation traded, picked or installed (`github-install.ts`), and the box's GitHub App registered from a manifest (`github-app-manifest.ts`) |
@@ -79,10 +79,11 @@ A repository that extends core holds this one as a submodule
 | `prompts/` | Prompt composition and the `system.md` and `task.md` templates ([System prompt](../concepts/system-prompt.md)) |
 | `state/` | The State JSON a run sees |
 | `groupchat/` | `GroupChat`: posts, clears, the event stream, and the dispatcher (`index.ts`); group history (`history.ts`); tags (`tags.ts`); the recipient rules (`recipients.ts`) and the recipient router (`router.ts`); the deliveries the dispatcher starts and the runs an interruption stops (`delivery.ts`); the message a woken group run reads (`wake.ts`); and what an operator reads and posts (`operator.ts`) ([Group chat](../concepts/group-chat.md)) |
-| `typesafe/` | The group routing client |
+| `typesafe/` | The System One client, which group routing asks |
 | `schedules/` | Routine timing, the `Schedules` service, and the routine writes an operator makes, each announced to the agent's guild (`operator.ts`) ([Routines](../concepts/routines.md)) |
 | `scripts/` | The agent `script` catalog, its materialisation, and the listing an operator reads and the script writes an operator makes, each write announced to the agent's guild (`operator.ts`) ([Scripts](../concepts/scripts.md)) |
 | `sandbox/` | `RunSandboxes`, core's sandbox provider (`index.ts`), the OpenSandbox SDK adapter: its shapes, the readers of a command result's fields under either spelling, its loading, and the wrappers over its JS signatures (`sdk.ts`), and the orphan sweep (`sweep.ts`) |
+| `browse/` | The agent-optimized browser: the `browse` call's service (`service.ts`), the fastbrowse run (`runner.ts`), fastbrowse's environment from the System One key and the browser model's credentials (`env.ts`), the result text and step lines (`format.ts`), browser usage from fastbrowse's cost lines (`cost.ts`), and the loopback CDP bridge to an agent's DevTools relay (`bridge.ts`) |
 | `llm/` | Providers, the models.dev catalog, credentials, the model client, tokens, and cost ([Model client](orchestrator.md#model-client)) |
 | `policy/` | `OrgPolicy` and the checks core runs against it |
 | `avatars/` | [DiceBear](https://www.dicebear.com/) SVGs in seven styles (critters, cameo, pixelbot, bottts-neutral, clay, cutouts, voxel-bot); `looks.ts` assigns a guild family and a variant per builder role |
@@ -101,7 +102,7 @@ A repository that extends core holds this one as a submodule
 | `cli/` | `seed:system`, `seed:operator`, `migrate`, and `pnpm connector` |
 | `observability/` | Logs, request ids, client-error intake, Sentry, and runtime metrics ([Observability](orchestrator.md#observability)) |
 | `net/` | Outbound HTTP and endpoint validation |
-| `lib/` | Shared helpers: ids, paths, locks, the event queue, the clock, JSON, names, numbers, change actors (`change-actor.ts`), an agent's home files (`agent-file.ts`), and the blob store under attachments and shared files (`blob-store.ts`) |
+| `lib/` | Shared helpers: ids, paths, locks, the event queue, the clock, JSON, names, numbers, change actors (`change-actor.ts`), an agent's home files (`agent-file.ts`), the blob store under attachments and shared files (`blob-store.ts`), and the headers a forwarding proxy leaves out with the WebSocket URL of an HTTP upstream (`forwarding.ts`) |
 
 ## `apps/web/`
 
@@ -164,7 +165,7 @@ helper that acts for one agent takes its id, or reads its home from
 
 | Path | What it is |
 | --- | --- |
-| `Dockerfile` | `python:3.12-slim` plus Chromium or Chrome, TigerVNC, noVNC, ttyd, Playwright 1.52.0, Node.js 24, build tools, GitHub CLI, mise, the coding harnesses, and the helpers below. Codex (`CODEX_VERSION`) is always installed. Claude Code, the Cursor CLI, and the Antigravity CLI (`CLAUDE_CODE_VERSION`, `CURSOR_VERSION`, `ANTIGRAVITY_VERSION`) are installed when the `HARNESSES` build argument names them, which its default does. The harness CLIs it carries are listed at `/usr/local/share/guilds/harnesses` |
+| `Dockerfile` | `python:3.12-slim` plus Chromium or Chrome, TigerVNC, noVNC, ttyd, gost, Playwright 1.52.0, Node.js 24, build tools, GitHub CLI, mise, the coding harnesses, and the helpers below. Codex (`CODEX_VERSION`) is always installed. Claude Code, the Cursor CLI, and the Antigravity CLI (`CLAUDE_CODE_VERSION`, `CURSOR_VERSION`, `ANTIGRAVITY_VERSION`) are installed when the `HARNESSES` build argument names them, which its default does. The harness CLIs it carries are listed at `/usr/local/share/guilds/harnesses` |
 | `guilds-code` | `shell` and background commands, `file_read`, ripgrep search, output shaping, home and machine sizes, and git setup, clones, checkpoints, and diffs; reads the agent's tokens from `/run/guilds/<agent id>/git-tokens.json` |
 | `guilds-harness` | The coding harnesses behind `code_task`: `check`, `start`, `poll`, `result`, `stop`, and `log`; one driver per harness (Claude Code, Codex, Cursor, Antigravity); call state under `/run/guilds/<agent id>/harness/` ([Harnesses](../concepts/coding/harnesses.md)) |
 | `agy` | The Antigravity CLI at the pinned version, installed as `/usr/local/bin/agy` |
@@ -172,7 +173,7 @@ helper that acts for one agent takes its id, or reads its home from
 | `guilds-git-credential` | The git credential helper: the installation token of the guild repository git talks to |
 | `git-template/` | The git template whose `prepare-commit-msg` hook adds the `Guild-Run` and `Guild-Agent` trailers |
 | `guilds-script-run` | Runs a named Python script with `GUILDS_SCRIPT_ARGS` on stdin |
-| `agent-browser-start <agent id> <slot> <language>` | One agent's Xtigervnc display, Chrome, and noVNC on its slot's ports |
+| `agent-browser-start <agent id> <slot> <language>` | One agent's Xtigervnc display, Chrome, noVNC, and gost DevTools relay, which sets each request's Host to Chrome's, on its slot's ports |
 | `agent-cli-start <agent id> <slot>` | One agent's ttyd with bash in its home; prints the secret path segment it serves under |
 | `agent-stop <agent id> browser\|all\|purge` | Stops one agent's browser, or its browser and terminal; `purge` also removes its `/run/guilds/<agent id>/` files |
 | `agent-lib.sh` | Shell helpers the `agent-*` scripts share |

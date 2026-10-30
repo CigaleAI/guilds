@@ -21,6 +21,8 @@ const driftDb = uniqueDbName("agent_platform_migrate_drift");
 const cliDb = uniqueDbName("agent_platform_migrate_cli");
 const accessDb = uniqueDbName("agent_platform_migrate_access");
 const configDb = uniqueDbName("agent_platform_migrate_config");
+const systemOneDb = uniqueDbName("agent_platform_migrate_system_one");
+const browserConfigDb = uniqueDbName("agent_platform_migrate_browser_config");
 
 after(async () => {
   await dropIsolatedDatabase(freshDb);
@@ -28,6 +30,8 @@ after(async () => {
   await dropIsolatedDatabase(driftDb);
   await dropIsolatedDatabase(cliDb);
   await dropIsolatedDatabase(accessDb);
+  await dropIsolatedDatabase(systemOneDb);
+  await dropIsolatedDatabase(browserConfigDb);
 });
 
 test("each migration is recorded once however often the chain is applied", async () => {
@@ -249,6 +253,70 @@ test("the agent config migration gives a config each key it predates, keeping th
     const byId = new Map(rows.rows.map((row) => [row.id, row.config]));
     assert.deepEqual(byId.get("old"), agentConfig({ model: MODEL, coding: true, harness: "codex", max_steps: 200 }));
     assert.deepEqual(byId.get("full"), full);
+  } finally {
+    await pool.end();
+  }
+});
+
+test("the System One migration keeps a group routing key under the new id", async () => {
+  const pool = await createPool(await createIsolatedDatabase(systemOneDb), reportPoolError);
+  try {
+    const folder = chainBefore("0017_system_one_key");
+    await migrate(drizzle(pool), { migrationsFolder: folder, migrationsSchema: "public", migrationsTable: "__drizzle_migrations" });
+    const now = new Date().toISOString();
+    for (const integration of ["group-routing", "web-search"]) {
+      await pool.query(
+        `INSERT INTO public.instance_keys (integration, ciphertext, nonce, set_by_user_id, created_at, updated_at)
+         VALUES ($1, $2, $3, NULL, $4, $4)`,
+        [integration, Buffer.from(`${integration}-ciphertext`), Buffer.from(`${integration}-nonce`), now],
+      );
+    }
+
+    await applyMigrations(pool);
+    const rows = await pool.query<{ integration: string; ciphertext: Buffer }>(
+      "SELECT integration, ciphertext FROM public.instance_keys ORDER BY integration",
+    );
+    assert.deepEqual(
+      rows.rows.map((row) => [row.integration, row.ciphertext.toString()]),
+      [
+        ["system-one", "group-routing-ciphertext"],
+        ["web-search", "web-search-ciphertext"],
+      ],
+    );
+  } finally {
+    await pool.end();
+  }
+});
+
+test("the agent browser config migration gives a config the browser mode keys, keeping the values it has", async () => {
+  const pool = await createPool(await createIsolatedDatabase(browserConfigDb), reportPoolError);
+  try {
+    const folder = chainBefore("0018_agent_browser_config");
+    await migrate(drizzle(pool), { migrationsFolder: folder, migrationsSchema: "public", migrationsTable: "__drizzle_migrations" });
+    const now = new Date().toISOString();
+    await pool.query("INSERT INTO public.orgs (id, name, slug, created_at, updated_at) VALUES ('org_1', 'Org', 'org', $1, $1)", [now]);
+    await pool.query("INSERT INTO public.guilds (id, name, org_id, created_at, updated_at) VALUES ('guild_1', 'g', 'org_1', $1, $1)", [now]);
+    await pool.query(
+      "INSERT INTO public.machines (id, org_id, name, box, created_at, updated_at) VALUES ('mach_1', 'org_1', 'default', 'standard', $1, $1)",
+      [now],
+    );
+    const MODEL = "openrouter/openai/gpt-5.6-luna";
+    const agent = (id: string, slot: number, config: Record<string, unknown>) =>
+      pool.query(
+        `INSERT INTO public.agents (id, guild_id, name, config, created_at, updated_at, org_id, task, task_hash, task_updated_at, machine_id, machine_slot)
+         VALUES ($1, 'guild_1', $1, $2, $3, $3, 'org_1', '', '', $3, 'mach_1', $4)`,
+        [id, JSON.stringify(config), now, slot],
+      );
+    const { browser_optimized: _optimized, browser_model: _model, ...older } = agentConfig({ model: MODEL, browser: true });
+    await agent("old", 0, older);
+    const optimized = agentConfig({ model: MODEL, browser: true, browser_optimized: true, browser_model: MODEL });
+    await agent("optimized", 1, optimized);
+
+    await applyMigrations(pool);
+    const rows = await pool.query<{ id: string; config: Record<string, unknown> }>("SELECT id, config FROM public.agents ORDER BY id");
+    const byId = new Map(rows.rows.map((row) => [row.id, row.config]));
+    assert.deepEqual(byId.get("old"), agentConfig({ model: MODEL, browser: true }));
+    assert.deepEqual(byId.get("optimized"), optimized);
   } finally {
     await pool.end();
   }

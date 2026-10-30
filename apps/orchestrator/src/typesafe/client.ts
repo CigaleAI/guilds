@@ -1,5 +1,5 @@
 import { Value } from "@sinclair/typebox/value";
-import { GROUP_ROUTING, integrationValue, type IntegrationSources } from "../instance/integrations.js";
+import { SYSTEM_ONE, integrationValue, type IntegrationSources } from "../instance/integrations.js";
 import { httpRequest, readJson, type FetchFn } from "../net/http.js";
 import type { TypeSafeUsage } from "../db/schema/index.js";
 import { redactApiKey } from "../llm/completion.js";
@@ -124,16 +124,16 @@ export type TypeSafeConnection = {
 /** A client's connection, or the `evaluate` that stands in for System One. */
 export type TypeSafeClientOptions = TypeSafeConnection & { evaluate?: TypeSafeEvaluateFn };
 
-/** The group routing key from the instance keys; empty while the integration is off. */
+/** The System One key from the instance keys; empty while the integration is off. */
 export function typeSafeApiKey(sources?: IntegrationSources): string {
-  return integrationValue(GROUP_ROUTING, "api_key", sources);
+  return integrationValue(SYSTEM_ONE, "api_key", sources);
 }
 
 export function typeSafeModel(sources?: IntegrationSources): string {
-  return integrationValue(GROUP_ROUTING, "model", sources) || TYPESAFE_MODEL;
+  return integrationValue(SYSTEM_ONE, "model", sources) || TYPESAFE_MODEL;
 }
 
-const KEY_NOT_SET = "the group routing key is not set";
+const KEY_NOT_SET = "the System One key is not set";
 
 function asTypeSafeError(error: unknown, apiKey: string | null, attempts: number): TypeSafeError {
   if (error instanceof TypeSafeError) {
@@ -466,7 +466,7 @@ export async function evaluateSystemOne(
 }
 
 /**
- * A client over the group routing key. The key is read on every call, so a key the admin enters
+ * A client over the System One key. The key is read on every call, so a key the admin enters
  * or removes under Platform keys takes effect without a restart; `configured` follows it.
  */
 export function createTypeSafeClient(options: TypeSafeClientOptions = {}): TypeSafeClient {

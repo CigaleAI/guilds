@@ -11,6 +11,8 @@ import type { AgentSeat, MachineSpec } from "../../src/sandbox/index.js";
 export class ExportSandboxes {
   novncBase = "http://127.0.0.1:9";
   novncHeaders: Record<string, string> = { "OPEN-SANDBOX-API-KEY": "compat-test" };
+  cdpBase = "http://127.0.0.1:9";
+  cdpHeaders: Record<string, string> = { "OPEN-SANDBOX-API-KEY": "compat-test" };
   cliBase = "http://127.0.0.1:9";
   cliHeaders: Record<string, string> = { "OPEN-SANDBOX-API-KEY": "compat-test" };
   cliToken = "f".repeat(48);
@@ -70,6 +72,10 @@ export class ExportSandboxes {
 
   async novncTarget(_sandbox: unknown, _seat: AgentSeat): Promise<[string, Record<string, string>]> {
     return [this.novncBase, { ...this.novncHeaders }];
+  }
+
+  async cdpTarget(_sandbox: unknown, _seat: AgentSeat): Promise<[string, Record<string, string>]> {
+    return [this.cdpBase, { ...this.cdpHeaders }];
   }
 
   async startCli(_sandbox: unknown, _seat: AgentSeat): Promise<string> {

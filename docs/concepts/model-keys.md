@@ -87,7 +87,7 @@ Three kinds of key reach the box. Only the first is a model key.
 |---|---|---|
 | Model key | The organisation, for its agents' runs | **Settings**, **Model keys** |
 | Secret | The organisation, handed to the agents it names as an environment variable | **Secrets** ([Secrets](secrets.md)) |
-| Platform key | The box, for everyone on it: web search, group routing, the GitHub App, Google | **Admin**, **Platform keys** ([Configure](../operations/configure.md#platform-keys)). Sentry and the registry are `.env` settings |
+| Platform key | The box, for everyone on it: web search, System One, the GitHub App, Google | **Admin**, **Platform keys** ([Configure](../operations/configure.md#platform-keys)). Sentry and the registry are `.env` settings |
 
 An agent's commands get secrets only.
 

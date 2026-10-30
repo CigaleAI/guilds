@@ -2,13 +2,17 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AccessBinding, AgentAccess, Instance, McpServerAccess } from "../../api/types";
 import {
+  BROWSER_NATIVE_TOOLS,
   bindingOrigin,
   canResetFirst,
   connectionStatus,
   filterTools,
   findBinding,
   isCapabilityNativeTool,
+  listedBrowserTools,
   nativeToolDisplay,
+  offersOptimizedBrowser,
+  OPTIMIZED_BROWSER_NATIVE_TOOLS,
   ownedConnection,
   toolFamilyGroups,
   withCapabilityNativeTools,
@@ -177,6 +181,40 @@ test("capability native tools are listed when the access payload omits them", ()
   );
 });
 
+test("an agent's Tools tab lists the browser tools of its browser mode", () => {
+  const browserNames = (capabilities?: Parameters<typeof withCapabilityNativeTools>[1]) =>
+    toolFamilyGroups(withCapabilityNativeTools([binding("note_find")], capabilities))
+      .find((group) => group.label === "Browser")
+      ?.tools.map((tool) => tool.name);
+  assert.deepEqual(browserNames({ browser: true, browser_optimized: true }), [
+    "browse",
+    "browser_eval",
+  ]);
+  assert.deepEqual(browserNames({ browser: true }), [...BROWSER_NATIVE_TOOLS]);
+  assert.deepEqual(browserNames(), [...BROWSER_NATIVE_TOOLS, "browse"], "every mode with no agent");
+  assert.deepEqual(listedBrowserTools({ browser: true, browser_optimized: true }), [
+    ...OPTIMIZED_BROWSER_NATIVE_TOOLS,
+  ]);
+  const offered = withCapabilityNativeTools([binding("browse"), binding("browser_click")], {
+    browser: true,
+  }).map((tool) => tool.name);
+  assert.equal(offered.includes("browse"), false, "a listed tool of the other mode is left out");
+  assert.equal(offered.filter((name) => name === "browser_click").length, 1);
+});
+
+test("the browse tool says which browser it needs where no agent is in view", () => {
+  assert.deepEqual(nativeToolDisplay(binding("browse"), "guild"), {
+    enabled: true,
+    caption: "Offered when an agent has the agent-optimized browser on",
+    bindable: false,
+  });
+  assert.deepEqual(
+    nativeToolDisplay(binding("browse"), "agent", { browser: true, browser_optimized: true }),
+    { enabled: true, caption: "Active via browser", bindable: false },
+  );
+  assert.equal(isCapabilityNativeTool("browse"), true);
+});
+
 test("browser and coding tools follow the agent's capability, not a binding", () => {
   const browser = binding("browser_click");
   assert.deepEqual(nativeToolDisplay(browser, "guild"), {
@@ -262,4 +300,28 @@ test("a tool that waits for a platform key is not offered, and says which", () =
     enabled: true,
     bindable: true,
   });
+});
+
+test("the agent-optimized browser is listed only while its platform key is on, as the server offers it", () => {
+  const box = (state: "on" | "off"): Instance => ({
+    auth_mode: "compat-cookie",
+    integrations: [
+      {
+        id: "system-one",
+        label: "System One",
+        enables: "The agent-optimized browser",
+        source: "store",
+        state,
+        fields: [{ name: "api_key", label: "API key", optional: false, secret: true, multiline: false, set: state === "on" }],
+        setup: null,
+        updated_at: null,
+        set_by: null,
+        provides: { native_tools: ["browse"], connectors: [] },
+      },
+    ],
+  });
+  assert.equal(offersOptimizedBrowser({ browser_optimized: true }, box("on")), true);
+  assert.equal(offersOptimizedBrowser({ browser_optimized: true }, box("off")), false);
+  assert.equal(offersOptimizedBrowser({ browser_optimized: false }, box("on")), false);
+  assert.equal(offersOptimizedBrowser(undefined, box("on")), false);
 });

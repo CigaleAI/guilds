@@ -33,12 +33,17 @@ export type GenerationSandboxes = {
   harnessesOf?(machineId: string): string[] | null;
   destroy(machineId: string): Promise<void>;
   listRunningMachineIds(): Promise<Iterable<string>>;
-  /** Starts the agent's display, Chrome, and noVNC when they are not up, and waits until they answer. */
+  /**
+   * Starts the agent's display, Chrome, noVNC, and DevTools relay when they are not up, and waits
+   * until they answer.
+   */
   startBrowser(sandbox: SandboxHandle, seat: AgentSeat): Promise<void>;
   stopBrowser(sandbox: SandboxHandle, seat: AgentSeat): Promise<void>;
   /** Stops the agent's browser and terminal and removes its runtime files. */
   purgeAgent(sandbox: SandboxHandle, seat: AgentSeat): Promise<void>;
   novncTarget(sandbox: SandboxHandle, seat: AgentSeat): Promise<[string, Record<string, string>]>;
+  /** The upstream base and headers of the agent's DevTools relay, which forwards to its Chrome. */
+  cdpTarget(sandbox: SandboxHandle, seat: AgentSeat): Promise<[string, Record<string, string>]>;
   startCli(sandbox: SandboxHandle, seat: AgentSeat): Promise<string>;
   cliTarget(sandbox: SandboxHandle, seat: AgentSeat, token: string): Promise<[string, Record<string, string>]>;
   /** The host a machine runs on, and its workspace root there; core runs every machine on one. */

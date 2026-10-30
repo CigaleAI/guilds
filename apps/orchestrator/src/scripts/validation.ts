@@ -35,6 +35,7 @@ export const NATIVE_TOOL_NAMES = new Set([
   "schedule_pause",
   "schedule_resume",
   "schedule_delete",
+  "browse",
   "browser_navigate",
   "browser_snapshot",
   "browser_click",

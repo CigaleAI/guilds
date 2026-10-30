@@ -4,6 +4,7 @@ import { HARNESS_MODEL_RE, harnessOffMessage, isHarness, isHarnessOff } from "..
 import { harnessEffortsFor, isEffort } from "../coding/harness-models.js";
 import { SECRET_NAME } from "../credentials/validate.js";
 import type { AgentConfig, ThinkingLevel } from "../db/schema/index.js";
+import { integrationState, SYSTEM_ONE } from "../instance/integrations.js";
 import { AgentValidationError } from "./validation.js";
 
 export const CONFIG_KEYS = new Set([
@@ -18,6 +19,8 @@ export const CONFIG_KEYS = new Set([
   "max_workspace_mib",
   "browser",
   "browser_language",
+  "browser_optimized",
+  "browser_model",
   "coding",
   "harness",
   "harness_model",
@@ -49,6 +52,8 @@ export const CODING_MAX_TOOL_CALLS = 200;
 export const DEFAULT_THINKING_LEVEL: ThinkingLevel = "none";
 /** Chrome UI and Accept-Language when the agent has a browser and none is stored. */
 export const DEFAULT_BROWSER_LANGUAGE = "en-US";
+/** A new agent browses with the step-by-step browser tools unless the operator turns this on. */
+export const DEFAULT_BROWSER_OPTIMIZED = false;
 /** Chrome language tags an agent may use. */
 export const BROWSER_LANGUAGES = [
   "ar",
@@ -97,9 +102,9 @@ export type BrowserLanguage = (typeof BROWSER_LANGUAGES)[number];
 const BROWSER_LANGUAGE_SET = new Set<string>(BROWSER_LANGUAGES);
 
 /**
- * The value each setting takes when a payload leaves it out: no browser, no coding, no harness,
- * the harness's default model and effort, no secret aliases, and the default limits. Only `model`
- * has none.
+ * The value each setting takes when a payload leaves it out: no browser, the step-by-step browser
+ * tools, no coding, no harness, the harness's default model and effort, no secret aliases, and the
+ * default limits. Only `model` has none.
  */
 const AGENT_CONFIG_DEFAULTS: Omit<AgentConfig, "model"> = {
   temperature: DEFAULT_TEMPERATURE,
@@ -112,6 +117,8 @@ const AGENT_CONFIG_DEFAULTS: Omit<AgentConfig, "model"> = {
   max_workspace_mib: DEFAULT_MAX_WORKSPACE_MIB,
   browser: false,
   browser_language: DEFAULT_BROWSER_LANGUAGE,
+  browser_optimized: DEFAULT_BROWSER_OPTIMIZED,
+  browser_model: null,
   coding: false,
   harness: null,
   harness_model: null,
@@ -203,6 +210,42 @@ function requireBooleanField(value: unknown, field: string): boolean {
     throw new AgentValidationError(`${field} must be a boolean`);
   }
   return value;
+}
+
+/** The agent-optimized browser is a mode of the browser: an agent without one cannot turn it on. */
+function rejectBrowserOptimizedWithoutBrowser(browserOptimized: boolean, browser: boolean): void {
+  if (browserOptimized && !browser) {
+    throw new AgentValidationError("browser_optimized requires browser");
+  }
+}
+
+/**
+ * Whether the agent's runs browse with the agent-optimized browser: its config turns it on and the
+ * System One key is on. Without the key its runs offer the step-by-step browser tools.
+ */
+export function isOptimizedBrowserOn(config: Pick<AgentConfig, "browser_optimized">): boolean {
+  return config.browser_optimized === true && integrationState(SYSTEM_ONE) === "on";
+}
+
+/**
+ * The model the agent-optimized browser plans and reads with: with `browser_optimized` on, a
+ * `{provider}/{model}` id of a provider core speaks to that is not for coding agents only; with it
+ * off, null or blank, read as null.
+ */
+function requireBrowserModel(value: unknown, browserOptimized: boolean): string | null {
+  const model = typeof value === "string" ? value.trim() : value;
+  if (!browserOptimized) {
+    if (model === null || model === "") {
+      return null;
+    }
+    throw new AgentValidationError("browser_model is only for the agent-optimized browser");
+  }
+  if (typeof model !== "string" || !parseModelId(model) || isCodingOnlyModel(model)) {
+    throw new AgentValidationError(
+      "browser_model must be a marketplace {provider}/{model} when browser_optimized is on",
+    );
+  }
+  return model;
 }
 
 function requireHarness(value: unknown): Harness | null {
@@ -346,6 +389,8 @@ export function validateAgentConfig(config: Record<string, unknown>): AgentConfi
   const model = requireModelId(filled.model);
   const coding = requireBooleanField(filled.coding, "coding");
   const browser = requireBooleanField(filled.browser, "browser");
+  const browserOptimized = requireBooleanField(filled.browser_optimized, "browser_optimized");
+  rejectBrowserOptimizedWithoutBrowser(browserOptimized, browser);
   rejectCodingOnlyModelWithoutCoding(model, coding);
   const harness = requireHarness(filled.harness);
   rejectHarnessWithoutCoding(harness, coding);
@@ -365,6 +410,8 @@ export function validateAgentConfig(config: Record<string, unknown>): AgentConfi
     max_workspace_mib: requirePositiveInteger(filled.max_workspace_mib, "max_workspace_mib"),
     browser,
     browser_language: validateBrowserLanguage(filled.browser_language),
+    browser_optimized: browserOptimized,
+    browser_model: requireBrowserModel(filled.browser_model, browserOptimized),
     coding,
     harness,
     harness_model: harnessModel,

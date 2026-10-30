@@ -82,7 +82,7 @@ try {
   await new InstanceKeys(database.pool, decodeMasterKey(config.secretsMasterKey)).load();
   const client = createTypeSafeClient();
   if (!client.configured) {
-    process.stderr.write("the group routing key is not set; a platform admin sets it under Admin, Platform keys\n");
+    process.stderr.write("the System One key is not set; a platform admin sets it under Admin, Platform keys\n");
     process.exit(2);
   }
   const db = database.pool;

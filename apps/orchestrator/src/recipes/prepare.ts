@@ -92,7 +92,8 @@ export type RoleChoice = { model?: string | undefined; harness?: Harness | undef
  * The agent config a role applies as: the role's, with the model and harness the operator chose
  * (else the recipe's), and the browser and coding flags settled. Only a coding role keeps a
  * harness, and the recipe's harness model and effort only with the recipe's harness, and secret
- * aliases that do not validate are left out. Every other setting the role leaves out takes its
+ * aliases that do not validate are left out. The agent browses with the step-by-step browser
+ * tools. Every other setting the role leaves out takes its
  * default when `validateAgentConfig` reads the config. The machine the agent goes on is the apply's.
  */
 export function configFromRecipeRole(role: RecipeRole, choice: RoleChoice = {}): Record<string, unknown> {
@@ -104,6 +105,8 @@ export function configFromRecipeRole(role: RecipeRole, choice: RoleChoice = {}):
     ...roleConfig,
     model: choice.model ?? recommended,
     browser: roleBrowses(role),
+    browser_optimized: false,
+    browser_model: null,
     coding,
     harness: applied,
     harness_model: appliedHarnessModel(roleConfig, applied),

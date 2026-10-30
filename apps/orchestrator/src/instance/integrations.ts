@@ -40,7 +40,21 @@ export type Integration = {
   fields: readonly IntegrationField[];
   provides?: IntegrationProvides;
   setup?: IntegrationSetup;
+  /**
+   * Refuses values a write gives that its fields alone allow, by throwing an
+   * `IntegrationValueError` that says why. It sees the values as they are stored: trimmed, with an
+   * empty optional field left out.
+   */
+  validate?(values: Readonly<Record<string, string>>): void;
 };
+
+/** Values a write gives that the integration refuses beyond its fields. */
+export class IntegrationValueError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "IntegrationValueError";
+  }
+}
 
 /** `incomplete`: some of its required fields are set and others are missing. */
 export type IntegrationState = "on" | "off" | "incomplete";
@@ -70,8 +84,14 @@ export type IntegrationSources = { env?: NodeJS.ProcessEnv; keys?: InstanceKeySn
 
 type FieldName<I extends Integration> = I["fields"][number]["name"];
 
-/** An integration as it is declared: its fields keep the names they are written with, so readers are typed by them. */
-type IntegrationDefinition<F extends readonly IntegrationField[]> = Omit<Integration, "fields"> & { fields: F };
+/**
+ * An integration as it is declared: its fields keep the names they are written with, so readers
+ * and its `validate` are typed by them.
+ */
+type IntegrationDefinition<F extends readonly IntegrationField[]> = Omit<Integration, "fields" | "validate"> & {
+  fields: F;
+  validate?(values: Readonly<Partial<Record<F[number]["name"], string>>>): void;
+};
 
 function integration<const F extends readonly IntegrationField[]>(
   definition: IntegrationDefinition<F>,
@@ -87,15 +107,36 @@ export const WEB_SEARCH = integration({
   fields: [{ name: "api_key", label: "Tavily API key", secret: true }],
 });
 
-export const GROUP_ROUTING = integration({
-  id: "group-routing",
-  label: "Group routing",
-  enables: "Recipient and history selection in group chat, beyond tag rules",
+/** The providers System One accepts in its `provider` field; a blank one reads as `typesafe`. */
+export const SYSTEM_ONE_PROVIDERS = ["typesafe"] as const;
+
+/** A System One `provider` value the box does not accept. */
+export class SystemOneProviderError extends IntegrationValueError {
+  constructor(value: string) {
+    super(`System One provider "${value}" is not one of: ${SYSTEM_ONE_PROVIDERS.join(", ")}`);
+    this.name = "SystemOneProviderError";
+  }
+}
+
+/** Refuses a System One `provider` that is set and not one of `SYSTEM_ONE_PROVIDERS`. */
+function assertSystemOneProvider(value: string | undefined): void {
+  if (value && !SYSTEM_ONE_PROVIDERS.some((provider) => provider === value)) {
+    throw new SystemOneProviderError(value);
+  }
+}
+
+export const SYSTEM_ONE = integration({
+  id: "system-one",
+  label: "System One",
+  enables: "Recipient and history selection in group chat, and the agent-optimized browser",
   source: "store",
   fields: [
-    { name: "api_key", label: "TypeSafe API key", secret: true },
+    { name: "provider", label: "Provider", optional: true, placeholder: "typesafe" },
+    { name: "api_key", label: "API key", secret: true },
     { name: "model", label: "Model", optional: true, placeholder: "jev-next" },
   ],
+  provides: { nativeTools: ["browse"] },
+  validate: (values) => assertSystemOneProvider(values.provider),
 });
 
 /** The `github` connector's server id: its connections are installations of the GitHub App. */
@@ -161,7 +202,7 @@ export const CONNECTOR_CODE = integration({
 
 export const CORE_INTEGRATIONS: readonly Integration[] = [
   WEB_SEARCH,
-  GROUP_ROUTING,
+  SYSTEM_ONE,
   GITHUB_APP,
   GOOGLE_CONNECTORS,
   ERROR_REPORTING,

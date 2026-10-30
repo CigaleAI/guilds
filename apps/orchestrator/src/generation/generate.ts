@@ -1,3 +1,4 @@
+import { isOptimizedBrowserOn } from "../agents/config.js";
 import { agentActor } from "../artifacts/actors.js";
 import { REPOSITORIES_MISSING, REPOSITORIES_MISSING_MESSAGE } from "../coding/harnesses.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
@@ -8,6 +9,7 @@ import { completeRun, getRun, listMessages, mergeRunMetadata, type MessageRow, t
 import { agentHome } from "../lib/agent-file.js";
 import { INPUT_TOKEN_LIMIT_MESSAGE } from "../llm/tokens.js";
 import { slotPorts } from "../machines/index.js";
+import { writeLog } from "../observability/log.js";
 import { agentSandbox, applyRunScripts, prepareBrowserWorkspace, prepareWorkspace, seatEnvironment } from "../sandbox/index.js";
 import type { SandboxHandle } from "../sandbox/sdk.js";
 import type { Scripts } from "../scripts/catalog.js";
@@ -426,14 +428,38 @@ export class RunGenerator {
     const scope: ToolBindingScope = { orgId: agent.org_id || null, guildId: agent.guild_id, agentId: agent.id };
     const rows = await this.services.db.listBindingsCovering(scope);
     const live = agent.config;
+    await this.warnBrowseKeyMissing(gen);
     return liveOfferedNames(snapshotOfferedNames(frozen), rows, scope, {
       browser: live.browser,
+      browserOptimized: live.browser_optimized === true,
       coding: live.coding,
       scripting: live.scripting,
       memory: live.memory,
       schedules: run.kind !== "schedule",
       direct: run.kind === "direct",
     });
+  }
+
+  /**
+   * Logs `browse.integration_off` once per run while the agent's config turns the agent-optimized
+   * browser on and the System One key is not set, and records `browse_integration_off_at` on the
+   * run's metadata so later generations of the run do not log it again.
+   */
+  private async warnBrowseKeyMissing(gen: Generation): Promise<void> {
+    const { agent, run } = gen;
+    if (agent.config.browser_optimized !== true || isOptimizedBrowserOn(agent.config)) {
+      return;
+    }
+    if (run.metadata.browse_integration_off_at) {
+      return;
+    }
+    writeLog(
+      "warn",
+      "the agent-optimized browser is on but the System One key is not set: a new run offers the step-by-step browser tools, and a run that started with browse keeps it and its calls fail until the key is set",
+      { run_id: gen.runId, agent_id: agent.id, operation: "browse.integration_off" },
+    );
+    const now = new Date();
+    await this.services.db.mergeRunMetadata(gen.runId, { browse_integration_off_at: now.toISOString() }, now);
   }
 
   /** The generation's run record: whose run it is, where its commands run, and what it offers. */
@@ -479,8 +505,8 @@ export class RunGenerator {
 
   /**
    * The hooks the generation's tools call, each bound to what its run record does not hold: the
-   * agent's container to track a command in, its machine to start Chrome on, and its row to store
-   * a secret for.
+   * agent's container to track a command in, its machine to start and reach Chrome on, and its
+   * row to store a secret for.
    */
   private toolHooks(gen: Generation, sandboxes: RunSandboxes): ToolHooks {
     const { generations, machines, secrets } = this.services;
@@ -488,6 +514,8 @@ export class RunGenerator {
     return {
       track_command: (executionId) => generations.trackCommand(runId, sandboxes.agent, executionId),
       ensure_browser: snapshot.browser ? () => machines.ensureRunBrowser(agent, sandboxes.machine) : null,
+      touch_browser: snapshot.browser ? () => machines.touchSandbox(agent.id) : null,
+      cdp_target: snapshot.browser ? () => machines.sandboxes.cdpTarget(sandboxes.machine, agentSeat(agent)) : null,
       before_command: null,
       secret_store: secrets.secretStore(agent),
     };

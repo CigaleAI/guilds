@@ -8,6 +8,91 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** The runtime image gains gost, and
+`agent-browser-start` takes the slot's DevTools relay port after the
+DevTools port: `agent-browser-start <agent id> <display> <vnc port>
+<devtools port> <cdp relay port> <novnc port> <language>`. Each
+agent's browser runs a gost relay on port `9400+slot`, on every
+interface, to Chrome's loopback DevTools port, with the Host of each
+request set to Chrome's, and the browser counts as up once the relay
+answers too. Port `9500+slot` is reserved for the
+slot's local forward proxy.
+
+**Breaking for extensions.** `SandboxProvider` and
+`GenerationSandboxes` (`extension.js`, `generation/machines.js`) have
+`cdpTarget(sandbox, seat)`, which answers the upstream base and
+headers of the agent's DevTools relay, as `novncTarget` does for
+noVNC. `SlotPorts` (`machines/index.js`) has `cdpRelay` and `proxy`.
+
+**Rebuild.** The orchestrator image gains the fastbrowse binary: the
+`fastbrowse` 0.9.0 npm package and its `@fastbrowse/linux-x64` or
+`@fastbrowse/linux-arm64` platform package. `pnpm browse:spike
+<agent id>` in `apps/orchestrator` runs one fastbrowse task on the
+agent's sandbox Chrome through a loopback CDP bridge, and
+`--probe` stops after the bridge answers `/json/version`. The task
+runs with the environment a `browse` call gives fastbrowse:
+`TYPESAFE_API_KEY` as its Jev key, and `BROWSER_MODEL` (else the
+agent's browser model) on `BROWSER_MODEL_API_KEY`, at
+`BROWSER_MODEL_BASE_URL` when set.
+
+**Breaking for operators who set the key by id.** The `group-routing`
+platform key is now `system-one`, with an optional `provider` field
+(`typesafe`); a box with the key set keeps it, the row migrates on
+boot. Saving another `provider` is a 422 naming the providers it
+accepts. Admin, Platform keys lists it as **System One**. Extensions
+import `SYSTEM_ONE` from `instance/integrations.js` where they
+imported `GROUP_ROUTING`.
+
+**No impact.** An `Integration` (`instance/integrations.js`) may
+declare `validate(values)`, which refuses a write's values by throwing
+an `IntegrationValueError`; the write is then a 422 with its message.
+
+**Rebuild.** Usage counters and monthly usage gain browser token,
+cost and call columns (`browser_input_tokens`, `browser_output_tokens`,
+`browser_cost_usd`, `browser_calls`). A browse call's cost also counts
+in `cost_usd`; `calls` counts model calls only. The usage routes return
+the four fields, and Agent, Guild and Settings › Usage show a
+**Browser** figure once a browse call was counted.
+
+**Rebuild.** Agent configs gain `browser_optimized` and
+`browser_model`; a migration fills them in.
+
+**No impact.** Settings shows an **Agent-optimized browser** toggle
+and **Browser model** under **Browser language**.
+
+**No impact.** A run of an agent with the agent-optimized browser on,
+created while the System One platform key is on, is offered `browse`
+and `browser_eval` in place of the eight step-by-step browser tools,
+and its standing prompt describes those two. A run created with the
+key off is offered the step-by-step tools. A run that started with
+`browse` keeps it while the agent-optimized browser stays on, and its
+calls answer that the key is missing until it is set again. Each run
+of an agent with the agent-optimized browser on and the key off logs
+one `browse.integration_off` warning and records
+`metadata.browse_integration_off_at`.
+
+**Breaking for operators with a custom `system.md`** under
+`TEMPLATES_ROOT` ([Deployment](docs/architecture/deployment.md)): the
+`browser` capability tag is now `browser_standard`, and a
+`browser_optimized` block holds the `browse` guidance. A template that
+keeps `browser` leaves its tags and text in every prompt.
+
+**No impact.** Creating an agent with the agent-optimized browser on,
+or an update that turns it on or changes its **Browser model**, is
+refused while the System One key is off or the browser model's
+provider is not connected. An update that leaves both as they were
+saves whatever the key or the provider has become.
+
+**No impact.** An agent with the agent-optimized browser on can call
+`browse`: it hands a whole web task to fastbrowse on the agent's
+Chrome, visible in the **Browser** tab, and answers the run's status,
+final URL, the answer with verbatim page citations, and the fields it
+was asked to extract. Each step shows as the call's progress in the
+run view. Only `complete` is verified; `needs_confirmation`,
+`needs_login`, `blocked` and the other statuses say where it stopped.
+Its Jev and browser-model cost counts under browser usage and in the
+organisation's monthly spend, and shows on the call's row.
+
 **No impact.** A GitHub reply that lists installations or an
 installation's repositories without its list, or with an entry whose
 `id` is not an integer or whose fields have the wrong type, fails the

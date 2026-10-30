@@ -61,6 +61,23 @@ RUN set -eu; \
     echo "${sum}  /usr/local/bin/ttyd" | sha256sum -c -; \
     chmod 755 /usr/local/bin/ttyd
 
+# gost relays each browser slot's DevTools port from every interface to Chrome's loopback
+# port, setting each request's Host to Chrome's, started by agent-browser-start. Release
+# tarball, pinned and checksum-verified.
+ARG GOST_VERSION=3.3.0
+RUN set -eu; \
+    case "$(dpkg --print-architecture)" in \
+        amd64) asset=linux_amd64; sum=676fb7f78d267b6ae73df719c0c7f2b565dde7147da935cfafbc1e1da558b6d5 ;; \
+        arm64) asset=linux_arm64; sum=d03699e3f385d4ff5dad68046712adfcc7515325a064d2ab046e0bece30f8f8f ;; \
+        *) echo "unsupported architecture for gost" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /tmp/gost.tar.gz "https://github.com/go-gost/gost/releases/download/v${GOST_VERSION}/gost_${GOST_VERSION}_${asset}.tar.gz"; \
+    echo "${sum}  /tmp/gost.tar.gz" | sha256sum -c -; \
+    mkdir /tmp/gost; \
+    tar -xzf /tmp/gost.tar.gz -C /tmp/gost --no-same-owner gost; \
+    install -m 755 /tmp/gost/gost /usr/local/bin/gost; \
+    rm -rf /tmp/gost.tar.gz /tmp/gost
+
 # Node.js for JavaScript and TypeScript projects and for the coding harnesses. Release
 # tarball, pinned and checksum-verified per architecture.
 ARG NODE_VERSION=24.21.0

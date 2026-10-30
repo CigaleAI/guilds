@@ -185,6 +185,9 @@ test("waitForBrowser includes the start log", async () => {
         if (command.includes("-w") && command.includes(String(slotPorts(2).cdp))) {
           return { exit_code: 0, logs: { stdout: [{ text: "down" }] } };
         }
+        if (command.includes("-w") && command.includes(String(slotPorts(2).cdpRelay))) {
+          return { exit_code: 0, logs: { stdout: [{ text: "502" }] } };
+        }
         return { exit_code: 1, logs: { stdout: [] } };
       },
     },
@@ -196,6 +199,7 @@ test("waitForBrowser includes the start log", async () => {
       assert.match(error.message, /browser session failed to start/);
       assert.match(error.message, /vnc=200/);
       assert.match(error.message, /cdp=down/);
+      assert.match(error.message, /relay=502/);
       assert.match(error.message, /clearing stale chromium SingletonLock -> old-host-59/);
       return true;
     },
@@ -230,7 +234,10 @@ test("waitForBrowser navigates off guilds.run onto about:blank", async () => {
   await sandboxes.waitForBrowser(fake, SEAT);
   const ports = slotPorts(2);
   assert.ok(
-    commands.some((command) => command.includes(`${ports.novnc}/vnc.html`) && command.includes(`${ports.cdp}/json/version`)),
+    commands.some((command) =>
+      command.includes(`${ports.novnc}/vnc.html`)
+      && command.includes(`${ports.cdp}/json/version`)
+      && command.includes(`${ports.cdpRelay}/json/version`)),
   );
   assert.ok(commands.some((command) => command.includes(`${ports.cdp}/json/list`)));
   const navigate = commands.find((command) => command.includes("guilds-browser"));
@@ -526,7 +533,7 @@ test("each agent's browser starts and stops on its own slot", async () => {
   const ports = slotPorts(2);
   assert.equal(
     commands[0],
-    `/usr/local/bin/agent-browser-start a_1 ${ports.display} ${ports.vnc} ${ports.cdp} ${ports.novnc} fr-FR`,
+    `/usr/local/bin/agent-browser-start a_1 ${ports.display} ${ports.vnc} ${ports.cdp} ${ports.cdpRelay} ${ports.novnc} fr-FR`,
   );
   assert.ok(commands.includes("/usr/local/bin/agent-stop a_1 browser"));
   assert.ok(commands.includes("/usr/local/bin/agent-stop a_1 purge"));
@@ -535,6 +542,27 @@ test("each agent's browser starts and stops on its own slot", async () => {
     SEAT,
   );
   assert.equal(base, `http://host/route/${slotPorts(2).novnc}`);
+});
+
+test("an agent's CDP target is its DevTools relay endpoint with the host's headers", async () => {
+  const sandboxes = new RunSandboxes({
+    url: "http://opensandbox:8080",
+    apiKey: "test",
+    image: "agent-runtime:0.4",
+    workspaceRoot: mkdtempSync(path.join(tmpdir(), "guilds-sandbox-")),
+  });
+  const commands = { async run() { return { exit_code: 0, logs: { stdout: [] } }; } };
+  const [base, headers] = await sandboxes.cdpTarget(
+    {
+      id: "sbx_fake",
+      commands,
+      getEndpoint: async (port: number) => ({ endpoint: `host/route/${port}/`, headers: { "X-Route": "r" } }),
+    },
+    SEAT,
+  );
+  assert.equal(base, `http://host/route/${slotPorts(2).cdpRelay}`);
+  assert.equal(headers["X-Route"], "r");
+  await assert.rejects(() => sandboxes.cdpTarget({ id: "sbx_fake", commands }, SEAT), SandboxError);
 });
 
 test("stopping an agent whose processes outlive the stop fails", async () => {
@@ -578,11 +606,13 @@ test("the agent helpers refuse a malformed agent id, port, display, or mode befo
   const root = runtimeScripts();
   const bin = (name: string) => path.join(root, "bin", name);
   const ports = slotPorts(2);
-  const browser = [String(ports.display), String(ports.vnc), String(ports.cdp), String(ports.novnc)];
+  const browser = [String(ports.display), String(ports.vnc), String(ports.cdp), String(ports.cdpRelay), String(ports.novnc)];
+  const relayed = [String(ports.cdpRelay), String(ports.novnc)];
   const refused = [
     [bin("agent-browser-start"), "../a_1", ...browser, "fr-FR"],
-    [bin("agent-browser-start"), "a_1", "0", String(ports.vnc), String(ports.cdp), String(ports.novnc), "fr-FR"],
-    [bin("agent-browser-start"), "a_1", String(ports.display), "80", String(ports.cdp), String(ports.novnc), "fr-FR"],
+    [bin("agent-browser-start"), "a_1", "0", String(ports.vnc), String(ports.cdp), ...relayed, "fr-FR"],
+    [bin("agent-browser-start"), "a_1", String(ports.display), "80", String(ports.cdp), ...relayed, "fr-FR"],
+    [bin("agent-browser-start"), "a_1", String(ports.display), String(ports.vnc), String(ports.cdp), "80", String(ports.novnc), "fr-FR"],
     [bin("agent-browser-start"), "a_1", ...browser, "fr FR"],
     [bin("agent-browser-start"), "a_1", "2", "fr-FR"],
     [bin("agent-cli-start"), "a 1", String(ports.ttyd), String(ports.portsFrom), String(ports.portsTo)],
@@ -630,6 +660,26 @@ test("runtime hides the --no-sandbox infobar and ships Chromium language packs",
   assert.match(image, /RestoreOnStartup": 4/);
   assert.match(image, /\/etc\/chromium\/policies\/managed/);
   assert.match(image, /\/etc\/opt\/chrome\/policies\/managed/);
+});
+
+test("runtime relays the DevTools port from every interface with gost, Host set to Chrome's, and waits for the relay", () => {
+  const text = readFileSync(path.join(repoRoot(import.meta.url), "runtime/agent-browser-start"), "utf8");
+  assert.match(text, /^\s+gost -C "\$relay_config" &$/m);
+  const config = /printf -v relay_config '([^']+)' \\\n\s+"\$RELAY_PORT" "\$CDP_PORT" "\$CDP_PORT"/.exec(text);
+  assert.ok(config, "the relay config is printed from the relay and DevTools ports");
+  const [, template = ""] = config;
+  const relay = JSON.parse(template.replace("%s", "9401").replaceAll("%s", "9201"));
+  assert.deepEqual(relay.services[0].addr, ":9401");
+  assert.deepEqual(relay.services[0].handler, { type: "tcp", metadata: { sniffing: true } });
+  assert.deepEqual(relay.services[0].forwarder.nodes[0], {
+    name: "chrome",
+    addr: "127.0.0.1:9201",
+    http: { host: "127.0.0.1:9201" },
+  });
+  assert.match(text, /curl -sf -o \/dev\/null "http:\/\/127\.0\.0\.1:\$\{RELAY_PORT\}\/json\/version"/);
+  assert.match(text, /--remote-debugging-address=127\.0\.0\.1/);
+  const image = readFileSync(path.join(repoRoot(import.meta.url), "runtime/Dockerfile"), "utf8");
+  assert.match(image, /install -m 755 \/tmp\/gost\/gost \/usr\/local\/bin\/gost/);
 });
 
 test("runtime clears stale chromium locks", () => {

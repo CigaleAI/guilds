@@ -10,7 +10,7 @@ directory. Everything else belongs to an
 
 Some things are shared by every organisation on the box: which
 connectors are installed, and the keys of the box's own integrations,
-such as web search, group routing, the GitHub App, and Google. One
+such as web search, System One, the GitHub App, and Google. One
 person decides them for everyone.
 
 ## In the app

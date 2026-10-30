@@ -38,6 +38,7 @@ import {
 } from "../harness";
 import { HarnessReadiness } from "./HarnessReadiness";
 import { HarnessLogo } from "../HarnessLogo";
+import { BrowserFields, withBrowser } from "./BrowserFields";
 /** A new agent's settings, as the server defaults them; the model is the organisation's default, or the operator's choice. */
 export const defaultAgentConfig: AgentConfig = {
   model: "",
@@ -51,6 +52,8 @@ export const defaultAgentConfig: AgentConfig = {
   max_workspace_mib: 10240,
   browser: false,
   browser_language: "en-US",
+  browser_optimized: false,
+  browser_model: null,
   coding: false,
   harness: null,
   harness_model: null,
@@ -86,58 +89,6 @@ export const limitFields = [
 
 type LimitKey = (typeof limitFields)[number]["key"];
 
-/** Chrome language tags the settings picker offers, US English first. */
-export const browserLanguageOptions = [
-  { value: "en-US", label: "English (United States)" },
-  { value: "en-GB", label: "English (United Kingdom)" },
-  { value: "ar", label: "Arabic" },
-  { value: "bg", label: "Bulgarian" },
-  { value: "zh-CN", label: "Chinese (Simplified)" },
-  { value: "zh-TW", label: "Chinese (Traditional)" },
-  { value: "hr", label: "Croatian" },
-  { value: "cs", label: "Czech" },
-  { value: "da", label: "Danish" },
-  { value: "nl", label: "Dutch" },
-  { value: "et", label: "Estonian" },
-  { value: "fi", label: "Finnish" },
-  { value: "fr-FR", label: "French" },
-  { value: "de-DE", label: "German" },
-  { value: "el", label: "Greek" },
-  { value: "he", label: "Hebrew" },
-  { value: "hi", label: "Hindi" },
-  { value: "hu", label: "Hungarian" },
-  { value: "id", label: "Indonesian" },
-  { value: "it-IT", label: "Italian" },
-  { value: "ja", label: "Japanese" },
-  { value: "ko", label: "Korean" },
-  { value: "lv", label: "Latvian" },
-  { value: "lt", label: "Lithuanian" },
-  { value: "ms", label: "Malay" },
-  { value: "nb", label: "Norwegian" },
-  { value: "pl", label: "Polish" },
-  { value: "pt-BR", label: "Portuguese (Brazil)" },
-  { value: "pt-PT", label: "Portuguese (Portugal)" },
-  { value: "ro", label: "Romanian" },
-  { value: "ru", label: "Russian" },
-  { value: "sr", label: "Serbian" },
-  { value: "sk", label: "Slovak" },
-  { value: "sl", label: "Slovenian" },
-  { value: "es-ES", label: "Spanish" },
-  { value: "es-419", label: "Spanish (Latin America)" },
-  { value: "sv", label: "Swedish" },
-  { value: "th", label: "Thai" },
-  { value: "tr", label: "Turkish" },
-  { value: "uk", label: "Ukrainian" },
-  { value: "vi", label: "Vietnamese" },
-] as const;
-
-function languageOptions(current: string) {
-  if (browserLanguageOptions.some((item) => item.value === current)) {
-    return browserLanguageOptions;
-  }
-  return [{ value: current, label: current }, ...browserLanguageOptions];
-}
-
 /** A model config and the agent's machine as a form edits them: numbers stay text while typed. */
 export type ConfigForm = {
   model: string;
@@ -147,6 +98,10 @@ export type ConfigForm = {
   machine_id: string;
   browser: boolean;
   browser_language: string;
+  /** Whether the browser runs as the agent-optimized browser. */
+  browser_optimized: boolean;
+  /** The model the agent-optimized browser plans and reads with; empty until one is picked. */
+  browser_model: string;
   coding: boolean;
   /** The coding agent's harness; empty until one is picked. */
   harness: Harness | "";
@@ -171,7 +126,8 @@ export type ConfigErrors = Partial<
     | "model"
     | "machine"
     | "harness"
-    | "harness_model",
+    | "harness_model"
+    | "browser_model",
     string
   >
 >;
@@ -191,6 +147,8 @@ export function configFormOf(config: AgentConfig, machineId = ""): ConfigForm {
     machine_id: machineId,
     browser: config.browser,
     browser_language: config.browser_language ?? "en-US",
+    browser_optimized: config.browser_optimized === true,
+    browser_model: config.browser_model ?? "",
     coding: config.coding,
     harness: isHarness(config.harness) ? config.harness : "",
     harness_model: config.harness_model ?? "",
@@ -240,7 +198,31 @@ export function configErrors(form: ConfigForm, context: ConfigErrorContext = {})
   } else if (modelProviderConnected(context.models, form.model) === false) {
     errors.model = `Connect a ${providerLabel(context.models, form.model)} key on Model keys first.`;
   }
+  const browserModel = browserModelError(form, context.models);
+  if (browserModel) errors.browser_model = browserModel;
   return errors;
+}
+
+/** What is wrong with the agent-optimized browser's model, when the form sends one. */
+function browserModelError(form: ConfigForm, models: OrgModels | undefined): string | undefined {
+  if (!browserOptimizedOf(form)) return undefined;
+  const model = form.browser_model.trim();
+  if (!model) return "Choose a browser model.";
+  if (isCodingOnlyModel(model, models)) return "A coding plan's model can't browse. Pick another.";
+  if (modelProviderConnected(models, model) === false) {
+    return `Connect a ${providerLabel(models, model)} key on Model keys first.`;
+  }
+  return undefined;
+}
+
+/** Whether the form sends the agent-optimized browser: only with the browser on. */
+function browserOptimizedOf(form: ConfigForm): boolean {
+  return form.browser && form.browser_optimized;
+}
+
+/** The browser model to send: only with the agent-optimized browser, else null. */
+function browserModelOf(form: ConfigForm): string | null {
+  return browserOptimizedOf(form) ? form.browser_model.trim() || null : null;
 }
 
 /** The harness model to send: only with a harness, and null for its subscription's default. */
@@ -271,8 +253,9 @@ export function withHarnessModel(
 }
 
 /**
- * The config to send, without the machine; a model that does not reason gets thinking off, and
- * only a coding agent carries a harness and its model.
+ * The config to send, without the machine; a model that does not reason gets thinking off, only
+ * a coding agent carries a harness and its model, and only an agent with the browser carries the
+ * agent-optimized browser and its model.
  */
 export function configOf(form: ConfigForm, models: OrgModels | undefined): AgentConfig {
   return {
@@ -281,6 +264,8 @@ export function configOf(form: ConfigForm, models: OrgModels | undefined): Agent
     thinking_level: modelLimits(models, form.model).thinkingOff ? "none" : form.thinking,
     browser: form.browser,
     browser_language: form.browser_language,
+    browser_optimized: browserOptimizedOf(form),
+    browser_model: browserModelOf(form),
     coding: form.coding,
     harness: form.coding && form.harness ? form.harness : null,
     harness_model: harnessModelOf(form),
@@ -520,26 +505,6 @@ export function withCoding(
         ? String(to.max_tool_calls)
         : form.max_tool_calls,
   };
-}
-
-/** Chrome's language while the browser is on. */
-function BrowserLanguageField({
-  form,
-  onChange,
-}: {
-  form: ConfigForm;
-  onChange: (next: ConfigForm) => void;
-}) {
-  return (
-    <Select
-      tone="surface"
-      label="Browser language"
-      hint="Chrome's interface language and the language sites see. Changing it restarts the browser."
-      value={form.browser_language}
-      onValueChange={(value) => onChange({ ...form, browser_language: value })}
-      options={languageOptions(form.browser_language)}
-    />
-  );
 }
 
 /** The agent an existing agent's settings edit, for the links and credentials they show. */
@@ -833,11 +798,13 @@ export function HarnessField({
  * Coding are greyed out while off when the machine is below the minimum they would set, with a
  * line that points to Settings → Machines; Coding stays on once saved: a coding agent stays one.
  * `codingToggle` false leaves the Coding card out, where the kind of agent was chosen before the form.
+ * With the browser on, its settings follow the cards.
  */
 export function CapabilitiesFields({
   form,
   onChange,
   models,
+  errors = {},
   machine,
   codingToggle = true,
   savedCoding = false,
@@ -845,6 +812,7 @@ export function CapabilitiesFields({
   form: ConfigForm;
   onChange: (next: ConfigForm) => void;
   models?: OrgModels | undefined;
+  errors?: ConfigErrors;
   /** The machine the agent goes on; undefined while none is chosen. */
   machine?: Pick<Machine, "name" | "cpu" | "memory_mib"> | undefined;
   codingToggle?: boolean;
@@ -868,7 +836,7 @@ export function CapabilitiesFields({
           icon={Globe}
           checked={form.browser}
           disabled={browserBlocked}
-          onChange={(browser) => onChange({ ...form, browser })}
+          onChange={(browser) => onChange(withBrowser(form, browser))}
         />
         {codingToggle ? (
           <CapabilityField
@@ -904,7 +872,9 @@ export function CapabilitiesFields({
       ) : machine && browserBlocked ? (
         <TooSmallNote machine={machine} minimum={browserMinimum} what="Browser" />
       ) : null}
-      {form.browser ? <BrowserLanguageField form={form} onChange={onChange} /> : null}
+      {form.browser ? (
+        <BrowserFields form={form} onChange={onChange} models={models} errors={errors} />
+      ) : null}
     </>
   );
 }

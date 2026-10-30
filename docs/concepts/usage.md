@@ -1,8 +1,9 @@
 # Usage
 
-Usage is what the model calls of a guild's agents have consumed:
-tokens, cost in US dollars, and the number of calls. Every model reply
-in a [run](runs.md) records its own tokens and cost. Those numbers are
+Usage is what the model calls and browse calls of a guild's agents
+have consumed: tokens, cost in US dollars, and the number of calls.
+Every model reply in a [run](runs.md) records its own tokens and cost,
+and so does every browse call. Those numbers are
 also added to running totals for the [agent](agents.md), its
 [guild](guilds.md), its [organisation](organisations.md), and the
 whole instance.
@@ -31,7 +32,8 @@ endpoint or Kimi Code, has no catalog price.
 
 ### Running totals
 
-Each reply with usage adds to five totals at once:
+Each reply with usage, and each browse call, adds to five totals at
+once:
 
 ```mermaid
 flowchart LR
@@ -52,6 +54,14 @@ Model calls of the [Prompt Studio](prompt-studio.md) coach and of the
 organisation, monthly, and instance totals only. The Studio coach
 and the Builder each show as a row of their own.
 
+### Browse calls
+
+A browse call drives a web page through a browsing service, which
+spends tokens of its own and of the model it drives the page with.
+Its tokens, cost, and call count are kept apart from model calls, and
+its cost is also part of the total cost. A browse call that is
+cancelled or stops at its time limit records no browser usage.
+
 ### For extensions
 
 After every model completion, core reports the run, the model, the
@@ -64,17 +74,19 @@ logged and never fails the run
 
 - **Agent › Usage**: the agent's totals since it was made, across every
   session: **Cost**, **Model calls**, **Input tokens**, **Output
-  tokens**, **Total tokens**, and **Cache reads**, with when it was
-  last counted. A line says the cost is what the provider reported, or
+  tokens**, **Total tokens**, and **Cache reads**, and **Browser**
+  with its cost and call count once a browse call was counted, with
+  when it was last counted. A line says the cost is what the provider reported, or
   the catalog rate when it reported none. Total tokens are input plus
   output; cache reads are counted apart. The same tab shows the disk
   the agent's home and its machine use ([Agent home](agent-home.md)).
-- **Guild › Usage**: the guild's totals, the same six figures, then
+- **Guild › Usage**: the guild's totals, the same figures, then
   each agent with its model calls, tokens, and cost. A name opens that
   agent's Usage tab. A line says deleted agents' spend stays in the
   organisation's usage.
 - **Settings › Usage**: the organisation's totals, then each guild and
-  its agents with calls and cost. The **Studio coach** and the
+  its agents with calls and cost, and their browser calls and cost
+  when there are any. The **Studio coach** and the
   **Builder** each have a row, and so does **Deleted guilds and
   agents**: what the organisation's total holds beyond the rows
   listed.
@@ -87,6 +99,7 @@ logged and never fails the run
 | --- | --- |
 | Spend gate in core | none |
 | Cost source | the provider's reported cost, else the catalog price, else 0 marked `unavailable` |
+| Browse calls | counted apart from model calls; their cost is part of the total cost |
 | Cache reads | priced at the cache-read rate; part of input tokens |
 | Total tokens | input plus output |
 | Counted from | each scope's creation |
@@ -107,8 +120,15 @@ Each assistant row with usage stores:
 - `metadata.cost_source`: `provider`, `catalog`, or `unavailable`;
 - `metadata.pricing_version`, the catalog's date, whenever the
   provider reported no cost;
-- `messages.cost_usd`, a column for accounting queries. It is NULL on
-  system, user, and tool rows.
+- `messages.cost_usd`, a column for accounting queries.
+
+Each tool row of a browse call stores `metadata.browser_usage`:
+`model`, the browsing service's `jev_input_tokens`,
+`jev_output_tokens`, and `jev_cost_usd`, the driving model's
+`llm_input_tokens`, `llm_output_tokens`, and `llm_cost_usd`, and
+their sum `cost_usd`, which is also its `messages.cost_usd`.
+`messages.cost_usd` is NULL on system and user rows and on every
+other tool row.
 
 ### Counters
 
@@ -123,7 +143,12 @@ row per `(scope, scope_id)`:
 | `global` | empty: the instance as a whole |
 
 Each counter holds `input_tokens`, `output_tokens`,
-`cache_read_tokens`, `cost_usd`, `calls`, and `updated_at`.
+`cache_read_tokens`, `cost_usd`, `calls`, `browser_input_tokens`,
+`browser_output_tokens`, `browser_cost_usd`, `browser_calls`, and
+`updated_at`. A model reply adds its tokens and cost and one to
+`calls`. A browse call adds its `jev` and `llm` tokens to the browser
+token columns, its cost to both `browser_cost_usd` and `cost_usd`,
+and one to `browser_calls`, leaving `calls` as it is.
 `org_monthly_usage` holds the same figures per `(org_id, month)`, the
 month being the UTC `YYYY-MM`.
 
@@ -150,8 +175,10 @@ agents, and guilds the caller cannot see.
 | `GET /api/usage` | `{ organisation }`: the current organisation's totals, `studio`, `archived`, and `guilds` with their `agents`, limited to the guilds the caller can see |
 
 Each set of totals carries `input_tokens`, `output_tokens`,
-`cache_read_tokens`, `total_tokens`, `cost_usd`, `calls`, and
-`updated_at` (null before the first call).
+`cache_read_tokens`, `total_tokens`, `cost_usd`, `calls`,
+`browser_input_tokens`, `browser_output_tokens`, `browser_cost_usd`,
+`browser_calls`, and `updated_at` (null before the first call).
+`total_tokens` is model input plus output.
 
 ### Usage callback
 

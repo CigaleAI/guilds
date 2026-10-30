@@ -145,6 +145,7 @@ test("fixed-level tools ignore arguments", () => {
   assert.equal(classifyToolCall(call("schedule_create_window", { level: "org" })).level, "local");
   assert.equal(classifyToolCall(call("browser_click", { ref: "e1" })).level, null);
   assert.equal(classifyToolCall(call("browser_click")).kind, "act");
+  assert.equal(classifyToolCall(call("browse", { task: "find the price" })).kind, "act");
   assert.equal(classifyToolCall(call("browser_eval")).kind, "act");
   assert.equal(classifyToolCall(call("browser_scroll")).kind, "act");
   assert.equal(classifyToolCall(call("browser_snapshot")).kind, "read");

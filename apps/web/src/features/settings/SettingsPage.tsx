@@ -342,6 +342,14 @@ function usageStats(totals: UsageTotals) {
     { label: "Output tokens", value: count.format(totals.output_tokens) },
     { label: "Total tokens", value: count.format(totals.total_tokens) },
     { label: "Cache reads", value: count.format(totals.cache_read_tokens) },
+    ...(totals.browser_calls > 0
+      ? [
+          {
+            label: `Browser, ${count.format(totals.browser_calls)} calls`,
+            value: formatCost(totals.browser_cost_usd),
+          },
+        ]
+      : []),
   ];
 }
 
@@ -359,6 +367,11 @@ function UsageLine({
       {lead}
       <span className="min-w-0 flex-1 truncate text-sm">{name}</span>
       <span className="font-mono text-xs text-muted">{count.format(totals.calls)} calls</span>
+      {totals.browser_calls > 0 ? (
+        <span className="font-mono text-xs text-muted">
+          Browser {count.format(totals.browser_calls)} calls, {formatCost(totals.browser_cost_usd)}
+        </span>
+      ) : null}
       <span className="w-20 text-right font-mono text-sm font-semibold">
         {formatCost(totals.cost_usd)}
       </span>

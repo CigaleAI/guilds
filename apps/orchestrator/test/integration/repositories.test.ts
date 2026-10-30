@@ -14,8 +14,16 @@ import { getMembership, listOrgsForUser } from "../../src/db/orgs.js";
 import { insertGuild } from "../../src/db/guilds.js";
 import { addTestAgent } from "../helpers/agents.js";
 import { createRun, insertMessage, nextSeq } from "../../src/db/runs.js";
-import { getUsage } from "../../src/db/usage.js";
+import { getOrgMonthlyUsage, getUsage, utcMonth } from "../../src/db/usage.js";
 import { agentConfig, runSnapshot } from "../helpers/generation.js";
+import { getAgent } from "../../src/db/agents.js";
+import { BrowseService } from "../../src/browse/service.js";
+import { setInstanceKeys } from "../../src/instance/integrations.js";
+import { createToolHooks } from "../../src/toolbox/types.js";
+import { invokeTool } from "../../src/toolbox/index.js";
+import { costLine, FakeFastbrowse, runResult } from "../helpers/browse.js";
+import { clearInstanceKeys, storeKeys } from "../helpers/env.js";
+import { fakeToolEvents, toolFixture } from "../helpers/toolbox.js";
 
 const dbName = uniqueDbName("agent_platform_r2");
 let database: Database;
@@ -216,5 +224,160 @@ describe("repositories", { concurrency: 1 }, () => {
         { seq: 3, cost: 0.0005 },
       ],
     );
+  });
+
+  test("insertMessage with a browse result counts browser usage apart from model calls", async () => {
+    const db = database.pool;
+    const now = new Date("2026-09-15T13:00:00.000Z");
+    await addTestAgent(db, "org_home",
+      {
+        agentId: "a_browse",
+        guildId: "guild_usage",
+        name: "browser",
+        config: agentConfig({ model: "openrouter/openai/gpt-5.6-luna" }),
+      },
+      now,
+    );
+    await createRun(db,
+      {
+        runId: "r_browse",
+        agentId: "a_browse",
+        configSnapshot: runSnapshot(),
+        systemContent: "sys",
+        taskContent: "task",
+        userContent: null,
+        systemPromptHash: "s",
+        taskPromptHash: "t",
+        memoryPromptHash: "m",
+      },
+      now,
+    );
+    const orgBefore = await getUsage(db, "org", "org_home");
+    const monthBefore = await getOrgMonthlyUsage(db, "org_home", utcMonth(now));
+    const seq = await nextSeq(db, "r_browse");
+    await insertMessage(db,
+      {
+        runId: "r_browse",
+        seq,
+        payload: { role: "tool", tool_call_id: "c_browse", content: "done" },
+        metadata: {
+          tool_name: "browse",
+          browser_usage: {
+            model: "browser-model",
+            jev_input_tokens: 100,
+            jev_output_tokens: 20,
+            jev_cost_usd: 0.01,
+            llm_input_tokens: 300,
+            llm_output_tokens: 40,
+            llm_cost_usd: 0.002,
+            cost_usd: 0.012,
+          },
+        },
+      },
+      now,
+    );
+    const agent = await getUsage(db, "agent", "a_browse");
+    assert.ok(agent);
+    assert.equal(Number(agent.input_tokens), 0);
+    assert.equal(Number(agent.calls), 0);
+    assert.equal(Number(agent.cost_usd), 0.012);
+    assert.equal(Number(agent.browser_input_tokens), 400);
+    assert.equal(Number(agent.browser_output_tokens), 60);
+    assert.equal(Number(agent.browser_cost_usd), 0.012);
+    assert.equal(Number(agent.browser_calls), 1);
+    const org = await getUsage(db, "org", "org_home");
+    assert.equal(Number(org?.calls), Number(orgBefore?.calls ?? 0));
+    assert.equal(Number(org?.browser_calls), Number(orgBefore?.browser_calls ?? 0) + 1);
+    assert.equal(
+      Number(org?.cost_usd).toFixed(8),
+      (Number(orgBefore?.cost_usd ?? 0) + 0.012).toFixed(8),
+    );
+    const month = await getOrgMonthlyUsage(db, "org_home", utcMonth(now));
+    assert.equal(Number(month?.calls), Number(monthBefore?.calls ?? 0));
+    assert.equal(Number(month?.browser_calls), Number(monthBefore?.browser_calls ?? 0) + 1);
+    assert.equal(
+      Number(month?.browser_cost_usd).toFixed(8),
+      (Number(monthBefore?.browser_cost_usd ?? 0) + 0.012).toFixed(8),
+    );
+    const cost = await db.query<{ cost_usd: string | null }>(
+      `SELECT cost_usd FROM messages WHERE run_id = $1 AND seq = $2`,
+      ["r_browse", seq],
+    );
+    assert.equal(Number(cost.rows[0]?.cost_usd), 0.012);
+  });
+
+  test("a browse call's committed result carries its browser usage into the usage counters", async () => {
+    const db = database.pool;
+    const now = new Date("2026-09-16T10:00:00.000Z");
+    setInstanceKeys(storeKeys({ "system-one": { api_key: "ts-key" } }));
+    try {
+      await addTestAgent(db, "org_home",
+        {
+          agentId: "a_browse_tool",
+          guildId: "guild_usage",
+          name: "browse-tool",
+          config: agentConfig({ browser: true, browser_optimized: true, browser_model: "openai/gpt-5" }),
+        },
+        now,
+      );
+      await createRun(db,
+        {
+          runId: "r_browse_tool",
+          agentId: "a_browse_tool",
+          configSnapshot: runSnapshot(),
+          systemContent: "sys",
+          taskContent: "task",
+          userContent: null,
+          systemPromptHash: "s",
+          taskPromptHash: "t",
+          memoryPromptHash: "m",
+        },
+        now,
+      );
+      const fastbrowse = new FakeFastbrowse(async () =>
+        runResult({
+          status: "complete",
+          answer: "done",
+          cost: {
+            lines: [
+              costLine({ component: "jev", dollars: 0.004, input_tokens: 120, output_tokens: 3 }),
+              costLine({ component: "llm", dollars: 0.006, input_tokens: 800, output_tokens: 50 }),
+            ],
+          },
+        }),
+      );
+      const browse = new BrowseService({
+        db: { getAgent: (agentId) => getAgent(db, agentId) },
+        credentials: { modelCredentials: async () => ({ apiKey: "openai-key" }) },
+        events: fakeToolEvents(),
+        fastbrowse,
+      });
+      const { services, run } = toolFixture({
+        run_id: "r_browse_tool",
+        agent_id: "a_browse_tool",
+        guild_id: "guild_usage",
+        sandbox: null,
+        secrets: {},
+        browse,
+      });
+      const hooks = createToolHooks({ cdp_target: async () => ["http://127.0.0.1:9", {}] });
+      const [payload, metadata] = await invokeTool(services, run, hooks, {
+        id: "c_browse_tool",
+        type: "function",
+        function: { name: "browse", arguments: JSON.stringify({ task: "find it" }) },
+      });
+      assert.equal(payload.content, "Status: complete\nAnswer:\ndone");
+      await insertMessage(db, { runId: "r_browse_tool", seq: await nextSeq(db, "r_browse_tool"), payload, metadata }, now);
+      const agent = await getUsage(db, "agent", "a_browse_tool");
+      assert.ok(agent);
+      assert.equal(Number(agent.calls), 0);
+      assert.equal(Number(agent.browser_calls), 1);
+      assert.equal(Number(agent.browser_input_tokens), 920);
+      assert.equal(Number(agent.browser_output_tokens), 53);
+      assert.equal(Number(agent.browser_cost_usd).toFixed(8), "0.01000000");
+      assert.equal(Number(agent.cost_usd).toFixed(8), "0.01000000");
+    } finally {
+      clearInstanceKeys();
+    }
   });
 });

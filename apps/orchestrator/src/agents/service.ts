@@ -28,6 +28,7 @@ import type { AgentConfig } from "../db/schema/index.js";
 import type { GenerationLoop } from "../generation/index.js";
 import type { AgentMachines } from "../generation/machines.js";
 import { assertGuildAgentRoom } from "../guilds/service.js";
+import { integrationState, SYSTEM_ONE } from "../instance/integrations.js";
 import { newId } from "../lib/ids.js";
 import { assertModelConnected, type ModelCredentialsProvider } from "../llm/credentials.js";
 import { freeSlot, placeAgent, placementMachine, type Placement } from "../machines/placement.js";
@@ -105,6 +106,41 @@ function configObject(raw: unknown): Record<string, unknown> {
     throw new AgentValidationError("config must be an object");
   }
   return raw;
+}
+
+/**
+ * Refuses the agent-optimized browser while the System One key is not on, or while its model's
+ * provider is not connected for the organisation.
+ */
+async function assertBrowserOptimizedReady(
+  services: AgentServices,
+  orgId: string,
+  config: AgentConfig,
+): Promise<void> {
+  if (!config.browser_optimized || config.browser_model === null) {
+    return;
+  }
+  if (integrationState(SYSTEM_ONE) !== "on") {
+    throw new AgentValidationError("the agent-optimized browser needs the System One key under Platform keys");
+  }
+  await assertModelConnected(services.modelCredentials, orgId, config.browser_model);
+}
+
+/**
+ * Refuses a reconfigure that turns the agent-optimized browser on, or gives it another browser
+ * model, while it is not ready. An edit that leaves both as they were saves whatever the key or
+ * the provider has become since.
+ */
+async function assertBrowserOptimizedChangeReady(
+  services: AgentServices,
+  orgId: string,
+  config: AgentConfig,
+  previous: AgentConfig,
+): Promise<void> {
+  if (previous.browser_optimized === true && previous.browser_model === config.browser_model) {
+    return;
+  }
+  await assertBrowserOptimizedReady(services, orgId, config);
 }
 
 function generationOf(services: AgentServices): NonNullable<AgentServices["generation"]> {
@@ -215,9 +251,9 @@ export async function addAgent(
 }
 
 /**
- * Creates an agent in the guild: validated, on a model the organisation has connected, within its
- * policy's caps and the guild's agent limit, and on the machine the request names or the
- * organisation's only one.
+ * Creates an agent in the guild: validated, on a model the organisation has connected, with the
+ * agent-optimized browser only while it is ready, within its policy's caps and the guild's agent
+ * limit, and on the machine the request names or the organisation's only one.
  */
 export async function createAgent(
   services: AgentServices,
@@ -237,6 +273,7 @@ export async function createAgent(
   const config = validateAgentConfig(withCodingLimits(configObject(request.config)));
   assertCodingAgent(config);
   await assertModelConnected(services.modelCredentials, guild.org_id, config.model);
+  await assertBrowserOptimizedReady(services, guild.org_id, config);
   const needs = { browser: config.browser, coding: config.coding };
   await assertCanCreateAgent(policy, db, guild.org_id, needs);
   await assertGuildAgentRoom(db, guild.id, 1);
@@ -353,10 +390,12 @@ async function moveAgentNotes(
 }
 
 /**
- * Changes an agent's config and profile. A new config is validated and its model connected; a
- * browser or coding switched on is within the policy's caps; a rename waits while the agent
- * generates and moves its notes folder; a machine the config needs or the patch names moves the
- * agent there. A browser switched off, or on a new language, restarts.
+ * Changes an agent's config and profile. A new config is validated and its model connected; the
+ * agent-optimized browser turned on, or given another browser model, must be ready, while an edit
+ * that leaves both alone saves without the check; a browser or coding switched on is
+ * within the policy's caps; a rename waits while the agent generates and moves its notes folder; a
+ * machine the config needs or the patch names moves the agent there. A browser switched off, or on
+ * a new language, restarts; switching the agent-optimized browser does not.
  */
 export async function reconfigureAgent(
   services: AgentServices,
@@ -368,6 +407,7 @@ export async function reconfigureAgent(
   const previous = agent.config;
   assertCodingAgent(config, previous);
   await assertModelConnected(services.modelCredentials, agent.org_id, config.model);
+  await assertBrowserOptimizedChangeReady(services, agent.org_id, config, previous);
   const needs = { browser: config.browser, coding: config.coding };
   const placement = await placeAgent(services, agent.org_id, userId, {
     requested: patch.machineId,

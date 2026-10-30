@@ -357,9 +357,11 @@ container:
 | What | Value |
 | --- | --- |
 | X display | `:10+s`, its VNC server on `5910+s`, on loopback |
-| Chrome DevTools | `9300+s` |
+| Chrome DevTools | `9300+s`, on loopback |
+| DevTools relay (gost, to Chrome DevTools, with each request's Host set to Chrome's) | `9400+s` |
 | noVNC | `6100+s` |
 | ttyd | `7700+s` |
+| Reserved for the slot's local forward proxy | `9500+s` |
 | The agent's own servers | `20000+100·s` to `20000+100·s+99` |
 
 ### Move rules

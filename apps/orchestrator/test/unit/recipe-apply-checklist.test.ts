@@ -184,6 +184,9 @@ test("apply gives a coding role the harness chosen, else the recipe's, and no ot
   assert.equal(configFromRecipeRole(role).harness_model, null);
   role.config = { coding: true, harness: "codex" };
   assert.equal(configFromRecipeRole(role).browser, false, "a coding role has the browser only when it asks for it");
+  role.config = { browser: true, browser_optimized: true, browser_model: TEST_MODEL };
+  assert.equal(configFromRecipeRole(role).browser_optimized, false, "a role browses with the step-by-step browser tools");
+  assert.equal(configFromRecipeRole(role).browser_model, null);
   role.config = { secret_aliases: { CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN" } };
   assert.deepEqual(configFromRecipeRole(role).secret_aliases, { CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN" });
   role.config = { secret_aliases: { SAME: "SAME" } };

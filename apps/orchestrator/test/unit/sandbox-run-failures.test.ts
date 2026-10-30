@@ -147,7 +147,7 @@ test("waitForBrowser answers when the sandbox cannot run the blank navigation", 
   assert.equal(navigated, true);
 });
 
-test("a browser that never answers on a sandbox that runs nothing reports vnc and cdp down", async () => {
+test("a browser that never answers on a sandbox that runs nothing reports vnc, cdp, and the relay down", async () => {
   const { sandboxes } = browserSandboxes(1);
   const fake = {
     id: "sbx_fake",
@@ -161,7 +161,7 @@ test("a browser that never answers on a sandbox that runs nothing reports vnc an
     () => sandboxes.waitForBrowser(fake, SEAT),
     (error: unknown) => {
       assert.ok(error instanceof SandboxError);
-      assert.equal(error.message, "browser session failed to start\nvnc=down\ncdp=down");
+      assert.equal(error.message, "browser session failed to start\nvnc=down\ncdp=down\nrelay=down");
       return true;
     },
   );

@@ -138,6 +138,10 @@ test("instance keys switch platform logins and the GitHub connector; replacing t
     assert.equal((await put("nope", { values: {} })).statusCode, 404);
     assert.equal((await remove("nope")).statusCode, 404);
     assert.equal((await status(app, "web-search")).state, "off", "a refused write changes nothing");
+    const provider = await put("system-one", { values: { api_key: "k", provider: "other" } });
+    assert.equal(provider.statusCode, 422, provider.body);
+    assert.match(String(provider.json().detail), /System One provider "other" is not one of: typesafe/);
+    assert.equal((await status(app, "system-one")).state, "off", "a refused provider stores nothing");
 
     // GitHub App: the connector connects only once the App is stored.
     const unconfigured = await connectGithub();
@@ -342,7 +346,7 @@ test("loading the keys skips one that does not decrypt under the master key and 
   };
   try {
     await insert("web-search", { api_key: " tvly-key " }, MASTER);
-    await insert("group-routing", { api_key: "routing-key" }, Buffer.alloc(32, 7));
+    await insert("system-one", { api_key: "system-one-key" }, Buffer.alloc(32, 7));
     const snapshot = await new InstanceKeys(db, MASTER).load();
     assert.deepEqual(snapshot, {
       "web-search": { values: { api_key: "tvly-key" }, updated_at: "2026-10-09T08:00:00.000Z", set_by: null },

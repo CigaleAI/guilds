@@ -41,6 +41,14 @@ export function GuildUsage() {
               { label: "Output tokens", value: count.format(usage.data.output_tokens) },
               { label: "Total tokens", value: count.format(usage.data.total_tokens) },
               { label: "Cache reads", value: count.format(usage.data.cache_read_tokens) },
+              ...(usage.data.browser_calls > 0
+                ? [
+                    {
+                      label: `Browser, ${count.format(usage.data.browser_calls)} calls`,
+                      value: formatCost(usage.data.browser_cost_usd),
+                    },
+                  ]
+                : []),
             ]}
           />
           <section aria-label="By agent" className="flex flex-col gap-1.5">

@@ -197,7 +197,8 @@ test("system template explains special messages", () => {
   assert.ok(text.includes("json.load(sys.stdin)"));
   assert.ok(text.includes('<capability name="notes">'));
   assert.ok(text.includes('<capability name="scripts">'));
-  assert.ok(text.includes('<capability name="browser">'));
+  assert.ok(text.includes('<capability name="browser_standard">'));
+  assert.ok(text.includes('<capability name="browser_optimized">'));
   assert.ok(text.includes('<capability name="memory">'));
 });
 
@@ -229,6 +230,30 @@ test("standing omits script notes and browser guides when those capabilities are
   assert.ok(on.includes("A script is the only way to execute code"));
   assert.ok(!on.includes("shell_status"));
   assert.ok(!on.includes("<capability"));
+});
+
+test("the browser renders the block of its mode and never both", () => {
+  const text = readFileSync(path.join(templatesRoot(), "system.md"), "utf8");
+  const caps = { scripts: false, notes: false, browser: true, coding: false };
+  const standard = standingForCapabilities(text, caps);
+  assert.ok(standard.includes("browser_navigate"));
+  assert.ok(standard.includes("browser_eval"));
+  assert.ok(!standard.includes("`browse`"));
+  assert.ok(!standard.includes("needs_confirmation"));
+  assert.ok(!standard.includes("<capability"));
+  assert.equal(standingForCapabilities(text, { ...caps, browserOptimized: false }), standard);
+  const optimized = standingForCapabilities(text, { ...caps, browserOptimized: true });
+  assert.ok(optimized.includes("`browse`"));
+  assert.ok(optimized.includes("browser_eval"));
+  assert.ok(optimized.includes("`authorize: true`"));
+  assert.ok(optimized.includes("needs_confirmation"));
+  assert.ok(optimized.includes("needs_login"));
+  assert.ok(!optimized.includes("browser_navigate"));
+  assert.ok(!optimized.includes("browser_scroll"));
+  assert.ok(!optimized.includes("<capability"));
+  const off = standingForCapabilities(text, { ...caps, browser: false, browserOptimized: true });
+  assert.ok(!off.includes("`browse`"));
+  assert.ok(!off.includes("browser_eval"));
 });
 
 test("the coding block replaces the scripts-only line for coding agents", () => {

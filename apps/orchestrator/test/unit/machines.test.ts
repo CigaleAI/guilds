@@ -125,15 +125,18 @@ test("a slot sets the agent's display, its ports, and its own port block, none o
     display: 10,
     vnc: 5910,
     cdp: 9300,
+    cdpRelay: 9400,
     novnc: 6100,
     ttyd: 7700,
+    proxy: 9500,
     portsFrom: 20000,
     portsTo: 20099,
   });
   const seen = new Set<number>();
   for (let slot = 0; slot < MAX_AGENTS_PER_MACHINE; slot += 1) {
     const ports = slotPorts(slot);
-    for (const port of [ports.vnc, ports.cdp, ports.novnc, ports.ttyd, ports.portsFrom, ports.portsTo]) {
+    const fixed = [ports.vnc, ports.cdp, ports.cdpRelay, ports.novnc, ports.ttyd, ports.proxy];
+    for (const port of [...fixed, ports.portsFrom, ports.portsTo]) {
       assert.equal(seen.has(port), false, `port ${port} is taken twice`);
       seen.add(port);
       assert.ok(port < 65536);

@@ -269,7 +269,7 @@ export function AccessTools({
           description="Notes, tables, memory, scripts, routines, group chat and secrets, served by the orchestrator; browser and coding follow the agent's capabilities. No login to connect."
         >
           <div className="flex flex-col overflow-hidden rounded-xl bg-surface">
-            {toolFamilyGroups(withCapabilityNativeTools(tools))
+            {toolFamilyGroups(withCapabilityNativeTools(tools, capabilities))
               .filter((group) => !hideFamilies.includes(group.label))
               .map((group) => (
                 <NativeFamily

@@ -115,7 +115,9 @@ function clippedHint(value: string | null | undefined): string {
 /**
  * The config a role carries for an agent: its settings, in the order of `CONFIG_KEYS`. A harness,
  * harness model or harness effort left unset, and secret aliases a recipe carries none of, leave
- * their key out; apply settles them.
+ * their key out; apply settles them. The agent-optimized browser stays behind: it needs the
+ * applying instance's System One key and a model of the applying organisation, so a role browses
+ * with the step-by-step browser tools.
  */
 export function portableRoleConfig(config: AgentConfig): RecipeRole["config"] {
   const aliases = portableSecretAliases(config);

@@ -1,6 +1,6 @@
 import { existsSync, statSync } from "node:fs";
 import { agentLogins, agentRuntime, type RuntimeAccess } from "../access/runtime.js";
-import { validateAgentConfig } from "../agents/config.js";
+import { isOptimizedBrowserOn, validateAgentConfig } from "../agents/config.js";
 import { AgentValidationError } from "../agents/validation.js";
 import { agentActor } from "../artifacts/actors.js";
 import { ArtifactError } from "../artifacts/errors.js";
@@ -99,6 +99,7 @@ export type PromptCapabilities = {
   notes: boolean;
   files: boolean;
   browser: boolean;
+  browserOptimized: boolean;
   coding: boolean;
   memory: boolean;
   memoryWrite: boolean;
@@ -111,6 +112,7 @@ function promptCapabilities(config: AgentConfig, tools: string[]): PromptCapabil
     notes: NOTE_TOOLS.some((name) => tools.includes(name)),
     files: FILE_TOOLS.some((name) => tools.includes(name)),
     browser: Boolean(config.browser),
+    browserOptimized: isOptimizedBrowserOn(config),
     coding: Boolean(config.coding),
     memory,
     memoryWrite: memory && tools.includes("memory_write"),

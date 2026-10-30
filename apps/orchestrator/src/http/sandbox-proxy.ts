@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import { inflateSync, gunzipSync } from "node:zlib";
 import { request as undiciRequest } from "undici";
 import WebSocket from "ws";
+import { filterHeaders, HOP_REQ, HOP_RESP, wsUrl } from "../lib/forwarding.js";
 
 /**
  * A request the sandbox proxy refuses, with the status it answers: a path outside the daemon's
@@ -16,28 +17,6 @@ export class SandboxProxyError extends Error {
     this.status = status;
   }
 }
-
-export const HOP_REQ = new Set([
-  "host",
-  "connection",
-  "keep-alive",
-  "proxy-connection",
-  "transfer-encoding",
-  "upgrade",
-  "content-length",
-  "sec-websocket-key",
-  "sec-websocket-version",
-  "sec-websocket-extensions",
-  "sec-websocket-protocol",
-]);
-
-export const HOP_RESP = new Set([
-  "connection",
-  "keep-alive",
-  "transfer-encoding",
-  "content-encoding",
-  "content-length",
-]);
 
 /**
  * The daemon URL a proxied path names: `pathPart` under the daemon's `base`, on the daemon's host.
@@ -55,26 +34,6 @@ export function joinUpstream(base: string, pathPart: string, query: string): str
     url.search = query.startsWith("?") ? query : `?${query}`;
   }
   return url.toString();
-}
-
-export function wsUrl(httpUrl: string): string {
-  const url = new URL(httpUrl);
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  return url.toString();
-}
-
-export function filterHeaders(
-  headers: Record<string, string | string[] | undefined>,
-  excluded: Set<string>,
-): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(headers)) {
-    if (value === undefined || excluded.has(key.toLowerCase())) {
-      continue;
-    }
-    out[key] = Array.isArray(value) ? value.join(", ") : value;
-  }
-  return out;
 }
 
 function rawQuery(request: FastifyRequest): string {

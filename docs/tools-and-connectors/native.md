@@ -111,9 +111,75 @@ agent's whole Memory ([Memory](../concepts/memory.md)).
 
 ## Browser
 
-Eight tools drive the agent's own Chrome through Playwright in its
-sandbox ([Browser](../concepts/browser.md)). Each call has a 60-second
-timeout.
+The browser tools drive the agent's own Chrome
+([Browser](../concepts/browser.md)). The browser runs in one of two
+modes, and each offers its own tools:
+
+| Mode | Runs when | Tools |
+|---|---|---|
+| Step-by-step | `browser` is on and the agent-optimized browser is not | The eight tools below |
+| Agent-optimized | `browser_optimized` is on and the System One [platform key](platform-keys.md) is on | `browse` and `browser_eval` |
+
+`browse` delegates a whole web task on the agent's Chrome and is
+offered in place of the seven step tools; `browser_eval` is offered in
+both modes. A run's mode is set when it is created: an agent with
+`browser_optimized` on starts its runs in the step-by-step mode while
+the System One key is not on. A run that started with `browse` keeps
+it while `browser_optimized` stays on, and its calls answer `ERROR:`
+naming the missing key until the key is set again. While
+`browser_optimized` is on without the key, each run logs one warning
+with the operation `browse.integration_off` and records the time in its
+`metadata.browse_integration_off_at`.
+
+### browse
+
+`browse` runs the task with fastbrowse, which picks each action from
+the page's own controls, plans and reads with the agent's
+`browser_model`, and cites a verbatim page quote for each fact of its
+answer. Every step shows in the **Browser** tab, and the operator can
+take over there at any time.
+
+| Parameter | Required | Meaning |
+|---|---|---|
+| `task` | Yes | The goal, the output wanted, constraints, and any values to fill |
+| `start` | No | An `http` or `https` URL to start on; without it the run continues from the current page or infers one from the task |
+| `authorize` | No | Allows irreversible actions (submit, pay, delete, send); default `false`, which stops at `needs_confirmation` before them |
+| `fields` | No | A flat object of field name to `{ type, description? }`, `type` one of `string`, `number`, `integer`, `boolean`; at most 20 fields, names `^[a-z][a-z0-9_]{0,39}$`; every field is extracted and backed by a page quote |
+| `max_steps` | No | 1 to 100 browser actions; default 40 |
+| `max_seconds` | No | 10 to 600 seconds; default 300 |
+
+The result is text, one part per line, each present only when it has
+something:
+
+- `Status:` one of `complete`, `unverified`, `needs_confirmation`,
+  `needs_login`, `blocked`, `needs_input`, `stuck`, `budget_exceeded`,
+  `observation_limit`, `unavailable`, `error`. Only `complete` is
+  verified.
+- `Final URL:` the page the run ended on.
+- `Answer:` the answer, its facts marked `[n]`.
+- `Citations:` one line per marker, `[n] "quote" — url`.
+- `Data:` the extracted `fields` as JSON.
+- `Wall:` the sign-in or bot wall a `needs_login` or `blocked` run
+  stopped at: its kind, origin, and the fields it asked for.
+- `Budget:` the limit a `budget_exceeded` run reached.
+- `Error:` what went wrong.
+
+While it runs, each step (`click "Sign in" at https://…`) is the
+call's progress in the run view, and keeps the agent's Chrome and
+machine from their idle stops. A cancel of the run stops the call
+with `ERROR: browse cancelled`; a run still going 30 seconds past
+`max_seconds` stops with `ERROR: browse stopped at its time limit`.
+The call's metadata keeps `status`, `final_url`, `steps`, and
+`browser_usage`: the Jev and browser-model tokens and cost, which count
+as browser usage and in the organisation's monthly spend
+([Usage](../concepts/usage.md)). Without the System One key, a browser
+model, or a connected key for that model, the call answers `ERROR:`
+with the reason.
+
+### Step-by-step tools
+
+The step-by-step tools run through Playwright in the agent's sandbox.
+Each call has a 60-second timeout.
 
 | Tool | Parameters | Does |
 |---|---|---|
