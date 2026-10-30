@@ -3,6 +3,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { isPlainRecord } from "../db/json.js";
 import { orchestratorRoot } from "../lib/paths.js";
 
 export class SandboxError extends Error {
@@ -119,6 +120,109 @@ export type RawSdk = {
     connect: (opts: unknown) => Promise<unknown>;
   };
 };
+
+/** What a manager is asked to list: the sandboxes in these states that carry these labels. */
+export type SandboxFilter = {
+  states?: string[];
+  metadata?: Record<string, string>;
+  pageSize: number;
+};
+
+/** How a command runs: its time limit, its directory, whether it detaches, and what it adds to the environment. */
+export type CommandOptions = {
+  timeoutSeconds?: number;
+  workingDirectory?: string;
+  background?: boolean;
+  envs?: Record<string, string>;
+};
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return isPlainRecord(value) && Object.values(value).every((item) => typeof item === "string");
+}
+
+/** A command's options from either spelling of each: `timeout`, `working_directory`, and `env` included. */
+export function commandOptions(opts: unknown): CommandOptions {
+  if (!isPlainRecord(opts)) {
+    return {};
+  }
+  const options: CommandOptions = {};
+  const timeout = opts.timeoutSeconds ?? opts.timeout;
+  if (typeof timeout === "number") {
+    options.timeoutSeconds = timeout;
+  }
+  const workingDirectory = opts.workingDirectory ?? opts.working_directory;
+  if (typeof workingDirectory === "string") {
+    options.workingDirectory = workingDirectory;
+  }
+  if (typeof opts.background === "boolean") {
+    options.background = opts.background;
+  }
+  const envs = opts.envs ?? opts.env;
+  if (isStringRecord(envs)) {
+    options.envs = envs;
+  }
+  return options;
+}
+
+/** The exit code a command's result reports, under either spelling. */
+export function exitCodeOf(result: CommandResult | null | undefined): number | undefined {
+  return result?.exit_code ?? result?.exitCode;
+}
+
+/** What a command printed, its lines joined and trimmed. */
+export function stdoutOf(result: CommandResult | null | undefined): string {
+  const messages = result?.logs?.stdout ?? [];
+  return messages.map((item) => item.text ?? "").join("\n").trim();
+}
+
+/** When a listed sandbox was created, in milliseconds since the epoch; 0 when it does not say. */
+export function createdAtOf(info: SandboxInfo): number {
+  const raw = info.created_at ?? info.createdAt;
+  if (raw instanceof Date) {
+    return raw.getTime();
+  }
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return raw;
+  }
+  if (typeof raw === "string") {
+    const parsed = Date.parse(raw);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+  return 0;
+}
+
+/** The headers a request to the endpoint carries, from whichever builder it has, else its own. */
+export function endpointHeaders(endpoint: SandboxEndpoint, config: ConnectionConfig): Record<string, string> {
+  const build = endpoint.build_request_headers ?? endpoint.buildRequestHeaders;
+  if (typeof build === "function") {
+    return build(config);
+  }
+  return { ...(endpoint.headers ?? {}) };
+}
+
+function listerOf(manager: SandboxManagerHandle): (filter: Record<string, unknown>) => Promise<ListMatches> {
+  const list = manager.listSandboxInfos ?? manager.list_sandbox_infos;
+  if (!list) {
+    throw new SandboxError("sandbox manager cannot list sandboxes");
+  }
+  return (filter) => list.call(manager, filter);
+}
+
+/** The sandboxes the manager lists for the filter, under whichever spelling its answer uses. */
+export async function listSandboxes(manager: SandboxManagerHandle, filter: SandboxFilter): Promise<SandboxInfo[]> {
+  const matches: ListMatches | null | undefined = await listerOf(manager)(filter);
+  const infos = matches?.sandbox_infos ?? matches?.sandboxInfos ?? matches?.items ?? [];
+  return Array.isArray(infos) ? infos : [];
+}
+
+/** Kills one sandbox through the manager, under whichever spelling its method uses. */
+export async function killSandbox(manager: SandboxManagerHandle, id: string): Promise<void> {
+  const kill = manager.killSandbox ?? manager.kill_sandbox;
+  if (!kill) {
+    throw new SandboxError("sandbox manager cannot kill sandboxes");
+  }
+  await kill.call(manager, id);
+}
 
 function connectionOf(value: unknown): unknown {
   if (!value || typeof value !== "object" || Array.isArray(value)) {

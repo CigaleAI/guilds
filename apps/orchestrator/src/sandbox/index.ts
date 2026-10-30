@@ -10,11 +10,17 @@ import { SCRIPTS_DIR } from "../scripts/validation.js";
 import { materialiseScripts } from "../scripts/materialise.js";
 import type { RunScriptSnapshot } from "../db/schema/index.js";
 import {
+  commandOptions,
+  createdAtOf,
+  endpointHeaders,
+  exitCodeOf,
+  killSandbox,
+  listSandboxes,
   openSandboxSdk,
   SandboxError,
+  stdoutOf,
   type CommandResult,
   type ConnectionConfig,
-  type ListMatches,
   type OpenSandboxModule,
   type SandboxCommands,
   type SandboxEndpoint,
@@ -147,15 +153,13 @@ export function seatEnvironment(seat: AgentSeat): Record<string, string> {
 export function agentSandbox(sandbox: SandboxHandle, home: string, envs: Record<string, string>): SandboxHandle {
   const commands: SandboxCommands = {
     run: async (command, opts, handlers) => {
-      const body = (opts ?? {}) as Record<string, unknown>;
-      const extra = (body.envs ?? body.env) as Record<string, string> | undefined;
-      const merged: Record<string, unknown> = { ...body, envs: { ...envs, ...(extra ?? {}) } };
-      delete merged.env;
-      if (merged.workingDirectory === undefined && merged.working_directory === undefined) {
-        merged.workingDirectory = home;
-        merged.working_directory = home;
-      }
-      return sandbox.commands.run(command, merged as never, handlers);
+      const options = commandOptions(opts);
+      const merged = {
+        ...options,
+        workingDirectory: options.workingDirectory ?? home,
+        envs: { ...envs, ...options.envs },
+      };
+      return sandbox.commands.run(command, merged, handlers);
     },
   };
   if (sandbox.commands.interrupt) {
@@ -191,26 +195,11 @@ export function connectionConfig(url: string, apiKey: string): ConnectionConfig 
   };
 }
 
-function createdStamp(item: SandboxInfo): number {
-  const raw = item.created_at ?? item.createdAt;
-  if (raw instanceof Date) {
-    return raw.getTime();
-  }
-  if (typeof raw === "number" && Number.isFinite(raw)) {
-    return raw;
-  }
-  if (typeof raw === "string") {
-    const parsed = Date.parse(raw);
-    return Number.isNaN(parsed) ? 0 : parsed;
-  }
-  return 0;
-}
-
 export function splitRunning(infos: SandboxInfo[]): [SandboxInfo | null, SandboxInfo[]] {
   if (!infos.length) {
     return [null, []];
   }
-  const ordered = [...infos].sort((left, right) => createdStamp(left) - createdStamp(right));
+  const ordered = [...infos].sort((left, right) => createdAtOf(left) - createdAtOf(right));
   return [ordered[0] ?? null, ordered.slice(1)];
 }
 
@@ -272,46 +261,7 @@ export function endpointUrl(endpoint: { endpoint: string }): string {
 }
 
 export function requestHeaders(endpoint: SandboxEndpoint, config: ConnectionConfig): Record<string, string> {
-  if (typeof endpoint.build_request_headers === "function") {
-    return endpoint.build_request_headers(config);
-  }
-  if (typeof endpoint.buildRequestHeaders === "function") {
-    return endpoint.buildRequestHeaders(config);
-  }
-  return { ...(endpoint.headers ?? {}) };
-}
-
-function infosOf(matches: ListMatches | null | undefined): SandboxInfo[] {
-  if (!matches) {
-    return [];
-  }
-  const list = matches.sandbox_infos ?? matches.sandboxInfos ?? matches.items ?? [];
-  return Array.isArray(list) ? list : [];
-}
-
-async function listInfos(manager: SandboxManagerHandle, filter: Record<string, unknown>): Promise<SandboxInfo[]> {
-  const listed = manager.listSandboxInfos ?? manager.list_sandbox_infos;
-  if (!listed) {
-    throw new SandboxError("sandbox manager cannot list sandboxes");
-  }
-  return infosOf(await listed.call(manager, filter));
-}
-
-async function killSandbox(manager: SandboxManagerHandle, id: string): Promise<void> {
-  const kill = manager.killSandbox ?? manager.kill_sandbox;
-  if (!kill) {
-    throw new SandboxError("sandbox manager cannot kill sandboxes");
-  }
-  await kill.call(manager, id);
-}
-
-function stdoutText(execution: CommandResult | null | undefined): string {
-  const messages = execution?.logs?.stdout ?? [];
-  return messages.map((item) => item.text ?? "").join("\n").trim();
-}
-
-function exitCode(execution: CommandResult | null | undefined): number | undefined {
-  return execution?.exit_code ?? execution?.exitCode;
+  return endpointHeaders(endpoint, config);
 }
 
 
@@ -380,7 +330,7 @@ export class RunSandboxes {
 
   private async connect(id: string): Promise<SandboxHandle> {
     const sdk = await this.module();
-    return sdk.Sandbox.connect(id, { connectionConfig: this.config, connection_config: this.config });
+    return sdk.Sandbox.connect(id, { connectionConfig: this.config });
   }
 
   /**
@@ -390,7 +340,7 @@ export class RunSandboxes {
   async ensure(machine: MachineSpec): Promise<SandboxHandle> {
     const manager = this.requireManager();
     const sdk = await this.module();
-    const matches = await listInfos(manager, {
+    const matches = await listSandboxes(manager, {
       states: ["Running"],
       metadata: { machine_id: machine.id },
       pageSize: 100,
@@ -418,13 +368,10 @@ export class RunSandboxes {
         {
           name: "machine",
           host: { path: directory },
-          mount_path: MACHINE_MOUNT,
           mountPath: MACHINE_MOUNT,
-          read_only: false,
           readOnly: false,
         },
       ],
-      connection_config: this.config,
       connectionConfig: this.config,
     });
     await this.readHarnesses(machine.id, created);
@@ -435,7 +382,7 @@ export class RunSandboxes {
   private async readHarnesses(machineId: string, sandbox: SandboxHandle): Promise<void> {
     try {
       const execution = await sandbox.commands.run(`cat ${HARNESS_LIST} 2>/dev/null || true`, { timeoutSeconds: 10 });
-      const listed = (execution.logs?.stdout ?? []).map((message) => message.text ?? "").join("\n");
+      const listed = stdoutOf(execution);
       this.carried.set(machineId, [...new Set(listed.split(/\s+/).filter(isHarness))]);
     } catch (error) {
       writeLog("warn", error instanceof Error ? error.message : String(error), {
@@ -452,7 +399,7 @@ export class RunSandboxes {
 
   async connectRunning(machineId: string): Promise<SandboxHandle | null> {
     const manager = this.requireManager();
-    const matches = await listInfos(manager, {
+    const matches = await listSandboxes(manager, {
       states: ["Running"],
       metadata: { machine_id: machineId },
       pageSize: 100,
@@ -491,7 +438,7 @@ export class RunSandboxes {
 
   private async runStop(sandbox: SandboxHandle, seat: AgentSeat, mode: "browser" | "purge"): Promise<void> {
     const result = await sandbox.commands.run(`${AGENT_STOP} ${seat.agentId} ${mode}`, { timeoutSeconds: 30 });
-    const code = exitCode(result);
+    const code = exitCodeOf(result);
     if (code !== undefined && code !== 0) {
       throw new SandboxError(`agent ${seat.agentId} processes did not stop (${mode}, exit ${code})`);
     }
@@ -522,9 +469,9 @@ export class RunSandboxes {
       const message = error instanceof Error ? error.message : String(error);
       throw new SandboxError(`terminal failed to start: ${message}`);
     }
-    const lines = stdoutText(result).split("\n");
+    const lines = stdoutOf(result).split("\n");
     const token = (lines[lines.length - 1] ?? "").trim();
-    if (exitCode(result) !== 0 || !CLI_TOKEN_RE.test(token)) {
+    if (exitCodeOf(result) !== 0 || !CLI_TOKEN_RE.test(token)) {
       throw new SandboxError("terminal failed to start");
     }
     return token;
@@ -555,7 +502,7 @@ export class RunSandboxes {
       } catch {
         result = null;
       }
-      if (result !== null && exitCode(result) === 0) {
+      if (result !== null && exitCodeOf(result) === 0) {
         await this.resetHostHomePage(sandbox, ports.cdp);
         return;
       }
@@ -602,7 +549,7 @@ export class RunSandboxes {
   private async runText(sandbox: SandboxHandle, command: string): Promise<string> {
     try {
       const result = await sandbox.commands.run(command, { timeoutSeconds: 5 });
-      return stdoutText(result);
+      return stdoutOf(result);
     } catch {
       return "";
     }
@@ -610,7 +557,7 @@ export class RunSandboxes {
 
   async listRunningMachineIds(): Promise<Set<string>> {
     const manager = this.requireManager();
-    const matches = await listInfos(manager, { states: ["Running"], pageSize: 100 });
+    const matches = await listSandboxes(manager, { states: ["Running"], pageSize: 100 });
     const machineIds = new Set<string>();
     for (const info of matches) {
       const metadata = info.metadata;
@@ -627,7 +574,7 @@ export class RunSandboxes {
 
   async destroy(machineId: string): Promise<void> {
     const manager = this.requireManager();
-    const matches = await listInfos(manager, { metadata: { machine_id: machineId }, pageSize: 100 });
+    const matches = await listSandboxes(manager, { metadata: { machine_id: machineId }, pageSize: 100 });
     for (const info of matches) {
       await killSandbox(manager, info.id);
     }
@@ -637,7 +584,7 @@ export class RunSandboxes {
   async destroyAgentSandboxes(): Promise<number> {
     const manager = this.requireManager();
     let count = 0;
-    for (const info of await listInfos(manager, { pageSize: 100 })) {
+    for (const info of await listSandboxes(manager, { pageSize: 100 })) {
       const metadata = info.metadata;
       if (metadata && typeof metadata === "object" && !Array.isArray(metadata) && "agent_id" in metadata) {
         await killSandbox(manager, info.id);

@@ -1043,7 +1043,7 @@
   },
   "src/sandbox/index.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 7
+      "count": 4
     },
     "no-restricted-syntax": {
       "count": 9
