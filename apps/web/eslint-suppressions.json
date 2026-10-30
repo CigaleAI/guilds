@@ -533,11 +533,6 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 3
-    }
-  },
-  "src/features/files/fileList.ts": {
-    "no-restricted-syntax": {
       "count": 1
     }
   },

@@ -173,16 +173,14 @@ export function FilesBrowser({ scopes, guildId, onOpenStep, initialPath }: Files
   );
 }
 
-/** The files of one scope, one row each: the name, then the description and facts. */
-function FileRows({
-  items,
-  selectedPath,
-  onSelect,
-}: {
+type FileRowsProps = {
   items: readonly FileItem[];
   selectedPath: string | null;
   onSelect: (path: string) => void;
-}) {
+};
+
+/** The files of one scope, one row each: the name, then the description and facts. */
+function FileRows({ items, selectedPath, onSelect }: FileRowsProps) {
   return (
     <ul className="flex flex-col" aria-label="Files">
       {items.map((item) => (
@@ -313,18 +311,15 @@ function FileView({ scope, item, guildId, onOpenStep, onBack, onDeleted }: FileV
   );
 }
 
-/** Picks a file and says what it is; a file of the same name in the scope is replaced. */
-function UploadDialog({
-  open,
-  onOpenChange,
-  scope,
-  onUploaded,
-}: {
+type UploadDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   scope: FileScope;
   onUploaded: (file: FileItem) => void;
-}) {
+};
+
+/** Picks a file and says what it is; a file of the same name in the scope is replaced. */
+function UploadDialog({ open, onOpenChange, scope, onUploaded }: UploadDialogProps) {
   const upload = useUploadFile(scope.prefix);
   const [file, setFile] = useState<File | null>(null);
   const [description, setDescription] = useState("");
