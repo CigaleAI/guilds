@@ -17,7 +17,6 @@ import type {
   AccessRow,
   AccessTarget,
   Agent,
-  AgentConfig,
   AgentAccess,
   AgentDetail,
   AgentSettingsInput,
@@ -125,6 +124,22 @@ import type {
   DatabaseInput,
   ReachSubject,
   OrgServerInput,
+  GroupMessageInput,
+  ScheduleUpdate,
+  SchedulePause,
+  GuildSchedulePause,
+  NewRun,
+  RunMessageInput,
+  TaskInput,
+  IssueStatusChange,
+  GuildIssueStatusChange,
+  MachineUpdate,
+  GuildOperatorRole,
+  NoteInput,
+  FileUpload,
+  NewGuild,
+  NewAgent,
+  RecordUpdate,
 } from "./types";
 
 /** Query keys. Identity is fixed for the page's life, so keys carry no user or org. */
@@ -372,7 +387,7 @@ export function useMarkTagsRead() {
 export function usePostGroupMessage(guildId: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (message: { content: string; interrupt?: boolean }) =>
+    mutationFn: (message: GroupMessageInput) =>
       api<GroupMessage>(`${guildPath(guildId)}/group-chat/messages`, {
         method: "POST",
         body: message,
@@ -469,7 +484,7 @@ export function useCreateSchedule(agentId: string) {
 export function useUpdateSchedule(agentId: string) {
   const refresh = useScheduleRefresh(agentId);
   return useMutation({
-    mutationFn: ({ scheduleId, input }: { scheduleId: string; input: ScheduleInput }) =>
+    mutationFn: ({ scheduleId, input }: ScheduleUpdate) =>
       api<Schedule>(`${schedulesPath(agentId)}/${encodeURIComponent(scheduleId)}`, {
         method: "PATCH",
         body: input,
@@ -482,7 +497,7 @@ export function useUpdateSchedule(agentId: string) {
 export function useSetSchedulePaused(agentId: string) {
   const refresh = useScheduleRefresh(agentId);
   return useMutation({
-    mutationFn: ({ scheduleId, paused }: { scheduleId: string; paused: boolean }) =>
+    mutationFn: ({ scheduleId, paused }: SchedulePause) =>
       api<Schedule>(`${schedulesPath(agentId)}/${encodeURIComponent(scheduleId)}`, {
         method: "PATCH",
         body: { paused },
@@ -534,7 +549,7 @@ function useRunRefresh(agentId: string) {
 export function useStartRun(agentId: string) {
   const refresh = useRunRefresh(agentId);
   return useMutation({
-    mutationFn: async (input: string | { message: string; files?: File[] }) => {
+    mutationFn: async (input: string | NewRun) => {
       const message = typeof input === "string" ? input : input.message;
       const files = typeof input === "string" ? undefined : input.files;
       const attachment_ids = await attachmentIdsOf(files);
@@ -555,15 +570,7 @@ export function useSendRunMessage(agentId: string) {
   const refresh = useRunRefresh(agentId);
   const client = useQueryClient();
   return useMutation({
-    mutationFn: async ({
-      runId,
-      content,
-      files,
-    }: {
-      runId: string;
-      content: string;
-      files?: File[];
-    }) => {
+    mutationFn: async ({ runId, content, files }: RunMessageInput) => {
       const attachment_ids = await attachmentIdsOf(files);
       return api<Run>(`${runPath(runId)}/messages`, {
         method: "POST",
@@ -629,7 +636,7 @@ export function useAgentTask(agentId: string) {
 export function useSaveTask(agentId: string, guildId: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (body: { content: string; expected_version?: number }) =>
+    mutationFn: (body: TaskInput) =>
       api<TaskFile>(taskPath(agentId), { method: "PUT", body }),
     onSuccess: (task) => {
       client.setQueryData(keys.agentTask(agentId), task);
@@ -1052,7 +1059,7 @@ export function useGuildIssues(guildId: string) {
 export function useSetIssueStatus(guildId: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ issueId, status }: { issueId: string; status: Issue["status"] }) =>
+    mutationFn: ({ issueId, status }: IssueStatusChange) =>
       api<Issue>(`${guildPath(guildId)}/issues/${encodeURIComponent(issueId)}`, {
         method: "PATCH",
         body: { status },
@@ -1088,15 +1095,7 @@ export function useGuildSchedules(guildId: string) {
 export function useSetGuildSchedulePaused(guildId: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({
-      agentId,
-      scheduleId,
-      paused,
-    }: {
-      agentId: string;
-      scheduleId: string;
-      paused: boolean;
-    }) =>
+    mutationFn: ({ agentId, scheduleId, paused }: GuildSchedulePause) =>
       api<Schedule>(
         `/api/agents/${encodeURIComponent(agentId)}/schedules/${encodeURIComponent(scheduleId)}`,
         { method: "PATCH", body: { paused } },
@@ -1190,7 +1189,7 @@ export function useCreateMachine(orgId: string) {
 export function useUpdateMachine(orgId: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ machineId, input }: { machineId: string; input: Partial<MachineInput> }) =>
+    mutationFn: ({ machineId, input }: MachineUpdate) =>
       api<Machine>(`${machinesPath(orgId)}/${encodeURIComponent(machineId)}`, {
         method: "PATCH",
         body: input,
@@ -1317,7 +1316,7 @@ export function useTaskLog(runId: string, callId: string | null) {
 export function useSetOperator(guildId: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ userId, role }: { userId: string; role: "admin" | "operator" }) =>
+    mutationFn: ({ userId, role }: GuildOperatorRole) =>
       api<Guild>(`${guildPath(guildId)}/operators/${encodeURIComponent(userId)}`, {
         method: "PUT",
         body: { role },
@@ -1386,7 +1385,7 @@ export function useNote(prefix: NotesPrefix, path: string | null) {
 export function useSaveNote(prefix: NotesPrefix) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ path, content }: { path: string; content: string }) =>
+    mutationFn: ({ path, content }: NoteInput) =>
       api<FileContent>(filePath(prefix, path), { method: "PUT", body: { content } }),
     onSuccess: (file, { path }) => {
       client.setQueryData(keys.note(prefix, path), file);
@@ -1422,7 +1421,7 @@ export function useFileList(prefix: FilesPrefix | null) {
 export function useUploadFile(prefix: FilesPrefix) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ file, description }: { file: File; description: string }) => uploadFile(prefix, file, description),
+    mutationFn: ({ file, description }: FileUpload) => uploadFile(prefix, file, description),
     onSuccess: (item) => {
       void client.invalidateQueries({ queryKey: keys.fileList(prefix) });
       void client.invalidateQueries({ queryKey: keys.latestChange(item.display_path) });
@@ -1443,15 +1442,7 @@ export function useDeleteFile(prefix: FilesPrefix) {
 export function useSetAnyIssueStatus() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({
-      guildId,
-      issueId,
-      status,
-    }: {
-      guildId: string;
-      issueId: string;
-      status: Issue["status"];
-    }) =>
+    mutationFn: ({ guildId, issueId, status }: GuildIssueStatusChange) =>
       api<Issue>(`${guildPath(guildId)}/issues/${encodeURIComponent(issueId)}`, {
         method: "PATCH",
         body: { status },
@@ -1467,12 +1458,7 @@ export function useSetAnyIssueStatus() {
 export function useCreateGuild() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (input: {
-      name: string;
-      about: string;
-      description: string;
-      visibility: Guild["visibility"];
-    }) => api<Guild>("/api/guilds", { method: "POST", body: { ...input, database: false } }),
+    mutationFn: (input: NewGuild) => api<Guild>("/api/guilds", { method: "POST", body: { ...input, database: false } }),
     onSuccess: () => void client.invalidateQueries({ queryKey: keys.guilds }),
   });
 }
@@ -1481,14 +1467,7 @@ export function useCreateGuild() {
 export function useCreateAgent(guildId: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (input: {
-      name: string;
-      focus: string;
-      avatar_shape: string;
-      avatar_color: string;
-      config: AgentConfig;
-      machine_id?: string;
-    }) => api<AgentDetail>(`${guildPath(guildId)}/agents`, { method: "POST", body: input }),
+    mutationFn: (input: NewAgent) => api<AgentDetail>(`${guildPath(guildId)}/agents`, { method: "POST", body: input }),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: keys.agents(guildId) });
       refreshMachines(client);
@@ -1629,7 +1608,7 @@ export function useAddRecord(id: string) {
 export function useUpdateRecord(id: string) {
   const refresh = useDatabasesRefresh();
   return useMutation({
-    mutationFn: ({ recordId, body }: { recordId: number; body: Record<string, unknown> }) =>
+    mutationFn: ({ recordId, body }: RecordUpdate) =>
       api<{ record: CollectionRecord; warnings: string[] }>(
         `${collectionPath(id)}/records/${recordId}`,
         {

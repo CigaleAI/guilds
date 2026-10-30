@@ -101,6 +101,9 @@ export type GuildOperator = {
   role: "admin" | "operator";
 };
 
+/** The role a user is to hold among a guild's operators. */
+export type GuildOperatorRole = { userId: string; role: GuildOperator["role"] };
+
 export type Guild = {
   id: string;
   name: string;
@@ -185,6 +188,9 @@ export type MachineInput = {
   memory_mib?: number;
   max_workspace_mib?: number;
 };
+
+/** The fields to change on one machine. */
+export type MachineUpdate = { machineId: string; input: Partial<MachineInput> };
 
 /** The coding CLI a coding agent delegates code work to through `code_task`. */
 export type Harness = "claude-code" | "codex" | "cursor" | "antigravity";
@@ -302,6 +308,12 @@ export type AgentDetail = Agent & {
   access: Record<string, unknown>;
 };
 
+/** A new agent of a guild; without `machine_id` it goes on the organisation's only machine. */
+export type NewAgent = Pick<Agent, "name" | "focus" | "avatar_shape" | "avatar_color"> & {
+  config: AgentConfig;
+  machine_id?: string;
+};
+
 export type DeliveryError = {
   at: string;
   agent_id: string;
@@ -341,6 +353,9 @@ export type GroupMessage = {
   created_at: string;
 };
 
+/** A group chat post; `interrupt` also stops the group runs it targets. */
+export type GroupMessageInput = { content: string; interrupt?: boolean };
+
 export type AgentBrief = {
   id: string;
   name: string;
@@ -370,6 +385,12 @@ export type Issue = {
   resolved_by: string | null;
   agent: AgentBrief | null;
 };
+
+/** An issue resolved or reopened in its guild. */
+export type IssueStatusChange = { issueId: string; status: IssueStatus };
+
+/** An issue resolved or reopened, with the guild it is in. */
+export type GuildIssueStatusChange = IssueStatusChange & { guildId: string };
 
 export type MentionNotice = {
   id: number;
@@ -458,6 +479,12 @@ export type Run = {
   /** The run that continued this one after its hand-off. */
   continued_by_run_id?: string;
 };
+
+/** The operator's first message to an agent, with the images attached to it. */
+export type NewRun = { message: string; files?: File[] };
+
+/** The operator's next message in a run, with the images attached to it. */
+export type RunMessageInput = { runId: string; content: string; files?: File[] };
 
 /** A run's or a code task's diff in one repository, cut at the server's limit. */
 export type RunDiff = { repository: string; diff: string; truncated: boolean };
@@ -563,6 +590,15 @@ export type ScheduleInput =
   | { cron: string; description: string; instruction: string }
   | { window: WakeWindow; description: string; instruction: string };
 
+/** A routine's new timing, description and instruction. */
+export type ScheduleUpdate = { scheduleId: string; input: ScheduleInput };
+
+/** A routine paused or resumed. */
+export type SchedulePause = { scheduleId: string; paused: boolean };
+
+/** A routine paused or resumed, with the agent it wakes. */
+export type GuildSchedulePause = SchedulePause & { agentId: string };
+
 /** One row of a run: system prompt, user turn, assistant turn (with tool calls) or tool result. */
 export type RunMessage = {
   id: number;
@@ -592,6 +628,9 @@ export type TaskFile = {
   /** Newest first. */
   revisions?: TaskRevision[];
 };
+
+/** A Task's new text; with `expected_version`, a save over a version written since is refused. */
+export type TaskInput = { content: string; expected_version?: number };
 
 export type NoteLevel = "org" | "guild" | "agent";
 
@@ -714,6 +753,9 @@ export type CollectionRecord = {
 };
 
 export type RecordsPage = { total: number; records: CollectionRecord[]; columns: Column[] };
+
+/** A record's changed values; null clears one. */
+export type RecordUpdate = { recordId: number; body: Record<string, unknown> };
 
 /** How a records view asks: a ranked search, or exact filters with an order and a page. */
 export type RecordsQuery = {
@@ -1102,6 +1144,9 @@ export type GuildInput = Partial<
   >
 >;
 
+/** A new guild; its creator becomes its admin, and a private one shows only to its operators. */
+export type NewGuild = Pick<Guild, "name" | "about" | "description" | "visibility">;
+
 export type OrgMember = {
   user_id: string;
   name: string;
@@ -1140,6 +1185,9 @@ export type FileItem = {
   access?: "read" | "write";
 };
 
+/** A file to store under a files scope, with what it is. */
+export type FileUpload = { file: File; description: string };
+
 /** A file's text; `id` is set for a note, not for task.md or memory.md. */
 export type FileContent = {
   id?: string;
@@ -1148,6 +1196,9 @@ export type FileContent = {
   display_path: string;
   version?: number;
 };
+
+/** A note's text, by its path in its scope. */
+export type NoteInput = { path: string; content: string };
 
 /** A Python script in the agent's home. One with parameters is also a tool named after it. */
 export type Script = {

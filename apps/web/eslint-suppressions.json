@@ -49,7 +49,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 43
+      "count": 27
     }
   },
   "src/api/session.ts": {
