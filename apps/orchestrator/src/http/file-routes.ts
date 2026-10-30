@@ -2,7 +2,12 @@ import { Type, type Static } from "@sinclair/typebox";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { loadOperatorActor } from "../artifacts/actors.js";
 import { ArtifactFiles, type FileView } from "../artifacts/files.js";
-import { deleteSharedFile, uploadSharedFile } from "../artifacts/operator-files.js";
+import {
+  deleteSharedFile,
+  readSharedFile,
+  uploadSharedFile,
+  type SharedFileDownload,
+} from "../artifacts/operator-files.js";
 import { FILE_MAX_BYTES, type ArtifactActor, type ArtifactLevel } from "../artifacts/types.js";
 import { requireVisibleGuild } from "../guilds/access.js";
 import { requireVisibleAgent } from "../agents/access.js";
@@ -109,13 +114,13 @@ async function uploadFile(
 }
 
 /** Sends a file's bytes for download: its media type, no sniffing, never shown inline. */
-function sendBytes(reply: FastifyReply, file: { name: string; mime: string }, bytes: Buffer): FastifyReply {
+function sendBytes(reply: FastifyReply, download: SharedFileDownload): FastifyReply {
   return reply
-    .header("content-type", file.mime)
+    .header("content-type", download.file.mime)
     .header("x-content-type-options", "nosniff")
-    .header("content-disposition", attachmentDisposition(file.name))
+    .header("content-disposition", attachmentDisposition(download.file.name))
     .header("cache-control", "private, no-store")
-    .send(bytes);
+    .send(download.bytes);
 }
 
 export async function registerFileRoutes(app: RouteApp, deps: AppDeps): Promise<void> {
@@ -157,9 +162,7 @@ export async function registerFileRoutes(app: RouteApp, deps: AppDeps): Promise<
 
   app.get("/api/files/:file_id", { schema: { params: FileParams } }, async (request, reply) => {
     const { actor } = await orgOwner(deps, request);
-    const files = filesOf(deps);
-    const row = await files.loadFileById(actor, request.params.file_id);
-    return sendBytes(reply, files.view(row), await files.readBytes(row));
+    return sendBytes(reply, await readSharedFile(filesOf(deps), actor, request.params.file_id));
   });
 
   app.delete("/api/files/:file_id", { schema: { params: FileParams } }, async (request, reply) => {
