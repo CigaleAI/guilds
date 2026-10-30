@@ -32,7 +32,11 @@ export type NotesOwner =
   | { level: "org"; orgId: string };
 
 /** A note as an operator writes it: its path, its content, and the version they edited, when they say. */
-export type NoteWrite = { path: string; content: string; expectedVersion: unknown };
+export type NoteWrite = {
+  path: string;
+  content: string;
+  expectedVersion: number | null | undefined;
+};
 
 function hostOwnerOf(owner: NotesOwner): HostFileOwner {
   if (owner.level === "guild") {
@@ -90,15 +94,14 @@ async function announce(
 }
 
 /** A request's `expected_version`: a version, or undefined when it names none. */
-function validateExpectedVersion(value: unknown): number | undefined {
-  if (value === undefined || value === null || value === "") {
+function validateExpectedVersion(value: number | null | undefined): number | undefined {
+  if (value === undefined || value === null) {
     return undefined;
   }
-  const version = Number(value);
-  if (!Number.isInteger(version) || version < 0) {
+  if (!Number.isInteger(value) || value < 0) {
     throw new ArtifactError("expected_version must be an integer", 422);
   }
-  return version;
+  return value;
 }
 
 export async function listOwnerNotes(

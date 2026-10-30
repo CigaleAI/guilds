@@ -498,6 +498,12 @@ test(
       const brief = "/api/org/notes/brief.md";
       const written = await put(brief, { content: "# Brief\n" });
       assert.equal(written.statusCode, 200, written.body);
+      const numberedOrgNote = await put(brief, { content: 5 });
+      assert.equal(numberedOrgNote.statusCode, 422);
+      assert.deepEqual(numberedOrgNote.json().detail[0].loc, ["body", "content"]);
+      const numberedGuildNote = await put(`${guild}/notes/brief.md`, { content: 5 });
+      assert.equal(numberedGuildNote.statusCode, 422);
+      assert.deepEqual(numberedGuildNote.json().detail[0].loc, ["body", "content"]);
       const displayPath = String(written.json().display_path);
       assert.equal((await get(brief)).json().content, "# Brief\n");
       assert.deepEqual(
@@ -523,6 +529,7 @@ test(
       const log = `${agent}/notes/log.md`;
       const stale = await put(log, { content: "day one\n", expected_version: "first" });
       assert.equal(stale.statusCode, 422, "an expected version is a number");
+      assert.deepEqual(stale.json().detail[0].loc, ["body", "expected_version"]);
       assert.equal((await put(log, { content: "day one\n" })).statusCode, 200);
       assert.equal((await remove(log)).statusCode, 204);
       assert.equal((await get(`${agent}/memory`)).statusCode, 200);
