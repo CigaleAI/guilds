@@ -10,7 +10,7 @@ import {
   useSaveNote,
   type NotesPrefix,
 } from "../../api/queries/notes";
-import type { NoteItem } from "../../api/types/notes";
+import type { FileContent, NoteItem } from "../../api/types/notes";
 
 import { scopeOfDisplayPath } from "../../app/displayPath";
 import { useIdentity } from "../../app/identity";
@@ -474,16 +474,14 @@ function NoteView({
   );
 }
 
-/** Who reaches a note: its access list, in a dialog over the open note. */
-function NoteAccessDialog({
-  item,
-  open,
-  onOpenChange,
-}: {
+type NoteAccessDialogProps = {
   item: NoteItem;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-}) {
+};
+
+/** Who reaches a note: its access list, in a dialog over the open note. */
+function NoteAccessDialog({ item, open, onOpenChange }: NoteAccessDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="lg">
@@ -504,19 +502,15 @@ function NoteAccessDialog({
   );
 }
 
-function NewNoteDialog({
-  open,
-  onOpenChange,
-  scope,
-  existing,
-  onCreated,
-}: {
+type NewNoteDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   scope: NoteScope;
   existing: readonly NoteItem[];
-  onCreated: (file: { display_path: string }) => void;
-}) {
+  onCreated: (file: FileContent) => void;
+};
+
+function NewNoteDialog({ open, onOpenChange, scope, existing, onCreated }: NewNoteDialogProps) {
   const save = useSaveNote(scope.prefix);
   const [name, setName] = useState("untitled");
   const [touched, setTouched] = useState(false);
