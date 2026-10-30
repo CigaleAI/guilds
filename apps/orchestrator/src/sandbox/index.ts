@@ -270,6 +270,15 @@ export function requestHeaders(endpoint: SandboxEndpoint, config: ConnectionConf
 }
 
 
+/** The command's result; null when the sandbox could not run it. */
+async function runOrNull(sandbox: SandboxHandle, command: string, timeoutSeconds: number): Promise<CommandResult | null> {
+  try {
+    return await sandbox.commands.run(command, { timeoutSeconds });
+  } catch {
+    return null;
+  }
+}
+
 async function loadOpenSandbox(): Promise<OpenSandboxModule> {
   return openSandboxSdk();
 }
@@ -393,18 +402,20 @@ export class RunSandboxes {
     return created;
   }
 
-  /** The harness CLIs a new container's image lists; an image without the list carries none. */
+  /**
+   * The harness CLIs a new container's image lists; an image without the list carries none. A
+   * container that cannot run the read leaves them unknown, and the warning names the machine.
+   */
   private async readHarnesses(machineId: string, sandbox: SandboxHandle): Promise<void> {
-    try {
-      const execution = await sandbox.commands.run(`cat ${HARNESS_LIST} 2>/dev/null || true`, { timeoutSeconds: 10 });
-      const listed = stdoutOf(execution);
-      this.carried.set(machineId, [...new Set(listed.split(/\s+/).filter(isHarness))]);
-    } catch (error) {
-      writeLog("warn", error instanceof Error ? error.message : String(error), {
+    const execution = await runOrNull(sandbox, `cat ${HARNESS_LIST} 2>/dev/null || true`, 10);
+    if (execution === null) {
+      writeLog("warn", "the container could not run the harness list read", {
         operation: "machine.harnesses",
         machine_id: machineId,
       });
+      return;
     }
+    this.carried.set(machineId, [...new Set(stdoutOf(execution).split(/\s+/).filter(isHarness))]);
   }
 
   /** The harness CLIs the container this process last created for the machine carries. */
@@ -429,11 +440,8 @@ export class RunSandboxes {
     const command =
       `${BROWSER_START} ${seat.agentId} ${ports.display} ${ports.vnc} ${ports.cdp} ${ports.novnc} `
       + seat.browserLanguage;
-    try {
-      await sandbox.commands.run(command, { timeoutSeconds: this.readySeconds + 5 });
-    } catch {
-      /* the wait below reports why the browser is not answering */
-    }
+    // A start the sandbox cannot run is not reported here: the wait reports why the browser does not answer.
+    await runOrNull(sandbox, command, this.readySeconds + 5);
     await this.waitForBrowser(sandbox, seat);
   }
 
@@ -511,13 +519,7 @@ export class RunSandboxes {
       `curl -sf -o /dev/null http://127.0.0.1:${ports.novnc}/vnc.html `
       + `&& curl -sf -o /dev/null http://127.0.0.1:${ports.cdp}/json/version`;
     for (let attempt = 0; attempt < this.readySeconds; attempt += 1) {
-      let result: CommandResult | null;
-      try {
-        result = await sandbox.commands.run(command, { timeoutSeconds: 5 });
-      } catch {
-        result = null;
-      }
-      if (result !== null && exitCodeOf(result) === 0) {
+      if (exitCodeOf(await runOrNull(sandbox, command, 5)) === 0) {
         await this.resetHostHomePage(sandbox, ports.cdp);
         return;
       }
@@ -536,11 +538,8 @@ export class RunSandboxes {
     if (!browserNeedsBlankReset(pages)) {
       return;
     }
-    try {
-      await sandbox.commands.run(blankNavigate(cdpPort), { timeoutSeconds: 20 });
-    } catch {
-      /* error page is still visible in noVNC; do not fail pane open */
-    }
+    // A navigation the sandbox cannot run leaves the error page in noVNC; the pane still opens.
+    await runOrNull(sandbox, blankNavigate(cdpPort), 20);
   }
 
   private async browserFailureDetail(sandbox: SandboxHandle, seat: AgentSeat): Promise<string> {
@@ -561,13 +560,9 @@ export class RunSandboxes {
     return parts.join("\n");
   }
 
+  /** What the command printed; empty when it printed nothing or the sandbox could not run it. */
   private async runText(sandbox: SandboxHandle, command: string): Promise<string> {
-    try {
-      const result = await sandbox.commands.run(command, { timeoutSeconds: 5 });
-      return stdoutOf(result);
-    } catch {
-      return "";
-    }
+    return stdoutOf(await runOrNull(sandbox, command, 5));
   }
 
   async listRunningMachineIds(): Promise<Set<string>> {

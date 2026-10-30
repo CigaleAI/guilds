@@ -69,25 +69,33 @@ export function planWorkspaceSweep(
     return [];
   }
   const cutoff = now.getTime() - ageDays * MS_PER_DAY;
-  const liveAgents = new Set([...machines.values()].flatMap((agents) => [...agents]));
-  const entries: SweepEntry[] = [];
-  const stale = (full: string): number | null => {
-    const stat = statSync(full);
+  const entries = orphanedFolders(workspaceRoot, machines).flatMap((folder): SweepEntry[] => {
+    const stat = statSync(folder.path);
     if (!stat.isDirectory() || stat.mtimeMs > cutoff) {
-      return null;
+      return [];
     }
-    return Math.floor((now.getTime() - stat.mtimeMs) / MS_PER_DAY);
-  };
+    return [{ ...folder, ageDays: Math.floor((now.getTime() - stat.mtimeMs) / MS_PER_DAY) }];
+  });
+  return entries.sort((left, right) => (left.path < right.path ? -1 : 1));
+}
+
+/** A folder no live machine or agent owns, whatever its age. */
+type OrphanedFolder = Omit<SweepEntry, "ageDays">;
+
+/**
+ * The entries under the workspace root that no live machine or agent owns: an entry whose machine
+ * is gone, unless it is named for a live agent, and an entry in a live machine's directory whose
+ * agent no longer sits on it.
+ */
+function orphanedFolders(workspaceRoot: string, machines: Map<string, Set<string>>): OrphanedFolder[] {
+  const liveAgents = new Set([...machines.values()].flatMap((agents) => [...agents]));
+  const folders: OrphanedFolder[] = [];
   for (const machineId of readdirSync(workspaceRoot)) {
     const machineDir = path.join(workspaceRoot, machineId);
     const agents = machines.get(machineId);
     if (agents === undefined) {
-      if (liveAgents.has(machineId)) {
-        continue;
-      }
-      const age = stale(machineDir);
-      if (age !== null) {
-        entries.push({ path: machineDir, machineId, agentId: null, ageDays: age });
+      if (!liveAgents.has(machineId)) {
+        folders.push({ path: machineDir, machineId, agentId: null });
       }
       continue;
     }
@@ -95,17 +103,12 @@ export function planWorkspaceSweep(
       continue;
     }
     for (const agentId of readdirSync(machineDir)) {
-      if (agents.has(agentId)) {
-        continue;
-      }
-      const home = path.join(machineDir, agentId);
-      const age = stale(home);
-      if (age !== null) {
-        entries.push({ path: home, machineId, agentId, ageDays: age });
+      if (!agents.has(agentId)) {
+        folders.push({ path: path.join(machineDir, agentId), machineId, agentId });
       }
     }
   }
-  return entries.sort((left, right) => (left.path < right.path ? -1 : 1));
+  return folders;
 }
 
 export function applyWorkspaceSweep(entries: SweepEntry[]): string[] {

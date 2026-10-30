@@ -8,6 +8,11 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** The `machine.harnesses` warning, logged when a new
+machine container cannot run the read of its harness list, reads
+`the container could not run the harness list read`, with the
+machine's id. Before, its message was the SDK's error.
+
 **Breaking for extensions.** `RunSandboxes` (`sandbox/index.js`)
 takes its server settings and what it calls as two arguments, a
 `SandboxHostSettings`, `{ url, apiKey, image, workspaceRoot, hostId,

@@ -635,16 +635,6 @@
       "count": 1
     }
   },
-  "src/sandbox/index.ts": {
-    "no-restricted-syntax": {
-      "count": 4
-    }
-  },
-  "src/sandbox/sweep.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/schedules/describe.ts": {
     "complexity": {
       "count": 1
