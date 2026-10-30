@@ -55,8 +55,8 @@ function fileUpload(headers: UploadHeaders, body: unknown): FileUpload {
   };
 }
 
-/** The owner a list or upload route names: the level, its id, the guild to publish to, and the actor. */
-type FileOwner = { level: ArtifactLevel; ownerId: string; guildId: string | null; actor: ArtifactActor };
+/** The owner a list or upload route names: the level, its id, and the actor. */
+type FileOwner = { level: ArtifactLevel; ownerId: string; actor: ArtifactActor };
 
 async function agentOwner(
   deps: AppDeps,
@@ -70,7 +70,7 @@ async function agentOwner(
     guildId: String(row.guild_id),
     agentId: String(row.id),
   });
-  return { level: "agent", ownerId: String(row.id), guildId: String(row.guild_id), actor };
+  return { level: "agent", ownerId: String(row.id), actor };
 }
 
 async function guildOwner(
@@ -81,14 +81,14 @@ async function guildOwner(
   const user = await currentUser(deps.db, request, deps);
   const row = await requireVisibleGuild(deps.db, guildId, user.id);
   const actor = await loadOperatorActor(deps.db, user, { orgId: String(row.org_id), guildId: String(row.id) });
-  return { level: "guild", ownerId: String(row.id), guildId: String(row.id), actor };
+  return { level: "guild", ownerId: String(row.id), actor };
 }
 
 async function orgOwner(deps: AppDeps, request: FastifyRequest): Promise<FileOwner> {
   const user = await currentUser(deps.db, request, deps);
   const org = await currentOrg(deps.db, request, user);
   const actor = await loadOperatorActor(deps.db, user, { orgId: String(org.id) });
-  return { level: "org", ownerId: String(org.id), guildId: null, actor };
+  return { level: "org", ownerId: String(org.id), actor };
 }
 
 /** The files an owner holds. */
