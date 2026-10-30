@@ -1,4 +1,4 @@
-import { isJsonObject, isJsonValue, type JsonValue } from "../../../api/wire";
+import { isJsonObject, isJsonValue, parseJson, type JsonValue } from "../../../api/wire";
 import { diffstat } from "../chat/changes";
 
 /** A recorded run message: the API's message row, every field optional so partial rows fit too. */
@@ -97,14 +97,6 @@ export type ToolArgsInfo = {
 export type ReturnedDataInfo = { isJson: boolean; isEmpty: boolean; text: string; raw: unknown };
 
 const REMAINING_TOOL_CALLS_RE = /\n\nremaining_tool_calls: \d+\s*$/;
-
-function parseJson(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return undefined;
-  }
-}
 
 /** Removes the tool-budget stamp the orchestrator appends to the end of a tool result. */
 export function stripRemainingToolCalls(content: string): string {

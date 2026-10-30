@@ -6,6 +6,15 @@ export type JsonValue = string | number | boolean | null | JsonValue[] | JsonObj
 /** A JSON object. A field held as `undefined` is one JSON leaves out. */
 export type JsonObject = { [key: string]: JsonValue | undefined };
 
+/** The value a JSON text holds; undefined when the text is not JSON. */
+export function parseJson(text: string): JsonValue | undefined {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
 const JSON_SCALARS: readonly string[] = ["string", "number", "boolean"];
 
 /** Whether a value is one JSON carries, every element and field of it included. */

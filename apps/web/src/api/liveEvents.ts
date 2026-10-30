@@ -17,17 +17,7 @@ import {
   isString,
   isStringList,
   isStringOrNull,
-  type JsonValue,
 } from "./wire";
-
-/** A frame's data as JSON; undefined when the frame is not JSON, which carries nothing to apply. */
-export function parseFrameData(text: string): JsonValue | undefined {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return undefined;
-  }
-}
 
 /** A check that an event's payload has the shape its handler reads. */
 export type PayloadGuard<T> = (data: unknown) => data is T;

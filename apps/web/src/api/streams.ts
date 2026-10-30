@@ -5,7 +5,6 @@ import {
   dispatchLiveEvent,
   guildEventGuards,
   inboxEventGuards,
-  parseFrameData,
   runEventGuards,
   studioEventGuards,
   type BuilderEvents,
@@ -33,6 +32,7 @@ import type { GroupChatState, GroupMessage, MessageNotice } from "./types/chat";
 import type { Run, RunMessage } from "./types/runs";
 import type { StudioMessage, StudioSession } from "./types/studio";
 import type { BuilderSession } from "./types/builder";
+import { parseJson } from "./wire";
 
 type StreamOptions = {
   /** Event names to listen for. */
@@ -65,7 +65,7 @@ export function useEventStream(url: string | null, options: StreamOptions): void
       for (const name of eventList.split(",")) {
         source.addEventListener(name, (event) => {
           if (!(event instanceof MessageEvent) || typeof event.data !== "string") return;
-          latest.current.onEvent(name, parseFrameData(event.data));
+          latest.current.onEvent(name, parseJson(event.data));
         });
       }
       source.onerror = () => {

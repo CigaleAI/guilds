@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { emptyArgValues, fieldsFromSchema, parseArgValues, parseJson } from "./toolArgs";
+import { emptyArgValues, fieldsFromSchema, parseArgValues } from "./toolArgs";
 
 test("object properties become typed fields; an empty schema is a JSON blob", () => {
   assert.deepEqual(
@@ -101,10 +101,4 @@ test("a lone string property named arguments stays text", () => {
   assert.deepEqual(parseArgValues(fields, { arguments: "eth" }), {
     arguments: { arguments: "eth" },
   });
-});
-
-test("json text parses to its value and other text to none", () => {
-  assert.deepEqual(parseJson('{"a":1}'), { value: { a: 1 } });
-  assert.deepEqual(parseJson("null"), { value: null });
-  assert.equal(parseJson("{"), null);
 });

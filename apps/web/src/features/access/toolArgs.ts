@@ -1,4 +1,4 @@
-import { isRecord } from "../../api/wire";
+import { isRecord, parseJson } from "../../api/wire";
 
 export type ArgFieldKind = "string" | "number" | "integer" | "boolean" | "enum" | "json";
 
@@ -71,15 +71,6 @@ export function emptyArgValues(fields: readonly ArgField[]): Record<string, stri
   return values;
 }
 
-/** The value a JSON text holds; null when the text is not JSON. */
-export function parseJson(text: string): { value: unknown } | null {
-  try {
-    return { value: JSON.parse(text) };
-  } catch {
-    return null;
-  }
-}
-
 /** What one field's text parses to: the value its kind takes, or why it takes none. */
 type ArgValue = { value: unknown } | { error: string };
 
@@ -103,8 +94,8 @@ const argValueByKind: Record<ArgFieldKind, (name: string, raw: string) => ArgVal
       : { error: `${name} must be a whole number.` };
   },
   json: (name, raw) => {
-    const parsed = parseJson(raw);
-    return parsed ? { value: parsed.value } : { error: `${name} must be valid JSON.` };
+    const value = parseJson(raw);
+    return value === undefined ? { error: `${name} must be valid JSON.` } : { value };
   },
 };
 

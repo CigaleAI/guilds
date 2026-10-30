@@ -12,6 +12,7 @@ import {
   isString,
   isStringList,
   isStringOrNull,
+  parseJson,
 } from "./wire";
 
 test("isRecord admits an object and refuses null, a list and a scalar", () => {
@@ -70,4 +71,14 @@ test("isJsonObject accepts an object of JSON values only", () => {
   assert.equal(isJsonObject(["a"]), false);
   assert.equal(isJsonObject("{}"), false);
   assert.equal(isJsonObject({ when: new Date(0) }), false);
+});
+
+test("parseJson reads the value a JSON text holds", () => {
+  assert.deepEqual(parseJson('{"run_id":"r2"}'), { run_id: "r2" });
+  assert.equal(parseJson("null"), null);
+});
+
+test("parseJson is undefined for a text that is not JSON", () => {
+  assert.equal(parseJson("{oops"), undefined);
+  assert.equal(parseJson(""), undefined);
 });
