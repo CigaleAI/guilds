@@ -63,7 +63,7 @@ import {
   type EditDeps,
   type EditScope,
 } from "./edits.js";
-import type { RoutineChange } from "./routines.js";
+import type { RoutineChange } from "../schedules/operator.js";
 import { getGuild, type GuildRow } from "../db/guilds.js";
 import { getAgent } from "../db/agents.js";
 import { listRunHeaders } from "../db/runs.js";

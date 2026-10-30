@@ -15,6 +15,7 @@ import {
   uniqueDbName,
 } from "../helpers/postgres.js";
 import { userActor } from "../../src/lib/change-actor.js";
+import type { RoutineChange } from "../../src/schedules/operator.js";
 import { getSchedule } from "../../src/db/schedules.js";
 import { createRun } from "../../src/db/runs.js";
 import { runSnapshot } from "../helpers/generation.js";
@@ -45,7 +46,16 @@ test("an operator and an agent can change a routine in place", { timeout: 60_000
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
   const schedules = agentSchedules(db);
-  const app = await buildApp(database, { db, notes, scripts: agentScripts(db), schedules });
+  const published: Array<[string, RoutineChange]> = [];
+  const app = await buildApp(database, {
+    db,
+    notes,
+    scripts: agentScripts(db),
+    schedules,
+    publishRoutinesChanged: async (guildId, change) => {
+      published.push([guildId, change]);
+    },
+  });
 
   try {
     const guild = await app.inject({
@@ -111,6 +121,16 @@ test("an operator and an agent can change a routine in place", { timeout: 60_000
       payload: { description: "Nothing" },
     });
     assert.equal(missing.statusCode, 404);
+    const guildId = String(guild.json().id);
+    const announced = (action: RoutineChange["action"], id: string): [string, RoutineChange] => [
+      guildId,
+      { agentId, action, scheduleId: id },
+    ];
+    assert.deepEqual(
+      published,
+      [announced("edit", scheduleId), announced("edit", scheduleId), announced("pause", scheduleId)],
+      "each change an operator makes is announced once; a refused one is not",
+    );
 
     await createRun(db,
       {
@@ -166,6 +186,34 @@ test("an operator and an agent can change a routine in place", { timeout: 60_000
     );
     assert.equal(log.rows.at(-1)?.actor_type, "run");
     assert.equal(log.rows.at(-1)?.tool_name, "schedule_update");
+
+    published.length = 0;
+    const created = await app.inject({
+      method: "POST",
+      url: `/api/agents/${agentId}/schedules`,
+      headers: OWNER,
+      payload: { cron: "0 8 * * *", description: "Daily", instruction: "Do the daily pass." },
+    });
+    assert.equal(created.statusCode, 201, created.body);
+    const createdId = String(created.json().id);
+    const resumed = await app.inject({
+      method: "PATCH",
+      url: `/api/agents/${agentId}/schedules/${createdId}`,
+      headers: OWNER,
+      payload: { paused: false },
+    });
+    assert.equal(resumed.statusCode, 200, resumed.body);
+    const deleted = await app.inject({
+      method: "DELETE",
+      url: `/api/agents/${agentId}/schedules/${createdId}`,
+      headers: { "X-Guilds-User": OWNER["X-Guilds-User"], "X-Guilds-Org": OWNER["X-Guilds-Org"] },
+    });
+    assert.equal(deleted.statusCode, 204);
+    assert.deepEqual(published, [
+      announced("create", createdId),
+      announced("resume", createdId),
+      announced("delete", createdId),
+    ]);
   } finally {
     await app.close();
     await database.close();

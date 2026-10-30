@@ -29,6 +29,7 @@ import { startRuntimeMetrics } from "./observability/runtime.js";
 import { OPEN_POLICY } from "./policy/index.js";
 import { recipeApply } from "./recipes/apply.js";
 import { RunSandboxes } from "./sandbox/index.js";
+import type { RoutineChange } from "./schedules/operator.js";
 import { agentSchedules } from "./schedules/service.js";
 import { agentScripts } from "./scripts/catalog.js";
 import { StudioService } from "./studio/index.js";
@@ -144,6 +145,15 @@ export async function createServer(
   // Runs the restart cut off are settled before the scheduler can fire.
   await generation.reconcile();
   generation.runs.startScheduler();
+  // A routine an operator writes, through the API or a Studio edit, is published on its guild's
+  // group chat.
+  const publishRoutinesChanged = async (guildId: string, change: RoutineChange): Promise<void> => {
+    await generation.groupChat.publish(guildId, "agent.routines.changed", {
+      agent_id: change.agentId,
+      action: change.action,
+      schedule_id: change.scheduleId,
+    });
+  };
   // An edit is published on the guild's group chat, and a session waits while its agent is
   // already generating.
   const studio = new StudioService({
@@ -162,13 +172,7 @@ export async function createServer(
         path: "task.md",
       });
     },
-    publishRoutinesChanged: async (guildId, change) => {
-      await generation.groupChat.publish(guildId, "agent.routines.changed", {
-        agent_id: change.agentId,
-        action: change.action,
-        schedule_id: change.scheduleId,
-      });
-    },
+    publishRoutinesChanged,
     isAgentBusy: (agentId) => generation.isAgentBusy(agentId),
   });
   // A studio session left generating is continued by this process.
@@ -204,6 +208,7 @@ export async function createServer(
       files,
       scripts,
       schedules,
+      publishRoutinesChanged,
       config,
       masterKey,
       instanceKeys,

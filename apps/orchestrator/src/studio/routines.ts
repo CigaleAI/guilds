@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { ScheduleDefinition, ScheduleTiming } from "../db/schedules.js";
 import { ScheduleError } from "../schedules/cron.js";
 import { timingText } from "../schedules/item.js";
+import type { RoutineChange } from "../schedules/operator.js";
 import { changedFields, scheduleChanges, type ScheduleChanges } from "../schedules/service.js";
 import { argString } from "../toolbox/schema.js";
 import type { EditAction } from "./actions.js";
@@ -68,8 +69,6 @@ export type RoutineReview = {
 /** The tool call under review, and the agent a create names: its handle resolved, or its request's record. */
 export type RoutineCall = { args: Record<string, unknown>; agentId: string | null };
 
-/** What an applied routine edit changed, for the guild's listeners. */
-export type RoutineChange = { agentId: string; action: RoutineAction; scheduleId: string };
 
 function hashOf(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value), "utf8").digest("hex");

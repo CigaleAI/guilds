@@ -12,6 +12,7 @@ import type { Database } from "../db/client.js";
 import type { OrgCreatedHook } from "../db/orgs.js";
 import type { NotesStore } from "../notes/store.js";
 import type { Scripts } from "../scripts/catalog.js";
+import type { RoutineChange } from "../schedules/operator.js";
 import type { Schedules } from "../schedules/service.js";
 import type { AppConfig } from "../config/index.js";
 import type { McpPool } from "../mcp/pool.js";
@@ -58,6 +59,8 @@ export type AppDeps = {
   files?: ArtifactFiles;
   scripts: Scripts;
   schedules: Schedules;
+  /** Tells a guild that one of its agents' routines changed; routine writes announce nothing when absent. */
+  publishRoutinesChanged?: (guildId: string, change: RoutineChange) => Promise<void>;
   config?: AppConfig;
   masterKey?: Buffer;
   mcp?: McpPool;
