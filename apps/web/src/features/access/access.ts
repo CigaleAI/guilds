@@ -35,6 +35,42 @@ export function connectionStatus(server: McpServerAccess): McpConnectionStatus |
   return server.status === "pending" ? "pending" : "disconnected";
 }
 
+/** Whether a Test call can run on a server's login: one that is connected and lists tools. */
+export function canTestLogin(
+  server: Pick<McpServerAccess, "connection_id" | "status" | "tools">,
+): boolean {
+  return Boolean(server.connection_id) && server.status === "connected" && server.tools.length > 0;
+}
+
+/** Where a server card says the server comes from; null for a verified server of the catalog. */
+export function serverOriginLabel(
+  server: Pick<McpServerAccess, "org_owned" | "source" | "verified">,
+): string | null {
+  if (server.org_owned) return "This organisation's";
+  if (server.source === "local") return "Added on this box";
+  return server.verified ? null : "Unverified";
+}
+
+/**
+ * The settings a server card shows for the login in use: its connector's schema once the login is
+ * signed in, the repositories once a GitHub login connects, or none.
+ */
+export function loginSettingsPanel(
+  server: McpServerAccess,
+):
+  | { kind: "schema"; schema: NonNullable<McpServerAccess["settings_schema"]> }
+  | { kind: "github" }
+  | null {
+  if (!server.connection_id) return null;
+  if (server.settings_schema && (server.status === "connected" || server.needs_settings)) {
+    return { kind: "schema", schema: server.settings_schema };
+  }
+  if (server.slug === "github" && (server.status === "connected" || server.account_hint)) {
+    return { kind: "github" };
+  }
+  return null;
+}
+
 /** The login the scope being edited owns, which it may disconnect; inherited logins belong to a wider scope. */
 export function ownedConnection(server: McpServerAccess, scope: BindingScope): string | null {
   if (!server.overlay?.connection_id || server.connection_owner_scope !== scope) return null;

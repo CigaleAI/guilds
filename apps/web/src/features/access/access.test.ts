@@ -6,14 +6,17 @@ import {
   BROWSER_NATIVE_TOOLS,
   bindingOrigin,
   canResetFirst,
+  canTestLogin,
   connectionStatus,
   filterTools,
   isCapabilityNativeTool,
   listedBrowserTools,
+  loginSettingsPanel,
   nativeToolDisplay,
   offersOptimizedBrowser,
   OPTIMIZED_BROWSER_NATIVE_TOOLS,
   ownedConnection,
+  serverOriginLabel,
   toolFamilyGroups,
   withCapabilityNativeTools,
 } from "./access";
@@ -332,4 +335,43 @@ test("the agent-optimized browser is listed only while its platform key is on, a
   assert.equal(offersOptimizedBrowser({ browser_optimized: true }, box("off")), false);
   assert.equal(offersOptimizedBrowser({ browser_optimized: false }, box("on")), false);
   assert.equal(offersOptimizedBrowser(undefined, box("on")), false);
+});
+
+test("a login is tested once it is connected and lists tools", () => {
+  assert.equal(canTestLogin(server()), true);
+  assert.equal(canTestLogin(server({ status: "pending" })), false);
+  assert.equal(canTestLogin(server({ connection_id: null })), false);
+  assert.equal(canTestLogin(server({ tools: [] })), false);
+});
+
+test("a server card names an org's own, a local, or an unverified server", () => {
+  assert.equal(
+    serverOriginLabel(server({ org_owned: true, source: "local" })),
+    "This organisation's",
+  );
+  assert.equal(serverOriginLabel(server({ source: "local" })), "Added on this box");
+  assert.equal(serverOriginLabel(server({ verified: false })), "Unverified");
+  assert.equal(serverOriginLabel(server()), null);
+});
+
+test("a login shows its schema's settings once signed in, a github login its repositories", () => {
+  const schema = { type: "object", properties: { folder: { type: "string" } } };
+  assert.deepEqual(loginSettingsPanel(server({ settings_schema: schema })), {
+    kind: "schema",
+    schema,
+  });
+  assert.deepEqual(
+    loginSettingsPanel(
+      server({ settings_schema: schema, status: "pending", needs_settings: true }),
+    ),
+    { kind: "schema", schema },
+  );
+  assert.equal(loginSettingsPanel(server({ settings_schema: schema, status: "pending" })), null);
+  assert.deepEqual(loginSettingsPanel(server({ slug: "github" })), { kind: "github" });
+  assert.deepEqual(
+    loginSettingsPanel(server({ slug: "github", status: "disconnected", account_hint: "ada" })),
+    { kind: "github" },
+  );
+  assert.equal(loginSettingsPanel(server({ slug: "github", connection_id: null })), null);
+  assert.equal(loginSettingsPanel(server()), null);
 });

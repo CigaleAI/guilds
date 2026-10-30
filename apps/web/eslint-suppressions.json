@@ -19,11 +19,6 @@
       "count": 1
     }
   },
-  "src/features/access/ServerCard.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/features/access/SettingsForm.tsx": {
     "complexity": {
       "count": 1
