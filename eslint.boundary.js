@@ -111,11 +111,35 @@ const noHostedImports = {
   },
 };
 
-/** A statement that hands on another module's exports: `export * from` or `export { x } from`. */
-function isReexport(statement) {
+/** The local names a module's imports bind. */
+function importedNames(program) {
+  return new Set(
+    program.body
+      .filter((statement) => statement.type === "ImportDeclaration")
+      .flatMap((statement) => statement.specifiers.map((specifier) => specifier.local.name)),
+  );
+}
+
+/** Whether an exported value is a name an import binds. */
+function isImported(imported, node) {
+  return node.type === "Identifier" && imported.has(node.name);
+}
+
+/**
+ * A statement that hands on another module's exports: `export * from`, `export { x } from`, or
+ * `export { x }` and `export default x` of a name an import binds.
+ */
+function isReexport(statement, imported) {
+  if (statement.type === "ExportAllDeclaration") {
+    return true;
+  }
+  if (statement.type === "ExportDefaultDeclaration") {
+    return isImported(imported, statement.declaration);
+  }
   return (
-    (statement.type === "ExportAllDeclaration" || statement.type === "ExportNamedDeclaration") &&
-    statement.source !== null
+    statement.type === "ExportNamedDeclaration" &&
+    (statement.source !== null ||
+      statement.specifiers.some((specifier) => isImported(imported, specifier.local)))
   );
 }
 
@@ -146,7 +170,8 @@ const noReexportModules = {
     }
     return {
       Program(node) {
-        if (node.body.some(isReexport)) {
+        const imported = importedNames(node);
+        if (node.body.some((statement) => isReexport(statement, imported))) {
           context.report({ node, messageId: "reexport" });
         }
       },

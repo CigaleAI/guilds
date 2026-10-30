@@ -90,6 +90,9 @@
   "src/avatars/index.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
+    },
+    "boundary/no-reexport-modules": {
+      "count": 1
     }
   },
   "src/avatars/looks.ts": {
@@ -803,6 +806,9 @@
   "src/studio/runner.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
+    },
+    "boundary/no-reexport-modules": {
+      "count": 1
     }
   },
   "src/studio/source-guild.ts": {
@@ -811,6 +817,9 @@
     }
   },
   "src/studio/system.ts": {
+    "boundary/no-reexport-modules": {
+      "count": 1
+    },
     "complexity": {
       "count": 1
     }
@@ -899,6 +908,11 @@
       "count": 2
     },
     "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "test/helpers/recipe-docs.ts": {
+    "boundary/no-reexport-modules": {
       "count": 1
     }
   }
