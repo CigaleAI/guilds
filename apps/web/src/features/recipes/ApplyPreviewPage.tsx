@@ -186,42 +186,21 @@ export function ApplyPreviewPage() {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-6 py-8 md:px-10">
       <div className="mx-auto flex max-w-240 flex-col gap-6">
-        <header className="flex flex-col gap-3">
-          <Button asChild variant="ghost" size="sm" className="self-start">
-            <Link to="/recipes/$recipeId" params={{ recipeId }}>
-              <Icon icon={ArrowLeft} size={14} />
-              {data.recipe_name}
-            </Link>
-          </Button>
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="flex min-w-60 flex-1 flex-col gap-1">
-              <span className="type-label text-muted">Apply</span>
-              <h1 className="type-h1">{data.recipe_name}</h1>
-              <p className="text-sm text-fg-2">
-                Review what this creates, then create the guild. Its routines stay paused until its
-                checklist is done.
-              </p>
-            </div>
-            <Button
-              size="md"
-              disabled={blockedBy !== null || applyRecipe.isPending || preview.isPlaceholderData}
-              onClick={create}
-            >
-              <Icon icon={Rocket} size={14} />
-              {applyRecipe.isPending ? "Creating…" : "Create guild"}
-            </Button>
-          </div>
-        </header>
+        <ApplyHeader
+          recipeId={recipeId}
+          recipeName={data.recipe_name}
+          blocked={blockedBy !== null}
+          creating={applyRecipe.isPending}
+          refreshing={preview.isPlaceholderData}
+          onCreate={create}
+        />
 
-        <Readiness blockedBy={blockedBy} />
-
-        {data.installs.length ? (
-          <Installs installs={data.installs} onInstalled={() => void preview.refetch()} />
-        ) : null}
-
-        {data.setups.length ? <Setups setups={data.setups} /> : null}
-
-        {noProvider ? <ConnectProviderGuide what="this guild's agents" /> : null}
+        <ApplyPrerequisites
+          blockedBy={blockedBy}
+          preview={data}
+          noProvider={noProvider}
+          onInstalled={() => void preview.refetch()}
+        />
 
         <TextField
           tone="surface"
@@ -272,6 +251,84 @@ export function ApplyPreviewPage() {
         />
       </div>
     </div>
+  );
+}
+
+type ApplyHeaderProps = {
+  recipeId: string;
+  recipeName: string;
+  /** True while something keeps the guild from being created. */
+  blocked: boolean;
+  creating: boolean;
+  /** True while the preview shown is the previous machine's, until the new one arrives. */
+  refreshing: boolean;
+  onCreate: () => void;
+};
+
+/** The apply page's title, the way back to the recipe, and the button that creates the guild. */
+function ApplyHeader({
+  recipeId,
+  recipeName,
+  blocked,
+  creating,
+  refreshing,
+  onCreate,
+}: ApplyHeaderProps) {
+  return (
+    <header className="flex flex-col gap-3">
+      <Button asChild variant="ghost" size="sm" className="self-start">
+        <Link to="/recipes/$recipeId" params={{ recipeId }}>
+          <Icon icon={ArrowLeft} size={14} />
+          {recipeName}
+        </Link>
+      </Button>
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="flex min-w-60 flex-1 flex-col gap-1">
+          <span className="type-label text-muted">Apply</span>
+          <h1 className="type-h1">{recipeName}</h1>
+          <p className="text-sm text-fg-2">
+            Review what this creates, then create the guild. Its routines stay paused until its
+            checklist is done.
+          </p>
+        </div>
+        <Button size="md" disabled={blocked || creating || refreshing} onClick={onCreate}>
+          <Icon icon={Rocket} size={14} />
+          {creating ? "Creating…" : "Create guild"}
+        </Button>
+      </div>
+    </header>
+  );
+}
+
+type ApplyPrerequisitesProps = {
+  blockedBy: string | null;
+  preview: ApplyPreview;
+  noProvider: boolean;
+  onInstalled: () => void;
+};
+
+/**
+ * What the guild needs before it can be created and run: whether anything blocks it, the
+ * connectors to install or set up, and a model provider when none is connected.
+ */
+function ApplyPrerequisites({
+  blockedBy,
+  preview,
+  noProvider,
+  onInstalled,
+}: ApplyPrerequisitesProps) {
+  return (
+    <>
+      <Readiness blockedBy={blockedBy} />
+
+      {preview.installs.length ? (
+        <Installs installs={preview.installs} onInstalled={onInstalled} />
+      ) : null}
+
+      {preview.setups.length ? <Setups setups={preview.setups} /> : null}
+
+      {noProvider ? <ConnectProviderGuide what="this guild's agents" /> : null}
+    </>
   );
 }
 
