@@ -9,11 +9,6 @@
       "count": 1
     }
   },
-  "src/features/agent/scripts/AgentScripts.tsx": {
-    "complexity": {
-      "count": 2
-    }
-  },
   "src/features/agent/settings/AgentSettings.tsx": {
     "complexity": {
       "count": 1
