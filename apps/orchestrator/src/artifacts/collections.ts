@@ -34,7 +34,7 @@ import {
   collectionDeleted,
   type CollectionRef,
 } from "./collection-changes.js";
-import { columnCatalog, normalizeIdentity, parseColumnChange, parseColumns, uniqueColumn, type ColumnChange } from "./columns.js";
+import { columnCatalog, normalizeIdentity, parseColumnChange, parseColumns, uniqueColumn, type ColumnChange, type ColumnRename } from "./columns.js";
 import { ArtifactError } from "./errors.js";
 import { collectionAccessItem, setAccessRow, writeGrants } from "./grants.js";
 import { collectionDisplayPath } from "./paths.js";
@@ -235,7 +235,7 @@ async function reindexIdentity(client: Queryable, collectionId: string, unique: 
 function uniqueChanged(
   previous: CollectionColumn | null,
   next: CollectionColumn,
-  renamed: Array<{ from: string; to: string }>,
+  renamed: ColumnRename[],
 ): boolean {
   return (
     !previous ||

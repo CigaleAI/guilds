@@ -7,7 +7,7 @@ import type { AgentRow } from "../db/agents.js";
 import { bindQuery } from "../db/pg.js";
 import type { TaskEmbedSnapshot } from "../db/schema/index.js";
 import { describeCollection } from "./collections.js";
-import { getByDisplayPath, type DisplayPathRead } from "./notes.js";
+import { getByDisplayPath, type DisplayPathRead, type LiveNote } from "./notes.js";
 import type { ArtifactRow } from "../db/artifacts.js";
 import type { ArtifactStore, CollectionDescription } from "./store.js";
 
@@ -54,7 +54,10 @@ export function taskEmbedActor(orgId: string, agent: Pick<AgentRow, "id" | "guil
   });
 }
 
-function collectionEmbed(href: string): { orgId: string; name: string } | null {
+/** The table an embed names: its organisation and its name. */
+type CollectionEmbed = { orgId: string; name: string };
+
+function collectionEmbed(href: string): CollectionEmbed | null {
   try {
     const parsed = parseDisplayPath(href);
     return parsed.kind === "collection" ? { orgId: parsed.orgId, name: parsed.collectionName } : null;
@@ -180,7 +183,7 @@ async function loadDisplayPath(
 async function readsEmbedCollection(
   source: EmbedSource,
   actor: ArtifactActor,
-  collection: { orgId: string; name: string },
+  collection: CollectionEmbed,
 ): Promise<boolean> {
   return collection.orgId === actor.orgId && (await source.describeCollection(actor, collection.name)) !== null;
 }
@@ -349,7 +352,7 @@ export async function snapshotTaskCollections(
   return found;
 }
 
-function hashFromRow(row: { content_text?: string | null; content_json?: unknown }): string {
+function hashFromRow(row: Pick<ArtifactRow, "content_text" | "content_json">): string {
   const body = row.content_text ?? JSON.stringify(row.content_json ?? {});
   return createHash("sha256").update(body, "utf8").digest("hex");
 }
@@ -401,7 +404,7 @@ async function resolveEmbedBlock(context: InlineContext, href: string, depth: nu
 async function resolveCollectionBlock(
   context: InlineContext,
   href: string,
-  collection: { orgId: string; name: string },
+  collection: CollectionEmbed,
 ): Promise<string> {
   if (!(await readsEmbedCollection(context.source, context.actor, collection))) {
     return unreachableMarker(href);
@@ -410,7 +413,7 @@ async function resolveCollectionBlock(
   return collection.name;
 }
 
-async function noteBlock(context: InlineContext, note: { href: string; row: ArtifactRow }, depth: number): Promise<string> {
+async function noteBlock(context: InlineContext, note: LiveNote, depth: number): Promise<string> {
   const { href, row } = note;
   let body = row.content_text ?? "";
   context.budget.used += Buffer.byteLength(body, "utf8");

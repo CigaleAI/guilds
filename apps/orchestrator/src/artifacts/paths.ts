@@ -60,7 +60,11 @@ export function recordDisplayPath(orgId: string, collectionName: string, recordI
   return `${collectionDisplayPath(orgId, collectionName)}/${recordId}`;
 }
 
-export function displayPathFor(args: {
+/**
+ * Where an artifact sits, as its display path is built from it: its organisation, level and owner,
+ * its kind, the collection a record or collection names, its folder, and its file name or record id.
+ */
+export type ArtifactLocation = {
   orgId: string;
   level: ArtifactLevel;
   ownerId: string;
@@ -68,7 +72,9 @@ export function displayPathFor(args: {
   collectionName?: string | null;
   path: string;
   key: string;
-}): string {
+};
+
+export function displayPathFor(args: ArtifactLocation): string {
   if (args.kind === "object" || args.kind === "collection") {
     const collectionName = (args.collectionName ?? "").trim();
     if (!collectionName) {

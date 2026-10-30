@@ -5,7 +5,7 @@ import {
   isAccessSubject,
   isAgentAccessMode,
   type AccessGrant,
-  type AccessSubject,
+  type AccessSubjectRef,
   type AgentAccessMode,
   type ArtifactLevel,
 } from "./types.js";
@@ -82,7 +82,7 @@ export function parseGrants(value: SubjectEntry[]): AccessGrant[] {
   return grants;
 }
 
-export function grantKey(grant: { type: AccessSubject; id: string }): string {
+export function grantKey(grant: AccessSubjectRef): string {
   return `${grant.type}:${grant.id}`;
 }
 

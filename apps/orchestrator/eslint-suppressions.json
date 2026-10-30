@@ -28,32 +28,9 @@
       "count": 1
     }
   },
-  "src/artifacts/access-lists.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
   "src/artifacts/access.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 2
-    },
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/artifacts/actors.ts": {
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
-  "src/artifacts/collection-changes.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/artifacts/collections.ts": {
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/artifacts/columns.ts": {
@@ -62,50 +39,16 @@
     },
     "complexity": {
       "count": 2
-    },
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/artifacts/embeds.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 4
-    }
-  },
-  "src/artifacts/files.ts": {
-    "no-restricted-syntax": {
-      "count": 3
-    }
-  },
-  "src/artifacts/grants.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/artifacts/memory.ts": {
-    "no-restricted-syntax": {
-      "count": 4
-    }
-  },
-  "src/artifacts/notes.ts": {
-    "no-restricted-syntax": {
-      "count": 2
     }
   },
   "src/artifacts/paths.ts": {
     "complexity": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/artifacts/records.ts": {
-    "no-restricted-syntax": {
-      "count": 7
     }
   },
   "src/artifacts/search.ts": {

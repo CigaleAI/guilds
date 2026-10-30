@@ -157,15 +157,18 @@ function got(value: unknown): string {
   return `got ${String(value)}`;
 }
 
+/** Why a value does not fit its column, phrased for the model. */
+export type ValueProblem = { ok: false; problem: string };
+
+/** A value checked against its column: the value to store, or why it does not fit. */
+export type CheckedValue = { ok: true; value: RecordValue } | ValueProblem;
+
 /**
  * Checks one value against its column. Returns the value to store (datetime
  * values are normalised to UTC) or the problem, phrased for the model.
  */
-export function checkValue(
-  column: CollectionColumn,
-  value: unknown,
-): { ok: true; value: RecordValue } | { ok: false; problem: string } {
-  const fail = (expected: string): { ok: false; problem: string } => ({
+export function checkValue(column: CollectionColumn, value: unknown): CheckedValue {
+  const fail = (expected: string): ValueProblem => ({
     ok: false,
     problem: `column "${column.name}": expected ${expected}; ${got(value)}`,
   });
@@ -206,8 +209,8 @@ export function checkValue(
 function checkArrayValue(
   column: CollectionColumn,
   value: unknown,
-  fail: (expected: string) => { ok: false; problem: string },
-): { ok: true; value: RecordValue } | { ok: false; problem: string } {
+  fail: (expected: string) => ValueProblem,
+): CheckedValue {
   const expected = column.values ? `a list of ${column.values.join(", ")}` : "a list of text";
   if (!Array.isArray(value)) {
     return fail(expected);
@@ -395,8 +398,11 @@ export function columnCatalog(columns: CollectionColumn[]): Array<Record<string,
   }));
 }
 
+/** One column a change renames: its previous name and its new one. */
+export type ColumnRename = { from: string; to: string };
+
 /** A replacement of a live collection's columns: the columns it stores, the columns it renames, and the names it drops. */
-export type ColumnChange = { columns: CollectionColumn[]; renamed: Array<{ from: string; to: string }>; removed: string[] };
+export type ColumnChange = { columns: CollectionColumn[]; renamed: ColumnRename[]; removed: string[] };
 
 /**
  * What changes when the columns of a live collection are replaced: renamed
@@ -408,7 +414,7 @@ export function parseColumnChange(previous: CollectionColumn[], raw: unknown): C
   if (!Array.isArray(raw)) {
     throw new ArtifactError("columns must be an array", 422);
   }
-  const renamed: Array<{ from: string; to: string }> = [];
+  const renamed: ColumnRename[] = [];
   const stripped = raw.map((item) => {
     if (!isPlainObject(item) || !("rename_from" in item)) {
       return item;

@@ -122,6 +122,9 @@ export async function grantAccess(
   await withTransaction(store.db, (client) => setAccessRow(client, actor, item, row));
 }
 
+/** A guild or an agent whose reach is read, with the guild it sits in (the guild itself for a guild). */
+export type ReachSubject = { type: "guild" | "agent"; id: string; guildId: string };
+
 /**
  * What a guild or an agent reaches: the notes and tables its rows give it,
  * with the mode it ends up with. An agent also reaches its own notes. A
@@ -130,7 +133,7 @@ export async function grantAccess(
 export async function reachOf(
   store: ArtifactStore,
   actor: ArtifactActor,
-  subject: { type: "guild" | "agent"; id: string; guildId: string },
+  subject: ReachSubject,
 ): Promise<{ notes: ReachedNote[]; tables: ReachedTable[] }> {
   assertOperator(actor);
   const reacher: ArtifactActor = {

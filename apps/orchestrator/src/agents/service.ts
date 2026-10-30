@@ -196,11 +196,10 @@ export async function addAgent(
   });
   try {
     if (artifacts) {
-      await ensureAgentRows(artifacts, {
+      await ensureAgentRows(artifacts, actor, {
         orgId: actor.orgId,
         guildId: agent.guildId,
         agentId: agent.agentId,
-        actor,
       });
     } else {
       await notes.createAgent(guild.org_slug, guild.name, agent.name, draft.task);

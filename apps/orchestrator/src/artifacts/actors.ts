@@ -3,14 +3,20 @@ import type { Queryable } from "../db/pg.js";
 import { NO_HIDDEN_GUILDS, type ArtifactActor, type HiddenGuilds } from "./types.js";
 import type { UserRow } from "../db/users.js";
 
-export function operatorActor(args: {
+/**
+ * The operator an actor stands for: their organisation, their id and name, the guild and agent the
+ * action names, and the private guilds hidden from them.
+ */
+export type OperatorIdentity = {
   orgId: string;
   actorId: string;
   actorName: string;
   guildId?: string | null;
   agentId?: string | null;
   hidden?: HiddenGuilds;
-}): ArtifactActor {
+};
+
+export function operatorActor(args: OperatorIdentity): ArtifactActor {
   return {
     orgId: args.orgId,
     guildId: args.guildId ?? null,
@@ -24,13 +30,16 @@ export function operatorActor(args: {
   };
 }
 
-export function agentActor(args: {
+/** The agent an actor stands for: its organisation, guild, id and name, and the run it acts in, when one does. */
+export type AgentIdentity = {
   orgId: string;
   guildId: string;
   agentId: string;
   agentName: string;
   runId?: string;
-}): ArtifactActor {
+};
+
+export function agentActor(args: AgentIdentity): ArtifactActor {
   return {
     orgId: args.orgId,
     guildId: args.guildId,

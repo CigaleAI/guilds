@@ -37,14 +37,11 @@ export type MemoryWrite = { content: string; detail: string; expectedVersion?: n
 export type WrittenMemory = { href: string; row: ArtifactRow };
 
 /** Where an agent's Memory sits: its organisation, its guild, and the agent. */
-type MemoryOwner = { orgId: string; guildId: string; agentId: string };
+export type MemoryOwner = { orgId: string; guildId: string; agentId: string };
 
 /** The rows a new agent starts with: its empty Memory. */
-export async function ensureAgentRows(
-  store: ArtifactStore,
-  args: MemoryOwner & { actor: ArtifactActor },
-): Promise<void> {
-  await createMemory(store, args.actor, args);
+export async function ensureAgentRows(store: ArtifactStore, actor: ArtifactActor, owner: MemoryOwner): Promise<void> {
+  await createMemory(store, actor, owner);
 }
 
 /** Creates an agent's empty Memory, logging its creation against `actor`; a Memory it already has stays. */
@@ -165,11 +162,14 @@ async function liveMemory(store: ArtifactStore, actor: ArtifactActor, agentId: s
   return created;
 }
 
+/** The Memory a write replaces: its live row, its agent, and why it changed. */
+type ReplacedMemory = { live: HashedArtifactRow; agentId: string; detail: string };
+
 /** Archives the Memory text `live` holds, keeping the newest revisions; returns the stamp it is archived at. */
 async function archiveMemory(
   client: Queryable,
   actor: ArtifactActor,
-  replaced: { live: HashedArtifactRow; agentId: string; detail: string },
+  replaced: ReplacedMemory,
   now: Date,
 ): Promise<string> {
   const { live, agentId, detail } = replaced;
@@ -318,46 +318,48 @@ function changeStatsFromPrevious(previous: string | null, content: string): { ad
   return lineChangeStats(previous, content);
 }
 
-function timelineEntryAt(args: {
-  index: number;
-  content: string;
-  revision: MemoryTimelineRevision | null;
-  previous: { content: string } | null;
-  writer: MemoryTimelineRevision | null;
-}): MemoryTimelineEntry {
-  const actor = actorWhoWroteVersion(args.writer);
-  const previous = args.previous?.content ?? null;
+/** One version a Memory has held: its text, and the revision that archives it; null for the live version. */
+type TimelineVersion = { content: string; revision: MemoryTimelineRevision | null };
+
+/** The timeline entry of the version at `index`, against the version before it and the revision that names its writer. */
+function timelineEntryAt(
+  index: number,
+  version: TimelineVersion,
+  previousVersion: TimelineVersion | null,
+  writer: MemoryTimelineRevision | null,
+): MemoryTimelineEntry {
+  const actor = actorWhoWroteVersion(writer);
+  const previous = previousVersion?.content ?? null;
   return {
-    index: args.index,
-    revision_id: args.revision?.id ?? null,
-    archive_display_path: args.revision?.display_path ?? null,
-    written_at: args.writer?.replaced_at ?? null,
+    index,
+    revision_id: version.revision?.id ?? null,
+    archive_display_path: version.revision?.display_path ?? null,
+    written_at: writer?.replaced_at ?? null,
     actor,
     run_id: runIdOfActor(actor),
-    content: args.content,
-    content_hash: hashText(args.content),
+    content: version.content,
+    content_hash: hashText(version.content),
     previous_content: previous,
-    stats: changeStatsFromPrevious(previous, args.content),
+    stats: changeStatsFromPrevious(previous, version.content),
   };
 }
 
-export function buildMemoryTimeline(args: {
-  live: { content: string };
-  revisions: MemoryTimelineRevision[];
-}): MemoryTimelineEntry[] {
+/** What a Memory has held: its live text, and the revisions archived before it. */
+export type MemoryHistory = { live: { content: string }; revisions: MemoryTimelineRevision[] };
+
+export function buildMemoryTimeline(args: MemoryHistory): MemoryTimelineEntry[] {
   const chronological = chronologicalRevisions(args.revisions);
-  const versions: Array<{ content: string; revision: MemoryTimelineRevision | null }> = [
+  const versions: TimelineVersion[] = [
     ...chronological.map((revision) => ({ content: revision.content, revision })),
     { content: args.live.content, revision: null },
   ];
   const entries = versions.map((version, index) =>
-    timelineEntryAt({
+    timelineEntryAt(
       index,
-      content: version.content,
-      revision: version.revision,
-      previous: index > 0 ? versions[index - 1]! : null,
-      writer: index > 0 ? chronological[index - 1]! : null,
-    }),
+      version,
+      index > 0 ? versions[index - 1]! : null,
+      index > 0 ? chronological[index - 1]! : null,
+    ),
   );
   return entries.reverse();
 }

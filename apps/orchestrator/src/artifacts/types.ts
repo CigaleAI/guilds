@@ -49,6 +49,9 @@ export type AccessEntry = {
   guild_name: string | null;
 };
 
+/** The organisation, guild, or agent one row of an access list names. */
+export type AccessSubjectRef = { type: AccessSubject; id: string };
+
 export type AccessGrant = { type: AccessSubject; id: string; mode: AgentAccessMode };
 
 /**

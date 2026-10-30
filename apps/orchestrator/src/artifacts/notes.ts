@@ -51,6 +51,9 @@ import {
 /** A parsed display path that names a note, file, Memory, or script by where it sits. */
 export type ArtifactPath = Extract<ParsedDisplayPath, { kind: "artifact" }>;
 
+/** A parsed display path that names an archived Memory revision. */
+export type RevisionPath = Extract<ParsedDisplayPath, { kind: "revision" }>;
+
 /** What a read of a display path finds: a live row, a tombstone, or an archived Memory revision. */
 export type DisplayPathRead = {
   row?: ArtifactRow;
@@ -263,7 +266,7 @@ export async function getByDisplayPath(
 async function readRevision(
   store: ArtifactStore,
   actor: ArtifactActor,
-  parsed: Extract<ParsedDisplayPath, { kind: "revision" }>,
+  parsed: RevisionPath,
 ): Promise<{ content: string; display_path: string }> {
   if (parsed.orgId !== actor.orgId) {
     throw new ArtifactError("artifact is not in this organisation", 404);
@@ -302,11 +305,14 @@ export async function canReadDisplayPath(store: ArtifactStore, actor: ArtifactAc
   return (await artifactMode(store, actor, row)) !== null;
 }
 
+/** A search of the notes an actor reads: the words to match, the level to keep, and how many to return. */
+export type NoteSearch = { query?: string; level?: ArtifactLevel; limit?: number };
+
 /** Notes the actor may read, searched by `query` or listed, optionally at one level. */
 export async function findNotes(
   store: ArtifactStore,
   actor: ArtifactActor,
-  args: { query?: string; level?: ArtifactLevel; limit?: number },
+  args: NoteSearch,
 ): Promise<{ notes: Array<Record<string, unknown>> }> {
   const limit = Math.min(Math.max(args.limit ?? FIND_DEFAULT, 1), FIND_MAX);
   const query = (args.query ?? "").trim();
