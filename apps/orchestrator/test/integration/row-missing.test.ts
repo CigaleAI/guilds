@@ -5,9 +5,17 @@ import { operatorActor } from "../../src/artifacts/actors.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { addTestAgent } from "../helpers/agents.js";
 import { insertAgent, upsertAgentScript } from "../../src/db/agents.js";
+import {
+  insertFile,
+  insertNote,
+  updateMemoryContent,
+  updateNoteContent,
+  type ArtifactAddress,
+} from "../../src/db/artifacts.js";
 import { insertAttachment } from "../../src/db/attachments.js";
 import { insertBindingIfAbsent, upsertPlatformBinding } from "../../src/db/bindings.js";
 import type { Database } from "../../src/db/client.js";
+import { insertCollection, insertRecord, updateRecordBody } from "../../src/db/collections.js";
 import { connect } from "../../src/seed/connect.js";
 import type { ChangeActor } from "../../src/lib/change-actor.js";
 import { insertConnector } from "../../src/db/connectors.js";
@@ -56,6 +64,15 @@ const AGENT_CONFIG = agentConfig({
   max_input_tokens: 100000,
   browser: false,
 });
+
+const NOTE_AT: ArtifactAddress = {
+  org_id: "org_home",
+  level: "guild",
+  owner_id: GUILD,
+  path: "",
+  key: "skipped.md",
+};
+const NOTE_OWNER = { guild_id: GUILD, agent_id: null, origin_guild_id: GUILD };
 
 function newIssue(issueId: string): NewIssue {
   return {
@@ -551,6 +568,128 @@ describe("RowMissing", { concurrency: 1 }, () => {
       event: "INSERT",
       write: () => insertIssue(database.pool, newIssue("iss_skipped"), new Date()),
       message: "issue insert failed",
+    },
+    {
+      name: "a note insert that writes no row raises RowMissing",
+      table: "artifacts",
+      event: "INSERT",
+      write: () =>
+        insertNote(
+          database.pool,
+          {
+            ...NOTE_AT,
+            ...NOTE_OWNER,
+            title: "Skipped",
+            content_text: "",
+            search_text: "",
+            content_hash: "hash",
+          },
+          ACTOR,
+          new Date(),
+        ),
+      message: "note insert returned no row",
+    },
+    {
+      name: "a file insert that writes no row raises RowMissing",
+      table: "artifacts",
+      event: "INSERT",
+      write: () =>
+        insertFile(
+          database.pool,
+          {
+            ...NOTE_AT,
+            ...NOTE_OWNER,
+            id: "art_skipped",
+            key: "skipped.txt",
+            title: "",
+            search_text: "",
+            mime: "text/plain",
+            bytes: 1,
+            content_hash: "hash",
+          },
+          ACTOR,
+          new Date(),
+        ),
+      message: "file insert returned no row",
+    },
+    {
+      name: "a note write to a missing note raises RowMissing",
+      write: () =>
+        updateNoteContent(
+          database.pool,
+          {
+            id: "art_missing",
+            content_text: "",
+            search_text: "",
+            title: null,
+            content_hash: "hash",
+          },
+          ACTOR,
+          new Date(),
+        ),
+      message: "note row vanished during its write",
+    },
+    {
+      name: "a Memory write to a missing Memory raises RowMissing",
+      write: () =>
+        updateMemoryContent(
+          database.pool,
+          {
+            id: "art_missing",
+            content_text: "",
+            search_text: "",
+            content_hash: "hash",
+            written_at: new Date().toISOString(),
+          },
+          ACTOR,
+        ),
+      message: "memory row vanished during its write",
+    },
+    {
+      name: "a collection insert that writes no row raises RowMissing",
+      table: "artifact_collections",
+      event: "INSERT",
+      write: () =>
+        insertCollection(
+          database.pool,
+          { org_id: "org_home", guild_id: GUILD, name: "skipped", purpose: "", columns: [] },
+          ACTOR,
+          new Date(),
+        ),
+      message: "collection insert returned no row",
+    },
+    {
+      name: "a record insert that writes no row raises RowMissing",
+      table: "artifacts",
+      event: "INSERT",
+      write: () =>
+        insertRecord(
+          database.pool,
+          {
+            org_id: "org_home",
+            origin_guild_id: GUILD,
+            collection_id: "acol_skipped",
+            key: "1",
+            content_hash: "hash",
+            search_blob: "",
+            identity: null,
+            body: {},
+          },
+          ACTOR,
+          new Date(),
+        ),
+      message: "record insert returned no row",
+    },
+    {
+      name: "a record write to a missing record raises RowMissing",
+      write: () =>
+        updateRecordBody(
+          database.pool,
+          { id: "art_missing", content_hash: "hash", search_blob: "", identity: null, body: {} },
+          ACTOR,
+          new Date(),
+        ),
+      message: "record row vanished during its write",
     },
   ];
 

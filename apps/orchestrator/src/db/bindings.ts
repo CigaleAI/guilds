@@ -56,13 +56,16 @@ export type McpConnectionBinding = {
 
 const BINDING_COLUMNS = pickColumns(bindings, BINDING_KEYS);
 
+/** The organisation, guild, and agent whose rows a lookup covers beside the platform's; an absent one covers none. */
+export type CoveredScope = {
+  orgId?: string | null;
+  guildId?: string | null;
+  agentId?: string | null;
+};
+
 export async function listBindingsCovering(
   pool: Queryable,
-  options: {
-    orgId?: string | null;
-    guildId?: string | null;
-    agentId?: string | null;
-  },
+  options: CoveredScope,
 ): Promise<BindingRow[]> {
   const result = await pool.query<BindingRow>(
     `SELECT ${BINDING_COLUMNS}

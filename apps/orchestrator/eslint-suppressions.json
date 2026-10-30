@@ -314,78 +314,8 @@
       "count": 1
     }
   },
-  "src/db/artifact-access.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/db/artifacts.ts": {
-    "no-restricted-syntax": {
-      "count": 7
-    }
-  },
-  "src/db/bindings.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/db/codecs.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/db/collections.ts": {
-    "no-restricted-syntax": {
-      "count": 7
-    }
-  },
-  "src/db/config-changes.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/db/file-changes.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/db/group-chat.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/db/mcp.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/db/migrations.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/db/orgs.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/db/recipe-applies.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
   "src/db/schema/columns.ts": {
     "@typescript-eslint/explicit-module-boundary-types": {
-      "count": 1
-    }
-  },
-  "src/db/secrets.ts": {
-    "no-restricted-syntax": {
-      "count": 3
-    }
-  },
-  "src/db/state.ts": {
-    "no-restricted-syntax": {
       "count": 1
     }
   },

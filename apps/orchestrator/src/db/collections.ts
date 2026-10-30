@@ -3,6 +3,7 @@ import type { ChangeActor } from "../lib/change-actor.js";
 import { newId } from "../lib/ids.js";
 import { agentModeSql, type ArtifactMode, type ArtifactReader } from "./artifact-access.js";
 import { ARTIFACT_RETURNING, ARTIFACT_SELECT, type ArtifactOrTombstoneRow, type ArtifactRow } from "./artifacts.js";
+import { RowMissing } from "./errors.js";
 import { type Queryable, stamp } from "./pg.js";
 import type { artifactCollections, artifacts, CollectionColumn, ColumnType, guilds, RecordBody } from "./schema/index.js";
 
@@ -116,7 +117,7 @@ export async function insertCollection(
   );
   const row = result.rows[0];
   if (!row) {
-    throw new Error("collection insert returned no row");
+    throw new RowMissing("collection insert returned no row");
   }
   return row;
 }
@@ -135,11 +136,14 @@ export async function lockLiveCollection(db: Queryable, collectionId: string): P
   return result.rows[0]?.next_id ?? null;
 }
 
+/** A record key's rename: the key it had and the key it takes. */
+export type RecordKeyRename = { from: string; to: string };
+
 /** Moves the value of one key of every live record to another key. */
 export async function renameRecordKey(
   db: Queryable,
   collectionId: string,
-  rename: { from: string; to: string },
+  rename: RecordKeyRename,
 ): Promise<void> {
   await db.query(
     `UPDATE artifacts
@@ -351,7 +355,7 @@ export async function insertRecord(
   );
   const row = result.rows[0];
   if (!row) {
-    throw new Error("record insert returned no row");
+    throw new RowMissing("record insert returned no row");
   }
   return row;
 }
@@ -386,7 +390,7 @@ export async function updateRecordBody(
   );
   const row = result.rows[0];
   if (!row) {
-    throw new Error("record row vanished during its write");
+    throw new RowMissing("record row vanished during its write");
   }
   return row;
 }
@@ -505,10 +509,13 @@ export type RecordListing = {
   offset: number;
 };
 
+/** A collection by id with its declared columns, which order its records. */
+export type CollectionShape = { id: string; columns: CollectionColumn[] };
+
 /** One page of a collection's live records, and how many match in all. */
 export async function listRecords(
   db: Queryable,
-  collection: { id: string; columns: CollectionColumn[] },
+  collection: CollectionShape,
   listing: RecordListing,
 ): Promise<{ total: number; rows: RecordRow[] }> {
   const values: unknown[] = [collection.id];
@@ -704,8 +711,11 @@ function whereClauseSql(clause: WhereClause, values: unknown[]): { where: string
   return datetimeClauseSql(clause, column, values);
 }
 
+/** A `where` term over a number column. */
+type NumberWhereClause = Extract<WhereClause, { type: "number" }>;
+
 function numberClauseSql(
-  clause: Extract<WhereClause, { type: "number" }>,
+  clause: NumberWhereClause,
   column: number,
   values: unknown[],
 ): { where: string; score: null } {
@@ -725,8 +735,11 @@ function numberClauseSql(
   return { where: `(${parts.join(" AND ")})`, score: null };
 }
 
+/** A `where` term over a datetime column. */
+type DatetimeWhereClause = Extract<WhereClause, { type: "datetime" }>;
+
 function datetimeClauseSql(
-  clause: Extract<WhereClause, { type: "datetime" }>,
+  clause: DatetimeWhereClause,
   column: number,
   values: unknown[],
 ): { where: string; score: null } {
