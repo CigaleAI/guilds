@@ -375,14 +375,11 @@ function KeysForm({ integration, returnTo, onSaved }: KeysFormProps) {
         confirmLabel="Remove"
         onConfirm={() => removeKeys(false)}
       />
-      <ConfirmDialog
-        kind="destructive"
-        open={replacing !== null}
-        onOpenChange={(open) => !open && setReplacing(null)}
-        title={replacing?.action === "remove" ? "Remove anyway?" : "Replace anyway?"}
-        description={replacing?.message}
-        confirmLabel={replacing?.action === "remove" ? "Remove" : "Replace"}
-        onConfirm={() => (replacing?.action === "remove" ? removeKeys(true) : replaceKeys())}
+      <ReplaceAnywayDialog
+        replacing={replacing}
+        onClose={() => setReplacing(null)}
+        onReplace={replaceKeys}
+        onRemove={() => removeKeys(true)}
       />
       {integration.setup === "github-app-manifest" ? (
         <CreateAppDialog
@@ -393,6 +390,37 @@ function KeysForm({ integration, returnTo, onSaved }: KeysFormProps) {
         />
       ) : null}
     </>
+  );
+}
+
+type ReplaceAnywayDialogProps = {
+  /** The change the server asked to confirm, with its reason; null keeps the dialog closed. */
+  replacing: { action: "save" | "remove"; message: string } | null;
+  onClose: () => void;
+  /** Saves the keys though logins depend on them; rejects when the save fails. */
+  onReplace: () => Promise<unknown>;
+  /** Removes the keys though logins depend on them; rejects when the removal fails. */
+  onRemove: () => Promise<unknown>;
+};
+
+/** Asks again before a change to the keys that disconnects the logins depending on them. */
+function ReplaceAnywayDialog({
+  replacing,
+  onClose,
+  onReplace,
+  onRemove,
+}: ReplaceAnywayDialogProps) {
+  const removal = replacing?.action === "remove";
+  return (
+    <ConfirmDialog
+      kind="destructive"
+      open={replacing !== null}
+      onOpenChange={(open) => !open && onClose()}
+      title={removal ? "Remove anyway?" : "Replace anyway?"}
+      description={replacing?.message}
+      confirmLabel={removal ? "Remove" : "Replace"}
+      onConfirm={() => (removal ? onRemove() : onReplace())}
+    />
   );
 }
 
