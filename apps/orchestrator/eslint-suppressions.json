@@ -826,24 +826,6 @@
       "count": 2
     }
   },
-  "src/typesafe/client.ts": {
-    "complexity": {
-      "count": 2
-    },
-    "max-depth": {
-      "count": 1
-    }
-  },
-  "src/typesafe/group.ts": {
-    "complexity": {
-      "count": 2
-    }
-  },
-  "src/typesafe/replay.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/usage/index.ts": {
     "complexity": {
       "count": 2

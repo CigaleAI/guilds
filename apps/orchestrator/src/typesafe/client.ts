@@ -282,6 +282,16 @@ function retryableStatus(status: number): boolean {
   return status === 408 || status === 429 || (status >= 500 && status <= 599);
 }
 
+/** A `retry-after` value in ms from `now`: seconds or an HTTP date; null when it is neither. */
+function retryAfterValueMs(raw: string, now: number): number | null {
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds)) {
+    return seconds * 1000;
+  }
+  const at = Date.parse(raw);
+  return Number.isFinite(at) ? at - now : null;
+}
+
 // Server hint in ms, or null when absent, unparseable, or above the cap (the
 // SDK falls back to its own backoff in that case too).
 export function retryAfterMs(
@@ -294,19 +304,9 @@ export function retryAfterMs(
     return millis <= maxMs ? millis : null;
   }
   const raw = (headers.get("retry-after") ?? "").trim();
-  if (!raw) {
+  const delay = raw ? retryAfterValueMs(raw, now) : null;
+  if (delay === null) {
     return null;
-  }
-  const seconds = Number(raw);
-  let delay: number;
-  if (Number.isFinite(seconds)) {
-    delay = seconds * 1000;
-  } else {
-    const at = Date.parse(raw);
-    if (!Number.isFinite(at)) {
-      return null;
-    }
-    delay = at - now;
   }
   if (delay <= 0) {
     return 0;
@@ -322,6 +322,14 @@ export function backoffMs(attempt: number, random: () => number = Math.random): 
 
 function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** The retry policy `options` sets, each unset field at its default. */
+function retryPolicy(options: TypeSafeRetryOptions = {}): Required<TypeSafeRetryOptions> {
+  return {
+    maxRetries: Math.max(0, options.maxRetries ?? TYPESAFE_MAX_RETRIES),
+    sleep: options.sleep ?? defaultSleep,
+  };
 }
 
 async function fetchWithTimeout(
@@ -343,19 +351,9 @@ function unexpected(problem: string): TypeSafeError {
   return new TypeSafeError(`TypeSafe returned an unexpected response at ${problem}`);
 }
 
-export async function evaluateSystemOne(
-  request: TypeSafeRequest,
-  connection: TypeSafeConnection = {},
-): Promise<TypeSafeResult> {
-  const apiKey = (connection.apiKey ?? typeSafeApiKey(connection.sources)).trim();
-  if (!apiKey) {
-    throw new TypeSafeError(KEY_NOT_SET);
-  }
-  const model = (connection.model ?? typeSafeModel(connection.sources)).trim() || TYPESAFE_MODEL;
-  const timeoutMs = connection.timeoutMs ?? TYPESAFE_TIMEOUT_MS;
-  const maxRetries = Math.max(0, connection.retry?.maxRetries ?? TYPESAFE_MAX_RETRIES);
-  const sleep = connection.retry?.sleep ?? defaultSleep;
-  const init: RequestInit = {
+/** The POST that asks System One `request` under `model`, signed with `apiKey`. */
+function systemOneInit(request: TypeSafeRequest, apiKey: string, model: string): RequestInit {
+  return {
     method: "POST",
     headers: {
       authorization: `Bearer ${apiKey}`,
@@ -367,47 +365,103 @@ export async function evaluateSystemOne(
       questions: request.questions,
     }),
   };
+}
+
+/** Sends `init` to System One over the connection's fetch, or the platform's HTTP client. */
+function systemOneSender(
+  connection: TypeSafeConnection,
+  init: RequestInit,
+): () => Promise<Response> {
+  const timeoutMs = connection.timeoutMs ?? TYPESAFE_TIMEOUT_MS;
   const fetchFn = connection.fetch;
-  const send = fetchFn
+  return fetchFn
     ? () => fetchWithTimeout(fetchFn, TYPESAFE_URL, init, timeoutMs)
     : () => httpRequest(TYPESAFE_URL, init, { timeoutMs });
+}
 
-  let attempt = 0;
-  for (;;) {
-    let response: Response;
+/** A System One reply as the result of `questions`; its model is `model` when it names none. */
+function systemOneResult(
+  payload: unknown,
+  questions: Record<string, TypeSafeQuestion>,
+  model: string,
+): TypeSafeResult {
+  const reply = decode(SystemOneResponse, payload, unexpected);
+  const result: TypeSafeResult = {
+    model: typeof reply.model === "string" && reply.model ? reply.model : model,
+    answers: parseAnswers(questions, reply.answers),
+  };
+  if (Value.Check(Usage, reply.usage)) {
+    result.usage = reply.usage;
+  }
+  return result;
+}
+
+/** One System One call: how it is sent, and the questions and model its reply is read against. */
+type SystemOneCall = {
+  send: () => Promise<Response>;
+  questions: Record<string, TypeSafeQuestion>;
+  model: string;
+};
+
+/** What one attempt came to: System One's result, or the wait before the next attempt. */
+type SystemOneAttempt = { result: TypeSafeResult } | { waitMs: number };
+
+/**
+ * Attempt number `attempt` of `call`. While it is below `maxRetries`, a connection failure or
+ * timeout, or a 408, 429 or 5xx reply, comes back as the wait before the next attempt, like the
+ * SDK; any other failure is thrown as a TypeSafeError.
+ */
+async function attemptSystemOne(
+  call: SystemOneCall,
+  attempt: number,
+  maxRetries: number,
+): Promise<SystemOneAttempt> {
+  const retryable = attempt < maxRetries;
+  let response: Response;
+  try {
+    response = await call.send();
+  } catch (error) {
+    if (retryable) {
+      return { waitMs: backoffMs(attempt) };
+    }
+    throw asTypeSafeError(error, null, attempt + 1);
+  }
+  if (!response.ok) {
+    const detail = await errorDetail(response);
+    if (retryable && retryableStatus(response.status)) {
+      return { waitMs: retryAfterMs(response.headers) ?? backoffMs(attempt) };
+    }
+    throw new TypeSafeError(detail, response.status);
+  }
+  return { result: systemOneResult(await readJson(response), call.questions, call.model) };
+}
+
+export async function evaluateSystemOne(
+  request: TypeSafeRequest,
+  connection: TypeSafeConnection = {},
+): Promise<TypeSafeResult> {
+  const apiKey = (connection.apiKey ?? typeSafeApiKey(connection.sources)).trim();
+  if (!apiKey) {
+    throw new TypeSafeError(KEY_NOT_SET);
+  }
+  const model = (connection.model ?? typeSafeModel(connection.sources)).trim() || TYPESAFE_MODEL;
+  const call: SystemOneCall = {
+    send: systemOneSender(connection, systemOneInit(request, apiKey, model)),
+    questions: request.questions,
+    model,
+  };
+  const { maxRetries, sleep } = retryPolicy(connection.retry);
+  for (let attempt = 0; ; attempt += 1) {
+    let outcome: SystemOneAttempt;
     try {
-      response = await send();
+      outcome = await attemptSystemOne(call, attempt, maxRetries);
     } catch (error) {
-      // Connection failures and timeouts are retryable, like the SDK.
-      if (attempt < maxRetries) {
-        await sleep(backoffMs(attempt));
-        attempt += 1;
-        continue;
-      }
       throw asTypeSafeError(error, apiKey, attempt + 1);
     }
-    try {
-      if (!response.ok) {
-        const detail = await errorDetail(response);
-        if (attempt < maxRetries && retryableStatus(response.status)) {
-          await sleep(retryAfterMs(response.headers) ?? backoffMs(attempt));
-          attempt += 1;
-          continue;
-        }
-        throw new TypeSafeError(detail, response.status);
-      }
-      const reply = decode(SystemOneResponse, await readJson(response), unexpected);
-      const result: TypeSafeResult = {
-        model: typeof reply.model === "string" && reply.model ? reply.model : model,
-        answers: parseAnswers(request.questions, reply.answers),
-      };
-      if (Value.Check(Usage, reply.usage)) {
-        result.usage = reply.usage;
-      }
-      return result;
-    } catch (error) {
-      throw asTypeSafeError(error, apiKey, attempt + 1);
+    if ("result" in outcome) {
+      return outcome.result;
     }
+    await sleep(outcome.waitMs);
   }
 }
 

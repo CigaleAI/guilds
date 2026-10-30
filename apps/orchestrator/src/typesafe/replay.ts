@@ -109,18 +109,9 @@ export async function replayRecipients(
   };
 }
 
-export function formatRecipientReplay(report: RecipientReplay): string {
-  const lines: string[] = [];
-  const preview = report.content.replace(/\s+/g, " ").trim();
-  lines.push(`message seq ${report.seq} from ${report.author}:`);
-  lines.push(`  ${preview.length > 200 ? `${preview.slice(0, 200)}…` : preview}`);
-  lines.push("offered to Jev:");
-  for (const member of report.offered) {
-    const focus = member.focus ? ` — ${member.focus}` : "";
-    lines.push(`  ${member.name}${focus} (task preview ${member.task_chars} chars)`);
-  }
-  const decision = report.decision;
-  lines.push(`decision: source=${decision.source} choice=${decision.choice ?? "-"}`);
+/** The report's lines for one decision: its source and choice, confidence, ranking and reason. */
+function decisionLines(decision: RecipientRouting): string[] {
+  const lines = [`decision: source=${decision.source} choice=${decision.choice ?? "-"}`];
   if (decision.confidence !== undefined) {
     lines.push(`  confidence ${decision.confidence.toFixed(3)} (model ${decision.model ?? "?"})`);
   }
@@ -134,6 +125,20 @@ export function formatRecipientReplay(report: RecipientReplay): string {
   if (decision.reason) {
     lines.push(`  reason: ${decision.reason}`);
   }
+  return lines;
+}
+
+export function formatRecipientReplay(report: RecipientReplay): string {
+  const lines: string[] = [];
+  const preview = report.content.replace(/\s+/g, " ").trim();
+  lines.push(`message seq ${report.seq} from ${report.author}:`);
+  lines.push(`  ${preview.length > 200 ? `${preview.slice(0, 200)}…` : preview}`);
+  lines.push("offered to Jev:");
+  for (const member of report.offered) {
+    const focus = member.focus ? ` — ${member.focus}` : "";
+    lines.push(`  ${member.name}${focus} (task preview ${member.task_chars} chars)`);
+  }
+  lines.push(...decisionLines(report.decision));
   lines.push(`tag rules alone would wake: ${report.rule_names.join(", ") || "(nobody)"}`);
   lines.push(`with this decision, wakes: ${report.would_wake.join(", ") || "(nobody)"}`);
   return `${lines.join("\n")}\n`;

@@ -192,29 +192,28 @@ export async function classifyGroupRecipients(
   return out;
 }
 
-export async function selectGroupHistory(
-  snapshot: HistorySnapshot,
-  client: TypeSafeClient,
-): Promise<HistorySelection> {
-  const keepLimit = CONTEXT_HISTORY_LIMIT;
-  const window = recentGroupRows(snapshot.rows, HISTORY_CANDIDATE_LIMIT);
-  if (window.length <= keepLimit) {
-    return { rows: window, keep: {} };
-  }
-  const latest = window[window.length - 1];
-  const latestSeq = Number(latest?.seq);
+/** The seqs an agent always reads: the latest row's, then each row that tags it, newest first. */
+function alwaysKeptSeqs(window: GroupMessageRow[], agentName: string): number[] {
+  const latestSeq = Number(window[window.length - 1]?.seq);
   const always: number[] = [];
   if (Number.isFinite(latestSeq)) {
     always.push(latestSeq);
   }
   for (const row of [...window].reverse()) {
     const seq = Number(row.seq);
-    if (storedTags(row).includes(snapshot.agentName) && !always.includes(seq)) {
+    if (storedTags(row).includes(agentName) && !always.includes(seq)) {
       always.push(seq);
     }
   }
-  // One yes/no Noul per candidate row (the rerank pattern); agent and focus
-  // live in state once instead of being repeated in every question.
+  return always;
+}
+
+// One yes/no Noul per candidate row (the rerank pattern); agent and focus
+// live in state once instead of being repeated in every question.
+function keepQuestions(
+  window: GroupMessageRow[],
+  always: number[],
+): Record<string, TypeSafeQuestion> {
   const questions: Record<string, TypeSafeQuestion> = {};
   for (const row of window) {
     const seq = Number(row.seq);
@@ -234,6 +233,38 @@ export async function selectGroupHistory(
       },
     };
   }
+  return questions;
+}
+
+/**
+ * The seqs an agent reads, at most `limit`: the ones it always reads, then the candidates by their
+ * Noul, the newer first on a tie.
+ */
+function selectedSeqs(always: number[], keep: Record<string, number>, limit: number): Set<number> {
+  const ranked = Object.entries(keep)
+    .map(([seq, noul]) => ({ seq: Number(seq), noul }))
+    .sort((left, right) => right.noul - left.noul || right.seq - left.seq);
+  const selected = new Set<number>();
+  for (const seq of [...always, ...ranked.map((item) => item.seq)]) {
+    if (selected.size >= limit) {
+      break;
+    }
+    selected.add(seq);
+  }
+  return selected;
+}
+
+export async function selectGroupHistory(
+  snapshot: HistorySnapshot,
+  client: TypeSafeClient,
+): Promise<HistorySelection> {
+  const window = recentGroupRows(snapshot.rows, HISTORY_CANDIDATE_LIMIT);
+  if (window.length <= CONTEXT_HISTORY_LIMIT) {
+    return { rows: window, keep: {} };
+  }
+  const latest = window[window.length - 1];
+  const always = alwaysKeptSeqs(window, snapshot.agentName);
+  const questions = keepQuestions(window, always);
   const keep: Record<string, number> = {};
   let model: string | undefined;
   let usage: TypeSafeUsage | undefined;
@@ -257,25 +288,10 @@ export async function selectGroupHistory(
       keep[String(seq)] = requireNoul(result, id);
     }
   }
-  const ranked = Object.entries(keep)
-    .map(([seq, noul]) => ({ seq: Number(seq), noul }))
-    .sort((left, right) => right.noul - left.noul || right.seq - left.seq);
-  const selected = new Set<number>();
-  for (const seq of always) {
-    if (selected.size >= keepLimit) {
-      break;
-    }
-    selected.add(seq);
-  }
-  for (const item of ranked) {
-    if (selected.size >= keepLimit) {
-      break;
-    }
-    selected.add(item.seq);
-  }
+  const selected = selectedSeqs(always, keep, CONTEXT_HISTORY_LIMIT);
   const rows = window.filter((row) => selected.has(Number(row.seq)));
   const out: HistorySelection = {
-    rows: rows.length ? rows : window.slice(-keepLimit),
+    rows: rows.length ? rows : window.slice(-CONTEXT_HISTORY_LIMIT),
     keep,
   };
   if (model !== undefined) {
@@ -285,6 +301,37 @@ export async function selectGroupHistory(
     out.usage = usage;
   }
   return out;
+}
+
+/**
+ * The decision a recipient Choice makes: the tagged agents and the one it picked, or the tagged
+ * agents and the tag rules' `ruleNames` when it is less sure than `confidenceMin`.
+ */
+function classifiedDecision(
+  classified: RecipientClassification,
+  tagged: Set<string>,
+  ruleNames: Set<string>,
+  confidenceMin: number,
+): RecipientDecision {
+  const decision: RecipientDecision = {
+    source: "typesafe",
+    names: new Set([...tagged, ...classified.names]),
+    choice: classified.choice,
+    confidence: classified.confidence,
+    probabilities: classified.probabilities,
+  };
+  if (classified.model) {
+    decision.model = classified.model;
+  }
+  if (classified.usage) {
+    decision.usage = classified.usage;
+  }
+  if (classified.confidence < confidenceMin) {
+    decision.source = "low_confidence";
+    decision.reason = `confidence ${classified.confidence.toFixed(2)} below ${confidenceMin}`;
+    decision.names = new Set([...tagged, ...ruleNames]);
+  }
+  return decision;
 }
 
 export function createGroupRouter(options: GroupRouterOptions = {}): GroupRouter {
@@ -307,25 +354,7 @@ export function createGroupRouter(options: GroupRouterOptions = {}): GroupRouter
           { rows: args.rows, members: args.members, pendingNames },
           client,
         );
-        const decision: RecipientDecision = {
-          source: "typesafe",
-          names: new Set([...tagged, ...classified.names]),
-          choice: classified.choice,
-          confidence: classified.confidence,
-          probabilities: classified.probabilities,
-        };
-        if (classified.model) {
-          decision.model = classified.model;
-        }
-        if (classified.usage) {
-          decision.usage = classified.usage;
-        }
-        if (classified.confidence < confidenceMin) {
-          decision.source = "low_confidence";
-          decision.reason = `confidence ${classified.confidence.toFixed(2)} below ${confidenceMin}`;
-          decision.names = new Set([...tagged, ...ruleNames]);
-        }
-        return decision;
+        return classifiedDecision(classified, tagged, ruleNames, confidenceMin);
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         writeLog("warn", "typesafe recipients fallback", {
