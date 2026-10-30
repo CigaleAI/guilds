@@ -24,7 +24,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 function isColumnType(value: unknown): value is ColumnType {
-  return typeof value === "string" && (COLUMN_TYPES as readonly string[]).includes(value);
+  return COLUMN_TYPES.some((type) => type === value);
 }
 
 /**
@@ -49,7 +49,7 @@ export function parseColumns(raw: unknown): CollectionColumn[] {
     if (!COLUMN_NAME_RE.test(name)) {
       throw new ArtifactError(`${describe(label)}: name must match ${COLUMN_NAME_RE.source}`, 422);
     }
-    if ((RESERVED_COLUMN_NAMES as readonly string[]).includes(name)) {
+    if (RESERVED_COLUMN_NAMES.some((reserved) => reserved === name)) {
       throw new ArtifactError(`column "${name}": name is reserved`, 422);
     }
     if (seen.has(name)) {
@@ -160,63 +160,78 @@ function got(value: unknown): string {
 /** Why a value does not fit its column, phrased for the model. */
 export type ValueProblem = { ok: false; problem: string };
 
-/** A value checked against its column: the value to store, or why it does not fit. */
-export type CheckedValue = { ok: true; value: RecordValue } | ValueProblem;
+/** A value checked against its column: the value to store, of the type the column holds, or why it does not fit. */
+export type Checked<T> = { ok: true; value: T } | ValueProblem;
+
+/** A value checked against a column of any type. */
+export type CheckedValue = Checked<RecordValue>;
+
+function valueProblem(column: CollectionColumn, value: unknown, expected: string): ValueProblem {
+  return { ok: false, problem: `column "${column.name}": expected ${expected}; ${got(value)}` };
+}
 
 /**
  * Checks one value against its column. Returns the value to store (datetime
  * values are normalised to UTC) or the problem, phrased for the model.
  */
 export function checkValue(column: CollectionColumn, value: unknown): CheckedValue {
-  const fail = (expected: string): ValueProblem => ({
-    ok: false,
-    problem: `column "${column.name}": expected ${expected}; ${got(value)}`,
-  });
   switch (column.type) {
-    case "text": {
-      if (typeof value !== "string") {
-        return fail(column.values ? `one of ${column.values.join(", ")}` : "text");
-      }
-      if (column.values && !column.values.includes(value)) {
-        return fail(`one of ${column.values.join(", ")}`);
-      }
-      return { ok: true, value };
-    }
-    case "number": {
-      if (typeof value !== "number" || !Number.isFinite(value)) {
-        return fail("number");
-      }
-      return { ok: true, value };
-    }
-    case "boolean": {
-      if (typeof value !== "boolean") {
-        return fail("true or false");
-      }
-      return { ok: true, value };
-    }
-    case "datetime": {
-      const normalised = typeof value === "string" ? normalizeDatetime(value) : null;
-      if (!normalised) {
-        return fail("an ISO 8601 datetime with a timezone");
-      }
-      return { ok: true, value: normalised };
-    }
+    case "text":
+      return checkText(column, value);
+    case "number":
+      return checkNumber(column, value);
+    case "boolean":
+      return checkBoolean(column, value);
+    case "datetime":
+      return checkDatetime(column, value);
     case "array":
-      return checkArrayValue(column, value, fail);
+      return checkArrayValue(column, value);
   }
 }
 
-function checkArrayValue(
-  column: CollectionColumn,
-  value: unknown,
-  fail: (expected: string) => ValueProblem,
-): CheckedValue {
+/** A text column's value: text, and one of the column's values when it has a closed list. */
+export function checkText(column: CollectionColumn, value: unknown): Checked<string> {
+  if (typeof value !== "string") {
+    return valueProblem(column, value, column.values ? `one of ${column.values.join(", ")}` : "text");
+  }
+  if (column.values && !column.values.includes(value)) {
+    return valueProblem(column, value, `one of ${column.values.join(", ")}`);
+  }
+  return { ok: true, value };
+}
+
+/** A number column's value: a finite number. */
+export function checkNumber(column: CollectionColumn, value: unknown): Checked<number> {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return valueProblem(column, value, "number");
+  }
+  return { ok: true, value };
+}
+
+/** A boolean column's value: true or false. */
+export function checkBoolean(column: CollectionColumn, value: unknown): Checked<boolean> {
+  if (typeof value !== "boolean") {
+    return valueProblem(column, value, "true or false");
+  }
+  return { ok: true, value };
+}
+
+/** A datetime column's value: an ISO 8601 datetime with a timezone, normalised to UTC. */
+export function checkDatetime(column: CollectionColumn, value: unknown): Checked<string> {
+  const normalised = typeof value === "string" ? normalizeDatetime(value) : null;
+  if (!normalised) {
+    return valueProblem(column, value, "an ISO 8601 datetime with a timezone");
+  }
+  return { ok: true, value: normalised };
+}
+
+function checkArrayValue(column: CollectionColumn, value: unknown): Checked<string[]> {
   const expected = column.values ? `a list of ${column.values.join(", ")}` : "a list of text";
   if (!Array.isArray(value)) {
-    return fail(expected);
+    return valueProblem(column, value, expected);
   }
   if (value.length > ARRAY_ITEMS_MAX) {
-    return fail(`a list of at most ${ARRAY_ITEMS_MAX} text items`);
+    return valueProblem(column, value, `a list of at most ${ARRAY_ITEMS_MAX} text items`);
   }
   const stored: string[] = [];
   for (let index = 0; index < value.length; index++) {

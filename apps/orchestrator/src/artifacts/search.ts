@@ -1,5 +1,5 @@
 import type { CollectionColumn } from "../db/schema/index.js";
-import { checkValue, columnNamed } from "./columns.js";
+import { checkBoolean, checkDatetime, checkNumber, checkText, columnNamed, type Checked } from "./columns.js";
 import type { OrderClause, WhereClause } from "../db/collections.js";
 import { ArtifactError } from "./errors.js";
 
@@ -25,7 +25,7 @@ export function searchBlobFor(id: string, body: unknown): string {
       return;
     }
     if (typeof value === "object") {
-      for (const item of Object.values(value as Record<string, unknown>)) visit(item);
+      for (const item of Object.values(value)) visit(item);
       return;
     }
     const text = String(value).trim();
@@ -106,20 +106,25 @@ function parseClause(name: string, raw: unknown, columns: CollectionColumn[]): W
     }
     return { column: name, type: "text", op: "like", term: raw.trim() };
   }
-  const checked = checkValue(column, typeof raw === "string" ? raw.trim() : raw);
-  if (!checked.ok) {
-    throw new ArtifactError(checked.problem.replace(`column "${name}"`, label), 422);
-  }
-  if (column.type === "text") {
-    return { column: name, type: "text", op: "eq", term: String(checked.value) };
-  }
+  const term = typeof raw === "string" ? raw.trim() : raw;
   if (column.type === "number") {
-    return { column: name, type: "number", op: "eq", term: Number(checked.value) };
+    return { column: name, type: "number", op: "eq", term: checkedTerm(label, column, checkNumber(column, term)) };
   }
   if (column.type === "datetime") {
-    return { column: name, type: "datetime", op: "eq", term: String(checked.value) };
+    return { column: name, type: "datetime", op: "eq", term: checkedTerm(label, column, checkDatetime(column, term)) };
   }
-  return { column: name, type: "boolean", op: "eq", term: Boolean(checked.value) };
+  if (column.type === "boolean") {
+    return { column: name, type: "boolean", op: "eq", term: checkedTerm(label, column, checkBoolean(column, term)) };
+  }
+  return { column: name, type: "text", op: "eq", term: checkedTerm(label, column, checkText(column, term)) };
+}
+
+/** The value a term checked against its column holds; a 422 naming the term at `label` when it does not fit. */
+function checkedTerm<T>(label: string, column: CollectionColumn, checked: Checked<T>): T {
+  if (!checked.ok) {
+    throw new ArtifactError(checked.problem.replace(`column "${column.name}"`, label), 422);
+  }
+  return checked.value;
 }
 
 function parseRange(label: string, column: CollectionColumn, raw: Record<string, unknown>): WhereClause {
@@ -130,31 +135,21 @@ function parseRange(label: string, column: CollectionColumn, raw: Record<string,
   if (keys.length === 0 || keys.some((key) => key !== "gte" && key !== "lte")) {
     throw new ArtifactError(`${label}: a range is { "gte": value } and/or { "lte": value }`, 422);
   }
-  const bound = (key: "gte" | "lte"): unknown => {
-    if (!(key in raw)) {
-      return null;
-    }
-    const checked = checkValue(column, raw[key]);
-    if (!checked.ok) {
-      throw new ArtifactError(checked.problem.replace(`column "${column.name}"`, `${label}.${key}`), 422);
-    }
-    return checked.value;
-  };
   if (column.type === "number") {
     return {
       column: column.name,
       type: "number",
       op: "range",
-      gte: bound("gte") as number | null,
-      lte: bound("lte") as number | null,
+      gte: "gte" in raw ? checkedTerm(`${label}.gte`, column, checkNumber(column, raw.gte)) : null,
+      lte: "lte" in raw ? checkedTerm(`${label}.lte`, column, checkNumber(column, raw.lte)) : null,
     };
   }
   return {
     column: column.name,
     type: "datetime",
     op: "range",
-    gte: bound("gte") as string | null,
-    lte: bound("lte") as string | null,
+    gte: "gte" in raw ? checkedTerm(`${label}.gte`, column, checkDatetime(column, raw.gte)) : null,
+    lte: "lte" in raw ? checkedTerm(`${label}.lte`, column, checkDatetime(column, raw.lte)) : null,
   };
 }
 
@@ -190,7 +185,7 @@ export function parseOrder(value: unknown, columns: CollectionColumn[]): OrderCl
     throw new ArtifactError("order.direction must be asc or desc", 422);
   }
   const declared = columnNamed(columns, column);
-  const known = (SYSTEM_ORDER_COLUMNS as readonly string[]).includes(column) || declared;
+  const known = SYSTEM_ORDER_COLUMNS.some((system) => system === column) || declared;
   if (!column || !known) {
     const names = [...SYSTEM_ORDER_COLUMNS, ...columns.map((item) => item.name)].join(", ");
     throw new ArtifactError(`order.column must be one of ${names}`, 422);

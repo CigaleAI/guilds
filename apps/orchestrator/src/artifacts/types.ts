@@ -82,21 +82,21 @@ export const TASK_REVISIONS_MAX = 50;
 export const COLLECTION_NAME_RE = /^[a-z][a-z0-9_-]{0,62}$/;
 
 export function isArtifactLevel(value: string): value is ArtifactLevel {
-  return (ARTIFACT_LEVELS as readonly string[]).includes(value);
+  return ARTIFACT_LEVELS.some((level) => level === value);
 }
 
 export function isArtifactKind(value: string): value is ArtifactKind {
-  return (ARTIFACT_KINDS as readonly string[]).includes(value);
+  return ARTIFACT_KINDS.some((kind) => kind === value);
 }
 
 export function isAccessMode(value: unknown): value is AccessMode {
-  return typeof value === "string" && (ACCESS_MODES as readonly string[]).includes(value);
+  return ACCESS_MODES.some((mode) => mode === value);
 }
 
 export function isAgentAccessMode(value: unknown): value is AgentAccessMode {
-  return typeof value === "string" && (AGENT_ACCESS_MODES as readonly string[]).includes(value);
+  return AGENT_ACCESS_MODES.some((mode) => mode === value);
 }
 
 export function isAccessSubject(value: unknown): value is AccessSubject {
-  return typeof value === "string" && (ACCESS_SUBJECTS as readonly string[]).includes(value);
+  return ACCESS_SUBJECTS.some((subject) => subject === value);
 }

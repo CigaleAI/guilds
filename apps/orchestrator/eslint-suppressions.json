@@ -28,17 +28,9 @@
       "count": 1
     }
   },
-  "src/artifacts/access.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 2
-    }
-  },
   "src/artifacts/columns.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 2
-    },
     "complexity": {
-      "count": 2
+      "count": 1
     }
   },
   "src/artifacts/embeds.ts": {
@@ -52,16 +44,8 @@
     }
   },
   "src/artifacts/search.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 6
-    },
     "complexity": {
       "count": 2
-    }
-  },
-  "src/artifacts/types.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 5
     }
   },
   "src/attachments/hydrate.ts": {
