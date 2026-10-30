@@ -173,14 +173,6 @@
       "count": 1
     }
   },
-  "src/config/index.ts": {
-    "complexity": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 14
-    }
-  },
   "src/connectors/alchemy/client.ts": {
     "no-restricted-syntax": {
       "count": 5
