@@ -14,6 +14,7 @@ import {
   snapshotTaskEmbeds,
   taskEmbedActor,
   walkTaskEmbeds,
+  type EmbedSource,
   type EmbedStep,
 } from "./embeds.js";
 import { ArtifactError } from "./errors.js";
@@ -33,23 +34,36 @@ import {
 import type { HashedArtifactRow } from "../db/artifacts.js";
 import { recordFileChange } from "../db/file-changes.js";
 import { type Queryable, withTransaction } from "../db/pg.js";
-import type { RunTaskSource, TaskEmbedSnapshot } from "../db/schema/index.js";
+import type { RunTaskSource } from "../db/schema/index.js";
 
 const FALLBACK_TASK = "Assist the user and collaborate with the guild members.\n";
 
+/**
+ * A new agent's Task: its focus, else the `task.md` template under `templatesRoot`, else a
+ * one-line default when there is no templates root or it holds no `task.md`.
+ */
 export function resolveTaskContent(seed: string, templatesRoot = ""): string {
   const focus = seed.trim();
   if (focus) {
     return `${focus}\n`;
   }
-  if (!templatesRoot) {
-    return FALLBACK_TASK;
-  }
+  return (templatesRoot ? readTaskTemplate(templatesRoot) : null) ?? FALLBACK_TASK;
+}
+
+/** The `task.md` template under `templatesRoot`; null when the file does not exist, and any other read failure thrown. */
+function readTaskTemplate(templatesRoot: string): string | null {
   try {
     return readFileSync(path.join(templatesRoot, "task.md"), "utf8");
-  } catch {
-    return FALLBACK_TASK;
+  } catch (error) {
+    if (isMissingFile(error)) {
+      return null;
+    }
+    throw error;
   }
+}
+
+function isMissingFile(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 
 export function hashTaskContent(content: string): string {
@@ -197,17 +211,21 @@ export async function expandTaskText(store: ArtifactStore, agent: AgentRow, text
   return inlineTaskEmbeds(embedSource(store), taskEmbedActor(agent.org_id, agent), text);
 }
 
+/** A Task's text with its embeds inlined as `actor` reads them, or the message of the ArtifactError that refuses inlining them. */
+export async function expandTaskEmbeds(source: EmbedSource, actor: ArtifactActor, task: string): Promise<TaskExpansion> {
+  try {
+    return { ok: true, text: await inlineTaskEmbeds(source, actor, task) };
+  } catch (error) {
+    if (error instanceof ArtifactError) {
+      return { ok: false, error: error.message };
+    }
+    throw error;
+  }
+}
+
 /** The agent's Task, inlined as its next run reads it, with the agent's Memory. */
 export async function agentTask(store: ArtifactStore, agent: AgentRow): Promise<AgentTaskView> {
-  let expanded: TaskExpansion;
-  try {
-    expanded = { ok: true, text: await expandTaskText(store, agent, agent.task) };
-  } catch (error) {
-    if (!(error instanceof ArtifactError)) {
-      throw error;
-    }
-    expanded = { ok: false, error: error.message };
-  }
+  const expanded = await expandTaskEmbeds(embedSource(store), taskEmbedActor(agent.org_id, agent), agent.task);
   const memory = await getMemoryRow(store, taskEmbedActor(agent.org_id, agent), agent.id);
   return {
     text: agent.task,
@@ -223,28 +241,17 @@ export async function agentTask(store: ArtifactStore, agent: AgentRow): Promise<
 
 /**
  * Where a run's Task comes from: its version, hash and display path, and the notes and
- * collections it embeds as the agent reads them. A walk the store refuses keeps what it
- * snapshotted before the refusal.
+ * collections it embeds as the agent reads them.
  */
 export async function taskSnapshot(store: ArtifactStore, agent: AgentRow): Promise<RunTaskSource> {
   const source = embedSource(store);
   const actor = taskEmbedActor(agent.org_id, agent);
-  let embeds: TaskEmbedSnapshot[] = [];
-  let collections: string[] = [];
-  try {
-    embeds = await snapshotTaskEmbeds(source, actor, agent.task);
-    collections = await snapshotTaskCollections(source, actor, agent.task);
-  } catch (error) {
-    if (!(error instanceof ArtifactError)) {
-      throw error;
-    }
-  }
   return {
     version: agent.task_version,
     hash: agent.task_hash,
     display_path: taskDisplayPath(agent.org_id, agent.id),
-    embeds,
-    collections,
+    embeds: await snapshotTaskEmbeds(source, actor, agent.task),
+    collections: await snapshotTaskCollections(source, actor, agent.task),
     has_embeds: collectTaskEmbeds(agent.task).length > 0,
   };
 }

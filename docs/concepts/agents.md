@@ -425,7 +425,9 @@ policy refusal is 409 `<source> limit reached: <cap>`.
 Creating an agent writes PostgreSQL. A new agent gets:
 
 - a `task` column, from the focus when one was given, otherwise from
-  `apps/orchestrator/src/prompts/task.md`;
+  `task.md` in `TEMPLATES_ROOT` (`apps/orchestrator/src/prompts/task.md`
+  by default), or a one-line default Task when that file does not
+  exist; a `task.md` that exists but cannot be read fails the create;
 - a `memory` artifact row;
 - a group-chat cursor at the guild's current sequence, so it does not
   replay old chat.

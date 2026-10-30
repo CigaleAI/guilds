@@ -39,81 +39,111 @@ export function parseColumns(raw: unknown): CollectionColumn[] {
     throw new ArtifactError(`at most ${COLUMNS_MAX} columns`, 422);
   }
   const seen = new Set<string>();
-  const uniques: string[] = [];
   const columns = raw.map((item, index) => {
     if (!isPlainObject(item)) {
       throw new ArtifactError(`column ${index + 1}: must be an object`, 422);
     }
-    const name = typeof item.name === "string" ? item.name.trim() : "";
-    const label = name || `column ${index + 1}`;
-    if (!COLUMN_NAME_RE.test(name)) {
-      throw new ArtifactError(`${describe(label)}: name must match ${COLUMN_NAME_RE.source}`, 422);
-    }
-    if (RESERVED_COLUMN_NAMES.some((reserved) => reserved === name)) {
-      throw new ArtifactError(`column "${name}": name is reserved`, 422);
-    }
+    const name = parseColumnName(item, index);
     if (seen.has(name)) {
       throw new ArtifactError(`column "${name}": duplicate name`, 422);
     }
     seen.add(name);
-    for (const field of Object.keys(item)) {
-      if (!COLUMN_FIELDS.has(field)) {
-        throw new ArtifactError(`column "${name}": unknown field "${field}"`, 422);
-      }
-    }
-    if (!isColumnType(item.type)) {
-      throw new ArtifactError(`column "${name}": type must be one of ${COLUMN_TYPES.join(", ")}`, 422);
-    }
-    const description = typeof item.description === "string" ? item.description.trim() : "";
-    if (!description) {
-      throw new ArtifactError(`column "${name}": description is required`, 422);
-    }
-    if (description.length > COLUMN_DESCRIPTION_MAX) {
-      throw new ArtifactError(
-        `column "${name}": description must be at most ${COLUMN_DESCRIPTION_MAX} characters`,
-        422,
-      );
-    }
-    if (item.required !== undefined && typeof item.required !== "boolean") {
-      throw new ArtifactError(`column "${name}": required must be true or false`, 422);
-    }
-    if (item.unique !== undefined && typeof item.unique !== "boolean") {
-      throw new ArtifactError(`column "${name}": unique must be true or false`, 422);
-    }
-    const unique = item.unique === true;
-    if (unique && item.type !== "text" && item.type !== "number") {
-      throw new ArtifactError(`column "${name}": unique needs a text or number column`, 422);
-    }
-    if (unique) {
-      uniques.push(name);
-    }
-    const column: CollectionColumn = {
-      name,
-      type: item.type,
-      description,
-      required: item.required === true,
-      unique,
-    };
-    if (item.values !== undefined && item.values !== null) {
-      if (item.type !== "text" && item.type !== "array") {
-        throw new ArtifactError(`column "${name}": values needs a text or array column`, 422);
-      }
-      const values = parseValues(item.values);
-      if (!values) {
-        throw new ArtifactError(
-          `column "${name}": values must be a list of 1 to ${COLUMN_VALUES_MAX} distinct non-empty ` +
-            `strings of at most ${COLUMN_VALUE_MAX} characters`,
-          422,
-        );
-      }
-      column.values = values;
-    }
-    return column;
+    return parseColumn(name, item);
   });
+  const uniques = columns.filter((column) => column.unique).map((column) => column.name);
   if (uniques.length > 1) {
     throw new ArtifactError(`only one column can be unique (${uniques.join(", ")})`, 422);
   }
   return columns;
+}
+
+/** The name a declared column gives itself, at `index` in its list: it matches COLUMN_NAME_RE and is not reserved. */
+function parseColumnName(item: Record<string, unknown>, index: number): string {
+  const name = typeof item.name === "string" ? item.name.trim() : "";
+  const label = name || `column ${index + 1}`;
+  if (!COLUMN_NAME_RE.test(name)) {
+    throw new ArtifactError(`${describe(label)}: name must match ${COLUMN_NAME_RE.source}`, 422);
+  }
+  if (RESERVED_COLUMN_NAMES.some((reserved) => reserved === name)) {
+    throw new ArtifactError(`column "${name}": name is reserved`, 422);
+  }
+  return name;
+}
+
+/** One declared column named `name`, normalised: known fields only, its type, description, flags, and closed list. */
+function parseColumn(name: string, item: Record<string, unknown>): CollectionColumn {
+  for (const field of Object.keys(item)) {
+    if (!COLUMN_FIELDS.has(field)) {
+      throw new ArtifactError(`column "${name}": unknown field "${field}"`, 422);
+    }
+  }
+  if (!isColumnType(item.type)) {
+    throw new ArtifactError(`column "${name}": type must be one of ${COLUMN_TYPES.join(", ")}`, 422);
+  }
+  const column: CollectionColumn = {
+    name,
+    type: item.type,
+    description: parseColumnDescription(name, item.description),
+    ...parseColumnFlags(name, item.type, item),
+  };
+  const values = parseColumnValues(name, item.type, item.values);
+  if (values) {
+    column.values = values;
+  }
+  return column;
+}
+
+/** A column's description: text of 1 to COLUMN_DESCRIPTION_MAX characters once trimmed. */
+function parseColumnDescription(name: string, raw: unknown): string {
+  const description = typeof raw === "string" ? raw.trim() : "";
+  if (!description) {
+    throw new ArtifactError(`column "${name}": description is required`, 422);
+  }
+  if (description.length > COLUMN_DESCRIPTION_MAX) {
+    throw new ArtifactError(
+      `column "${name}": description must be at most ${COLUMN_DESCRIPTION_MAX} characters`,
+      422,
+    );
+  }
+  return description;
+}
+
+/** Whether a column of `type` is required and unique: each true or false when given, and unique only on text or number. */
+function parseColumnFlags(
+  name: string,
+  type: ColumnType,
+  item: Record<string, unknown>,
+): Pick<CollectionColumn, "required" | "unique"> {
+  if (item.required !== undefined && typeof item.required !== "boolean") {
+    throw new ArtifactError(`column "${name}": required must be true or false`, 422);
+  }
+  if (item.unique !== undefined && typeof item.unique !== "boolean") {
+    throw new ArtifactError(`column "${name}": unique must be true or false`, 422);
+  }
+  const unique = item.unique === true;
+  if (unique && type !== "text" && type !== "number") {
+    throw new ArtifactError(`column "${name}": unique needs a text or number column`, 422);
+  }
+  return { required: item.required === true, unique };
+}
+
+/** The closed list of a text or array column, null when it declares none. */
+function parseColumnValues(name: string, type: ColumnType, raw: unknown): string[] | null {
+  if (raw === undefined || raw === null) {
+    return null;
+  }
+  if (type !== "text" && type !== "array") {
+    throw new ArtifactError(`column "${name}": values needs a text or array column`, 422);
+  }
+  const values = parseValues(raw);
+  if (!values) {
+    throw new ArtifactError(
+      `column "${name}": values must be a list of 1 to ${COLUMN_VALUES_MAX} distinct non-empty ` +
+        `strings of at most ${COLUMN_VALUE_MAX} characters`,
+      422,
+    );
+  }
+  return values;
 }
 
 function describe(label: string): string {

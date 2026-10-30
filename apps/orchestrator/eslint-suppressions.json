@@ -28,21 +28,6 @@
       "count": 1
     }
   },
-  "src/artifacts/columns.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/artifacts/paths.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/artifacts/search.ts": {
-    "complexity": {
-      "count": 2
-    }
-  },
   "src/attachments/hydrate.ts": {
     "no-restricted-syntax": {
       "count": 1

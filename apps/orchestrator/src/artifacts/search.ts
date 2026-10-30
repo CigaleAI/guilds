@@ -90,33 +90,46 @@ function parseClause(name: string, raw: unknown, columns: CollectionColumn[]): W
   if (typeof raw === "string" && raw.trim().length > WHERE_TERM_MAX) {
     throw new ArtifactError(`${label}: term must be at most ${WHERE_TERM_MAX} characters`, 422);
   }
-  if (column.type === "array") {
-    if (typeof raw !== "string" || !raw.trim()) {
-      throw new ArtifactError(`${label}: expected text; ${gotText(raw)}`, 422);
-    }
-    const term = raw.trim();
-    if (column.values && !column.values.includes(term)) {
-      throw new ArtifactError(`${label}: expected one of ${column.values.join(", ")}; ${gotText(raw)}`, 422);
-    }
-    return { column: name, type: "array", op: column.values ? "contains" : "like", term };
-  }
-  if (column.type === "text" && !column.values) {
-    if (typeof raw !== "string" || !raw.trim()) {
-      throw new ArtifactError(`${label}: expected text; ${gotText(raw)}`, 422);
-    }
-    return { column: name, type: "text", op: "like", term: raw.trim() };
-  }
+  return parseTerm(label, column, raw);
+}
+
+/**
+ * The clause one term makes on its column: by substring or similar spelling on text without a
+ * closed list and on an open array, by item on a closed array, exactly otherwise.
+ */
+function parseTerm(label: string, column: CollectionColumn, raw: unknown): WhereClause {
   const term = typeof raw === "string" ? raw.trim() : raw;
-  if (column.type === "number") {
-    return { column: name, type: "number", op: "eq", term: checkedTerm(label, column, checkNumber(column, term)) };
+  switch (column.type) {
+    case "array":
+      return parseArrayTerm(label, column, raw);
+    case "text":
+      return column.values
+        ? { column: column.name, type: "text", op: "eq", term: checkedTerm(label, column, checkText(column, term)) }
+        : { column: column.name, type: "text", op: "like", term: textTerm(label, raw) };
+    case "number":
+      return { column: column.name, type: "number", op: "eq", term: checkedTerm(label, column, checkNumber(column, term)) };
+    case "datetime":
+      return { column: column.name, type: "datetime", op: "eq", term: checkedTerm(label, column, checkDatetime(column, term)) };
+    case "boolean":
+      return { column: column.name, type: "boolean", op: "eq", term: checkedTerm(label, column, checkBoolean(column, term)) };
   }
-  if (column.type === "datetime") {
-    return { column: name, type: "datetime", op: "eq", term: checkedTerm(label, column, checkDatetime(column, term)) };
+}
+
+/** The clause a term makes on an array column: an item of its closed list, or a substring of an item when it has none. */
+function parseArrayTerm(label: string, column: CollectionColumn, raw: unknown): WhereClause {
+  const term = textTerm(label, raw);
+  if (column.values && !column.values.includes(term)) {
+    throw new ArtifactError(`${label}: expected one of ${column.values.join(", ")}; ${gotText(raw)}`, 422);
   }
-  if (column.type === "boolean") {
-    return { column: name, type: "boolean", op: "eq", term: checkedTerm(label, column, checkBoolean(column, term)) };
+  return { column: column.name, type: "array", op: column.values ? "contains" : "like", term };
+}
+
+/** A term that must be text, trimmed; a 422 when it is not text or is empty. */
+function textTerm(label: string, raw: unknown): string {
+  if (typeof raw !== "string" || !raw.trim()) {
+    throw new ArtifactError(`${label}: expected text; ${gotText(raw)}`, 422);
   }
-  return { column: name, type: "text", op: "eq", term: checkedTerm(label, column, checkText(column, term)) };
+  return raw.trim();
 }
 
 /** The value a term checked against its column holds; a 422 naming the term at `label` when it does not fit. */
@@ -169,18 +182,7 @@ export function parseOrder(value: unknown, columns: CollectionColumn[]): OrderCl
   if (value === null || value === undefined || value === "") {
     return null;
   }
-  let column: string;
-  let direction: string;
-  if (typeof value === "string") {
-    const parts = value.trim().split(/\s+/);
-    column = parts[0] ?? "";
-    direction = (parts[1] ?? "asc").toLowerCase();
-  } else if (isPlainObject(value)) {
-    column = typeof value.column === "string" ? value.column.trim() : "";
-    direction = typeof value.direction === "string" ? value.direction.trim().toLowerCase() : "asc";
-  } else {
-    throw new ArtifactError("order must be { column, direction }", 422);
-  }
+  const { column, direction } = readOrderRequest(value);
   if (direction !== "asc" && direction !== "desc") {
     throw new ArtifactError("order.direction must be asc or desc", 422);
   }
@@ -194,6 +196,24 @@ export function parseOrder(value: unknown, columns: CollectionColumn[]): OrderCl
     throw new ArtifactError("order.column cannot be an array column", 422);
   }
   return { column, direction };
+}
+
+/** The column and direction an `order` argument names, before either is checked. */
+type OrderRequest = { column: string; direction: string };
+
+/** What an `order` argument asks for, from `"column"`, `"column desc"`, or `{ column, direction }`; ascending unless it says otherwise. */
+function readOrderRequest(value: unknown): OrderRequest {
+  if (typeof value === "string") {
+    const parts = value.trim().split(/\s+/);
+    return { column: parts[0] ?? "", direction: (parts[1] ?? "asc").toLowerCase() };
+  }
+  if (isPlainObject(value)) {
+    return {
+      column: typeof value.column === "string" ? value.column.trim() : "",
+      direction: typeof value.direction === "string" ? value.direction.trim().toLowerCase() : "asc",
+    };
+  }
+  throw new ArtifactError("order must be { column, direction }", 422);
 }
 
 /** The `since` argument: an ISO 8601 timestamp, returned normalised to UTC. */
