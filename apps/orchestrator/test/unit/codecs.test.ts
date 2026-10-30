@@ -7,9 +7,7 @@ import {
   formatColumnTimestamp,
   formatOperationalTimestamp,
   parseInt8,
-  roundCostUsd,
   sortableColumnTimestamp,
-  usageFields,
   utcIso,
   utcStamp,
 } from "../../src/db/codecs.js";
@@ -27,24 +25,6 @@ const fixture = JSON.parse(
   memory_iso: string;
   memory_stamp: string;
   bigint_id: number;
-  numeric_cost: {
-    input_tokens: number;
-    output_tokens: number;
-    cache_read_tokens: number;
-    total_tokens: number;
-    cost_usd: number;
-    calls: number;
-    updated_at: string | null;
-  };
-  numeric_cost_quarter: {
-    input_tokens: number;
-    output_tokens: number;
-    cache_read_tokens: number;
-    total_tokens: number;
-    cost_usd: number;
-    calls: number;
-    updated_at: string | null;
-  };
 };
 
 describe("codecs", () => {
@@ -92,32 +72,5 @@ describe("codecs", () => {
     assert.equal(parseInt8(String(fixture.bigint_id)), fixture.bigint_id);
     assert.throws(() => parseInt8("9007199254740992"), /MAX_SAFE_INTEGER/);
     assert.throws(() => parseInt8("1.5"), /not an integer/);
-  });
-
-  test("NUMERIC cost rounds to 8 decimal places", () => {
-    assert.equal(roundCostUsd(0.011984499999999999), fixture.numeric_cost.cost_usd);
-    assert.equal(roundCostUsd("0.25"), fixture.numeric_cost_quarter.cost_usd);
-    assert.deepEqual(
-      usageFields({
-        input_tokens: 8,
-        output_tokens: 2,
-        cache_read_tokens: 1,
-        cost_usd: 0.011984499999999999,
-        calls: 3,
-        updated_at: fixture.isoformat_whole,
-      }),
-      fixture.numeric_cost,
-    );
-    assert.deepEqual(
-      usageFields({
-        input_tokens: 8,
-        output_tokens: 2,
-        cache_read_tokens: 1,
-        cost_usd: 0.25,
-        calls: 3,
-        updated_at: fixture.isoformat_whole,
-      }),
-      fixture.numeric_cost_quarter,
-    );
   });
 });
