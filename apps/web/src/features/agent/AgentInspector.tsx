@@ -75,6 +75,122 @@ const tabs = [
   { route: "/guilds/$guildId/agents/$agentId/settings", label: "Settings", icon: Settings },
 ] as const;
 
+type AgentActionsProps = {
+  guildId: string;
+  agentId: string;
+  coding: boolean;
+  /** The screen is wide enough for the inspector to fill the window. */
+  wide: boolean;
+  full: boolean;
+  onToggleFull: () => void;
+  onDelete: () => void;
+};
+
+/**
+ * The header's actions: what the Task embeds that the agent cannot reach, a coding agent's
+ * readiness, the sheet or full-window toggle, the agent's menu, and Close.
+ */
+function AgentActions({
+  guildId,
+  agentId,
+  coding,
+  wide,
+  full,
+  onToggleFull,
+  onDelete,
+}: AgentActionsProps) {
+  const navigate = useNavigate();
+  const broken = useBrokenEmbeds([guildId]).get(agentId) ?? [];
+  return (
+    <>
+      {broken.length ? (
+        <IconButton
+          icon={Unlink}
+          label={`Not reachable from the Task: ${broken.join(", ")}`}
+          title={`Not reachable from the Task: ${broken.join(", ")}`}
+          variant="surface"
+          className="text-t-ochre-fg"
+          onClick={() =>
+            void navigate({
+              to: "/guilds/$guildId/agents/$agentId/prompt",
+              params: { guildId, agentId },
+            })
+          }
+        />
+      ) : null}
+      {coding ? <CodingNotReadyButton guildId={guildId} agentId={agentId} /> : null}
+      {wide ? (
+        <IconButton
+          icon={full ? Minimize2 : Maximize2}
+          label={full ? "Show as a sheet" : "Fill the window"}
+          variant="surface"
+          onClick={onToggleFull}
+        />
+      ) : null}
+      <Menu modal={false}>
+        <MenuTrigger variant="surface" label="Agent options" />
+        <MenuContent>
+          <MenuItem icon={Trash2} destructive onSelect={onDelete}>
+            Delete agent
+          </MenuItem>
+        </MenuContent>
+      </Menu>
+      <SheetClose asChild>
+        <IconButton icon={X} label="Close" variant="ink" />
+      </SheetClose>
+    </>
+  );
+}
+
+type DeleteAgentDialogProps = {
+  guildId: string;
+  agentId: string;
+  /** The agent's name, which the operator types to confirm; undefined while it loads. */
+  name: string | undefined;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onDeleted: () => void;
+};
+
+/** Deleting the agent once the operator types its name; a refusal stays in the dialog. */
+function DeleteAgentDialog({
+  guildId,
+  agentId,
+  name,
+  open,
+  onOpenChange,
+  onDeleted,
+}: DeleteAgentDialogProps) {
+  const removeAgent = useDeleteAgent(guildId);
+  return (
+    <ConfirmDialog
+      kind="destructive"
+      open={open}
+      onOpenChange={onOpenChange}
+      title={`Delete ${name ?? "this agent"}?`}
+      description="Its sessions, routines, notes, home and usage row are removed; its posts stay in the group chat. This can't be undone."
+      confirmLabel="Delete agent"
+      {...(name ? { confirmText: name } : {})}
+      onConfirm={() =>
+        removeAgent.mutateAsync(agentId).then(
+          () => {
+            toast({ kind: "success", title: `${name ?? "Agent"} deleted` });
+            onDeleted();
+          },
+          (error: Error) => {
+            toast({
+              kind: "error",
+              title: "Couldn't delete the agent",
+              description: error.message,
+            });
+            throw error;
+          },
+        )
+      }
+    />
+  );
+}
+
 /** One agent, over its guild's page: who it is, what it is doing, the open tab, and Chat's session. */
 export function AgentInspector() {
   const { guildId, agentId } = useParams({ from: "/guilds/$guildId/agents/$agentId" });
@@ -82,10 +198,8 @@ export function AgentInspector() {
   const wide = useMediaQuery(wideScreen);
   const onChat = Boolean(useMatchRoute()({ to: "/guilds/$guildId/agents/$agentId", fuzzy: false }));
   const agent = useAgent(agentId);
-  const broken = useBrokenEmbeds([guildId]).get(agentId) ?? [];
   const [full, setFull] = useState(() => readStored(viewModeKey) === "full");
   const [deleting, setDeleting] = useState(false);
-  const removeAgent = useDeleteAgent(guildId);
 
   const toggleFull = () => {
     writeStored(viewModeKey, full ? "modal" : "full");
@@ -107,45 +221,15 @@ export function AgentInspector() {
               state={agent.data.generating ? "running" : "idle"}
               {...(agent.data.focus ? { focus: agent.data.focus } : {})}
               actions={
-                <>
-                  {broken.length ? (
-                    <IconButton
-                      icon={Unlink}
-                      label={`Not reachable from the Task: ${broken.join(", ")}`}
-                      title={`Not reachable from the Task: ${broken.join(", ")}`}
-                      variant="surface"
-                      className="text-t-ochre-fg"
-                      onClick={() =>
-                        void navigate({
-                          to: "/guilds/$guildId/agents/$agentId/prompt",
-                          params: { guildId, agentId },
-                        })
-                      }
-                    />
-                  ) : null}
-                  {agent.data.config.coding ? (
-                    <CodingNotReadyButton guildId={guildId} agentId={agentId} />
-                  ) : null}
-                  {wide ? (
-                    <IconButton
-                      icon={full ? Minimize2 : Maximize2}
-                      label={full ? "Show as a sheet" : "Fill the window"}
-                      variant="surface"
-                      onClick={toggleFull}
-                    />
-                  ) : null}
-                  <Menu modal={false}>
-                    <MenuTrigger variant="surface" label="Agent options" />
-                    <MenuContent>
-                      <MenuItem icon={Trash2} destructive onSelect={() => setDeleting(true)}>
-                        Delete agent
-                      </MenuItem>
-                    </MenuContent>
-                  </Menu>
-                  <SheetClose asChild>
-                    <IconButton icon={X} label="Close" variant="ink" />
-                  </SheetClose>
-                </>
+                <AgentActions
+                  guildId={guildId}
+                  agentId={agentId}
+                  coding={agent.data.config.coding}
+                  wide={wide}
+                  full={full}
+                  onToggleFull={toggleFull}
+                  onDelete={() => setDeleting(true)}
+                />
               }
             />
             <div className="flex min-w-0 shrink-0 items-center border-y border-line bg-surface">
@@ -194,30 +278,13 @@ export function AgentInspector() {
           </div>
         )}
       </SheetContent>
-      <ConfirmDialog
-        kind="destructive"
+      <DeleteAgentDialog
+        guildId={guildId}
+        agentId={agentId}
+        name={agent.data?.name}
         open={deleting}
         onOpenChange={setDeleting}
-        title={`Delete ${agent.data?.name ?? "this agent"}?`}
-        description="Its sessions, routines, notes, home and usage row are removed; its posts stay in the group chat. This can't be undone."
-        confirmLabel="Delete agent"
-        {...(agent.data ? { confirmText: agent.data.name } : {})}
-        onConfirm={() =>
-          removeAgent.mutateAsync(agentId).then(
-            () => {
-              toast({ kind: "success", title: `${agent.data?.name ?? "Agent"} deleted` });
-              close();
-            },
-            (error: Error) => {
-              toast({
-                kind: "error",
-                title: "Couldn't delete the agent",
-                description: error.message,
-              });
-              throw error;
-            },
-          )
-        }
+        onDeleted={close}
       />
     </Sheet>
   );

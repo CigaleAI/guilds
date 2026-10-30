@@ -86,6 +86,60 @@ export async function copyToHostClipboard(text: string): Promise<boolean> {
 type Session =
   { kind: "starting" } | { kind: "live"; nonce: number } | { kind: "failed"; detail: string };
 
+/** How the header's badge shows each state of the browser session. */
+const SESSION_BADGES: Readonly<
+  Record<Session["kind"], { status: "ok" | "failed" | "running"; label: string }>
+> = Object.freeze({
+  live: { status: "ok", label: "Live" },
+  failed: { status: "failed", label: "Failed" },
+  starting: { status: "running", label: "Starting" },
+});
+
+type BrowserOffProps = { guildId: string; agentId: string };
+
+/** An agent without the browser, pointed at the Settings section that turns it on. */
+function BrowserOff({ guildId, agentId }: BrowserOffProps) {
+  return (
+    <div className="grid flex-1 place-items-center p-6">
+      <EmptyState
+        icon={Globe}
+        title="This agent has no browser"
+        description="Turn it on in Settings to give the agent a Chromium it can sign in with."
+        action={
+          <Button asChild size="sm">
+            <Link
+              to="/guilds/$guildId/agents/$agentId/settings"
+              params={{ guildId, agentId }}
+              search={{ section: "model" }}
+            >
+              Open Settings
+            </Link>
+          </Button>
+        }
+      />
+    </div>
+  );
+}
+
+type BrowserFailedProps = { detail: string; onRetry: () => void };
+
+/** Why the browser could not start, with another try. */
+function BrowserFailed({ detail, onRetry }: BrowserFailedProps) {
+  return (
+    <div className="grid flex-1 place-items-center">
+      <div className="flex max-w-160 flex-col items-center gap-3 text-center">
+        <h3 className="text-lg font-semibold">Browser unavailable</h3>
+        <pre className="max-h-60 w-full overflow-auto rounded-md bg-surface p-3 text-left font-mono text-xs whitespace-pre-wrap">
+          {detail}
+        </pre>
+        <Button size="sm" onClick={onRetry}>
+          Try again
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /**
  * The agent's Chromium, live: starting its machine can take up to a minute. Keyboard and mouse go
  * straight to the desktop; the clipboard strip moves text in and out.
@@ -116,28 +170,8 @@ export function AgentBrowser() {
     setAttempt((count) => count + 1);
   };
 
-  if (agent.data && !enabled) {
-    return (
-      <div className="grid flex-1 place-items-center p-6">
-        <EmptyState
-          icon={Globe}
-          title="This agent has no browser"
-          description="Turn it on in Settings to give the agent a Chromium it can sign in with."
-          action={
-            <Button asChild size="sm">
-              <Link
-                to="/guilds/$guildId/agents/$agentId/settings"
-                params={{ guildId, agentId }}
-                search={{ section: "model" }}
-              >
-                Open Settings
-              </Link>
-            </Button>
-          }
-        />
-      </div>
-    );
-  }
+  if (agent.data && !enabled) return <BrowserOff guildId={guildId} agentId={agentId} />;
+  const badge = SESSION_BADGES[session.kind];
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 px-7 py-5">
@@ -146,11 +180,7 @@ export function AgentBrowser() {
           Chromium on the agent's machine. Its signed-in profile stays in /home/{agentId}/.browser.
         </span>
         <span className="flex-1" />
-        <StatusBadge
-          status={session.kind === "live" ? "ok" : session.kind === "failed" ? "failed" : "running"}
-        >
-          {session.kind === "live" ? "Live" : session.kind === "failed" ? "Failed" : "Starting"}
-        </StatusBadge>
+        <StatusBadge status={badge.status}>{badge.label}</StatusBadge>
         <IconButton
           icon={RotateCw}
           label="Restart the browser view"
@@ -166,17 +196,7 @@ export function AgentBrowser() {
           nonce={session.nonce}
         />
       ) : session.kind === "failed" ? (
-        <div className="grid flex-1 place-items-center">
-          <div className="flex max-w-160 flex-col items-center gap-3 text-center">
-            <h3 className="text-lg font-semibold">Browser unavailable</h3>
-            <pre className="max-h-60 w-full overflow-auto rounded-md bg-surface p-3 text-left font-mono text-xs whitespace-pre-wrap">
-              {session.detail}
-            </pre>
-            <Button size="sm" onClick={restart}>
-              Try again
-            </Button>
-          </div>
-        </div>
+        <BrowserFailed detail={session.detail} onRetry={restart} />
       ) : (
         <div className="grid flex-1 place-items-center">
           <div role="status" className="flex flex-col items-center gap-2 text-sm text-muted">

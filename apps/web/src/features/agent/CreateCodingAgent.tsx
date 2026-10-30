@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { SquareTerminal } from "lucide-react";
 import { useCreateAgent, useOrgMachines } from "../../api/queries/agents";
 import { useCreateSecret, useSecrets } from "../../api/queries/secrets";
@@ -296,6 +296,25 @@ export function CodingAgentForm({ guild, onClose }: CodingAgentFormProps) {
   ][step];
   const busy = create.isPending || createSecret.isPending;
   const stepProps = { form, setConfig, errors, machine };
+  /** What each step shows, in the order of `STEPS`. */
+  const stepViews: readonly ReactNode[] = [
+    <Group title="Identity">
+      <IdentityFields draft={identity.draft} onChange={identity.setDraft} />
+    </Group>,
+    <MachineGroup
+      {...stepProps}
+      machines={machines}
+      coding
+      onDiskTyped={disk.onTyped}
+      hint="Coding agents need a Code machine."
+    />,
+    <HarnessStep {...stepProps} guild={guild} token={token} onToken={setToken} />,
+    <ModelStep {...stepProps} lead models={models.data} noProvider={noProvider} />,
+    <CodingRepositories
+      guild={guild}
+      missingNote="No repository yet. You can create the agent and add one later in the guild's Settings."
+    />,
+  ];
 
   const submit = async () => {
     const plan = tokenPlan(
@@ -345,32 +364,7 @@ export function CodingAgentForm({ guild, onClose }: CodingAgentFormProps) {
       />
       <DialogBody className="gap-6">
         <Stepper steps={[...STEPS]} current={step} />
-        {step === 0 ? (
-          <Group title="Identity">
-            <IdentityFields draft={identity.draft} onChange={identity.setDraft} />
-          </Group>
-        ) : null}
-        {step === 1 ? (
-          <MachineGroup
-            {...stepProps}
-            machines={machines}
-            coding
-            onDiskTyped={disk.onTyped}
-            hint="Coding agents need a Code machine."
-          />
-        ) : null}
-        {step === 2 ? (
-          <HarnessStep {...stepProps} guild={guild} token={token} onToken={setToken} />
-        ) : null}
-        {step === 3 ? (
-          <ModelStep {...stepProps} lead models={models.data} noProvider={noProvider} />
-        ) : null}
-        {step === 4 ? (
-          <CodingRepositories
-            guild={guild}
-            missingNote="No repository yet. You can create the agent and add one later in the guild's Settings."
-          />
-        ) : null}
+        {stepViews[step]}
         {create.isError ? (
           <Banner tone="error" title="Couldn't create the agent">
             {create.error.message}
