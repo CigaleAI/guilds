@@ -209,6 +209,13 @@ export async function createServer(
       scripts,
       schedules,
       publishRoutinesChanged,
+      // An issue an operator resolves or reopens is published on its guild's group chat.
+      publishIssuesChanged: async (guildId, change) => {
+        await generation.groupChat.publish(guildId, "guild.issues.changed", {
+          action: change.action,
+          ...(change.issueId === null ? {} : { issue_id: change.issueId }),
+        });
+      },
       config,
       masterKey,
       instanceKeys,

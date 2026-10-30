@@ -12,6 +12,7 @@ import type { Database } from "../db/client.js";
 import type { OrgCreatedHook } from "../db/orgs.js";
 import type { NotesStore } from "../notes/store.js";
 import type { Scripts } from "../scripts/catalog.js";
+import type { IssueChange } from "../issues/operator.js";
 import type { RoutineChange } from "../schedules/operator.js";
 import type { Schedules } from "../schedules/service.js";
 import type { AppConfig } from "../config/index.js";
@@ -61,6 +62,8 @@ export type AppDeps = {
   schedules: Schedules;
   /** Tells a guild that one of its agents' routines changed; routine writes announce nothing when absent. */
   publishRoutinesChanged?: (guildId: string, change: RoutineChange) => Promise<void>;
+  /** Tells a guild that its issues changed; issue writes announce nothing when absent. */
+  publishIssuesChanged?: (guildId: string, change: IssueChange) => Promise<void>;
   config?: AppConfig;
   masterKey?: Buffer;
   mcp?: McpPool;

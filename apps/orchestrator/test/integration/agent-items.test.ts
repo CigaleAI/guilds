@@ -5,6 +5,7 @@ import { connect } from "../../src/seed/connect.js";
 import { addTestAgent } from "../helpers/agents.js";
 import { insertGuild } from "../../src/db/guilds.js";
 import { insertIssue } from "../../src/db/issues.js";
+import type { IssueChange } from "../../src/issues/operator.js";
 import { insertMember } from "../../src/db/orgs.js";
 import { insertRun } from "../../src/db/runs.js";
 import { insertUser } from "../../src/db/users.js";
@@ -37,11 +38,15 @@ test(
     const notes = new NotesStore(tempDir("guilds-agent-items-"), templatesRoot());
     await notes.ensureSystemPrompt();
     const db = database.pool;
+    const issuesChanged: Array<[string, IssueChange]> = [];
     const app = await buildApp(database, {
       db,
       notes,
       scripts: agentScripts(db),
       schedules: agentSchedules(db),
+      publishIssuesChanged: async (guildId, change) => {
+        issuesChanged.push([guildId, change]);
+      },
     });
     await insertGuild(
       db,
@@ -196,6 +201,26 @@ test(
       });
       assert.equal(resolved.statusCode, 200, resolved.body);
       assert.equal(resolved.json().status, "resolved");
+      const reopened = await app.inject({
+        method: "PATCH",
+        url: `${guild}/issues/${issue.id}`,
+        headers: JSON_OWNER,
+        payload: { status: "open" },
+      });
+      assert.equal(reopened.statusCode, 200, reopened.body);
+      assert.deepEqual(
+        (await app.inject({ method: "POST", url: `${guild}/issues/resolve`, headers: OWNER })).json(),
+        { resolved: 1 },
+      );
+      assert.deepEqual(
+        issuesChanged,
+        [
+          ["guild_items", { action: "resolved", issueId: "iss_items" }],
+          ["guild_items", { action: "open", issueId: "iss_items" }],
+          ["guild_items", { action: "resolved", issueId: null }],
+        ],
+        "each status an operator sets is announced once; a refused one, or resolving none, is not",
+      );
 
       const runs = `${agent}/runs`;
       const start = (payload: object) =>
