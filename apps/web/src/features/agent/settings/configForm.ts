@@ -146,7 +146,8 @@ function positiveInteger(text: string): boolean {
 /** The server's rule for a harness model: empty for the default, else an alias or a full model name. */
 const harnessModelPattern = /^(?:[A-Za-z0-9][A-Za-z0-9._:/=,[\]-]{0,119})?$/;
 
-export function configErrors(form: ConfigForm, context: ConfigErrorContext = {}): ConfigErrors {
+/** The run limits, the script cap and the disk cap that are not a whole number of 1 or more. */
+function budgetErrors(form: ConfigForm): ConfigErrors {
   const errors: ConfigErrors = {};
   for (const field of limitFields) {
     if (!positiveInteger(form[field.key])) errors[field.key] = "A whole number, 1 or more.";
@@ -154,23 +155,41 @@ export function configErrors(form: ConfigForm, context: ConfigErrorContext = {})
   if (!positiveInteger(form.max_scripts)) errors.max_scripts = "A whole number, 1 or more.";
   if (!positiveInteger(form.max_workspace_mib))
     errors.max_workspace_mib = "A whole number, 1 or more.";
-  if (!form.temperature.trim() || !Number.isFinite(Number(form.temperature)))
-    errors.temperature = "A number.";
+  return errors;
+}
+
+/** What is wrong with a coding agent's harness and its model; nothing for an agent that does not code. */
+function harnessErrors(form: ConfigForm): ConfigErrors {
+  const errors: ConfigErrors = {};
   if (form.coding && !form.harness) errors.harness = "Pick a harness.";
   if (form.coding && !harnessModelPattern.test(form.harness_model.trim()))
     errors.harness_model =
       "Up to 120 letters, digits, and . _ : / = , [ ] -, starting with a letter or digit.";
-  if (context.machines) {
-    const machine = chosenMachine(context.machines, form.machine_id);
-    if (!machine) errors.machine = "Choose a machine.";
+  return errors;
+}
+
+/** What is wrong with the agent's model: none chosen, a coding plan's without Coding, or its provider not connected. */
+function modelError(form: ConfigForm, models: OrgModels | undefined): string | undefined {
+  if (!form.model) return "Choose a model.";
+  if (isCodingOnlyModel(form.model, models) && !form.coding) {
+    return "Turn Coding on to use this model.";
   }
-  if (!form.model) {
-    errors.model = "Choose a model.";
-  } else if (isCodingOnlyModel(form.model, context.models) && !form.coding) {
-    errors.model = "Turn Coding on to use this model.";
-  } else if (modelProviderConnected(context.models, form.model) === false) {
-    errors.model = `Connect a ${providerLabel(context.models, form.model)} key on Model keys first.`;
+  if (modelProviderConnected(models, form.model) === false) {
+    return `Connect a ${providerLabel(models, form.model)} key on Model keys first.`;
   }
+  return undefined;
+}
+
+export function configErrors(form: ConfigForm, context: ConfigErrorContext = {}): ConfigErrors {
+  const errors: ConfigErrors = budgetErrors(form);
+  if (!form.temperature.trim() || !Number.isFinite(Number(form.temperature)))
+    errors.temperature = "A number.";
+  Object.assign(errors, harnessErrors(form));
+  if (context.machines && !chosenMachine(context.machines, form.machine_id)) {
+    errors.machine = "Choose a machine.";
+  }
+  const model = modelError(form, context.models);
+  if (model) errors.model = model;
   const browserModel = browserModelError(form, context.models);
   if (browserModel) errors.browser_model = browserModel;
   return errors;

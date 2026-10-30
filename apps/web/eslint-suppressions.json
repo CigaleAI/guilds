@@ -49,11 +49,6 @@
       "count": 2
     }
   },
-  "src/features/agent/chat/runContext.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/features/agent/prompt/AgentPrompt.tsx": {
     "complexity": {
       "count": 1
@@ -65,11 +60,6 @@
     }
   },
   "src/features/agent/prompt/InsertPicker.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/features/agent/prompt/taskContext.ts": {
     "complexity": {
       "count": 1
     }
@@ -95,11 +85,6 @@
     }
   },
   "src/features/agent/settings/CapabilitiesFields.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/features/agent/settings/configForm.ts": {
     "complexity": {
       "count": 1
     }
