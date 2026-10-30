@@ -197,11 +197,6 @@
       "count": 1
     }
   },
-  "src/features/coach/Splitter.tsx": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
   "src/features/guild/GroupChat.tsx": {
     "complexity": {
       "count": 1
