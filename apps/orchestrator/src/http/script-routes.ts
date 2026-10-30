@@ -4,10 +4,10 @@ import { displayPathFor } from "../artifacts/paths.js";
 import { requireVisibleAgent } from "../agents/access.js";
 import type { AgentRow } from "../db/agents.js";
 import { scriptItem, type AgentScript } from "../scripts/catalog.js";
+import { clearScripts, createScript, deleteScript } from "../scripts/operator.js";
 import type { AppDeps, RouteApp } from "./deps.js";
 import { currentUser } from "./identity.js";
 import { AgentParams } from "./params.js";
-import { publishGroup } from "./publish.js";
 import type { UserRow } from "../db/users.js";
 
 /** A new script: its name, what it does, its source, and the parameters it takes, checked by the catalog. */
@@ -59,19 +59,11 @@ export async function registerScriptRoutes(app: RouteApp, deps: AppDeps): Promis
       const user = await currentUser(db, request, deps);
       const agent = await requireVisibleAgent(db, request.params.agent_id, user.id);
       const body = request.body;
-      const row = await scripts.create(
-        await scriptOperator(user, agent),
-        agent.id,
-        body.name,
-        body.description,
-        body.source,
-        body.parameters ?? null,
-        { maxScripts: agent.config.max_scripts },
-      );
-      await publishGroup(deps, agent.guild_id, "agent.scripts.changed", {
-        agent_id: agent.id,
-        action: "create",
-        name: row.name,
+      const row = await createScript(deps, await scriptOperator(user, agent), agent, {
+        name: body.name,
+        description: body.description,
+        source: body.source,
+        parameters: body.parameters ?? null,
       });
       return reply.code(201).send(scriptItem(row));
     },
@@ -83,11 +75,7 @@ export async function registerScriptRoutes(app: RouteApp, deps: AppDeps): Promis
     async (request, reply) => {
       const user = await currentUser(db, request, deps);
       const agent = await requireVisibleAgent(db, request.params.agent_id, user.id);
-      await scripts.deleteAll(await scriptOperator(user, agent), agent.id);
-      await publishGroup(deps, agent.guild_id, "agent.scripts.changed", {
-        agent_id: agent.id,
-        action: "clear",
-      });
+      await clearScripts(deps, await scriptOperator(user, agent), agent);
       return reply.code(204).send();
     },
   );
@@ -108,13 +96,7 @@ export async function registerScriptRoutes(app: RouteApp, deps: AppDeps): Promis
     async (request, reply) => {
       const user = await currentUser(db, request, deps);
       const agent = await requireVisibleAgent(db, request.params.agent_id, user.id);
-      const name = request.params.name;
-      await scripts.delete(await scriptOperator(user, agent), agent.id, name);
-      await publishGroup(deps, agent.guild_id, "agent.scripts.changed", {
-        agent_id: agent.id,
-        action: "delete",
-        name,
-      });
+      await deleteScript(deps, await scriptOperator(user, agent), agent, request.params.name);
       return reply.code(204).send();
     },
   );

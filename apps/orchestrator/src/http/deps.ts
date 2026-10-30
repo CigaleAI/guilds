@@ -14,6 +14,7 @@ import type { NotesStore } from "../notes/store.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { IssueChange } from "../issues/operator.js";
 import type { RoutineChange } from "../schedules/operator.js";
+import type { ScriptChange } from "../scripts/operator.js";
 import type { Schedules } from "../schedules/service.js";
 import type { AppConfig } from "../config/index.js";
 import type { McpPool } from "../mcp/pool.js";
@@ -62,6 +63,8 @@ export type AppDeps = {
   schedules: Schedules;
   /** Tells a guild that one of its agents' routines changed; routine writes announce nothing when absent. */
   publishRoutinesChanged?: (guildId: string, change: RoutineChange) => Promise<void>;
+  /** Tells a guild that one of its agents' scripts changed; script writes announce nothing when absent. */
+  publishScriptsChanged?: (guildId: string, change: ScriptChange) => Promise<void>;
   /** Tells a guild that its issues changed; issue writes announce nothing when absent. */
   publishIssuesChanged?: (guildId: string, change: IssueChange) => Promise<void>;
   config?: AppConfig;

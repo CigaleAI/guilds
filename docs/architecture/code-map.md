@@ -81,7 +81,7 @@ A repository that extends core holds this one as a submodule
 | `groupchat/` | Group history, tags, the dispatcher, and what an operator reads and posts (`operator.ts`) ([Group chat](../concepts/group-chat.md)) |
 | `typesafe/` | The group routing client |
 | `schedules/` | Routine timing, the `Schedules` service, and the routine writes an operator makes, each announced to the agent's guild (`operator.ts`) ([Routines](../concepts/routines.md)) |
-| `scripts/` | The agent `script` catalog and its materialisation ([Scripts](../concepts/scripts.md)) |
+| `scripts/` | The agent `script` catalog, its materialisation, and the script writes an operator makes, each announced to the agent's guild (`operator.ts`) ([Scripts](../concepts/scripts.md)) |
 | `sandbox/` | `RunSandboxes`, core's sandbox provider, and the orphan sweep |
 | `llm/` | Providers, the models.dev catalog, credentials, the model client, tokens, and cost ([Model client](orchestrator.md#model-client)) |
 | `policy/` | `OrgPolicy` and the checks core runs against it |

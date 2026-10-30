@@ -14,6 +14,7 @@ import { StudioError } from "../../src/studio/errors.js";
 import { readGuildRun } from "../../src/studio/inspector.js";
 import { usageForOrg, usageForPlatform } from "../../src/usage/view.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
+import type { ScriptChange } from "../../src/scripts/operator.js";
 import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
@@ -39,11 +40,15 @@ test(
     await notes.ensureSystemPrompt();
     const db = database.pool;
     const issuesChanged: Array<[string, IssueChange]> = [];
+    const scriptsChanged: Array<[string, ScriptChange]> = [];
     const app = await buildApp(database, {
       db,
       notes,
       scripts: agentScripts(db),
       schedules: agentSchedules(db),
+      publishScriptsChanged: async (guildId, change) => {
+        scriptsChanged.push([guildId, change]);
+      },
       publishIssuesChanged: async (guildId, change) => {
         issuesChanged.push([guildId, change]);
       },
@@ -117,6 +122,16 @@ test(
       assert.deepEqual(
         (await app.inject({ method: "GET", url: `${agent}/scripts`, headers: OWNER })).json(),
         [],
+      );
+      assert.deepEqual(
+        scriptsChanged,
+        [
+          ["guild_items", { agentId: "a_items", action: "create", name: "tally" }],
+          ["guild_items", { agentId: "a_items", action: "create", name: "sum" }],
+          ["guild_items", { agentId: "a_items", action: "delete", name: "tally" }],
+          ["guild_items", { agentId: "a_items", action: "clear", name: null }],
+        ],
+        "each script write an operator makes is announced once; a refused one is not",
       );
 
       const patched = await app.inject({

@@ -209,6 +209,14 @@ export async function createServer(
       scripts,
       schedules,
       publishRoutinesChanged,
+      // A script an operator writes or deletes is published on its guild's group chat.
+      publishScriptsChanged: async (guildId, change) => {
+        await generation.groupChat.publish(guildId, "agent.scripts.changed", {
+          agent_id: change.agentId,
+          action: change.action,
+          ...(change.name === null ? {} : { name: change.name }),
+        });
+      },
       // An issue an operator resolves or reopens is published on its guild's group chat.
       publishIssuesChanged: async (guildId, change) => {
         await generation.groupChat.publish(guildId, "guild.issues.changed", {
