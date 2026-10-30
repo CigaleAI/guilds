@@ -299,20 +299,30 @@ Every package also runs the boundary rule
 (`eslint.boundary.js`). It fails any file that imports a package
 of an extension or a relative path that leaves this repository. It
 also fails a module that holds a re-export (`export * from`,
-`export { x } from`), except an index a tool requires, which the
-package names: the orchestrator's `src/db/schema/index.ts`, which
-drizzle-kit reads.
+`export { x } from`, or `export { x }` and `export default x` of a
+name the module imports), except an index a tool requires, which
+the package names: the orchestrator's `src/db/schema/index.ts`,
+which drizzle-kit reads.
 
 Every package also runs the limits of the
 [code guidelines](code-guidelines.md#functions) on its source,
 tests and stories excepted (`eslint.limits.js`): `complexity`,
 `max-depth`, an error at five parameters, a
 warning past 800 lines and an error past 1,000, a refusal of
-every type assertion except `as const`, and a refusal of a `catch`
-that neither throws nor returns, of a throw of a plain `Error`, and
-of an object type written inline in a function's parameter. A
+every type assertion except `as const`, and a refusal of a silent
+catch: a `catch` that neither throws nor returns, a `catch` whose
+only exit is a bare `return;`, and a promise's `.catch()` whose
+handler returns nothing, `undefined` or `null`. It also refuses a
+throw of a plain `Error`, an object type written inline in a
+function's parameter, and an erased return type: `unknown` or
+`Record<string, unknown>`, alone or as the element of an array or
+the value of a promise, returned by an exported function, an
+exported const's function, or a public method. A
 package names its command-line modules, which may throw a plain
-`Error`: the orchestrator's `cli/`. The orchestrator also requires
+`Error`: the orchestrator's `cli/`. The operator app refuses an
+import from `src/features/` in its shared directories, `src/api/`
+and `src/app/`, except in `src/app/router.tsx`, the composition
+root that mounts the features. The orchestrator also requires
 explicit parameter and return types on what a module exports
 (`@typescript-eslint/explicit-module-boundary-types`). It refuses an
 import of `fastify` outside `http/`, the roots, the
