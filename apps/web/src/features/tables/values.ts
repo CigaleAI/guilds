@@ -23,7 +23,7 @@ export function isTableTab(value: unknown): value is (typeof tableTabs)[number] 
 /** Fields every record has, which no column may be named. */
 const reservedColumns = ["id", "created_at", "updated_at", "created_by", "updated_by"];
 const columnName = /^[a-z][a-z0-9_]{0,63}$/;
-export const tableName = /^[a-z][a-z0-9_-]{0,62}$/;
+const tableName = /^[a-z][a-z0-9_-]{0,62}$/;
 const maxColumns = 64;
 export const maxValues = 50;
 /** A column's description is instructions every agent that reads the table gets in State. */
@@ -181,6 +181,27 @@ export function columnErrors(columns: readonly ColumnInput[]): Map<number, strin
   for (const index of unique.slice(1)) errors.set(index, "Only one column can be unique.");
   if (columns.length > maxColumns) errors.set(maxColumns, `At most ${maxColumns} columns.`);
   return errors;
+}
+
+/** Why a table cannot take a name; undefined when it can. */
+export function tableNameError(name: string): string | undefined {
+  return tableName.test(name.trim())
+    ? undefined
+    : "Lowercase letters, digits, _ and -, starting with a letter.";
+}
+
+/** Whether a new table has what creating it needs: a name, a purpose and columns that save. */
+export function isNewTableReady(
+  name: string,
+  purpose: string,
+  columns: readonly ColumnInput[],
+): boolean {
+  return (
+    tableNameError(name) === undefined &&
+    purpose.trim() !== "" &&
+    columns.length > 0 &&
+    columnErrors(columns).size === 0
+  );
 }
 
 /** What a columns edit changes, in words, to confirm before it reshapes existing records. */

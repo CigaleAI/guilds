@@ -1,11 +1,9 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
 import { useCreateDatabase } from "../../api/queries/tables";
-import { useGuilds } from "../../api/queries/guilds";
 import type { ColumnInput } from "../../api/types/tables";
 import {
   Button,
-  Select,
   TextAreaField,
   TextField,
   Banner,
@@ -17,9 +15,8 @@ import {
   DialogHeader,
 } from "@guildsrun/ui";
 import { blankColumn, ColumnsEditor } from "./ColumnsEditor";
-import { columnErrors, columnsForSave, tableName } from "./values";
-
-const orgScope = "org";
+import { orgScope, TableScopeSelect } from "./TableScope";
+import { columnErrors, columnsForSave, isNewTableReady, tableNameError } from "./values";
 
 type CreateTableDialogProps = {
   open: boolean;
@@ -31,7 +28,6 @@ type CreateTableDialogProps = {
 /** A new table: its name, purpose, whether one guild owns it, and its columns. */
 export function CreateTableDialog({ open, onOpenChange, guildId }: CreateTableDialogProps) {
   const navigate = useNavigate();
-  const guilds = useGuilds();
   const create = useCreateDatabase();
   const [name, setName] = useState("");
   const [purpose, setPurpose] = useState("");
@@ -39,17 +35,9 @@ export function CreateTableDialog({ open, onOpenChange, guildId }: CreateTableDi
   const [columns, setColumns] = useState<ColumnInput[]>([blankColumn()]);
   const [tried, setTried] = useState(false);
 
-  const nameError =
-    name.trim() && !tableName.test(name.trim())
-      ? "Lowercase letters, digits, _ and -, starting with a letter."
-      : undefined;
+  const nameError = name.trim() ? tableNameError(name) : undefined;
   const errors = columnErrors(columns);
-  const invalid =
-    !name.trim() ||
-    Boolean(nameError) ||
-    !purpose.trim() ||
-    columns.length === 0 ||
-    errors.size > 0;
+  const invalid = !isNewTableReady(name, purpose, columns);
 
   const close = () => {
     setName("");
@@ -106,9 +94,7 @@ export function CreateTableDialog({ open, onOpenChange, guildId }: CreateTableDi
                 onChange={(event) => setName(event.currentTarget.value)}
                 {...(nameError ? { error: nameError } : {})}
               />
-              <Select
-                tone="surface"
-                label="Belongs to"
+              <TableScopeSelect
                 hint={
                   scope === orgScope
                     ? "Every agent of the organisation starts with read; change it on its Access tab."
@@ -116,10 +102,6 @@ export function CreateTableDialog({ open, onOpenChange, guildId }: CreateTableDi
                 }
                 value={scope}
                 onValueChange={setScope}
-                options={[
-                  { value: orgScope, label: "The organisation" },
-                  ...(guilds.data ?? []).map((guild) => ({ value: guild.id, label: guild.name })),
-                ]}
               />
             </div>
             <TextAreaField

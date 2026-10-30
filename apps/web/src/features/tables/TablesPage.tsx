@@ -17,7 +17,6 @@ import {
   Button,
   IconButton,
   Segmented,
-  Select,
   TextAreaField,
   TextField,
   DatabaseItem,
@@ -40,12 +39,13 @@ import { AccessListPanel } from "../access/AccessListPanel";
 import { ColumnsEditor } from "./ColumnsEditor";
 import { CreateTableDialog } from "./CreateTableDialog";
 import { RecordsPanel } from "./RecordsPanel";
+import { orgScope, TableScopeSelect } from "./TableScope";
 import {
   columnErrors,
   columnsForSave,
   describeChanges,
   isTableTab,
-  tableName,
+  tableNameError,
   tableTabs,
 } from "./values";
 
@@ -370,7 +370,25 @@ function ColumnsTab({ collection }: ColumnsTabProps) {
   );
 }
 
-const orgScope = "org";
+type TableMoveNoticeProps = {
+  /** Where the table is moving: `orgScope` or a guild's id. */
+  scope: string;
+};
+
+/** Where a table is moving to, and that moving it leaves its access list as it is. */
+function TableMoveNotice({ scope }: TableMoveNoticeProps) {
+  const guilds = useGuilds();
+  const target = guilds.data?.find((guild) => guild.id === scope)?.name;
+  return (
+    <Banner
+      tone="info"
+      title={scope === orgScope ? "Moving to the organisation" : `Moving to ${target ?? "a guild"}`}
+    >
+      Only where it is listed changes. Its access list stays as it is; change who reaches it on the
+      Access tab.
+    </Banner>
+  );
+}
 
 type EditTableDialogProps = {
   collection: Collection;
@@ -379,16 +397,13 @@ type EditTableDialogProps = {
 };
 
 function EditTableDialog({ collection, open, onOpenChange }: EditTableDialogProps) {
-  const guilds = useGuilds();
   const update = useUpdateDatabase(collection.id);
+  const savedScope = collection.guild?.id ?? orgScope;
   const [name, setName] = useState(collection.name);
   const [purpose, setPurpose] = useState(collection.purpose);
-  const [scope, setScope] = useState(collection.guild?.id ?? orgScope);
-  const moving = scope !== (collection.guild?.id ?? orgScope);
-  const nameError = tableName.test(name.trim())
-    ? undefined
-    : "Lowercase letters, digits, _ and -, starting with a letter.";
-  const target = guilds.data?.find((guild) => guild.id === scope)?.name;
+  const [scope, setScope] = useState(savedScope);
+  const moving = scope !== savedScope;
+  const nameError = tableNameError(name);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -432,29 +447,8 @@ function EditTableDialog({ collection, open, onOpenChange }: EditTableDialogProp
               value={purpose}
               onChange={(event) => setPurpose(event.currentTarget.value)}
             />
-            <Select
-              tone="surface"
-              label="Belongs to"
-              value={scope}
-              onValueChange={setScope}
-              options={[
-                { value: orgScope, label: "The organisation" },
-                ...(guilds.data ?? []).map((guild) => ({ value: guild.id, label: guild.name })),
-              ]}
-            />
-            {moving ? (
-              <Banner
-                tone="info"
-                title={
-                  scope === orgScope
-                    ? "Moving to the organisation"
-                    : `Moving to ${target ?? "a guild"}`
-                }
-              >
-                Only where it is listed changes. Its access list stays as it is; change who reaches
-                it on the Access tab.
-              </Banner>
-            ) : null}
+            <TableScopeSelect value={scope} onValueChange={setScope} />
+            {moving ? <TableMoveNotice scope={scope} /> : null}
             {update.isError ? (
               <Banner tone="error" title="Couldn't save the table">
                 {update.error.message}

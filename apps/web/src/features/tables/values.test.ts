@@ -8,14 +8,31 @@ import {
   fieldText,
   fits,
   isColumnType,
+  isNewTableReady,
   isTableTab,
   parseField,
+  tableNameError,
   whereOf,
 } from "./values";
 
 function column(name: string, type: Column["type"], extra: Partial<Column> = {}): Column {
   return { name, type, description: "d", required: false, unique: false, ...extra };
 }
+
+test("a table name is lowercase letters, digits, _ and -, starting with a letter", () => {
+  assert.equal(tableNameError(" degen-projects "), undefined);
+  assert.match(tableNameError("Degen") ?? "", /^Lowercase/);
+  assert.match(tableNameError("") ?? "", /^Lowercase/);
+});
+
+test("a new table needs a valid name, a purpose and columns that save", () => {
+  const columns = [column("score", "number")];
+  assert.equal(isNewTableReady("scores", "Track scores", columns), true);
+  assert.equal(isNewTableReady("", "Track scores", columns), false);
+  assert.equal(isNewTableReady("scores", " ", columns), false);
+  assert.equal(isNewTableReady("scores", "Track scores", []), false);
+  assert.equal(isNewTableReady("scores", "Track scores", [column("id", "number")]), false);
+});
 
 test("a column type is one the server stores", () => {
   assert.equal(isColumnType("datetime"), true);
