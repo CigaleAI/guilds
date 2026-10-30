@@ -53,6 +53,22 @@ export type ConnectWidget = {
   alreadyConnected: boolean;
 };
 
+/** The server a connect widget's card starts on: the one it names, else the first it offers. */
+export function initialServerId(widget: ConnectWidget): string {
+  return widget.server?.id ?? widget.servers[0]?.id ?? "";
+}
+
+/** The server a connect card signs in to: the one picked when it offers several, else its own. */
+export function pickedServer(widget: ConnectWidget, picked: string): WidgetServer | null {
+  if (widget.mode !== "any") return widget.server;
+  return widget.servers.find((item) => item.id === picked) ?? widget.server;
+}
+
+/** How a connect card names its server: by its display name, its slug, or as "the service". */
+export function serverName(server: WidgetServer | null): string {
+  return server?.display_name || server?.slug || "the service";
+}
+
 export type QuestionOption = { id: string; label: string; description: string };
 
 export type Question = {

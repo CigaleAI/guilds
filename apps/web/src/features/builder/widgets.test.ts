@@ -5,8 +5,11 @@ import {
   accessCutMessage,
   answeredAll,
   answerMessage,
+  initialServerId,
   isConnectScope,
   pendingQuestions,
+  pickedServer,
+  serverName,
   widgetOf,
   type Question,
 } from "./widgets";
@@ -35,6 +38,24 @@ test("a connect widget reads its server, scopes and connection state", () => {
   assert.deepEqual(widget.allowedScopes, ["org", "guild"]);
   assert.equal(widget.servers[0]?.display_name, "x");
   assert.equal(widget.servers[0]?.connection_state, "connected");
+});
+
+test("a connect card starts on the named server and signs in to the one picked", () => {
+  const notion = { id: "mcp_notion", slug: "notion", display_name: "Notion", auth: "oauth" };
+  const x = { id: "mcp_x", slug: "x", display_name: "", auth: "token" };
+  const widget = widgetOf(tool({ widget: "connect", mode: "any", servers: [notion, x] }));
+  assert.ok(widget?.kind === "connect");
+  assert.equal(initialServerId(widget), "mcp_notion");
+  assert.equal(pickedServer(widget, "mcp_x")?.id, "mcp_x");
+  assert.equal(pickedServer(widget, "mcp_gone"), null);
+  assert.equal(
+    pickedServer({ ...widget, mode: "org", server: widget.servers[0] ?? null }, "mcp_x")?.id,
+    "mcp_notion",
+  );
+  assert.equal(initialServerId({ ...widget, servers: [] }), "");
+  assert.equal(serverName(widget.servers[0] ?? null), "Notion");
+  assert.equal(serverName(widget.servers[1] ?? null), "x");
+  assert.equal(serverName(null), "the service");
 });
 
 test("a connect scope is one of org, guild and agent", () => {
