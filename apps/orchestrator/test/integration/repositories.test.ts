@@ -99,7 +99,7 @@ describe("repositories", { concurrency: 1 }, () => {
       name: "operator",
     });
 
-    await writeAgentTask(db, actor, "a_scripts", "Updated task");
+    await writeAgentTask(db, actor, "a_scripts", { content: "Updated task" });
     const taskChanges = await listFileChanges(
       database.pool,
       "org_home",

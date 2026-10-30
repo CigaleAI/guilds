@@ -1,17 +1,20 @@
 import { Type, type Static } from "@sinclair/typebox";
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { loadOperatorActor } from "../artifacts/actors.js";
 import { ArtifactFiles, type FileView } from "../artifacts/files.js";
 import {
   deleteSharedFile,
+  listSharedFiles,
+  loadSharedFileActor,
   readSharedFile,
   uploadSharedFile,
   type SharedFileDownload,
+  type SharedFileOwner,
 } from "../artifacts/operator-files.js";
-import { FILE_MAX_BYTES, type ArtifactActor, type ArtifactLevel } from "../artifacts/types.js";
+import { FILE_MAX_BYTES, type ArtifactActor } from "../artifacts/types.js";
 import { requireVisibleGuild } from "../guilds/access.js";
 import { requireVisibleAgent } from "../agents/access.js";
 import { attachmentDisposition } from "../attachments/index.js";
+import type { UserRow } from "../db/users.js";
 import type { AppDeps, RouteApp } from "./deps.js";
 import { HttpError } from "./errors.js";
 import { currentOrg, currentUser } from "./identity.js";
@@ -60,56 +63,48 @@ function fileUpload(headers: UploadHeaders, body: unknown): FileUpload {
   };
 }
 
-/** The owner a list or upload route names: the level, its id, and the actor. */
-type FileOwner = { level: ArtifactLevel; ownerId: string; actor: ArtifactActor };
+/** Whose files a list or upload route names, and the user it lists or uploads them for. */
+type FileScope = { owner: SharedFileOwner; user: UserRow };
 
-async function agentOwner(
-  deps: AppDeps,
-  request: FastifyRequest,
-  agentId: string,
-): Promise<FileOwner> {
+async function agentFiles(deps: AppDeps, request: FastifyRequest, agentId: string): Promise<FileScope> {
   const user = await currentUser(deps.db, request, deps);
-  const row = await requireVisibleAgent(deps.db, agentId, user.id);
-  const actor = await loadOperatorActor(deps.db, user, {
-    orgId: String(row.org_id),
-    guildId: String(row.guild_id),
-    agentId: String(row.id),
-  });
-  return { level: "agent", ownerId: String(row.id), actor };
+  const agent = await requireVisibleAgent(deps.db, agentId, user.id);
+  return { owner: { level: "agent", agent }, user };
 }
 
-async function guildOwner(
-  deps: AppDeps,
-  request: FastifyRequest,
-  guildId: string,
-): Promise<FileOwner> {
+async function guildFiles(deps: AppDeps, request: FastifyRequest, guildId: string): Promise<FileScope> {
   const user = await currentUser(deps.db, request, deps);
-  const row = await requireVisibleGuild(deps.db, guildId, user.id);
-  const actor = await loadOperatorActor(deps.db, user, { orgId: String(row.org_id), guildId: String(row.id) });
-  return { level: "guild", ownerId: String(row.id), actor };
+  const guild = await requireVisibleGuild(deps.db, guildId, user.id);
+  return { owner: { level: "guild", guild }, user };
 }
 
-async function orgOwner(deps: AppDeps, request: FastifyRequest): Promise<FileOwner> {
+async function orgFiles(deps: AppDeps, request: FastifyRequest): Promise<FileScope> {
   const user = await currentUser(deps.db, request, deps);
   const org = await currentOrg(deps.db, request, user);
-  const actor = await loadOperatorActor(deps.db, user, { orgId: String(org.id) });
-  return { level: "org", ownerId: String(org.id), actor };
+  return { owner: { level: "org", orgId: org.id }, user };
 }
 
-/** The files an owner holds. */
-async function listFiles(deps: AppDeps, owner: FileOwner): Promise<FileView[]> {
-  return await filesOf(deps).listOwnerFiles(owner.actor, owner.level, owner.ownerId);
+/** The user as the artifact actor of their organisation. */
+async function orgActor(deps: AppDeps, request: FastifyRequest): Promise<ArtifactActor> {
+  const scope = await orgFiles(deps, request);
+  return await loadSharedFileActor(deps.db, scope.owner, scope.user);
+}
+
+/** The files an owner holds that the user may read. */
+async function listFiles(deps: AppDeps, scope: FileScope): Promise<FileView[]> {
+  return await listSharedFiles({ db: deps.db, files: filesOf(deps) }, scope.owner, scope.user);
 }
 
 /** Stores an upload as the owner's file, or a new version of the file of that name, and answers 201. */
 async function uploadFile(
   deps: AppDeps,
   reply: FastifyReply,
-  owner: FileOwner,
+  scope: FileScope,
   upload: FileUpload,
 ): Promise<FastifyReply> {
+  const actor = await loadSharedFileActor(deps.db, scope.owner, scope.user);
   const writes = { ...deps, files: filesOf(deps) };
-  const view = await uploadSharedFile(writes, owner.actor, { level: owner.level, ...upload });
+  const view = await uploadSharedFile(writes, actor, { level: scope.owner.level, ...upload });
   return reply.code(201).send(view);
 }
 
@@ -127,46 +122,46 @@ export async function registerFileRoutes(app: RouteApp, deps: AppDeps): Promise<
   const upload = { bodyLimit: FILE_MAX_BYTES + 4096 };
 
   app.get("/api/agents/:agent_id/files", { schema: { params: AgentParams } }, async (request) =>
-    listFiles(deps, await agentOwner(deps, request, request.params.agent_id)),
+    listFiles(deps, await agentFiles(deps, request, request.params.agent_id)),
   );
   app.post(
     "/api/agents/:agent_id/files",
     { ...upload, schema: { params: AgentParams, headers: UploadHeadersSchema } },
     async (request, reply) => {
-      const owner = await agentOwner(deps, request, request.params.agent_id);
-      return uploadFile(deps, reply, owner, fileUpload(request.headers, request.body));
+      const scope = await agentFiles(deps, request, request.params.agent_id);
+      return uploadFile(deps, reply, scope, fileUpload(request.headers, request.body));
     },
   );
 
   app.get("/api/guilds/:guild_id/files", { schema: { params: GuildParams } }, async (request) =>
-    listFiles(deps, await guildOwner(deps, request, request.params.guild_id)),
+    listFiles(deps, await guildFiles(deps, request, request.params.guild_id)),
   );
   app.post(
     "/api/guilds/:guild_id/files",
     { ...upload, schema: { params: GuildParams, headers: UploadHeadersSchema } },
     async (request, reply) => {
-      const owner = await guildOwner(deps, request, request.params.guild_id);
-      return uploadFile(deps, reply, owner, fileUpload(request.headers, request.body));
+      const scope = await guildFiles(deps, request, request.params.guild_id);
+      return uploadFile(deps, reply, scope, fileUpload(request.headers, request.body));
     },
   );
 
-  app.get("/api/org/files", async (request) => listFiles(deps, await orgOwner(deps, request)));
+  app.get("/api/org/files", async (request) => listFiles(deps, await orgFiles(deps, request)));
   app.post(
     "/api/org/files",
     { ...upload, schema: { headers: UploadHeadersSchema } },
     async (request, reply) => {
-      const owner = await orgOwner(deps, request);
-      return uploadFile(deps, reply, owner, fileUpload(request.headers, request.body));
+      const scope = await orgFiles(deps, request);
+      return uploadFile(deps, reply, scope, fileUpload(request.headers, request.body));
     },
   );
 
   app.get("/api/files/:file_id", { schema: { params: FileParams } }, async (request, reply) => {
-    const { actor } = await orgOwner(deps, request);
+    const actor = await orgActor(deps, request);
     return sendBytes(reply, await readSharedFile(filesOf(deps), actor, request.params.file_id));
   });
 
   app.delete("/api/files/:file_id", { schema: { params: FileParams } }, async (request, reply) => {
-    const { actor } = await orgOwner(deps, request);
+    const actor = await orgActor(deps, request);
     await deleteSharedFile({ ...deps, files: filesOf(deps) }, actor, request.params.file_id);
     return reply.code(204).send();
   });

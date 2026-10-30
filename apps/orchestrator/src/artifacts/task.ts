@@ -81,16 +81,16 @@ export function taskDisplayPath(orgId: string, agentId: string): string {
   });
 }
 
+/** A new text for an agent's Task, and the version it replaces when the writer names one. */
+export type TaskWrite = { content: string; expectedVersion?: number | undefined };
+
 export async function writeAgentTask(
   pool: Queryable,
   actor: ArtifactActor,
   agentId: string,
-  content: string,
-  expectedVersion?: number,
+  write: TaskWrite,
 ): Promise<AgentTaskRow> {
-  return withTransaction(pool, (client) =>
-    writeAgentTaskInTransaction(client, actor, agentId, content, expectedVersion),
-  );
+  return withTransaction(pool, (client) => writeAgentTaskInTransaction(client, actor, agentId, write));
 }
 
 /**
@@ -101,9 +101,9 @@ async function writeAgentTaskInTransaction(
   tx: pg.PoolClient,
   actor: ArtifactActor,
   agentId: string,
-  content: string,
-  expectedVersion?: number,
+  write: TaskWrite,
 ): Promise<AgentTaskRow> {
+  const { content, expectedVersion } = write;
   if (!actor.operator) {
     throw new ArtifactError("task is not writable", 422);
   }
@@ -175,7 +175,10 @@ export async function publishAgentTask(
     return { outcome: "unchanged" };
   }
   try {
-    const task = await writeAgentTaskInTransaction(tx, actor, agentId, draft.content, draft.baseVersion);
+    const task = await writeAgentTaskInTransaction(tx, actor, agentId, {
+      content: draft.content,
+      expectedVersion: draft.baseVersion,
+    });
     return { outcome: "published", task };
   } catch (error) {
     if (error instanceof ArtifactError && error.status === 409) {

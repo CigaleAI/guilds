@@ -196,7 +196,7 @@ describe("artifact store", { concurrency: 1 }, () => {
     await writeAgentTask(db,
       operator,
       "a_alpha",
-      `Follow ![[${orgPath}]]\n\nNested stays in the note.\n`,
+      { content: `Follow ![[${orgPath}]]\n\nNested stays in the note.\n` },
     );
     const inlined = await inlineTaskEmbeds(
       embedSource(store),
@@ -1383,11 +1383,11 @@ describe("artifact store", { concurrency: 1 }, () => {
     const seeded = await getAgentTask(db, "org_home", "a_taskver");
     assert.equal(seeded?.version, 1);
 
-    const first = await writeAgentTask(db, operator, "a_taskver", "first purpose\n");
+    const first = await writeAgentTask(db, operator, "a_taskver", { content: "first purpose\n" });
     assert.equal(first.version, 2);
-    const second = await writeAgentTask(db, operator, "a_taskver", "second purpose\n");
+    const second = await writeAgentTask(db, operator, "a_taskver", { content: "second purpose\n" });
     assert.equal(second.version, 3);
-    const unchanged = await writeAgentTask(db, operator, "a_taskver", "second purpose\n");
+    const unchanged = await writeAgentTask(db, operator, "a_taskver", { content: "second purpose\n" });
     assert.equal(unchanged.version, 3);
 
     const revisions = await listAgentTaskRevisions(db, "org_home", "a_taskver");
@@ -1397,7 +1397,7 @@ describe("artifact store", { concurrency: 1 }, () => {
     assert.equal(revisions[1]?.version, 1);
     assert.equal(revisions[1]?.content, "seeded purpose\n");
 
-    const restored = await writeAgentTask(db, operator, "a_taskver", revisions[0].content);
+    const restored = await writeAgentTask(db, operator, "a_taskver", { content: revisions[0].content });
     assert.equal(restored.version, 4);
     assert.equal(restored.content_text, "first purpose\n");
     const afterRestore = await listAgentTaskRevisions(db, "org_home", "a_taskver");
@@ -1407,10 +1407,10 @@ describe("artifact store", { concurrency: 1 }, () => {
 
     await assert.rejects(
       () =>
-        writeAgentTask(db, operator, "a_taskver", "stale editor\n", 3),
+        writeAgentTask(db, operator, "a_taskver", { content: "stale editor\n", expectedVersion: 3 }),
       (error: unknown) => error instanceof Error && error.message === "version conflict",
     );
-    const cas = await writeAgentTask(db, operator, "a_taskver", "cas purpose\n", 4);
+    const cas = await writeAgentTask(db, operator, "a_taskver", { content: "cas purpose\n", expectedVersion: 4 });
     assert.equal(cas.version, 5);
   });
 });

@@ -417,7 +417,7 @@ test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => 
       actorName: "operator",
       guildId: "guild_capture",
       agentId: "a_capture",
-    }), "a_capture", "Ping @scout and keep @user.");
+    }), "a_capture", { content: "Ping @scout and keep @user." });
     const captureActor = operatorActor({
       orgId: "org_home",
       actorId: "user_operator",

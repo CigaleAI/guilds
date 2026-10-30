@@ -19,6 +19,12 @@ was kept with blank fields. A minted token whose `repositories` is not
 a list fails with `GitHub returned no installation token`; before, it
 read as listing none.
 
+**Breaking for extensions.** `integrationStatuses`
+(`instance/integrations.js`) has no options argument and answers every
+status without audit: `integrationStatuses(integrations, connectors,
+sources)`. `auditedIntegrationStatuses`, with the same arguments, adds
+when and by whom each store integration's row was last written.
+
 **No impact.** The agent's schedule tools refuse a `cron`, a window
 field, or a `schedule_update` `description` or `instruction` of the
 wrong type before anything is written, with the first mismatch named

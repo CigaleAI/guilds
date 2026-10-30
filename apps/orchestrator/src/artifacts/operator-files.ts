@@ -1,5 +1,19 @@
+import { loadOperatorActor } from "./actors.js";
 import type { ArtifactFiles, FileView } from "./files.js";
 import type { ArtifactActor, ArtifactLevel } from "./types.js";
+import type { AgentRow } from "../db/agents.js";
+import type { GuildRow } from "../db/guilds.js";
+import type { Queryable } from "../db/pg.js";
+import type { UserRow } from "../db/users.js";
+
+/** Whose shared files an operator reaches: an agent or a guild they see, or their organisation. */
+export type SharedFileOwner =
+  | { level: "agent"; agent: AgentRow }
+  | { level: "guild"; guild: GuildRow }
+  | { level: "org"; orgId: string };
+
+/** What an operator's file lists run with: the database their actor is loaded from, and the shared files. */
+export type SharedFileReadDeps = { db: Queryable; files: ArtifactFiles };
 
 /** A shared file that changed, for its guild's listeners: its display path. */
 export type SharedFileChange = { displayPath: string };
@@ -22,6 +36,43 @@ export type SharedFileUpload = {
 
 /** A file as an operator downloads it: its view, which names it and gives its media type, and its bytes. */
 export type SharedFileDownload = { file: FileView; bytes: Buffer };
+
+/** The user as the artifact actor of the owner's scope, with the private guilds they do not operate hidden from them. */
+export async function loadSharedFileActor(
+  db: Queryable,
+  owner: SharedFileOwner,
+  user: UserRow,
+): Promise<ArtifactActor> {
+  if (owner.level === "agent") {
+    const { agent } = owner;
+    return loadOperatorActor(db, user, { orgId: agent.org_id, guildId: agent.guild_id, agentId: agent.id });
+  }
+  if (owner.level === "guild") {
+    return loadOperatorActor(db, user, { orgId: owner.guild.org_id, guildId: owner.guild.id });
+  }
+  return loadOperatorActor(db, user, { orgId: owner.orgId });
+}
+
+/** The id of the agent, guild, or organisation that holds the owner's files. */
+function sharedFileOwnerId(owner: SharedFileOwner): string {
+  if (owner.level === "agent") {
+    return owner.agent.id;
+  }
+  if (owner.level === "guild") {
+    return owner.guild.id;
+  }
+  return owner.orgId;
+}
+
+/** The files the owner holds that `user` may read, by name. */
+export async function listSharedFiles(
+  deps: SharedFileReadDeps,
+  owner: SharedFileOwner,
+  user: UserRow,
+): Promise<FileView[]> {
+  const actor = await loadSharedFileActor(deps.db, owner, user);
+  return await deps.files.listOwnerFiles(actor, owner.level, sharedFileOwnerId(owner));
+}
 
 /** The file with this id and its current bytes, as `actor` reaches it. */
 export async function readSharedFile(

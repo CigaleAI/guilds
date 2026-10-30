@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { installedManifests } from "../../src/connectors/servers.js";
 import {
+  auditedIntegrationStatuses,
   CORE_INTEGRATIONS,
   ERROR_REPORTING,
   GITHUB_APP,
@@ -139,7 +140,7 @@ test("audit adds when and by whom a store row was written; the environment has n
     env: { SENTRY_DSN: "dsn" },
     keys: storeKeys({ "web-search": { api_key: "k" } }, "2026-10-09T08:00:00.000Z"),
   };
-  const audited = integrationStatuses(CORE_INTEGRATIONS, installedManifests(), sources, { audit: true });
+  const audited = auditedIntegrationStatuses(CORE_INTEGRATIONS, installedManifests(), sources);
   const web = audited.find((item) => item.id === "web-search")!;
   assert.equal(web.updated_at, "2026-10-09T08:00:00.000Z");
   assert.equal(web.set_by, "operator");

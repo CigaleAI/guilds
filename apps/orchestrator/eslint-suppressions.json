@@ -31,11 +31,6 @@
       "count": 1
     }
   },
-  "src/artifacts/task.ts": {
-    "max-params": {
-      "count": 2
-    }
-  },
   "src/attachments/hydrate.ts": {
     "no-restricted-syntax": {
       "count": 1
@@ -255,31 +250,6 @@
   "src/http/sandbox-proxy.ts": {
     "max-params": {
       "count": 2
-    },
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/instance/integrations.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
-    "complexity": {
-      "count": 2
-    },
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
-  "src/instance/keys.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 4
-    },
-    "complexity": {
-      "count": 1
-    },
-    "max-depth": {
-      "count": 1
     },
     "no-restricted-syntax": {
       "count": 1

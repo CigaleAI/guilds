@@ -1,3 +1,4 @@
+import type { InferSelectModel } from "drizzle-orm";
 import { decryptPayload, encryptPayload } from "../credentials/crypto.js";
 import { writeLog } from "../observability/log.js";
 import {
@@ -6,7 +7,19 @@ import {
   type InstanceKeyRow,
   type InstanceKeySnapshot,
 } from "./integrations.js";
+import { isPlainRecord } from "../db/json.js";
 import type { Queryable } from "../db/pg.js";
+import type { instanceKeys } from "../db/schema/index.js";
+import type { UserRow } from "../db/users.js";
+
+/** An instance key as the store holds it: its integration, its encrypted values, when it was written, and by whom. */
+type StoredInstanceKey = Pick<
+  InferSelectModel<typeof instanceKeys>,
+  "integration" | "ciphertext" | "nonce" | "updated_at"
+> & { set_by_name: UserRow["name"] | null; set_by_email: UserRow["email"] };
+
+/** A stored key's values, or the name of the error that kept them from decrypting under the master key. */
+type DecryptedValues = { readable: true; values: Record<string, string> } | { readable: false; errorType: string };
 
 /**
  * A key write the box refuses: an unknown or env-sourced integration, a missing required field, a
@@ -33,20 +46,18 @@ export function validateKeyValues(integration: Integration, raw: unknown): Recor
   if (integration.source !== "store") {
     throw new InstanceKeyError(`${integration.label} is read from the environment`);
   }
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+  if (!isPlainRecord(raw)) {
     throw new InstanceKeyError("values must be an object");
   }
-  const given = raw as Record<string, unknown>;
   const known = new Set(integration.fields.map((field) => field.name));
-  for (const name of Object.keys(given)) {
-    if (!known.has(name)) {
-      throw new InstanceKeyError(`${integration.label} has no field ${name}`);
-    }
+  const unknown = Object.keys(raw).find((name) => !known.has(name));
+  if (unknown !== undefined) {
+    throw new InstanceKeyError(`${integration.label} has no field ${unknown}`);
   }
   const values: Record<string, string> = {};
   const missing: string[] = [];
   for (const field of integration.fields) {
-    const value = given[field.name];
+    const value = raw[field.name];
     if (value !== undefined && typeof value !== "string") {
       throw new InstanceKeyError(`${field.label} must be a string`);
     }
@@ -63,10 +74,25 @@ export function validateKeyValues(integration: Integration, raw: unknown): Recor
   return values;
 }
 
-function setByOf(row: Record<string, unknown>): string | null {
-  const name = typeof row.set_by_name === "string" ? row.set_by_name.trim() : "";
-  const email = typeof row.set_by_email === "string" ? row.set_by_email.trim() : "";
-  return name || email || null;
+function setByOf(row: StoredInstanceKey): string | null {
+  return (row.set_by_name ?? "").trim() || (row.set_by_email ?? "").trim() || null;
+}
+
+/** A stored key's values, each trimmed and the empty ones left out, decrypted under `masterKey`. */
+function decryptStoredValues(row: StoredInstanceKey, masterKey: Buffer | undefined): DecryptedValues {
+  let payload: Record<string, unknown>;
+  try {
+    payload = decryptPayload(row.ciphertext, row.nonce, masterKey);
+  } catch (error) {
+    return { readable: false, errorType: error instanceof Error ? error.name : "Error" };
+  }
+  const values: Record<string, string> = {};
+  for (const [name, value] of Object.entries(payload)) {
+    if (typeof value === "string" && value.trim()) {
+      values[name] = value.trim();
+    }
+  }
+  return { readable: true, values };
 }
 
 /**
@@ -88,7 +114,7 @@ export class InstanceKeys {
 
   /** Reads and decrypts every row into the snapshot readers resolve from. A row that fails to decrypt is skipped and logged. */
   async load(): Promise<InstanceKeySnapshot> {
-    const result = await this.db.query(
+    const result = await this.db.query<StoredInstanceKey>(
       `SELECT k.integration, k.ciphertext, k.nonce, k.updated_at,
               u.name AS set_by_name, u.email AS set_by_email
          FROM instance_keys k
@@ -96,27 +122,20 @@ export class InstanceKeys {
         ORDER BY k.integration`,
     );
     const next: Record<string, InstanceKeyRow> = {};
-    for (const row of result.rows as Array<Record<string, unknown>>) {
-      const integration = String(row.integration);
-      try {
-        const payload = decryptPayload(row.ciphertext as Buffer, row.nonce as Buffer, this.masterKey);
-        const values: Record<string, string> = {};
-        for (const [name, value] of Object.entries(payload)) {
-          if (typeof value === "string" && value.trim()) {
-            values[name] = value.trim();
-          }
-        }
-        next[integration] = {
-          values,
-          updated_at: (row.updated_at instanceof Date ? row.updated_at : new Date(String(row.updated_at))).toISOString(),
-          set_by: setByOf(row),
-        };
-      } catch (error) {
-        writeLog("warn", `instance key unreadable: ${integration}`, {
+    for (const row of result.rows) {
+      const decrypted = decryptStoredValues(row, this.masterKey);
+      if (!decrypted.readable) {
+        writeLog("warn", `instance key unreadable: ${row.integration}`, {
           operation: "instance_keys.load",
-          error_type: error instanceof Error ? error.name : "Error",
+          error_type: decrypted.errorType,
         });
+        continue;
       }
+      next[row.integration] = {
+        values: decrypted.values,
+        updated_at: new Date(row.updated_at).toISOString(),
+        set_by: setByOf(row),
+      };
     }
     this.snapshot = next;
     setInstanceKeys(next);

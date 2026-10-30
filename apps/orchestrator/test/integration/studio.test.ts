@@ -826,7 +826,7 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
     { level: "guild", key: "house-rules.md", content: "Always cite the source.\n", title: "House rules" },
   );
   const sharedPath = `${ownerPrefix("org_home", "guild", "guild_ev")}${shared.key}`;
-  await writeAgentTask(db, operator, "a_ev", `Curate the digest.\n\n![[${sharedPath}]]\n`);
+  await writeAgentTask(db, operator, "a_ev", { content: `Curate the digest.\n\n![[${sharedPath}]]\n` });
 
   // A routine and one run it woke, then a memory written by that run.
   const routine = await schedules.create(TEST_ACTOR, "a_ev", { when: { cron: "0 9 * * 1" }, description: "Weekly digest", instruction: "Compile the weekly digest." });
@@ -1986,7 +1986,7 @@ test("studio proposes notes to create and delete and narrows an agent's access",
     assert.ok(deleteWidget.edit.effects.some((effect) => /scout embed it/.test(effect)), deleteWidget.edit.effects.join(" | "));
     const deleteSeq = await commit("studio_edit_note", deleteArgs, deleteWidget);
     assert.equal((await resolve(deleteSeq, "apply")).statusCode, 409);
-    await writeAgentTask(db, operator, "a_sc", `Find candidates.\n\nnote_get ${playbookPath}\n`);
+    await writeAgentTask(db, operator, "a_sc", { content: `Find candidates.\n\nnote_get ${playbookPath}\n` });
     const deleted = await resolve(deleteSeq, "apply");
     assert.equal(deleted.statusCode, 200, deleted.body);
     assert.equal((deleted.json() as { status: string }).status, "applied");
