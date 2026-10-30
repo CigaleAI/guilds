@@ -97,7 +97,7 @@ export class BuilderService {
     }
   }
 
-  viewSession(
+  private viewSession(
     session: BuilderSessionRow,
     recipe?: Record<string, unknown> | null,
   ): Record<string, unknown> {
@@ -240,7 +240,7 @@ export class BuilderService {
     return this.viewSession(session, recipe);
   }
 
-  async recipeFor(session: BuilderSessionRow): Promise<RecipeRow> {
+  private async recipeFor(session: BuilderSessionRow): Promise<RecipeRow> {
     const recipe = await getRecipe(this.deps.db, String(session.recipe_id));
     if (!recipe) {
       throw new BuilderError(404, "recipe not found");
