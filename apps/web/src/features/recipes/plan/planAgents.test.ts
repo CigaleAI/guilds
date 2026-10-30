@@ -125,4 +125,7 @@ test("a coding agent lists its harness as a capability, pending until one is nam
   const [coding] = agentCard(unnamed.agents[0]!, unnamed, []).capabilities;
   assert.equal(coding?.label, "Coding · no harness yet");
   assert.equal(coding?.pending, true);
+  assert.equal(coder("vim").agents[0]?.harness, null);
+  const writer = planFromRecipe({ roles: [{ role: "w", config: { harness: "codex" } }] });
+  assert.equal(writer.agents[0]?.harness, null);
 });

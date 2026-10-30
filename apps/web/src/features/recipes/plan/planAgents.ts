@@ -86,6 +86,12 @@ export function rolesFromCreatedAgents(
   }));
 }
 
+/** The harness a coding role runs; null when the role does not code or names no known harness. */
+function codingHarness(role: RoleDraft): Harness | null {
+  const config = asObject(role.config);
+  return config.coding === true && isHarness(config.harness) ? config.harness : null;
+}
+
 export function planAgent(
   role: RoleDraft,
   doc: RecipeDraft,
@@ -103,7 +109,7 @@ export function planAgent(
     avatar_color: role.avatar_color || "#7c5cff",
     browser: Boolean(browser.required || config.browser),
     coding: config.coding === true,
-    harness: config.coding === true && isHarness(config.harness) ? config.harness : null,
+    harness: codingHarness(role),
     browserInstructions: browser.instructions || "",
     task: taskBody(role),
     taskAuthor: taskAuthor(role),
