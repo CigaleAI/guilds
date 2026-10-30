@@ -23,17 +23,14 @@ import { LatestChange, useOpenStepInAgent } from "../notes/LatestChange";
 
 const unset = "__unset__";
 
-function Field({
-  column,
-  text,
-  onChange,
-  error,
-}: {
+type FieldProps = {
   column: Column;
   text: string;
   onChange: (text: string) => void;
   error: string | undefined;
-}) {
+};
+
+function Field({ column, text, onChange, error }: FieldProps) {
   const label = column.required ? `${column.name} *` : column.name;
   const common = { label, hint: column.description, ...(error ? { error } : {}) };
   if (column.type === "boolean" || (column.type === "text" && column.values?.length)) {
@@ -113,15 +110,13 @@ export function RecordDialog({ collection, record, onClose }: RecordDialogProps)
   );
 }
 
-function RecordForm({
-  collection,
-  record,
-  onClose,
-}: {
+type RecordFormProps = {
   collection: Collection;
   record: CollectionRecord | "new";
   onClose: () => void;
-}) {
+};
+
+function RecordForm({ collection, record, onClose }: RecordFormProps) {
   const creating = record === "new";
   const add = useAddRecord(collection.id);
   const update = useUpdateRecord(collection.id);

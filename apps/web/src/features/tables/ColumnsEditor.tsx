@@ -146,13 +146,12 @@ export function ColumnsEditor({ columns, onChange, errors }: ColumnsEditorProps)
   );
 }
 
-function ValuesField({
-  values,
-  onChange,
-}: {
+type ValuesFieldProps = {
   values: string[];
   onChange: (values: string[]) => void;
-}) {
+};
+
+function ValuesField({ values, onChange }: ValuesFieldProps) {
   const id = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState("");

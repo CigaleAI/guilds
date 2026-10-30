@@ -163,17 +163,14 @@ export function TablesPage() {
   );
 }
 
-function TableDetail({
-  id,
-  tab,
-  onTab,
-  onBack,
-}: {
+type TableDetailProps = {
   id: string;
   tab: TableTab;
   onTab: (tab: TableTab) => void;
   onBack?: () => void;
-}) {
+};
+
+function TableDetail({ id, tab, onTab, onBack }: TableDetailProps) {
   const navigate = useNavigate();
   const table = useDatabase(id);
   const remove = useDeleteDatabase();
@@ -303,7 +300,9 @@ function columnsOf(collection: Collection): ColumnInput[] {
   return collection.columns.map((column) => ({ ...column, rename_from: column.name }));
 }
 
-function ColumnsTab({ collection }: { collection: Collection }) {
+type ColumnsTabProps = { collection: Collection };
+
+function ColumnsTab({ collection }: ColumnsTabProps) {
   const update = useUpdateDatabase(collection.id);
   const [draft, setDraft] = useState<ColumnInput[] | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -370,15 +369,13 @@ function ColumnsTab({ collection }: { collection: Collection }) {
 
 const orgScope = "org";
 
-function EditTableDialog({
-  collection,
-  open,
-  onOpenChange,
-}: {
+type EditTableDialogProps = {
   collection: Collection;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-}) {
+};
+
+function EditTableDialog({ collection, open, onOpenChange }: EditTableDialogProps) {
   const guilds = useGuilds();
   const update = useUpdateDatabase(collection.id);
   const [name, setName] = useState(collection.name);

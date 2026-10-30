@@ -21,17 +21,15 @@ import { columnErrors, columnsForSave, tableName } from "./values";
 
 const orgScope = "org";
 
-/** A new table: its name, purpose, whether one guild owns it, and its columns. */
-export function CreateTableDialog({
-  open,
-  onOpenChange,
-  guildId,
-}: {
+type CreateTableDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** The guild to own it at first, when created from a guild. */
   guildId?: string;
-}) {
+};
+
+/** A new table: its name, purpose, whether one guild owns it, and its columns. */
+export function CreateTableDialog({ open, onOpenChange, guildId }: CreateTableDialogProps) {
   const navigate = useNavigate();
   const guilds = useGuilds();
   const create = useCreateDatabase();

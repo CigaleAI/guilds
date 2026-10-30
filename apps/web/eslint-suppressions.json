@@ -1004,37 +1004,20 @@
   "src/features/tables/ColumnsEditor.tsx": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/features/tables/CreateTableDialog.tsx": {
     "complexity": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
       "count": 1
     }
   },
   "src/features/tables/RecordDialog.tsx": {
     "complexity": {
       "count": 2
-    },
-    "no-restricted-syntax": {
-      "count": 2
     }
   },
   "src/features/tables/RecordsPanel.tsx": {
     "complexity": {
-      "count": 2
-    },
-    "no-restricted-syntax": {
-      "count": 3
-    }
-  },
-  "src/features/tables/StateTablesTab.tsx": {
-    "no-restricted-syntax": {
       "count": 2
     }
   },
@@ -1046,7 +1029,7 @@
       "count": 3
     },
     "no-restricted-syntax": {
-      "count": 4
+      "count": 1
     }
   },
   "src/features/tables/values.ts": {

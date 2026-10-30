@@ -26,7 +26,9 @@ import { fits, whereOf, type ColumnFilter } from "./values";
 const pageSize = 50;
 const any = "__any__";
 
-function Cell({ value, column }: { value: unknown; column: Column }) {
+type CellProps = { value: unknown; column: Column };
+
+function Cell({ value, column }: CellProps) {
   if (value === null || value === undefined) return <span className="text-faint">—</span>;
   if (!fits(value, column)) {
     return (
@@ -57,15 +59,13 @@ function Cell({ value, column }: { value: unknown; column: Column }) {
   );
 }
 
-function FilterInput({
-  column,
-  filter,
-  onChange,
-}: {
+type FilterInputProps = {
   column: Column;
   filter: ColumnFilter;
   onChange: (filter: ColumnFilter) => void;
-}) {
+};
+
+function FilterInput({ column, filter, onChange }: FilterInputProps) {
   if (column.type === "boolean" || column.values?.length) {
     const values = column.type === "boolean" ? ["true", "false"] : (column.values ?? []);
     return (
@@ -113,11 +113,13 @@ function FilterInput({
   );
 }
 
+type RecordsPanelProps = { collection: Collection };
+
 /**
  * A table's records: a ranked search, or filters with sortable, paged rows. A row opens the
  * record to edit; new records and clearing them all start here.
  */
-export function RecordsPanel({ collection }: { collection: Collection }) {
+export function RecordsPanel({ collection }: RecordsPanelProps) {
   const [typed, setTyped] = useState("");
   const [query, setQuery] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
