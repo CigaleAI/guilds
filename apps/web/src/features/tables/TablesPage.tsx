@@ -61,18 +61,36 @@ function scopeLabel(collection: Collection): string {
  */
 export function TablesPage() {
   const params = useParams({ strict: false });
-  const search = useSearch({ strict: false });
-  const navigate = useNavigate();
   const wide = useMediaQuery(wideScreen);
   const tables = useDatabases();
   const [creating, setCreating] = useState(false);
+  const selectedId = params.collectionId ?? (wide ? tables.data?.[0]?.id : undefined);
 
+  return (
+    <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+      <TablesList
+        selectedId={selectedId}
+        visible={wide || !params.collectionId}
+        onNew={() => setCreating(true)}
+      />
+      <OpenTableSection selectedId={selectedId} onNew={() => setCreating(true)} />
+      <CreateTableDialog open={creating} onOpenChange={setCreating} />
+    </div>
+  );
+}
+
+type TablesListProps = {
+  selectedId: string | undefined;
+  /** False on a narrow screen while a table is open. */
+  visible: boolean;
+  onNew: () => void;
+};
+
+/** The organisation's tables, grouped by where each belongs: the organisation, then each guild. */
+function TablesList({ selectedId, visible, onNew }: TablesListProps) {
+  const navigate = useNavigate();
+  const tables = useDatabases();
   const list = tables.data ?? [];
-  const selectedId = params.collectionId ?? (wide ? list[0]?.id : undefined);
-  const showingList = wide || !params.collectionId;
-  const showingDetail = Boolean(selectedId) && (wide || Boolean(params.collectionId));
-  const showingSection =
-    showingDetail || (wide && !selectedId) || (!wide && !list.length && !tables.isPending);
   const groups = [
     { label: "Organisation", items: list.filter((item) => !item.guild) },
     ...[...new Set(list.flatMap((item) => (item.guild ? [item.guild.name] : [])))]
@@ -81,100 +99,108 @@ export function TablesPage() {
   ].filter((group) => group.items.length);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-      <aside
-        className={cn(
-          "min-h-0 flex-col gap-3 border-b border-line p-4 md:flex md:w-80 md:flex-none md:border-r md:border-b-0",
-          showingList ? "flex flex-1" : "hidden",
+    <aside
+      className={cn(
+        "min-h-0 flex-col gap-3 border-b border-line p-4 md:flex md:w-80 md:flex-none md:border-r md:border-b-0",
+        visible ? "flex flex-1" : "hidden",
+      )}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <h1 className="type-h2">Tables</h1>
+        <IconButton icon={Plus} label="New table" variant="surface" onClick={onNew} />
+      </div>
+      <div className="-mx-2 min-h-0 flex-1 overflow-y-auto">
+        {tables.isPending ? (
+          <SkeletonRows rows={5} label="Loading tables" />
+        ) : tables.isError ? (
+          <Banner tone="error" title="Couldn't load the tables" meta={tables.error.message} />
+        ) : (
+          groups.map((group) => (
+            <div key={group.label} className="flex flex-col gap-1">
+              <ListGroupLabel>{group.label}</ListGroupLabel>
+              {group.items.map((item) => (
+                <DatabaseItem
+                  key={item.id}
+                  name={item.name}
+                  purpose={item.purpose}
+                  count={item.count ?? 0}
+                  age={relativeTime(item.updated_at)}
+                  selected={item.id === selectedId}
+                  onClick={() =>
+                    void navigate({
+                      to: "/tables/$collectionId",
+                      params: { collectionId: item.id },
+                    })
+                  }
+                />
+              ))}
+            </div>
+          ))
         )}
-      >
-        <div className="flex items-center justify-between gap-2">
-          <h1 className="type-h2">Tables</h1>
-          <IconButton
-            icon={Plus}
-            label="New table"
-            variant="surface"
-            onClick={() => setCreating(true)}
-          />
-        </div>
-        <div className="-mx-2 min-h-0 flex-1 overflow-y-auto">
-          {tables.isPending ? (
-            <SkeletonRows rows={5} label="Loading tables" />
-          ) : tables.isError ? (
-            <Banner tone="error" title="Couldn't load the tables" meta={tables.error.message} />
-          ) : (
-            groups.map((group) => (
-              <div key={group.label} className="flex flex-col gap-1">
-                <ListGroupLabel>{group.label}</ListGroupLabel>
-                {group.items.map((item) => (
-                  <DatabaseItem
-                    key={item.id}
-                    name={item.name}
-                    purpose={item.purpose}
-                    count={item.count ?? 0}
-                    age={relativeTime(item.updated_at)}
-                    selected={item.id === selectedId}
-                    onClick={() =>
-                      void navigate({
-                        to: "/tables/$collectionId",
-                        params: { collectionId: item.id },
-                      })
-                    }
-                  />
-                ))}
-              </div>
-            ))
-          )}
-        </div>
-      </aside>
-      <section
-        className={cn("min-h-0 min-w-0 flex-1 flex-col", showingSection ? "flex" : "hidden")}
-      >
-        {selectedId ? (
-          <TableDetail
-            key={selectedId}
-            id={selectedId}
-            tab={isTableTab(search.tab) ? search.tab : "records"}
-            onTab={(tab) =>
-              void navigate({
-                to: "/tables/$collectionId",
-                params: { collectionId: selectedId },
-                search: tab === "records" ? {} : { tab },
-              })
+      </div>
+    </aside>
+  );
+}
+
+type OpenTableSectionProps = {
+  selectedId: string | undefined;
+  onNew: () => void;
+};
+
+/**
+ * The open table, or the invitation to create the first one. A narrow screen shows it in place of
+ * the list, only once a table is opened or when there is none.
+ */
+function OpenTableSection({ selectedId, onNew }: OpenTableSectionProps) {
+  const params = useParams({ strict: false });
+  const navigate = useNavigate();
+  const wide = useMediaQuery(wideScreen);
+  const tables = useDatabases();
+  const visible =
+    wide || Boolean(params.collectionId) || (!tables.data?.length && !tables.isPending);
+
+  return (
+    <section className={cn("min-h-0 min-w-0 flex-1 flex-col", visible ? "flex" : "hidden")}>
+      {selectedId ? (
+        <TableDetail
+          key={selectedId}
+          id={selectedId}
+          {...(wide ? {} : { onBack: () => void navigate({ to: "/tables" }) })}
+        />
+      ) : tables.isPending ? null : (
+        <div className="grid flex-1 place-items-center p-6">
+          <EmptyState
+            icon={Database}
+            title="No tables yet"
+            description="Tables hold records with typed columns that agents search and write."
+            action={
+              <Button size="sm" onClick={onNew}>
+                New table
+              </Button>
             }
-            {...(!wide && params.collectionId
-              ? { onBack: () => void navigate({ to: "/tables" }) }
-              : {})}
           />
-        ) : tables.isPending ? null : (
-          <div className="grid flex-1 place-items-center p-6">
-            <EmptyState
-              icon={Database}
-              title="No tables yet"
-              description="Tables hold records with typed columns that agents search and write."
-              action={
-                <Button size="sm" onClick={() => setCreating(true)}>
-                  New table
-                </Button>
-              }
-            />
-          </div>
-        )}
-      </section>
-      <CreateTableDialog open={creating} onOpenChange={setCreating} />
-    </div>
+        </div>
+      )}
+    </section>
   );
 }
 
 type TableDetailProps = {
   id: string;
-  tab: TableTab;
-  onTab: (tab: TableTab) => void;
   onBack?: () => void;
 };
 
-function TableDetail({ id, tab, onTab, onBack }: TableDetailProps) {
+/** One table: its header, and its records, columns or access list as the route's tab says. */
+function TableDetail({ id, onBack }: TableDetailProps) {
   const navigate = useNavigate();
+  const search = useSearch({ strict: false });
+  const tab = isTableTab(search.tab) ? search.tab : "records";
+  const showTab = (next: TableTab) =>
+    void navigate({
+      to: "/tables/$collectionId",
+      params: { collectionId: id },
+      search: next === "records" ? {} : { tab: next },
+    });
   const table = useDatabase(id);
   const remove = useDeleteDatabase();
   const access = useItemAccess({ kind: "collection", id });
@@ -243,7 +269,7 @@ function TableDetail({ id, tab, onTab, onBack }: TableDetailProps) {
           size="sm"
           label="Table view"
           value={tab}
-          onValueChange={onTab}
+          onValueChange={showTab}
           options={[
             { value: "records", label: "Records", count: collection.count ?? 0 },
             { value: "columns", label: "Columns", count: collection.columns.length },
@@ -251,23 +277,7 @@ function TableDetail({ id, tab, onTab, onBack }: TableDetailProps) {
           ]}
         />
       </header>
-      <div
-        className={cn(
-          "flex min-h-0 flex-1 flex-col overflow-y-auto",
-          tab === "records" ? "py-4 md:py-5" : "px-4 py-4 md:px-6 md:py-5",
-        )}
-      >
-        {tab === "records" ? (
-          <RecordsPanel collection={collection} />
-        ) : tab === "columns" ? (
-          <ColumnsTab collection={collection} />
-        ) : (
-          <AccessListPanel
-            target={{ kind: "collection", id }}
-            intro={`Who reads and writes ${collection.name}. Where it belongs only places it; this list decides who reaches it.`}
-          />
-        )}
-      </div>
+      <TableTabPanel collection={collection} tab={tab} />
       <EditTableDialog collection={collection} open={editing} onOpenChange={setEditing} />
       <ConfirmDialog
         kind="destructive"
@@ -294,6 +304,31 @@ function TableDetail({ id, tab, onTab, onBack }: TableDetailProps) {
           )
         }
       />
+    </div>
+  );
+}
+
+type TableTabPanelProps = { collection: Collection; tab: TableTab };
+
+/** What a table's tab shows: its records, its columns editor, or its access list. */
+function TableTabPanel({ collection, tab }: TableTabPanelProps) {
+  return (
+    <div
+      className={cn(
+        "flex min-h-0 flex-1 flex-col overflow-y-auto",
+        tab === "records" ? "py-4 md:py-5" : "px-4 py-4 md:px-6 md:py-5",
+      )}
+    >
+      {tab === "records" ? (
+        <RecordsPanel collection={collection} />
+      ) : tab === "columns" ? (
+        <ColumnsTab collection={collection} />
+      ) : (
+        <AccessListPanel
+          target={{ kind: "collection", id: collection.id }}
+          intro={`Who reads and writes ${collection.name}. Where it belongs only places it; this list decides who reaches it.`}
+        />
+      )}
     </div>
   );
 }

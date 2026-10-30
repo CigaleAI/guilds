@@ -377,10 +377,5 @@
     "complexity": {
       "count": 2
     }
-  },
-  "src/features/tables/TablesPage.tsx": {
-    "complexity": {
-      "count": 2
-    }
   }
 }
