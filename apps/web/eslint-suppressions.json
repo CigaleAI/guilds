@@ -401,9 +401,6 @@
   "src/features/notes/NotesBrowser.tsx": {
     "complexity": {
       "count": 2
-    },
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/features/recipes/ApplyPage.tsx": {

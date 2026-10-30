@@ -11,7 +11,7 @@ import {
   type NotesPrefix,
 } from "../../api/queries/notes";
 import type { FileContent, NoteItem } from "../../api/types/notes";
-
+import { copyText } from "../../app/clipboard";
 import { scopeOfDisplayPath } from "../../app/displayPath";
 import { useIdentity } from "../../app/identity";
 import { useMediaQuery, wideScreen } from "../../app/media";
@@ -321,12 +321,9 @@ function NoteView({
   const value = draft ?? saved;
 
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(value);
-      toast({ kind: "success", title: "Copied" });
-    } catch {
-      toast({ kind: "error", title: "Couldn't copy the note" });
-    }
+    const outcome = await copyText(value);
+    if (outcome === "copied") toast({ kind: "success", title: "Copied" });
+    else toast({ kind: "error", title: "Couldn't copy the note" });
   };
 
   return (
