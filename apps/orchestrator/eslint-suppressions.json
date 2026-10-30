@@ -1077,24 +1077,6 @@
       "count": 6
     }
   },
-  "src/schedules/item.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/schedules/service.ts": {
-    "max-params": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
-  "src/schedules/timing.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
   "src/schedules/window.ts": {
     "max-params": {
       "count": 1

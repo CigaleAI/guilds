@@ -4,38 +4,17 @@ import { userActor } from "../lib/change-actor.js";
 import { requireVisibleGuild } from "../guilds/access.js";
 import { scheduleItem } from "../schedules/item.js";
 import { createRoutine, deleteRoutine, updateRoutine } from "../schedules/operator.js";
+import { RoutineChangeInput, RoutineTimingInput } from "../schedules/input.js";
 import { scheduleChanges } from "../schedules/service.js";
 import type { AppDeps, RouteApp } from "./deps.js";
 import { currentUser } from "./identity.js";
 import { AgentParams, GuildParams } from "./params.js";
 
-/** A random-wake window: when an agent may wake, in which timezone, and how often at most. */
-const WakeWindowSchema = Type.Object({
-  timezone: Type.String(),
-  start: Type.String(),
-  end: Type.String(),
-  max_wakes: Type.Number(),
-});
-
-/** When a routine runs: a cron expression or a wake window; null is neither. */
-const RoutineTimingFields = {
-  cron: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-  window: Type.Optional(Type.Union([WakeWindowSchema, Type.Null()])),
-};
-
 /** A new routine: what it is for, what the agent is told, and when it runs. */
 const RoutineDraftSchema = Type.Object({
   description: Type.String(),
   instruction: Type.String(),
-  ...RoutineTimingFields,
-});
-
-/** A change to a routine; a field left out keeps its value. */
-const RoutineChangeSchema = Type.Object({
-  description: Type.Optional(Type.String()),
-  instruction: Type.Optional(Type.String()),
-  paused: Type.Optional(Type.Boolean()),
-  ...RoutineTimingFields,
+  ...RoutineTimingInput.properties,
 });
 
 /** The path of one routine of an agent. */
@@ -73,7 +52,7 @@ export async function registerScheduleRoutes(app: RouteApp, deps: AppDeps): Prom
       const agent = await requireVisibleAgent(db, request.params.agent_id, user.id);
       const body = request.body;
       const row = await createRoutine(deps, userActor(user), agent, {
-        when: { cron: body.cron, window: body.window },
+        when: { cron: body.cron ?? null, window: body.window ?? null },
         description: body.description,
         instruction: body.instruction,
       });
@@ -83,7 +62,7 @@ export async function registerScheduleRoutes(app: RouteApp, deps: AppDeps): Prom
 
   app.patch(
     "/api/agents/:agent_id/schedules/:schedule_id",
-    { schema: { params: RoutineParams, body: RoutineChangeSchema } },
+    { schema: { params: RoutineParams, body: RoutineChangeInput } },
     async (request) => {
       const user = await currentUser(db, request, deps);
       const agent = await requireVisibleAgent(db, request.params.agent_id, user.id);

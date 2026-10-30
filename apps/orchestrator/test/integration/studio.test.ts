@@ -829,7 +829,7 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
   await writeAgentTask(db, operator, "a_ev", `Curate the digest.\n\n![[${sharedPath}]]\n`);
 
   // A routine and one run it woke, then a memory written by that run.
-  const routine = await schedules.create(TEST_ACTOR, "a_ev", { cron: "0 9 * * 1" }, "Weekly digest", "Compile the weekly digest.");
+  const routine = await schedules.create(TEST_ACTOR, "a_ev", { when: { cron: "0 9 * * 1" }, description: "Weekly digest", instruction: "Compile the weekly digest." });
   const scheduleId = String(routine.id);
   await createScheduleRun(db,
     {

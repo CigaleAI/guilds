@@ -269,14 +269,12 @@ async function createRoutines(skeleton: Skeleton, role: RecipeRole, recipe: Reci
       rewriteRolesToNames(schedule.instruction || roleTaskText(role, recipe), skeleton.names),
       `${role.role} schedule ${schedule.key}`,
     );
-    await skeleton.apply.schedules.create(
-      skeleton.actor,
-      agentId,
-      { cron: schedule.cron, window: schedule.window },
-      schedule.description,
-      clippedInstruction(instruction),
-      { paused: true },
-    );
+    await skeleton.apply.schedules.create(skeleton.actor, agentId, {
+      when: { cron: schedule.cron ?? null, window: schedule.window ?? null },
+      description: schedule.description,
+      instruction: clippedInstruction(instruction),
+      paused: true,
+    });
   }
 }
 

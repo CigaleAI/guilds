@@ -8,6 +8,14 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** The agent's schedule tools refuse a `cron`, a window
+field, or a `schedule_update` `description` or `instruction` of the
+wrong type before anything is written, with the first mismatch named
+by its JSON pointer, such as `/max_wakes: Expected number` from
+`schedule_create_window` or `/cron: Expected union value`. Before, the
+routine's validator refused it with a message of its own, such as
+`window.max_wakes must be a positive integer`.
+
 **No impact.** A Studio tool call that gives a value outside an
 argument's fixed list is refused before the tool does any work, with
 the first mismatch named by its JSON pointer, such as

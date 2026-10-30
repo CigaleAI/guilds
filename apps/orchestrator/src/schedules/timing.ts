@@ -1,9 +1,10 @@
 import type { PlannedWake, ScheduleRow, ScheduleTiming, ScheduleTimingColumns } from "../db/schedules.js";
 import { nextRunAt, ScheduleError, validateCron } from "./cron.js";
 import { describeCron } from "./describe.js";
+import type { RoutineTimingInput } from "./input.js";
 import { describeWindow, planWindowAfterFire, planWindowWake, validateWindow } from "./window.js";
 
-export function validateTiming(input: { cron?: unknown; window?: unknown }): ScheduleTiming {
+export function validateTiming(input: RoutineTimingInput): ScheduleTiming {
   const hasCron = input.cron !== undefined && input.cron !== null;
   const hasWindow = input.window !== undefined && input.window !== null;
   if (hasCron === hasWindow) {

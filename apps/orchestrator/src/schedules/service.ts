@@ -2,6 +2,7 @@ import { newId } from "../lib/ids.js";
 import { ScheduleError, validateInstruction, validateScheduleDescription } from "./cron.js";
 import { routineChange } from "./changes.js";
 import { formatScheduleRow, rowDescription, scheduleItem, type ScheduleItem } from "./item.js";
+import type { RoutineChangeInput, RoutineTimingInput } from "./input.js";
 import { planWake, rowTiming, validateTiming } from "./timing.js";
 import type { ChangeActor } from "../lib/change-actor.js";
 import { recordChangeIfAny } from "../db/config-changes.js";
@@ -63,20 +64,14 @@ export type GuildScheduleItem = ScheduleItem & {
 export class Schedules {
   constructor(public db: ScheduleDatabase) {}
 
-  async create(
-    actor: ChangeActor,
-    agentId: string,
-    when: { cron?: unknown; window?: unknown },
-    description: unknown,
-    instruction: unknown,
-    options: { paused?: boolean } = {},
-  ): Promise<ScheduleRow> {
-    const timing = validateTiming(when);
-    const summary = validateScheduleDescription(description);
-    const text = validateInstruction(instruction);
+  /** Creates the routine `draft` describes for the agent, validated; it starts unpaused unless `draft` pauses it. */
+  async create(actor: ChangeActor, agentId: string, draft: RoutineDraft): Promise<ScheduleRow> {
+    const timing = validateTiming(draft.when);
+    const summary = validateScheduleDescription(draft.description);
+    const text = validateInstruction(draft.instruction);
     const now = new Date();
     const scheduleId = newId("sch");
-    const paused = Boolean(options.paused);
+    const paused = draft.paused ?? false;
     return this.db.scheduleTransaction(async (tx) => {
       const row = await tx.insertSchedule(
         {
@@ -243,26 +238,34 @@ export function agentSchedules(db: Queryable): Schedules {
   return new Schedules(scheduleDatabase(db));
 }
 
+/** A new routine: when it runs, what it is for, what the agent is told, and whether it starts paused. */
+export type RoutineDraft = {
+  when: RoutineTimingInput;
+  description: string;
+  instruction: string;
+  paused?: boolean;
+};
+
 /** What an update may change; a key left out keeps the routine's value. */
 export type ScheduleChanges = {
-  when?: { cron?: unknown; window?: unknown };
-  description?: unknown;
-  instruction?: unknown;
+  when?: RoutineTimingInput;
+  description?: string;
+  instruction?: string;
   paused?: boolean;
 };
 
 /**
  * The changes a request or tool call names: `cron` or `window` for a new
- * timing, `description`, `instruction`, and a boolean `paused`. A key it
- * leaves out is left out of the changes.
+ * timing, `description`, `instruction`, and `paused`. A field it leaves out
+ * is left out of the changes.
  */
-export function scheduleChanges(input: Record<string, unknown>): ScheduleChanges {
+export function scheduleChanges(input: RoutineChangeInput): ScheduleChanges {
   const timed = input.cron !== undefined || input.window !== undefined;
   return {
-    ...(timed ? { when: { cron: input.cron, window: input.window } } : {}),
+    ...(timed ? { when: { cron: input.cron ?? null, window: input.window ?? null } } : {}),
     ...(input.description !== undefined ? { description: input.description } : {}),
     ...(input.instruction !== undefined ? { instruction: input.instruction } : {}),
-    ...(typeof input.paused === "boolean" ? { paused: input.paused } : {}),
+    ...(input.paused !== undefined ? { paused: input.paused } : {}),
   };
 }
 

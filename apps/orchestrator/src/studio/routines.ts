@@ -280,8 +280,10 @@ async function writeRoutine(
 ): Promise<RoutineChange> {
   if (plan.action === "create") {
     const { timing, description, instruction, paused } = plan.definition;
-    const when = { cron: timing.cron, window: timing.window };
-    const row = await deps.schedules.create(editActor(scope), plan.agentId, when, description, instruction, {
+    const row = await deps.schedules.create(editActor(scope), plan.agentId, {
+      when: timing,
+      description,
+      instruction,
       paused,
     });
     return { agentId: plan.agentId, action: "create", scheduleId: String(row.id) };
