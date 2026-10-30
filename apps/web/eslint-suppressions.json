@@ -9,16 +9,6 @@
       "count": 1
     }
   },
-  "src/features/agent/routine/AgentRoutines.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/features/agent/routine/RoutineForm.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/features/agent/scripts/AgentScripts.tsx": {
     "complexity": {
       "count": 2
