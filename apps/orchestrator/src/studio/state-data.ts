@@ -91,8 +91,8 @@ async function loadStateEvents(deps: StateDeps, scope: StateScope): Promise<{ it
 const STATE_KINDS: readonly StateKind[] = ["note", "memory", "script", "file", "table"];
 
 /** A kind filter from the query: one of the item kinds, or none. */
-export function parseStateKind(value: unknown): StateKind | null {
-  if (value === undefined || value === null || value === "") return null;
+export function parseStateKind(value: string | undefined): StateKind | null {
+  if (value === undefined || value === "") return null;
   const kind = STATE_KINDS.find((entry) => entry === value);
   if (!kind) throw new StudioUnprocessableError("kind must be note, memory, script, file, or table");
   return kind;
@@ -143,10 +143,10 @@ export function parseHistoryCursor(cursor: string | null): { at: string; id: str
 const OPERATIONS = ["create", "update", "delete"];
 
 /** An operation filter from the query: create, update, delete, or none. */
-export function parseOperation(value: unknown): string | null {
-  if (value === undefined || value === null || value === "") return null;
-  if (!OPERATIONS.includes(String(value))) throw new StudioUnprocessableError("op must be create, update, or delete");
-  return String(value);
+export function parseOperation(value: string | undefined): string | null {
+  if (value === undefined || value === "") return null;
+  if (!OPERATIONS.includes(value)) throw new StudioUnprocessableError("op must be create, update, or delete");
+  return value;
 }
 
 /** One item's history, a page at a time, each entry with the step or coach message that made it. */

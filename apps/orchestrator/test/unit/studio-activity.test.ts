@@ -6,6 +6,7 @@ import {
   activityWindow,
   classifyWrite,
   groupPostSeq,
+  hoursWindow,
   messageFloor,
   projectActivity,
   type ActivityInput,
@@ -89,6 +90,12 @@ test("the window is hours back from until, capped, and never in the future", () 
   assert.throws(() => activityWindow({ hours: "0" }, NOW), StudioUnprocessableError);
   assert.throws(() => activityWindow({ hours: "soon" }, NOW), StudioUnprocessableError);
   assert.throws(() => activityWindow({ until: "yesterday" }, NOW), StudioUnprocessableError);
+});
+
+test("an hours window ends now and takes the default when it names no hours", () => {
+  assert.equal(hoursWindow("6", NOW).since.toISOString(), "2026-09-25T11:40:00.000Z");
+  assert.equal(hoursWindow(undefined, NOW).since.toISOString(), "2026-09-24T17:40:00.000Z");
+  assert.equal(hoursWindow(undefined, NOW).until.toISOString(), NOW.toISOString());
 });
 
 test("writes are classified by display path", () => {

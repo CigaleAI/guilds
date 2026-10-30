@@ -1,3 +1,4 @@
+import { Type, type Static } from "@sinclair/typebox";
 import { getAgent } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
 import { getRun, listMessages, listRunHeaders, routineRunStats, type RunHeaderRow } from "../db/runs.js";
@@ -15,13 +16,15 @@ export type InspectorServices = {
   generation: Pick<GenerationLoop, "isGenerating"> | null;
 };
 
-/** Which of an agent's runs the inspector lists, as its query asks for them. */
-export type RunHeaderQuery = {
-  taskPromptHash: string;
-  scheduleId: string;
-  kind: string;
-  limit: unknown;
-};
+/** Which of an agent's runs the inspector lists: by prompt, routine, or kind, and how many. */
+export const RunHeaderQuerySchema = Type.Object({
+  task_prompt_hash: Type.Optional(Type.String()),
+  schedule_id: Type.Optional(Type.String()),
+  kind: Type.Optional(Type.String()),
+  limit: Type.Optional(Type.String()),
+});
+
+export type RunHeaderQuery = Static<typeof RunHeaderQuerySchema>;
 
 type Item = Record<string, unknown>;
 
@@ -54,9 +57,9 @@ export async function listAgentRunHeaders(
 ): Promise<Item[]> {
   const limit = Math.min(Math.max(Number(query.limit) || 100, 1), 500);
   const filter = {
-    taskPromptHash: query.taskPromptHash,
-    scheduleId: query.scheduleId,
-    kind: query.kind,
+    taskPromptHash: query.task_prompt_hash ?? "",
+    scheduleId: query.schedule_id ?? "",
+    kind: query.kind ?? "",
     limit,
   };
   return (await listRunHeaders(services.db, agentId, filter)).map((row) =>

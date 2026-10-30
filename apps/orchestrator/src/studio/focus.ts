@@ -1,3 +1,4 @@
+import { Type, type Static } from "@sinclair/typebox";
 import { ArtifactError } from "../artifacts/errors.js";
 import { memoryDiffText, memoryTimeline, type MemoryTimelineEntry } from "../artifacts/memory.js";
 import { artifactAt, parseActorPath } from "../artifacts/notes.js";
@@ -29,6 +30,31 @@ import { operatorActor } from "../artifacts/actors.js";
 // fills in what it can, and writes the evidence block the coach reads.
 
 export const STUDIO_FOCUS_SOURCE = "studio_focus";
+
+/** An id or path a focus pin names, or null when it names none. */
+const FocusText = Type.Optional(Type.Union([Type.String(), Type.Null()]));
+
+/** A step or version a focus pin names: a non-negative integer, as a number or its digits. */
+const FocusIndex = Type.Optional(Type.Union([Type.Number(), Type.String(), Type.Null()]));
+
+/** The evidence an operator pins to a Studio message: its kind and the ids that name it. */
+export const StudioFocusRequestSchema = Type.Object({
+  kind: Type.String(),
+  agent_id: FocusText,
+  run_id: FocusText,
+  seq: FocusIndex,
+  call_id: FocusText,
+  revision_id: FocusText,
+  version_index: FocusIndex,
+  schedule_id: FocusText,
+  display_path: FocusText,
+  change_id: FocusText,
+  issue_id: FocusText,
+  tool_name: FocusText,
+});
+
+export type StudioFocusRequest = Static<typeof StudioFocusRequestSchema>;
+
 export type StudioFocusDeps = {
   db: Queryable;
   artifacts: ArtifactStore;
@@ -37,11 +63,11 @@ export type StudioFocusDeps = {
   user: UserRow;
 };
 
-function trimmedText(value: unknown): string {
-  return typeof value === "string" ? value.trim() : "";
+function trimmedText(value: string | null | undefined): string {
+  return (value ?? "").trim();
 }
 
-function nonNegativeInt(value: unknown): number | null {
+function nonNegativeInt(value: number | string | null | undefined): number | null {
   if (typeof value === "number" && Number.isInteger(value) && value >= 0) {
     return value;
   }
@@ -140,7 +166,7 @@ function focusedMessages(
 
 async function resolveRun(
   deps: StudioFocusDeps,
-  input: Record<string, unknown>,
+  input: StudioFocusRequest,
 ): Promise<{ focus: StudioFocus; content: string }> {
   const runId = trimmedText(input.run_id);
   const run = runId ? await getRun(deps.db, runId) : null;
@@ -213,7 +239,7 @@ async function resolveRun(
 
 function findEntry(
   entries: MemoryTimelineEntry[],
-  input: Record<string, unknown>,
+  input: StudioFocusRequest,
 ): MemoryTimelineEntry | undefined {
   const revisionId = trimmedText(input.revision_id);
   if (revisionId && revisionId !== "live") {
@@ -228,7 +254,7 @@ function findEntry(
 
 async function resolveMemoryVersion(
   deps: StudioFocusDeps,
-  input: Record<string, unknown>,
+  input: StudioFocusRequest,
 ): Promise<{ focus: StudioFocus; content: string }> {
   const agent = await guildAgent(deps, trimmedText(input.agent_id));
   const actor = operatorActor({
@@ -300,7 +326,7 @@ async function resolveMemoryVersion(
 
 async function resolveRoutine(
   deps: StudioFocusDeps,
-  input: Record<string, unknown>,
+  input: StudioFocusRequest,
 ): Promise<{ focus: StudioFocus; content: string }> {
   const agent = await guildAgent(deps, trimmedText(input.agent_id));
   const scheduleId = trimmedText(input.schedule_id);
@@ -417,7 +443,7 @@ function changeSummary(change: FileChangeView): string {
 
 async function resolveFile(
   deps: StudioFocusDeps,
-  input: Record<string, unknown>,
+  input: StudioFocusRequest,
 ): Promise<{ focus: StudioFocus; content: string }> {
   const displayPath = trimmedText(input.display_path);
   if (!displayPath) {
@@ -485,7 +511,7 @@ async function resolveFile(
 
 async function resolveIssue(
   deps: StudioFocusDeps,
-  input: Record<string, unknown>,
+  input: StudioFocusRequest,
 ): Promise<{ focus: StudioFocus; content: string }> {
   const issueId = trimmedText(input.issue_id);
   const row = issueId ? await getIssue(deps.db, deps.sourceGuildId, issueId) : null;
@@ -561,7 +587,7 @@ function toolFailureLines(rows: Array<Record<string, unknown>>): string[] {
 // and its latest failures, with where to read further.
 async function resolveTool(
   deps: StudioFocusDeps,
-  input: Record<string, unknown>,
+  input: StudioFocusRequest,
 ): Promise<{ focus: StudioFocus; content: string }> {
   const name = trimmedText(input.tool_name).trim();
   if (!TOOL_NAME.test(name)) {
@@ -602,29 +628,21 @@ async function resolveTool(
 
 export async function resolveStudioFocus(
   deps: StudioFocusDeps,
-  input: unknown,
+  input: StudioFocusRequest,
 ): Promise<{ focus: StudioFocus; content: string }> {
-  const raw =
-    input && typeof input === "object" && !Array.isArray(input)
-      ? (input as Record<string, unknown>)
-      : null;
-  if (!raw) {
-    throw new StudioUnprocessableError("focus must be an object");
-  }
-  const kind = trimmedText(raw.kind) as StudioFocusKind;
-  switch (kind) {
+  switch (input.kind.trim()) {
     case "run":
-      return resolveRun(deps, raw);
+      return resolveRun(deps, input);
     case "memory_version":
-      return resolveMemoryVersion(deps, raw);
+      return resolveMemoryVersion(deps, input);
     case "routine":
-      return resolveRoutine(deps, raw);
+      return resolveRoutine(deps, input);
     case "file":
-      return resolveFile(deps, raw);
+      return resolveFile(deps, input);
     case "issue":
-      return resolveIssue(deps, raw);
+      return resolveIssue(deps, input);
     case "tool":
-      return resolveTool(deps, raw);
+      return resolveTool(deps, input);
     default:
       throw new StudioUnprocessableError(
         "focus kind must be run, memory_version, routine, file, issue, or tool",
