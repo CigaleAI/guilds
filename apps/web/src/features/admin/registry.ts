@@ -1,4 +1,4 @@
-import type { RegistryConnector } from "../../api/types/admin";
+import type { RegistryConnector, RegistryConnectorAcceptance } from "../../api/types/admin";
 
 /**
  * What the registry dialog offers for a connector: `install` when the box lacks it, `update` when a
@@ -13,4 +13,15 @@ export function registryAction(
   if (!entry.installed) return "install";
   if (entry.installed.source !== "registry") return "elsewhere";
   return entry.installed.version === entry.version ? "current" : "update";
+}
+
+/** What installing or updating a registry connector sends: its slug and what the admin accepts of it. */
+export function acceptanceOf(
+  entry: Pick<RegistryConnector, "slug" | "verified" | "experimental">,
+): RegistryConnectorAcceptance {
+  return {
+    slug: entry.slug,
+    unverified: !entry.verified,
+    experimental: entry.experimental === true,
+  };
 }

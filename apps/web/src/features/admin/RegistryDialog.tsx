@@ -18,7 +18,7 @@ import {
   Tag,
   toast,
 } from "@guildsrun/ui";
-import { registryAction } from "./registry";
+import { acceptanceOf, registryAction } from "./registry";
 
 type Pending = { entry: RegistryConnector; action: "install" | "update" | "remove" };
 
@@ -50,6 +50,28 @@ function installLabel(entry: RegistryConnector | undefined): string {
   return entry && needsAcceptance(entry) ? `Install ${acceptanceWords(entry)}` : "Install";
 }
 
+/** The toasts that say how an action on a registry entry went. */
+function actionReport({ entry, action }: Pending) {
+  return {
+    onSuccess: () =>
+      toast({
+        kind: "success",
+        title:
+          action === "install"
+            ? `${entry.display_name} installed`
+            : action === "update"
+              ? `${entry.display_name} updated to v${entry.version}`
+              : `${entry.display_name} removed`,
+      }),
+    onError: (error: Error) =>
+      toast({
+        kind: "error",
+        title: `Couldn't ${action} ${entry.display_name}`,
+        description: error.message,
+      }),
+  };
+}
+
 type RegistryDialogProps = { open: boolean; onClose: () => void };
 
 /** What the registry offers, beside what the box has: install, update, or remove a registry connector. */
@@ -69,40 +91,21 @@ function RegistryList() {
   const [confirming, setConfirming] = useState<Pending | null>(null);
   const busy = install.isPending || update.isPending || remove.isPending;
 
-  const run = ({ entry, action }: Pending) => {
-    const accepted = { unverified: !entry.verified, experimental: entry.experimental === true };
-    const done =
-      action === "install"
-        ? install.mutateAsync({ slug: entry.slug, ...accepted })
-        : action === "update"
-          ? update.mutateAsync({ slug: entry.slug, ...accepted })
-          : remove.mutateAsync(entry.slug);
-    return done.then(
-      () => {
-        toast({
-          kind: "success",
-          title:
-            action === "install"
-              ? `${entry.display_name} installed`
-              : action === "update"
-                ? `${entry.display_name} updated to v${entry.version}`
-                : `${entry.display_name} removed`,
-        });
-      },
-      (error: Error) => {
-        toast({
-          kind: "error",
-          title: `Couldn't ${action} ${entry.display_name}`,
-          description: error.message,
-        });
-        throw error;
-      },
-    );
+  /** Runs a confirmed action; rejects when it fails, which keeps the confirmation open. */
+  const run = (pending: Pending) => {
+    const report = actionReport(pending);
+    if (pending.action === "remove") return remove.mutateAsync(pending.entry.slug, report);
+    const mutation = pending.action === "install" ? install : update;
+    return mutation.mutateAsync(acceptanceOf(pending.entry), report);
   };
 
   const start = (pending: Pending) => {
-    if (pending.action === "remove" || needsAcceptance(pending.entry)) setConfirming(pending);
-    else void run(pending).catch(() => undefined);
+    if (pending.action === "remove" || needsAcceptance(pending.entry)) {
+      setConfirming(pending);
+      return;
+    }
+    const mutation = pending.action === "install" ? install : update;
+    mutation.mutate(acceptanceOf(pending.entry), actionReport(pending));
   };
 
   const entry = confirming?.entry;

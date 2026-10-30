@@ -91,16 +91,10 @@
     },
     "complexity": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/features/admin/RegistryDialog.tsx": {
     "complexity": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
       "count": 1
     }
   },

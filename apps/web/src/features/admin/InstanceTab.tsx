@@ -18,7 +18,6 @@ import {
   TextField,
   toast,
 } from "@guildsrun/ui";
-import { ApiError } from "../../api/client";
 import {
   useInstance,
   useRemoveInstanceKeys,
@@ -28,12 +27,14 @@ import {
 import type {
   InstanceIntegration,
   IntegrationField,
+  InstanceKeysResult,
   IntegrationState,
 } from "../../api/types/admin";
 import { DocsLink } from "../../app/docs";
 import type { TabSearch } from "../../app/router";
 import { safeReturnTo } from "../instance/instance";
 import { submitManifestForm } from "./githubManifest";
+import { asksToConfirmReplace } from "./instanceKeys";
 
 const stateTag: Record<IntegrationState, { tone: "tide" | "ochre" | "well"; label: string }> = {
   on: { tone: "tide", label: "On" },
@@ -252,36 +253,28 @@ function KeysForm({ integration, returnTo, onSaved }: KeysFormProps) {
       }),
     );
 
-  const saveKeys = (confirmReplace: boolean) =>
-    save
-      .mutateAsync({
-        integration: integration.id,
-        values: entered(),
-        ...(confirmReplace ? { confirmReplace } : {}),
-      })
-      .then(
-        ({ disconnected }) => {
-          toast({
-            kind: "success",
-            title: `${integration.label} saved`,
-            ...disconnectedNote(disconnected),
-          });
-          setValues({});
-          onSaved();
-        },
-        (error: Error) => {
-          if (!confirmReplace && error instanceof ApiError && error.status === 409) {
-            setReplacing({ action: "save", message: error.message });
-            return;
-          }
-          toast({
-            kind: "error",
-            title: `Couldn't save ${integration.label}`,
-            description: error.message,
-          });
-          throw error;
-        },
-      );
+  const keysSaved = ({ disconnected }: InstanceKeysResult) => {
+    toast({
+      kind: "success",
+      title: `${integration.label} saved`,
+      ...disconnectedNote(disconnected),
+    });
+    setValues({});
+    onSaved();
+  };
+  const keysNotSaved = (error: Error) =>
+    toast({
+      kind: "error",
+      title: `Couldn't save ${integration.label}`,
+      description: error.message,
+    });
+
+  /** Replaces the stored keys though logins depend on them; rejects when the save fails. */
+  const replaceKeys = () =>
+    save.mutateAsync(
+      { integration: integration.id, values: entered(), confirmReplace: true },
+      { onSuccess: keysSaved, onError: keysNotSaved },
+    );
 
   const removeKeys = (confirmReplace: boolean) =>
     remove
@@ -296,7 +289,7 @@ function KeysForm({ integration, returnTo, onSaved }: KeysFormProps) {
           setValues({});
         },
         (error: Error) => {
-          if (!confirmReplace && error instanceof ApiError && error.status === 409) {
+          if (!confirmReplace && asksToConfirmReplace(error)) {
             setReplacing({ action: "remove", message: error.message });
             return;
           }
@@ -311,7 +304,16 @@ function KeysForm({ integration, returnTo, onSaved }: KeysFormProps) {
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    void saveKeys(false).catch(() => undefined);
+    save.mutate(
+      { integration: integration.id, values: entered() },
+      {
+        onSuccess: keysSaved,
+        onError: (error) => {
+          if (asksToConfirmReplace(error)) setReplacing({ action: "save", message: error.message });
+          else keysNotSaved(error);
+        },
+      },
+    );
   };
 
   return (
@@ -381,7 +383,7 @@ function KeysForm({ integration, returnTo, onSaved }: KeysFormProps) {
         title={replacing?.action === "remove" ? "Remove anyway?" : "Replace anyway?"}
         description={replacing?.message}
         confirmLabel={replacing?.action === "remove" ? "Remove" : "Replace"}
-        onConfirm={() => (replacing?.action === "remove" ? removeKeys(true) : saveKeys(true))}
+        onConfirm={() => (replacing?.action === "remove" ? removeKeys(true) : replaceKeys())}
       />
       {integration.setup === "github-app-manifest" ? (
         <CreateAppDialog
