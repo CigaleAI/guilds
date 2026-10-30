@@ -182,8 +182,8 @@ operator app.
 - **Boundary lint.** `eslint.boundary.js` is a lint rule a core
   package loads from its `eslint.config.js` with the packages it
   may not import and the repository its relative imports must stay
-  inside. It fails any orchestrator or web file, tests and scripts
-  included, that imports one of those packages or a relative path
+  inside. It fails any orchestrator, web or design-system file,
+  tests and scripts included, that imports one of those packages or a relative path
   that leaves core's repository. No file is excepted. Core's
   repository holds nothing of an extension and passes its own check
   alone.

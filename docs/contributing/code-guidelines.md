@@ -19,8 +19,7 @@ everything it does. Nothing happens inside that the name does not
 promise, including side effects. If the name needs an "and", it is
 two functions.
 
-- A function has at most **4 parameters**. ESLint warns at 5 and
-  fails at 6.
+- A function has at most **4 parameters**. ESLint fails at 5.
 - An object parameter is one of two kinds, and its type is always
   a named type:
   - A **record** names a thing that exists in the application
@@ -43,8 +42,8 @@ two functions.
   body with many early returns is fine; the limit exists to keep one
   function from holding several contracts.
 - Nesting goes at most **3 levels** deep. A `try` block counts as
-  a level in review; ESLint does not count it. Use early returns to
-  stay flat. Nesting is what makes a body hard to read, so this
+  a level, and ESLint counts it with the others. Use early returns
+  to stay flat. Nesting is what makes a body hard to read, so this
   limit is the strict one.
 - Parameters are typed for what they are. A function does not take
   `Record<string, unknown>` or `unknown` when the caller has a type.

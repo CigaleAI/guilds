@@ -11,22 +11,6 @@ const REPOSITORY = "../..";
 // (drizzle.config.ts).
 const INDEXES = ["src/db/schema/index.ts"];
 
-// Syntax docs/contributing/code-guidelines.md refuses, under Types and errors and under Functions.
-const EMPTY_CATCH = {
-  selector: "CatchClause[body.body.length=0]",
-  message: "A catch throws a named error or returns a typed absence.",
-};
-const BARE_ERROR = {
-  selector: "ThrowStatement > NewExpression[callee.name='Error']",
-  message: "A domain throws a named error class.",
-};
-// The outermost object type literal in a parameter's type, so one inline type is reported once.
-const INLINE_PARAMETER_TYPE = {
-  selector:
-    ":function > :matches(Identifier, ObjectPattern, ArrayPattern, AssignmentPattern, RestElement, TSParameterProperty) TSTypeLiteral:not(TSTypeLiteral TSTypeLiteral)",
-  message: "An object parameter's type is a named type.",
-};
-
 export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
@@ -41,7 +25,7 @@ export default tseslint.config(
       ],
     },
   },
-  limits({ files: ["src/**/*.ts"] }),
+  limits({ files: ["src/**/*.ts"], commands: ["src/cli/**/*.ts"] }),
   {
     // Public functions have explicit types for inputs and outputs
     // (docs/contributing/code-guidelines.md, Types and errors).
@@ -49,28 +33,6 @@ export default tseslint.config(
     ignores: ["**/*.test.ts", "**/*.test.tsx", "**/*.stories.tsx", "test/**", "scripts/**"],
     rules: {
       "@typescript-eslint/explicit-module-boundary-types": "error",
-    },
-  },
-  {
-    files: ["src/**/*.ts"],
-    ignores: [
-      "**/*.test.ts",
-      "**/*.test.tsx",
-      "**/*.stories.tsx",
-      "test/**",
-      "scripts/**",
-      "src/cli/**",
-    ],
-    rules: {
-      "no-restricted-syntax": ["error", EMPTY_CATCH, BARE_ERROR, INLINE_PARAMETER_TYPE],
-    },
-  },
-  {
-    // A command in cli/ is no domain: its Error reaches the person who ran it, not an HTTP mapping.
-    files: ["src/cli/**/*.ts"],
-    ignores: ["**/*.test.ts"],
-    rules: {
-      "no-restricted-syntax": ["error", EMPTY_CATCH, INLINE_PARAMETER_TYPE],
     },
   },
   {

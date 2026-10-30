@@ -24,6 +24,9 @@
     }
   },
   "src/app.ts": {
+    "boundary/no-reexport-modules": {
+      "count": 1
+    },
     "complexity": {
       "count": 1
     }
@@ -113,6 +116,11 @@
       "count": 6
     },
     "complexity": {
+      "count": 2
+    }
+  },
+  "src/artifacts/task.ts": {
+    "max-params": {
       "count": 2
     }
   },
@@ -232,7 +240,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 1
+      "count": 2
     }
   },
   "src/coding/git.ts": {
@@ -315,6 +323,9 @@
     }
   },
   "src/connectors/instance.ts": {
+    "max-params": {
+      "count": 1
+    },
     "no-restricted-syntax": {
       "count": 1
     }
@@ -373,7 +384,7 @@
       "count": 6
     },
     "no-restricted-syntax": {
-      "count": 5
+      "count": 9
     }
   },
   "src/conversation/templates.ts": {
@@ -472,6 +483,9 @@
     }
   },
   "src/directories/index.ts": {
+    "max-params": {
+      "count": 1
+    },
     "no-restricted-syntax": {
       "count": 1
     }
@@ -512,6 +526,17 @@
   "src/generation/generate.ts": {
     "@typescript-eslint/explicit-module-boundary-types": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/generation/index.ts": {
+    "boundary/no-reexport-modules": {
+      "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 1
     }
   },
   "src/generation/machines.ts": {
@@ -519,7 +544,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 2
+      "count": 7
     }
   },
   "src/generation/offered-tools.ts": {
@@ -550,15 +575,24 @@
   "src/generation/runs.ts": {
     "@typescript-eslint/explicit-module-boundary-types": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 2
     }
   },
   "src/generation/tool-calls.ts": {
     "@typescript-eslint/explicit-module-boundary-types": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 1
     }
   },
   "src/generation/workspace.ts": {
     "@typescript-eslint/explicit-module-boundary-types": {
+      "count": 1
+    },
+    "no-restricted-syntax": {
       "count": 1
     }
   },
@@ -570,7 +604,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 5
+      "count": 6
     }
   },
   "src/github/manifest.ts": {
@@ -595,14 +629,20 @@
     }
   },
   "src/groupchat/index.ts": {
+    "boundary/no-reexport-modules": {
+      "count": 1
+    },
     "complexity": {
       "count": 1
     },
     "limits/file-lines": {
       "count": 1
     },
+    "max-params": {
+      "count": 1
+    },
     "no-restricted-syntax": {
-      "count": 9
+      "count": 12
     }
   },
   "src/guilds/service.ts": {
@@ -620,10 +660,23 @@
   },
   "src/http/builder-routes.ts": {
     "no-restricted-syntax": {
-      "count": 2
+      "count": 3
+    }
+  },
+  "src/http/error-handler.ts": {
+    "no-restricted-syntax": {
+      "count": 1
     }
   },
   "src/http/file-routes.ts": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/http/sandbox-proxy.ts": {
+    "max-params": {
+      "count": 2
+    },
     "no-restricted-syntax": {
       "count": 1
     }
@@ -647,6 +700,9 @@
       "count": 1
     },
     "max-depth": {
+      "count": 1
+    },
+    "no-restricted-syntax": {
       "count": 1
     }
   },
@@ -708,7 +764,7 @@
   },
   "src/llm/catalog.ts": {
     "no-restricted-syntax": {
-      "count": 1
+      "count": 2
     }
   },
   "src/llm/client.ts": {
@@ -716,13 +772,18 @@
       "count": 3
     },
     "no-restricted-syntax": {
-      "count": 3
+      "count": 4
     }
   },
   "src/llm/completion.ts": {
     "complexity": {
       "count": 1
     },
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/llm/credentials.ts": {
     "no-restricted-syntax": {
       "count": 1
     }
@@ -773,6 +834,9 @@
     "complexity": {
       "count": 2
     },
+    "max-params": {
+      "count": 1
+    },
     "no-restricted-syntax": {
       "count": 1
     }
@@ -784,7 +848,7 @@
   },
   "src/mcp/connect-flow.ts": {
     "no-restricted-syntax": {
-      "count": 1
+      "count": 2
     }
   },
   "src/mcp/connect-token.ts": {
@@ -794,13 +858,16 @@
     "complexity": {
       "count": 1
     },
-    "no-restricted-syntax": {
+    "max-params": {
       "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 2
     }
   },
   "src/mcp/connections.ts": {
     "no-restricted-syntax": {
-      "count": 1
+      "count": 4
     }
   },
   "src/mcp/database.ts": {
@@ -815,21 +882,21 @@
   },
   "src/mcp/operator-call.ts": {
     "no-restricted-syntax": {
-      "count": 1
+      "count": 2
     }
   },
   "src/mcp/pool.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 2
     },
-    "@typescript-eslint/max-params": {
-      "count": 1
-    },
     "complexity": {
       "count": 1
     },
+    "max-params": {
+      "count": 3
+    },
     "no-restricted-syntax": {
-      "count": 2
+      "count": 3
     }
   },
   "src/mcp/session.ts": {
@@ -850,7 +917,7 @@
     "@typescript-eslint/consistent-type-assertions": {
       "count": 2
     },
-    "@typescript-eslint/max-params": {
+    "max-params": {
       "count": 1
     }
   },
@@ -860,6 +927,9 @@
     }
   },
   "src/memory/index.ts": {
+    "boundary/no-reexport-modules": {
+      "count": 1
+    },
     "no-restricted-syntax": {
       "count": 1
     }
@@ -873,14 +943,14 @@
     "@typescript-eslint/consistent-type-assertions": {
       "count": 3
     },
-    "@typescript-eslint/max-params": {
-      "count": 1
-    },
     "complexity": {
       "count": 1
     },
     "max-depth": {
       "count": 2
+    },
+    "max-params": {
+      "count": 4
     },
     "no-restricted-syntax": {
       "count": 3
@@ -895,11 +965,14 @@
     "@typescript-eslint/consistent-type-assertions": {
       "count": 9
     },
+    "boundary/no-reexport-modules": {
+      "count": 1
+    },
     "complexity": {
       "count": 2
     },
     "no-restricted-syntax": {
-      "count": 12
+      "count": 13
     }
   },
   "src/observability/client-errors.ts": {
@@ -926,6 +999,11 @@
       "count": 1
     },
     "no-restricted-syntax": {
+      "count": 3
+    }
+  },
+  "src/observability/runtime.ts": {
+    "no-restricted-syntax": {
       "count": 1
     }
   },
@@ -942,15 +1020,20 @@
       "count": 1
     }
   },
+  "src/policy/index.ts": {
+    "max-params": {
+      "count": 2
+    }
+  },
   "src/prompts/index.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     },
-    "@typescript-eslint/max-params": {
-      "count": 2
-    },
     "complexity": {
       "count": 1
+    },
+    "max-params": {
+      "count": 2
     },
     "no-restricted-syntax": {
       "count": 2
@@ -1022,7 +1105,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 3
+      "count": 4
     }
   },
   "src/registry/index.ts": {
@@ -1056,7 +1139,7 @@
       "count": 7
     },
     "no-restricted-syntax": {
-      "count": 7
+      "count": 9
     }
   },
   "src/sandbox/sdk.ts": {
@@ -1082,10 +1165,10 @@
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     },
-    "@typescript-eslint/max-params": {
+    "complexity": {
       "count": 1
     },
-    "complexity": {
+    "max-params": {
       "count": 1
     },
     "no-restricted-syntax": {
@@ -1098,7 +1181,7 @@
     }
   },
   "src/schedules/service.ts": {
-    "@typescript-eslint/max-params": {
+    "max-params": {
       "count": 1
     },
     "no-restricted-syntax": {
@@ -1110,8 +1193,13 @@
       "count": 1
     }
   },
+  "src/schedules/window.ts": {
+    "max-params": {
+      "count": 1
+    }
+  },
   "src/scripts/catalog.ts": {
-    "@typescript-eslint/max-params": {
+    "max-params": {
       "count": 1
     },
     "no-restricted-syntax": {
@@ -1120,6 +1208,9 @@
   },
   "src/scripts/materialise.ts": {
     "complexity": {
+      "count": 1
+    },
+    "max-params": {
       "count": 1
     },
     "no-restricted-syntax": {
@@ -1136,12 +1227,20 @@
       "count": 1
     }
   },
+  "src/seed/system.ts": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
   "src/state/index.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 2
     },
     "complexity": {
       "count": 2
+    },
+    "max-params": {
+      "count": 1
     }
   },
   "src/studio/access.ts": {
@@ -1178,15 +1277,18 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 1
+      "count": 2
     }
   },
   "src/studio/drafts.ts": {
     "complexity": {
       "count": 1
     },
+    "max-params": {
+      "count": 1
+    },
     "no-restricted-syntax": {
-      "count": 3
+      "count": 4
     }
   },
   "src/studio/edits.ts": {
@@ -1196,8 +1298,11 @@
     "complexity": {
       "count": 6
     },
+    "max-params": {
+      "count": 1
+    },
     "no-restricted-syntax": {
-      "count": 3
+      "count": 8
     }
   },
   "src/studio/focus.ts": {
@@ -1230,6 +1335,11 @@
       "count": 1
     }
   },
+  "src/studio/routines.ts": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
   "src/studio/runner.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
@@ -1260,6 +1370,11 @@
     },
     "no-restricted-syntax": {
       "count": 3
+    }
+  },
+  "src/studio/tables.ts": {
+    "no-restricted-syntax": {
+      "count": 1
     }
   },
   "src/studio/tool-usage.ts": {
@@ -1295,9 +1410,17 @@
       "count": 2
     }
   },
+  "src/toolbox/browser.ts": {
+    "max-params": {
+      "count": 1
+    }
+  },
   "src/toolbox/code.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 3
+    },
+    "max-params": {
+      "count": 1
     },
     "no-restricted-syntax": {
       "count": 7
@@ -1317,11 +1440,14 @@
     }
   },
   "src/toolbox/index.ts": {
+    "boundary/no-reexport-modules": {
+      "count": 1
+    },
     "complexity": {
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 1
+      "count": 2
     }
   },
   "src/toolbox/offered.ts": {
@@ -1330,6 +1456,11 @@
     },
     "no-restricted-syntax": {
       "count": 4
+    }
+  },
+  "src/toolbox/output.ts": {
+    "no-restricted-syntax": {
+      "count": 1
     }
   },
   "src/toolbox/report.ts": {

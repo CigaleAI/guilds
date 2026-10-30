@@ -3,7 +3,7 @@
 // stay inside, the hosted paths still inside it, and the core files that still cross the boundary;
 // that last list only shrinks, and an entry a file no longer needs is an error.
 //
-// The same block fails a module made only of re-exports (docs/contributing/code-guidelines.md,
+// The same block fails a module that re-exports another's exports (docs/contributing/code-guidelines.md,
 // Boundaries). A core package names the indexes a tool requires, which are the exceptions.
 import path from "node:path";
 
@@ -135,7 +135,7 @@ const noReexportModules = {
     ],
     messages: {
       reexport:
-        "A module that only re-exports others does not exist. See docs/contributing/code-guidelines.md, Boundaries.",
+        "A module exports what it declares and does not hand on another module's exports. See docs/contributing/code-guidelines.md, Boundaries.",
     },
   },
   create(context) {
@@ -146,7 +146,7 @@ const noReexportModules = {
     }
     return {
       Program(node) {
-        if (node.body.length > 0 && node.body.every(isReexport)) {
+        if (node.body.some(isReexport)) {
           context.report({ node, messageId: "reexport" });
         }
       },

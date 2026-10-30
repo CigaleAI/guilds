@@ -295,10 +295,10 @@ typescript-eslint rules. Unused names are allowed when they start
 with `_`. The operator app and the design system also run the
 recommended React Hooks rules.
 
-The orchestrator and the operator app also run the boundary rule
+Every package also runs the boundary rule
 (`eslint.boundary.js`). It fails any file that imports a package
 of an extension or a relative path that leaves this repository. It
-also fails a module made only of re-exports (`export * from`,
+also fails a module that holds a re-export (`export * from`,
 `export { x } from`), except an index a tool requires, which the
 package names: the orchestrator's `src/db/schema/index.ts`, which
 drizzle-kit reads.
@@ -306,13 +306,15 @@ drizzle-kit reads.
 Every package also runs the limits of the
 [code guidelines](code-guidelines.md#functions) on its source,
 tests and stories excepted (`eslint.limits.js`): `complexity`,
-`max-depth`, a warning at five parameters and an error at six, a
-warning past 800 lines and an error past 1,000, and a refusal of
-every type assertion except `as const`. The orchestrator also requires explicit
-parameter and return types on what a module exports
+`max-depth`, an error at five parameters, a
+warning past 800 lines and an error past 1,000, a refusal of
+every type assertion except `as const`, and a refusal of a `catch`
+that neither throws nor returns, of a throw of a plain `Error`, and
+of an object type written inline in a function's parameter. A
+package names its command-line modules, which may throw a plain
+`Error`: the orchestrator's `cli/`. The orchestrator also requires
+explicit parameter and return types on what a module exports
 (`@typescript-eslint/explicit-module-boundary-types`). It refuses an
-empty `catch`; a throw of a plain `Error` outside the commands in
-`cli/`; an object type written inline in a function's parameter; an
 import of `fastify` outside `http/`, the roots, the
 extension points and the observability hooks; a value import of
 `db/` from `http/`;
