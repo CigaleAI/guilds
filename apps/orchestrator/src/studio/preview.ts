@@ -1,4 +1,6 @@
 import { agentActor } from "../artifacts/actors.js";
+import { ArtifactError } from "../artifacts/errors.js";
+import type { ArtifactActor } from "../artifacts/types.js";
 import type { ArtifactStore } from "../artifacts/store.js";
 import { enabledToolNames, resolvedMcp, resolvedTools } from "../access/index.js";
 import { agentLogins, agentSecrets, resolveMcpTool } from "../access/runtime.js";
@@ -36,6 +38,18 @@ export type PreviewDeps = {
   scripts: Scripts;
 };
 
+/** The collections the agent reaches, or none when artifacts refuses to list them, as a run reads them. */
+async function previewCollections(store: ArtifactStore, actor: ArtifactActor): Promise<unknown[]> {
+  try {
+    return await listCollections(store, actor);
+  } catch (error) {
+    if (error instanceof ArtifactError) {
+      return [];
+    }
+    throw error;
+  }
+}
+
 export async function previewCurrentState(
   deps: PreviewDeps,
   agent: AgentRow,
@@ -48,12 +62,7 @@ export async function previewCurrentState(
   const members = await deps.db.listAgents(guildId);
   const historyRows = await deps.db.listGroupMessages(guildId);
   const actor = agentActor({ orgId, guildId, agentId, agentName: agent.name });
-  let collections: unknown[] = [];
-  try {
-    collections = await listCollections(deps.artifacts, actor);
-  } catch {
-    /* keep empty collections */
-  }
+  const collections = await previewCollections(deps.artifacts, actor);
   const config = agent.config;
   const state = collectRunState(null, agent.org_slug, agent.guild_name, agent.name, {
     members,

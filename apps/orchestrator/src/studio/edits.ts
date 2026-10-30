@@ -2,9 +2,9 @@ import { createHash } from "node:crypto";
 import { hashArtifactContent, type ArtifactStore } from "../artifacts/store.js";
 import { updateGuildText } from "../guilds/service.js";
 import type { Schedules } from "../schedules/service.js";
-import { GuildValidationError, validateGuildTextPatch, type GuildTextPatch } from "../guilds/validation.js";
+import { validateGuildTextPatch, type GuildTextPatch } from "../guilds/validation.js";
 import { STUDIO_ACCESS_TOOLS, applyAccess, isAccessTool, reviewAccess, reviewAccessRequest } from "./access.js";
-import { StudioConflictError, StudioError, StudioUnprocessableError, artifactFailure } from "./errors.js";
+import { StudioConflictError, StudioError, StudioNotFoundError, StudioUnprocessableError, artifactRefusal } from "./errors.js";
 import type { StudioOrigin } from "../lib/change-actor.js";
 import { editActor } from "./actor.js";
 import { editActionOf } from "./actions.js";
@@ -123,14 +123,7 @@ export function proposedFor(base: EditBase, args: Record<string, unknown>): stri
     if (patch.about === undefined && patch.description === undefined) {
       throw new StudioUnprocessableError("studio_edit_guild requires about, description, or both");
     }
-    try {
-      return { ...base.text, ...validateGuildTextPatch(patch) };
-    } catch (error) {
-      if (error instanceof GuildValidationError) {
-        throw new StudioUnprocessableError(error.message);
-      }
-      throw error;
-    }
+    return { ...base.text, ...validateGuildTextPatch(patch) };
   }
   if (typeof args.content !== "string") {
     throw new StudioUnprocessableError("content is required: the complete replacement text");
@@ -303,13 +296,13 @@ export function findEditRecord(messages: ConversationMessageRow[], seq: number):
   const payload = message?.payload;
   const widget = payload?.role === "tool" ? parseJsonObject(payload.content) : null;
   if (!message || payload?.role !== "tool" || !widget || widget.widget !== STUDIO_EDIT_WIDGET) {
-    throw new StudioError(404, "edit request not found");
+    throw new StudioNotFoundError("edit request not found");
   }
   const toolCallId = payload.tool_call_id;
   const call = callById(messages, toolCallId);
   const args = call ? parseJsonObject(call.function.arguments) : null;
   if (!call || !args || !isEditTool(call.function.name)) {
-    throw new StudioError(404, "edit request not found");
+    throw new StudioNotFoundError("edit request not found");
   }
   return { seq, toolName: call.function.name, toolCallId, widget, args, metadata: message.metadata };
 }
@@ -338,7 +331,7 @@ async function loadBaseFor(
   if (record.toolName === "studio_edit_guild") {
     return loadGuildBase(deps, scope);
   }
-  throw new StudioError(404, "edit request not found");
+  throw new StudioNotFoundError("edit request not found");
 }
 
 /** A note create or delete; null for a note edit and for every other tool. */
@@ -521,7 +514,7 @@ export async function applyEdit(
       const { row } = await writeMemory(deps.artifacts, actor, base.agentId, { content: proposed as string, detail: record.toolName, ...(base.version > 0 ? { expectedVersion: base.version } : {}) });
       return { version: row.version };
     } catch (error) {
-      artifactFailure(error);
+      throw artifactRefusal(error);
     }
   }
   if (base.kind === "note") {
@@ -539,7 +532,7 @@ export async function applyEdit(
       });
       return { version: written.row.version };
     } catch (error) {
-      artifactFailure(error);
+      throw artifactRefusal(error);
     }
   }
   const row = await updateGuildText(deps.db, base.guildId, guildTextPatch(record.args), editActor(scope));

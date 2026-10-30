@@ -18,7 +18,7 @@ import { argString } from "../toolbox/schema.js";
 import { editActor } from "./actor.js";
 import { assertContent, awaitOperator, lineDelta, requireReason } from "./edit-request.js";
 import type { EditBase, EditDeps, EditScope } from "./edits.js";
-import { StudioConflictError, StudioUnprocessableError, artifactFailure } from "./errors.js";
+import { StudioConflictError, StudioUnprocessableError, artifactRefusal } from "./errors.js";
 
 // One tool creates, edits, or deletes a note. An edit replaces an existing
 // note's body like a Memory edit; a create or delete is reviewed as a plan.
@@ -69,7 +69,7 @@ export async function loadNoteBase(
       content: row.content_text ?? "",
     };
   } catch (error) {
-    artifactFailure(error);
+    throw artifactRefusal(error);
   }
 }
 
@@ -116,7 +116,7 @@ async function liveNoteAt(
     return view.kind === "row" && !view.deleted ? { version: Number(view.row.version) } : null;
   } catch (error) {
     if (error instanceof ArtifactError && error.status === 404) return null;
-    artifactFailure(error);
+    throw artifactRefusal(error);
   }
 }
 
@@ -138,7 +138,7 @@ async function reviewNoteCreate(
   try {
     planned = planNote({ orgId: scope.orgId, ownerId }, { level, key: argString(args, "key"), content, ...(title ? { title } : {}) });
   } catch (error) {
-    artifactFailure(error);
+    throw artifactRefusal(error);
   }
   if (!content.trim()) {
     throw new StudioUnprocessableError("content is required: the complete note body");
@@ -254,7 +254,7 @@ export async function applyNote(deps: EditDeps, scope: EditScope, plan: NotePlan
     await deleteByDisplayPath(deps.artifacts, toolActor, plan.displayPath);
     return null;
   } catch (error) {
-    artifactFailure(error);
+    throw artifactRefusal(error);
   }
 }
 

@@ -8,7 +8,7 @@ import { tokenRedactions } from "../oauth/index.js";
 import { redact } from "../secrets/index.js";
 import { capBytes } from "../lib/bytes.js";
 import { STUDIO_TOOL_RESULT_MAX_BYTES } from "./constants.js";
-import { StudioConflictError, StudioError, StudioUnprocessableError } from "./errors.js";
+import { StudioConflictError, StudioNotFoundError, StudioUnprocessableError } from "./errors.js";
 import { projectGuildConnections, type PreviewDeps } from "./preview.js";
 import { withLockedSession } from "./session-lock.js";
 import type { LiveStudioSession } from "./index.js";
@@ -56,7 +56,7 @@ export function findLoginRecord(message: ConversationMessageRow | null, seq: num
     widget?.widget !== STUDIO_CONNECTION_ACCESS_WIDGET ||
     typeof connection.id !== "string"
   ) {
-    throw new StudioError(404, "login request not found");
+    throw new StudioNotFoundError("login request not found");
   }
   return { seq, connectionId: connection.id, payload, metadata: message.metadata };
 }
@@ -127,6 +127,15 @@ export function connectionSummary(reach: ReachableConnection): Record<string, un
   };
 }
 
+/** The tokens a connection stores, as redaction values; a payload that cannot be read holds none a call can use. */
+function storedRedactions(connection: McpConnectionRow): Record<string, string> {
+  try {
+    return tokenRedactions(decryptPayload(connection.ciphertext, connection.nonce), connection.id);
+  } catch {
+    return {};
+  }
+}
+
 // Proxies one read-only tool on an operator-granted connection. The result is
 // redacted against that connection's stored credentials and byte-capped.
 export async function callConnectionTool(args: {
@@ -151,15 +160,7 @@ export async function callConnectionTool(args: {
   if (!listed.read_only) {
     throw new StudioUnprocessableError(`tool ${listed.namespaced_name} is not read-only; Studio proxies read-only tools`);
   }
-  let redactions: Record<string, string>;
-  try {
-    redactions = tokenRedactions(
-      decryptPayload(connection.ciphertext, connection.nonce),
-      connection.id,
-    );
-  } catch {
-    redactions = {};
-  }
+  const redactions = storedRedactions(connection);
   let raw: string;
   try {
     raw = await callTool(args.mcp, {

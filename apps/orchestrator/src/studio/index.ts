@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type { ArtifactStore } from "../artifacts/store.js";
 import { memoryHistory } from "../memory/history.js";
 import { canSeeGuild } from "../guilds/operators.js";
@@ -6,7 +5,6 @@ import {
   assertModelConnected,
   coreModelCredentials,
   type ModelCredentialsProvider,
-  ModelNotConnectedError,
 } from "../llm/credentials.js";
 import { isMarketplaceModel } from "../llm/providers.js";
 import { newId } from "../lib/ids.js";
@@ -19,8 +17,8 @@ import {
   STUDIO_DEFAULT_TEMPERATURE,
   STUDIO_MAX_STEPS,
 } from "./constants.js";
-import { StudioConflictError, StudioError, StudioUnprocessableError } from "./errors.js";
-import { StudioDrafts, viewDraft } from "./drafts.js";
+import { StudioConflictError, StudioNotFoundError, StudioUnprocessableError } from "./errors.js";
+import { StudioDrafts } from "./drafts.js";
 import { StudioRunner } from "./runner.js";
 import { withLockedSession } from "./session-lock.js";
 import {
@@ -28,7 +26,6 @@ import {
   composeStudioSystemMessage,
   hydrateStudioMember,
   readStudioSystemTemplate,
-  studioSystemHash,
 } from "./system.js";
 import { refreshSystemMessage } from "./system-message.js";
 import { inventoryItem, type StudioInventoryItem } from "./inventory.js";
@@ -167,7 +164,7 @@ export class StudioService {
       String(guild.org_id) !== String(args.org.id) ||
       !canSeeGuild(guild, String(args.user.id))
     ) {
-      throw new StudioError(404, "guild not found");
+      throw new StudioNotFoundError("guild not found");
     }
     const model = await this.validateModel(String(args.org.id), args.model);
     const temperature = this.validateTemperature(args.temperature);
@@ -178,7 +175,7 @@ export class StudioService {
         String(parent.org_id) !== String(args.org.id) ||
         String(parent.created_by_user_id ?? "") !== String(args.user.id)
       ) {
-        throw new StudioError(404, "parent studio session not found");
+        throw new StudioNotFoundError("parent studio session not found");
       }
     }
     const template = readStudioSystemTemplate({ guidelinesPath: this.deps.notesSystemPath });
@@ -258,14 +255,7 @@ export class StudioService {
     if (!isMarketplaceModel(id)) {
       throw new StudioUnprocessableError("the coach needs a marketplace model");
     }
-    try {
-      await assertModelConnected(this.credentials, orgId, id);
-    } catch (error) {
-      if (error instanceof ModelNotConnectedError) {
-        throw new StudioUnprocessableError(error.message);
-      }
-      throw error;
-    }
+    await assertModelConnected(this.credentials, orgId, id);
     return id;
   }
 
@@ -292,20 +282,20 @@ export class StudioService {
   async getOwnedSession(sessionId: string, user: UserRow, org: OrgMembershipRow): Promise<StudioSessionRow> {
     const session = await getStudioSession(this.deps.db, sessionId);
     if (!session || session.org_id !== org.id) {
-      throw new StudioError(404, "studio session not found");
+      throw new StudioNotFoundError("studio session not found");
     }
     if (session.created_by_user_id && session.created_by_user_id !== user.id) {
-      throw new StudioError(404, "studio session not found");
+      throw new StudioNotFoundError("studio session not found");
     }
     if (!session.created_by_user_id) {
-      throw new StudioError(404, "studio session not found");
+      throw new StudioNotFoundError("studio session not found");
     }
     // Seeing the guild is checked on every request, not only at creation: a
     // user who can no longer see a private guild loses its sessions too.
     if (session.source_guild_id) {
       const guild = await getGuild(this.deps.db, session.source_guild_id);
       if (guild && !canSeeGuild(guild, user.id)) {
-        throw new StudioError(404, "studio session not found");
+        throw new StudioNotFoundError("studio session not found");
       }
     }
     if (!session.source_guild_id && session.status === "active") {
@@ -788,10 +778,8 @@ export class StudioService {
   async requireGuildAgent(session: StudioSessionRow, agentId: string): Promise<AgentRow> {
     const agent = await getAgent(this.deps.db, agentId);
     if (!agent || agent.guild_id !== session.source_guild_id) {
-      throw new StudioError(404, "agent not found");
+      throw new StudioNotFoundError("agent not found");
     }
     return agent;
   }
 }
-
-export { viewDraft, studioSystemHash, createHash };

@@ -9,7 +9,7 @@ import { iso } from "../db/views.js";
 import type { GenerationLoop } from "../generation/index.js";
 import { composeAgentSystemPrompt, hydrateStanding, promptHash, schemasOffer } from "../prompts/index.js";
 import type { Schedules } from "../schedules/service.js";
-import { StudioError } from "./errors.js";
+import { StudioNotFoundError } from "./errors.js";
 import { previewCurrentState, projectOfferedToolSchemas, type PreviewDeps } from "./preview.js";
 
 /** What the Studio inspector reads a guild's runs and routines through, built once from the app's services. */
@@ -80,7 +80,7 @@ export async function readGuildRun(
   const run = await getRun(services.db, runId);
   const agent = run === null ? null : await getAgent(services.db, run.agent_id);
   if (run === null || agent === null || agent.guild_id !== guildId) {
-    throw new StudioError(404, "run not found");
+    throw new StudioNotFoundError("run not found");
   }
   return {
     run: {

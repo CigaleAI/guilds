@@ -1193,7 +1193,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 2
+      "count": 1
     }
   },
   "src/studio/drafts.ts": {
@@ -1204,7 +1204,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 4
+      "count": 3
     }
   },
   "src/studio/edits.ts": {
@@ -1215,7 +1215,7 @@
       "count": 4
     },
     "no-restricted-syntax": {
-      "count": 5
+      "count": 3
     }
   },
   "src/studio/focus.ts": {
@@ -1248,27 +1248,16 @@
     },
     "max-params": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 3
     }
   },
   "src/studio/preview.ts": {
     "@typescript-eslint/explicit-module-boundary-types": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
       "count": 1
     }
   },
   "src/studio/prompt-tools.ts": {
     "complexity": {
       "count": 1
-    }
-  },
-  "src/studio/routines.ts": {
-    "no-restricted-syntax": {
-      "count": 2
     }
   },
   "src/studio/runner.ts": {
@@ -1306,11 +1295,6 @@
     },
     "no-restricted-syntax": {
       "count": 3
-    }
-  },
-  "src/studio/tables.ts": {
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/studio/tool-usage.ts": {
