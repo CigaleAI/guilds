@@ -577,11 +577,6 @@
       "count": 1
     }
   },
-  "src/features/home/GuildEmptyState.tsx": {
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
   "src/features/inbox/Inbox.tsx": {
     "no-restricted-syntax": {
       "count": 1
