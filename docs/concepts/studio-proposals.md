@@ -389,7 +389,9 @@ the widget's schema: one shape per `edit.kind` (`memory`, `note`,
 body edit and one for a create or delete, which carries `action`. A
 row whose content does not match is not an edit request (404). Viewing
 and applying read the target, hashes, and action from the parsed
-request.
+request. A login request is read back the same way: its content is a
+`studio_connection_access` widget whose `connection` carries a string
+`id`, or the row is not a login request (404).
 
 ### Code paths
 
