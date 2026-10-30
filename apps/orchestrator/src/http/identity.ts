@@ -69,13 +69,7 @@ export async function signedInUserOrNull(
   try {
     return await currentUser(db, request, deps);
   } catch (error) {
-    if (
-      typeof error === "object" &&
-      error !== null &&
-      "statusCode" in error &&
-      typeof error.statusCode === "number" &&
-      error.statusCode < 500
-    ) {
+    if (error instanceof HttpError && error.status < 500) {
       return null;
     }
     throw error;
