@@ -160,6 +160,14 @@ test("recipeBody unwraps a row, keeps a document, and falls back to an empty rec
   assert.equal(planFromRecipe(null).guild.name, "Untitled guild");
 });
 
+test("recipeBody reads only objects as recipe documents", () => {
+  const empty = { roles: [], collections: [], connections: [], design: {} };
+  assert.deepEqual(recipeBody("a recipe"), empty);
+  assert.deepEqual(recipeBody([deskRecipe()]), empty);
+  const row = { id: "r1", body: "not a document" };
+  assert.equal(recipeBody(row), row);
+});
+
 test("cadenceLabel describes cron expressions without the UTC suffix", () => {
   assert.equal(cadenceLabel("5 * * * *"), "At minute 05 past every hour");
   assert.equal(cadenceLabel("35 */3 * * *"), "At minute 35 past every 3 hours");

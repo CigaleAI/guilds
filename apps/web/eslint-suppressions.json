@@ -194,9 +194,6 @@
     }
   },
   "src/features/recipes/plan/planModel.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 5
-    },
     "complexity": {
       "count": 6
     },

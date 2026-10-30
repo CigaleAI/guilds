@@ -244,25 +244,19 @@ export type RecipePlan = {
 export type PendingAccess = { tools: Map<string, boolean>; removed: Set<string> };
 
 function asArray<T>(value: readonly T[] | null | undefined): readonly T[] {
-  return Array.isArray(value) ? (value as readonly T[]) : [];
+  return Array.isArray(value) ? value : [];
 }
 
 function asObject<T extends object>(value: T | null | undefined): Partial<T> {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
-function recordOf(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
 function plural(count: number, word: string): string {
   return `${count} ${word}${count === 1 ? "" : "s"}`;
 }
 
-function enabledKeys(map: unknown): string[] {
-  return Object.entries(recordOf(map))
+function enabledKeys(map: Draft<Record<string, boolean>> | null | undefined): string[] {
+  return Object.entries(asObject(map))
     .filter(([, enabled]) => enabled)
     .map(([name]) => name);
 }
@@ -277,14 +271,19 @@ export function recipeStatusLabel(status: unknown): "approved" | "draft" {
   return isRecipeApproved(status) ? "approved" : "draft";
 }
 
+/**
+ * True when a value is an object, which the plan reads as a recipe document: every field of a
+ * draft is optional and read defensively.
+ */
+function isRecipeDraft(value: unknown): value is RecipeDraft {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 /** The recipe document inside a recipe row, the value itself when it is a document, or an empty recipe. */
 export function recipeBody(row: unknown): RecipeDraft {
-  if (row && typeof row === "object") {
-    const body = (row as { body?: unknown }).body;
-    if (body && typeof body === "object") return body as RecipeDraft;
-    return row as RecipeDraft;
-  }
-  return { roles: [], collections: [], connections: [], design: {} };
+  if (!isRecipeDraft(row)) return { roles: [], collections: [], connections: [], design: {} };
+  if ("body" in row && isRecipeDraft(row.body)) return row.body;
+  return row;
 }
 
 /** Findings grouped by their recipe path, in their original order. */
