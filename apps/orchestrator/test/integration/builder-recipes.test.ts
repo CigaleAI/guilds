@@ -125,6 +125,9 @@ test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => 
     assert.equal(session.recipe.body_version, 1);
     const guildsAfterCreate = await listGuilds(db, "org_home");
     assert.equal(guildsAfterCreate.length, guildsBefore.length);
+    const fetched = await app.inject({ method: "GET", url: `/api/builder/sessions/${session.id}`, headers: AUTH });
+    assert.equal(fetched.statusCode, 200, fetched.body);
+    assert.deepEqual(fetched.json(), session);
     const listedSessions = await app.inject({ method: "GET", url: "/api/builder/sessions", headers: AUTH });
     assert.equal(listedSessions.statusCode, 200, listedSessions.body);
     const listedRow = (listedSessions.json() as Array<Record<string, unknown>>).find((row) => row.id === session.id);

@@ -248,6 +248,11 @@ export class BuilderService {
     return recipe;
   }
 
+  /** The session as the operator sees it, with its recipe row. */
+  async loadSessionView(session: BuilderSessionRow): Promise<Record<string, unknown>> {
+    return this.viewSession(session, await this.recipeFor(session));
+  }
+
   toolContext(session: BuilderSessionRow): BuilderToolContext {
     return {
       orgId: session.org_id,
@@ -355,7 +360,7 @@ export class BuilderService {
       maxToolCalls: limits.max_tool_calls,
       maxInput: limits.max_input_tokens,
     });
-    return this.viewSession(started.session, await this.recipeFor(started.session));
+    return this.loadSessionView(started.session);
   }
 
   async cancel(session: BuilderSessionRow): Promise<Record<string, unknown>> {
