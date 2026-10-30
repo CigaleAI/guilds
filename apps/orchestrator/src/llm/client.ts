@@ -51,10 +51,23 @@ export async function listProviderModels(
   if (provider.api === "messages") {
     return listMessagesModels(provider, { apiKey: key, baseURL: base }, services);
   }
+  return listChatCompletionsModels(provider, `${base}/models`, key, services);
+}
+
+/**
+ * The model ids an OpenAI-style `/models` at `url` lists for `key`, sent as a bearer token when
+ * there is one. A rejected key fails.
+ */
+async function listChatCompletionsModels(
+  provider: ProviderDef,
+  url: string,
+  key: string,
+  services: ModelListingServices,
+): Promise<string[]> {
   const fetchFn = services.fetch ?? fetch;
   let response: Response;
   try {
-    response = await fetchFn(`${base}/models`, {
+    response = await fetchFn(url, {
       headers: {
         ...(key ? { Authorization: `Bearer ${key}` } : {}),
         "User-Agent": MODEL_USER_AGENT,
@@ -128,6 +141,18 @@ export type CompletionChunk = {
 };
 
 type ToolCallAcc = Omit<ToolCallDelta, "index">;
+
+/** What a Chat Completions stream has assembled from the chunks read so far. */
+type StreamedCompletion = {
+  content: string;
+  reasoning: string;
+  reasoningDetails: ReasoningDetail[];
+  toolCalls: ToolCallAcc[];
+  finishReason: string | null;
+  responseId: string | null;
+  servedModel: string | null;
+  usage: ProviderUsage;
+};
 
 function applyToolCallDelta(acc: ToolCallAcc[], delta: ToolCallDelta[]): void {
   for (const part of delta) {
@@ -214,6 +239,18 @@ export function parseCompletionChunk(chunk: unknown): CompletionChunk {
   };
 }
 
+/** Folds a chunk into what the stream has assembled: its text is appended, and a field it carries replaces the last one. */
+function applyChunk(streamed: StreamedCompletion, chunk: CompletionChunk): void {
+  streamed.responseId = chunk.id ?? streamed.responseId;
+  streamed.servedModel = chunk.model ?? streamed.servedModel;
+  applyReasoningDetailDelta(streamed.reasoningDetails, chunk.reasoningDetails);
+  streamed.reasoning += chunk.reasoning;
+  streamed.content += chunk.text;
+  applyToolCallDelta(streamed.toolCalls, chunk.toolCalls);
+  streamed.finishReason = chunk.finishReason ?? streamed.finishReason;
+  streamed.usage = chunk.usage ?? streamed.usage;
+}
+
 const PROMPT_CACHE_CONTROL = { type: "ephemeral" } as const;
 
 /** The parts with their last non-empty text part marked for the prompt cache; null when none is text. */
@@ -268,35 +305,39 @@ export type ChatCompletionsBody = {
   tool_choice?: unknown;
 };
 
+/**
+ * The fields of a body that each provider names its own way: the token limit (OpenAI's
+ * `max_completion_tokens`), OpenRouter's prompt cache, and the reasoning effort.
+ */
+function providerFields(provider: ProviderDef, request: ModelRequest): Partial<ChatCompletionsBody> {
+  const openrouter = provider.id === "openrouter";
+  const fields: Partial<ChatCompletionsBody> =
+    provider.id === "openai" ? { max_completion_tokens: request.max_tokens } : { max_tokens: request.max_tokens };
+  if (openrouter) {
+    fields.cache_control = PROMPT_CACHE_CONTROL;
+  }
+  const effort = reasoningEffortForModel(request.model, request.thinking_level ?? "none");
+  if (effort && openrouter) {
+    fields.reasoning = { effort };
+  } else if (effort) {
+    fields.reasoning_effort = effort;
+  }
+  return fields;
+}
+
 /** The Chat Completions body a provider takes: the fields in its row, and `temperature` only when the catalog says the model takes one. */
 export function completionRequestBody(request: ModelRequest): ChatCompletionsBody {
   const { provider, upstream } = providerForModel(request.model);
-  const openrouter = provider.id === "openrouter";
   const body: ChatCompletionsBody = {
     model: upstream,
-    messages: openrouter ? applyPromptCacheControl(request.messages) : request.messages,
+    messages: provider.id === "openrouter" ? applyPromptCacheControl(request.messages) : request.messages,
     stream: true,
     stream_options: { include_usage: true },
   };
   if (modelCatalog.entry(request.model)?.temperature !== false) {
     body.temperature = request.temperature;
   }
-  if (provider.id === "openai") {
-    body.max_completion_tokens = request.max_tokens;
-  } else {
-    body.max_tokens = request.max_tokens;
-  }
-  if (openrouter) {
-    body.cache_control = PROMPT_CACHE_CONTROL;
-  }
-  const effort = reasoningEffortForModel(request.model, request.thinking_level ?? "none");
-  if (effort) {
-    if (openrouter) {
-      body.reasoning = { effort };
-    } else {
-      body.reasoning_effort = effort;
-    }
-  }
+  Object.assign(body, providerFields(provider, request));
   if (request.tools && request.tools.length) {
     body.tools = request.tools;
   }
@@ -348,32 +389,27 @@ export async function* streamCompletion(
     throw asLlmError(error, apiKey);
   }
   let received = false;
-  let content = "";
-  let reasoning = "";
-  const reasoningDetails: ReasoningDetail[] = [];
-  const toolCalls: ToolCallAcc[] = [];
-  let finishReason: string | null = null;
-  let responseId: string | null = null;
-  let servedModel: string | null = null;
-  let usage: ProviderUsage = {};
+  const streamed: StreamedCompletion = {
+    content: "",
+    reasoning: "",
+    reasoningDetails: [],
+    toolCalls: [],
+    finishReason: null,
+    responseId: null,
+    servedModel: null,
+    usage: {},
+  };
   try {
     for await (const raw of stream) {
       received = true;
       const chunk = parseCompletionChunk(raw);
-      responseId = chunk.id ?? responseId;
-      servedModel = chunk.model ?? servedModel;
-      applyReasoningDetailDelta(reasoningDetails, chunk.reasoningDetails);
+      applyChunk(streamed, chunk);
       if (chunk.reasoning) {
-        reasoning += chunk.reasoning;
         yield ["reasoning", chunk.reasoning];
       }
       if (chunk.text) {
-        content += chunk.text;
         yield ["delta", chunk.text];
       }
-      applyToolCallDelta(toolCalls, chunk.toolCalls);
-      finishReason = chunk.finishReason ?? finishReason;
-      usage = chunk.usage ?? usage;
     }
   } catch (error) {
     throw asLlmError(error, apiKey);
@@ -382,8 +418,8 @@ export async function* streamCompletion(
     throw new LLMError("provider returned no chunks");
   }
   const payload = assistantPayload(
-    content,
-    toolCalls.map((call) => ({
+    streamed.content,
+    streamed.toolCalls.map((call) => ({
       id: call.id,
       type: call.type || "function",
       function: { name: call.name, arguments: call.arguments },
@@ -396,12 +432,12 @@ export async function* streamCompletion(
       payload,
       metadata: assistantMetadata(
         {
-          id: responseId,
-          model: servedModel,
-          usage,
-          finish_reason: finishReason,
-          reasoning,
-          reasoning_details: reasoningDetails.filter((detail) => detail !== undefined),
+          id: streamed.responseId,
+          model: streamed.servedModel,
+          usage: streamed.usage,
+          finish_reason: streamed.finishReason,
+          reasoning: streamed.reasoning,
+          reasoning_details: streamed.reasoningDetails.filter((detail) => detail !== undefined),
         },
         request.model,
         latencyMs,

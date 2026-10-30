@@ -10,6 +10,7 @@ import {
   completionTimeoutMs,
   providerForModel,
   reasoningEffortForModel,
+  type AssembledCompletion,
   type ModelEndpoint,
   type ModelEvent,
   type ModelListingServices,
@@ -274,6 +275,27 @@ const FINISH_REASONS: Record<string, string> = {
 };
 
 /**
+ * A finished Messages API message as the completion it assembles, before it is priced: the cache
+ * reads and writes count as input, and the stop reason is named as OpenAI names it.
+ */
+function assembledMessage(message: Anthropic.Message, reasoning: string, requestId: string | null): AssembledCompletion {
+  const cacheRead = message.usage.cache_read_input_tokens ?? 0;
+  const cacheWrite = message.usage.cache_creation_input_tokens ?? 0;
+  return {
+    id: message.id,
+    model: message.model,
+    usage: {
+      prompt_tokens: message.usage.input_tokens + cacheRead + cacheWrite,
+      completion_tokens: message.usage.output_tokens,
+      cache_read_input_tokens: cacheRead,
+    },
+    finish_reason: FINISH_REASONS[message.stop_reason ?? ""] ?? "stop",
+    provider_request_id: requestId,
+    reasoning,
+  };
+}
+
+/**
  * A Messages API completion at `endpoint`, streamed as text and reasoning deltas and one assembled
  * assistant payload.
  */
@@ -314,25 +336,12 @@ export async function* streamMessages(
       : [],
   );
   const payload = assistantPayload(text, toolCalls);
-  const cacheRead = message.usage.cache_read_input_tokens ?? 0;
-  const cacheWrite = message.usage.cache_creation_input_tokens ?? 0;
   yield [
     "done",
     {
       payload,
       metadata: assistantMetadata(
-        {
-          id: message.id,
-          model: message.model,
-          usage: {
-            prompt_tokens: message.usage.input_tokens + cacheRead + cacheWrite,
-            completion_tokens: message.usage.output_tokens,
-            cache_read_input_tokens: cacheRead,
-          },
-          finish_reason: FINISH_REASONS[message.stop_reason ?? ""] ?? "stop",
-          provider_request_id: requestId,
-          reasoning,
-        },
+        assembledMessage(message, reasoning, requestId),
         request.model,
         Math.trunc(performance.now() - started),
       ),

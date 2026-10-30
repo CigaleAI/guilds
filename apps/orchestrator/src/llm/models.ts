@@ -152,6 +152,40 @@ export const ProviderConnectionSchema = Type.Object({
 
 export type ProviderConnection = Static<typeof ProviderConnectionSchema>;
 
+/** The key and base URL a provider is connected with; the base URL is the local endpoint's, null for any other provider. */
+type ProviderAccess = { apiKey: string; baseURL: string | null };
+
+/** A field a connection gives, else the one stored: a blank given field keeps what is stored. */
+function givenOrStored(given: string | undefined, stored: string | null | undefined): string {
+  return given?.trim() || stored || "";
+}
+
+/**
+ * The key and base URL a connection writes: the given ones, else the stored ones. A local endpoint
+ * needs an http(s) URL and any other provider a key.
+ */
+function connectionAccess(
+  provider: ProviderDef,
+  input: ProviderConnection,
+  stored: ProviderAccess | null,
+): ProviderAccess {
+  const apiKey = givenOrStored(input.api_key, stored?.apiKey);
+  if (provider.id !== "local") {
+    if (!apiKey) {
+      throw new ModelsError(422, "api_key is required");
+    }
+    return { apiKey, baseURL: null };
+  }
+  const baseURL = givenOrStored(input.base_url, stored?.baseURL);
+  if (!baseURL) {
+    throw new ModelsError(422, "base_url is required");
+  }
+  if (!/^https?:\/\//.test(baseURL)) {
+    throw new ModelsError(422, "base_url must start with http:// or https://");
+  }
+  return { apiKey, baseURL };
+}
+
 /** The organisation's default model; null or empty names none. */
 export const DefaultModelSchema = Type.Object({
   model: Type.Optional(Type.Union([Type.String(), Type.Null()])),
@@ -271,20 +305,7 @@ export class ModelsService {
     const provider = requireProvider(providerId);
     const existing = await this.deps.db.getOrgModelProvider(orgId, provider.id);
     const stored = existing ? decryptProviderRow(existing, this.deps.masterKey) : null;
-    const givenKey = input.api_key?.trim() ?? "";
-    const apiKey = givenKey || stored?.apiKey || "";
-    const givenURL = input.base_url?.trim() ?? "";
-    const baseURL = provider.id === "local" ? givenURL || stored?.baseURL || "" : null;
-    if (provider.id === "local") {
-      if (!baseURL) {
-        throw new ModelsError(422, "base_url is required");
-      }
-      if (!/^https?:\/\//.test(baseURL)) {
-        throw new ModelsError(422, "base_url must start with http:// or https://");
-      }
-    } else if (!apiKey) {
-      throw new ModelsError(422, "api_key is required");
-    }
+    const { apiKey, baseURL } = connectionAccess(provider, input, stored);
     const models =
       input.models === undefined && existing
         ? validateChosenModels(provider, existing.models)
@@ -308,10 +329,7 @@ export class ModelsService {
       },
       now,
     );
-    const current = await this.deps.db.getOrgDefaultModel(orgId);
-    if (current && parseModelId(current)?.provider.id === provider.id && !models.includes(current)) {
-      await this.deps.db.setOrgDefaultModel(orgId, null, now);
-    }
+    await this.clearDefaultLeftOut(orgId, provider, models, now);
     return {
       id: provider.id,
       label: provider.label,
@@ -321,6 +339,14 @@ export class ModelsService {
       key_hint: row.key_hint || null,
       base_url: baseURL,
     };
+  }
+
+  /** Clears the organisation's default when it is a model of `provider` that `models` leaves out. */
+  private async clearDefaultLeftOut(orgId: string, provider: ProviderDef, models: string[], now: Date): Promise<void> {
+    const current = await this.deps.db.getOrgDefaultModel(orgId);
+    if (current && parseModelId(current)?.provider.id === provider.id && !models.includes(current)) {
+      await this.deps.db.setOrgDefaultModel(orgId, null, now);
+    }
   }
 
   /** Names the organisation's default: one of its chosen models on a connected marketplace provider, or none. */

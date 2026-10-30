@@ -1,4 +1,4 @@
-import type { AssistantMessage, CompletionMetadata, ReasoningDetail, ToolCall } from "../db/schema/index.js";
+import type { AssistantMessage, CompletionMetadata, ReasoningDetail, TokenUsage, ToolCall } from "../db/schema/index.js";
 import { catalogCostUsd } from "./cost.js";
 import { optionalString } from "./payload.js";
 import { parseModelId, type ProviderDef } from "./providers.js";
@@ -122,15 +122,23 @@ export function assistantPayload(content: string, toolCalls: ToolCall[]): Assist
   return { role: "assistant", content, ...(toolCalls.length ? { tool_calls: toolCalls } : {}) };
 }
 
-/** What a completion records: its usage, its cost on the stored model id `model`, and how long it took. */
-export function assistantMetadata(assembled: AssembledCompletion, model: string, latencyMs: number): CompletionMetadata {
-  const usage = assembled.usage ?? {};
+/**
+ * The token counts a provider's usage reports, a count it leaves out being zero. The cache read is
+ * the provider's own field, else OpenAI's cached prompt tokens.
+ */
+function tokenUsageOf(usage: ProviderUsage): TokenUsage {
   const cacheRead = usage.cache_read_input_tokens ?? usage.prompt_tokens_details?.cached_tokens ?? 0;
-  const tokenUsage = {
+  return {
     input_tokens: Number(usage.prompt_tokens || 0),
     output_tokens: Number(usage.completion_tokens || 0),
     cache_read_tokens: Number(cacheRead || 0),
   };
+}
+
+/** What a completion records: its usage, its cost on the stored model id `model`, and how long it took. */
+export function assistantMetadata(assembled: AssembledCompletion, model: string, latencyMs: number): CompletionMetadata {
+  const usage = assembled.usage ?? {};
+  const tokenUsage = tokenUsageOf(usage);
   const providerCost = assembled.provider_cost ?? usage.cost;
   const cost =
     typeof providerCost === "number"
