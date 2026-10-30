@@ -52,92 +52,162 @@ function itemKey(item: unknown): string {
 export function SettingsForm({ schema, value, onChange, search, disabled }: SettingsFormProps) {
   const properties = Object.entries(record(schema.properties));
   const required = new Set(Array.isArray(schema.required) ? schema.required.map(String) : []);
-  const set = (name: string, next: unknown) => onChange?.({ ...value, [name]: next });
   return (
     <div className="flex flex-col gap-4">
-      {properties.map(([name, raw]) => {
-        const property = record(raw);
-        const label = `${typeof property.title === "string" ? property.title : name}${required.has(name) ? "" : " (optional)"}`;
-        const hint = typeof property.description === "string" ? property.description : "";
-        const props = {
-          label,
-          hint,
-          disabled: Boolean(disabled) || !onChange,
-          search: (query: string) => search(name, query),
-        };
-        if (property["x-lookup"] === true && property.type === "array") {
-          const stored = value[name];
-          const items: unknown[] = Array.isArray(stored) ? stored : [];
-          const max = typeof property.maxItems === "number" ? property.maxItems : undefined;
-          return (
-            <LookupList
-              key={name}
-              {...props}
-              items={items}
-              max={max}
-              {...(onChange ? { onChange: (next: unknown[]) => set(name, next) } : {})}
-            />
-          );
-        }
-        if (property["x-lookup"] === true) {
-          return (
-            <LookupOne
-              key={name}
-              {...props}
-              current={value[name]}
-              {...(onChange ? { onChange: (next: unknown) => set(name, next) } : {})}
-            />
-          );
-        }
-        if (Array.isArray(property.enum)) {
-          return (
-            <Select
-              key={name}
-              tone="surface"
-              label={label}
-              disabled={props.disabled}
-              value={String(value[name] ?? "")}
-              onValueChange={(next) => set(name, next)}
-              options={property.enum.map((option) => ({
-                value: String(option),
-                label: String(option),
-              }))}
-            />
-          );
-        }
-        if (property.type === "boolean") {
-          return (
-            <Select
-              key={name}
-              tone="surface"
-              label={label}
-              disabled={props.disabled}
-              value={value[name] === true ? "true" : "false"}
-              onValueChange={(next) => set(name, next === "true")}
-              options={[
-                { value: "false", label: "No" },
-                { value: "true", label: "Yes" },
-              ]}
-            />
-          );
-        }
-        const numeric = property.type === "number" || property.type === "integer";
-        return (
-          <TextField
-            key={name}
-            tone="surface"
-            label={label}
-            {...(hint ? { hint } : {})}
-            disabled={props.disabled}
-            value={value[name] === undefined ? "" : String(value[name])}
-            onChange={(event) => {
-              const text = event.currentTarget.value;
-              set(name, numeric ? (text === "" ? undefined : Number(text)) : text);
-            }}
-          />
-        );
-      })}
+      {properties.map(([name, raw]) => (
+        <SettingInput
+          key={name}
+          name={name}
+          property={record(raw)}
+          required={required.has(name)}
+          value={value[name]}
+          disabled={Boolean(disabled) || !onChange}
+          search={search}
+          onChange={onChange ? (next) => onChange({ ...value, [name]: next }) : undefined}
+        />
+      ))}
     </div>
+  );
+}
+
+type SettingInputProps = {
+  name: string;
+  /** The property's JSON Schema. */
+  property: Record<string, unknown>;
+  required: boolean;
+  /** What the login stores for the property. */
+  value: unknown;
+  disabled: boolean;
+  search: SettingsSearch;
+  /** Undefined for a setting this scope can only read. */
+  onChange: ((next: unknown) => void) | undefined;
+};
+
+/** One setting as the input its schema calls for: a lookup, a choice, yes or no, or text. */
+function SettingInput({
+  name,
+  property,
+  required,
+  value,
+  disabled,
+  search,
+  onChange,
+}: SettingInputProps) {
+  const label = `${typeof property.title === "string" ? property.title : name}${required ? "" : " (optional)"}`;
+  const hint = typeof property.description === "string" ? property.description : "";
+  if (property["x-lookup"] === true) {
+    return (
+      <LookupSetting
+        property={property}
+        label={label}
+        hint={hint}
+        disabled={disabled}
+        value={value}
+        search={(query: string) => search(name, query)}
+        onChange={onChange}
+      />
+    );
+  }
+  if (Array.isArray(property.enum)) {
+    return (
+      <Select
+        tone="surface"
+        label={label}
+        disabled={disabled}
+        value={String(value ?? "")}
+        onValueChange={(next) => onChange?.(next)}
+        options={property.enum.map((option) => ({
+          value: String(option),
+          label: String(option),
+        }))}
+      />
+    );
+  }
+  if (property.type === "boolean") {
+    return (
+      <Select
+        tone="surface"
+        label={label}
+        disabled={disabled}
+        value={value === true ? "true" : "false"}
+        onValueChange={(next) => onChange?.(next === "true")}
+        options={[
+          { value: "false", label: "No" },
+          { value: "true", label: "Yes" },
+        ]}
+      />
+    );
+  }
+  return (
+    <TextSetting
+      property={property}
+      label={label}
+      hint={hint}
+      disabled={disabled}
+      value={value}
+      onChange={onChange}
+    />
+  );
+}
+
+type LookupSettingProps = {
+  property: Record<string, unknown>;
+  label: string;
+  hint: string;
+  disabled: boolean;
+  value: unknown;
+  search: (query: string) => Promise<LookupOption[]>;
+  onChange: ((next: unknown) => void) | undefined;
+};
+
+/** A setting marked `x-lookup`: a list of picks when its schema holds an array, one pick otherwise. */
+function LookupSetting({
+  property,
+  label,
+  hint,
+  disabled,
+  value,
+  search,
+  onChange,
+}: LookupSettingProps) {
+  const field = { label, hint, disabled, search };
+  if (property.type === "array") {
+    return (
+      <LookupList
+        {...field}
+        items={Array.isArray(value) ? value : []}
+        max={typeof property.maxItems === "number" ? property.maxItems : undefined}
+        {...(onChange ? { onChange } : {})}
+      />
+    );
+  }
+  return <LookupOne {...field} current={value} {...(onChange ? { onChange } : {})} />;
+}
+
+type TextSettingProps = {
+  property: Record<string, unknown>;
+  label: string;
+  hint: string;
+  disabled: boolean;
+  value: unknown;
+  onChange: ((next: unknown) => void) | undefined;
+};
+
+/** A setting typed in: a number for a numeric schema, cleared to unset when emptied; text otherwise. */
+function TextSetting({ property, label, hint, disabled, value, onChange }: TextSettingProps) {
+  const numeric = property.type === "number" || property.type === "integer";
+  return (
+    <TextField
+      tone="surface"
+      label={label}
+      {...(hint ? { hint } : {})}
+      disabled={disabled}
+      value={value === undefined ? "" : String(value)}
+      onChange={(event) => {
+        const text = event.currentTarget.value;
+        onChange?.(numeric ? (text === "" ? undefined : Number(text)) : text);
+      }}
+    />
   );
 }
 

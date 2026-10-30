@@ -9,11 +9,6 @@
       "count": 1
     }
   },
-  "src/features/access/SettingsForm.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/features/admin/AdminPage.tsx": {
     "complexity": {
       "count": 2
