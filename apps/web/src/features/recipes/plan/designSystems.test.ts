@@ -28,6 +28,10 @@ test("operator and pending-question systems are told apart", () => {
   );
   assert.equal(isPendingQuestion({ resolution: "browser" }), false);
   assert.equal(isPendingQuestion({ resolution: "native" }), false);
+  assert.equal(isPendingQuestion({ kind: "catalog", resolution: "decision" }), false);
+  assert.equal(isPendingQuestion({ kind: "composition" }), true);
+  assert.equal(isOperatorSystem({ kind: "browser" }), true);
+  assert.equal(isOperatorSystem({ kind: "native", resolution: "browser" }), false);
   const recipe = deskRecipe();
   recipe.design = {
     systems: [

@@ -22,28 +22,27 @@ function isScriptSystem(system: SystemDraft): boolean {
   return systemKind(system) === "script" || systemResolution(system) === "script";
 }
 
+/** The kinds and resolutions of a system the platform covers itself: a catalog connector or a native tool. */
+const platformKinds: ReadonlySet<string> = new Set(["catalog", "native"]);
+/** The kinds of a system an operator works at the keyboard. */
+const operatorKinds: ReadonlySet<string> = new Set(["browser", "script"]);
+/** The resolutions of a system an operator works at the keyboard. */
+const operatorResolutions: ReadonlySet<string> = new Set(["browser", "script", "browser_fallback"]);
+/** The kinds and resolutions of a system the operator still has to decide. */
+const questionKinds: ReadonlySet<string> = new Set(["decision", "composition"]);
+
+/** True when the platform covers a design system itself: its kind or resolution is catalog or native. */
+function isPlatformSystem(system: SystemDraft | null | undefined): boolean {
+  return platformKinds.has(systemKind(system)) || platformKinds.has(systemResolution(system));
+}
+
 /**
  * True when a design system needs an operator at the keyboard: a browser or script resolution, a
  * browser fallback, or a reason that asks to take control. Catalog and native systems never do.
  */
 export function isOperatorSystem(system: SystemDraft | null | undefined): boolean {
-  const kind = systemKind(system);
-  const resolution = systemResolution(system);
-  if (
-    kind === "catalog" ||
-    resolution === "catalog" ||
-    kind === "native" ||
-    resolution === "native"
-  ) {
-    return false;
-  }
-  if (
-    kind === "browser" ||
-    kind === "script" ||
-    resolution === "browser" ||
-    resolution === "script" ||
-    resolution === "browser_fallback"
-  ) {
+  if (isPlatformSystem(system)) return false;
+  if (operatorKinds.has(systemKind(system)) || operatorResolutions.has(systemResolution(system))) {
     return true;
   }
   return /\btake[- ]?control\b/.test(systemReason(system).toLowerCase());
@@ -56,25 +55,9 @@ export function isOperatorSystem(system: SystemDraft | null | undefined): boolea
  */
 export function isPendingQuestion(system: SystemDraft | null | undefined): boolean {
   if (!system || system.accepted === true) return false;
-  if (isOperatorSystem(system)) return false;
-  const kind = systemKind(system);
-  const resolution = systemResolution(system);
-  if (
-    kind === "catalog" ||
-    resolution === "catalog" ||
-    kind === "native" ||
-    resolution === "native"
-  ) {
-    return false;
-  }
-  const reason = systemReason(system);
-  if (/^open question\b/i.test(reason)) return true;
-  return (
-    resolution === "decision" ||
-    resolution === "composition" ||
-    kind === "decision" ||
-    kind === "composition"
-  );
+  if (isOperatorSystem(system) || isPlatformSystem(system)) return false;
+  if (/^open question\b/i.test(systemReason(system))) return true;
+  return questionKinds.has(systemKind(system)) || questionKinds.has(systemResolution(system));
 }
 
 /** The design systems of a recipe row or document that are still open questions. */
