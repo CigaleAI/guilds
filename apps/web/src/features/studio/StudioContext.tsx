@@ -32,11 +32,19 @@ export type StudioView = {
   approvals: Approvals;
 };
 
+/** A Studio contract broken by its caller, such as reading the session outside one. */
+export class StudioError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "StudioError";
+  }
+}
+
 export const StudioContext = createContext<StudioView | null>(null);
 
 /** The session the inspector belongs to, and how to move it or pin what it shows. */
 export function useStudio(): StudioView {
   const view = useContext(StudioContext);
-  if (!view) throw new Error("useStudio is only available inside a Studio session");
+  if (!view) throw new StudioError("useStudio is only available inside a Studio session");
   return view;
 }
