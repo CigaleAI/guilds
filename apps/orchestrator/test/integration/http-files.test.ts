@@ -125,6 +125,9 @@ test("operators upload, list, download, share, and delete files per level", { ti
     const page = await app.inject({ method: "GET", url: `/api/files/${String(html.json().id)}`, headers: OWNER });
     assert.equal(page.headers["content-type"], "text/html");
     assert.match(String(page.headers["content-disposition"]), /^attachment;/);
+    const orgFiles = await app.inject({ method: "GET", url: `/api/org/files`, headers: OWNER });
+    assert.equal(orgFiles.statusCode, 200);
+    assert.deepEqual((orgFiles.json() as Array<{ id: string }>).map((item) => item.id), [html.json().id]);
 
     // A member who cannot see the private guild does not see its file, by list or by id.
     const hiddenList = await app.inject({ method: "GET", url: `/api/guilds/${guildId}/files`, headers: TEAMMATE });
