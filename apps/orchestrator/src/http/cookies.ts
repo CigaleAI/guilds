@@ -1,7 +1,12 @@
 import type { IncomingHttpHeaders } from "node:http";
 
+/** A request as a reader of its headers sees it. */
+export type RequestWithHeaders = {
+  headers: IncomingHttpHeaders;
+};
+
 /** The request's cookies by name, values decoded. */
-export function requestCookies(request: { headers: IncomingHttpHeaders }): Record<string, string> {
+export function requestCookies(request: RequestWithHeaders): Record<string, string> {
   const raw = request.headers.cookie;
   const header = Array.isArray(raw) ? raw.join("; ") : raw;
   const out: Record<string, string> = {};

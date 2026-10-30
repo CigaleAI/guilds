@@ -17,8 +17,8 @@ function statusOf(error: unknown, http: HttpError | null): number {
   if (http) {
     return http.status;
   }
-  if (error && typeof error === "object" && typeof (error as { statusCode?: unknown }).statusCode === "number") {
-    return (error as { statusCode: number }).statusCode;
+  if (error && typeof error === "object" && "statusCode" in error && typeof error.statusCode === "number") {
+    return error.statusCode;
   }
   return 500;
 }
