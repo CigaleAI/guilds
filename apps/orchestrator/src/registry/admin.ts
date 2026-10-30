@@ -4,9 +4,9 @@ import type { Queryable } from "../db/pg.js";
 import type { InstanceKeys } from "../instance/keys.js";
 import type { McpPool } from "../mcp/pool.js";
 import { listPlatformServers, reloadServer } from "../mcp/servers.js";
-import type { RegistryClient } from "./client.js";
+import { onlineRegistry, type RegistryClient } from "./client.js";
 import { codeTierRoot, connectorsRoot, syncCodeConnectors, type CodeSync } from "./code.js";
-import { latestEntries, RegistryError, type RegistryConnectorEntry } from "./index.js";
+import { latestEntries, type RegistryConnectorEntry } from "./index.js";
 import { installConnector, removeConnector, updateConnectors, type Acceptance } from "./install.js";
 
 /** What serving a connector change in this process reloads: the instance keys, the logins' key, and the pool. */
@@ -37,13 +37,6 @@ export type RegistryCatalog = {
 
 /** A connector's move to a newer version. */
 export type ConnectorMove = { slug: string; from: string; to: string; code: boolean };
-
-function onlineRegistry(services: RegistryAdminServices): RegistryClient {
-  if (services.registry === null) {
-    throw new RegistryError("the box is offline: REGISTRY_URL is set empty", 409);
-  }
-  return services.registry;
-}
 
 /** The newest entry of each connector the registry's index offers, with the box's row beside it. */
 export async function registryCatalog(
@@ -94,7 +87,7 @@ export async function installRegistryConnector(
   services: RegistryAdminServices,
   pick: ConnectorPick,
 ): Promise<LoadedConnector> {
-  const { row } = await installConnector(db, onlineRegistry(services), pick.slug, {
+  const { row } = await installConnector(db, onlineRegistry(services.registry), pick.slug, {
     ...(pick.version ? { version: pick.version } : {}),
     unverified: pick.unverified === true,
     experimental: pick.experimental === true,
@@ -111,7 +104,7 @@ export async function updateRegistryConnector(
   slug: string,
   accept: Acceptance,
 ): Promise<ConnectorMove[]> {
-  const moved = await updateConnectors(db, onlineRegistry(services), {
+  const moved = await updateConnectors(db, onlineRegistry(services.registry), {
     slug,
     unverified: accept.unverified === true,
     experimental: accept.experimental === true,

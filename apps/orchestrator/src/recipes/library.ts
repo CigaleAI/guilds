@@ -17,7 +17,7 @@ import {
 } from "../db/recipes.js";
 import type { RecipeFinding, RecipeDocument } from "../db/schema/index.js";
 import { newId } from "../lib/ids.js";
-import type { RegistryClient } from "../registry/client.js";
+import { onlineRegistry, type RegistryClient } from "../registry/client.js";
 import { latestEntries, pickEntry, RegistryError, type RegistryRecipeEntry } from "../registry/index.js";
 import type { Schedules } from "../schedules/service.js";
 import type { Scripts } from "../scripts/catalog.js";
@@ -184,15 +184,17 @@ export async function registryRecipes(registry: RegistryClient | null): Promise<
 }
 
 /**
- * Imports the recipe `wanted` names from the registry as `importRecipe` imports a document. One
- * the index lacks is a 404; a file that is not a recipe is refused naming the registry's recipe.
+ * Imports the recipe `wanted` names from the registry as `importRecipe` imports a document. A null
+ * client is the box offline, a 409; a recipe the index lacks is a 404; a file that is not a recipe
+ * is refused naming the registry's recipe.
  */
 export async function importRegistryRecipe(
   db: Queryable,
-  registry: RegistryClient,
+  client: RegistryClient | null,
   wanted: RegistryRecipeRef,
   owner: RecipeOwner,
 ): Promise<RecipeRow> {
+  const registry = onlineRegistry(client);
   const entry = pickEntry(
     (await registry.index()).recipes.filter((item) => item.name === wanted.name),
     wanted.version,

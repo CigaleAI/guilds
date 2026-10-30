@@ -2,7 +2,7 @@ import { pathToFileURL } from "node:url";
 import { loadToolConfig } from "../config/index.js";
 import { startErrorReporting } from "../error-reporting.js";
 import { connect } from "../seed/connect.js";
-import { registryClient, type RegistryClient } from "../registry/client.js";
+import { onlineRegistry, registryClient, type RegistryClient } from "../registry/client.js";
 import { codeTierRoot, connectorsRoot } from "../registry/code.js";
 import { RegistryError } from "../registry/index.js";
 import { installConnector, listConnectors, removeConnector, updateConnectors } from "../registry/install.js";
@@ -15,13 +15,6 @@ export const USAGE = `usage: connector install <slug>[@version] [--unverified] [
 
 const FLAGS = new Set(["--unverified", "--experimental"]);
 const SERVES = "; the running server serves its code after Admin → Reload connectors";
-
-function needClient(client: RegistryClient | null): RegistryClient {
-  if (client === null) {
-    throw new RegistryError("the box is offline: REGISTRY_URL is set empty", 409);
-  }
-  return client;
-}
 
 /** Runs one `connector` command against a box's database and registry; returns the lines it prints. */
 export async function connectorCommand(
@@ -41,7 +34,7 @@ export async function connectorCommand(
         throw new RegistryError(USAGE, 400);
       }
       const [slug = "", version] = target.split("@");
-      const { row, code } = await installConnector(deps.db, needClient(deps.client), slug, {
+      const { row, code } = await installConnector(deps.db, onlineRegistry(deps.client), slug, {
         ...(version ? { version } : {}),
         unverified,
         experimental,
@@ -75,7 +68,7 @@ export async function connectorCommand(
       );
     }
     case "update": {
-      const moved = await updateConnectors(deps.db, needClient(deps.client), {
+      const moved = await updateConnectors(deps.db, onlineRegistry(deps.client), {
         ...(target ? { slug: target } : {}),
         unverified,
         experimental,

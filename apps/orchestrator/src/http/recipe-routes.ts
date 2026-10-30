@@ -131,12 +131,9 @@ export async function registerRecipeRoutes(app: RouteApp, deps: AppDeps): Promis
     async (request, reply) => {
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
-      const client = registryOf(deps);
-      if (client === null) {
-        throw new HttpError(409, "the box is offline: REGISTRY_URL is set empty");
-      }
       const wanted = { name: request.body.name ?? "", version: request.body.version || undefined };
-      const row = await importRegistryRecipe(db, client, wanted, { orgId: org.id, userId: user.id });
+      const owner = { orgId: org.id, userId: user.id };
+      const row = await importRegistryRecipe(db, registryOf(deps), wanted, owner);
       reply.code(201);
       return row;
     },
