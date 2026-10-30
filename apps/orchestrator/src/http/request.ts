@@ -32,15 +32,19 @@ export function queryOf(request: FastifyRequest): Record<string, string> {
   return {};
 }
 
+/** The path with its percent-encoding decoded, or null when that encoding is malformed. */
+function decodedPath(raw: string): string | null {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return null;
+  }
+}
+
 /** The file path a wildcard route names, decoded; a path that climbs out with `..` is a 404. */
 export function filePathParam(request: FastifyRequest): string {
   const raw = (request.raw.url ?? request.url).split("?")[0] ?? "";
-  let pathname = raw;
-  try {
-    pathname = decodeURIComponent(raw);
-  } catch {
-    /* keep the undecoded path */
-  }
+  const pathname = decodedPath(raw) ?? raw;
   if (pathname.split("/").includes("..")) {
     throw new HttpError(404, "Not Found");
   }

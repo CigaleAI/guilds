@@ -646,9 +646,6 @@
   "src/http/request.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 2
-    },
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/http/sandbox-proxy.ts": {
