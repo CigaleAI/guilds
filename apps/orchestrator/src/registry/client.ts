@@ -34,6 +34,9 @@ function packageFiles(bytes: Buffer): Map<string, Buffer> {
   return files;
 }
 
+/** A file an index entry lists: where it sits, and the size and hash its bytes must have. */
+type IndexedFile = Pick<RegistryConnectorEntry, "path" | "sha256" | "size">;
+
 /** A connector package: its manifest, and the bundled adapter and logo when it ships them. */
 export type ConnectorPackage = { manifest: Manifest; adapter: Buffer | null; logo: Buffer | null };
 
@@ -81,7 +84,7 @@ export class RegistryClient {
     return body;
   }
 
-  private async checked(entry: { path: string; sha256: string; size: number }): Promise<Buffer> {
+  private async checked(entry: IndexedFile): Promise<Buffer> {
     const body = await this.bytes(entry.path, PACKAGE_MAX_BYTES);
     if (body.length !== entry.size) {
       throw new RegistryPackageError(`${entry.path} is ${body.length} bytes; the index says ${entry.size}`);

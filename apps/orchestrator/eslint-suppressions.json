@@ -992,37 +992,6 @@
       "count": 1
     }
   },
-  "src/registry/client.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/registry/code.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 3
-    },
-    "complexity": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/registry/index.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    }
-  },
-  "src/registry/install.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/registry/tar.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/run.ts": {
     "no-restricted-syntax": {
       "count": 1

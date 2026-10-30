@@ -159,6 +159,19 @@ async function registryRow(db: Queryable, slug: string): Promise<Record<string, 
   return row;
 }
 
+export type UpdateOptions = Acceptance & {
+  /** The one connector to move; every registry connector when unset. */
+  slug?: string;
+  now?: Date;
+  /** The code tier's root while it is on: a package carrying code is written there. */
+  codeRoot?: string | null;
+  /** Where code connectors live, so a connector that moves keeps only its new version's folder. */
+  connectorsRoot?: string | null;
+};
+
+/** A registry connector moved from one version to another; `code` says the new version carries code. */
+export type ConnectorMove = { slug: string; from: string; to: string; code: boolean };
+
 /**
  * Moves registry connectors to the newest version the index offers, or `slug` alone. The row keeps
  * its switch, its OAuth client, the admin's overrides, its logins, and its bindings; its tools are
@@ -168,13 +181,13 @@ async function registryRow(db: Queryable, slug: string): Promise<Record<string, 
 export async function updateConnectors(
   db: Queryable,
   client: RegistryClient,
-  options: Acceptance & { slug?: string; now?: Date; codeRoot?: string | null; connectorsRoot?: string | null } = {},
-): Promise<Array<{ slug: string; from: string; to: string; code: boolean }>> {
+  options: UpdateOptions = {},
+): Promise<ConnectorMove[]> {
   const index = await client.index();
   const rows = options.slug
     ? [await registryRow(db, options.slug)]
     : await listServers(db, { owner: "platform", source: "registry" });
-  const moved: Array<{ slug: string; from: string; to: string; code: boolean }> = [];
+  const moved: ConnectorMove[] = [];
   for (const row of rows) {
     const slug = String(row.slug);
     const latest = pickEntry(entriesFor(index, slug));

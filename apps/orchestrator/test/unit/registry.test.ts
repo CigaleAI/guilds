@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
+import { mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { test } from "node:test";
 import { boxWiringProblem, endpointOnlyProblem, loadManifest, recipeManifestProblem } from "../../src/connectors/manifest.js";
 import { integrationState, REGISTRY } from "../../src/instance/integrations.js";
@@ -19,7 +21,9 @@ import {
   RegistrySignatureError,
   signIndex,
 } from "../../src/registry/index.js";
+import { codeEntry } from "../../src/registry/code.js";
 import { readTarball } from "../../src/registry/tar.js";
+import { tempDir } from "../helpers/env.js";
 import { endpointManifest, fakeRegistry, registryKeys, tarball } from "../helpers/registry.js";
 
 test("the registry is the default one while REGISTRY_URL is unset, and offline when it is set empty", () => {
@@ -220,5 +224,29 @@ test("a client with a key reads only an index that key signed", async () => {
   const ec = generateKeyPairSync("ec", { namedCurve: "P-256" }).publicKey.export({ format: "der", type: "spki" });
   assert.throws(() => registryPublicKey(ec.toString("base64")), {
     message: "REGISTRY_PUBLIC_KEY is not an Ed25519 public key: not an Ed25519 key",
+  });
+});
+
+test("a code connector loads only when adapter.js exports an object whose hooks are functions", async () => {
+  const root = tempDir("guilds-code-");
+  const provenance = { verified: true, publisher: "acme" };
+  const write = (version: string, adapter: string) => {
+    const folder = path.join(root, "coded", version);
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(path.join(folder, "connector.json"), JSON.stringify(endpointManifest("coded")));
+    writeFileSync(path.join(folder, "adapter.js"), adapter);
+  };
+  write("1.0.0", "export default { async list() { return []; } };");
+  write("2.0.0", "export default 42;");
+  write("3.0.0", 'export default { call: "not code" };');
+  const entry = await codeEntry(root, "coded", "1.0.0", provenance);
+  assert.equal(typeof entry.adapter.list, "function");
+  await assert.rejects(() => codeEntry(root, "coded", "2.0.0", provenance), {
+    name: "RegistryPackageError",
+    message: "adapter.js has no default export object",
+  });
+  await assert.rejects(() => codeEntry(root, "coded", "3.0.0", provenance), {
+    name: "RegistryPackageError",
+    message: "adapter.js exports call that is not a function",
   });
 });

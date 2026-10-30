@@ -158,7 +158,8 @@ export function canonicalJson(value: unknown): string {
     return `[${value.map(canonicalJson).join(",")}]`;
   }
   if (value && typeof value === "object") {
-    const entries = Object.entries(value as Record<string, unknown>)
+    const fields: [string, unknown][] = Object.entries(value);
+    const entries = fields
       .filter(([, item]) => item !== undefined)
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
     return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`).join(",")}}`;

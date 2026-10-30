@@ -69,22 +69,37 @@ export function removeCodePackage(root: string, slug: string, keep: string | nul
   }
 }
 
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+/** Whether an adapter's field is a hook it may carry: a function, or absent. */
+function isHook(value: unknown): boolean {
+  return value === undefined || typeof value === "function";
+}
+
+/** Whether an object is an adapter: each hook it carries is a function. */
+function isAdapter(value: Record<string, unknown>): value is Adapter {
+  return HOOKS.every((hook) => isHook(value[hook]));
+}
+
 /** The adapter a bundled `adapter.js` exports by default, its hooks checked to be functions. */
 async function importAdapter(file: string, version: string): Promise<Adapter> {
   // The version in the URL gives each version its own module; a new version never reuses an old one.
-  const module = (await import(`${pathToFileURL(file).href}?v=${encodeURIComponent(version)}`)) as { default?: unknown };
-  const adapter = module.default;
-  if (!adapter || typeof adapter !== "object") {
+  const module: unknown = await import(`${pathToFileURL(file).href}?v=${encodeURIComponent(version)}`);
+  const adapter = isObject(module) ? module.default : undefined;
+  if (!isObject(adapter)) {
     throw new RegistryPackageError("adapter.js has no default export object");
   }
-  for (const hook of HOOKS) {
-    const value = (adapter as Record<string, unknown>)[hook];
-    if (value !== undefined && typeof value !== "function") {
-      throw new RegistryPackageError(`adapter.js exports ${hook} that is not a function`);
-    }
+  if (!isAdapter(adapter)) {
+    const hook = HOOKS.find((name) => !isHook(adapter[name]));
+    throw new RegistryPackageError(`adapter.js exports ${hook} that is not a function`);
   }
-  return adapter as Adapter;
+  return adapter;
 }
+
+/** Who published a code connector, and whether the registry verified it, as its entry records. */
+export type ConnectorProvenance = Pick<ConnectorEntry, "verified" | "publisher">;
 
 /**
  * One version of a code connector as a registry entry: its manifest from the folder, its adapter
@@ -94,7 +109,7 @@ export async function codeEntry(
   root: string,
   slug: string,
   version: string,
-  row: { verified: boolean; publisher: string },
+  provenance: ConnectorProvenance,
 ): Promise<ConnectorEntry> {
   const folder = codeFolder(root, slug, version);
   const manifest = loadManifest(JSON.parse(readFileSync(path.join(folder, "connector.json"), "utf8")), slug);
@@ -103,8 +118,8 @@ export async function codeEntry(
     manifest,
     adapter: await importAdapter(path.join(folder, "adapter.js"), version),
     source: "registry",
-    verified: row.verified,
-    publisher: row.publisher,
+    verified: provenance.verified,
+    publisher: provenance.publisher,
     folder,
   };
   new ConnectorRegistry([entry]);
@@ -136,6 +151,11 @@ async function serveCodeVersion(root: string, row: LoadedConnector): Promise<Con
   }
 }
 
+/** Whether the version a registry row names has its `adapter.js` in its folder under `root`. */
+function hasCodeOnDisk(root: string, row: LoadedConnector): boolean {
+  return row.version !== "" && existsSync(path.join(codeFolder(root, row.slug, row.version), "adapter.js"));
+}
+
 export type CodeSync = { loaded: string[]; removed: string[]; failed: string[] };
 
 /**
@@ -152,16 +172,15 @@ export async function syncCodeConnectors(db: Queryable, env: NodeJS.ProcessEnv =
   const on = codeTierRoot(env) !== null;
   const rows = await listServers(db, { owner: "platform", source: "registry" });
   const wanted = new Set<string>();
-  for (const row of root === null ? [] : rows) {
-    const slug = String(row.slug);
-    const version = String(row.version ?? "");
-    if (!version || !existsSync(path.join(codeFolder(root!, slug, version), "adapter.js"))) {
+  for (const row of rows) {
+    if (root === null || !hasCodeOnDisk(root, row)) {
       continue;
     }
+    const { slug, version } = row;
     if (!on) {
       writeLog("warn", "code connector on disk while the code tier is off; not loaded", {
         operation: "connectors.code.load",
-        path: codeFolder(root!, slug, version),
+        path: codeFolder(root, slug, version),
       });
       continue;
     }
@@ -169,7 +188,7 @@ export async function syncCodeConnectors(db: Queryable, env: NodeJS.ProcessEnv =
     if (served.get(slug) === version && installedConnectors().bySlug(slug)) {
       continue;
     }
-    if ((await serveCodeVersion(root!, row)) === null) {
+    if ((await serveCodeVersion(root, row)) === null) {
       result.failed.push(slug);
       continue;
     }
