@@ -133,6 +133,14 @@ function choiceGroups(
     .filter((group) => group.choices.length > 0);
 }
 
+/** The choice at the selected path among the groups shown; undefined when none is selected or shown. */
+function selectedChoice(
+  groups: readonly ChoiceGroup[] | undefined,
+  selected: string | null,
+): Choice | undefined {
+  return groups?.flatMap((group) => group.choices).find((choice) => choice.path === selected);
+}
+
 /**
  * Picks what to insert in a Task or note: a note, embedded as `![[path]]` or referenced as
  * `[[path]]`; a table, embedded; or one of a table's columns, named as `table.column`.
@@ -147,9 +155,7 @@ export function InsertPicker({ kind, noteGroups, collections, orgId, onPick }: I
     () => choiceGroups(kind, { noteGroups, collections, orgId }, query),
     [kind, noteGroups, collections, orgId, query],
   );
-  const chosen = groups
-    ?.flatMap((group) => group.choices)
-    .find((choice) => choice.path === selected);
+  const chosen = selectedChoice(groups, selected);
   const copy = copyByKind[kind ?? "note"];
   const markup =
     kind && chosen
