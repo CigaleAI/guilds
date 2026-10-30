@@ -17,9 +17,6 @@
   "src/features/access/ConnectDialogs.tsx": {
     "complexity": {
       "count": 2
-    },
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/features/access/GithubRepositories.tsx": {

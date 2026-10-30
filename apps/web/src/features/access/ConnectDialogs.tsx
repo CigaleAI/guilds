@@ -21,6 +21,7 @@ import {
   toast,
   Icon,
 } from "@guildsrun/ui";
+import { copyText } from "./clipboard";
 import { SettingsForm, type SettingsValue } from "./SettingsForm";
 
 /** What signing in to a server needs to know about it. */
@@ -202,12 +203,9 @@ export function OAuthDialog({ pending, onDone }: OAuthDialogProps) {
   }, [pending, refetch]);
 
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(url);
+    if ((await copyText(url)) === "copied")
       toast({ kind: "success", title: "Sign-in link copied" });
-    } catch {
-      toast({ kind: "error", title: "Couldn't copy the link", description: url });
-    }
+    else toast({ kind: "error", title: "Couldn't copy the link", description: url });
   };
 
   return (
