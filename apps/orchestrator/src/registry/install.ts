@@ -6,7 +6,15 @@ import { assertSlugFree, CatalogError } from "../mcp/catalog.js";
 import { generateToolPrefix, isReservedToolPrefix } from "../mcp/policy.js";
 import type { ConnectorPackage, RegistryClient } from "./client.js";
 import { codeEntry, codeFolder, removeCodePackage, writeCodePackage } from "./code.js";
-import { compareVersions, pickEntry, RegistryError, type RegistryConnectorEntry, type RegistryIndex } from "./index.js";
+import {
+  compareVersions,
+  pickEntry,
+  RegistryError,
+  RegistryNotFoundError,
+  RegistryPackageError,
+  type RegistryConnectorEntry,
+  type RegistryIndex,
+} from "./index.js";
 import { deleteConnector, insertConnector, listTakenToolPrefixes, updateConnector } from "../db/connectors.js";
 import { expireMcpTools } from "../db/mcp.js";
 import { deleteInstanceKey } from "../db/orgs.js";
@@ -34,7 +42,7 @@ export type Acceptance = { unverified?: boolean; experimental?: boolean };
 function chosenEntry(index: RegistryIndex, slug: string, version: string | undefined, accept: Acceptance): RegistryConnectorEntry {
   const entry = pickEntry(entriesFor(index, slug), version);
   if (entry === null) {
-    throw new RegistryError(version ? `the registry has no ${slug}@${version}` : `the registry has no connector ${slug}`, 404);
+    throw new RegistryNotFoundError(version ? `the registry has no ${slug}@${version}` : `the registry has no connector ${slug}`);
   }
   if (!entry.verified && accept.unverified !== true) {
     throw new RegistryError(`${slug}@${entry.version} is unverified; install it with --unverified to accept that`, 409);
@@ -75,7 +83,7 @@ async function placeCode(
     await codeEntry(codeRoot, slug, entry.version, { verified: entry.verified, publisher: entry.publisher });
   } catch (error) {
     rmSync(codeFolder(codeRoot, slug, entry.version), { recursive: true, force: true });
-    throw new RegistryError(`${slug}@${entry.version} does not load: ${error instanceof Error ? error.message : String(error)}`, 422);
+    throw new RegistryPackageError(`${slug}@${entry.version} does not load: ${error instanceof Error ? error.message : String(error)}`);
   }
   return true;
 }
@@ -143,7 +151,7 @@ export async function installConnector(
 async function registryRow(db: Queryable, slug: string): Promise<Record<string, unknown>> {
   const row = await getMcpServerBySlug(db, slug, null);
   if (row === null || row.owner_org_id) {
-    throw new RegistryError(`connector ${slug} is not installed`, 404);
+    throw new RegistryNotFoundError(`connector ${slug} is not installed`);
   }
   if (row.source !== "registry") {
     throw new RegistryError(`connector ${slug} is ${String(row.source)}, not a registry install`, 409);

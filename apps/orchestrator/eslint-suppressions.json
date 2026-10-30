@@ -1005,14 +1005,11 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 4
+      "count": 1
     }
   },
   "src/registry/index.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
       "count": 1
     }
   },
@@ -1024,9 +1021,6 @@
   "src/registry/tar.ts": {
     "complexity": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 6
     }
   },
   "src/run.ts": {

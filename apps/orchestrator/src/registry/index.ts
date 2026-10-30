@@ -51,6 +51,7 @@ export type RegistryIndex = Static<typeof RegistryIndexSchema>;
 export type RegistryConnectorEntry = Static<typeof ConnectorEntry>;
 export type RegistryRecipeEntry = Static<typeof RecipeEntry>;
 
+/** A registry failure, answered with `status`. The classes below it name what failed. */
 export class RegistryError extends Error {
   status: number;
 
@@ -61,11 +62,51 @@ export class RegistryError extends Error {
   }
 }
 
-/** Checks a parsed index; throws `RegistryError` naming the first problem. */
+/** An index that is not JSON, or not the shape of a registry's index. */
+export class RegistryIndexError extends RegistryError {
+  constructor(message: string) {
+    super(message, 502);
+    this.name = "RegistryIndexError";
+  }
+}
+
+/** An index with no signature where the box requires one, or one `REGISTRY_PUBLIC_KEY` does not verify. */
+export class RegistrySignatureError extends RegistryError {
+  constructor(message: string) {
+    super(message, 502);
+    this.name = "RegistrySignatureError";
+  }
+}
+
+/** A registry that cannot be reached, answers with an error status, or serves more bytes than the limit. */
+export class RegistryFetchError extends RegistryError {
+  constructor(message: string) {
+    super(message, 502);
+    this.name = "RegistryFetchError";
+  }
+}
+
+/** A package that does not match its index entry, does not unpack, or does not hold a connector that loads. */
+export class RegistryPackageError extends RegistryError {
+  constructor(message: string) {
+    super(message, 422);
+    this.name = "RegistryPackageError";
+  }
+}
+
+/** A connector, or a version of one, that the registry does not offer or the box has not installed. */
+export class RegistryNotFoundError extends RegistryError {
+  constructor(message: string) {
+    super(message, 404);
+    this.name = "RegistryNotFoundError";
+  }
+}
+
+/** Checks a parsed index; throws `RegistryIndexError` naming the first problem. */
 export function parseIndex(raw: unknown): RegistryIndex {
   if (!Value.Check(RegistryIndexSchema, raw)) {
     const first = Value.Errors(RegistryIndexSchema, raw).First();
-    throw new RegistryError(`registry index ${first ? `${first.path || "/"}: ${first.message}` : "is invalid"}`, 502);
+    throw new RegistryIndexError(`registry index ${first ? `${first.path || "/"}: ${first.message}` : "is invalid"}`);
   }
   return raw;
 }
@@ -132,15 +173,16 @@ function unsignedBytes(index: RegistryIndex): Buffer {
 
 /** An Ed25519 public key from base64 SPKI DER, as `REGISTRY_PUBLIC_KEY` holds it. */
 export function registryPublicKey(base64: string): KeyObject {
+  let key: KeyObject;
   try {
-    const key = createPublicKey({ key: Buffer.from(base64, "base64"), format: "der", type: "spki" });
-    if (key.asymmetricKeyType !== "ed25519") {
-      throw new Error("not an Ed25519 key");
-    }
-    return key;
+    key = createPublicKey({ key: Buffer.from(base64, "base64"), format: "der", type: "spki" });
   } catch (error) {
     throw new RegistryError(`REGISTRY_PUBLIC_KEY is not an Ed25519 public key: ${error instanceof Error ? error.message : String(error)}`, 500);
   }
+  if (key.asymmetricKeyType !== "ed25519") {
+    throw new RegistryError("REGISTRY_PUBLIC_KEY is not an Ed25519 public key: not an Ed25519 key", 500);
+  }
+  return key;
 }
 
 /** Signs an index with an Ed25519 private key in base64 PKCS#8 DER; returns it with `signature` set. */
@@ -152,9 +194,9 @@ export function signIndex(index: RegistryIndex, privateKeyBase64: string): Regis
 /** Refuses an index that carries no signature, or one `key` does not verify. */
 export function assertSigned(index: RegistryIndex, key: KeyObject): void {
   if (!index.signature) {
-    throw new RegistryError("registry index is unsigned, and this box requires a signature", 502);
+    throw new RegistrySignatureError("registry index is unsigned, and this box requires a signature");
   }
   if (!verify(null, unsignedBytes(index), key, Buffer.from(index.signature, "base64"))) {
-    throw new RegistryError("registry index signature does not verify with REGISTRY_PUBLIC_KEY", 502);
+    throw new RegistrySignatureError("registry index signature does not verify with REGISTRY_PUBLIC_KEY");
   }
 }

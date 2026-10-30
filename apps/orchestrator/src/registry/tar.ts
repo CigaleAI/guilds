@@ -1,4 +1,5 @@
 import { gunzipSync, gzipSync } from "node:zlib";
+import { RegistryPackageError } from "./index.js";
 
 /** The largest package the client unpacks, packed or not. */
 export const PACKAGE_MAX_BYTES = 16 * 1024 * 1024;
@@ -12,7 +13,7 @@ export function readTarball(bytes: Buffer): Map<string, Buffer> {
   try {
     tar = gunzipSync(bytes, { maxOutputLength: PACKAGE_MAX_BYTES });
   } catch {
-    throw new Error("package is not a gzipped archive within the size limit");
+    throw new RegistryPackageError("package is not a gzipped archive within the size limit");
   }
   const files = new Map<string, Buffer>();
   let offset = 0;
@@ -28,20 +29,20 @@ export function readTarball(bytes: Buffer): Map<string, Buffer> {
     const size = Number.parseInt(field(124, 12).trim() || "0", 8);
     const type = field(156, 1) || "0";
     if (!Number.isFinite(size) || size < 0) {
-      throw new Error(`package entry ${name} has no valid size`);
+      throw new RegistryPackageError(`package entry ${name} has no valid size`);
     }
     const body = offset + 512;
     if (body + size > tar.length) {
-      throw new Error(`package entry ${name} is truncated`);
+      throw new RegistryPackageError(`package entry ${name} is truncated`);
     }
     const path = name.replace(/^\.\//, "");
     if (type === "0") {
       if (path.startsWith("/") || path.split("/").includes("..")) {
-        throw new Error(`package entry ${name} leaves the archive`);
+        throw new RegistryPackageError(`package entry ${name} leaves the archive`);
       }
       files.set(path, Buffer.from(tar.subarray(body, body + size)));
     } else if (type !== "5" && type !== "x" && type !== "g") {
-      throw new Error(`package entry ${name} is not a regular file`);
+      throw new RegistryPackageError(`package entry ${name} is not a regular file`);
     }
     offset = body + Math.ceil(size / 512) * 512;
   }
@@ -53,7 +54,7 @@ export function packTarball(files: ReadonlyArray<readonly [string, Buffer]>): Bu
   const blocks: Buffer[] = [];
   for (const [name, body] of files) {
     if (Buffer.byteLength(name) > 100) {
-      throw new Error(`package path ${name} exceeds 100 bytes`);
+      throw new RegistryPackageError(`package path ${name} exceeds 100 bytes`);
     }
     const header = Buffer.alloc(512);
     header.write(name, 0, 100, "utf8");

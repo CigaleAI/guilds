@@ -4,11 +4,12 @@ import { pathToFileURL } from "node:url";
 import { installedConnectors, removeInstalledConnector, replaceInstalledConnector } from "../connectors/index.js";
 import { loadManifest, serverIdOf } from "../connectors/manifest.js";
 import { ConnectorRegistry, type ConnectorEntry } from "../connectors/registry.js";
-import { listServers } from "../connectors/servers.js";
+import { listServers, type LoadedConnector } from "../connectors/servers.js";
 import type { Adapter } from "../connectors/types.js";
 import { CONNECTOR_CODE, integrationValue, integrationValues } from "../instance/integrations.js";
 import { writeLog } from "../observability/log.js";
 import type { ConnectorPackage } from "./client.js";
+import { RegistryPackageError } from "./index.js";
 import type { Queryable } from "../db/pg.js";
 
 // Code connectors live under CONNECTORS_ROOT, one folder per version: `<root>/<slug>/<version>/`
@@ -74,12 +75,12 @@ async function importAdapter(file: string, version: string): Promise<Adapter> {
   const module = (await import(`${pathToFileURL(file).href}?v=${encodeURIComponent(version)}`)) as { default?: unknown };
   const adapter = module.default;
   if (!adapter || typeof adapter !== "object") {
-    throw new Error("adapter.js has no default export object");
+    throw new RegistryPackageError("adapter.js has no default export object");
   }
   for (const hook of HOOKS) {
     const value = (adapter as Record<string, unknown>)[hook];
     if (value !== undefined && typeof value !== "function") {
-      throw new Error(`adapter.js exports ${hook} that is not a function`);
+      throw new RegistryPackageError(`adapter.js exports ${hook} that is not a function`);
     }
   }
   return adapter as Adapter;
@@ -108,6 +109,31 @@ export async function codeEntry(
   };
   new ConnectorRegistry([entry]);
   return entry;
+}
+
+/**
+ * Loads the version of a code connector its row names and serves it in place of the one before.
+ * Returns the entry now served, or null when that version does not load: the failure is logged and
+ * the version served before stays.
+ */
+async function serveCodeVersion(root: string, row: LoadedConnector): Promise<ConnectorEntry | null> {
+  try {
+    const entry = await codeEntry(root, row.slug, row.version, row);
+    replaceInstalledConnector(entry);
+    return entry;
+  } catch (error) {
+    writeLog(
+      "error",
+      "code connector did not load",
+      {
+        operation: "connectors.code.load",
+        path: codeFolder(root, row.slug, row.version),
+        error_type: error instanceof Error ? error.name : "Error",
+      },
+      error,
+    );
+    return null;
+  }
 }
 
 export type CodeSync = { loaded: string[]; removed: string[]; failed: string[] };
@@ -143,27 +169,12 @@ export async function syncCodeConnectors(db: Queryable, env: NodeJS.ProcessEnv =
     if (served.get(slug) === version && installedConnectors().bySlug(slug)) {
       continue;
     }
-    try {
-      const entry = await codeEntry(root!, slug, version, {
-        verified: row.verified === true,
-        publisher: String(row.publisher ?? ""),
-      });
-      replaceInstalledConnector(entry);
-      served.set(slug, version);
-      result.loaded.push(slug);
-    } catch (error) {
+    if ((await serveCodeVersion(root!, row)) === null) {
       result.failed.push(slug);
-      writeLog(
-        "error",
-        "code connector did not load",
-        {
-          operation: "connectors.code.load",
-          path: codeFolder(root!, slug, version),
-          error_type: error instanceof Error ? error.name : "Error",
-        },
-        error,
-      );
+      continue;
     }
+    served.set(slug, version);
+    result.loaded.push(slug);
   }
   for (const slug of [...served.keys()]) {
     if (!wanted.has(slug)) {
