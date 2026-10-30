@@ -80,7 +80,6 @@ export function GuildSettings() {
   const update = useUpdateGuild(guildId);
   const setLimit = useSetMessageLimit(guildId);
   const [draft, setDraft] = useState<Form | null>(null);
-  const [descriptionView, setDescriptionView] = useState<"write" | "preview">("write");
 
   const saved = useMemo<Form | null>(
     () =>
@@ -111,12 +110,8 @@ export function GuildSettings() {
   const admin = isGuildAdmin(guild.data, user.id);
   const agentCount = (agents.data ?? []).length;
   const dirty = JSON.stringify(form) !== JSON.stringify(saved);
-  const errors = {
-    name: form.name.trim() ? handleError(form.name.trim()) : handleHint,
-    maxAgents: positiveInteger(form.maxAgents) ? undefined : "A whole number, 1 or more.",
-    messageLimit: positiveInteger(form.messageLimit) ? undefined : "A whole number, 1 or more.",
-  };
-  const invalid = Boolean(errors.name || errors.maxAgents || errors.messageLimit);
+  const errors = formErrors(form);
+  const invalid = Object.values(errors).some(Boolean);
   const saving = update.isPending || setLimit.isPending;
   const set = (patch: Partial<Form>) => setDraft({ ...form, ...patch });
 
@@ -164,107 +159,9 @@ export function GuildSettings() {
           />
         </Group>
 
-        <Group title="Purpose">
-          <TextAreaField
-            tone="surface"
-            label="Short description"
-            font="sans"
-            rows={2}
-            maxLength={aboutMax}
-            showCount
-            placeholder="High-level goal for everyone in this guild"
-            hint="Shown in the guild header and to agents."
-            value={form.about}
-            onChange={(event) => set({ about: event.currentTarget.value })}
-          />
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-sm font-semibold">Description</span>
-              <Segmented
-                size="sm"
-                label="Description view"
-                value={descriptionView}
-                onValueChange={setDescriptionView}
-                options={[
-                  { value: "write", label: "Write" },
-                  { value: "preview", label: "Preview" },
-                ]}
-              />
-            </div>
-            {descriptionView === "write" ? (
-              <TextAreaField
-                tone="surface"
-                aria-label="Description"
-                font="mono"
-                rows={12}
-                maxLength={descriptionMax}
-                showCount
-                placeholder="What this guild is for, how it should work, constraints"
-                hint="Markdown. Agents read it on every run."
-                value={form.description}
-                onChange={(event) => set({ description: event.currentTarget.value })}
-              />
-            ) : (
-              <div className="min-h-40 rounded-lg bg-surface px-4 py-3">
-                {form.description.trim() ? (
-                  <Markdown>{form.description}</Markdown>
-                ) : (
-                  <p className="text-sm text-muted">Nothing written yet.</p>
-                )}
-              </div>
-            )}
-          </div>
-        </Group>
-
-        <Group title="Limits">
-          <div className="grid gap-4 md:grid-cols-2">
-            <TextField
-              tone="surface"
-              label="Agents"
-              type="number"
-              min={1}
-              hint={`This guild has ${agentCount} agent${agentCount === 1 ? "" : "s"}. New agents are refused past this number.`}
-              value={form.maxAgents}
-              onChange={(event) => set({ maxAgents: event.currentTarget.value })}
-              {...(errors.maxAgents ? { error: errors.maxAgents } : {})}
-            />
-            <TextField
-              tone="surface"
-              label="Agent turns in a row"
-              type="number"
-              min={1}
-              hint="Agent messages in the group chat before an operator must post."
-              value={form.messageLimit}
-              onChange={(event) => set({ messageLimit: event.currentTarget.value })}
-              {...(errors.messageLimit ? { error: errors.messageLimit } : {})}
-            />
-          </div>
-        </Group>
-
-        <Group title="Behaviour">
-          <div className="flex flex-col gap-1">
-            <Checkbox
-              label="Routines fire on schedule"
-              checked={form.routines}
-              onCheckedChange={(checked) => set({ routines: checked === true })}
-            />
-            <p className="pl-7 text-sm text-fg-2">
-              Turn this off to hold every routine; paused routines stay paused.
-            </p>
-          </div>
-          {admin ? (
-            <div className="flex flex-col gap-1">
-              <Checkbox
-                label="Private"
-                checked={form.private}
-                onCheckedChange={(checked) => set({ private: checked === true })}
-              />
-              <p className="pl-7 text-sm text-fg-2">
-                Only this guild's operators can see it; others in the organisation cannot.
-              </p>
-            </div>
-          ) : null}
-        </Group>
+        <PurposeGroup form={form} onChange={set} />
+        <LimitsGroup form={form} errors={errors} agentCount={agentCount} onChange={set} />
+        <BehaviourGroup form={form} admin={admin} onChange={set} />
 
         {failure ? (
           <Banner tone="error" title="Couldn't save the settings">
@@ -287,16 +184,186 @@ export function GuildSettings() {
         <GuildRepositories guild={guild.data} />
         {admin ? <DangerZone guild={guild.data} /> : null}
       </GuildPage>
-      <div className="flex shrink-0 items-center justify-end gap-2 border-t border-line bg-surface px-6 py-3 md:px-10">
-        {dirty ? <span className="mr-auto text-sm text-muted">Unsaved changes</span> : null}
-        <Button variant="ghost" disabled={!dirty || saving} onClick={() => setDraft(null)}>
-          Discard
-        </Button>
-        <Button type="submit" disabled={!dirty || invalid || saving}>
-          {saving ? "Saving…" : "Save"}
-        </Button>
-      </div>
+      <SettingsFooter
+        dirty={dirty}
+        invalid={invalid}
+        saving={saving}
+        onDiscard={() => setDraft(null)}
+      />
     </form>
+  );
+}
+
+type FormErrors = {
+  name: string | undefined;
+  maxAgents: string | undefined;
+  messageLimit: string | undefined;
+};
+
+/** Why each checked field of the form cannot be saved; undefined for one that can. */
+function formErrors(form: Form): FormErrors {
+  return {
+    name: form.name.trim() ? handleError(form.name.trim()) : handleHint,
+    maxAgents: positiveInteger(form.maxAgents) ? undefined : "A whole number, 1 or more.",
+    messageLimit: positiveInteger(form.messageLimit) ? undefined : "A whole number, 1 or more.",
+  };
+}
+
+type PurposeGroupProps = { form: Form; onChange: (patch: Partial<Form>) => void };
+
+/** What the guild is for: its short description, and its Markdown description to write or preview. */
+function PurposeGroup({ form, onChange }: PurposeGroupProps) {
+  const [view, setView] = useState<"write" | "preview">("write");
+  return (
+    <Group title="Purpose">
+      <TextAreaField
+        tone="surface"
+        label="Short description"
+        font="sans"
+        rows={2}
+        maxLength={aboutMax}
+        showCount
+        placeholder="High-level goal for everyone in this guild"
+        hint="Shown in the guild header and to agents."
+        value={form.about}
+        onChange={(event) => onChange({ about: event.currentTarget.value })}
+      />
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm font-semibold">Description</span>
+          <Segmented
+            size="sm"
+            label="Description view"
+            value={view}
+            onValueChange={setView}
+            options={[
+              { value: "write", label: "Write" },
+              { value: "preview", label: "Preview" },
+            ]}
+          />
+        </div>
+        {view === "write" ? (
+          <TextAreaField
+            tone="surface"
+            aria-label="Description"
+            font="mono"
+            rows={12}
+            maxLength={descriptionMax}
+            showCount
+            placeholder="What this guild is for, how it should work, constraints"
+            hint="Markdown. Agents read it on every run."
+            value={form.description}
+            onChange={(event) => onChange({ description: event.currentTarget.value })}
+          />
+        ) : (
+          <div className="min-h-40 rounded-lg bg-surface px-4 py-3">
+            {form.description.trim() ? (
+              <Markdown>{form.description}</Markdown>
+            ) : (
+              <p className="text-sm text-muted">Nothing written yet.</p>
+            )}
+          </div>
+        )}
+      </div>
+    </Group>
+  );
+}
+
+type LimitsGroupProps = {
+  form: Form;
+  errors: FormErrors;
+  /** How many agents the guild has now. */
+  agentCount: number;
+  onChange: (patch: Partial<Form>) => void;
+};
+
+/** The guild's agent cap and how many agent turns in a row the group chat allows. */
+function LimitsGroup({ form, errors, agentCount, onChange }: LimitsGroupProps) {
+  return (
+    <Group title="Limits">
+      <div className="grid gap-4 md:grid-cols-2">
+        <TextField
+          tone="surface"
+          label="Agents"
+          type="number"
+          min={1}
+          hint={`This guild has ${agentCount} agent${agentCount === 1 ? "" : "s"}. New agents are refused past this number.`}
+          value={form.maxAgents}
+          onChange={(event) => onChange({ maxAgents: event.currentTarget.value })}
+          {...(errors.maxAgents ? { error: errors.maxAgents } : {})}
+        />
+        <TextField
+          tone="surface"
+          label="Agent turns in a row"
+          type="number"
+          min={1}
+          hint="Agent messages in the group chat before an operator must post."
+          value={form.messageLimit}
+          onChange={(event) => onChange({ messageLimit: event.currentTarget.value })}
+          {...(errors.messageLimit ? { error: errors.messageLimit } : {})}
+        />
+      </div>
+    </Group>
+  );
+}
+
+type BehaviourGroupProps = {
+  form: Form;
+  /** Only a guild admin changes the guild's visibility. */
+  admin: boolean;
+  onChange: (patch: Partial<Form>) => void;
+};
+
+/** Whether the guild's routines fire, and for an admin whether the guild is private. */
+function BehaviourGroup({ form, admin, onChange }: BehaviourGroupProps) {
+  return (
+    <Group title="Behaviour">
+      <div className="flex flex-col gap-1">
+        <Checkbox
+          label="Routines fire on schedule"
+          checked={form.routines}
+          onCheckedChange={(checked) => onChange({ routines: checked === true })}
+        />
+        <p className="pl-7 text-sm text-fg-2">
+          Turn this off to hold every routine; paused routines stay paused.
+        </p>
+      </div>
+      {admin ? (
+        <div className="flex flex-col gap-1">
+          <Checkbox
+            label="Private"
+            checked={form.private}
+            onCheckedChange={(checked) => onChange({ private: checked === true })}
+          />
+          <p className="pl-7 text-sm text-fg-2">
+            Only this guild's operators can see it; others in the organisation cannot.
+          </p>
+        </div>
+      ) : null}
+    </Group>
+  );
+}
+
+type SettingsFooterProps = {
+  /** The form differs from the saved settings. */
+  dirty: boolean;
+  invalid: boolean;
+  saving: boolean;
+  onDiscard: () => void;
+};
+
+/** Whether there are unsaved changes, with Discard and Save. */
+function SettingsFooter({ dirty, invalid, saving, onDiscard }: SettingsFooterProps) {
+  return (
+    <div className="flex shrink-0 items-center justify-end gap-2 border-t border-line bg-surface px-6 py-3 md:px-10">
+      {dirty ? <span className="mr-auto text-sm text-muted">Unsaved changes</span> : null}
+      <Button variant="ghost" disabled={!dirty || saving} onClick={onDiscard}>
+        Discard
+      </Button>
+      <Button type="submit" disabled={!dirty || invalid || saving}>
+        {saving ? "Saving…" : "Save"}
+      </Button>
+    </div>
   );
 }
 
