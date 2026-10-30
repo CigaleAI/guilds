@@ -8,7 +8,6 @@ import { repoRoot } from "../../src/lib/paths.js";
 import { agentDirectory, slotPorts } from "../../src/machines/index.js";
 import {
   RunSandboxes,
-  SandboxError,
   agentSandbox,
   applyRunScripts,
   connectionConfig,
@@ -22,11 +21,11 @@ import {
   prepareWorkspace,
   seatEnvironment,
   splitRunning,
-  wrapOpenSandbox,
   browserNeedsBlankReset,
   type AgentSeat,
   type MachineSpec,
 } from "../../src/sandbox/index.js";
+import { SandboxError, wrapOpenSandbox } from "../../src/sandbox/sdk.js";
 
 const STANDARD: MachineSpec = { id: "mach_1", orgId: "org_1", box: "standard", cpu: 1, memoryMib: 2048 };
 const SEAT: AgentSeat = { agentId: "a_1", machineId: "mach_1", slot: 2, browserLanguage: "fr-FR" };

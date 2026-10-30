@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { slotPorts } from "../../src/machines/index.js";
-import { CLI_ENTRYPOINT, RunSandboxes, SandboxError, type AgentSeat } from "../../src/sandbox/index.js";
+import { CLI_ENTRYPOINT, RunSandboxes, type AgentSeat } from "../../src/sandbox/index.js";
+import { SandboxError } from "../../src/sandbox/sdk.js";
 import { tempDir } from "../helpers/env.js";
 
 const TOKEN = "0123456789abcdef".repeat(3);

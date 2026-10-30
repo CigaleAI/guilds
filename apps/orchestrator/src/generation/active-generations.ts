@@ -3,7 +3,7 @@ import { getAgent, type AgentRow } from "../db/agents.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import { AsyncEvent } from "../lib/event.js";
 import type { OrgPolicy } from "../policy/index.js";
-import type { SandboxHandle } from "../sandbox/index.js";
+import type { SandboxHandle } from "../sandbox/sdk.js";
 import { CancelEvent } from "../toolbox/index.js";
 import { ConflictError, RunRequestError } from "./errors.js";
 

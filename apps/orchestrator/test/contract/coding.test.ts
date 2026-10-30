@@ -13,8 +13,8 @@ import {
   seatEnvironment,
   type AgentSeat,
   type MachineSpec,
-  type SandboxHandle,
 } from "../../src/sandbox/index.js";
+import type { SandboxHandle } from "../../src/sandbox/sdk.js";
 import { invokeTool } from "../../src/toolbox/index.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { gated, run, startOpenSandboxServer, stdoutOf } from "../helpers/opensandbox-server.js";

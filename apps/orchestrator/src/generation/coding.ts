@@ -20,7 +20,8 @@ import { GITHUB_SERVER_ID } from "../instance/integrations.js";
 import type { McpPool } from "../mcp/pool.js";
 import { retireLogin, type LoginFailure } from "../mcp/service.js";
 import { errorMessage, errorName, writeLog } from "../observability/log.js";
-import { agentRunDir, type SandboxHandle } from "../sandbox/index.js";
+import { agentRunDir } from "../sandbox/index.js";
+import type { SandboxHandle } from "../sandbox/sdk.js";
 import { redact } from "../secrets/index.js";
 import { callSegment, runCodeHelper } from "../toolbox/code.js";
 import {

@@ -13,11 +13,10 @@ import {
   machineSpec,
   prepareBrowserWorkspace,
   prepareWorkspace,
-  SandboxError,
   type AgentSeat,
   type MachineSpec,
-  type SandboxHandle,
 } from "../sandbox/index.js";
+import { SandboxError, type SandboxHandle } from "../sandbox/sdk.js";
 import type { ActiveGenerations } from "./active-generations.js";
 import { RunRequestError } from "./errors.js";
 import { IdleTimers } from "./idle.js";
