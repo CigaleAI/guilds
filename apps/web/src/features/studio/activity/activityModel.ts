@@ -272,7 +272,7 @@ function messageOrigin(
   return { start: { kind: "unknown", seq, at: wokeAt }, source: MESSAGE_NODE };
 }
 
-/** A chain with its wakes counted, their cost added up, when the last ended, and whether all were silent. */
+/** A chain with its wakes counted and costed, when the last ended, and whether all were silent. */
 function withTotals(chain: Chain): Chain {
   const steps = chainSteps(chain);
   return {

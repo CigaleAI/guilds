@@ -1,6 +1,6 @@
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { Archive, ArrowLeft, Plus } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   useArchiveStudio,
   useContinueStudio,
@@ -11,7 +11,7 @@ import {
   useStudioSession,
 } from "../../api/queries/studio";
 import { useStudioStream } from "../../api/streams";
-import type { StudioDraft } from "../../api/types/studio";
+import type { StudioDraft, StudioSession } from "../../api/types/studio";
 import { useMediaQuery } from "../../app/media";
 import {
   Button,
@@ -66,12 +66,10 @@ function Workspace({ sessionId }: WorkspaceProps) {
   const drafts = useStudioDrafts(sessionId);
   const setTarget = useSetStudioTarget(sessionId);
   const archive = useArchiveStudio(sessionId);
-  const continueSession = useContinueStudio(sessionId);
   const [archiving, setArchiving] = useState(false);
   const [pin, setPin] = useState<StudioPin | null>(() => readPin(sessionId));
   const split = useMediaQuery(splitScreen);
-  const [pane, setPane] = useState<"inspect" | "coach">("inspect");
-  const [share, setShare] = useSplitShare(splitKey, 0.65);
+  const [pane, setPane] = useState<WorkspacePane>("inspect");
   const approvals = useApprovals(sessionId, session.data, messages.data, drafts.data);
 
   const agents = inventory.data ?? [];
@@ -109,7 +107,7 @@ function Workspace({ sessionId }: WorkspaceProps) {
   }
 
   const data = session.data;
-  const pending = (drafts.data ?? []).filter(openDraft);
+  const allDrafts = drafts.data ?? [];
   const view: StudioView = {
     session: data,
     agents,
@@ -145,60 +143,7 @@ function Workspace({ sessionId }: WorkspaceProps) {
   return (
     <StudioContext value={view}>
       <div className="flex min-h-0 flex-1 flex-col">
-        <WorkspaceHeader
-          eyebrow="Studio"
-          title={data.source_guild?.name ?? "Guild"}
-          meta={`coach · ${data.coach.model} · temp ${data.coach.temperature}`}
-          status={{
-            label: data.status === "active" ? `active · ${data.generation_state}` : data.status,
-            live: data.status === "active",
-          }}
-          actions={
-            <>
-              <Button asChild variant="on-panel" size="sm">
-                <Link to="/guilds/$guildId" params={{ guildId: data.source_guild_id }}>
-                  <Icon icon={ArrowLeft} size={14} />
-                  Back to guild
-                </Link>
-              </Button>
-              {data.status === "blocked" && data.blocked_reason === "input_token_limit" ? (
-                <Button
-                  variant="accent"
-                  size="sm"
-                  disabled={continueSession.isPending}
-                  onClick={() =>
-                    continueSession.mutate(undefined, {
-                      onSuccess: (next) =>
-                        void navigate({ to: "/studio/$sessionId", params: { sessionId: next.id } }),
-                      onError: (error) =>
-                        toast({
-                          kind: "error",
-                          title: "Couldn't continue",
-                          description: error.message,
-                        }),
-                    })
-                  }
-                >
-                  Continue in a new session
-                </Button>
-              ) : null}
-              {data.status === "active" ? <ApprovalTray /> : null}
-              {data.status === "active" ? <LoginsPopover session={data} /> : null}
-              <Button asChild variant="on-panel" size="sm">
-                <Link to="/studio" search={{ guild: data.source_guild_id }}>
-                  <Icon icon={Plus} size={14} />
-                  New session
-                </Link>
-              </Button>
-              {data.status !== "archived" ? (
-                <Button variant="on-panel" size="sm" onClick={() => setArchiving(true)}>
-                  <Icon icon={Archive} size={14} />
-                  Archive
-                </Button>
-              ) : null}
-            </>
-          }
-        />
+        <SessionHeader session={data} onArchive={() => setArchiving(true)} />
 
         {live ? <SectionBar /> : null}
 
@@ -217,42 +162,28 @@ function Workspace({ sessionId }: WorkspaceProps) {
           </div>
         ) : null}
 
-        <div className="flex min-h-0 flex-1">
-          {split || pane === "inspect" ? (
-            <section
-              aria-label="Inspector"
-              className={cn("flex min-h-0 min-w-0 flex-col", split ? "flex-none" : "flex-1")}
-              style={split ? { width: `${share * 100}%` } : undefined}
-            >
-              {live ? (
-                <Inspector drafts={drafts.data ?? []} pending={pending} />
-              ) : (
-                <p className="p-6 text-sm text-muted">
-                  This session is not live, so its guild can't be inspected here.
-                </p>
-              )}
-            </section>
-          ) : null}
-          {split ? (
-            <Splitter
-              storageKey={splitKey}
-              share={share}
-              onShareChange={setShare}
-              label="Resize the inspector"
+        <WorkspacePanes
+          split={split}
+          pane={pane}
+          inspector={
+            live ? (
+              <Inspector drafts={allDrafts} pending={allDrafts.filter(openDraft)} />
+            ) : (
+              <p className="p-6 text-sm text-muted">
+                This session is not live, so its guild can't be inspected here.
+              </p>
+            )
+          }
+          coach={
+            <StudioChat
+              session={data}
+              messages={messages.data}
+              live={streamText}
+              pin={pin}
+              onUnpin={unpin}
             />
-          ) : null}
-          {split || pane === "coach" ? (
-            <section aria-label="Coach" className="flex min-h-0 min-w-0 flex-1 flex-col">
-              <StudioChat
-                session={data}
-                messages={messages.data}
-                live={streamText}
-                pin={pin}
-                onUnpin={unpin}
-              />
-            </section>
-          ) : null}
-        </div>
+          }
+        />
 
         <ConfirmDialog
           open={archiving}
@@ -276,6 +207,116 @@ function Workspace({ sessionId }: WorkspaceProps) {
         />
       </div>
     </StudioContext>
+  );
+}
+
+/** The pane a narrow screen shows: the inspector or the coach. */
+type WorkspacePane = "inspect" | "coach";
+
+type SessionHeaderProps = { session: StudioSession; onArchive: () => void };
+
+/**
+ * The session's guild, coach and state, with the way back to the guild, Continue for a session
+ * blocked by its input limit, the requests and logins of a live one, a new session, and Archive.
+ */
+function SessionHeader({ session, onArchive }: SessionHeaderProps) {
+  const navigate = useNavigate();
+  const continueSession = useContinueStudio(session.id);
+  return (
+    <WorkspaceHeader
+      eyebrow="Studio"
+      title={session.source_guild?.name ?? "Guild"}
+      meta={`coach · ${session.coach.model} · temp ${session.coach.temperature}`}
+      status={{
+        label:
+          session.status === "active" ? `active · ${session.generation_state}` : session.status,
+        live: session.status === "active",
+      }}
+      actions={
+        <>
+          <Button asChild variant="on-panel" size="sm">
+            <Link to="/guilds/$guildId" params={{ guildId: session.source_guild_id }}>
+              <Icon icon={ArrowLeft} size={14} />
+              Back to guild
+            </Link>
+          </Button>
+          {session.status === "blocked" && session.blocked_reason === "input_token_limit" ? (
+            <Button
+              variant="accent"
+              size="sm"
+              disabled={continueSession.isPending}
+              onClick={() =>
+                continueSession.mutate(undefined, {
+                  onSuccess: (next) =>
+                    void navigate({ to: "/studio/$sessionId", params: { sessionId: next.id } }),
+                  onError: (error) =>
+                    toast({
+                      kind: "error",
+                      title: "Couldn't continue",
+                      description: error.message,
+                    }),
+                })
+              }
+            >
+              Continue in a new session
+            </Button>
+          ) : null}
+          {session.status === "active" ? <ApprovalTray /> : null}
+          {session.status === "active" ? <LoginsPopover session={session} /> : null}
+          <Button asChild variant="on-panel" size="sm">
+            <Link to="/studio" search={{ guild: session.source_guild_id }}>
+              <Icon icon={Plus} size={14} />
+              New session
+            </Link>
+          </Button>
+          {session.status !== "archived" ? (
+            <Button variant="on-panel" size="sm" onClick={onArchive}>
+              <Icon icon={Archive} size={14} />
+              Archive
+            </Button>
+          ) : null}
+        </>
+      }
+    />
+  );
+}
+
+type WorkspacePanesProps = {
+  /** Whether the screen is wide enough to show the inspector beside the coach. */
+  split: boolean;
+  pane: WorkspacePane;
+  inspector: ReactNode;
+  coach: ReactNode;
+};
+
+/** The inspector and the coach side by side, or the one pane a narrow screen shows. */
+function WorkspacePanes({ split, pane, inspector, coach }: WorkspacePanesProps) {
+  const [share, setShare] = useSplitShare(splitKey, 0.65);
+  return (
+    <div className="flex min-h-0 flex-1">
+      {split || pane === "inspect" ? (
+        <section
+          aria-label="Inspector"
+          className={cn("flex min-h-0 min-w-0 flex-col", split ? "flex-none" : "flex-1")}
+          style={split ? { width: `${share * 100}%` } : undefined}
+        >
+          {inspector}
+        </section>
+      ) : null}
+      {split ? (
+        <Splitter
+          storageKey={splitKey}
+          share={share}
+          onShareChange={setShare}
+          label="Resize the inspector"
+        />
+      ) : null}
+      {split || pane === "coach" ? (
+        <section aria-label="Coach" className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {coach}
+        </section>
+      ) : null}
+    </div>
   );
 }
 

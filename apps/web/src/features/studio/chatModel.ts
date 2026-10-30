@@ -195,7 +195,7 @@ function textFields<Key extends string>(
   return fields;
 }
 
-/** The fields of a JSON object that hold text or null, by name; a field of another type is left out. */
+/** The fields of a JSON object that hold text or null, by name; one of another type is left out. */
 function nullableTextFields<Key extends string>(
   record: Record<string, unknown>,
   keys: readonly Key[],
@@ -208,7 +208,7 @@ function nullableTextFields<Key extends string>(
   return fields;
 }
 
-/** One overlay of an access edit; null when it lacks a field or names an unknown kind or setting. */
+/** One overlay of an access edit; null when it lacks a field or names no known kind or setting. */
 function parseAccessChange(value: unknown): AccessChange | null {
   if (!isPlainRecord(value)) return null;
   const kind = accessChangeKinds.find((entry) => entry === value.kind);
