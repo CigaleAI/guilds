@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
-import { useCreateMachine, useUpdateMachine } from "../../api/queries";
-import type { Machine, MachineBox } from "../../api/types";
+import { useCreateMachine, useUpdateMachine } from "../../api/queries/agents";
+import type { Machine, MachineBox } from "../../api/types/agents";
 import { useIdentity } from "../../app/identity";
 import {
   Banner,
@@ -19,6 +19,7 @@ import {
 import {
   customMachineBounds,
   machineBoxLabel,
+  machineBoxes,
   machineFormErrors,
   machineFormOf,
   machineInputOf,
@@ -35,7 +36,7 @@ const tierHint: Record<MachineBox, string> = {
   custom: `A size you choose, ${customMachineBounds.minCpu} to ${customMachineBounds.maxCpu} CPUs and ${customMachineBounds.minMemoryMib} to ${customMachineBounds.maxMemoryMib} MiB. Hosts any agent, coding agents included.`,
 };
 
-const tierOptions = (Object.keys(machineBoxLabel) as MachineBox[]).map((box) => ({
+const tierOptions = machineBoxes.map((box) => ({
   value: box,
   label: machineBoxLabel[box],
 }));
@@ -90,14 +91,13 @@ function useMachineSubmit(machine: Machine | null, onClose: () => void) {
   };
 }
 
-/** Adds a machine, or renames, resizes and re-caps one; a new tier or size restarts it once idle. */
-export function MachineDialog({
-  machine,
-  onClose,
-}: {
+type MachineDialogProps = {
   machine: Machine | null;
   onClose: () => void;
-}) {
+};
+
+/** Adds a machine, or renames, resizes and re-caps one; a new tier or size restarts it once idle. */
+export function MachineDialog({ machine, onClose }: MachineDialogProps) {
   const { org } = useIdentity();
   const { form, set, errors, submit, pending, blocked, failure } = useMachineSubmit(
     machine,
@@ -158,7 +158,9 @@ export function MachineDialog({
   );
 }
 
-function NameField({ form, errors, onChange, autoFocus }: FieldsProps & { autoFocus: boolean }) {
+type NameFieldProps = FieldsProps & { autoFocus: boolean };
+
+function NameField({ form, errors, onChange, autoFocus }: NameFieldProps) {
   return (
     <TextField
       tone="surface"

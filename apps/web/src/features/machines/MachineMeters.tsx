@@ -8,21 +8,18 @@ import {
   type MachineSize,
 } from "./machines";
 
-/**
- * A share of a limit as a bar: what is used, then what a placement adds in a lighter fill. Past the
- * limit the bar scales to the total and turns ochre.
- */
-function Meter({
-  used,
-  adds = 0,
-  max,
-  label,
-}: {
+type MeterProps = {
   used: number;
   adds?: number;
   max: number;
   label: string;
-}) {
+};
+
+/**
+ * A share of a limit as a bar: what is used, then what a placement adds in a lighter fill. Past the
+ * limit the bar scales to the total and turns ochre.
+ */
+function Meter({ used, adds = 0, max, label }: MeterProps) {
   const total = used + adds;
   const scale = Math.max(max, total, 1);
   const over = total > max;
@@ -58,20 +55,16 @@ function formatCpu(cpu: number): string {
   return String(Number(cpu.toFixed(2)));
 }
 
-/** One resource of a machine's planned load against its capacity, with what the capacity is. */
-function LoadMeter({
-  label,
-  share,
-  format,
-  size,
-  factor,
-}: {
+type LoadMeterProps = {
   label: string;
   share: LoadShare;
   format: (value: number) => string;
   size: string;
   factor: number;
-}) {
+};
+
+/** One resource of a machine's planned load against its capacity, with what the capacity is. */
+function LoadMeter({ label, share, format, size, factor }: LoadMeterProps) {
   const total = share.planned + share.adds;
   return (
     <div className="flex flex-col gap-1.5">
@@ -90,6 +83,20 @@ function LoadMeter({
   );
 }
 
+type LoadBudgetProps = {
+  size: MachineSize;
+  /** The planned load of the agents already on it. */
+  planned: MachineSize;
+  /** What a placement adds. */
+  adds?: MachineSize | undefined;
+  /** Who adds `adds`: "this agent", "the recipe's agents". */
+  addsLabel?: string;
+  /** What to do when it is over, after the warning. */
+  remedy: string;
+  /** Show the sizing rules under the meters; off where the page states them once. */
+  rules?: boolean;
+};
+
 /**
  * A machine's planned load against its capacity, CPUs and memory each: the sum of its agents'
  * minimums, plus what a placement adds, against its size times the overcommit factors. The sizing
@@ -102,19 +109,7 @@ export function LoadBudget({
   addsLabel,
   remedy,
   rules = true,
-}: {
-  size: MachineSize;
-  /** The planned load of the agents already on it. */
-  planned: MachineSize;
-  /** What a placement adds. */
-  adds?: MachineSize | undefined;
-  /** Who adds `adds`: "this agent", "the recipe's agents". */
-  addsLabel?: string;
-  /** What to do when it is over, after the warning. */
-  remedy: string;
-  /** Show the sizing rules under the meters; off where the page states them once. */
-  rules?: boolean;
-}) {
+}: LoadBudgetProps) {
   const shares = loadShares(
     { ...size, planned_cpu: planned.cpu, planned_mib: planned.memory_mib },
     adds,
@@ -159,16 +154,14 @@ export function LoadBudget({
   );
 }
 
-/** Disk used against a cap, or a note that nothing has been measured yet. */
-export function DiskMeter({
-  usedMib,
-  maxMib,
-  label,
-}: {
+type DiskMeterProps = {
   usedMib: number | null;
   maxMib: number;
   label: string;
-}) {
+};
+
+/** Disk used against a cap, or a note that nothing has been measured yet. */
+export function DiskMeter({ usedMib, maxMib, label }: DiskMeterProps) {
   return (
     <div className="flex flex-col gap-1.5">
       <Meter used={usedMib ?? 0} max={maxMib} label={label} />
@@ -181,6 +174,15 @@ export function DiskMeter({
   );
 }
 
+type DiskBudgetProps = {
+  othersMib: number;
+  addsMib: number;
+  unreservedMib: number;
+  machineMib: number;
+  /** The machine's cap less its homes as last measured; null before a measure. */
+  freeMib: number | null;
+};
+
 /**
  * A machine's disk as its agents' own caps reserve it, plus the cap of the agent being placed: the
  * room left unreserved, and the disk free as last measured. Past the unreserved room it warns.
@@ -191,14 +193,7 @@ export function DiskBudget({
   unreservedMib,
   machineMib,
   freeMib,
-}: {
-  othersMib: number;
-  addsMib: number;
-  unreservedMib: number;
-  machineMib: number;
-  /** The machine's cap less its homes as last measured; null before a measure. */
-  freeMib: number | null;
-}) {
+}: DiskBudgetProps) {
   const total = othersMib + addsMib;
   return (
     <div className="flex flex-col gap-1.5">

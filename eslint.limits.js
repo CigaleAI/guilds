@@ -33,15 +33,22 @@ const INLINE_PARAMETER_TYPE = {
     ":function > :matches(Identifier, ObjectPattern, ArrayPattern, AssignmentPattern, RestElement, TSParameterProperty) TSTypeLiteral:not(TSTypeLiteral TSTypeLiteral)",
   message: "An object parameter's type is a named type.",
 };
-// A return type that names nothing, `unknown` or `Record<string, unknown>`, alone or wrapped in a
-// promise or an array, on an exported function, an exported const's function, or a public method.
+// A type that names nothing, `unknown` or `Record<string, unknown>`, alone or wrapped in a promise
+// or an array, as the return type of an exported function, an exported const's function, or a
+// public method, and as the whole of a type alias.
 const ERASED_TYPE =
   ":matches(TSUnknownKeyword, TSTypeReference[typeName.name='Record'][typeArguments.params.0.type='TSStringKeyword'][typeArguments.params.1.type='TSUnknownKeyword'])";
+const erasedAt = (position) =>
+  `:matches(${position}, ${position} > TSArrayType, ${position} > TSTypeReference[typeName.name=/^(Promise|Array)$/] > TSTypeParameterInstantiation) > ${ERASED_TYPE}`;
 const RETURN_TYPE =
   ":matches(:matches(ExportNamedDeclaration, ExportDefaultDeclaration) > FunctionDeclaration, ExportNamedDeclaration > VariableDeclaration > VariableDeclarator > :matches(ArrowFunctionExpression, FunctionExpression), ExportDefaultDeclaration > :matches(ArrowFunctionExpression, FunctionExpression), :matches(MethodDefinition, TSAbstractMethodDefinition):not([accessibility='private'], [accessibility='protected'], [key.type='PrivateIdentifier']) > :matches(FunctionExpression, TSEmptyBodyFunctionExpression)) > TSTypeAnnotation";
 const ERASED_RETURN_TYPE = {
-  selector: `:matches(${RETURN_TYPE}, ${RETURN_TYPE} > TSArrayType, ${RETURN_TYPE} > TSTypeReference[typeName.name=/^(Promise|Array)$/] > TSTypeParameterInstantiation) > ${ERASED_TYPE}`,
+  selector: erasedAt(RETURN_TYPE),
   message: "An export returns a named type.",
+};
+const ERASED_ALIAS = {
+  selector: erasedAt("TSTypeAliasDeclaration"),
+  message: "A named type names a shape.",
 };
 
 const fileLines = {
@@ -89,6 +96,7 @@ export function limits({ files, commands = [] }) {
         SILENT_PROMISE_CATCH,
         INLINE_PARAMETER_TYPE,
         ERASED_RETURN_TYPE,
+        ERASED_ALIAS,
       ],
     },
   };
@@ -112,6 +120,7 @@ export function limits({ files, commands = [] }) {
           BARE_ERROR,
           INLINE_PARAMETER_TYPE,
           ERASED_RETURN_TYPE,
+          ERASED_ALIAS,
         ],
       },
     },

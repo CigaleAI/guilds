@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { CatalogModel, OrgModels } from "../../api/types";
-import { modelOptions, preselectedModel, setupProgress } from "./models";
+import type { CatalogModel, OrgModelProvider, OrgModels } from "../../api/types/models";
+import { formatProviderState, modelOptions, preselectedModel, setupProgress } from "./models";
 
 function model(id: string, kind: "marketplace" | "coding" = "marketplace"): CatalogModel {
   const [provider, ...rest] = id.split("/");
@@ -64,4 +64,44 @@ test("setup progress follows a connected provider, chosen models, and a default"
   assert.deepEqual(setupProgress(empty).map((step) => step.done), [false, false, false]);
   assert.deepEqual(setupProgress({ ...models, default: null, models: [] }).map((step) => step.done), [true, false, false]);
   assert.deepEqual(setupProgress(models).map((step) => step.done), [true, true, true]);
+});
+
+const provider = (patch: Partial<OrgModelProvider>): OrgModelProvider => ({
+  id: "openai",
+  label: "OpenAI",
+  kind: "marketplace",
+  connected: false,
+  source: null,
+  key_hint: null,
+  base_url: null,
+  ...patch,
+});
+
+test("a connected provider's state names its key, and a local one its endpoint", () => {
+  assert.equal(
+    formatProviderState(provider({ connected: true, source: "own", key_hint: "abcd" })),
+    "Connected · key ends in abcd",
+  );
+  assert.equal(
+    formatProviderState(provider({ connected: true, source: "own" })),
+    "Connected · key ends in …",
+  );
+  const local = { id: "local" as const, connected: true, source: "own" as const, base_url: "http://box:11434/v1" };
+  assert.equal(formatProviderState(provider(local)), "Connected · http://box:11434/v1");
+  assert.equal(
+    formatProviderState(provider({ ...local, key_hint: "wxyz" })),
+    "Connected · http://box:11434/v1 · key ends in wxyz",
+  );
+});
+
+test("a provider not connected with the organisation's key says how to connect it", () => {
+  assert.equal(formatProviderState(provider({})), "Not connected. Paste the organisation's key.");
+  assert.equal(
+    formatProviderState(provider({ connected: true, source: "platform" })),
+    "Provided by the platform. Paste the organisation's key to run on it instead.",
+  );
+  assert.equal(
+    formatProviderState(provider({ id: "local" })),
+    "Not connected. Save the endpoint's URL, and a key when it needs one.",
+  );
 });

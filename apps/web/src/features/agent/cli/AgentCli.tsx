@@ -2,7 +2,7 @@ import { useParams } from "@tanstack/react-router";
 import { RotateCw, SquareTerminal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../../api/client";
-import { useAgent } from "../../../api/queries";
+import { useAgent } from "../../../api/queries/agents";
 import { Button, IconButton, EmptyState, StatusBadge } from "@guildsrun/ui";
 type Session =
   | { kind: "idle" }

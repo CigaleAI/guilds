@@ -1,5 +1,5 @@
-import { useDatabase } from "../../../api/queries";
-import type { StudioAgent } from "../../../api/types";
+import { useDatabase } from "../../../api/queries/tables";
+import type { StudioAgent } from "../../../api/types/studio";
 import { Banner, SkeletonRows } from "@guildsrun/ui";
 import { RecordsPanel } from "../../tables/RecordsPanel";
 import { NotesBrowser, type NoteScope } from "../../notes/NotesBrowser";
@@ -7,11 +7,13 @@ import { useStudio } from "../StudioContext";
 
 const enc = encodeURIComponent;
 
+type NoteEditorProps = { agent: StudioAgent | null; path: string };
+
 /**
  * The notes browser opened at one note: the agent's notes when it belongs to one, the guild's
  * and the organisation's, with changes opened in Studio.
  */
-export function NoteEditor({ agent, path }: { agent: StudioAgent | null; path: string }) {
+export function NoteEditor({ agent, path }: NoteEditorProps) {
   const { session, openStep, ask } = useStudio();
   const guildId = session.source_guild_id;
   const shared: NoteScope[] = [
@@ -49,8 +51,10 @@ export function NoteEditor({ agent, path }: { agent: StudioAgent | null; path: s
   );
 }
 
+type TableRecordsProps = { collectionId: string };
+
 /** One table's records, to search and edit. */
-export function TableRecords({ collectionId }: { collectionId: string }) {
+export function TableRecords({ collectionId }: TableRecordsProps) {
   const table = useDatabase(collectionId);
   if (table.isError) {
     return <Banner tone="error" title="Couldn't open the table" meta={table.error.message} />;

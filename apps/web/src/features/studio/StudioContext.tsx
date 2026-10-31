@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react";
-import type { StudioAgent, StudioSession } from "../../api/types";
+import type { StudioAgent, StudioSession } from "../../api/types/studio";
 import type { Approvals } from "./approvals";
 import type { StudioPin } from "./investigate";
 import type { StudioSearch } from "./location";
@@ -20,8 +20,10 @@ export type StudioView = {
   /** The guild's agents. */
   agents: StudioAgent[];
   search: StudioSearch;
-  /** Points the inspector somewhere else; `replace` keeps the current history entry. */
-  go: (next: StudioSearch, options?: { replace?: boolean }) => void;
+  /** Points the inspector somewhere else, as a new history entry. */
+  go: (next: StudioSearch) => void;
+  /** Points the inspector somewhere else in place of the current history entry. */
+  goInPlace: (next: StudioSearch) => void;
   /** Opens a run at a step, in the History tab of the agent that ran it. */
   openStep: (step: StudioStep) => void;
   /** Pins evidence to the operator's next message to the coach. */
@@ -30,11 +32,19 @@ export type StudioView = {
   approvals: Approvals;
 };
 
+/** A Studio contract broken by its caller, such as reading the session outside one. */
+export class StudioError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "StudioError";
+  }
+}
+
 export const StudioContext = createContext<StudioView | null>(null);
 
 /** The session the inspector belongs to, and how to move it or pin what it shows. */
 export function useStudio(): StudioView {
   const view = useContext(StudioContext);
-  if (!view) throw new Error("useStudio is only available inside a Studio session");
+  if (!view) throw new StudioError("useStudio is only available inside a Studio session");
   return view;
 }

@@ -1,8 +1,13 @@
-import type { ApplyMachine, ApplyPreview } from "../../api/types";
+import type { ApplyMachine, ApplyPreview } from "../../api/types/recipes";
 import { Select } from "@guildsrun/ui";
 import { LoadBudget } from "../machines/MachineMeters";
 import { MachinesSettingsLink, NoMachines } from "../machines/MachineNotes";
 import { machineBoxLabel, machineSizeLabel, sharedMachineNote } from "../machines/machines";
+
+type ApplyMachinePickerProps = {
+  preview: ApplyPreview;
+  onChange: (machineId: string) => void;
+};
 
 /**
  * The machine every agent of the recipe goes on: a picker when the organisation has several, else
@@ -10,13 +15,7 @@ import { machineBoxLabel, machineSizeLabel, sharedMachineNote } from "../machine
  * smallest machine every role runs on are offered disabled. Under it, the machine's planned load
  * with what the recipe's agents add, and the server's findings about the machine.
  */
-export function ApplyMachinePicker({
-  preview,
-  onChange,
-}: {
-  preview: ApplyPreview;
-  onChange: (machineId: string) => void;
-}) {
+export function ApplyMachinePicker({ preview, onChange }: ApplyMachinePickerProps) {
   const [only] = preview.machines;
   if (!only) return <NoMachines />;
   const machine = preview.machines.find((item) => item.id === preview.machine_id);
@@ -64,8 +63,10 @@ function machineLabel(machine: ApplyMachine): string {
   return `${machine.name} · ${machineBoxLabel[machine.box]} · ${machineSizeLabel(machine)}${machine.fits ? "" : " · too small"}`;
 }
 
+type MachineFindingsProps = { preview: ApplyPreview };
+
 /** What the server refuses about the chosen machine, with where machines are created and resized. */
-function MachineFindings({ preview }: { preview: ApplyPreview }) {
+function MachineFindings({ preview }: MachineFindingsProps) {
   const findings = preview.errors.filter((finding) => finding.code.startsWith("machine."));
   if (!findings.length) return null;
   return (

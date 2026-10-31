@@ -1,9 +1,13 @@
 import { Pin } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { useAskInNewSession, useCancelStudio, usePostStudioMessage } from "../../api/queries";
+import {
+  useAskInNewSession,
+  useCancelStudio,
+  usePostStudioMessage,
+} from "../../api/queries/studio";
 import type { LiveTurn } from "../../api/liveTurn";
-import type { StudioMessage, StudioSession } from "../../api/types";
+import type { StudioMessage, StudioSession } from "../../api/types/studio";
 import { Button, Checkbox, Composer, Banner, toast, Icon } from "@guildsrun/ui";
 import type { FlowSegment } from "../agent/runs/runFlowModel";
 import { CoachLog, type CoachRow } from "../coach/CoachLog";
@@ -11,7 +15,7 @@ import { answered } from "../coach/coachRows";
 import { focusOf, widgetOf } from "./chatModel";
 import type { StudioPin } from "./investigate";
 import { focusLocation } from "./location";
-import { proposalsOf, type ProposalRequest } from "./pendingModel";
+import { proposalsOf, type Proposal, type ProposalRequest } from "./pendingModel";
 import { ProposalCard, SettleAll } from "./ProposalCards";
 import { useStudio } from "./StudioContext";
 
@@ -123,35 +127,9 @@ export function StudioChat({ session, messages, live, pin, onUnpin }: StudioChat
         }}
       />
       <div className="flex flex-col gap-2 px-5 pb-5">
-        {session.status !== "active" ? (
-          <Banner
-            tone="info"
-            title={
-              session.status === "archived" ? "This session is archived" : "This session is blocked"
-            }
-          >
-            {session.status === "archived"
-              ? "It stays readable; start a new session to keep working."
-              : session.blocked_reason === "input_token_limit"
-                ? "The conversation reached the coach's input limit. Continue in a new session that starts from a summary."
-                : "Its guild is gone."}
-          </Banner>
-        ) : null}
+        {session.status !== "active" ? <ClosedSessionBanner session={session} /> : null}
         {pin ? (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 self-start rounded-2xl bg-surface py-1 pr-1 pl-3 text-xs text-fg-2">
-            <span className="flex items-center gap-2">
-              <Icon icon={Pin} size={14} />
-              {pin.focus.label}
-            </span>
-            <Checkbox
-              label="Ask in a new session"
-              checked={fresh}
-              onCheckedChange={(value) => setFresh(value === true)}
-            />
-            <Button variant="ghost" size="xs" onClick={onUnpin}>
-              Unpin
-            </Button>
-          </div>
+          <PinnedEvidence pin={pin} fresh={fresh} onFreshChange={setFresh} onUnpin={onUnpin} />
         ) : null}
         <Composer
           label="Message the coach"
@@ -167,21 +145,67 @@ export function StudioChat({ session, messages, live, pin, onUnpin }: StudioChat
   );
 }
 
+type ClosedSessionBannerProps = { session: StudioSession };
+
+/** Why a session takes no more messages: it is archived, or blocked by its input limit or guild. */
+function ClosedSessionBanner({ session }: ClosedSessionBannerProps) {
+  return (
+    <Banner
+      tone="info"
+      title={session.status === "archived" ? "This session is archived" : "This session is blocked"}
+    >
+      {session.status === "archived"
+        ? "It stays readable; start a new session to keep working."
+        : session.blocked_reason === "input_token_limit"
+          ? "The conversation reached the coach's input limit. Continue in a new session that starts from a summary."
+          : "Its guild is gone."}
+    </Banner>
+  );
+}
+
+type PinnedEvidenceProps = {
+  pin: StudioPin;
+  /** Whether the next message starts a new session instead of continuing this one. */
+  fresh: boolean;
+  onFreshChange: (fresh: boolean) => void;
+  onUnpin: () => void;
+};
+
+/** The evidence the next message is pinned to, with the choice to ask it in a new session. */
+function PinnedEvidence({ pin, fresh, onFreshChange, onUnpin }: PinnedEvidenceProps) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 self-start rounded-2xl bg-surface py-1 pr-1 pl-3 text-xs text-fg-2">
+      <span className="flex items-center gap-2">
+        <Icon icon={Pin} size={14} />
+        {pin.focus.label}
+      </span>
+      <Checkbox
+        label="Ask in a new session"
+        checked={fresh}
+        onCheckedChange={(value) => onFreshChange(value === true)}
+      />
+      <Button variant="ghost" size="xs" onClick={onUnpin}>
+        Unpin
+      </Button>
+    </div>
+  );
+}
+
+type RequestBatchProps = {
+  requests: ProposalRequest[];
+  answered: boolean;
+};
+
 /**
  * The requests one coach turn made, each on its own card, with Apply all and Decline all while
  * several are open. The coach continues with one reply once every request is answered.
  */
-function RequestBatch({
-  requests,
-  answered: done,
-}: {
-  requests: ProposalRequest[];
-  answered: boolean;
-}) {
+function RequestBatch({ requests, answered: done }: RequestBatchProps) {
   const { approvals } = useStudio();
   const seqs = new Set(requests.map((request) => request.seq));
   const current = approvals.proposals.filter((proposal) => seqs.has(proposal.seq));
-  const proposals = !done && current.length ? current : proposalsOf(requests, approvals);
+  const proposals =
+    !done && current.length ? current : proposalsOf(requests, approvals.drafts, approvals.granted);
   const open = done ? [] : proposals.filter((proposal) => proposal.state === "open");
   const idle = approvals.live && !approvals.busy;
 
@@ -190,20 +214,30 @@ function RequestBatch({
       {proposals.map((proposal) => (
         <ProposalCard key={proposal.seq} proposal={proposal} actionable={!done} showable />
       ))}
-      {open.length && proposals.length > 1 ? (
-        <div className="flex flex-wrap items-center gap-2 self-start">
-          <span className="text-sm text-fg-2">
-            {open.length} of {proposals.length} left to decide; the coach continues once each is
-            answered.
-          </span>
-          {open.length > 1 ? <SettleAll open={open} disabled={!idle} /> : null}
-        </div>
-      ) : null}
+      <BatchProgress open={open} total={proposals.length} disabled={!idle} />
       {!done && approvals.reply && idle && !approvals.replying ? (
         <Button size="sm" className="self-start" onClick={approvals.carryOn}>
           Continue
         </Button>
       ) : null}
     </>
+  );
+}
+
+type BatchProgressProps = { open: readonly Proposal[]; total: number; disabled: boolean };
+
+/**
+ * How many of a turn's several requests are left to decide, with Apply all and Decline all while
+ * more than one is; nothing once each is decided or for a turn of one request.
+ */
+function BatchProgress({ open, total, disabled }: BatchProgressProps) {
+  if (!open.length || total < 2) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2 self-start">
+      <span className="text-sm text-fg-2">
+        {open.length} of {total} left to decide; the coach continues once each is answered.
+      </span>
+      {open.length > 1 ? <SettleAll open={open} disabled={disabled} /> : null}
+    </div>
   );
 }

@@ -1,26 +1,22 @@
 import { Link, useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import { ArrowLeft, CircleCheck, Rocket } from "lucide-react";
 import { useState } from "react";
-import {
-  useAddOrgServer,
-  useApplyRecipe,
-  useInstallRegistryConnector,
-  useOrgModels,
-  useRecipe,
-  useRecipePreview,
-} from "../../api/queries";
+import { useAddOrgServer } from "../../api/queries/access";
+import { useApplyRecipe, useRecipe, useRecipePreview } from "../../api/queries/recipes";
+import { useInstallRegistryConnector } from "../../api/queries/admin";
+import { useOrgModels } from "../../api/queries/models";
+import type { Harness } from "../../api/types/agents";
+import type { OrgModels } from "../../api/types/models";
 import type {
   ApplyConnectionChoice,
   ApplyInstall,
   ApplyPreview,
   ApplySetup,
-  Harness,
-  OrgModels,
   PlannedConnection,
-} from "../../api/types";
-import { hasConnectedProvider } from "../../api/types";
+} from "../../api/types/recipes";
+import { hasConnectedProvider } from "../../api/types/models";
 import { useIdentity } from "../../app/identity";
-import { harnessLabel, harnessOptions, harnessSubscriptionNote } from "../agent/harness";
+import { harnessLabel, harnessOptions, harnessSubscriptionNote, isHarness } from "../agent/harness";
 import { setupSearch } from "../instance/instance";
 import { ConnectProviderGuide } from "../models/ConnectProviderGuide";
 import { modelOptions } from "../models/models";
@@ -37,8 +33,10 @@ import {
   Tag,
 } from "@guildsrun/ui";
 import { ApplyMachinePicker } from "./ApplyMachinePicker";
-import { isRecipeApproved, planFromRecipe } from "./plan/planModel";
+import { isRecipeApproved } from "./plan/recipeDraft";
+import { planFromRecipe } from "./plan/planModel";
 import { PlanView } from "./plan/PlanView";
+import { filledPlanSections } from "./plan/planSections";
 
 const connectLater = "create";
 
@@ -49,14 +47,21 @@ function defaultLogin(connection: PlannedConnection): string {
     : connectLater;
 }
 
-/** What keeps the guild from being created, first thing first; null when nothing does. */
-function blockingReason(checks: {
+/**
+ * What apply checks before it creates the guild: whether the recipe is approved, whether no model
+ * provider is connected, whether an agent lacks a model or a coding agent a harness, and the
+ * preview with its machine and errors.
+ */
+type ApplyChecks = {
   approved: boolean;
   noProvider: boolean;
   missingModel: boolean;
   missingHarness: boolean;
   preview: ApplyPreview;
-}): string | null {
+};
+
+/** What keeps the guild from being created, first thing first; null when nothing does. */
+function blockingReason(checks: ApplyChecks): string | null {
   const reasons: Array<[boolean, string]> = [
     [!checks.approved, "Approve this recipe before applying it."],
     [checks.noProvider, "Connect a model provider on Model keys before applying."],
@@ -181,42 +186,21 @@ export function ApplyPreviewPage() {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-6 py-8 md:px-10">
       <div className="mx-auto flex max-w-240 flex-col gap-6">
-        <header className="flex flex-col gap-3">
-          <Button asChild variant="ghost" size="sm" className="self-start">
-            <Link to="/recipes/$recipeId" params={{ recipeId }}>
-              <Icon icon={ArrowLeft} size={14} />
-              {data.recipe_name}
-            </Link>
-          </Button>
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="flex min-w-60 flex-1 flex-col gap-1">
-              <span className="type-label text-muted">Apply</span>
-              <h1 className="type-h1">{data.recipe_name}</h1>
-              <p className="text-sm text-fg-2">
-                Review what this creates, then create the guild. Its routines stay paused until its
-                checklist is done.
-              </p>
-            </div>
-            <Button
-              size="md"
-              disabled={blockedBy !== null || applyRecipe.isPending || preview.isPlaceholderData}
-              onClick={create}
-            >
-              <Icon icon={Rocket} size={14} />
-              {applyRecipe.isPending ? "Creating…" : "Create guild"}
-            </Button>
-          </div>
-        </header>
+        <ApplyHeader
+          recipeId={recipeId}
+          recipeName={data.recipe_name}
+          blocked={blockedBy !== null}
+          creating={applyRecipe.isPending}
+          refreshing={preview.isPlaceholderData}
+          onCreate={create}
+        />
 
-        <Readiness blockedBy={blockedBy} />
-
-        {data.installs.length ? (
-          <Installs installs={data.installs} onInstalled={() => void preview.refetch()} />
-        ) : null}
-
-        {data.setups.length ? <Setups setups={data.setups} /> : null}
-
-        {noProvider ? <ConnectProviderGuide what="this guild's agents" /> : null}
+        <ApplyPrerequisites
+          blockedBy={blockedBy}
+          preview={data}
+          noProvider={noProvider}
+          onInstalled={() => void preview.refetch()}
+        />
 
         <TextField
           tone="surface"
@@ -231,7 +215,7 @@ export function ApplyPreviewPage() {
         <PlanView
           plan={plan}
           findings={data.findings.filter((finding) => !authoringFindings.has(finding.code))}
-          hideEmpty
+          sections={filledPlanSections(plan)}
           hideName
           agentExtras={(agent) => (
             <AgentChoices
@@ -270,8 +254,88 @@ export function ApplyPreviewPage() {
   );
 }
 
+type ApplyHeaderProps = {
+  recipeId: string;
+  recipeName: string;
+  /** True while something keeps the guild from being created. */
+  blocked: boolean;
+  creating: boolean;
+  /** True while the preview shown is the previous machine's, until the new one arrives. */
+  refreshing: boolean;
+  onCreate: () => void;
+};
+
+/** The apply page's title, the way back to the recipe, and the button that creates the guild. */
+function ApplyHeader({
+  recipeId,
+  recipeName,
+  blocked,
+  creating,
+  refreshing,
+  onCreate,
+}: ApplyHeaderProps) {
+  return (
+    <header className="flex flex-col gap-3">
+      <Button asChild variant="ghost" size="sm" className="self-start">
+        <Link to="/recipes/$recipeId" params={{ recipeId }}>
+          <Icon icon={ArrowLeft} size={14} />
+          {recipeName}
+        </Link>
+      </Button>
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="flex min-w-60 flex-1 flex-col gap-1">
+          <span className="type-label text-muted">Apply</span>
+          <h1 className="type-h1">{recipeName}</h1>
+          <p className="text-sm text-fg-2">
+            Review what this creates, then create the guild. Its routines stay paused until its
+            checklist is done.
+          </p>
+        </div>
+        <Button size="md" disabled={blocked || creating || refreshing} onClick={onCreate}>
+          <Icon icon={Rocket} size={14} />
+          {creating ? "Creating…" : "Create guild"}
+        </Button>
+      </div>
+    </header>
+  );
+}
+
+type ApplyPrerequisitesProps = {
+  blockedBy: string | null;
+  preview: ApplyPreview;
+  noProvider: boolean;
+  onInstalled: () => void;
+};
+
+/**
+ * What the guild needs before it can be created and run: whether anything blocks it, the
+ * connectors to install or set up, and a model provider when none is connected.
+ */
+function ApplyPrerequisites({
+  blockedBy,
+  preview,
+  noProvider,
+  onInstalled,
+}: ApplyPrerequisitesProps) {
+  return (
+    <>
+      <Readiness blockedBy={blockedBy} />
+
+      {preview.installs.length ? (
+        <Installs installs={preview.installs} onInstalled={onInstalled} />
+      ) : null}
+
+      {preview.setups.length ? <Setups setups={preview.setups} /> : null}
+
+      {noProvider ? <ConnectProviderGuide what="this guild's agents" /> : null}
+    </>
+  );
+}
+
+type ReadinessProps = { blockedBy: string | null };
+
 /** What keeps the guild from being created, or that it is ready. */
-function Readiness({ blockedBy }: { blockedBy: string | null }) {
+function Readiness({ blockedBy }: ReadinessProps) {
   if (blockedBy) {
     return (
       <Banner tone="error" title="Not ready to apply">
@@ -289,6 +353,22 @@ function Readiness({ blockedBy }: { blockedBy: string | null }) {
   );
 }
 
+type AgentChoicesProps = {
+  name: string;
+  onName: (name: string) => void;
+  collides: boolean;
+  /** Null hides the model picker. */
+  model: string | null;
+  onModel: (model: string) => void;
+  recommended: string | null;
+  coding: boolean;
+  orgModels: OrgModels | undefined;
+  /** Null hides the harness picker: the agent does not code. */
+  harness: Harness | "" | null;
+  onHarness: (harness: Harness) => void;
+  recommendedHarness: Harness | null;
+};
+
 /**
  * An agent's name and model before apply, and a coding agent's harness; no model picker while no
  * provider is connected.
@@ -305,21 +385,7 @@ function AgentChoices({
   harness,
   onHarness,
   recommendedHarness,
-}: {
-  name: string;
-  onName: (name: string) => void;
-  collides: boolean;
-  /** Null hides the model picker. */
-  model: string | null;
-  onModel: (model: string) => void;
-  recommended: string | null;
-  coding: boolean;
-  orgModels: OrgModels | undefined;
-  /** Null hides the harness picker: the agent does not code. */
-  harness: Harness | "" | null;
-  onHarness: (harness: Harness) => void;
-  recommendedHarness: Harness | null;
-}) {
+}: AgentChoicesProps) {
   return (
     <div className="grid gap-3 md:grid-cols-2">
       <TextField
@@ -349,7 +415,9 @@ function AgentChoices({
           label="Harness"
           placeholder="Choose a harness"
           value={harness}
-          onValueChange={(value) => onHarness(value as Harness)}
+          onValueChange={(value) => {
+            if (isHarness(value)) onHarness(value);
+          }}
           options={harnessOptions}
           hint={
             recommendedHarness
@@ -363,16 +431,14 @@ function AgentChoices({
   );
 }
 
-/** The login apply gives a connector: a live one to reuse, or one to connect afterwards. */
-function LoginSelect({
-  connection,
-  value,
-  onChange,
-}: {
+type LoginSelectProps = {
   connection: PlannedConnection;
   value: string;
   onChange: (login: string) => void;
-}) {
+};
+
+/** The login apply gives a connector: a live one to reuse, or one to connect afterwards. */
+function LoginSelect({ connection, value, onChange }: LoginSelectProps) {
   return (
     <Select
       tone="paper"
@@ -390,17 +456,22 @@ function LoginSelect({
   );
 }
 
+/** A connector the recipe names that apply installs from the registry. */
+type RegistryConnectorInstall = Extract<ApplyInstall, { from: "registry" }>;
+
+/** A connector the recipe declares itself, which apply adds to the organisation. */
+type RecipeConnectorInstall = Extract<ApplyInstall, { from: "recipe" }>;
+
+type InstallsProps = {
+  installs: ApplyInstall[];
+  onInstalled: () => void;
+};
+
 /**
  * The connectors the recipe names that the box lacks. An instance admin installs a registry one;
  * an owner or admin adds the recipe's own remote server as the organisation's server.
  */
-function Installs({
-  installs,
-  onInstalled,
-}: {
-  installs: ApplyInstall[];
-  onInstalled: () => void;
-}) {
+function Installs({ installs, onInstalled }: InstallsProps) {
   const { user, org } = useIdentity();
   const install = useInstallRegistryConnector();
   const addServer = useAddOrgServer(org.id);
@@ -408,19 +479,24 @@ function Installs({
   const canAdd = org.role === "owner" || org.role === "admin";
   const busy = install.isPending || addServer.isPending;
 
-  const fromRegistry = (server: string, verified: boolean) =>
-    install.mutateAsync({ slug: server, unverified: !verified }).then(
-      () => {
-        toast({ kind: "success", title: `${server} installed` });
-        onInstalled();
-      },
-      (error: Error) => {
-        toast({ kind: "error", title: `Couldn't install ${server}`, description: error.message });
-        throw error;
-      },
-    );
+  /** What an install reports either way, and the refreshed preview once it lands. */
+  const installOutcome = (server: string) => ({
+    onSuccess: () => {
+      toast({ kind: "success", title: `${server} installed` });
+      onInstalled();
+    },
+    onError: (error: Error) =>
+      toast({ kind: "error", title: `Couldn't install ${server}`, description: error.message }),
+  });
 
-  const fromRecipe = (item: Extract<ApplyInstall, { from: "recipe" }>) =>
+  const installVerified = (server: string) =>
+    install.mutate({ slug: server, unverified: false }, installOutcome(server));
+
+  /** Rejects on failure, so the confirm dialog stays open. */
+  const installUnverified = (server: string) =>
+    install.mutateAsync({ slug: server, unverified: true }, installOutcome(server));
+
+  const fromRecipe = (item: RecipeConnectorInstall) =>
     addServer.mutate(
       {
         slug: item.server,
@@ -456,9 +532,7 @@ function Installs({
                 canInstall={user.platform_admin}
                 busy={busy}
                 onInstall={() =>
-                  item.verified
-                    ? void fromRegistry(item.server, true).catch(() => undefined)
-                    : setConfirming(item.server)
+                  item.verified ? installVerified(item.server) : setConfirming(item.server)
                 }
               />
             ) : (
@@ -478,24 +552,21 @@ function Installs({
         title={`Install ${confirming ?? ""} unverified?`}
         description="The registry hasn't verified its publisher. Its tools reach whatever its logins grant."
         confirmLabel="Install unverified"
-        onConfirm={() => (confirming ? fromRegistry(confirming, false) : undefined)}
+        onConfirm={() => (confirming ? installUnverified(confirming) : undefined)}
       />
     </section>
   );
 }
 
-/** A registry connector to install; an instance admin installs it. */
-function RegistryInstall({
-  item,
-  canInstall,
-  busy,
-  onInstall,
-}: {
-  item: Extract<ApplyInstall, { from: "registry" }>;
+type RegistryInstallProps = {
+  item: RegistryConnectorInstall;
   canInstall: boolean;
   busy: boolean;
   onInstall: () => void;
-}) {
+};
+
+/** A registry connector to install; an instance admin installs it. */
+function RegistryInstall({ item, canInstall, busy, onInstall }: RegistryInstallProps) {
   return (
     <>
       <span className="min-w-0 flex-1 text-fg-2">
@@ -519,18 +590,15 @@ function RegistryInstall({
   );
 }
 
-/** The recipe's own remote server, to add as the organisation's; an owner or admin adds it. */
-function RecipeInstall({
-  item,
-  canAdd,
-  busy,
-  onAdd,
-}: {
-  item: Extract<ApplyInstall, { from: "recipe" }>;
+type RecipeInstallProps = {
+  item: RecipeConnectorInstall;
   canAdd: boolean;
   busy: boolean;
   onAdd: () => void;
-}) {
+};
+
+/** The recipe's own remote server, to add as the organisation's; an owner or admin adds it. */
+function RecipeInstall({ item, canAdd, busy, onAdd }: RecipeInstallProps) {
   return (
     <>
       <span className="flex min-w-0 flex-1 flex-col">
@@ -551,11 +619,13 @@ function RecipeInstall({
   );
 }
 
+type SetupsProps = { setups: ApplySetup[] };
+
 /**
  * The connectors the recipe needs that the box has but no platform admin has set up. The guild
  * cannot connect them until one enters the platform key under Admin → Platform keys.
  */
-function Setups({ setups }: { setups: ApplySetup[] }) {
+function Setups({ setups }: SetupsProps) {
   const { user } = useIdentity();
   const location = useLocation();
   return (

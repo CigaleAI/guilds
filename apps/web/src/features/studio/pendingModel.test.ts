@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { StudioDraft, StudioMessage } from "../../api/types";
+import type { StudioDraft, StudioMessage } from "../../api/types/studio";
 import { countOpen, draftHead, turnProposals, turnReply } from "./pendingModel";
 
 function message(

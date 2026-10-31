@@ -1,8 +1,8 @@
 import { ExternalLink, Pin } from "lucide-react";
 import { formatSize } from "../../../app/format";
 import { Banner, Button, cn, Icon } from "@guildsrun/ui";
-import type { ReferenceNode, StudioReferences } from "../../../api/types";
-import { DetailHeader, Empty } from "../MasterDetail";
+import type { ReferenceNode, StudioReferences } from "../../../api/types/studio";
+import { DetailHeader, Empty } from "../../../app/MasterDetail";
 import { useStudio } from "../StudioContext";
 import { NodeRow, ReferenceSection as Section } from "./referenceParts";
 import {
@@ -18,16 +18,14 @@ import {
   type TaskPull,
 } from "./referencesModel";
 
-/** The selected Task or file: what it pulls in, what pulls it in, and where to open it. */
-export function ReferenceDetail({
-  data,
-  node,
-  onSelect,
-}: {
+type ReferenceDetailProps = {
   data: StudioReferences;
   node: ReferenceNode;
   onSelect: (id: string) => void;
-}) {
+};
+
+/** The selected Task or file: what it pulls in, what pulls it in, and where to open it. */
+export function ReferenceDetail({ data, node, onSelect }: ReferenceDetailProps) {
   return (
     <section className="flex flex-col gap-4">
       <DetailHeader
@@ -44,7 +42,9 @@ export function ReferenceDetail({
   );
 }
 
-function DetailActions({ node }: { node: ReferenceNode }) {
+type DetailActionsProps = { node: ReferenceNode };
+
+function DetailActions({ node }: DetailActionsProps) {
   const { go, ask } = useStudio();
   const location = stateListLocation(node);
   return (
@@ -77,7 +77,9 @@ function DetailActions({ node }: { node: ReferenceNode }) {
   );
 }
 
-function OpenPrompt({ agentId, label = "Open Prompt" }: { agentId: string; label?: string }) {
+type OpenPromptProps = { agentId: string; label?: string };
+
+function OpenPrompt({ agentId, label = "Open Prompt" }: OpenPromptProps) {
   const { go } = useStudio();
   return (
     <Button
@@ -91,16 +93,14 @@ function OpenPrompt({ agentId, label = "Open Prompt" }: { agentId: string; label
   );
 }
 
-/** A Task's embed budget, and everything it pulls into every run. */
-function TaskDetail({
-  data,
-  node,
-  onSelect,
-}: {
+type TaskDetailProps = {
   data: StudioReferences;
   node: ReferenceNode;
   onSelect: (id: string) => void;
-}) {
+};
+
+/** A Task's embed budget, and everything it pulls into every run. */
+function TaskDetail({ data, node, onSelect }: TaskDetailProps) {
   const used = node.inlined_bytes ?? 0;
   const over = isOverBudget(node, data.budget);
   const labels = referenceColumnLabels(data.depth);
@@ -152,16 +152,14 @@ function pullMeta(pull: TaskPull, labels: string[]): string {
   return `${labels[pull.hop]} · ${formatSize(pull.node.bytes)}`;
 }
 
-/** What a file embeds or names, what embeds or names it, and which agents' prompts it reaches. */
-export function FileDetail({
-  data,
-  node,
-  onSelect,
-}: {
+type FileDetailProps = {
   data: StudioReferences;
   node: ReferenceNode;
   onSelect: (id: string) => void;
-}) {
+};
+
+/** What a file embeds or names, what embeds or names it, and which agents' prompts it reaches. */
+export function FileDetail({ data, node, onSelect }: FileDetailProps) {
   const { agents } = useStudio();
   const links = referenceLinks(data, node.id);
   const reached = reachedAgents(node, data.depth);
@@ -212,7 +210,9 @@ export function FileDetail({
   );
 }
 
-function LinkRows({ links, onSelect }: { links: ReferenceLink[]; onSelect: (id: string) => void }) {
+type LinkRowsProps = { links: ReferenceLink[]; onSelect: (id: string) => void };
+
+function LinkRows({ links, onSelect }: LinkRowsProps) {
   return links.flatMap((link) =>
     link.node ? (
       <NodeRow

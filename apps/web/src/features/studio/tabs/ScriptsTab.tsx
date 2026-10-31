@@ -1,15 +1,18 @@
 import { Link } from "@tanstack/react-router";
 import { ExternalLink, Pin } from "lucide-react";
-import { useAgentScripts } from "../../../api/queries";
-import type { Script, StudioAgent } from "../../../api/types";
+import { useAgentScripts } from "../../../api/queries/scripts";
+import type { Script } from "../../../api/types/scripts";
+import type { StudioAgent } from "../../../api/types/studio";
 import { Button, Banner, SkeletonRows, Icon, Row, Tag } from "@guildsrun/ui";
-import { DetailHeader, Empty, MasterDetail } from "../MasterDetail";
+import { DetailHeader, Empty, MasterDetail } from "../../../app/MasterDetail";
 import { useStudio } from "../StudioContext";
 import { ChangeBar } from "./ChangeBar";
 
+type ScriptsTabProps = { agent: StudioAgent };
+
 /** The agent's scripts: what each does, its tool parameters, its source and who changed it last. */
-export function ScriptsTab({ agent }: { agent: StudioAgent }) {
-  const { search, go } = useStudio();
+export function ScriptsTab({ agent }: ScriptsTabProps) {
+  const { search, goInPlace } = useStudio();
   const scripts = useAgentScripts(agent.id);
 
   if (scripts.isPending) return <SkeletonRows rows={4} label="Loading scripts" className="p-5" />;
@@ -57,10 +60,12 @@ export function ScriptsTab({ agent }: { agent: StudioAgent }) {
                   type="button"
                   aria-current={isSelected ? "true" : undefined}
                   onClick={() =>
-                    go(
-                      { section: "agents", agent: agent.id, tab: "scripts", item: script.name },
-                      { replace: true },
-                    )
+                    goInPlace({
+                      section: "agents",
+                      agent: agent.id,
+                      tab: "scripts",
+                      item: script.name,
+                    })
                   }
                 />
               </Row>
@@ -83,7 +88,9 @@ export function ScriptsTab({ agent }: { agent: StudioAgent }) {
   );
 }
 
-function ScriptDetail({ agent, script }: { agent: StudioAgent; script: Script }) {
+type ScriptDetailProps = { agent: StudioAgent; script: Script };
+
+function ScriptDetail({ agent, script }: ScriptDetailProps) {
   const { session, ask } = useStudio();
   return (
     <>

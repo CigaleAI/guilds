@@ -6,6 +6,7 @@ import {
   flowTimeline,
   turnReasoning,
   turnText,
+  turnUsage,
 } from "./runFlowModel";
 import type { FlowSegment, RunError, Segment } from "./runFlowModel";
 
@@ -220,6 +221,32 @@ test("a tool result without a matching call becomes its own step", () => {
   assert.equal(flow.steps[0]?.index, null);
   assert.equal(flow.steps[0]?.calls[0]?.info.kind, "execute");
   assert.equal(flow.steps[0]?.calls[0]?.error, "execution interrupted");
+});
+
+test("a tool result recorded twice for one call gets one step", () => {
+  seq = 0;
+  const messages = [toolRow("ghost", "note_get", "a"), toolRow("ghost", "note_get", "a")];
+  const flow = flowAt(buildFlowSegments(messages, run).segments, 0);
+  assert.equal(flow.steps.length, 1);
+});
+
+test("each tool result that names no call gets a step of its own", () => {
+  seq = 0;
+  const messages = [toolRow("", "note_get", "a"), toolRow("", "note_get", "b")];
+  const flow = flowAt(buildFlowSegments(messages, run).segments, 0);
+  assert.equal(flow.steps.length, 2);
+  assert.equal(flow.steps[0]?.calls[0]?.info.name, "note_get");
+});
+
+test("a turn's usage is the object it recorded, and empty otherwise", () => {
+  seq = 0;
+  assert.deepEqual(turnUsage(row({ role: "assistant" }, assistantMeta())), {
+    input_tokens: 1000,
+    output_tokens: 50,
+    cache_read_tokens: 0,
+  });
+  assert.deepEqual(turnUsage(row({ role: "assistant" }, { usage: [1000] })), {});
+  assert.deepEqual(turnUsage(null), {});
 });
 
 test("flowStats sums time, tokens, cost, and counts errors and running calls", () => {

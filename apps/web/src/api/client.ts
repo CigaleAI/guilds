@@ -27,11 +27,82 @@ export function detailText(detail: unknown, fallback: string): string {
   return fallback;
 }
 
+/** A failed reply's status as text: its status text, or `HTTP <status>` when it has none. */
+function statusLine(response: Response): string {
+  return response.statusText || `HTTP ${response.status}`;
+}
+
+/**
+ * A failed reply's body as one readable line: the server's `detail`, or the status line when the
+ * body carries none. Null when the body is not JSON.
+ */
+export async function readErrorBody(response: Response): Promise<string | null> {
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    return null;
+  }
+  const detail = body && typeof body === "object" && "detail" in body ? body.detail : null;
+  return detailText(detail, statusLine(response));
+}
+
+/**
+ * The `ApiError` a failed reply stands for. A server error is reported, and a signed-out operator
+ * goes to the extension's sign-in page when it has one.
+ */
+export async function readApiFailure(
+  method: string,
+  path: string,
+  response: Response,
+): Promise<ApiError> {
+  if (response.status >= 500) {
+    reportClientError({ kind: "api", message: `${method} ${path} ${response.status}` });
+  }
+  const signIn = response.status === 401 && authMode() !== "compat-cookie" ? signInUrl() : null;
+  if (signIn) {
+    window.location.assign(signIn);
+  }
+  return new ApiError(response.status, (await readErrorBody(response)) ?? statusLine(response));
+}
+
+type ApiMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+
 type RequestOptions = {
-  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  method?: ApiMethod;
   body?: unknown;
   signal?: AbortSignal;
 };
+
+/** The request `api` sends: as the operator, with the tab's request id, and `body` as JSON. */
+function buildApiRequest(
+  method: ApiMethod,
+  body: unknown,
+  signal: AbortSignal | undefined,
+): RequestInit {
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    "X-Request-Id": requestId(),
+    ...identityHeaders(),
+  };
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  return {
+    method,
+    headers,
+    credentials: "same-origin",
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    ...(signal ? { signal } : {}),
+  };
+}
+
+/** A reply's JSON as `T`, nothing for a 204; a failed reply throws its `ApiError`. */
+async function readApiReply<T>(method: ApiMethod, path: string, response: Response): Promise<T> {
+  if (!response.ok) {
+    throw await readApiFailure(method, path, response);
+  }
+  if (response.status === 204) return undefined as T;
+  return (await response.json()) as T;
+}
 
 /**
  * Calls the orchestrator API as the current operator, with the tab's request id. A signed-out
@@ -40,21 +111,9 @@ type RequestOptions = {
  */
 export async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = "GET", body, signal } = options;
-  const headers: Record<string, string> = {
-    Accept: "application/json",
-    "X-Request-Id": requestId(),
-    ...identityHeaders(),
-  };
-  if (body !== undefined) headers["Content-Type"] = "application/json";
   let response: Response;
   try {
-    response = await fetch(path, {
-      method,
-      headers,
-      credentials: "same-origin",
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-      ...(signal ? { signal } : {}),
-    });
+    response = await fetch(path, buildApiRequest(method, body, signal));
   } catch (error) {
     if (!signal?.aborted) {
       reportClientError({
@@ -64,25 +123,5 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
     }
     throw error;
   }
-  if (response.status >= 500) {
-    reportClientError({ kind: "api", message: `${method} ${path} ${response.status}` });
-  }
-  const signIn = response.status === 401 && authMode() !== "compat-cookie" ? signInUrl() : null;
-  if (signIn) {
-    window.location.assign(signIn);
-  }
-  if (!response.ok) {
-    let detail: unknown = null;
-    try {
-      detail = ((await response.json()) as { detail?: unknown }).detail;
-    } catch {
-      // Not JSON; the status text stands in.
-    }
-    throw new ApiError(
-      response.status,
-      detailText(detail, response.statusText || `HTTP ${response.status}`),
-    );
-  }
-  if (response.status === 204) return undefined as T;
-  return (await response.json()) as T;
+  return readApiReply<T>(method, path, response);
 }

@@ -64,3 +64,41 @@ test("a lone arguments field must be a JSON object", () => {
     error: "arguments must be a JSON object.",
   });
 });
+
+test("each kind of field refuses text it cannot read", () => {
+  const fields = fieldsFromSchema({
+    type: "object",
+    properties: {
+      live: { type: "boolean" },
+      price: { type: "number" },
+      count: { type: "integer" },
+      filter: { type: "object" },
+    },
+  });
+  const empty = { live: "", price: "", count: "", filter: "" };
+  assert.deepEqual(parseArgValues(fields, { ...empty, live: "yes" }), {
+    error: "live must be true or false.",
+  });
+  assert.deepEqual(parseArgValues(fields, { ...empty, price: "cheap" }), {
+    error: "price must be a number.",
+  });
+  assert.deepEqual(parseArgValues(fields, { ...empty, count: "many" }), {
+    error: "count must be a number.",
+  });
+  assert.deepEqual(parseArgValues(fields, { ...empty, filter: "{" }), {
+    error: "filter must be valid JSON.",
+  });
+  assert.deepEqual(parseArgValues(fields, { ...empty, price: "2.5", filter: "[1]" }), {
+    arguments: { price: 2.5, filter: [1] },
+  });
+});
+
+test("a lone string property named arguments stays text", () => {
+  const fields = fieldsFromSchema({
+    type: "object",
+    properties: { arguments: { type: "string" } },
+  });
+  assert.deepEqual(parseArgValues(fields, { arguments: "eth" }), {
+    arguments: { arguments: "eth" },
+  });
+});

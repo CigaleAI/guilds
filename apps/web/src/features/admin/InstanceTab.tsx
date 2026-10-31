@@ -18,18 +18,22 @@ import {
   TextField,
   toast,
 } from "@guildsrun/ui";
-import { ApiError } from "../../api/client";
 import {
   useInstance,
   useRemoveInstanceKeys,
   useSaveInstanceKeys,
   useStartGithubAppManifest,
-} from "../../api/queries";
-import type { InstanceIntegration, IntegrationField, IntegrationState } from "../../api/types";
+} from "../../api/queries/admin";
+import type {
+  InstanceIntegration,
+  IntegrationField,
+  InstanceKeysResult,
+  IntegrationState,
+} from "../../api/types/admin";
 import { DocsLink } from "../../app/docs";
-import type { TabSearch } from "../../app/router";
 import { safeReturnTo } from "../instance/instance";
 import { submitManifestForm } from "./githubManifest";
+import { asksToConfirmReplace } from "./instanceKeys";
 
 const stateTag: Record<IntegrationState, { tone: "tide" | "ochre" | "well"; label: string }> = {
   on: { tone: "tide", label: "On" },
@@ -69,7 +73,7 @@ function fieldTag(
  * only shows which of its variables are set.
  */
 export function InstanceTab() {
-  const search = useSearch({ strict: false }) as TabSearch;
+  const search = useSearch({ from: "/admin" });
   const navigate = useNavigate();
   const instance = useInstance();
   const returnTo = safeReturnTo(search.return_to);
@@ -130,19 +134,16 @@ export function InstanceTab() {
   );
 }
 
-/** One integration: its state and what it enables, with its keys form or its variables behind a toggle. */
-function IntegrationBlock({
-  integration,
-  focused,
-  returnTo,
-  onSaved,
-}: {
+type IntegrationBlockProps = {
   integration: InstanceIntegration;
   /** Named in the page's search: opened and scrolled to on arrival. */
   focused: boolean;
   returnTo: string | null;
   onSaved: () => void;
-}) {
+};
+
+/** One integration: its state and what it enables, with its keys form or its variables behind a toggle. */
+function IntegrationBlock({ integration, focused, returnTo, onSaved }: IntegrationBlockProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(focused);
   useEffect(() => {
@@ -191,8 +192,10 @@ function IntegrationBlock({
   );
 }
 
+type EnvFieldsProps = { integration: InstanceIntegration };
+
 /** An environment integration's variables and whether each is set; a value is never shown. */
-function EnvFields({ integration }: { integration: InstanceIntegration }) {
+function EnvFields({ integration }: EnvFieldsProps) {
   return (
     <>
       <p className="text-xs text-muted">
@@ -219,19 +222,17 @@ function disconnectedNote(disconnected: number): { description?: string } {
     : {};
 }
 
+type KeysFormProps = {
+  integration: InstanceIntegration;
+  returnTo: string | null;
+  onSaved: () => void;
+};
+
 /**
  * A store integration's keys: one input per field, entered afresh each time since the server
  * never returns a value. Replacing the GitHub App while logins exist asks first.
  */
-function KeysForm({
-  integration,
-  returnTo,
-  onSaved,
-}: {
-  integration: InstanceIntegration;
-  returnTo: string | null;
-  onSaved: () => void;
-}) {
+function KeysForm({ integration, returnTo, onSaved }: KeysFormProps) {
   const save = useSaveInstanceKeys();
   const remove = useRemoveInstanceKeys();
   const [values, setValues] = useState<Record<string, string>>({});
@@ -251,36 +252,28 @@ function KeysForm({
       }),
     );
 
-  const saveKeys = (confirmReplace: boolean) =>
-    save
-      .mutateAsync({
-        integration: integration.id,
-        values: entered(),
-        ...(confirmReplace ? { confirmReplace } : {}),
-      })
-      .then(
-        ({ disconnected }) => {
-          toast({
-            kind: "success",
-            title: `${integration.label} saved`,
-            ...disconnectedNote(disconnected),
-          });
-          setValues({});
-          onSaved();
-        },
-        (error: Error) => {
-          if (!confirmReplace && error instanceof ApiError && error.status === 409) {
-            setReplacing({ action: "save", message: error.message });
-            return;
-          }
-          toast({
-            kind: "error",
-            title: `Couldn't save ${integration.label}`,
-            description: error.message,
-          });
-          throw error;
-        },
-      );
+  const keysSaved = ({ disconnected }: InstanceKeysResult) => {
+    toast({
+      kind: "success",
+      title: `${integration.label} saved`,
+      ...disconnectedNote(disconnected),
+    });
+    setValues({});
+    onSaved();
+  };
+  const keysNotSaved = (error: Error) =>
+    toast({
+      kind: "error",
+      title: `Couldn't save ${integration.label}`,
+      description: error.message,
+    });
+
+  /** Replaces the stored keys though logins depend on them; rejects when the save fails. */
+  const replaceKeys = () =>
+    save.mutateAsync(
+      { integration: integration.id, values: entered(), confirmReplace: true },
+      { onSuccess: keysSaved, onError: keysNotSaved },
+    );
 
   const removeKeys = (confirmReplace: boolean) =>
     remove
@@ -295,7 +288,7 @@ function KeysForm({
           setValues({});
         },
         (error: Error) => {
-          if (!confirmReplace && error instanceof ApiError && error.status === 409) {
+          if (!confirmReplace && asksToConfirmReplace(error)) {
             setReplacing({ action: "remove", message: error.message });
             return;
           }
@@ -310,7 +303,16 @@ function KeysForm({
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    void saveKeys(false).catch(() => undefined);
+    save.mutate(
+      { integration: integration.id, values: entered() },
+      {
+        onSuccess: keysSaved,
+        onError: (error) => {
+          if (asksToConfirmReplace(error)) setReplacing({ action: "save", message: error.message });
+          else keysNotSaved(error);
+        },
+      },
+    );
   };
 
   return (
@@ -373,14 +375,11 @@ function KeysForm({
         confirmLabel="Remove"
         onConfirm={() => removeKeys(false)}
       />
-      <ConfirmDialog
-        kind="destructive"
-        open={replacing !== null}
-        onOpenChange={(open) => !open && setReplacing(null)}
-        title={replacing?.action === "remove" ? "Remove anyway?" : "Replace anyway?"}
-        description={replacing?.message}
-        confirmLabel={replacing?.action === "remove" ? "Remove" : "Replace"}
-        onConfirm={() => (replacing?.action === "remove" ? removeKeys(true) : saveKeys(true))}
+      <ReplaceAnywayDialog
+        replacing={replacing}
+        onClose={() => setReplacing(null)}
+        onReplace={replaceKeys}
+        onRemove={() => removeKeys(true)}
       />
       {integration.setup === "github-app-manifest" ? (
         <CreateAppDialog
@@ -394,18 +393,46 @@ function KeysForm({
   );
 }
 
-/** One key's input: a password field for a secret, a mono text area for a multiline value, plain text otherwise. */
-function KeyInput({
-  field,
-  value,
-  disabled,
-  onChange,
-}: {
+type ReplaceAnywayDialogProps = {
+  /** The change the server asked to confirm, with its reason; null keeps the dialog closed. */
+  replacing: { action: "save" | "remove"; message: string } | null;
+  onClose: () => void;
+  /** Saves the keys though logins depend on them; rejects when the save fails. */
+  onReplace: () => Promise<unknown>;
+  /** Removes the keys though logins depend on them; rejects when the removal fails. */
+  onRemove: () => Promise<unknown>;
+};
+
+/** Asks again before a change to the keys that disconnects the logins depending on them. */
+function ReplaceAnywayDialog({
+  replacing,
+  onClose,
+  onReplace,
+  onRemove,
+}: ReplaceAnywayDialogProps) {
+  const removal = replacing?.action === "remove";
+  return (
+    <ConfirmDialog
+      kind="destructive"
+      open={replacing !== null}
+      onOpenChange={(open) => !open && onClose()}
+      title={removal ? "Remove anyway?" : "Replace anyway?"}
+      description={replacing?.message}
+      confirmLabel={removal ? "Remove" : "Replace"}
+      onConfirm={() => (removal ? onRemove() : onReplace())}
+    />
+  );
+}
+
+type KeyInputProps = {
   field: IntegrationField;
   value: string;
   disabled: boolean;
   onChange: (value: string) => void;
-}) {
+};
+
+/** One key's input: a password field for a secret, a mono text area for a multiline value, plain text otherwise. */
+function KeyInput({ field, value, disabled, onChange }: KeyInputProps) {
   const aside = [field.optional ? "Optional" : null, field.set ? "Set" : null]
     .filter(Boolean)
     .join(" · ");
@@ -438,21 +465,18 @@ function KeyInput({
   );
 }
 
-/**
- * Starts creating the GitHub App from a manifest: the name and owner to create it under, then
- * GitHub's confirmation page, which brings the admin back here with the App stored.
- */
-function CreateAppDialog({
-  integration,
-  returnTo,
-  open,
-  onClose,
-}: {
+type CreateAppDialogProps = {
   integration: InstanceIntegration;
   returnTo: string | null;
   open: boolean;
   onClose: () => void;
-}) {
+};
+
+/**
+ * Starts creating the GitHub App from a manifest: the name and owner to create it under, then
+ * GitHub's confirmation page, which brings the admin back here with the App stored.
+ */
+function CreateAppDialog({ integration, returnTo, open, onClose }: CreateAppDialogProps) {
   const start = useStartGithubAppManifest();
   const [name, setName] = useState("");
   const [owner, setOwner] = useState("");

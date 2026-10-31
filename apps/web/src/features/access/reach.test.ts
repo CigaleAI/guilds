@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { ReachedNote } from "../../api/types";
+import type { ReachedNote } from "../../api/types/access";
 import { noteLink, notePlacement } from "./reach";
 
 function note(

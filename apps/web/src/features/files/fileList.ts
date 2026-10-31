@@ -1,6 +1,6 @@
 import { FILE_MAX_BYTES } from "../../api/files";
 import { formatSize } from "../../app/format";
-import type { FileItem } from "../../api/types";
+import type { FileItem } from "../../api/types/files";
 
 /** The files whose name or description holds the search, in the server's order. */
 export function filterFiles(items: readonly FileItem[], query: string): FileItem[] {
@@ -10,7 +10,7 @@ export function filterFiles(items: readonly FileItem[], query: string): FileItem
 }
 
 /** Why an upload cannot be sent, or null when it can: a file is chosen, fits, and is described. */
-export function uploadProblem(file: { size: number } | null, description: string): string | null {
+export function uploadProblem(file: Pick<File, "size"> | null, description: string): string | null {
   if (!file) return "Choose a file.";
   if (file.size === 0) return "The file is empty.";
   if (file.size > FILE_MAX_BYTES) return `A file is at most ${formatSize(FILE_MAX_BYTES)}.`;

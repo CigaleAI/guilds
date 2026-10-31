@@ -1,4 +1,4 @@
-import { useLocation, useRouter } from "@tanstack/react-router";
+import { useLocation, useRouter, type ParsedLocation } from "@tanstack/react-router";
 import { useEffect, useSyncExternalStore } from "react";
 
 /**
@@ -95,6 +95,9 @@ export function placeOf(pathname: string): Place {
 /** Where to go back to: the location a content link was followed from, and its place. */
 export type ReturnPoint = { href: string; place: Place };
 
+/** A location of the app as the router reports it: its whole href and its path. */
+export type PageLocation = Pick<ParsedLocation, "href" | "pathname">;
+
 /**
  * What a navigation leaves as the way back: the place it started from when a content link
  * started it and it changed place, none when it came back to the way back's place or anything
@@ -102,16 +105,15 @@ export type ReturnPoint = { href: string; place: Place };
  */
 export function nextReturnPoint(
   current: ReturnPoint | null,
-  fromHref: string,
-  fromPath: string,
+  from: PageLocation,
   toPath: string,
   byContentLink: boolean,
 ): ReturnPoint | null {
-  const from = placeOf(fromPath);
+  const fromPlace = placeOf(from.pathname);
   const to = placeOf(toPath);
   if (current && to.key === current.place.key) return null;
-  if (from.key === to.key) return current;
-  return byContentLink ? { href: fromHref, place: from } : null;
+  if (fromPlace.key === to.key) return current;
+  return byContentLink ? { href: from.href, place: fromPlace } : null;
 }
 
 /** A click marks the navigation it starts as a content link for this long. */
@@ -156,15 +158,7 @@ export function useReturnTrail() {
       const byContentLink = clickedAt > 0 && Date.now() - clickedAt < CLICK_WINDOW_MS;
       clickedAt = 0;
       if (!fromLocation) return;
-      setPoint(
-        nextReturnPoint(
-          point,
-          fromLocation.href,
-          fromLocation.pathname,
-          toLocation.pathname,
-          byContentLink,
-        ),
-      );
+      setPoint(nextReturnPoint(point, fromLocation, toLocation.pathname, byContentLink));
     });
     return () => {
       document.removeEventListener("click", onClick, true);

@@ -1,4 +1,5 @@
-import type { ApplyCreates, ApplyRow, ApplyStep, McpServerAccess } from "../../api/types";
+import type { McpServerAccess } from "../../api/types/access";
+import type { ApplyCreates, ApplyRow, ApplyStep } from "../../api/types/recipes";
 
 /**
  * The apply checklist as the page shows it: which steps an operator works through, how far along

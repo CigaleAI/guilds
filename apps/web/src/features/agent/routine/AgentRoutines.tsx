@@ -1,15 +1,16 @@
 import { Link, useParams } from "@tanstack/react-router";
 import { Pencil, Plus, Repeat, Trash2 } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
+import { useAgent } from "../../../api/queries/agents";
+import { useAgentRuns } from "../../../api/queries/runs";
 import {
-  useAgent,
-  useAgentRuns,
   useAgentSchedules,
   useDeleteSchedule,
-  useGuild,
   useSetSchedulePaused,
-} from "../../../api/queries";
-import type { Run, Schedule } from "../../../api/types";
+} from "../../../api/queries/schedules";
+import { useGuild } from "../../../api/queries/guilds";
+import type { Run } from "../../../api/types/runs";
+import type { Schedule } from "../../../api/types/schedules";
 import { messageTime, upcomingTime } from "../../../app/format";
 import {
   Button,
@@ -38,6 +39,68 @@ function routineState(routine: Schedule, guildOn: boolean): RoutineState {
   return { kind: "active", next: routine.next_run_at ? upcomingTime(routine.next_run_at) : "—" };
 }
 
+/** The routine the operator selected, else the first; undefined when there is none. */
+function selectedRoutine(
+  list: readonly Schedule[],
+  selectedId: string | null,
+): Schedule | undefined {
+  return list.find((routine) => routine.id === selectedId) ?? list[0];
+}
+
+/** Whether the guild's routines wake its agents; on until the guild loads. */
+function useGuildRoutinesOn(guildId: string): boolean {
+  const guild = useGuild(guildId);
+  return guild.data?.routines_enabled ?? true;
+}
+
+type DeleteRoutineDialogProps = {
+  agentId: string;
+  agentName: string;
+  /** The routine to delete; null keeps the dialog closed. */
+  routine: Schedule | null;
+  onClose: () => void;
+  onDeleted: () => void;
+};
+
+/** Deleting a routine; its past wake-ups stay in History, and a refusal keeps the dialog open. */
+function DeleteRoutineDialog({
+  agentId,
+  agentName,
+  routine,
+  onClose,
+  onDeleted,
+}: DeleteRoutineDialogProps) {
+  const remove = useDeleteSchedule(agentId);
+  return (
+    <ConfirmDialog
+      kind="destructive"
+      open={routine !== null}
+      onOpenChange={(open) => !open && onClose()}
+      title="Delete this routine?"
+      description={`${agentName} stops waking for “${routine?.description ?? ""}”. Its past wake-ups stay in History.`}
+      confirmLabel="Delete routine"
+      onConfirm={() =>
+        routine
+          ? remove.mutateAsync(routine.id).then(
+              () => {
+                onDeleted();
+                toast({ kind: "success", title: "Routine deleted" });
+              },
+              (error: Error) => {
+                toast({
+                  kind: "error",
+                  title: "Couldn't delete the routine",
+                  description: error.message,
+                });
+                throw error;
+              },
+            )
+          : undefined
+      }
+    />
+  );
+}
+
 /**
  * The agent's routines: when each wakes it and with what instruction. Routines are added, edited,
  * paused and deleted here; an agent can also set its own from chat.
@@ -45,19 +108,17 @@ function routineState(routine: Schedule, guildOn: boolean): RoutineState {
 export function AgentRoutines() {
   const { guildId, agentId } = useParams({ from: "/guilds/$guildId/agents/$agentId" });
   const agent = useAgent(agentId);
-  const guild = useGuild(guildId);
+  const guildOn = useGuildRoutinesOn(guildId);
   const routines = useAgentSchedules(agentId);
   const runs = useAgentRuns(agentId);
   const setPaused = useSetSchedulePaused(agentId);
-  const remove = useDeleteSchedule(agentId);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Schedule | null>(null);
   const [deleting, setDeleting] = useState<Schedule | null>(null);
 
-  const guildOn = guild.data?.routines_enabled ?? true;
   const list = routines.data ?? [];
-  const selected = list.find((routine) => routine.id === selectedId) ?? list[0];
+  const selected = selectedRoutine(list, selectedId);
 
   /** Each routine's wake-ups, newest first. */
   const wakes = useMemo(() => {
@@ -70,7 +131,8 @@ export function AgentRoutines() {
       list.sort((a, b) => b.created_at.localeCompare(a.created_at));
     return byRoutine;
   }, [runs.data]);
-
+  /** A routine's wake-ups, newest first; none before it first woke the agent. */
+  const wakesOf = (routine: Schedule) => wakes.get(routine.id) ?? [];
   const agentName = agent.data?.name ?? "the agent";
   const newRoutine = (
     <Button size="sm" onClick={() => setAdding(true)}>
@@ -160,7 +222,7 @@ export function AgentRoutines() {
             {selected ? (
               <RoutineDetail
                 routine={selected}
-                wakes={wakes.get(selected.id) ?? []}
+                wakes={wakesOf(selected)}
                 guildId={guildId}
                 agentId={agentId}
                 onEdit={() => setEditing(selected)}
@@ -182,32 +244,15 @@ export function AgentRoutines() {
           onOpenChange={(open) => !open && setEditing(null)}
         />
       ) : null}
-      <ConfirmDialog
-        kind="destructive"
-        open={deleting !== null}
-        onOpenChange={(open) => !open && setDeleting(null)}
-        title="Delete this routine?"
-        description={`${agentName} stops waking for “${deleting?.description ?? ""}”. Its past wake-ups stay in History.`}
-        confirmLabel="Delete routine"
-        onConfirm={() =>
-          deleting
-            ? remove.mutateAsync(deleting.id).then(
-                () => {
-                  setDeleting(null);
-                  setSelectedId(null);
-                  toast({ kind: "success", title: "Routine deleted" });
-                },
-                (error: Error) => {
-                  toast({
-                    kind: "error",
-                    title: "Couldn't delete the routine",
-                    description: error.message,
-                  });
-                  throw error;
-                },
-              )
-            : undefined
-        }
+      <DeleteRoutineDialog
+        agentId={agentId}
+        agentName={agentName}
+        routine={deleting}
+        onClose={() => setDeleting(null)}
+        onDeleted={() => {
+          setDeleting(null);
+          setSelectedId(null);
+        }}
       />
     </div>
   );
@@ -222,7 +267,12 @@ type RoutineDetailProps = {
   onDelete: () => void;
 };
 
-function Facts({ items }: { items: { term: string; value: ReactNode }[] }) {
+/** One line of a description list: what it states and its value. */
+type Fact = { term: string; value: ReactNode };
+
+type FactsProps = { items: Fact[] };
+
+function Facts({ items }: FactsProps) {
   return (
     <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5 text-sm">
       {items.map(({ term, value }) => (

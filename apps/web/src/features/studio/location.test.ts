@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { agentTab, focusLocation, parseStudioSearch, tablePathOf } from "./location";
+import { agentTab, focusLocation, parseStudioSearch, revealedStep, tablePathOf } from "./location";
 
 test("a run or issue pin opens the agent's History at the step", () => {
   assert.deepEqual(
@@ -119,4 +119,22 @@ test("an agent opens on the tab asked for, else where a request waits, else Prom
   assert.equal(agentTab("scripts", ["memory"], tabs), "memory");
   assert.equal(agentTab(undefined, ["list", "draft"], tabs), "draft");
   assert.equal(agentTab(undefined, [], tabs), "prompt");
+});
+
+test("a location reveals the call and the row it names in its run", () => {
+  assert.deepEqual(
+    revealedStep({
+      section: "agents",
+      agent: "a_1",
+      tab: "history",
+      item: "r_1",
+      call: "c_1",
+      seq: 0,
+    }),
+    { call: "c_1", seq: 0 },
+  );
+  assert.deepEqual(
+    revealedStep({ section: "agents", agent: "a_1", tab: "history", item: "r_1" }),
+    {},
+  );
 });

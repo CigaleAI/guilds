@@ -1,7 +1,15 @@
 import { ArrowLeft, ExternalLink } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { useConnectModelProvider, useOrgModels, useSetDefaultModel } from "../../api/queries";
-import { hasConnectedProvider, type ModelProvider, type OrgModelProvider } from "../../api/types";
+import {
+  useConnectModelProvider,
+  useOrgModels,
+  useSetDefaultModel,
+} from "../../api/queries/models";
+import {
+  hasConnectedProvider,
+  type ModelProvider,
+  type OrgModelProvider,
+} from "../../api/types/models";
 import { useIdentity } from "../../app/identity";
 import {
   Banner,
@@ -23,6 +31,11 @@ import { PROVIDER_META } from "./models";
 
 type Step = "pick" | "connect" | "models" | "default";
 
+/** Where an owner or admin is in the setup: the step, the provider picked, and the models ticked for it. */
+type SetupWalk = { step: Step; providerId: ModelProvider | null; ticked: string[] };
+
+const walkStart: SetupWalk = { step: "pick", providerId: null, ticked: [] };
+
 const STEPS: Array<{ id: Step; label: string }> = [
   { id: "connect", label: "Connect" },
   { id: "models", label: "Choose models" },
@@ -40,9 +53,7 @@ export function ModelSetupGate() {
   const models = useOrgModels(org.id);
   const [gated, setGated] = useState(false);
   const [finished, setFinished] = useState(false);
-  const [step, setStep] = useState<Step>("pick");
-  const [providerId, setProviderId] = useState<ModelProvider | null>(null);
-  const [ticked, setTicked] = useState<string[]>([]);
+  const [walk, setWalk] = useState<SetupWalk>(walkStart);
   const canManage = org.role === "owner" || org.role === "admin";
   const connected = hasConnectedProvider(models.data);
   // Once the gate has opened it stays through choosing models and a default, instead of closing
@@ -53,7 +64,6 @@ export function ModelSetupGate() {
   if (!gated || finished) {
     return null;
   }
-  const provider = models.data?.providers.find((item) => item.id === providerId) ?? null;
 
   return (
     <Dialog open>
@@ -91,49 +101,11 @@ export function ModelSetupGate() {
               </p>
             </DialogBody>
           </>
-        ) : step === "pick" || !provider ? (
-          <PickProvider
-            providers={models.data.providers}
-            onPick={(id) => {
-              setProviderId(id);
-              setTicked([]);
-              setStep("connect");
-            }}
-          />
-        ) : step === "connect" ? (
-          <ConnectProvider
-            provider={provider}
-            onBack={() => setStep("pick")}
-            onConnected={() => setStep("models")}
-          />
-        ) : step === "models" ? (
-          <>
-            <StepHeader provider={provider} step="models" title={`Choose the models ${provider.label} offers`} />
-            <DialogBody>
-              <p className="text-sm text-fg-2">
-                Tick the models your agents may run on. You can change the list any time under
-                Settings → Model keys.
-              </p>
-              <CatalogPicker
-                provider={provider}
-                chosen={ticked}
-                saveLabel="Continue"
-                requireOne
-                onSaved={(saved) => {
-                  setTicked(saved);
-                  if (provider.kind === "marketplace") {
-                    setStep("default");
-                  } else {
-                    setFinished(true);
-                  }
-                }}
-              />
-            </DialogBody>
-          </>
         ) : (
-          <PickDefault
-            provider={provider}
-            chosen={ticked}
+          <SetupSteps
+            providers={models.data.providers}
+            walk={walk}
+            onWalk={setWalk}
             onFinished={() => setFinished(true)}
           />
         )}
@@ -142,8 +114,63 @@ export function ModelSetupGate() {
   );
 }
 
+type SetupStepsProps = {
+  providers: OrgModelProvider[];
+  walk: SetupWalk;
+  onWalk: (walk: SetupWalk) => void;
+  onFinished: () => void;
+};
+
+/** The setup an owner or admin walks: pick a provider, connect it, choose its models, mark a default. */
+function SetupSteps({ providers, walk, onWalk, onFinished }: SetupStepsProps) {
+  const provider = providers.find((item) => item.id === walk.providerId) ?? null;
+  if (walk.step === "pick" || !provider) {
+    return (
+      <PickProvider
+        providers={providers}
+        onPick={(id) => onWalk({ step: "connect", providerId: id, ticked: [] })}
+      />
+    );
+  }
+  if (walk.step === "connect") {
+    return (
+      <ConnectProvider
+        provider={provider}
+        onBack={() => onWalk({ ...walk, step: "pick" })}
+        onConnected={() => onWalk({ ...walk, step: "models" })}
+      />
+    );
+  }
+  if (walk.step === "models") {
+    return (
+      <>
+        <StepHeader provider={provider} step="models" title={`Choose the models ${provider.label} offers`} />
+        <DialogBody>
+          <p className="text-sm text-fg-2">
+            Tick the models your agents may run on. You can change the list any time under
+            Settings → Model keys.
+          </p>
+          <CatalogPicker
+            provider={provider}
+            chosen={walk.ticked}
+            saveLabel="Continue"
+            requireOne
+            onSaved={(saved) => {
+              if (provider.kind === "marketplace") onWalk({ ...walk, step: "default", ticked: saved });
+              else onFinished();
+            }}
+          />
+        </DialogBody>
+      </>
+    );
+  }
+  return <PickDefault provider={provider} chosen={walk.ticked} onFinished={onFinished} />;
+}
+
+type StepHeaderProps = { provider: OrgModelProvider; step: Step; title: string };
+
 /** The three steps after picking a provider, with the current one marked. */
-function StepHeader({ provider, step, title }: { provider: OrgModelProvider; step: Step; title: string }) {
+function StepHeader({ provider, step, title }: StepHeaderProps) {
   return (
     <DialogHeader
       title={
@@ -172,13 +199,12 @@ function StepHeader({ provider, step, title }: { provider: OrgModelProvider; ste
   );
 }
 
-function PickProvider({
-  providers,
-  onPick,
-}: {
+type PickProviderProps = {
   providers: OrgModelProvider[];
   onPick: (provider: ModelProvider) => void;
-}) {
+};
+
+function PickProvider({ providers, onPick }: PickProviderProps) {
   const marketplace = providers.filter((item) => item.kind === "marketplace");
   const coding = providers.filter((item) => item.kind === "coding");
   const tile = (provider: OrgModelProvider) => (
@@ -220,15 +246,13 @@ function PickProvider({
   );
 }
 
-function ConnectProvider({
-  provider,
-  onBack,
-  onConnected,
-}: {
+type ConnectProviderProps = {
   provider: OrgModelProvider;
   onBack: () => void;
   onConnected: () => void;
-}) {
+};
+
+function ConnectProvider({ provider, onBack, onConnected }: ConnectProviderProps) {
   const { org } = useIdentity();
   const connect = useConnectModelProvider(org.id);
   const [key, setKey] = useState("");
@@ -306,15 +330,13 @@ function ConnectProvider({
   );
 }
 
-function PickDefault({
-  provider,
-  chosen,
-  onFinished,
-}: {
+type PickDefaultProps = {
   provider: OrgModelProvider;
   chosen: string[];
   onFinished: () => void;
-}) {
+};
+
+function PickDefault({ provider, chosen, onFinished }: PickDefaultProps) {
   const { org } = useIdentity();
   const models = useOrgModels(org.id);
   const setDefault = useSetDefaultModel(org.id);

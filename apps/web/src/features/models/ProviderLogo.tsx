@@ -1,5 +1,5 @@
 import { Server } from "lucide-react";
-import type { ModelProvider } from "../../api/types";
+import type { ModelProvider } from "../../api/types/models";
 import { Icon, Tile, type IconSize, type TileProps } from "@guildsrun/ui";
 
 // The marks of the hosted providers, as models.dev draws them (THIRD_PARTY_NOTICES.md); each
@@ -60,16 +60,14 @@ const MARKS: Partial<Record<ModelProvider, Mark>> = {
   },
 };
 
-/** A provider's mark on a tile; the local endpoint shows a server. */
-export function ProviderLogo({
-  provider,
-  size = 36,
-  tone = "paper",
-}: {
+type ProviderLogoProps = {
   provider: ModelProvider;
   size?: TileProps["size"];
   tone?: TileProps["tone"];
-}) {
+};
+
+/** A provider's mark on a tile; the local endpoint shows a server. */
+export function ProviderLogo({ provider, size = 36, tone = "paper" }: ProviderLogoProps) {
   const mark = MARKS[provider];
   const glyph = Math.round(Number(size) * 0.58);
   const iconSize: IconSize = glyph >= 24 ? 24 : glyph >= 20 ? 20 : glyph >= 18 ? 18 : glyph >= 16 ? 16 : 14;

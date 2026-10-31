@@ -1,6 +1,7 @@
 import { Link, useLocation } from "@tanstack/react-router";
-import { useInstance } from "../../../api/queries";
-import type { InstanceIntegration, OrgModels } from "../../../api/types";
+import { useInstance } from "../../../api/queries/admin";
+import type { InstanceIntegration } from "../../../api/types/admin";
+import type { OrgModels } from "../../../api/types/models";
 import { useIdentity } from "../../../app/identity";
 import { Select, Tag, Toggle } from "@guildsrun/ui";
 import { missingFieldsPhrase, setupSearch, toolIntegrationGap } from "../../instance/instance";

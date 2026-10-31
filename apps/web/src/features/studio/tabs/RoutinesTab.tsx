@@ -1,10 +1,10 @@
 import { Link } from "@tanstack/react-router";
 import { ExternalLink, Pin } from "lucide-react";
-import { useStudioInspector, useStudioRoutines, useStudioRuns } from "../../../api/queries";
-import type { StudioAgent, StudioRoutine } from "../../../api/types";
+import { useStudioInspector, useStudioRoutines, useStudioRuns } from "../../../api/queries/studio";
+import type { StudioAgent, StudioRoutine } from "../../../api/types/studio";
 import { clockTime, dayLabel, relativeTime, upcomingTime } from "../../../app/format";
 import { Button, Markdown, Banner, SkeletonRows, Icon, Row, Tag } from "@guildsrun/ui";
-import { DetailHeader, Empty, MasterDetail } from "../MasterDetail";
+import { DetailHeader, Empty, MasterDetail } from "../../../app/MasterDetail";
 import { useStudio } from "../StudioContext";
 import { RunRow } from "./HistoryTab";
 
@@ -19,9 +19,11 @@ function nextWake(routine: StudioRoutine): string {
   return routine.next_run_at ? `next ${upcomingTime(routine.next_run_at)}` : "not scheduled";
 }
 
+type RoutinesTabProps = { agent: StudioAgent };
+
 /** The agent's routines: each one's instruction, when it wakes next, and the runs it started. */
-export function RoutinesTab({ agent }: { agent: StudioAgent }) {
-  const { session, search, go } = useStudio();
+export function RoutinesTab({ agent }: RoutinesTabProps) {
+  const { session, search, goInPlace } = useStudio();
   const routines = useStudioRoutines(session.id, agent.id);
 
   if (routines.isPending) {
@@ -71,10 +73,12 @@ export function RoutinesTab({ agent }: { agent: StudioAgent }) {
                   type="button"
                   aria-current={isSelected ? "true" : undefined}
                   onClick={() =>
-                    go(
-                      { section: "agents", agent: agent.id, tab: "routines", item: routine.id },
-                      { replace: true },
-                    )
+                    goInPlace({
+                      section: "agents",
+                      agent: agent.id,
+                      tab: "routines",
+                      item: routine.id,
+                    })
                   }
                 />
               </Row>
@@ -97,7 +101,9 @@ export function RoutinesTab({ agent }: { agent: StudioAgent }) {
   );
 }
 
-function RoutineDetail({ agent, routine }: { agent: StudioAgent; routine: StudioRoutine }) {
+type RoutineDetailProps = { agent: StudioAgent; routine: StudioRoutine };
+
+function RoutineDetail({ agent, routine }: RoutineDetailProps) {
   const { session, go, ask } = useStudio();
   const runs = useStudioRuns(session.id, agent.id);
   const inspector = useStudioInspector(session.id, agent.id);

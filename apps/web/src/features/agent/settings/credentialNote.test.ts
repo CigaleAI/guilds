@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { HarnessCredential } from "../../../api/types";
+import type { HarnessCredential } from "../../../api/types/agents";
 import { harnessCredentialNote, type CredentialCheck, type NotePart } from "./credentialNote";
 
 const now = new Date("2026-05-01T12:00:00Z");

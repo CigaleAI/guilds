@@ -1,4 +1,4 @@
-import type { Run } from "../../../api/types";
+import type { Run } from "../../../api/types/runs";
 import { promptSections } from "@guildsrun/ui";
 import type { PromptSection, OfferedToolGroup } from "@guildsrun/ui";
 /** The system message's four sections, as the run hydrated them. */
@@ -11,12 +11,18 @@ export function promptSectionsOf(content: string): Partial<Record<PromptSection,
   return sections;
 }
 
-/** The tools the run offered the model, grouped by the connected server that serves them. */
-export function offeredToolGroups(run: Run): OfferedToolGroup[] {
+/** The slug of the connected server that serves each of the run's connected tools, by tool name. */
+function connectedToolSlugs(run: Run): Map<string, string> {
   const serverOf = new Map<string, string>();
   for (const server of run.config_snapshot.mcp ?? []) {
     for (const tool of server.tools) serverOf.set(tool.name, server.slug);
   }
+  return serverOf;
+}
+
+/** The tools the run offered the model, grouped by the connected server that serves them. */
+export function offeredToolGroups(run: Run): OfferedToolGroup[] {
+  const serverOf = connectedToolSlugs(run);
   const groups = new Map<string, OfferedToolGroup>();
   for (const tool of run.config_snapshot.tools ?? []) {
     const name = tool.function?.name ?? tool.name;

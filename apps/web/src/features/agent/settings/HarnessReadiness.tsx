@@ -2,8 +2,10 @@ import { Link } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
 import { useState } from "react";
 import { Banner, Button, cn, Icon, Select, StatusBadge, toast } from "@guildsrun/ui";
-import { useAgent, useAgentHarness, useCheckHarness, useSecrets } from "../../../api/queries";
-import type { Harness, HarnessCredential, Secret } from "../../../api/types";
+import { useAgent, useAgentHarness, useCheckHarness } from "../../../api/queries/agents";
+import { useSecrets } from "../../../api/queries/secrets";
+import type { Harness, HarnessCredential } from "../../../api/types/agents";
+import type { Secret } from "../../../api/types/secrets";
 import { useIdentity } from "../../../app/identity";
 import { AddSecretDialog } from "../../access/AccessSecrets";
 import { managesSecrets } from "../../access/secrets";
@@ -16,14 +18,21 @@ import {
   withTokenAlias,
 } from "../harness";
 import type { SettingsAgent } from "./configForm";
-import { harnessCredentialNote, type AgentTab, type CredentialNote, type NotePart } from "./credentialNote";
+import {
+  harnessCredentialNote,
+  type AgentTab,
+  type CredentialNote,
+  type NotePart,
+} from "./credentialNote";
 
 const tabLinks = {
   secrets: { to: "/guilds/$guildId/agents/$agentId/secrets", label: "Secrets" },
   cli: { to: "/guilds/$guildId/agents/$agentId/cli", label: "CLI" },
 } as const;
 
-function TabLink({ tab, agent }: { tab: AgentTab; agent: SettingsAgent }) {
+type TabLinkProps = { tab: AgentTab; agent: SettingsAgent };
+
+function TabLink({ tab, agent }: TabLinkProps) {
   return (
     <Link to={tabLinks[tab].to} params={agent} className="underline">
       {tabLinks[tab].label}
@@ -31,7 +40,9 @@ function TabLink({ tab, agent }: { tab: AgentTab; agent: SettingsAgent }) {
   );
 }
 
-function NotePartView({ part, agent }: { part: NotePart; agent: SettingsAgent }) {
+type NotePartViewProps = { part: NotePart; agent: SettingsAgent };
+
+function NotePartView({ part, agent }: NotePartViewProps) {
   if (typeof part === "string") return part;
   if ("code" in part) return <code className="font-mono">{part.code}</code>;
   return <TabLink tab={part.tab} agent={agent} />;
@@ -112,8 +123,10 @@ function TokenPicker(choice: TokenChoice) {
   );
 }
 
+type CheckLoginProps = { agent: SettingsAgent; harness: Harness };
+
 /** Looks for the harness's login in the agent's home, waking its machine, and records what it finds. */
-function CheckLogin({ agent, harness }: { agent: SettingsAgent; harness: Harness }) {
+function CheckLogin({ agent, harness }: CheckLoginProps) {
   const check = useCheckHarness(agent.agentId);
   const run = () =>
     check.mutate(harness, {
@@ -155,18 +168,15 @@ function statusBadgeProps(entry: HarnessCredential | null, muted: boolean) {
   return { status: "warning" as const, label: "Setup needed" };
 }
 
-/** A reassuring status card showing credential status, active secret, and login checks. */
-function CredentialStatusCard({
-  note,
-  entry,
-  agent,
-  harness,
-}: {
+type CredentialStatusCardProps = {
   note: CredentialNote;
   entry: HarnessCredential | null;
   agent: SettingsAgent;
   harness: Harness;
-}) {
+};
+
+/** A reassuring status card showing credential status, active secret, and login checks. */
+function CredentialStatusCard({ note, entry, agent, harness }: CredentialStatusCardProps) {
   const badge = statusBadgeProps(entry, note.muted);
   const showLoginCheck = Boolean(entry && !entry.secret_granted);
   const showDetails = !entry?.secret_granted;
@@ -222,6 +232,13 @@ function liveEntry(
   };
 }
 
+type HarnessReadinessProps = {
+  agent: SettingsAgent;
+  harness: Harness;
+  aliases: Record<string, string>;
+  onAliasesChange: (aliases: Record<string, string>) => void;
+};
+
 /**
  * What the picked harness still needs before the agent's code tasks run: the token its variable
  * reads, with a picker among the secrets reaching the agent; its credential status as
@@ -232,12 +249,7 @@ export function HarnessReadiness({
   harness,
   aliases,
   onAliasesChange,
-}: {
-  agent: SettingsAgent;
-  harness: Harness;
-  aliases: Record<string, string>;
-  onAliasesChange: (aliases: Record<string, string>) => void;
-}) {
+}: HarnessReadinessProps) {
   const status = useAgentHarness(agent.agentId);
   const secrets = useSecrets({ scope: "agent", id: agent.agentId });
   const entry = liveEntry(status.data?.harnesses, secrets.data, harness, aliases);
@@ -263,12 +275,7 @@ export function HarnessReadiness({
         />
       ) : null}
       {note ? (
-        <CredentialStatusCard
-          note={note}
-          entry={entry}
-          agent={agent}
-          harness={harness}
-        />
+        <CredentialStatusCard note={note} entry={entry} agent={agent} harness={harness} />
       ) : null}
     </div>
   );

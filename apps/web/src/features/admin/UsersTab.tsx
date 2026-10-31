@@ -19,8 +19,8 @@ import {
   personTone,
   toast,
 } from "@guildsrun/ui";
-import { useCreateUser, useSetUserEmail, useUsers } from "../../api/queries";
-import type { User } from "../../api/types";
+import { useCreateUser, useSetUserEmail, useUsers } from "../../api/queries/admin";
+import type { User } from "../../api/types/org";
 import { useIdentity } from "../../app/identity";
 
 /** Every account on the box, with a new one and the email each signs in with. */
@@ -85,39 +85,26 @@ export function UsersTab() {
           </div>
         )}
       </div>
-      {editing ? (
-        <UserDialog user={editing === "new" ? null : editing} onClose={() => setEditing(null)} />
+      {editing === "new" ? <NewUserDialog onClose={() => setEditing(null)} /> : null}
+      {editing && editing !== "new" ? (
+        <UserEmailDialog user={editing} onClose={() => setEditing(null)} />
       ) : null}
     </div>
   );
 }
 
-/** Creates a user with a name and an optional email, or changes an existing user's email. */
-function UserDialog({ user, onClose }: { user: User | null; onClose: () => void }) {
+type NewUserDialogProps = { onClose: () => void };
+
+/** Creates a user with a name and an optional email. */
+function NewUserDialog({ onClose }: NewUserDialogProps) {
   const create = useCreateUser();
-  const setEmail = useSetUserEmail();
   const [name, setName] = useState("");
-  const [email, setEmailText] = useState(user?.email ?? "");
-  const pending = create.isPending || setEmail.isPending;
-  const error = create.error ?? setEmail.error;
-  const typedEmail = email.trim() || null;
+  const [email, setEmail] = useState("");
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (user) {
-      setEmail.mutate(
-        { userId: user.id, email: typedEmail },
-        {
-          onSuccess: () => {
-            toast({ kind: "success", title: `@${user.name}'s email saved` });
-            onClose();
-          },
-        },
-      );
-      return;
-    }
     create.mutate(
-      { name: name.trim(), email: typedEmail },
+      { name: name.trim(), email: email.trim() || null },
       {
         onSuccess: (created) => {
           toast({ kind: "success", title: `@${created.name} created` });
@@ -132,44 +119,34 @@ function UserDialog({ user, onClose }: { user: User | null; onClose: () => void 
       <DialogContent size="sm">
         <form onSubmit={submit} className="flex min-h-0 flex-col">
           <DialogHeader
-            title={user ? `@${user.name}` : "New user"}
-            description={
-              user
-                ? "The email this person signs in with behind an authenticating proxy."
-                : "An account on this box, with a personal organisation of its own."
-            }
+            title="New user"
+            description="An account on this box, with a personal organisation of its own."
           />
           <DialogBody>
-            {user ? null : (
-              <TextField
-                tone="surface"
-                label="Name"
-                hint="The @name others tag: a lowercase letter, then lowercase letters, digits, and hyphens."
-                lead="@"
-                mono
-                maxLength={63}
-                autoComplete="off"
-                autoFocus
-                value={name}
-                onChange={(event) => setName(event.currentTarget.value)}
-              />
-            )}
+            <TextField
+              tone="surface"
+              label="Name"
+              hint="The @name others tag: a lowercase letter, then lowercase letters, digits, and hyphens."
+              lead="@"
+              mono
+              maxLength={63}
+              autoComplete="off"
+              autoFocus
+              value={name}
+              onChange={(event) => setName(event.currentTarget.value)}
+            />
             <TextField
               tone="surface"
               label="Email"
               aside="Optional"
               type="email"
               autoComplete="off"
-              autoFocus={user !== null}
               value={email}
-              onChange={(event) => setEmailText(event.currentTarget.value)}
+              onChange={(event) => setEmail(event.currentTarget.value)}
             />
-            {error ? (
-              <Banner
-                tone="error"
-                title={user ? "Couldn't save the email" : "Couldn't create the user"}
-              >
-                {error.message}
+            {create.isError ? (
+              <Banner tone="error" title="Couldn't create the user">
+                {create.error.message}
               </Banner>
             ) : null}
           </DialogBody>
@@ -177,8 +154,67 @@ function UserDialog({ user, onClose }: { user: User | null; onClose: () => void 
             <DialogClose asChild>
               <Button variant="ghost">Cancel</Button>
             </DialogClose>
-            <Button type="submit" disabled={pending || (!user && !name.trim())}>
-              {user ? "Save" : "Create user"}
+            <Button type="submit" disabled={create.isPending || !name.trim()}>
+              Create user
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+type UserEmailDialogProps = { user: User; onClose: () => void };
+
+/** Changes the email an existing user signs in with. */
+function UserEmailDialog({ user, onClose }: UserEmailDialogProps) {
+  const setUserEmail = useSetUserEmail();
+  const [email, setEmail] = useState(user.email ?? "");
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    setUserEmail.mutate(
+      { userId: user.id, email: email.trim() || null },
+      {
+        onSuccess: () => {
+          toast({ kind: "success", title: `@${user.name}'s email saved` });
+          onClose();
+        },
+      },
+    );
+  };
+
+  return (
+    <Dialog open onOpenChange={(next) => !next && onClose()}>
+      <DialogContent size="sm">
+        <form onSubmit={submit} className="flex min-h-0 flex-col">
+          <DialogHeader
+            title={`@${user.name}`}
+            description="The email this person signs in with behind an authenticating proxy."
+          />
+          <DialogBody>
+            <TextField
+              tone="surface"
+              label="Email"
+              aside="Optional"
+              type="email"
+              autoComplete="off"
+              autoFocus
+              value={email}
+              onChange={(event) => setEmail(event.currentTarget.value)}
+            />
+            {setUserEmail.isError ? (
+              <Banner tone="error" title="Couldn't save the email">
+                {setUserEmail.error.message}
+              </Banner>
+            ) : null}
+          </DialogBody>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="ghost">Cancel</Button>
+            </DialogClose>
+            <Button type="submit" disabled={setUserEmail.isPending}>
+              Save
             </Button>
           </DialogFooter>
         </form>

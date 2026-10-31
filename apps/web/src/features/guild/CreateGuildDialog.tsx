@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
-import { useCreateGuild } from "../../api/queries";
+import { useCreateGuild } from "../../api/queries/guilds";
 import {
   Button,
   Checkbox,
@@ -14,16 +14,15 @@ import {
   DialogFooter,
   DialogHeader,
 } from "@guildsrun/ui";
-import { handleHint, liveHandleError } from "../names";
+import { handleHint, liveHandleError } from "../../app/names";
 
-/** A new guild: its name, what it is for, and whether only its operators see it. */
-export function CreateGuildDialog({
-  open,
-  onOpenChange,
-}: {
+type CreateGuildDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-}) {
+};
+
+/** A new guild: its name, what it is for, and whether only its operators see it. */
+export function CreateGuildDialog({ open, onOpenChange }: CreateGuildDialogProps) {
   const navigate = useNavigate();
   const create = useCreateGuild();
   const [name, setName] = useState("");

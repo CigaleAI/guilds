@@ -1,21 +1,38 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
+import {
+  builderEventGuards,
+  dispatchLiveEvent,
+  guildEventGuards,
+  inboxEventGuards,
+  runEventGuards,
+  studioEventGuards,
+  type BuilderEvents,
+  type GuildEvents,
+  type InboxEvents,
+  type LiveEventHandlers,
+  type RunEvents,
+  type StudioEvents,
+} from "./liveEvents";
 import { applyLiveDelta, type LiveTurn } from "./liveTurn";
-import { keys, showClearedGroupChat } from "./queries";
+import { agentKeys } from "./queries/agents";
+import { builderKeys } from "./queries/builder";
+import { chatKeys, showClearedGroupChat } from "./queries/chat";
+import { guildKeys } from "./queries/guilds";
+import { issueKeys } from "./queries/issues";
+import { noteKeys } from "./queries/notes";
+import { recipeKeys } from "./queries/recipes";
+import { runKeys } from "./queries/runs";
+import { scheduleKeys } from "./queries/schedules";
+import { scriptKeys } from "./queries/scripts";
+import { studioKeys } from "./queries/studio";
+import { tableKeys } from "./queries/tables";
 import { applyToolProgress, dropToolProgress, type ToolProgress } from "./toolProgress";
-import type {
-  BuilderSession,
-  GroupChatState,
-  GroupMessage,
-  MessageNotice,
-  Run,
-  RunMessage,
-  StudioMessage,
-  StudioSession,
-} from "./types";
-
-export type { LiveTurn } from "./liveTurn";
-export type { ToolProgress } from "./toolProgress";
+import type { GroupChatState, GroupMessage, MessageNotice } from "./types/chat";
+import type { Run, RunMessage } from "./types/runs";
+import type { StudioMessage, StudioSession } from "./types/studio";
+import type { BuilderSession } from "./types/builder";
+import { parseJson } from "./wire";
 
 type StreamOptions = {
   /** Event names to listen for. */
@@ -47,13 +64,8 @@ export function useEventStream(url: string | null, options: StreamOptions): void
       source.onopen = () => latest.current.onOpen?.();
       for (const name of eventList.split(",")) {
         source.addEventListener(name, (event) => {
-          let data: unknown = null;
-          try {
-            data = JSON.parse((event as MessageEvent<string>).data);
-          } catch {
-            // A malformed frame carries nothing to apply.
-          }
-          latest.current.onEvent(name, data);
+          if (!(event instanceof MessageEvent) || typeof event.data !== "string") return;
+          latest.current.onEvent(name, parseJson(event.data));
         });
       }
       source.onerror = () => {
@@ -71,19 +83,7 @@ export function useEventStream(url: string | null, options: StreamOptions): void
   }, [url, eventList, retryMs]);
 }
 
-const guildEvents = [
-  "group.message.committed",
-  "group.cleared",
-  "group.limit_reached",
-  "group.idle",
-  "group.delivery.started",
-  "group.delivery.finished",
-  "group.delivery.failed",
-  "guild.issues.changed",
-  "guild.artifacts.changed",
-  "agent.routines.changed",
-  "agent.scripts.changed",
-] as const;
+const guildEvents = Object.keys(guildEventGuards);
 
 /**
  * Keeps a guild's chat, agents, open issues, files and routines current: committed messages are
@@ -92,56 +92,55 @@ const guildEvents = [
  */
 export function useGuildStream(guildId: string): void {
   const client = useQueryClient();
+  const showChatState = (state: GroupChatState) => {
+    client.setQueryData<GroupChatState>(chatKeys.chatState(guildId), (previous) => ({
+      ...state,
+      seen_through_seq: previous?.seen_through_seq ?? null,
+    }));
+    void client.invalidateQueries({ queryKey: agentKeys.agents(guildId) });
+  };
+  const refreshChatState = () => {
+    void client.invalidateQueries({ queryKey: chatKeys.chatState(guildId) });
+    void client.invalidateQueries({ queryKey: agentKeys.agents(guildId) });
+  };
+  const handlers: LiveEventHandlers<GuildEvents> = {
+    "group.message.committed": (message) => {
+      client.setQueryData<GroupMessage[]>(chatKeys.chatMessages(guildId), (messages) =>
+        messages && !messages.some((known) => known.seq === message.seq)
+          ? [...messages, message].sort((a, b) => a.seq - b.seq)
+          : messages,
+      );
+      void client.invalidateQueries({ queryKey: chatKeys.chatState(guildId) });
+    },
+    "group.cleared": (state) => showClearedGroupChat(client, guildId, state),
+    "group.limit_reached": showChatState,
+    "group.idle": showChatState,
+    "group.delivery.started": refreshChatState,
+    "group.delivery.finished": refreshChatState,
+    "group.delivery.failed": refreshChatState,
+    "guild.issues.changed": () =>
+      void client.invalidateQueries({ queryKey: issueKeys.issues(guildId) }),
+    "guild.artifacts.changed": () =>
+      void client.invalidateQueries({ queryKey: noteKeys.artifacts }),
+    "agent.routines.changed": (change) => {
+      void client.invalidateQueries({ queryKey: scheduleKeys.agentSchedules(change.agent_id) });
+      void client.invalidateQueries({ queryKey: guildKeys.guildSchedules(guildId) });
+    },
+    "agent.scripts.changed": (change) =>
+      void client.invalidateQueries({ queryKey: scriptKeys.agentScripts(change.agent_id) }),
+  };
   useEventStream(`/api/guilds/${encodeURIComponent(guildId)}/group-chat/stream`, {
     events: guildEvents,
     onOpen: () => {
-      void client.invalidateQueries({ queryKey: keys.chatMessages(guildId) });
-      void client.invalidateQueries({ queryKey: keys.chatState(guildId) });
-      void client.invalidateQueries({ queryKey: keys.agents(guildId) });
+      void client.invalidateQueries({ queryKey: chatKeys.chatMessages(guildId) });
+      void client.invalidateQueries({ queryKey: chatKeys.chatState(guildId) });
+      void client.invalidateQueries({ queryKey: agentKeys.agents(guildId) });
     },
-    onEvent: (name, data) => {
-      if (name === "group.message.committed") {
-        const message = data as GroupMessage;
-        client.setQueryData<GroupMessage[]>(keys.chatMessages(guildId), (messages) =>
-          messages && !messages.some((known) => known.seq === message.seq)
-            ? [...messages, message].sort((a, b) => a.seq - b.seq)
-            : messages,
-        );
-        void client.invalidateQueries({ queryKey: keys.chatState(guildId) });
-        return;
-      }
-      if (name === "group.cleared") {
-        showClearedGroupChat(client, guildId, data as GroupChatState);
-        return;
-      }
-      if (name === "group.idle" || name === "group.limit_reached") {
-        const state = data as GroupChatState;
-        client.setQueryData<GroupChatState>(keys.chatState(guildId), (previous) => ({
-          ...state,
-          seen_through_seq: previous?.seen_through_seq ?? null,
-        }));
-      } else if (name === "guild.issues.changed") {
-        void client.invalidateQueries({ queryKey: keys.issues(guildId) });
-        return;
-      } else if (name === "guild.artifacts.changed") {
-        void client.invalidateQueries({ queryKey: keys.artifacts });
-        return;
-      } else if (name === "agent.scripts.changed") {
-        const agentId = (data as { agent_id?: string } | null)?.agent_id;
-        if (agentId) void client.invalidateQueries({ queryKey: keys.agentScripts(agentId) });
-        return;
-      } else if (name === "agent.routines.changed") {
-        const agentId = (data as { agent_id?: string } | null)?.agent_id;
-        if (agentId) void client.invalidateQueries({ queryKey: keys.agentSchedules(agentId) });
-        void client.invalidateQueries({ queryKey: keys.guildSchedules(guildId) });
-        return;
-      } else {
-        void client.invalidateQueries({ queryKey: keys.chatState(guildId) });
-      }
-      void client.invalidateQueries({ queryKey: keys.agents(guildId) });
-    },
+    onEvent: (name, data) => dispatchLiveEvent(guildEventGuards, handlers, name, data),
   });
 }
+
+const inboxEvents = Object.keys(inboxEventGuards);
 
 /**
  * Keeps the inbox current: its counts, and the unread count of each guild. Bursts of changes
@@ -155,30 +154,25 @@ export function useInboxStream(onMessage?: (notice: MessageNotice) => void): voi
   const refetch = () => {
     clearTimeout(pending.current);
     pending.current = setTimeout(() => {
-      void client.invalidateQueries({ queryKey: keys.notifications });
+      void client.invalidateQueries({ queryKey: chatKeys.notifications });
     }, 150);
   };
-  useEventStream("/api/notifications/stream", {
-    events: ["notifications.changed", "notifications.message"],
-    onOpen: refetch,
-    onEvent: (name, data) => {
+  const handlers: LiveEventHandlers<InboxEvents> = {
+    "notifications.changed": refetch,
+    "notifications.message": (notice) => {
       refetch();
-      if (name === "notifications.message" && data) onMessage?.(data as MessageNotice);
+      onMessage?.(notice);
     },
+  };
+  useEventStream("/api/notifications/stream", {
+    events: inboxEvents,
+    onOpen: refetch,
+    onEvent: (name, data) => dispatchLiveEvent(inboxEventGuards, handlers, name, data),
     retryMs: 5000,
   });
 }
 
-const runEvents = [
-  "generation.started",
-  "assistant.reasoning.delta",
-  "assistant.delta",
-  "message.committed",
-  "tool.progress",
-  "run.error",
-  "generation.finished",
-  "run.continued",
-] as const;
+const runEvents = Object.keys(runEventGuards);
 
 /** What a run's stream shows before it is committed: the turn being written, and running calls' progress. */
 export type RunStreamState = { live: LiveTurn | null; progress: ToolProgress };
@@ -205,10 +199,16 @@ export function useRunStream(
   }
   const refreshRun = () => {
     if (!runId) return;
-    void client.invalidateQueries({ queryKey: keys.run(runId) });
-    void client.invalidateQueries({ queryKey: keys.runMessages(runId) });
-    void client.invalidateQueries({ queryKey: keys.agentRuns(agentId) });
-    void client.invalidateQueries({ queryKey: keys.agent(agentId) });
+    void client.invalidateQueries({ queryKey: runKeys.run(runId) });
+    void client.invalidateQueries({ queryKey: runKeys.runMessages(runId) });
+    void client.invalidateQueries({ queryKey: runKeys.agentRuns(agentId) });
+    void client.invalidateQueries({ queryKey: agentKeys.agent(agentId) });
+  };
+
+  const showGenerationEnded = () => {
+    setLive(null);
+    setProgress({});
+    refreshRun();
   };
 
   useEventStream(runId ? `/api/runs/${encodeURIComponent(runId)}/stream` : null, {
@@ -216,64 +216,48 @@ export function useRunStream(
     onOpen: refreshRun,
     onEvent: (name, data) => {
       if (!runId) return;
-      if (name === "assistant.reasoning.delta" || name === "assistant.delta") {
-        setLive((turn) => applyLiveDelta(turn, name, data));
-        return;
-      }
-      if (name === "generation.started") {
-        client.setQueryData<Run>(keys.run(runId), (run) =>
-          run ? { ...run, generating: true } : run,
-        );
-        client.setQueryData<Run[]>(keys.agentRuns(agentId), (runs) =>
-          runs?.map((run) => (run.id === runId ? { ...run, generating: true } : run)),
-        );
-        return;
-      }
-      if (name === "message.committed") {
-        const message = data as RunMessage;
-        client.setQueryData<RunMessage[]>(keys.runMessages(runId), (messages) =>
-          messages && !messages.some((known) => known.seq === message.seq)
-            ? [...messages, message].sort((a, b) => a.seq - b.seq)
-            : messages,
-        );
-        if (message.payload.role === "assistant") setLive(null);
-        // Files, scripts and routines follow the guild's stream; records follow the run's tools.
-        if (message.payload.role === "tool") {
-          setProgress((current) => dropToolProgress(current, message.payload.tool_call_id));
-          void client.invalidateQueries({ queryKey: keys.databases });
-        }
-        return;
-      }
-      if (name === "tool.progress") {
-        setProgress((current) => applyToolProgress(current, data));
-        return;
-      }
-      if (name === "generation.finished" || name === "run.error") {
-        setLive(null);
-        setProgress({});
-        refreshRun();
-        return;
-      }
-      if (name === "run.continued") {
-        const next = (data as { run_id?: string } | null)?.run_id;
-        refreshRun();
-        if (next) onContinued?.(next);
-      }
+      const handlers: LiveEventHandlers<RunEvents> = {
+        "generation.started": () => {
+          client.setQueryData<Run>(runKeys.run(runId), (run) =>
+            run ? { ...run, generating: true } : run,
+          );
+          client.setQueryData<Run[]>(runKeys.agentRuns(agentId), (runs) =>
+            runs?.map((run) => (run.id === runId ? { ...run, generating: true } : run)),
+          );
+        },
+        "assistant.reasoning.delta": (delta) =>
+          setLive((turn) => applyLiveDelta(turn, "assistant.reasoning.delta", delta)),
+        "assistant.delta": (delta) =>
+          setLive((turn) => applyLiveDelta(turn, "assistant.delta", delta)),
+        "message.committed": (message) => {
+          client.setQueryData<RunMessage[]>(runKeys.runMessages(runId), (messages) =>
+            messages && !messages.some((known) => known.seq === message.seq)
+              ? [...messages, message].sort((a, b) => a.seq - b.seq)
+              : messages,
+          );
+          if (message.payload.role === "assistant") setLive(null);
+          // Files, scripts and routines follow the guild's stream; records follow the run's tools.
+          if (message.payload.role === "tool") {
+            setProgress((current) => dropToolProgress(current, message.payload.tool_call_id));
+            void client.invalidateQueries({ queryKey: tableKeys.databases });
+          }
+        },
+        "tool.progress": (event) => setProgress((current) => applyToolProgress(current, event)),
+        "run.error": showGenerationEnded,
+        "generation.finished": showGenerationEnded,
+        "run.continued": (continuation) => {
+          refreshRun();
+          onContinued?.(continuation.run_id);
+        },
+      };
+      dispatchLiveEvent(runEventGuards, handlers, name, data);
     },
   });
 
   return { live, progress };
 }
 
-const studioEvents = [
-  "generation.started",
-  "assistant.delta",
-  "assistant.reasoning.delta",
-  "message.committed",
-  "draft.changed",
-  "generation.finished",
-  "session.error",
-] as const;
+const studioEvents = Object.keys(studioEventGuards);
 
 /**
  * Follows a Studio session: the coach's reply as it is written, committed rows into the cached
@@ -287,58 +271,47 @@ export function useStudioStream(sessionId: string): LiveTurn | null {
     setTracked(sessionId);
     setLive(null);
   }
-  const refresh = () => void client.invalidateQueries({ queryKey: keys.studio(sessionId) });
+  const refresh = () => void client.invalidateQueries({ queryKey: studioKeys.studio(sessionId) });
+
+  const handlers: LiveEventHandlers<StudioEvents> = {
+    "generation.started": () =>
+      client.setQueryData<StudioSession>(studioKeys.studio(sessionId), (session) =>
+        session ? { ...session, generation_state: "generating" } : session,
+      ),
+    "assistant.delta": (delta) => setLive((turn) => applyLiveDelta(turn, "assistant.delta", delta)),
+    "assistant.reasoning.delta": (delta) =>
+      setLive((turn) => applyLiveDelta(turn, "assistant.reasoning.delta", delta)),
+    "message.committed": ({ message }) => {
+      client.setQueryData<StudioMessage[]>(studioKeys.studioMessages(sessionId), (messages) =>
+        messages && !messages.some((known) => known.seq === message.seq)
+          ? [...messages, message].sort((a, b) => a.seq - b.seq)
+          : messages,
+      );
+      if (message.payload.role === "assistant") setLive(null);
+    },
+    "draft.changed": refresh,
+    "generation.finished": () => {
+      setLive(null);
+      client.setQueryData<StudioSession>(studioKeys.studio(sessionId), (session) =>
+        session ? { ...session, generation_state: "idle" } : session,
+      );
+      refresh();
+    },
+    "session.error": () => {
+      setLive(null);
+      refresh();
+    },
+  };
 
   useEventStream(`/api/studio/sessions/${encodeURIComponent(sessionId)}/stream`, {
     events: studioEvents,
     onOpen: refresh,
-    onEvent: (name, data) => {
-      if (name === "assistant.reasoning.delta" || name === "assistant.delta") {
-        setLive((turn) => applyLiveDelta(turn, name, data));
-        return;
-      }
-      if (name === "generation.started") {
-        client.setQueryData<StudioSession>(keys.studio(sessionId), (session) =>
-          session ? { ...session, generation_state: "generating" } : session,
-        );
-        return;
-      }
-      if (name === "message.committed") {
-        const message = (data as { message?: StudioMessage } | null)?.message;
-        if (!message) return;
-        client.setQueryData<StudioMessage[]>(keys.studioMessages(sessionId), (messages) =>
-          messages && !messages.some((known) => known.seq === message.seq)
-            ? [...messages, message].sort((a, b) => a.seq - b.seq)
-            : messages,
-        );
-        if (message.payload.role === "assistant") setLive(null);
-        return;
-      }
-      if (name === "draft.changed") {
-        refresh();
-        return;
-      }
-      setLive(null);
-      if (name === "generation.finished") {
-        client.setQueryData<StudioSession>(keys.studio(sessionId), (session) =>
-          session ? { ...session, generation_state: "idle" } : session,
-        );
-      }
-      refresh();
-    },
+    onEvent: (name, data) => dispatchLiveEvent(studioEventGuards, handlers, name, data),
   });
   return live;
 }
 
-const builderEvents = [
-  "generation.started",
-  "assistant.delta",
-  "assistant.reasoning.delta",
-  "message.committed",
-  "recipe.changed",
-  "generation.finished",
-  "session.error",
-] as const;
+const builderEvents = Object.keys(builderEventGuards);
 
 /**
  * Follows a Builder session: the coach's reply as it is written, committed rows into the cached
@@ -356,51 +329,45 @@ export function useBuilderStream(
     setLive(null);
   }
   const refresh = () => {
-    void client.invalidateQueries({ queryKey: keys.builder(sessionId) });
-    void client.invalidateQueries({ queryKey: keys.recipes });
+    void client.invalidateQueries({ queryKey: builderKeys.builder(sessionId) });
+    void client.invalidateQueries({ queryKey: recipeKeys.recipes });
+  };
+
+  const handlers: LiveEventHandlers<BuilderEvents> = {
+    "generation.started": () =>
+      client.setQueryData<BuilderSession>(builderKeys.builder(sessionId), (session) =>
+        session ? { ...session, generation_state: "generating" } : session,
+      ),
+    "assistant.delta": (delta) => setLive((turn) => applyLiveDelta(turn, "assistant.delta", delta)),
+    "assistant.reasoning.delta": (delta) =>
+      setLive((turn) => applyLiveDelta(turn, "assistant.reasoning.delta", delta)),
+    "message.committed": ({ message }) => {
+      client.setQueryData<StudioMessage[]>(builderKeys.builderMessages(sessionId), (messages) =>
+        messages && !messages.some((known) => known.seq === message.seq)
+          ? [...messages, message].sort((a, b) => a.seq - b.seq)
+          : messages,
+      );
+      if (message.payload.role === "assistant") setLive(null);
+    },
+    "recipe.changed": refresh,
+    "generation.finished": () => {
+      setLive(null);
+      client.setQueryData<BuilderSession>(builderKeys.builder(sessionId), (session) =>
+        session ? { ...session, generation_state: "idle" } : session,
+      );
+      refresh();
+    },
+    "session.error": (failure) => {
+      onError(failure.detail);
+      setLive(null);
+      refresh();
+    },
   };
 
   useEventStream(`/api/builder/sessions/${encodeURIComponent(sessionId)}/stream`, {
     events: builderEvents,
     onOpen: refresh,
-    onEvent: (name, data) => {
-      if (name === "assistant.reasoning.delta" || name === "assistant.delta") {
-        setLive((turn) => applyLiveDelta(turn, name, data));
-        return;
-      }
-      if (name === "generation.started") {
-        client.setQueryData<BuilderSession>(keys.builder(sessionId), (session) =>
-          session ? { ...session, generation_state: "generating" } : session,
-        );
-        return;
-      }
-      if (name === "message.committed") {
-        const message = (data as { message?: StudioMessage } | null)?.message;
-        if (!message) return;
-        client.setQueryData<StudioMessage[]>(keys.builderMessages(sessionId), (messages) =>
-          messages && !messages.some((known) => known.seq === message.seq)
-            ? [...messages, message].sort((a, b) => a.seq - b.seq)
-            : messages,
-        );
-        if (message.payload.role === "assistant") setLive(null);
-        return;
-      }
-      if (name === "recipe.changed") {
-        refresh();
-        return;
-      }
-      if (name === "session.error") {
-        const detail = (data as { detail?: unknown } | null)?.detail;
-        if (typeof detail === "string") onError(detail);
-      }
-      setLive(null);
-      if (name === "generation.finished") {
-        client.setQueryData<BuilderSession>(keys.builder(sessionId), (session) =>
-          session ? { ...session, generation_state: "idle" } : session,
-        );
-      }
-      refresh();
-    },
+    onEvent: (name, data) => dispatchLiveEvent(builderEventGuards, handlers, name, data),
   });
   return live;
 }

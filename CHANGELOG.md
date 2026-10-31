@@ -8,6 +8,21 @@ commands for each effect are in
 
 ## Unreleased
 
+**Breaking for extensions.** `@guildsrun/web` exports the API types
+as one module per domain, `api/types/<domain>` (`access`, `admin`,
+`agents`, `builder`, `chat`, `files`, `guilds`, `issues`, `models`,
+`notes`, `org`, `recipes`, `runs`, `schedules`, `scripts`, `secrets`,
+`studio`, `tables`), in place of `api/types`.
+
+**Breaking for extensions.** In `@guildsrun/web`'s
+`features/agent/runs/toolFormat`, `stripRemainingToolCalls` takes and
+returns a string, `parseToolArgs` returns a `ToolArguments`, and the
+`parsed` of what `formatToolArgs` returns is a `JsonValue`. The module
+exports `ToolArguments` and `ToolResultMetadata`. `JsonValue`,
+`JsonObject`, `isJsonValue` and `isJsonObject` are exported from
+`api/wire`, beside `isRecord` and the other guards that narrow what
+the server sends, and `formatCost` from `app/format`.
+
 **Rebuild.** The runtime image gains gost, and
 `agent-browser-start` takes the slot's DevTools relay port after the
 DevTools port: `agent-browser-start <agent id> <display> <vnc port>

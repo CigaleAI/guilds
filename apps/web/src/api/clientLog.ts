@@ -14,22 +14,32 @@ let tabId: string | null = null;
 const sentAt: number[] = [];
 const recent = new Map<string, number>();
 
-/** This tab's request id, kept for the tab's life. */
+/** The request id this tab stored; null when it stored none or session storage is unavailable. */
+export function storedRequestId(): string | null {
+  try {
+    return sessionStorage.getItem(storageKey);
+  } catch {
+    return null;
+  }
+}
+
+/** Keeps a request id in session storage for the tab's life; false when storage is unavailable. */
+export function storeRequestId(id: string): boolean {
+  try {
+    sessionStorage.setItem(storageKey, id);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** This tab's request id, kept for the tab's life; without session storage, for the page's. */
 export function requestId(): string {
   if (tabId) return tabId;
-  try {
-    tabId = sessionStorage.getItem(storageKey);
-  } catch {
-    // Without storage the id lives as long as the page.
-  }
-  if (!tabId) {
-    tabId = crypto.randomUUID();
-    try {
-      sessionStorage.setItem(storageKey, tabId);
-    } catch {
-      // As above.
-    }
-  }
+  tabId = storedRequestId();
+  if (tabId) return tabId;
+  tabId = crypto.randomUUID();
+  storeRequestId(tabId);
   return tabId;
 }
 
@@ -62,12 +72,22 @@ export function reportClientError(report: ClientReport): void {
     href: window.location.href.slice(0, 500),
     request_id: requestId(),
   });
-  void fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Request-Id": requestId() },
-    body,
-    keepalive: true,
-  }).catch(() => undefined);
+  void deliverReport(body);
+}
+
+/** Posts a report; resolves whether the orchestrator took it, false when the request failed. */
+export async function deliverReport(body: string): Promise<boolean> {
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Request-Id": requestId() },
+      body,
+      keepalive: true,
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
 
 /** The report for anything thrown. */

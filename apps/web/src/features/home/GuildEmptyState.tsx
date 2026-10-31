@@ -33,19 +33,15 @@ const crew = [
 const choiceClass =
   "flex h-full cursor-pointer flex-col gap-3 rounded-xl bg-surface p-5 text-left transition-colors hover:bg-paper-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus";
 
-function ChoiceBody({
-  icon,
-  title,
-  hint,
-  hintTone,
-  children,
-}: {
+type ChoiceBodyProps = {
   icon: LucideIcon;
   title: string;
   hint: string;
   hintTone: "well" | "signal";
   children: ReactNode;
-}) {
+};
+
+function ChoiceBody({ icon, title, hint, hintTone, children }: ChoiceBodyProps) {
   return (
     <>
       <div className="flex items-center gap-2">
@@ -60,8 +56,10 @@ function ChoiceBody({
   );
 }
 
+type GuildEmptyStateProps = { onCreateGuild: () => void };
+
 /** The start with no guilds: a small DiceBear crew and two ways in. */
-export function GuildEmptyState({ onCreateGuild }: { onCreateGuild: () => void }) {
+export function GuildEmptyState({ onCreateGuild }: GuildEmptyStateProps) {
   return (
     <div className="grid flex-1 place-items-center p-6">
       <div className="flex w-full max-w-xl flex-col items-center gap-8">

@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { StudioMessage } from "../../api/types";
+import type { StudioMessage } from "../../api/types/studio";
 import {
   accessCutMessage,
   answeredAll,
   answerMessage,
+  initialServerId,
+  isConnectScope,
   pendingQuestions,
+  pickedServer,
+  serverName,
   widgetOf,
   type Question,
 } from "./widgets";
@@ -34,6 +38,65 @@ test("a connect widget reads its server, scopes and connection state", () => {
   assert.deepEqual(widget.allowedScopes, ["org", "guild"]);
   assert.equal(widget.servers[0]?.display_name, "x");
   assert.equal(widget.servers[0]?.connection_state, "connected");
+});
+
+test("a connect card starts on the named server and signs in to the one picked", () => {
+  const notion = { id: "mcp_notion", slug: "notion", display_name: "Notion", auth: "oauth" };
+  const x = { id: "mcp_x", slug: "x", display_name: "", auth: "token" };
+  const widget = widgetOf(tool({ widget: "connect", mode: "any", servers: [notion, x] }));
+  assert.ok(widget?.kind === "connect");
+  assert.equal(initialServerId(widget), "mcp_notion");
+  assert.equal(pickedServer(widget, "mcp_x")?.id, "mcp_x");
+  assert.equal(pickedServer(widget, "mcp_gone"), null);
+  assert.equal(
+    pickedServer({ ...widget, mode: "org", server: widget.servers[0] ?? null }, "mcp_x")?.id,
+    "mcp_notion",
+  );
+  assert.equal(initialServerId({ ...widget, servers: [] }), "");
+  assert.equal(serverName(widget.servers[0] ?? null), "Notion");
+  assert.equal(serverName(widget.servers[1] ?? null), "x");
+  assert.equal(serverName(null), "the service");
+});
+
+test("a connect scope is one of org, guild and agent", () => {
+  assert.equal(isConnectScope("guild"), true);
+  assert.equal(isConnectScope("planet"), false);
+  assert.equal(isConnectScope(undefined), false);
+});
+
+test("a connect widget falls back to the organisation for an unknown recommended scope", () => {
+  const widget = widgetOf(tool({ widget: "connect", recommended_scope: "planet" }));
+  assert.ok(widget?.kind === "connect");
+  assert.equal(widget.recommendedScope, "org");
+  assert.deepEqual(widget.allowedScopes, ["org"]);
+});
+
+test("a server keeps the key login inputs it describes and drops the malformed ones", () => {
+  const widget = widgetOf(
+    tool({
+      widget: "connect",
+      server: {
+        id: "mcp_x",
+        auth: "token",
+        auth_fields: [
+          { name: "api_key", label: "API key", secret: true },
+          { name: "region", label: "Region", optional: "yes" },
+          { label: "No name" },
+          "api_key",
+        ],
+      },
+    }),
+  );
+  assert.ok(widget?.kind === "connect");
+  assert.deepEqual(widget.server?.auth_fields, [
+    { name: "api_key", label: "API key", secret: true },
+  ]);
+});
+
+test("a tool result whose content is not an object carries no widget", () => {
+  assert.equal(widgetOf(tool(["widget", "connect"])), null);
+  assert.equal(widgetOf(tool("connect")), null);
+  assert.equal(widgetOf({ payload: { role: "tool", content: "not json" } }), null);
 });
 
 test("a question widget accepts the one-question shorthand and nested results", () => {

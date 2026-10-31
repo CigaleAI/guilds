@@ -1,3 +1,5 @@
+import { isJsonObject, isJsonValue, parseJson, type JsonValue } from "../../../api/wire";
+import { formatCost } from "../../../app/format";
 import { diffstat } from "../chat/changes";
 
 /** A recorded run message: the API's message row, every field optional so partial rows fit too. */
@@ -15,11 +17,81 @@ export type ToolCallRequest = {
   function?: { name?: unknown; arguments?: unknown };
 };
 
+/**
+ * A tool call's arguments: the parameters the app reads by name, and the rest of the tool's own
+ * schema, which differs from tool to tool.
+ */
+export type ToolArguments = {
+  action?: JsonValue;
+  agent_id?: JsonValue;
+  agent_name?: JsonValue;
+  background?: JsonValue;
+  brief?: JsonValue;
+  collection?: JsonValue;
+  command?: JsonValue;
+  direction?: JsonValue;
+  home_path?: JsonValue;
+  id?: JsonValue;
+  key?: JsonValue;
+  mode?: JsonValue;
+  name?: JsonValue;
+  offset?: JsonValue;
+  path?: JsonValue;
+  path_prefix?: JsonValue;
+  pattern?: JsonValue;
+  query?: JsonValue;
+  repo?: JsonValue;
+  scope?: JsonValue;
+  server_ref?: JsonValue;
+  session_id?: JsonValue;
+  start?: JsonValue;
+  stop?: JsonValue;
+  summary?: JsonValue;
+  target_agent_id?: JsonValue;
+  tool?: JsonValue;
+  url?: JsonValue;
+  user?: JsonValue;
+  [parameter: string]: JsonValue | undefined;
+};
+
+/**
+ * What the orchestrator records about a tool result: the facts the app reads by name, and the
+ * rest a tool adds of its own.
+ */
+export type ToolResultMetadata = {
+  browser_usage?: JsonValue;
+  cwd?: JsonValue;
+  deletions?: JsonValue;
+  duration_ms?: JsonValue;
+  end_sha?: JsonValue;
+  error?: JsonValue;
+  exit_code?: JsonValue;
+  files_changed?: JsonValue;
+  harness?: JsonValue;
+  insertions?: JsonValue;
+  log_path?: JsonValue;
+  original_bytes?: JsonValue;
+  output_filter?: JsonValue;
+  path?: JsonValue;
+  range?: JsonValue;
+  remaining_tool_calls?: JsonValue;
+  repeat_of?: JsonValue;
+  repository?: JsonValue;
+  session_id?: JsonValue;
+  start_sha?: JsonValue;
+  status?: JsonValue;
+  stored_bytes?: JsonValue;
+  timed_out?: JsonValue;
+  tool_name?: JsonValue;
+  truncated?: JsonValue;
+  [fact: string]: JsonValue | undefined;
+};
+
 /** A call's arguments ready to show: pretty JSON, the raw text, or an empty notice. */
 export type ToolArgsInfo = {
   isEmpty: boolean;
   text: string;
-  parsed: Record<string, unknown> | null;
+  parsed: JsonValue | null;
 };
 
 /** A call's result ready to show: pretty JSON when the body parses, the raw text otherwise. */
@@ -27,52 +99,29 @@ export type ReturnedDataInfo = { isJson: boolean; isEmpty: boolean; text: string
 
 const REMAINING_TOOL_CALLS_RE = /\n\nremaining_tool_calls: \d+\s*$/;
 
-function parseJson(text: string): unknown {
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return undefined;
-  }
-}
-
 /** Removes the tool-budget stamp the orchestrator appends to the end of a tool result. */
-export function stripRemainingToolCalls(content: string): string;
-export function stripRemainingToolCalls<T>(content: T): T;
-export function stripRemainingToolCalls(content: unknown): unknown {
-  if (typeof content !== "string") return content;
+export function stripRemainingToolCalls(content: string): string {
   return content.replace(REMAINING_TOOL_CALLS_RE, "");
 }
 
 /** Reads a call's arguments, given as a JSON string or an object, as an object; empty when unreadable. */
-export function parseToolArgs(raw: unknown): Record<string, unknown> {
-  if (!raw) return {};
-  if (typeof raw === "object" && !Array.isArray(raw)) return raw as Record<string, unknown>;
-  if (typeof raw !== "string") return {};
-  const parsed = parseJson(raw);
-  return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-    ? (parsed as Record<string, unknown>)
-    : {};
+export function parseToolArgs(raw: unknown): ToolArguments {
+  const value = typeof raw === "string" && raw ? parseJson(raw) : raw;
+  return isJsonObject(value) ? value : {};
 }
 
 /** Formats a call's arguments for display, noting when there are none. */
 export function formatToolArgs(raw: unknown): ToolArgsInfo {
   if (!raw) return { isEmpty: true, text: "No arguments provided.", parsed: null };
-  if (typeof raw === "object") {
-    const object = raw as Record<string, unknown>;
-    if (Object.keys(object).length === 0) {
-      return { isEmpty: true, text: "No arguments provided.", parsed: object };
-    }
-    return { isEmpty: false, text: JSON.stringify(object, null, 2), parsed: object };
+  const value = typeof raw === "object" ? raw : parseJson(String(raw));
+  if (!value || typeof value !== "object") {
+    return { isEmpty: false, text: String(raw), parsed: null };
   }
-  const parsed = parseJson(String(raw));
-  if (parsed && typeof parsed === "object") {
-    const object = parsed as Record<string, unknown>;
-    if (Object.keys(object).length === 0) {
-      return { isEmpty: true, text: "No arguments provided.", parsed: object };
-    }
-    return { isEmpty: false, text: JSON.stringify(object, null, 2), parsed: object };
+  const parsed = isJsonValue(value) ? value : null;
+  if (Object.keys(value).length === 0) {
+    return { isEmpty: true, text: "No arguments provided.", parsed };
   }
-  return { isEmpty: false, text: String(raw), parsed: null };
+  return { isEmpty: false, text: JSON.stringify(value, null, 2), parsed };
 }
 
 /** Formats a call's result for display, pretty-printing bodies that are JSON objects or arrays. */
@@ -101,7 +150,7 @@ export function formatReturnedData(content: unknown): ReturnedDataInfo {
 }
 
 /** The text of a message payload, joining the text parts of multi-part content. */
-export function messageContentText(payload: { content?: unknown } | null | undefined): string {
+export function messageContentText(payload: RunMessage["payload"] | null | undefined): string {
   if (!payload) return "";
   const { content } = payload;
   if (typeof content === "string") return content;
@@ -110,7 +159,7 @@ export function messageContentText(payload: { content?: unknown } | null | undef
       .map((part: unknown) => {
         if (typeof part === "string") return part;
         const text: unknown =
-          part !== null && typeof part === "object" ? (part as { text?: unknown }).text : undefined;
+          part !== null && typeof part === "object" && "text" in part ? part.text : undefined;
         return text || "";
       })
       .join("");
@@ -123,23 +172,23 @@ export function toolResultError(resultMsg: RunMessage | null | undefined): strin
   if (!resultMsg) return null;
   const metadata = resultMsg.metadata || {};
   if (typeof metadata.error === "string" && metadata.error) return metadata.error;
-  const content = stripRemainingToolCalls(resultMsg.payload?.content);
-  if (typeof content === "string" && content.trim().startsWith("ERROR:")) {
-    const firstLine = content.trim().slice("ERROR:".length).trim().split("\n")[0];
+  const content = resultMsg.payload?.content;
+  if (typeof content !== "string") return null;
+  const body = stripRemainingToolCalls(content).trim();
+  if (body.startsWith("ERROR:")) {
+    const firstLine = body.slice("ERROR:".length).trim().split("\n")[0];
     return firstLine || "error";
   }
   return null;
 }
 
-type ToolArgs = Record<string, unknown>;
-
-function friendlyNoteChange(args: ToolArgs): string {
+function friendlyNoteChange(args: ToolArguments): string {
   if (args.action === "create") return args.key ? `Propose note ${args.key}` : "Propose note";
   if (args.action === "delete") return "Propose deleting a note";
   return "Propose note edit";
 }
 
-function friendlyTableChange(args: ToolArgs): string {
+function friendlyTableChange(args: ToolArguments): string {
   if (args.action === "create") return args.name ? `Propose table ${args.name}` : "Propose table";
   if (args.action === "delete") {
     return args.collection ? `Propose deleting ${args.collection}` : "Propose deleting a table";
@@ -147,209 +196,150 @@ function friendlyTableChange(args: ToolArgs): string {
   return args.collection ? `Propose changes to ${args.collection}` : "Propose table changes";
 }
 
-function friendlyRoutineChange(args: ToolArgs): string {
+function friendlyRoutineChange(args: ToolArguments): string {
   const handle = args.agent_id || args.agent_name;
   if (args.action === "create") return handle ? `Propose routine for ${handle}` : "Propose routine";
   if (args.action === "delete") return "Propose deleting a routine";
   return "Propose routine changes";
 }
 
-/** A short human summary of a tool call, such as "Find notes thesis"; empty when nothing useful fits. */
-export function friendlyToolCall(call: ToolCallRequest | null | undefined): string {
-  const name = call?.function?.name || "tool";
-  const args = parseToolArgs(call?.function?.arguments);
-  if (name === "studio_get_agent_context") {
-    const handle = args.agent_id || args.target_agent_id || args.agent_name;
+/** How one tool's calls read in a few words, from their arguments. */
+type CallSummary = (args: ToolArguments) => string;
+
+/** The agent a Studio call names: by id, by the target it addresses, or by name. */
+function studioTarget(args: ToolArguments): JsonValue | undefined {
+  return args.agent_id || args.target_agent_id || args.agent_name;
+}
+
+function friendlyTaskDraft(args: ToolArguments): string {
+  const handle = studioTarget(args);
+  return handle ? `Draft task for ${handle}` : "Propose task draft";
+}
+
+/** The agent a call names, by id or by name. */
+function namedAgent(args: ToolArguments): JsonValue | undefined {
+  return args.agent_id || args.agent_name;
+}
+
+const CALL_SUMMARIES: Readonly<Record<string, CallSummary>> = Object.freeze({
+  studio_get_agent_context: (args) => {
+    const handle = studioTarget(args);
     return handle ? `Inspect ${handle}` : "Inspect agent context";
-  }
-  if (name === "studio_create_task_draft" || name === "studio_propose_draft") {
-    const handle = args.agent_id || args.target_agent_id || args.agent_name;
-    return handle ? `Draft task for ${handle}` : "Propose task draft";
-  }
-  if (name === "studio_publish_draft") return "Publish task draft";
-  if (name === "studio_get_guild") return "Read guild description";
-  if (name === "studio_list_guilds") return "Read other guilds";
-  if (name === "studio_edit_memory") {
-    const handle = args.agent_id || args.agent_name;
+  },
+  studio_create_task_draft: friendlyTaskDraft,
+  studio_propose_draft: friendlyTaskDraft,
+  studio_publish_draft: () => "Publish task draft",
+  studio_get_guild: () => "Read guild description",
+  studio_list_guilds: () => "Read other guilds",
+  studio_edit_memory: (args) => {
+    const handle = namedAgent(args);
     return handle ? `Propose Memory edit for ${handle}` : "Propose Memory edit";
-  }
-  if (name === "studio_edit_note") return friendlyNoteChange(args);
-  if (name === "studio_edit_guild") return "Propose guild description edit";
-  if (name === "studio_list_collections") return "List tables";
-  if (name === "studio_get_collection") {
-    return args.collection ? `Read table ${args.collection}` : "Read table";
-  }
-  if (name === "studio_edit_collection") return friendlyTableChange(args);
-  if (name === "studio_edit_routine") return friendlyRoutineChange(args);
-  if (name === "studio_inspect_history") return "Inspect run history";
-  if (name === "studio_get_script") {
-    return args.name ? `Read script ${args.name}` : "Read script";
-  }
-  if (name === "studio_get_agent_access") {
-    const handle = args.agent_id || args.agent_name;
+  },
+  studio_edit_note: friendlyNoteChange,
+  studio_edit_guild: () => "Propose guild description edit",
+  studio_list_collections: () => "List tables",
+  studio_get_collection: (args) =>
+    args.collection ? `Read table ${args.collection}` : "Read table",
+  studio_edit_collection: friendlyTableChange,
+  studio_edit_routine: friendlyRoutineChange,
+  studio_inspect_history: () => "Inspect run history",
+  studio_get_script: (args) => (args.name ? `Read script ${args.name}` : "Read script"),
+  studio_get_agent_access: (args) => {
+    const handle = namedAgent(args);
     return handle ? `Inspect access for ${handle}` : "Inspect agent access";
-  }
-  if (name === "studio_request_connection_access") return "Request connection access";
-  if (name === "studio_call_connection_tool") {
-    return args.tool ? `Read via ${args.tool}` : "Read via connection";
-  }
-  if (name === "builder_list_capabilities") return "List capabilities";
-  if (name === "builder_search_capabilities") {
-    return args.query ? `Search capabilities ${args.query}` : "Search capabilities";
-  }
-  if (name === "builder_describe_server") {
-    return args.server_ref ? `Describe ${args.server_ref}` : "Describe connector";
-  }
-  if (name === "builder_write_recipe") return "Write recipe";
-  if (name === "builder_validate_recipe") return "Validate recipe";
-  if (name === "artifact_find") {
-    return args.query ? `Find ${args.query}` : "Find artifacts";
-  }
-  if (name === "note_find") {
-    return args.query ? `Find notes ${args.query}` : "Find notes";
-  }
-  if (name === "record_search") {
+  },
+  studio_request_connection_access: () => "Request connection access",
+  studio_call_connection_tool: (args) =>
+    args.tool ? `Read via ${args.tool}` : "Read via connection",
+  builder_list_capabilities: () => "List capabilities",
+  builder_search_capabilities: (args) =>
+    args.query ? `Search capabilities ${args.query}` : "Search capabilities",
+  builder_describe_server: (args) =>
+    args.server_ref ? `Describe ${args.server_ref}` : "Describe connector",
+  builder_write_recipe: () => "Write recipe",
+  builder_validate_recipe: () => "Validate recipe",
+  artifact_find: (args) => (args.query ? `Find ${args.query}` : "Find artifacts"),
+  note_find: (args) => (args.query ? `Find notes ${args.query}` : "Find notes"),
+  record_search: (args) => {
     const scope = args.collection ? `Search ${args.collection}` : "Search records";
     return args.query ? `${scope} ${args.query}` : scope;
-  }
-  if (name === "record_list") {
-    return `List ${args.collection || "records"}`;
-  }
-  if (name === "record_add") {
-    return `Add to ${args.collection || "records"}`;
-  }
-  if (name === "record_update") {
-    return args.collection && args.id !== undefined
+  },
+  record_list: (args) => `List ${args.collection || "records"}`,
+  record_add: (args) => `Add to ${args.collection || "records"}`,
+  record_update: (args) =>
+    args.collection && args.id !== undefined
       ? `Update ${args.collection}/${args.id}`
-      : "Update record";
-  }
-  if (name === "record_remove") {
-    return args.collection && args.id !== undefined
+      : "Update record",
+  record_remove: (args) =>
+    args.collection && args.id !== undefined
       ? `Remove ${args.collection}/${args.id}`
-      : "Remove record";
-  }
-  if (name === "artifact_get") {
-    return args.path ? `Get ${args.path}` : "Get artifact";
-  }
-  if (name === "note_get") {
-    return args.path ? `Get ${args.path}` : "Get note";
-  }
-  if (name === "note_write") {
-    return args.key ? `Wrote ${args.key}` : "Wrote note";
-  }
-  if (name === "artifact_delete") {
-    return args.path ? `Delete ${args.path}` : "Delete artifact";
-  }
-  if (name === "note_delete") {
-    return args.path ? `Delete ${args.path}` : "Delete note";
-  }
-  if (name === "file_find") {
-    return args.query ? `Find files ` : "Find files";
-  }
-  if (name === "file_fetch") {
-    return args.path ? `Fetch ` : "Fetch file";
-  }
-  if (name === "file_put") {
-    return args.home_path ? `Shared ` : "Shared file";
-  }
-  if (name === "file_delete") {
-    return args.path ? `Delete ` : "Delete file";
-  }
-  if (name === "note_read") {
-    return args.path ? `Read ${args.path}` : "Read note";
-  }
-  if (name === "note_list") {
-    return args.scope ? `List ${args.scope} notes` : "List notes";
-  }
-  if (name === "memory_write") return "Write memory";
-  if (name === "secret_store") {
-    return args.name ? `Stored ${args.name}` : "Stored a secret";
-  }
-  if (name === "secret_request") {
-    return args.name ? `Asked for ${args.name}` : "Asked for a secret";
-  }
-  if (name === "group_post") return "Post to group";
-  if (name === "report_issue") {
-    return args.summary ? `Report: ${args.summary}` : "Report issue";
-  }
-  if (name === "browse") {
-    return args.start ? `Browse from ${args.start}` : "Browse";
-  }
-  if (name === "browser_navigate") {
-    return args.url ? `Open ${args.url}` : "Open page";
-  }
-  if (name === "browser_snapshot") return "Read page snapshot";
-  if (name === "browser_click") return "Click element";
-  if (name === "browser_type") return "Type text";
-  if (name === "browser_fill") return "Fill form";
-  if (name === "browser_scroll") {
-    return args.direction ? `Scroll ${args.direction}` : "Scroll page";
-  }
-  if (name === "browser_screenshot") return "Take screenshot";
-  if (name === "browser_eval") return "Run page script";
-  if (name === "shell") {
+      : "Remove record",
+  artifact_get: (args) => (args.path ? `Get ${args.path}` : "Get artifact"),
+  note_get: (args) => (args.path ? `Get ${args.path}` : "Get note"),
+  note_write: (args) => (args.key ? `Wrote ${args.key}` : "Wrote note"),
+  artifact_delete: (args) => (args.path ? `Delete ${args.path}` : "Delete artifact"),
+  note_delete: (args) => (args.path ? `Delete ${args.path}` : "Delete note"),
+  file_find: (args) => (args.query ? `Find files ` : "Find files"),
+  file_fetch: (args) => (args.path ? `Fetch ` : "Fetch file"),
+  file_put: (args) => (args.home_path ? `Shared ` : "Shared file"),
+  file_delete: (args) => (args.path ? `Delete ` : "Delete file"),
+  note_read: (args) => (args.path ? `Read ${args.path}` : "Read note"),
+  note_list: (args) => (args.scope ? `List ${args.scope} notes` : "List notes"),
+  memory_write: () => "Write memory",
+  secret_store: (args) => (args.name ? `Stored ${args.name}` : "Stored a secret"),
+  secret_request: (args) => (args.name ? `Asked for ${args.name}` : "Asked for a secret"),
+  group_post: () => "Post to group",
+  report_issue: (args) => (args.summary ? `Report: ${args.summary}` : "Report issue"),
+  browse: (args) => (args.start ? `Browse from ${args.start}` : "Browse"),
+  browser_navigate: (args) => (args.url ? `Open ${args.url}` : "Open page"),
+  browser_snapshot: () => "Read page snapshot",
+  browser_click: () => "Click element",
+  browser_type: () => "Type text",
+  browser_fill: () => "Fill form",
+  browser_scroll: (args) => (args.direction ? `Scroll ${args.direction}` : "Scroll page"),
+  browser_screenshot: () => "Take screenshot",
+  browser_eval: () => "Run page script",
+  shell: (args) => {
     const command = firstCommandLine(args.command);
     return command ? `${args.background === true ? "Start" : "Run"} ${command}` : "Run command";
-  }
-  if (name === "code_task") {
+  },
+  code_task: (args) => {
     const where = typeof args.repo === "string" && args.repo ? ` in ${args.repo}` : "";
     return `${args.session_id ? "Resume code task" : "Code task"}${where}`;
-  }
-  if (name === "shell_status") {
+  },
+  shell_status: (args) => {
     if (typeof args.id !== "string" || !args.id) return "List background commands";
     return args.stop === true ? `Stop ${args.id}` : `Check ${args.id}`;
-  }
-  if (name === "file_read") {
+  },
+  file_read: (args) => {
     if (!args.path) return "Read file";
     const from = Number(args.offset);
     return Number.isInteger(from) && from > 1
       ? `Read ${args.path} from line ${from}`
       : `Read ${args.path}`;
-  }
-  if (name === "code_search") {
+  },
+  code_search: (args) => {
     const where = args.path ? ` in ${args.path}` : "";
     const how = args.mode === "content" ? "Search lines" : "Search files";
     return args.pattern ? `${how} "${args.pattern}"${where}` : how;
-  }
-  if (name === "script_run") {
-    return args.name ? `Run ${args.name}` : "Run script";
-  }
-  if (name === "script_create") {
-    return args.name ? `Write ${args.name}` : "Write script";
-  }
-  if (name === "tavily_search") {
-    return args.query ? `Search: "${args.query}"` : "Search web";
-  }
-  if (name === "twitterapiio_search") {
-    return args.query ? `Search X: "${args.query}"` : "Search X";
-  }
-  if (name === "twitterapiio_user") {
-    return args.user ? `X profile ${args.user}` : "X profile";
-  }
-  if (name === "twitterapiio_posts") {
-    return args.user ? `X posts ${args.user}` : "X posts";
-  }
-  if (name === "twitterapiio_post") {
-    return args.id ? `X post ${args.id}` : "X post";
-  }
-  if (name === "twitterapiio_followers") {
-    return args.user ? `X followers ${args.user}` : "X followers";
-  }
-  if (name === "twitterapiio_following") {
-    return args.user ? `X following ${args.user}` : "X following";
-  }
-  if (name === "twitterapiio_mentions") {
-    return args.user ? `X mentions ${args.user}` : "X mentions";
-  }
-  if (name === "twitterapiio_replies") {
-    return args.id ? `X replies ${args.id}` : "X replies";
-  }
-  if (name === "twitterapiio_quotes") {
-    return args.id ? `X quotes ${args.id}` : "X quotes";
-  }
-  if (name === "twitterapiio_trends") {
-    return "X trends";
-  }
+  },
+  script_run: (args) => (args.name ? `Run ${args.name}` : "Run script"),
+  script_create: (args) => (args.name ? `Write ${args.name}` : "Write script"),
+  tavily_search: (args) => (args.query ? `Search: "${args.query}"` : "Search web"),
+  twitterapiio_search: (args) => (args.query ? `Search X: "${args.query}"` : "Search X"),
+  twitterapiio_user: (args) => (args.user ? `X profile ${args.user}` : "X profile"),
+  twitterapiio_posts: (args) => (args.user ? `X posts ${args.user}` : "X posts"),
+  twitterapiio_post: (args) => (args.id ? `X post ${args.id}` : "X post"),
+  twitterapiio_followers: (args) => (args.user ? `X followers ${args.user}` : "X followers"),
+  twitterapiio_following: (args) => (args.user ? `X following ${args.user}` : "X following"),
+  twitterapiio_mentions: (args) => (args.user ? `X mentions ${args.user}` : "X mentions"),
+  twitterapiio_replies: (args) => (args.id ? `X replies ${args.id}` : "X replies"),
+  twitterapiio_quotes: (args) => (args.id ? `X quotes ${args.id}` : "X quotes"),
+  twitterapiio_trends: () => "X trends",
+});
+
+/** A call with one short text argument, as `key: value`; empty for any other call. */
+function onlyArgumentSummary(args: ToolArguments): string {
   const argKeys = Object.keys(args);
   const onlyKey = argKeys.length === 1 ? argKeys[0] : undefined;
   const onlyValue = onlyKey === undefined ? undefined : args[onlyKey];
@@ -357,6 +347,17 @@ export function friendlyToolCall(call: ToolCallRequest | null | undefined): stri
     return `${onlyKey}: ${onlyValue}`;
   }
   return "";
+}
+
+/** A short human summary of a tool call, such as "Find notes thesis"; empty when nothing useful fits. */
+export function friendlyToolCall(call: ToolCallRequest | null | undefined): string {
+  const name = call?.function?.name || "tool";
+  const args = parseToolArgs(call?.function?.arguments);
+  const summary =
+    typeof name === "string" && Object.hasOwn(CALL_SUMMARIES, name)
+      ? CALL_SUMMARIES[name]
+      : undefined;
+  return summary ? summary(args) : onlyArgumentSummary(args);
 }
 
 function firstCommandLine(command: unknown): string {
@@ -441,7 +442,8 @@ export function toolOutcome(metadata: Record<string, unknown> | null | undefined
 
 /** A browse call's status when it did not complete, and what it spent. */
 function browseOutcome(metadata: Record<string, unknown>): string {
-  const status = typeof metadata.status === "string" && metadata.status !== "complete" ? metadata.status : "";
+  const status =
+    typeof metadata.status === "string" && metadata.status !== "complete" ? metadata.status : "";
   const usage = metadata.browser_usage;
   const cost =
     usage && typeof usage === "object" && "cost_usd" in usage ? formatCost(usage.cost_usd) : "";
@@ -466,15 +468,6 @@ export function formatTokens(count: unknown): string {
   if (value < 1000) return String(Math.round(value));
   if (value < 1_000_000) return `${(value / 1000).toFixed(value < 10_000 ? 1 : 0)}k`;
   return `${(value / 1_000_000).toFixed(1)}M`;
-}
-
-/** A dollar cost: "$0", four decimals under a cent, two otherwise; empty for non-numeric input. */
-export function formatCost(usd: unknown): string {
-  const value = Number(usd);
-  if (!Number.isFinite(value)) return "";
-  if (value === 0) return "$0";
-  if (value < 0.01) return `$${value.toFixed(4)}`;
-  return `$${value.toFixed(2)}`;
 }
 
 /** Text collapsed to one line and cut to `max` characters with an ellipsis. */

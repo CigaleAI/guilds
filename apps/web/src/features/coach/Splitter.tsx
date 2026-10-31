@@ -1,4 +1,5 @@
 import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { readStored, writeStored } from "../../app/storage";
 
 const minShare = 0.35;
 const maxShare = 0.75;
@@ -6,20 +7,8 @@ const maxShare = 0.75;
 const clamp = (share: number) => Math.min(maxShare, Math.max(minShare, share));
 
 function savedShare(key: string, fallback: number): number {
-  try {
-    const share = Number(localStorage.getItem(key));
-    return share ? clamp(share) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function saveShare(key: string, share: number) {
-  try {
-    localStorage.setItem(key, String(share));
-  } catch {
-    // Without storage the split resets on the next visit.
-  }
+  const share = Number(readStored(key));
+  return share ? clamp(share) : fallback;
 }
 
 /** The first pane's share of a split workspace, remembered across visits under `key`. */
@@ -50,7 +39,7 @@ export function Splitter({ storageKey, share, onShareChange, label }: SplitterPr
     event.preventDefault();
     const next = clamp(share + step);
     onShareChange(next);
-    saveShare(storageKey, next);
+    writeStored(storageKey, String(next));
   };
 
   return (
@@ -71,7 +60,7 @@ export function Splitter({ storageKey, share, onShareChange, label }: SplitterPr
       onPointerUp={(event) => {
         if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
         event.currentTarget.releasePointerCapture(event.pointerId);
-        saveShare(storageKey, shareAt(event));
+        writeStored(storageKey, String(shareAt(event)));
       }}
       className="group flex w-2 shrink-0 cursor-col-resize touch-none justify-center focus-visible:outline-none"
     >

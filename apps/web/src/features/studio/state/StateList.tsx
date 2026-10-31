@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { useStudioState } from "../../../api/queries";
-import type { StateItemRow, StudioAgent } from "../../../api/types";
+import { useStudioState } from "../../../api/queries/studio";
+import type { StateItemRow, StudioAgent } from "../../../api/types/studio";
 import { relativeTime } from "../../../app/format";
+import { readStored, writeStored } from "../../../app/storage";
 import {
   Banner,
   Checkbox,
@@ -33,20 +34,8 @@ const windowLabel: Record<number, string> = { 24: "24 h", 72: "3 d", 168: "7 d" 
 
 /** The window State last showed, remembered in this browser. */
 export function storedStateHours(): number {
-  try {
-    const value = Number(localStorage.getItem(hoursKey));
-    return STATE_WINDOW_HOURS.includes(value) ? value : STATE_DEFAULT_HOURS;
-  } catch {
-    return STATE_DEFAULT_HOURS;
-  }
-}
-
-function storeHours(hours: number) {
-  try {
-    localStorage.setItem(hoursKey, String(hours));
-  } catch {
-    // Without storage the window resets on the next visit.
-  }
+  const value = Number(readStored(hoursKey));
+  return STATE_WINDOW_HOURS.includes(value) ? value : STATE_DEFAULT_HOURS;
 }
 
 /**
@@ -56,11 +45,7 @@ function storeHours(hours: number) {
 export function StateList() {
   const { session, search, approvals } = useStudio();
   const [hours, setHours] = useState(storedStateHours);
-  const rows = useStudioState(session.id, {
-    hours,
-    agent: search.agent ?? null,
-    kind: search.kind ?? null,
-  });
+  const rows = useStudioState(session.id, hours, search.agent ?? null, search.kind ?? null);
   const waiting = itemsAwaitingApproval(approvals.proposals);
   if (rows.isError) {
     return (
@@ -83,7 +68,7 @@ export function StateList() {
   }
   const changeHours = (next: number) => {
     setHours(next);
-    storeHours(next);
+    writeStored(hoursKey, String(next));
   };
   return (
     <StateTable rows={rows.data} waiting={waiting} hours={hours} onHoursChange={changeHours} />
@@ -97,26 +82,22 @@ const sortKeys: Record<string, StateSortKey> = {
   last: "last",
 };
 
-function StateTable({
-  rows,
-  waiting,
-  hours,
-  onHoursChange,
-}: {
+type StateTableProps = {
   rows: StateItemRow[];
   waiting: Set<string>;
   hours: number;
   onHoursChange: (hours: number) => void;
-}) {
+};
+
+function StateTable({ rows, waiting, hours, onHoursChange }: StateTableProps) {
   const { agents, search, go } = useStudio();
   const [query, setQuery] = useState("");
   const [needsLook, setNeedsLook] = useState(false);
   const [sort, setSort] = useState<DataTableSort>({ columnId: "changes", direction: "descending" });
-  const shown = filterStateRows(
-    rows,
-    { needsLook, query, waiting },
-    { key: sortKeys[sort.columnId] ?? "changes", descending: sort.direction === "descending" },
-  );
+  const shown = filterStateRows(rows, { needsLook, query }, waiting, {
+    key: sortKeys[sort.columnId] ?? "changes",
+    descending: sort.direction === "descending",
+  });
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
       <FilterBar

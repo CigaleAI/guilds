@@ -20,18 +20,33 @@ function audio(): AudioContext | null {
   return context;
 }
 
-function resumeAudio(): void {
+/**
+ * How resuming the chime's audio ended: resumed, refused by the browser until the operator has
+ * pressed a key or a pointer, not needed because the audio is not suspended, or unavailable
+ * without Web Audio.
+ */
+export type AudioResume = "resumed" | "refused" | "unneeded" | "unavailable";
+
+/** Resumes the chime's audio when it is suspended. */
+export async function resumeChimeAudio(): Promise<AudioResume> {
   const ctx = audio();
-  if (ctx && ctx.state === "suspended") void ctx.resume().catch(() => undefined);
+  if (!ctx) return "unavailable";
+  if (ctx.state !== "suspended") return "unneeded";
+  try {
+    await ctx.resume();
+    return "resumed";
+  } catch {
+    return "refused";
+  }
 }
 
 /** Starts audio on the first key or pointer press; returns what stops listening for it. */
 export function primeChime(): () => void {
-  window.addEventListener("pointerdown", resumeAudio, { passive: true });
-  window.addEventListener("keydown", resumeAudio, { passive: true });
+  window.addEventListener("pointerdown", resumeChimeAudio, { passive: true });
+  window.addEventListener("keydown", resumeChimeAudio, { passive: true });
   return () => {
-    window.removeEventListener("pointerdown", resumeAudio);
-    window.removeEventListener("keydown", resumeAudio);
+    window.removeEventListener("pointerdown", resumeChimeAudio);
+    window.removeEventListener("keydown", resumeChimeAudio);
   };
 }
 

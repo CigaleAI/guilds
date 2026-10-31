@@ -1,9 +1,9 @@
 import { useMemo } from "react";
 import { Waypoints } from "lucide-react";
 import { Banner, EmptyState, SkeletonRows } from "@guildsrun/ui";
-import { useStudioReferences, useStudioState } from "../../../api/queries";
-import type { StudioAgent, StudioReferences } from "../../../api/types";
-import { Empty } from "../MasterDetail";
+import { useStudioReferences, useStudioState } from "../../../api/queries/studio";
+import type { StudioAgent, StudioReferences } from "../../../api/types/studio";
+import { Empty } from "../../../app/MasterDetail";
 import { useStudio } from "../StudioContext";
 import { ReferenceDetail } from "./ReferenceDetail";
 import { ReferencesMap } from "./ReferencesMap";
@@ -11,14 +11,13 @@ import { NodeRow, ReferenceSection } from "./referenceParts";
 import { referenceMapView, shownIds, standoutGroups } from "./referencesModel";
 import { storedStateHours } from "./StateList";
 
-/** What each Task and file in the guild's state embeds or names, filtered to one agent's runs. */
-export function ReferencesView({
-  agent,
-  onSelect,
-}: {
+type ReferencesViewProps = {
   agent: StudioAgent | null;
   onSelect: (id: string) => void;
-}) {
+};
+
+/** What each Task and file in the guild's state embeds or names, filtered to one agent's runs. */
+export function ReferencesView({ agent, onSelect }: ReferencesViewProps) {
   const { session, search } = useStudio();
   const references = useStudioReferences(session.id);
   if (references.isPending) {
@@ -41,17 +40,14 @@ export function ReferencesView({
   );
 }
 
-function ReferencesBody({
-  data,
-  agent,
-  selectedId,
-  onSelect,
-}: {
+type ReferencesBodyProps = {
   data: StudioReferences;
   agent: StudioAgent | null;
   selectedId: string | null;
   onSelect: (id: string) => void;
-}) {
+};
+
+function ReferencesBody({ data, agent, selectedId, onSelect }: ReferencesBodyProps) {
   const view = useMemo(() => referenceMapView(data, agent?.id), [data, agent?.id]);
   const shown = useMemo(() => shownIds(view), [view]);
   if (!shown.size) {
@@ -110,18 +106,16 @@ function ReferencesBody({
   );
 }
 
-/** Broken embeds, Tasks over budget, shared notes, notes too deep, and files nothing points to. */
-function Standouts({
-  data,
-  shown,
-  onSelect,
-}: {
+type StandoutsProps = {
   data: StudioReferences;
   shown: ReadonlySet<string>;
   onSelect: (id: string) => void;
-}) {
+};
+
+/** Broken embeds, Tasks over budget, shared notes, notes too deep, and files nothing points to. */
+function Standouts({ data, shown, onSelect }: StandoutsProps) {
   const { session } = useStudio();
-  const state = useStudioState(session.id, { hours: storedStateHours(), agent: null, kind: null });
+  const state = useStudioState(session.id, storedStateHours(), null, null);
   const read = new Set(
     (state.data ?? []).filter((row) => row.reads > 0).map((row) => row.display_path),
   );

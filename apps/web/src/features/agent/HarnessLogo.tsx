@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { Harness } from "../../api/types";
+import type { Harness } from "../../api/types/agents";
 import { Tile, type TileProps } from "@guildsrun/ui";
 
 type Mark = { viewBox: string; paths: ReactNode };
@@ -51,18 +51,15 @@ const TONES: Record<Harness, TileProps["tone"]> = {
   antigravity: "dusk",
 };
 
-/** A coding harness's mark on a tile. */
-export function HarnessLogo({
-  harness,
-  size = 36,
-  tone,
-  className,
-}: {
+type HarnessLogoProps = {
   harness: Harness;
   size?: TileProps["size"];
   tone?: TileProps["tone"];
   className?: string;
-}) {
+};
+
+/** A coding harness's mark on a tile. */
+export function HarnessLogo({ harness, size = 36, tone, className }: HarnessLogoProps) {
   const mark = MARKS[harness];
   const glyph = Math.round(Number(size) * 0.58);
   return (

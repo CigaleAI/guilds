@@ -155,7 +155,7 @@ log.
 
 | Lane | Steps |
 | --- | --- |
-| orchestrator | `typecheck`, `lint`, `import-cycles`, `compat-verify`, `test-orchestrator` |
+| orchestrator | `typecheck`, `suppressions`, `lint`, `import-cycles`, `compat-verify`, `test-orchestrator` |
 | web | `test-ui`, `test-web`, `import-cycles-web`, `build-web`, `build-storybook` |
 | core stack | `smoke-core-stack`: `./setup.sh` and `docker compose up` on a copy of the checkout, under its own Compose project, port, image tag, and state directory. It checks that the box is healthy, serves the app on loopback alone, holds one operator, and refuses a request from another web origin |
 
@@ -317,7 +317,8 @@ throw of a plain `Error`, an object type written inline in a
 function's parameter, and an erased return type: `unknown` or
 `Record<string, unknown>`, alone or as the element of an array or
 the value of a promise, returned by an exported function, an
-exported const's function, or a public method. A
+exported const's function, or a public method, or named by a type
+alias. A
 package names its command-line modules, which may throw a plain
 `Error`: the orchestrator's `cli/`. The operator app refuses an
 import from `src/features/` in its shared directories, `src/api/`

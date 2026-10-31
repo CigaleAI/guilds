@@ -50,5 +50,5 @@ export function placeTabs(core: readonly Tab[], slots: readonly TabSlot[] = []):
 
 /** The tab a page shows: the one asked for when it exists, else the first. */
 export function chosenTab(tabs: readonly Tab[], asked: string | undefined): string {
-  return tabs.some((tab) => tab.value === asked) ? (asked as string) : (tabs[0]?.value ?? "");
+  return (tabs.find((tab) => tab.value === asked) ?? tabs[0])?.value ?? "";
 }

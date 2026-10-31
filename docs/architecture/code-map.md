@@ -110,8 +110,8 @@ A repository that extends core holds this one as a submodule
 | --- | --- |
 | `src/main.tsx`, `index.html` | Entry: mounts the app with no slot filled |
 | `src/mount.tsx` | `mount(slots)` ([Boot](web-app.md#boot)) |
-| `src/app/` | The app frame: providers, identity, routes, slots, theme, storage helpers, formatting, and the back button (`returnTrail.ts`) |
-| `src/api/` | The typed API client, identity, queries, streams, and the client error log ([State and events](web-app.md#state-and-events)) |
+| `src/app/` | The app frame: providers, identity, routes, slots, theme, storage helpers, formatting, the rules a guild, agent or repository name follows (`names.ts`), the list beside its selected item (`MasterDetail.tsx`), and the back button (`returnTrail.ts`) |
+| `src/api/` | The typed API client, identity, the API types and the queries (`types/` and `queries/`, one module per domain, [Code paths](web-app.md#code-paths)), streams, and the client error log ([State and events](web-app.md#state-and-events)) |
 | `public/` | Files served as-is |
 | `vite.app.ts` | `appConfig()`: build and dev-server configuration, shared with an extension |
 | `package.json` | `exports`: what an extension's package may import ([Extension slots](web-app.md#extension-slots)) |
@@ -127,9 +127,9 @@ One directory per area. The screens are in the
 | `shell/` | Sidebar and rail, unread counts, account menu, new-message chime and desktop notifications |
 | `home/` | `/`, the empty state, and the not-found page |
 | `guild/` | Guild workspace, group chat with its message queue, guild menu, and guild pages |
-| `agent/` | Create-agent dialogs and the agent inspector's tabs |
+| `agent/` | Create-agent dialogs, the agent inspector's tabs, and the repositories a guild's coding agents clone (`GuildRepositories.tsx`, `CodingRepositories.tsx`) |
 | `agent/runs/` | A run's rows grouped into generations, steps, and tool calls |
-| `notes/` | The notes browser and the provenance strip |
+| `notes/` | The notes browser, the provenance strip (`LatestChange.tsx`, `changeActor.ts`), and the notes and tables a Task or a note embeds (`embeds.ts`, `InsertPicker.tsx`, `EmbedPreview.tsx`) |
 | `files/` | The files browser: upload, download, access, and delete of shared files |
 | `access/` | One scope's tools and secrets |
 | `tables/` | The Tables page |
@@ -140,7 +140,7 @@ One directory per area. The screens are in the
 | `admin/` | Connector catalog, platform keys, and users |
 | `settings/` | Organisation settings |
 | `machines/` | Machines tab, dialog, meters, and picker |
-| `models/` | Model setup and the model pickers |
+| `models/` | Model setup, the model pickers, and the link to Settings, Model keys (`ModelKeysLink.tsx`) |
 | `instance/` | What a missing platform key means for a screen |
 | `inbox/` | The Inbox |
 

@@ -1,4 +1,4 @@
-import type { AccessOwner } from "../../api/queries";
+import type { AccessOwner } from "../../api/types/access";
 
 /** The words and links an access view uses for the scope it edits. */
 export type ScopeCopy = {

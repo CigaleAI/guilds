@@ -1,22 +1,28 @@
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { Clock, Plus } from "lucide-react";
-import { useAgentRuns, useAgentSchedules, useRun } from "../../../api/queries";
-import type { Run, Schedule } from "../../../api/types";
+import { useAgentRuns, useRun } from "../../../api/queries/runs";
+import { useAgentSchedules } from "../../../api/queries/schedules";
+import type { Run } from "../../../api/types/runs";
+import type { Schedule } from "../../../api/types/schedules";
 import { messageTime } from "../../../app/format";
 import { IconButton, StatusBadge, Tooltip } from "@guildsrun/ui";
 import { runState, runTitle } from "../runState";
 import { heldChatRun, holdChatRun, useHeldChatRun } from "./chatLinger";
 
-type ChatSearch = {
+/** What the Chat search names: the run open, the call or message it opens at, and the history drawer. */
+export type ChatSearch = {
   run?: string;
   call?: string;
   seq?: number;
   history?: true;
 };
 
+/** A change to the Chat search: the run to open (`null` closes it) and whether history is open. */
+type ChatSearchPatch = { run?: string | null; history?: boolean };
+
 /** Keeps the open run and history drawer in the Chat search when one of them changes. */
-function nextChatSearch(current: ChatSearch, patch: { run?: string | null; history?: boolean }) {
+function nextChatSearch(current: ChatSearch, patch: ChatSearchPatch) {
   const run = patch.run === null ? undefined : patch.run !== undefined ? patch.run : current.run;
   const runChanged = patch.run !== undefined;
   const history = patch.history === undefined ? Boolean(current.history) : patch.history;
@@ -36,7 +42,9 @@ export function runLabel(run: Run, schedules: readonly Schedule[] | undefined): 
   return `${runTitle(run, schedules)} · ${messageTime(run.created_at)}`;
 }
 
-export function RunStatus({ run, className }: { run: Run; className?: string }) {
+type RunStatusProps = { run: Run; className?: string };
+
+export function RunStatus({ run, className }: RunStatusProps) {
   const state = runState(run);
   return (
     <StatusBadge
@@ -68,7 +76,7 @@ export function useChatSession() {
   const runId = search.run ?? (held === null ? undefined : (generatingId ?? held));
   const run = useRun(runId);
 
-  const go = (patch: { run?: string | null; history?: boolean }) => {
+  const go = (patch: ChatSearchPatch) => {
     void navigate({
       to: "/guilds/$guildId/agents/$agentId",
       params: { guildId, agentId },

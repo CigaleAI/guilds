@@ -3,7 +3,15 @@
  * and `describeWindow`, so the form shows the label the server will store. The tests pin both to
  * the shared compat fixture.
  */
-import type { WakeWindow } from "../../../api/types";
+import type { WakeWindow } from "../../../api/types/schedules";
+
+/** A cron the describer has no words for; describeCron answers with the expression itself. */
+class CronDescriptionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CronDescriptionError";
+  }
+}
 
 const DOW: Record<string, number> = {
   "0": 0,
@@ -114,10 +122,10 @@ function parseToken(
   } else if (/^\d+$/.test(token)) {
     value = Number(token);
   } else {
-    throw new Error(`unsupported cron token ${token}`);
+    throw new CronDescriptionError(`unsupported cron token ${token}`);
   }
   if (value < lo || value > hi) {
-    throw new Error(`cron token ${token} out of range`);
+    throw new CronDescriptionError(`cron token ${token} out of range`);
   }
   return value;
 }
@@ -131,14 +139,14 @@ function expandField(
   const values: number[] = [];
   for (const item of field.split(",")) {
     if (item.includes("/")) {
-      throw new Error(`unsupported cron step ${item}`);
+      throw new CronDescriptionError(`unsupported cron step ${item}`);
     }
     if (item.includes("-")) {
       const [startS, endS] = item.split("-", 2);
       const start = parseToken(startS!, table, lo, hi);
       const end = parseToken(endS!, table, lo, hi);
       if (start > end) {
-        throw new Error(`unsupported cron range ${item}`);
+        throw new CronDescriptionError(`unsupported cron range ${item}`);
       }
       for (let value = start; value <= end; value += 1) {
         values.push(value);
@@ -163,75 +171,88 @@ function pad2(value: number): string {
   return String(value).padStart(2, "0");
 }
 
+/** A minute step's words: every N minutes of every hour, or of the hours listed. */
+function describeMinuteStep(minStep: number, hour: string): string {
+  if (hour === "*") {
+    return minStep === 1 ? "Every minute" : `Every ${minStep} minutes`;
+  }
+  if (stepSize(hour) !== null) {
+    throw new CronDescriptionError("unsupported time fields");
+  }
+  const hours = joinAnd(expandField(hour, null, 0, 23).map((value) => `${pad2(value)}:00`));
+  return `Every ${minStep} minutes during ${hours}`;
+}
+
+/** Fixed minutes past every hour, or past every `hourStep` hours. */
+function describeMinutesPast(minute: string, hourStep: number | null): string {
+  const minutes = expandField(minute, null, 0, 59);
+  const hours = hourStep === null ? "hour" : `${hourStep} hours`;
+  if (minutes.length === 1 && minutes[0] === 0) {
+    return `Every ${hours}`;
+  }
+  return `At minute ${joinAnd(minutes.map((value) => pad2(value)))} past every ${hours}`;
+}
+
+/** Each listed hour at each listed minute, as clock times; refused past eight of them. */
+function describeClockTimes(minute: string, hour: string): string {
+  const minutes = expandField(minute, null, 0, 59);
+  const hours = expandField(hour, null, 0, 23);
+  const times = hours.flatMap((h) => minutes.map((m) => `${pad2(h)}:${pad2(m)}`));
+  if (times.length > 8) {
+    throw new CronDescriptionError("too many clock times");
+  }
+  return `At ${joinAnd(times)}`;
+}
+
 function describeTime(minute: string, hour: string): string {
-  const minStep = stepSize(minute);
-  const hourStep = stepSize(hour);
   if (minute === "*" && hour === "*") {
     return "Every minute";
   }
-  if (minStep !== null && hour === "*") {
-    if (minStep === 1) {
-      return "Every minute";
-    }
-    return `Every ${minStep} minutes`;
+  const minStep = stepSize(minute);
+  if (minStep !== null) {
+    return describeMinuteStep(minStep, hour);
   }
-  if (minStep !== null && hour !== "*" && hourStep === null) {
-    const hours = joinAnd(expandField(hour, null, 0, 23).map((value) => `${pad2(value)}:00`));
-    return `Every ${minStep} minutes during ${hours}`;
+  if (minute === "*") {
+    throw new CronDescriptionError("unsupported time fields");
   }
-  if (minStep === null && minute !== "*" && hour === "*") {
-    const minutes = expandField(minute, null, 0, 59);
-    if (minutes.length === 1 && minutes[0] === 0) {
-      return "Every hour";
-    }
-    const labels = minutes.map((value) => pad2(value));
-    if (labels.length === 1) {
-      return `At minute ${labels[0]} past every hour`;
-    }
-    return `At minute ${joinAnd(labels)} past every hour`;
+  if (hour === "*") {
+    return describeMinutesPast(minute, null);
   }
-  if (minStep === null && minute !== "*" && hourStep !== null) {
-    const minutes = expandField(minute, null, 0, 59);
-    if (minutes.length === 1 && minutes[0] === 0) {
-      return `Every ${hourStep} hours`;
-    }
-    const labels = minutes.map((value) => pad2(value));
-    if (labels.length === 1) {
-      return `At minute ${labels[0]} past every ${hourStep} hours`;
-    }
-    return `At minute ${joinAnd(labels)} past every ${hourStep} hours`;
+  const hourStep = stepSize(hour);
+  if (hourStep !== null) {
+    return describeMinutesPast(minute, hourStep);
   }
-  if (minStep === null && hourStep === null && minute !== "*" && hour !== "*") {
-    const minutes = expandField(minute, null, 0, 59);
-    const hours = expandField(hour, null, 0, 23);
-    const times = hours.flatMap((h) => minutes.map((m) => `${pad2(h)}:${pad2(m)}`));
-    if (times.length > 8) {
-      throw new Error("too many clock times");
-    }
-    return `At ${joinAnd(times)}`;
-  }
-  throw new Error("unsupported time fields");
+  return describeClockTimes(minute, hour);
 }
 
 function isClockTime(minute: string, hour: string): boolean {
   return minute !== "*" && hour !== "*" && stepSize(minute) === null && stepSize(hour) === null;
 }
 
+/**
+ * The values a calendar field of a cron takes, `lo` to `hi`, and `offset`, what a value adds to
+ * reach its name in the field's list of names.
+ */
+type CalendarFieldBounds = { lo: number; hi: number; offset: number };
+
+const WEEKDAY_BOUNDS: CalendarFieldBounds = { lo: 0, hi: 7, offset: 0 };
+
+const MONTH_BOUNDS: CalendarFieldBounds = { lo: 1, hi: 12, offset: -1 };
+
+/** A field that is one range, such as `MON-FRI`, as "Monday through Friday"; null for any other field. */
 function describeRange(
   field: string,
   table: Record<string, number>,
   names: readonly string[],
-  lo: number,
-  hi: number,
-  offset: number,
+  bounds: CalendarFieldBounds,
 ): string | null {
   if (field.includes(",") || field.includes("/") || !field.includes("-")) {
     return null;
   }
   const [startS, endS] = field.split("-", 2);
-  const start = parseToken(startS!, table, lo, hi);
-  const end = parseToken(endS!, table, lo, hi);
-  return `${names[start + offset]} through ${names[end + offset]}`;
+  const start = parseToken(startS!, table, bounds.lo, bounds.hi);
+  const end = parseToken(endS!, table, bounds.lo, bounds.hi);
+  return `${names[start + bounds.offset]} through ${names[end + bounds.offset]}`;
 }
 
 function describeDom(day: string): string | null {
@@ -257,7 +278,7 @@ function describeDow(weekday: string): string | null {
   if (step !== null) {
     return `every ${step} days of the week`;
   }
-  const spanned = describeRange(weekday, DOW, DOW_NAME, 0, 7, 0);
+  const spanned = describeRange(weekday, DOW, DOW_NAME, WEEKDAY_BOUNDS);
   if (spanned !== null) {
     return `on ${spanned}`;
   }
@@ -276,7 +297,7 @@ function describeMonth(month: string): string | null {
   if (step !== null) {
     return `every ${step} months`;
   }
-  const spanned = describeRange(month, MONTH, MONTH_NAME, 1, 12, -1);
+  const spanned = describeRange(month, MONTH, MONTH_NAME, MONTH_BOUNDS);
   if (spanned !== null) {
     return `in ${spanned}`;
   }
@@ -303,13 +324,24 @@ function describeCalendar(day: string, month: string, weekday: string): string {
   return days || mon || "";
 }
 
+/** The five fields of a cron expression, minute first. */
+type CronFields = { minute: string; hour: string; day: string; month: string; weekday: string };
+
+/** A cron expression's fields; null when it has more or fewer than five. */
+function cronFields(text: string): CronFields | null {
+  const [minute, hour, day, month, weekday, ...rest] = text.split(" ");
+  if (minute === undefined || hour === undefined || day === undefined) return null;
+  if (month === undefined || weekday === undefined || rest.length > 0) return null;
+  return { minute, hour, day, month, weekday };
+}
+
 export function describeCron(value: string): string {
   const text = value.split(/\s+/).filter(Boolean).join(" ");
-  const parts = text.split(" ");
-  if (parts.length !== 5) {
+  const fields = cronFields(text);
+  if (!fields) {
     return text;
   }
-  const [minute, hour, day, month, weekday] = parts as [string, string, string, string, string];
+  const { minute, hour, day, month, weekday } = fields;
   try {
     let label = describeTime(minute, hour);
     let when = describeCalendar(day, month, weekday);
@@ -320,8 +352,11 @@ export function describeCron(value: string): string {
       label = `${label} ${when}`;
     }
     return `${label} (UTC)`;
-  } catch {
-    return text;
+  } catch (error) {
+    if (error instanceof CronDescriptionError) {
+      return text;
+    }
+    throw error;
   }
 }
 

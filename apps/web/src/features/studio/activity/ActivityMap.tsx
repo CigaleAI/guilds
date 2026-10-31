@@ -3,13 +3,12 @@ import { cn, Icon, OutcomeStrip, wakeOutcomeLabel } from "@guildsrun/ui";
 import {
   WAKE_BUCKETS,
   formatUsd,
-  layoutActivityMap,
   plural,
+  type MapNode,
   type MapSelection,
   type OutcomeCounts,
-  type PlacedMapLink,
-  type PlacedMapNode,
 } from "./activityModel";
+import { layoutActivityMap, type PlacedMapLink, type PlacedMapNode } from "./mapLayout";
 import { AgentMark, AgentName, nodeName, sourceIcon, useWidth, type ActivityData } from "./parts";
 
 const MIN_WIDTH = 560;
@@ -20,25 +19,23 @@ function outcomeText(counts: OutcomeCounts): string {
     .join(", ");
 }
 
+type ActivityMapProps = {
+  data: ActivityData;
+  selection: MapSelection | null;
+  onSelect: (selection: MapSelection) => void;
+};
+
 /**
  * Who woke whom over the window: routines, the operator's messages and direct chats on the left,
  * agents in columns to the right, and a line for each "A woke B", thicker the more often it
  * happened. Hovering reads out its counts; clicking selects it.
  */
-export function ActivityMap({
-  data,
-  selection,
-  onSelect,
-}: {
-  data: ActivityData;
-  selection: MapSelection | null;
-  onSelect: (selection: MapSelection) => void;
-}) {
+export function ActivityMap({ data, selection, onSelect }: ActivityMapProps) {
   const [measure, width] = useWidth();
   const [hover, setHover] = useState<MapSelection | null>(null);
   const markers = useId();
   const layout = useMemo(
-    () => layoutActivityMap(data.map, { width: Math.max(MIN_WIDTH, width) }),
+    () => layoutActivityMap(data.map, Math.max(MIN_WIDTH, width)),
     [data.map, width],
   );
   const { index, map } = data;
@@ -58,39 +55,17 @@ export function ActivityMap({
             (link.to === focus.id && link.from === id),
         );
 
-  const readout = (() => {
-    if (!hover) return "Hover a line or a box for its counts; click it to list those chains.";
-    if (hover.kind === "link") {
-      const link = map.links.find((item) => item.from === hover.from && item.to === hover.to);
-      if (!link) return "";
-      return `${name(link.from)} → ${name(link.to)}: ${plural(link.count, "wake")} (${outcomeText(link.counts)}) · ${formatUsd(link.cost)}`;
-    }
-    const node = [...map.sources, ...map.agents].find((item) => item.id === hover.id);
-    if (!node) return "";
-    if (node.kind !== "agent") {
-      const routine = node.kind === "routine" ? index.routines.get(node.id.slice(8)) : undefined;
-      const started = node.count
-        ? `started ${plural(node.count, "chain")}`
-        : "didn't fire in this window";
-      return [name(node.id), routine?.label, started].filter(Boolean).join(" · ");
-    }
-    const wokenBy = map.links
-      .filter((link) => link.to === node.id)
-      .map((link) => `${name(link.from)} ×${link.count}`);
-    const woke = map.links
-      .filter((link) => link.from === node.id)
-      .map((link) => `${name(link.to)} ×${link.count}`);
-    return [
-      `${name(node.id)}: ${plural(node.count, "wake")}${node.count ? ` (${outcomeText(node.counts)})` : ""}`,
-      wokenBy.length ? `woken by ${wokenBy.join(", ")}` : null,
-      woke.length ? `its posts woke ${woke.join(", ")}` : null,
-    ]
-      .filter(Boolean)
-      .join(" · ");
-  })();
+  const readout = hoverReadout(data, hover);
 
   const selectedLink = (link: PlacedMapLink) =>
     selection?.kind === "link" && link.from === selection.from && link.to === selection.to;
+  // A link the selection leaves out while nothing is hovered: not the selected link, nor one
+  // touching the selected box.
+  const leftOut = (link: PlacedMapLink) =>
+    !hover &&
+    selection !== null &&
+    !selectedLink(link) &&
+    !(selection.kind === "node" && touches(selection, link));
   const selectedNode = (id: string) =>
     selection?.kind === "node"
       ? selection.id === id
@@ -146,11 +121,7 @@ export function ActivityMap({
                     className={cn(
                       "cursor-pointer outline-none transition-opacity",
                       faded(hover ? touches(hover, link) : true) && "opacity-15",
-                      !hover &&
-                        selection &&
-                        !selected &&
-                        !(selection.kind === "node" && touches(selection, link)) &&
-                        "opacity-40",
+                      leftOut(link) && "opacity-40",
                     )}
                     onPointerEnter={() => setHover(focus)}
                     onPointerLeave={() => setHover(null)}
@@ -227,21 +198,57 @@ export function ActivityMap({
   );
 }
 
-function MapBox({
-  data,
-  node,
-  selected,
-  faded,
-  onHover,
-  onSelect,
-}: {
+/** What the map reads out for the line or box under the pointer, or how to use it. */
+function hoverReadout(data: ActivityData, hover: MapSelection | null): string {
+  if (!hover) return "Hover a line or a box for its counts; click it to list those chains.";
+  const { index, map } = data;
+  if (hover.kind === "link") {
+    const link = map.links.find((item) => item.from === hover.from && item.to === hover.to);
+    if (!link) return "";
+    return `${nodeName(index, link.from)} → ${nodeName(index, link.to)}: ${plural(link.count, "wake")} (${outcomeText(link.counts)}) · ${formatUsd(link.cost)}`;
+  }
+  const node = [...map.sources, ...map.agents].find((item) => item.id === hover.id);
+  return node ? nodeReadout(data, node) : "";
+}
+
+/**
+ * What the map reads out for a box: a source's chains or that its routine didn't fire, or an
+ * agent's wakes by outcome, who woke it and whom its posts woke.
+ */
+function nodeReadout({ index, map }: ActivityData, node: MapNode): string {
+  const name = (id: string) => nodeName(index, id);
+  if (node.kind !== "agent") {
+    const routine = node.kind === "routine" ? index.routines.get(node.id.slice(8)) : undefined;
+    const started = node.count
+      ? `started ${plural(node.count, "chain")}`
+      : "didn't fire in this window";
+    return [name(node.id), routine?.label, started].filter(Boolean).join(" · ");
+  }
+  const wokenBy = map.links
+    .filter((link) => link.to === node.id)
+    .map((link) => `${name(link.from)} ×${link.count}`);
+  const woke = map.links
+    .filter((link) => link.from === node.id)
+    .map((link) => `${name(link.to)} ×${link.count}`);
+  return [
+    `${name(node.id)}: ${plural(node.count, "wake")}${node.count ? ` (${outcomeText(node.counts)})` : ""}`,
+    wokenBy.length ? `woken by ${wokenBy.join(", ")}` : null,
+    woke.length ? `its posts woke ${woke.join(", ")}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+type MapBoxProps = {
   data: ActivityData;
   node: PlacedMapNode;
   selected: boolean;
   faded: boolean;
   onHover: (on: boolean) => void;
   onSelect: () => void;
-}) {
+};
+
+function MapBox({ data, node, selected, faded, onHover, onSelect }: MapBoxProps) {
   const { index } = data;
   const idle = node.count === 0;
   const common = {

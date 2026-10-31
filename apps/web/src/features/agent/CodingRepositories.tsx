@@ -1,51 +1,61 @@
 import { Link, useLocation } from "@tanstack/react-router";
-import { useAccess, useGuildRepositories } from "../../api/queries";
-import type { GithubSelectedRepository } from "../../api/types";
+import { useAccess } from "../../api/queries/access";
+import { useGuildRepositories } from "../../api/queries/guilds";
+import type { McpServerAccess } from "../../api/types/access";
 import { DocsLink } from "../../app/docs";
 import { useIdentity } from "../../app/identity";
 import { Button } from "@guildsrun/ui";
 import { GithubSettings } from "../access/GithubRepositories";
 import { useServerConnect } from "../access/ConnectDialogs";
-import { GuildRepositories } from "../guild/pages/GuildRepositories";
+import { GuildRepositories } from "./GuildRepositories";
 import { setupSearch } from "../instance/instance";
 
+/** GitHub without its app on this box: a link to set it up for a platform admin, a note for anyone else. */
+function GithubUnsupported() {
+  const { user } = useIdentity();
+  const location = useLocation();
+  return (
+    <p className="flex flex-wrap items-center gap-x-1.5 text-sm text-fg-2">
+      GitHub is not set up on this box.
+      {user.platform_admin ? (
+        <Link to="/admin" search={setupSearch("github-app", location.href)} className="underline">
+          Set up
+        </Link>
+      ) : (
+        "Ask a platform admin to set it up."
+      )}
+      <DocsLink path="/tools-and-connectors/github">Learn more</DocsLink>
+    </p>
+  );
+}
+
+/** What the block says of the guild's GitHub login: whose it is once connected, else why to connect one. */
+function githubLoginNote(
+  github: McpServerAccess,
+  connected: boolean,
+  owned: string | null,
+): string {
+  if (!connected) return "Connect GitHub to pick repositories, private ones included.";
+  return `GitHub · ${github.account_hint}${owned ? "" : " (the organisation's login)"}`;
+}
+
+type GithubBlockProps = { guildId: string };
+
 /** The GitHub login the guild's repositories come from: connect one, or pick repositories on it. */
-function GithubBlock({ guildId }: { guildId: string }) {
+function GithubBlock({ guildId }: GithubBlockProps) {
   const owner = { scope: "guild", id: guildId } as const;
   const access = useAccess(owner);
   const connect = useServerConnect(owner);
-  const { user } = useIdentity();
-  const location = useLocation();
   const github = access.data?.mcp.find((server) => server.slug === "github");
   if (!github) return null;
-  if (github.oauth_setup_state === "unsupported") {
-    return (
-      <p className="flex flex-wrap items-center gap-x-1.5 text-sm text-fg-2">
-        GitHub is not set up on this box.
-        {user.platform_admin ? (
-          <Link
-            to="/admin"
-            search={setupSearch("github-app", location.href)}
-            className="underline"
-          >
-            Set up
-          </Link>
-        ) : (
-          "Ask a platform admin to set it up."
-        )}
-        <DocsLink path="/tools-and-connectors/github">Learn more</DocsLink>
-      </p>
-    );
-  }
+  if (github.oauth_setup_state === "unsupported") return <GithubUnsupported />;
   const connected = github.connection_id !== null && github.status === "connected";
   const owned = github.connection_owner_scope === "guild" ? github.connection_id : null;
   return (
     <div className="flex flex-col gap-3 rounded-xl bg-surface p-4">
       <div className="flex flex-wrap items-center gap-3">
         <p className="min-w-60 flex-1 text-sm text-fg-2">
-          {connected
-            ? `GitHub · ${github.account_hint}${owned ? "" : " (the organisation's login)"}`
-            : "Connect GitHub to pick repositories, private ones included."}
+          {githubLoginNote(github, connected, owned)}
         </p>
         {!connected || !owned ? (
           <Button
@@ -70,22 +80,21 @@ export function useGuildHasRepositories(guildId: string): boolean | null {
   const access = useAccess({ scope: "guild", id: guildId });
   if (!listed.data || !access.data) return null;
   const github = access.data.mcp.find((server) => server.slug === "github");
-  const picked = (github?.settings.repositories as GithubSelectedRepository[] | undefined) ?? [];
-  return listed.data.repositories.length > 0 || picked.length > 0;
+  const picked = github?.settings.repositories;
+  return listed.data.repositories.length > 0 || (Array.isArray(picked) && picked.length > 0);
 }
+
+type CodingRepositoriesProps = {
+  guild: { id: string; name: string };
+  missingNote: string;
+};
 
 /**
  * The guild's repositories, which every coding agent of the guild codes in: its GitHub login and
  * the repositories picked on it, then those added by URL. While it has none, `missingNote` says
  * what that means where it shows.
  */
-export function CodingRepositories({
-  guild,
-  missingNote,
-}: {
-  guild: { id: string; name: string };
-  missingNote: string;
-}) {
+export function CodingRepositories({ guild, missingNote }: CodingRepositoriesProps) {
   const hasRepositories = useGuildHasRepositories(guild.id);
   return (
     <>

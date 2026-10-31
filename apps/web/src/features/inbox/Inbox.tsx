@@ -1,8 +1,10 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { CheckCheck } from "lucide-react";
 import { useState } from "react";
-import { useMarkTagsRead, useNotifications, useSetAnyIssueStatus } from "../../api/queries";
-import type { Issue, MentionNotice } from "../../api/types";
+import { useMarkTagsRead, useNotifications } from "../../api/queries/chat";
+import { useSetAnyIssueStatus } from "../../api/queries/issues";
+import type { MentionNotice } from "../../api/types/chat";
+import type { Issue } from "../../api/types/issues";
 import { agentLook } from "../../app/agents";
 import { relativeTime } from "../../app/format";
 import {
@@ -25,7 +27,9 @@ type Entry =
   | { kind: "tag"; at: string; notice: MentionNotice }
   | { kind: "issue"; at: string; issue: Issue & { guild_name: string } };
 
-function MentionCard({ notice }: { notice: MentionNotice }) {
+type MentionCardProps = { notice: MentionNotice };
+
+function MentionCard({ notice }: MentionCardProps) {
   const look = notice.agent ? agentLook(notice.agent) : null;
   return (
     <article className="flex flex-col gap-2 rounded-xl bg-surface p-4">

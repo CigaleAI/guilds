@@ -1,5 +1,6 @@
-import { useAgentsByGuild, useGuilds } from "../../api/queries";
-import type { SecretAccessChoice } from "../../api/types";
+import { useAgentsByGuild } from "../../api/queries/agents";
+import { useGuilds } from "../../api/queries/guilds";
+import type { SecretAccessChoice } from "../../api/types/secrets";
 import { Checkbox, Toggle } from "@guildsrun/ui";
 
 function withId(ids: readonly string[], id: string): string[] {
@@ -10,6 +11,13 @@ function withoutId(ids: readonly string[], id: string): string[] {
   return ids.filter((item) => item !== id);
 }
 
+type SecretAccessPickerProps = {
+  value: SecretAccessChoice;
+  onChange: (value: SecretAccessChoice) => void;
+  allowOrgWide: boolean;
+  disabled?: boolean;
+};
+
 /**
  * Who gets a secret: organisation-wide (owners and admins only), or any set of the guilds the
  * viewer can see and their agents. Grants add up; an agent gets the secret through its guild or itself.
@@ -19,12 +27,7 @@ export function SecretAccessPicker({
   onChange,
   allowOrgWide,
   disabled = false,
-}: {
-  value: SecretAccessChoice;
-  onChange: (value: SecretAccessChoice) => void;
-  allowOrgWide: boolean;
-  disabled?: boolean;
-}) {
+}: SecretAccessPickerProps) {
   const guilds = useGuilds().data ?? [];
   const agentsByGuild = useAgentsByGuild(guilds.map((guild) => guild.id));
 

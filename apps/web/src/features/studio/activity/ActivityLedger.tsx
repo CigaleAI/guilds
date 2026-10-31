@@ -1,6 +1,7 @@
 import { RefreshCw } from "lucide-react";
 import { useMemo, useState } from "react";
-import { useStudioActivity } from "../../../api/queries";
+import { useStudioActivity } from "../../../api/queries/studio";
+import { readStored, writeStored } from "../../../app/storage";
 import {
   IconButton,
   Segmented,
@@ -41,36 +42,19 @@ const hoursKey = "studio.activity.hours";
 const tabKey = "studio.activity.tab";
 type ActivityTab = "map" | "agents";
 
-function stored<T>(key: string, read: (value: string | null) => T): T {
-  try {
-    return read(localStorage.getItem(key));
-  } catch {
-    return read(null);
-  }
-}
-
-function store(key: string, value: string) {
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    // Without storage the choice resets on the next visit.
-  }
-}
-
 /**
  * The guild's activity over a window of hours. Map draws who woke whom and lists every chain of
  * wakes, from what started it to where it stopped; a line or box selected on the map narrows the
  * chains to those passing through it. Per agent adds up what woke each agent and what it did.
  */
 export function ActivityLedger() {
-  const { session, search, go } = useStudio();
-  const [hours, setHours] = useState(() =>
-    stored(hoursKey, (value) =>
-      ACTIVITY_WINDOW_HOURS.includes(Number(value)) ? Number(value) : ACTIVITY_DEFAULT_HOURS,
-    ),
-  );
+  const { session, search, goInPlace } = useStudio();
+  const [hours, setHours] = useState(() => {
+    const value = Number(readStored(hoursKey));
+    return ACTIVITY_WINDOW_HOURS.includes(value) ? value : ACTIVITY_DEFAULT_HOURS;
+  });
   const [tab, setTab] = useState<ActivityTab>(() =>
-    stored(tabKey, (value) => (value === "agents" ? "agents" : "map")),
+    readStored(tabKey) === "agents" ? "agents" : "map",
   );
   const activity = useStudioActivity(session.id, hours);
 
@@ -84,22 +68,14 @@ export function ActivityLedger() {
   const wanted = selectionFromItem(search.item);
   const selection = data && wanted && selectionExists(data.map, wanted) ? wanted : null;
   const select = (next: MapSelection | null) =>
-    go(
-      {
-        section: "agents",
-        ...(next && !sameSelection(selection, next) ? { item: selectionItem(next) } : {}),
-      },
-      { replace: true },
-    );
+    goInPlace({
+      section: "agents",
+      ...(next && !sameSelection(selection, next) ? { item: selectionItem(next) } : {}),
+    });
   const switchTab = (next: ActivityTab) => {
     setTab(next);
-    store(tabKey, next);
+    writeStored(tabKey, next);
   };
-
-  const wakes = data?.view.wakes ?? [];
-  const counts = emptyCounts();
-  for (const wake of wakes) counts[wakeBucket(wake)] += 1;
-  const cost = wakes.reduce((sum, wake) => sum + wake.cost_usd, 0);
 
   return (
     <section
@@ -117,25 +93,14 @@ export function ActivityLedger() {
           value={String(hours)}
           onValueChange={(value) => {
             setHours(Number(value));
-            store(hoursKey, value);
+            writeStored(hoursKey, value);
           }}
           options={ACTIVITY_WINDOW_HOURS.map((value) => ({
             value: String(value),
             label: windowLabel(value),
           }))}
         />
-        <span className="min-w-0 flex-1 truncate text-xs text-muted">
-          {data && wakes.length
-            ? [
-                plural(data.chains.length, "chain"),
-                plural(wakes.length, "wake"),
-                ...WAKE_BUCKETS.filter((outcome) => counts[outcome]).map(
-                  (outcome) => `${counts[outcome]} ${wakeOutcomeLabel[outcome]}`,
-                ),
-                formatUsd(cost),
-              ].join(" · ")
-            : ""}
-        </span>
+        <ActivityTotals data={data} />
         <IconButton
           icon={RefreshCw}
           label="Refresh"
@@ -150,7 +115,7 @@ export function ActivityLedger() {
         <Banner tone="error" title="Couldn't load the activity" meta={activity.error.message} />
       ) : !data ? (
         <SkeletonRows rows={5} label="Loading activity" />
-      ) : !wakes.length && !data.map.sources.length ? (
+      ) : !data.view.wakes.length && !data.map.sources.length ? (
         <p className="rounded-lg bg-surface px-4 py-6 text-center text-sm text-muted">
           Nothing ran in the last {windowLabel(hours)}. Pick a longer window.
         </p>
@@ -196,5 +161,29 @@ export function ActivityLedger() {
         </Tabs>
       )}
     </section>
+  );
+}
+
+type ActivityTotalsProps = { data: ActivityData | null };
+
+/** The window's chains and wakes, its wakes by outcome, and what they cost; empty with no wake. */
+function ActivityTotals({ data }: ActivityTotalsProps) {
+  const wakes = data?.view.wakes ?? [];
+  const counts = emptyCounts();
+  for (const wake of wakes) counts[wakeBucket(wake)] += 1;
+  const cost = wakes.reduce((sum, wake) => sum + wake.cost_usd, 0);
+  return (
+    <span className="min-w-0 flex-1 truncate text-xs text-muted">
+      {data && wakes.length
+        ? [
+            plural(data.chains.length, "chain"),
+            plural(wakes.length, "wake"),
+            ...WAKE_BUCKETS.filter((outcome) => counts[outcome]).map(
+              (outcome) => `${counts[outcome]} ${wakeOutcomeLabel[outcome]}`,
+            ),
+            formatUsd(cost),
+          ].join(" · ")
+        : ""}
+    </span>
   );
 }

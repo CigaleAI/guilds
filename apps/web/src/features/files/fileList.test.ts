@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { FileItem } from "../../api/types";
+import type { FileItem } from "../../api/types/files";
 import { fileMeta, filterFiles, uploadProblem } from "./fileList";
 
 const item = (name: string, description: string): FileItem => ({

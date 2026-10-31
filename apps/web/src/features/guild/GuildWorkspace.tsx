@@ -9,16 +9,15 @@ import {
 import { BookmarkPlus, Eraser, SearchX, Settings, Sparkles, UserPlus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ApiError } from "../../api/client";
-import {
-  useCaptureRecipe,
-  useGroupChatState,
-  useGuild,
-  useGuildAgents,
-  useOpenIssues,
-  useStudioSessions,
-} from "../../api/queries";
+import { useCaptureRecipe } from "../../api/queries/recipes";
+import { useGroupChatState } from "../../api/queries/chat";
+import { useGuild } from "../../api/queries/guilds";
+import { useGuildAgents } from "../../api/queries/agents";
+import { useOpenIssues } from "../../api/queries/issues";
+import { useStudioSessions } from "../../api/queries/studio";
 import { useGuildStream } from "../../api/streams";
-import type { Agent } from "../../api/types";
+import type { Agent } from "../../api/types/agents";
+import type { Guild } from "../../api/types/guilds";
 import { agentLook } from "../../app/agents";
 import { useIdentity } from "../../app/identity";
 import { ReturnButton } from "../../app/ReturnButton";
@@ -68,66 +67,24 @@ export function GuildWorkspace() {
   const { guildId } = useParams({ from: "/guilds/$guildId" });
   const matchRoute = useMatchRoute();
   const wide = useMediaQuery(wideScreen);
-  const { user } = useIdentity();
   const [addingAgent, setAddingAgent] = useState(false);
   const [clearingChat, setClearingChat] = useState(false);
-  const sessions = useStudioSessions();
-  const capture = useCaptureRecipe();
   const navigate = useNavigate();
   const inspecting = Boolean(matchRoute({ to: "/guilds/$guildId/agents/$agentId", fuzzy: true }));
   useGuildStream(guildId);
   const guild = useGuild(guildId);
   const agents = useGuildAgents(guildId);
   const state = useGroupChatState(guildId);
-  const openIssues = useOpenIssues(guildId);
-  useSendQueuedMessages(guildId, agents.data ?? noAgents, state.data);
+  const members = agents.data ?? noAgents;
+  useSendQueuedMessages(guildId, members, state.data);
 
-  useEffect(() => writeStored(lastGuildKey, guildId), [guildId]);
+  useEffect(() => {
+    writeStored(lastGuildKey, guildId);
+  }, [guildId]);
 
-  if (guild.isError) {
-    return guild.error instanceof ApiError && guild.error.status === 404 ? (
-      <div className="grid flex-1 place-items-center p-6">
-        <EmptyState
-          icon={SearchX}
-          title="This guild isn't here"
-          description="It was deleted, it's private, or it belongs to another organisation."
-          action={
-            <Link to="/" className="font-semibold text-signal-t underline">
-              Back to your guilds
-            </Link>
-          }
-        />
-      </div>
-    ) : (
-      <div className="grid flex-1 place-items-center p-6">
-        <PageError title="Couldn't load this guild" description={guild.error.message} />
-      </div>
-    );
-  }
+  if (guild.isError) return <GuildLoadError error={guild.error} />;
 
-  const members = agents.data ?? [];
-
-  /** Studio resumes the guild's latest live session, or starts one. */
-  const openStudio = () => {
-    const live = sessions.data?.find(
-      (session) => session.source_guild_id === guildId && session.status === "active",
-    );
-    void (live
-      ? navigate({ to: "/studio/$sessionId", params: { sessionId: live.id } })
-      : navigate({ to: "/studio", search: { guild: guildId } }));
-  };
-
-  const saveAsRecipe = () =>
-    capture.mutate(guildId, {
-      onSuccess: (row) => {
-        toast({ kind: "success", title: `Saved ${row.name} as a draft recipe` });
-        void navigate({ to: "/recipes/$recipeId", params: { recipeId: row.id } });
-      },
-      onError: (error) =>
-        toast({ kind: "error", title: "Couldn't save the recipe", description: error.message }),
-    });
   const active = members.filter((agent) => agent.generating).length;
-  const issueCount = openIssues.data?.length ?? 0;
 
   return (
     <>
@@ -156,92 +113,23 @@ export function GuildWorkspace() {
           actions={
             <>
               {state.data ? <MessageBudget guildId={guildId} state={state.data} /> : null}
-              <Menu>
-                <MenuTrigger
-                  variant="on-plum"
-                  label="Guild options"
-                  {...(!wide ? { size: 28 } : {})}
-                />
-                <MenuContent>
-                  <MenuItem icon={Sparkles} onSelect={openStudio}>
-                    Open in Studio
-                  </MenuItem>
-                  <MenuItem
-                    icon={UserPlus}
-                    disabled={members.length >= guild.data.max_agents}
-                    onSelect={() => setAddingAgent(true)}
-                  >
-                    {members.length >= guild.data.max_agents
-                      ? `New agent (full at ${guild.data.max_agents})`
-                      : "New agent"}
-                  </MenuItem>
-                  <MenuItem
-                    icon={BookmarkPlus}
-                    disabled={capture.isPending}
-                    onSelect={saveAsRecipe}
-                  >
-                    Save as recipe
-                  </MenuItem>
-                  <MenuItem
-                    icon={Settings}
-                    onSelect={() =>
-                      void navigate({ to: "/guilds/$guildId/settings", params: { guildId } })
-                    }
-                  >
-                    Guild settings
-                  </MenuItem>
-                  {isGuildAdmin(guild.data, user.id) ? (
-                    <>
-                      <MenuSeparator />
-                      <MenuItem icon={Eraser} destructive onSelect={() => setClearingChat(true)}>
-                        Clear group chat
-                      </MenuItem>
-                    </>
-                  ) : null}
-                </MenuContent>
-              </Menu>
+              <GuildOptionsMenu
+                guild={guild.data}
+                agentCount={members.length}
+                compact={!wide}
+                onAddAgent={() => setAddingAgent(true)}
+                onClearChat={() => setClearingChat(true)}
+              />
             </>
           }
         />
       ) : (
-        <div className={`flex flex-col gap-3 bg-plum ${wide ? "px-10 py-8" : "px-4 py-2.5"}`}>
-          {wide ? (
-            <>
-              <Skeleton className="h-3 w-16 bg-on-plum-hover" />
-              <Skeleton className="h-8 w-72 bg-on-plum-hover" />
-            </>
-          ) : (
-            <Skeleton className="h-5 w-40 bg-on-plum-hover" />
-          )}
-        </div>
+        <GuildHeaderSkeleton wide={wide} />
       )}
-      <TabsNav aria-label="Guild pages">
-        <Link
-          to="/guilds/$guildId"
-          params={{ guildId }}
-          activeOptions={{ exact: true, includeSearch: false }}
-          {...(inspecting ? { "aria-current": "page" as const } : {})}
-          className={tabsTrigger({ look: "bar" })}
-        >
-          Group chat
-        </Link>
-        {otherTabs.map(({ route, label }) => (
-          <Link
-            key={route}
-            to={route}
-            params={{ guildId }}
-            className={tabsTrigger({ look: "bar" })}
-          >
-            {label}
-            {route === "/guilds/$guildId/issues" && issueCount > 0 ? (
-              <PillCount>{issueCount}</PillCount>
-            ) : null}
-          </Link>
-        ))}
-      </TabsNav>
+      <GuildTabs guildId={guildId} inspecting={inspecting} />
       <OpenApplyStrip guildId={guildId} />
       {inspecting && guild.data ? (
-        <GroupChat guild={guild.data} agents={agents.data ?? []} state={state.data} />
+        <GroupChat guild={guild.data} agents={members} state={state.data} />
       ) : null}
       {inspecting ? null : <ReturnButton />}
       <Outlet />
@@ -257,6 +145,161 @@ export function GuildWorkspace() {
         />
       ) : null}
     </>
+  );
+}
+
+type GuildLoadErrorProps = { error: Error };
+
+/** Why the guild did not load: it is not there for this operator, or the request failed. */
+function GuildLoadError({ error }: GuildLoadErrorProps) {
+  if (error instanceof ApiError && error.status === 404) {
+    return (
+      <div className="grid flex-1 place-items-center p-6">
+        <EmptyState
+          icon={SearchX}
+          title="This guild isn't here"
+          description="It was deleted, it's private, or it belongs to another organisation."
+          action={
+            <Link to="/" className="font-semibold text-signal-t underline">
+              Back to your guilds
+            </Link>
+          }
+        />
+      </div>
+    );
+  }
+  return (
+    <div className="grid flex-1 place-items-center p-6">
+      <PageError title="Couldn't load this guild" description={error.message} />
+    </div>
+  );
+}
+
+type GuildOptionsMenuProps = {
+  guild: Guild;
+  agentCount: number;
+  /** The narrow screen's smaller trigger. */
+  compact: boolean;
+  onAddAgent: () => void;
+  onClearChat: () => void;
+};
+
+/** The guild's options: Studio, a new agent, saving it as a recipe, settings, clearing the chat. */
+function GuildOptionsMenu({
+  guild,
+  agentCount,
+  compact,
+  onAddAgent,
+  onClearChat,
+}: GuildOptionsMenuProps) {
+  const { user } = useIdentity();
+  const sessions = useStudioSessions();
+  const capture = useCaptureRecipe();
+  const navigate = useNavigate();
+  const full = agentCount >= guild.max_agents;
+
+  /** Studio resumes the guild's latest live session, or starts one. */
+  const openStudio = () => {
+    const live = sessions.data?.find(
+      (session) => session.source_guild_id === guild.id && session.status === "active",
+    );
+    void (live
+      ? navigate({ to: "/studio/$sessionId", params: { sessionId: live.id } })
+      : navigate({ to: "/studio", search: { guild: guild.id } }));
+  };
+
+  const saveAsRecipe = () =>
+    capture.mutate(guild.id, {
+      onSuccess: (row) => {
+        toast({ kind: "success", title: `Saved ${row.name} as a draft recipe` });
+        void navigate({ to: "/recipes/$recipeId", params: { recipeId: row.id } });
+      },
+      onError: (error) =>
+        toast({ kind: "error", title: "Couldn't save the recipe", description: error.message }),
+    });
+
+  return (
+    <Menu>
+      <MenuTrigger variant="on-plum" label="Guild options" {...(compact ? { size: 28 } : {})} />
+      <MenuContent>
+        <MenuItem icon={Sparkles} onSelect={openStudio}>
+          Open in Studio
+        </MenuItem>
+        <MenuItem icon={UserPlus} disabled={full} onSelect={onAddAgent}>
+          {full ? `New agent (full at ${guild.max_agents})` : "New agent"}
+        </MenuItem>
+        <MenuItem icon={BookmarkPlus} disabled={capture.isPending} onSelect={saveAsRecipe}>
+          Save as recipe
+        </MenuItem>
+        <MenuItem
+          icon={Settings}
+          onSelect={() =>
+            void navigate({ to: "/guilds/$guildId/settings", params: { guildId: guild.id } })
+          }
+        >
+          Guild settings
+        </MenuItem>
+        {isGuildAdmin(guild, user.id) ? (
+          <>
+            <MenuSeparator />
+            <MenuItem icon={Eraser} destructive onSelect={onClearChat}>
+              Clear group chat
+            </MenuItem>
+          </>
+        ) : null}
+      </MenuContent>
+    </Menu>
+  );
+}
+
+type GuildHeaderSkeletonProps = { wide: boolean };
+
+/** The guild header's place while the guild loads. */
+function GuildHeaderSkeleton({ wide }: GuildHeaderSkeletonProps) {
+  return (
+    <div className={`flex flex-col gap-3 bg-plum ${wide ? "px-10 py-8" : "px-4 py-2.5"}`}>
+      {wide ? (
+        <>
+          <Skeleton className="h-3 w-16 bg-on-plum-hover" />
+          <Skeleton className="h-8 w-72 bg-on-plum-hover" />
+        </>
+      ) : (
+        <Skeleton className="h-5 w-40 bg-on-plum-hover" />
+      )}
+    </div>
+  );
+}
+
+type GuildTabsProps = {
+  guildId: string;
+  /** An agent's inspector is open over the group chat, which keeps its tab current. */
+  inspecting: boolean;
+};
+
+/** The guild's pages, the issues tab counting the open issues. */
+function GuildTabs({ guildId, inspecting }: GuildTabsProps) {
+  const openIssues = useOpenIssues(guildId);
+  const issueCount = openIssues.data?.length ?? 0;
+  return (
+    <TabsNav aria-label="Guild pages">
+      <Link
+        to="/guilds/$guildId"
+        params={{ guildId }}
+        activeOptions={{ exact: true, includeSearch: false }}
+        {...(inspecting ? { "aria-current": "page" as const } : {})}
+        className={tabsTrigger({ look: "bar" })}
+      >
+        Group chat
+      </Link>
+      {otherTabs.map(({ route, label }) => (
+        <Link key={route} to={route} params={{ guildId }} className={tabsTrigger({ look: "bar" })}>
+          {label}
+          {route === "/guilds/$guildId/issues" && issueCount > 0 ? (
+            <PillCount>{issueCount}</PillCount>
+          ) : null}
+        </Link>
+      ))}
+    </TabsNav>
   );
 }
 

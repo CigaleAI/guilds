@@ -1,8 +1,10 @@
 import { Link, useParams } from "@tanstack/react-router";
 import { Database, Plus } from "lucide-react";
 import { useState } from "react";
-import { useCollections, useReach, type ReachSubject } from "../../api/queries";
-import type { AccessMode, Column, ReachedTable } from "../../api/types";
+import { useCollections } from "../../api/queries/tables";
+import { useReach } from "../../api/queries/access";
+import type { Column } from "../../api/types/tables";
+import type { AccessMode, ReachSubject, ReachedTable } from "../../api/types/access";
 import { Banner, Button, EmptyState, Icon, SkeletonRows, Tag } from "@guildsrun/ui";
 import { CreateTableDialog } from "./CreateTableDialog";
 
@@ -33,8 +35,10 @@ export function GuildTablesTab() {
   return <StateTables subject={{ type: "guild", id: guildId }} guildId={guildId} />;
 }
 
+type StateTablesProps = { subject: ReachSubject; guildId: string };
+
 /** The tables a guild's agents, or one agent, reach, each with its columns; empty, it says so. */
-function StateTables({ subject, guildId }: { subject: ReachSubject; guildId: string }) {
+function StateTables({ subject, guildId }: StateTablesProps) {
   const reach = useReach(subject);
   const collections = useCollections();
   const [creating, setCreating] = useState(false);
@@ -72,7 +76,9 @@ function StateTables({ subject, guildId }: { subject: ReachSubject; guildId: str
   );
 }
 
-function TableCard({ table, columns }: { table: ReachedTable; columns: Column[] }) {
+type TableCardProps = { table: ReachedTable; columns: Column[] };
+
+function TableCard({ table, columns }: TableCardProps) {
   return (
     <section className="flex flex-col overflow-hidden rounded-xl bg-surface">
       <div className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3">

@@ -1,4 +1,4 @@
-import type { Agent, AgentBrief } from "../api/types";
+import type { Agent, AgentBrief } from "../api/types/agents";
 import { identityHex, identityToneOf } from "@guildsrun/ui";
 import type { IdentityTone } from "@guildsrun/ui";
 type Styled = Pick<Agent | AgentBrief, "avatar_shape" | "avatar_color">;

@@ -1,10 +1,10 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { useFileChanges, useLatestChange } from "../../api/queries";
-import type { FileChange } from "../../api/types";
+import { useFileChanges, useLatestChange } from "../../api/queries/notes";
+import type { FileChange } from "../../api/types/notes";
 import { relativeTime } from "../../app/format";
 import { Button, VersionBar, SkeletonRows, Tag, cn } from "@guildsrun/ui";
-import { changeActor } from "../agent/prompt/taskContext";
+import { changeActor } from "./changeActor";
 
 /** Opens the run step that made a change. */
 export type OpenChangeStep = (change: FileChange & { run: NonNullable<FileChange["run"]> }) => void;

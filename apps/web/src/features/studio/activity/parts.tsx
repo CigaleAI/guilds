@@ -1,8 +1,8 @@
-import { CircleHelp, Clock, MessagesSquare, User, type LucideIcon } from "lucide-react";
-import { useCallback, useState } from "react";
-import type { ActivityAgent, ActivityView } from "../../../api/types";
+import { CircleHelp, Clock, MessagesSquare, User, X, type LucideIcon } from "lucide-react";
+import { useCallback, useState, type ReactNode } from "react";
+import type { ActivityAgent, ActivityView } from "../../../api/types/studio";
 import { agentLook } from "../../../app/agents";
-import { cn, identityFill, identityText, Icon } from "@guildsrun/ui";
+import { cn, identityFill, identityText, Icon, IconButton } from "@guildsrun/ui";
 import type { ActivityIndex, ActivityMap, Chain } from "./activityModel";
 import { DIRECT_NODE, MESSAGE_NODE, OPERATOR_NODE, type MapNodeKind } from "./activityModel";
 
@@ -32,16 +32,14 @@ export function nodeName(index: ActivityIndex, id: string): string {
   return index.agents.get(id)?.name ?? "agent";
 }
 
-/** An agent's mascot or initial on its identity colour, at inline size. */
-export function AgentMark({
-  agent,
-  size = 16,
-  className,
-}: {
+type AgentMarkProps = {
   agent: ActivityAgent | undefined;
   size?: 14 | 16 | 20;
   className?: string;
-}) {
+};
+
+/** An agent's mascot or initial on its identity colour, at inline size. */
+export function AgentMark({ agent, size = 16, className }: AgentMarkProps) {
   const look = agent ? agentLook(agent) : { tone: "dusk" as const };
   return (
     <span
@@ -62,14 +60,13 @@ export function AgentMark({
   );
 }
 
-/** An agent's handle in its identity colour. */
-export function AgentName({
-  agent,
-  className,
-}: {
+type AgentNameProps = {
   agent: ActivityAgent | undefined;
   className?: string;
-}) {
+};
+
+/** An agent's handle in its identity colour. */
+export function AgentName({ agent, className }: AgentNameProps) {
   const tone = agent ? agentLook(agent).tone : "dusk";
   return (
     <span className={cn("truncate font-mono", identityText[tone], className)}>
@@ -78,16 +75,14 @@ export function AgentName({
   );
 }
 
-/** What a map node looks like inline: an agent's mark, or the icon of a routine, the operator or a chat. */
-export function NodeMark({
-  index,
-  id,
-  kind,
-}: {
+type NodeMarkProps = {
   index: ActivityIndex;
   id: string;
   kind: MapNodeKind;
-}) {
+};
+
+/** What a map node looks like inline: an agent's mark, or the icon of a routine, the operator or a chat. */
+export function NodeMark({ index, id, kind }: NodeMarkProps) {
   if (kind === "agent") return <AgentMark agent={index.agents.get(id)} />;
   return <Icon icon={sourceIcon[kind]} size={16} className="text-muted" />;
 }
@@ -104,4 +99,52 @@ export function useWidth() {
     return () => observer.disconnect();
   }, []);
   return [ref, width] as const;
+}
+
+type DetailHeadProps = { children: ReactNode; onClose: () => void };
+
+export function DetailHead({ children, onClose }: DetailHeadProps) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2">
+      {children}
+      <IconButton
+        icon={X}
+        label="Close"
+        variant="ghost"
+        size={28}
+        className="ml-auto"
+        onClick={onClose}
+      />
+    </div>
+  );
+}
+
+type SectionProps = {
+  title: string;
+  highlighted?: boolean;
+  children: ReactNode;
+};
+
+export function Section({ title, highlighted, children }: SectionProps) {
+  return (
+    <section
+      className={cn(
+        "flex min-w-0 flex-col gap-1.5 rounded-md",
+        highlighted && "-m-2 p-2 ring-2 ring-signal-t",
+      )}
+    >
+      <h4 className="type-label text-muted">{title}</h4>
+      {children}
+    </section>
+  );
+}
+
+type QuotedProps = { children: string };
+
+export function Quoted({ children }: QuotedProps) {
+  return (
+    <p className="max-h-56 overflow-y-auto rounded-md bg-surface px-3 py-2 font-mono text-xs whitespace-pre-wrap text-fg-2 [overflow-wrap:anywhere]">
+      {children}
+    </p>
+  );
 }

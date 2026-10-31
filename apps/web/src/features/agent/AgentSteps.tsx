@@ -1,22 +1,17 @@
 import { useState } from "react";
-import type { useOrgMachines } from "../../api/queries";
-import type { Machine, OrgModels } from "../../api/types";
+import type { useOrgMachines } from "../../api/queries/agents";
+import type { Machine } from "../../api/types/agents";
+import type { OrgModels } from "../../api/types/models";
 import { Banner, Button, DialogClose, DialogFooter } from "@guildsrun/ui";
 import { DiskBudget } from "../machines/MachineMeters";
 import { MachinePicker } from "../machines/MachinePicker";
 import { diskBudget, seededDiskMib } from "../machines/machines";
 import { ConnectProviderGuide } from "../models/ConnectProviderGuide";
-import {
-  CapabilitiesFields,
-  defaultAgentConfig,
-  LimitFields,
-  MaxDiskField,
-  MaxScriptsField,
-  ModelFields,
-  type ConfigErrors,
-  type ConfigForm,
-} from "./settings/configForm";
+import { CapabilitiesFields } from "./settings/CapabilitiesFields";
+import { defaultAgentConfig, type ConfigErrors, type ConfigForm } from "./settings/configForm";
 import { Group } from "./settings/Group";
+import { LimitFields, MaxDiskField, MaxScriptsField } from "./settings/LimitFields";
+import { ModelFields } from "./settings/ModelFields";
 
 /** What every step edits: the config form, its errors, and the machine it names. */
 export type StepProps = {
@@ -47,6 +42,14 @@ export function useSeededDisk() {
 /** An existing agent as its machine sees it: its id, and the machine and disk cap it has saved. */
 export type PlacedAgent = { id: string; machineId: string; diskMib: number };
 
+type MachineGroupProps = StepProps & {
+  machines: ReturnType<typeof useOrgMachines>;
+  coding: boolean;
+  hint?: string | undefined;
+  placed?: PlacedAgent | undefined;
+  onDiskTyped?: () => void;
+};
+
 /**
  * The machine the agent goes on, with what it adds to that machine's memory, then its disk cap
  * against the disk the machine's other agents reserve. An existing agent's own saved cap is not
@@ -62,13 +65,7 @@ export function MachineGroup({
   hint,
   placed,
   onDiskTyped,
-}: StepProps & {
-  machines: ReturnType<typeof useOrgMachines>;
-  coding: boolean;
-  hint?: string | undefined;
-  placed?: PlacedAgent | undefined;
-  onDiskTyped?: () => void;
-}) {
+}: MachineGroupProps) {
   const ownMib = placed && machine?.id === placed.machineId ? placed.diskMib : 0;
   const disk = machine ? diskBudget(machine, Number(form.max_workspace_mib) || 0, ownMib) : null;
   return (
@@ -104,6 +101,14 @@ export function MachineGroup({
   );
 }
 
+type ModelStepProps = StepProps & {
+  lead: boolean;
+  codingToggle?: boolean;
+  savedCoding?: boolean;
+  models: OrgModels | undefined;
+  noProvider: boolean;
+};
+
 /**
  * The model that runs the agent, its capabilities, and its run limits behind a disclosure. A
  * coding agent's model is its lead model, beside the harness that writes the code. With
@@ -117,13 +122,7 @@ export function ModelStep({
   models,
   noProvider,
   ...step
-}: StepProps & {
-  lead: boolean;
-  codingToggle?: boolean;
-  savedCoding?: boolean;
-  models: OrgModels | undefined;
-  noProvider: boolean;
-}) {
+}: ModelStepProps) {
   const { form, setConfig, errors, machine } = step;
   const patch = (next: Partial<ConfigForm>) => setConfig({ ...form, ...next });
   return (
@@ -165,6 +164,16 @@ export function ModelStep({
   );
 }
 
+type StepFooterProps = {
+  step: number;
+  count: number;
+  ready: boolean;
+  busy: boolean;
+  createLabel: string;
+  onStep: (step: number) => void;
+  onCreate: () => void;
+};
+
 /** The dialog's Back, Next, and Create buttons for the step in progress. */
 export function StepFooter({
   step,
@@ -174,15 +183,7 @@ export function StepFooter({
   createLabel,
   onStep,
   onCreate,
-}: {
-  step: number;
-  count: number;
-  ready: boolean;
-  busy: boolean;
-  createLabel: string;
-  onStep: (step: number) => void;
-  onCreate: () => void;
-}) {
+}: StepFooterProps) {
   return (
     <DialogFooter>
       <DialogClose asChild>

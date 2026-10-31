@@ -1,4 +1,4 @@
-import type { ReachedNote } from "../../api/types";
+import type { ReachedNote } from "../../api/types/access";
 
 /** Where a note opens: a guild's Files view, or an agent's Notes view when `agentId` is set. */
 export type NoteLink = { guildId: string; agentId?: string; path: string };

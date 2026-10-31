@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { ReferenceEdge, ReferenceNode, StudioReferences } from "../../../api/types";
+import type { ReferenceEdge, ReferenceNode, StudioReferences } from "../../../api/types/studio";
 import {
   isBroken,
   isOverBudget,

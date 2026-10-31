@@ -1,10 +1,10 @@
 import { ArrowLeft, MessageCircleQuestion } from "lucide-react";
 import { useState } from "react";
-import { useStudioToolCalls } from "../../../api/queries";
-import type { StudioAgent, StudioTool, StudioToolCall } from "../../../api/types";
+import { useStudioToolCalls } from "../../../api/queries/studio";
+import type { StudioAgent, StudioTool, StudioToolCall } from "../../../api/types/studio";
 import { relativeTime } from "../../../app/format";
 import { Banner, Button, Icon, Segmented, SkeletonRows, StatBand, Tag, cn } from "@guildsrun/ui";
-import { DetailHeader } from "../MasterDetail";
+import { DetailHeader } from "../../../app/MasterDetail";
 import { useStudio } from "../StudioContext";
 import { OfferedAgents } from "./OfferedAgents";
 import {
@@ -21,16 +21,14 @@ const sourceLabel: Record<string, string> = {
   connector: "connection tool",
 };
 
-/** One tool: its numbers, who calls it and how, its errors, and each call, to open or ask about. */
-export function ToolDetail({
-  tool,
-  hours,
-  flags,
-}: {
+type ToolDetailProps = {
   tool: StudioTool;
   hours: number;
   flags: ToolFlag[];
-}) {
+};
+
+/** One tool: its numbers, who calls it and how, its errors, and each call, to open or ask about. */
+export function ToolDetail({ tool, hours, flags }: ToolDetailProps) {
   const { agents, go, ask } = useStudio();
   const users = tool.agents.filter((usage) => usage.offered && usage.calls > 0).length;
   return (
@@ -101,8 +99,10 @@ function nameOf(agents: StudioAgent[], id: string): string {
   return agents.find((agent) => agent.id === id)?.name ?? id;
 }
 
+type CallersSectionProps = { tool: StudioTool; agents: StudioAgent[] };
+
 /** Each agent that called the tool, with its ok and failed calls as one bar. */
-function CallersSection({ tool, agents }: { tool: StudioTool; agents: StudioAgent[] }) {
+function CallersSection({ tool, agents }: CallersSectionProps) {
   const callers = tool.agents.filter((usage) => usage.calls > 0).sort((a, b) => b.calls - a.calls);
   const most = callers[0]?.calls ?? 0;
   if (!callers.length) return null;
@@ -134,7 +134,9 @@ function CallersSection({ tool, agents }: { tool: StudioTool; agents: StudioAgen
   );
 }
 
-function IdleSection({ tool, agents }: { tool: StudioTool; agents: StudioAgent[] }) {
+type IdleSectionProps = { tool: StudioTool; agents: StudioAgent[] };
+
+function IdleSection({ tool, agents }: IdleSectionProps) {
   const idle = offeredNeverCalled(tool);
   if (!idle.length) return null;
   return (
@@ -145,20 +147,18 @@ function IdleSection({ tool, agents }: { tool: StudioTool; agents: StudioAgent[]
   );
 }
 
-/** The tool's calls in the window, newest first, all or only the failed ones. */
-function ToolCalls({
-  tool,
-  hours,
-  agents,
-}: {
+type ToolCallsProps = {
   tool: StudioTool;
   hours: number;
   agents: StudioAgent[];
-}) {
+};
+
+/** The tool's calls in the window, newest first, all or only the failed ones. */
+function ToolCalls({ tool, hours, agents }: ToolCallsProps) {
   const { session } = useStudio();
   const [errorsOnly, setErrorsOnly] = useState(false);
-  const calls = useStudioToolCalls(session.id, { name: tool.name, hours, errorsOnly });
-  const failures = useStudioToolCalls(session.id, { name: tool.name, hours, errorsOnly: true });
+  const calls = useStudioToolCalls(session.id, tool.name, hours, errorsOnly);
+  const failures = useStudioToolCalls(session.id, tool.name, hours, true);
   const rows = calls.data?.pages.flatMap((page) => page.calls) ?? [];
   const groups = errorGroups(failures.data?.pages.flatMap((page) => page.calls) ?? []);
   return (
@@ -227,7 +227,9 @@ function ToolCalls({
   );
 }
 
-function CallRow({ call, agents }: { call: StudioToolCall; agents: StudioAgent[] }) {
+type CallRowProps = { call: StudioToolCall; agents: StudioAgent[] };
+
+function CallRow({ call, agents }: CallRowProps) {
   const { openStep } = useStudio();
   return (
     <li className="flex items-center gap-3 rounded-md bg-surface px-3 py-2 text-sm">

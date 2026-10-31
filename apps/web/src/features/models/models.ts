@@ -1,5 +1,11 @@
 import type { SelectOption, SelectOptionGroup } from "@guildsrun/ui";
-import type { ModelProvider, OrgModels } from "../../api/types";
+import type { ModelProvider, OrgModelProvider, OrgModels } from "../../api/types/models";
+
+/**
+ * Which models a model picker offers: `current` is the value it holds, `coding` whether the agent
+ * it picks for has coding on, and `marketplaceOnly` whether it offers marketplace models alone.
+ */
+export type ModelPickerScope = { current?: string; coding?: boolean; marketplaceOnly?: boolean };
 
 /**
  * The picker's options: the organisation's chosen models grouped by provider. Coding rows appear
@@ -8,7 +14,7 @@ import type { ModelProvider, OrgModels } from "../../api/types";
  */
 export function modelOptions(
   models: OrgModels | undefined,
-  options: { current?: string; coding?: boolean; marketplaceOnly?: boolean } = {},
+  options: ModelPickerScope = {},
 ): SelectOptionGroup[] {
   const current = options.current ?? "";
   if (!models) {
@@ -47,7 +53,7 @@ export function modelLabel(models: OrgModels | undefined, modelId: string): stri
 /** The organisation's default when the picker may list it, else nothing. */
 export function preselectedModel(
   models: OrgModels | undefined,
-  options: { coding?: boolean; marketplaceOnly?: boolean } = {},
+  options: Omit<ModelPickerScope, "current"> = {},
 ): string {
   const chosen = models?.default ?? "";
   if (!chosen) return "";
@@ -97,6 +103,21 @@ export function setupProgress(models: OrgModels | undefined): SetupStep[] {
     { id: "models", label: "Choose the models to offer", done: chosen },
     { id: "default", label: "Mark one as the default", done: Boolean(models?.default) },
   ];
+}
+
+/** The line under a provider's name: the endpoint and key it is connected with, or how to connect it. */
+export function formatProviderState(provider: OrgModelProvider): string {
+  const local = provider.id === "local";
+  if (provider.source === "own" && local) {
+    const key = provider.key_hint ? ` · key ends in ${provider.key_hint}` : "";
+    return `Connected · ${provider.base_url ?? ""}${key}`;
+  }
+  if (provider.source === "own") return `Connected · key ends in ${provider.key_hint ?? "…"}`;
+  if (local) return "Not connected. Save the endpoint's URL, and a key when it needs one.";
+  if (provider.source === "platform") {
+    return "Provided by the platform. Paste the organisation's key to run on it instead.";
+  }
+  return "Not connected. Paste the organisation's key.";
 }
 
 /** What a provider is for, and where its key comes from, as the setup shows them. */

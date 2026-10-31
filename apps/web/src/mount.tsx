@@ -5,6 +5,7 @@ import { setSignInPath } from "./api/session";
 import { App } from "./app/App";
 import type { AppSlots } from "./app/slots";
 import { applyTheme, readThemePreference } from "./app/theme";
+import { AppWiringError } from "./app/wiring";
 
 /** Starts the app in the page's `#root`, with what the extension adds to it. */
 export function mount(slots: AppSlots = {}): void {
@@ -13,7 +14,7 @@ export function mount(slots: AppSlots = {}): void {
   setSignInPath(slots.signInPath ?? null);
 
   const root = document.getElementById("root");
-  if (!root) throw new Error("index.html has no #root element");
+  if (!root) throw new AppWiringError("index.html has no #root element");
   createRoot(root, {
     onUncaughtError: (error) => reportThrown("react", error),
     onCaughtError: (error) => reportThrown("react", error),

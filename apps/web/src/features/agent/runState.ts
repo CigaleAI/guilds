@@ -1,4 +1,5 @@
-import type { Run, RunKind, Schedule } from "../../api/types";
+import type { Run, RunKind } from "../../api/types/runs";
+import type { Schedule } from "../../api/types/schedules";
 import type { StatusBadgeStatus } from "@guildsrun/ui";
 export const runKindLabel: Record<RunKind, string> = {
   direct: "Direct session",

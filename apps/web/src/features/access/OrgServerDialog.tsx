@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
-import { useAddOrgServer, type OrgServerInput } from "../../api/queries";
+import { useAddOrgServer } from "../../api/queries/access";
+import type { OrgServerInput } from "../../api/types/access";
 import {
   Banner,
   Button,
@@ -14,6 +15,7 @@ import {
   TextField,
   toast,
 } from "@guildsrun/ui";
+import { isRemoteServerAuth } from "./remoteServer";
 
 const empty: OrgServerInput = {
   slug: "",
@@ -23,19 +25,17 @@ const empty: OrgServerInput = {
   description: "",
 };
 
+type OrgServerDialogProps = {
+  orgId: string;
+  open: boolean;
+  onClose: () => void;
+};
+
 /**
  * Adds a remote MCP server for this organisation alone: a URL on public HTTPS and how it signs
  * in. A blank name and description fill in from the server once a login connects.
  */
-export function OrgServerDialog({
-  orgId,
-  open,
-  onClose,
-}: {
-  orgId: string;
-  open: boolean;
-  onClose: () => void;
-}) {
+export function OrgServerDialog({ orgId, open, onClose }: OrgServerDialogProps) {
   const add = useAddOrgServer(orgId);
   const [form, setForm] = useState<OrgServerInput>(empty);
   const set = (patch: Partial<OrgServerInput>) => setForm({ ...form, ...patch });
@@ -105,7 +105,9 @@ export function OrgServerDialog({
               tone="surface"
               label="Sign-in"
               value={form.auth}
-              onValueChange={(value) => set({ auth: value as OrgServerInput["auth"] })}
+              onValueChange={(value) => {
+                if (isRemoteServerAuth(value)) set({ auth: value });
+              }}
               options={[
                 { value: "token", label: "An API key or token" },
                 { value: "oauth", label: "OAuth at the server" },

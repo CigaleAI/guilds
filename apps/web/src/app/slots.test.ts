@@ -42,3 +42,7 @@ test("a page shows the tab asked for when it exists, else its first", () => {
   assert.equal(chosenTab(core, "billing"), "general");
   assert.equal(chosenTab(core, undefined), "general");
 });
+
+test("a page without tabs shows none", () => {
+  assert.equal(chosenTab([], "keys"), "");
+});

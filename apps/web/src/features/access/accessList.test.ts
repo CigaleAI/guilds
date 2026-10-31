@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { AccessEntry } from "../../api/types";
+import type { AccessEntry } from "../../api/types/access";
 import {
   accessCandidates,
   findCandidate,

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { MemoryVersion } from "../../../api/types";
+import type { MemoryVersion } from "../../../api/types/notes";
 import { memoryAuthorLabel, memoryChangeLabel, memoryVersionId, memoryVersionName } from "./memoryVersions";
 
 function version(overrides: Partial<MemoryVersion> = {}): MemoryVersion {

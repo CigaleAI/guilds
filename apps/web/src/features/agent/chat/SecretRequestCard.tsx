@@ -1,12 +1,10 @@
 import { KeyRound } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import {
-  useCreateSecret,
-  useSecrets,
-  useSendRunMessage,
-  useSetSecretAccess,
-} from "../../../api/queries";
-import type { AgentDetail, Run, SecretAccessChoice } from "../../../api/types";
+import { useCreateSecret, useSecrets, useSetSecretAccess } from "../../../api/queries/secrets";
+import { useSendRunMessage } from "../../../api/queries/runs";
+import type { AgentDetail } from "../../../api/types/agents";
+import type { Run } from "../../../api/types/runs";
+import type { Secret, SecretAccessChoice } from "../../../api/types/secrets";
 import { useIdentity } from "../../../app/identity";
 import { Button, Segmented, TextField, Banner, toast, Icon } from "@guildsrun/ui";
 import { SecretReach } from "../../access/AccessSecrets";
@@ -27,37 +25,73 @@ function accessFor(target: Target, agent: AgentDetail): SecretAccessChoice {
   return { org_wide: false, guild_ids: [], agent_ids: [agent.id] };
 }
 
-/**
- * An agent's secret_request in its chat. The card keeps no state: it reads the name in the
- * organisation and offers to provide it, grant it, or says it is set. The value goes straight to
- * the secrets API and never into the transcript; once it lands, an idle run hears "Secret NAME is set."
- */
-export function SecretRequestCard({
-  agent,
-  run,
-  request,
-}: {
+type SecretRequestCardProps = {
   agent: AgentDetail;
   run: Run;
   request: SecretRequest;
-}) {
-  const { org } = useIdentity();
-  const manager = managesSecrets(org.role);
-  const orgSecrets = useSecrets({ scope: "org", id: org.id });
-  const environment = useSecrets({ scope: "agent", id: agent.id });
-  const create = useCreateSecret();
+};
+
+type GrantSecretProps = {
+  agent: AgentDetail;
+  secret: Secret;
+  /** The operator manages the organisation's secrets, so may grant this one. */
+  manager: boolean;
+  onGranted: () => void;
+};
+
+/** A secret of that name the agent cannot reach yet: who has it, and granting it to this agent. */
+function GrantSecret({ agent, secret, manager, onGranted }: GrantSecretProps) {
   const grant = useSetSecretAccess();
-  const send = useSendRunMessage(agent.id);
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm text-fg-2">
+      <span>{secret.name} exists, available to</span>
+      <SecretReach secret={secret} />
+      {manager ? (
+        <Button
+          size="sm"
+          disabled={grant.isPending}
+          onClick={() =>
+            grant.mutate(
+              { secretId: secret.id, access: withAgent(secret, agent.id) },
+              {
+                onSuccess: () => {
+                  toast({ kind: "success", title: `${secret.name} granted to ${agent.name}` });
+                  onGranted();
+                },
+              },
+            )
+          }
+        >
+          {grant.isPending ? "Granting…" : "Grant to this agent"}
+        </Button>
+      ) : (
+        <span className="text-muted">An org owner or admin can grant it to this agent.</span>
+      )}
+      {grant.isError ? (
+        <Banner tone="error" title="Couldn't grant the secret">
+          {grant.error.message}
+        </Banner>
+      ) : null}
+    </div>
+  );
+}
+
+type ProvideSecretProps = {
+  agent: AgentDetail;
+  request: SecretRequest;
+  /** The operator manages the organisation's secrets, so may give it to the guild or the organisation. */
+  manager: boolean;
+  onProvided: () => void;
+};
+
+/** The form that stores the secret the agent asked for, described as it asked, for whom the operator picks. */
+function ProvideSecret({ agent, request, manager, onProvided }: ProvideSecretProps) {
+  const create = useCreateSecret();
   const [description, setDescription] = useState(
     request.description.slice(0, secretDescriptionMax),
   );
   const [value, setValue] = useState("");
   const [target, setTarget] = useState<Target>("agent");
-
-  const tellAgent = () => {
-    if (run.generating || run.status !== "active") return;
-    send.mutate({ runId: run.id, content: `Secret ${request.name} is set.` });
-  };
 
   const provide = (event: FormEvent) => {
     event.preventDefault();
@@ -72,10 +106,76 @@ export function SecretRequestCard({
         onSuccess: () => {
           setValue("");
           toast({ kind: "success", title: `${request.name} provided` });
-          tellAgent();
+          onProvided();
         },
       },
     );
+  };
+
+  return (
+    <form onSubmit={provide} className="flex flex-col gap-3">
+      <TextField
+        tone="paper"
+        label="Description"
+        required
+        maxLength={secretDescriptionMax}
+        showCount
+        value={description}
+        onChange={(event) => setDescription(event.currentTarget.value)}
+      />
+      <SecretValueField
+        tone="paper"
+        label="Value"
+        required
+        value={value}
+        onValueChange={setValue}
+      />
+      {manager ? (
+        <Segmented
+          label="Who gets it"
+          size="sm"
+          value={target}
+          onValueChange={setTarget}
+          options={[
+            { value: "agent", label: "This agent" },
+            { value: "guild", label: "Its guild" },
+            { value: "org", label: "The organisation" },
+          ]}
+        />
+      ) : null}
+      {create.isError ? (
+        <Banner tone="error" title="Couldn't provide the secret">
+          {create.error.message}
+        </Banner>
+      ) : null}
+      <div>
+        <Button
+          type="submit"
+          size="sm"
+          disabled={create.isPending || !value || !description.trim()}
+        >
+          {create.isPending ? "Providing…" : "Provide"}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+/**
+ * An agent's secret_request in its chat. The card keeps no state: it reads the name in the
+ * organisation and offers to provide it, grant it, or says it is set. The value goes straight to
+ * the secrets API and never into the transcript; once it lands, an idle run hears "Secret NAME is set."
+ */
+export function SecretRequestCard({ agent, run, request }: SecretRequestCardProps) {
+  const { org } = useIdentity();
+  const manager = managesSecrets(org.role);
+  const orgSecrets = useSecrets({ scope: "org", id: org.id });
+  const environment = useSecrets({ scope: "agent", id: agent.id });
+  const send = useSendRunMessage(agent.id);
+
+  const tellAgent = () => {
+    if (run.generating || run.status !== "active") return;
+    send.mutate({ runId: run.id, content: `Secret ${request.name} is set.` });
   };
 
   const state =
@@ -109,82 +209,9 @@ export function SecretRequestCard({
       ) : state.kind === "set" ? (
         <p className="text-sm font-semibold text-fg">{request.name} is set</p>
       ) : state.kind === "elsewhere" ? (
-        <div className="flex flex-wrap items-center gap-2 text-sm text-fg-2">
-          <span>{request.name} exists, available to</span>
-          <SecretReach secret={state.secret} />
-          {manager ? (
-            <Button
-              size="sm"
-              disabled={grant.isPending}
-              onClick={() =>
-                grant.mutate(
-                  { secretId: state.secret.id, access: withAgent(state.secret, agent.id) },
-                  {
-                    onSuccess: () => {
-                      toast({ kind: "success", title: `${request.name} granted to ${agent.name}` });
-                      tellAgent();
-                    },
-                  },
-                )
-              }
-            >
-              {grant.isPending ? "Granting…" : "Grant to this agent"}
-            </Button>
-          ) : (
-            <span className="text-muted">An org owner or admin can grant it to this agent.</span>
-          )}
-          {grant.isError ? (
-            <Banner tone="error" title="Couldn't grant the secret">
-              {grant.error.message}
-            </Banner>
-          ) : null}
-        </div>
+        <GrantSecret agent={agent} secret={state.secret} manager={manager} onGranted={tellAgent} />
       ) : (
-        <form onSubmit={provide} className="flex flex-col gap-3">
-          <TextField
-            tone="paper"
-            label="Description"
-            required
-            maxLength={secretDescriptionMax}
-            showCount
-            value={description}
-            onChange={(event) => setDescription(event.currentTarget.value)}
-          />
-          <SecretValueField
-            tone="paper"
-            label="Value"
-            required
-            value={value}
-            onValueChange={setValue}
-          />
-          {manager ? (
-            <Segmented
-              label="Who gets it"
-              size="sm"
-              value={target}
-              onValueChange={setTarget}
-              options={[
-                { value: "agent", label: "This agent" },
-                { value: "guild", label: "Its guild" },
-                { value: "org", label: "The organisation" },
-              ]}
-            />
-          ) : null}
-          {create.isError ? (
-            <Banner tone="error" title="Couldn't provide the secret">
-              {create.error.message}
-            </Banner>
-          ) : null}
-          <div>
-            <Button
-              type="submit"
-              size="sm"
-              disabled={create.isPending || !value || !description.trim()}
-            >
-              {create.isPending ? "Providing…" : "Provide"}
-            </Button>
-          </div>
-        </form>
+        <ProvideSecret agent={agent} request={request} manager={manager} onProvided={tellAgent} />
       )}
     </section>
   );

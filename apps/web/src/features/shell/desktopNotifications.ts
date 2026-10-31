@@ -2,8 +2,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "@guildsrun/ui";
-import { keys } from "../../api/queries";
-import type { Guild, MessageNotice } from "../../api/types";
+import { guildKeys } from "../../api/queries/guilds";
+import type { Guild } from "../../api/types/guilds";
+import type { MessageNotice } from "../../api/types/chat";
 import { agentLook } from "../../app/agents";
 import { readStored, useStoredFlag } from "../../app/storage";
 
@@ -142,7 +143,7 @@ export function useDesktopNotification(): (notice: MessageNotice) => void {
   const navigate = useNavigate();
   return (notice) => {
     if (!desktopNotificationsOn()) return;
-    const guilds = client.getQueryData<Guild[]>(keys.guilds);
+    const guilds = client.getQueryData<Guild[]>(guildKeys.guilds);
     const guild = guilds?.find((known) => known.id === notice.guild_id);
     const open = () => {
       window.focus();

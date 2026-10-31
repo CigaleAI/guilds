@@ -1,9 +1,11 @@
 import { Link } from "@tanstack/react-router";
 import { ListChecks } from "lucide-react";
-import { useGuildApply } from "../../api/queries";
+import { useGuildApply } from "../../api/queries/recipes";
 import { Button, Icon } from "@guildsrun/ui";
+type OpenApplyStripProps = { guildId: string };
+
 /** A guild whose recipe checklist is still open: its routines wait on it. */
-export function OpenApplyStrip({ guildId }: { guildId: string }) {
+export function OpenApplyStrip({ guildId }: OpenApplyStripProps) {
   const apply = useGuildApply(guildId);
   if (!apply.data) return null;
   return (

@@ -1,5 +1,5 @@
-import type { StudioMessage } from "../../api/types";
-import type { RunMessage } from "../agent/runs/runFlowModel";
+import type { StudioMessage } from "../../api/types/studio";
+import type { RunMessage } from "../agent/runs/toolFormat";
 
 /** A coach conversation as run rows, so the run flow model groups its steps and tool calls. */
 export function asRunMessages(

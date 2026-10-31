@@ -1,19 +1,49 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { Column } from "../../api/types";
+import type { Column } from "../../api/types/tables";
 import {
   columnErrors,
   columnsForSave,
   describeChanges,
   fieldText,
   fits,
+  isColumnType,
+  isNewTableReady,
+  isTableTab,
   parseField,
+  tableNameError,
   whereOf,
 } from "./values";
 
 function column(name: string, type: Column["type"], extra: Partial<Column> = {}): Column {
   return { name, type, description: "d", required: false, unique: false, ...extra };
 }
+
+test("a table name is lowercase letters, digits, _ and -, starting with a letter", () => {
+  assert.equal(tableNameError(" degen-projects "), undefined);
+  assert.match(tableNameError("Degen") ?? "", /^Lowercase/);
+  assert.match(tableNameError("") ?? "", /^Lowercase/);
+});
+
+test("a new table needs a valid name, a purpose and columns that save", () => {
+  const columns = [column("score", "number")];
+  assert.equal(isNewTableReady("scores", "Track scores", columns), true);
+  assert.equal(isNewTableReady("", "Track scores", columns), false);
+  assert.equal(isNewTableReady("scores", " ", columns), false);
+  assert.equal(isNewTableReady("scores", "Track scores", []), false);
+  assert.equal(isNewTableReady("scores", "Track scores", [column("id", "number")]), false);
+});
+
+test("a column type is one the server stores", () => {
+  assert.equal(isColumnType("datetime"), true);
+  assert.equal(isColumnType("date"), false);
+});
+
+test("a table tab is records, columns or access", () => {
+  assert.equal(isTableTab("columns"), true);
+  assert.equal(isTableTab("settings"), false);
+  assert.equal(isTableTab(undefined), false);
+});
 
 test("values fit their column, including allowed values", () => {
   assert.equal(fits("watch", column("status", "text", { values: ["watch", "ignore"] })), true);
@@ -49,6 +79,38 @@ test("filters become the server's where", () => {
   assert.deepEqual(whereOf({ score: { from: "5", to: "5" } }, columns), { score: 5 });
 });
 
+test("a range with one end set matches from it or up to it", () => {
+  const columns = [column("score", "number"), column("seen", "datetime")];
+  assert.deepEqual(
+    whereOf({ score: { from: "3" }, seen: { to: "2026-01-02T00:00:00Z" } }, columns),
+    { score: { gte: 3 }, seen: { lte: "2026-01-02T00:00:00.000Z" } },
+  );
+});
+
+test("unset filters and unknown columns put no condition in the where", () => {
+  const columns = [column("score", "number"), column("status", "text")];
+  assert.deepEqual(
+    whereOf(
+      {
+        id: { value: " " },
+        score: { from: " ", value: "4" },
+        status: { value: "" },
+        gone: { value: "x" },
+      },
+      columns,
+    ),
+    {},
+  );
+  assert.deepEqual(whereOf({ status: { value: "open" } }, columns), { status: "open" });
+});
+
+test("a time fits a datetime column and a boolean a boolean column", () => {
+  assert.equal(fits("2026-01-02T00:00:00Z", column("seen", "datetime")), true);
+  assert.equal(fits("someday", column("seen", "datetime")), false);
+  assert.equal(fits(false, column("done", "boolean")), true);
+  assert.equal(fits(["a", 1], column("tags", "array")), false);
+});
+
 test("columns for save drop empty values and values on the wrong type", () => {
   assert.deepEqual(
     columnsForSave([
@@ -68,7 +130,14 @@ test("columns for save drop empty values and values on the wrong type", () => {
         unique: false,
         values: ["open", "closed"],
       },
-      { name: "note", type: "text", description: "free", required: false, unique: false, values: [] },
+      {
+        name: "note",
+        type: "text",
+        description: "free",
+        required: false,
+        unique: false,
+        values: [],
+      },
     ]),
     [
       { name: "date", type: "datetime", description: "when", required: false, unique: false },
@@ -117,7 +186,10 @@ test("a columns edit is described change by change", () => {
 
 test("a description-only edit is a change", () => {
   assert.deepEqual(
-    describeChanges([column("status", "text")], [column("status", "text", { description: "state" })]),
+    describeChanges(
+      [column("status", "text")],
+      [column("status", "text", { description: "state" })],
+    ),
     ["Change the description of status"],
   );
 });

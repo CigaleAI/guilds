@@ -1,4 +1,4 @@
-import type { NoteItem } from "../../api/types";
+import type { NoteItem } from "../../api/types/notes";
 import type { FileTreeNode } from "@guildsrun/ui";
 /** Names a note cannot take: the agent's Task and memory live under them. */
 const reservedFiles = ["task.md", "memory.md"];

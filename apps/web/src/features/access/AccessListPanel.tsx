@@ -1,7 +1,9 @@
 import { Plus, X } from "lucide-react";
 import { useState } from "react";
-import { useAgentsByGuild, useGuilds, useItemAccess, useSetItemAccess } from "../../api/queries";
-import type { AccessEntry, AccessListMode, AccessRow, AccessTarget } from "../../api/types";
+import { useAgentsByGuild } from "../../api/queries/agents";
+import { useGuilds } from "../../api/queries/guilds";
+import { useItemAccess, useSetItemAccess } from "../../api/queries/access";
+import type { AccessEntry, AccessListMode, AccessRow, AccessTarget } from "../../api/types/access";
 import { useIdentity } from "../../app/identity";
 import {
   Banner,
@@ -36,11 +38,13 @@ function modeOptions(type: AccessEntry["type"]) {
   return accessModes[type].map((mode) => ({ value: mode, label: accessModeLabel[mode] }));
 }
 
+type AccessListPanelProps = { target: AccessTarget; intro: string };
+
 /**
  * A note's or a table's access list: one row per organisation, guild or agent, each with its
  * mode. Every change sends the full list and shows the list the server keeps.
  */
-export function AccessListPanel({ target, intro }: { target: AccessTarget; intro: string }) {
+export function AccessListPanel({ target, intro }: AccessListPanelProps) {
   const access = useItemAccess(target);
   const save = useSetItemAccess(target);
 
@@ -74,17 +78,14 @@ export function AccessListPanel({ target, intro }: { target: AccessTarget; intro
   );
 }
 
-function AccessRows({
-  entries,
-  disabled,
-  onMode,
-  onRemove,
-}: {
+type AccessRowsProps = {
   entries: readonly AccessEntry[];
   disabled: boolean;
   onMode: (entry: AccessEntry, mode: AccessListMode) => void;
   onRemove: (entry: AccessEntry) => void;
-}) {
+};
+
+function AccessRows({ entries, disabled, onMode, onRemove }: AccessRowsProps) {
   if (!entries.length) return <p className="text-sm text-muted">No one is on the list.</p>;
   return (
     <div className="flex flex-col overflow-hidden rounded-xl bg-surface">
@@ -119,21 +120,18 @@ function AccessRows({
   );
 }
 
-/**
- * Picks a subject not yet on the list and the mode its row starts with; each add starts the next
- * one over at read.
- */
-function AddAccessRow({
-  taken,
-  ownerAgentId,
-  disabled,
-  onAdd,
-}: {
+type AddAccessRowProps = {
   taken: readonly AccessEntry[];
   ownerAgentId: string | null;
   disabled: boolean;
   onAdd: (row: AccessRow) => void;
-}) {
+};
+
+/**
+ * Picks a subject not yet on the list and the mode its row starts with; each add starts the next
+ * one over at read.
+ */
+function AddAccessRow({ taken, ownerAgentId, disabled, onAdd }: AddAccessRowProps) {
   const { org } = useIdentity();
   const guilds = useGuilds().data ?? [];
   const agentsByGuild = useAgentsByGuild(guilds.map((guild) => guild.id));

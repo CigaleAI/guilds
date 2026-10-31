@@ -2,7 +2,8 @@ import { Link, useParams } from "@tanstack/react-router";
 import { ArrowDownToLine, Check, Copy, Globe, RotateCw } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api } from "../../../api/client";
-import { useAgent } from "../../../api/queries";
+import { useAgent } from "../../../api/queries/agents";
+import { copyText } from "../../../app/clipboard";
 import { Button, IconButton, TextField, EmptyState, StatusBadge } from "@guildsrun/ui";
 /** The browser desktop is fixed at 1280 × 720 and scales to the pane. */
 const desktopRatio = 16 / 9;
@@ -24,7 +25,21 @@ type Rfb = {
   _clipboardServerCapabilitiesActions?: Record<number, boolean>;
 };
 
-type NovncWindow = Window & { guildsNovnc?: { rfb?: Rfb } };
+const RFB_METHODS = ["focus", "sendKey", "clipboardPasteFrom", "addEventListener"] as const;
+
+/** Whether a value is noVNC's RFB connection: it has every method the clipboard bridge calls. */
+export function isRfb(value: unknown): value is Rfb {
+  if (typeof value !== "object" || value === null) return false;
+  return RFB_METHODS.every((method) => typeof Reflect.get(value, method) === "function");
+}
+
+/** The RFB connection noVNC's UI exposes on the viewer's window once it connects; null before. */
+function novncConnection(viewer: Window): Rfb | null {
+  const ui: unknown = Reflect.get(viewer, "guildsNovnc");
+  if (typeof ui !== "object" || ui === null) return null;
+  const connection: unknown = Reflect.get(ui, "rfb");
+  return isRfb(connection) ? connection : null;
+}
 
 /** Hides noVNC's own controls so the desktop fills the pane. */
 const embedStyle = `
@@ -59,6 +74,60 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 type Session =
   { kind: "starting" } | { kind: "live"; nonce: number } | { kind: "failed"; detail: string };
 
+/** How the header's badge shows each state of the browser session. */
+const SESSION_BADGES: Readonly<
+  Record<Session["kind"], { status: "ok" | "failed" | "running"; label: string }>
+> = Object.freeze({
+  live: { status: "ok", label: "Live" },
+  failed: { status: "failed", label: "Failed" },
+  starting: { status: "running", label: "Starting" },
+});
+
+type BrowserOffProps = { guildId: string; agentId: string };
+
+/** An agent without the browser, pointed at the Settings section that turns it on. */
+function BrowserOff({ guildId, agentId }: BrowserOffProps) {
+  return (
+    <div className="grid flex-1 place-items-center p-6">
+      <EmptyState
+        icon={Globe}
+        title="This agent has no browser"
+        description="Turn it on in Settings to give the agent a Chromium it can sign in with."
+        action={
+          <Button asChild size="sm">
+            <Link
+              to="/guilds/$guildId/agents/$agentId/settings"
+              params={{ guildId, agentId }}
+              search={{ section: "model" }}
+            >
+              Open Settings
+            </Link>
+          </Button>
+        }
+      />
+    </div>
+  );
+}
+
+type BrowserFailedProps = { detail: string; onRetry: () => void };
+
+/** Why the browser could not start, with another try. */
+function BrowserFailed({ detail, onRetry }: BrowserFailedProps) {
+  return (
+    <div className="grid flex-1 place-items-center">
+      <div className="flex max-w-160 flex-col items-center gap-3 text-center">
+        <h3 className="text-lg font-semibold">Browser unavailable</h3>
+        <pre className="max-h-60 w-full overflow-auto rounded-md bg-surface p-3 text-left font-mono text-xs whitespace-pre-wrap">
+          {detail}
+        </pre>
+        <Button size="sm" onClick={onRetry}>
+          Try again
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /**
  * The agent's Chromium, live: starting its machine can take up to a minute. Keyboard and mouse go
  * straight to the desktop; the clipboard strip moves text in and out.
@@ -89,28 +158,8 @@ export function AgentBrowser() {
     setAttempt((count) => count + 1);
   };
 
-  if (agent.data && !enabled) {
-    return (
-      <div className="grid flex-1 place-items-center p-6">
-        <EmptyState
-          icon={Globe}
-          title="This agent has no browser"
-          description="Turn it on in Settings to give the agent a Chromium it can sign in with."
-          action={
-            <Button asChild size="sm">
-              <Link
-                to="/guilds/$guildId/agents/$agentId/settings"
-                params={{ guildId, agentId }}
-                search={{ section: "model" }}
-              >
-                Open Settings
-              </Link>
-            </Button>
-          }
-        />
-      </div>
-    );
-  }
+  if (agent.data && !enabled) return <BrowserOff guildId={guildId} agentId={agentId} />;
+  const badge = SESSION_BADGES[session.kind];
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 px-7 py-5">
@@ -119,11 +168,7 @@ export function AgentBrowser() {
           Chromium on the agent's machine. Its signed-in profile stays in /home/{agentId}/.browser.
         </span>
         <span className="flex-1" />
-        <StatusBadge
-          status={session.kind === "live" ? "ok" : session.kind === "failed" ? "failed" : "running"}
-        >
-          {session.kind === "live" ? "Live" : session.kind === "failed" ? "Failed" : "Starting"}
-        </StatusBadge>
+        <StatusBadge status={badge.status}>{badge.label}</StatusBadge>
         <IconButton
           icon={RotateCw}
           label="Restart the browser view"
@@ -139,17 +184,7 @@ export function AgentBrowser() {
           nonce={session.nonce}
         />
       ) : session.kind === "failed" ? (
-        <div className="grid flex-1 place-items-center">
-          <div className="flex max-w-160 flex-col items-center gap-3 text-center">
-            <h3 className="text-lg font-semibold">Browser unavailable</h3>
-            <pre className="max-h-60 w-full overflow-auto rounded-md bg-surface p-3 text-left font-mono text-xs whitespace-pre-wrap">
-              {session.detail}
-            </pre>
-            <Button size="sm" onClick={restart}>
-              Try again
-            </Button>
-          </div>
-        </div>
+        <BrowserFailed detail={session.detail} onRetry={restart} />
       ) : (
         <div className="grid flex-1 place-items-center">
           <div role="status" className="flex flex-col items-center gap-2 text-sm text-muted">
@@ -162,7 +197,9 @@ export function AgentBrowser() {
   );
 }
 
-function Viewer({ agentId, name, nonce }: { agentId: string; name: string; nonce: number }) {
+type ViewerProps = { agentId: string; name: string; nonce: number };
+
+function Viewer({ agentId, name, nonce }: ViewerProps) {
   const area = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const rfb = useRef<Rfb | null>(null);
@@ -192,7 +229,7 @@ function Viewer({ agentId, name, nonce }: { agentId: string; name: string; nonce
   /** Hides noVNC's controls and exposes its RFB connection for the clipboard. */
   const onLoad = () => {
     const doc = frame.current?.contentDocument;
-    const win = frame.current?.contentWindow as NovncWindow | null | undefined;
+    const win = frame.current?.contentWindow;
     if (!doc || !win) return;
     if (!doc.getElementById("guilds-novnc-embed")) {
       const style = doc.createElement("style");
@@ -206,7 +243,7 @@ function Viewer({ agentId, name, nonce }: { agentId: string; name: string; nonce
     }
     const started = Date.now();
     const poll = () => {
-      const found = win.guildsNovnc?.rfb;
+      const found = novncConnection(win);
       if (found) {
         rfb.current = found;
         found.addEventListener("clipboard", (event) => setClip(event.detail.text ?? ""));
@@ -249,12 +286,8 @@ function Viewer({ agentId, name, nonce }: { agentId: string; name: string; nonce
     await wait(400);
     const text = clipRef.current;
     if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
-      flashed("copy");
-    } catch {
-      // The page may not be allowed to write the clipboard; the text stays in the field.
-    }
+    // Unavailable leaves the text in the clipboard field for the operator to copy.
+    if ((await copyText(text)) === "copied") flashed("copy");
   };
 
   return (

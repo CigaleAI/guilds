@@ -1,10 +1,9 @@
 import type { ToolKind } from "@guildsrun/ui";
+import { isJsonObject, type JsonObject } from "../../../api/wire";
 import { messageContentText, toolResultError } from "./toolFormat";
 import type { RunMessage, ToolCallRequest } from "./toolFormat";
 import { classifyToolCall, kindBreakdown } from "./toolKinds";
 import type { RunWithTools, ToolCallInfo } from "./toolKinds";
-
-export type { RunMessage, ToolCallRequest } from "./toolFormat";
 
 /** An error recorded on a run; `generation` ties it to the generation it ended. */
 export type RunError = {
@@ -69,18 +68,12 @@ export type FlowStats = {
 /** One bar of a flow's timeline: a step's model latency or one tool's run time. */
 export type TimelineSegment = { kind: ToolKind | "model"; ms: number; label: string };
 
-function recordOf(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
 function metaOf(msg: RunMessage | null | undefined): Record<string, unknown> {
-  return recordOf(msg?.metadata);
+  return msg?.metadata ?? {};
 }
 
 function payloadOf(msg: RunMessage | null | undefined): Record<string, unknown> {
-  return recordOf(msg?.payload);
+  return msg?.payload ?? {};
 }
 
 function generationOf(msg: RunMessage): number | null {
@@ -104,19 +97,58 @@ function makeCall<M extends RunMessage>(
   };
 }
 
+/** The id of the call a tool result answers; empty when it names none. */
+function answeredCallId(payload: Record<string, unknown>): string {
+  return payload.tool_call_id ? String(payload.tool_call_id) : "";
+}
+
+/** The tool results among a run's messages, by the id of the call each answers. */
+function resultsByCallId<M extends RunMessage>(rows: readonly M[]): Map<string, M> {
+  const results = new Map<string, M>();
+  for (const msg of rows) {
+    const payload = payloadOf(msg);
+    const callId = answeredCallId(payload);
+    if (payload.role === "tool" && callId) results.set(callId, msg);
+  }
+  return results;
+}
+
+/** The step of a tool result whose request the run does not hold: one call, named by the result's tool. */
+function orphanResultStep<M extends RunMessage>(
+  msg: M,
+  callId: string,
+  run: FlowRun | null,
+): FlowStep<M> {
+  const orphanCall: ToolCallRequest = {
+    id: callId,
+    function: { name: metaOf(msg).tool_name || "tool", arguments: "" },
+  };
+  return { index: null, turn: null, calls: [makeCall(orphanCall, msg, run, 1)] };
+}
+
+/**
+ * Records that the result of a call has its step in the flow; false when one already has. A result
+ * that names no call always gets a step of its own.
+ */
+function claimResult(handled: Set<string>, callId: string): boolean {
+  if (!callId) return true;
+  if (handled.has(callId)) return false;
+  handled.add(callId);
+  return true;
+}
+
+/** The tool calls an assistant message requested; empty when it requested none. */
+function requestedCalls(payload: Record<string, unknown>): readonly ToolCallRequest[] {
+  return Array.isArray(payload.tool_calls) ? payload.tool_calls : [];
+}
+
 /** Splits a run's ordered messages into chat rows and tool flows, pairing each call with its result and attaching run errors to their flow. */
 export function buildFlowSegments<M extends RunMessage>(
   messages: readonly M[] | null | undefined,
   run: FlowRun | null = null,
 ): { segments: Segment<M>[]; unattachedErrors: RunError[] } {
   const rows: readonly M[] = Array.isArray(messages) ? messages : [];
-  const resultsByCallId = new Map<string, M>();
-  for (const msg of rows) {
-    const payload = payloadOf(msg);
-    if (payload.role === "tool" && payload.tool_call_id) {
-      resultsByCallId.set(String(payload.tool_call_id), msg);
-    }
-  }
+  const results = resultsByCallId(rows);
   const handled = new Set<string>();
   const stepsByGeneration = new Map<number | null, number>();
   const segments: Segment<M>[] = [];
@@ -139,32 +171,21 @@ export function buildFlowSegments<M extends RunMessage>(
     const payload = payloadOf(msg);
     const role = payload.role || "assistant";
     if (role === "tool") {
-      const callId = payload.tool_call_id ? String(payload.tool_call_id) : "";
-      if (callId && handled.has(callId)) continue;
-      if (callId) handled.add(callId);
-      const orphanCall: ToolCallRequest = {
-        id: callId,
-        function: { name: metaOf(msg).tool_name || "tool", arguments: "" },
-      };
-      flowFor(generationOf(msg), msg).steps.push({
-        index: null,
-        turn: null,
-        calls: [makeCall(orphanCall, msg, run, 1)],
-      });
+      const callId = answeredCallId(payload);
+      if (!claimResult(handled, callId)) continue;
+      flowFor(generationOf(msg), msg).steps.push(orphanResultStep(msg, callId, run));
       continue;
     }
     if (role === "assistant") {
       const generation = generationOf(msg);
       const stepIndex = (stepsByGeneration.get(generation) || 0) + 1;
       stepsByGeneration.set(generation, stepIndex);
-      const calls: readonly ToolCallRequest[] = Array.isArray(payload.tool_calls)
-        ? payload.tool_calls
-        : [];
+      const calls = requestedCalls(payload);
       if (calls.length) {
         const items = calls.map((call, position) => {
           const id = call?.id ? String(call.id) : "";
           if (id) handled.add(id);
-          return makeCall(call, id ? (resultsByCallId.get(id) ?? null) : null, run, position + 1);
+          return makeCall(call, id ? (results.get(id) ?? null) : null, run, position + 1);
         });
         flowFor(generation, msg).steps.push({ index: stepIndex, turn: msg, calls: items });
         continue;
@@ -208,6 +229,22 @@ export function turnReasoning(msg: RunMessage | null | undefined): string {
   return typeof value === "string" && value.trim() ? value : "";
 }
 
+/** The token usage recorded for an assistant message; empty when there is none. */
+export function turnUsage(msg: RunMessage | null | undefined): JsonObject {
+  const usage = metaOf(msg).usage;
+  return isJsonObject(usage) ? usage : {};
+}
+
+/** How long the model took to write an assistant message, in ms; 0 when it is not recorded. */
+function turnLatencyMs(msg: RunMessage): number {
+  return Number(metaOf(msg).latency_ms) || 0;
+}
+
+/** How long a call's tool ran, in ms; 0 before its result, or when it is not recorded. */
+function resultDurationMs(result: RunMessage | null): number {
+  return Number(metaOf(result).duration_ms) || 0;
+}
+
 /** Sums a flow's steps, calls, failures, running calls, model and tool time, tokens, and cost. */
 export function flowStats(flow: FlowSegment): FlowStats {
   let calls = 0;
@@ -224,8 +261,8 @@ export function flowStats(flow: FlowSegment): FlowStats {
   for (const step of flow.steps) {
     if (step.turn) {
       const meta = metaOf(step.turn);
-      const usage = recordOf(meta.usage);
-      modelMs += Number(meta.latency_ms) || 0;
+      const usage = turnUsage(step.turn);
+      modelMs += turnLatencyMs(step.turn);
       inputTokens += Number(usage.input_tokens) || 0;
       outputTokens += Number(usage.output_tokens) || 0;
       const cost = meta.cost_usd;
@@ -240,7 +277,7 @@ export function flowStats(flow: FlowSegment): FlowStats {
       infos.push(item.info);
       if (item.error) toolErrors += 1;
       if (!item.result) running += 1;
-      toolMs += Number(metaOf(item.result).duration_ms) || 0;
+      toolMs += resultDurationMs(item.result);
     }
   }
   return {
@@ -265,11 +302,11 @@ export function flowTimeline(flow: FlowSegment): { segments: TimelineSegment[]; 
   for (const step of flow.steps) {
     const label = step.index === null ? "Tool result" : `Step ${step.index}`;
     if (step.turn) {
-      const ms = Number(metaOf(step.turn).latency_ms) || 0;
+      const ms = turnLatencyMs(step.turn);
       if (ms > 0) segments.push({ kind: "model", ms, label: `${label} · model` });
     }
     for (const item of step.calls) {
-      const ms = Number(metaOf(item.result).duration_ms) || 0;
+      const ms = resultDurationMs(item.result);
       if (ms > 0)
         segments.push({ kind: item.info.kind, ms, label: `${label} · ${item.info.name}` });
     }

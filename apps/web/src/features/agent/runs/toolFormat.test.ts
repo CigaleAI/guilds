@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   codeTaskStatus,
-  formatCost,
   formatDuration,
   formatReturnedData,
   formatTokens,
+  formatToolArgs,
   friendlyToolCall,
+  parseToolArgs,
   previewText,
   stripRemainingToolCalls,
   summarizeCalls,
@@ -25,7 +26,31 @@ test("stripRemainingToolCalls removes only the trailing budget stamp", () => {
     stripRemainingToolCalls(`ok\n\n${wrapUp}\n\nremaining_tool_calls: 5`),
     `ok\n\n${wrapUp}`,
   );
-  assert.equal(stripRemainingToolCalls(null), null);
+});
+
+test("parseToolArgs reads a JSON string or an object, and is empty otherwise", () => {
+  assert.deepEqual(parseToolArgs('{"path":"a.md"}'), { path: "a.md" });
+  assert.deepEqual(parseToolArgs({ path: "a.md" }), { path: "a.md" });
+  assert.deepEqual(parseToolArgs("not json"), {});
+  assert.deepEqual(parseToolArgs("[1]"), {});
+  assert.deepEqual(parseToolArgs(""), {});
+  assert.deepEqual(parseToolArgs(undefined), {});
+});
+
+test("formatToolArgs shows arguments as JSON, and what it cannot read as text", () => {
+  assert.deepEqual(formatToolArgs('{"a":1}'), {
+    isEmpty: false,
+    text: '{\n  "a": 1\n}',
+    parsed: { a: 1 },
+  });
+  assert.deepEqual(formatToolArgs("{}"), {
+    isEmpty: true,
+    text: "No arguments provided.",
+    parsed: {},
+  });
+  assert.deepEqual(formatToolArgs("plain"), { isEmpty: false, text: "plain", parsed: null });
+  assert.equal(formatToolArgs(null).isEmpty, true);
+  assert.equal(formatToolArgs({ run: "a", at: new Date(0) }).parsed, null);
 });
 
 test("toolResultError prefers metadata and falls back to the ERROR body", () => {
@@ -64,10 +89,6 @@ test("compact formatters", () => {
   assert.equal(formatTokens(3100), "3.1k");
   assert.equal(formatTokens(41_000), "41k");
   assert.equal(formatTokens(1_200_000), "1.2M");
-  assert.equal(formatCost(0), "$0");
-  assert.equal(formatCost(0.0031), "$0.0031");
-  assert.equal(formatCost(0.12), "$0.12");
-  assert.equal(formatCost("x"), "");
   assert.equal(previewText("  a\n\nb   c  "), "a b c");
   assert.equal(previewText("abcdefghij", 5), "abcd…");
 });
@@ -77,16 +98,43 @@ test("friendlyToolCall summarises known calls and falls back to a single short a
     friendlyToolCall({ function: { name, arguments: args } });
   assert.equal(friendly("note_find", '{"query":"thesis"}'), "Find notes thesis");
   assert.equal(friendly("memory_write", "{}"), "Write memory");
-  assert.equal(friendly("studio_edit_routine", '{"action":"create","agent_id":"scout"}'), "Propose routine for scout");
+  assert.equal(
+    friendly("studio_edit_routine", '{"action":"create","agent_id":"scout"}'),
+    "Propose routine for scout",
+  );
   assert.equal(friendly("studio_edit_routine", '{"action":"create"}'), "Propose routine");
-  assert.equal(friendly("studio_edit_routine", '{"action":"edit","schedule_id":"sch_1"}'), "Propose routine changes");
-  assert.equal(friendly("studio_edit_routine", '{"action":"delete","schedule_id":"sch_1"}'), "Propose deleting a routine");
-  assert.equal(friendly("studio_edit_collection", '{"action":"create","name":"leads"}'), "Propose table leads");
-  assert.equal(friendly("studio_edit_collection", '{"action":"edit","collection":"leads"}'), "Propose changes to leads");
-  assert.equal(friendly("studio_edit_collection", '{"action":"delete","collection":"leads"}'), "Propose deleting leads");
-  assert.equal(friendly("studio_edit_note", '{"action":"create","key":"playbook.md"}'), "Propose note playbook.md");
-  assert.equal(friendly("studio_edit_note", '{"action":"edit","display_path":"x"}'), "Propose note edit");
-  assert.equal(friendly("studio_edit_note", '{"action":"delete","display_path":"x"}'), "Propose deleting a note");
+  assert.equal(
+    friendly("studio_edit_routine", '{"action":"edit","schedule_id":"sch_1"}'),
+    "Propose routine changes",
+  );
+  assert.equal(
+    friendly("studio_edit_routine", '{"action":"delete","schedule_id":"sch_1"}'),
+    "Propose deleting a routine",
+  );
+  assert.equal(
+    friendly("studio_edit_collection", '{"action":"create","name":"leads"}'),
+    "Propose table leads",
+  );
+  assert.equal(
+    friendly("studio_edit_collection", '{"action":"edit","collection":"leads"}'),
+    "Propose changes to leads",
+  );
+  assert.equal(
+    friendly("studio_edit_collection", '{"action":"delete","collection":"leads"}'),
+    "Propose deleting leads",
+  );
+  assert.equal(
+    friendly("studio_edit_note", '{"action":"create","key":"playbook.md"}'),
+    "Propose note playbook.md",
+  );
+  assert.equal(
+    friendly("studio_edit_note", '{"action":"edit","display_path":"x"}'),
+    "Propose note edit",
+  );
+  assert.equal(
+    friendly("studio_edit_note", '{"action":"delete","display_path":"x"}'),
+    "Propose deleting a note",
+  );
   assert.equal(friendly("record_search", '{"query":"acme"}'), "Search records acme");
   assert.equal(
     friendly("record_search", '{"collection":"customers","query":"acme"}'),
@@ -110,19 +158,31 @@ test("friendlyToolCall summarises known calls and falls back to a single short a
 test("code tools read as the command, the file, or the background job they touch", () => {
   const call = (name: string, args: Record<string, unknown>) =>
     friendlyToolCall({ function: { name, arguments: JSON.stringify(args) } });
-  assert.equal(call("shell", { command: "npm test -- --watch=false\necho done" }), "Run npm test -- --watch=false");
+  assert.equal(
+    call("shell", { command: "npm test -- --watch=false\necho done" }),
+    "Run npm test -- --watch=false",
+  );
   assert.equal(call("shell", { command: "npm run dev", background: true }), "Start npm run dev");
   assert.equal(call("shell_status", {}), "List background commands");
   assert.equal(call("shell_status", { id: "b2", stop: true }), "Stop b2");
-  assert.equal(call("file_read", { path: "src/app.ts", offset: 120 }), "Read src/app.ts from line 120");
-  assert.equal(call("code_search", { pattern: "refund", mode: "content", path: "src" }), 'Search lines "refund" in src');
+  assert.equal(
+    call("file_read", { path: "src/app.ts", offset: 120 }),
+    "Read src/app.ts from line 120",
+  );
+  assert.equal(
+    call("code_search", { pattern: "refund", mode: "content", path: "src" }),
+    'Search lines "refund" in src',
+  );
   assert.equal(call("code_search", { pattern: "refund" }), 'Search files "refund"');
 });
 
 test("browse reads as where the delegated web task starts", () => {
   const call = (args: Record<string, unknown>) =>
     friendlyToolCall({ function: { name: "browse", arguments: JSON.stringify(args) } });
-  assert.equal(call({ task: "find the price", start: "https://example.com" }), "Browse from https://example.com");
+  assert.equal(
+    call({ task: "find the price", start: "https://example.com" }),
+    "Browse from https://example.com",
+  );
   assert.equal(call({ task: "find the price" }), "Browse");
 });
 

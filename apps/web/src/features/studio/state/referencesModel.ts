@@ -3,7 +3,7 @@ import type {
   ReferenceEdgeStatus,
   ReferenceNode,
   StudioReferences,
-} from "../../../api/types";
+} from "../../../api/types/studio";
 import { formatSize } from "../../../app/format";
 import type { StudioSearch } from "../location";
 

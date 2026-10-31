@@ -51,8 +51,10 @@ function Boot() {
   );
 }
 
+type AppProps = { slots?: AppSlots };
+
 /** The app, with what the extension adds; a path the extension owns is shown before anyone is identified. */
-export function App({ slots = {} }: { slots?: AppSlots }) {
+export function App({ slots = {} }: AppProps) {
   const theme = useTheme();
   return (
     <ThemeContext value={theme}>

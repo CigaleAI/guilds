@@ -1,33 +1,13 @@
+import type { Instance } from "../../api/types/admin";
+import type { AgentConfig } from "../../api/types/agents";
 import type {
   AccessBinding,
-  AgentAccess,
-  AgentConfig,
   BindingScope,
-  CatalogKind,
-  Instance,
   McpConnectionStatus,
   McpServerAccess,
-} from "../../api/types";
+} from "../../api/types/access";
 import type { BindingOrigin } from "@guildsrun/ui";
 import { missingFieldsPhrase, toolIntegrationGap } from "../instance/instance";
-/** One switch in the Tools tab: what it binds, and how the agent gets it now. */
-export type BindingTarget = { kind: CatalogKind; id: string };
-
-/** The item a target points at in an access payload, or undefined when it is gone. */
-export function findBinding(
-  access: AgentAccess,
-  target: BindingTarget,
-): AccessBinding | McpServerAccess | undefined {
-  switch (target.kind) {
-    case "native_tool":
-      return access.tools.find((item) => item.name === target.id);
-    case "mcp":
-      return access.mcp.find((server) => server.id === target.id);
-    case "mcp_tool":
-      return access.mcp.flatMap((server) => server.tools).find((tool) => tool.name === target.id);
-  }
-}
-
 /**
  * The agent's own binding can go when it holds no login: dropping it may already give the wanted
  * state, which keeps overrides to the ones that matter.
@@ -55,6 +35,42 @@ export function connectionStatus(server: McpServerAccess): McpConnectionStatus |
   return server.status === "pending" ? "pending" : "disconnected";
 }
 
+/** Whether a Test call can run on a server's login: one that is connected and lists tools. */
+export function canTestLogin(
+  server: Pick<McpServerAccess, "connection_id" | "status" | "tools">,
+): boolean {
+  return Boolean(server.connection_id) && server.status === "connected" && server.tools.length > 0;
+}
+
+/** Where a server card says the server comes from; null for a verified server of the catalog. */
+export function serverOriginLabel(
+  server: Pick<McpServerAccess, "org_owned" | "source" | "verified">,
+): string | null {
+  if (server.org_owned) return "This organisation's";
+  if (server.source === "local") return "Added on this box";
+  return server.verified ? null : "Unverified";
+}
+
+/**
+ * The settings a server card shows for the login in use: its connector's schema once the login is
+ * signed in, the repositories once a GitHub login connects, or none.
+ */
+export function loginSettingsPanel(
+  server: McpServerAccess,
+):
+  | { kind: "schema"; schema: NonNullable<McpServerAccess["settings_schema"]> }
+  | { kind: "github" }
+  | null {
+  if (!server.connection_id) return null;
+  if (server.settings_schema && (server.status === "connected" || server.needs_settings)) {
+    return { kind: "schema", schema: server.settings_schema };
+  }
+  if (server.slug === "github" && (server.status === "connected" || server.account_hint)) {
+    return { kind: "github" };
+  }
+  return null;
+}
+
 /** The login the scope being edited owns, which it may disconnect; inherited logins belong to a wider scope. */
 export function ownedConnection(server: McpServerAccess, scope: BindingScope): string | null {
   if (!server.overlay?.connection_id || server.connection_owner_scope !== scope) return null;
@@ -67,11 +83,8 @@ function matchesToolState(enabled: boolean, filter: ToolFilter): boolean {
   return filter === "all" || enabled === (filter === "active");
 }
 
-function matchesToolQuery(
-  tool: Pick<AccessBinding, "name"> & { description?: string },
-  needle: string,
-): boolean {
-  return !needle || `${tool.name} ${tool.description ?? ""}`.toLowerCase().includes(needle);
+function matchesToolQuery(name: string, description: string | undefined, needle: string): boolean {
+  return !needle || `${name} ${description ?? ""}`.toLowerCase().includes(needle);
 }
 
 export function filterTools<
@@ -79,7 +92,9 @@ export function filterTools<
 >(tools: readonly T[], query: string, filter: ToolFilter): T[] {
   const needle = query.trim().toLowerCase();
   return tools.filter(
-    (tool) => matchesToolState(tool.enabled, filter) && matchesToolQuery(tool, needle),
+    (tool) =>
+      matchesToolState(tool.enabled, filter) &&
+      matchesToolQuery(tool.name, tool.description, needle),
   );
 }
 
@@ -220,45 +235,39 @@ export function nativeToolDisplay(
       bindable: false,
     };
   }
-  if (ANY_BROWSER_NATIVE_TOOLS.includes(item.name)) {
-    const on = capabilities?.browser;
-    const mode = item.name === "browse" ? "the agent-optimized browser" : "browser";
+  const capability = gatingCapability(item.name);
+  if (capability) {
+    const on = capabilities?.[capability];
+    const mode = item.name === "browse" ? "the agent-optimized browser" : capability;
     return {
       enabled: on ?? true,
       caption:
         scope === "agent"
           ? on
-            ? "Active via browser"
-            : "Offered when browser is on"
+            ? `Active via ${capability}`
+            : `Offered when ${capability} is on`
           : `Offered when an agent has ${mode} on`,
       bindable: false,
     };
   }
-  if ((CODING_NATIVE_TOOLS as readonly string[]).includes(item.name)) {
-    const on = capabilities?.coding;
-    return {
-      enabled: on ?? true,
-      caption:
-        scope === "agent"
-          ? on
-            ? "Active via coding"
-            : "Offered when coding is on"
-          : "Offered when an agent has coding on",
-      bindable: false,
-    };
-  }
-  if ((ALWAYS_NATIVE_TOOLS as readonly string[]).includes(item.name)) {
+  if (ALWAYS_NATIVE_TOOLS.some((name) => name === item.name)) {
     return { enabled: true, caption: "Always offered", bindable: false };
   }
   return { enabled: item.enabled, bindable: true };
 }
 
+/** The agent capability a native tool waits for; null for a tool no capability gates. */
+function gatingCapability(name: string): "browser" | "coding" | null {
+  if (ANY_BROWSER_NATIVE_TOOLS.includes(name)) return "browser";
+  return CODING_NATIVE_TOOLS.some((tool) => tool === name) ? "coding" : null;
+}
+
 export function toolFamilyGroups(
   tools: readonly AccessBinding[],
 ): { label: string; tools: AccessBinding[] }[] {
-  const groups = toolFamilies.map((family) => ({
+  const groups: { label: string; tools: AccessBinding[] }[] = toolFamilies.map((family) => ({
     label: family.label,
-    tools: [] as AccessBinding[],
+    tools: [],
   }));
   const other: AccessBinding[] = [];
   for (const tool of tools) {

@@ -1,6 +1,6 @@
 import { useLocation } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
-import type { MessageNotice } from "../../api/types";
+import type { MessageNotice } from "../../api/types/chat";
 import { useIdentity } from "../../app/identity";
 import { playChime, primeChime } from "./chime";
 import { useDesktopNotification } from "./desktopNotifications";

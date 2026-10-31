@@ -1,15 +1,17 @@
 import { useNavigate } from "@tanstack/react-router";
 import { TriangleAlert } from "lucide-react";
 import { Banner, IconButton } from "@guildsrun/ui";
-import { useAgentHarness } from "../../api/queries";
+import { useAgentHarness } from "../../api/queries/agents";
 import { codingProblems, codingProblemsSentence, codingProblemsText } from "./harness";
 import { problemSection } from "./settings/sections";
+
+type CodingNotReadyButtonProps = { guildId: string; agentId: string };
 
 /**
  * A warning in the agent's header while its coding runs would fail at start; it opens the Settings
  * section where the first problem is fixed.
  */
-export function CodingNotReadyButton({ guildId, agentId }: { guildId: string; agentId: string }) {
+export function CodingNotReadyButton({ guildId, agentId }: CodingNotReadyButtonProps) {
   const navigate = useNavigate();
   const status = useAgentHarness(agentId);
   const problems = status.data ? codingProblems(status.data) : [];
@@ -34,8 +36,10 @@ export function CodingNotReadyButton({ guildId, agentId }: { guildId: string; ag
   );
 }
 
+type CodingReadinessBannerProps = { agentId: string };
+
 /** A banner at the top of a coding agent's Settings while its saved setup would fail a coding run at start. */
-export function CodingReadinessBanner({ agentId }: { agentId: string }) {
+export function CodingReadinessBanner({ agentId }: CodingReadinessBannerProps) {
   const status = useAgentHarness(agentId);
   const problems = status.data ? codingProblems(status.data) : [];
   if (!problems.length) return null;

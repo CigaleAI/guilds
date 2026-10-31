@@ -3,13 +3,13 @@ import { BookOpen, Download, Package, Sparkles, Upload } from "lucide-react";
 import { useRef, useState } from "react";
 import {
   useCaptureRecipe,
-  useGuilds,
   useImportRecipe,
   useImportRegistryRecipe,
   useRecipeRegistry,
   useRecipes,
-} from "../../api/queries";
-import type { RecipeRow } from "../../api/types";
+} from "../../api/queries/recipes";
+import { useGuilds } from "../../api/queries/guilds";
+import type { RecipeRow } from "../../api/types/recipes";
 import { relativeTime } from "../../app/format";
 import {
   Button,
@@ -25,6 +25,8 @@ import {
   Row,
   Tag,
 } from "@guildsrun/ui";
+import { readRecipeFile } from "./recipeFile";
+
 const sourceLabel: Record<RecipeRow["source_kind"], string> = {
   builder: "from the Builder",
   guild: "from a guild",
@@ -51,21 +53,20 @@ export function RecipesPage() {
 
   const onFile = async (picked: File | undefined) => {
     if (!picked) return;
-    try {
-      const recipe: unknown = JSON.parse(await picked.text());
-      importRecipe.mutate(recipe, {
-        onSuccess: (row) => {
-          toast({ kind: "success", title: `Imported ${row.name}` });
-          openRecipe(row.id);
-        },
-        onError: (error) =>
-          toast({ kind: "error", title: "Couldn't import the recipe", description: error.message }),
-      });
-    } catch {
+    const read = await readRecipeFile(picked);
+    if (file.current) file.current.value = "";
+    if (read.kind === "not-json") {
       toast({ kind: "error", title: "That file isn't JSON" });
-    } finally {
-      if (file.current) file.current.value = "";
+      return;
     }
+    importRecipe.mutate(read.recipe, {
+      onSuccess: (row) => {
+        toast({ kind: "success", title: `Imported ${row.name}` });
+        openRecipe(row.id);
+      },
+      onError: (error) =>
+        toast({ kind: "error", title: "Couldn't import the recipe", description: error.message }),
+    });
   };
 
   return (
@@ -156,13 +157,12 @@ export function RecipesPage() {
   );
 }
 
-function CaptureDialog({
-  open,
-  onOpenChange,
-}: {
+type CaptureDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-}) {
+};
+
+function CaptureDialog({ open, onOpenChange }: CaptureDialogProps) {
   const guilds = useGuilds();
   const capture = useCaptureRecipe();
   const openRecipe = useOpenRecipe();
@@ -209,13 +209,12 @@ function CaptureDialog({
   );
 }
 
-function RegistryDialog({
-  open,
-  onOpenChange,
-}: {
+type RegistryDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-}) {
+};
+
+function RegistryDialog({ open, onOpenChange }: RegistryDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="md">
@@ -229,7 +228,9 @@ function RegistryDialog({
   );
 }
 
-function RegistryRecipes({ onDone }: { onDone: () => void }) {
+type RegistryRecipesProps = { onDone: () => void };
+
+function RegistryRecipes({ onDone }: RegistryRecipesProps) {
   const registry = useRecipeRegistry();
   const importRecipe = useImportRegistryRecipe();
   const openRecipe = useOpenRecipe();

@@ -1,17 +1,21 @@
-import type {
-  AccessEdit,
-  ConnectorAuthField,
-  McpServerAccess,
-  StudioMessage,
-} from "../../api/types";
-import { pendingDesignQuestions } from "../recipes/plan/planModel";
+import type { ConnectorAuthField, McpServerAccess } from "../../api/types/access";
+import type { StudioMessage } from "../../api/types/studio";
+import type { AccessEdit } from "../../api/types/recipes";
+import { isRecord } from "../../api/wire";
+import { pendingDesignQuestions } from "../recipes/plan/designSystems";
 
 /**
  * The Builder coach's requests to the operator, read from its tool results: a login to connect or
  * plan for, or questions to answer. Each answer goes back to the coach as the operator's message.
  */
 
-export type ConnectScope = "org" | "guild" | "agent";
+const connectScopes = ["org", "guild", "agent"] as const;
+
+export type ConnectScope = (typeof connectScopes)[number];
+
+export function isConnectScope(value: unknown): value is ConnectScope {
+  return connectScopes.some((scope) => scope === value);
+}
 
 type OauthSetupState = McpServerAccess["oauth_setup_state"];
 
@@ -50,6 +54,22 @@ export type ConnectWidget = {
   alreadyConnected: boolean;
 };
 
+/** The server a connect widget's card starts on: the one it names, else the first it offers. */
+export function initialServerId(widget: ConnectWidget): string {
+  return widget.server?.id ?? widget.servers[0]?.id ?? "";
+}
+
+/** The server a connect card signs in to: the one picked when it offers several, else its own. */
+export function pickedServer(widget: ConnectWidget, picked: string): WidgetServer | null {
+  if (widget.mode !== "any") return widget.server;
+  return widget.servers.find((item) => item.id === picked) ?? widget.server;
+}
+
+/** How a connect card names its server: by its display name, its slug, or as "the service". */
+export function serverName(server: WidgetServer | null): string {
+  return server?.display_name || server?.slug || "the service";
+}
+
 export type QuestionOption = { id: string; label: string; description: string };
 
 export type Question = {
@@ -65,19 +85,21 @@ export type QuestionWidget = { kind: "question"; title: string; questions: Quest
 
 export type BuilderWidget = ConnectWidget | QuestionWidget;
 
-const scopes: readonly ConnectScope[] = ["org", "guild", "agent"];
-
-function record(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
 const text = (value: unknown, fallback = "") => (typeof value === "string" ? value : fallback);
 
-function serverOf(value: unknown): WidgetServer | null {
-  const row = record(value);
-  if (!row || typeof row.id !== "string") return null;
+function isConnectorAuthField(value: unknown): value is ConnectorAuthField {
+  return (
+    isRecord(value) &&
+    typeof value.name === "string" &&
+    typeof value.label === "string" &&
+    (value.secret === undefined || typeof value.secret === "boolean") &&
+    (value.optional === undefined || typeof value.optional === "boolean") &&
+    (value.placeholder === undefined || typeof value.placeholder === "string")
+  );
+}
+
+function serverOf(row: unknown): WidgetServer | null {
+  if (!isRecord(row) || typeof row.id !== "string") return null;
   const auth = row.auth === "token" || row.auth === "none" ? row.auth : "oauth";
   const setup = setupStates.find((state) => state === row.oauth_setup_state);
   return {
@@ -87,7 +109,7 @@ function serverOf(value: unknown): WidgetServer | null {
     auth,
     setup_hint: typeof row.setup_hint === "string" ? row.setup_hint : null,
     ...(Array.isArray(row.auth_fields)
-      ? { auth_fields: row.auth_fields as ConnectorAuthField[] }
+      ? { auth_fields: row.auth_fields.filter(isConnectorAuthField) }
       : {}),
     ...(row.connection_state === "connected" || row.connection_state === "registered_not_connected"
       ? { connection_state: row.connection_state }
@@ -96,16 +118,10 @@ function serverOf(value: unknown): WidgetServer | null {
   };
 }
 
-function scopeOf(value: unknown, fallback: ConnectScope): ConnectScope {
-  return scopes.includes(value as ConnectScope) ? (value as ConnectScope) : fallback;
-}
-
-function questionOf(value: unknown, index: number): Question | null {
-  const row = record(value);
-  if (!row || !text(row.question).trim()) return null;
-  const options = (Array.isArray(row.options) ? row.options : []).flatMap((item, position) => {
-    const option = record(item);
-    if (!option || !text(option.label).trim()) return [];
+function questionOf(row: unknown, index: number): Question | null {
+  if (!isRecord(row) || !text(row.question).trim()) return null;
+  const options = (Array.isArray(row.options) ? row.options : []).flatMap((option, position) => {
+    if (!isRecord(option) || !text(option.label).trim()) return [];
     return [
       {
         id: text(option.id) || `opt-${position + 1}`,
@@ -124,34 +140,40 @@ function questionOf(value: unknown, index: number): Question | null {
   };
 }
 
+/** A question widget: its questions, or the one-question shorthand; null when none is readable. */
+function questionWidgetOf(body: Record<string, unknown>): QuestionWidget | null {
+  const raw = Array.isArray(body.questions) ? body.questions : body.question ? [body] : [];
+  const questions = raw.flatMap((item, index) => questionOf(item, index) ?? []);
+  return questions.length
+    ? { kind: "question", title: text(body.title) || "Question", questions }
+    : null;
+}
+
+/** A connect widget: the server or servers it names and where their login may live. */
+function connectWidgetOf(body: Record<string, unknown>): ConnectWidget {
+  const recommended = isConnectScope(body.recommended_scope) ? body.recommended_scope : "org";
+  const allowed = (Array.isArray(body.allowed_scopes) ? body.allowed_scopes : []).filter(
+    isConnectScope,
+  );
+  return {
+    kind: "connect",
+    mode: body.mode === "any" ? "any" : "org",
+    title: text(body.title) || "Connect a service",
+    reason: text(body.reason),
+    storageHint: typeof body.storage_hint === "string" ? body.storage_hint : null,
+    server: serverOf(body.server),
+    servers: (Array.isArray(body.servers) ? body.servers : []).flatMap(
+      (item) => serverOf(item) ?? [],
+    ),
+    recommendedScope: recommended,
+    allowedScopes: allowed.length ? allowed : [recommended],
+    alreadyConnected: body.already_connected === true,
+  };
+}
+
 function widgetFrom(body: Record<string, unknown>): BuilderWidget | null {
-  if (body.widget === "question") {
-    const raw = Array.isArray(body.questions) ? body.questions : body.question ? [body] : [];
-    const questions = raw.flatMap((item, index) => questionOf(item, index) ?? []);
-    return questions.length
-      ? { kind: "question", title: text(body.title) || "Question", questions }
-      : null;
-  }
-  if (body.widget === "connect") {
-    const recommended = scopeOf(body.recommended_scope, "org");
-    const allowed = (Array.isArray(body.allowed_scopes) ? body.allowed_scopes : []).filter(
-      (scope): scope is ConnectScope => scopes.includes(scope as ConnectScope),
-    );
-    return {
-      kind: "connect",
-      mode: body.mode === "any" ? "any" : "org",
-      title: text(body.title) || "Connect a service",
-      reason: text(body.reason),
-      storageHint: typeof body.storage_hint === "string" ? body.storage_hint : null,
-      server: serverOf(body.server),
-      servers: (Array.isArray(body.servers) ? body.servers : []).flatMap(
-        (item) => serverOf(item) ?? [],
-      ),
-      recommendedScope: recommended,
-      allowedScopes: allowed.length ? allowed : [recommended],
-      alreadyConnected: body.already_connected === true,
-    };
-  }
+  if (body.widget === "question") return questionWidgetOf(body);
+  if (body.widget === "connect") return connectWidgetOf(body);
   return null;
 }
 
@@ -165,7 +187,8 @@ export function widgetOf(
   const parse = (value: unknown): Record<string, unknown> | null => {
     if (typeof value !== "string") return null;
     try {
-      return record(JSON.parse(value));
+      const parsed: unknown = JSON.parse(value);
+      return isRecord(parsed) ? parsed : null;
     } catch {
       return null;
     }

@@ -7,6 +7,7 @@ import {
   queueGroupMessage,
   queuedMessages,
   sendableHead,
+  sendQueuedMessage,
   taggedAgentNames,
   type QueuedMessage,
 } from "./messageQueue";
@@ -75,4 +76,24 @@ test("queue_keeps_order_per_guild_and_drops_by_id", () => {
   dropQueuedMessage("g_queue", second.id);
   assert.deepEqual(queuedMessages("g_queue"), []);
   assert.equal(queuedMessages("g_other").length, 1);
+});
+
+test("sent_queued_message_leaves_the_queue", async () => {
+  const message = queueGroupMessage("g_send", "hello");
+  const posted: string[] = [];
+  const error = await sendQueuedMessage("g_send", message, async (content) => {
+    posted.push(content);
+  });
+  assert.equal(error, null);
+  assert.deepEqual(posted, ["hello"]);
+  assert.deepEqual(queuedMessages("g_send"), []);
+});
+
+test("queued_message_that_fails_to_post_stays_failed_with_its_error", async () => {
+  const message = queueGroupMessage("g_fail", "hello");
+  const error = await sendQueuedMessage("g_fail", message, () =>
+    Promise.reject(new Error("offline")),
+  );
+  assert.equal(error?.message, "offline");
+  assert.equal(queuedMessages("g_fail")[0]?.status, "failed");
 });

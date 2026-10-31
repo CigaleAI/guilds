@@ -1,3 +1,4 @@
+import type { RevealStep } from "../agent/chat/FlowView";
 import type { PinnedFocus } from "./chatModel";
 
 /** The four parts of a session's workspace. */
@@ -94,13 +95,22 @@ const parseSeq = (value: unknown): number | undefined => {
 };
 
 /** A location whose optional fields may be spelled out as missing. */
-type LooseSearch = { [Key in keyof StudioSearch]: StudioSearch[Key] | undefined };
+type LooseSearch = Pick<StudioSearch, "section"> & {
+  [Key in Exclude<keyof StudioSearch, "section">]?: StudioSearch[Key] | undefined;
+};
 
 /** Drops the keys whose value is missing, so the URL carries only what is set. */
 function compact(search: LooseSearch): StudioSearch {
-  return Object.fromEntries(
-    Object.entries(search).filter(([, value]) => value !== undefined),
-  ) as StudioSearch;
+  const { section, agent, tab, kind, item, call, seq } = search;
+  return {
+    section,
+    ...(agent === undefined ? {} : { agent }),
+    ...(tab === undefined ? {} : { tab }),
+    ...(kind === undefined ? {} : { kind }),
+    ...(item === undefined ? {} : { item }),
+    ...(call === undefined ? {} : { call }),
+    ...(seq === undefined ? {} : { seq }),
+  };
 }
 
 /** Each section keeps only the fields it reads. */
@@ -131,6 +141,14 @@ const sectionParsers: Record<StudioSection, (search: Record<string, unknown>) =>
 export function parseStudioSearch(search: Record<string, unknown>): StudioSearch {
   const section = oneOf(studioSections, search.section) ?? "guild";
   return compact(sectionParsers[section](search));
+}
+
+/** The step a location reveals in the run it selects: its call, its row, both, or neither. */
+export function revealedStep(search: StudioSearch): RevealStep {
+  return {
+    ...(search.call ? { call: search.call } : {}),
+    ...(search.seq !== undefined ? { seq: search.seq } : {}),
+  };
 }
 
 /** A file opens in State with the file selected; a record opens its table. */

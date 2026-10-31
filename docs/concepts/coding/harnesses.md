@@ -542,6 +542,6 @@ credential fixes), `apps/orchestrator/src/coding/harness-models.ts` (the
 catalogue), `apps/orchestrator/src/generation/run-review.ts` (the harness
 view and check), `apps/orchestrator/src/http/coding-routes.ts` (routes),
 `runtime/guilds-harness` (drivers), `runtime/agy`, `runtime/Dockerfile`,
-and in the app `apps/web/src/features/agent/settings/configForm.tsx`,
+and in the app `apps/web/src/features/agent/settings/HarnessFields.tsx`,
 `apps/web/src/features/agent/settings/HarnessReadiness.tsx`, and
 `apps/web/src/features/agent/CreateCodingAgent.tsx`.

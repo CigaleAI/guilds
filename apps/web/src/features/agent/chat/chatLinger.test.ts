@@ -29,28 +29,8 @@ test("a new session is held apart from having nothing held", () => {
 
 test("a finished chat closes on focus only after the idle window with no action", () => {
   const finishedAt = 1_000;
-  assert.equal(
-    shouldCloseFinishedChat({ generating: true, lastActionAt: finishedAt, now: finishedAt + chatIdleCloseMs }),
-    false,
-  );
-  assert.equal(
-    shouldCloseFinishedChat({ generating: false, lastActionAt: null, now: finishedAt + chatIdleCloseMs }),
-    false,
-  );
-  assert.equal(
-    shouldCloseFinishedChat({
-      generating: false,
-      lastActionAt: finishedAt,
-      now: finishedAt + chatIdleCloseMs - 1,
-    }),
-    false,
-  );
-  assert.equal(
-    shouldCloseFinishedChat({
-      generating: false,
-      lastActionAt: finishedAt,
-      now: finishedAt + chatIdleCloseMs,
-    }),
-    true,
-  );
+  assert.equal(shouldCloseFinishedChat(true, finishedAt, finishedAt + chatIdleCloseMs), false);
+  assert.equal(shouldCloseFinishedChat(false, null, finishedAt + chatIdleCloseMs), false);
+  assert.equal(shouldCloseFinishedChat(false, finishedAt, finishedAt + chatIdleCloseMs - 1), false);
+  assert.equal(shouldCloseFinishedChat(false, finishedAt, finishedAt + chatIdleCloseMs), true);
 });

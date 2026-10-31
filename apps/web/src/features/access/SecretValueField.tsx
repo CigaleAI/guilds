@@ -8,7 +8,9 @@ export type SecretValueFieldProps = Omit<SecretFieldProps, "value" | "onChange">
   onValueChange: (value: string) => void;
 };
 
-function WhitespaceNote({ notes }: { notes: string[] }): ReactNode {
+type WhitespaceNoteProps = { notes: string[] };
+
+function WhitespaceNote({ notes }: WhitespaceNoteProps): ReactNode {
   return (
     <span className="flex items-start gap-1.5">
       <Icon icon={Info} size={14} className="mt-px shrink-0" />

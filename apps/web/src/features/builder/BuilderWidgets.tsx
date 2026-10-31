@@ -7,6 +7,10 @@ import {
   answeredAll,
   answerMessage,
   connectReplies,
+  initialServerId,
+  isConnectScope,
+  pickedServer,
+  serverName,
   type Answer,
   type ConnectScope,
   type ConnectWidget,
@@ -20,17 +24,26 @@ const scopeLabel: Record<ConnectScope, string> = {
   agent: "Agent · at apply",
 };
 
-function WidgetCard({
-  kicker,
-  title,
-  children,
-  settled,
-}: {
+/** What a connect card says while it waits on the operator, by where the login lives. */
+const awaitingStatus: Record<ConnectScope, string> = {
+  org: "Connect it or skip it; the coach waits for you.",
+  guild: "Guild logins are made when the guild is applied.",
+  agent: "Agent logins are made when the guild is applied.",
+};
+
+const connectKicker: Record<ConnectWidget["mode"], string> = {
+  org: "Organisation login",
+  any: "Connection",
+};
+
+type WidgetCardProps = {
   kicker: string;
   title: string;
   children: ReactNode;
   settled: boolean;
-}) {
+};
+
+function WidgetCard({ kicker, title, children, settled }: WidgetCardProps) {
   return (
     <article
       className={cn(
@@ -55,141 +68,196 @@ type WidgetProps = {
   onReply: (message: string) => void;
 };
 
+type ConnectCardProps = WidgetProps & { widget: ConnectWidget };
+
 /** The coach asks for a login: connect it to the organisation now, or plan it for apply, or skip it. */
-export function ConnectCard({
-  widget,
-  answered,
-  live,
-  onReply,
-}: WidgetProps & { widget: ConnectWidget }) {
+export function ConnectCard({ widget, answered, live, onReply }: ConnectCardProps) {
   const { org } = useIdentity();
-  const [picked, setPicked] = useState<string>(widget.server?.id ?? widget.servers[0]?.id ?? "");
+  const [picked, setPicked] = useState(initialServerId(widget));
   const [scope, setScope] = useState<ConnectScope>(widget.recommendedScope);
   const [done, setDone] = useState<string | null>(null);
-  const server: WidgetServer | null =
-    widget.mode === "any"
-      ? (widget.servers.find((item) => item.id === picked) ?? widget.server)
-      : widget.server;
-  const name = server?.display_name || server?.slug || "the service";
-  const notSetUp = server?.oauth_setup_state === "unsupported";
+  const server = pickedServer(widget, picked);
+  const name = serverName(server);
   const orgConnected =
     scope === "org" && (widget.alreadyConnected || server?.connection_state === "connected");
-  const connect = useServerConnect({ scope: "org", id: org.id }, () => {
-    setDone(`${name} is connected. The coach carries on.`);
-    onReply(connectReplies.connected(name));
-  });
+  const settle = (status: string, reply: string) => {
+    setDone(status);
+    onReply(reply);
+  };
+  const connect = useServerConnect({ scope: "org", id: org.id }, () =>
+    settle(`${name} is connected. The coach carries on.`, connectReplies.connected(name)),
+  );
+  const startConnect = () => {
+    if (!server) return;
+    connect.start({
+      id: server.id,
+      slug: server.slug,
+      name,
+      auth: server.auth === "token" ? "token" : "oauth",
+      setup_hint: server.setup_hint ?? undefined,
+      auth_fields: server.auth_fields,
+    });
+  };
 
-  const settled = answered || done !== null || orgConnected;
-  const status = done
-    ? done
-    : answered
+  /** What the card says once the request needs nothing more; null while it waits on the operator. */
+  const settledStatus =
+    done ??
+    (answered
       ? "Answered; the coach has your reply."
       : orgConnected
         ? `${name} is connected to this organisation.`
-        : scope === "org"
-          ? "Connect it or skip it; the coach waits for you."
-          : `${scope === "guild" ? "Guild" : "Agent"} logins are made when the guild is applied.`;
+        : null);
 
   return (
     <WidgetCard
-      kicker={widget.mode === "org" ? "Organisation login" : "Connection"}
+      kicker={connectKicker[widget.mode]}
       title={widget.title}
-      settled={settled}
+      settled={settledStatus !== null}
     >
       {widget.reason ? <p className="text-sm text-fg-2">{widget.reason}</p> : null}
       {widget.storageHint ? <p className="text-xs text-muted">{widget.storageHint}</p> : null}
-      {!settled ? (
-        <div className="flex flex-wrap gap-3">
-          {widget.mode === "any" && widget.servers.length ? (
-            <Select
-              tone="surface"
-              label="Service"
-              className="min-w-48"
-              value={picked}
-              onValueChange={setPicked}
-              options={widget.servers.map((item) => ({
-                value: item.id,
-                label: `${item.display_name}${item.connection_state === "connected" ? " · connected" : ""}`,
-              }))}
-            />
-          ) : null}
-          <Select
-            tone="surface"
-            label="Where it logs in"
-            className="min-w-48"
-            value={scope}
-            disabled={widget.allowedScopes.length < 2}
-            onValueChange={(value) => setScope(value as ConnectScope)}
-            options={widget.allowedScopes.map((value) => ({ value, label: scopeLabel[value] }))}
+      {settledStatus === null ? (
+        <>
+          <ConnectFields
+            widget={widget}
+            picked={picked}
+            onPick={setPicked}
+            scope={scope}
+            onScope={setScope}
           />
-        </div>
-      ) : null}
-      <p className="text-sm text-fg-2">{status}</p>
-      {!settled && notSetUp ? (
-        <p className="text-xs text-muted">
-          Not set up on this server: a platform admin sets it up under Admin → Platform keys.
-        </p>
-      ) : null}
-      {!settled ? (
-        <div className="flex flex-wrap gap-2">
-          {scope === "org" ? (
-            <Button
-              size="sm"
-              disabled={!live || !server || connect.busy || notSetUp}
-              {...(notSetUp ? { title: "Not set up on this server" } : {})}
-              onClick={() =>
-                server &&
-                connect.start({
-                  id: server.id,
-                  slug: server.slug,
-                  name,
-                  auth: server.auth === "token" ? "token" : "oauth",
-                  setup_hint: server.setup_hint ?? undefined,
-                  auth_fields: server.auth_fields,
-                })
-              }
-            >
-              <Icon icon={Link2} size={14} />
-              Connect {name}
-            </Button>
-          ) : (
-            <Button
-              size="sm"
-              disabled={!live}
-              onClick={() => {
-                setDone(`${name} is planned at ${scope} scope.`);
-                onReply(connectReplies.planned(name, scope));
-              }}
-            >
-              Use at {scope} scope
-            </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={!live}
-            onClick={() => {
-              setDone(`Skipped ${name}.`);
-              onReply(connectReplies.declined(name, scope));
-            }}
-          >
-            Skip
-          </Button>
-        </div>
-      ) : null}
+          <p className="text-sm text-fg-2">{awaitingStatus[scope]}</p>
+          <ConnectActions
+            server={server}
+            name={name}
+            scope={scope}
+            live={live}
+            busy={connect.busy}
+            onConnect={startConnect}
+            onSettle={settle}
+          />
+        </>
+      ) : (
+        <p className="text-sm text-fg-2">{settledStatus}</p>
+      )}
       {connect.dialogs}
     </WidgetCard>
   );
 }
 
-/** The coach's questions: pick options or write an answer, then send them all at once. */
-export function QuestionCard({
-  widget,
-  answered,
+type ConnectFieldsProps = {
+  widget: ConnectWidget;
+  /** The id of the server picked among several. */
+  picked: string;
+  onPick: (serverId: string) => void;
+  scope: ConnectScope;
+  onScope: (scope: ConnectScope) => void;
+};
+
+/** The service to connect, when the coach offers several, and where its login lives. */
+function ConnectFields({ widget, picked, onPick, scope, onScope }: ConnectFieldsProps) {
+  return (
+    <div className="flex flex-wrap gap-3">
+      {widget.mode === "any" && widget.servers.length ? (
+        <Select
+          tone="surface"
+          label="Service"
+          className="min-w-48"
+          value={picked}
+          onValueChange={onPick}
+          options={widget.servers.map((item) => ({
+            value: item.id,
+            label: `${item.display_name}${item.connection_state === "connected" ? " · connected" : ""}`,
+          }))}
+        />
+      ) : null}
+      <Select
+        tone="surface"
+        label="Where it logs in"
+        className="min-w-48"
+        value={scope}
+        disabled={widget.allowedScopes.length < 2}
+        onValueChange={(value) => {
+          if (isConnectScope(value)) onScope(value);
+        }}
+        options={widget.allowedScopes.map((value) => ({ value, label: scopeLabel[value] }))}
+      />
+    </div>
+  );
+}
+
+type ConnectActionsProps = {
+  server: WidgetServer | null;
+  /** How the card names the server. */
+  name: string;
+  scope: ConnectScope;
+  live: boolean;
+  /** A sign-in is under way. */
+  busy: boolean;
+  onConnect: () => void;
+  /** Settles the request: what the card then says, and the reply the coach gets. */
+  onSettle: (status: string, reply: string) => void;
+};
+
+/**
+ * Connecting the server to the organisation now, or planning its login for apply, or skipping it.
+ * A server whose sign-in this server has not set up says so and cannot connect.
+ */
+function ConnectActions({
+  server,
+  name,
+  scope,
   live,
-  onReply,
-  kicker,
-}: WidgetProps & { widget: QuestionWidget; kicker?: string }) {
+  busy,
+  onConnect,
+  onSettle,
+}: ConnectActionsProps) {
+  const notSetUp = server?.oauth_setup_state === "unsupported";
+  return (
+    <>
+      {notSetUp ? (
+        <p className="text-xs text-muted">
+          Not set up on this server: a platform admin sets it up under Admin → Platform keys.
+        </p>
+      ) : null}
+      <div className="flex flex-wrap gap-2">
+        {scope === "org" ? (
+          <Button
+            size="sm"
+            disabled={!live || !server || busy || notSetUp}
+            {...(notSetUp ? { title: "Not set up on this server" } : {})}
+            onClick={onConnect}
+          >
+            <Icon icon={Link2} size={14} />
+            Connect {name}
+          </Button>
+        ) : (
+          <Button
+            size="sm"
+            disabled={!live}
+            onClick={() =>
+              onSettle(`${name} is planned at ${scope} scope.`, connectReplies.planned(name, scope))
+            }
+          >
+            Use at {scope} scope
+          </Button>
+        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={!live}
+          onClick={() => onSettle(`Skipped ${name}.`, connectReplies.declined(name, scope))}
+        >
+          Skip
+        </Button>
+      </div>
+    </>
+  );
+}
+
+type QuestionCardProps = WidgetProps & { widget: QuestionWidget; kicker?: string };
+
+/** The coach's questions: pick options or write an answer, then send them all at once. */
+export function QuestionCard({ widget, answered, live, onReply, kicker }: QuestionCardProps) {
   const [answers, setAnswers] = useState<Record<string, Answer>>({});
   const [sent, setSent] = useState(false);
   const settled = answered || sent;

@@ -1,10 +1,10 @@
 import { ArrowLeft, Code, MessageCircleQuestion, Pencil, Table } from "lucide-react";
 import { useState } from "react";
-import { useStudioReferences, useStudioStateItem } from "../../../api/queries";
-import type { StateHistoryEntry, StateItemRow, StateTally } from "../../../api/types";
+import { useStudioReferences, useStudioStateItem } from "../../../api/queries/studio";
+import type { StateHistoryEntry, StateItemRow, StateTally } from "../../../api/types/studio";
 import { relativeTime } from "../../../app/format";
 import { Banner, Button, Icon, Segmented, SkeletonRows, StatBand, Tag } from "@guildsrun/ui";
-import { DetailHeader, Empty } from "../MasterDetail";
+import { DetailHeader, Empty } from "../../../app/MasterDetail";
 import { useStudio } from "../StudioContext";
 import { FileDetail } from "./ReferenceDetail";
 import { ReferenceSection as Section } from "./referenceParts";
@@ -13,27 +13,21 @@ import { itemSize, linkLabel, readHow, stateFlagLabels } from "./stateModel";
 
 type Operation = "all" | "create" | "update" | "delete";
 
+type StateItemDetailProps = {
+  row: StateItemRow;
+  hours: number;
+  pending: boolean;
+};
+
 /**
  * One item of the guild's state: its numbers, who changes it and who reads it, what references
  * it, and its history; it opens in the notes browser, the records panel, or its agent's Scripts.
  */
-export function StateItemDetail({
-  row,
-  hours,
-  pending,
-}: {
-  row: StateItemRow;
-  hours: number;
-  pending: boolean;
-}) {
+export function StateItemDetail({ row, hours, pending }: StateItemDetailProps) {
   const { session, search, go } = useStudio();
   const [op, setOp] = useState<Operation>("all");
   const [editing, setEditing] = useState(false);
-  const detail = useStudioStateItem(session.id, {
-    path: row.display_path,
-    hours,
-    op: op === "all" ? null : op,
-  });
+  const detail = useStudioStateItem(session.id, row.display_path, hours, op === "all" ? null : op);
   const first = detail.data?.pages[0];
   const history = detail.data?.pages.flatMap((page) => page.history) ?? [];
   return (
@@ -72,21 +66,7 @@ export function StateItemDetail({
         actions={<ItemActions row={row} editing={editing} onEdit={() => setEditing(!editing)} />}
       />
       {editing ? <ItemEditor row={row} /> : null}
-      <StatBand
-        className="rounded-lg"
-        stats={[
-          {
-            value: row.kind === "table" ? itemSize(row) : `v${row.version ?? 1}`,
-            label: row.kind === "table" ? "records" : "version",
-          },
-          { value: row.changes, label: "changes" },
-          { value: row.reads, label: "reads" },
-          {
-            value: relativeTime(row.created_at),
-            label: row.created_by ? `created by ${row.created_by}` : "created",
-          },
-        ]}
-      />
+      <ItemStats row={row} />
       {detail.isError ? (
         <Banner tone="error" title="Couldn't load this item" meta={detail.error.message} />
       ) : !first ? (
@@ -139,21 +119,42 @@ export function StateItemDetail({
   );
 }
 
+type ItemStatsProps = { row: StateItemRow };
+
+/** An item's records or version, its changes and reads, and when and by whom it was created. */
+function ItemStats({ row }: ItemStatsProps) {
+  return (
+    <StatBand
+      className="rounded-lg"
+      stats={[
+        {
+          value: row.kind === "table" ? itemSize(row) : `v${row.version ?? 1}`,
+          label: row.kind === "table" ? "records" : "version",
+        },
+        { value: row.changes, label: "changes" },
+        { value: row.reads, label: "reads" },
+        {
+          value: relativeTime(row.created_at),
+          label: row.created_by ? `created by ${row.created_by}` : "created",
+        },
+      ]}
+    />
+  );
+}
+
 const editLabels: Record<string, { label: string; icon: typeof Pencil }> = {
   note: { label: "Open text", icon: Pencil },
   memory: { label: "Open text", icon: Pencil },
   table: { label: "Open records", icon: Table },
 };
 
-function ItemActions({
-  row,
-  editing,
-  onEdit,
-}: {
+type ItemActionsProps = {
   row: StateItemRow;
   editing: boolean;
   onEdit: () => void;
-}) {
+};
+
+function ItemActions({ row, editing, onEdit }: ItemActionsProps) {
   const { go, ask } = useStudio();
   const edit = editLabels[row.kind];
   return (
@@ -197,8 +198,10 @@ function ItemActions({
   );
 }
 
+type ItemEditorProps = { row: StateItemRow };
+
 /** Today's notes browser or records panel, opened on the item, so editing stays in State. */
-function ItemEditor({ row }: { row: StateItemRow }) {
+function ItemEditor({ row }: ItemEditorProps) {
   const { agents } = useStudio();
   if (row.kind === "table" && row.collection_id) {
     return <TableRecords collectionId={row.collection_id} />;
@@ -208,15 +211,13 @@ function ItemEditor({ row }: { row: StateItemRow }) {
   return <NoteEditor agent={agent} path={row.display_path} />;
 }
 
-function TallySection({
-  title,
-  tallies,
-  describe,
-}: {
+type TallySectionProps = {
   title: string;
   tallies: StateTally[];
   describe: (how: string) => string;
-}) {
+};
+
+function TallySection({ title, tallies, describe }: TallySectionProps) {
   return (
     <Section title={title}>
       {tallies.length ? (
@@ -239,8 +240,10 @@ function TallySection({
   );
 }
 
+type ItemReferencesProps = { path: string };
+
 /** What the item embeds or names and what embeds or names it, from the References view. */
-function ItemReferences({ path }: { path: string }) {
+function ItemReferences({ path }: ItemReferencesProps) {
   const { session, search, go } = useStudio();
   const references = useStudioReferences(session.id);
   const node = references.data?.nodes.find((entry) => entry.id === path);
@@ -261,7 +264,9 @@ function ItemReferences({ path }: { path: string }) {
   );
 }
 
-function HistoryRow({ entry }: { entry: StateHistoryEntry }) {
+type HistoryRowProps = { entry: StateHistoryEntry };
+
+function HistoryRow({ entry }: HistoryRowProps) {
   const { session, openStep } = useStudio();
   const link = entry.link;
   const label = linkLabel(link, session.id);

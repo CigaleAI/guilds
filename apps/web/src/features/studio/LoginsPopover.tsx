@@ -1,6 +1,6 @@
 import { KeyRound } from "lucide-react";
-import { useGrantStudioConnection, useStudioConnections } from "../../api/queries";
-import type { StudioSession } from "../../api/types";
+import { useGrantStudioConnection, useStudioConnections } from "../../api/queries/studio";
+import type { StudioSession } from "../../api/types/studio";
 import {
   Button,
   SkeletonRows,
@@ -17,11 +17,13 @@ const scopeWord: Record<string, string> = {
   agent: "agent",
 };
 
+type LoginsPopoverProps = { session: StudioSession };
+
 /**
  * The logins the guild reaches, and which of them the coach may read through: granting one lets
  * the coach call its read-only tools while it investigates.
  */
-export function LoginsPopover({ session }: { session: StudioSession }) {
+export function LoginsPopover({ session }: LoginsPopoverProps) {
   const connections = useStudioConnections(session.id);
   const grant = useGrantStudioConnection(session.id);
   const live = session.status === "active";

@@ -1,8 +1,8 @@
 import type { UseQueryResult } from "@tanstack/react-query";
 import { GitBranch } from "lucide-react";
 import { useState } from "react";
-import { useRunDiff } from "../../../api/queries";
-import type { Run, RunDiff, RunRepositoryChange } from "../../../api/types";
+import { useRunDiff } from "../../../api/queries/runs";
+import type { Run, RunDiff, RunRepositoryChange } from "../../../api/types/runs";
 import { Button, CopyButton, Banner, cn, Icon } from "@guildsrun/ui";
 import { diffLineTone, diffstat } from "./changes";
 
@@ -14,14 +14,13 @@ const toneClass = {
   context: "text-fg-2",
 } as const;
 
-/** A diff fetched from the agent's machine: its lines toned, with a copy button and the cut noted. */
-export function DiffView({
-  diff,
-  className,
-}: {
+type DiffViewProps = {
   diff: UseQueryResult<RunDiff>;
   className?: string;
-}) {
+};
+
+/** A diff fetched from the agent's machine: its lines toned, with a copy button and the cut noted. */
+export function DiffView({ diff, className }: DiffViewProps) {
   if (diff.isError) {
     return <Banner tone="error" title="Couldn't load the diff" meta={diff.error.message} />;
   }
@@ -47,7 +46,9 @@ export function DiffView({
   );
 }
 
-function RepositoryChange({ runId, change }: { runId: string; change: RunRepositoryChange }) {
+type RepositoryChangeProps = { runId: string; change: RunRepositoryChange };
+
+function RepositoryChange({ runId, change }: RepositoryChangeProps) {
   const [open, setOpen] = useState(false);
   const diff = useRunDiff(runId, open ? change.name : null);
   return (
@@ -76,11 +77,13 @@ function RepositoryChange({ runId, change }: { runId: string; change: RunReposit
   );
 }
 
+type ChangesPanelProps = { run: Run };
+
 /**
  * What a coding run changed in each repository, between the working tree at its first
  * generation and at its last: a diffstat per repository, and the diff on demand.
  */
-export function ChangesPanel({ run }: { run: Run }) {
+export function ChangesPanel({ run }: ChangesPanelProps) {
   const repos = run.repos ?? [];
   if (!repos.length) return null;
   return (

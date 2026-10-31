@@ -4,8 +4,8 @@ import {
   useInstallRegistryConnector,
   useRemoveRegistryConnector,
   useUpdateRegistryConnector,
-} from "../../api/queries";
-import type { RegistryConnector } from "../../api/types";
+} from "../../api/queries/admin";
+import type { RegistryConnector } from "../../api/types/admin";
 import {
   Banner,
   Button,
@@ -18,7 +18,7 @@ import {
   Tag,
   toast,
 } from "@guildsrun/ui";
-import { registryAction } from "./registry";
+import { acceptanceOf, registryAction } from "./registry";
 
 type Pending = { entry: RegistryConnector; action: "install" | "update" | "remove" };
 
@@ -27,15 +27,13 @@ const needsAcceptance = (entry: RegistryConnector) =>
   !entry.verified || entry.experimental === true;
 
 /** What the admin accepts with the entry: "unverified", "experimental", or both. */
-function acceptanceWords(entry: RegistryConnector | undefined): string {
-  if (!entry) return "";
+function acceptanceWords(entry: RegistryConnector): string {
   return [!entry.verified ? "unverified" : null, entry.experimental ? "experimental" : null]
     .filter(Boolean)
     .join(" and ");
 }
 
-function acceptanceWarning(entry: RegistryConnector | undefined): string {
-  if (!entry) return "";
+function acceptanceWarning(entry: RegistryConnector): string {
   return [
     !entry.verified
       ? "The registry hasn't verified its publisher. Its tools reach whatever its logins grant."
@@ -46,12 +44,59 @@ function acceptanceWarning(entry: RegistryConnector | undefined): string {
     .join(" ");
 }
 
-function installLabel(entry: RegistryConnector | undefined): string {
-  return entry && needsAcceptance(entry) ? `Install ${acceptanceWords(entry)}` : "Install";
+function installLabel(entry: RegistryConnector): string {
+  return needsAcceptance(entry) ? `Install ${acceptanceWords(entry)}` : "Install";
 }
 
+/** What the confirmation says before each action on a registry entry. */
+const confirmationCopy: Record<
+  Pending["action"],
+  (entry: RegistryConnector) => { title: string; description: string; confirmLabel: string }
+> = {
+  install: (entry) => ({
+    title: `Install ${entry.display_name} ${acceptanceWords(entry)}?`,
+    description: acceptanceWarning(entry),
+    confirmLabel: installLabel(entry),
+  }),
+  update: (entry) => ({
+    title: `Update ${entry.display_name} ${acceptanceWords(entry)}?`,
+    description: acceptanceWarning(entry),
+    confirmLabel: `Update to v${entry.version}`,
+  }),
+  remove: (entry) => ({
+    title: `Remove ${entry.display_name}?`,
+    description:
+      "The connector leaves the box with every organisation's logins to it and their bindings.",
+    confirmLabel: "Remove connector",
+  }),
+};
+
+/** The toasts that say how an action on a registry entry went. */
+function actionReport({ entry, action }: Pending) {
+  return {
+    onSuccess: () =>
+      toast({
+        kind: "success",
+        title:
+          action === "install"
+            ? `${entry.display_name} installed`
+            : action === "update"
+              ? `${entry.display_name} updated to v${entry.version}`
+              : `${entry.display_name} removed`,
+      }),
+    onError: (error: Error) =>
+      toast({
+        kind: "error",
+        title: `Couldn't ${action} ${entry.display_name}`,
+        description: error.message,
+      }),
+  };
+}
+
+type RegistryDialogProps = { open: boolean; onClose: () => void };
+
 /** What the registry offers, beside what the box has: install, update, or remove a registry connector. */
-export function RegistryDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function RegistryDialog({ open, onClose }: RegistryDialogProps) {
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogContent size="lg">{open ? <RegistryList /> : null}</DialogContent>
@@ -67,43 +112,23 @@ function RegistryList() {
   const [confirming, setConfirming] = useState<Pending | null>(null);
   const busy = install.isPending || update.isPending || remove.isPending;
 
-  const run = ({ entry, action }: Pending) => {
-    const accepted = { unverified: !entry.verified, experimental: entry.experimental === true };
-    const done =
-      action === "install"
-        ? install.mutateAsync({ slug: entry.slug, ...accepted })
-        : action === "update"
-          ? update.mutateAsync({ slug: entry.slug, ...accepted })
-          : remove.mutateAsync(entry.slug);
-    return done.then(
-      () => {
-        toast({
-          kind: "success",
-          title:
-            action === "install"
-              ? `${entry.display_name} installed`
-              : action === "update"
-                ? `${entry.display_name} updated to v${entry.version}`
-                : `${entry.display_name} removed`,
-        });
-      },
-      (error: Error) => {
-        toast({
-          kind: "error",
-          title: `Couldn't ${action} ${entry.display_name}`,
-          description: error.message,
-        });
-        throw error;
-      },
-    );
+  /** Runs a confirmed action; rejects when it fails, which keeps the confirmation open. */
+  const run = (pending: Pending) => {
+    const report = actionReport(pending);
+    if (pending.action === "remove") return remove.mutateAsync(pending.entry.slug, report);
+    const mutation = pending.action === "install" ? install : update;
+    return mutation.mutateAsync(acceptanceOf(pending.entry), report);
   };
 
   const start = (pending: Pending) => {
-    if (pending.action === "remove" || needsAcceptance(pending.entry)) setConfirming(pending);
-    else void run(pending).catch(() => undefined);
+    if (pending.action === "remove" || needsAcceptance(pending.entry)) {
+      setConfirming(pending);
+      return;
+    }
+    const mutation = pending.action === "install" ? install : update;
+    mutation.mutate(acceptanceOf(pending.entry), actionReport(pending));
   };
 
-  const entry = confirming?.entry;
   return (
     <>
       <DialogHeader
@@ -204,29 +229,37 @@ function RegistryList() {
           </div>
         )}
       </DialogBody>
-      <ConfirmDialog
-        open={confirming !== null}
-        onOpenChange={(next) => !next && setConfirming(null)}
-        {...(confirming?.action === "remove" ? { kind: "destructive" as const } : {})}
-        title={
-          confirming?.action === "remove"
-            ? `Remove ${entry?.display_name ?? ""}?`
-            : `${confirming?.action === "update" ? "Update" : "Install"} ${entry?.display_name ?? ""} ${acceptanceWords(entry)}?`
-        }
-        description={
-          confirming?.action === "remove"
-            ? "The connector leaves the box with every organisation's logins to it and their bindings."
-            : acceptanceWarning(entry)
-        }
-        confirmLabel={
-          confirming?.action === "remove"
-            ? "Remove connector"
-            : confirming?.action === "update"
-              ? `Update to v${entry?.version ?? ""}`
-              : installLabel(entry)
-        }
-        onConfirm={() => (confirming ? run(confirming) : undefined)}
+      <RegistryConfirmDialog
+        pending={confirming}
+        onClose={() => setConfirming(null)}
+        onConfirm={run}
       />
     </>
+  );
+}
+
+type RegistryConfirmDialogProps = {
+  /** The action to confirm on an entry; null keeps the dialog closed. */
+  pending: Pending | null;
+  onClose: () => void;
+  /** Runs the confirmed action; rejects when it fails, which keeps the dialog open. */
+  onConfirm: (pending: Pending) => Promise<unknown>;
+};
+
+/** Asks before removing a registry connector, or before installing or updating one the registry does not vouch for. */
+function RegistryConfirmDialog({ pending, onClose, onConfirm }: RegistryConfirmDialogProps) {
+  const copy = pending
+    ? confirmationCopy[pending.action](pending.entry)
+    : { title: "", description: "", confirmLabel: "" };
+  return (
+    <ConfirmDialog
+      open={pending !== null}
+      onOpenChange={(next) => !next && onClose()}
+      {...(pending?.action === "remove" ? { kind: "destructive" as const } : {})}
+      title={copy.title}
+      description={copy.description}
+      confirmLabel={copy.confirmLabel}
+      onConfirm={() => (pending ? onConfirm(pending) : undefined)}
+    />
   );
 }

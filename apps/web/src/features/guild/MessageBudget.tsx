@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { useSetMessageLimit } from "../../api/queries";
-import type { GroupChatState } from "../../api/types";
+import { useSetMessageLimit } from "../../api/queries/chat";
+import type { GroupChatState } from "../../api/types/chat";
 import {
   Button,
   TextField,
@@ -12,8 +12,10 @@ import {
 } from "@guildsrun/ui";
 const presets = [25, 50, 100, 200];
 
+type RingProps = { used: number };
+
 /** How full the budget is: a ring drawn around its centre. */
-function Ring({ used }: { used: number }) {
+function Ring({ used }: RingProps) {
   const radius = 7;
   const length = 2 * Math.PI * radius;
   return (
@@ -40,11 +42,13 @@ function Ring({ used }: { used: number }) {
   );
 }
 
+type MessageBudgetProps = { guildId: string; state: GroupChatState };
+
 /**
  * The guild's message budget in its header: how many messages agents posted in a row since an
  * operator last did, against the limit at which they pause, with the limit to change.
  */
-export function MessageBudget({ guildId, state }: { guildId: string; state: GroupChatState }) {
+export function MessageBudget({ guildId, state }: MessageBudgetProps) {
   const save = useSetMessageLimit(guildId);
   const [value, setValue] = useState(String(state.agent_message_limit));
   const limit = state.agent_message_limit;

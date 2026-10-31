@@ -7,9 +7,16 @@ import {
   isMutation,
   isScriptRun,
   kindBreakdown,
+  kindLabel,
   levelFromDisplayPath,
   offeredToolNames,
 } from "./toolKinds";
+
+test("a known kind shows as itself and any other value as unknown", () => {
+  assert.equal(kindLabel("memory"), "memory");
+  assert.equal(kindLabel("teleport"), "unknown");
+  assert.equal(kindLabel(null), "unknown");
+});
 
 function call(name: string, args: Record<string, unknown> = {}): ToolCallRequest {
   return { id: "c1", function: { name, arguments: JSON.stringify(args) } };

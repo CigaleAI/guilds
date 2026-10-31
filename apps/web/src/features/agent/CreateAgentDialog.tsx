@@ -27,17 +27,14 @@ type CreateAgentDialogProps = {
   onClose: () => void;
 };
 
-function KindCard({
-  icon,
-  title,
-  hint,
-  onPick,
-}: {
+type KindCardProps = {
   icon: typeof Bot;
   title: string;
   hint: string;
   onPick: () => void;
-}) {
+};
+
+function KindCard({ icon, title, hint, onPick }: KindCardProps) {
   return (
     <button
       type="button"
@@ -53,8 +50,10 @@ function KindCard({
   );
 }
 
+type KindChooserProps = { guild: CreateAgentGuild; onPick: (kind: Kind) => void };
+
 /** The first screen: which kind of agent to create, since the two take different settings. */
-function KindChooser({ guild, onPick }: { guild: CreateAgentGuild; onPick: (kind: Kind) => void }) {
+function KindChooser({ guild, onPick }: KindChooserProps) {
   return (
     <>
       <DialogHeader title="Create an agent" description={`A new member of ${guild.name}.`} />

@@ -1,7 +1,8 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { useCreateAgent, useOrgMachines, useOrgModels } from "../../api/queries";
-import { hasConnectedProvider } from "../../api/types";
+import { useCreateAgent, useOrgMachines } from "../../api/queries/agents";
+import { useOrgModels } from "../../api/queries/models";
+import { hasConnectedProvider } from "../../api/types/models";
 import { useIdentity } from "../../app/identity";
 import { Banner, DialogBody, DialogHeader, Stepper } from "@guildsrun/ui";
 import { chosenMachine } from "../machines/machines";
@@ -22,18 +23,17 @@ type CreateAgentGuild = { id: string; name: string };
 
 const STEPS = ["Identity", "Model", "Machine"] as const;
 
+type StandardAgentFormProps = {
+  guild: CreateAgentGuild;
+  onClose: () => void;
+};
+
 /**
  * A new agent without coding, step by step: its identity; the model that runs it, with its
  * capabilities and run limits; and the machine it goes on, with its disk cap. Its focus seeds its
  * Task.
  */
-export function StandardAgentForm({
-  guild,
-  onClose,
-}: {
-  guild: CreateAgentGuild;
-  onClose: () => void;
-}) {
+export function StandardAgentForm({ guild, onClose }: StandardAgentFormProps) {
   const navigate = useNavigate();
   const { org } = useIdentity();
   const models = useOrgModels(org.id);

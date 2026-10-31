@@ -1,7 +1,9 @@
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { BookOpen, Database, Inbox, Sparkles } from "lucide-react";
 import { useState } from "react";
-import { useAgentsByGuild, useBrokenEmbeds, useGuilds } from "../../api/queries";
+import { useAgentsByGuild } from "../../api/queries/agents";
+import { useBrokenEmbeds } from "../../api/queries/notes";
+import { useGuilds } from "../../api/queries/guilds";
 import { agentLook } from "../../app/agents";
 import { readStored, writeStored } from "../../app/storage";
 import {
@@ -15,22 +17,20 @@ import {
 import { CreateAgentDialog } from "../agent/CreateAgentDialog";
 import { CreateGuildDialog } from "../guild/CreateGuildDialog";
 import { AccountMenu } from "./AccountMenu";
+import { parseFoldedGuilds } from "./foldedGuilds";
 import { useInboxCount, useUnreadByGuild } from "./inbox";
 
 /** Guild ids the operator folded in the sidebar. */
 const collapsedKey = "guilds-guilds-collapsed";
 
 function readCollapsed(): Record<string, boolean> {
-  try {
-    const parsed: unknown = JSON.parse(readStored(collapsedKey) ?? "{}");
-    return parsed && typeof parsed === "object" ? (parsed as Record<string, boolean>) : {};
-  } catch {
-    return {};
-  }
+  return parseFoldedGuilds(readStored(collapsedKey) ?? "{}") ?? {};
 }
 
+type GuildSidebarProps = { onRetract: () => void };
+
 /** The full sidebar: guilds with their agents, then the workspace tools and the account. */
-export function GuildSidebar({ onRetract }: { onRetract: () => void }) {
+export function GuildSidebar({ onRetract }: GuildSidebarProps) {
   const navigate = useNavigate();
   const { guildId, agentId } = useParams({ strict: false });
   const guilds = useGuilds();

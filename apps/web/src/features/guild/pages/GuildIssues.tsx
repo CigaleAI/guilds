@@ -1,8 +1,12 @@
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { CheckCheck, Flag } from "lucide-react";
 import { useState } from "react";
-import { useGuildIssues, useResolveOpenIssues, useSetIssueStatus } from "../../../api/queries";
-import type { Issue } from "../../../api/types";
+import {
+  useGuildIssues,
+  useResolveOpenIssues,
+  useSetIssueStatus,
+} from "../../../api/queries/issues";
+import type { Issue } from "../../../api/types/issues";
 import { agentLook } from "../../../app/agents";
 import { relativeTime } from "../../../app/format";
 import {
@@ -15,11 +19,18 @@ import {
   SkeletonRows,
   toast,
   Icon,
+  type IssueAgent,
 } from "@guildsrun/ui";
 import { useInvestigateIssue } from "../../studio/investigate";
 import { GuildPage } from "./GuildPage";
 
 type Filter = "open" | "resolved" | "all";
+
+/** The agent that reported an issue, as its card shows it: by the name it reported under when gone. */
+function issueAgent(issue: Issue): IssueAgent {
+  if (!issue.agent) return { name: issue.agent_name, tone: "dusk" };
+  return { name: issue.agent.name, ...agentLook(issue.agent) };
+}
 
 /**
  * Tool failures the guild's agents reported with report_issue. Resolve one once its cause is
@@ -113,7 +124,6 @@ export function GuildIssues() {
       ) : (
         <div className="flex flex-col gap-3">
           {listed.map((issue) => {
-            const look = issue.agent ? agentLook(issue.agent) : { tone: "dusk" as const };
             const agentId = issue.agent_id;
             const runId = issue.run_id;
             return (
@@ -123,7 +133,7 @@ export function GuildIssues() {
                 kind={issue.kind}
                 severity={issue.severity}
                 status={issue.status}
-                agent={{ name: issue.agent?.name ?? issue.agent_name, ...look }}
+                agent={issueAgent(issue)}
                 age={relativeTime(issue.created_at)}
                 {...(issue.tool_name ? { toolName: issue.tool_name } : {})}
                 {...(issue.resolved_by ? { resolvedBy: issue.resolved_by } : {})}

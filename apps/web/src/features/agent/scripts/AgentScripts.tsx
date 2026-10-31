@@ -1,15 +1,17 @@
 import { Link, useParams } from "@tanstack/react-router";
 import { FileCode, Pencil, Plus, Trash2 } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
+import { useAgent } from "../../../api/queries/agents";
 import {
-  useAgent,
   useAgentScripts,
   useCreateScript,
   useDeleteAllScripts,
   useDeleteScript,
-  useLatestChange,
-} from "../../../api/queries";
-import type { FileChange, Script } from "../../../api/types";
+} from "../../../api/queries/scripts";
+import { useLatestChange } from "../../../api/queries/notes";
+import type { AgentConfig } from "../../../api/types/agents";
+import type { Script } from "../../../api/types/scripts";
+import type { FileChange } from "../../../api/types/notes";
 import { relativeTime } from "../../../app/format";
 import {
   Button,
@@ -32,22 +34,21 @@ import {
   Icon,
 } from "@guildsrun/ui";
 import { ChangeHistory, useOpenStepInAgent } from "../../notes/LatestChange";
-import { changeActor } from "../prompt/taskContext";
+import { changeActor } from "../../notes/changeActor";
 import { capabilityOn, defaultAgentConfig } from "../settings/configForm";
+import { readParameters } from "./scriptParameters";
 
 /** The server's rules: a script name like a tool name, and not the reserved `manifest`. */
 const scriptName = /^[a-z][a-z0-9_-]{0,62}$/;
 
-/** Who wrote the script's current version: this agent through a run, or a person. */
-function Provenance({
-  change,
-  agentName,
-  onOpenStep,
-}: {
+type ProvenanceProps = {
   change: FileChange;
   agentName: string;
   onOpenStep: () => void;
-}) {
+};
+
+/** Who wrote the script's current version: this agent through a run, or a person. */
+function Provenance({ change, agentName, onOpenStep }: ProvenanceProps) {
   const actor = changeActor(change);
   const when = relativeTime(change.created_at);
   if (actor.kind === "run") {
@@ -72,21 +73,16 @@ function Provenance({
 
 type Disclosure = "history" | "parameters";
 
-function ScriptCard({
-  script,
-  agentId,
-  agentName,
-  guildId,
-  onEdit,
-  onDelete,
-}: {
+type ScriptCardProps = {
   script: Script;
   agentId: string;
   agentName: string;
   guildId: string;
   onEdit: () => void;
   onDelete: () => void;
-}) {
+};
+
+function ScriptCard({ script, agentId, agentName, guildId, onEdit, onDelete }: ScriptCardProps) {
   const latest = useLatestChange(script.display_path);
   const openStep = useOpenStepInAgent(guildId);
   const [showing, setShowing] = useState<Disclosure | null>(null);
@@ -165,8 +161,10 @@ function ScriptCard({
   );
 }
 
+type RemoveAllScriptsButtonProps = { agentId: string; count: number };
+
 /** Removes every script on this agent after the operator confirms. */
-export function RemoveAllScriptsButton({ agentId, count }: { agentId: string; count: number }) {
+export function RemoveAllScriptsButton({ agentId, count }: RemoveAllScriptsButtonProps) {
   const removeAll = useDeleteAllScripts(agentId);
   const [confirming, setConfirming] = useState(false);
   return (
@@ -209,6 +207,136 @@ export function RemoveAllScriptsButton({ agentId, count }: { agentId: string; co
   );
 }
 
+/** How many scripts an agent may keep: its own cap, or the default before the agent loads. */
+export function scriptCap(config: AgentConfig | undefined): number {
+  return config?.max_scripts ?? defaultAgentConfig.max_scripts;
+}
+
+type ScriptingOffProps = { guildId: string; agentId: string };
+
+/** An agent without scripting, pointed at the Settings section that turns it on. */
+function ScriptingOff({ guildId, agentId }: ScriptingOffProps) {
+  return (
+    <div className="grid flex-1 place-items-center p-6">
+      <EmptyState
+        icon={FileCode}
+        title="This agent has no scripting"
+        description="Turn it on in Settings to give the agent script tools and this tab."
+        action={
+          <Button asChild size="sm">
+            <Link
+              to="/guilds/$guildId/agents/$agentId/settings"
+              params={{ guildId, agentId }}
+              search={{ section: "model" }}
+            >
+              Open Settings
+            </Link>
+          </Button>
+        }
+      />
+    </div>
+  );
+}
+
+type DeleteScriptDialogProps = {
+  agentId: string;
+  /** The script to delete; null keeps the dialog closed. */
+  script: Script | null;
+  onClose: () => void;
+};
+
+/** Deleting a script, with its tool when it had parameters; a refusal keeps the dialog open. */
+function DeleteScriptDialog({ agentId, script, onClose }: DeleteScriptDialogProps) {
+  const remove = useDeleteScript(agentId);
+  return (
+    <ConfirmDialog
+      kind="destructive"
+      open={script !== null}
+      onOpenChange={(open) => !open && onClose()}
+      title={`Delete ${script?.name ?? ""}?`}
+      description="The script leaves the agent's home, with its tool if it had parameters."
+      confirmLabel="Delete script"
+      onConfirm={() =>
+        script
+          ? remove.mutateAsync(script.name).then(
+              () => {
+                toast({ kind: "success", title: `${script.name} deleted` });
+                onClose();
+              },
+              (error: Error) => {
+                toast({
+                  kind: "error",
+                  title: "Couldn't delete the script",
+                  description: error.message,
+                });
+                throw error;
+              },
+            )
+          : undefined
+      }
+    />
+  );
+}
+
+type ScriptListProps = {
+  scripts: ReturnType<typeof useAgentScripts>;
+  agentId: string;
+  agentName: string;
+  guildId: string;
+  /** Adds a script; the empty list offers it. */
+  addButton: ReactNode;
+  onEdit: (script: Script) => void;
+  onDelete: (script: Script) => void;
+};
+
+/** The agent's scripts as cards, once they load; why they did not, or that there are none yet. */
+function ScriptList({
+  scripts,
+  agentId,
+  agentName,
+  guildId,
+  addButton,
+  onEdit,
+  onDelete,
+}: ScriptListProps) {
+  if (scripts.isPending) return <SkeletonRows rows={3} label="Loading scripts" />;
+  if (scripts.isError) {
+    return (
+      <Banner
+        tone="error"
+        title="Couldn't load the scripts"
+        meta={scripts.error.message}
+        action={
+          <Button variant="outline" size="sm" onClick={() => void scripts.refetch()}>
+            Retry
+          </Button>
+        }
+      />
+    );
+  }
+  if (scripts.data.length === 0) {
+    return (
+      <EmptyState
+        icon={FileCode}
+        title="No scripts yet"
+        description="Add a Python file, or ask the agent in chat to write one."
+        action={addButton}
+      />
+    );
+  }
+  return scripts.data.map((script) => (
+    <ScriptCard
+      key={script.name}
+      script={script}
+      agentId={agentId}
+      agentName={agentName}
+      guildId={guildId}
+      onEdit={() => onEdit(script)}
+      onDelete={() => onDelete(script)}
+    />
+  ));
+}
+
 /**
  * Python the agent keeps at scripts/ in its home, /home/<agent id>, and runs with its script tools.
  * A script with parameters is also offered to the agent as a tool of its own.
@@ -217,12 +345,11 @@ export function AgentScripts() {
   const { guildId, agentId } = useParams({ from: "/guilds/$guildId/agents/$agentId" });
   const agent = useAgent(agentId);
   const scripts = useAgentScripts(agentId);
-  const remove = useDeleteScript(agentId);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Script | null>(null);
   const [deleting, setDeleting] = useState<Script | null>(null);
   const count = scripts.data?.length ?? 0;
-  const maxScripts = agent.data?.config.max_scripts ?? defaultAgentConfig.max_scripts;
+  const maxScripts = scriptCap(agent.data?.config);
   const atCap = count >= maxScripts;
   const agentName = agent.data?.name ?? "the agent";
 
@@ -234,26 +361,7 @@ export function AgentScripts() {
   );
 
   if (agent.data && !capabilityOn(agent.data.config, "scripting")) {
-    return (
-      <div className="grid flex-1 place-items-center p-6">
-        <EmptyState
-          icon={FileCode}
-          title="This agent has no scripting"
-          description="Turn it on in Settings to give the agent script tools and this tab."
-          action={
-            <Button asChild size="sm">
-              <Link
-                to="/guilds/$guildId/agents/$agentId/settings"
-                params={{ guildId, agentId }}
-                search={{ section: "model" }}
-              >
-                Open Settings
-              </Link>
-            </Button>
-          }
-        />
-      </div>
-    );
+    return <ScriptingOff guildId={guildId} agentId={agentId} />;
   }
 
   return (
@@ -271,46 +379,22 @@ export function AgentScripts() {
             </>
           ) : null}
         </div>
-        {scripts.isPending ? (
-          <SkeletonRows rows={3} label="Loading scripts" />
-        ) : scripts.isError ? (
-          <Banner
-            tone="error"
-            title="Couldn't load the scripts"
-            meta={scripts.error.message}
-            action={
-              <Button variant="outline" size="sm" onClick={() => void scripts.refetch()}>
-                Retry
-              </Button>
-            }
-          />
-        ) : scripts.data.length === 0 ? (
-          <EmptyState
-            icon={FileCode}
-            title="No scripts yet"
-            description="Add a Python file, or ask the agent in chat to write one."
-            action={addButton}
-          />
-        ) : (
-          scripts.data.map((script) => (
-            <ScriptCard
-              key={script.name}
-              script={script}
-              agentId={agentId}
-              agentName={agentName}
-              guildId={guildId}
-              onEdit={() => setEditing(script)}
-              onDelete={() => setDeleting(script)}
-            />
-          ))
-        )}
+        <ScriptList
+          scripts={scripts}
+          agentId={agentId}
+          agentName={agentName}
+          guildId={guildId}
+          addButton={addButton}
+          onEdit={setEditing}
+          onDelete={setDeleting}
+        />
       </div>
 
       <ScriptForm
         key={editing ? editing.name : "new"}
         agentId={agentId}
         script={editing}
-        existing={scripts.data?.map((script) => script.name) ?? []}
+        scripts={scripts.data}
         open={adding || editing !== null}
         onOpenChange={(open) => {
           if (open) {
@@ -321,91 +405,76 @@ export function AgentScripts() {
           setEditing(null);
         }}
       />
-      <ConfirmDialog
-        kind="destructive"
-        open={deleting !== null}
-        onOpenChange={(open) => !open && setDeleting(null)}
-        title={`Delete ${deleting?.name ?? ""}?`}
-        description="The script leaves the agent's home, with its tool if it had parameters."
-        confirmLabel="Delete script"
-        onConfirm={() =>
-          deleting
-            ? remove.mutateAsync(deleting.name).then(
-                () => {
-                  toast({ kind: "success", title: `${deleting.name} deleted` });
-                  setDeleting(null);
-                },
-                (error: Error) => {
-                  toast({
-                    kind: "error",
-                    title: "Couldn't delete the script",
-                    description: error.message,
-                  });
-                  throw error;
-                },
-              )
-            : undefined
-        }
-      />
+      <DeleteScriptDialog agentId={agentId} script={deleting} onClose={() => setDeleting(null)} />
     </div>
   );
 }
 
-/** Adds a script, or saves a new version of `script`; saving under an existing name replaces it. */
-function ScriptForm({
-  agentId,
-  script,
-  existing,
-  open,
-  onOpenChange,
-}: {
+/** A script as the form edits it: its parameters stay JSON text while typed. */
+export type ScriptDraft = { name: string; description: string; source: string; parameters: string };
+
+/** A script's fields in the form; a new script's are empty. */
+export function scriptDraft(script: Script | null): ScriptDraft {
+  return {
+    name: script?.name ?? "",
+    description: script?.description ?? "",
+    source: script?.source ?? "",
+    parameters: script?.parameters ? JSON.stringify(script.parameters, null, 2) : "",
+  };
+}
+
+/** What is wrong with a script name the server would refuse; undefined for a valid or empty one. */
+export function scriptNameError(name: string): string | undefined {
+  if (!name) return undefined;
+  if (!scriptName.test(name)) return "Lowercase letters, digits, _ and -, starting with a letter.";
+  return name === "manifest" ? "That name is reserved." : undefined;
+}
+
+/** The hint under the name: an edited script keeps its name; a new one under a taken name replaces it. */
+export function scriptNameHint(
+  script: Script | null,
+  scripts: readonly Script[] | undefined,
+  name: string,
+): string | undefined {
+  if (script) return "A script keeps its name; add a new script to use another.";
+  return scripts?.some((item) => item.name === name)
+    ? "A script with this name exists; saving replaces it."
+    : undefined;
+}
+
+/** The form's words for adding a script and for saving a new version of one. */
+const SCRIPT_FORM_COPY = Object.freeze({
+  add: {
+    description: "Python the agent runs on its machine.",
+    submit: "Add script",
+  },
+  edit: {
+    description: "Saving records a new version in the agent's home.",
+    submit: "Save",
+  },
+});
+
+type ScriptFormProps = {
   agentId: string;
   script: Script | null;
-  existing: string[];
+  /** The agent's scripts, so a new one's name says when saving replaces one. */
+  scripts: readonly Script[] | undefined;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-}) {
-  const create = useCreateScript(agentId);
-  const [name, setName] = useState(script?.name ?? "");
-  const [description, setDescription] = useState(script?.description ?? "");
-  const [source, setSource] = useState(script?.source ?? "");
-  const [parameters, setParameters] = useState(
-    script?.parameters ? JSON.stringify(script.parameters, null, 2) : "",
-  );
+};
 
-  const trimmed = name.trim();
-  const nameError = !trimmed
-    ? undefined
-    : !scriptName.test(trimmed)
-      ? "Lowercase letters, digits, _ and -, starting with a letter."
-      : trimmed === "manifest"
-        ? "That name is reserved."
-        : undefined;
-  let parsed: Record<string, unknown> | null = null;
-  let parametersError: string | undefined;
-  if (parameters.trim()) {
-    try {
-      const value: unknown = JSON.parse(parameters);
-      if (
-        value &&
-        typeof value === "object" &&
-        !Array.isArray(value) &&
-        (value as { type?: unknown }).type === "object"
-      ) {
-        parsed = value as Record<string, unknown>;
-      } else {
-        parametersError = 'A JSON Schema object, with "type": "object".';
-      }
-    } catch {
-      parametersError = "Not valid JSON.";
-    }
-  }
+/** Adds a script, or saves a new version of `script`; saving under an existing name replaces it. */
+function ScriptForm({ agentId, script, scripts, open, onOpenChange }: ScriptFormProps) {
+  const create = useCreateScript(agentId);
+  const [draft, setDraft] = useState(() => scriptDraft(script));
+  const copy = SCRIPT_FORM_COPY[script ? "edit" : "add"];
+
+  const trimmed = draft.name.trim();
+  const nameError = scriptNameError(trimmed);
+  const { schema, error: parametersError } = readParameters(draft.parameters);
 
   const close = () => {
-    setName("");
-    setDescription("");
-    setSource("");
-    setParameters("");
+    setDraft(scriptDraft(null));
     create.reset();
     onOpenChange(false);
   };
@@ -414,7 +483,12 @@ function ScriptForm({
     event.preventDefault();
     if (nameError || parametersError) return;
     create.mutate(
-      { name: trimmed, description: description.trim(), source, parameters: parsed },
+      {
+        name: trimmed,
+        description: draft.description.trim(),
+        source: draft.source,
+        parameters: schema,
+      },
       {
         onSuccess: () => {
           toast({ kind: "success", title: `${trimmed} saved` });
@@ -430,11 +504,7 @@ function ScriptForm({
         <form onSubmit={submit} className="flex min-h-0 flex-col">
           <DialogHeader
             title={script ? `Edit ${script.name}.py` : "Add a script"}
-            description={
-              script
-                ? "Saving records a new version in the agent's home."
-                : "Python the agent runs on its machine."
-            }
+            description={copy.description}
           />
           <DialogBody>
             <TextField
@@ -444,16 +514,10 @@ function ScriptForm({
               required
               autoComplete="off"
               placeholder="send_usdc"
-              value={name}
+              value={draft.name}
               disabled={script !== null}
-              onChange={(event) => setName(event.currentTarget.value)}
-              hint={
-                script
-                  ? "A script keeps its name; add a new script to use another."
-                  : existing.includes(trimmed)
-                    ? "A script with this name exists; saving replaces it."
-                    : undefined
-              }
+              onChange={(event) => setDraft({ ...draft, name: event.currentTarget.value })}
+              hint={scriptNameHint(script, scripts, trimmed)}
               {...(nameError ? { error: nameError } : {})}
             />
             <TextField
@@ -463,8 +527,8 @@ function ScriptForm({
               maxLength={400}
               showCount
               placeholder="Why this script exists"
-              value={description}
-              onChange={(event) => setDescription(event.currentTarget.value)}
+              value={draft.description}
+              onChange={(event) => setDraft({ ...draft, description: event.currentTarget.value })}
             />
             <TextAreaField
               tone="surface"
@@ -473,8 +537,8 @@ function ScriptForm({
               required
               rows={10}
               placeholder="print('hello')"
-              value={source}
-              onChange={(event) => setSource(event.currentTarget.value)}
+              value={draft.source}
+              onChange={(event) => setDraft({ ...draft, source: event.currentTarget.value })}
             />
             <TextAreaField
               tone="surface"
@@ -484,8 +548,8 @@ function ScriptForm({
               rows={4}
               placeholder='{"type": "object", "properties": {}}'
               hint="With parameters, the script is also a tool the agent calls with arguments."
-              value={parameters}
-              onChange={(event) => setParameters(event.currentTarget.value)}
+              value={draft.parameters}
+              onChange={(event) => setDraft({ ...draft, parameters: event.currentTarget.value })}
               {...(parametersError ? { error: parametersError } : {})}
             />
             {create.isError ? (
@@ -502,7 +566,7 @@ function ScriptForm({
               type="submit"
               disabled={create.isPending || !trimmed || Boolean(nameError || parametersError)}
             >
-              {create.isPending ? "Saving…" : script ? "Save" : "Add script"}
+              {create.isPending ? "Saving…" : copy.submit}
             </Button>
           </DialogFooter>
         </form>

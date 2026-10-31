@@ -4,14 +4,12 @@ import type {
   ActivityMessage,
   ActivityPost,
   ActivityRoutine,
-  ActivityToolCall,
   ActivityTrigger,
   ActivityTriggerReason,
   ActivityView,
   ActivityWake,
-  ActivityWrite,
-  ActivityWriteKind,
-} from "../../../api/types";
+} from "../../../api/types/studio";
+import { tally, wakeEffects, type Tally, type WriteGroup } from "./wakeEffects";
 
 /**
  * Studio's activity views: the chains of wakes that woke one another, the map of who woke whom, and
@@ -25,6 +23,20 @@ export const reasonLabel: Record<ActivityTriggerReason, string> = {
   rules: "rules",
   fallback: "fallback",
 };
+
+/** Every reason a message reaches the agent it wakes. */
+const activityTriggerReasons = [
+  "tag",
+  "jev",
+  "rules",
+  "fallback",
+] as const satisfies readonly ActivityTriggerReason[];
+
+/** Whether a key of an agent input's reasons names a reason a message wakes an agent for. */
+export function isActivityTriggerReason(value: string): value is ActivityTriggerReason {
+  const known: readonly string[] = activityTriggerReasons;
+  return known.includes(value);
+}
 
 /**
  * Why a message woke an agent, in a word, or null for a wake no message started. A run stores
@@ -65,18 +77,6 @@ export const MESSAGE_NODE = "message";
 export function routineNode(scheduleId: string | null): string {
   return `routine:${scheduleId ?? "?"}`;
 }
-
-/** Tools whose calls a step shows as side effects rather than as plain tool calls. */
-const EFFECT_TOOLS = new Set([
-  "group_post",
-  "memory_write",
-  "record_add",
-  "record_update",
-  "note_write",
-  "script_create",
-  "script_run",
-  "report_issue",
-]);
 
 /** A time value the model reads: epoch milliseconds or an ISO string. */
 export type TimeValue = number | string | null | undefined;
@@ -154,6 +154,9 @@ export type ChainStart =
   | { kind: "earlier"; message: ActivityMessage; at: number }
   | { kind: "unknown"; seq: number | null; at: number };
 
+/** The starts of the named kinds. */
+export type ChainStartOf<Kind extends ChainStart["kind"]> = Extract<ChainStart, { kind: Kind }>;
+
 /** A wake in a chain: the map node that woke it, the post that did, and the wakes its posts woke. */
 export type ChainStep = {
   wake: ActivityWake;
@@ -209,37 +212,13 @@ export function buildChains(
   const byMessage = new Map<number, Chain>();
   for (const wake of view.wakes) {
     if (parentOf(wake) !== null || seen.has(wake.run_id)) continue;
-    const startedAt = toMs(wake.started_at) ?? 0;
-    const { trigger } = wake;
-    if (trigger.type === "message" && trigger.seq !== null) {
-      const existing = byMessage.get(trigger.seq);
-      if (existing) {
-        existing.steps.push(step(wake, existing.source, null));
-        continue;
-      }
+    const seq = triggerSeq(wake);
+    const existing = seq === null ? undefined : byMessage.get(seq);
+    if (existing) {
+      existing.steps.push(step(wake, existing.source, null));
+      continue;
     }
-    let start: ChainStart;
-    let source: string;
-    if (trigger.type === "routine") {
-      start = { kind: "routine", scheduleId: trigger.schedule_id, at: startedAt };
-      source = routineNode(trigger.schedule_id);
-    } else if (trigger.type === "direct") {
-      start = { kind: "direct", at: startedAt };
-      source = DIRECT_NODE;
-    } else {
-      const message = trigger.seq === null ? undefined : index.messages.get(trigger.seq);
-      const author = message?.author_agent_id;
-      if (message?.author_type === "user") {
-        start = { kind: "operator", message, at: toMs(message.created_at) ?? startedAt };
-        source = OPERATOR_NODE;
-      } else if (message && author && index.agents.has(author)) {
-        start = { kind: "earlier", message, at: toMs(message.created_at) ?? startedAt };
-        source = author;
-      } else {
-        start = { kind: "unknown", seq: trigger.seq, at: startedAt };
-        source = MESSAGE_NODE;
-      }
-    }
+    const { start, source } = chainOrigin(wake, index);
     const chain: Chain = {
       id: wake.run_id,
       start,
@@ -251,17 +230,64 @@ export function buildChains(
       quiet: true,
     };
     chains.push(chain);
-    if (trigger.type === "message" && trigger.seq !== null) byMessage.set(trigger.seq, chain);
+    if (seq !== null) byMessage.set(seq, chain);
   }
-  for (const chain of chains) {
-    for (const item of chainSteps(chain)) {
-      chain.wakes += 1;
-      chain.cost += item.wake.cost_usd || 0;
-      chain.end = Math.max(chain.end, toMs(item.wake.ended_at) ?? chain.end);
-      if (wakeBucket(item.wake) !== "silent") chain.quiet = false;
-    }
+  return chains.map(withTotals).sort((left, right) => right.start.at - left.start.at);
+}
+
+/** What started the chain a wake begins, and the map node it starts from. */
+function chainOrigin(wake: ActivityWake, index: ActivityIndex): Pick<Chain, "start" | "source"> {
+  const at = toMs(wake.started_at) ?? 0;
+  const { trigger } = wake;
+  if (trigger.type === "routine") {
+    return {
+      start: { kind: "routine", scheduleId: trigger.schedule_id, at },
+      source: routineNode(trigger.schedule_id),
+    };
   }
-  return chains.sort((left, right) => right.start.at - left.start.at);
+  if (trigger.type === "direct") return { start: { kind: "direct", at }, source: DIRECT_NODE };
+  return messageOrigin(trigger.seq, index, at);
+}
+
+/**
+ * What started the chain a message wake begins: the operator's row, an agent's post from before
+ * the window, or a row the ledger does not include. `wokeAt` dates a start whose row is missing.
+ */
+function messageOrigin(
+  seq: number | null,
+  index: ActivityIndex,
+  wokeAt: number,
+): Pick<Chain, "start" | "source"> {
+  const message = seq === null ? undefined : index.messages.get(seq);
+  const author = message?.author_agent_id;
+  if (message?.author_type === "user") {
+    return {
+      start: { kind: "operator", message, at: toMs(message.created_at) ?? wokeAt },
+      source: OPERATOR_NODE,
+    };
+  }
+  if (message && author && index.agents.has(author)) {
+    return {
+      start: { kind: "earlier", message, at: toMs(message.created_at) ?? wokeAt },
+      source: author,
+    };
+  }
+  return { start: { kind: "unknown", seq, at: wokeAt }, source: MESSAGE_NODE };
+}
+
+/** A chain with its wakes counted and costed, when the last ended, and whether all were silent. */
+function withTotals(chain: Chain): Chain {
+  const steps = chainSteps(chain);
+  return {
+    ...chain,
+    wakes: steps.length,
+    cost: steps.reduce((sum, item) => sum + (item.wake.cost_usd || 0), 0),
+    end: steps.reduce(
+      (end, item) => Math.max(end, toMs(item.wake.ended_at) ?? end),
+      chain.start.at,
+    ),
+    quiet: steps.every((item) => wakeBucket(item.wake) === "silent"),
+  };
 }
 
 /** Every step of a chain, depth first. */
@@ -295,8 +321,7 @@ export function chainLines(chain: Pick<Chain, "steps">): ChainLine[] {
     from: null,
     steps: [first],
   }));
-  while (queue.length) {
-    const line = queue.shift() as ChainLine;
+  for (let line = queue.shift(); line; line = queue.shift()) {
     lines.push(line);
     let current = line.steps[0];
     while (current?.next.length) {
@@ -433,6 +458,22 @@ export function buildActivityMap(view: ActivityView, chains: readonly Chain[]): 
     return { id: agent.id, kind: "agent", count: countTotal(counts), counts, agentId: agent.id };
   });
   const onMap = new Set(agents.map((agent) => agent.id));
+  return {
+    sources: mapSources(view.routines, started, onMap),
+    agents,
+    links: [...links.values()].filter((link) => onMap.has(link.to)),
+  };
+}
+
+/**
+ * The map's sources, each with the chains it started: every routine of an agent on the map, then
+ * every other node that started a chain and is no agent on the map.
+ */
+function mapSources(
+  routines: readonly ActivityRoutine[],
+  started: ReadonlyMap<string, number>,
+  onMap: ReadonlySet<string>,
+): MapNode[] {
   const sources: MapNode[] = [];
   const addSource = (id: string, agentId: string | null) =>
     sources.push({
@@ -442,349 +483,14 @@ export function buildActivityMap(view: ActivityView, chains: readonly Chain[]): 
       counts: emptyCounts(),
       agentId,
     });
-  for (const routine of view.routines) {
+  for (const routine of routines) {
     if (onMap.has(routine.agent_id)) addSource(routineNode(routine.id), routine.agent_id);
   }
   for (const id of started.keys()) {
     if (onMap.has(id) || sources.some((source) => source.id === id)) continue;
     addSource(id, null);
   }
-  return {
-    sources,
-    agents,
-    links: [...links.values()].filter((link) => onMap.has(link.to)),
-  };
-}
-
-/**
- * Each agent's column: an agent mostly woken by routines or the operator sits in the first; one
- * mostly woken by other agents sits one column past the agent that wakes it most.
- */
-export function agentColumns(map: ActivityMap): Map<string, number> {
-  const agentIds = new Set(map.agents.map((agent) => agent.id));
-  const inbound = (id: string) => map.links.filter((link) => link.to === id && link.from !== id);
-  const column = new Map<string, number>();
-  for (const agent of map.agents) {
-    const links = inbound(agent.id);
-    const fromAgents = links
-      .filter((link) => agentIds.has(link.from))
-      .reduce((sum, link) => sum + link.count, 0);
-    const fromSources = links
-      .filter((link) => !agentIds.has(link.from))
-      .reduce((sum, link) => sum + link.count, 0);
-    if (fromSources >= fromAgents) column.set(agent.id, 1);
-  }
-  for (let pass = 0; pass < map.agents.length; pass += 1) {
-    for (const agent of map.agents) {
-      if (column.has(agent.id)) continue;
-      const main = inbound(agent.id)
-        .filter((link) => agentIds.has(link.from) && column.has(link.from))
-        .sort((left, right) => right.count - left.count)[0];
-      if (main) column.set(agent.id, (column.get(main.from) ?? 0) + 1);
-    }
-  }
-  for (const agent of map.agents) if (!column.has(agent.id)) column.set(agent.id, 1);
-  return column;
-}
-
-export type MapLayoutOptions = {
-  /** The width to fill; the map grows past it only to keep its minimum gaps. */
-  width: number;
-  sourceWidth?: number;
-  sourceHeight?: number;
-  agentWidth?: number;
-  agentHeight?: number;
-  sourceRow?: number;
-  agentRow?: number;
-  minGap?: number;
-};
-
-/** A box with its top-left corner and size. */
-export type PlacedMapNode = MapNode & { x: number; y: number; w: number; h: number };
-
-/**
- * A link as an SVG path with its stroke width and the anchor of its count. A `loop` runs back to an
- * earlier or the same column, under the boxes.
- */
-export type PlacedMapLink = MapLink & {
-  path: string;
-  width: number;
-  label: { x: number; y: number };
-  loop: boolean;
-  fromAgent: boolean;
-};
-
-export type MapLayout = {
-  width: number;
-  height: number;
-  nodes: PlacedMapNode[];
-  links: PlacedMapLink[];
-};
-
-type Point = { x: number; y: number };
-
-function cubicAt(p0: Point, p1: Point, p2: Point, p3: Point, t: number): Point {
-  const u = 1 - t;
-  return {
-    x: u * u * u * p0.x + 3 * u * u * t * p1.x + 3 * u * t * t * p2.x + t * t * t * p3.x,
-    y: u * u * u * p0.y + 3 * u * u * t * p1.y + 3 * u * t * t * p2.y + t * t * t * p3.y,
-  };
-}
-
-const round = (value: number) => Math.round(value * 10) / 10;
-
-/**
- * Sources in a column on the left, each beside the agent it wakes most; agents in columns to the
- * right. Links run left to right between the side ports of their boxes, spread along each side;
- * links back to an earlier or the same column loop under the boxes, the shortest innermost. A link
- * is 1.5 to 9 px wide by how often it happened.
- */
-export function layoutActivityMap(
-  map: ActivityMap,
-  {
-    width,
-    sourceWidth = 208,
-    sourceHeight = 44,
-    agentWidth = 168,
-    agentHeight = 50,
-    sourceRow = 54,
-    agentRow = 86,
-    minGap = 72,
-  }: MapLayoutOptions,
-): MapLayout {
-  const column = agentColumns(map);
-  const columns = Math.max(1, ...column.values());
-  const gap = Math.max(
-    minGap,
-    Math.floor((width - sourceWidth - columns * agentWidth - 8) / columns),
-  );
-  const columnX = (index: number) => sourceWidth + gap + (index - 1) * (agentWidth + gap);
-  const totalWidth = columnX(columns) + agentWidth + 8;
-
-  const byColumn = new Map<number, MapNode[]>();
-  for (const agent of map.agents) {
-    const index = column.get(agent.id) ?? 1;
-    byColumn.set(index, [...(byColumn.get(index) ?? []), agent]);
-  }
-  const tallest = Math.max(1, ...[...byColumn.values()].map((list) => list.length));
-  const body = Math.max(map.sources.length * sourceRow, tallest * agentRow);
-  const top = 6;
-  const placed = new Map<string, PlacedMapNode>();
-  for (const [index, list] of byColumn) {
-    const offset = top + (body - list.length * agentRow) / 2 + (agentRow - agentHeight) / 2;
-    list.forEach((agent, position) =>
-      placed.set(agent.id, {
-        ...agent,
-        x: columnX(index),
-        y: offset + position * agentRow,
-        w: agentWidth,
-        h: agentHeight,
-      }),
-    );
-  }
-  const targetY = (source: MapNode) => {
-    const main = map.links
-      .filter((link) => link.from === source.id)
-      .sort((left, right) => right.count - left.count)[0];
-    return placed.get(main?.to ?? source.agentId ?? "")?.y ?? 0;
-  };
-  const sources = [...map.sources].sort(
-    (left, right) => targetY(left) - targetY(right) || right.count - left.count,
-  );
-  const sourceOffset =
-    top + (body - sources.length * sourceRow) / 2 + (sourceRow - sourceHeight) / 2;
-  sources.forEach((source, position) =>
-    placed.set(source.id, {
-      ...source,
-      x: 0,
-      y: sourceOffset + position * sourceRow,
-      w: sourceWidth,
-      h: sourceHeight,
-    }),
-  );
-
-  const drawn = map.links.filter((link) => placed.has(link.from) && placed.has(link.to));
-  const isForward = (link: MapLink) => {
-    const from = placed.get(link.from) as PlacedMapNode;
-    const to = placed.get(link.to) as PlacedMapNode;
-    return from.kind !== "agent" || from.x < to.x;
-  };
-  const forward = drawn.filter(isForward);
-  const loops = drawn
-    .filter((link) => !isForward(link))
-    .sort(
-      (left, right) =>
-        Math.abs((placed.get(left.from)?.x ?? 0) - (placed.get(left.to)?.x ?? 0)) -
-        Math.abs((placed.get(right.from)?.x ?? 0) - (placed.get(right.to)?.x ?? 0)),
-    );
-  const ports = (side: "in" | "out") => {
-    const bySide = new Map<string, MapLink[]>();
-    for (const link of forward) {
-      const id = side === "in" ? link.to : link.from;
-      bySide.set(id, [...(bySide.get(id) ?? []), link]);
-    }
-    const at = new Map<string, number>();
-    for (const [id, links] of bySide) {
-      const box = placed.get(id) as PlacedMapNode;
-      const other = (link: MapLink) => placed.get(side === "in" ? link.from : link.to)?.y ?? 0;
-      links.sort((left, right) => other(left) - other(right));
-      const room = box.h - 14;
-      links.forEach((link, position) =>
-        at.set(
-          link.id,
-          box.y + 7 + (links.length === 1 ? room / 2 : (room * position) / (links.length - 1)),
-        ),
-      );
-    }
-    return at;
-  };
-  const inPort = ports("in");
-  const outPort = ports("out");
-  const maxCount = Math.max(1, ...drawn.map((link) => link.count));
-  const strokeOf = (count: number) => round(1.5 + 7.5 * (count / maxCount));
-  const loopBase = top + body + 8;
-
-  const links: PlacedMapLink[] = [];
-  for (const link of forward) {
-    const from = placed.get(link.from) as PlacedMapNode;
-    const to = placed.get(link.to) as PlacedMapNode;
-    const p0 = { x: from.x + from.w, y: outPort.get(link.id) ?? from.y + from.h / 2 };
-    const p3 = { x: to.x - 2, y: inPort.get(link.id) ?? to.y + to.h / 2 };
-    const bend = (p3.x - p0.x) / 2;
-    const p1 = { x: p0.x + bend, y: p0.y };
-    const p2 = { x: p3.x - bend, y: p3.y };
-    const label = cubicAt(p0, p1, p2, p3, 0.5);
-    links.push({
-      ...link,
-      path: `M${round(p0.x)},${round(p0.y)} C${round(p1.x)},${round(p1.y)} ${round(p2.x)},${round(p2.y)} ${round(p3.x)},${round(p3.y)}`,
-      width: strokeOf(link.count),
-      label: { x: round(label.x), y: round(label.y) },
-      loop: false,
-      fromAgent: from.kind === "agent",
-    });
-  }
-  loops.forEach((link, position) => {
-    const from = placed.get(link.from) as PlacedMapNode;
-    const to = placed.get(link.to) as PlacedMapNode;
-    const depth = loopBase + 18 + position * 20;
-    const p0 = { x: from.x + from.w * 0.62, y: from.y + from.h };
-    const p3 = { x: to.x + to.w * 0.38, y: to.y + to.h + 2 };
-    const p1 = { x: p0.x, y: depth };
-    const p2 = { x: p3.x, y: depth };
-    const label = cubicAt(p0, p1, p2, p3, 0.5);
-    links.push({
-      ...link,
-      path: `M${round(p0.x)},${round(p0.y)} C${round(p1.x)},${round(p1.y)} ${round(p2.x)},${round(p2.y)} ${round(p3.x)},${round(p3.y)}`,
-      width: strokeOf(link.count),
-      label: { x: round(label.x), y: round(label.y) },
-      loop: true,
-      fromAgent: true,
-    });
-  });
-  const height = loops.length ? loopBase + 18 + (loops.length - 1) * 20 + 22 : top + body + 6;
-  return { width: totalWidth, height, nodes: [...placed.values()], links };
-}
-
-/* ---------- What one wake did ---------- */
-
-/** Writes to one target: how many, by operation, the record ids touched, and the first write. */
-export type WriteGroup = {
-  kind: ActivityWriteKind;
-  target: string;
-  count: number;
-  operations: Record<string, number>;
-  ids: string[];
-  first: ActivityWrite;
-};
-
-/** The record id at the end of a record's display path; null when the last part is not numeric. */
-export function recordIdFromPath(displayPath: string | null | undefined): string | null {
-  const last = (displayPath || "").split("/").pop() ?? "";
-  return /^\d+$/.test(last) ? last : null;
-}
-
-/** Writes grouped by what they touched, in first-write order, with record ids and the first write. */
-export function groupWrites(writes: readonly ActivityWrite[] | null | undefined): WriteGroup[] {
-  const groups = new Map<string, WriteGroup>();
-  for (const write of writes ?? []) {
-    const key = `${write.kind}:${write.target}`;
-    let group = groups.get(key);
-    if (!group) {
-      group = {
-        kind: write.kind,
-        target: write.target,
-        count: 0,
-        operations: {},
-        ids: [],
-        first: write,
-      };
-      groups.set(key, group);
-    }
-    group.count += 1;
-    group.operations[write.operation] = (group.operations[write.operation] ?? 0) + 1;
-    const id = write.kind === "record" ? recordIdFromPath(write.display_path) : null;
-    if (id && !group.ids.includes(id)) group.ids.push(id);
-  }
-  return [...groups.values()];
-}
-
-/** A value and how often it came up, most frequent first. */
-export type Tally = { value: string; count: number };
-
-export function tally(values: readonly string[]): Tally[] {
-  const counts = new Map<string, number>();
-  for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1);
-  return [...counts.entries()]
-    .map(([value, count]) => ({ value, count }))
-    .sort((left, right) => right.count - left.count);
-}
-
-function argument(args: string, key: string): string | null {
-  try {
-    const value = (JSON.parse(args) as Record<string, unknown>)[key];
-    return typeof value === "string" ? value : null;
-  } catch {
-    return new RegExp(`"${key}"\\s*:\\s*"([^"]*)`).exec(args)?.[1] ?? null;
-  }
-}
-
-/**
- * What a wake did, split the way a step shows it: tool calls other than posts, writes, script runs
- * and issue reports; the scripts it ran; the issues it reported; the calls that failed; its writes
- * by record, note and script; and whether it updated its memory.
- */
-export type WakeEffects = {
-  calls: ActivityToolCall[];
-  scriptRuns: Tally[];
-  issues: string[];
-  failedCalls: ActivityToolCall[];
-  records: WriteGroup[];
-  notes: WriteGroup[];
-  scripts: WriteGroup[];
-  /** Repositories a coding wake changed, each with its diffstat. */
-  code: ActivityWrite[];
-  memory: boolean;
-};
-
-export function wakeEffects(wake: ActivityWake): WakeEffects {
-  const writes = groupWrites(wake.writes);
-  return {
-    calls: wake.tool_calls.filter((call) => !EFFECT_TOOLS.has(call.name)),
-    scriptRuns: tally(
-      wake.tool_calls
-        .filter((call) => call.name === "script_run")
-        .map((call) => argument(call.arguments, "name") ?? "a script"),
-    ),
-    issues: wake.tool_calls
-      .filter((call) => call.name === "report_issue")
-      .map((call) => argument(call.arguments, "detail") ?? call.arguments),
-    failedCalls: wake.tool_calls.filter((call) => call.error !== null),
-    records: writes.filter((group) => group.kind === "record"),
-    notes: writes.filter((group) => group.kind === "note"),
-    scripts: writes.filter((group) => group.kind === "script"),
-    code: wake.writes.filter((write) => write.kind === "code"),
-    memory: writes.some((group) => group.kind === "memory"),
-  };
+  return sources;
 }
 
 /* ---------- Each agent's inputs and outputs ---------- */
@@ -847,80 +553,102 @@ export function agentActivity(
     const agent = view.agents.find((item) => item.id === node.id);
     if (!agent) return [];
     const mine = steps.filter((item) => item.wake.agent_id === agent.id);
-    const inputs = new Map<string, AgentInput>();
-    for (const source of map.sources) {
-      if (source.kind === "routine" && source.agentId === agent.id) {
-        inputs.set(source.id, {
-          id: source.id,
-          kind: "routine",
-          count: 0,
-          counts: emptyCounts(),
-          cost: 0,
-          reasons: {},
-        });
-      }
-    }
-    for (const item of mine) {
-      const input = inputs.get(item.from) ?? {
-        id: item.from,
-        kind: nodeKind(item.from),
+    return [
+      {
+        agent,
+        inputs: agentInputs(agent.id, map.sources, mine),
+        outputs: agentOutputs(node.counts, mine),
+      },
+    ];
+  });
+}
+
+/**
+ * How an agent was woken, routines first and then the operator, other agents, direct chats and
+ * unknown rows, busiest first: one input per map source or waking agent of its wakes, its routines
+ * listed even when they did not fire.
+ */
+function agentInputs(
+  agentId: string,
+  sources: readonly MapNode[],
+  wakes: readonly ChainStep[],
+): AgentInput[] {
+  const inputs = new Map<string, AgentInput>();
+  for (const source of sources) {
+    if (source.kind === "routine" && source.agentId === agentId) {
+      inputs.set(source.id, {
+        id: source.id,
+        kind: "routine",
         count: 0,
         counts: emptyCounts(),
         cost: 0,
         reasons: {},
-      };
-      input.count += 1;
-      input.counts[wakeBucket(item.wake)] += 1;
-      input.cost += item.wake.cost_usd || 0;
-      if (item.wake.trigger.type === "message") {
-        const reason = item.wake.trigger.reason;
-        input.reasons[reason] = (input.reasons[reason] ?? 0) + 1;
-      }
-      inputs.set(item.from, input);
+      });
     }
-    const wakes = mine.map((item) => item.wake);
-    const effects = wakes.map(wakeEffects);
-    const recordOperations: Record<string, number> = {};
-    for (const group of effects.flatMap((effect) => effect.records)) {
-      for (const [operation, count] of Object.entries(group.operations)) {
-        recordOperations[operation] = (recordOperations[operation] ?? 0) + count;
-      }
-    }
-    const expand = (groups: WriteGroup[]) =>
-      groups.flatMap((group) => Array<string>(group.count).fill(group.target));
-    const woken = mine.flatMap((item) => item.next.map((next) => next.wake.agent_id));
-    const outputs: AgentOutputs = {
-      wakes: wakes.length,
-      counts: node.counts,
-      cost: wakes.reduce((sum, wake) => sum + (wake.cost_usd || 0), 0),
-      posts: wakes.reduce((sum, wake) => sum + wake.posts.length, 0),
-      postingWakes: wakes.filter((wake) => wake.posts.length > 0).length,
-      woke: tally(woken),
-      records: tally(expand(effects.flatMap((effect) => effect.records))),
-      recordOperations,
-      notes: tally(expand(effects.flatMap((effect) => effect.notes))),
-      scriptRuns: tally(
-        effects.flatMap((effect) =>
-          effect.scriptRuns.flatMap((run) => Array<string>(run.count).fill(run.value)),
-        ),
-      ),
-      scriptChanges: tally(expand(effects.flatMap((effect) => effect.scripts))),
-      issues: effects.reduce((sum, effect) => sum + effect.issues.length, 0),
-      memory: effects.filter((effect) => effect.memory).length,
-      errors: tally([
-        ...wakes.flatMap((wake) =>
-          wake.errors.map((error) => error.message ?? error.operation ?? "error"),
-        ),
-        ...effects.flatMap((effect) =>
-          effect.failedCalls.map((call) => `${call.name}: ${call.error ?? ""}`),
-        ),
-      ]),
+  }
+  for (const item of wakes) {
+    const input = inputs.get(item.from) ?? {
+      id: item.from,
+      kind: nodeKind(item.from),
+      count: 0,
+      counts: emptyCounts(),
+      cost: 0,
+      reasons: {},
     };
-    const ordered = [...inputs.values()].sort(
-      (left, right) => inputOrder[left.kind] - inputOrder[right.kind] || right.count - left.count,
-    );
-    return [{ agent, inputs: ordered, outputs }];
-  });
+    input.count += 1;
+    input.counts[wakeBucket(item.wake)] += 1;
+    input.cost += item.wake.cost_usd || 0;
+    if (item.wake.trigger.type === "message") {
+      const reason = item.wake.trigger.reason;
+      input.reasons[reason] = (input.reasons[reason] ?? 0) + 1;
+    }
+    inputs.set(item.from, input);
+  }
+  return [...inputs.values()].sort(
+    (left, right) => inputOrder[left.kind] - inputOrder[right.kind] || right.count - left.count,
+  );
+}
+
+/** What an agent's wakes produced, added up; `counts` are its wakes by outcome. */
+function agentOutputs(counts: OutcomeCounts, steps: readonly ChainStep[]): AgentOutputs {
+  const wakes = steps.map((item) => item.wake);
+  const effects = wakes.map(wakeEffects);
+  const recordOperations: Record<string, number> = {};
+  for (const group of effects.flatMap((effect) => effect.records)) {
+    for (const [operation, count] of Object.entries(group.operations)) {
+      recordOperations[operation] = (recordOperations[operation] ?? 0) + count;
+    }
+  }
+  const expand = (groups: WriteGroup[]) =>
+    groups.flatMap((group) => Array<string>(group.count).fill(group.target));
+  const woken = steps.flatMap((item) => item.next.map((next) => next.wake.agent_id));
+  return {
+    wakes: wakes.length,
+    counts,
+    cost: wakes.reduce((sum, wake) => sum + (wake.cost_usd || 0), 0),
+    posts: wakes.reduce((sum, wake) => sum + wake.posts.length, 0),
+    postingWakes: wakes.filter((wake) => wake.posts.length > 0).length,
+    woke: tally(woken),
+    records: tally(expand(effects.flatMap((effect) => effect.records))),
+    recordOperations,
+    notes: tally(expand(effects.flatMap((effect) => effect.notes))),
+    scriptRuns: tally(
+      effects.flatMap((effect) =>
+        effect.scriptRuns.flatMap((run) => Array<string>(run.count).fill(run.value)),
+      ),
+    ),
+    scriptChanges: tally(expand(effects.flatMap((effect) => effect.scripts))),
+    issues: effects.reduce((sum, effect) => sum + effect.issues.length, 0),
+    memory: effects.filter((effect) => effect.memory).length,
+    errors: tally([
+      ...wakes.flatMap((wake) =>
+        wake.errors.map((error) => error.message ?? error.operation ?? "error"),
+      ),
+      ...effects.flatMap((effect) =>
+        effect.failedCalls.map((call) => `${call.name}: ${call.error ?? ""}`),
+      ),
+    ]),
+  };
 }
 
 /* ---------- Words ---------- */
@@ -930,23 +658,28 @@ export function windowLabel(hours: number): string {
   return hours < 24 || hours % 24 !== 0 || hours === 24 ? `${hours}h` : `${hours / 24}d`;
 }
 
-/** A time as the viewer's clock, with seconds or the day when asked. */
-export function clock(
-  value: TimeValue,
-  options: { seconds?: boolean; day?: boolean } = {},
-): string {
+const CLOCK_TIME = { hour: "2-digit", minute: "2-digit", hourCycle: "h23" } as const;
+
+/** A time as the viewer's clock, in hours and minutes; `—` when unreadable. */
+export function clock(value: TimeValue): string {
+  const ms = toMs(value);
+  return ms === null ? "—" : new Date(ms).toLocaleTimeString([], CLOCK_TIME);
+}
+
+/** A time as the viewer's clock, to the second; `—` when unreadable. */
+export function clockWithSeconds(value: TimeValue): string {
+  const ms = toMs(value);
+  return ms === null
+    ? "—"
+    : new Date(ms).toLocaleTimeString([], { ...CLOCK_TIME, second: "2-digit" });
+}
+
+/** A time as the viewer's clock after its month and day; `—` when unreadable. */
+export function clockWithDay(value: TimeValue): string {
   const ms = toMs(value);
   if (ms === null) return "—";
   const date = new Date(ms);
-  const time = date.toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-    ...(options.seconds ? { second: "2-digit" } : {}),
-  });
-  return options.day
-    ? `${date.toLocaleDateString([], { month: "short", day: "numeric" })} ${time}`
-    : time;
+  return `${date.toLocaleDateString([], { month: "short", day: "numeric" })} ${date.toLocaleTimeString([], CLOCK_TIME)}`;
 }
 
 /** A day as the viewer's calendar: weekday, month and day. */

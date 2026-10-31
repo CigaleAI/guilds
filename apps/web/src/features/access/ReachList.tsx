@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { useReach, type ReachSubject } from "../../api/queries";
-import type { AccessMode, ReachedNote, ReachedTable } from "../../api/types";
+import { useReach } from "../../api/queries/access";
+import type { AccessMode, ReachSubject, ReachedNote, ReachedTable } from "../../api/types/access";
 import { Banner, SkeletonRows, Tag } from "@guildsrun/ui";
 import { accessModeLabel } from "./accessList";
 import { noteLink, notePlacement } from "./reach";
@@ -15,7 +15,9 @@ const intros: Record<ReachSubject["type"], string> = {
 
 const editHint = "Change who reaches an item on the item: a table's Access tab, a note's Access.";
 
-function ModeTag({ mode }: { mode: AccessMode }) {
+type ModeTagProps = { mode: AccessMode };
+
+function ModeTag({ mode }: ModeTagProps) {
   return (
     <Tag tone={mode === "write" ? "tide" : "signal"} font="sans">
       {accessModeLabel[mode]}
@@ -23,15 +25,13 @@ function ModeTag({ mode }: { mode: AccessMode }) {
   );
 }
 
-function Section({
-  title,
-  count,
-  children,
-}: {
+type SectionProps = {
   title: string;
   count: number;
   children: ReactNode;
-}) {
+};
+
+function Section({ title, count, children }: SectionProps) {
   return (
     <section className="flex flex-col gap-1.5">
       <h3 className="type-label text-muted">
@@ -49,7 +49,9 @@ function Section({
 const rowClass =
   "flex flex-wrap items-center gap-3 border-b border-line px-4 py-2.5 last:border-b-0";
 
-function TableRow({ table }: { table: ReachedTable }) {
+type TableRowProps = { table: ReachedTable };
+
+function TableRow({ table }: TableRowProps) {
   return (
     <div className={rowClass}>
       <div className="flex min-w-0 flex-1 flex-col">
@@ -70,7 +72,9 @@ function TableRow({ table }: { table: ReachedTable }) {
   );
 }
 
-function NoteTitle({ note, guildId }: { note: ReachedNote; guildId: string }) {
+type NoteTitleProps = { note: ReachedNote; guildId: string };
+
+function NoteTitle({ note, guildId }: NoteTitleProps) {
   const link = noteLink(note, guildId);
   const className = "w-fit font-mono text-sm font-medium hover:underline";
   if (!link) return <span className="font-mono text-sm font-medium">{note.title}</span>;
@@ -98,7 +102,9 @@ function NoteTitle({ note, guildId }: { note: ReachedNote; guildId: string }) {
   );
 }
 
-function NoteRow({ note, guildId }: { note: ReachedNote; guildId: string }) {
+type NoteRowProps = { note: ReachedNote; guildId: string };
+
+function NoteRow({ note, guildId }: NoteRowProps) {
   return (
     <div className={rowClass}>
       <div className="flex min-w-0 flex-1 flex-col">
@@ -110,11 +116,13 @@ function NoteRow({ note, guildId }: { note: ReachedNote; guildId: string }) {
   );
 }
 
+type ReachListProps = { subject: ReachSubject; guildId: string };
+
 /**
  * What a guild's agents, or one agent, reach: the notes and tables with the mode each ends up
  * with. Read-only; each item links to where its access list is edited.
  */
-export function ReachList({ subject, guildId }: { subject: ReachSubject; guildId: string }) {
+export function ReachList({ subject, guildId }: ReachListProps) {
   const reach = useReach(subject);
 
   return (

@@ -1,4 +1,4 @@
-import type { Machine } from "../../api/types";
+import type { Machine } from "../../api/types/agents";
 import { Select } from "@guildsrun/ui";
 import { LoadBudget } from "./MachineMeters";
 import { MachinesSettingsLink, NoMachines, TooSmallNote } from "./MachineNotes";
@@ -11,8 +11,17 @@ import {
   sizeMeets,
   agentMinimum,
 } from "./machines";
+import type { AgentToPlace } from "./types";
 
-type PlacedAgent = { id?: string | undefined; browser: boolean; coding: boolean };
+type MachinePickerProps = {
+  machines: Machine[];
+  value: string;
+  onChange: (machineId: string) => void;
+  /** The agent being placed: its id when it already exists, and its flags as the form holds them. */
+  agent: AgentToPlace;
+  error?: string | undefined;
+  hint?: string | undefined;
+};
 
 /**
  * Where an agent goes: a Machine picker when the organisation has several machines, else the only
@@ -27,15 +36,7 @@ export function MachinePicker({
   agent,
   error,
   hint,
-}: {
-  machines: Machine[];
-  value: string;
-  onChange: (machineId: string) => void;
-  /** The agent being placed: its id when it already exists, and its flags as the form holds them. */
-  agent: PlacedAgent;
-  error?: string | undefined;
-  hint?: string | undefined;
-}) {
+}: MachinePickerProps) {
   const [only] = machines;
   if (!only) return <NoMachines />;
   const machine = chosenMachine(machines, value);
@@ -73,8 +74,10 @@ export function MachinePicker({
   );
 }
 
+type PlacementBudgetProps = { machine: Machine; agent: AgentToPlace };
+
 /** Whether the machine meets the agent's minimum, and its planned load with what the agent adds. */
-function PlacementBudget({ machine, agent }: { machine: Machine; agent: PlacedAgent }) {
+function PlacementBudget({ machine, agent }: PlacementBudgetProps) {
   const budget = placementBudget(machine, agent);
   return (
     <>

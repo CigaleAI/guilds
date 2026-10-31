@@ -4,8 +4,13 @@ import {
   useProviderCatalog,
   useRemoveModelProvider,
   useSetDefaultModel,
-} from "../../api/queries";
-import type { CatalogModel, ModelProvider, OrgModelProvider, OrgModels } from "../../api/types";
+} from "../../api/queries/models";
+import type {
+  CatalogModel,
+  ModelProvider,
+  OrgModelProvider,
+  OrgModels,
+} from "../../api/types/models";
 import { useIdentity } from "../../app/identity";
 import {
   Banner,
@@ -19,7 +24,7 @@ import {
   toast,
 } from "@guildsrun/ui";
 import { ProviderLogo } from "./ProviderLogo";
-import { PROVIDER_META } from "./models";
+import { formatProviderState, PROVIDER_META } from "./models";
 
 const tokens = new Intl.NumberFormat("en", { notation: "compact" });
 
@@ -33,12 +38,14 @@ export function modelFacts(model: CatalogModel): string {
   return facts.join(" · ");
 }
 
+type ModelProvidersProps = { models: OrgModels; canManage: boolean };
+
 /**
  * The models the platform provides, then every provider split into marketplace and coding APIs.
  * The organisation connects a provider with its own key, ticks the models it offers from the
  * provider's catalog, and marks one marketplace model, its own or the platform's, as its default.
  */
-export function ModelProviders({ models, canManage }: { models: OrgModels; canManage: boolean }) {
+export function ModelProviders({ models, canManage }: ModelProvidersProps) {
   const { org } = useIdentity();
   const removeProvider = useRemoveModelProvider(org.id);
   const setDefault = useSetDefaultModel(org.id);
@@ -131,15 +138,7 @@ export function ModelProviders({ models, canManage }: { models: OrgModels; canMa
   );
 }
 
-function ProviderSection({
-  title,
-  intro,
-  providers,
-  models,
-  canManage,
-  onRemove,
-  onDefault,
-}: {
+type ProviderSectionProps = {
   title: string;
   intro: string;
   providers: OrgModelProvider[];
@@ -148,7 +147,17 @@ function ProviderSection({
   onRemove: (provider: ModelProvider) => void;
   /** Marks a chosen model as the default, or clears it with null; absent for providers that cannot hold it. */
   onDefault: ((model: string | null) => void) | null;
-}) {
+};
+
+function ProviderSection({
+  title,
+  intro,
+  providers,
+  models,
+  canManage,
+  onRemove,
+  onDefault,
+}: ProviderSectionProps) {
   return (
     <>
       <p className="text-sm text-fg-2">
@@ -169,18 +178,15 @@ function ProviderSection({
   );
 }
 
-/** A provider the platform provides: the models it offers the organisation, each one a possible default. */
-function PlatformCard({
-  provider,
-  models,
-  canManage,
-  onDefault,
-}: {
+type PlatformCardProps = {
   provider: OrgModelProvider;
   models: OrgModels;
   canManage: boolean;
   onDefault: (model: string | null) => void;
-}) {
+};
+
+/** A provider the platform provides: the models it offers the organisation, each one a possible default. */
+function PlatformCard({ provider, models, canManage, onDefault }: PlatformCardProps) {
   return (
     <section className="flex flex-col gap-3 rounded-xl bg-surface p-4">
       <div className="flex flex-wrap items-start gap-3">
@@ -201,55 +207,19 @@ function PlatformCard({
   );
 }
 
-/** One provider: its state, the connect form, and once connected the catalog to choose from. */
-function ProviderCard({
-  provider,
-  models,
-  canManage,
-  onRemove,
-  onDefault,
-}: {
+type ProviderCardProps = {
   provider: OrgModelProvider;
   models: OrgModels;
   canManage: boolean;
   onRemove: (provider: ModelProvider) => void;
   onDefault: ((model: string | null) => void) | null;
-}) {
-  const { org } = useIdentity();
-  const connect = useConnectModelProvider(org.id);
-  const [key, setKey] = useState("");
-  const [url, setUrl] = useState(provider.base_url ?? "");
+};
+
+/** One provider: its state, the connect form, and once connected the catalog to choose from. */
+function ProviderCard({ provider, models, canManage, onRemove, onDefault }: ProviderCardProps) {
   const [choosing, setChoosing] = useState(false);
-  const local = provider.id === "local";
   const own = provider.source === "own";
   const chosen = models.models.filter((model) => model.provider === provider.id);
-  const state = own
-    ? local
-      ? `Connected · ${provider.base_url ?? ""}${provider.key_hint ? ` · key ends in ${provider.key_hint}` : ""}`
-      : `Connected · key ends in ${provider.key_hint ?? "…"}`
-    : local
-      ? "Not connected. Save the endpoint's URL, and a key when it needs one."
-      : provider.source === "platform"
-        ? "Provided by the platform. Paste the organisation's key to run on it instead."
-        : "Not connected. Paste the organisation's key.";
-
-  const save = () => {
-    const body = {
-      provider: provider.id,
-      ...(key.trim() ? { api_key: key.trim() } : {}),
-      ...(local ? { base_url: url.trim() } : {}),
-    };
-    connect.mutate(body, {
-      onSuccess: () => {
-        setKey("");
-        toast({ kind: "success", title: `${provider.label} connected` });
-        setChoosing(true);
-      },
-      onError: (error) =>
-        toast({ kind: "error", title: `Couldn't connect ${provider.label}`, description: error.message }),
-    });
-  };
-  const canSave = local ? Boolean(url.trim()) && (Boolean(key.trim()) || url.trim() !== (provider.base_url ?? "")) : Boolean(key.trim());
 
   return (
     <section className="flex flex-col gap-3 rounded-xl bg-surface p-4">
@@ -257,7 +227,7 @@ function ProviderCard({
         <ProviderLogo provider={provider.id} size={44} />
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="text-md font-semibold">{provider.label}</span>
-          <span className="text-sm text-muted">{state}</span>
+          <span className="text-sm text-muted">{formatProviderState(provider)}</span>
           <span className="text-xs text-muted">{PROVIDER_META[provider.id].blurb}</span>
         </div>
         {own && canManage ? (
@@ -272,36 +242,7 @@ function ProviderCard({
         ) : null}
       </div>
       {canManage ? (
-        <form
-          className="flex flex-wrap items-end gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (canSave) save();
-          }}
-        >
-          {local ? (
-            <TextField
-              tone="paper"
-              label="Base URL"
-              placeholder="http://127.0.0.1:11434/v1"
-              className="min-w-60 flex-1"
-              value={url}
-              onChange={(event) => setUrl(event.currentTarget.value)}
-            />
-          ) : null}
-          <TextField
-            tone="paper"
-            label={local ? "API key (optional)" : "API key"}
-            type="password"
-            autoComplete="off"
-            className="min-w-60 flex-1"
-            value={key}
-            onChange={(event) => setKey(event.currentTarget.value)}
-          />
-          <Button type="submit" size="xl" disabled={!canSave || connect.isPending}>
-            {own ? "Replace" : "Connect"}
-          </Button>
-        </form>
+        <ProviderKeyForm provider={provider} onConnected={() => setChoosing(true)} />
       ) : (
         <p className="text-sm text-muted">Owners and admins manage model keys.</p>
       )}
@@ -325,20 +266,82 @@ function ProviderCard({
   );
 }
 
-/** The models a connected provider offers, with the default marked. */
-function ChosenModels({
-  provider,
-  chosen,
-  defaultModel,
-  canManage,
-  onDefault,
-}: {
+type ProviderKeyFormProps = {
+  provider: OrgModelProvider;
+  /** After the provider is connected, to choose its models next. */
+  onConnected: () => void;
+};
+
+/** Connects a provider with the organisation's key, or replaces it; a local endpoint also takes its URL. */
+function ProviderKeyForm({ provider, onConnected }: ProviderKeyFormProps) {
+  const { org } = useIdentity();
+  const connect = useConnectModelProvider(org.id);
+  const [key, setKey] = useState("");
+  const [url, setUrl] = useState(provider.base_url ?? "");
+  const local = provider.id === "local";
+
+  const save = () => {
+    const body = {
+      provider: provider.id,
+      ...(key.trim() ? { api_key: key.trim() } : {}),
+      ...(local ? { base_url: url.trim() } : {}),
+    };
+    connect.mutate(body, {
+      onSuccess: () => {
+        setKey("");
+        toast({ kind: "success", title: `${provider.label} connected` });
+        onConnected();
+      },
+      onError: (error) =>
+        toast({ kind: "error", title: `Couldn't connect ${provider.label}`, description: error.message }),
+    });
+  };
+  const canSave = local ? Boolean(url.trim()) && (Boolean(key.trim()) || url.trim() !== (provider.base_url ?? "")) : Boolean(key.trim());
+
+  return (
+    <form
+      className="flex flex-wrap items-end gap-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (canSave) save();
+      }}
+    >
+      {local ? (
+        <TextField
+          tone="paper"
+          label="Base URL"
+          placeholder="http://127.0.0.1:11434/v1"
+          className="min-w-60 flex-1"
+          value={url}
+          onChange={(event) => setUrl(event.currentTarget.value)}
+        />
+      ) : null}
+      <TextField
+        tone="paper"
+        label={local ? "API key (optional)" : "API key"}
+        type="password"
+        autoComplete="off"
+        className="min-w-60 flex-1"
+        value={key}
+        onChange={(event) => setKey(event.currentTarget.value)}
+      />
+      <Button type="submit" size="xl" disabled={!canSave || connect.isPending}>
+        {provider.source === "own" ? "Replace" : "Connect"}
+      </Button>
+    </form>
+  );
+}
+
+type ChosenModelsProps = {
   provider: OrgModelProvider;
   chosen: CatalogModel[];
   defaultModel: string | null;
   canManage: boolean;
   onDefault: ((model: string | null) => void) | null;
-}) {
+};
+
+/** The models a connected provider offers, with the default marked. */
+function ChosenModels({ provider, chosen, defaultModel, canManage, onDefault }: ChosenModelsProps) {
   if (!chosen.length) {
     return (
       <p className="text-sm text-muted">
@@ -376,14 +379,7 @@ function ChosenModels({
   );
 }
 
-/** The provider's catalog with a search over label and id; ticked rows become the chosen models. */
-export function CatalogPicker({
-  provider,
-  chosen,
-  onSaved,
-  saveLabel = "Save models",
-  requireOne = false,
-}: {
+type CatalogPickerProps = {
   provider: OrgModelProvider;
   chosen: string[];
   /** After the chosen models are saved, with what was saved. */
@@ -391,7 +387,16 @@ export function CatalogPicker({
   saveLabel?: string;
   /** Whether the save waits for at least one ticked row. */
   requireOne?: boolean;
-}) {
+};
+
+/** The provider's catalog with a search over label and id; ticked rows become the chosen models. */
+export function CatalogPicker({
+  provider,
+  chosen,
+  onSaved,
+  saveLabel = "Save models",
+  requireOne = false,
+}: CatalogPickerProps) {
   const { org } = useIdentity();
   const catalog = useProviderCatalog(org.id, provider.id, true);
   const connect = useConnectModelProvider(org.id);

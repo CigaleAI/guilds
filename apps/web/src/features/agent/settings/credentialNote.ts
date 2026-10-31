@@ -1,4 +1,4 @@
-import type { Harness, HarnessCredential } from "../../../api/types";
+import type { Harness, HarnessCredential } from "../../../api/types/agents";
 import { relativeTime } from "../../../app/format";
 
 /** A tab of the agent's page that a credential note links to. */

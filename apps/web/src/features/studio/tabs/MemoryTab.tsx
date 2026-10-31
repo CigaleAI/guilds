@@ -1,7 +1,8 @@
 import { Pin } from "lucide-react";
 import { useState } from "react";
-import { useMemoryTimeline } from "../../../api/queries";
-import type { MemoryVersion, StudioAgent } from "../../../api/types";
+import { useMemoryTimeline } from "../../../api/queries/studio";
+import type { MemoryVersion } from "../../../api/types/notes";
+import type { StudioAgent } from "../../../api/types/studio";
 import { Button, Select, Banner, SkeletonRows, Icon } from "@guildsrun/ui";
 import {
   MemoryStepButton,
@@ -12,17 +13,19 @@ import {
   memoryVersionId,
   memoryVersionName,
 } from "../../agent/memory/memoryVersions";
-import { Empty, MasterDetail } from "../MasterDetail";
+import { Empty, MasterDetail } from "../../../app/MasterDetail";
 import { useStudio } from "../StudioContext";
 
 const any = "all";
+
+type MemoryTabProps = { agent: StudioAgent };
 
 /**
  * Every version of the agent's memory, newest first, filtered by author: who wrote each,
  * what it changed against the one before, and the run step that wrote it.
  */
-export function MemoryTab({ agent }: { agent: StudioAgent }) {
-  const { session, search, go } = useStudio();
+export function MemoryTab({ agent }: MemoryTabProps) {
+  const { session, search, goInPlace } = useStudio();
   const timeline = useMemoryTimeline(session.id, agent.id);
   const [author, setAuthor] = useState<string>(any);
 
@@ -72,15 +75,12 @@ export function MemoryTab({ agent }: { agent: StudioAgent }) {
               }
               meta={`${memoryAuthorLabel(entry)} · ${memoryChangeLabel(entry)}`}
               onSelect={() =>
-                go(
-                  {
-                    section: "agents",
-                    agent: agent.id,
-                    tab: "memory",
-                    item: memoryVersionId(entry),
-                  },
-                  { replace: true },
-                )
+                goInPlace({
+                  section: "agents",
+                  agent: agent.id,
+                  tab: "memory",
+                  item: memoryVersionId(entry),
+                })
               }
             />
           ))
@@ -99,8 +99,10 @@ export function MemoryTab({ agent }: { agent: StudioAgent }) {
   );
 }
 
+type MemoryDetailProps = { agent: StudioAgent; entry: MemoryVersion };
+
 /** One version with Studio's actions: open the step that wrote it, or ask the coach about it. */
-function MemoryDetail({ agent, entry }: { agent: StudioAgent; entry: MemoryVersion }) {
+function MemoryDetail({ agent, entry }: MemoryDetailProps) {
   const { ask, openStep } = useStudio();
   return (
     <MemoryVersionView

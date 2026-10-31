@@ -1,7 +1,8 @@
-import { ApiError, detailText } from "./client";
+import { ApiError, readApiFailure } from "./client";
 import { reportClientError, requestId } from "./clientLog";
-import { authMode, identityHeaders, signInUrl } from "./session";
-import type { ChatAttachment } from "./types";
+import { identityHeaders } from "./session";
+import type { ChatAttachment } from "./types/runs";
+import { hasFields, isRecord, isString } from "./wire";
 
 /** Stores image bytes, then returns the id later messages reference. */
 export async function uploadAttachment(file: File): Promise<ChatAttachment> {
@@ -27,26 +28,24 @@ export async function uploadAttachment(file: File): Promise<ChatAttachment> {
     });
     throw error;
   }
-  if (response.status >= 500) {
-    reportClientError({ kind: "api", message: `POST /api/attachments ${response.status}` });
-  }
-  const signIn = response.status === 401 && authMode() !== "compat-cookie" ? signInUrl() : null;
-  if (signIn) {
-    window.location.assign(signIn);
-  }
   if (!response.ok) {
-    let detail: unknown = null;
-    try {
-      detail = ((await response.json()) as { detail?: unknown }).detail;
-    } catch {
-      // Not JSON; the status text stands in.
-    }
-    throw new ApiError(
-      response.status,
-      detailText(detail, response.statusText || `HTTP ${response.status}`),
-    );
+    throw await readApiFailure("POST", "/api/attachments", response);
   }
-  return (await response.json()) as ChatAttachment;
+  const reply: unknown = await response.json();
+  if (!isChatAttachment(reply)) {
+    throw new ApiError(response.status, "The server's reply is not a stored attachment.");
+  }
+  return reply;
+}
+
+/** Whether a reply is a stored attachment, as `POST /api/attachments` returns one. */
+export function isChatAttachment(value: unknown): value is ChatAttachment {
+  return (
+    isRecord(value) &&
+    hasFields(value, ["id", "filename", "mime", "url", "created_at"], isString) &&
+    typeof value.bytes === "number" &&
+    (value.kind === "image" || value.kind === "file")
+  );
 }
 
 export async function attachmentIdsOf(files?: File[]): Promise<string[]> {

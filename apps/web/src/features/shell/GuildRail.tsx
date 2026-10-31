@@ -1,13 +1,15 @@
 import { Link, useParams } from "@tanstack/react-router";
 import { BookOpen, Database, Inbox, Settings, Sparkles } from "lucide-react";
-import { useGuilds } from "../../api/queries";
+import { useGuilds } from "../../api/queries/guilds";
 import { cappedCount, RingCount, CollapsedRail, RailItem } from "@guildsrun/ui";
 import { AccountMenu } from "./AccountMenu";
 import { guildInitials } from "./guilds";
 import { useInboxCount, useUnreadByGuild } from "./inbox";
 
+type GuildRailProps = { onExpand: () => void };
+
 /** The retracted sidebar: guild tiles, workspace tools and the account. */
-export function GuildRail({ onExpand }: { onExpand: () => void }) {
+export function GuildRail({ onExpand }: GuildRailProps) {
   const { guildId } = useParams({ strict: false });
   const guilds = useGuilds().data ?? [];
   const inboxCount = useInboxCount();

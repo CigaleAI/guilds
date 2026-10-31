@@ -1,8 +1,13 @@
 import { useBlocker, useParams } from "@tanstack/react-router";
 import { Brain } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { agentNotesPrefix, useAgentMemory, useNote, useSaveMemory } from "../../../api/queries";
-import type { MemoryVersion } from "../../../api/types";
+import {
+  agentNotesPrefix,
+  useAgentMemory,
+  useNote,
+  useSaveMemory,
+} from "../../../api/queries/notes";
+import type { MemoryVersion } from "../../../api/types/notes";
 import { relativeTime } from "../../../app/format";
 import {
   Button,
@@ -14,7 +19,7 @@ import {
   toast,
 } from "@guildsrun/ui";
 import { LatestChange, useOpenRunStep } from "../../notes/LatestChange";
-import { DetailHeader, MasterDetail } from "../../studio/MasterDetail";
+import { DetailHeader, MasterDetail } from "../../../app/MasterDetail";
 import {
   MemoryStepButton,
   MemoryVersionRow,

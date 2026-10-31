@@ -1,9 +1,8 @@
 import { useParams } from "@tanstack/react-router";
-import { useAgentUsage } from "../../../api/queries";
-import { messageTime } from "../../../app/format";
+import { useAgentUsage } from "../../../api/queries/agents";
+import { formatCost, messageTime } from "../../../app/format";
 import { Button, StatBand, Banner, SkeletonRows } from "@guildsrun/ui";
 import { DiskMeter } from "../../machines/MachineMeters";
-import { formatCost } from "../runs/toolFormat";
 
 const count = new Intl.NumberFormat();
 
@@ -83,8 +82,8 @@ export function AgentUsage() {
                 />
               </div>
               <p className="text-xs text-muted">
-                A generation will not start while the home or the machine is over its cap. Free space
-                from the CLI tab.
+                A generation will not start while the home or the machine is over its cap. Free
+                space from the CLI tab.
               </p>
             </section>
           </>

@@ -3,26 +3,25 @@ import { ArrowLeft, Check, Download, Rocket } from "lucide-react";
 import { useState } from "react";
 import {
   exportRecipe,
-  useCapabilities,
   usePublishRecipe,
   useRecipe,
   useRecipeAccess,
   useRecipePreview,
   useRecipeValidation,
   useReviewRecipe,
-} from "../../api/queries";
-import type { RecipeRow } from "../../api/types";
+} from "../../api/queries/recipes";
+import { useCapabilities } from "../../api/queries/builder";
+import type { RecipeRow } from "../../api/types/recipes";
 import { Button, PageError, SkeletonRows, toast, Icon, Tag } from "@guildsrun/ui";
 import { PendingAccessBar } from "./plan/PendingAccessBar";
+import { isRecipeApproved, recipeStatusLabel } from "./plan/recipeDraft";
+import { planFromRecipe } from "./plan/planModel";
 import {
   emptyPendingAccess,
-  isRecipeApproved,
   pendingAccessEdits,
-  planFromRecipe,
-  recipeStatusLabel,
   toolKey,
   type PendingAccess,
-} from "./plan/planModel";
+} from "./plan/pendingAccess";
 import { PlanView } from "./plan/PlanView";
 
 const sourceLabel: Record<RecipeRow["source_kind"], string> = {
@@ -50,19 +49,7 @@ function download(name: string, body: unknown) {
  */
 export function RecipePage() {
   const { recipeId } = useParams({ from: "/recipes/$recipeId" });
-  const navigate = useNavigate();
   const recipe = useRecipe(recipeId);
-  const capabilities = useCapabilities();
-  const preview = useRecipePreview(recipeId, recipe.data?.body_version);
-  const validation = useRecipeValidation(
-    recipeId,
-    preview.isError ? recipe.data?.body_version : undefined,
-  );
-  const publish = usePublishRecipe(recipeId);
-  const review = useReviewRecipe(recipeId);
-  const access = useRecipeAccess(recipeId);
-  const [pending, setPending] = useState<PendingAccess>(emptyPendingAccess);
-  const [exporting, setExporting] = useState(false);
 
   if (recipe.isError) {
     return (
@@ -78,8 +65,22 @@ export function RecipePage() {
       </div>
     );
   }
+  return <RecipeDetail recipeId={recipeId} row={recipe.data} />;
+}
 
-  const row = recipe.data;
+type RecipeDetailProps = { recipeId: string; row: RecipeRow };
+
+/** A loaded recipe: its header and actions, its plan with the access edits, and the bar that saves them. */
+function RecipeDetail({ recipeId, row }: RecipeDetailProps) {
+  const navigate = useNavigate();
+  const capabilities = useCapabilities();
+  const preview = useRecipePreview(recipeId, row.body_version);
+  const validation = useRecipeValidation(recipeId, preview.isError ? row.body_version : undefined);
+  const publish = usePublishRecipe(recipeId);
+  const review = useReviewRecipe(recipeId);
+  const access = useRecipeAccess(recipeId);
+  const [pending, setPending] = useState<PendingAccess>(emptyPendingAccess);
+
   const approved = isRecipeApproved(row.status);
   const findings = preview.data?.findings ?? validation.data?.findings;
   const plan = planFromRecipe(row.body, preview.data ? { creates: preview.data.creates } : {});
@@ -115,70 +116,14 @@ export function RecipePage() {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-6 py-8 md:px-10">
       <div className="mx-auto flex max-w-240 flex-col gap-6">
-        <header className="flex flex-col gap-3">
-          <Button asChild variant="ghost" size="sm" className="self-start">
-            <Link to="/recipes">
-              <Icon icon={ArrowLeft} size={14} />
-              Recipes
-            </Link>
-          </Button>
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="flex min-w-60 flex-1 flex-col gap-1.5">
-              <div className="flex flex-wrap items-center gap-2">
-                <Tag tone={approved ? "tide" : "ochre"} font="sans">
-                  {recipeStatusLabel(row.status)}
-                </Tag>
-                <Tag tone="well" font="sans">
-                  {sourceLabel[row.source_kind]}
-                </Tag>
-                <span className="font-mono text-xs text-muted">body v{row.body_version}</span>
-              </div>
-              <h1 className="type-h1">{row.name}</h1>
-              {row.description && row.description !== row.body.guild.about ? (
-                <p className="text-sm text-fg-2">{row.description}</p>
-              ) : null}
-            </div>
-            {!approved ? (
-              <Button variant="outline" size="md" disabled={busy} onClick={() => void approve()}>
-                <Icon icon={Check} size={14} />
-                Approve
-              </Button>
-            ) : null}
-            <Button
-              variant="outline"
-              size="md"
-              disabled={!approved || exporting}
-              title={approved ? "Save the recipe as a file" : "Approve the recipe before export"}
-              onClick={() => {
-                setExporting(true);
-                exportRecipe(recipeId)
-                  .then(
-                    (body) => download(row.name, body),
-                    (error: Error) =>
-                      toast({
-                        kind: "error",
-                        title: "Couldn't export the recipe",
-                        description: error.message,
-                      }),
-                  )
-                  .finally(() => setExporting(false));
-              }}
-            >
-              <Icon icon={Download} size={14} />
-              Export
-            </Button>
-            <Button size="md" disabled={busy} onClick={apply}>
-              <Icon icon={Rocket} size={14} />
-              {approved ? "Apply" : "Approve and apply"}
-            </Button>
-          </div>
-          {!approved ? (
-            <p className="text-xs text-muted">
-              A draft can be edited freely; approving checks it against the organisation. Any later
-              edit returns it to draft.
-            </p>
-          ) : null}
-        </header>
+        <RecipeHeader
+          recipeId={recipeId}
+          row={row}
+          approved={approved}
+          busy={busy}
+          onApprove={() => void approve()}
+          onApply={apply}
+        />
 
         {preview.isPending ? (
           <SkeletonRows rows={6} label="Checking the recipe" />
@@ -227,5 +172,94 @@ export function RecipePage() {
         onDiscard={() => setPending(emptyPendingAccess())}
       />
     </div>
+  );
+}
+
+type RecipeHeaderProps = {
+  recipeId: string;
+  row: RecipeRow;
+  approved: boolean;
+  busy: boolean;
+  onApprove: () => void;
+  onApply: () => void;
+};
+
+/** A recipe's status, source and version, its name and description, and approving, exporting and applying it. */
+function RecipeHeader({ recipeId, row, approved, busy, onApprove, onApply }: RecipeHeaderProps) {
+  return (
+    <header className="flex flex-col gap-3">
+      <Button asChild variant="ghost" size="sm" className="self-start">
+        <Link to="/recipes">
+          <Icon icon={ArrowLeft} size={14} />
+          Recipes
+        </Link>
+      </Button>
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="flex min-w-60 flex-1 flex-col gap-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <Tag tone={approved ? "tide" : "ochre"} font="sans">
+              {recipeStatusLabel(row.status)}
+            </Tag>
+            <Tag tone="well" font="sans">
+              {sourceLabel[row.source_kind]}
+            </Tag>
+            <span className="font-mono text-xs text-muted">body v{row.body_version}</span>
+          </div>
+          <h1 className="type-h1">{row.name}</h1>
+          {row.description && row.description !== row.body.guild.about ? (
+            <p className="text-sm text-fg-2">{row.description}</p>
+          ) : null}
+        </div>
+        {!approved ? (
+          <Button variant="outline" size="md" disabled={busy} onClick={onApprove}>
+            <Icon icon={Check} size={14} />
+            Approve
+          </Button>
+        ) : null}
+        <RecipeExportButton recipeId={recipeId} name={row.name} approved={approved} />
+        <Button size="md" disabled={busy} onClick={onApply}>
+          <Icon icon={Rocket} size={14} />
+          {approved ? "Apply" : "Approve and apply"}
+        </Button>
+      </div>
+      {!approved ? (
+        <p className="text-xs text-muted">
+          A draft can be edited freely; approving checks it against the organisation. Any later edit
+          returns it to draft.
+        </p>
+      ) : null}
+    </header>
+  );
+}
+
+type RecipeExportButtonProps = { recipeId: string; name: string; approved: boolean };
+
+/** Saves an approved recipe as a file named after it; a draft cannot be exported. */
+function RecipeExportButton({ recipeId, name, approved }: RecipeExportButtonProps) {
+  const [exporting, setExporting] = useState(false);
+  return (
+    <Button
+      variant="outline"
+      size="md"
+      disabled={!approved || exporting}
+      title={approved ? "Save the recipe as a file" : "Approve the recipe before export"}
+      onClick={() => {
+        setExporting(true);
+        exportRecipe(recipeId)
+          .then(
+            (body) => download(name, body),
+            (error: Error) =>
+              toast({
+                kind: "error",
+                title: "Couldn't export the recipe",
+                description: error.message,
+              }),
+          )
+          .finally(() => setExporting(false));
+      }}
+    >
+      <Icon icon={Download} size={14} />
+      Export
+    </Button>
   );
 }

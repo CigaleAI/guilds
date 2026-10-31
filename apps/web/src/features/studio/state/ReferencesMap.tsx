@@ -1,7 +1,11 @@
 import { useId, useMemo, useState } from "react";
 import { FileText, Link2Off, ScrollText, Table2, type LucideIcon } from "lucide-react";
 import { cn, Icon } from "@guildsrun/ui";
-import type { ReferenceEdgeStatus, ReferenceNodeKind, StudioReferences } from "../../../api/types";
+import type {
+  ReferenceEdgeStatus,
+  ReferenceNodeKind,
+  StudioReferences,
+} from "../../../api/types/studio";
 import { useWidth } from "../activity/parts";
 import {
   isBroken,
@@ -31,24 +35,28 @@ const edgeTone: Record<ReferenceEdgeStatus, { stroke: string; fill: string }> = 
   named: { stroke: "stroke-rule-2", fill: "fill-rule-2" },
 };
 
-const edgeStatuses = Object.keys(edgeTone) as ReferenceEdgeStatus[];
+/** Every status an edge can have, one arrow marker each. */
+const edgeStatuses: readonly ReferenceEdgeStatus[] = [
+  "inlined",
+  "too_deep",
+  "unreached",
+  "broken",
+  "named",
+];
+
+type ReferencesMapProps = {
+  data: StudioReferences;
+  view: ReferenceMapView;
+  selected: string | null;
+  onSelect: (id: string) => void;
+};
 
 /**
  * Every Task in the first column, then the notes and tables its embeds reach, one column per hop,
  * with the files no Task reaches in a band below. A solid line is an embed, a dotted one a path
  * named in the text. Hovering or selecting a box lights what it pulls in and what pulls it in.
  */
-export function ReferencesMap({
-  data,
-  view,
-  selected,
-  onSelect,
-}: {
-  data: StudioReferences;
-  view: ReferenceMapView;
-  selected: string | null;
-  onSelect: (id: string) => void;
-}) {
+export function ReferencesMap({ data, view, selected, onSelect }: ReferencesMapProps) {
   const [measure, width] = useWidth();
   const [hover, setHover] = useState<string | null>(null);
   const markers = useId();
@@ -133,21 +141,16 @@ export function ReferencesMap({
   );
 }
 
-function ReferenceBox({
-  data,
-  placed,
-  selected,
-  faded,
-  onHover,
-  onSelect,
-}: {
+type ReferenceBoxProps = {
   data: StudioReferences;
   placed: PlacedReference;
   selected: boolean;
   faded: boolean;
   onHover: (on: boolean) => void;
   onSelect: () => void;
-}) {
+};
+
+function ReferenceBox({ data, placed, selected, faded, onHover, onSelect }: ReferenceBoxProps) {
   const { node } = placed;
   const failing = isBroken(node) || isOverBudget(node, data.budget);
   return (

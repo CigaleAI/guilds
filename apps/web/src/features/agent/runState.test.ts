@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { Run, RunError, Schedule } from "../../api/types";
+import type { Run, RunError } from "../../api/types/runs";
+import type { Schedule } from "../../api/types/schedules";
 import { runIsCapped, runState, runTitle } from "./runState";
 
 function run(overrides: Partial<Run> = {}): Run {

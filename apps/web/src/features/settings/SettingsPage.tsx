@@ -1,11 +1,12 @@
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useState, type FormEvent, type ReactNode } from "react";
-import { useOrgModels, useOrgUsage, useUpdateProfile, useUpdateOrg } from "../../api/queries";
+import { useOrgModels } from "../../api/queries/models";
+import { useOrgUsage, useUpdateProfile, useUpdateOrg } from "../../api/queries/org";
 import { switchOrg } from "../../api/identity";
-import type { UsageTotals } from "../../api/types";
+import type { UsageTotals } from "../../api/types/org";
 import { agentLook } from "../../app/agents";
+import { formatCost } from "../../app/format";
 import { useIdentity } from "../../app/identity";
-import type { TabSearch } from "../../app/router";
 import { chosenTab, placeTabs, useSlots } from "../../app/slots";
 import {
   Button,
@@ -24,9 +25,8 @@ import {
 } from "@guildsrun/ui";
 import { AccessSecrets } from "../access/AccessSecrets";
 import { AccessTools } from "../access/AccessTools";
-import { formatCost } from "../agent/runs/toolFormat";
 import { ModelProviders } from "../models/ModelProviders";
-import { handlePattern } from "../names";
+import { handlePattern } from "../../app/names";
 import { MachinesTab } from "../machines/MachinesTab";
 import { MembersTab } from "./MembersTab";
 import { canManageMembers } from "./members";
@@ -44,7 +44,9 @@ const coreTabs = [
 const count = new Intl.NumberFormat();
 const timezones = ["UTC", ...Intl.supportedValuesOf("timeZone").filter((zone) => zone !== "UTC")];
 
-function Scroll({ children }: { children: ReactNode }) {
+type ScrollProps = { children: ReactNode };
+
+function Scroll({ children }: ScrollProps) {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6 md:px-10">
       <div className="mx-auto flex max-w-240 flex-col gap-7">{children}</div>
@@ -52,7 +54,9 @@ function Scroll({ children }: { children: ReactNode }) {
   );
 }
 
-function Group({ title, children }: { title: string; children: ReactNode }) {
+type GroupProps = { title: string; children: ReactNode };
+
+function Group({ title, children }: GroupProps) {
   return (
     <section aria-label={title} className="flex flex-col gap-3">
       <h2 className="type-label text-muted">{title}</h2>
@@ -68,7 +72,7 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
  */
 export function SettingsPage() {
   const { org } = useIdentity();
-  const search = useSearch({ strict: false }) as TabSearch;
+  const search = useSearch({ from: "/settings" });
   const navigate = useNavigate();
   const { settingsTabs = [] } = useSlots();
   const tabs = placeTabs(coreTabs, settingsTabs);
@@ -116,22 +120,141 @@ export function SettingsPage() {
   );
 }
 
+/** The General tab: the operator's own profile, then the organisation's. */
 function General() {
-  const { user, org, orgs } = useIdentity();
-  const update = useUpdateOrg(org.id);
+  return (
+    <Scroll>
+      <ProfileSettings />
+      <OrganisationSettings />
+    </Scroll>
+  );
+}
+
+/** The operator's own name, colour and timezone. */
+function ProfileSettings() {
+  const { user, org } = useIdentity();
   const profile = useUpdateProfile();
-  const [name, setName] = useState(org.name);
-  const [slug, setSlug] = useState(org.slug);
   const [handle, setHandle] = useState(user.name);
   const [timezone, setTimezoneText] = useState(user.timezone ?? "");
-  const canManage = org.role === "owner" || org.role === "admin";
-  const slugError = handlePattern.test(slug.trim())
-    ? undefined
-    : "Lowercase letters, digits and hyphens, starting with a letter.";
   const handleError =
     handlePattern.test(handle.trim()) && handle.trim() !== "user"
       ? undefined
       : "Lowercase letters, digits and hyphens, starting with a letter; not “user”.";
+
+  const failed = (title: string) => (error: Error) =>
+    toast({ kind: "error", title, description: error.message });
+
+  const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  return (
+    <Group title="You">
+      <p className="text-sm text-fg-2">
+        {user.email ?? user.name} belongs to {org.name} as {org.role}.
+      </p>
+      <form
+        className="flex flex-wrap items-end gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (handleError || handle.trim() === user.name) return;
+          profile.mutate(
+            { name: handle.trim() },
+            {
+              onSuccess: () => toast({ kind: "success", title: "Name saved" }),
+              onError: failed("Couldn't save your name"),
+            },
+          );
+        }}
+      >
+        <TextField
+          tone="surface"
+          label="Name"
+          mono
+          required
+          maxLength={63}
+          className="min-w-60 flex-1"
+          hint="Agents and other operators tag you as @name; group chat shows it on your messages."
+          value={handle}
+          onChange={(event) => setHandle(event.currentTarget.value)}
+          {...(handleError ? { error: handleError } : {})}
+        />
+        <Button
+          type="submit"
+          variant="outline"
+          size="xl"
+          disabled={profile.isPending || Boolean(handleError) || handle.trim() === user.name}
+        >
+          Save
+        </Button>
+      </form>
+      <FormField
+        controlId="settings-colour"
+        label="Your colour"
+        labelFor={false}
+        hint="Your messages and avatar take this colour. With none, your messages are plum."
+      >
+        <ToneSwatches
+          label="Your colour"
+          none="No colour: plum"
+          value={personTone(user.color)}
+          disabled={profile.isPending}
+          onValueChange={(tone) =>
+            profile.mutate(
+              { color: tone ? identityHex[tone] : null },
+              { onError: failed("Couldn't save your colour") },
+            )
+          }
+        />
+      </FormField>
+      <form
+        className="flex flex-wrap items-end gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          profile.mutate(
+            { timezone: timezone.trim() || null },
+            {
+              onSuccess: () => toast({ kind: "success", title: "Timezone saved" }),
+              onError: failed("Couldn't save the timezone"),
+            },
+          );
+        }}
+      >
+        <TextField
+          tone="surface"
+          label="Timezone"
+          className="min-w-60 flex-1"
+          list="settings-timezones"
+          placeholder={browserZone}
+          value={timezone}
+          onChange={(event) => setTimezoneText(event.currentTarget.value)}
+        />
+        <datalist id="settings-timezones">
+          {timezones.map((zone) => (
+            <option key={zone} value={zone} />
+          ))}
+        </datalist>
+        <Button type="submit" variant="outline" size="xl" disabled={profile.isPending}>
+          Save
+        </Button>
+      </form>
+      <p className="-mt-1 text-sm text-muted">
+        {user.timezone
+          ? "New random-window routines start in this timezone."
+          : `Not set: new routines use this browser's timezone (${browserZone}).`}
+      </p>
+    </Group>
+  );
+}
+
+/** The organisation worked in: which one, and its name and slug, which owners and admins change. */
+function OrganisationSettings() {
+  const { org, orgs } = useIdentity();
+  const update = useUpdateOrg(org.id);
+  const [name, setName] = useState(org.name);
+  const [slug, setSlug] = useState(org.slug);
+  const canManage = org.role === "owner" || org.role === "admin";
+  const slugError = handlePattern.test(slug.trim())
+    ? undefined
+    : "Lowercase letters, digits and hyphens, starting with a letter.";
 
   const saveOrg = (event: FormEvent) => {
     event.preventDefault();
@@ -142,170 +265,67 @@ function General() {
     );
   };
 
-  const failed = (title: string) => (error: Error) =>
-    toast({ kind: "error", title, description: error.message });
-
-  const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-
   return (
-    <Scroll>
-      <Group title="You">
-        <p className="text-sm text-fg-2">
-          {user.email ?? user.name} belongs to {org.name} as {org.role}.
-        </p>
-        <form
-          className="flex flex-wrap items-end gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (handleError || handle.trim() === user.name) return;
-            profile.mutate(
-              { name: handle.trim() },
-              {
-                onSuccess: () => toast({ kind: "success", title: "Name saved" }),
-                onError: failed("Couldn't save your name"),
-              },
-            );
-          }}
-        >
+    <Group title="Organisation">
+      {orgs.length > 1 ? (
+        <Select
+          tone="surface"
+          label="Working in"
+          className="max-w-sm"
+          value={org.id}
+          onValueChange={switchOrg}
+          options={orgs.map((item) => ({ value: item.id, label: item.name }))}
+        />
+      ) : null}
+      <form onSubmit={saveOrg} className="flex flex-col gap-3">
+        <div className="grid gap-4 md:grid-cols-2">
           <TextField
             tone="surface"
             label="Name"
+            required
+            maxLength={80}
+            disabled={!canManage}
+            value={name}
+            onChange={(event) => setName(event.currentTarget.value)}
+          />
+          <TextField
+            tone="surface"
+            label="Slug"
             mono
             required
-            maxLength={63}
-            className="min-w-60 flex-1"
-            hint="Agents and other operators tag you as @name; group chat shows it on your messages."
-            value={handle}
-            onChange={(event) => setHandle(event.currentTarget.value)}
-            {...(handleError ? { error: handleError } : {})}
+            disabled={!canManage}
+            value={slug}
+            onChange={(event) => setSlug(event.currentTarget.value)}
+            {...(slugError ? { error: slugError } : {})}
           />
+        </div>
+        {update.isError ? (
+          <Banner tone="error" title="Couldn't save the organisation">
+            {update.error.message}
+          </Banner>
+        ) : null}
+        {canManage ? (
           <Button
             type="submit"
-            variant="outline"
-            size="xl"
-            disabled={profile.isPending || Boolean(handleError) || handle.trim() === user.name}
+            className="self-start"
+            disabled={update.isPending || (name.trim() === org.name && slug.trim() === org.slug)}
           >
             Save
           </Button>
-        </form>
-        <FormField
-          controlId="settings-colour"
-          label="Your colour"
-          labelFor={false}
-          hint="Your messages and avatar take this colour. With none, your messages are plum."
-        >
-          <ToneSwatches
-            label="Your colour"
-            none="No colour: plum"
-            value={personTone(user.color)}
-            disabled={profile.isPending}
-            onValueChange={(tone) =>
-              profile.mutate(
-                { color: tone ? identityHex[tone] : null },
-                { onError: failed("Couldn't save your colour") },
-              )
-            }
-          />
-        </FormField>
-        <form
-          className="flex flex-wrap items-end gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            profile.mutate(
-              { timezone: timezone.trim() || null },
-              {
-                onSuccess: () => toast({ kind: "success", title: "Timezone saved" }),
-                onError: failed("Couldn't save the timezone"),
-              },
-            );
-          }}
-        >
-          <TextField
-            tone="surface"
-            label="Timezone"
-            className="min-w-60 flex-1"
-            list="settings-timezones"
-            placeholder={browserZone}
-            value={timezone}
-            onChange={(event) => setTimezoneText(event.currentTarget.value)}
-          />
-          <datalist id="settings-timezones">
-            {timezones.map((zone) => (
-              <option key={zone} value={zone} />
-            ))}
-          </datalist>
-          <Button type="submit" variant="outline" size="xl" disabled={profile.isPending}>
-            Save
-          </Button>
-        </form>
-        <p className="-mt-1 text-sm text-muted">
-          {user.timezone
-            ? "New random-window routines start in this timezone."
-            : `Not set: new routines use this browser's timezone (${browserZone}).`}
-        </p>
-      </Group>
-
-      <Group title="Organisation">
-        {orgs.length > 1 ? (
-          <Select
-            tone="surface"
-            label="Working in"
-            className="max-w-sm"
-            value={org.id}
-            onValueChange={switchOrg}
-            options={orgs.map((item) => ({ value: item.id, label: item.name }))}
-          />
-        ) : null}
-        <form onSubmit={saveOrg} className="flex flex-col gap-3">
-          <div className="grid gap-4 md:grid-cols-2">
-            <TextField
-              tone="surface"
-              label="Name"
-              required
-              maxLength={80}
-              disabled={!canManage}
-              value={name}
-              onChange={(event) => setName(event.currentTarget.value)}
-            />
-            <TextField
-              tone="surface"
-              label="Slug"
-              mono
-              required
-              disabled={!canManage}
-              value={slug}
-              onChange={(event) => setSlug(event.currentTarget.value)}
-              {...(slugError ? { error: slugError } : {})}
-            />
-          </div>
-          {update.isError ? (
-            <Banner tone="error" title="Couldn't save the organisation">
-              {update.error.message}
-            </Banner>
-          ) : null}
-          {canManage ? (
-            <Button
-              type="submit"
-              className="self-start"
-              disabled={update.isPending || (name.trim() === org.name && slug.trim() === org.slug)}
-            >
-              Save
-            </Button>
-          ) : (
-            <p className="text-sm text-muted">
-              Owners and admins change the organisation's name and slug.
-            </p>
-          )}
-        </form>
-        <p className="text-sm text-muted">
-          Members are under{" "}
-          <Link to="/settings" search={{ tab: "members" }} className="underline">
-            Members
-          </Link>
-          .
-        </p>
-      </Group>
-    </Scroll>
+        ) : (
+          <p className="text-sm text-muted">
+            Owners and admins change the organisation's name and slug.
+          </p>
+        )}
+      </form>
+      <p className="text-sm text-muted">
+        Members are under{" "}
+        <Link to="/settings" search={{ tab: "members" }} className="underline">
+          Members
+        </Link>
+        .
+      </p>
+    </Group>
   );
 }
 
@@ -329,7 +349,10 @@ function ModelKeys() {
   }
   return (
     <Scroll>
-      <ModelProviders models={models.data} canManage={org.role === "owner" || org.role === "admin"} />
+      <ModelProviders
+        models={models.data}
+        canManage={org.role === "owner" || org.role === "admin"}
+      />
     </Scroll>
   );
 }
@@ -353,15 +376,13 @@ function usageStats(totals: UsageTotals) {
   ];
 }
 
-function UsageLine({
-  name,
-  totals,
-  lead,
-}: {
+type UsageLineProps = {
   name: ReactNode;
   totals: UsageTotals;
   lead?: ReactNode;
-}) {
+};
+
+function UsageLine({ name, totals, lead }: UsageLineProps) {
   return (
     <div className="flex items-center gap-3 border-b border-line px-4 py-2.5 last:border-b-0">
       {lead}
@@ -443,9 +464,7 @@ function Usage() {
           {organisation.studio ? (
             <UsageLine name="Studio coach" totals={organisation.studio} />
           ) : null}
-          {organisation.builder ? (
-            <UsageLine name="Builder" totals={organisation.builder} />
-          ) : null}
+          {organisation.builder ? <UsageLine name="Builder" totals={organisation.builder} /> : null}
           {organisation.archived ? (
             <UsageLine name="Deleted guilds and agents" totals={organisation.archived} />
           ) : null}

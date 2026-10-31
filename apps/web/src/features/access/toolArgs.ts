@@ -1,3 +1,5 @@
+import { isRecord, parseJson } from "../../api/wire";
+
 export type ArgFieldKind = "string" | "number" | "integer" | "boolean" | "enum" | "json";
 
 export type ArgField = {
@@ -7,10 +9,6 @@ export type ArgField = {
   description?: string;
   values?: string[];
 };
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
 
 function typeOf(spec: Record<string, unknown>): string {
   const raw = spec.type;
@@ -41,7 +39,7 @@ function fieldKind(spec: Record<string, unknown>): ArgFieldKind {
 
 /** One form field per property on an object schema; a single JSON field when there are none. */
 export function fieldsFromSchema(schema: Record<string, unknown> | undefined): ArgField[] {
-  const properties = isPlainObject(schema?.properties) ? schema.properties : null;
+  const properties = isRecord(schema?.properties) ? schema.properties : null;
   if (!properties || !Object.keys(properties).length) {
     return [{ name: "arguments", kind: "json", required: false, description: "JSON object." }];
   }
@@ -51,7 +49,7 @@ export function fieldsFromSchema(schema: Record<string, unknown> | undefined): A
       : [],
   );
   return Object.entries(properties).map(([name, raw]) => {
-    const spec = isPlainObject(raw) ? raw : {};
+    const spec = isRecord(raw) ? raw : {};
     const kind = fieldKind(spec);
     const values = kind === "enum" ? (enumValues(spec) ?? undefined) : undefined;
     const description = typeof spec.description === "string" ? spec.description : undefined;
@@ -73,6 +71,34 @@ export function emptyArgValues(fields: readonly ArgField[]): Record<string, stri
   return values;
 }
 
+/** What one field's text parses to: the value its kind takes, or why it takes none. */
+type ArgValue = { value: unknown } | { error: string };
+
+/** How each kind of field reads its text, by the field's name and its non-empty text. */
+const argValueByKind: Record<ArgFieldKind, (name: string, raw: string) => ArgValue> = {
+  string: (_name, raw) => ({ value: raw }),
+  enum: (_name, raw) => ({ value: raw }),
+  boolean: (name, raw) =>
+    raw === "true" || raw === "false"
+      ? { value: raw === "true" }
+      : { error: `${name} must be true or false.` },
+  number: (name, raw) => {
+    const number = Number(raw);
+    return Number.isFinite(number) ? { value: number } : { error: `${name} must be a number.` };
+  },
+  integer: (name, raw) => {
+    const number = Number(raw);
+    if (!Number.isFinite(number)) return { error: `${name} must be a number.` };
+    return Number.isInteger(number)
+      ? { value: number }
+      : { error: `${name} must be a whole number.` };
+  },
+  json: (name, raw) => {
+    const value = parseJson(raw);
+    return value === undefined ? { error: `${name} must be valid JSON.` } : { value };
+  },
+};
+
 /** Turns form text into tool arguments. Empty optional fields are omitted. */
 export function parseArgValues(
   fields: readonly ArgField[],
@@ -85,36 +111,14 @@ export function parseArgValues(
       if (field.required) return { error: `${field.name} is required.` };
       continue;
     }
-    if (field.kind === "boolean") {
-      if (raw !== "true" && raw !== "false")
-        return { error: `${field.name} must be true or false.` };
-      arguments_[field.name] = raw === "true";
-      continue;
+    const parsed = argValueByKind[field.kind](field.name, raw);
+    if ("error" in parsed) return parsed;
+    if (fields.length === 1 && field.kind === "json" && field.name === "arguments") {
+      return isRecord(parsed.value)
+        ? { arguments: parsed.value }
+        : { error: "arguments must be a JSON object." };
     }
-    if (field.kind === "number" || field.kind === "integer") {
-      const number = Number(raw);
-      if (!Number.isFinite(number)) return { error: `${field.name} must be a number.` };
-      if (field.kind === "integer" && !Number.isInteger(number)) {
-        return { error: `${field.name} must be a whole number.` };
-      }
-      arguments_[field.name] = number;
-      continue;
-    }
-    if (field.kind === "json") {
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(raw);
-      } catch {
-        return { error: `${field.name} must be valid JSON.` };
-      }
-      if (fields.length === 1 && field.name === "arguments") {
-        if (!isPlainObject(parsed)) return { error: "arguments must be a JSON object." };
-        return { arguments: parsed };
-      }
-      arguments_[field.name] = parsed;
-      continue;
-    }
-    arguments_[field.name] = raw;
+    arguments_[field.name] = parsed.value;
   }
   return { arguments: arguments_ };
 }

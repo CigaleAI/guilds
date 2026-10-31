@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { Secret } from "../../api/types";
+import type { Secret } from "../../api/types/secrets";
 import {
   askedRequest,
   availableTo,
@@ -96,6 +96,22 @@ test("only a result that asked the operator becomes a card", () => {
   assert.equal(askedRequest(args, '{"status":"available"}'), null);
   assert.equal(askedRequest(args, "ERROR: reason must contain non-whitespace text"), null);
   assert.equal(askedRequest(args, undefined), null);
+  assert.equal(askedRequest(args, "null"), null);
+});
+
+test("an asked request reads its arguments as text or as an object, and none from text that is not JSON", () => {
+  const asked = JSON.stringify({ widget: "secret_request", name: "ACME_KEY", status: "asked" });
+  assert.deepEqual(askedRequest({ description: "Calls Acme", reason: "Report" }, asked), {
+    name: "ACME_KEY",
+    description: "Calls Acme",
+    reason: "Report",
+  });
+  assert.deepEqual(askedRequest('"ACME_KEY"', asked), {
+    name: "ACME_KEY",
+    description: "",
+    reason: "",
+  });
+  assert.equal(askedRequest('{"name":', asked), null);
 });
 
 test("owners and admins manage secrets; members do not", () => {

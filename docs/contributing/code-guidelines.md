@@ -44,11 +44,24 @@ two functions.
     pool is the same for every call, so it may be a field. A
     transaction client is call context, not the pool.
 
-  A React component's props object is the component's record.
+  A record is named for the thing it holds, never for the function
+  that takes it. In the operator app:
+  - A React component's props object is the component's record. It
+    is named `<Component>Props` and declared beside the component.
+  - Every other record, such as what a call sends or addresses (a
+    mutation's variables, the owner a query key names, a patch), is
+    named for that thing (`SecretOwner`, `ScheduleUpdate`) and
+    declared in the feature's `types.ts`, or in the API's module of
+    its domain under `api/types/` when the API shares it.
+
   Every other object parameter is an argument bag and is not
-  allowed. That includes an inline object type of optional settings,
+  allowed. That includes an inline object type that lists a
+  function's arguments, an inline object type of optional settings,
   and a type named after its function that bundles the call's
-  arguments; neither brings a function under the parameter limit.
+  arguments; none of them brings a function under the parameter
+  limit. An argument bag is unbundled into parameters. A function
+  that needs more than four parameters has two contracts and is
+  split along them.
   Call context (the clock, the actor, a transaction client, a hook)
   is a parameter of its own, never a field of a record or a
   dependencies object.
@@ -168,7 +181,8 @@ warns past 800 and fails at 1,000. A file that grows past the limit
 is split by sub-domain (`http/agent-routes.ts`,
 `http/run-routes.ts`), never by type (`helpers.ts`, `utils.ts`). A
 domain's `types.ts` is not such a split: it is the shapes the domain
-shows to others, and other domains import it directly. A reader
+shows to others and the records its calls send, and other domains
+import it directly. A reader
 loads one file to understand one behaviour, and a file that holds
 every behaviour of a layer costs the whole layer to read and makes
 every edit collide.
