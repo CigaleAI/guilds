@@ -1,30 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { GithubLogin } from "../../api/types/guilds";
-import {
-  isGithubUrl,
-  NO_LOGIN,
-  repositoryLogin,
-  repositoryNameError,
-  repositoryNameFrom,
-  repositoryNamePattern,
-} from "./repositories";
-
-test("a GitHub repository name becomes a folder name the server accepts", () => {
-  assert.equal(repositoryNameFrom("Shop.API"), "shop-api");
-  assert.equal(repositoryNameFrom("2024-site"), "site");
-  assert.equal(repositoryNameFrom("___"), "repo");
-  for (const name of ["Shop.API", "2024-site", "___", "a".repeat(90)]) {
-    assert.ok(repositoryNamePattern.test(repositoryNameFrom(name)), name);
-  }
-});
-
-test("a repository name is refused once typed outside the server's rule", () => {
-  assert.equal(repositoryNameError(""), undefined);
-  assert.equal(repositoryNameError("shop_api-2"), undefined);
-  assert.match(repositoryNameError("Shop") ?? "", /^Lowercase/);
-  assert.match(repositoryNameError("2shop") ?? "", /^Lowercase/);
-});
+import { isGithubUrl, NO_LOGIN, repositoryLogin } from "./repositories";
 
 test("only github.com repository URLs can use a GitHub login", () => {
   assert.ok(isGithubUrl("https://github.com/acme/shop"));

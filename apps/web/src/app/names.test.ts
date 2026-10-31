@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { agentHandleError, handleError, handleHint, liveHandleError } from "./names";
+import {
+  agentHandleError,
+  handleError,
+  handleHint,
+  liveHandleError,
+  repositoryNameError,
+  repositoryNameFrom,
+  repositoryNamePattern,
+} from "./names";
 
 test("an empty handle is not yet an error", () => {
   assert.equal(handleError(""), undefined);
@@ -27,4 +35,20 @@ test("live handle errors stay quiet until the operator has started, then follow 
   assert.equal(liveHandleError("lab", true), undefined);
   assert.equal(liveHandleError("user", true, "agent"), "Reserved for tagging every operator.");
   assert.equal(liveHandleError("user", true, "guild"), undefined);
+});
+
+test("a GitHub repository name becomes a folder name the server accepts", () => {
+  assert.equal(repositoryNameFrom("Shop.API"), "shop-api");
+  assert.equal(repositoryNameFrom("2024-site"), "site");
+  assert.equal(repositoryNameFrom("___"), "repo");
+  for (const name of ["Shop.API", "2024-site", "___", "a".repeat(90)]) {
+    assert.ok(repositoryNamePattern.test(repositoryNameFrom(name)), name);
+  }
+});
+
+test("a repository name is refused once typed outside the server's rule", () => {
+  assert.equal(repositoryNameError(""), undefined);
+  assert.equal(repositoryNameError("shop_api-2"), undefined);
+  assert.match(repositoryNameError("Shop") ?? "", /^Lowercase/);
+  assert.match(repositoryNameError("2shop") ?? "", /^Lowercase/);
 });

@@ -5,8 +5,8 @@ import type {
   GithubSelectedRepository,
   McpServerAccess,
 } from "../../api/types/access";
+import { repositoryNameFrom } from "../../app/names";
 import { IconButton, Select, Tag, toast } from "@guildsrun/ui";
-import { repositoryNameFrom } from "../guild/repositories";
 import { selectedRepositories } from "./githubSettings";
 
 type GithubSettingsProps = {

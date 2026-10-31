@@ -7,7 +7,8 @@ import {
 } from "../../../api/queries/guilds";
 import type { GithubLogin, Guild, GuildRepository } from "../../../api/types/guilds";
 import { Button, IconButton, TextField, Banner, Select, toast, Icon, Tag } from "@guildsrun/ui";
-import { isGithubUrl, NO_LOGIN, repositoryLogin, repositoryNameError } from "../repositories";
+import { repositoryNameError } from "../../../app/names";
+import { isGithubUrl, NO_LOGIN, repositoryLogin } from "../repositories";
 
 type Draft = { name: string; url: string; branch: string; login: string };
 

@@ -1,7 +1,6 @@
 {
   "filesInCycles": [],
   "domainsInCycles": [
-    "features/access",
     "features/agent",
     "features/coach",
     "features/guild",
