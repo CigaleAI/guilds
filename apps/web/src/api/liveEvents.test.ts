@@ -56,6 +56,7 @@ const runMessage = {
   payload: { role: "assistant", content: "hi" },
   metadata: {},
   created_at: "2026-01-01T00:00:00Z",
+  cost_usd: 0.002,
 };
 
 const studioMessage = {
@@ -116,9 +117,11 @@ test("isMessageNotice admits a notice from an operator or an agent", () => {
   assert.equal(isMessageNotice({ ...notice, preview: undefined }), false);
 });
 
-test("isRunMessage admits a committed run row and refuses one without its payload", () => {
+test("isRunMessage admits a committed run row and refuses one without its payload or cost", () => {
   assert.equal(isRunMessage(runMessage), true);
+  assert.equal(isRunMessage({ ...runMessage, cost_usd: null }), true);
   assert.equal(isRunMessage({ ...runMessage, payload: null }), false);
+  assert.equal(isRunMessage({ ...runMessage, cost_usd: "0.002" }), false);
   assert.equal(isRunMessage([]), false);
 });
 

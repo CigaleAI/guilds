@@ -1,3 +1,4 @@
+import { numberOrNull } from "../lib/numbers.js";
 import { formatColumnTimestamp } from "./codecs.js";
 import type { GroupMessageRow } from "./group-chat.js";
 import type { MessageRow, RunRow } from "./runs.js";
@@ -24,16 +25,25 @@ export function isoOrNull(value: unknown): string | null {
   return iso(value);
 }
 
-/** A run message as the API and the live stream send it. */
-export type MessageView = Pick<MessageRow, "id" | "seq" | "payload" | "metadata"> & { created_at: string };
+/**
+ * A run message as the API and the live stream send it, with the cost stored beside it: a model
+ * reply's, or a tool result's spend such as a `browse` call's; null when it records none.
+ */
+export type MessageView = Pick<MessageRow, "id" | "seq" | "payload" | "metadata"> & {
+  created_at: string;
+  cost_usd: number | null;
+};
 
-export function messageItem(row: Pick<MessageRow, "id" | "seq" | "payload" | "metadata" | "created_at">): MessageView {
+export function messageItem(
+  row: Pick<MessageRow, "id" | "seq" | "payload" | "metadata" | "created_at" | "cost_usd">,
+): MessageView {
   return {
     id: row.id,
     seq: row.seq,
     payload: row.payload,
     metadata: row.metadata,
     created_at: iso(row.created_at),
+    cost_usd: numberOrNull(row.cost_usd),
   };
 }
 

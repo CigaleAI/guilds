@@ -172,6 +172,7 @@ test("run and message views match R0 fixtures", () => {
       payload: { role: "user", content: "hi" },
       metadata: { generation: 1 },
       created_at: "2026-09-13T12:00:00.123456+00:00",
+      cost_usd: null,
     }),
     fixture.message_us,
   );
@@ -182,8 +183,20 @@ test("run and message views match R0 fixtures", () => {
       payload: { role: "system", content: "sys" },
       metadata: {},
       created_at: "2026-09-13T12:00:00+00:00",
+      cost_usd: null,
     }),
     fixture.message_whole,
+  );
+  assert.equal(
+    messageItem({
+      id: 2,
+      seq: 4,
+      payload: { role: "tool", tool_call_id: "call_1", content: "done" },
+      metadata: { generation: 1 },
+      created_at: "2026-09-13T12:00:00+00:00",
+      cost_usd: "0.0125",
+    }).cost_usd,
+    0.0125,
   );
   assert.deepEqual(
     runItem(

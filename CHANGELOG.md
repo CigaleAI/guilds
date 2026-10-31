@@ -58,6 +58,13 @@ accepts. Admin, Platform keys lists it as **System One**. Extensions
 import `SYSTEM_ONE` from `instance/integrations.js` where they
 imported `GROUP_ROUTING`.
 
+**No impact.** A run message, as `GET /api/runs/:run_id/messages`
+returns it and `message.committed` carries it, has `cost_usd`: the
+cost stored beside it, a model reply's or a tool result's spend such
+as a `browse` call's, null when it records none. A run flow's cost
+and each step's cost add tool results' spend, so a `browse` call's
+cost counts in the generation's total.
+
 **No impact.** An `Integration` (`instance/integrations.js`) may
 declare `validate(values)`, which refuses a write's values by throwing
 an `IntegrationValueError`; the write is then a 422 with its message.

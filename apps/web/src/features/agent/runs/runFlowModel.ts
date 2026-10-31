@@ -245,6 +245,17 @@ function resultDurationMs(result: RunMessage | null): number {
   return Number(metaOf(result).duration_ms) || 0;
 }
 
+/**
+ * What a step cost: its model reply's and its calls' results' stored costs, so a tool that records
+ * spend, such as `browse`, counts with the model; null when none of them records a cost.
+ */
+export function stepCostUsd(step: FlowStep): number | null {
+  const costs = [step.turn, ...step.calls.map((item) => item.result)]
+    .map((msg) => msg?.cost_usd)
+    .filter((cost): cost is number => typeof cost === "number");
+  return costs.length ? costs.reduce((total, cost) => total + cost, 0) : null;
+}
+
 /** Sums a flow's steps, calls, failures, running calls, model and tool time, tokens, and cost. */
 export function flowStats(flow: FlowSegment): FlowStats {
   let calls = 0;
@@ -259,17 +270,16 @@ export function flowStats(flow: FlowSegment): FlowStats {
   let reasoning = 0;
   const infos: ToolCallInfo[] = [];
   for (const step of flow.steps) {
+    const cost = stepCostUsd(step);
+    if (cost !== null) {
+      costUsd += cost;
+      hasCost = true;
+    }
     if (step.turn) {
-      const meta = metaOf(step.turn);
       const usage = turnUsage(step.turn);
       modelMs += turnLatencyMs(step.turn);
       inputTokens += Number(usage.input_tokens) || 0;
       outputTokens += Number(usage.output_tokens) || 0;
-      const cost = meta.cost_usd;
-      if (typeof cost === "number") {
-        costUsd += cost;
-        hasCost = true;
-      }
       if (turnReasoning(step.turn)) reasoning += 1;
     }
     for (const item of step.calls) {

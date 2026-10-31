@@ -120,7 +120,8 @@ export function isRunMessage(data: unknown): data is RunMessage {
     isRecord(data) &&
     hasFields(data, ["id", "seq"], isNumber) &&
     hasFields(data, ["payload", "metadata"], isRecord) &&
-    isString(data.created_at)
+    isString(data.created_at) &&
+    isNumberOrNull(data.cost_usd)
   );
 }
 

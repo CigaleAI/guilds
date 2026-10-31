@@ -110,6 +110,8 @@ export type RunMessage = {
   payload: Record<string, unknown>;
   metadata: Record<string, unknown>;
   created_at: string;
+  /** The cost stored beside the message: a model reply's, or a tool result's spend such as a `browse` call's; null when it records none. */
+  cost_usd: number | null;
 };
 
 /** An uploaded chat image the operator attached to a direct-chat message. */

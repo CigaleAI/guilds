@@ -9,6 +9,8 @@ export type RunMessage = {
   payload?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
   created_at?: string;
+  /** The cost stored beside the message; null when it records none. */
+  cost_usd?: number | null;
 };
 
 /** One tool call as the model requested it in an assistant message's `tool_calls`. */

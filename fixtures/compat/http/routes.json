@@ -15169,7 +15169,8 @@
                 "has_embeds": false
               }
             },
-            "created_at": "<ts:+00:00-us>"
+            "created_at": "<ts:+00:00-us>",
+            "cost_usd": null
           }
         ]
       }

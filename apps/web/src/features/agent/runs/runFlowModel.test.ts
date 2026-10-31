@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   buildFlowSegments,
   flowStats,
+  stepCostUsd,
   flowTimeline,
   turnReasoning,
   turnText,
@@ -16,10 +17,16 @@ type Row = {
   payload: Record<string, unknown>;
   metadata: Record<string, unknown>;
   created_at: string;
+  cost_usd: number | null;
 };
 
 let seq = 0;
-function row(payload: Record<string, unknown>, metadata: Record<string, unknown> = {}): Row {
+/** A message row; its stored cost is a model reply's `cost_usd` unless `cost_usd` names another. */
+function row(
+  payload: Record<string, unknown>,
+  metadata: Record<string, unknown> = {},
+  cost_usd: number | null = typeof metadata.cost_usd === "number" ? metadata.cost_usd : null,
+): Row {
   seq += 1;
   return {
     id: seq,
@@ -27,6 +34,7 @@ function row(payload: Record<string, unknown>, metadata: Record<string, unknown>
     payload,
     metadata,
     created_at: `2026-09-21T08:00:${String(seq).padStart(2, "0")}Z`,
+    cost_usd,
   };
 }
 
@@ -270,6 +278,28 @@ test("flowStats sums time, tokens, cost, and counts errors and running calls", (
   const second = flowStats(flowAt(segments, 5));
   assert.equal(second.running, 1);
   assert.equal(second.errors, 0);
+});
+
+test("a step's cost adds its tool results' stored costs to its model reply's", () => {
+  seq = 0;
+  const messages = [
+    row({ role: "user", content: "find the price" }, { generation: 1 }),
+    row(
+      { role: "assistant", content: "", tool_calls: [call("b1", "browse", { task: "price" })] },
+      assistantMeta(),
+    ),
+    row(
+      { role: "tool", tool_call_id: "b1", content: "OK: 12 EUR" },
+      { generation: 1, tool_name: "browse", duration_ms: 9, error: null },
+      0.04,
+    ),
+  ];
+  const { segments } = buildFlowSegments(messages, run);
+  const flow = flowAt(segments, 1);
+  const step = flow.steps[0];
+  assert.ok(step);
+  assert.equal(stepCostUsd(step), 0.01 + 0.04);
+  assert.equal(flowStats(flow).costUsd, 0.01 + 0.04);
 });
 
 test("flowTimeline orders model latency before each step's tool durations", () => {

@@ -59,7 +59,8 @@ per generation. Its header shows:
 - the title, which names the model on hover, and how the generation
   ended: **Done**, **Running…**, or its error count
 - its time (model and tool time on hover), steps, tool calls, failed
-  calls, tokens, and cost
+  calls, tokens, and cost: the model replies' cost and the spend of
+  any tool result that records one, such as a `browse` call's
 - a toolbar
 
 Below the header, the generation reads down a rail as one block per
@@ -85,7 +86,8 @@ Cues follow:
 - a wrench with the call count
 - the step's time, with model and tool time on hover
 
-Hovering the header adds the step's tokens and cost. A step cut by
+Hovering the header adds the step's tokens and cost, its tool
+results' spend included. A step cut by
 `finish_reason: length` carries **max tokens**. Any finish reason
 other than stopping or calling tools is tagged too.
 

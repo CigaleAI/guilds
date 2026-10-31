@@ -28,6 +28,7 @@ import type {
 } from "@guildsrun/ui";
 import {
   flowStats,
+  stepCostUsd,
   turnReasoning,
   turnText,
   turnUsage,
@@ -168,7 +169,7 @@ function stepCues(steps: readonly FlowStep[], generating: boolean): FlowStepCues
   const input = sum(usages.map((usage) => usage.input_tokens));
   const output = sum(usages.map((usage) => usage.output_tokens));
   const cached = sum(usages.map((usage) => usage.cache_read_tokens));
-  const costs = metas.map((meta) => meta.cost_usd).filter((cost) => typeof cost === "number");
+  const costs = steps.map(stepCostUsd).filter((cost) => cost !== null);
   const kinds = new Set(calls.map((call) => kindLabel(call.info.kind)));
   const facts: StepFact[] = [];
   if (input + output) {
