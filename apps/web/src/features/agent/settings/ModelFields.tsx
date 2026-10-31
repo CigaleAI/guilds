@@ -3,7 +3,7 @@ import type { ThinkingLevel } from "../../../api/types/agents";
 import { useIdentity } from "../../../app/identity";
 import { Select, Slider } from "@guildsrun/ui";
 import { modelLimits, modelOptions } from "../../models/models";
-import { ModelKeysLink } from "../../settings/ModelKeysLink";
+import { ModelKeysLink } from "../../models/ModelKeysLink";
 import type { FieldsProps } from "./configForm";
 
 const THINKING_LEVELS = ["none", "low", "medium", "high"] as const satisfies ThinkingLevel[];

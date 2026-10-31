@@ -1,9 +1,6 @@
 {
   "filesInCycles": [],
-  "domainsInCycles": [
-    "features/agent",
-    "features/settings"
-  ],
+  "domainsInCycles": [],
   "compositionRoots": [
     "app/router.tsx"
   ]

@@ -140,7 +140,7 @@ One directory per area. The screens are in the
 | `admin/` | Connector catalog, platform keys, and users |
 | `settings/` | Organisation settings |
 | `machines/` | Machines tab, dialog, meters, and picker |
-| `models/` | Model setup and the model pickers |
+| `models/` | Model setup, the model pickers, and the link to Settings, Model keys (`ModelKeysLink.tsx`) |
 | `instance/` | What a missing platform key means for a screen |
 | `inbox/` | The Inbox |
 
