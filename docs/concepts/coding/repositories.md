@@ -304,5 +304,5 @@ tokens are minted),
 `apps/orchestrator/src/mcp/connections.ts` (the GitHub login an
 operator sees),
 `apps/orchestrator/src/http/coding-routes.ts` (routes),
-`apps/web/src/features/guild/pages/GuildRepositories.tsx`, and
+`apps/web/src/features/agent/GuildRepositories.tsx`, and
 `apps/web/src/features/agent/CodingRepositories.tsx`.

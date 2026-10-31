@@ -34,7 +34,7 @@ import {
 import { handleError, handleHint } from "../../../app/names";
 import { isGuildAdmin, isOperatorRole } from "../permissions";
 import { GuildPage } from "./GuildPage";
-import { GuildRepositories } from "./GuildRepositories";
+import { GuildRepositories } from "../../agent/GuildRepositories";
 
 /** The server's limits on a guild's text. */
 const aboutMax = 200;

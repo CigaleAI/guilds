@@ -3,9 +3,7 @@
   "domainsInCycles": [
     "features/agent",
     "features/coach",
-    "features/guild",
     "features/notes",
-    "features/recipes",
     "features/settings",
     "features/studio",
     "features/tables"

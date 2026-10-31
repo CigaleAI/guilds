@@ -4,11 +4,11 @@ import {
   useAddGuildRepository,
   useGuildRepositories,
   useRemoveGuildRepository,
-} from "../../../api/queries/guilds";
-import type { GithubLogin, Guild, GuildRepository } from "../../../api/types/guilds";
+} from "../../api/queries/guilds";
+import type { GithubLogin, Guild, GuildRepository } from "../../api/types/guilds";
 import { Button, IconButton, TextField, Banner, Select, toast, Icon, Tag } from "@guildsrun/ui";
-import { repositoryNameError } from "../../../app/names";
-import { isGithubUrl, NO_LOGIN, repositoryLogin } from "../repositories";
+import { repositoryNameError } from "../../app/names";
+import { isGithubUrl, NO_LOGIN, repositoryLogin } from "./repositories";
 
 type Draft = { name: string; url: string; branch: string; login: string };
 

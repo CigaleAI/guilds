@@ -7,7 +7,7 @@ import { useIdentity } from "../../app/identity";
 import { Button } from "@guildsrun/ui";
 import { GithubSettings } from "../access/GithubRepositories";
 import { useServerConnect } from "../access/ConnectDialogs";
-import { GuildRepositories } from "../guild/pages/GuildRepositories";
+import { GuildRepositories } from "./GuildRepositories";
 import { setupSearch } from "../instance/instance";
 
 /** GitHub without its app on this box: a link to set it up for a platform admin, a note for anyone else. */
