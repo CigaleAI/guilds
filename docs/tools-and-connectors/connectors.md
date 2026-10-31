@@ -33,6 +33,21 @@ own through `ServerExtension.connectors`
 also comes from the [connector registry](connector-registry.md), or
 from a server the instance admin or an organisation adds by hand.
 
+Beside the folders, `src/connectors/` holds the code every connector
+shares:
+
+| Module | Holds |
+| --- | --- |
+| `manifest.ts` | The manifest checks, the server id, and the default login field |
+| `registry.ts` | The lookup of installed connectors by slug and server id |
+| `servers.ts` | The loader of `connectors` rows, and what starts Off |
+| `naming.ts` | The writing verbs, and a tool's prefixed name |
+| `settings.ts` | The check of a login's settings |
+| `types.ts` | The adapter contract and `ConnectorError` |
+| `instance.ts`, `instance-keys.ts` | Platform logins and platform key writes |
+| `login.ts` | Whether a login waits only for its settings |
+| `builder.ts`, `format.ts` | The guild builder's view of a connector, and number formatting for adapters |
+
 Installed connectors are rows of one table, `connectors`: the manifest
 as a JSON document beside the box's state for it.
 
@@ -41,14 +56,15 @@ as a JSON document beside the box's state for it.
 | `id`, `slug`, `tool_prefix` | The server id, its slug, and the prefix of its tool names, unique on the box |
 | `owner_org_id` | Null for a platform connector |
 | `manifest` | The manifest, as its folder or the Admin form wrote it |
-| `source`, `verified`, `publisher`, `version` | Where it came from: `core` (a folder in the image), `registry`, or `local` (made on this box) |
+| `source`, `verified`, `experimental`, `publisher`, `version` | Where it came from: `core` (a folder in the image), `registry`, or `local` (made on this box) |
 | `enabled` | The connector's switch; on at install |
 | `oauth_client` | The client a `dynamic` OAuth connector registered |
 | `overrides` | The instance admin's edits, applied on read |
 
 At boot, every installed folder replaces its row's manifest and
 source, with or without a version bump. The switch, the OAuth client,
-and the overrides are kept. One loader (`connectors/servers.ts`) applies
+and the overrides are kept. A new folder row takes its slug as its
+tool prefix. One loader (`connectors/servers.ts`) applies
 `overrides` to the manifest for every reader. A server added by hand
 is a `local` row with no folder, and its row is its source of truth.
 
@@ -68,8 +84,8 @@ A connector has an endpoint, an adapter, or both:
 | `endpoint.url` | The remote MCP server, public HTTPS |
 | `endpoint.headers` | Custom `X-` headers every request to the endpoint sends. Names are case-insensitive: each appears once, and none is `auth.header`'s |
 | `auth.kind` | `token`, `oauth`, or `none` |
-| `auth.fields` | A token login's inputs `{ name, label, secret, optional, multiline, placeholder }`. `multiline` is a text area. Omitted, one secret field named `token` |
-| `auth.header` | `{ name, prefix }`, the header an endpoint's token travels in. Default: `Authorization: Bearer` |
+| `auth.fields` | A token login's inputs `{ name, label, secret, optional, multiline, placeholder }`. `multiline` is a text area. Omitted, one secret field named `token`, labelled API key |
+| `auth.header` | `{ name, prefix }`, the header an endpoint's token travels in. Default: `Authorization: Bearer`. The token is the OAuth access token, else the `token` field, else the first login field |
 | `auth.oauth` | `{ strategy, provider, scopes }`. `strategy` is `dynamic`, `configured`, or `github_app` ([OAuth](#oauth)) |
 | `auth.instance` | `{ integration, field }` or `{ own: true }` ([Platform logins](#platform-logins)) |
 | `requires.integration` | The integration the connector needs ([Platform keys](platform-keys.md)) |
@@ -106,8 +122,9 @@ login share one MCP session. Two logins are two sessions.
 
 Connect creates a pending login at a scope, or retries a pending or
 disconnected one. It is a 409 while a connected login exists. Connect
-refuses a platform owner. The app connects at the organisation, a
-guild, or an agent.
+refuses a platform owner (400), a connector that is off (422), and one
+the owner's organisation does not see (404). The app connects at the
+organisation, a guild, or an agent.
 
 ### Token logins
 
@@ -115,7 +132,7 @@ Every token connector connects through one operation, `connect`
 (`src/mcp/connect-token.ts`):
 
 1. It reads the inputs `auth.fields` names. A missing required one is
-   a 422 naming it.
+   a 422 naming its label.
 2. It checks `settings` against the connector's `settings_schema`
    when the request sends any.
 3. It applies `onExisting` to a connected login of the same owner.
@@ -126,7 +143,9 @@ Every token connector connects through one operation, `connect`
 
 A rejected key (401 or 403 from the provider) is a 422 and stores
 nothing. Any other provider failure is a 502. A listing the server
-rejects with 401 or 403 removes the new login.
+rejects with 401 or 403 is a 422. It removes a new login, and
+disconnects the login it replaced. Any other listing failure leaves
+the tools for the next listing.
 
 `onExisting` says what happens to a connected login:
 
@@ -147,7 +166,9 @@ stays `pending` until its settings are saved
 
 OAuth logins leave the login pending and write its enabled binding on
 a successful callback ([OAuth](#oauth)). The GitHub App follows its
-own install flow ([GitHub](github.md#connect-flow)).
+own install flow ([GitHub](github.md#connect-flow)). A connector with
+auth `none` stores a pending login and its enabled binding at once,
+with no sign-in.
 
 ### Login settings
 
@@ -166,8 +187,9 @@ A login that lacks a required setting is signed in but `pending`. Its
 metadata carries `needs_settings`, and its card shows the settings
 form. After an OAuth callback, the page says to finish setup in
 guilds.run. The first save that completes the document connects the
-login and lists its tools. Every login carries its `settings`. The
-access card adds the connector's `settings_schema`.
+login and lists its tools. Login metadata carries `settings`. Each
+server in `GET /api/mcp/servers` carries its connector's
+`settings_schema`, which the access card's settings form reads.
 
 ## Platform logins
 
@@ -184,18 +206,21 @@ of two forms:
 
 `syncInstanceLogins` (`src/connectors/instance.ts`) gives the
 connector a platform login while its integration is on. The login
-holds an empty encrypted payload, is `connected`, and has an enabled
-platform binding. Every scope inherits that binding, and any scope may
-turn it Off. While the integration is off, the login is
-`disconnected`, and a run leaves its tools out instead of failing.
+holds an empty encrypted payload, is `connected` with the account hint
+`platform key`, and has an enabled platform binding. Every scope
+inherits that binding, and any scope may turn it Off. While the
+integration is off, the login is `disconnected`, and a run leaves its
+tools out instead of failing.
 
 The sync runs:
 
 - at boot, once the key store is loaded
 - after every platform key write
-- after every connector registry change from Admin
+- after every connector registry change from Admin, and after
+  **Reload connectors**
 
-Entering or removing a key takes effect without a restart.
+Entering or removing a key takes effect without a restart, and every
+login lists its tools again on its next use.
 
 The pool reads the key at call time. It is never stored on the login
 and never enters a sandbox. Run output redacts it as
@@ -214,25 +239,26 @@ nor capped.
 
 ## Tools of a login
 
-A connector's tools are its manifest's `tools[]`, or the tools its
-endpoint lists from a session, or what its adapter's `list` returns.
-GitHub has none. Each login's tools are stored in `mcp_tools`, with
-the listing's `readOnlyHint` and `destructiveHint`, null when the
-listing gave none.
+A connector's tools are what its adapter's `list` returns, else what
+its endpoint lists from a session, else its manifest's `tools[]`. A
+tool a `policy.exclude` pattern matches is left out. Each login's
+tools are stored in `mcp_tools`, with the listing's `readOnlyHint` and
+`destructiveHint`, null when the listing gave none.
 
-Connect and a successful callback list at once. After that, run starts
-and access views read the stored list. A run start lists again once
-the stored list is 10 minutes old. A listing failure at run start
-keeps the stored list and logs. A listing of more than 200 tools, or a
-reply over 1 MB, is an error.
+Connect, a successful callback, and a settings save list at once. Run
+starts and access views read the stored list, and list again once it
+is 10 minutes old. A listing failure there keeps the stored list and
+logs. A listing of more than 200 tools, or a reply over 1 MB, is an
+error.
 
 The model sees a tool as `<tool_prefix>_<name>`. The prefix is the
-connector's `tool_prefix`, generated from its slug: lowercase letters
-and digits, at most 32 characters, with a number added when it is
-taken or reserved. Every character of the name outside
-`[A-Za-z0-9_-]` becomes `_`, and leading and trailing `_` are trimmed.
-A call maps the prefixed name through the run snapshot to the tool's
-remote name.
+connector's `tool_prefix`. A folder connector's prefix is its slug.
+Any other connector's prefix is generated from its slug: its lowercase
+letters and digits, at most 32 characters, with a number from 2 added
+when it is taken or reserved (`src/mcp/policy.ts`). Each run of
+characters of the name outside `[A-Za-z0-9_-]` becomes one `_`, and
+leading and trailing `_` are trimmed. A call maps the prefixed name
+through the run snapshot to the tool's remote name.
 
 ### What starts Off
 
@@ -260,8 +286,11 @@ switch is inherited across scopes is
 
 **Test** on a connected login opens one tool, fills its arguments
 from the listed schema, and calls
-`POST /api/mcp/connections/{id}/call`. The result is redacted against
-that login's credentials and byte-capped.
+`POST /api/mcp/connections/{id}/call`. The tool is named by its
+prefixed or its remote name, and must be listed on that login (422).
+A login that is not connected is a 409. The answer is
+`{ remote_name, name, content, truncated }`: the result redacted
+against that login's credentials and capped at 64 KiB.
 
 ## The pool and adapters
 
@@ -292,12 +321,13 @@ The adapter gets:
 - `creds`: the decrypted payload's strings, keyed by the manifest's
   field names
 - `ctx.settings`: the login's stored settings
+- `ctx.connection_id`: the login's id, empty before the login exists
 - `ctx.http`: the proxy-aware HTTP client with the adapter timeout
 - `ctx.remote`: the pool's session on the endpoint. Its calls run
   inside the pool's auth retry and drop the session on error. On a
   connector with no endpoint, it refuses.
-- `ctx.workspace_dir`: the agent's home on the host, when the call
-  comes from a run
+- `ctx.workspace_dir`: the agent's workspace on the host, when the
+  call comes from a run
 
 An adapter reads what the agent names in its home through
 `lib/agent-file.ts`: `readAgentFile` for one file, `readAgentFolder`
@@ -333,6 +363,7 @@ manifest's `state.intro` for each key present.
 | One listing reply | 1 MB |
 | State hooks, all together | 5 seconds |
 | One State value | 32,000 serialised bytes |
+| One **Test** result | 64 KiB |
 
 Every request a session sends to an endpoint first resolves its host.
 It refuses a private, loopback, link-local, or metadata address. This
@@ -369,8 +400,9 @@ is used, which is enough for loopback. Notion rejects a non-loopback
 1. The pending login holds the PKCE verifier. Its `oauth_state` finds
    it at the callback.
 2. A successful callback stores the access and refresh tokens, sets
-   `connected`, writes the enabled binding, and lists the tools. Notion
-   fills `account_hint` from its `email_domain` when present.
+   `connected`, writes the enabled binding, and lists the tools. The
+   account hint is the token response's `email_domain`, else its
+   `workspace_id`.
 3. A denied or failed callback deletes a new pending login. A retry
    over a disconnected login leaves it `disconnected`, with its
    bindings intact.
@@ -382,29 +414,38 @@ disconnected.
 
 `GET /api/mcp/servers` lists the servers the caller's organisation
 sees: the platform's and its own. Each has `enabled`, the connector's
-`auth_fields`, `source`, `verified`, `publisher`, and `logo_url`. The
-logo (`GET /api/mcp/servers/{id}/logo`) is the folder's `logo.svg`,
-served with a `default-src 'none'` policy.
+`auth_fields` and `settings_schema`, `source`, `verified`,
+`experimental`, `publisher`, and `logo_url`. The logo
+(`GET /api/mcp/servers/{id}/logo`) is the folder's `logo.svg`, served
+with a `default-src 'none'; style-src 'unsafe-inline'` policy.
 
 The instance admin edits the catalog under **Admin**, **Connector
-catalog**. A connector whose integration is not on is marked **Not set
-up**, with a **Set up** link to Platform keys.
+catalog**. Each row shows the connector's name, slug, auth, tags, and
+switch. A connector whose integration is not on is marked **Not set
+up**, with a **Set up** link to Platform keys. An expanded row shows
+the tool prefix, the OAuth setup state, the endpoint, **Edit server**
+or **Edit copy**, **Export connector.json**, and each tool with
+whether it starts on.
 
+- `GET /api/admin/mcp/servers` and `GET /api/admin/mcp/servers/{id}`
+  read the platform's connectors with their copy, overrides, and tools.
 - `PATCH /api/admin/mcp/servers/{id}` switches a connector on or off.
   On a `local` row it edits the fields. On any other row it writes
   `display_name`, `description`, `limitations`, and `setup_hint` into
   `overrides`, where `null` clears one. The endpoint, auth, and slug
-  of a connector the box did not write come from its manifest.
+  of a connector the box did not write come from its manifest:
+  sending `slug`, `url`, `auth`, or `oauth_strategy` for one is 422.
 - `PATCH /api/admin/mcp/servers/{id}/tools/{name}` writes one tool's
   `description`, `input_schema`, and `default` (On or Off for a new
   login) into `overrides.tools[name]`. A listed tool takes the copy and
   schema edits at its next listing.
 - `GET /api/admin/mcp/servers/{id}/export` returns the connector in
   the `connector.json` format, overrides applied.
-- `POST /api/admin/mcp/servers` adds a remote MCP server by hand: a
-  `local` row on public HTTPS, `auth` `none`, `token`, or `oauth`
-  (`dynamic` or `configured`), its tool prefix generated from the
-  slug.
+- `POST /api/admin/mcp/servers` adds a remote MCP server by hand
+  (**Add a remote server**): a `local` row on public HTTPS, `auth`
+  `none`, `token` (the default), or `oauth` (`dynamic` or
+  `configured`), its tool prefix generated from the slug. A slug that
+  names a part of the box, such as `memory` or `notes`, is 422.
 - In these bodies `slug`, `url` and `auth` are strings;
   `display_name`, `oauth_strategy`, `description`, `limitations`,
   `setup_hint` and a tool's `description` are a string or `null`;
@@ -417,16 +458,19 @@ Its existing logins keep showing.
 ## An organisation's own servers
 
 An organisation's owners and admins add remote MCP servers under
-**Settings**, **Tools**:
+**Settings**, **Tools**, **Integrations**, **Add a remote server**:
 
-- `POST /api/orgs/{org}/mcp/servers` takes a slug, a URL on public
+- `GET /api/orgs/{org}/mcp/servers` lists the organisation's own
+  servers.
+- - `POST /api/orgs/{org}/mcp/servers` takes a slug, a URL on public
   HTTPS, an optional display name and description, and `auth` `none`,
   `token`, or `oauth`. An OAuth server registers its client
-  dynamically. The row is `local` with `owner_org_id` set, on at
-  creation. Its tool prefix is generated against every prefix on the
-  box, because tool bindings and recipe overlays name a tool by its
-  prefixed name alone. `OrgLimits.maxMcpServers` caps how many an
-  organisation adds. Core's open policy sets none.
+  dynamically; a `configured` strategy is 422. The row is `local` with
+  `owner_org_id` set, on at creation. Its tool prefix is generated
+  against every prefix on the box, because tool bindings and recipe
+  overlays name a tool by its prefixed name alone.
+  `OrgLimits.maxMcpServers` caps how many an organisation adds. Core's
+  open policy sets none.
 - `PATCH` and `DELETE /api/orgs/{org}/mcp/servers/{id}` edit the
   server, or remove it with its logins and the bindings that name it.
 - The bodies take the fields and types of the instance admin's
@@ -472,8 +516,8 @@ query value given more than once, is 422 naming it.
 `PUT .../settings` checks the document against the schema (422 naming
 the first problem), runs the adapter's `validate` with it, stores it,
 and takes the hint `validate` returns as the login's `account_hint`.
-A platform login is a 400. A login still waiting on its OAuth sign-in
-is a 409.
+A connector with no settings is a 422. A platform login is a 400. A
+login that is neither connected nor waiting for its settings is a 409.
 
 Login metadata is `id`, `mcp_server_id`, `owner_scope`, `owner_id`,
 `account_hint`, `status`, `created_at`, `updated_at`, `rotated_at`,

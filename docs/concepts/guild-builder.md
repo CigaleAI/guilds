@@ -117,9 +117,9 @@ choose the mascots.
 ### Workspace
 
 A session's workspace has two panes: the blueprint of its draft recipe
-and the coach chat. A draggable bar splits them, and its share
-persists. On a narrow screen one pane shows at a time, switched with
-**Show**: **Coach** or **Blueprint**.
+and the coach chat. A bar splits them. Drag it, or focus it and use
+the arrow keys; its share persists. On a narrow screen one pane shows
+at a time, switched with **Show**: **Coach** or **Blueprint**.
 
 The header shows the recipe's name, its body version, and a status:
 *draft* or *approved*, and *coach designing…*, *waiting for you*, or
@@ -136,12 +136,24 @@ In it you rewrite Tasks, switch connector tools per role, or drop
 connectors. **Save and tell the coach** writes those access cuts and
 posts them to the coach.
 
-The coach chat shows the coach's reasoning as it streams, then its
-reply. Connect cards and question cards appear inline. A question card
-offers options plus **Other**. A connector that is not set up on the
-box shows as **Not set up**, with Connect disabled. Open questions the
-coach recorded in the design show as a question card above the message
-box. While a card waits for an answer, the message box is disabled.
+The coach chat shows the coach's tool steps, then its reasoning and
+its reply as they stream. A reply that hit the output limit says so.
+Connect cards and question cards appear after the steps that asked
+for them:
+
+- A **connect card** names the service, with a **Service** picker
+  when the coach offers several, and **Where it logs in**. An
+  organisation login has **Connect `<name>`**, which connects now. A
+  guild or agent login has **Use at `<scope>` scope**, which plans it
+  for apply. **Skip** declines. A connector that is not set up on the
+  box says a platform admin sets it up under **Admin**, **Platform
+  keys**, and Connect stays disabled.
+- A **question card** offers options plus **Other**, and sends every
+  answer at once.
+
+Open questions the coach recorded in the design show as a question
+card above the message box. While a card waits for an answer, the
+message box is disabled.
 When the session reaches the coach's input limit, a banner says so:
 the session stays readable, its draft stays in Recipes, and a new
 session continues the design.

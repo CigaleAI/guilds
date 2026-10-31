@@ -218,28 +218,46 @@ Values never show. The view has no switches.
 gets it. The choice starts on:
 
 - organisation-wide in Settings, for an owner or admin
+- nothing in Settings, for a member, who must pick a guild or an
+  agent
 - the guild in a guild's view
 - the agent in an agent's view
 
 A member picks guilds they can see and their agents, and cannot pick
 organisation-wide.
 
-A row the viewer may manage offers **Edit**, for the name, the
-description, and a new value, and **Delete**. Owners and admins also
-change who gets it, with the organisation-wide toggle or the guilds
-and agents to tick. Grants in guilds the viewer cannot see stay as
-they are.
+A row the viewer may manage offers:
+
+- **Edit**, for the name, the description, and a new value. An empty
+  value keeps the current one.
+- **Change who gets**, for owners and admins: the organisation-wide
+  switch, or the guilds and agents to pick. Grants in guilds the
+  viewer cannot see stay as they are.
+- **Delete**, after a confirm.
 
 Every value field has a button that shows the typed value. A note
 under the field says when the value has whitespace around it, which
 is removed on save, or whitespace inside it, which is kept.
 
 When an agent calls `secret_request`, its chat shows a card with the
-variable name, the use, and the reason. The operator provides the
-value there, or grants an existing secret to the agent
-([Run transcript](run-transcript.md)). The run view labels a
-`secret_store` call **Stored NAME** and a `secret_request` call
-**Asked for NAME**.
+variable name, the use, and the reason
+([Run transcript](run-transcript.md)). What the card offers depends
+on the name:
+
+- The agent already gets it: the card says it is set.
+- The organisation holds it, but not for this agent: the card shows
+  who gets it. An owner or admin grants it to the agent with **Grant
+  to this agent**. A member is told an owner or admin can.
+- The organisation does not hold it: the operator types the value
+  and **Provide** stores it. The description starts as the agent's.
+  An owner or admin picks who gets it: **This agent**, **Its guild**,
+  or **The organisation**. A member gives it to this agent.
+
+Once the secret is granted or stored, the app sends the run
+`Secret NAME is set.` when the run is open and idle.
+
+The run view labels a `secret_store` call **Stored NAME** and a
+`secret_request` call **Asked for NAME**.
 
 An agent's **Settings** has a **Subscription token** select that
 writes the alias its coding harness reads
@@ -333,8 +351,10 @@ DELETE /api/secrets/:id
   agent id, or an invalid field, is 422. A member asking for
   organisation-wide or unassigned access, or a grant outside the
   guilds they can see, is 403.
-- `PATCH` takes any of `name`, `description`, and `value`; none of
-  them is 422. A new value sets `rotated_at`. A taken name is 409.
+- `PATCH` takes any of `name`, `description`, and `value`; a field
+  left out or null stays as it is. None of them is 422
+  `name, description, or value is required`. A new value sets
+  `rotated_at`. A taken name is 409.
 - `PUT …/access` (owners and admins) takes
   `{ org_wide, guild_ids, agent_ids }` and replaces access. Unless
   `org_wide` is set, grants the caller cannot see stay, since the
@@ -350,8 +370,16 @@ A grant in a guild the caller cannot see, either a private guild or
 an agent in one, comes back as `{ kind, id: null, name: null }` and
 reads **Private guild**. So does a creating agent in such a guild.
 
-The agent payload, `GET /api/agents/:id`, carries `access.secrets`:
-the agent's environment as `[{ id, name, description }]`.
+The agent payload, `GET /api/agents/:agent_id`, carries
+`access.secrets`: the agent's environment as
+`[{ id, name, description }]`.
+
+Code: `apps/orchestrator/src/http/secret-routes.ts`,
+`apps/orchestrator/src/secrets/service.ts`,
+`apps/orchestrator/src/secrets/access.ts`,
+`apps/orchestrator/src/credentials/validate.ts`,
+`apps/orchestrator/src/credentials/crypto.ts`,
+`apps/orchestrator/src/db/secrets.ts`.
 
 ### Aliases: `secret_aliases`
 
@@ -392,12 +420,13 @@ harness ([Code tools](coding/code-tools.md)):
 
 | Harness | Removed |
 | --- | --- |
-| every harness | `GH_TOKEN`, `GITHUB_TOKEN` |
+| every harness | `GH_TOKEN`, `GITHUB_TOKEN`, `GUILDS_RUN_DIR` |
 | Claude Code | `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX` |
 | Codex | `CODEX_API_KEY`, `OPENAI_API_KEY` |
 | Antigravity | `GEMINI_API_KEY`, `GOOGLE_GEMINI_BASE_URL`, `AGY_ADC_AUTH`, `AGY_LLM_GATEWAY_URL`, `AGY_ACCOUNT`, `GOOGLE_CLOUD_QUOTA_PROJECT`, `GOOGLE_CLOUD_LOCATION` |
 
-Each of those would move a harness off its subscription sign-in.
+The variables in a harness's own row would each move that harness
+off its subscription sign-in.
 
 `shell` sets `GH_TOKEN` from `/run/guilds/<agent id>/git-tokens.json`
 when its working folder is inside a guild repository, replacing a
@@ -464,6 +493,9 @@ redaction set.
 
 It returns `{"stored": NAME, "rotated": bool}` plus the line
 `NAME is in your environment from the next generation.`
+
+Code: `apps/orchestrator/src/secrets/agent.ts`,
+`apps/orchestrator/src/toolbox/secret.ts`.
 
 ### `secret_request`
 

@@ -109,34 +109,38 @@ log in from its Browser tab (see [Browser](browser.md)).
 
 ### Apply preview
 
-**Apply** on a recipe's page opens the apply preview. It shows:
+**Apply** on a recipe's page opens the apply preview. From the top,
+it shows:
 
-- the new guild's name (**Guild name**)
-- each agent's card, with its **Agent name**, its **Model**, and for a
-  coding agent its **Harness**. The model list is the organisation's
-  chosen models. A coding agent's logo follows the harness picked.
-  A taken name says *An agent already has this name. Rename it before
-  creating.*
-- a **Machine** picker. Machines below the recipe's minimum are
-  disabled. The chosen machine shows its planned load bars with what
-  the recipe's agents add, and its `machine.*` findings.
-- for each connector, a **Login**: a live login to reuse, or
-  **Connect after the guild exists**
+- whether the guild can be created: a **Not ready to apply** banner
+  naming the first thing missing, or a line saying the recipe checks
+  out
 - **Connectors to install**: each connector the box lacks. An instance
   admin installs a registry one there (**Install unverified** for an
   unverified one). An owner or admin adds one the recipe carries as
-  the organisation's own server.
+  the organisation's own server (**Add server**).
 - **Connectors to set up**: each connector the box has but a platform
   admin has not set up, GitHub included when the recipe lists
   repositories. A platform admin gets a **Set up** link. Anyone else
   reads that a platform admin sets it up under **Admin**,
   **Platform keys**.
+- the new guild's name (**Guild name**)
+- a **Machine** picker. Machines below the recipe's minimum are
+  disabled. The chosen machine shows its planned load bars with what
+  the recipe's agents add, and its `machine.*` findings.
+- the plan, as on the recipe's page, with only the sections that have
+  entries. Each agent's card adds its **Agent name**, its **Model**,
+  and for a coding agent its **Harness**. The model list is the
+  organisation's chosen models, with a hint naming the recipe's
+  recommendation. The agent's **Coding** chip names the harness
+  picked. A taken name says *An agent already has this name. Rename
+  it before creating.* Each connector card adds a **Login**: a live
+  login to reuse, or **Connect after the guild exists**.
 
 **Create guild** waits until every agent has a model, every coding
 agent has a harness, and, with several machines, one is chosen. While
 no model provider is connected, a guide to
-[Model keys](model-keys.md) stands in for the model pickers. A
-**Not ready to apply** banner names the first thing missing. The
+[Model keys](model-keys.md) stands in for the model pickers. The
 preview leaves out `connection.missing`, which is a note on how the
 recipe is written.
 
@@ -153,8 +157,9 @@ Each step shows its title, what it asks for, and its status:
   Connect dialog as the Tools view, and **Check**. A connector a
   platform admin has not set up shows that gap, keeps Connect
   disabled, and offers **Set up** (**Admin**, **Platform keys**) to a
-  platform admin. The step still closes once the login is connected or
-  the step is skipped.
+  platform admin. A login made from the step is checked at once. The
+  step still closes once the login is connected or the step is
+  skipped.
 - A secret step has **Check** and a **Guild secrets** link.
 - A repository step has **Check** and a **Guild settings** link.
 - Connection steps also link to **Guild tools**.
@@ -168,7 +173,8 @@ Browser and tool overlay steps are not listed: logins happen on the
 live agent, and tool overlays close with their connection.
 
 **Activate** (or **Activate routines**) is enabled once every other
-step is closed. It starts the routines and opens the guild. **Abort**
+step is closed. It starts the routines and opens the guild. A done
+checklist offers **Open the guild**. **Abort**
 asks for confirmation (**Abort and delete**), deletes what the apply
 created, and returns to the library.
 
@@ -325,7 +331,6 @@ on.
   organisation holds is a collision and defaults to `reuse`. The
   operator may `rename` (with `dest_name`) or `skip`. A free one is
   `create`. A recommended `org` scope becomes `guild`
-- org-level seed note collisions
 - each recipe collection against the organisation's live collections
   (see [Collections](#collections))
 - provenance of builder-authored fields (`unreviewed`; informational,

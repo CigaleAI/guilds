@@ -11,8 +11,8 @@ Tokens live in CSS. Components are the barrel at
 The catalogue is Storybook. A running instance serves it at
 `/storybook` when the image built it. `pnpm storybook` at the repo
 root serves it at `http://127.0.0.1:6006/`. Open Foundations before
-inventing a colour or type size. Off-token colours have no Tailwind utilities.
-The theme clears the default palette.
+inventing a colour or type size. Off-token colours have no Tailwind
+utilities: the theme clears the default palette.
 
 ## Package
 
@@ -23,8 +23,10 @@ The theme clears the default palette.
 | `@guildsrun/ui/tokens.css` | Brand and semantic CSS variables only |
 
 The barrel is a client module (`"use client"`). Peer dependencies
-are React 19 and React DOM 19. The package also uses Radix,
-Lucide, `class-variance-authority`, and Tailwind v4.
+are React 19 and React DOM 19. The package also uses Radix, Lucide,
+`class-variance-authority`, `tailwind-merge`, and Tailwind v4. Its
+Markdown is `react-markdown` with `remark-gfm` and `remark-breaks`.
+Its fonts come from Fontsource.
 
 A consumer depends on `@guildsrun/ui` with `workspace:*`. That
 covers the operator app in this repository, and an extension's
@@ -43,14 +45,15 @@ and unpublished.
 | `src/primitives/` | Surface, Card, Bubble, Text, Icon, Mark, Pill, Tag, Track, Field, Tile, Dot, Divider, Kbd, Row |
 | `src/components/` | Composed components by area: actions, controls, identity, navigation, conversation, runs, overlays, feedback, data, content, blocks |
 | `src/foundations/` | Storybook boards for colour, type, space, radius, elevation, icons |
+| `src/writeDesignSystemDoc.ts` | The writer behind `pnpm design-system-doc` |
 | `.storybook/` | Storybook config |
 
 ## Theme
 
 One CSS entry loads the system. Set `data-theme` on `<html>`.
 Fonts (Manrope Variable for people, JetBrains Mono for machine
-text) load from the kit. A consumer does not add a second pair of
-body fonts.
+text) load from the package. A consumer does not add a second
+pair of body fonts.
 
 The operator app does this in `apps/web/src/main.tsx` (`import
 "@guildsrun/ui/theme.css"`) and `apps/web/src/app/theme.ts`

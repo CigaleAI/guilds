@@ -13,15 +13,19 @@ lives is the [Code map](code-map.md).
 
 - Node.js 24 LTS, image `node:24.21.0-bookworm-slim` (pinned by
   digest in the Dockerfile), `engines.node` `^24`
-- pnpm 10 (`packageManager` pin), workspace `apps/*` and `packages/*`
+- pnpm 10 (`packageManager` pin `pnpm@10.17.1`), workspace `apps/*`
+  and `packages/*`
 - Fastify 5, TypeBox, `@fastify/type-provider-typebox`,
   `@fastify/static`, `@fastify/websocket`
 - Drizzle ORM with `node-postgres` on `postgres:17`
-- `openai` (official client) for every model provider, `js-tiktoken`
-  for input counting, `croner` for cron, `undici` for outbound HTTP,
+- `openai` (official client) for a `chat-completions` provider,
+  `@anthropic-ai/sdk` (official client) for a `messages` provider,
+  `js-tiktoken` for input counting, `croner` for cron, `undici` for
+  outbound HTTP, `fastbrowse` for the agent-optimized browser,
   `esbuild` (development) to bundle a registry connector,
   [`@dicebear/*`](https://www.dicebear.com/) for avatars, `@sentry/node`,
-  `@sentry/node-native` for event loop stall stacks
+  `@sentry/profiling-node`, and `@sentry/node-native` for event loop
+  stall stacks
 - Tests: `node:test` through `tsx`
 - OpenSandbox server commit `473ff611d93670a149ce6600f27ed194b18cce89`,
   `opensandbox/execd:v1.1.0`, runtime `agent-runtime:0.4` (every
@@ -38,29 +42,35 @@ lives is the [Code map](code-map.md).
 ## Configuration
 
 `src/config/index.ts` validates the environment once into a typed
-`AppConfig`:
+`AppConfig`. A value it refuses throws a `ConfigError` naming the
+variable, and boot stops.
 
-- `DATABASE_URL`
-- `NOTES_ROOT`
-- `WORKSPACE_ROOT`
-- `ATTACHMENTS_ROOT`
+- `DATABASE_URL` (required)
+- `NOTES_ROOT` and `WORKSPACE_ROOT` (required, existing directories)
+- `ATTACHMENTS_ROOT` (empty keeps attachment bytes in memory)
 - `TEMPLATES_ROOT` (the prompt templates, `src/prompts` by default)
-- `OPENSANDBOX_URL`
-- `OPENSANDBOX_API_KEY`
-- `SANDBOX_IMAGE` (the image every machine runs)
-- `SECRETS_MASTER_KEY`, and `ALLOW_ZERO_MASTER_KEY` on a development
-  stack
-- `AUTH_MODE` with the `trusted-header` settings (`PUBLIC_BASE_URL`,
-  `TRUSTED_HEADER_EMAIL`, `TRUSTED_PROXY_SECRET`, `OPERATOR_EMAIL`)
-- `MAX_CONCURRENT_GENERATIONS`
-- `TOOL_RESULT_MAX_BYTES`
-- `HARNESSES_OFF` (coding harnesses this box does not offer)
-- `HOST`
-- `PORT`
+- `OPENSANDBOX_URL` and `OPENSANDBOX_API_KEY` (required)
+- `SANDBOX_IMAGE` (required: the image every machine runs)
+- `SECRETS_MASTER_KEY` (required), and `ALLOW_ZERO_MASTER_KEY=1` on a
+  development stack
+- `AUTH_MODE` (`compat-cookie` by default) with the `trusted-header`
+  settings: `PUBLIC_BASE_URL`, `TRUSTED_PROXY_SECRET`, and
+  `OPERATOR_EMAIL`, each required in that mode, and
+  `TRUSTED_HEADER_EMAIL` (`X-Forwarded-Email` by default)
+- `MAX_CONCURRENT_GENERATIONS` (default 0, no ceiling)
+- `TOOL_RESULT_MAX_BYTES` (default 65536)
+- `HARNESSES_OFF` (coding harnesses this box does not offer,
+  separated by commas or spaces; an unknown name stops boot)
+- `HOST` (default `0.0.0.0`)
+- `PORT` (default 8080)
 
 [Configure](../operations/configure.md) explains each one. The model
 catalog reads `MODELS_DEV_URL` on its own
-([Configure](../operations/configure.md#model-catalog)).
+([Configure](../operations/configure.md#model-catalog)). The
+environment integrations' variables (`SENTRY_DSN`, `REGISTRY_URL`,
+`REGISTRY_PUBLIC_KEY`, `CONNECTORS_CODE_TIER`, `CONNECTORS_ROOT`) are
+read through the integration registry
+([Extension points](extension-points.md#instance-keys)).
 
 `loadConfig` accepts the modes an extension identifies requests in
 beside core's two. The instance keys are read through the registry
@@ -76,8 +86,9 @@ A few modules read their own optional variables:
 - `WORKSPACE_MAX_MIB` (host-wide cap on one agent's home, default
   10240; each agent also has `max_workspace_mib`, default the same,
   and each machine a `max_workspace_mib` over every home on it)
-- `SENTRY_ENVIRONMENT`, `SENTRY_TRACES_SAMPLE_RATE`,
-  `SENTRY_PROFILE_SESSION_SAMPLE_RATE`, `SENTRY_DEBUG`
+- `SENTRY_ENVIRONMENT` (default `NODE_ENV`, else `development`),
+  `SENTRY_TRACES_SAMPLE_RATE` and `SENTRY_PROFILE_SESSION_SAMPLE_RATE`
+  (default 1 each), `SENTRY_DEBUG=1`
 - `ADAPTER_PROXY_URL` (forward proxy for adapter and MCP HTTP)
 - `OPENSANDBOX_SDK_MODULE` (test substitution)
 
@@ -85,22 +96,24 @@ A few modules read their own optional variables:
 
 Configurable only in tests:
 
-- `SANDBOX_IDLE_TIMEOUT` = 5 minutes, for a machine and for an
+- idle timeout (`LOOP_TIMINGS.idleTimeoutMs`,
+  `generation/index.ts`) = 5 minutes, for a machine and for an
   agent's Chrome
-- `SCHEDULER_TICK` = 30 seconds
-- `CANCEL_GRACE` = 2 seconds
-- `SHUTDOWN_TIMEOUT` = 15 seconds
+- scheduler tick (`LOOP_TIMINGS.schedulerTickMs`) = 30 seconds
+- `CANCEL_GRACE_MS` (`generation/completion.ts`) = 2 seconds
+- `SHUTDOWN_TIMEOUT_MS` (`generation/completion.ts`) = 15 seconds
 - PostgreSQL pool = min 1, max 5, TCP keepalive, connection handshake
   timeout 10 seconds
 - runtime metrics sample = 10 seconds; event loop stall = 1 second
-- OpenSandbox SDK `request_timeout` = 3 minutes
-- OpenSandbox list `page_size` = 100
+- OpenSandbox SDK `requestTimeoutSeconds` = 180
+- OpenSandbox list `pageSize` = 100
 - model request timeout = 25 ms per `max_tokens`, at least 2 and at
   most 10 minutes
 - script command timeout = 120 seconds
 - browser tool timeout = 60 seconds
 - browser ready wait = 60 seconds
-- code tool timeout = 120 seconds; `shell` gets its own timeout plus 30;
+- code tool timeout = 120 seconds; `shell` takes 120 seconds by
+  default and at most 600, and its sandbox command waits that plus 30;
   ripgrep stops after 60 seconds inside the sandbox
 - inline code-tool request = 64 KiB of base64; larger goes through the
   sandbox file API
@@ -123,10 +136,11 @@ Configurable only in tests:
 - overcommit before placement warns = 5× a machine's CPUs, 3× its
   memory
 - browser desktop = 1280×720
-- event queue per subscriber = 4096
+- event queue per subscriber = 4096 on a run, guild, Studio, or
+  Builder stream; 256 on an inbox stream
 
 Compose `stop_grace_period` on the orchestrator is 20 seconds so
-Docker does not SIGKILL during `SHUTDOWN_TIMEOUT`.
+Docker does not SIGKILL during `SHUTDOWN_TIMEOUT_MS`.
 
 ## Startup and shutdown
 
@@ -175,21 +189,30 @@ sequenceDiagram
    the connector-declared integrations (`connectors/instance.ts`),
    load the instance keys into their snapshot (`instance/keys.ts`),
    and sync the platform logins (`connectors/instance.ts`)
-5. build the artifact store (`artifactStore`), `Scripts`, `Schedules`, the model
-   service, and `McpPool`
+5. take the organisation policy (an extension's, else
+   `OPEN_POLICY`); build the artifact store (`artifactStore`), the
+   agent scripts and schedules, the model credentials (an
+   extension's, else core's), the model service, and the MCP pool
+   (`mcpPool`)
 6. start the sandbox provider: one `RunSandboxes` manager on
    `OPENSANDBOX_URL`, or the one an extension supplies; then lay out
    agent homes by machine (`machines/layout.ts`): destroy every
    sandbox labelled with an `agent_id`, and move each
    `WORKSPACE_ROOT/<agent id>` that exists to
    `WORKSPACE_ROOT/<machine id>/<agent id>` when the target does not
-7. construct the attachment service and `GenerationLoop`; reconcile
-   active runs; start the scheduler
-8. construct Studio and reconcile its sessions; construct recipes,
-   capabilities, apply, and Builder; reconcile Builder sessions
-9. build the Fastify app, each extension's routes first
+7. take the blob store (an extension's, else `FileBlobStore` under
+   `ATTACHMENTS_ROOT`, else `MemoryBlobStore`); construct the
+   attachment service, the artifact files, the admission coordinator,
+   and `GenerationLoop`; reconcile active runs; start the scheduler
+8. construct Studio and reconcile its sessions; construct
+   capabilities, recipe apply, and Builder; reconcile Builder
+   sessions
+9. build the Fastify app (`buildApp`, `src/app.ts`), each extension's
+   routes first
 
-`runServer` then listens.
+`runServer` logs whether Sentry is on and installs the fatal error
+handlers before it calls `createServer`. It then listens on `HOST`
+and `PORT`.
 
 Run reconciliation:
 
@@ -200,7 +223,8 @@ Run reconciliation:
    once the harness has exited, and the task's end checkpoint is
    taken; its result is `interrupted`, naming the session and log
    from the run's `metadata.harness_task`
-3. leave direct runs active and reusable
+3. leave direct runs, and runs an operator resumed, active and
+   reusable
 4. append a `generation.interrupted` run error to group and
    schedule runs
 5. complete group delivery through the run's snapshotted sequence
@@ -209,16 +233,23 @@ Run reconciliation:
 7. schedule idle teardown for running machines on which no agent
    generates
 
-Studio and Builder reconciliation repairs abandoned coach
-generations.
+Studio and Builder reconciliation settles each session left
+generating or cancelling: the generation is recorded as interrupted
+and the session goes idle.
 
-Graceful shutdown (SIGTERM / SIGINT): close HTTP, stop the
-scheduler and dispatchers, cooperative-cancel in-flight generations
-with `CANCEL_GRACE`, wait up to `SHUTDOWN_TIMEOUT`, close sandboxes
-and the pool, flush Sentry.
+Graceful shutdown (SIGTERM or SIGINT) runs once, in this order:
 
-An unhandled rejection or uncaught exception logs, flushes, stops,
-and exits 1.
+1. close the HTTP server, sockets and streams included
+2. stop the scheduler, cancel the machines' idle timers, and stop
+   the group dispatchers
+3. ask every in-flight generation to stop and interrupt its sandbox
+   command, then wait up to `SHUTDOWN_TIMEOUT_MS` for them
+4. close the sandbox provider, stop the runtime metrics, and close
+   the PostgreSQL pool
+5. flush Sentry
+
+An unhandled rejection or uncaught exception logs, flushes Sentry,
+shuts down, and exits 1.
 
 ## Request path
 
@@ -234,7 +265,7 @@ flowchart TD
   R --> Builder["/api/builder/*"]
   R --> Recipes["/api/recipes/* /api/applies/*"]
   Run --> GL["GenerationLoop"]
-  Group --> GC["GroupChat.dispatch"]
+  Group --> GC["GroupChat dispatcher"]
   GC --> GL
   Cron["scheduler tick"] --> GL
   Studio --> CR["ConversationRunner"]
@@ -277,10 +308,10 @@ refusal of the store with 404, but an invalid path with 422
 
 ### Work queuing
 
-An agent runs at most one generation at a time (`ActiveGenerations`
-in `generation/active-generations.ts`). Direct, group, and schedule work all take that same
-lock. Work waits in that registry, in group dispatch, and in the
-schedule's `next_run_at`, never in a job table.
+An agent runs at most one generation at a time (`ActiveGenerations` in
+`generation/active-generations.ts`). Direct, group, and schedule work
+all take that same lock. Work waits in that registry, in group
+dispatch, and in the schedule's `next_run_at`, never in a job table.
 
 | Incoming work | If the agent is already generating |
 | --- | --- |
@@ -289,7 +320,8 @@ schedule's `next_run_at`, never in a job table.
 | Due schedule | **Skip** this tick; `next_run_at` stays due |
 
 Studio and Builder take an **organisation** admission slot, not the
-agent lock (`AdmissionCoordinator` in `admission/coordinator.ts`). They do not make a target agent busy.
+agent lock (`AdmissionCoordinator` in `admission/coordinator.ts`).
+They do not make a target agent busy.
 
 Group chat **coalesces**. Several unseen messages become **one** run
 with a snapshot through the current `chat_seq`. Schedules do not
@@ -390,7 +422,8 @@ share one slot count under the organisation policy's
 ## Events
 
 One in-process bus carries every event. Each SSE stream sends
-`: connected\n\n`, then live events only.
+`: connected\n\n`, then live events only. The Builder stream also
+sends a `: keepalive\n\n` comment every 15 seconds.
 
 | Event | Stream | Class | What it says |
 |---|---|---|---|
@@ -436,11 +469,11 @@ Delivery rules:
   final message and log path.
 - There is no historical replay. After a reconnect the client
   re-reads over REST.
-- Headers are `Content-Type: text/event-stream`,
+- Headers are `Content-Type: text/event-stream; charset=utf-8`,
   `Cache-Control: no-cache`, `Connection: keep-alive`, and
   `X-Accel-Buffering: no`.
-- Slow subscribers do not stall generation. A disconnected or
-  stalled subscriber is dropped.
+- Slow subscribers do not stall generation. A disconnected
+  subscriber, or one whose queue is full, is dropped.
 
 ## PostgreSQL
 
@@ -585,17 +618,26 @@ AES-GCM plaintext is compact sorted UTF-8 JSON with non-ASCII
 
 ## Model client
 
-```ts
-interface ModelClient {
-  streamCompletion(
-    request: ModelRequest,
-    endpoint: ModelEndpoint,
-    signal?: AbortSignal,
-  ): AsyncIterable<ModelEvent>;
+Two functions are the model client:
 
-  countInputTokens(request: TokenCountRequest): Promise<number>;
-}
+```ts
+// src/llm/client.ts
+function streamCompletion(
+  request: ModelRequest,
+  endpoint: ModelEndpoint,
+  signal?: AbortSignal,
+): AsyncGenerator<ModelEvent>;
+
+// src/llm/tokens.ts
+function countInputTokens(
+  model: string,
+  messages: unknown[],
+  tools?: unknown[] | null,
+): number;
 ```
+
+Generation calls both through `generationLive`
+(`generation/completion.ts`), which tests replace.
 
 Each provider row names the API it speaks. A `chat-completions`
 provider is called with the official OpenAI client, a `messages`
@@ -632,7 +674,8 @@ cache and is retried after five minutes. Before the first fetch, and
 on a box with no network, the snapshot in
 `src/llm/models-dev.snapshot.json` serves it:
 `pnpm --filter @guildsrun/orchestrator models:snapshot` rewrites that
-file from the feed, reduced to the hosted providers and the fields the catalog reads. The whole feed is never checked in.
+file from the feed, reduced to the hosted providers and the fields
+the catalog reads. The whole feed is never checked in.
 
 A row is kept when `tool_call` is true, `status` is not
 `deprecated`, and text is among its input and output modalities. Each
@@ -778,22 +821,23 @@ through `resolveModelCredentials`, and turns both into fastbrowse's
 environment (`browse/env.ts`). That environment sets every variable
 fastbrowse reads a key, an endpoint, a model, or its Jev source from,
 blank where the run's route does not use it, so nothing of the
-orchestrator's own environment reaches fastbrowse's routing. It asks the generation's `cdp_target`
-hook for the agent's DevTools relay, opens a CDP bridge to it, and
-starts a fastbrowse process attached to that Chrome in the foreground,
-its stderr logged at debug. The run's cancel, or `max_seconds` plus
-30 seconds, aborts the run, and an aborted run's spend is logged as
-uncounted (`browse.cost`), since fastbrowse answers no result. Each
-step is published as the call's `tool.progress` event, redacted with
-the run's secrets and clipped like a harness's progress lines, and
-re-arms the agent's browser and machine idle timers (`touch_browser`);
-a step that fails to publish is logged (`browse.progress`) and the run
-goes on. The result is formatted for the model
-(`browse/format.ts`), and its cost lines become the call's
-`browser_usage` (`browse/cost.ts`), which `incrementUsage` counts when
-the tool message is committed. Fastbrowse and the bridge close however
-the call ends. The keys stay in the orchestrator's process: the
-machine's container sees only DevTools traffic.
+orchestrator's own environment reaches fastbrowse's routing. It asks
+the generation's `cdp_target` hook for the agent's DevTools relay,
+opens a CDP bridge to it, and starts a fastbrowse process attached to
+that Chrome in the foreground, its stderr logged at debug. The run's
+cancel, or `max_seconds` plus 30 seconds, aborts the run, and an
+aborted run's spend is logged as uncounted (`browse.cost`), since
+fastbrowse answers no result. Each step is published as the call's
+`tool.progress` event, redacted with the run's secrets and clipped
+like a harness's progress lines, and re-arms the agent's browser and
+machine idle timers (`touch_browser`); a step that fails to publish is
+logged (`browse.progress`) and the run goes on. The result is
+formatted for the model (`browse/format.ts`), and its cost lines
+become the call's `browser_usage` (`browse/cost.ts`), which
+`incrementUsage` counts when the tool message is committed. Fastbrowse
+and the bridge close however the call ends. The keys stay in the
+orchestrator's process: the machine's container sees only DevTools
+traffic.
 
 Control-plane tools run in Node (notes, records, memory, schedules,
 scripts, secrets, remote MCP servers, adapters). Sandbox tools
@@ -887,17 +931,23 @@ Compose json-file rotation is `max-size: 10m`, `max-file: 5`.
 |---|---|
 | `test/unit` | Domain without Docker; generation tests drive `GenerationLoop` against `NotesStore` and fakes |
 | `test/integration` | HTTP + Postgres: a database per test on the server named by `R1_ADMIN_DATABASE_URL` (default the Compose Postgres on `127.0.0.1:5432`); `http-r2`, `http-r3`, `http-r6` replay the recorded routes and SSE/WS fixtures |
-| `test/contract` | Live OpenSandbox / model / Jev routing, gated by `RUN_*_CONTRACT=1` plus a key |
+| `test/contract` | Live OpenSandbox, runtime image, coding harness, model, and Jev contracts, each skipped unless its `RUN_*_CONTRACT=1` is set, with its key or image where it needs one |
 | `fixtures/compat` | Frozen HTTP, SSE, schema, crypto, and adapter contracts (`manifest.json` digests) |
 
-`make contract` runs the OpenSandbox and model contracts
-(`RUN_OPENSANDBOX_CONTRACT`, `RUN_MODEL_CONTRACT` with
-`MODEL_CONTRACT_MODEL`).
+`pnpm test` in `apps/orchestrator` runs the three layers through
+`node:test` with `MODELS_DEV_URL` set empty, so the model catalog is
+the bundled snapshot. `test/helpers/` holds the shared fixtures, and
+the package exports some of them to an extension's tests.
 
-The OpenSandbox contract starts its own server at the pinned
-commit. Its coding case runs the code tools through execd in
-`agent-runtime:0.4` (or `CONTRACT_RUNTIME_IMAGE`). It is skipped
-until the image is built.
+`make contract` runs the OpenSandbox contracts
+(`RUN_OPENSANDBOX_CONTRACT`) and the model contract
+(`RUN_MODEL_CONTRACT`, with `MODEL_CONTRACT_MODEL` and
+`MODEL_CONTRACT_API_KEY` from `.env`).
+
+The OpenSandbox contracts start their own server at the pinned
+commit. `coding.test.ts` runs two agents on one machine, and the
+code tools through execd, in `agent-runtime:0.4` (or
+`CONTRACT_RUNTIME_IMAGE`). It is skipped until the image is built.
 
 The web app's tests (`pnpm test:web`, `node:test` over
 `apps/web/src/**/*.test.ts`) and the design-system tests

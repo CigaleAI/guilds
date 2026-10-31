@@ -24,12 +24,12 @@ shows how.
 
 Open `http://127.0.0.1:8080/`. The page says **No guilds yet**.
 
-Click **Create a guild**. Fill in:
+Click **Create a guild**. The dialog **Create a guild** opens. Fill in:
 
 - **Name**: `research`
 - **Short description**: `Keep a shared understanding of one topic`
 
-Leave the other fields as they are. Click **Create a guild**.
+Leave the other fields as they are. Click **Create guild**.
 
 You should see the guild open on its **Group chat** tab. The tabs
 under the header are the guild's pages. This walk uses **Group chat**
@@ -37,9 +37,9 @@ only.
 
 ## 2. Add an agent
 
-In the sidebar, click **Add agent** under the guild. A dialog offers
-two kinds of agent. Click **Agent**. The dialog **Create an agent**
-opens on three steps.
+In the sidebar, click **Add agent** under the guild. The dialog
+**Create an agent** opens. It offers two kinds of agent. Click
+**Agent**. The dialog walks you through three steps.
 
 1. **Identity**: type `researcher` as the **Name**. Type
    `Answers the guild's questions and remembers what it was asked`
@@ -87,18 +87,20 @@ first reply takes a while, because the agent's machine starts up.
 Then the reply appears on the left, with an **Inspect run** button.
 
 A message with no tag wakes every agent in the guild. A message that
-starts with `@researcher` wakes that agent alone.
+tags `@researcher` wakes that agent alone.
 
 ## 5. Inspect the run
 
 Click **Inspect run** on the reply.
 
-You should see the run that produced the reply. It starts with the
-prompt the model received. Open the `<task>` section. Your Task is
-there, word for word.
+You should see the agent's inspector on its **Chat** tab, showing the
+run that produced the reply. The **Conversation** view lists each
+step the model took. Open a step to see what the model wrote and
+every tool it called.
 
-Below it, each step the model took is a row. Open a row to see what
-the model wrote and every tool it called.
+Click **System**. It shows the system prompt the model received,
+section by section. The `<task>` section holds your Task, word for
+word.
 
 When a reply is not what you wanted, look here first.
 [Runs](../concepts/runs.md) explains everything a run records.
@@ -118,9 +120,9 @@ Click the agent in the sidebar, then its **State** tab. **Memory**
 lists every version of the agent's memory, newest first. Click one
 to read it.
 
-If the reply does not name your first question, open its run. An
-empty `<memory>` section means the agent did not write its memory
-yet. Tell it to, in the chat.
+If the reply does not name your first question, open its run and
+click **System**. An empty `<memory>` section means the agent did not
+write its memory yet. Tell it to, in the chat.
 
 ## What you have
 

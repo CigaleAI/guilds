@@ -149,8 +149,8 @@ The Guidelines teach a few habits every agent shares:
 
 ### Sections
 
-1. **Guidelines**: the repository template
-   `apps/orchestrator/src/prompts/system.md`, then
+1. **Guidelines**: the template `system.md` in `TEMPLATES_ROOT`
+   (`apps/orchestrator/src/prompts/` by default), then
    `You are <name>. Your id is <id>. Your home is <home>.`
    ([Agent home](agent-home.md)), then each offered connector's
    `prompt.guidance` paragraph, in catalog order. A leading
@@ -167,8 +167,10 @@ The Guidelines teach a few habits every agent shares:
    tools the agent has.
 4. **Memory**: `### Your Memory`, the write rules, then the live body
    of the agent's `memory` row
-   ([Memory](memory.md#the-memory-section)). A missing row hydrates
-   as empty. When `config.memory` is false the section is omitted.
+   ([Memory](memory.md#the-memory-section)). Without `memory_write`
+   offered, a short read-only intro replaces the write rules. A
+   missing row hydrates as empty. When `config.memory` is false the
+   section is omitted.
 
 The run's system row metadata records `task_source`
 ([Task](task.md#storage)).
@@ -195,8 +197,9 @@ without its tags, when the condition holds, and removed otherwise:
 | Name | Kept when |
 |---|---|
 | `notes` | the run offers note tools |
+| `files` | the run offers file tools |
 | `scripts` | `scripting` is on and the run offers script tools |
-| `browser_standard` | `browser` is on and the agent-optimized browser is not |
+| `browser_standard` | `browser` is on, and `browser_optimized` or the System One platform key is off |
 | `browser_optimized` | `browser` and `browser_optimized` are on and the System One platform key is on |
 | `coding` | `coding` is on |
 | `no_coding` | `coding` is off |
@@ -205,8 +208,9 @@ without its tags, when the condition holds, and removed otherwise:
 | `memory_write` | `memory` is on and the run offers `memory_write` |
 
 Without note tools, the State intro also drops the line about
-searching notes. Without scripts, it drops the
-`scripts` explanation.
+searching notes. Without file tools, it drops the line about
+searching files. Without scripts, it drops the `scripts` explanation.
+A coding agent's State intro adds a line on `repositories`.
 
 ### State keys
 
@@ -268,7 +272,11 @@ this order:
    `file_read`, and `code_search`, briefs, sessions, branches, pull
    requests, and data that is never instructions
    ([Coding agents](coding/index.md)).
-6. The browser tools, when on ([Browser](browser.md)).
+6. The browser, when on: the step-by-step tools, or `browse` and
+   `browser_eval` with the agent-optimized browser. `browse` takes a
+   whole sub-goal. `authorize` stays false unless the Task allows the
+   action or the operator confirms it. Only a `complete` result is
+   verified ([Browser](browser.md)).
 7. Notes, when offered: `note_find` and the `access` of each note it
    returns, `note_get`, `note_write` at a level or by display path, a
    new note only at `agent` or `guild` level, `.md` keys with no
@@ -280,7 +288,7 @@ this order:
    `where`, `since`, and `order` filters, `record_search` syntax, and
    queue collections that carry their state in a column
    ([Collections](collections.md)).
-10. Routines: the six schedule tools on direct and group chat runs,
+10. Routines: the seven schedule tools on direct and group chat runs,
    cron and window schedules, the Schedule wake-up message, and
    `previous_run_at` as `since` for `record_list`
    ([Routines](routines.md)).
@@ -299,5 +307,7 @@ The generated Memory section owns the `memory_write` guidance.
 | `memory` row missing | Memory hydrates as empty |
 
 Code: `apps/orchestrator/src/prompts/index.ts` (composition),
+`apps/orchestrator/src/prompts/system.md` (the Guidelines template),
 `apps/orchestrator/src/state/index.ts` (State),
+`apps/orchestrator/src/memory/index.ts` (the Memory section),
 `apps/orchestrator/src/generation/prepare.ts` (`RunPreparation.prepare`).

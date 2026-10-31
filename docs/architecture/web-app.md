@@ -51,7 +51,7 @@ through `ServerExtension.webApp`
 
 `pnpm --filter @guildsrun/web dev` serves the app on
 `http://127.0.0.1:5173/` and proxies `/api`, `/avatars`, and `/health`
-(WebSockets included) to the orchestrator on 8080.
+(WebSockets included) to the orchestrator on `127.0.0.1:8080`.
 
 ## Boot
 
@@ -65,10 +65,11 @@ through `ServerExtension.webApp`
 4. renders `App` into `#root`, with React's error hooks reporting to
    the client error log
 
-`App.tsx` mounts the query client, the slots, `TooltipProvider`, and
-`Toaster`. It shows the extension's public page when one owns the path,
-and otherwise resolves the operator and organisation
-(`src/api/identity.ts`) before the router renders any page.
+`App.tsx` mounts the theme, the query client, the slots,
+`TooltipProvider`, and `Toaster`. It shows the extension's public
+page when one owns the path, and otherwise resolves the operator and
+organisation (`src/api/identity.ts`) before the router renders any
+page.
 
 The query client keeps data fresh for 15 s. A query that fails with a
 4xx is not retried; any other failure is retried up to twice.
@@ -125,6 +126,7 @@ not-found page (`features/home/NotFound.tsx`).
 | `/tables`, `/tables/$collectionId` | Tables | `tab`: `columns` or `access` (records without it) |
 | `/guilds/$guildId` | Guild group chat | `seq`: open at that message |
 | `/guilds/$guildId/settings` | Guild settings | |
+| `/guilds/$guildId/state` | Opens Guild State › Notes | |
 | `/guilds/$guildId/state/notes` | Guild State › Notes | `path`: open that note |
 | `/guilds/$guildId/state/files` | Guild State › Files | `path`: open that file |
 | `/guilds/$guildId/state/tables` | Guild State › Tables | |
@@ -133,6 +135,7 @@ not-found page (`features/home/NotFound.tsx`).
 | `/guilds/$guildId/agents/$agentId` | Agent inspector, Chat tab | `run`: one session; with it `call` or `seq` for a step; `history=true` opens the History drawer |
 | `/guilds/$guildId/agents/$agentId/state/files` | Agent State › Files | `path`: open that file |
 | `…/agents/$agentId/prompt` | Agent Prompt tab | |
+| `…/agents/$agentId/state` | Opens Agent State › Memory | |
 | `…/agents/$agentId/state/memory`, `…/state/notes`, `…/state/tables`, `…/state/access`, `…/state/scripts` | Agent State sub-tabs | `path` on notes |
 | `…/agents/$agentId/history` | Opens Chat with the History drawer | |
 | `…/agents/$agentId/routine`, `…/browser`, `…/cli`, `…/tools`, `…/secrets`, `…/usage` | Agent tabs | |
@@ -157,13 +160,22 @@ them, and the app is whole without a slot. The slots are `AppSlots`
 beside these.
 
 `package.json` lists under `exports` what an extension's package may
-import: `mount`, the slots, the router, the build recipe
-(`appConfig()` in `vite.app.ts`), the API client and session, the
-API types of each domain (`api/types/<domain>`), the JSON value
-type and the guards that narrow a server's reply (`api/wire`),
-identity, formatting, tool-call formatting
-(`features/agent/runs/toolFormat`), and the member role helpers
-(`features/settings/members`).
+import:
+
+| Export | What it holds |
+|---|---|
+| `mount` | `mount(slots)` |
+| `vite` | The build recipe, `appConfig()` in `vite.app.ts` |
+| `app/slots` | `AppSlots` and the tab placement |
+| `app/router` | The router and its routes |
+| `app/identity` | The signed-in operator and organisation |
+| `app/format` | Times, sizes, and costs as text, such as `formatCost` |
+| `api/client` | The API client and its error |
+| `api/session` | Who the app acts as, and the sign-in path |
+| `api/types/<domain>` | The API types of one domain, one module per query module |
+| `api/wire` | `JsonValue`, `JsonObject`, and the guards that narrow a server's reply, such as `isRecord` and `isJsonObject` |
+| `features/agent/runs/toolFormat` | Tool-call formatting |
+| `features/settings/members` | The member role helpers |
 
 ## State and events
 
@@ -175,21 +187,22 @@ SSE carries transient deltas and newly committed rows
 
 | Stream | URL | What it keeps current |
 |---|---|---|
-| One per open guild | `/api/guilds/:id/group-chat/stream` | Chat, delivery state, issues, notes and records, routines, and scripts |
+| One per open guild | `/api/guilds/:id/group-chat/stream` | Chat, delivery state, issues, notes, files, Tasks and Memory, routines, and scripts |
 | The inbox | `/api/notifications/stream` | The inbox and its badge, each guild's unread count, and the chime for a message posted where the operator is not looking |
-| One per open run | `/api/runs/:id/stream` | The run transcript |
+| One per open run | `/api/runs/:id/stream` | The run transcript, the progress lines of its running tool calls, and the records its tools change |
 | One per open Studio session | `/api/studio/sessions/:id/stream` | The coach chat and drafts |
 | One per open Builder session | `/api/builder/sessions/:id/stream` | The coach chat and the recipe draft |
 
-A dropped stream reconnects after one second. Each stream re-reads
-what it covers on every (re)connect, since the server replays
-nothing, so a reload reconstructs the same chat and the same resolved
-access view.
+A dropped stream reconnects after one second, the inbox stream after
+five. Each stream re-reads what it covers on every (re)connect, since
+the server replays nothing, so a reload reconstructs the same chat
+and the same resolved access view.
 
 A run stream marks the run generating when `generation.started`
 arrives, and streams reasoning and text into the transcript. Studio
-and Builder streams do the same for the coach, and while the coach
-works their session and messages are also re-read every 2.5 s.
+and Builder streams do the same for the coach. While a run or a coach
+generates, its data is also re-read every 2.5 s, in case the stream
+falls silent.
 
 A group message the operator sends while the agents it targets are
 generating waits in a queue in the tab (`features/guild/messageQueue.ts`)
@@ -205,20 +218,26 @@ at 10 a minute.
 
 `localStorage` holds:
 
-- the operator's user and organisation (`guilds-user-id`,
-  `guilds-org-id`)
-- the theme (`guilds-theme`)
-- whether desktop notifications are wanted
-  (`guilds-desktop-notifications`)
-- view preferences: folded guilds, the retracted sidebar, the agent
-  inspector's size, the Studio and Builder splits, the activity
-  window, the last guild visited, and browser logins marked done
+| Key | What it keeps |
+|---|---|
+| `guilds-user-id`, `guilds-org-id` | The operator's user and organisation |
+| `guilds-theme` | The theme, when it is not `system` |
+| `guilds-desktop-notifications` | Whether desktop notifications are wanted |
+| `guilds-last-guild` | The last guild visited, which `/` opens |
+| `guilds-guilds-collapsed` | The guilds the sidebar folds |
+| `guilds-rail-retracted` | Whether the sidebar is retracted to the rail |
+| `guilds-agent-view-mode` | Whether the agent inspector opens full or as a modal |
+| `guilds-setup-dismissed:<agent id>:browser-login` | A browser login marked done |
+| `studio.split`, `builder.split` | The Studio and Builder splits |
+| `studio.activity.hours`, `studio.activity.tab` | The Studio activity window and its view |
+| `studio.state.hours`, `studio.tools.hours` | The Studio State and Tools windows |
 
 Every read and write tolerates storage being unavailable; the cookies
 still carry the user and organisation.
 
 `sessionStorage` holds the tab's request id (`guilds-request-id`)
-and a new Studio session's pinned issue.
+and the pin a new Studio session opens with: its focus and the
+question it offers (`studio-pin:<session id>`).
 
 ## Design system
 
@@ -236,9 +255,11 @@ import components from the package barrel
 | `apps/web/src/app/router.tsx` | Every route |
 | `apps/web/src/app/slots.ts` | `AppSlots` and tab placement |
 | `apps/web/src/app/theme.ts` | Theme preference and `data-theme` |
+| `apps/web/src/app/storage.ts` | Browser storage reads and writes that tolerate its absence |
 | `apps/web/src/api/` | API client, identity, session storage, streams, client log |
+| `apps/web/src/api/wire.ts` | The JSON value type and the guards that narrow what the server sends |
 | `apps/web/src/api/types/` | The shapes of the API's JSON and the records its calls send, one type module per domain, named as the query modules are |
-| `apps/web/src/api/queries/` | Every API read and write as a TanStack Query hook, with its query keys, one module per domain: `guilds`, `agents` (with the machines they run on), `scripts`, `chat` (the group chat and the inbox), `issues`, `schedules`, `runs`, `notes` (notes, Tasks, memory and embeds), `files`, `tables`, `access` (tools, logins, access lists and reach), `secrets`, `admin` (the instance, the catalog, the registry and the users), `org`, `models`, `recipes` (with their applies), `studio`, `builder`. A module imports another's keys to refresh what a write changes there |
+| `apps/web/src/api/queries/` | Every API read and write as a TanStack Query hook, with its query keys, one module per domain: `guilds` (with their repositories and operators), `agents` (with their harnesses and the machines they run on), `scripts`, `chat` (the group chat and the inbox), `issues`, `schedules`, `runs`, `notes` (notes, Tasks, Memory, embeds, and file changes), `files`, `tables`, `access` (tools, logins, access lists, reach, and a GitHub login's repositories), `secrets`, `admin` (the instance, the catalog, the registry, and the users), `org` (members, profile, and usage), `models`, `recipes` (with the registry and their applies), `studio`, `builder`. A module imports another's keys to refresh what a write changes there |
 | `apps/web/src/features/` | One directory per area of the app |
 | `apps/web/vite.app.ts` | Build and dev-server configuration, shared with an extension's package |
 | `apps/orchestrator/src/http/web-app.ts` | Serving the build and the page fallback |

@@ -128,43 +128,42 @@ The **Tables** page, at `/tables`, is where the organisation
 builds its collections and browses their records.
 
 The left column lists them by owner: the organisation's first, then
-each guild's own under its name. Each row shows the name, purpose,
-live record count, and when it last changed.
+each guild's own under its name, guilds in name order. Each row shows
+the name, purpose, live record count, and when it last changed.
 
-**New table** asks for a name, a purpose, an owner (the
-organisation, or one guild), and columns. A hint says how the table
-starts: an organisation table with every agent reading it, a guild
-table with that guild's agents reading and writing it. Both are
-changed on the **Access** tab.
+**New table** asks for a name, a purpose, an owner (**Belongs to**:
+the organisation, or one guild), and at least one column. A hint says
+how the table starts: an organisation table with every agent reading
+it, a guild table with that guild's agents reading and writing it.
+Both are changed on the **Access** tab.
 
-A collection opens at `/tables/<id>` with three views, each with
-its own `?tab=`:
+A collection opens at `/tables/<id>` on **Records**.
+`?tab=columns` and `?tab=access` open the other two views:
 
-- **Records**: a grid over the declared columns plus `id` and
+- **Records**: a grid over `id`, the declared columns, and
   `updated_at`.
-  - Sort by clicking a header. Pages hold 50 records, with the total.
-  - The search box runs the text search on Enter (top 50, unsorted).
-  - **Filters** filter by column type: an exact `id`; "contains" for
-    text and for an open list (an item, same as text); a select for a
-    column with allowed values or a boolean, including "(empty)",
-    which matches a missing value; from and to bounds for numbers and
-    dates.
-  - **Add record**, or clicking a row, opens the record dialog: a
-    field per column (a list as comma-separated items) and the
-    provenance strip ([Artifact store](artifacts.md#every-change-is-recorded)).
-    When the server rejects the record, the dialog shows its answer
-    verbatim, including a multi-line `record rejected` list.
-  - After a save, a notice says when the record merged into an
-    existing one (`Merged into record #N`) and which values still do
-    not fit their columns.
+  - Sort by clicking a header; an `array` column does not sort.
+    Pages hold 50 records, with **Previous**, **Next**, and the total.
+  - The search box runs the text search on Enter. It shows the top 50
+    hits in rank order, with sorting and paging off. Emptying the box
+    goes back to the listing.
+  - **Filters** filter by column type, and apply to a search too:
+    - an exact `id`
+    - a select for a boolean or a column with allowed values: any,
+      one value, or **(empty)**, which matches a missing value
+    - from and to bounds for numbers and dates; equal bounds match
+      one value
+    - "contains" for any other text or list column
+  - **Add record**, or clicking a row, opens the record dialog
+    ([below](#the-record-dialog)).
+  - The delete button on a row removes the record after a confirm.
+    Its id is not reused.
+  - **Delete all** empties the collection after a confirm that asks
+    for its name. The collection, its columns, and its access stay,
+    and ids are not reused. It is disabled on an empty collection.
+  - **Refresh** re-reads the records.
   - A stored value that does not fit its column shows as a marked
     chip in the grid.
-  - **Delete record**, in the dialog or on the row after a confirm,
-    removes the record.
-  - **Delete all** empties the collection after a confirm. The
-    collection, its columns, and its access stay, and ids are not
-    reused.
-  - **Refresh** re-reads the records.
 - **Columns**: one row per column: name, type (text, number,
   boolean, datetime, array), **required**, **unique** (text and
   number only), description in a multi-line box with a character
@@ -175,7 +174,8 @@ its own `?tab=`:
     apply the listed changes to its records: a rename moves the value
     in every record, a removal deletes the values, a retype or a
     changed value list leaves values as they are.
-  - Adding columns applies directly.
+  - Adding a column or changing a description applies directly.
+  - **Discard** drops the unsaved changes.
   - A column that cannot become unique because values repeat is
     refused by the server, with the duplicates listed.
 - **Access**: the **Access** panel of the collection, with the
@@ -206,13 +206,42 @@ access rows of the source guild and its live members
 ([Studio proposals](studio-proposals.md)). Another guild's own
 collections are out of the coach's reach.
 
+### The record dialog
+
+The record dialog holds one field per column, with the column's
+description under it and `*` on a required column:
+
+| Column | Field |
+|---|---|
+| `text` | a text box |
+| `text` with allowed values, `boolean` | a select, with **(not set)** |
+| `number` | a number input |
+| `datetime` | a local date and time, saved in UTC |
+| `array` | comma-separated items; blank items are dropped |
+
+An empty field means no value. The dialog checks each field before it
+sends: a number, `true` or `false`, a date and time, and every
+required column set. A saved record also shows its version, who
+changed it last, and the provenance strip
+([Artifact store](artifacts.md#every-change-is-recorded)). A field
+whose stored value no longer fits its column is flagged.
+
+- **Save changes** sends only the fields that changed.
+- When the server rejects the record, the dialog shows its answer
+  verbatim, including a multi-line `record rejected` list.
+- After a save, a notice says when the record merged into an existing
+  one (`Merged into record #N`) and which values still do not fit
+  their columns.
+- **Delete record** removes the record at once.
+
 ### What a guild or an agent reaches
 
 The **Tables** sub-tab of the guild's and the agent's **State** lists
 the tables that guild's agents, or that agent, reach. Each shows its
 placement, its mode, its purpose, and its columns with their
-descriptions. **New table** creates one placed in the guild. With no
-table reached, the sub-tab says **No tables yet**.
+descriptions. **New table** opens the **Tables** page's dialog, with
+the guild as the owner at first. With no table reached, the sub-tab
+says **No tables yet**.
 
 The **Access** sub-tab of the guild's and the agent's **State**
 lists the tables that guild's agents, or that agent, reach, each with
@@ -515,20 +544,20 @@ Organisation-authorized routes behind the **Tables** page, all
 acting as the operator:
 
 ```text
-GET    /api/collections                          every live collection with its record count
-POST   /api/collections                          { name, purpose, columns, guild_id? }; 201
-GET    /api/collections/:id                      the collection and its count
-PATCH  /api/collections/:id                      { name?, purpose?, columns?, guild_id? }; a renamed column carries rename_from; guild_id null moves it to the organisation
-DELETE /api/collections/:id                      204
-GET    /api/collections/:id/export               the live records as JSONL, without collection and version
-GET    /api/collections/:id/records              query, where, since, order, limit, offset; { total, records, columns }
-POST   /api/collections/:id/records              { body }; 201 { record, merged }
-DELETE /api/collections/:id/records              every live record; the collection, its access list, and next_id stay; 204
-GET    /api/collections/:id/records/:rid
-PATCH  /api/collections/:id/records/:rid         { body }; { record, warnings }
-DELETE /api/collections/:id/records/:rid         204
-GET    /api/collections/:id/access               { subjects, owner_agent_id }: the access list
-PUT    /api/collections/:id/access               { subjects: [{ type, id, mode }] }: the full list, replacing it
+GET    /api/collections                                    every live collection with its record count
+POST   /api/collections                                    { name, purpose, columns?, guild_id? }; 201
+GET    /api/collections/:collection_id                     the collection and its count
+PATCH  /api/collections/:collection_id                     { name?, purpose?, columns?, guild_id? }; a renamed column carries rename_from; guild_id null moves it to the organisation
+DELETE /api/collections/:collection_id                     204
+GET    /api/collections/:collection_id/export              the live records as JSONL, without collection and version
+GET    /api/collections/:collection_id/records             query, where, since, order, limit, offset; { total, records, columns }
+POST   /api/collections/:collection_id/records             { body }; 201 { record, merged }
+DELETE /api/collections/:collection_id/records             every live record; the collection, its access list, and next_id stay; 204
+GET    /api/collections/:collection_id/records/:record_id
+PATCH  /api/collections/:collection_id/records/:record_id  { body }; { record, warnings }
+DELETE /api/collections/:collection_id/records/:record_id  204
+GET    /api/collections/:collection_id/access              { subjects, owner_agent_id }: the access list
+PUT    /api/collections/:collection_id/access              { subjects: [{ type, id, mode }] }: the full list, replacing it
 ```
 
 - `where` and `order` travel as JSON in the query string. `order_by`

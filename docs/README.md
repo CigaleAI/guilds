@@ -89,7 +89,8 @@ How the product works, for the operator. Start with
 - [Organisations](concepts/organisations.md) — members, roles, what
   an organisation owns
 - [Operators](concepts/operators.md) — the people a guild works for
-- [Inbox](concepts/inbox.md) — issues agents raise for an operator
+- [Inbox](concepts/inbox.md) — the issues agents raise and the
+  messages that tag an operator
 - [Model keys](concepts/model-keys.md) — providers, the welcome
   dialog, which models an organisation offers
 
@@ -113,7 +114,7 @@ How the product works, for the operator. Start with
 
 **How an agent thinks**
 
-- [Runs](concepts/runs.md) — direct, group, and schedule runs;
+- [Runs](concepts/runs.md) — direct, group, and routine runs;
   what each run records
 - [Run transcript](concepts/run-transcript.md) — reading a run in
   the app
@@ -163,8 +164,8 @@ How the product works, for the operator. Start with
   to a running guild
 - [Prompt Studio](concepts/prompt-studio.md) — improve Tasks on a
   live guild
-- [Studio activity](concepts/studio-activity.md) — the guild
-  overview and its activity ledger
+- [Studio activity](concepts/studio-activity.md) — who woke whom
+  over a recent window, and what each wake produced
 - [Studio proposals](concepts/studio-proposals.md) — the coach's
   proposal cards
 - [Guild builder](concepts/guild-builder.md) — design a recipe from a
@@ -176,8 +177,8 @@ How the product works, for the operator. Start with
   and MCP tools, what a run offers
 - [Platform keys](tools-and-connectors/platform-keys.md) — the
   integrations a platform admin sets up for the whole box
-- [Connectors](tools-and-connectors/connectors.md) — token logins
-  and remote MCP
+- [Connectors](tools-and-connectors/connectors.md) — how a
+  connector runs, signs in, and lists its tools
 - [Connector list](tools-and-connectors/connector-list.md) — each
   connector the image carries
 - [Gmail and Drive](tools-and-connectors/google.md) — the Google
@@ -185,8 +186,9 @@ How the product works, for the operator. Start with
 - [GitHub](tools-and-connectors/github.md) — the GitHub App
 - [Connector registry](tools-and-connectors/connector-registry.md) —
   connectors beyond the image
-- [Native tools](tools-and-connectors/native.md) — notes, collections,
-  memory, browser, scripts, routines, secrets
+- [Native tools](tools-and-connectors/native.md) — notes, files,
+  records, memory, browser, code, group chat, issues, routines,
+  scripts, secrets
 
 ## Architecture
 
@@ -194,12 +196,13 @@ For the people who change the code.
 
 - [Deployment](architecture/deployment.md) — processes, state on
   disk, images, the trust boundary
-- [Orchestrator](architecture/orchestrator.md) — startup, events,
-  PostgreSQL, the model client, the sandbox manager
+- [Orchestrator](architecture/orchestrator.md) — startup, the
+  request path, generation, events, PostgreSQL, the model client,
+  sandbox and tools
 - [Web app](architecture/web-app.md) — the operator app: stack,
-  extension slots, state and events
-- [Code map](architecture/code-map.md) — repository layout, boot,
-  the request path, the run flow
+  boot, routes, extension slots, state and events
+- [Code map](architecture/code-map.md) — repository layout and
+  what each directory holds
 - [Screen map](architecture/screen-map.md) — every screen of the
   operator app
 - [Extension points](architecture/extension-points.md) — where

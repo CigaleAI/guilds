@@ -165,7 +165,8 @@ The `orgs` table:
 deletes its rows. A guild's operator rows hang off the membership,
 so leaving the organisation removes the user from its guilds.
 
-Code: `apps/orchestrator/src/organisations/index.ts`.
+Code: `apps/orchestrator/src/organisations/` (`index.ts` for the
+rules, `service.ts` for the changes).
 
 ### Selection
 

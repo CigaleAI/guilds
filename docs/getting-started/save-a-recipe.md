@@ -9,7 +9,8 @@ values, and chat history stay on your box.
 
 ## 1. Save the guild
 
-Open the guild's menu in its header. Click **Save as recipe**.
+Open the **Guild options** menu in the guild's header. Click **Save
+as recipe**.
 
 You should see the recipe's page. It shows the plan of everything the
 recipe creates, and each agent's Task. The recipe is a draft.
@@ -33,11 +34,11 @@ easy to tell apart. Click **Create guild**.
 
 You should see a checklist. It lists what the new guild still needs
 from you: logins, secret values, and outside setup. This recipe
-needs none of those. Click **Activate routines**. That unpauses any
-routine the recipe brought, and closes the checklist.
+needs none of those. Click **Activate routines**. That unpauses the
+routines the recipe brought.
 
-The new guild is in the sidebar, with the same agent, the same Task,
-and the same routine.
+You should see the new guild open. It is in the sidebar, with the
+same agent, the same Task, and the same routine.
 
 ## Good to know
 

@@ -133,7 +133,7 @@ user is added to it by name in its **Settings**, **Members**
 |---|---|
 | Name | Lowercase letter first, then lowercase letters, digits, and hyphens; 63 characters at most |
 | Reserved name | `user` |
-| Name taken | Refused |
+| Name taken | Refused, by another user or by an agent of a guild the user operates |
 | Email | Optional, stored trimmed and in lower case, one user per email |
 | Colour | A 6-digit hex, or none |
 | Timezone | An IANA name, or none |
@@ -171,9 +171,9 @@ Code: `apps/orchestrator/src/users/index.ts`.
   them. `name` is a string; `timezone` and `color` are a string or
   `null`. A field of another type is 422. A field left out keeps
   its value. A body with none of the three is 422. An invalid name,
-  colour, or timezone is 422. A name another user holds is 409. The
-  name is trimmed. The colour is stored in lower case. A new name is
-  not checked against the agents of the guilds the user operates.
+  colour, or timezone is 422. A name another user holds is 409. A
+  name an agent holds in a guild the user operates is 409. The name
+  is trimmed. The colour is stored in lower case.
 
 `/api/auth/me` and the organisation's member list return the colour.
 The Routine tab pre-fills random windows with the timezone and falls
@@ -265,6 +265,4 @@ routes it opens are on [Instance admin](instance-admin.md#routes).
 `DELETE /api/users/:id` removes the user row. Their organisation
 memberships go with it, and with them their guild operator rows.
 Every organisation left with no member and no guild is deleted in the
-same transaction. The delete check looks only at organisations that
-have guilds. An organisation with other members and no guilds can be
-left with no owner.
+same transaction.

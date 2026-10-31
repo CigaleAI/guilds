@@ -8,16 +8,26 @@ that uses it.
 
 ESLint and the import-cycle check
 ([Lint](development.md#lint-and-format)) enforce these rules:
-cyclomatic complexity, nesting depth, parameter count, file length,
-type assertions, a `catch` that neither throws nor returns a value,
-a throw of a plain `Error`, an object type written inline in a
-parameter, explicit types on what an orchestrator module exports,
-an export whose return type is `unknown` or
-`Record<string, unknown>`, imports of `fastify`, `http/` importing
-`db/`, what `db/` and `lib/` import, a shared directory of the
-operator app importing a feature, re-exports, imports of hosted
-code, and import cycles. Every other
-rule on this page is checked in review
+
+- cyclomatic complexity, nesting depth, parameter count, and file
+  length;
+- type assertions;
+- a `catch`, or a promise's `.catch()`, that neither throws nor
+  returns a value;
+- a throw of a plain `Error`;
+- an object type written inline in a parameter;
+- an export whose return type is `unknown` or
+  `Record<string, unknown>`, and a type alias that is only one of
+  them;
+- explicit types on what an orchestrator module exports;
+- imports of `fastify`, a value import of `db/` from `http/`, and
+  what `db/` and `lib/` import;
+- a shared directory of the operator app importing a feature;
+- re-exports;
+- imports of an extension's code or of code outside the repository;
+- import cycles.
+
+Every other rule on this page is checked in review
 ([Pull requests](pull-requests.md)).
 
 ---
@@ -50,7 +60,7 @@ two functions.
     is named `<Component>Props` and declared beside the component.
   - Every other record, such as what a call sends or addresses (a
     mutation's variables, the owner a query key names, a patch), is
-    named for that thing (`SecretOwner`, `ScheduleUpdate`) and
+    named for that thing (`AccessOwner`, `ScheduleUpdate`) and
     declared in the feature's `types.ts`, or in the API's module of
     its domain under `api/types/` when the API shares it.
 
@@ -81,9 +91,11 @@ two functions.
   such as a field of a patch, is not.
 
 **What counts towards complexity:** `if`, `else if`, `case`, loops,
-`&&`, `||`, `??`, ternaries (`a ? b : c`), and `catch`. An `if` that
-returns early counts like any other `if`. A JSX conditional
-(`cond && <X />`) counts like any other `&&`.
+`&&`, `||`, `??`, ternaries (`a ? b : c`), `catch`, a default value
+(`x = 1`), optional chaining (`a?.b`), and the logical assignments
+(`??=`, `||=`, `&&=`). An `if` that returns early counts like any
+other `if`. A JSX conditional (`cond && <X />`) counts like any
+other `&&`.
 
 A function has no line limit. A long body with one contract is
 better than a short body that calls six helpers a reader has to
@@ -170,10 +182,17 @@ feature, flat inside it. In the orchestrator each domain is a
 directory under `src/` (`schedules/`, `secrets/`, `recipes/`) whose
 files are named for what they hold (`service.ts`, `timing.ts`,
 `access.ts`). In the operator app each screen is a directory under
-`src/features/`, and the code the screens share is `src/api/` (the
-HTTP client, queries, streams, and the API types) and `src/app/`
-(the app root, the router, extension slots, and formatting). There
-is no `utils/`, `helpers/`, or `common/`. A sub-directory is a
+`src/features/`. The code the screens share is in two directories:
+
+- `src/api/` talks to the server: the HTTP client, the live streams,
+  the guards in `wire.ts` that narrow what the server sends, and one
+  module per domain under `queries/` and `types/`.
+- `src/app/` holds the app itself: the app root, the router,
+  extension slots, and the pieces every feature uses, such as
+  formatting (`format.ts`), name rules (`names.ts`), and the
+  list-detail layout (`MasterDetail.tsx`).
+
+There is no `utils/`, `helpers/`, or `common/`. A sub-directory is a
 sub-domain, never a type (`components/`, `hooks/`).
 
 A file holds one concern and stays under **800 lines**. ESLint
@@ -189,8 +208,8 @@ every edit collide.
 
 HTTP stays thin in `http/`. A route handler reads the request,
 including who makes it, calls one domain function, and writes the
-reply in its wire shape. It does not import `db/` and does not
-validate, decide, or query on its own. A rule several routes would
+reply in its wire shape. It imports no value from `db/` and does
+not validate, decide, or query on its own. A rule several routes would
 repeat, such as who may see a resource or what happens after a
 named error, is one function in the domain that owns it. A route
 that calls several domain functions in turn is the domain missing
@@ -342,7 +361,7 @@ Before you submit a change, check:
       are parameters of their own.
 - [ ] Every file is under 800 lines and holds one concern.
 - [ ] Rows leave `db/` typed; route handlers call one domain
-      function and never touch `db/`.
+      function and import no value from `db/`.
 - [ ] No import points up the stack, and no function is passed in
       to avoid one.
 - [ ] No type assertion but `as const`; every `catch` throws a

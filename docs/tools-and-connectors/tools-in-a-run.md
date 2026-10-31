@@ -16,9 +16,9 @@ A run draws its tools from three sources:
 
 ## What a run offers
 
-The note, record, memory, script, schedule, secret, and `group_post`
-tools are bindings. A run offers the ones that resolve enabled for its
-agent.
+The note, record, file, memory, script, schedule, secret, and
+`group_post` tools are bindings. A run offers the ones that resolve
+enabled for its agent.
 
 Agent flags and the run kind narrow that set:
 
@@ -29,17 +29,17 @@ Agent flags and the run kind narrow that set:
 | The five code tools | `config.coding` is true |
 | The five script tools | `config.scripting` is not false |
 | `memory_write` | `config.memory` is not false |
-| The six schedule tools | The run is a direct or group-chat run, not a schedule run |
+| The seven schedule tools | The run is a direct or group-chat run, not a schedule run |
 | `secret_request` | The run is a direct run |
 | `report_issue` | Always |
 
-Each turn re-reads the agent's bindings and flags. A native tool that
-is now off leaves the run at the next turn. `browse` leaves the run
-when `config.browser_optimized` is now off, and stays while it is on
-even after the System One key is removed, its calls then answering
-`ERROR:` with the missing key; the step-by-step browser tools stay
-while `config.browser` is on, whatever the browser's mode
-([Browser modes](native.md#browser)). A script with
+Each turn re-reads the agent's bindings and flags. A native tool
+turned off during a run leaves it at the next turn. A run that
+started with `browse` keeps it while `config.browser_optimized` is on,
+even without the System One key; its calls then answer `ERROR:`
+naming the missing key. The
+step-by-step browser tools stay while `config.browser` is on, whatever
+the browser's mode ([Browser modes](native.md#browser)). A script with
 `parameters` is also offered as a tool of its own while `script_run`
 is offered ([Scripts](../concepts/scripts.md)).
 
@@ -70,7 +70,8 @@ guild's repositories ([GitHub](github.md)).
 ### Browser calls
 
 Each step-by-step browser call starts the agent's Chrome on its
-machine when it is not running. It then runs `/usr/local/bin/guilds-browser` there. The
+machine when it is not running. It then runs
+`/usr/local/bin/guilds-browser` there. The
 helper attaches Playwright to the agent's own Chrome at its DevTools
 port, `http://127.0.0.1:<9300 + slot>`, and leaves Chrome running
 ([Browser](../concepts/browser.md)).
@@ -79,8 +80,8 @@ port, `http://127.0.0.1:<9300 + slot>`, and leaves Chrome running
 
 ### Schemas
 
-Every native tool declares a JSON Schema. Before any schema reaches
-the model, the orchestrator changes it:
+Every tool, native or connector, declares a JSON Schema. Before a
+schema reaches the model, the orchestrator changes it:
 
 - `format` is removed from optional and nullable properties, nested
   objects and array items included.
@@ -89,9 +90,9 @@ the model, the orchestrator changes it:
   it gets the line "Optional. Omit this key when unused; do not pass
   an empty value."
 
-Before a connector tool is called, an empty string is dropped when its
-key is optional on the tool's schema. An empty string for a required
-key is sent as is.
+Before a connector tool is called, an empty or blank string is
+dropped when its key is optional on the tool's schema, nested objects
+included. An empty string for a required key is sent as is.
 
 ### Handlers
 
@@ -99,12 +100,14 @@ A handler takes four parameters and returns a string:
 
 - the toolbox's services, built once by the generation loop: notes,
   artifacts, files, group chat, issues, schedules, scripts, the
-  run-state database functions, and the run streams;
+  run-state database functions, the run streams, and the
+  agent-optimized browser;
 - the run record: the run, its agent, guild, and organisation, its
   sandbox, secrets, offered tools, pinned scripts, and harness;
 - the run's hooks, which the loop composes for each run: command
-  tracking for cancels, the browser start, the repository token
-  refresh before a command, and the secret store;
+  tracking for cancels, the browser start and its activity, the
+  agent's DevTools relay, the repository token refresh before a
+  command, and the secret store;
 - the call: its id, name, and arguments, and the exit code and
   metadata the handler reports for it.
 
@@ -136,7 +139,8 @@ raw result is never stored.
 | Low-budget line | N ≤ 8 | Remaining calls at which the wrap-up line appears |
 | Connector list age | 10 minutes | A stored tool list older than this is listed again at run start |
 
-Each call records `tool_name`, `duration_ms`, `output_filter`,
-`truncated`, `original_bytes`, `stored_bytes`, and `error` in the
-tool message's metadata. A `script_run` call also records
-`exit_code`.
+Each call records `tool_name`, `tool_call_id`, `duration_ms`,
+`output_filter`, `truncated`, `original_bytes`, `stored_bytes`,
+`error`, and `remaining_tool_calls` in the tool message's metadata. A
+`script_run` call also records `exit_code`. A tool may add its own
+fields, such as `browse`'s `status` and `browser_usage`.

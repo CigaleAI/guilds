@@ -42,8 +42,9 @@ There are two kinds of agent:
 - **Wake triggers**: an optional text, up to 500 characters, that
   completes "Wake me when…". It describes the untagged group-chat
   messages the agent should answer. The field shows the focus while
-  it is empty. The operator writes it, and recipes carry it. Nothing reads it at run time: it is not in the
-  system prompt, and the group-chat router does not weigh it
+  it is empty. The operator writes it, and recipes carry it. Nothing
+  reads it at run time: it is not in the system prompt, and the
+  group-chat router does not weigh it
   ([Group chat](group-chat.md#who-wakes-up)).
 - **Avatar**: a mascot and an identity colour. They only change how
   the agent looks in the app. The agent never sees them.
@@ -177,8 +178,8 @@ card. An existing agent's Settings has one.
 ### Agent inspector
 
 Selecting an agent opens its inspector, a sheet over the guild's
-group chat. The expand control fills the window instead; the choice
-is remembered.
+group chat. On a wide screen, the expand control fills the window
+instead; the choice is remembered.
 
 The header shows the avatar, the name, whether the agent is running,
 and its focus. Two warnings can sit there:
@@ -201,7 +202,7 @@ sideways when they do not fit.
 | --- | --- | --- |
 | **Chat** | sessions with the agent, their transcripts, and **History** | [Runs](runs.md), [Run transcript](run-transcript.md) |
 | **Prompt** | the standing Task | [Task](task.md) |
-| **State** | Memory, Notes, Tables, Access, Scripts (with scripting on) | [Memory](memory.md), [Notes](notes.md), [Collections](collections.md#what-a-guild-or-an-agent-reaches), [Access](access.md#what-a-guild-or-an-agent-reaches), [Scripts](scripts.md) |
+| **State** | Memory, Notes, Files, Tables, Access, Scripts (with scripting on) | [Memory](memory.md), [Notes](notes.md), [Files](files.md), [Collections](collections.md#what-a-guild-or-an-agent-reaches), [Access](access.md#what-a-guild-or-an-agent-reaches), [Scripts](scripts.md) |
 | **Routine** | the agent's routines | [Routines](routines.md) |
 | **Browser** | the agent's live Chrome, only with Browser on | [Browser](browser.md) |
 | **CLI** | a terminal on the agent's machine | [Agent home](agent-home.md) |
@@ -224,8 +225,10 @@ has **Identity**, **Machine**, **Harness**, **Lead model**, and
 **Repositories**. The sections follow the form's Coding button, so
 turning Coding on changes them before the save. A step whose fields
 have an error, or that holds a coding-readiness problem to fix,
-carries a warning in place of its number. One **Save** and one **Discard** at
-the bottom cover every section. Enter in a field saves.
+carries a warning in place of its number. A coding agent that is not
+ready opens on a banner that lists what is missing. One **Save** and
+one **Discard** at the bottom cover every section. Enter in a field
+saves.
 
 - **Identity**: the name, the focus, the avatar picker, and **Wake me
   when** under **Group chat**, which shows the focus while it is
@@ -313,11 +316,11 @@ positive integer`, `missing keys: …`, or `unknown keys: …`.
 
 Native tools come from bindings (instance → organisation → guild →
 agent) and sandbox environment values from secret grants, not from
-this JSON ([Access](access.md), [Secrets](secrets.md)). A login's settings, such as the folder a Drive
-login reads or the repositories a GitHub login picks, live on that
-login in Tools. The browser, code, script (when `scripting` is off),
-and memory (when `memory` is off) tools follow their flags, not only
-the bindings.
+this JSON ([Access](access.md), [Secrets](secrets.md)). A login's
+settings, such as the folder a Drive login reads or the repositories a
+GitHub login picks, live on that login in Tools. The browser, code,
+script (when `scripting` is off), and memory (when `memory` is off)
+tools follow their flags, not only the bindings.
 
 Turning `browser` off, or changing `browser_language` while it is on,
 stops this agent's Chrome. Other agents on the machine keep theirs. No
@@ -327,12 +330,12 @@ configuration change replaces the machine's container
 ### Model id and options
 
 `model` is `{provider}/{model}`: a provider core speaks to (`openai`,
-`anthropic`, `openrouter`, `xai`, `deepinfra`, `local`, or `kimi`) and the id that
-provider knows the model by. On save and on run the provider must be
-connected for the organisation (422 `connect a <provider> key on
-Model keys` otherwise). Whether the catalog lists the id, or the
-organisation chose it, is not checked: a catalog change or an
-unticked model never breaks an existing agent.
+`anthropic`, `openrouter`, `xai`, `deepinfra`, `local`, or `kimi`) and
+the id that provider knows the model by. On save and on run the
+provider must be connected for the organisation (422 `connect a
+<provider> key on Model keys` otherwise). Whether the catalog lists
+the id, or the organisation chose it, is not checked: a catalog change
+or an unticked model never breaks an existing agent.
 
 The picker lists the organisation's chosen models, grouped by
 provider, from `GET /api/orgs/:id/models`
@@ -396,9 +399,8 @@ at create, and it is part of each option the group-chat router weighs
 
 `wake_triggers` (at most 500 characters) is stored on the agent,
 written by the operator, and carried in recipes. The Guild builder's
-write schema leaves it out. It is not
-hydrated into the system prompt, and it is not part of the recipient
-Choice.
+write schema leaves it out. It is not hydrated into the system
+prompt, and it is not part of the recipient Choice.
 
 ### HTTP
 

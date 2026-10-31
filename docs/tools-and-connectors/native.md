@@ -26,9 +26,10 @@ tools do not reach the memory archive.
 | `note_write` | `content` (required), and `level` with `key`, or `path` | With `level` and `key`, writes the agent's note at that level: a new note only at `agent` or `guild` level, an existing one with `write` on it. With `path`, rewrites any existing note the agent may write. `key` is the `.md` file name. Returns the display path |
 | `note_delete` | `path` (required) | Soft-deletes a note the agent may write. `task.md` and `memory.md` cannot be deleted |
 
-A collection or record path is refused with a pointer to the record
-tools. A script is refused with a pointer to the script tools, and a
-file with a pointer to the file tools.
+A record path is refused with a pointer to the record tools. A
+collection path is refused too: collections are the operator's. A
+script is refused with a pointer to the script tools, and a file with
+a pointer to the file tools.
 
 An agent always reaches its own agent-level notes. Every other note
 is reached through its access list
@@ -118,7 +119,7 @@ modes, and each offers its own tools:
 | Mode | Runs when | Tools |
 |---|---|---|
 | Step-by-step | `browser` is on and the agent-optimized browser is not | The eight tools below |
-| Agent-optimized | `browser_optimized` is on and the System One [platform key](platform-keys.md) is on | `browse` and `browser_eval` |
+| Agent-optimized | `browser` and `browser_optimized` are on, and the System One [platform key](platform-keys.md) is on | `browse` and `browser_eval` |
 
 `browse` delegates a whole web task on the agent's Chrome and is
 offered in place of the seven step tools; `browser_eval` is offered in

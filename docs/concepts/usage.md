@@ -150,7 +150,9 @@ Each counter holds `input_tokens`, `output_tokens`,
 token columns, its cost to both `browser_cost_usd` and `cost_usd`,
 and one to `browser_calls`, leaving `calls` as it is.
 `org_monthly_usage` holds the same figures per `(org_id, month)`, the
-month being the UTC `YYYY-MM`.
+month being the UTC `YYYY-MM`. It also counts `studio_builder_runs`,
+the Studio coach and Builder generations of the month, which the
+organisation policy's `monthlyCoachRuns` caps. Core sets no cap.
 
 Deleting an agent deletes its `agent` counter row and its messages.
 Deleting a guild deletes its `guild` counter row and its agents'.
@@ -172,7 +174,7 @@ agents, and guilds the caller cannot see.
 | --- | --- |
 | `GET /api/agents/:id/usage` | the agent's totals, `workspace_mib`, `max_workspace_mib`, and its `machine` with its own disk figures |
 | `GET /api/guilds/:id/usage` | the guild's totals and `agents`, each with its totals |
-| `GET /api/usage` | `{ organisation }`: the current organisation's totals, `studio`, `archived`, and `guilds` with their `agents`, limited to the guilds the caller can see |
+| `GET /api/usage` | `{ organisation }`: the current organisation's totals, `studio`, `builder`, `archived`, and `guilds` with their `agents`, limited to the guilds the caller can see |
 
 Each set of totals carries `input_tokens`, `output_tokens`,
 `cache_read_tokens`, `total_tokens`, `cost_usd`, `calls`,
@@ -191,5 +193,7 @@ gate.
 
 - `apps/orchestrator/src/usage/index.ts`: counters, totals, the usage tree
 - `apps/orchestrator/src/llm/cost.ts`: catalog pricing
+- `apps/orchestrator/src/browse/cost.ts`: a browse call's
+  `browser_usage`
 - `apps/orchestrator/src/llm/credentials.ts`: `onUsage`
 - `apps/orchestrator/src/usage/view.ts`: the organisation, guild, and agent listings

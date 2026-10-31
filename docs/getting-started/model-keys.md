@@ -3,8 +3,9 @@
 Agents need a model to run. You give guilds.run an API key from a
 model provider. This page shows how.
 
-The welcome dialog does it in four steps. You paste a key, you tick
-the models your agents may use, and you pick one as the default.
+The welcome dialog does it in four steps. You pick a provider, paste
+its key, tick the models your agents may use, and pick one as the
+default.
 
 ## Pick a provider
 
@@ -34,8 +35,8 @@ explains it.
 ### If you run a local model server
 
 Pick **Local endpoint**. Type the server's address into **Base URL**.
-Include `/v1` when your server uses it. Leave **API key** empty when
-your server needs none.
+Include `/v1` when your server uses it. Leave the optional **API key**
+field empty when your server needs none.
 
 guilds.run runs inside Docker. So `127.0.0.1` names the container.
 Use `http://host.docker.internal:<port>/v1` to reach your machine.
@@ -60,7 +61,8 @@ The dialog closes. You should see a page that says **No guilds yet**.
 ## Later
 
 You can add more providers, replace a key, or change the default
-under **Settings**, **Model keys**.
+later. Open the account menu at the bottom of the sidebar. Click
+**Settings**, then **Model keys**.
 [Model keys](../concepts/model-keys.md) describes that page.
 
 Next: [Your first guild](first-guild.md).

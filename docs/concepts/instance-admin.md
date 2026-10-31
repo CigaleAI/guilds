@@ -55,8 +55,11 @@ The admin enters and removes the values of an integration kept in
 the database. A value is never shown again. An integration set in
 `.env` is read-only. The GitHub App is created from a manifest here.
 
-**Set up** links from Tools, a coding agent's repositories, and a
-recipe's preview open this tab on that integration.
+**Set up** links open this tab on one integration. They appear, for
+the instance admin, wherever an integration is missing: **Tools**, an
+agent's browser settings, a coding agent's repositories, and a
+recipe's apply pages. Once a value is saved, **Back** returns to the
+page the link came from.
 
 ## Rules and limits
 
@@ -90,6 +93,8 @@ reads it. Only the instance admin gets who set each field and when.
 
 The tabs are `?tab=catalog`, `?tab=instance`, and `?tab=users`.
 `?integration=<id>` opens **Platform keys** on one integration.
+`?return_to=<path>` is where **Back** goes after a save; only a path
+on the same origin is followed.
 
 Code: `apps/web/src/features/admin/`,
 `apps/orchestrator/src/http/instance-admin.ts`.

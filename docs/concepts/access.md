@@ -3,8 +3,8 @@
 Access decides what each agent may use. It answers four questions:
 which tools the agent is offered, which login a connector's tools act
 as, which [secrets](secrets.md) reach the agent's commands, and which
-[notes](notes.md) and [collections](collections.md) the agent may read
-or write.
+[notes](notes.md), [collections](collections.md), and
+[files](files.md) the agent may read or write.
 
 Tools, connectors, and logins are set at a scope. There are four
 scopes, nested like boxes: the instance, an
@@ -85,7 +85,10 @@ A native tool, such as `note_write` or `group_post`, has one switch.
 A connector has a switch for the whole server, and each tool the
 connector lists has a switch of its own. A listed tool follows its
 server until a scope sets the tool itself. A server that is off keeps
-every one of its tools off.
+every one of its tools off. When a login first lists a tool that
+starts off, such as one that writes, an off switch for it is set at
+the login's scope
+([Connectors](../tools-and-connectors/connectors.md#what-starts-off)).
 
 Every native tool that has a switch starts on at the instance. New
 agents inherit that set. An organisation, a guild, or an agent can
@@ -217,7 +220,7 @@ Each view shows what the scope inherits from the scopes above it.
 
 ### Tools
 
-The organisation's **Tools** has three sub-tabs:
+Every scope's **Tools** has two sub-tabs:
 
 - **Integrations**: each catalog server with its brand mark when
   there is one, its login, a switch for the server, and its listed
@@ -229,9 +232,6 @@ The organisation's **Tools** has three sub-tabs:
   record tools, **Files**, **Memory**, **Scripts**, **Routines**, **Group chat**,
   **Secrets**, **Browser**, **Coding**, **Issues**, and **Other**),
   each family collapsible.
-
-A guild's and an agent's **Tools** have **Integrations** and
-**Native tools**.
 
 Each switchable item is an on/off switch captioned with where its
 state comes from: inherited from a wider scope, or set at this one.
@@ -248,7 +248,9 @@ listed are `code_task`, `shell`, `shell_status`, `file_read`, and
 
 A server shows **Connect** at the current scope, or **Use own login**
 when it already uses an inherited one. It shows **Disconnect** when
-this scope owns the login. Disconnecting also removes the bindings
+this scope owns the login. **Test** calls one of the login's tools
+([Connectors](../tools-and-connectors/connectors.md#testing-a-tool)).
+It needs a login. Disconnecting also removes the bindings
 that use the login, and the tools go back to a login inherited from a
 wider scope, if there is one.
 
@@ -298,6 +300,8 @@ in two places:
 - the **Access** button in the header of an open note, in the notes
   browser. It opens a dialog titled **Access to `<path>`**
   ([Notes](notes.md#in-the-app)).
+- the **Access** button in the header of an open file, in the files
+  browser, with the same dialog ([Files](files.md#in-the-app)).
 
 The panel:
 
@@ -423,9 +427,11 @@ absent, enable:
   `note_delete`)
 - the record tools (`record_search`, `record_list`, `record_add`,
   `record_update`, `record_remove`)
+- the file tools (`file_find`, `file_fetch`, `file_put`,
+  `file_delete`)
 - `memory_write`
 - the five script tools
-- the six schedule tools
+- the seven schedule tools
 - `secret_store`
 - `secret_request`
 - `group_post`
@@ -461,11 +467,15 @@ DELETE /api/bindings     ?catalog_kind=&catalog_id=&scope=&scope_id=
 
 Code: `apps/orchestrator/src/access/index.ts`,
 `apps/orchestrator/src/access/operator.ts`,
+`apps/orchestrator/src/access/bindings.ts`,
+`apps/orchestrator/src/access/changes.ts`,
+`apps/orchestrator/src/seed/system.ts`,
 `apps/orchestrator/src/http/binding-routes.ts`.
 
 ### Access views
 
 ```text
+GET /api/platform                   the instance; instance admins only, 404 for anyone else
 GET /api/access                     the current organisation
 GET /api/guilds/:guild_id/access    one guild
 GET /api/agents/:agent_id/access    one agent
@@ -480,7 +490,12 @@ Each returns `{ tools, mcp }`:
 Every entry carries its effective value, the scope it comes from
 (`source_scope`), and this scope's own setting (`overlay`).
 `GET /api/secrets?guild_id=` and `?agent_id=` are the Secrets side
-([Secrets](secrets.md#http)).
+([Secrets](secrets.md#http)). The agent payload,
+`GET /api/agents/:agent_id`, carries the same view as `access`, with
+`access.secrets` added.
+
+Code: `apps/orchestrator/src/access/view.ts`,
+`apps/orchestrator/src/http/access-routes.ts`.
 
 Every connector's access entry carries `oauth_setup_state`:
 `not_applicable`, `dynamic`, `configured`, or `unsupported` when the
@@ -524,14 +539,14 @@ agent's note or file can still be given rows, which open it to other
 agents; no row names the agent that owns it.
 
 Creating an item writes its starting rows in the same transaction:
-`guild` at `write` for a guild note or a guild's own collection,
-`org` at `read` for an organisation note or collection, and no row for
-an agent note. Changing a collection's owner leaves its rows as they
-are.
+`guild` at `write` for a guild note or file or a guild's own
+collection, `org` at `read` for an organisation note, file, or
+collection, and no row for an agent note or file. Changing a
+collection's owner leaves its rows as they are.
 
 Rows go away:
 
-- with their note or collection, when it is deleted
+- with their note, file, or collection, when it is deleted
 - with a guild: the rows naming the guild or one of its agents, and
   the rows on its own collections and on its and its agents' notes
 - with an agent: the rows naming it and the rows on its notes
@@ -539,6 +554,8 @@ Rows go away:
 ```text
 GET  /api/notes/:note_id/access                { subjects, owner_agent_id }
 PUT  /api/notes/:note_id/access                { subjects: [{ type, id, mode }] }; answers { subjects, owner_agent_id }
+GET  /api/files/:file_id/access                { subjects, owner_agent_id }
+PUT  /api/files/:file_id/access                { subjects: [{ type, id, mode }] }; answers { subjects, owner_agent_id }
 GET  /api/collections/:collection_id/access    { subjects, owner_agent_id }
 PUT  /api/collections/:collection_id/access    { subjects: [{ type, id, mode }] }; answers { subjects, owner_agent_id }
 GET  /api/guilds/:guild_id/reach               { notes, tables }
@@ -552,8 +569,8 @@ subject belongs to; both are null for the organisation. The list is
 ordered: the organisation, then guilds, then agents by guild and name.
 Rows of private guilds the caller does not operate, and of their
 agents, are left out. `owner_agent_id` is the agent that owns an
-agent-level note, which always writes it; it is null for every other
-item.
+agent-level note or file, which always writes it; it is null for every
+other item.
 
 `PUT` takes the full list and replaces the list with it. A subject
 left out loses its row. Rows the caller cannot see are not in the
@@ -573,18 +590,18 @@ list, `subjects[<index>]: `.
 | An `org` or `guild` row whose mode is not `read` or `write` | 422 `mode must be read or write` |
 | An `agent` row whose mode is not `none`, `read`, or `write` | 422 `mode must be none, read, or write` |
 | The same subject twice | 422 `the subject appears more than once`, at the second |
-| A row naming the agent that owns the note | 422 `the agent that owns the note always writes it` |
+| A row naming the agent that owns the note or file | 422 `the agent that owns the note always writes it`, with `file` for a file |
 | A collection that is not live, or a private guild's own one the caller does not operate | 404 `unknown collection` |
-| A note that is not live, or one of a private guild the caller does not operate | 404 `note not found` |
+| A note or file that is not live, or one of a private guild the caller does not operate | 404 `note not found` or `file not found` |
 | A subject that does not exist, is outside the organisation, or is in a private guild the caller does not operate | 422 `unknown org`, `unknown guild`, or `unknown agent` |
 
 Each subject whose row changes appends one `config_changes` row, with
-`target_kind` `note` and the note id, or `collection` and the
-collection id ([Artifacts](artifacts.md#configuration-change-log)).
-The operation is `create` for a new row, `update` for a new mode, and
-`delete` for a removed row. The summary names the subject (`the
-organisation`, `guild <name>`, or `agent <name>`) and the item (`the
-note <display path>` or `the table <name>`):
+`target_kind` `note`, `file`, or `collection` and the item's id
+([Artifacts](artifacts.md#configuration-change-log)). The operation is
+`create` for a new row, `update` for a new mode, and `delete` for a
+removed row. The summary names the subject (`the organisation`,
+`guild <name>`, or `agent <name>`) and the item (`the note <display
+path>`, `the file <display path>`, or `the table <name>`):
 
 ```text
 Gave guild research read on the note org/o_…/guilds/g_…/glossary.md

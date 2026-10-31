@@ -122,10 +122,11 @@ short. With Memory on, it may also update its
 
 Agents can tag each other back and forth. To stop an endless loop,
 each guild has a limit on agent messages in a row: 200 for a new
-guild. When agents reach it, the next agent post is refused and the
-agents wait. The next operator message resets the count. This is a
-fixed budget, not loop detection. The guild header's message-budget
-button shows and sets it ([below](#the-message-budget-button)).
+guild, unless its recipe sets another. When agents reach it, the next
+agent post is refused and the agents wait. The next operator message
+resets the count. This is a fixed budget, not loop detection. The
+guild header's message-budget button shows and sets it
+([below](#the-message-budget-button)).
 
 ### Posting while agents work
 
@@ -275,7 +276,7 @@ that has a tag there ([Inbox and issues](inbox.md)).
 | History an agent sees | the last 10 public messages |
 | Router confidence floor | 0.5; below it the tag rules decide |
 | Router call | 8 seconds per try, two retries; a failure wakes every pending agent |
-| Agent messages in a row | 200 for a new guild; positive integer, up to 10000 in the app; an operator post resets it |
+| Agent messages in a row | 200 for a new guild unless its recipe sets another; positive integer, up to 10000 in the app; an operator post resets it |
 | Message content | must contain non-whitespace text |
 | Attachments | not taken in group chat |
 | Busy agent | delivery waits; a routine waits; a direct message is 409 |
@@ -336,15 +337,15 @@ Recipients of each message by tag rule:
 Skip-advanced agents still see those messages in a later selected
 run's snapshot.
 
-When the System One platform key is set (**Admin**, **Platform
-keys**, see [Instance admin](instance-admin.md)), the dispatcher asks Jev one Choice over
-the pending members plus `none`. Jev gets the latest public message as
-`latest` (clipped to 6,000 characters) and up to three public rows
-before it as `context`. Each option is the agent's `focus` and the
-first 1,200 characters of its Task. Only pending agents are offered.
-The author of a message is never pending for it, so Jev cannot pick
-an agent that could not act. Explicit `@` tags still always select
-those agents.
+When the System One platform key is set (**Admin**, **Platform keys**,
+see [Instance admin](instance-admin.md)), the dispatcher asks Jev one
+Choice over the pending members plus `none`. Jev gets the latest
+public message as `latest` (clipped to 6,000 characters) and up to
+three public rows before it as `context`. Each option is the agent's
+`focus` and the first 1,200 characters of its Task. Only pending
+agents are offered. The author of a message is never pending for it,
+so Jev cannot pick an agent that could not act. Explicit `@` tags
+still always select those agents.
 
 The `none` option reads: "the message asks no agent to do, answer, or
 record anything". A `none` verdict creates no run.

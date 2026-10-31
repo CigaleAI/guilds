@@ -195,13 +195,14 @@ returns 201 with the repository.
 - A bad name, URL, or branch is 422. `default_branch` must be a valid
   branch name.
 - A name the guild already has is 409.
-- With a `connection_id`: the connection must exist (404), be a GitHub
-  connection (422), and be the organisation's login or a guild-owned
-  login the caller can see in the same organisation (422 "the GitHub
-  connection is not visible from this guild"). The URL must be
-  `https://github.com/<owner>/<repository>`. The connection must be
-  connected (422), and its installation must reach the repository
-  (422 "the GitHub connection does not reach `<owner>`/`<repository>`").
+- With a `connection_id`: the URL must be
+  `https://github.com/<owner>/<repository>` (422). The connection must
+  exist (404), be a GitHub connection (422), and be the organisation's
+  login or a guild-owned login the caller can see in the same
+  organisation (422 "the GitHub connection is not visible from this
+  guild"). It must be connected (422), and its installation must reach
+  the repository (422 "the GitHub connection does not reach
+  `<owner>`/`<repository>`").
   `default_branch` then defaults to the one GitHub reports, and GitHub's
   id is recorded. When the connection is this guild's own login, the
   repository is also added to the login's selection. GitHub refusing
@@ -303,6 +304,14 @@ tokens are minted),
 `apps/orchestrator/src/generation/coding.ts` (a coding run's tokens),
 `apps/orchestrator/src/mcp/connections.ts` (the GitHub login an
 operator sees),
-`apps/orchestrator/src/http/coding-routes.ts` (routes),
-`apps/web/src/features/agent/GuildRepositories.tsx`, and
-`apps/web/src/features/agent/CodingRepositories.tsx`.
+`apps/orchestrator/src/guilds/validation.ts` (the commit author
+email), `apps/orchestrator/src/http/coding-routes.ts` (routes), and in
+the app `apps/web/src/features/agent/GuildRepositories.tsx` (the
+guild's repositories and the add form),
+`apps/web/src/features/agent/repositories.ts` (the login a URL is
+added with), `apps/web/src/features/agent/CodingRepositories.tsx` (the
+coding agent's Repositories),
+`apps/web/src/features/access/GithubRepositories.tsx` (a login's
+repository picker), and
+`apps/web/src/features/guild/pages/GuildSettings.tsx` (the **Git**
+group).

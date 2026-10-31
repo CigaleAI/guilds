@@ -21,32 +21,17 @@ You need:
 A coding agent needs a machine of the **Code** tier: 2 CPUs and 4 GiB.
 Owners and admins of the organisation can change machines.
 
-Click **Settings** in the rail. Open **Machines**. Click **Edit** on
-your machine. Pick **Code** under **Tier**. Click **Save**.
+Open the account menu at the bottom of the sidebar. Click
+**Settings**. Open **Machines**. Click **Edit** on your machine. Pick
+**Code** under **Tier**. Click **Save**.
 
 You should see the **Code** tag on the machine's card.
 
-## 2. Add a repository to the guild
-
-A repository is shared by every coding agent of the guild. Each agent
-gets its own copy.
-
-Open the guild. Open its **Settings** tab. Scroll to **Repositories**.
-Fill in the form:
-
-- **Name**: `demo`
-- **URL**: the address of your repository, such as
-  `https://github.com/you/demo`
-
-A **GitHub login** select appears for a GitHub address. Pick
-**None: clone anonymously**. Click **Add repository**.
-
-You should see `demo` in the list, tagged **anonymous**.
-
-## 3. Create the coding agent
+## 2. Create the coding agent
 
 In the sidebar, click **Add agent** under the guild. Click **Coding
-agent**. A dialog opens on five steps.
+agent**. The dialog **Create a coding agent** walks you through five
+steps.
 
 1. **Identity**: type `coder` as the **Name**, and
    `Makes small, tested changes to the code` as the **Focus**. Click
@@ -58,14 +43,24 @@ agent**. A dialog opens on five steps.
 4. **Lead model**: the lead model is the agent's own model. It plans,
    talks to you, and reviews the harness's work. Keep the model it
    offers. Click **Next**.
-5. **Repositories**: the step lists `demo`. Click **Create agent**.
+5. **Repositories**: a repository is shared by every coding agent of
+   the guild. Each agent gets its own copy. Fill in the form at the
+   bottom of the step:
+   - **Name**: `demo`
+   - **URL**: the address of your repository, such as
+     `https://github.com/you/demo`
+
+   A **GitHub login** select appears for a GitHub address. Leave it
+   on **None: clone anonymously**. Click **Add repository**. You
+   should see `demo` in the list, tagged **anonymous**. Click
+   **Create agent**.
 
 You should see `coder` under the guild in the sidebar. Its panel opens
 on the **Prompt** tab. A warning icon shows in its header. Its tooltip
 reads "Coding isn't ready: Claude Code has no credential. Fix it in
 Settings."
 
-## 4. Log in to Claude Code
+## 3. Log in to Claude Code
 
 Open the agent's **CLI** tab. Click **Start the terminal**. A terminal
 opens on the agent's machine. Type:
@@ -78,17 +73,18 @@ Claude Code starts. Type `/login`. Follow the link it prints, sign in,
 and paste the code back into the terminal. Type `/exit` once it says
 you are logged in.
 
-Open the agent's **Settings** tab, then its **Harness** section. Click
-**Check login**.
+Click the warning icon in the agent's header. The agent's
+**Settings** tab opens on its **Harness** section. Click **Check
+login**.
 
 You should see a toast that reads "Logged in as" your account. The
 card under the harness reads **Logged in**, and the warning icon in the
 header is gone.
 
-## 5. Send a first task
+## 4. Send a first task
 
 Open the agent's **Chat** tab. A strip under the tabs sums up the
-agent: its lead model, Claude Code, its login, and `repos demo`.
+coding setup: the Claude Code logo, **Logged in**, and **1 repo**.
 
 Type in the composer:
 
@@ -104,7 +100,7 @@ shows the harness's progress lines under it while it works. The
 harness can take a few minutes. Then the agent replies with what it
 changed and what it checked.
 
-## 6. Review the diff
+## 5. Review the diff
 
 Under the reply, a **Changes** panel lists `demo` with its branch and
 the number of lines added and removed. Click **Show diff**.
@@ -125,12 +121,13 @@ the change of that one harness turn.
   own computer. In the agent's **Harness** settings, click **Add
   token**. Paste the token as the **Value** and click **Add secret**.
   The card under the harness reads **Active token**.
-- Codex runs on a ChatGPT login. Pick **Codex** in step 3, then type
-  `codex login --device-auth` in the **CLI** tab.
-- Cursor runs on an API key. Pick **Cursor** in step 3, then click
-  **Paste API key** and paste it.
-- Antigravity runs on a Google login. Pick **Antigravity** in step 3,
-  then type `agy` in the **CLI** tab and sign in with Google.
+- Codex runs on a ChatGPT login. Pick **Codex** at the **Harness**
+  step, then type `codex login --device-auth` in the **CLI** tab.
+- Cursor runs on an API key. Pick **Cursor** at the **Harness** step,
+  then click **Paste API key** and paste it.
+- Antigravity runs on a Google login. Pick **Antigravity** at the
+  **Harness** step, then type `agy` in the **CLI** tab and sign in
+  with Google.
 - The agent works on its own branch, named after itself and the
   topic. It pushes and opens pull requests itself, never the harness.
 - A harness marked **Not on machine** is missing from the machine's

@@ -54,17 +54,17 @@ as that user.
 | `make contract-opensandbox` | The OpenSandbox and coding contract tests with `RUN_OPENSANDBOX_CONTRACT=1` ([Tests](#tests)) |
 | `make contract-model` | The model contract test with `RUN_MODEL_CONTRACT=1`. Reads `MODEL_CONTRACT_MODEL` and `MODEL_CONTRACT_API_KEY` from `.env`, and fails when either is empty |
 | `make state` | Creates the `STATE_ROOT` trees (`.state/` in the checkout) |
-| `make opensandbox-image` | `scripts/images.sh opensandbox`: builds `guilds-opensandbox-server:<commit>` from the pinned commit, once |
+| `make opensandbox-image` | `scripts/images.sh opensandbox`: builds `guilds-opensandbox-server` from the pinned commit, once, tagged with the commit's first 8 characters |
 | `make runtime-image` | `scripts/images.sh runtime`: builds `agent-runtime:0.4` from `runtime/`, every time, from Docker's cache |
 | `make core-image` | Builds `guilds-orchestrator:local` from `apps/orchestrator/Dockerfile` |
 | `make build` | `state`, both images, then builds the development stack's images |
-| `make up` | `state`, both images, then the development stack, built, detached, and healthy |
-| `make dev` | `make up`, then the Vite server |
+| `make up`, `make up-dev` | `state`, both images, then the development stack, built, detached, and healthy |
+| `make dev` | `make up-dev`, then the Vite server |
 | `make down` | Stops every service of the product stack and an extension's Compose files |
 | `make reset` | `make down`, removes the local state trees, `make up` ([Resetting](#resetting)) |
 | `make migrate` | Gives each recorded migration its committed stamp, applies the migrations it was hiding, and restarts the orchestrator. The data stays ([Schema changes](#schema-changes)) |
 | `make verify` | Against a running stack: health, the guild list as the seed user, the app page, typecheck, lint, the orchestrator tests, an extension's test packages, the fixture digests |
-| `make soak` | Creates and deletes a guild, restarts the orchestrator, and reads the migration, seed, binding, and run tables |
+| `make soak` | Against a running stack: health, the guild list, and the OAuth callback page. It then creates and deletes a guild, restarts the orchestrator, and reads the migration, seed, binding, and run tables |
 | `make check` | `scripts/check.sh`: what CI runs ([Check](#check)) |
 | `make compat-verify` | The fixture digests alone |
 
@@ -97,6 +97,8 @@ In `apps/orchestrator`, run as `pnpm --filter @guildsrun/orchestrator <script>`:
 | `models:snapshot` | Rewrites the bundled models.dev snapshot, `src/llm/models-dev.snapshot.json` |
 | `sweep:workspaces` | Lists, or with `--apply` removes, orphan machine directories and agent homes ([Maintain](../operations/maintain.md#free-disk-space)) |
 | `typesafe:replay` | Replays the group-chat recipient choice for one message ([Group chat](../concepts/group-chat.md)) |
+| `browse:spike` | Runs one browse task on an agent's Chrome through the CDP bridge and prints each step, the result, and its cost ([Browser](../concepts/browser.md)) |
+| `cycles` | The import-cycle check; `cycles --write` rewrites its list ([Lint and format](#lint-and-format)) |
 | `compat:verify`, `compat:digest` | Checks, or rewrites, the fixture digests ([Tests](#tests)) |
 | `format` | Prettier over the package |
 
@@ -157,7 +159,7 @@ log.
 | --- | --- |
 | orchestrator | `typecheck`, `suppressions`, `lint`, `import-cycles`, `compat-verify`, `test-orchestrator` |
 | web | `test-ui`, `test-web`, `import-cycles-web`, `build-web`, `build-storybook` |
-| core stack | `smoke-core-stack`: `./setup.sh` and `docker compose up` on a copy of the checkout, under its own Compose project, port, image tag, and state directory. It checks that the box is healthy, serves the app on loopback alone, holds one operator, and refuses a request from another web origin |
+| core stack | `smoke-core-stack`: `./setup.sh` and `docker compose up` on a copy of the checkout, under its own Compose project, port, image tag, and state directory. It checks that the stack asks for `./setup.sh` first, that `.env` is private and unchanged by a second `./setup.sh`, and that the box is healthy, serves the app on loopback alone, holds one operator and no hosted table, creates a guild, and refuses a request from another web origin |
 
 `scripts/check.sh <commit>` (or `make check COMMIT=<rev>`)
 checks that commit the way CI does: a clean worktree of it and
@@ -187,13 +189,15 @@ One job installs with the frozen lockfile and runs
 
 `.github/workflows/images.yml` runs when a `v*` tag is pushed, or
 by hand. It publishes three images to `ghcr.io`, under the
-repository owner, tagged with the ref name and `latest`:
+repository owner, for `linux/amd64` and `linux/arm64`. The
+orchestrator and the runtime are tagged with the ref name and
+`latest`:
 
 | Image | Built from |
 | --- | --- |
 | `guilds-orchestrator` | `apps/orchestrator/Dockerfile` |
 | `guilds-agent-runtime` | `runtime/`, with `BROWSER=chromium` and `HARNESSES=` empty: Chromium and Codex only |
-| `guilds-opensandbox-server` | The pinned OpenSandbox commit, tagged by its first 8 characters |
+| `guilds-opensandbox-server` | The pinned OpenSandbox commit, tagged with its first 8 characters only |
 
 The release tag is the version in the
 [changelog](../../CHANGELOG.md).
@@ -209,7 +213,7 @@ The orchestrator's tests run on Node's test runner through `tsx`
 | `test/unit` | Domain logic without Docker; the generation tests drive `GenerationLoop` against the file-backed `NotesStore` and fakes |
 | `test/integration` | HTTP and PostgreSQL: the recorded routes and SSE and WebSocket fixtures replayed against a database on `127.0.0.1:5432` (`R1_ADMIN_DATABASE_URL` names another) |
 | `test/contract` | Live calls, each skipped until its variables are set (below) |
-| `test/helpers` | The environment, fixtures, HTTP, OpenSandbox stub, and PostgreSQL helpers, which the package also exports for an extension's tests |
+| `test/helpers` | The fixtures, fakes, and stubs the tests share. The package exports the environment, fixtures, HTTP, installed-connector, MCP database, OpenSandbox stub, and PostgreSQL helpers for an extension's tests |
 
 | Contract test | Runs when |
 | --- | --- |
@@ -217,17 +221,22 @@ The orchestrator's tests run on Node's test runner through `tsx`
 | `coding.test.ts` | `RUN_OPENSANDBOX_CONTRACT=1`, and the runtime image exists: `CONTRACT_RUNTIME_IMAGE`, `agent-runtime:0.4` by default (`make runtime-image`) |
 | `model.test.ts` | `RUN_MODEL_CONTRACT=1`, `MODEL_CONTRACT_MODEL` (a `{provider}/{model}` id), and `MODEL_CONTRACT_API_KEY`. `MODEL_CONTRACT_BASE_URL` points it at a local endpoint |
 | `typesafe.test.ts` | `RUN_TYPESAFE_CONTRACT=1` or `RUN_MODEL_CONTRACT=1`, and `TYPESAFE_API_KEY` |
-| `harness.test.ts` | One live turn per harness whose credential is set: `CLAUDE_CODE_OAUTH_TOKEN`, `CURSOR_API_KEY`, or `CODEX_AUTH_JSON` (the path of a Codex `auth.json`). It needs the runtime image too |
+| `harness.test.ts` | `RUN_OPENSANDBOX_CONTRACT=1` and the runtime image, as for `coding.test.ts`. One live turn per harness whose credential is set: `CLAUDE_CODE_OAUTH_TOKEN`, `CURSOR_API_KEY`, or `CODEX_AUTH_JSON` (the path of a Codex `auth.json`) |
 
-The operator app's and the design system's tests sit beside their
-modules as `src/**/*.test.ts` (`pnpm test:web`, `pnpm test:ui`).
-They cover the pure models:
+The operator app's and the design system's tests run on Node's
+test runner too. They sit beside their modules as
+`src/**/*.test.ts` (`pnpm test:web`, `pnpm test:ui`). They run
+without a browser and test the functions a module exports:
 
-- run flow
-- tool kinds and formatting
-- Studio location and chat
-- the activity ledger
-- the recipe plan and apply steps
+- in `src/api/`, the client, the session, the live streams, and
+  the guards that narrow what the server sends
+- in `src/app/`, the shared helpers, such as formatting, names,
+  display paths, the router, and the extension slots
+- in each feature, its models, such as the run flow, tool kinds and
+  formatting, Studio's location and chat, the activity ledger, and
+  the recipe plan and apply steps
+- in the design system, the content parsers: embeds, mentions,
+  highlighting, and prompt blocks
 
 `fixtures/compat/` holds the frozen contracts, one directory per
 surface: HTTP routes, SSE and WebSocket frames, crypto, adapters,
@@ -245,11 +254,13 @@ HTTP fixture when the catalog's shapes change.
 ## Schema changes
 
 New schema lands as the next numbered SQL file in
-`apps/orchestrator/drizzle/`. It is mirrored in
-`src/db/schema/`, one file per table family that `index.ts`
-re-exports, and recorded in
-`drizzle/meta/_journal.json` with a stamp later than the
-migration before it.
+`apps/orchestrator/drizzle/`. It is mirrored in `src/db/schema/`,
+one file per table family, and recorded in
+`drizzle/meta/_journal.json` with a stamp later than the migration
+before it. Beside the table families, `recipe-document.ts` and
+`apply-preview.ts` hold the shapes of two JSON columns, and
+`columns.ts` the column types the tables share. `index.ts`
+re-exports every file but `columns.ts`.
 
 The mirror is what `db/` derives its row types from. Each schema
 key is its column's name in the database, since raw queries return
@@ -293,7 +304,8 @@ migration against applying the SQL files directly.
 Every package runs ESLint (`pnpm -r lint`) on the recommended and
 typescript-eslint rules. Unused names are allowed when they start
 with `_`. The operator app and the design system also run the
-recommended React Hooks rules.
+recommended React Hooks rules, and the design system the Storybook
+rules.
 
 Every package also runs the boundary rule
 (`eslint.boundary.js`). It fails any file that imports a package

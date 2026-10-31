@@ -60,12 +60,17 @@ and hands its extensions to `runServer` (`src/run.ts`). Core's
 A factory on `ServerExtension` (`policy`, `modelCredentials`,
 `instanceAdmin`, `sandboxes`, `identity`) runs once at boot and
 receives the database connection as `db`, a `Queryable`
-(`db/pg.js`). The extension reads and writes core's tables through
-the `db/` modules the package exports (`db/orgs.js`, `db/users.js`,
-`db/connectors.js`, `db/mcp.js`, `db/usage.js`), builds the column
-lists of its own tables with `db/columns.js` and throws `db/errors.js`'s
-`RowMissing` where a write finds no row, and loads a
-connector with its overrides applied through `connectors/servers.js`.
+(`db/pg.js`); `sandboxes` also receives the configuration and the
+master key, `identity` the configuration. `blobStore` receives the
+configuration alone. Where several extensions supply a factory, the
+first one that returns a value is used; every extension's
+`orgCreated` hook runs. The extension reads and writes core's
+tables through the `db/` modules the package exports (`db/orgs.js`,
+`db/users.js`, `db/connectors.js`, `db/mcp.js`, `db/usage.js`),
+builds the column lists of its own tables with `db/columns.js` and
+throws `db/errors.js`'s `RowMissing` where a write finds no row, and
+loads a connector with its overrides applied through
+`connectors/servers.js`.
 Each function takes that connection, or the client of a transaction
 the extension has open, as its first argument; a function whose
 writes commit together runs them in a savepoint of that transaction.
@@ -120,8 +125,8 @@ and `trusted-header`. Paths below are under
   not start the run on. A provider whose credentials resolve while
   the organisation's row holds no key is shown as provided by the
   platform (`source: "platform"`). Core's default decrypts the
-  organisation's row and has no callback. Who pays, whether a budget exists, and
-  what the callback does are the implementation's
+  organisation's row and has no callback. Who pays, whether a
+  budget exists, and what the callback does are the implementation's
   ([Orchestrator](orchestrator.md#credentials)).
 - **Organisation created.** The hook runs inside the transaction that
   creates an organisation. Hooks from several extensions run in
@@ -135,11 +140,12 @@ and `trusted-header`. Paths below are under
   optional `harnessesOf(machineId)` (the harness CLIs the machine's
   container carries). On an agent's seat (agent id, machine id, slot,
   browser language): `startBrowser`, `stopBrowser`, `purgeAgent`,
-  `novncTarget`, `startCli`, and `cliTarget`. An optional
-  `machineHost(machineId)` gives the host, workspace root, and proxy
-  URL a machine runs with. `SandboxProvider` adds `start`, `close`,
-  and an optional `destroyAgentSandboxes` the boot layout step calls.
-  Core's `RunSandboxes` runs on `OPENSANDBOX_URL` and
+  `novncTarget`, `cdpTarget` (the upstream base and headers of the
+  agent's DevTools relay), `startCli`, and `cliTarget`. An optional
+  `machineHost(machineId)` gives the host id, workspace root, and
+  proxy URL a machine runs with. `SandboxProvider` adds `start`,
+  `close`, and an optional `destroyAgentSandboxes` the boot layout
+  step calls. Core's `RunSandboxes` runs on `OPENSANDBOX_URL` and
   `WORKSPACE_ROOT`, every machine on this host. Moving an agent
   between machines whose workspace roots differ is refused.
 - **Blob store.** `ATTACHMENTS_ROOT` is `STATE_ROOT/attachments` on
@@ -178,17 +184,25 @@ operator app.
   process runner, the extension interfaces, and the domain modules
   and test helpers an extension builds on. A module left off the
   list does not resolve from outside. `apps/web/package.json`
-  exports `mount`, the slots, the build recipe (`appConfig()` in
-  `vite.app.ts`), and the API client, identity, formatting, and
-  role helpers an extension's screens use.
+  exports `mount`, the slots (`app/slots`), the router
+  (`app/router`), the build recipe (`vite`, `appConfig()` in
+  `vite.app.ts`), and what an extension's screens use: the API
+  client and session (`api/client`, `api/session`), the API types,
+  one module per domain (`api/types/<domain>`), the guards that
+  narrow what the server sends (`api/wire`), identity
+  (`app/identity`), formatting (`app/format`), the tool-call
+  formatting of a run (`features/agent/runs/toolFormat`), and the
+  member role helpers (`features/settings/members`).
 - **Boundary lint.** `eslint.boundary.js` is a lint rule a core
-  package loads from its `eslint.config.js` with the packages it
-  may not import and the repository its relative imports must stay
-  inside. It fails any orchestrator, web or design-system file,
-  tests and scripts included, that imports one of those packages or a relative path
-  that leaves core's repository. No file is excepted. Core's
+  package loads from its `eslint.config.js` with the packages it may
+  not import and the repository its relative imports must stay inside.
+  It fails any orchestrator, web or design-system file, tests and
+  scripts included, that imports one of those packages or a relative
+  path that leaves core's repository. No file is excepted. Core's
   repository holds nothing of an extension and passes its own check
-  alone.
+  alone. The same block refuses a module that hands on another
+  module's exports, except the indexes the package names ([Code
+  guidelines](../contributing/code-guidelines.md#boundaries)).
 - **Images.** Core's image (`apps/orchestrator/Dockerfile`) holds
   no extension code, starts core's entry point, and serves core's
   build of the operator app. Its `CORE` build argument is where
@@ -202,7 +216,8 @@ operator app.
   from core's directory.
 - **Makefile.** Core's `Makefile` runs in whichever root includes
   it. `CORE` is core's path under that root (`.` in core's
-  repository). The extending repository's Makefile sets `CORE`,
+  repository). `COMPOSE` is the Compose command that reads that
+  root's `.env`. The extending repository's Makefile sets `CORE`,
   its development stack (`DEV_STACK`, `COMPOSE_DEV`, `DEV_BASE_IMAGE`,
   `WEB_PACKAGE`, `SEED_USER`, `SEED_ORG_SLUG`,
   `EXTENSION_TEST_PACKAGES`, `EXTENSION_COMPOSE_FILES`), and
@@ -225,7 +240,8 @@ as opposed to an organisation's model key, secret, or connection.
 No instance key serves a model provider: the organisation's own key
 does ([Orchestrator](orchestrator.md#credentials)).
 Each belongs to an integration. An integration declares its fields
-(`name`, `label`, `secret`, `optional`, `multiline`, `placeholder`)
+(`name`, `label`, `secret`, `optional`, `multiline`, `placeholder`,
+and for an env field a `default` used while the variable is unset)
 and its `source`, `store` or `env`. It is `on` when every required
 field has a value, `incomplete` when some do, and `off` when none
 does; an optional field tunes it and never switches it off.
@@ -306,8 +322,9 @@ does; an optional field tunes it and never switches it off.
 
 `SECRETS_MASTER_KEY`, the PostgreSQL password, and the OpenSandbox
 key are not integrations. The box cannot run without them.
-`./setup.sh` generates them. `.env.example` lists the environment
-integrations' variables by hand and no store integration's. Code
+`./setup.sh` generates them. `.env.example` lists the error
+reporting variables and no store integration's fields. The Compose
+file sets `CONNECTORS_ROOT` under `STATE_ROOT`. Code
 and the other pages call instance keys platform keys.
 
 ## Data

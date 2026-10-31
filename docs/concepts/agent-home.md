@@ -39,8 +39,10 @@ The home holds:
   names another place ([Files](files.md))
 - `.browser/`, its Chrome profile, with its logins
   ([Browser](browser.md))
+- `screenshots/latest.jpg`, the page `browser_screenshot` saved last
 - `repos/`, a coding agent's clones ([Coding agents](coding/index.md))
 - `.runs/`, the logs of its code and harness calls
+- `.bash_history`, the CLI tab's shell history
 - `.gitconfig`, caches, and toolchains
 
 Runtime files that must stay out of every home, such as git tokens,
@@ -96,8 +98,8 @@ where the operator frees disk space, or logs a coding harness in
 ### Files the orchestrator reads and writes
 
 Some tools take a path in the home: Drive `create_file` and
-`download_file_content`, Qonto `upload_invoice`, `secret_store`,
-`file_put`, and `file_fetch`.
+`download_file_content`, Gmail `download_attachment`, Qonto
+`upload_invoice`, `secret_store`, `file_put`, and `file_fetch`.
 For those, the orchestrator opens the folder on the host directly.
 It guards that access: a path must stay inside the home, and a link
 cannot lead out of it ([Agent home files](#agent-home-files)).
@@ -229,15 +231,16 @@ machine's idle timer, at most once every 30 seconds
 ([Machines](machines.md#the-container)).
 
 The shell runs as root with `HOME`, `GUILDS_AGENT_HOME`, `PORT`, and
-`GUILDS_PORTS` set for the agent, and no secret values. Every agent
+`GUILDS_PORTS` set for the agent, `HISTFILE` at `.bash_history` in
+the home, and no secret values. Every agent
 has the CLI tab and the CLI API; no config key turns them off.
 
 ### Agent home files
 
 Tools that take a path in the home (Drive `create_file` and
-`download_file_content`, Qonto `upload_invoice`, `secret_store`,
-`file_put`, and `file_fetch`)
-open the folder on the orchestrator's host directly. A link there
+`download_file_content`, Gmail `download_attachment`, Qonto
+`upload_invoice`, `secret_store`, `file_put`, and `file_fetch`) open
+the folder on the orchestrator's host directly. A link there
 resolves against the orchestrator's own filesystem. `readAgentFile`
 and `writeAgentFile` in `apps/orchestrator/src/lib/agent-file.ts` are
 the only way in:

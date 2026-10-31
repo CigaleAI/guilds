@@ -22,8 +22,10 @@ signs in, and lists its tools is [Connectors](connectors.md).
 | [Web search](#web-search) | `tavily` | Token, or the platform key | Adapter | `web-search` for the platform login |
 
 "Platform setup" is the [platform key](platform-keys.md) a platform
-admin enters first. Until it is on, **Tools** marks the connector
-**Not set up** and disables **Connect**.
+admin enters first. Until it is on, **Tools** marks Gmail, Google
+Drive, and GitHub **Not set up** and disables **Connect**. The
+`web-search` key serves only the platform login: without it, an
+organisation can still connect a Tavily key of its own.
 
 ## What token connectors share
 
@@ -35,8 +37,8 @@ admin enters first. Until it is on, **Tools** marks the connector
 - An endpoint connector sends the key as `Authorization: Bearer`
   unless its section names another header.
 - An adapter connector writes its curated tool list into `mcp_tools`
-  after its check succeeds. Its calls return compact TSV. Lists default
-  to 15 rows, at most 30. Images are left out.
+  after its check succeeds. Its calls return compact text, one row per
+  line. Lists default to 15 rows, at most 30. Images are left out.
 
 ## Notion
 
@@ -44,8 +46,8 @@ Browser OAuth against `https://mcp.notion.com/mcp`. The box registers
 its own client ([OAuth](connectors.md#oauth)). Notion rejects a
 non-loopback `http://` redirect URI, so a box reached over the network
 needs an `https` `PUBLIC_BASE_URL`. The login's `account_hint` is
-Notion's `email_domain` when present. Tools are listed from the
-session.
+Notion's `email_domain` when present, else its `workspace_id`. Tools
+are listed from the session.
 
 An organisation login is searchable from the guild builder
 (`builder.searchable`), and Notion is a system of record
@@ -63,7 +65,7 @@ Google access token, scopes `gmail.readonly` and `gmail.compose`.
 Eight tools: `search_threads`, `get_thread`, `get_message`,
 `download_attachment`, `list_labels`, `list_drafts`, `create_draft`,
 and `send_message`.
-`send_message` starts Off. Setup and detail:
+`send_message` starts Off, as `mutating`. Setup and detail:
 [Gmail and Drive](google.md#gmail).
 
 ## Google Drive
@@ -146,8 +148,9 @@ with the zero address. Three tools: `holdings`, `nft`, and
 `holdings` takes an owner address (ENS on ethereum) and an optional
 chain, contract filter, and `page_key`. Chains: `ethereum`,
 `polygon`, `base`, `arbitrum`, `bsc`, `optimism`, `ink`, `robinhood`,
-and `solana`. Solana uses DAS `getAssetsByOwner` on `solana-mainnet`.
-The other chains use NFT REST.
+and `solana`. Solana uses DAS on `solana-mainnet`: `getAssetsByOwner`,
+or `searchAssets` with a contract filter. The other chains use NFT
+REST.
 
 ## X
 
@@ -190,7 +193,7 @@ Production API only. Four tools:
 | `list_bank_accounts` | The organisation's accounts |
 | `list_missing_invoices` | Completed transactions that still need an invoice |
 | `get_transaction` | One transaction |
-| `upload_invoice` | Attaches a file to a transaction. Starts Off |
+| `upload_invoice` | Attaches a file to a transaction. Starts Off, as `mutating` |
 
 `list_missing_invoices` keeps transactions with empty
 `attachment_ids`, `attachment_required` true, and `attachment_lost`
@@ -198,8 +201,10 @@ not true. It defaults to the last 90 days, debit side.
 
 `upload_invoice` takes a `file_path` in the agent's home, under the
 [home file rules](../concepts/agent-home.md#agent-home-files). The
-file is a PDF, JPEG, or PNG, at most 15 MiB. Qonto processes it in the
-background, and the call waits up to 60 seconds.
+file is a PDF, JPEG, or PNG, at most 15 MiB. A transaction that
+already has an attachment is refused unless `force` is true. Qonto
+processes the file in the background, and the call waits up to 60
+seconds for it.
 
 ## DexPaprika
 

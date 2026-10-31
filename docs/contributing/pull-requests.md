@@ -43,8 +43,10 @@ commits are what the reviewer reads.
 - **Description**: three parts, for a reader who has not seen the
   conversation that produced the change.
   - *Why*: the problem, the request, or the issue the pull request
-    exists for, and what is wrong without it. For a refactor, the
-    rule the code breaks and the backlog item that names it. A pull
+    exists for, and what is wrong without it. A pull request that
+    implements an issue names it
+    ([Issues](../CONTRIBUTING.md#issues)). For a refactor, the rule
+    the code breaks and the chore issue that names it. A pull
     request whose reason cannot be stated is not opened.
   - *What*: what changes, and what is deliberately left out.
   - *Breaks*: anything that is not backward compatible: a changed
@@ -88,8 +90,9 @@ commits are what the reviewer reads.
 - **Docs**: the page that describes what the change touches is
   updated in the same commit, and describes the new state only
   ([Documentation](development.md#documentation)).
-- **Changelog**: a user-visible change has a line under
-  `Unreleased` in `CHANGELOG.md`.
+- **Changelog**: a user-visible change has a paragraph under
+  `Unreleased` in `CHANGELOG.md` that opens with its effect
+  ([Versions](../CONTRIBUTING.md#versions)).
 - **Security register**: a change that fixes or introduces a
   security issue adds or updates its entry in the
   [Security register](../architecture/security-register.md).

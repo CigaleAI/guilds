@@ -282,7 +282,7 @@ the machine's `cpu` and `memory_mib` for `custom`. Its directory on the host is
 
 | Route | Who | Body or result |
 | --- | --- | --- |
-| `GET /api/orgs/:id/machines` | members | each machine with `cpu`, `memory_mib`, `max_workspace_mib`, `workspace_mib`, `allocated_workspace_mib`, `harnesses`, `planned_cpu` and `planned_mib` (its planned load), `agents` (id, name, guild, `browser`, `coding`), and `hidden_agents`, the number of agents of guilds the caller cannot see, which `agents` leaves out |
+| `GET /api/orgs/:id/machines` | members | each machine with `cpu`, `memory_mib`, `max_workspace_mib`, `workspace_mib`, `allocated_workspace_mib`, `harnesses`, `planned_cpu` and `planned_mib` (its planned load), `agents` (`id`, `name`, `guild_id`, `guild_name`, `browser`, `coding`), and `hidden_agents`, the number of agents of guilds the caller cannot see, which `agents` leaves out |
 | `POST /api/orgs/:id/machines` | owners, admins | `name`, `box`, `cpu`?, `memory_mib`?, `max_workspace_mib`?; 201 with the machine |
 | `PATCH /api/orgs/:id/machines/:machine_id` | owners, admins | the same fields; the body fills in what it leaves out from the machine |
 | `DELETE /api/orgs/:id/machines/:machine_id` | owners, admins | 204 |
@@ -328,7 +328,8 @@ page.
   `max_workspace_mib`, agents of hidden guilds included. What it
   leaves of the machine's `max_workspace_mib` is unreserved.
 - The Machines tab, the machine picker, and the apply preview warn
-  past either capacity, and past the unreserved disk.
+  past either capacity.
+- The agent's **Disk** field warns past the unreserved disk.
 
 ### Placement
 
@@ -377,13 +378,14 @@ The move is refused in these cases:
 - The body has no `machine_id` (422).
 - The agent is generating (409).
 - The two machines keep their directories under different
-  workspace roots (409).
+  workspace roots (409, `the machines keep their homes on different
+  hosts`).
 - The target machine already holds a home for the agent (409).
 - The target machine hosts an agent of a guild the caller cannot
   see (403).
 - The target machine is below the agent's minimum (422).
-- The sandbox provider does not support moving agents (501, `agents cannot
-  move here`).
+- The box runs no generation loop (503, `generation is
+  unavailable`).
 
 ### The container
 

@@ -19,7 +19,8 @@ PUBLIC_BASE_URL=https://<the name people open>
 ```
 
 The server answers a request only when it names a loopback host or
-that name.
+that name. Any other host gets a 403. `/health` answers whatever
+host a request names.
 
 A browser sends an `Origin` header with a request that changes state
 or opens a WebSocket. The server serves such a request only when that
@@ -71,7 +72,7 @@ request:
 - a shared secret, in `X-Guilds-Proxy-Secret`, equal to
   `TRUSTED_PROXY_SECRET`
 
-A request without the secret gets a 401.
+A request without the secret, or without an email, gets a 401.
 
 This mode needs three more lines in `.env`. The server does not start
 without them:
@@ -89,8 +90,9 @@ their email.
 
 **Admin**, **Users** does it
 ([Instance admin](../concepts/instance-admin.md)). **New user** takes
-their name and email. It creates the user and a personal organisation they own. The
-pencil on a user's row changes their address, or removes it.
+their name and email. It creates the user and a personal
+organisation they own. The pencil on a user's row changes their
+address, or removes it.
 
 To let them work in your organisation, add them by name in
 **Settings**, **Members**. A guild admin then adds them to the guild

@@ -57,9 +57,9 @@ container that uses it. The stack creates no named Docker volume.
 | `postgres/` | The PostgreSQL data directory: every table |
 | `opensandbox/` | The sandbox server's SQLite lifecycle store |
 | `workspaces/` | One directory per machine, mounted at `/home` in the machine's container, with one home per agent on it: `workspaces/<machine id>/<agent id>`, `/home/<agent id>` inside. Scripts, the browser profile, and a coding agent's repositories live there |
-| `notes/` | The notes vault |
+| `notes/` | The file tree of the notes store (`NOTES_ROOT`). The server requires it at boot. Notes themselves are rows in PostgreSQL |
 | `attachments/` | Chat images, one file per attachment |
-| `connectors/` | Connector packages installed from a registry |
+| `connectors/` | The adapter code of registry connectors installed under the code tier (`CONNECTORS_ROOT`) ([Connector registry](../tools-and-connectors/connector-registry.md#code-tier)) |
 
 The path must be absolute because the sandbox server mounts each
 machine's directory by that same path.
@@ -195,10 +195,10 @@ docker compose logs --follow orchestrator
 ```
 
 Each line carries `timestamp`, `level`, `run_id`, `guild_id`,
-`agent_id`, `operation`, `error_type`, `message`, and `traceback`.
-It also carries `source`, `request_id`, `session_id`, `path`,
-`method`, and `status` when they apply. Warnings and errors are also
-written to stderr as one readable line.
+`agent_id`, `operation`, `error_type`, `message`, and `traceback`. It
+also carries `machine_id`, `source`, `request_id`, `session_id`,
+`path`, `method`, and `status` when they apply. Warnings and errors
+are also written to stderr as one readable line.
 
 Secrets never reach the log. Every value of an environment variable
 whose name ends in `API_KEY`, `SECRET`, `TOKEN`, `PASSWORD`, or
@@ -262,8 +262,14 @@ monitor outside the box can poll it.
 | `SECRETS_MASTER_KEY is the all-zero development key: set 32 random bytes` | The server refuses the development key outside the development stack ([Security register](../architecture/security-register.md), SEC-14) |
 | `SECRETS_MASTER_KEY must be 32 bytes (base64 or hex)` | The key is not 32 bytes |
 | `AUTH_MODE must be compat-cookie, trusted-header` | `.env` names a mode core does not have |
+| `HARNESSES_OFF names an unknown harness …` | `HARNESSES_OFF` names something other than `claude-code`, `codex`, `cursor`, or `antigravity` |
+| `MAX_CONCURRENT_GENERATIONS must be a non-negative integer` | The value is negative or not a whole number |
+| `OPERATOR_EMAIL must be an email address` | The value is set and is not an address |
 | `TRUSTED_PROXY_SECRET is required when AUTH_MODE=trusted-header`, and the same for `PUBLIC_BASE_URL` and `OPERATOR_EMAIL` | The proxy mode is missing one of its three settings ([Remote access](remote-access.md)) |
 | `OPERATOR_EMAIL is another user's email` | A user other than the box's first already holds that address |
+| `host not allowed: reach this server by a loopback address or the host of PUBLIC_BASE_URL` | The request named another host ([Remote access](remote-access.md)) |
+| `origin not allowed` | A page from another origin tried to change state or open a WebSocket |
+| `untrusted proxy`, `missing trusted email`, or `user not found` | Under `trusted-header`, the request lacked the proxy secret, lacked the email, or named an email no user has ([Remote access](remote-access.md#an-authenticating-proxy)) |
 | Create agent, Studio, the Builder, or recipe apply shows `Connect a model provider first` | The organisation has no provider connected. Connect one under **Settings**, **Model keys** ([Model keys](../concepts/model-keys.md#without-a-key)) |
 | A run ends with `connect a … key on Model keys` | The organisation has no key for that agent's model provider, or removed it. Connect one under **Settings**, **Model keys** ([Model keys](../concepts/model-keys.md#replace-or-remove-a-key)) |
 | Model keys answers `<Provider> rejected the key` or `did not accept the key` | The provider refused `GET /models` with that key. Nothing was saved ([Model keys](../concepts/model-keys.md#the-key-check)) |
