@@ -1,7 +1,7 @@
 import { Columns3, FileText, Info, Table2, type LucideIcon } from "lucide-react";
 import { useMemo, useState } from "react";
-import type { EmbeddableNote } from "../../../api/types/notes";
-import type { Collection } from "../../../api/types/tables";
+import type { EmbeddableNote } from "../../api/types/notes";
+import type { Collection } from "../../api/types/tables";
 import {
   Button,
   Markdown,
@@ -22,7 +22,7 @@ import {
   cn,
 } from "@guildsrun/ui";
 import type { EmbedMode, InsertKind } from "@guildsrun/ui";
-import { collectionDisplayPath, insertMarkup, type NoteGroup } from "./taskContext";
+import { collectionDisplayPath, insertMarkup, type NoteGroup } from "./embeds";
 
 type InsertPickerProps = {
   /** What to pick; null keeps the dialog closed. */

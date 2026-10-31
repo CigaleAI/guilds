@@ -4,7 +4,7 @@ import { useAgentTask } from "../../../api/queries/notes";
 import type { StudioAgent } from "../../../api/types/studio";
 import { relativeTime } from "../../../app/format";
 import { Button, DiffView, diffLines, Banner, SkeletonRows, Icon, Row } from "@guildsrun/ui";
-import { DetailHeader, Empty, MasterDetail } from "../MasterDetail";
+import { DetailHeader, Empty, MasterDetail } from "../../../app/MasterDetail";
 import { useStudio } from "../StudioContext";
 
 type TaskVersion = {

@@ -34,7 +34,7 @@ import {
   Icon,
 } from "@guildsrun/ui";
 import { ChangeHistory, useOpenStepInAgent } from "../../notes/LatestChange";
-import { changeActor } from "../prompt/taskContext";
+import { changeActor } from "../../notes/changeActor";
 import { capabilityOn, defaultAgentConfig } from "../settings/configForm";
 import { readParameters } from "./scriptParameters";
 

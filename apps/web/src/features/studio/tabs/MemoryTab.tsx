@@ -13,7 +13,7 @@ import {
   memoryVersionId,
   memoryVersionName,
 } from "../../agent/memory/memoryVersions";
-import { Empty, MasterDetail } from "../MasterDetail";
+import { Empty, MasterDetail } from "../../../app/MasterDetail";
 import { useStudio } from "../StudioContext";
 
 const any = "all";

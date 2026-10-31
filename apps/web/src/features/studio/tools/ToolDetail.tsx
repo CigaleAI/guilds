@@ -4,7 +4,7 @@ import { useStudioToolCalls } from "../../../api/queries/studio";
 import type { StudioAgent, StudioTool, StudioToolCall } from "../../../api/types/studio";
 import { relativeTime } from "../../../app/format";
 import { Banner, Button, Icon, Segmented, SkeletonRows, StatBand, Tag, cn } from "@guildsrun/ui";
-import { DetailHeader } from "../MasterDetail";
+import { DetailHeader } from "../../../app/MasterDetail";
 import { useStudio } from "../StudioContext";
 import { OfferedAgents } from "./OfferedAgents";
 import {

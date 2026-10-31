@@ -2,11 +2,7 @@
   "filesInCycles": [],
   "domainsInCycles": [
     "features/agent",
-    "features/coach",
-    "features/notes",
-    "features/settings",
-    "features/studio",
-    "features/tables"
+    "features/settings"
   ],
   "compositionRoots": [
     "app/router.tsx"

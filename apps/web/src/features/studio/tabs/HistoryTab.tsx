@@ -26,7 +26,7 @@ import {
 import type { RevealStep } from "../../agent/chat/FlowView";
 import { Transcript } from "../../agent/chat/Transcript";
 import { runKindLabel } from "../../agent/runState";
-import { DetailHeader, Empty, MasterDetail } from "../MasterDetail";
+import { DetailHeader, Empty, MasterDetail } from "../../../app/MasterDetail";
 import { revealedStep } from "../location";
 import { useStudio } from "../StudioContext";
 import { isRunKindFilter, type RunKindFilter } from "./historyFilters";

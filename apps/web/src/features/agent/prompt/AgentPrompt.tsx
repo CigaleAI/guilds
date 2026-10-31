@@ -28,9 +28,10 @@ import {
   Icon,
 } from "@guildsrun/ui";
 import type { InsertKind } from "@guildsrun/ui";
-import { InsertPicker } from "./InsertPicker";
-import { EmbedPreview } from "./EmbedPreview";
-import { embedIsBroken, pickableNotes, taskEdit, type TaskDraft } from "./taskContext";
+import { EmbedPreview } from "../../notes/EmbedPreview";
+import { embedIsBroken, pickableNotes } from "../../notes/embeds";
+import { InsertPicker } from "../../notes/InsertPicker";
+import { taskEdit, type TaskDraft } from "./taskContext";
 import { LatestChange } from "../../notes/LatestChange";
 
 const currentVersion = "current";

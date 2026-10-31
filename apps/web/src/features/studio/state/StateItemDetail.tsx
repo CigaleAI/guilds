@@ -4,7 +4,7 @@ import { useStudioReferences, useStudioStateItem } from "../../../api/queries/st
 import type { StateHistoryEntry, StateItemRow, StateTally } from "../../../api/types/studio";
 import { relativeTime } from "../../../app/format";
 import { Banner, Button, Icon, Segmented, SkeletonRows, StatBand, Tag } from "@guildsrun/ui";
-import { DetailHeader, Empty } from "../MasterDetail";
+import { DetailHeader, Empty } from "../../../app/MasterDetail";
 import { useStudio } from "../StudioContext";
 import { FileDetail } from "./ReferenceDetail";
 import { ReferenceSection as Section } from "./referenceParts";

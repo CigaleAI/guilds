@@ -3,7 +3,7 @@ import { useState, type ReactNode } from "react";
 import type { MemoryVersion } from "../../../api/types/notes";
 import { relativeTime } from "../../../app/format";
 import { Button, DiffView, diffLines, Segmented, Icon, Row, Tag } from "@guildsrun/ui";
-import { DetailHeader } from "../../studio/MasterDetail";
+import { DetailHeader } from "../../../app/MasterDetail";
 import { runKindLabel } from "../runState";
 
 /** A version's id in a list: its revision, or `live` for the live version. */

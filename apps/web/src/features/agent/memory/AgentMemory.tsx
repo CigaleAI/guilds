@@ -19,7 +19,7 @@ import {
   toast,
 } from "@guildsrun/ui";
 import { LatestChange, useOpenRunStep } from "../../notes/LatestChange";
-import { DetailHeader, MasterDetail } from "../../studio/MasterDetail";
+import { DetailHeader, MasterDetail } from "../../../app/MasterDetail";
 import {
   MemoryStepButton,
   MemoryVersionRow,

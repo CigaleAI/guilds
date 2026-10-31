@@ -40,9 +40,9 @@ import {
 } from "@guildsrun/ui";
 import type { FileTreeNode, InsertKind } from "@guildsrun/ui";
 import { AccessListPanel } from "../access/AccessListPanel";
-import { InsertPicker } from "../agent/prompt/InsertPicker";
-import { EmbedPreview } from "../agent/prompt/EmbedPreview";
-import { embedIsBroken, pickableNotes } from "../agent/prompt/taskContext";
+import { EmbedPreview } from "./EmbedPreview";
+import { embedIsBroken, pickableNotes } from "./embeds";
+import { InsertPicker } from "./InsertPicker";
 import { buildTree, newNotePath } from "./noteTree";
 import { LatestChange, type OpenChangeStep } from "./LatestChange";
 

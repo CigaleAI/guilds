@@ -4,7 +4,7 @@ import { useStudioInspector, useStudioRoutines, useStudioRuns } from "../../../a
 import type { StudioAgent, StudioRoutine } from "../../../api/types/studio";
 import { clockTime, dayLabel, relativeTime, upcomingTime } from "../../../app/format";
 import { Button, Markdown, Banner, SkeletonRows, Icon, Row, Tag } from "@guildsrun/ui";
-import { DetailHeader, Empty, MasterDetail } from "../MasterDetail";
+import { DetailHeader, Empty, MasterDetail } from "../../../app/MasterDetail";
 import { useStudio } from "../StudioContext";
 import { RunRow } from "./HistoryTab";
 

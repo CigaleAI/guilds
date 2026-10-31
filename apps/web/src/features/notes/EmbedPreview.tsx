@@ -1,6 +1,6 @@
-import { useEmbeddableNote } from "../../../api/queries/notes";
-import type { EmbeddableNote } from "../../../api/types/notes";
-import type { Collection } from "../../../api/types/tables";
+import { useEmbeddableNote } from "../../api/queries/notes";
+import type { EmbeddableNote } from "../../api/types/notes";
+import type { Collection } from "../../api/types/tables";
 import { Link } from "@tanstack/react-router";
 import {
   Button,
@@ -16,7 +16,7 @@ import {
   DialogFooter,
   DialogHeader,
 } from "@guildsrun/ui";
-import { collectionDisplayPath } from "./taskContext";
+import { collectionDisplayPath } from "./embeds";
 
 type EmbedPreviewProps = {
   /** The embed to show; null keeps the dialog closed. */

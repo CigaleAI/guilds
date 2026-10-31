@@ -4,7 +4,7 @@ import { useAgentScripts } from "../../../api/queries/scripts";
 import type { Script } from "../../../api/types/scripts";
 import type { StudioAgent } from "../../../api/types/studio";
 import { Button, Banner, SkeletonRows, Icon, Row, Tag } from "@guildsrun/ui";
-import { DetailHeader, Empty, MasterDetail } from "../MasterDetail";
+import { DetailHeader, Empty, MasterDetail } from "../../../app/MasterDetail";
 import { useStudio } from "../StudioContext";
 import { ChangeBar } from "./ChangeBar";
 
