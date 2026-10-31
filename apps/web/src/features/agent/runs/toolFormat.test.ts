@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   codeTaskStatus,
-  formatCost,
   formatDuration,
   formatReturnedData,
   formatTokens,
@@ -90,10 +89,6 @@ test("compact formatters", () => {
   assert.equal(formatTokens(3100), "3.1k");
   assert.equal(formatTokens(41_000), "41k");
   assert.equal(formatTokens(1_200_000), "1.2M");
-  assert.equal(formatCost(0), "$0");
-  assert.equal(formatCost(0.0031), "$0.0031");
-  assert.equal(formatCost(0.12), "$0.12");
-  assert.equal(formatCost("x"), "");
   assert.equal(previewText("  a\n\nb   c  "), "a b c");
   assert.equal(previewText("abcdefghij", 5), "abcd…");
 });

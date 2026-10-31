@@ -5,6 +5,7 @@ import { useOrgUsage, useUpdateProfile, useUpdateOrg } from "../../api/queries/o
 import { switchOrg } from "../../api/identity";
 import type { UsageTotals } from "../../api/types/org";
 import { agentLook } from "../../app/agents";
+import { formatCost } from "../../app/format";
 import { useIdentity } from "../../app/identity";
 import { chosenTab, placeTabs, useSlots } from "../../app/slots";
 import {
@@ -24,7 +25,6 @@ import {
 } from "@guildsrun/ui";
 import { AccessSecrets } from "../access/AccessSecrets";
 import { AccessTools } from "../access/AccessTools";
-import { formatCost } from "../agent/runs/toolFormat";
 import { ModelProviders } from "../models/ModelProviders";
 import { handlePattern } from "../../app/names";
 import { MachinesTab } from "../machines/MachinesTab";

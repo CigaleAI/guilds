@@ -1,4 +1,5 @@
 import { isJsonObject, isJsonValue, parseJson, type JsonValue } from "../../../api/wire";
+import { formatCost } from "../../../app/format";
 import { diffstat } from "../chat/changes";
 
 /** A recorded run message: the API's message row, every field optional so partial rows fit too. */
@@ -467,15 +468,6 @@ export function formatTokens(count: unknown): string {
   if (value < 1000) return String(Math.round(value));
   if (value < 1_000_000) return `${(value / 1000).toFixed(value < 10_000 ? 1 : 0)}k`;
   return `${(value / 1_000_000).toFixed(1)}M`;
-}
-
-/** A dollar cost: "$0", four decimals under a cent, two otherwise; empty for non-numeric input. */
-export function formatCost(usd: unknown): string {
-  const value = Number(usd);
-  if (!Number.isFinite(value)) return "";
-  if (value === 0) return "$0";
-  if (value < 0.01) return `$${value.toFixed(4)}`;
-  return `$${value.toFixed(2)}`;
 }
 
 /** Text collapsed to one line and cut to `max` characters with an ellipsis. */

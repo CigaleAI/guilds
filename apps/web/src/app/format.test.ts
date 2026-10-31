@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { dayKey, dayLabel, formatSize, isoTime, messageTime, relativeTime, upcomingTime } from "./format";
+import {
+  dayKey,
+  dayLabel,
+  formatCost,
+  formatSize,
+  isoTime,
+  messageTime,
+  relativeTime,
+  upcomingTime,
+} from "./format";
 
 test("server timestamps with microseconds parse", () => {
   assert.equal(isoTime("2026-09-26T09:00:00.123456+00:00"), "2026-09-26T09:00:00.123Z");
@@ -59,4 +68,11 @@ test("formatSize reads bytes, kilobytes, and megabytes", () => {
   assert.equal(formatSize(64 * 1024), "64 KB");
   assert.equal(formatSize(2.5 * 1024 * 1024), "2.5 MB");
   assert.equal(formatSize(10 * 1024 * 1024), "10 MB");
+});
+
+test("a cost reads in dollars: none, under a cent to four decimals, else to two", () => {
+  assert.equal(formatCost(0), "$0");
+  assert.equal(formatCost(0.0031), "$0.0031");
+  assert.equal(formatCost(0.12), "$0.12");
+  assert.equal(formatCost("x"), "");
 });

@@ -21,7 +21,7 @@ returns a string, `parseToolArgs` returns a `ToolArguments`, and the
 exports `ToolArguments` and `ToolResultMetadata`. `JsonValue`,
 `JsonObject`, `isJsonValue` and `isJsonObject` are exported from
 `api/wire`, beside `isRecord` and the other guards that narrow what
-the server sends.
+the server sends, and `formatCost` from `app/format`.
 
 **Rebuild.** The runtime image gains gost, and
 `agent-browser-start` takes the slot's DevTools relay port after the

@@ -39,7 +39,6 @@ import {
 import {
   codeTaskChanges,
   codeTaskStatus,
-  formatCost,
   formatDuration,
   formatTokens,
   friendlyToolCall,
@@ -58,6 +57,7 @@ import {
 } from "../runs/toolKinds";
 import type { ToolProgress } from "../../../api/toolProgress";
 import type { Harness } from "../../../api/types/agents";
+import { formatCost } from "../../../app/format";
 import { harnessLabels } from "../harness";
 import { HarnessLogo } from "../HarnessLogo";
 import { callHarness, callMetadata } from "./callDetail";
