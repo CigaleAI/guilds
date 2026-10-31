@@ -64,9 +64,11 @@ of ESLint. An extending repository loads the boundary rule from
 files are gone. The errors that predate a package's rules are in its
 `lint-suppressions.json`, which `pnpm lint --write` rewrites.
 
-`@guildsrun/orchestrator` exports `db/columns.js` and `db/errors.js`,
-so an extension's `db/` modules build their column lists and throw
-`RowMissing` the way core's do.
+`@guildsrun/orchestrator` exports `db/columns.js`, `db/errors.js`,
+`db/machines.js` and `llm/credentials.js`, so an extension's `db/`
+modules build their column lists and throw `RowMissing` the way
+core's do, read machines through core's queries, and name the
+`ModelCredentialsProvider` type they implement.
 
 **Breaking for extensions.** `@guildsrun/web` exports the API types
 as one module per domain, `api/types/<domain>` (`access`, `admin`,

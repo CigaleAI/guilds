@@ -66,11 +66,11 @@ configuration alone. Where several extensions supply a factory, the
 first one that returns a value is used; every extension's
 `orgCreated` hook runs. The extension reads and writes core's
 tables through the `db/` modules the package exports (`db/orgs.js`,
-`db/users.js`, `db/connectors.js`, `db/mcp.js`, `db/usage.js`),
-builds the column lists of its own tables with `db/columns.js` and
-throws `db/errors.js`'s `RowMissing` where a write finds no row, and
-loads a connector with its overrides applied through
-`connectors/servers.js`.
+`db/users.js`, `db/connectors.js`, `db/mcp.js`, `db/usage.js`,
+`db/machines.js`), builds the column lists of its own tables with
+`db/columns.js` and throws `db/errors.js`'s `RowMissing` where a write
+finds no row, and loads a connector with its overrides applied
+through `connectors/servers.js`.
 Each function takes that connection, or the client of a transaction
 the extension has open, as its first argument; a function whose
 writes commit together runs them in a savepoint of that transaction.
@@ -84,7 +84,7 @@ and `trusted-header`. Paths below are under
 |---|---|---|---|
 | Identity | `IdentityProvider` (`http/identity.ts`) | `ServerExtension.identity` | `compat-cookie` or `trusted-header` |
 | Organisation policy | `OrgPolicy` (`policy/index.ts`) | `ServerExtension.policy` | `OPEN_POLICY`: no cap |
-| Model credentials | `ModelCredentialsProvider` (`llm/credentials.ts`) | `ServerExtension.modelCredentials` | The organisation's own row under Settings → Model keys |
+| Model credentials | `ModelCredentialsProvider` (`llm/credentials.ts`, exported as `llm/credentials.js`) | `ServerExtension.modelCredentials` | The organisation's own row under Settings → Model keys |
 | Organisation created | `OrgCreatedHook` (`db/orgs.ts`) | `ServerExtension.orgCreated` | Nothing |
 | Sandbox provider | `SandboxProvider` (`extension.ts`) | `ServerExtension.sandboxes` | One `RunSandboxes` (`sandbox/`) |
 | Blob store | `BlobStore` (`lib/blob-store.ts`) | `ServerExtension.blobStore` | `FileBlobStore` under `ATTACHMENTS_ROOT` |
