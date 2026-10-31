@@ -62,7 +62,9 @@ A factory on `ServerExtension` (`policy`, `modelCredentials`,
 receives the database connection as `db`, a `Queryable`
 (`db/pg.js`). The extension reads and writes core's tables through
 the `db/` modules the package exports (`db/orgs.js`, `db/users.js`,
-`db/connectors.js`, `db/mcp.js`, `db/usage.js`), and loads a
+`db/connectors.js`, `db/mcp.js`, `db/usage.js`), builds the column
+lists of its own tables with `db/columns.js` and throws `db/errors.js`'s
+`RowMissing` where a write finds no row, and loads a
 connector with its overrides applied through `connectors/servers.js`.
 Each function takes that connection, or the client of a transaction
 the extension has open, as its first argument; a function whose

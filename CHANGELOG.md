@@ -8,6 +8,10 @@ commands for each effect are in
 
 ## Unreleased
 
+`@guildsrun/orchestrator` exports `db/columns.js` and `db/errors.js`,
+so an extension's `db/` modules build their column lists and throw
+`RowMissing` the way core's do.
+
 **Breaking for extensions.** `@guildsrun/web` exports the API types
 as one module per domain, `api/types/<domain>` (`access`, `admin`,
 `agents`, `builder`, `chat`, `files`, `guilds`, `issues`, `models`,
