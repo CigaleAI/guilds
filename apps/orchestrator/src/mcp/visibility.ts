@@ -7,13 +7,14 @@ import type { Queryable } from "../db/pg.js";
 import { requireVisibleGuild } from "../guilds/access.js";
 import { canSeeGuild } from "../guilds/operators.js";
 import type { LoadedConnector } from "../connectors/servers.js";
+import type { JsonObject } from "../lib/json.js";
 
 /** A request about a connector login refused, with the HTTP status it answers with. */
 export class ConnectionError extends Error {
   status: number;
-  detail: unknown;
+  detail: string | JsonObject;
 
-  constructor(status: number, detail: string | Record<string, unknown>) {
+  constructor(status: number, detail: string | JsonObject) {
     super(typeof detail === "string" ? detail : String(detail.message ?? ""));
     this.name = "ConnectionError";
     this.status = status;

@@ -34,15 +34,20 @@ import { SecretError } from "../secrets/service.js";
 import { StudioError } from "../studio/errors.js";
 import { UserError } from "../users/directory.js";
 import { UserValidationError } from "../users/index.js";
+import { isJsonValue, isObjectNode, type JsonValue } from "../lib/json.js";
 import { SandboxProxyError } from "./sandbox-proxy.js";
 
+/**
+ * An answer a route gives with a status and its `{ detail }`: a message, or JSON that says more.
+ * Its message is the detail, as text.
+ */
 export class HttpError extends Error {
   status: number;
   statusCode: number;
-  detail: unknown;
+  detail: JsonValue;
 
-  constructor(status: number, detail: unknown) {
-    super(typeof detail === "string" ? detail : JSON.stringify(detail));
+  constructor(status: number, detail: JsonValue) {
+    super(Array.isArray(detail) || isObjectNode(detail) ? JSON.stringify(detail) : String(detail));
     this.name = "HttpError";
     this.status = status;
     this.statusCode = status;
@@ -55,8 +60,15 @@ export type ValidationProblem = {
   type: string;
   loc: string[];
   msg: string;
-  input: unknown;
+  input: JsonValue | undefined;
 };
+
+/** A schema problem for a field the request leaves out, which Ajv names as `missingProperty`. */
+type MissingFieldProblem = FastifySchemaValidationError & { params: { missingProperty: string } };
+
+function isMissingField(error: FastifySchemaValidationError): error is MissingFieldProblem {
+  return error.keyword === "required" && typeof error.params.missingProperty === "string";
+}
 
 /**
  * The 422 for a request its route's schema refused. A missing field is `missing` at the field's
@@ -72,9 +84,9 @@ export function validationHttp(errors: FastifySchemaValidationError[], part: str
         .split("/")
         .slice(1)
         .map((segment) => segment.replaceAll("~1", "/").replaceAll("~0", "~"));
-      const input = "data" in error ? error.data : undefined;
-      const missing = error.params.missingProperty;
-      if (error.keyword === "required" && typeof missing === "string") {
+      const input = "data" in error && isJsonValue(error.data) ? error.data : undefined;
+      if (isMissingField(error)) {
+        const missing = error.params.missingProperty;
         return { type: "missing", loc: [part, ...path, missing], msg: "Field required", input };
       }
       return {
@@ -84,23 +96,6 @@ export function validationHttp(errors: FastifySchemaValidationError[], part: str
         input,
       };
     }),
-  );
-}
-
-export function missingBodyFields(body: unknown, fields: string[]): HttpError | null {
-  const input = body && typeof body === "object" && !Array.isArray(body) ? body : {};
-  const missing = fields.filter((field) => !Object.prototype.hasOwnProperty.call(input, field));
-  if (!missing.length) {
-    return null;
-  }
-  return new HttpError(
-    422,
-    missing.map((field) => ({
-      type: "missing",
-      loc: ["body", field],
-      msg: "Field required",
-      input,
-    })),
   );
 }
 
@@ -191,28 +186,44 @@ const INVALID = [
   SettingsError,
 ] as const;
 
+/** A domain error that carries the status it answers with. */
+type Refusal = InstanceType<(typeof REFUSALS)[number]>;
+
+/** A domain error for a value a validator refused. */
+type Invalid = InstanceType<(typeof INVALID)[number]>;
+
 /**
- * The HTTP answer for a refusal a domain module raises: a recipe conflict with the version it met,
- * a notes store refusal by its message, one with its own status, answered with its detail when it
- * carries one, or a value its validator refused. Any other error is null.
+ * A refusal a domain module raises, which HTTP answers: a recipe conflict, a notes store refusal,
+ * one with its own status, or a value its validator refused.
  */
-export function domainHttp(error: unknown): HttpError | null {
+export type DomainError = RecipeConflictError | NotesError | Refusal | Invalid;
+
+function isRefusal(error: DomainError): error is Refusal {
+  return REFUSALS.some((kind) => error instanceof kind);
+}
+
+/** Whether a thrown value is a domain error, the one decision of what HTTP answers it with. */
+export function isDomainError(error: unknown): error is DomainError {
+  return [RecipeConflictError, NotesError, ...REFUSALS, ...INVALID].some(
+    (kind) => error instanceof kind,
+  );
+}
+
+/**
+ * The HTTP answer for a domain error: a recipe conflict with the version it met, a notes store
+ * refusal by its message, one with its own status, answered with its detail when it carries one,
+ * or a 422 for a value its validator refused.
+ */
+export function domainHttp(error: DomainError): HttpError {
   if (error instanceof RecipeConflictError) {
     return recipeConflictHttp(error);
   }
   if (error instanceof NotesError) {
     return notesWriteHttp(error);
   }
-  for (const kind of REFUSALS) {
-    if (error instanceof kind) {
-      const detail = "detail" in error && error.detail !== undefined ? error.detail : error.message;
-      return new HttpError(error.status, detail);
-    }
+  if (isRefusal(error)) {
+    const detail = "detail" in error && error.detail !== undefined ? error.detail : error.message;
+    return new HttpError(error.status, detail);
   }
-  for (const kind of INVALID) {
-    if (error instanceof kind) {
-      return new HttpError(422, error.message);
-    }
-  }
-  return null;
+  return new HttpError(422, error.message);
 }

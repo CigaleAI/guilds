@@ -10,6 +10,7 @@ import {
 } from "./integrations.js";
 import { isPlainRecord } from "../db/json.js";
 import type { Queryable } from "../db/pg.js";
+import type { JsonObject } from "../lib/json.js";
 import type { instanceKeys } from "../db/schema/index.js";
 import type { UserRow } from "../db/users.js";
 
@@ -30,9 +31,9 @@ type DecryptedValues = { readable: true; values: Record<string, string> } | { re
 export class InstanceKeyError extends Error {
   status: number;
   /** What the refusal answers with, when it says more than its message. */
-  detail: Record<string, unknown> | undefined;
+  detail: JsonObject | undefined;
 
-  constructor(message: string, status = 400, detail?: Record<string, unknown>) {
+  constructor(message: string, status = 400, detail?: JsonObject) {
     super(message);
     this.name = "InstanceKeyError";
     this.status = status;

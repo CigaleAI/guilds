@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { HttpError, domainHttp, validationHttp } from "../../src/http/errors.js";
+import { HttpError, domainHttp, isDomainError, validationHttp } from "../../src/http/errors.js";
 import { numberOrNull } from "../../src/lib/numbers.js";
 import { ModelNotConnectedError } from "../../src/llm/credentials.js";
 import { MachineError } from "../../src/machines/index.js";
@@ -49,7 +49,7 @@ test("a notes store refusal answers by its message", () => {
 
 test("any other error, or a thrown non-error, has no domain answer", () => {
   for (const error of [new Error("boom"), new HttpError(400, "bad"), "text", null, undefined, { status: 409, message: "x" }]) {
-    assert.equal(domainHttp(error), null);
+    assert.equal(isDomainError(error), false);
   }
 });
 

@@ -1100,22 +1100,8 @@
     }
   },
   "src/http/error-handler.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 3
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 3
-    },
     "limits/silent-catch": {
       "count": 1
-    }
-  },
-  "src/http/errors.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 3
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 3
     }
   },
   "src/http/file-routes.ts": {
@@ -1188,7 +1174,7 @@
       "count": 1
     },
     "anti-slop/no-unsafe-dictionary-type": {
-      "count": 3
+      "count": 1
     }
   },
   "src/instrument.ts": {
@@ -1598,9 +1584,6 @@
   },
   "src/mcp/visibility.ts": {
     "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
       "count": 1
     }
   },
