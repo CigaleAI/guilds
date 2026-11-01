@@ -44,8 +44,17 @@ export function defaultEntry(provider: ProviderDef, model: string): CatalogEntry
   };
 }
 
+/** A model's prices in USD per million tokens. */
+export type CatalogPrice = { input: number; output: number; cache_read: number };
+
+/** A model as the API lists it: what it accepts, its window, and its prices; null for one without a price. */
+export type CatalogEntryPayload = Pick<
+  CatalogEntry,
+  "id" | "model" | "provider" | "label" | "thinking" | "temperature" | "attachments" | "context" | "kind" | "coding_only"
+> & { price: CatalogPrice | null };
+
 /** An entry as the API lists it: prices in USD per million tokens. */
-export function entryPayload(entry: CatalogEntry): Record<string, unknown> {
+export function entryPayload(entry: CatalogEntry): CatalogEntryPayload {
   return {
     id: entry.id,
     model: entry.model,

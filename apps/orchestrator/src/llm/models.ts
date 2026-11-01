@@ -1,7 +1,6 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { encryptPayload } from "../credentials/crypto.js";
 import { newId } from "../lib/ids.js";
-import type { JsonObject } from "../lib/json.js";
 import { PolicyError } from "../policy/index.js";
 import { modelCatalog, type ModelCatalog } from "./catalog.js";
 import { listProviderModels } from "./client.js";
@@ -11,8 +10,10 @@ import {
   decryptProviderRow,
   keyHint,
   type ModelCredentialsProvider,
+  type ProviderAccess,
+  type ProviderSecret,
 } from "./credentials.js";
-import { defaultEntry, entryPayload, type CatalogEntry } from "./entries.js";
+import { defaultEntry, entryPayload, type CatalogEntry, type CatalogEntryPayload } from "./entries.js";
 import {
   PROVIDERS,
   parseModelId,
@@ -92,28 +93,13 @@ export type ProviderItem = {
 export type OrgModelsPayload = {
   default: string | null;
   providers: ProviderItem[];
-  models: Array<Record<string, unknown>>;
+  models: CatalogEntryPayload[];
 };
 
 const MAX_CHOSEN_MODELS = 500;
 
-function isStringList(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === "string");
-}
-
-function stringList(value: unknown, field: string): string[] {
-  if (value === undefined) {
-    return [];
-  }
-  if (!isStringList(value)) {
-    throw new ModelsError(422, `${field} must be a list of model ids`);
-  }
-  return value;
-}
-
 /** The chosen ids of a provider: `{provider}/{model}`, trimmed, deduplicated, in the order given. */
-export function validateChosenModels(provider: ProviderDef, value: unknown): string[] {
-  const ids = stringList(value, "models");
+export function validateChosenModels(provider: ProviderDef, ids: readonly string[]): string[] {
   const chosen: string[] = [];
   for (const raw of ids) {
     const id = raw.trim();
@@ -152,9 +138,6 @@ export const ProviderConnectionSchema = Type.Object({
 });
 
 export type ProviderConnection = Static<typeof ProviderConnectionSchema>;
-
-/** The key and base URL a provider is connected with; the base URL is the local endpoint's, null for any other provider. */
-type ProviderAccess = { apiKey: string; baseURL: string | null };
 
 /** A field a connection gives, else the one stored: a blank given field keeps what is stored. */
 function givenOrStored(given: string | undefined, stored: string | null | undefined): string {
@@ -249,7 +232,7 @@ export class ModelsService {
       (await this.deps.db.listOrgModelProviders(orgId)).map((row) => [row.provider, row]),
     );
     const providers: ProviderItem[] = [];
-    const models: Array<Record<string, unknown>> = [];
+    const models: CatalogEntryPayload[] = [];
     for (const provider of PROVIDERS) {
       const row = rows.get(provider.id);
       const state = await this.connected(orgId, provider);
@@ -270,7 +253,7 @@ export class ModelsService {
   }
 
   /** A provider's full catalog, or the local endpoint's live list once its URL is saved. */
-  async providerCatalog(orgId: string, providerId: string): Promise<Array<Record<string, unknown>>> {
+  async providerCatalog(orgId: string, providerId: string): Promise<CatalogEntryPayload[]> {
     const provider = requireProvider(providerId);
     if (provider.modelsDev) {
       await this.catalog.ensureFresh();
@@ -307,16 +290,10 @@ export class ModelsService {
     const existing = await this.deps.db.getOrgModelProvider(orgId, provider.id);
     const stored = existing ? decryptProviderRow(existing, this.deps.masterKey) : null;
     const { apiKey, baseURL } = connectionAccess(provider, input, stored);
-    const models =
-      input.models === undefined && existing
-        ? validateChosenModels(provider, existing.models)
-        : validateChosenModels(provider, input.models);
+    const models = validateChosenModels(provider, input.models ?? existing?.models ?? []);
     await this.listModels(provider, apiKey, baseURL);
-    const payload: JsonObject = { api_key: apiKey };
-    if (baseURL) {
-      payload.base_url = baseURL;
-    }
-    const [ciphertext, nonce] = encryptPayload(payload, this.deps.masterKey);
+    const secret: ProviderSecret = { api_key: apiKey, ...(baseURL ? { base_url: baseURL } : {}) };
+    const [ciphertext, nonce] = encryptPayload(secret, this.deps.masterKey);
     const now = new Date();
     const row = await this.deps.db.upsertOrgModelProvider(
       {
