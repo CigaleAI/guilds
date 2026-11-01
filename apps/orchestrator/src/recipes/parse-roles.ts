@@ -111,7 +111,7 @@ function parseTask(value: unknown, path: string): RecipeRole["task"] {
 }
 
 /** The role's browser login; it is required exactly when the role's config turns the browser on, if it says. */
-function parseBrowser(value: unknown, config: Record<string, unknown>, path: string): RecipeRole["browser"] {
+function parseBrowser(value: unknown, config: RecipeRole["config"], path: string): RecipeRole["browser"] {
   const record = value === undefined ? {} : assertObject(value, path);
   assertKeys(record, ["required", "instructions", "author"], path);
   const instructions = boundedText(record.instructions, `${path}.instructions`, RECIPE_SETUP_MAX);
@@ -124,6 +124,12 @@ function parseBrowser(value: unknown, config: Record<string, unknown>, path: str
     instructions,
     author: parseAuthor(record.author, builderAuthor()),
   };
+}
+
+/** The model a role's config recommends, trimmed; null when it names none. */
+export function recommendedModelOf(config: RecipeRole["config"]): string | null {
+  const model = config.model;
+  return typeof model === "string" && model.trim() ? model.trim() : null;
 }
 
 function parseWakeTriggers(value: unknown, path: string): string {

@@ -60,6 +60,7 @@ import type {
 } from "./apply.js";
 import { validationContext } from "./apply.js";
 import { RecipeError } from "./errors.js";
+import { recommendedModelOf } from "./parse-roles.js";
 import type { ValidationContext } from "./findings.js";
 import { prepareRecipeForApply, roleBrowses, roleCodes, roleTaskText, schedulesForRole } from "./prepare.js";
 import { unreviewedFields } from "./review.js";
@@ -367,11 +368,6 @@ async function setupsNeeded(apply: RecipeApply, orgId: string, recipe: RecipeDoc
   });
 }
 
-/** The recipe's recommended model for a role, when it names one. */
-function recommendedModel(role: RecipeRole): string | null {
-  return typeof role.config.model === "string" && role.config.model.trim() ? role.config.model.trim() : null;
-}
-
 /** The models a role may run: one of a connected provider, and a coding provider only for a coding role. */
 function modelFits(role: RecipeRole, connected: Set<string>, id: string | null): id is string {
   const parsed = id ? parseModelId(id) : null;
@@ -389,7 +385,7 @@ function resolveModels(recipe: RecipeDocument, decisions: ModelDecision[], offer
   const chosen = new Map(decisions.map((item) => [item.role, String(item.model ?? "").trim()]));
   return recipe.roles.map((role) => {
     const fits = (id: string | null): id is string => modelFits(role, offer.connected, id);
-    const recommended = recommendedModel(role);
+    const recommended = recommendedModelOf(role.config);
     const choice = chosen.get(role.role) || null;
     if (choice && !parseModelId(choice)) {
       throw new RecipeError(`models.${role.role}: model must be {provider}/{model}`);
@@ -464,7 +460,7 @@ function inventoryFromRecipe(recipe: RecipeDocument, plan: InventoryPlan): Apply
       role: role.role,
       name: plan.names.get(role.role) ?? role.name_suggestion,
       focus: role.focus,
-      model: typeof role.config.model === "string" ? role.config.model : "",
+      model: recommendedModelOf(role.config) ?? "",
       browser: roleBrowses(role),
       coding: roleCodes(role),
       task: roleTaskText(role, recipe),

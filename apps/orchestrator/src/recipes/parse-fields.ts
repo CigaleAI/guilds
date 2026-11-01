@@ -1,13 +1,14 @@
-import { isPlainRecord } from "../db/json.js";
+import { isJsonObject, type JsonObject } from "../lib/json.js";
 import { RecipeError } from "./errors.js";
-import type { FieldAuthor } from "../db/schema/index.js";
+import type { FieldAuthor, RecipeRole } from "../db/schema/index.js";
 
 // The field readers a recipe is parsed with. Each names the field it reads by its path in the
 // document, so an error tells the author where to look; an unknown key also says which key the
 // author most likely meant.
 
-export function assertObject(value: unknown, path: string): Record<string, unknown> {
-  if (!isPlainRecord(value)) {
+/** The JSON object at `path`; anything else is refused. */
+export function assertObject(value: unknown, path: string): JsonObject {
+  if (!isJsonObject(value)) {
     throw new RecipeError(`${path} must be an object`);
   }
   return value;
@@ -54,7 +55,7 @@ function keyHint(path: string, key: string): string | null {
   return found?.hint ?? null;
 }
 
-export function assertKeys(record: Record<string, unknown>, allowed: string[], path: string): void {
+export function assertKeys(record: JsonObject, allowed: string[], path: string): void {
   const allow = new Set(allowed);
   const unknown = Object.keys(record).find((key) => !allow.has(key));
   if (unknown === undefined) {
@@ -125,7 +126,8 @@ export function boundedText(value: unknown, path: string, max: number): string {
   return text;
 }
 
-export function parseBoolMap(value: unknown, path: string): Record<string, boolean> {
+/** Switches by name, such as a role's native tools or its tools on a connection; absent is none. */
+export function parseBoolMap(value: unknown, path: string): RecipeRole["native_tools"] {
   if (value === undefined) {
     return {};
   }

@@ -72,14 +72,14 @@ export function rewriteRecipeIdsToHrefs(text: string, noteIdToHref: Map<string, 
   });
 }
 
+/** A text with its recipe note paths rewritten, and the paths no note resolved, as the text wrote them. */
+export type RewrittenText = { text: string; unresolved: string[] };
+
 /**
  * Recipe note paths become live display paths: inside `![[…]]` embeds (including
  * `recipe:<note-id>`) and as plain text such as a path handed to `note_get`.
  */
-export function rewriteRecipePathsToDisplayPaths(
-  text: string,
-  resolved: Map<string, string>,
-): { text: string; unresolved: string[] } {
+export function rewriteRecipePathsToDisplayPaths(text: string, resolved: Map<string, string>): RewrittenText {
   const unresolved: string[] = [];
   const next = text.replace(RECIPE_PATH_RE, (match, embed: string | undefined, path: string | undefined) => {
     if (embed === undefined) {
