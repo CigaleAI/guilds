@@ -17,13 +17,13 @@ import {
 import { CreateAgentDialog } from "../agent/CreateAgentDialog";
 import { CreateGuildDialog } from "../guild/CreateGuildDialog";
 import { AccountMenu } from "./AccountMenu";
-import { parseFoldedGuilds } from "./foldedGuilds";
+import { parseFoldedGuilds, type FoldedGuilds } from "./foldedGuilds";
 import { useInboxCount, useUnreadByGuild } from "./inbox";
 
 /** Guild ids the operator folded in the sidebar. */
 const collapsedKey = "guilds-guilds-collapsed";
 
-function readCollapsed(): Record<string, boolean> {
+function readCollapsed(): FoldedGuilds {
   return parseFoldedGuilds(readStored(collapsedKey) ?? "{}") ?? {};
 }
 

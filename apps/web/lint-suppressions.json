@@ -40,11 +40,6 @@
       "count": 4
     }
   },
-  "src/features/admin/githubManifest.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    }
-  },
   "src/features/agent/CodingStrip.tsx": {
     "react/purity": {
       "count": 1
@@ -162,11 +157,6 @@
       "count": 4
     }
   },
-  "src/features/coach/coachRows.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    }
-  },
   "src/features/instance/instance.ts": {
     "anti-slop/no-known-value-widening": {
       "count": 1
@@ -238,11 +228,6 @@
     },
     "anti-slop/no-unknown-parameters": {
       "count": 3
-    }
-  },
-  "src/features/shell/foldedGuilds.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
     }
   },
   "src/features/studio/LoginsPopover.tsx": {
@@ -342,14 +327,6 @@
   "src/features/studio/tools/ToolsSection.tsx": {
     "anti-slop/no-known-value-widening": {
       "count": 1
-    }
-  },
-  "src/features/tables/values.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 6
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 3
     }
   }
 }
