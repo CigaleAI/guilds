@@ -244,6 +244,9 @@ export type MemoryTimelineRevision = {
   replaced_by: { type: "user" | "agent" | "run"; id: string; name: string; detail: string };
 };
 
+/** How many lines a change added and removed. */
+export type LineChanges = { added: number; removed: number };
+
 export type MemoryTimelineEntry = {
   index: number;
   revision_id: string | null;
@@ -254,7 +257,7 @@ export type MemoryTimelineEntry = {
   content: string;
   content_hash: string;
   previous_content: string | null;
-  stats: { added: number; removed: number };
+  stats: LineChanges;
 };
 
 const UNKNOWN_ACTOR: MemoryTimelineActor = { type: "unknown", id: null, name: null, detail: null };
@@ -271,7 +274,7 @@ function nonBlankMemoryLines(text: string): string[] {
     .filter((line) => line.trim() !== "");
 }
 
-function lineMultisetDelta(before: string, after: string): { added: number; removed: number } {
+function lineMultisetDelta(before: string, after: string): LineChanges {
   const counts = new Map<string, number>();
   for (const line of nonBlankMemoryLines(before)) counts.set(line, (counts.get(line) ?? 0) - 1);
   for (const line of nonBlankMemoryLines(after)) counts.set(line, (counts.get(line) ?? 0) + 1);
@@ -284,7 +287,7 @@ function lineMultisetDelta(before: string, after: string): { added: number; remo
   return { added, removed };
 }
 
-export function lineChangeStats(before: string, after: string): { added: number; removed: number } {
+export function lineChangeStats(before: string, after: string): LineChanges {
   return lineMultisetDelta(before, after);
 }
 
@@ -311,7 +314,7 @@ function runIdOfActor(actor: MemoryTimelineActor): string | null {
   return actor.type === "run" ? actor.id : null;
 }
 
-function changeStatsFromPrevious(previous: string | null, content: string): { added: number; removed: number } {
+function changeStatsFromPrevious(previous: string | null, content: string): LineChanges {
   if (previous === null) {
     return { added: 0, removed: 0 };
   }

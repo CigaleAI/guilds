@@ -52,20 +52,6 @@
       "count": 1
     }
   },
-  "src/artifacts/access.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 2
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    }
-  },
   "src/artifacts/collection-views.ts": {
     "anti-slop/no-known-value-widening": {
       "count": 1
@@ -99,11 +85,6 @@
       "count": 1
     }
   },
-  "src/artifacts/files.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    }
-  },
   "src/artifacts/guild-tables.ts": {
     "anti-slop/no-unknown-parameters": {
       "count": 1
@@ -123,11 +104,6 @@
       "count": 6
     },
     "limits/erased-return-type": {
-      "count": 2
-    }
-  },
-  "src/artifacts/memory.ts": {
-    "anti-slop/no-known-value-widening": {
       "count": 2
     }
   },
@@ -170,11 +146,6 @@
     },
     "limits/erased-return-type": {
       "count": 2
-    }
-  },
-  "src/artifacts/task.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
     }
   },
   "src/attachments/hydrate.ts": {
