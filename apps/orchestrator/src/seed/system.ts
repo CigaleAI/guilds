@@ -1,6 +1,7 @@
 import type pg from "pg";
 import { decryptPayload, encryptPayload } from "../credentials/crypto.js";
 import { newId } from "../lib/ids.js";
+import type { JsonObject } from "../lib/json.js";
 import {
   DROPPED_MCP_SERVERS,
   DROPPED_NATIVE_TOOLS,
@@ -56,7 +57,7 @@ export async function moveDriveFolders(pool: pg.Pool, now = new Date()): Promise
      WHERE mcp_server_id = 'mcp_drive' AND NOT (settings ? 'folder_id')`,
   );
   for (const row of rows.rows) {
-    let payload: Record<string, unknown>;
+    let payload: JsonObject;
     try {
       payload = decryptPayload(row.ciphertext, row.nonce);
     } catch {

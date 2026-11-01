@@ -17,6 +17,7 @@ import { loadJsonFixture } from "../helpers/fixtures.js";
 import { mockFetch } from "../helpers/http.js";
 import { serverRow, connectionRow } from "../helpers/servers.js";
 import type { McpConnectionRow } from "../../src/db/mcp.js";
+import type { JsonObject } from "../../src/lib/json.js";
 import { MemoryMcpDatabase } from "../helpers/mcp-database.js";
 
 const fixture = loadJsonFixture<{ results: string; empty: string }>("adapters/tavily.json");
@@ -41,7 +42,7 @@ function webSearch(apiKey: string) {
 
 function login(
   scope: "platform" | "org",
-  payload: Record<string, unknown>,
+  payload: JsonObject,
   status: McpConnectionRow["status"] = "connected",
 ): McpConnectionRow {
   const [ciphertext, nonce] = encryptPayload(payload, KEY);

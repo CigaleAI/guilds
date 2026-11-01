@@ -1,31 +1,18 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from "node:crypto";
 import { decodeMasterKey } from "../config/index.js";
-import { dumpsCompact, isJsonObject } from "../lib/json.js";
-import { CredentialError } from "./validate.js";
+import { dumpsCompact, type JsonObject } from "../lib/json.js";
+import { parsePayload } from "./validate.js";
 
 export function loadMasterKey(value?: string | null): Buffer {
   const raw = value === undefined || value === null ? process.env.SECRETS_MASTER_KEY : value;
   return decodeMasterKey(raw ?? "");
 }
 
-export function asBuffer(value: unknown): Buffer {
-  if (Buffer.isBuffer(value)) {
-    return value;
-  }
-  if (value instanceof Uint8Array) {
-    return Buffer.from(value);
-  }
-  throw new CredentialError("payload must be bytes");
-}
-
 export function encryptPayload(
-  payload: Record<string, unknown>,
+  payload: JsonObject,
   key?: Buffer | undefined,
   nonce?: Buffer | undefined,
 ): [Buffer, Buffer] {
-  if (!isJsonObject(payload)) {
-    throw new CredentialError("payload must be a JSON object");
-  }
   const master = key ?? loadMasterKey();
   const usedNonce = nonce ?? randomBytes(12);
   const plaintext = Buffer.from(dumpsCompact(payload, true), "utf8");
@@ -39,18 +26,14 @@ export function decryptPayload(
   ciphertext: Buffer,
   nonce: Buffer,
   key?: Buffer | undefined,
-): Record<string, unknown> {
+): JsonObject {
   const master = key ?? loadMasterKey();
   const tag = ciphertext.subarray(ciphertext.length - 16);
   const data = ciphertext.subarray(0, ciphertext.length - 16);
   const decipher = createDecipheriv("aes-256-gcm", master, nonce);
   decipher.setAuthTag(tag);
   const plaintext = Buffer.concat([decipher.update(data), decipher.final()]).toString("utf8");
-  const loaded: unknown = JSON.parse(plaintext);
-  if (!loaded || typeof loaded !== "object" || Array.isArray(loaded)) {
-    throw new CredentialError("payload must be an object");
-  }
-  return loaded as Record<string, unknown>;
+  return parsePayload(plaintext);
 }
 
 export function environmentFingerprint(

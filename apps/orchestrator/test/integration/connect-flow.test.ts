@@ -5,6 +5,7 @@ import { buildApp } from "../../src/app.js";
 import { installConnectors } from "../../src/connectors/index.js";
 import { folderEntry } from "../../src/connectors/registry.js";
 import { getMcpServer } from "../../src/connectors/servers.js";
+import type { JsonObject } from "../../src/lib/json.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import { connect } from "../../src/seed/connect.js";
 import { projectConnectors } from "../../src/seed/system.js";
@@ -107,7 +108,7 @@ test(
       assert.equal(response.statusCode, 201, response.body);
       return String(response.json().id);
     };
-    const start = (serverId: string, ownerScope = "org", form: Record<string, unknown> = {}) =>
+    const start = (serverId: string, ownerScope = "org", form: JsonObject = {}) =>
       startConnection(services, "user_operator", {
         serverId,
         ownerScope,
