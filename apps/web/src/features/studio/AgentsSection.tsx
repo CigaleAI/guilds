@@ -96,7 +96,7 @@ function AgentMarks({ agent, pending }: AgentMarksProps) {
 /** Where an agent's notes and tables open: State, filtered to the agent. */
 const stateLinks: { label: string; search: (agentId: string) => StudioSearch }[] = [
   {
-    label: "Files",
+    label: "Notes",
     search: (agent) => ({ section: "state", agent, tab: "list", kind: "note" }),
   },
   {
