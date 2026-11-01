@@ -8,15 +8,15 @@ import type { McpConnectionRow } from "../db/mcp.js";
 import type { Manifest } from "../db/schema/index.js";
 import { GithubInstallationGoneError } from "../github/index.js";
 import { mintLoginToken, RepositoryAccessError, type RepositoryToken } from "../github/tokens.js";
-import type { JsonObject } from "../lib/json.js";
+import type { JsonObject, JsonValue } from "../lib/json.js";
 import type { FetchFn } from "../net/http.js";
 import { accessExpired, isGithubApp, OAuthReauthError, refreshConnection, TOKEN_FIELDS } from "../oauth/index.js";
 import { McpDisconnectedError, McpError } from "./errors.js";
-import type { McpSession } from "./session.js";
+import type { McpSession, SessionHeaders } from "./session.js";
 import { markDisconnected, type McpDatabase } from "./database.js";
 
 /** What a login's session sends, and when that stops working; null when it does not expire while the session lives. */
-export type SessionAuth = { headers: Record<string, string>; expiresAt: number | null };
+export type SessionAuth = { headers: SessionHeaders; expiresAt: number | null };
 
 /** The login an operation runs on. A refresh replaces `connection`, so later steps see the new token. */
 export type Login = { connection: McpConnectionRow };
@@ -45,11 +45,16 @@ function connectionPayload(connection: McpConnectionRow): JsonObject | null {
   }
 }
 
+/** Whether a payload field holds a credential: text. A payload's other fields, such as an installation's id, do not. */
+function isCredential(value: JsonValue | undefined): value is string {
+  return typeof value === "string";
+}
+
 /** A login's credentials: every string in its decrypted payload, trimmed. */
 export function connectionCredentials(connection: McpConnectionRow): Credentials {
   const credentials: Record<string, string> = {};
   for (const [name, value] of Object.entries(connectionPayload(connection) ?? {})) {
-    if (typeof value === "string") {
+    if (isCredential(value)) {
       credentials[name] = value.trim();
     }
   }
@@ -61,7 +66,7 @@ export function connectionCredentials(connection: McpConnectionRow): Credentials
  * field its manifest does not mark `secret: false`, and the instance key serving a platform login.
  * The rest of its payload, such as the account a login names, is not secret.
  */
-export function loginSecrets(connection: McpConnectionRow, manifest: Manifest): Record<string, string> {
+export function loginSecrets(connection: McpConnectionRow, manifest: Manifest): Credentials {
   const credentials = connectionCredentials(connection);
   const fields = [...TOKEN_FIELDS, ...authFields(manifest).filter((field) => field.secret !== false).map((field) => field.name)];
   const secrets: Record<string, string> = {};
@@ -85,12 +90,11 @@ export function credentialToken(credentials: Credentials, manifest: Manifest): s
     return credentials.token;
   }
   const first = authFields(manifest)[0]?.name;
-  const value = first ? credentials[first] : undefined;
-  return typeof value === "string" ? value : "";
+  return (first ? credentials[first] : undefined) ?? "";
 }
 
 /** What an endpoint session sends: the manifest's endpoint headers, and the token in its auth header. */
-export function headersFor(token: string, manifest: Manifest): Record<string, string> {
+export function headersFor(token: string, manifest: Manifest): SessionHeaders {
   const fixed = { ...manifest.endpoint?.headers };
   if (!token) {
     return fixed;
@@ -99,7 +103,7 @@ export function headersFor(token: string, manifest: Manifest): Record<string, st
   return { ...fixed, [header.name]: `${header.prefix}${token}` };
 }
 
-export function authHeaders(connection: McpConnectionRow, server: LoadedConnector): Record<string, string> {
+export function authHeaders(connection: McpConnectionRow, server: LoadedConnector): SessionHeaders {
   const manifest = serverManifest(server);
   const credentials =
     connection.owner_scope === "platform" && manifest.auth.instance

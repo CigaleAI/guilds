@@ -9,8 +9,8 @@ import {
   recordSearch,
   recordUpdate,
 } from "./artifacts.js";
-import { isPlainRecord } from "../db/json.js";
 import type { ToolCall, ToolMessage, ToolResultMetadata } from "../db/schema/index.js";
+import { isJsonObject, type JsonObject } from "../lib/json.js";
 import { writeLog } from "../observability/log.js";
 import { identityOutput, processOutput } from "./output.js";
 import { browse } from "./browse.js";
@@ -86,12 +86,12 @@ export function schemasFor(names: string[]): Array<Record<string, unknown>> {
 }
 
 /** A call's arguments: the JSON object the model wrote, empty when it wrote none. */
-export function parseArguments(call: ToolCall): Record<string, unknown> {
+export function parseArguments(call: ToolCall): JsonObject {
   if (call.function.arguments === "") {
     return {};
   }
   const loaded: unknown = JSON.parse(call.function.arguments);
-  if (!isPlainRecord(loaded)) {
+  if (!isJsonObject(loaded)) {
     throw new ToolArgumentError("tool arguments must be a JSON object");
   }
   return loaded;

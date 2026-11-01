@@ -1,4 +1,5 @@
 import { capBytes } from "../lib/bytes.js";
+import type { JsonObject } from "../lib/json.js";
 import { storedTokenRedactions } from "../oauth/index.js";
 import { redact } from "../secrets/index.js";
 import { McpDisconnectedError, McpError } from "./errors.js";
@@ -19,15 +20,18 @@ export class OperatorCallError extends Error {
   }
 }
 
+/** A tool call's result as the operator reads it: the tool by both its names, its text, and whether that text was cut. */
+export type OperatorToolResult = { remote_name: string; name: string; content: string; truncated: boolean };
+
 /** Calls one listed tool on a connected login the operator can see. Results are redacted and capped. */
 export async function callOwnedConnectionTool(args: {
   mcp: Pick<McpPool, "call" | "database">;
   connection: McpConnectionRow;
   server: LoadedConnector;
   tool: string;
-  arguments: Record<string, unknown>;
+  arguments: JsonObject;
   masterKey?: Buffer;
-}): Promise<{ remote_name: string; name: string; content: string; truncated: boolean }> {
+}): Promise<OperatorToolResult> {
   const { connection, server } = args;
   if (connection.status !== "connected") {
     throw new OperatorCallError(409, `connection is ${connection.status}`);

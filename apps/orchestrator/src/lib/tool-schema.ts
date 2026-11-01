@@ -24,6 +24,12 @@ export type ToolSubschema = ToolSchema | boolean;
 /** The properties of an object schema, each one's schema by its name. */
 export type ToolSchemaProperties = { [name: string]: ToolSubschema };
 
+/** A tool as a model is offered it: a function, with its name, what it does, and the JSON Schema of its parameters. */
+export type FunctionTool = {
+  type: "function";
+  function: { name: string; description: string; parameters: ToolSchema };
+};
+
 /** The keywords whose value is a list of schemas. */
 const LIST_KEYWORDS = ["anyOf", "oneOf", "allOf", "prefixItems"] as const;
 

@@ -1,6 +1,7 @@
 import { Type, type Static, type TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { assertMatches } from "../../lib/decode.js";
+import type { JsonObject as ToolCallArguments } from "../../lib/json.js";
 import { proxyFetch, type FetchFn } from "../../net/http.js";
 import {
   DriveFile,
@@ -596,7 +597,7 @@ async function constrainSearch(scoped: ScopedDrive, arguments_: Record<string, u
 }
 
 /** A create goes into the connected folder, or a folder inside it. */
-async function constrainCreate(scoped: ScopedDrive, arguments_: Record<string, unknown>): Promise<Record<string, unknown>> {
+async function constrainCreate(scoped: ScopedDrive, arguments_: ToolCallArguments): Promise<ToolCallArguments> {
   const parent = driveArg(arguments_, "parentId", "parent_id");
   if (!parent) {
     return { ...arguments_, parentId: scoped.folderId };
@@ -607,9 +608,9 @@ async function constrainCreate(scoped: ScopedDrive, arguments_: Record<string, u
 
 export async function constrainDriveTool(
   remoteName: string,
-  arguments_: Record<string, unknown>,
+  arguments_: ToolCallArguments,
   options: ScopedDrive,
-): Promise<Record<string, unknown>> {
+): Promise<ToolCallArguments> {
   if (remoteName === "search_files") {
     await constrainSearch(options, arguments_);
     return arguments_;

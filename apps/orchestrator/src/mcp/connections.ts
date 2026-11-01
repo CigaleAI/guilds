@@ -8,9 +8,8 @@ import {
   serverSettings,
 } from "../connectors/servers.js";
 import { validateSettings } from "../connectors/settings.js";
-import { bindingItem, connectionMetadata, serverItem } from "./view.js";
+import { bindingItem, connectionMetadata, serverItem, type BindingView, type ConnectionView, type ServerView } from "./view.js";
 import { listBindingsForConnection } from "../db/bindings.js";
-import { isPlainRecord } from "../db/json.js";
 import {
   deleteMcpConnection,
   getMcpConnection,
@@ -21,9 +20,10 @@ import {
 import type { Queryable } from "../db/pg.js";
 import { GITHUB_SLUG } from "../github/index.js";
 import { requireVisibleGuild } from "../guilds/access.js";
+import { isJsonObject } from "../lib/json.js";
 import { relistTools, type McpPool, type SettingsLookup } from "./pool.js";
 import { awaitingSettings } from "../connectors/login.js";
-import { callOwnedConnectionTool } from "./operator-call.js";
+import { callOwnedConnectionTool, type OperatorToolResult } from "./operator-call.js";
 import { ConnectionError, seesConnection, serverVisible } from "./visibility.js";
 
 /** What an operator's connector logins are read, used and changed through, built once from the app's services. */
@@ -43,7 +43,8 @@ export type ConnectionToolCall = { tool: string; arguments: unknown };
 /** A lookup made from a Connect form, with the credentials the form holds before they are saved. */
 export type CredentialsLookup = SettingsLookup & { credentials: unknown };
 
-type Item = Record<string, unknown>;
+/** A login as the API shows it, with the bindings that use it. */
+export type BoundConnectionView = ConnectionView & { bindings: BindingView[] };
 
 function poolOf(services: ConnectionServices, unavailable: string): McpPool {
   if (services.mcp === null) {
@@ -76,7 +77,7 @@ function assertNotPlatform(connection: McpConnectionRow): void {
   }
 }
 
-export async function listOrgServers(db: Queryable, orgId: string): Promise<{ servers: Item[] }> {
+export async function listOrgServers(db: Queryable, orgId: string): Promise<{ servers: ServerView[] }> {
   return { servers: (await listServers(db, { owner: { visibleTo: orgId } })).map((row) => serverItem(row)) };
 }
 
@@ -95,7 +96,7 @@ export async function listConnections(
   orgId: string,
   userId: string,
   scope: ConnectionListScope,
-): Promise<{ connections: Item[] }> {
+): Promise<{ connections: ConnectionView[] }> {
   if (scope.guildId) {
     await requireVisibleGuild(db, scope.guildId, userId);
   }
@@ -140,7 +141,7 @@ export async function requireVisibleGithubConnection(
 }
 
 /** A login with the bindings that use it. */
-export async function viewConnection(db: Queryable, connection: McpConnectionRow): Promise<Item> {
+export async function viewConnection(db: Queryable, connection: McpConnectionRow): Promise<BoundConnectionView> {
   const bindings = await listBindingsForConnection(db, connection.id);
   return { ...connectionMetadata(connection), bindings: bindings.map((item) => bindingItem(item)) };
 }
@@ -150,14 +151,15 @@ export async function callConnectionTool(
   services: ConnectionServices,
   connection: McpConnectionRow,
   call: ConnectionToolCall,
-): Promise<Item> {
+): Promise<OperatorToolResult> {
   const server = await requireServer(services.db, connection.mcp_server_id);
   const mcp = poolOf(services, "tool calls are unavailable");
   const tool = call.tool.trim();
   if (!tool) {
     throw new ConnectionError(422, "tool is required");
   }
-  if (call.arguments !== undefined && !isPlainRecord(call.arguments)) {
+  const arguments_ = call.arguments ?? {};
+  if (!isJsonObject(arguments_)) {
     throw new ConnectionError(422, "arguments must be an object");
   }
   return callOwnedConnectionTool({
@@ -165,7 +167,7 @@ export async function callConnectionTool(
     connection,
     server,
     tool,
-    arguments: call.arguments ?? {},
+    arguments: arguments_,
     ...(services.masterKey ? { masterKey: services.masterKey } : {}),
   });
 }
@@ -183,7 +185,7 @@ export async function lookupWithCredentials(
   }
   const mcp = poolOf(services, "lookups are unavailable");
   const search = requireLookup(lookup);
-  const credentials = isPlainRecord(lookup.credentials) ? lookup.credentials : {};
+  const credentials = isJsonObject(lookup.credentials) ? lookup.credentials : {};
   try {
     return {
       options: await mcp.lookup(server, search, tokenCredentials(server, credentials)),
@@ -219,7 +221,7 @@ export async function saveConnectionSettings(
   services: ConnectionServices,
   connection: McpConnectionRow,
   settings: unknown,
-): Promise<Item> {
+): Promise<ConnectionView> {
   assertNotPlatform(connection);
   const server = await requireServer(services.db, connection.mcp_server_id);
   const schema = serverSettings(server);

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { JsonObject } from "../../src/lib/json.js";
 import {
   DRIVE_FOLDER_MIME,
   DriveFolderError,
@@ -302,7 +303,7 @@ test("Drive's adapter looks up folders by name or link and validates the picked 
     }
     return { status: 404 };
   });
-  const ctx = (settings: Record<string, unknown>) => ({
+  const ctx = (settings: JsonObject) => ({
     http: folderFetch,
     remote: { initialize: async () => ({ name: "", instructions: "" }), list: async () => [], call: async () => "" },
     connection_id: "conn_drive",

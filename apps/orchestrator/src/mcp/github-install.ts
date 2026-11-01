@@ -1,5 +1,6 @@
 // A GitHub App sign-in's installation: traded from the user's code, picked when the user
 // reaches several, or installed when they reach none.
+import { Type } from "@sinclair/typebox";
 import { getMcpServer } from "../connectors/servers.js";
 import {
   getMcpConnectionByOauthState,
@@ -15,6 +16,7 @@ import {
   resolveGithubInstallation,
   type GithubInstallation,
 } from "../github/index.js";
+import { keepMatching } from "../lib/decode.js";
 import { ConnectionError } from "./visibility.js";
 import { newState, OAuthError, pendingReplaces } from "../oauth/index.js";
 
@@ -30,6 +32,21 @@ import {
 
 /** A pending GitHub sign-in whose user has several installations to pick from. */
 export type GithubPickerSession = { row: McpConnectionRow; userToken: string };
+
+/**
+ * What a pending GitHub sign-in's payload holds beside the sign-in itself: the installation
+ * GitHub came back from, and the user token of a user who has an installation to pick.
+ */
+const GithubPending = Type.Object({
+  installation_id: Type.Optional(Type.Integer()),
+  github_user_token: Type.Optional(Type.String({ minLength: 1 })),
+});
+
+/**
+ * A pending GitHub sign-in as its callback reads it: the installation it names, the redirect
+ * URI it was started with, and its payload.
+ */
+type GithubPendingSignIn = { storedId: string | undefined; redirectUri: string | undefined; pending: Payload };
 
 /** Keeps the installation a user chose: the login connects with its id, and its user token is discarded. */
 async function applyGithubInstallation(
@@ -56,22 +73,17 @@ async function applyGithubInstallation(
 }
 
 /** A pending GitHub sign-in's payload, with the installation it names and the redirect URI it was started with. */
-function githubPendingFields(
-  services: ConnectFlowServices,
-  row: McpConnectionRow,
-): { storedId: string | undefined; redirectUri: string | undefined; pending: Payload } {
+function githubPendingFields(services: ConnectFlowServices, row: McpConnectionRow): GithubPendingSignIn {
   let pending: Payload;
   try {
     pending = decrypt(services, row);
   } catch {
     return { storedId: undefined, redirectUri: undefined, pending: {} };
   }
-  const installation = pending.installation_id;
-  const uri = oauthOf(pending).redirect_uri;
+  const installation = keepMatching(GithubPending, pending)?.installation_id;
   return {
-    storedId:
-      installation === undefined || installation === null ? undefined : String(installation),
-    redirectUri: typeof uri === "string" && uri ? uri : undefined,
+    storedId: installation === undefined ? undefined : String(installation),
+    redirectUri: oauthOf(pending).redirect_uri || undefined,
     pending,
   };
 }
@@ -154,8 +166,8 @@ export async function loadGithubPickerSession(
   } catch {
     return null;
   }
-  const token = payload.github_user_token;
-  return typeof token === "string" && token ? { row, userToken: token } : null;
+  const token = keepMatching(GithubPending, payload)?.github_user_token;
+  return token === undefined ? null : { row, userToken: token };
 }
 
 async function requirePickerSession(services: ConnectFlowServices, state: string | undefined) {

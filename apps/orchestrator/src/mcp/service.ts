@@ -6,6 +6,7 @@ import { isReadOnlyRemote, type LoadedConnector } from "../connectors/servers.js
 import type { McpConnectionRow, McpToolRow } from "../db/mcp.js";
 import type { Queryable } from "../db/pg.js";
 import type { ToolInputSchema } from "../db/schema/index.js";
+import type { FunctionTool } from "../lib/tool-schema.js";
 
 /**
  * A tool a connection offers: its names, what it does and takes, whether Studio may proxy it
@@ -17,7 +18,7 @@ export type ConnectionTool = {
   description: string;
   input_schema: ToolInputSchema;
   read_only: boolean;
-  schema: Record<string, unknown>;
+  schema: FunctionTool;
 };
 
 /** A tool as a connection lists it: a stored row, or one its server's listing just returned. */

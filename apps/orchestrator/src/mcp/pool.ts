@@ -18,13 +18,13 @@ import {
   type RemoteInfo,
   type RemoteSession,
 } from "../connectors/types.js";
-import { isPlainRecord, jsonObj } from "../db/json.js";
 import type { McpConnectionRow, McpToolRow } from "../db/mcp.js";
+import type { ConnectionSettings } from "../db/schema/index.js";
 import type { Queryable } from "../db/pg.js";
 import { utcMonth } from "../db/usage.js";
 import { TOKEN_REFRESH_MS } from "../github/tokens.js";
 import { newId } from "../lib/ids.js";
-import { isJsonObject } from "../lib/json.js";
+import { isJsonValue, type JsonObject, type JsonValue } from "../lib/json.js";
 import { omitEmptyOptionalStrings } from "../lib/tool-schema.js";
 import { proxyFetch, type FetchFn } from "../net/http.js";
 import { writeLog } from "../observability/log.js";
@@ -65,12 +65,11 @@ function latestListedAt(rows: McpToolRow[]): number | null {
 }
 
 function serverUrl(server: LoadedConnector): string {
-  const config = jsonObj(server.config);
-  const url = isPlainRecord(config) ? config.url : undefined;
-  if (typeof url !== "string" || !url.trim()) {
+  const url = server.config.url?.trim();
+  if (!url) {
     throw new McpError("mcp server is missing a url");
   }
-  return url.trim();
+  return url;
 }
 
 /** A login and the connector it signs into. */
@@ -86,7 +85,7 @@ export type McpCaller = { orgId: string | null; workspaceDir: string | null };
 export const OPERATOR_CALLER: McpCaller = { orgId: null, workspaceDir: null };
 
 /** A call of one of a login's remote tools: its name on the remote, its arguments, and who calls it. */
-export type RemoteCall = { tool: string; arguments: Record<string, unknown>; caller: McpCaller };
+export type RemoteCall = { tool: string; arguments: JsonObject; caller: McpCaller };
 
 /**
  * How a login's tools are listed: `force` lists them again however fresh the stored listing is,
@@ -100,8 +99,9 @@ export type SettingsLookup = { property: string; q: string };
 /** A pooled session and when the credential it sends expires. */
 type PooledSession = { session: McpSession; expiresAt: number | null };
 
-function translateConnectorError(error: unknown): unknown {
-  return isConnectorError(error) ? new McpError(error.message, error.status) : error;
+/** What a failure of adapter code leaves as: `cause`, the value thrown, as an `McpError` when it is a `ConnectorError`. */
+function translateConnectorError(cause: unknown): unknown {
+  return isConnectorError(cause) ? new McpError(cause.message, cause.status) : cause;
 }
 
 const NO_REMOTE: RemoteSession = {
@@ -124,26 +124,28 @@ async function withTimeout<T>(work: Promise<T>, ms: number, message: string): Pr
   }
 }
 
-/** Logs a failed tool call: a warning for a login that is not connected or a refusal below 500, an error otherwise. */
-function logCallFailure(error: unknown): void {
-  const status = error instanceof McpError ? error.status : null;
-  const level =
-    error instanceof McpDisconnectedError || (typeof status === "number" && status < 500) ? "warn" : "error";
+/**
+ * Logs a failed tool call, `cause` being the value thrown: a warning for a login that is not
+ * connected or a refusal below 500, an error otherwise.
+ */
+function logCallFailure(cause: unknown): void {
+  const status = cause instanceof McpError ? cause.status : null;
+  const level = cause instanceof McpDisconnectedError || (status !== null && status < 500) ? "warn" : "error";
   writeLog(
     level,
-    error instanceof Error ? error.message : String(error),
+    cause instanceof Error ? cause.message : String(cause),
     {
       source: "backend",
       operation: "mcp.call",
-      error_type: error instanceof Error ? error.name : "Error",
+      error_type: cause instanceof Error ? cause.name : "Error",
     },
-    error,
+    cause,
   );
 }
 
 /** Studio's stand-in for `McpPool.state`: each key the connectors of an agent's logins fill, without calling them. */
-export function previewConnectorState(logins: ConnectorLogin[]): Record<string, unknown> {
-  const state: Record<string, unknown> = {};
+export function previewConnectorState(logins: ConnectorLogin[]): JsonObject {
+  const state: JsonObject = {};
   for (const hook of stateHooks()) {
     if (logins.some((login) => login.server.id === hook.serverId)) {
       state[hook.key] = { unavailable: "fetched live at run start" };
@@ -280,7 +282,7 @@ export class McpPool {
     remote: RemoteSession,
     resolved: ConnectorCode,
     connectionId: string,
-    settings: Record<string, unknown>,
+    settings: ConnectionSettings,
   ): ConnectorContext {
     return {
       http: this.fetchFn,
@@ -328,7 +330,7 @@ export class McpPool {
   private async onCredentials<T>(
     server: LoadedConnector,
     credentials: Credentials,
-    settings: Record<string, unknown>,
+    settings: ConnectionSettings,
     work: (resolved: ConnectorCode, ctx: ConnectorContext) => Promise<T>,
   ): Promise<T> {
     const resolved = connectorCode(server);
@@ -364,7 +366,7 @@ export class McpPool {
   async validate(
     server: LoadedConnector,
     credentials: Credentials,
-    settings: Record<string, unknown> = {},
+    settings: ConnectionSettings = {},
   ): Promise<string> {
     return this.onCredentials(server, credentials, settings, (resolved, ctx) =>
       this.validateWith(resolved, credentials, ctx),
@@ -376,7 +378,7 @@ export class McpPool {
     server: LoadedConnector,
     search: SettingsLookup,
     credentials: Credentials,
-    settings: Record<string, unknown> = {},
+    settings: ConnectionSettings = {},
   ): Promise<LookupOption[]> {
     return this.onCredentials(server, credentials, settings, (resolved, ctx) => {
       if (!resolved.adapter.lookup) {
@@ -390,7 +392,7 @@ export class McpPool {
   async validateLogin(
     connection: McpConnectionRow,
     server: LoadedConnector,
-    settings: Record<string, unknown>,
+    settings: ConnectionSettings,
   ): Promise<string> {
     const resolved = connectorCode(server);
     return this.onLogin({ connection }, server, resolved, (credentials, ctx) =>
@@ -473,9 +475,7 @@ export class McpPool {
     try {
       const listed = listedFromRows(await this.database.listMcpTools(connection.id));
       const tool = listed.find((item) => item.remote_name === call.tool);
-      const argumentsForCall = tool !== undefined && isJsonObject(call.arguments)
-        ? omitEmptyOptionalStrings(call.arguments, tool.input_schema)
-        : call.arguments;
+      const argumentsForCall = tool === undefined ? call.arguments : omitEmptyOptionalStrings(call.arguments, tool.input_schema);
       try {
         return await this.invokeCall(connection, server, { ...call, arguments: argumentsForCall });
       } finally {
@@ -529,13 +529,13 @@ export class McpPool {
    * one of the logins signs into. Hooks run in parallel under one budget; a hook that fails,
    * times out, or returns too much yields `{ unavailable }` under its key.
    */
-  async state(logins: ConnectorLogin[]): Promise<Record<string, unknown>> {
+  async state(logins: ConnectorLogin[]): Promise<JsonObject> {
     const hooks = stateHooks();
     if (!hooks.length) {
       return {};
     }
     const values = await Promise.all(
-      hooks.map(async ({ serverId, manifest, key, read }): Promise<[string, unknown] | null> => {
+      hooks.map(async ({ serverId, manifest, key, read }): Promise<[string, JsonValue] | null> => {
         const login = logins.find((item) => item.server.id === serverId);
         if (!login) {
           return null;
@@ -555,7 +555,11 @@ export class McpPool {
           if (Buffer.byteLength(text, "utf8") > STATE_MAX_BYTES) {
             throw new McpError(`value exceeds ${STATE_MAX_BYTES} bytes`);
           }
-          return [key, JSON.parse(text)];
+          const redacted: unknown = JSON.parse(text);
+          if (!isJsonValue(redacted)) {
+            throw new McpError("value is not JSON");
+          }
+          return [key, redacted];
         } catch (error) {
           const reason = error instanceof Error && error.message ? error.message : "state hook failed";
           writeLog("warn", `connector state ${manifest.slug}: ${reason}`, {
@@ -566,7 +570,7 @@ export class McpPool {
         }
       }),
     );
-    return Object.fromEntries(values.filter((value): value is [string, unknown] => value !== null));
+    return Object.fromEntries(values.filter((value): value is [string, JsonValue] => value !== null));
   }
 }
 
