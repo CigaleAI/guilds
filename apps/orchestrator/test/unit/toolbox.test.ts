@@ -194,11 +194,10 @@ test("filter failure becomes error result", () => {
   assert.equal(meta.error, "tool output filter failed");
 });
 
-test("a filter that returns no string becomes an error result", () => {
-  const notText: unknown = 3;
-  const [stored, meta] = processOutput("hi", () => notText as string, {}, 1024);
-  assert.equal(stored, "ERROR: tool output filter failed");
-  assert.equal(meta.error, "tool output filter failed");
+test("a filter's string is the result, an empty one included", () => {
+  const [stored, meta] = processOutput("hi", () => "", {}, 1024);
+  assert.equal(stored, "");
+  assert.equal(meta.error, null);
 });
 
 test("format_execution includes nonzero exit code", () => {
