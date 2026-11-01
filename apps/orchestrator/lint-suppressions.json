@@ -774,19 +774,6 @@
       "count": 1
     }
   },
-  "src/db/migrations.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    }
-  },
-  "src/db/pg.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    }
-  },
   "src/db/schema/agents.ts": {
     "anti-slop/no-unsafe-dictionary-type": {
       "count": 2

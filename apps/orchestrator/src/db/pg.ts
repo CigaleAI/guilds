@@ -1,4 +1,4 @@
-import type pg from "pg";
+import pg from "pg";
 
 /**
  * The connection a query runs on: the pool, or the client of a transaction already open. A
@@ -32,8 +32,9 @@ export function bindTransaction<D>(db: Queryable, database: (db: Queryable) => D
   return (work) => withTransaction(db, (client) => work(database(client)));
 }
 
-export function isUniqueViolation(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === "23505";
+/** Whether `error` is the database refusing a write that would break a unique constraint. */
+export function isUniqueViolation(error: unknown): error is pg.DatabaseError {
+  return error instanceof pg.DatabaseError && error.code === "23505";
 }
 
 /**
