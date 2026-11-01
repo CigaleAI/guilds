@@ -1,7 +1,6 @@
 import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import path from "node:path";
-import { validateAgentConfig } from "../agents/config.js";
-import { AgentValidationError } from "../agents/validation.js";
+import { AgentValidationError, validateAgentConfig } from "../agents/validation.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
 import { setMachineHarnesses } from "../db/machines.js";
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";

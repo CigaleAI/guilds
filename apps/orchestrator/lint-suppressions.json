@@ -1,47 +1,7 @@
 {
-  "src/agents/config.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 2
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 12
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 12
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 6
-    },
-    "limits/erased-return-type": {
-      "count": 1
-    }
-  },
   "src/agents/service.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 2
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 3
-    },
     "limits/bare-error": {
       "count": 1
-    }
-  },
-  "src/agents/view.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 2
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
-    },
-    "limits/erased-return-type": {
-      "count": 2
     }
   },
   "src/app.ts": {

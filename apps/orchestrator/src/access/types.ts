@@ -1,4 +1,4 @@
-import type { agentDetail } from "../agents/view.js";
+import type { AgentDetail } from "../agents/view.js";
 import type { ConnectorFacts, LoadedConnector } from "../connectors/servers.js";
 import type { McpConnectionRow } from "../db/mcp.js";
 import type { SecretRef } from "../db/schema/index.js";
@@ -48,7 +48,7 @@ export type AccessView = {
 };
 
 /** An agent as its page shows it: its detail, and its access with the secrets it reaches. */
-export type AgentView = ReturnType<typeof agentDetail> & {
+export type AgentView = AgentDetail & {
   access: AccessView & { secrets: SecretRef[] };
 };
 

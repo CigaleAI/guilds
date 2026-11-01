@@ -6,7 +6,8 @@ import {
   type RecipeRole,
 } from "../db/schema/index.js";
 import { parseModelId, providerLabel } from "../llm/providers.js";
-import { CONFIG_KEYS, isValidSecretAliases } from "../agents/config.js";
+import { CONFIG_KEYS } from "../agents/config.js";
+import { isValidSecretAliases } from "../agents/validation.js";
 import { credentialFix, HARNESS_INFO, harnessModelOf, isHarness, isHarnessOff } from "../coding/harnesses.js";
 import { harnessEffortsFor, isEffort } from "../coding/harness-models.js";
 import { validateTiming } from "../schedules/timing.js";
