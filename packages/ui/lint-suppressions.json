@@ -178,9 +178,6 @@
     }
   },
   "src/components/runs/GenerationHero.tsx": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
     "complexity": {
       "count": 1
     }
@@ -198,11 +195,6 @@
       "count": 3
     },
     "typescript/consistent-type-assertions": {
-      "count": 1
-    }
-  },
-  "src/identity.ts": {
-    "anti-slop/no-known-value-widening": {
       "count": 1
     }
   },
@@ -225,9 +217,6 @@
     }
   },
   "src/writeDesignSystemDoc.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 2
-    },
     "complexity": {
       "count": 3
     },

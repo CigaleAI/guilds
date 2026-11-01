@@ -93,12 +93,10 @@ export function designSystemMarkdown(): string {
       }
     }
     for (const cva of entry.cvas) {
-      const keys = Object.entries(cva.variants)
-        .map(([axis, values]) => `${axis}: ${values.join(" | ")}`)
+      const keys = cva.variants
+        .map(({ axis, options }) => `${axis}: ${options.join(" | ")}`)
         .join("; ");
-      const defaults = Object.entries(cva.defaults)
-        .map(([axis, value]) => `${axis}=${value}`)
-        .join(", ");
+      const defaults = cva.defaults.map(({ axis, option }) => `${axis}=${option}`).join(", ");
       sections.push(
         `- \`${cva.name}\`${keys ? ` — ${keys}` : ""}${defaults ? ` (default ${defaults})` : ""}`,
       );
@@ -118,11 +116,17 @@ export function writeDesignSystemDoc(outPath = join(packageRoot, "design-system.
 }
 
 type DocNote = { name: string; text: string };
+/** A variant axis of a `cva` style: its name and the options it takes. */
+type VariantAxis = { axis: string; options: string[] };
+/** The option a `cva` style takes on an axis when none is passed. */
+type VariantDefault = { axis: string; option: string };
 type CvaDoc = {
   name: string;
-  variants: Record<string, string[]>;
-  defaults: Record<string, string>;
+  variants: VariantAxis[];
+  defaults: VariantDefault[];
 };
+/** A property of an object literal in source text: its key and the source of its value. */
+type SourceProperty = { key: string; source: string };
 type LibraryEntry = {
   title: string;
   path: string;
@@ -306,39 +310,40 @@ function parseCvaDocs(source: string): CvaDoc[] {
     const variantsAt = call.indexOf("variants:");
     if (variantsAt < 0) continue;
     const variantsOpen = call.indexOf("{", variantsAt);
-    const variants = objectKeys(balanced(call, variantsOpen, "{", "}"));
+    const variants = variantAxes(balanced(call, variantsOpen, "{", "}"));
     const defaultsAt = call.indexOf("defaultVariants:");
-    const defaults: Record<string, string> = {};
-    if (defaultsAt >= 0) {
-      const defaultsOpen = call.indexOf("{", defaultsAt);
-      for (const [axis, raw] of Object.entries(
-        objectProps(balanced(call, defaultsOpen, "{", "}")),
-      )) {
-        defaults[axis] = raw.replace(/^["']|["']$/g, "");
-      }
-    }
+    const defaults =
+      defaultsAt < 0
+        ? []
+        : objectProps(balanced(call, call.indexOf("{", defaultsAt), "{", "}")).map(
+            ({ key, source }) => ({ axis: key, option: unquoted(source) }),
+          );
     docs.push({ name, variants, defaults });
   }
   return docs;
 }
 
-/** Variant axes → option names inside a `variants` object. */
-function objectKeys(objectText: string): Record<string, string[]> {
-  const axes: Record<string, string[]> = {};
-  for (const [axis, raw] of Object.entries(objectProps(objectText))) {
-    const trimmed = raw.trim();
-    if (!trimmed.startsWith("{")) {
-      axes[axis] = [trimmed.replace(/^["']|["']$/g, "")];
-      continue;
-    }
-    axes[axis] = Object.keys(objectProps(trimmed));
-  }
-  return axes;
+/** The axes of a `variants` object, each with the options it names. */
+function variantAxes(objectText: string): VariantAxis[] {
+  return objectProps(objectText).map(({ key, source }) => {
+    const trimmed = source.trim();
+    return {
+      axis: key,
+      options: trimmed.startsWith("{")
+        ? objectProps(trimmed).map((option) => option.key)
+        : [unquoted(trimmed)],
+    };
+  });
 }
 
-function objectProps(objectText: string): Record<string, string> {
+function unquoted(source: string): string {
+  return source.replace(/^["']|["']$/g, "");
+}
+
+/** The properties of an object literal's source, in source order. */
+function objectProps(objectText: string): SourceProperty[] {
   const body = objectText.trim().replace(/^\{|\}$/g, "");
-  const props: Record<string, string> = {};
+  const props: SourceProperty[] = [];
   let i = 0;
   while (i < body.length) {
     while (i < body.length && /[\s,]/.test(body[i]!)) i += 1;
@@ -352,7 +357,7 @@ function objectProps(objectText: string): Record<string, string> {
     if (ch === "{" || ch === "(" || ch === "[") {
       const close = ch === "{" ? "}" : ch === "(" ? ")" : "]";
       const block = balanced(body, i, ch, close);
-      props[keyMatch[1]!] = block;
+      props.push({ key: keyMatch[1]!, source: block });
       i += block.length;
     } else if (ch === '"' || ch === "'") {
       i += 1;
@@ -361,10 +366,10 @@ function objectProps(objectText: string): Record<string, string> {
         i += 1;
       }
       i += 1;
-      props[keyMatch[1]!] = body.slice(start, i).trim();
+      props.push({ key: keyMatch[1]!, source: body.slice(start, i).trim() });
     } else {
       while (i < body.length && body[i] !== "," && body[i] !== "\n") i += 1;
-      props[keyMatch[1]!] = body.slice(start, i).trim();
+      props.push({ key: keyMatch[1]!, source: body.slice(start, i).trim() });
     }
   }
   return props;
