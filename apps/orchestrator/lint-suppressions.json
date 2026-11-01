@@ -138,9 +138,6 @@
     }
   },
   "src/attachments/hydrate.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 3
-    },
     "limits/inline-parameter-type": {
       "count": 1
     }
@@ -160,7 +157,7 @@
       "count": 1
     },
     "anti-slop/no-unsafe-dictionary-type": {
-      "count": 3
+      "count": 2
     },
     "limits/erased-return-type": {
       "count": 1
@@ -560,7 +557,7 @@
       "count": 5
     },
     "anti-slop/no-unsafe-dictionary-type": {
-      "count": 17
+      "count": 16
     },
     "limits/erased-return-type": {
       "count": 3
@@ -683,9 +680,6 @@
   "src/generation/completion.ts": {
     "anti-slop/no-runtime-typeof": {
       "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 3
     },
     "limits/silent-catch": {
       "count": 2
@@ -1038,108 +1032,6 @@
   },
   "src/lib/paths.ts": {
     "limits/bare-error": {
-      "count": 1
-    }
-  },
-  "src/llm/anthropic.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 2
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 11
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 5
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 5
-    }
-  },
-  "src/llm/client.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 18
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 3
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 5
-    },
-    "limits/erased-return-type": {
-      "count": 1
-    }
-  },
-  "src/llm/completion.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    }
-  },
-  "src/llm/cost.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 2
-    }
-  },
-  "src/llm/credentials.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 2
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 2
-    }
-  },
-  "src/llm/entries.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    },
-    "limits/erased-return-type": {
-      "count": 1
-    }
-  },
-  "src/llm/models-dev.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 8
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 4
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 3
-    }
-  },
-  "src/llm/models.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 2
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 3
-    }
-  },
-  "src/llm/payload.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
       "count": 1
     }
   },

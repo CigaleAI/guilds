@@ -6,8 +6,8 @@ import {
   MODELS_DEV_URL,
   entryFromModelsDev,
   keepModelsDevRow,
-  projectModelsDevFeed,
   readBundledSnapshot,
+  readModelsDevFeed,
   type ModelsDevFeed,
   type ModelsDevSnapshot,
 } from "./models-dev.js";
@@ -177,7 +177,7 @@ export class ModelCatalog {
     if (!response.ok) {
       throw new ModelsDevFeedError(`models.dev answered ${response.status}`);
     }
-    return projectModelsDevFeed(await response.json(), MODELS_DEV_PROVIDER_IDS);
+    return readModelsDevFeed(response, MODELS_DEV_PROVIDER_IDS);
   }
 }
 

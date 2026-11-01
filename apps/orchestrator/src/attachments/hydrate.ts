@@ -5,6 +5,7 @@ import {
 } from "./types.js";
 import type { AttachmentRef, MessageMetadata, MessagePayload } from "../db/schema/index.js";
 import type { BlobStore } from "../lib/blob-store.js";
+import type { ContentPart, ModelMessage } from "../llm/completion.js";
 
 /** A stored message as the attachments read it: what the model reads, and the files attached to it. */
 export type AttachedMessage = { payload: MessagePayload; metadata: Pick<MessageMetadata, "attachments"> };
@@ -44,8 +45,8 @@ export async function hydrateMessages(
   store: BlobStore,
   orgId: string,
   options: { inlineImages?: boolean } = {},
-): Promise<Array<Record<string, unknown>>> {
-  const messages: Array<Record<string, unknown>> = [];
+): Promise<ModelMessage[]> {
+  const messages: ModelMessage[] = [];
   for (const row of rows) {
     const payload = row.payload;
     const refs = attachmentsOf(row.metadata).filter((item) => item.kind === "image");
@@ -54,7 +55,7 @@ export async function hydrateMessages(
       continue;
     }
     const text = payload.content;
-    const parts: Array<Record<string, unknown>> = [];
+    const parts: ContentPart[] = [];
     if (text) {
       parts.push({ type: "text", text });
     }

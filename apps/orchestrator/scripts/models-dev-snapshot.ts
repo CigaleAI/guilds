@@ -9,7 +9,7 @@ import path from "node:path";
 import {
   MODELS_DEV_URL,
   keepModelsDevRow,
-  projectModelsDevFeed,
+  readModelsDevFeed,
   snapshotFileName,
   type ModelsDevFeed,
 } from "../src/llm/models-dev.js";
@@ -22,7 +22,7 @@ if (!response.ok) {
   throw new Error(`${url} answered ${response.status}`);
 }
 const ids = PROVIDERS.flatMap((provider) => (provider.modelsDev ? [provider.modelsDev] : []));
-const projected = projectModelsDevFeed(await response.json(), ids);
+const projected = await readModelsDevFeed(response, ids);
 const providers: ModelsDevFeed = {};
 for (const [id, provider] of Object.entries(projected)) {
   providers[id] = {

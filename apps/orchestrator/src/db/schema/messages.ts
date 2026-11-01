@@ -1,4 +1,5 @@
 /** The message a run or a coach conversation keeps, and the metadata stored beside it. */
+import { Type, type Static } from "@sinclair/typebox";
 import type { JsonObject } from "../../lib/json.js";
 import type { Harness, RunTaskSource } from "./agents.js";
 
@@ -38,8 +39,19 @@ export type TokenUsage = {
 
 export type CostSource = "provider" | "catalog" | "unavailable";
 
-/** A provider's reasoning block as it streams it: its fields are the provider's own. */
-export type ReasoningDetail = JsonObject & { index?: number };
+/**
+ * The fields of a reasoning block that a stream reads: the block a piece extends, and the text, the
+ * summary and the encrypted data each piece appends to.
+ */
+export const ReasoningDetailFields = Type.Object({
+  index: Type.Optional(Type.Number()),
+  text: Type.Optional(Type.String()),
+  summary: Type.Optional(Type.String()),
+  data: Type.Optional(Type.String()),
+});
+
+/** A provider's reasoning block as it streams it: the fields it reads, beside the provider's own. */
+export type ReasoningDetail = JsonObject & Static<typeof ReasoningDetailFields>;
 
 /** What a model call records on the assistant message it returns. */
 export type CompletionMetadata = {

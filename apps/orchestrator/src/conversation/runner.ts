@@ -102,7 +102,7 @@ export type ConversationGeneration = {
 /** One call of the model: the history it is sent and the settings from the session's snapshot. */
 type CompletionRequest = {
   model: string;
-  messages: Array<Record<string, unknown>>;
+  messages: MessagePayload[];
   temperature: number;
   max_tokens: number;
   tools: unknown[];

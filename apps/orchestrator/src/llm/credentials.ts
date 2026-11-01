@@ -1,5 +1,7 @@
+import { Type, type Static } from "@sinclair/typebox";
 import { decryptPayload } from "../credentials/crypto.js";
 import type { OrgModelProviderRow } from "../db/orgs.js";
+import { keepMatching } from "../lib/decode.js";
 import { writeLog } from "../observability/log.js";
 import { PolicyError } from "../policy/index.js";
 import type { CompletionMetadata, CostSource, TokenUsage } from "../db/schema/index.js";
@@ -66,18 +68,29 @@ function modelProviderStore(db: Queryable) {
 
 export type ModelProviderStore = ReturnType<typeof modelProviderStore>;
 
+/** What a connected provider's row stores encrypted: its key, and the base URL of a local endpoint. */
+export const ProviderSecret = Type.Object({
+  api_key: Type.String(),
+  base_url: Type.Optional(Type.String()),
+});
+export type ProviderSecret = Static<typeof ProviderSecret>;
+
+/** What a provider row's payload holds of its secret: each field of it it has, as the field is typed. */
+const StoredProviderSecret = Type.Partial(ProviderSecret);
+
+/** The key and base URL a provider is connected with; the base URL is the local endpoint's, null for any other provider. */
+export type ProviderAccess = { apiKey: string; baseURL: string | null };
+
 /** The stored secret of a provider row: its key, and the base URL of a local endpoint. */
 export function decryptProviderRow(
   row: Pick<OrgModelProviderRow, "ciphertext" | "nonce">,
   masterKey?: Buffer,
-): { apiKey: string; baseURL: string | null } {
+): ProviderAccess {
   if (!row.ciphertext || !row.nonce) {
     return { apiKey: "", baseURL: null };
   }
-  const payload = decryptPayload(row.ciphertext, row.nonce, masterKey);
-  const apiKey = typeof payload.api_key === "string" ? payload.api_key.trim() : "";
-  const baseURL = typeof payload.base_url === "string" && payload.base_url.trim() ? payload.base_url.trim() : null;
-  return { apiKey, baseURL };
+  const secret = keepMatching(StoredProviderSecret, decryptPayload(row.ciphertext, row.nonce, masterKey)) ?? {};
+  return { apiKey: secret.api_key?.trim() ?? "", baseURL: secret.base_url?.trim() || null };
 }
 
 /** Core's default: the organisation's row for the provider on `db`, and no usage callback. */

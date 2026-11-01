@@ -5,6 +5,7 @@ import { newId } from "../lib/ids.js";
 import { iso } from "../db/views.js";
 import { sanitizeFilename, sniffImage } from "./sniff.js";
 import { hydrateMessages, type AttachedMessage } from "./hydrate.js";
+import type { ModelMessage } from "../llm/completion.js";
 import {
   AttachmentError,
   MAX_ATTACHMENT_BYTES,
@@ -52,7 +53,7 @@ export class AttachmentService {
     orgId: string,
     rows: AttachedMessage[],
     model = "",
-  ): Promise<Array<Record<string, unknown>>> {
+  ): Promise<ModelMessage[]> {
     return hydrateMessages(rows, this.blobs, orgId, {
       ...(modelNeedsInlineImages(model) ? { inlineImages: true } : {}),
     });
