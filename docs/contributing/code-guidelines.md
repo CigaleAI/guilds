@@ -6,7 +6,7 @@ it: a function's name and signature say what it does, what it
 needs, and what it returns, and behaviour lives next to the code
 that uses it.
 
-ESLint and the import-cycle check
+Oxlint and the import-cycle check
 ([Lint](development.md#lint-and-format)) enforce these rules:
 
 - cyclomatic complexity, nesting depth, parameter count, and file
@@ -19,6 +19,12 @@ ESLint and the import-cycle check
 - an export whose return type is `unknown` or
   `Record<string, unknown>`, and a type alias that is only one of
   them;
+- a parameter typed `unknown` or `object`, outside a type predicate
+  and the modules that parse input; a dictionary whose value type
+  is `unknown`, `any`, `object` or `{}`; a `typeof` check outside a
+  type guard; a `Record<string, T>` annotation on a value whose
+  keys are known; a reducer that copies its accumulator; and a
+  module mock in a test;
 - explicit types on what an orchestrator module exports;
 - imports of `fastify`, a value import of `db/` from `http/`, and
   what `db/` and `lib/` import;
@@ -39,7 +45,7 @@ everything it does. Nothing happens inside that the name does not
 promise, including side effects. If the name needs an "and", it is
 two functions.
 
-- A function has at most **4 parameters**. ESLint fails at 5.
+- A function has at most **4 parameters**. Lint fails at 5.
 - An object parameter is one of two kinds, and its type is always
   a named type:
   - A **record** names a thing that exists in the application
@@ -76,10 +82,10 @@ two functions.
   is a parameter of its own, never a field of a record or a
   dependencies object.
 - A function has a **cyclomatic complexity of 11 or less**, as
-  ESLint counts it. The limit keeps one function from holding
+  Oxlint counts it. The limit keeps one function from holding
   several contracts.
 - Nesting goes at most **3 levels** deep. A `try` block counts as
-  a level, and ESLint counts it with the others. Use early returns
+  a level, and Oxlint counts it with the others. Use early returns
   to stay flat. Nesting is what makes a body hard to read, so this
   limit is the strict one.
 - Parameters are typed for what they are. A function does not take
@@ -195,7 +201,7 @@ files are named for what they hold (`service.ts`, `timing.ts`,
 There is no `utils/`, `helpers/`, or `common/`. A sub-directory is a
 sub-domain, never a type (`components/`, `hooks/`).
 
-A file holds one concern and stays under **800 lines**. ESLint
+A file holds one concern and stays under **800 lines**. Lint
 warns past 800 and fails at 1,000. A file that grows past the limit
 is split by sub-domain (`http/agent-routes.ts`,
 `http/run-routes.ts`), never by type (`helpers.ts`, `utils.ts`). A
@@ -249,7 +255,7 @@ leaked, not the import:
   `src/app/router.tsx`) or faked in a test.
 
 Core imports nothing from an extension built on it.
-`eslint.boundary.js` fails the file that tries.
+`lint/boundary.js` fails the file that tries.
 
 A domain module imports the `db/` modules it reads and writes
 through, and holds a `Queryable` as its connection: a parameter of

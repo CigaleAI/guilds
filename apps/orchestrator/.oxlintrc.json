@@ -1,0 +1,151 @@
+{
+  // Lint for the orchestrator: the rules of docs/contributing/code-guidelines.md as
+  // docs/contributing/development.md (Lint and format) lists them. `pnpm lint` runs Oxlint on
+  // this file through scripts/lint.mjs, which subtracts lint-suppressions.json.
+  "$schema": "../../node_modules/oxlint/configuration_schema.json",
+  "ignorePatterns": ["dist/**", "node_modules/**"],
+  "jsPlugins": [
+    { "name": "limits", "specifier": "../../lint/limits.js" },
+    { "name": "boundary", "specifier": "../../lint/boundary.js" },
+    { "name": "anti-slop", "specifier": "../../lint/anti-slop/index.ts" }
+  ],
+  "plugins": ["eslint", "typescript", "oxc"],
+  "categories": { "correctness": "error" },
+  "rules": {
+    "no-unused-vars": ["error", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
+    // A test fakes a dependency through the seam the code offers, never the module system.
+    "anti-slop/no-module-mocking": "error",
+    // Core may not import hosted code, nor a path outside this repository, and a module does not
+    // hand on another module's exports; drizzle-kit reads the schema mirror from its index.
+    "boundary/no-hosted-imports": [
+      "error",
+      { "source": ".", "hosted": [], "leaks": {}, "packages": ["@guildsrun/hosted-server"], "repository": "../.." }
+    ],
+    "boundary/no-reexport-modules": ["error", { "source": ".", "indexes": ["src/db/schema/index.ts"] }]
+  },
+  "overrides": [
+    {
+      // The function and file limits, and the syntax the guidelines refuse, on the source.
+      "files": ["src/**/*.ts"],
+      "rules": {
+        "complexity": ["error", 11],
+        "max-depth": ["error", 3],
+        "max-params": ["error", 4],
+        "max-lines": ["warn", { "max": 800, "skipBlankLines": false, "skipComments": false }],
+        "limits/file-lines": ["error", { "max": 1000 }],
+        "typescript/consistent-type-assertions": ["error", { "assertionStyle": "never" }],
+        "limits/silent-catch": "error",
+        "limits/bare-error": "error",
+        "limits/inline-parameter-type": "error",
+        "limits/erased-return-type": "error",
+        "limits/erased-alias": "error",
+        // The rules vendored from anti-slop (lint/anti-slop/): a parameter, a dictionary value or
+        // a runtime check that carries no evidence of a type.
+        "anti-slop/no-known-value-widening": "error",
+        "anti-slop/no-object-parameters": "error",
+        "anti-slop/no-reduce-accumulator-copy": "error",
+        "anti-slop/no-runtime-typeof": ["error", { "allowInTypeGuards": true }],
+        "anti-slop/no-unknown-parameters": "error",
+        "anti-slop/no-unsafe-dictionary-type": "error",
+        "oxc/no-accumulating-spread": "error",
+        // Public functions have explicit types for inputs and outputs.
+        "typescript/explicit-module-boundary-types": "error",
+        // A domain module imports nothing from the HTTP framework.
+        "no-restricted-imports": [
+          "error",
+          { "paths": [{ "name": "fastify", "message": "Only http/ and the roots import fastify." }] }
+        ]
+      }
+    },
+    {
+      // A command is no domain: its Error reaches the person who ran it, so it may be plain.
+      "files": ["src/cli/**/*.ts"],
+      "rules": { "limits/bare-error": "off" }
+    },
+    {
+      // The roots, the extension points and the observability hooks import fastify.
+      "files": ["src/http/**", "src/app.ts", "src/compose.ts", "src/extension.ts", "src/observability/**"],
+      "rules": { "no-restricted-imports": "off" }
+    },
+    {
+      // A route handler calls a domain module, which reads and writes through db/. A row type is
+      // not a query.
+      "files": ["src/http/**/*.ts"],
+      "rules": {
+        "typescript/no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["../db/*", "../db/**"],
+                "allowTypeImports": true,
+                "message": "http/ calls a domain module, which reads and writes through db/."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      // db/ imports only db/ and lib/, and lib/ only lib/.
+      "files": ["src/db/*.ts"],
+      "rules": {
+        "typescript/no-restricted-imports": [
+          "error",
+          { "patterns": [{ "group": ["../**", "!../lib/**"], "message": "db/ imports only db/ and lib/." }] }
+        ]
+      }
+    },
+    {
+      "files": ["src/db/*/**/*.ts"],
+      "rules": {
+        "typescript/no-restricted-imports": [
+          "error",
+          { "patterns": [{ "group": ["../../**", "!../../lib/**"], "message": "db/ imports only db/ and lib/." }] }
+        ]
+      }
+    },
+    {
+      "files": ["src/lib/**/*.ts"],
+      "rules": {
+        "typescript/no-restricted-imports": [
+          "error",
+          { "patterns": [{ "group": ["../**"], "message": "lib/ imports only lib/." }] }
+        ]
+      }
+    },
+    {
+      // Input is validated at the edge, once: a domain's validation and parse modules take what arrives as unknown and give it a type.
+      "files": ["src/**/validation.ts", "src/**/validate.ts", "src/**/validate-*.ts", "src/**/parse.ts", "src/**/parse-*.ts"],
+      "rules": { "anti-slop/no-unknown-parameters": "off", "anti-slop/no-runtime-typeof": "off" }
+    },
+    {
+      // Tests, stories and scripts are not held to the limits. A test that reads through an
+      // optional chain asserts the value is there, so the chain is not unsafe.
+      "files": ["**/*.test.ts", "**/*.test.tsx", "**/*.stories.tsx", "test/**", "scripts/**"],
+      "rules": {
+        "no-unsafe-optional-chaining": "off",
+        "complexity": "off",
+        "max-depth": "off",
+        "max-params": "off",
+        "max-lines": "off",
+        "limits/file-lines": "off",
+        "typescript/consistent-type-assertions": "off",
+        "limits/silent-catch": "off",
+        "limits/bare-error": "off",
+        "limits/inline-parameter-type": "off",
+        "limits/erased-return-type": "off",
+        "limits/erased-alias": "off",
+        "anti-slop/no-known-value-widening": "off",
+        "anti-slop/no-object-parameters": "off",
+        "anti-slop/no-reduce-accumulator-copy": "off",
+        "anti-slop/no-runtime-typeof": "off",
+        "anti-slop/no-unknown-parameters": "off",
+        "anti-slop/no-unsafe-dictionary-type": "off",
+        "oxc/no-accumulating-spread": "off",
+        "typescript/explicit-module-boundary-types": "off",
+        "no-restricted-imports": "off"
+      }
+    }
+  ]
+}

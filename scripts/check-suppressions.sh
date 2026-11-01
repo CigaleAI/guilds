@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Fails when a package's eslint-suppressions.json grows outside a rule commit. The total of a
+# Fails when a package's lint-suppressions.json grows outside a rule commit. The total of a
 # suppressions file is the sum of its counts. A commit may raise a package's total only when every
-# file it changes is a suppressions file, an ESLint configuration (`eslint.*.js`) or a Markdown page
+# file it changes is a suppressions file, a lint configuration (`.oxlintrc.json`, `lint/`) or a Markdown page
 # under docs/: the commit that adds a rule records the errors that predate it and nothing else.
 #
 # It checks each commit of the branch against its parent, from the merge base with origin/main (or
@@ -34,15 +34,15 @@ total() {
   '
 }
 
-is_suppressions() { [[ "${1##*/}" == eslint-suppressions.json ]]; }
+is_suppressions() { [[ "${1##*/}" == lint-suppressions.json ]]; }
 
 # A file a rule commit may change.
 is_rule_file() {
-  is_suppressions "$1" || [[ "${1##*/}" == eslint.*.js || "$1" == docs/*.md ]]
+  is_suppressions "$1" || [[ "${1##*/}" == .oxlintrc.json || "$1" == lint/* || "$1" == docs/*.md ]]
 }
 
 fail() {
-  echo "$1: $2 grows from $3 to $4 suppressions; only a commit that adds a rule adds entries, and it changes nothing but suppressions files, ESLint configurations and docs pages"
+  echo "$1: $2 grows from $3 to $4 suppressions; only a commit that adds a rule adds entries, and it changes nothing but suppressions files, lint configurations and docs pages"
   status=1
 }
 

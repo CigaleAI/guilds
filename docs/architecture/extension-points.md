@@ -193,14 +193,14 @@ operator app.
   (`app/identity`), formatting (`app/format`), the tool-call
   formatting of a run (`features/agent/runs/toolFormat`), and the
   member role helpers (`features/settings/members`).
-- **Boundary lint.** `eslint.boundary.js` is a lint rule a core
-  package loads from its `eslint.config.js` with the packages it may
+- **Boundary lint.** `lint/boundary.js` is an Oxlint plugin a core
+  package loads from its `.oxlintrc.json` with the packages it may
   not import and the repository its relative imports must stay inside.
   It fails any orchestrator, web or design-system file, tests and
   scripts included, that imports one of those packages or a relative
   path that leaves core's repository. No file is excepted. Core's
   repository holds nothing of an extension and passes its own check
-  alone. The same block refuses a module that hands on another
+  alone. The same plugin refuses a module that hands on another
   module's exports, except the indexes the package names ([Code
   guidelines](../contributing/code-guidelines.md#boundaries)).
 - **Images.** Core's image (`apps/orchestrator/Dockerfile`) holds

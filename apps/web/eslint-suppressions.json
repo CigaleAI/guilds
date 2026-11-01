@@ -1,7 +1,0 @@
-{
-  "src/api/client.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 2
-    }
-  }
-}

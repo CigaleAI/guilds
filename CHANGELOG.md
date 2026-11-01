@@ -8,6 +8,13 @@ commands for each effect are in
 
 ## Unreleased
 
+**Breaking for extensions.** The packages lint with Oxlint instead
+of ESLint. An extending repository loads the boundary rule from
+`lint/boundary.js` into a package's `.oxlintrc.json`;
+`eslint.boundary.js`, `eslint.limits.js` and the `eslint.config.js`
+files are gone. The errors that predate a package's rules are in its
+`lint-suppressions.json`, which `pnpm lint --write` rewrites.
+
 `@guildsrun/orchestrator` exports `db/columns.js` and `db/errors.js`,
 so an extension's `db/` modules build their column lists and throw
 `RowMissing` the way core's do.

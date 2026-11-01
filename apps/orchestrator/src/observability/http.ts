@@ -6,7 +6,7 @@ export const REQUEST_ID_HEADER = "x-request-id";
 export function fastifyRequestIdOptions() {
   return {
     requestIdHeader: REQUEST_ID_HEADER,
-    genReqId() {
+    genReqId(): string {
       return crypto.randomUUID();
     },
   };

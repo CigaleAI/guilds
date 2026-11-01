@@ -1,9 +1,10 @@
-// The core/hosted boundary as a lint rule (docs/architecture/extension-points.md): core code may not import
-// hosted code. A core package names the hosted packages, the repository its relative imports must
-// stay inside, the hosted paths still inside it, and the core files that still cross the boundary;
-// that last list only shrinks, and an entry a file no longer needs is an error.
+// The core/hosted boundary as an Oxlint plugin (docs/architecture/extension-points.md): core code
+// may not import hosted code. A core package's .oxlintrc.json names the hosted packages, the
+// repository its relative imports must stay inside, the hosted paths still inside it, and the core
+// files that still cross the boundary; that last list only shrinks, and an entry a file no longer
+// needs is an error.
 //
-// The same block fails a module that re-exports another's exports (docs/contributing/code-guidelines.md,
+// The same plugin fails a module that re-exports another's exports (docs/contributing/code-guidelines.md,
 // Boundaries). A core package names the indexes a tool requires, which are the exceptions.
 import path from "node:path";
 
@@ -179,26 +180,7 @@ const noReexportModules = {
   },
 };
 
-/** A flat-config block that holds `files` to the boundary. */
-export function boundary({
-  files,
-  source,
-  hosted = [],
-  leaks = {},
-  packages = [],
-  repository,
-  indexes = [],
-}) {
-  return {
-    files,
-    plugins: {
-      boundary: {
-        rules: { "no-hosted-imports": noHostedImports, "no-reexport-modules": noReexportModules },
-      },
-    },
-    rules: {
-      "boundary/no-hosted-imports": ["error", { source, hosted, leaks, packages, repository }],
-      "boundary/no-reexport-modules": ["error", { source, indexes }],
-    },
-  };
-}
+export default {
+  meta: { name: "boundary" },
+  rules: { "no-hosted-imports": noHostedImports, "no-reexport-modules": noReexportModules },
+};

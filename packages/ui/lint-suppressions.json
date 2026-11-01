@@ -1,6 +1,9 @@
 {
   "src/components/actions/CopyButton.tsx": {
-    "no-restricted-syntax": {
+    "anti-slop/no-runtime-typeof": {
+      "count": 1
+    },
+    "limits/silent-catch": {
       "count": 1
     }
   },
@@ -8,26 +11,43 @@
     "complexity": {
       "count": 1
     },
-    "no-restricted-syntax": {
+    "limits/inline-parameter-type": {
       "count": 4
     }
   },
   "src/components/content/JsonTree.tsx": {
-    "@typescript-eslint/consistent-type-assertions": {
+    "anti-slop/no-object-parameters": {
       "count": 1
     },
-    "no-restricted-syntax": {
+    "anti-slop/no-runtime-typeof": {
+      "count": 4
+    },
+    "anti-slop/no-unsafe-dictionary-type": {
+      "count": 1
+    },
+    "limits/inline-parameter-type": {
       "count": 2
+    },
+    "typescript/consistent-type-assertions": {
+      "count": 1
+    }
+  },
+  "src/components/content/Markdown.tsx": {
+    "anti-slop/no-runtime-typeof": {
+      "count": 5
     }
   },
   "src/components/content/OfferedTools.tsx": {
-    "no-restricted-syntax": {
+    "limits/inline-parameter-type": {
       "count": 1
     }
   },
   "src/components/content/PromptSections.tsx": {
-    "no-restricted-syntax": {
-      "count": 4
+    "limits/inline-parameter-type": {
+      "count": 3
+    },
+    "limits/silent-catch": {
+      "count": 1
     }
   },
   "src/components/content/TaskEditor.tsx": {
@@ -46,12 +66,17 @@
     }
   },
   "src/components/content/mentions.ts": {
-    "no-restricted-syntax": {
+    "limits/inline-parameter-type": {
       "count": 1
     }
   },
   "src/components/content/promptBlocks.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
+    "typescript/consistent-type-assertions": {
+      "count": 1
+    }
+  },
+  "src/components/content/textNodes.ts": {
+    "anti-slop/no-unsafe-dictionary-type": {
       "count": 1
     }
   },
@@ -64,22 +89,27 @@
     "complexity": {
       "count": 1
     },
-    "no-restricted-syntax": {
+    "limits/inline-parameter-type": {
       "count": 1
     }
   },
   "src/components/controls/Segmented.tsx": {
-    "@typescript-eslint/consistent-type-assertions": {
+    "typescript/consistent-type-assertions": {
       "count": 1
     }
   },
   "src/components/controls/Select.tsx": {
-    "no-restricted-syntax": {
+    "limits/inline-parameter-type": {
       "count": 1
     }
   },
   "src/components/controls/Slider.tsx": {
     "complexity": {
+      "count": 1
+    }
+  },
+  "src/components/controls/Tabs.tsx": {
+    "anti-slop/no-runtime-typeof": {
       "count": 1
     }
   },
@@ -94,7 +124,7 @@
     }
   },
   "src/components/controls/ToneSwatches.tsx": {
-    "@typescript-eslint/consistent-type-assertions": {
+    "typescript/consistent-type-assertions": {
       "count": 1
     }
   },
@@ -128,8 +158,13 @@
       "count": 1
     }
   },
+  "src/components/navigation/AgentHeader.tsx": {
+    "anti-slop/no-runtime-typeof": {
+      "count": 1
+    }
+  },
   "src/components/navigation/AgentRow.tsx": {
-    "no-restricted-syntax": {
+    "limits/inline-parameter-type": {
       "count": 1
     }
   },
@@ -148,54 +183,67 @@
       "count": 1
     }
   },
+  "src/components/navigation/WorkspaceHeader.tsx": {
+    "anti-slop/no-runtime-typeof": {
+      "count": 1
+    }
+  },
   "src/components/overlays/ConfirmDialog.tsx": {
     "complexity": {
       "count": 1
     },
-    "no-restricted-syntax": {
+    "limits/silent-catch": {
       "count": 1
     }
   },
   "src/components/overlays/Toaster.tsx": {
-    "no-restricted-syntax": {
+    "limits/inline-parameter-type": {
       "count": 1
     }
   },
   "src/components/runs/FlowTimeline.tsx": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 2
-    },
     "complexity": {
       "count": 1
+    },
+    "typescript/consistent-type-assertions": {
+      "count": 2
     }
   },
   "src/components/runs/GenerationHeader.tsx": {
     "complexity": {
       "count": 1
     },
-    "no-restricted-syntax": {
+    "limits/inline-parameter-type": {
       "count": 1
     }
   },
   "src/components/runs/GenerationHero.tsx": {
+    "anti-slop/no-known-value-widening": {
+      "count": 1
+    },
     "complexity": {
       "count": 1
     }
   },
   "src/components/runs/RunTrace.tsx": {
-    "no-restricted-syntax": {
+    "limits/inline-parameter-type": {
       "count": 1
     }
   },
   "src/components/runs/ToolCall.tsx": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
     "complexity": {
       "count": 1
     },
-    "no-restricted-syntax": {
+    "limits/inline-parameter-type": {
       "count": 3
+    },
+    "typescript/consistent-type-assertions": {
+      "count": 1
+    }
+  },
+  "src/identity.ts": {
+    "anti-slop/no-known-value-widening": {
+      "count": 1
     }
   },
   "src/index.ts": {
@@ -204,26 +252,29 @@
     }
   },
   "src/primitives/Divider.tsx": {
-    "no-restricted-syntax": {
+    "limits/inline-parameter-type": {
       "count": 2
     }
   },
   "src/primitives/Mark.tsx": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
+    "limits/inline-parameter-type": {
       "count": 2
+    },
+    "typescript/consistent-type-assertions": {
+      "count": 1
     }
   },
   "src/writeDesignSystemDoc.ts": {
+    "anti-slop/no-known-value-widening": {
+      "count": 2
+    },
     "complexity": {
       "count": 3
     },
-    "max-depth": {
+    "limits/inline-parameter-type": {
       "count": 1
     },
-    "no-restricted-syntax": {
+    "max-depth": {
       "count": 1
     }
   }

@@ -12,6 +12,7 @@
     "test:orchestrator": "pnpm --filter @guildsrun/orchestrator test",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",
+    "test:lint-rules": "sh -c 'for f in lint/anti-slop/rules/*.test.ts; do node \"$f\" || exit 1; done'",
     "storybook": "pnpm --filter @guildsrun/ui storybook",
     "build:storybook": "pnpm --filter @guildsrun/ui build-storybook",
     "design-system-doc": "pnpm --filter @guildsrun/ui design-system-doc",
@@ -19,5 +20,9 @@
     "test:web": "pnpm --filter @guildsrun/web test",
     "prepare": "git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || true",
     "check": "scripts/check.sh"
+  },
+  "devDependencies": {
+    "@oxlint/plugins": "1.90.0",
+    "oxlint": "1.90.0"
   }
 }
