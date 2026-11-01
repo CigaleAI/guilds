@@ -133,14 +133,13 @@ test("usage_fields_formats_browser_columns", () => {
 });
 
 test("usage_fields_formats_row", () => {
-  const updated = new Date(Date.UTC(2026, 8, 13));
   const fields = usageFields({
     input_tokens: 8,
     output_tokens: 2,
     cache_read_tokens: 1,
     cost_usd: 0.25,
     calls: 3,
-    updated_at: updated,
+    updated_at: "2026-09-13 00:00:00+00",
   });
   assert.equal(fields.total_tokens, 10);
   assert.equal(fields.cost_usd, 0.25);
