@@ -18,12 +18,12 @@ export async function runServer(
   let closing = false;
   let stop: () => Promise<void> = async () => {};
 
-  function onFatal(operation: string, error: unknown): void {
-    log.error(error instanceof Error ? error.message : String(error), { operation }, error);
+  function onFatal(operation: string, cause: unknown): void {
+    log.error(cause instanceof Error ? cause.message : String(cause), { operation }, cause);
   }
 
-  async function crash(operation: string, error: unknown): Promise<void> {
-    onFatal(operation, error);
+  async function crash(operation: string, cause: unknown): Promise<void> {
+    onFatal(operation, cause);
     await flushSentry();
     await stop();
     process.exit(1);

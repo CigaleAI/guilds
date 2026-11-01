@@ -15,7 +15,7 @@ import {
 } from "./types.js";
 import type { AttachmentRef } from "../db/schema/index.js";
 import { BlobMissing, type BlobStore } from "../lib/blob-store.js";
-import { getAttachment, insertAttachment, listAttachmentsByIds } from "../db/attachments.js";
+import { getAttachment, insertAttachment, listAttachmentsByIds, type AttachmentRow as StoredAttachment } from "../db/attachments.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 
 /** The db/ functions attachment rows are read and written through, on `db`. */
@@ -29,16 +29,17 @@ function attachmentDatabase(db: Queryable) {
 
 export type AttachmentDatabase = ReturnType<typeof attachmentDatabase>;
 
-function asRow(row: Record<string, unknown>): AttachmentRow {
+/** An attachment as the domain holds it: its stored row, with `created_at` in ISO form. */
+function attachmentRow(row: StoredAttachment): AttachmentRow {
   return {
-    id: String(row.id),
-    org_id: String(row.org_id),
-    uploaded_by: String(row.uploaded_by),
-    filename: String(row.filename),
-    mime: String(row.mime),
-    kind: row.kind === "file" ? "file" : "image",
-    bytes: Number(row.bytes),
-    sha256: String(row.sha256),
+    id: row.id,
+    org_id: row.org_id,
+    uploaded_by: row.uploaded_by,
+    filename: row.filename,
+    mime: row.mime,
+    kind: row.kind,
+    bytes: row.bytes,
+    sha256: row.sha256,
     created_at: iso(row.created_at),
   };
 }
@@ -89,15 +90,15 @@ export class AttachmentService {
       },
       new Date(),
     );
-    return asRow(created);
+    return attachmentRow(created);
   }
 
   async getForOrg(orgId: string, id: string): Promise<{ row: AttachmentRow; bytes: Buffer }> {
     const raw = await this.db.getAttachment(id);
-    if (raw === null || String(raw.org_id) !== orgId) {
+    if (raw === null || raw.org_id !== orgId) {
       throw new AttachmentError(404, "attachment not found");
     }
-    const row = asRow(raw);
+    const row = attachmentRow(raw);
     try {
       return { row, bytes: await this.blobs.get(objectKey(orgId, id)) };
     } catch (error) {
@@ -127,19 +128,14 @@ export class AttachmentService {
       throw new AttachmentError(422, "attachment_ids must not repeat");
     }
     const rows = await this.db.listAttachmentsByIds(args.orgId, unique);
-    const byId = new Map(rows.map((row) => [String(row.id), row]));
+    const byId = new Map(rows.map((row) => [row.id, row]));
     const refs: AttachmentRef[] = [];
     for (const id of unique) {
       const row = byId.get(id);
       if (!row) {
         throw new AttachmentError(404, "attachment not found");
       }
-      refs.push({
-        id: String(row.id),
-        filename: String(row.filename),
-        mime: String(row.mime),
-        kind: row.kind === "file" ? "file" : "image",
-      });
+      refs.push({ id: row.id, filename: row.filename, mime: row.mime, kind: row.kind });
     }
     return refs;
   }
@@ -150,7 +146,12 @@ export function attachmentService(db: Queryable, blobs: BlobStore): AttachmentSe
   return new AttachmentService(attachmentDatabase(db), blobs);
 }
 
-export function attachmentPayload(row: AttachmentRow): Record<string, unknown> {
+/** An uploaded attachment as the API answers it: its row's public fields and the URL that serves its bytes. */
+export type AttachmentView = Pick<AttachmentRow, "id" | "filename" | "mime" | "bytes" | "kind" | "created_at"> & {
+  url: string;
+};
+
+export function attachmentPayload(row: AttachmentRow): AttachmentView {
   return {
     id: row.id,
     filename: row.filename,

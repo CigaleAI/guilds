@@ -1,6 +1,8 @@
+import { Type } from "@sinclair/typebox";
 import type pg from "pg";
 import { decryptPayload, encryptPayload } from "../credentials/crypto.js";
 import { newId } from "../lib/ids.js";
+import { keepMatching } from "../lib/decode.js";
 import type { JsonObject } from "../lib/json.js";
 import {
   DROPPED_MCP_SERVERS,
@@ -46,6 +48,9 @@ export async function projectConnectors(pool: pg.Pool, now = new Date()): Promis
   }
 }
 
+/** The folder a Drive login's encrypted payload named before its settings did. */
+const LegacyDriveFolder = Type.Object({ drive_folder_id: Type.String() });
+
 /**
  * Moves the folder a Drive login picked out of its encrypted payload into its settings, where
  * the connector's `settings_schema` names it. A login already moved, or one this box cannot
@@ -63,8 +68,8 @@ export async function moveDriveFolders(pool: pg.Pool, now = new Date()): Promise
     } catch {
       continue;
     }
-    const folderId = payload.drive_folder_id;
-    if (typeof folderId !== "string" || !folderId.trim()) {
+    const folderId = keepMatching(LegacyDriveFolder, payload)?.drive_folder_id.trim();
+    if (!folderId) {
       continue;
     }
     const { drive_folder_id: _id, drive_folder_name: _name, ...rest } = payload;
@@ -74,7 +79,7 @@ export async function moveDriveFolders(pool: pg.Pool, now = new Date()): Promise
        SET ciphertext = $2, nonce = $3,
            settings = jsonb_set(settings, '{folder_id}', to_jsonb($4::text)), updated_at = $5
        WHERE id = $1`,
-      [row.id, ciphertext, nonce, folderId.trim(), now.toISOString()],
+      [row.id, ciphertext, nonce, folderId, now.toISOString()],
     );
   }
 }
