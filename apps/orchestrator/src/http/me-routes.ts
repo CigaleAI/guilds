@@ -1,5 +1,5 @@
-import { ProfileChangeSchema, changeOwnProfile, type UserItem } from "../users/directory.js";
-import { userItem } from "../users/index.js";
+import { ProfileChangeSchema, changeOwnProfile } from "../users/directory.js";
+import { userItem, type UserItem } from "../users/index.js";
 import type { AppDeps, RouteApp } from "./deps.js";
 import { currentUser } from "./identity.js";
 import { isInstanceAdmin } from "./instance-admin.js";

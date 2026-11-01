@@ -41,22 +41,8 @@
       "count": 2
     }
   },
-  "src/avatars/clay.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 3
-    },
-    "typescript/consistent-type-assertions": {
-      "count": 2
-    }
-  },
   "src/avatars/index.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 4
-    },
     "boundary/no-reexport-modules": {
-      "count": 1
-    },
-    "typescript/consistent-type-assertions": {
       "count": 1
     }
   },
@@ -587,20 +573,6 @@
   "src/instrument.ts": {
     "limits/silent-catch": {
       "count": 1
-    }
-  },
-  "src/issues/index.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 4
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 4
-    },
-    "limits/inline-parameter-type": {
-      "count": 1
-    },
-    "typescript/consistent-type-assertions": {
-      "count": 2
     }
   },
   "src/lib/agent-file.ts": {
@@ -1156,30 +1128,7 @@
       "count": 1
     }
   },
-  "src/users/directory.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    }
-  },
   "src/users/index.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 2
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 2
-    },
-    "limits/inline-parameter-type": {
-      "count": 1
-    },
     "typescript/consistent-type-assertions": {
       "count": 2
     }
