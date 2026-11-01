@@ -917,8 +917,10 @@ tab's id on every API call. It reports uncaught errors, unhandled
 rejections, React render errors, and API calls that fail with a 5xx
 or on the network to `POST /api/client-errors` (the app
 deduplicates for 30 s and sends at most 10 a minute; the endpoint
-accepts 30 a minute per address). Each report is logged with that
-request id.
+accepts 30 a minute per address). A report is its `kind` and
+`message`, with the `stack`, the page's `href` and the tab's
+`request_id` when it has them, each text; any other body is refused
+with a 422. Each report is logged with that request id.
 
 Compose json-file rotation is `max-size: 10m`, `max-file: 5`.
 `error`-level events go to Sentry when `SENTRY_DSN` is set
