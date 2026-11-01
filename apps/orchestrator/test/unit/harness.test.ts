@@ -18,7 +18,10 @@ import { createToolHooks, invokeTool } from "../../src/toolbox/index.js";
 import { CancelEvent } from "../../src/toolbox/types.js";
 import type { ToolServices } from "../../src/toolbox/services.js";
 import { HARNESS_HELPER, runCodeHelper } from "../../src/toolbox/code.js";
-import { harnessTiming, notePaths, timeoutMinutes } from "../../src/toolbox/harness.js";
+import { CodeTaskParameters, harnessTiming, notePaths, timeoutMinutes } from "../../src/toolbox/harness.js";
+import { ToolArgumentError } from "../../src/toolbox/errors.js";
+import { decodeToolArguments } from "../../src/toolbox/types.js";
+import type { JsonValue } from "../../src/lib/json.js";
 import { BRIEF_PREAMBLE, buildBrief } from "../../src/toolbox/harness-brief.js";
 import { HARNESS_LOG_MAX_BYTES, readHarnessLog, shownProgressLines } from "../../src/toolbox/harness-ops.js";
 import { codeTaskText, failureDetail, formatDuration, isChangedFile, type CodeTaskOutcome } from "../../src/toolbox/harness-result.js";
@@ -890,13 +893,14 @@ describe("code_task arguments", () => {
   });
 
   test("notes are a list of display paths, trimmed and without repeats", async () => {
+    const decoded = (notes: JsonValue) => decodeToolArguments(CodeTaskParameters, { brief: "x", notes });
     assert.deepEqual(notePaths({}), []);
-    assert.deepEqual(notePaths({ notes: null }), []);
+    assert.deepEqual(notePaths(decoded(null)), []);
     assert.deepEqual(notePaths({ notes: [" a.md", "a.md", "", "b.md"] }), ["a.md", "b.md"]);
-    assert.throws(() => notePaths({ notes: "a.md" }), /notes must be a list of display paths/);
-    assert.throws(() => notePaths({ notes: ["a.md", 1] }), /notes must be a list of display paths/);
+    assert.throws(() => decoded("a.md"), (error) => error instanceof ToolArgumentError && error.message.startsWith("/notes:"));
+    assert.throws(() => decoded(["a.md", 1]), (error) => error instanceof ToolArgumentError && error.message.startsWith("/notes/1:"));
     const { ctx } = context(new HostCodeSandbox());
-    assert.match((await codeTask(ctx, { brief: "x", notes: [1] })).text, /^ERROR: notes must be a list of display paths/);
+    assert.match((await codeTask(ctx, { brief: "x", notes: [1] })).text, /^ERROR: \/notes\/0: Expected string/);
   });
 
   test("timeout_minutes defaults to 30 and is kept between 1 and 60 whole minutes", () => {

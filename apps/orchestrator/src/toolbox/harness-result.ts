@@ -1,8 +1,8 @@
 import { Buffer } from "node:buffer";
-import { isPlainRecord } from "../db/json.js";
 import type { Harness } from "../db/schema/index.js";
+import { isJsonObject } from "../lib/json.js";
 import { codeResultMaxBytes } from "./code.js";
-import { numberOrZero } from "./harness-ops.js";
+import type { HarnessExit } from "./harness-ops.js";
 
 const FILES_SHOWN = 30;
 
@@ -26,7 +26,7 @@ function isCount(value: unknown): value is number | null {
 
 /** Whether `value` is a file of a checkpoint's change list: its path, and its line counts or null for a binary file. */
 export function isChangedFile(value: unknown): value is ChangedFile {
-  return isPlainRecord(value) && typeof value.path === "string" && isCount(value.insertions) && isCount(value.deletions);
+  return isJsonObject(value) && typeof value.path === "string" && isCount(value.insertions) && isCount(value.deletions);
 }
 
 export type CodeTaskOutcome = {
@@ -111,18 +111,20 @@ export function interruptedText(task: InterruptedTask): string {
   ].join("\n");
 }
 
-function stderrTail(value: unknown): string {
-  return typeof value === "string" ? value.trim().split("\n").slice(-5).join("\n") : "";
+/** The last five lines of a CLI's stderr; empty when it printed none. */
+function stderrTail(stderr = ""): string {
+  return stderr.trim().split("\n").slice(-5).join("\n");
 }
 
-function firstLine(value: unknown): string {
-  return typeof value === "string" ? (value.split("\n")[0] ?? "") : "";
+/** The first line of a CLI's error text; empty when it gave none. */
+function firstLine(text = ""): string {
+  return text.split("\n")[0] ?? "";
 }
 
 /** Why a turn failed. A CLI that printed no event, such as one refusing to start without a login, says why on stderr. */
-export function failureDetail(harness: Harness, result: Record<string, unknown>, version: string | null): string {
-  const events = numberOrZero(result.events);
-  if (events === 0 && numberOrZero(result.unparsed) > 0) {
+export function failureDetail(harness: Harness, result: HarnessExit, version: string | null): string {
+  const events = result.events ?? 0;
+  if (events === 0 && (result.unparsed ?? 0) > 0) {
     return `error: the ${harness} driver does not parse this CLI's output (${version ?? "unknown version"})`;
   }
   const stderr = stderrTail(result.stderr);

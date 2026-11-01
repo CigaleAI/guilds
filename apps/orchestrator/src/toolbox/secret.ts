@@ -1,7 +1,6 @@
+import { Type } from "@sinclair/typebox";
 import { CredentialError, SECRET_DESCRIPTION_MAX, validateSecretDescription, validateSecretName } from "../credentials/validate.js";
-import { argString, functionSchema } from "./schema.js";
-import { identityOutput } from "./output.js";
-import type { Tool } from "./types.js";
+import { nativeTool } from "./types.js";
 import { ToolArgumentError, ToolUnavailableError } from "./errors.js";
 
 export const SECRET_REASON_MAX = 400;
@@ -36,70 +35,46 @@ function checked<T>(fn: () => T): T {
   }
 }
 
-export const secretStore: Tool = {
+/** A secret's name: the environment variable it is set as. */
+const SecretName = Type.String({ description: "environment variable name, for example ACME_API_KEY" });
+
+export const secretStore = nativeTool({
   name: "secret_store",
   description: STORE_DESCRIPTION,
-  output_filter: identityOutput,
-  filter_name: "identity",
-  schema: functionSchema(
-    "secret_store",
-    STORE_DESCRIPTION,
-    {
-      name: { type: "string", description: "environment variable name, for example ACME_API_KEY" },
-      description: {
-        type: "string",
-        description: `how agents use this value, at most ${SECRET_DESCRIPTION_MAX} characters`,
-      },
-      file: { type: "string", description: "path in your home to a file holding the value" },
-    },
-    ["name", "description", "file"],
-  ),
+  parameters: Type.Object({
+    name: SecretName,
+    description: Type.String({ description: `how agents use this value, at most ${SECRET_DESCRIPTION_MAX} characters` }),
+    file: Type.String({ description: "path in your home to a file holding the value" }),
+  }),
   async handler(_services, run, hooks, { arguments: args }) {
     const store = hooks.secret_store;
     if (store === null) {
       throw new ToolUnavailableError("secret storage is not available");
     }
-    const stored = await store.store({
-      name: args.name,
-      description: args.description,
-      file: argString(args, "file"),
-    });
+    const stored = await store.store({ name: args.name, description: args.description, file: args.file });
     run.secrets[stored.name] = stored.value;
     return (
       `${JSON.stringify({ stored: stored.name, rotated: stored.rotated })}\n` +
       `${stored.name} is in your environment from the next generation.`
     );
   },
-};
+});
 
-export const secretRequest: Tool = {
+export const secretRequest = nativeTool({
   name: "secret_request",
   description: REQUEST_DESCRIPTION,
-  output_filter: identityOutput,
-  filter_name: "identity",
-  schema: functionSchema(
-    "secret_request",
-    REQUEST_DESCRIPTION,
-    {
-      name: { type: "string", description: "environment variable name, for example ACME_API_KEY" },
-      description: {
-        type: "string",
-        description: `how you will use the value, at most ${SECRET_DESCRIPTION_MAX} characters`,
-      },
-      reason: {
-        type: "string",
-        description: `why you need it now, at most ${SECRET_REASON_MAX} characters`,
-      },
-    },
-    ["name", "description", "reason"],
-  ),
+  parameters: Type.Object({
+    name: SecretName,
+    description: Type.String({ description: `how you will use the value, at most ${SECRET_DESCRIPTION_MAX} characters` }),
+    reason: Type.String({ description: `why you need it now, at most ${SECRET_REASON_MAX} characters` }),
+  }),
   async handler(_services, run, _hooks, { arguments: args }) {
     if (run.run_kind !== "direct") {
       throw new ToolUnavailableError("secret_request is only available in a direct chat; say what you need with group_post");
     }
     const name = checked(() => validateSecretName(args.name));
     checked(() => validateSecretDescription(args.description));
-    const reason = argString(args, "reason").trim();
+    const reason = args.reason.trim();
     if (!reason) {
       throw new ToolArgumentError("reason must contain non-whitespace text");
     }
@@ -114,4 +89,4 @@ export const secretRequest: Tool = {
       `The operator has been asked in this chat. End your turn now; ${name} is in your environment once they answer.`
     );
   },
-};
+});

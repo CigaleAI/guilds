@@ -1,4 +1,4 @@
-import type { Static, TSchema } from "@sinclair/typebox";
+import { Type, type Static, type TSchema } from "@sinclair/typebox";
 import { type ChangeActor, runActor } from "../lib/change-actor.js";
 import { assertMatches } from "../lib/decode.js";
 import { ScheduleError } from "../schedules/cron.js";
@@ -6,10 +6,10 @@ import { RoutineChangeInput, RoutineTimingInput, WakeWindowInput } from "../sche
 import { formatScheduleStamp, timingText } from "../schedules/item.js";
 import { scheduleChanges } from "../schedules/service.js";
 import { rowTiming } from "../schedules/timing.js";
-import { argString, functionSchema } from "./schema.js";
-import { identityOutput } from "./output.js";
+import type { JsonObject } from "../lib/json.js";
+import { jsonArgument } from "./schema.js";
 import type { ToolServices } from "./services.js";
-import type { Tool, ToolInvocation, ToolRun } from "./types.js";
+import { nativeTool, type ToolInvocation, type ToolRun } from "./types.js";
 
 export const SCHEDULE_TOOLS = [
   "schedule_create_cron",
@@ -37,7 +37,7 @@ function routineActor(run: ToolRun, call: ToolInvocation): ChangeActor {
 }
 
 /** The arguments `values` name as `schema` describes them; a mismatch is a ScheduleError naming it. */
-function routineArguments<T extends TSchema>(schema: T, values: unknown): Static<T> {
+function routineArguments<T extends TSchema>(schema: T, values: JsonObject): Static<T> {
   assertMatches(schema, values, (problem) => new ScheduleError(problem));
   return values;
 }
@@ -52,18 +52,20 @@ async function publish(services: ToolServices, run: ToolRun, action: string, sch
   }
 }
 
+/** What a new routine says of itself: the label it is listed under, and what its wake-ups ask. */
+const RoutineCopy = Type.Object({
+  description: Type.String({ description: "one-line label for the Routine tab and schedule_list" }),
+  instruction: Type.String({ description: "short markdown for the Schedule wake-up user message" }),
+});
+
 async function createAndPublish(
   services: ToolServices,
   run: ToolRun,
-  call: ToolInvocation,
+  call: ToolInvocation<Static<typeof RoutineCopy>>,
   when: RoutineTimingInput,
 ): Promise<string> {
-  const args = call.arguments;
-  const row = await schedules(services, run).create(routineActor(run, call), run.agent_id, {
-    when,
-    description: argString(args, "description"),
-    instruction: argString(args, "instruction"),
-  });
+  const { description, instruction } = call.arguments;
+  const row = await schedules(services, run).create(routineActor(run, call), run.agent_id, { when, description, instruction });
   await publish(services, run, "create", String(row.id));
   return `created ${row.id}  ${timingText(rowTiming(row))}\n${row.description}`;
 }
@@ -85,86 +87,52 @@ const WINDOW_DESCRIPTION =
   "Routine tab and schedule_list. instruction is short markdown stored on the schedule row " +
   "and passed on the Schedule wake-up user message.";
 
-export const scheduleCreateCron: Tool = {
+/** The arguments of a call that names one routine: its id, as `schedule_list` shows it. */
+const ScheduleId = Type.Object({ schedule_id: Type.String() });
+
+/** A daily local-time window of random wake-ups, as the model is offered it; the schedules' input reads it. */
+const WINDOW_FIELDS = {
+  timezone: jsonArgument({ type: "string", description: "IANA name, e.g. Europe/Paris" }),
+  start: jsonArgument({ type: "string", description: "HH:MM local time" }),
+  end: jsonArgument({ type: "string", description: "HH:MM local time; earlier than start spans midnight" }),
+  max_wakes: jsonArgument({ type: "integer", description: "most wake-ups per window; gaps are at least 5 minutes" }),
+};
+
+export const scheduleCreateCron = nativeTool({
   name: "schedule_create_cron",
   description: CRON_DESCRIPTION,
-  output_filter: identityOutput,
-  filter_name: "identity",
-  schema: functionSchema(
-    "schedule_create_cron",
-    CRON_DESCRIPTION,
-    {
-      cron: {
-        type: "string",
-        description: "5-field UTC expression: minute hour day month weekday, e.g. '0 9 * * 1'",
-      },
-      description: {
-        type: "string",
-        description: "one-line label for the Routine tab and schedule_list",
-      },
-      instruction: {
-        type: "string",
-        description: "short markdown for the Schedule wake-up user message",
-      },
-    },
-    ["cron", "description", "instruction"],
-  ),
+  parameters: Type.Object({
+    cron: jsonArgument({
+      type: "string",
+      description: "5-field UTC expression: minute hour day month weekday, e.g. '0 9 * * 1'",
+    }),
+    ...RoutineCopy.properties,
+  }),
   async handler(services, run, _hooks, call) {
     const when = routineArguments(RoutineTimingInput, { cron: call.arguments.cron });
     return createAndPublish(services, run, call, when);
   },
-};
+});
 
-export const scheduleCreateWindow: Tool = {
+export const scheduleCreateWindow = nativeTool({
   name: "schedule_create_window",
   description: WINDOW_DESCRIPTION,
-  output_filter: identityOutput,
-  filter_name: "identity",
-  schema: functionSchema(
-    "schedule_create_window",
-    WINDOW_DESCRIPTION,
-    {
-      timezone: { type: "string", description: "IANA name, e.g. Europe/Paris" },
-      start: { type: "string", description: "HH:MM local time" },
-      end: { type: "string", description: "HH:MM local time; earlier than start spans midnight" },
-      max_wakes: {
-        type: "integer",
-        description: "most wake-ups per window; gaps are at least 5 minutes",
-      },
-      description: {
-        type: "string",
-        description: "one-line label for the Routine tab and schedule_list",
-      },
-      instruction: {
-        type: "string",
-        description: "short markdown for the Schedule wake-up user message",
-      },
-    },
-    ["timezone", "start", "end", "max_wakes", "description", "instruction"],
-  ),
+  parameters: Type.Object({ ...WINDOW_FIELDS, ...RoutineCopy.properties }),
   async handler(services, run, _hooks, call) {
     const { timezone, start, end, max_wakes } = call.arguments;
     const window = routineArguments(WakeWindowInput, { timezone, start, end, max_wakes });
     return createAndPublish(services, run, call, { window });
   },
-};
+});
 
-export const scheduleList: Tool = {
+export const scheduleList = nativeTool({
   name: "schedule_list",
-  description:
-    "List this agent's schedules, one-line descriptions, " + "and when each fires next (UTC).",
-  output_filter: identityOutput,
-  filter_name: "identity",
-  schema: functionSchema(
-    "schedule_list",
-    "List this agent's schedules, one-line descriptions, " + "and when each fires next (UTC).",
-    {},
-    [],
-  ),
+  description: "List this agent's schedules, one-line descriptions, " + "and when each fires next (UTC).",
+  parameters: Type.Object({}),
   async handler(services, run) {
     return schedules(services, run).listForAgent(run.agent_id);
   },
-};
+});
 
 const UPDATE_DESCRIPTION =
   "Change one of this agent's schedules by id from schedule_list: a new timing, description, " +
@@ -172,21 +140,19 @@ const UPDATE_DESCRIPTION =
   "new timing on a running schedule plans the next wake-up from now. Pausing and resuming " +
   "use schedule_pause and schedule_resume.";
 
-export const scheduleUpdate: Tool = {
+export const scheduleUpdate = nativeTool({
   name: "schedule_update",
   description: UPDATE_DESCRIPTION,
-  output_filter: identityOutput,
-  filter_name: "identity",
-  schema: functionSchema(
-    "schedule_update",
-    UPDATE_DESCRIPTION,
-    {
-      schedule_id: { type: "string" },
-      cron: {
+  parameters: Type.Object({
+    schedule_id: Type.String(),
+    cron: Type.Optional(
+      jsonArgument({
         type: "string",
         description: "new 5-field UTC expression: minute hour day month weekday, e.g. '0 9 * * 1'",
-      },
-      window: {
+      }),
+    ),
+    window: Type.Optional(
+      jsonArgument({
         type: "object",
         description: "new random wake-ups inside a daily local-time window",
         properties: {
@@ -200,106 +166,58 @@ export const scheduleUpdate: Tool = {
         },
         required: ["timezone", "start", "end", "max_wakes"],
         additionalProperties: false,
-      },
-      description: {
-        type: "string",
-        description: "new one-line label for the Routine tab and schedule_list",
-      },
-      instruction: {
-        type: "string",
-        description: "new short markdown for the Schedule wake-up user message",
-      },
-    },
-    ["schedule_id"],
-  ),
+      }),
+    ),
+    description: Type.Optional(
+      jsonArgument({ type: "string", description: "new one-line label for the Routine tab and schedule_list" }),
+    ),
+    instruction: Type.Optional(
+      jsonArgument({ type: "string", description: "new short markdown for the Schedule wake-up user message" }),
+    ),
+  }),
   async handler(services, run, _hooks, call) {
-    const args = call.arguments;
-    const { cron, window, description, instruction } = args;
+    const { schedule_id: scheduleId, cron, window, description, instruction } = call.arguments;
     const row = await schedules(services, run).update(
       routineActor(run, call),
       run.agent_id,
-      argString(args, "schedule_id"),
+      scheduleId,
       scheduleChanges(routineArguments(RoutineChangeInput, { cron, window, description, instruction })),
     );
     await publish(services, run, "edit", String(row.id));
     const next = row.paused ? "paused" : `next ${formatScheduleStamp(row.next_run_at)}`;
     return `updated ${row.id}  ${timingText(rowTiming(row))}  ${next}\n${row.description}`;
   },
-};
+});
 
-export const schedulePause: Tool = {
+export const schedulePause = nativeTool({
   name: "schedule_pause",
   description: "Pause a schedule so it stops firing. Resume later with schedule_resume.",
-  output_filter: identityOutput,
-  filter_name: "identity",
-  schema: functionSchema(
-    "schedule_pause",
-    "Pause a schedule so it stops firing. Resume later with schedule_resume.",
-    {
-      schedule_id: { type: "string" },
-    },
-    ["schedule_id"],
-  ),
+  parameters: ScheduleId,
   async handler(services, run, _hooks, call) {
-    const args = call.arguments;
-    const row = await schedules(services, run).setPaused(
-      routineActor(run, call),
-      run.agent_id,
-      argString(args, "schedule_id"),
-      true,
-    );
+    const row = await schedules(services, run).setPaused(routineActor(run, call), run.agent_id, call.arguments.schedule_id, true);
     await publish(services, run, "pause", String(row.id));
     return `paused ${row.id}`;
   },
-};
+});
 
-export const scheduleResume: Tool = {
+export const scheduleResume = nativeTool({
   name: "schedule_resume",
   description: "Resume a paused schedule. The next fire is recomputed from now.",
-  output_filter: identityOutput,
-  filter_name: "identity",
-  schema: functionSchema(
-    "schedule_resume",
-    "Resume a paused schedule. The next fire is recomputed from now.",
-    {
-      schedule_id: { type: "string" },
-    },
-    ["schedule_id"],
-  ),
+  parameters: ScheduleId,
   async handler(services, run, _hooks, call) {
-    const args = call.arguments;
-    const row = await schedules(services, run).setPaused(
-      routineActor(run, call),
-      run.agent_id,
-      argString(args, "schedule_id"),
-      false,
-    );
+    const row = await schedules(services, run).setPaused(routineActor(run, call), run.agent_id, call.arguments.schedule_id, false);
     await publish(services, run, "resume", String(row.id));
     return `resumed ${row.id}  next ${formatScheduleStamp(row.next_run_at)}`;
   },
-};
+});
 
-export const scheduleDelete: Tool = {
+export const scheduleDelete = nativeTool({
   name: "schedule_delete",
   description: "Delete one of this agent's schedules by id from schedule_list.",
-  output_filter: identityOutput,
-  filter_name: "identity",
-  schema: functionSchema(
-    "schedule_delete",
-    "Delete one of this agent's schedules by id from schedule_list.",
-    {
-      schedule_id: { type: "string" },
-    },
-    ["schedule_id"],
-  ),
+  parameters: ScheduleId,
   async handler(services, run, _hooks, call) {
-    const args = call.arguments;
-    const row = await schedules(services, run).delete(
-      routineActor(run, call),
-      run.agent_id,
-      argString(args, "schedule_id"),
-    );
+    const row = await schedules(services, run).delete(routineActor(run, call), run.agent_id, call.arguments.schedule_id);
     await publish(services, run, "delete", String(row.id));
     return `deleted ${row.id}`;
   },
-};
+});

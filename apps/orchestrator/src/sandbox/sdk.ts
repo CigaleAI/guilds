@@ -120,7 +120,8 @@ type RawSandboxHandle = Omit<SandboxHandle, "commands"> & {
   kill?: () => Promise<void>;
 };
 
-type SandboxFiles = {
+/** A sandbox's file API: writes, moves, listings and deletes, each under either spelling. */
+export type SandboxFiles = {
   writeFiles(entries: Array<{ path: string; data?: string | Uint8Array | ArrayBuffer }>): Promise<void>;
   moveFiles(entries: Array<{ src: string; dest: string }>): Promise<void>;
   listDirectory?(entry: { path: string; depth?: number }): Promise<Array<{ path: string; type?: string }>>;

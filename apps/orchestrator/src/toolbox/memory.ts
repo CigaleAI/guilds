@@ -1,9 +1,8 @@
+import { Type } from "@sinclair/typebox";
 import { ArtifactError } from "../artifacts/errors.js";
 import { validateMemory } from "../memory/index.js";
-import { argString, functionSchema } from "./schema.js";
-import { identityOutput } from "./output.js";
 import type { ToolServices } from "./services.js";
-import { callActor, type Tool, type ToolInvocation, type ToolRun } from "./types.js";
+import { callActor, nativeTool, type ToolInvocation, type ToolRun } from "./types.js";
 
 async function publishMemoryFileChanged(services: ToolServices, run: ToolRun): Promise<void> {
   if (services.group_chat === null || !run.guild_id || !services.group_chat.publish) {
@@ -46,25 +45,16 @@ async function writeMemoryThroughNotes(services: ToolServices, run: ToolRun, con
   });
 }
 
-export const memoryWrite: Tool = {
+export const memoryWrite = nativeTool({
   name: "memory_write",
   description: "Replace your whole Memory with the full text to keep. Call it only when the next run needs something this run learned.",
-  output_filter: identityOutput,
-  filter_name: "identity",
-  schema: functionSchema(
-    "memory_write",
-    "Replace your whole Memory with the full text to keep. Call it only when the next run needs something this run learned.",
-    {
-      content: { type: "string" },
-    },
-    ["content"],
-  ),
+  parameters: Type.Object({ content: Type.String() }),
   async handler(services, run, _hooks, call) {
-    const content = argString(call.arguments, "content");
+    const { content } = call.arguments;
     validateMemory(content);
     return (
       (await writeMemoryThroughArtifacts(services, run, call, content)) ??
       (await writeMemoryThroughNotes(services, run, content))
     );
   },
-};
+});

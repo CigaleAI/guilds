@@ -15,6 +15,7 @@ import {
   type AgentSecretsDatabase,
 } from "../../src/secrets/agent.js";
 import { invokeTool, type Tool } from "../../src/toolbox/index.js";
+import { functionSchema } from "../../src/toolbox/schema.js";
 
 import { agentRow, FakeDB, FakeSandboxes, makeLoop } from "../helpers/generation.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
@@ -194,7 +195,7 @@ test("secret_store redacts the stored value from later results in the generation
     description: "",
     output_filter: (result) => result,
     filter_name: "identity",
-    schema: {},
+    schema: functionSchema("echo_value", "", {}, []),
     handler: async () => "the key is sk-live-999",
   };
   const stores: Array<Record<string, unknown>> = [];

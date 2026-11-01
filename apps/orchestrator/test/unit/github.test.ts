@@ -433,7 +433,7 @@ test("repository tokens: one per connection, limited to its repositories, refres
   assert.equal(tokens.needsRefresh(), false);
   now = new Date(now.getTime() + 3_600_000 - TOKEN_REFRESH_MS + 1000);
   assert.equal(tokens.needsRefresh(), true);
-  const files: Array<{ path: string; data: string }> = [];
+  const files: Array<{ path: string; data?: string | Uint8Array | ArrayBuffer }> = [];
   await tokens.write({
     writeFiles: async (entries) => {
       files.push(...entries);
@@ -442,7 +442,7 @@ test("repository tokens: one per connection, limited to its repositories, refres
     deleteFiles: async () => undefined,
   }, "a_1");
   assert.equal(files[0]?.path, "/run/guilds/a_1/git-tokens.json");
-  assert.equal((JSON.parse(files[0]!.data) as { repositories: Record<string, unknown> }).repositories.shop !== undefined, true);
+  assert.equal((JSON.parse(String(files[0]!.data)) as { repositories: Record<string, unknown> }).repositories.shop !== undefined, true);
   assert.deepEqual(saved, []);
 });
 
