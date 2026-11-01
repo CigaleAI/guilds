@@ -102,7 +102,7 @@ test("mcpIndex maps each connection tool to its connection and remote name, neve
       ],
     },
   ]);
-  assert.deepEqual(index, { notion_search: ["conn_1", "search"] });
+  assert.deepEqual(index, new Map([["notion_search", ["conn_1", "search"]]]));
 });
 
 test("configSnapshot offers each connection tool's schema and keeps the connection's tools by name", () => {

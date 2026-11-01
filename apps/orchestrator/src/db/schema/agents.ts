@@ -17,6 +17,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { Type, type Static } from "@sinclair/typebox";
 import { sql } from "drizzle-orm";
+import type { FunctionTool } from "../../lib/tool-schema.js";
 import { timestamptz } from "./columns.js";
 import type { ToolInputSchema } from "./connectors.js";
 import type { MessageMetadata, MessagePayload } from "./messages.js";
@@ -110,7 +111,7 @@ export type RunScriptSnapshot = {
 export type RunConfigSnapshot = Omit<AgentConfig, "max_scripts" | "max_workspace_mib"> & {
   projection_policy_version: number;
   database: boolean;
-  tools: Array<Record<string, unknown>>;
+  tools: FunctionTool[];
   mcp: RunMcpConnection[];
   secrets: SecretRef[];
   scripts?: RunScriptSnapshot[];

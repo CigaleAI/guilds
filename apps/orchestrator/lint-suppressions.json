@@ -410,11 +410,6 @@
       "count": 1
     }
   },
-  "src/db/schema/agents.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    }
-  },
   "src/db/schema/coaches.ts": {
     "anti-slop/no-unsafe-dictionary-type": {
       "count": 1
@@ -456,60 +451,26 @@
     }
   },
   "src/generation/chain.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    },
     "limits/silent-catch": {
       "count": 1
     }
   },
-  "src/generation/coding.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 2
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    }
-  },
   "src/generation/completion.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
     "limits/silent-catch": {
       "count": 2
     }
   },
   "src/generation/events.ts": {
-    "anti-slop/no-unknown-parameters": {
+    "anti-slop/no-unsafe-dictionary-type": {
       "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
-    }
-  },
-  "src/generation/generate.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
     }
   },
   "src/generation/index.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 6
-    },
-    "limits/erased-return-type": {
-      "count": 3
-    },
     "limits/silent-catch": {
       "count": 1
     }
   },
   "src/generation/machines.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
     "limits/erased-return-type": {
       "count": 2
     },
@@ -517,85 +478,8 @@
       "count": 1
     }
   },
-  "src/generation/offered-tools.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 2
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 4
-    },
-    "limits/erased-return-type": {
-      "count": 1
-    }
-  },
-  "src/generation/operator.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
-    },
-    "limits/erased-return-type": {
-      "count": 1
-    }
-  },
-  "src/generation/prepare.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
-    }
-  },
-  "src/generation/run-review.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 2
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    },
-    "limits/erased-alias": {
-      "count": 1
-    }
-  },
   "src/generation/run-secrets.ts": {
     "typescript/explicit-module-boundary-types": {
-      "count": 1
-    }
-  },
-  "src/generation/runs.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    },
-    "limits/erased-return-type": {
-      "count": 1
-    }
-  },
-  "src/generation/snapshot.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    }
-  },
-  "src/generation/tool-calls.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
       "count": 1
     }
   },

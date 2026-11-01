@@ -53,10 +53,11 @@ export function continuationMessage(
   previousRunId: string,
   handoff: string,
 ): RunMessage {
-  const body: Record<string, unknown> = { previous_run_id: previousRunId, handoff: handoff || null };
-  if (!handoff) {
-    body.note = "The previous run wrote no hand-off. Work from Memory, notes, and the working tree.";
-  }
+  const body = {
+    previous_run_id: previousRunId,
+    handoff: handoff || null,
+    ...(handoff ? {} : { note: "The previous run wrote no hand-off. Work from Memory, notes, and the working tree." }),
+  };
   return [
     { role: "user", content: `Continuation: ${JSON.stringify(body, null, 2)}` },
     { generation: 1, source: "continuation", previous_run_id: previousRunId },

@@ -11,6 +11,7 @@ import { listAgents, type AgentRow } from "../db/agents.js";
 import { listGroupMessages } from "../db/group-chat.js";
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import type { GroupRouter } from "../groupchat/router.js";
+import type { JsonObject } from "../lib/json.js";
 import { McpDisconnectedError } from "../mcp/errors.js";
 import type { McpPool } from "../mcp/pool.js";
 import { readMemory } from "../memory/index.js";
@@ -219,7 +220,7 @@ export class RunPreparation {
       }
       throw error;
     }
-    if (typeof task !== "string") {
+    if (task === null) {
       throw new RunRequestError(422, "task prompt is required");
     }
     return [system, task, readMemory(agentDir)];
@@ -273,13 +274,13 @@ export class RunPreparation {
     }
   }
 
-  private async connectorState(agent: AgentRow): Promise<Record<string, unknown>> {
+  private async connectorState(agent: AgentRow): Promise<JsonObject> {
     const { mcp, db } = this.services;
     return mcp.state(await db.agentLogins(agent));
   }
 
   /** The guild's state as the run's system prompt shows it; a notes folder it cannot read is a 422. */
-  private runState(agent: AgentRow, inputs: RunStateInputs): Record<string, unknown> {
+  private runState(agent: AgentRow, inputs: RunStateInputs): ReturnType<typeof collectRunState> {
     try {
       return collectRunState(
         this.services.artifacts ? null : this.services.notes,
