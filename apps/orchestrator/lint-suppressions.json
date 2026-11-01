@@ -895,11 +895,6 @@
       "count": 2
     }
   },
-  "src/groupchat/router.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 3
-    }
-  },
   "src/groupchat/tags.ts": {
     "anti-slop/no-unsafe-dictionary-type": {
       "count": 3
@@ -2311,34 +2306,6 @@
   "src/toolbox/types.ts": {
     "anti-slop/no-unsafe-dictionary-type": {
       "count": 4
-    }
-  },
-  "src/typesafe/client.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 3
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 4
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 7
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 3
-    }
-  },
-  "src/typesafe/group.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 2
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 5
     }
   },
   "src/usage/index.ts": {
