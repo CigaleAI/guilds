@@ -13,6 +13,7 @@ import type { BrowserUsageMetadata } from "../db/schema/index.js";
 import { errorMessage, errorName, writeLog, type LogFields } from "../observability/log.js";
 import { openCdpBridge, type CdpTarget } from "./bridge.js";
 import { browserUsageOf } from "./cost.js";
+import type { FastbrowseEnv } from "./env.js";
 import { formatBrowseResult, formatStep } from "./format.js";
 
 /** The kind of value a requested field holds. */
@@ -72,7 +73,7 @@ export const FASTBROWSE: FastbrowseLauncher = {
  * fields its log lines carry.
  */
 export type BrowseContext = {
-  env: Record<string, string>;
+  env: FastbrowseEnv;
   model: string;
   target: CdpTarget;
   signal: AbortSignal;
@@ -98,9 +99,9 @@ function fastbrowseLog(fields: LogFields): Writable {
   });
 }
 
-/** The outcome of a run its signal stopped: past its time limit, or cancelled with the run. */
-function stoppedOutcome(reason: unknown, steps: number): BrowseOutcome {
-  if (reason instanceof DOMException && reason.name === "TimeoutError") {
+/** The outcome of a run `signal` stopped: past its time limit, or cancelled with the run. */
+function stoppedOutcome(signal: AbortSignal, steps: number): BrowseOutcome {
+  if (signal.reason instanceof DOMException && signal.reason.name === "TimeoutError") {
     return { text: "ERROR: browse stopped at its time limit", metadata: { status: "timed_out", final_url: null, steps } };
   }
   return { text: "ERROR: browse cancelled", metadata: { status: "cancelled", final_url: null, steps } };
@@ -165,7 +166,7 @@ async function runTask(
         `a stopped browse run's Jev and LLM spend is not counted, since fastbrowse answers no result on abort (steps: ${steps})`,
         { ...context.log, operation: "browse.cost" },
       );
-      return stoppedOutcome(context.signal.reason, steps);
+      return stoppedOutcome(context.signal, steps);
     }
     if (error instanceof FastbrowseError) {
       throw new BrowseError(`the agent-optimized browser failed: ${error.message}`, { cause: error });

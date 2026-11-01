@@ -65,24 +65,6 @@
       "count": 1
     }
   },
-  "src/browse/bridge.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 2
-    }
-  },
-  "src/browse/env.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 4
-    }
-  },
-  "src/browse/runner.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    }
-  },
   "src/builder/index.ts": {
     "anti-slop/no-unsafe-dictionary-type": {
       "count": 2
