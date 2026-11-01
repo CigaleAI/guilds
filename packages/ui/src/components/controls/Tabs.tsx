@@ -135,8 +135,9 @@ function revealInRow(tab: HTMLElement, motion: "smooth" | "instant") {
 }
 
 function assignRef<T>(ref: Ref<T> | undefined, node: T | null) {
-  if (typeof ref === "function") ref(node);
-  else if (ref) ref.current = node;
+  if (!ref) return;
+  if ("current" in ref) ref.current = node;
+  else ref(node);
 }
 
 /** One tab: its label with an optional icon and count. Selected is an ink pill. */

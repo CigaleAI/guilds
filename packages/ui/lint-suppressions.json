@@ -83,11 +83,6 @@
       "count": 1
     }
   },
-  "src/components/controls/Tabs.tsx": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    }
-  },
   "src/components/controls/TextAreaField.tsx": {
     "complexity": {
       "count": 1
@@ -133,11 +128,6 @@
       "count": 1
     }
   },
-  "src/components/navigation/AgentHeader.tsx": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    }
-  },
   "src/components/navigation/AgentRow.tsx": {
     "limits/inline-parameter-type": {
       "count": 1
@@ -155,11 +145,6 @@
   },
   "src/components/navigation/UtilityLink.tsx": {
     "complexity": {
-      "count": 1
-    }
-  },
-  "src/components/navigation/WorkspaceHeader.tsx": {
-    "anti-slop/no-runtime-typeof": {
       "count": 1
     }
   },
