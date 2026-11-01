@@ -1,7 +1,7 @@
 import { agentActor } from "../artifacts/actors.js";
 import { ArtifactError } from "../artifacts/errors.js";
 import type { ArtifactActor } from "../artifacts/types.js";
-import type { ArtifactStore, CollectionView } from "../artifacts/store.js";
+import type { ArtifactStore } from "../artifacts/store.js";
 import { enabledToolNames, resolvedMcp, resolvedTools } from "../access/index.js";
 import { agentLogins, agentSecrets, resolveMcpTool } from "../access/runtime.js";
 import { listAgents, type AgentPlaceRow, type AgentRow } from "../db/agents.js";
@@ -16,7 +16,7 @@ import type { Scripts } from "../scripts/catalog.js";
 import { listServers, type LoadedConnector } from "../connectors/servers.js";
 import { listMcpConnections, type McpConnectionRow } from "../db/mcp.js";
 import { connectionTools } from "../mcp/service.js";
-import { listCollections } from "../artifacts/collections.js";
+import { collectionCatalog, type CatalogCollection } from "../artifacts/collections.js";
 
 import type { FunctionTool } from "../lib/tool-schema.js";
 import type { ScriptCatalogItem } from "../scripts/catalog.js";
@@ -42,9 +42,9 @@ export type PreviewDeps = {
 };
 
 /** The collections the agent reaches, or none when artifacts refuses to list them, as a run reads them. */
-async function previewCollections(store: ArtifactStore, actor: ArtifactActor): Promise<CollectionView[]> {
+async function previewCollections(store: ArtifactStore, actor: ArtifactActor): Promise<CatalogCollection[]> {
   try {
-    return await listCollections(store, actor);
+    return await collectionCatalog(store, actor);
   } catch (error) {
     if (error instanceof ArtifactError) {
       return [];
