@@ -1,5 +1,5 @@
 import { Value } from "@sinclair/typebox/value";
-import { decode } from "../../lib/decode.js";
+import { assertMatches } from "../../lib/decode.js";
 import { proxyFetch, withQuery, type FetchFn } from "../../net/http.js";
 import { LIST_DEFAULT, argStr, clipRows, clipText, fmtNum, joinParts, rowLimit } from "../format.js";
 import {
@@ -266,9 +266,9 @@ async function getJson(
   } catch {
     throw new TwitterApiIoError("TwitterAPI.io returned a non-JSON body");
   }
-  const body = decode(TwitterBody, payload, unexpected);
-  assertSuccess(body);
-  return body;
+  assertMatches(TwitterBody, payload, unexpected);
+  assertSuccess(payload);
+  return payload;
 }
 
 function userParam(value: string): Record<string, string> {

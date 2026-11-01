@@ -766,7 +766,7 @@
   },
   "src/db/schema/connectors.ts": {
     "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
+      "count": 1
     }
   },
   "src/db/schema/recipe-document.ts": {
@@ -1228,21 +1228,8 @@
       "count": 3
     }
   },
-  "src/lib/decode.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
-    }
-  },
   "src/lib/event.ts": {
     "limits/bare-error": {
-      "count": 1
-    }
-  },
-  "src/lib/forwarding.ts": {
-    "anti-slop/no-known-value-widening": {
       "count": 1
     }
   },
@@ -1254,26 +1241,6 @@
   "src/lib/paths.ts": {
     "limits/bare-error": {
       "count": 1
-    }
-  },
-  "src/lib/tool-schema.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 5
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 3
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 3
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 11
-    },
-    "complexity": {
-      "count": 1
-    },
-    "limits/erased-return-type": {
-      "count": 2
     }
   },
   "src/llm/anthropic.ts": {
@@ -2462,7 +2429,7 @@
       "count": 1
     },
     "anti-slop/no-unsafe-dictionary-type": {
-      "count": 4
+      "count": 3
     },
     "max-params": {
       "count": 1
@@ -2476,7 +2443,7 @@
       "count": 5
     },
     "anti-slop/no-unsafe-dictionary-type": {
-      "count": 10
+      "count": 6
     },
     "max-params": {
       "count": 1
@@ -2571,7 +2538,7 @@
       "count": 3
     },
     "anti-slop/no-unsafe-dictionary-type": {
-      "count": 6
+      "count": 5
     },
     "limits/erased-return-type": {
       "count": 1

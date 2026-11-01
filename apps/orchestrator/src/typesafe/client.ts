@@ -3,7 +3,7 @@ import { SYSTEM_ONE, integrationValue, type IntegrationSources } from "../instan
 import { httpRequest, readJson, type FetchFn } from "../net/http.js";
 import type { TypeSafeUsage } from "../db/schema/index.js";
 import { redactApiKey } from "../llm/completion.js";
-import { decode } from "../lib/decode.js";
+import { assertMatches } from "../lib/decode.js";
 import {
   ChoiceAnswerBody,
   ErrorBody,
@@ -381,11 +381,11 @@ function systemOneSender(
 
 /** A System One reply as the result of `questions`; its model is `model` when it names none. */
 function systemOneResult(
-  payload: unknown,
+  reply: unknown,
   questions: Record<string, TypeSafeQuestion>,
   model: string,
 ): TypeSafeResult {
-  const reply = decode(SystemOneResponse, payload, unexpected);
+  assertMatches(SystemOneResponse, reply, unexpected);
   const result: TypeSafeResult = {
     model: typeof reply.model === "string" && reply.model ? reply.model : model,
     answers: parseAnswers(questions, reply.answers),

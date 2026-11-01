@@ -37,12 +37,12 @@ export function filterHeaders(
   headers: Record<string, string | string[] | undefined>,
   excluded: Set<string>,
 ): Record<string, string> {
-  const out: Record<string, string> = {};
+  const kept = new Map<string, string>();
   for (const [key, value] of Object.entries(headers)) {
     if (value === undefined || excluded.has(key.toLowerCase())) {
       continue;
     }
-    out[key] = Array.isArray(value) ? value.join(", ") : value;
+    kept.set(key, Array.isArray(value) ? value.join(", ") : value);
   }
-  return out;
+  return Object.fromEntries(kept);
 }

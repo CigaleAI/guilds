@@ -86,6 +86,15 @@ test("create rejects native collisions and non-object schemas", async () => {
       error instanceof ScriptError && error.message === "parameters must be a JSON Schema object",
   );
   await assert.rejects(
+    () =>
+      scripts.create(scriptOperator, "a_1", "priced", "why", "print(1)\n", {
+        type: "object",
+        properties: { to: { type: "string", required: true } },
+      }),
+    (error: unknown) =>
+      error instanceof ScriptError && error.message === "parameters must be a JSON Schema object",
+  );
+  await assert.rejects(
     () => scripts.create(scriptOperator, "a_1", "priced", "why", "print(1)\n", ["to"]),
     (error: unknown) =>
       error instanceof ScriptError && error.message === "parameters must be a JSON object",

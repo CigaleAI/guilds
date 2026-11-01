@@ -11,6 +11,7 @@ import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { serverRow, connectionRow } from "../helpers/servers.js";
 import { MemoryMcpDatabase, storedTool } from "../helpers/mcp-database.js";
 import type { McpConnectionRow } from "../../src/db/mcp.js";
+import type { ToolInputSchema } from "../../src/db/schema/index.js";
 
 const masterKey = Buffer.from(HEX_MASTER_KEY, "hex");
 
@@ -19,7 +20,7 @@ function listed(
     remote_name: string;
     namespaced_name: string;
     description: string;
-    input_schema: Record<string, unknown>;
+    input_schema: ToolInputSchema;
   }> = {},
 ) {
   return {

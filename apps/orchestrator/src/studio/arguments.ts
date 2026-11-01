@@ -10,7 +10,7 @@ import {
   type TSchema,
   type TUnsafe,
 } from "@sinclair/typebox";
-import { decode } from "../lib/decode.js";
+import { assertMatches } from "../lib/decode.js";
 import { functionSchema } from "../toolbox/schema.js";
 import { StudioUnprocessableError } from "./errors.js";
 import type { StudioTool, StudioToolCall, StudioToolDeps } from "./tools.js";
@@ -81,7 +81,8 @@ export function decodeStudioArguments<T extends TObject>(
   if ("agent_id" in parameters.properties && AGENT_HANDLE_KEYS.some((key) => key in args)) {
     given.agent_id = agentHandleOf(args);
   }
-  return decode(parameters, given, (problem) => new StudioUnprocessableError(problem));
+  assertMatches(parameters, given, (problem) => new StudioUnprocessableError(problem));
+  return given;
 }
 
 /** A Studio tool as it is written: what the model is offered, and the work it does on a decoded call. */

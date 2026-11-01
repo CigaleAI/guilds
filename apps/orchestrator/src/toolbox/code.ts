@@ -3,6 +3,8 @@ import { Type } from "@sinclair/typebox";
 import { isPlainRecord } from "../db/json.js";
 import type { MessageMetadata, ReportedToolMetadata } from "../db/schema/index.js";
 import { keepMatching } from "../lib/decode.js";
+import { isJsonObject, type JsonObject } from "../lib/json.js";
+import type { ToolSchemaProperties } from "../lib/tool-schema.js";
 import { stderrOf, stdoutOf, type CommandResult } from "../sandbox/sdk.js";
 import { executeCommand } from "./shell.js";
 import { functionSchema } from "./schema.js";
@@ -33,7 +35,7 @@ export function codeResultMaxBytes(env: NodeJS.ProcessEnv = process.env): number
   return Number.isInteger(value) && value >= 1024 ? value : 8192;
 }
 
-export type CodeResult = { text: string; meta: Record<string, unknown> };
+export type CodeResult = { text: string; meta: JsonObject };
 
 /** A call id as a file name: providers may use characters a path segment cannot hold. */
 export function callSegment(callId: string): string {
@@ -42,7 +44,7 @@ export function callSegment(callId: string): string {
 }
 
 /** What a sandbox helper prints: whether its op succeeded, its text and meta, and its error text when it says one. */
-export type HelperEnvelope = { ok: boolean; text: string; meta: Record<string, unknown>; error: string | null };
+export type HelperEnvelope = { ok: boolean; text: string; meta: JsonObject; error: string | null };
 
 /** The envelope a helper printed as base64 JSON; throws when it is not a JSON object. */
 export function decodeEnvelope(stdout: string): HelperEnvelope {
@@ -54,7 +56,7 @@ export function decodeEnvelope(stdout: string): HelperEnvelope {
   return {
     ok: Boolean(decoded.ok),
     text: typeof decoded.text === "string" ? decoded.text : "",
-    meta: isPlainRecord(decoded.meta) ? decoded.meta : {},
+    meta: isJsonObject(decoded.meta) ? decoded.meta : {},
     error: typeof decoded.error === "string" && decoded.error ? decoded.error : null,
   };
 }
@@ -106,7 +108,7 @@ const ReportedFields = Type.Object({
 });
 
 /** The fields of a helper's metadata a call's result keeps; one of another shape is dropped. */
-function reportedFields(meta: Record<string, unknown>): ReportedToolMetadata | null {
+function reportedFields(meta: JsonObject): ReportedToolMetadata | null {
   return keepMatching(ReportedFields, meta);
 }
 
@@ -145,7 +147,7 @@ export async function runCodeHelper(
 function tool(
   name: string,
   description: string,
-  properties: Record<string, unknown>,
+  properties: ToolSchemaProperties,
   required: string[],
   handler: Tool["handler"],
 ): Tool {

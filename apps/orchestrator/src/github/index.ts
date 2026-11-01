@@ -6,7 +6,7 @@ import {
   missingFields,
   type IntegrationSources,
 } from "../instance/integrations.js";
-import { decode } from "../lib/decode.js";
+import { assertMatches } from "../lib/decode.js";
 import { proxyFetch, readJson, type FetchFn } from "../net/http.js";
 import {
   ErrorReply,
@@ -304,7 +304,9 @@ export async function userInstallations(userToken: string, services: GithubServi
     if (response.status >= 400) {
       throw await githubApiError(response, "listing GitHub installations failed");
     }
-    const rows = decode(InstallationsPage, await readJson(response), unexpectedGithubReply).installations;
+    const body = await readJson(response);
+    assertMatches(InstallationsPage, body, unexpectedGithubReply);
+    const rows = body.installations;
     for (const row of rows) {
       installations.push(installationFrom(row));
     }
@@ -331,7 +333,9 @@ export async function appInstallation(
   if (response.status >= 400) {
     throw await githubApiError(response, "reading the GitHub installation failed");
   }
-  return installationFrom(decode(InstallationReply, await readJson(response), unexpectedGithubReply));
+  const body = await readJson(response);
+  assertMatches(InstallationReply, body, unexpectedGithubReply);
+  return installationFrom(body);
 }
 
 /** Whether the user token can see this installation (SEC-11). */
@@ -501,7 +505,9 @@ export async function installationRepositories(
     if (response.status >= 400) {
       throw await githubApiError(response, "listing GitHub repositories failed");
     }
-    const rows = decode(RepositoriesPage, await readJson(response), unexpectedGithubReply).repositories;
+    const body = await readJson(response);
+    assertMatches(RepositoriesPage, body, unexpectedGithubReply);
+    const rows = body.repositories;
     for (const row of rows) {
       repositories.push(repositoryFrom(row));
     }

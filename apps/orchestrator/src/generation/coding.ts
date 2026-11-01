@@ -15,7 +15,7 @@ import { getMcpConnectionForOwner, type McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import { getRun, mergeRunMetadata, type RunRow } from "../db/runs.js";
 import { RunRepositoryChangeSchema, type Harness, type RunRepositoryChange, type ToolCall } from "../db/schema/index.js";
-import { decode } from "../lib/decode.js";
+import { assertMatches } from "../lib/decode.js";
 import { RepositoryAccessError } from "../github/tokens.js";
 import { GITHUB_SERVER_ID } from "../instance/integrations.js";
 import { retireLogin, type LoginFailure } from "../mcp/service.js";
@@ -377,9 +377,12 @@ export class CodingRuns {
   private async checkpoint(run: ToolRun, which: "start" | "end", agent: AgentRow): Promise<RunRepositoryChange[]> {
     try {
       const result = await runCodeHelper(run, createToolHooks(), { op: "checkpoint", which }, { timeoutSeconds: 300 });
-      return which === "end"
-        ? decode(Type.Array(RunRepositoryChangeSchema), result.meta.repositories, (problem) => new Error(`checkpoint ${problem}`))
-        : [];
+      if (which === "start") {
+        return [];
+      }
+      const { repositories } = result.meta;
+      assertMatches(Type.Array(RunRepositoryChangeSchema), repositories, (problem) => new Error(`checkpoint ${problem}`));
+      return repositories;
     } catch (error) {
       writeLog("warn", errorMessage(error), {
         run_id: run.run_id,

@@ -1,6 +1,6 @@
 import { Type, type Static, type TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
-import { decode } from "../../lib/decode.js";
+import { assertMatches } from "../../lib/decode.js";
 import { proxyFetch, type FetchFn } from "../../net/http.js";
 import {
   DriveFile,
@@ -213,7 +213,8 @@ export async function driveJson<T extends TSchema>(
   if (!isJsonObject(payload)) {
     throw new DriveFolderError("Drive folder lookup returned a non-object");
   }
-  return decode(request.schema, payload, unexpected);
+  assertMatches(request.schema, payload, unexpected);
+  return payload;
 }
 
 export async function driveBytes(

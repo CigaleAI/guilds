@@ -1,7 +1,7 @@
 import type { Static, TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { AgentFileError, agentDisplayPath, writeAgentFile } from "../../lib/agent-file.js";
-import { decode } from "../../lib/decode.js";
+import { assertMatches } from "../../lib/decode.js";
 import { proxyFetch, type FetchFn } from "../../net/http.js";
 import { argStr, clipRows, clipText, joinParts, rowLimit } from "../format.js";
 import {
@@ -284,7 +284,9 @@ async function gmailRequest<T extends TSchema>(request: GmailRequest<T>, options
   if (response.status >= 400) {
     throw new GmailError(await errorDetail(response), response.status);
   }
-  return decode(request.schema, await jsonBody(response), unexpected);
+  const body = await jsonBody(response);
+  assertMatches(request.schema, body, unexpected);
+  return body;
 }
 
 function composeFields(arguments_: Record<string, unknown>): OutgoingMessage {

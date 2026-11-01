@@ -7,6 +7,7 @@ import { encryptPayload } from "../../src/credentials/crypto.js";
 import { decodeMasterKey } from "../../src/config/index.js";
 import { McpDisconnectedError, McpError } from "../../src/mcp/errors.js";
 import { mcpSchema } from "../../src/mcp/tools.js";
+import { CatalogError, validateInputSchema } from "../../src/mcp/catalog.js";
 import { CALL_TOOL_TIMEOUT_MS, McpSession, rpcPayload } from "../../src/mcp/session.js";
 import { authHeaders } from "../../src/mcp/login-auth.js";
 import { McpPool, OPERATOR_CALLER, relistTools, type ToolListing } from "../../src/mcp/pool.js";
@@ -167,6 +168,18 @@ test("offered Cigale schema marks optional strings for omit", () => {
   assert.match(String(properties.campaignId.description), /Omit this key when unused/);
   assert.match(String(properties.prompt.description), /Omit this key when unused/);
   assert.equal("description" in properties.agentId, false);
+});
+
+test("an input schema that is not a JSON Schema at some depth is refused where it enters", () => {
+  const nested = { type: "object", properties: { id: { type: "string", format: "uuid", required: true } } };
+  assert.throws(
+    () => validateInputSchema(nested),
+    (error: unknown) => error instanceof CatalogError && /^input_schema /.test(error.message),
+  );
+  assert.deepEqual(validateInputSchema({ type: "object", properties: { any: true } }), {
+    type: "object",
+    properties: { any: true },
+  });
 });
 
 test("mcpSchema drops format uuid from optional properties", () => {
