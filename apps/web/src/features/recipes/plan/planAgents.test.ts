@@ -5,11 +5,16 @@ import { agentCard, promptBadge } from "./planAgents";
 import { planFromRecipe } from "./planModel";
 import { deskRecipe, finding } from "./planFixtures";
 
-test("planFromRecipe reads a plain-text task", () => {
-  const role: RoleDraft = { role: "solo", task: "Do the thing." };
+test("planFromRecipe reads a task's body and author", () => {
+  const role: RoleDraft = { role: "solo", task: { body: "Do the thing." } };
   const [agent] = planFromRecipe({ roles: [role] }).agents;
   assert.equal(agent?.task, "Do the thing.");
   assert.equal(agent?.taskAuthor, null);
+  const [authored] = planFromRecipe({
+    roles: [{ role: "solo", task: { body: "", author: { by: "operator", reviewed: true } } }],
+  }).agents;
+  assert.equal(authored?.task, "");
+  assert.deepEqual(authored?.taskAuthor, { by: "operator", reviewed: true });
 });
 
 test("apply agents stand in when the recipe has no roles", () => {

@@ -38,12 +38,10 @@ export function planTally(plan: RecipePlan): PlanTallyItem[] {
 }
 
 /** The guild header: name, about text, message cap, and the goal when it says more than the about text. */
-export function guildHero(plan: RecipePlan): {
-  name: string;
-  about: string;
-  groupLimit: number;
-  goal: string | null;
-} {
+export type GuildHero = { name: string; about: string; groupLimit: number; goal: string | null };
+
+/** The guild header the plan page opens with. */
+export function guildHero(plan: RecipePlan): GuildHero {
   const { name, about, objective, groupLimit } = plan.guild;
   return {
     name: name || "Untitled guild",

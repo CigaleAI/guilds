@@ -1,3 +1,5 @@
+import type { AccessMode } from "../../../api/types/access";
+import type { RecipeNote } from "../../../api/types/recipes";
 import { asArray, type NoteDraft } from "./recipeDraft";
 import { writersSuffix } from "./planCollections";
 
@@ -20,10 +22,14 @@ export function notesFromRecipe(
 }
 
 /** The guild's mode a note's level gives when the recipe names none. */
-const NOTE_GUILD_DEFAULT: Record<string, string> = { org: "read", guild: "write" };
+const NOTE_GUILD_DEFAULT: Record<RecipeNote["level"], AccessMode | undefined> = {
+  org: "read",
+  guild: "write",
+  agent: undefined,
+};
 
 /** The guild's mode on a note: the recipe's, or what the note's level gives. */
-function noteGuildMode(item: NoteDraft): string | undefined {
+function noteGuildMode(item: NoteDraft): AccessMode | undefined {
   return item.guild || NOTE_GUILD_DEFAULT[item.level || "guild"];
 }
 
@@ -52,14 +58,17 @@ export function noteSnippet(body: string | null | undefined): string {
 }
 
 /** A note's card: title, owner, who reaches it, snippet, where apply writes it, and its body. */
-export function noteCard(item: NoteDraft): {
+export type NoteCard = {
   title: string;
   owner: string;
   access: string;
   snippet: string;
   destination: string;
   body: string;
-} {
+};
+
+/** The card a note shows. */
+export function noteCard(item: NoteDraft): NoteCard {
   const title = noteTitle(item);
   const body = String(item.body || "");
   const dest = item.key || title;

@@ -205,7 +205,10 @@ export function connectionCard(
 }
 
 /** A secret's card: the name it is stored under and its description or scope. */
-export function secretCard(secret: SecretDraft): { name: string; snippet: string } {
+export type SecretCard = { name: string; snippet: string };
+
+/** The card a secret shows. */
+export function secretCard(secret: SecretDraft): SecretCard {
   return {
     name: secret.dest_name || secret.name || "",
     snippet: secret.description || secret.recommended_scope || "",
@@ -213,11 +216,10 @@ export function secretCard(secret: SecretDraft): { name: string; snippet: string
 }
 
 /** The connectors section: its count (connectors and secrets), its listed systems, and whether it has nothing to list. */
-export function accessSection(plan: RecipePlan): {
-  count: number;
-  systems: SystemCard[];
-  empty: boolean;
-} {
+export type AccessSection = { count: number; systems: SystemCard[]; empty: boolean };
+
+/** The connectors section of the plan page. */
+export function accessSection(plan: RecipePlan): AccessSection {
   const systems = systemCards(plan);
   return {
     count: plan.connections.length + plan.secrets.length,

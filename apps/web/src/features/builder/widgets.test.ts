@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { StudioMessage } from "../../api/types/studio";
+import type { RecipeDraft } from "../recipes/plan/recipeDraft";
 import {
   accessCutMessage,
   answeredAll,
@@ -154,14 +155,12 @@ test("answers become one line per question", () => {
 });
 
 test("the design's open questions become one widget, minus those answered", () => {
-  const recipe = {
-    body: {
-      design: {
-        systems: [
-          { name: "Payments", resolution: "decision", reason: "Open question. Which processor?" },
-          { name: "Search", resolution: "catalog", server: "exa", reason: "Web search" },
-        ],
-      },
+  const recipe: RecipeDraft = {
+    design: {
+      systems: [
+        { name: "Payments", resolution: "decision", reason: "Open question. Which processor?" },
+        { name: "Search", resolution: "catalog", server: "exa", reason: "Web search" },
+      ],
     },
   };
   const widget = pendingQuestions(recipe, new Set());

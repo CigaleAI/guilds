@@ -115,68 +115,10 @@
       "count": 5
     },
     "anti-slop/no-unknown-parameters": {
-      "count": 5
+      "count": 4
     },
     "anti-slop/no-unsafe-dictionary-type": {
       "count": 4
-    }
-  },
-  "src/features/recipes/RecipePage.tsx": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    }
-  },
-  "src/features/recipes/applySteps.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 2
-    }
-  },
-  "src/features/recipes/plan/designSystems.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    }
-  },
-  "src/features/recipes/plan/planActions.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    }
-  },
-  "src/features/recipes/plan/planAgents.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 2
-    }
-  },
-  "src/features/recipes/plan/planConnectors.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 2
-    }
-  },
-  "src/features/recipes/plan/planHandoffs.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    }
-  },
-  "src/features/recipes/plan/planNotes.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 2
-    }
-  },
-  "src/features/recipes/plan/planRoutines.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    }
-  },
-  "src/features/recipes/plan/planSections.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    }
-  },
-  "src/features/recipes/plan/recipeDraft.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 3
     }
   }
 }

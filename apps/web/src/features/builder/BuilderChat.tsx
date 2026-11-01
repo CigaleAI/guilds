@@ -44,8 +44,8 @@ export function BuilderChat({ session, messages, live }: BuilderChatProps) {
   const active = session.status === "active";
   const idle = active && !generating && !post.isPending;
   const pending = useMemo(
-    () => pendingQuestions(session.recipe, answeredHere),
-    [session.recipe, answeredHere],
+    () => pendingQuestions(session.recipe.body, answeredHere),
+    [session.recipe.body, answeredHere],
   );
   const blocked = openRequest(messages ?? []) || pending !== null;
 

@@ -3,6 +3,7 @@ import type { StudioMessage } from "../../api/types/studio";
 import type { AccessEdit } from "../../api/types/recipes";
 import { isJsonObject } from "../../api/wire";
 import { pendingDesignQuestions } from "../recipes/plan/designSystems";
+import type { RecipeDraft } from "../recipes/plan/recipeDraft";
 
 /**
  * The Builder coach's requests to the operator, read from its tool results: a login to connect or
@@ -230,10 +231,10 @@ export function answerMessage(
 
 /** The design's open questions the operator has not answered here, as one question widget. */
 export function pendingQuestions(
-  recipe: unknown,
+  doc: RecipeDraft | null | undefined,
   answered: ReadonlySet<string>,
 ): QuestionWidget | null {
-  const questions = pendingDesignQuestions(recipe).flatMap((system, index): Question[] => {
+  const questions = pendingDesignQuestions(doc).flatMap((system, index): Question[] => {
     const id = system.name || `pending-${index + 1}`;
     if (answered.has(id)) return [];
     const reason = (system.reason ?? "").replace(/^\s*Open question\.?\s*/i, "").trim();
