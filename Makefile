@@ -41,7 +41,7 @@ $(error DEV_STACK=$(DEV_STACK) names no development stack: set COMPOSE_DEV)
 endif
 COMPOSE_ALL := $(COMPOSE) -f $(CORE)/docker-compose.yml $(EXTENSION_COMPOSE_FILES)
 
-.PHONY: contract contract-opensandbox contract-model state opensandbox-image runtime-image core-image build up up-dev dev down reset migrate verify check soak compat-verify
+.PHONY: contract contract-opensandbox contract-model state opensandbox-image runtime-image core-image build up up-dev dev down reset migrate verify check soak compat-verify preview preview-down
 
 contract: contract-opensandbox contract-model
 
@@ -133,3 +133,11 @@ soak:
 
 compat-verify:
 	pnpm --filter @guildsrun/orchestrator compat:verify
+
+# A preview of this checkout behind a password at a trycloudflare.com URL, as the preview workflow
+# serves a pull request. It reads PREVIEW_PASSWORD, PREVIEW_MODEL_KEY and PREVIEW_MODEL.
+preview:
+	$(CORE)/scripts/preview-stack.sh up
+
+preview-down:
+	$(CORE)/scripts/preview-stack.sh down

@@ -1,0 +1,27 @@
+# A preview of the stack (scripts/preview-stack.sh), merged into docker-compose.yml: Caddy asks for
+# the preview password in front of the orchestrator, and a Cloudflare quick tunnel serves Caddy at
+# a random trycloudflare.com hostname, with no account and no token. Neither publishes a port: the
+# tunnel is the only way in from outside, and only through Caddy.
+services:
+  caddy:
+    image: caddy:2.11.7
+    # The password's bcrypt hash is read from its file at start, so it is in neither this file
+    # nor the container's configuration.
+    command:
+      - sh
+      - -c
+      - export PREVIEW_PASSWORD_HASH="$$(cat /run/preview/hash)" && exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+    volumes:
+      - ./scripts/preview/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./scripts/preview/.caddy-hash:/run/preview/hash:ro
+    depends_on:
+      orchestrator:
+        condition: service_healthy
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.1
+    # It starts before Caddy: the orchestrator serves only the host PUBLIC_BASE_URL names, so the
+    # tunnel's hostname is known before the orchestrator starts.
+    command: ["tunnel", "--no-autoupdate", "--url", "http://caddy:80"]
+    restart: unless-stopped

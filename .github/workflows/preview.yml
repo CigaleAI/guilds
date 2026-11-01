@@ -1,0 +1,109 @@
+name: preview
+
+# Serves a pull request from this repository that carries the `preview` label as a preview
+# (scripts/preview-stack.sh), when the label is added and on every push after. The preview's URL is
+# the pull request's deployment in the `preview` environment, which holds the password and the
+# model key. The preview ends when a review is submitted after the deployment, when the label is
+# removed, or after forty-five minutes, and is torn down however the job ends.
+on:
+  pull_request:
+    types: [labeled, synchronize]
+
+permissions:
+  contents: read
+  deployments: write
+  pull-requests: read
+
+jobs:
+  preview:
+    # A fork's pull request never reaches the environment's secrets, and a label other than
+    # `preview` added to the pull request leaves its preview running.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'preview') &&
+      (github.event.action == 'synchronize' || github.event.label.name == 'preview')
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    # A new push replaces the running preview.
+    concurrency:
+      group: preview-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    # The job records its own deployment, the one that carries the URL.
+    environment:
+      name: preview
+      deployment: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PULL_NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Mask the secrets
+        env:
+          PREVIEW_PASSWORD: ${{ secrets.PREVIEW_PASSWORD }}
+          PREVIEW_MODEL_KEY: ${{ secrets.PREVIEW_MODEL_KEY }}
+        run: |
+          echo "::add-mask::$PREVIEW_PASSWORD"
+          echo "::add-mask::$PREVIEW_MODEL_KEY"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.17.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - id: up
+        name: Start the preview
+        env:
+          PREVIEW_PASSWORD: ${{ secrets.PREVIEW_PASSWORD }}
+          PREVIEW_MODEL_KEY: ${{ secrets.PREVIEW_MODEL_KEY }}
+          PREVIEW_MODEL: ${{ vars.PREVIEW_MODEL }}
+        run: |
+          url="$(scripts/preview-stack.sh up)"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+      - id: deployment
+        name: Record the deployment
+        env:
+          URL: ${{ steps.up.outputs.url }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          deployment="$(jq -n --arg ref "$SHA" '{ref: $ref, environment: "preview", transient_environment: true, auto_merge: false, required_contexts: [], description: "Preview of this pull request"}' |
+            gh api "repos/$GITHUB_REPOSITORY/deployments" --input -)"
+          id="$(jq -r .id <<<"$deployment")"
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+          echo "created_at=$(jq -r .created_at <<<"$deployment")" >> "$GITHUB_OUTPUT"
+          jq -n --arg url "$URL" '{state: "success", environment_url: $url}' |
+            gh api "repos/$GITHUB_REPOSITORY/deployments/$id/statuses" --input - >/dev/null
+      - name: Hold the preview open
+        env:
+          SINCE: ${{ steps.deployment.outputs.created_at }}
+        run: |
+          deadline=$((SECONDS + 45 * 60))
+          while true; do
+            if ((SECONDS >= deadline)); then
+              echo "The preview ends: forty-five minutes have passed since the deployment."
+              break
+            fi
+            sleep 60
+            labels="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PULL_NUMBER" --jq '.labels[].name')"
+            if ! grep -qx preview <<<"$labels"; then
+              echo "The preview ends: the preview label was removed."
+              break
+            fi
+            reviews="$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PULL_NUMBER/reviews" --jq ".[] | select(.submitted_at != null and .submitted_at > \"$SINCE\") | .id")"
+            if [[ -n "$reviews" ]]; then
+              echo "The preview ends: a review was submitted."
+              break
+            fi
+          done
+      - name: Tear down the preview
+        if: always()
+        env:
+          DEPLOYMENT: ${{ steps.deployment.outputs.id }}
+        run: |
+          status=0
+          scripts/preview-stack.sh down || status=$?
+          if [[ -n "$DEPLOYMENT" ]]; then
+            gh api "repos/$GITHUB_REPOSITORY/deployments/$DEPLOYMENT/statuses" -f state=inactive >/dev/null
+          fi
+          exit "$status"
