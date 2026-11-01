@@ -1,7 +1,6 @@
-import { createHash } from "node:crypto";
 import { loadOperatorActor } from "../artifacts/actors.js";
 import { ArtifactError } from "../artifacts/errors.js";
-import { columnCatalog, describeColumn } from "../artifacts/columns.js";
+import { columnCatalog, describeColumn, type CatalogColumn } from "../artifacts/columns.js";
 import { listRecords } from "../artifacts/records.js";
 import {
   applyCollectionStep,
@@ -29,15 +28,17 @@ import {
   type GuildAccessProposal,
 } from "../artifacts/access-lists.js";
 import { effectiveAccess } from "../artifacts/access.js";
-import type { AccessEntry, ArtifactActor } from "../artifacts/types.js";
+import type { AccessEntry, AgentAccessMode, ArtifactActor } from "../artifacts/types.js";
+import type { AccessMode } from "../db/schema/index.js";
+import type { JsonValue } from "../lib/json.js";
 import type { CollectionColumn } from "../db/schema/index.js";
 import { STUDIO_TOOL_RESULT_MAX_BYTES } from "./constants.js";
 import type { EditAction } from "./actions.js";
 import type { EditCollectionArguments, TableAccessArguments } from "./edit-arguments.js";
-import type { CollectionTarget } from "./edit-request.js";
+import { jsonHash, type CollectionTarget } from "./edit-request.js";
 import type { EditDeps, EditScope } from "./edits.js";
 import { editActor } from "./actor.js";
-import { StudioConflictError, StudioUnprocessableError } from "./errors.js";
+import { StudioConflictError, StudioError, StudioUnprocessableError } from "./errors.js";
 import { excerptBytes, wrapEvidence } from "./system.js";
 import { getGuild } from "../db/guilds.js";
 import { listAgents } from "../db/agents.js";
@@ -103,32 +104,22 @@ type TableContext = {
   members: Member[];
 };
 
-/** An artifacts refusal as Studio reports it to the coach; any other error as it is. */
-function tableRefusal(error: unknown): unknown {
-  if (error instanceof GuildTableBaseRefused) {
-    return error.base === null
-      ? new StudioUnprocessableError(
-          "base_updated_at is required: the updated_at studio_get_collection returned",
-        )
+/** A table refusal as the error Studio reports it to the coach with; any other error is thrown as it is. */
+function tableRefusal(cause: unknown): StudioError {
+  if (cause instanceof GuildTableBaseRefused) {
+    return cause.base === null
+      ? new StudioUnprocessableError("base_updated_at is required: the updated_at studio_get_collection returned")
       : new StudioConflictError(
-          `base_updated_at ${error.base} is stale; ${error.tableName} was updated at ${error.updatedAt}. Read it again with studio_get_collection and rebuild the edit.`,
+          `base_updated_at ${cause.base} is stale; ${cause.tableName} was updated at ${cause.updatedAt}. Read it again with studio_get_collection and rebuild the edit.`,
         );
   }
-  if (error instanceof OrgTableChangeRefused) {
-    return new StudioUnprocessableError(
-      `${error.tableName} ${ORG_TABLE_LIMIT}${orgTableKept(error.refusal)}`,
-    );
+  if (cause instanceof OrgTableChangeRefused) {
+    return new StudioUnprocessableError(`${cause.tableName} ${ORG_TABLE_LIMIT}${orgTableKept(cause.refusal)}`);
   }
-  if (error instanceof ArtifactError) {
-    return error.status === 409
-      ? new StudioConflictError(error.message)
-      : new StudioUnprocessableError(error.message);
+  if (cause instanceof ArtifactError) {
+    return cause.status === 409 ? new StudioConflictError(cause.message) : new StudioUnprocessableError(cause.message);
   }
-  return error;
-}
-
-function hashOf(value: unknown): string {
-  return createHash("sha256").update(JSON.stringify(value), "utf8").digest("hex");
+  throw cause;
 }
 
 function plural(count: number, noun: string): string {
@@ -184,8 +175,11 @@ function outsideRow(entry: AccessEntry): string {
   return entry.type === "guild" ? `guild ${entry.name} ${entry.mode}` : `agent ${entry.name} (${entry.guild_name}) ${entry.mode}`;
 }
 
+/** A table's access list split: the rows that reach the source guild, and each row outside it as the operator reads it. */
+type SplitAccess = { access: GuildAccess; outside: string[] };
+
 /** A table's access list split into the rows that reach the source guild and the rest. */
-function sourceAccess(tc: TableContext, entries: AccessEntry[]): { access: GuildAccess; outside: string[] } {
+function sourceAccess(tc: TableContext, entries: AccessEntry[]): SplitAccess {
   const source = tc.scope.sourceGuildId;
   const live = new Set(tc.members.map((member) => member.id));
   const access: GuildAccess = { guild: null, org: null, agents: new Map() };
@@ -258,12 +252,12 @@ function agentRows(tc: TableContext, rows: NonNullable<TableAccessArguments["age
   });
 }
 
-function accessKey(access: GuildAccess): unknown {
+function accessKey(access: GuildAccess): JsonValue {
   return [access.guild, access.org, [...access.agents.entries()].sort(([a], [b]) => a.localeCompare(b))];
 }
 
 function tableHash(table: Table): string {
-  return hashOf([
+  return jsonHash([
     "table",
     table.id,
     table.name,
@@ -275,7 +269,7 @@ function tableHash(table: Table): string {
 }
 
 function shapeHash(shape: Shape): string {
-  return hashOf([
+  return jsonHash([
     shape.name,
     shape.purpose,
     shape.guildId,
@@ -441,7 +435,7 @@ function createReview(tc: TableContext, plan: GuildTableCreatePlan): TableReview
     action: "create",
     title: `Create table ${name}`,
     target: targetOf(null, name, guildId, plan.href),
-    baseHash: hashOf(["absent", name]),
+    baseHash: jsonHash(["absent", name]),
     proposedHash: shapeHash(shape),
     live: "",
     proposed: render(tc, shape),
@@ -479,7 +473,7 @@ function deleteReview(tc: TableContext, table: Table, step: CollectionStep): Tab
     title: `Delete table ${table.name}`,
     target: targetOf(table.id, table.name, table.guildId, table.displayPath),
     baseHash: tableHash(table),
-    proposedHash: hashOf(["delete", table.id]),
+    proposedHash: jsonHash(["delete", table.id]),
     live: render(tc, shapeOf(table)),
     proposed: "",
     effects: [
@@ -539,11 +533,48 @@ export async function applyTable(
   }
 }
 
+/** A table as studio_list_collections lists it: who owns it, what it holds, and the source guild's access to it. */
+export type StudioTableSummary = {
+  name: string;
+  display_path: string;
+  purpose: string;
+  owner: string;
+  records: number;
+  columns: string[];
+  guild_access: AccessMode | null;
+  studio_can: TableReach;
+};
+
+/** One source-guild agent's access to a table: its own row and the access it ends up with. */
+export type StudioTableAgentAccess = {
+  agent_id: string;
+  name: string;
+  own: AgentAccessMode | null;
+  effective: AccessMode | null;
+};
+
+/** A table as studio_get_collection reads it: its columns, the source guild's access, and its latest records as evidence. */
+export type StudioTable = {
+  name: string;
+  display_path: string;
+  purpose: string;
+  owner: string;
+  records: number;
+  updated_at: string;
+  studio_can: TableReach;
+  columns: CatalogColumn[];
+  access: {
+    org: GuildAccess["org"];
+    guild: GuildAccess["guild"];
+    own_table: boolean;
+    agents: StudioTableAgentAccess[];
+  };
+  outside: string[];
+  recent_records: string;
+};
+
 /** The tables Studio reaches: the source guild's own first, then the organisation's. */
-export async function listTables(
-  deps: EditDeps,
-  scope: EditScope,
-): Promise<Array<Record<string, unknown>>> {
+export async function listTables(deps: EditDeps, scope: EditScope): Promise<StudioTableSummary[]> {
   const actor = await tableActor(deps, scope);
   const tables = await guildTables(deps.artifacts, actor, scope.sourceGuildId);
   return tables
@@ -565,7 +596,7 @@ export async function readTable(
   deps: EditDeps,
   scope: EditScope,
   name: string,
-): Promise<Record<string, unknown>> {
+): Promise<StudioTable> {
   const tc = await tableContext(deps, scope);
   const table = await loadTable(tc, { name: name.trim() });
   if (!table) {

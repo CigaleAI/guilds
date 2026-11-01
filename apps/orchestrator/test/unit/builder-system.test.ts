@@ -174,7 +174,9 @@ test("builder system message shows only the coach settings, not the session's au
   const snapshot: CoachSessionConfig = {
     ...COACH,
     system_prompt_hash: "abc123",
-    tool_schemas: [{ type: "function", function: { name: "builder_write_recipe" } }],
+    tool_schemas: [
+      { type: "function", function: { name: "builder_write_recipe", description: "Write the recipe.", parameters: { type: "object" } } },
+    ],
   };
   const composed = composeBuilderSystemMessage(
     snapshot,

@@ -2,6 +2,7 @@
 // connections, one script's source, and a proposed change to its access.
 
 import { Type, type Static } from "@sinclair/typebox";
+import type { AgentScript } from "../scripts/catalog.js";
 import { ScriptError } from "../scripts/validation.js";
 import { NATIVE_TOOLS } from "../seed/catalog.js";
 import { studioTool } from "./arguments.js";
@@ -68,7 +69,7 @@ export const studioGetScript: StudioTool = studioTool({
   parameters: GetScriptArguments,
   async run(deps, call, input: GetScriptArguments) {
     const agent = await resolveHandle(deps, call, input.agent_id);
-    let script: Record<string, unknown>;
+    let script: AgentScript;
     try {
       script = await deps.preview.scripts.get(agent.id, input.name);
     } catch (error) {
@@ -77,7 +78,7 @@ export const studioGetScript: StudioTool = studioTool({
       }
       throw error;
     }
-    const sliced = sliceStudioBytes(String(script.source ?? ""), input.cursor);
+    const sliced = sliceStudioBytes(script.source, input.cursor);
     return {
       agent_id: agent.id,
       name: script.name,
@@ -88,7 +89,7 @@ export const studioGetScript: StudioTool = studioTool({
       editable: false,
       content: wrapEvidence({
         source: "script",
-        coordinates: { agent_id: agent.id, name: String(script.name), source_hash: String(script.source_hash ?? "") },
+        coordinates: { agent_id: agent.id, name: script.name, source_hash: script.source_hash },
         body: sliced.text,
       }),
       ...(sliced.next_cursor ? { next_cursor: sliced.next_cursor } : {}),

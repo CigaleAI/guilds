@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { resetBinding, writeBinding } from "../access/bindings.js";
 import {
   BindingError,
@@ -12,7 +11,7 @@ import { resolveMcpTool } from "../access/runtime.js";
 import { newId } from "../lib/ids.js";
 import { connectionTools } from "../mcp/service.js";
 import type { AccessSetting, EditAccessArguments } from "./edit-arguments.js";
-import type { AgentTarget } from "./edit-request.js";
+import { jsonHash, type AccessChange, type AgentTarget } from "./edit-request.js";
 import type { EditDeps, EditScope } from "./edits.js";
 import { editActor } from "./actor.js";
 import { StudioConflictError, StudioUnprocessableError } from "./errors.js";
@@ -35,7 +34,7 @@ export function isAccessTool(name: string): name is StudioAccessTool {
 
 type CatalogKind = BindingRow["catalog_kind"];
 
-type Change = { kind: CatalogKind; id: string; label: string; setting: AccessSetting };
+type Change = AccessChange;
 
 type ListedTool = { name: string; readOnly: boolean };
 
@@ -75,9 +74,6 @@ export type AccessReview = {
   widens: boolean;
 };
 
-function hashOf(value: unknown): string {
-  return createHash("sha256").update(JSON.stringify(value), "utf8").digest("hex");
-}
 
 async function loadSnapshot(deps: EditDeps, scope: EditScope, agentId: string): Promise<Snapshot> {
   const agent = await getAgent(deps.db, agentId);
@@ -313,8 +309,8 @@ export async function reviewAccess(deps: EditDeps, scope: EditScope, agentId: st
   return {
     title: `Change ${snapshot.agentName}'s access`,
     target: { agent_id: snapshot.agentId, agent_name: snapshot.agentName },
-    baseHash: hashOf(["access", live]),
-    proposedHash: hashOf(["access", proposed]),
+    baseHash: jsonHash(["access", live]),
+    proposedHash: jsonHash(["access", proposed]),
     live,
     proposed,
     effects: accessEffects(snapshot, after, changes),

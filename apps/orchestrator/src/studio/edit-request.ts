@@ -1,16 +1,22 @@
 // The request an edit tool returns instead of writing: the reason it gives, the content it may carry,
 // its line counts, and the widget the turn pauses on until the operator applies or declines it.
 
+import { createHash } from "node:crypto";
 import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { WRITE_MAX_BYTES } from "../artifacts/types.js";
+import type { JsonValue } from "../lib/json.js";
+import { CATALOG_KINDS } from "../access/index.js";
+import { studioChoice } from "./arguments.js";
+import { ACCESS_SETTINGS } from "./edit-arguments.js";
 import { StudioUnprocessableError } from "./errors.js";
 
 // An edit tool never writes. It returns this widget; the turn pauses until
 // the operator applies or declines the proposal from the Studio log.
 export const STUDIO_EDIT_WIDGET = "studio_edit_request";
 
-const Lines = Type.Object({ added: Type.Number(), removed: Type.Number() });
+/** The lines an edit adds and removes. */
+const LineCounts = Type.Object({ added: Type.Number(), removed: Type.Number() });
 
 const Action = Type.Union([Type.Literal("create"), Type.Literal("edit"), Type.Literal("delete")]);
 
@@ -49,12 +55,12 @@ const RoutineTarget = Type.Object({
   description: Type.String(),
 });
 
-/** One setting an access edit changes. */
+/** One overlay an access edit writes: a native tool, a connection, or one tool of a connection, and how it sets it. */
 const AccessChange = Type.Object({
-  kind: Type.String(),
+  kind: studioChoice(CATALOG_KINDS),
   id: Type.String(),
   label: Type.String(),
-  setting: Type.String(),
+  setting: studioChoice(ACCESS_SETTINGS),
 });
 
 // Every edit binds the live content by its hash and the proposal by its own,
@@ -62,7 +68,7 @@ const AccessChange = Type.Object({
 const Bound = {
   base_hash: Type.String(),
   proposed_hash: Type.String(),
-  lines: Lines,
+  lines: LineCounts,
 };
 
 const MemoryEdit = Type.Object({ kind: Type.Literal("memory"), target: AgentTarget, base_version: Type.Number(), ...Bound });
@@ -131,6 +137,8 @@ const StudioEditWidgetSchema = Type.Object({
   hint: Type.String(),
 });
 
+export type LineCounts = Static<typeof LineCounts>;
+export type AccessChange = Static<typeof AccessChange>;
 export type AgentTarget = Static<typeof AgentTarget>;
 export type NoteLifecycleTarget = Static<typeof NoteLifecycleTarget>;
 export type CollectionTarget = Static<typeof CollectionTarget>;
@@ -155,7 +163,13 @@ export function parseEditWidget(content: string): StudioEditWidget | null {
   return Value.Check(StudioEditWidgetSchema, parsed) ? parsed : null;
 }
 
-export function lineDelta(before: string, after: string): { added: number; removed: number } {
+/** The hash an edit binds a value by: of its JSON text. */
+export function jsonHash(value: JsonValue): string {
+  return createHash("sha256").update(JSON.stringify(value), "utf8").digest("hex");
+}
+
+/** The lines an edit adds and removes, each line counted as often as it occurs. */
+export function lineDelta(before: string, after: string): LineCounts {
   const count = (lines: string[]) => {
     const map = new Map<string, number>();
     for (const line of lines) map.set(line, (map.get(line) ?? 0) + 1);

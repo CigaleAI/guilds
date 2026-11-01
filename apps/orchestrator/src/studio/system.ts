@@ -19,6 +19,7 @@ import {
   wrapEvidence,
   wrapUntrustedText,
 } from "../conversation/trust.js";
+import type { CoachSettings } from "../builder/system.js";
 import type { StudioSourceGuild } from "../db/schema/index.js";
 import type { StudioDraftRow, StudioInventoryRow } from "../db/studio.js";
 import { STUDIO_OBJECTIVE_EXCERPT_BYTES, STUDIO_TASK_EXCERPT_WORDS } from "./constants.js";
@@ -124,8 +125,11 @@ export function renderStudioBaseHydration(base: StudioBaseHydration): string {
 /** The coach a Studio session runs: its mode and its configuration. */
 export type StudioCoach = {
   mode: string;
-  config: Record<string, unknown>;
+  config: CoachSettings;
 };
+
+/** A Studio session's system message, and the hash its session records it by. */
+export type StudioSystemMessage = { content: string; hash: string };
 
 /** The system message from its template, the coach, and the source guild when the session has one. */
 export function composeStudioSystemMessage(
@@ -133,7 +137,7 @@ export function composeStudioSystemMessage(
   coach: StudioCoach,
   base: StudioBaseHydration | null,
   now?: Date,
-): { content: string; hash: string } {
+): StudioSystemMessage {
   const clock = utcClock(now);
   const lines = [template.replace(/\s+$/, ""), "", "## Coach configuration", JSON.stringify(coach.config, null, 2)];
   if (base) {

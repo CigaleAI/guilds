@@ -503,7 +503,20 @@ one step by `seq` or tool-call id. A collection path is refused with
 ### Evidence references
 
 Evidence references bind to a committed Studio tool message
-(`tool_message_seq`). The model never supplies content hashes or
+(`tool_message_seq`). Each `kind` takes the coordinates the evidence
+of that tool result gives, and the tool message must contain them:
+
+| `kind` | Coordinates |
+| --- | --- |
+| `run_message` | `run_id`, `seq` |
+| `group_message` | `seq` |
+| `artifact` | `display_path`, `version` |
+| `task_revision` | `agent_id`, `version` |
+| `memory_revision` | `revision_id` |
+| `routine` | `schedule_id`, and the `instruction` its hash is of when given |
+
+A stored reference keeps its kind's coordinates and nothing else
+the model sent. The model never supplies content hashes or
 ownership. Unresolved individual refs become `evidence_warnings`. A
 draft with none has `verified_evidence: false`.
 
@@ -571,7 +584,8 @@ that takes a display path, and for focus pins.
 | `studio_get_agent_access` | What one member is offered at run start, projected from bindings, the secrets that reach it, and the stored MCP catalog: native tools and the ones withheld, scripts, secret names and descriptions, and each MCP connection with its offered and withheld tools, whether the server is enabled for that agent, and whether this session may read through it. No remote list and no credential decryption |
 
 Every Studio tool that takes arguments checks them against the
-parameters it declares before it does any work
+parameters it declares before it does any work, with the decode
+every native tool's arguments go through
 (`apps/orchestrator/src/studio/arguments.ts`):
 
 - An optional argument sent as `null` counts as left out.
@@ -581,10 +595,11 @@ parameters it declares before it does any work
   section of `studio_get_agent_context`, a column type, or an access
   setting or mode, is offered to the model as an enum and checked
   with the rest.
+- A call that leaves out a required argument is refused with its
+  name, such as `run_id is required`.
 - A call whose arguments do not match is refused with the first
   mismatch, named by its JSON pointer, such as
-  `/limit: Expected integer`,
-  `/run_id: Expected required property`, or
+  `/limit: Expected integer` or
   `/action: Expected string to match '^(?:create|edit|delete)$'`.
 
 The edit tools' parameters live in

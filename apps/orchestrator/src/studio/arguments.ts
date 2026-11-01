@@ -10,19 +10,30 @@ import {
   type TSchema,
   type TUnsafe,
 } from "@sinclair/typebox";
-import { assertMatches } from "../lib/decode.js";
-import { functionSchema } from "../toolbox/schema.js";
+import { keepMatching } from "../lib/decode.js";
+import type { JsonObject } from "../lib/json.js";
+import { ToolArgumentError } from "../toolbox/errors.js";
+import { toolFunctionSchema } from "../toolbox/schema.js";
+import { decodeToolArguments } from "../toolbox/types.js";
 import { StudioUnprocessableError } from "./errors.js";
 import type { StudioTool, StudioToolCall, StudioToolDeps } from "./tools.js";
 
-const AGENT_HANDLE_KEYS = ["agent_id", "agent", "agent_name"];
+/** The names a call may give its agent by, in the order the first non-blank one is taken. */
+const AgentHandles = Type.Object({
+  agent_id: Type.Optional(Type.String()),
+  agent: Type.Optional(Type.String()),
+  agent_name: Type.Optional(Type.String()),
+});
 
-/** The agent a Studio tool call names: the first non-blank of agent_id, agent, and agent_name. */
-function agentHandleOf(args: Record<string, unknown>): string {
+const AGENT_HANDLE_KEYS = ["agent_id", "agent", "agent_name"] as const;
+
+/** The agent a Studio tool call names: the first non-blank of agent_id, agent, and agent_name given as text. */
+function agentHandleOf(args: JsonObject): string {
+  const handles = keepMatching(AgentHandles, args) ?? {};
   for (const key of AGENT_HANDLE_KEYS) {
-    const value = args[key];
-    if (typeof value === "string" && value.trim()) {
-      return value.trim();
+    const handle = handles[key]?.trim();
+    if (handle) {
+      return handle;
     }
   }
   return "";
@@ -52,37 +63,25 @@ export function studioMap<T extends TSchema>(
   return Type.Unsafe<Record<string, Static<T>>>(Type.Object({}, { ...options, additionalProperties: value }));
 }
 
-/** The function schema the model is offered for the Studio tool `name`, which takes `parameters`. */
-export function studioFunctionSchema(
-  name: string,
-  description: string,
-  parameters: TObject,
-): Record<string, unknown> {
-  return functionSchema(name, description, parameters.properties, parameters.required ?? []);
-}
-
 /**
- * `args` as the type `parameters` describes. An optional argument sent as null is absent. For a
- * tool that takes agent_id, agent_id is the first non-blank of agent_id, agent, and agent_name
+ * `args` as the type `parameters` describes, decoded as every tool's arguments are. For a tool
+ * that takes agent_id, agent_id is the first non-blank of agent_id, agent, and agent_name
  * whenever the call gives one of them. Arguments that do not match throw a
- * StudioUnprocessableError naming the first mismatch by its JSON pointer.
+ * StudioUnprocessableError with the decode's message.
  */
-export function decodeStudioArguments<T extends TObject>(
-  parameters: T,
-  args: Record<string, unknown>,
-): Static<T> {
-  const required = new Set(parameters.required ?? []);
-  const given: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(args)) {
-    if (value !== null || required.has(key)) {
-      given[key] = value;
+export function decodeStudioArguments<T extends TObject>(parameters: T, args: JsonObject): JsonObject & Static<T> {
+  const given =
+    "agent_id" in parameters.properties && AGENT_HANDLE_KEYS.some((key) => key in args)
+      ? { ...args, agent_id: agentHandleOf(args) }
+      : args;
+  try {
+    return decodeToolArguments(parameters, given);
+  } catch (error) {
+    if (error instanceof ToolArgumentError) {
+      throw new StudioUnprocessableError(error.message);
     }
+    throw error;
   }
-  if ("agent_id" in parameters.properties && AGENT_HANDLE_KEYS.some((key) => key in args)) {
-    given.agent_id = agentHandleOf(args);
-  }
-  assertMatches(parameters, given, (problem) => new StudioUnprocessableError(problem));
-  return given;
 }
 
 /** A Studio tool as it is written: what the model is offered, and the work it does on a decoded call. */
@@ -90,7 +89,7 @@ export type StudioToolDefinition<T extends TObject> = {
   name: string;
   description: string;
   parameters: T;
-  run: (deps: StudioToolDeps, call: StudioToolCall, input: Static<T>) => Promise<Record<string, unknown>>;
+  run: (deps: StudioToolDeps, call: StudioToolCall, input: Static<T>) => Promise<JsonObject>;
 };
 
 /**
@@ -101,7 +100,7 @@ export function studioTool<T extends TObject>(definition: StudioToolDefinition<T
   const { name, description, parameters, run } = definition;
   return {
     name,
-    schema: studioFunctionSchema(name, description, parameters),
+    schema: toolFunctionSchema(name, description, parameters),
     handler: async (deps, call, args) => run(deps, call, decodeStudioArguments(parameters, args)),
   };
 }

@@ -610,7 +610,7 @@ test("studio reads agent access, script source, and granted connections", { time
     assert.equal(script.name, "tally");
     assert.match(script.content, /source="script"/);
     assert.match(script.content, /print\('tally'\)/);
-    await assert.rejects(studioGetScript.handler(toolDeps, await toolContext(), { agent_id: "a_access" }), /\/name: Expected required property/);
+    await assert.rejects(studioGetScript.handler(toolDeps, await toolContext(), { agent_id: "a_access" }), /name is required/);
 
     const blocked = (await studioCallConnectionTool.handler(toolDeps, await toolContext(), {
       connection_id: String(connection.id),
@@ -625,7 +625,7 @@ test("studio reads agent access, script source, and granted connections", { time
     );
     await assert.rejects(
       studioRequestConnectionAccess.handler(toolDeps, await toolContext(), { connection_id: String(connection.id) }),
-      /\/reason: Expected required property/,
+      /reason is required/,
     );
     const byAlias = (await studioGetAgentAccess.handler(toolDeps, await toolContext(), { agent: "curator" })) as { agent_id: string };
     assert.equal(byAlias.agent_id, "a_access");
@@ -1152,7 +1152,7 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
     assert.deepEqual(paused.routines, []);
     await assert.rejects(studioGetRun.handler(toolDeps, toolCtx(), { run_id: 5 }), /^StudioUnprocessableError: \/run_id: Expected string$/);
     await assert.rejects(studioListRoutines.handler(toolDeps, toolCtx(), { limit: "5" }), /\/limit: Expected integer/);
-    await assert.rejects(studioGetAgentContext.handler(toolDeps, toolCtx(), { sections: ["task"] }), /\/agent_id: Expected required property/);
+    await assert.rejects(studioGetAgentContext.handler(toolDeps, toolCtx(), { sections: ["task"] }), /agent_id is required/);
     await postUserGroupMessage(
       db,
       { guildId: "guild_ev", content: "Ship the digest on Monday.", taggedNames: [], taggedAgentIds: [], taggedUserIds: [], authorName: "operator", authorUserId: "user_operator" },
@@ -1178,7 +1178,7 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
     const firstChange = await studioListFileChanges.handler(toolDeps, toolCtx(), { display_path: memoryPath, limit: 1 });
     assert.equal((firstChange.changes as unknown[]).length, 1);
     await assert.rejects(studioFindArtifacts.handler(toolDeps, toolCtx(), { query: ["cite"] }), /\/query: Expected string/);
-    await assert.rejects(studioGetArtifact.handler(toolDeps, toolCtx(), {}), /\/display_path: Expected required property/);
+    await assert.rejects(studioGetArtifact.handler(toolDeps, toolCtx(), {}), /display_path is required/);
     const guidelines = await studioGetGuidelines.handler(toolDeps, toolCtx(), {});
     assert.equal(guidelines.editable, false);
     assert.match(String(guidelines.content), /source="guidelines"/);
@@ -1344,7 +1344,7 @@ test("studio proposes memory, note, and guild edits that the operator applies or
       studioEditMemory.handler(toolDeps, await ctx(), { agent_id: "curator", content: "x", base_version: String(memory?.version), reason: "r" }),
       /\/base_version: Expected integer/,
     );
-    await assert.rejects(studioEditGuild.handler(toolDeps, await ctx(), { about: "New about" }), /\/reason: Expected required property/);
+    await assert.rejects(studioEditGuild.handler(toolDeps, await ctx(), { about: "New about" }), /reason is required/);
     const memoryArgs = {
       agent_id: "curator",
       content: "- be brief\n- digest in notes/digest.md\n- nothing yet",

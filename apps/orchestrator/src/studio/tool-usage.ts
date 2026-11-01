@@ -6,7 +6,12 @@ import { StudioUnprocessableError } from "./errors.js";
 import { projectAgentAccess, type PreviewDeps } from "./preview.js";
 import type { ActivityWindow } from "./activity.js";
 import { listAgents, type AgentRow } from "../db/agents.js";
-import { listGuildToolCallStats, listGuildToolCalls, type GuildToolCallRow } from "../db/activity.js";
+import {
+  listGuildToolCallStats,
+  listGuildToolCalls,
+  type GuildToolCallRow,
+  type GuildToolCallStatRow,
+} from "../db/activity.js";
 import type { Queryable } from "../db/pg.js";
 
 // The guild's tools as Studio's Tools section lists them: what each agent is
@@ -57,8 +62,9 @@ export const TOOL_CALLS_PAGE = 50;
 // Enough of a call's arguments to recognise it; the run keeps them all.
 export const TOOL_ARGUMENT_CHARS = 240;
 
-const num = (value: unknown): number | null =>
-  value === null || value === undefined || value === "" || !Number.isFinite(Number(value)) ? null : Number(value);
+/** A numeric column the driver returns as text, as a number; null when it holds none. */
+const num = (value: string | null): number | null =>
+  value === null || value === "" || !Number.isFinite(Number(value)) ? null : Number(value);
 
 /** A native tool's group: the family its name starts with, such as `note` or `record`. */
 export function nativeGroup(name: string): string {
@@ -91,7 +97,7 @@ function nativeEntries(agent: Pick<AgentRow, "id" | "config">, access: AgentAcce
 
 function scriptEntries(agent: Pick<AgentRow, "id">, access: AgentAccess, scripting: boolean): ToolEntry[] {
   return access.scripts
-    .filter((script) => script.parameters !== null && script.parameters !== undefined)
+    .filter((script) => script.parameters !== undefined)
     .map((script) => ({
       name: String(script.name),
       source: "script",
@@ -126,29 +132,27 @@ export function agentToolEntries(agent: Pick<AgentRow, "id" | "config">, access:
   ];
 }
 
-type StatRow = Record<string, unknown>;
-
 type Totals = Pick<ToolRow, "calls" | "errors" | "median_ms" | "last_at">;
 
-function totalsOf(stat: StatRow | undefined): Totals {
+function totalsOf(stat: GuildToolCallStatRow | undefined): Totals {
   return {
-    calls: num(stat?.calls) ?? 0,
-    errors: num(stat?.errors) ?? 0,
-    median_ms: num(stat?.median_ms),
+    calls: stat?.calls ?? 0,
+    errors: stat?.errors ?? 0,
+    median_ms: stat?.median_ms ?? null,
     last_at: stat?.last_at ? iso(stat.last_at) : null,
   };
 }
 
 /** The agents a tool row covers: each offered it, then each that called it without the offer. */
-function agentUsages(entries: ToolEntry[], stats: StatRow[]): ToolAgentUsage[] {
+function agentUsages(entries: ToolEntry[], stats: GuildToolCallStatRow[]): ToolAgentUsage[] {
   const offered = new Set(entries.filter((entry) => entry.offered).map((entry) => entry.agentId));
-  const byAgent = new Map(stats.map((stat) => [String(stat.agent_id), stat]));
+  const byAgent = new Map(stats.flatMap((stat) => (stat.agent_id === null ? [] : [[stat.agent_id, stat] as const])));
   const ids = [...new Set([...offered, ...byAgent.keys()])].sort();
   return ids.map((id) => ({ agent_id: id, offered: offered.has(id), ...totalsOf(byAgent.get(id)) }));
 }
 
 /** One tool's row from its entries and its stats; a tool no entry lists is native when registered. */
-function toolRow(name: string, entries: ToolEntry[], stats: StatRow[]): ToolRow {
+function toolRow(name: string, entries: ToolEntry[], stats: GuildToolCallStatRow[]): ToolRow {
   const known = entries[0];
   const agents = agentUsages(entries, stats.filter((stat) => stat.agent_id !== null));
   return {
@@ -168,9 +172,9 @@ function toolRow(name: string, entries: ToolEntry[], stats: StatRow[]): ToolRow 
  * agent_id hold a tool's totals. A tool called but no longer offered keeps its row, offered to
  * no agent.
  */
-export function buildToolRows(entries: ToolEntry[], stats: StatRow[]): ToolRow[] {
+export function buildToolRows(entries: ToolEntry[], stats: GuildToolCallStatRow[]): ToolRow[] {
   const offered = entries.filter((entry) => entry.offered).map((entry) => entry.name);
-  const names = [...new Set([...offered, ...stats.map((stat) => String(stat.tool_name))])].sort();
+  const names = [...new Set([...offered, ...stats.map((stat) => stat.tool_name)])].sort();
   return names.map((name) =>
     toolRow(
       name,

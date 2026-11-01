@@ -381,9 +381,6 @@
   "src/conversation/trust.ts": {
     "anti-slop/no-known-value-widening": {
       "count": 5
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
     }
   },
   "src/credentials/visibility.ts": {
@@ -407,11 +404,6 @@
       "count": 1
     },
     "limits/erased-return-type": {
-      "count": 1
-    }
-  },
-  "src/db/schema/coaches.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
       "count": 1
     }
   },
@@ -1088,15 +1080,7 @@
       "count": 2
     }
   },
-  "src/studio/access-tools.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    }
-  },
   "src/studio/access.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
     "complexity": {
       "count": 1
     },
@@ -1105,40 +1089,12 @@
     }
   },
   "src/studio/activity.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 4
-    },
     "complexity": {
       "count": 2
-    }
-  },
-  "src/studio/arguments.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 5
-    },
-    "limits/erased-return-type": {
-      "count": 1
-    }
-  },
-  "src/studio/connection-tools.ts": {
-    "typescript/consistent-type-assertions": {
-      "count": 1
     }
   },
   "src/studio/connections.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
-    },
     "complexity": {
-      "count": 1
-    },
-    "limits/erased-return-type": {
       "count": 1
     },
     "limits/inline-parameter-type": {
@@ -1146,65 +1102,24 @@
     }
   },
   "src/studio/drafts.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 2
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 9
-    },
     "complexity": {
       "count": 1
-    },
-    "limits/erased-return-type": {
-      "count": 6
     },
     "max-params": {
       "count": 1
     }
   },
-  "src/studio/edit-request.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    }
-  },
   "src/studio/edits.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 2
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 4
-    },
     "complexity": {
       "count": 3
-    },
-    "limits/erased-return-type": {
-      "count": 1
     }
   },
   "src/studio/errors.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
     "limits/erased-return-type": {
       "count": 1
     }
   },
   "src/studio/focus.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 3
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 2
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
-    },
     "complexity": {
       "count": 4
     },
@@ -1212,56 +1127,16 @@
       "count": 2
     }
   },
-  "src/studio/guild-tools.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    }
-  },
   "src/studio/index.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 22
-    },
-    "complexity": {
-      "count": 1
-    },
-    "limits/erased-return-type": {
-      "count": 15
-    },
-    "typescript/consistent-type-assertions": {
-      "count": 1
-    }
-  },
-  "src/studio/inspector.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
     "anti-slop/no-unsafe-dictionary-type": {
       "count": 2
     },
     "complexity": {
       "count": 1
-    },
-    "limits/erased-alias": {
-      "count": 1
-    },
-    "limits/erased-return-type": {
-      "count": 1
     }
   },
-  "src/studio/memory-tools.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
+  "src/studio/inspector.ts": {
+    "complexity": {
       "count": 1
     }
   },
@@ -1273,55 +1148,19 @@
       "count": 1
     }
   },
-  "src/studio/paging.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 4
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
-    },
-    "limits/erased-return-type": {
-      "count": 1
-    }
-  },
   "src/studio/preview.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 3
-    },
     "typescript/explicit-module-boundary-types": {
       "count": 1
     }
   },
   "src/studio/prompt-tools.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 2
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 3
-    },
     "complexity": {
-      "count": 1
-    }
-  },
-  "src/studio/routines.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 2
-    }
-  },
-  "src/studio/run-tools.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    },
-    "limits/erased-return-type": {
       "count": 1
     }
   },
   "src/studio/runner.ts": {
     "anti-slop/no-unsafe-dictionary-type": {
-      "count": 3
+      "count": 2
     },
     "boundary/no-reexport-modules": {
       "count": 1
@@ -1335,30 +1174,7 @@
       "count": 1
     }
   },
-  "src/studio/state-list.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    },
-    "limits/erased-alias": {
-      "count": 1
-    }
-  },
   "src/studio/system.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    },
     "boundary/no-reexport-modules": {
       "count": 1
     },
@@ -1366,39 +1182,8 @@
       "count": 1
     }
   },
-  "src/studio/tables.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 3
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 2
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
-    },
-    "limits/erased-return-type": {
-      "count": 1
-    }
-  },
   "src/studio/tool-usage.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    },
     "complexity": {
-      "count": 1
-    },
-    "limits/erased-alias": {
-      "count": 1
-    }
-  },
-  "src/studio/tools.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 4
-    },
-    "limits/erased-return-type": {
       "count": 1
     }
   },

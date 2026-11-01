@@ -2,6 +2,8 @@
 // agent's task, memory, state, config, and effective prompt.
 
 import { Type, type Static } from "@sinclair/typebox";
+import type { AgentConfig } from "../db/schema/index.js";
+import type { JsonObject } from "../lib/json.js";
 import { agentTask } from "../artifacts/task.js";
 import { composeAgentSystemPrompt, hydrateStanding, promptHash, schemasOffer } from "../prompts/index.js";
 import { studioChoice, studioTool } from "./arguments.js";
@@ -12,7 +14,8 @@ import { resolveHandle } from "./source-guild.js";
 import { wrapEvidence } from "./system.js";
 import type { StudioTool } from "./tools.js";
 
-function fitStudioPayload(payload: Record<string, unknown>): Record<string, unknown> {
+/** `payload` within the byte cap: whole, less the sections that do not fit with a hint naming them, or truncated. */
+function fitStudioPayload(payload: JsonObject): JsonObject {
   if (Buffer.from(JSON.stringify(payload), "utf8").length <= STUDIO_TOTAL_RETURNED_BYTES) {
     return payload;
   }
@@ -67,6 +70,32 @@ const GetAgentContextArguments = Type.Object({
 });
 type GetAgentContextArguments = Static<typeof GetAgentContextArguments>;
 
+/** Who owns a prompt source: the guild's shared Guidelines, the operator's Task, the agent's Memory, or a projection. */
+type SourceOwnership = "shared" | "operator-owned" | "agent-owned" | "derived";
+
+/** A prompt source's text as evidence, a slice at a time: the cursor of the next slice, and whether text was left out. */
+type SlicedEvidence = { content: string; next_cursor?: string; truncated?: true };
+
+/** A prompt source as studio_get_agent_context reads it: whose it is and whether the coach may propose an edit. */
+type PromptSource = { ownership: SourceOwnership; editable: boolean };
+
+/** One section of the effective prompt: whose it is, and the version and hash of a section that has them. */
+type PromptSectionHeader = PromptSource & { section: string; version?: number; content_hash?: string };
+
+/** One agent's prompt sources as studio_get_agent_context reads them, each section only when it was asked for. */
+type AgentContext = {
+  agent_id: string;
+  name: string;
+  focus: string;
+  task?: PromptSource & SlicedEvidence & { display_path: string; version: number; content_hash: string; has_embeds: boolean };
+  memory?: PromptSource & SlicedEvidence & { version: number; content_hash: string };
+  state?: PromptSource & SlicedEvidence & { projected_at: string };
+  config?: AgentConfig;
+  effective_prompt?: PromptSource &
+    SlicedEvidence & { hash: string; task_hash: string; memory_hash: string; projected_at: string; embed_warning?: string };
+  effective_prompt_headers?: PromptSectionHeader[];
+};
+
 export const studioGetAgentContext: StudioTool = studioTool({
   name: "studio_get_agent_context",
   description:
@@ -81,7 +110,7 @@ export const studioGetAgentContext: StudioTool = studioTool({
     // state and effective_prompt read the same projection; take it once.
     let statePreview: ReturnType<typeof previewCurrentState> | null = null;
     const currentState = () => (statePreview ??= previewCurrentState(deps.preview, agent));
-    const result: Record<string, unknown> = {
+    const result: AgentContext = {
       agent_id: agent.id,
       name: agent.name,
       focus: agent.focus,
@@ -164,7 +193,7 @@ export const studioGetAgentContext: StudioTool = studioTool({
         { section: "guidelines", ownership: "shared", editable: false },
         { section: "task", ownership: "operator-owned", editable: true, version: task.version, content_hash: task.hash },
         { section: "state", ownership: "derived", editable: false },
-        { section: "memory", ownership: "agent-owned", editable: true, version: memory?.version },
+        { section: "memory", ownership: "agent-owned", editable: true, ...(memory ? { version: memory.version } : {}) },
       ];
     }
     return fitStudioPayload(result);

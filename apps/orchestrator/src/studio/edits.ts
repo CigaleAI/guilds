@@ -31,7 +31,7 @@ import { STUDIO_ROUTINE_TOOL, applyRoutine, reviewRoutine, type RoutineCall } fr
 import type { RoutineChange } from "../schedules/operator.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
 import { getGuild, type GuildRow } from "../db/guilds.js";
-import { isPlainRecord } from "../db/json.js";
+import { isJsonObject, type JsonObject } from "../lib/json.js";
 import type { Queryable } from "../db/pg.js";
 import { getConversationMessage, updateConversationMessage, type ConversationMessageRow } from "../db/conversations.js";
 import type { ConversationMessageMetadata, ToolCall } from "../db/schema/index.js";
@@ -49,7 +49,6 @@ export const STUDIO_EDIT_TOOLS = [
 ] as const;
 export type StudioEditTool = (typeof STUDIO_EDIT_TOOLS)[number];
 
-export type StudioEditKind = "memory" | "note" | "guild" | "collection" | "access" | "routine";
 export type StudioEditStatus = "pending" | "applied" | "declined";
 
 export type GuildText = { about: string; description: string };
@@ -192,8 +191,11 @@ function editHashes(fromHash: string, toHash: string): EditHashes {
   return { base_hash: fromHash, proposed_hash: toHash };
 }
 
+/** What a text edit asks for: the change, and the reason the coach gives for it. */
+type ReasonedEdit = { edit: StudioEdit; reason: string };
+
 /** What an edit of `base` to the proposal `args` asks for changes. */
-function bodyEdit(base: EditBase, args: TextEditArguments): { edit: StudioEdit; reason: string } {
+function bodyEdit(base: EditBase, args: TextEditArguments): ReasonedEdit {
   if (base.kind === "guild") {
     const proposed = proposedGuildText(base, args);
     const reason = requireReason(args.reason);
@@ -329,7 +331,7 @@ export type EditRecord = RecordedEdit & {
 };
 
 /** `edit` beside the recorded call `args` that proposed it, decoded as its tool decodes them. */
-function recordedEdit(edit: StudioEdit, args: Record<string, unknown>): RecordedEdit {
+function recordedEdit(edit: StudioEdit, args: JsonObject): RecordedEdit {
   switch (edit.kind) {
     case "memory":
       return { kind: edit.kind, edit, args: decodeStudioArguments(EditMemoryArguments, args) };
@@ -347,10 +349,10 @@ function recordedEdit(edit: StudioEdit, args: Record<string, unknown>): Recorded
 }
 
 /** A tool call's arguments as an object, or null when they are not one. */
-function parseArguments(text: string): Record<string, unknown> | null {
+function parseArguments(text: string): JsonObject | null {
   try {
     const parsed: unknown = JSON.parse(text);
-    return isPlainRecord(parsed) ? parsed : null;
+    return isJsonObject(parsed) ? parsed : null;
   } catch {
     return null;
   }
@@ -451,13 +453,31 @@ function reviewerOf(deps: EditDeps, scope: EditScope, recorded: RecordedEdit): (
   }
 }
 
+/**
+ * An edit request as the operator reviews it: what the widget asks for, the live target and the
+ * proposal in the same shape, what applying does, whether the live target moved on, and how the
+ * operator answered.
+ */
+export type StudioEditView = {
+  seq: number;
+  tool: StudioEditTool;
+  status: StudioEditStatus;
+  title: string;
+  reason: string;
+  edit: StudioEdit;
+  live: string | GuildText | null;
+  live_version: number | null;
+  proposed: string | GuildText | null;
+  effects?: string[];
+  stale: boolean;
+  error?: string;
+  resolved_at?: string | null;
+  applied_version?: number | null;
+};
+
 // What the operator reviews: the live content, the proposal, and whether the
 // live content still matches the base the proposal was built on.
-export async function viewEdit(
-  deps: EditDeps,
-  scope: EditScope,
-  record: EditRecord,
-): Promise<Record<string, unknown>> {
+export async function viewEdit(deps: EditDeps, scope: EditScope, record: EditRecord): Promise<StudioEditView> {
   const { edit } = record.widget;
   const status = editStatus(record);
   const reviewer = reviewerOf(deps, scope, record);
@@ -497,7 +517,7 @@ async function viewReviewedEdit(
   record: EditRecord,
   status: StudioEditStatus,
   review: () => Promise<ReviewedEdit>,
-): Promise<Record<string, unknown>> {
+): Promise<StudioEditView> {
   const { edit } = record.widget;
   let reviewed = null;
   let error: string | null = null;

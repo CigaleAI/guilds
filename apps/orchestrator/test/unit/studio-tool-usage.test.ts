@@ -9,13 +9,14 @@ import {
   viewToolCall,
   type ToolEntry,
 } from "../../src/studio/tool-usage.js";
+import type { ProjectedAccess } from "../../src/studio/preview.js";
 import { AGENT_CONFIG } from "../helpers/generation.js";
 
-const access = {
+const access: ProjectedAccess = {
   native_tools: ["note_get", "memory_write", "script_run"],
   scripts: [
     { name: "tally", description: "Counts rows", parameters: { type: "object" } },
-    { name: "notes_only", description: "No parameters", parameters: null },
+    { name: "notes_only", description: "No parameters" },
   ],
   secrets: [],
   connections: [
@@ -75,12 +76,12 @@ test("tool rows join what each agent is offered with its calls, keeping tools no
   const rows = buildToolRows(
     [entry("note_get", "a_1", true), entry("note_get", "a_2", true), entry("notion_create", "a_1", false, "connector")],
     [
-      { tool_name: "note_get", agent_id: null, calls: "3", errors: "1", median_ms: "200", last_at: new Date("2026-10-19T10:00:00Z") },
-      { tool_name: "note_get", agent_id: "a_1", calls: "3", errors: "1", median_ms: "200", last_at: new Date("2026-10-19T10:00:00Z") },
-      { tool_name: "report_issue", agent_id: null, calls: "1", errors: "0", median_ms: null, last_at: null },
-      { tool_name: "report_issue", agent_id: "a_3", calls: "1", errors: "0", median_ms: null, last_at: null },
-      { tool_name: "gone_tool", agent_id: null, calls: "2", errors: "2", median_ms: "5", last_at: null },
-      { tool_name: "gone_tool", agent_id: "a_1", calls: "2", errors: "2", median_ms: "5", last_at: null },
+      { tool_name: "note_get", agent_id: null, calls: 3, errors: 1, median_ms: 200, last_at: "2026-10-19T10:00:00.000Z" },
+      { tool_name: "note_get", agent_id: "a_1", calls: 3, errors: 1, median_ms: 200, last_at: "2026-10-19T10:00:00.000Z" },
+      { tool_name: "report_issue", agent_id: null, calls: 1, errors: 0, median_ms: null, last_at: null },
+      { tool_name: "report_issue", agent_id: "a_3", calls: 1, errors: 0, median_ms: null, last_at: null },
+      { tool_name: "gone_tool", agent_id: null, calls: 2, errors: 2, median_ms: 5, last_at: null },
+      { tool_name: "gone_tool", agent_id: "a_1", calls: 2, errors: 2, median_ms: 5, last_at: null },
     ],
   );
   assert.deepEqual(

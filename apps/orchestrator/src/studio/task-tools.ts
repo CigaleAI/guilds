@@ -4,6 +4,7 @@ import { Type, type Static } from "@sinclair/typebox";
 import { hashArtifactContent } from "../artifacts/store.js";
 import { listAgentTaskRevisions } from "../db/agents.js";
 import { capBytes } from "../lib/bytes.js";
+import { jsonArgument } from "../toolbox/schema.js";
 import { studioTool } from "./arguments.js";
 import { STUDIO_DEFAULT_LIMIT, STUDIO_REVISION_LIST_MAX, STUDIO_TOOL_RESULT_MAX_BYTES } from "./constants.js";
 import { AgentHistoryArguments, clampLimit, cursorOffset } from "./paging.js";
@@ -45,7 +46,14 @@ const CreateTaskDraftArguments = Type.Object({
       "Complete standing task in the Task shape: an opening line, then Inputs, Work, Outputs, and Files as headings with bullets. Shared files that must enter every run use ![[display-path]] from studio_find_artifacts / studio_get_artifact. A bare filename does not inline.",
   }),
   rationale: Type.String(),
-  evidence_refs: Type.Optional(Type.Array(Type.Unknown())),
+  evidence_refs: Type.Optional(
+    Type.Array(
+      jsonArgument({
+        type: "object",
+        description: "A cited tool result: kind, tool_message_seq, and the coordinates that tool result's evidence gives.",
+      }),
+    ),
+  ),
   risks: Type.Optional(Type.Array(Type.String())),
 });
 export type CreateTaskDraftArguments = Static<typeof CreateTaskDraftArguments>;
