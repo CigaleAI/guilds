@@ -1,15 +1,61 @@
+import { Type, type Static } from "@sinclair/typebox";
 import { defaultSearchServer, isSearchable, storageHint } from "../connectors/builder.js";
 import { getMcpServer, getMcpServerBySlug, listServers, type LoadedConnector } from "../connectors/servers.js";
 import { OPERATOR_CALLER, type McpPool } from "../mcp/pool.js";
 import { callTool } from "../mcp/service.js";
 import { listMcpConnections, listMcpTools, type McpConnectionRow, type McpToolRow } from "../db/mcp.js";
-import { isPlainRecord } from "../db/json.js";
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
+import { keepMatching } from "../lib/decode.js";
+import { isJsonValue, isObjectNode, type JsonValue } from "../lib/json.js";
+import { isText } from "../toolbox/schema.js";
 
 const SEARCH_REMOTES = ["search", "notion-search", "Search"];
 const MAX_HITS = 20;
 const MAX_SNIPPET = 240;
 const MAX_RAW = 4_000;
+
+/** The fields of a search tool's answer that hold its hits, in the order they are looked for. */
+const HIT_LISTS = ["results", "hits", "databases", "pages", "items"] as const;
+
+/** A text part of a search tool's answer, as an MCP content list holds it: its kind and its text. */
+const TextPart = Type.Object({ type: Type.Optional(Type.String()), text: Type.String() });
+
+/** A run of a Notion title property: its plain text, or the content of its text. */
+const TitleRun = Type.Object({
+  plain_text: Type.Optional(Type.String()),
+  text: Type.Optional(Type.Object({ content: Type.Optional(Type.String()) })),
+});
+
+/** A Notion title property: the runs of its text. */
+const TitleProperty = Type.Object({ title: Type.Array(TitleRun) });
+
+/**
+ * A page, database or record a workspace search names, as its connector writes it: the fields a
+ * hit is read from, each kept only when it is text (or, for `properties`, a Notion title property).
+ */
+const WorkspaceItem = Type.Object({
+  id: Type.Optional(Type.String()),
+  page_id: Type.Optional(Type.String()),
+  database_id: Type.Optional(Type.String()),
+  url: Type.Optional(Type.String()),
+  public_url: Type.Optional(Type.String()),
+  object: Type.Optional(Type.String()),
+  type: Type.Optional(Type.String()),
+  kind: Type.Optional(Type.String()),
+  resource: Type.Optional(Type.String()),
+  title: Type.Optional(Type.String()),
+  name: Type.Optional(Type.String()),
+  Name: Type.Optional(Type.String()),
+  snippet: Type.Optional(Type.String()),
+  highlight: Type.Optional(Type.String()),
+  text: Type.Optional(Type.String()),
+  description: Type.Optional(Type.String()),
+  caption: Type.Optional(Type.String()),
+  properties: Type.Optional(
+    Type.Object({ title: Type.Optional(TitleProperty), Name: Type.Optional(TitleProperty) }),
+  ),
+});
+type WorkspaceItem = Static<typeof WorkspaceItem>;
 
 /** The pool the Builder searches a connected workspace through. */
 export type BuilderMcpClient = Pick<McpPool, "call" | "database">;
@@ -107,14 +153,12 @@ export function pickSearchRemote(tools: Array<Pick<McpToolRow, "remote_name">>):
   return names.find((name) => /search/i.test(name)) || "search";
 }
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return isPlainRecord(value) ? value : null;
-}
-
-function firstString(...values: unknown[]): string {
+/** The first of `values` that holds more than whitespace, trimmed; empty when none does. */
+function firstString(...values: Array<string | undefined>): string {
   for (const value of values) {
-    if (typeof value === "string" && value.trim()) {
-      return value.trim();
+    const trimmed = value?.trim();
+    if (trimmed) {
+      return trimmed;
     }
   }
   return "";
@@ -127,7 +171,7 @@ function clip(text: string, max: number): string {
   return `${text.slice(0, max - 1)}…`;
 }
 
-function inferKind(item: Record<string, unknown>): WorkspaceHit["kind"] {
+function inferKind(item: WorkspaceItem): WorkspaceHit["kind"] {
   const token = firstString(item.object, item.type, item.kind, item.resource).toLowerCase();
   if (token.includes("database") || token === "data_source") {
     return "database";
@@ -142,30 +186,22 @@ function inferKind(item: Record<string, unknown>): WorkspaceHit["kind"] {
   return token ? "other" : "page";
 }
 
-function titleFromItem(item: Record<string, unknown>): string {
+function titleFromItem(item: WorkspaceItem): string {
   const direct = firstString(item.title, item.name, item.Name);
   if (direct) {
     return direct;
   }
-  const properties = asRecord(item.properties);
-  const titleProp = properties ? asRecord(properties.title) || asRecord(properties.Name) : null;
-  const titleArray = titleProp && Array.isArray(titleProp.title) ? titleProp.title : null;
-  if (titleArray) {
-    const parts = titleArray
-      .map((part) => {
-        const row = asRecord(part);
-        return row ? firstString(row.plain_text, row.text && asRecord(row.text)?.content) : "";
-      })
-      .filter(Boolean);
-    if (parts.length) {
-      return parts.join("");
-    }
+  const runs = (item.properties?.title ?? item.properties?.Name)?.title ?? [];
+  const title = runs.map((run) => firstString(run.plain_text, run.text?.content)).join("");
+  if (title) {
+    return title;
   }
   return firstString(item.id, item.page_id, item.database_id) || "Untitled";
 }
 
-export function hitFromUnknown(value: unknown): WorkspaceHit | null {
-  const item = asRecord(value);
+/** The hit a search tool's answer names in `value`; null when it is not an object or names no id or url. */
+export function hitOf(value: JsonValue): WorkspaceHit | null {
+  const item = isObjectNode(value) ? keepMatching(WorkspaceItem, value) : null;
   if (!item) {
     return null;
   }
@@ -182,8 +218,27 @@ export function hitFromUnknown(value: unknown): WorkspaceHit | null {
   };
 }
 
+/** The JSON `text` holds, or `text` itself when it is not JSON. */
+function jsonOrText(text: string): JsonValue {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return isJsonValue(parsed) ? parsed : text;
+  } catch {
+    return text;
+  }
+}
+
+/** The text of each of `parts` that is a text part holding more than whitespace; `kind` names the part type a part must state, when it must. */
+function partTexts(parts: JsonValue[], kind: string | null): string[] {
+  return parts.flatMap((item) => {
+    const part = isObjectNode(item) ? keepMatching(TextPart, item) : null;
+    const text = part && (kind === null || part.type === kind) ? part.text.trim() : "";
+    return text ? [text] : [];
+  });
+}
+
 /** What the text parts of a tool result carry: a single part's JSON (or its text), the parts joined, or `fallback` when there are none. */
-function payloadOfTexts(texts: string[], fallback: unknown): unknown {
+function payloadOfTexts(texts: string[], fallback: JsonValue): JsonValue {
   const [only, ...rest] = texts;
   if (only === undefined) {
     return fallback;
@@ -191,56 +246,36 @@ function payloadOfTexts(texts: string[], fallback: unknown): unknown {
   if (rest.length) {
     return texts.join("\n");
   }
-  try {
-    const parsed: unknown = JSON.parse(only);
-    return parsed;
-  } catch {
-    return only;
-  }
+  return jsonOrText(only);
 }
 
-function unwrapMcpPayload(raw: string): unknown {
+/** What a search tool answered in `raw`: the JSON its text parts carry, or the JSON or text `raw` holds. */
+function unwrapMcpPayload(raw: string): JsonValue {
   const trimmed = raw.trim();
   if (!trimmed) {
     return "";
   }
-  try {
-    const parsed: unknown = JSON.parse(trimmed);
-    if (Array.isArray(parsed)) {
-      const texts = parsed
-        .map((part) => {
-          const row = asRecord(part);
-          return row && row.type === "text" ? firstString(row.text) : "";
-        })
-        .filter(Boolean);
-      return payloadOfTexts(texts, parsed);
-    }
-    const record = asRecord(parsed);
-    if (record && Array.isArray(record.content)) {
-      const texts = record.content
-        .map((part) => {
-          const row = asRecord(part);
-          return row ? firstString(row.text) : "";
-        })
-        .filter(Boolean);
-      return payloadOfTexts(texts, parsed);
-    }
-    return parsed;
-  } catch {
-    return trimmed;
+  const parsed = jsonOrText(trimmed);
+  if (Array.isArray(parsed)) {
+    return payloadOfTexts(partTexts(parsed, "text"), parsed);
   }
+  const content = isObjectNode(parsed) ? parsed.content : undefined;
+  if (Array.isArray(content)) {
+    return payloadOfTexts(partTexts(content, null), parsed);
+  }
+  return parsed;
 }
 
-function collectCandidateArrays(value: unknown): unknown[] {
+/** The entries of the list `value` names its hits in: `value` itself when it is a list, else its first list of hits. */
+function candidateItems(value: JsonValue): JsonValue[] {
   if (Array.isArray(value)) {
     return value;
   }
-  const record = asRecord(value);
-  if (!record) {
+  if (!isObjectNode(value)) {
     return [];
   }
-  for (const key of ["results", "hits", "databases", "pages", "items"]) {
-    const candidates = record[key];
+  for (const key of HIT_LISTS) {
+    const candidates = value[key];
     if (Array.isArray(candidates)) {
       return candidates;
     }
@@ -255,8 +290,8 @@ export function parseWorkspaceHits(raw: string): WorkspaceHits {
   const payload = unwrapMcpPayload(raw);
   const hits: WorkspaceHit[] = [];
   const seen = new Set<string>();
-  for (const item of collectCandidateArrays(payload)) {
-    const hit = hitFromUnknown(item);
+  for (const item of candidateItems(payload)) {
+    const hit = hitOf(item);
     if (!hit || seen.has(hit.id)) {
       continue;
     }
@@ -269,7 +304,7 @@ export function parseWorkspaceHits(raw: string): WorkspaceHits {
   if (hits.length) {
     return { hits };
   }
-  const excerpt = typeof payload === "string" ? payload : raw;
+  const excerpt = isText(payload) ? payload : raw;
   return {
     hits: [],
     raw_excerpt: clip(excerpt, MAX_RAW),

@@ -9,6 +9,7 @@ import {
   updateConversationSession,
 } from "../db/conversations.js";
 import { isPlainRecord } from "../db/json.js";
+import { isJsonObject, type JsonObject } from "../lib/json.js";
 import type { Queryable } from "../db/pg.js";
 import type { MessagePayload, ToolCall, ToolMessage } from "../db/schema/index.js";
 import { incrementOrgUsage } from "../db/usage.js";
@@ -53,7 +54,7 @@ const EVENT_QUEUE_LIMIT = 4096;
 export type ConversationTool = {
   name: string;
   schema: Record<string, unknown>;
-  handler: (ctx: unknown, args: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  handler: (ctx: unknown, args: JsonObject) => Promise<Record<string, unknown>>;
 };
 
 export type ConversationProjectionBudget = ProjectionBudget;
@@ -656,13 +657,13 @@ export function truncatedToolArguments(finishReason: unknown, raw: unknown): boo
   return finishReason === "length" && !toolArgsAreJsonObject(raw);
 }
 
-export function parseToolArgs(raw: unknown): Record<string, unknown> {
+export function parseToolArgs(raw: unknown): JsonObject {
   if (!raw) return {};
-  if (isPlainRecord(raw)) return raw;
+  if (isJsonObject(raw)) return raw;
   if (typeof raw !== "string") return {};
   try {
     const parsed: unknown = JSON.parse(raw);
-    if (isPlainRecord(parsed)) {
+    if (isJsonObject(parsed)) {
       return parsed;
     }
   } catch {
@@ -671,8 +672,8 @@ export function parseToolArgs(raw: unknown): Record<string, unknown> {
   return recoverPartialToolArgs(raw);
 }
 
-export function recoverPartialToolArgs(raw: string): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
+export function recoverPartialToolArgs(raw: string): JsonObject {
+  const out: JsonObject = {};
   const handle = raw.match(/"(?:agent_id|agent_name)"\s*:\s*"((?:\\.|[^"\\])*)"/);
   if (handle?.[1]) {
     out.agent_id = decodeJsonStringBody(handle[1]) ?? handle[1];

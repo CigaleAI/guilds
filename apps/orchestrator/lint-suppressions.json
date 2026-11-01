@@ -83,60 +83,9 @@
       "count": 1
     }
   },
-  "src/builder/connected.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 2
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 4
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 3
-    }
-  },
   "src/builder/index.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 2
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 2
-    },
     "anti-slop/no-unsafe-dictionary-type": {
-      "count": 13
-    },
-    "limits/erased-return-type": {
-      "count": 8
-    }
-  },
-  "src/builder/tools.ts": {
-    "anti-slop/no-runtime-typeof": {
       "count": 2
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 12
-    },
-    "limits/erased-return-type": {
-      "count": 1
-    }
-  },
-  "src/builder/widgets.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 3
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
     }
   },
   "src/capabilities/index.ts": {
@@ -408,9 +357,6 @@
     }
   },
   "src/conversation/runner.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
     "anti-slop/no-runtime-typeof": {
       "count": 3
     },
@@ -418,10 +364,10 @@
       "count": 5
     },
     "anti-slop/no-unsafe-dictionary-type": {
-      "count": 16
+      "count": 12
     },
     "limits/erased-return-type": {
-      "count": 3
+      "count": 1
     }
   },
   "src/conversation/templates.ts": {
@@ -1114,9 +1060,6 @@
     }
   },
   "src/recipes/access-edits.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 2
-    },
     "limits/inline-parameter-type": {
       "count": 1
     }
@@ -1132,11 +1075,6 @@
   "src/recipes/checklist.ts": {
     "limits/inline-parameter-type": {
       "count": 2
-    }
-  },
-  "src/recipes/library.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
     }
   },
   "src/recipes/lifecycle.ts": {
@@ -1675,14 +1613,6 @@
   "src/toolbox/output.ts": {
     "anti-slop/no-runtime-typeof": {
       "count": 1
-    }
-  },
-  "src/toolbox/schema.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 3
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
     }
   },
   "src/toolbox/shell.ts": {

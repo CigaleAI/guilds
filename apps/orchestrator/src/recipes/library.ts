@@ -267,13 +267,12 @@ export async function changeRecipe(db: Queryable, row: RecipeRow, change: Recipe
   );
 }
 
-/** Parses `document` and writes it over the recipe at `version`, under the name and description it gives itself. */
-export async function writeRecipeDocument(db: Queryable, version: RecipeVersion, document: unknown): Promise<RecipeRow> {
-  const parsed = parseRecipe(document);
+/** Writes `document` over the recipe at `version`, under the name and description it gives itself. */
+export async function writeRecipeDocument(db: Queryable, version: RecipeVersion, document: RecipeDocument): Promise<RecipeRow> {
   return writeRecipe(
     db,
     version,
-    { body: parsed, name: parsed.meta.name, description: parsed.meta.description },
+    { body: document, name: document.meta.name, description: document.meta.description },
     new Date(),
   );
 }

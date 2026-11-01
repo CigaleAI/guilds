@@ -238,7 +238,7 @@ test("the CLI, the admin routes, recipe import, and apply preview read the regis
         recipeId: String(drafted.json().id),
         connection: db,
         apply,
-      });
+      }, {});
       assert.ok("findings" in coached);
       assert.ok(coached.findings.some((item) => item.code === "server.registry"));
       const validated = await app.inject({

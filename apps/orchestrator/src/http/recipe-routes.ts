@@ -1,6 +1,5 @@
 import { Type } from "@sinclair/typebox";
-import { parseAccessEdits } from "../recipes/access-edits.js";
-import { parseRecipe } from "../recipes/parse.js";
+import { parseAccessEdits, parseRecipe } from "../recipes/parse.js";
 import {
   captureRecipe,
   changeRecipe,

@@ -1,30 +1,32 @@
+import { Type, type Static, type TObject } from "@sinclair/typebox";
 import type { ConversationTool } from "../conversation/runner.js";
 import type { RecipeApply } from "../recipes/apply.js";
 import { parseRecipe } from "../recipes/parse.js";
+import { recommendedModelOf } from "../recipes/parse-roles.js";
 import { RECIPE_WRITE_HINT } from "./constants.js";
 import {
   searchConnectedWorkspace,
   type BuilderMcpClient,
   type ConnectedDatabase,
-  type ConnectedSearchResult,
 } from "./connected.js";
 import {
   buildAnyConnectWidget,
   buildOrgConnectWidget,
   buildQuestionWidget,
-  normalizeConnectScope,
-  type AnyConnectWidget,
-  type OrgConnectWidget,
-  type QuestionWidget,
-  type WidgetRefusal,
+  ConnectScopeInput,
+  QuestionCardInput,
 } from "./widgets.js";
-import { argInteger, argString, functionSchema } from "../toolbox/schema.js";
+import { jsonArgument, toolFunctionSchema } from "../toolbox/schema.js";
+import { decodeToolArguments } from "../toolbox/types.js";
+import { ToolArgumentError } from "../toolbox/errors.js";
 import type { CapabilityService } from "../capabilities/index.js";
 import type { RecipeDocument } from "../db/schema/index.js";
 import { RecipeConflictError, RecipeError } from "../recipes/errors.js";
 import type { Queryable } from "../db/pg.js";
 import { getRecipe, type RecipeRow } from "../db/recipes.js";
 import { validateLibraryRecipe, writeBuilderRecipe, type RecipeValidation } from "../recipes/library.js";
+import type { FunctionTool, ToolSchema } from "../lib/tool-schema.js";
+import type { JsonObject } from "../lib/json.js";
 
 export type BuilderCapabilityContext = {
   orgId: string;
@@ -42,7 +44,7 @@ export type BuilderToolContext = BuilderCapabilityContext & {
   coachModel?: string;
   /** The services the recipe is validated in its organisation with. */
   apply: RecipeApply;
-  onRecipeChanged?: (recipe: Record<string, unknown>) => Promise<void>;
+  onRecipeChanged?: (recipe: RecipeRow) => Promise<void>;
 };
 
 /** What a Builder tool returns when it refuses the call: why, and for a version conflict the version the recipe is at. */
@@ -54,61 +56,87 @@ export type BuilderWriteReceipt = { ok: true; body_version: number; name: string
 /** What the coach's validate tool returns: the findings and access cuts at the version validated. */
 export type BuilderValidation = Pick<RecipeValidation, "findings" | "access_cuts" | "body_version">;
 
-export const builderListCapabilities = {
+/**
+ * A Builder tool as it is written: its name, what it does, the TypeBox schema of its parameters,
+ * what the coach is told beside the first mismatch when a call does not match them, and the work
+ * it does on a call decoded against them.
+ */
+type BuilderToolDefinition<C, P extends TObject, R> = {
+  name: string;
+  description: string;
+  /** What the function schema says the tool does; `description` when it is the same. */
+  summary?: string;
+  parameters: P;
+  /** What the coach is told to do when a call's arguments do not match the parameters. */
+  mismatchHint?: string;
+  run: (ctx: C, input: Static<P>) => Promise<R>;
+};
+
+/**
+ * A Builder tool as the coach calls it: what it is offered, and the handler of the arguments it
+ * writes, which are decoded against the tool's parameters before any work, so a call that does
+ * not match them is refused with nothing done.
+ */
+export type BuilderTool<C, R> = {
+  name: string;
+  description: string;
+  schema: FunctionTool;
+  handler: (ctx: C, args: JsonObject) => Promise<R | BuilderToolRefusal>;
+};
+
+/** The tool `definition` describes: one declaration of its parameters is both the schema the coach is offered and the decode of its calls. */
+function builderTool<C, P extends TObject, R>(definition: BuilderToolDefinition<C, P, R>): BuilderTool<C, R> {
+  const { name, description, summary, parameters, mismatchHint, run } = definition;
+  return {
+    name,
+    description,
+    schema: toolFunctionSchema(name, summary ?? description, parameters),
+    handler: async (ctx, args) => {
+      let input: Static<P>;
+      try {
+        input = decodeToolArguments(parameters, args);
+      } catch (error) {
+        if (error instanceof ToolArgumentError) {
+          const hint = mismatchHint === undefined ? "" : ` ${mismatchHint}`;
+          return { error: `invalid ${name} arguments: ${error.message}.${hint}` };
+        }
+        throw error;
+      }
+      return run(ctx, input);
+    },
+  };
+}
+
+export const builderListCapabilities = builderTool({
   name: "builder_list_capabilities",
   description:
     "List native tools, the browser capability (operator take-control login at apply when a site has no connector), the coding capability (code tools and repositories), published catalog connectors, models, plan caps, remaining capacity, and reusable org/platform connections. Native group ids are tool groups, not recipe role keys. Call this before naming any system.",
-  schema: functionSchema(
-    "builder_list_capabilities",
-    "List native tools, the browser capability (operator take-control login at apply when a site has no connector), the coding capability (code tools and repositories), published catalog connectors, models, plan caps, remaining capacity, and reusable org/platform connections. Native group ids are tool groups, not recipe role keys. Call this before naming any system.",
-    {},
-    [],
-  ),
-  async handler(ctx: BuilderCapabilityContext): Promise<Record<string, unknown>> {
-    return ctx.capabilities.listCapabilities({ orgId: ctx.orgId });
-  },
-};
+  parameters: Type.Object({}),
+  run: (ctx: BuilderCapabilityContext) => ctx.capabilities.listCapabilities({ orgId: ctx.orgId }),
+});
 
-export const builderSearchCapabilities = {
+export const builderSearchCapabilities = builderTool({
   name: "builder_search_capabilities",
   description:
     "Search published connector descriptions and canonical tool names. Use when the operator names a system or action that is not obvious from builder_list_capabilities.",
-  schema: functionSchema(
-    "builder_search_capabilities",
-    "Search published connector descriptions and canonical tool names. Use when the operator names a system or action that is not obvious from builder_list_capabilities.",
-    {
-      query: { type: "string", description: "Search phrase, slug, or tool name." },
-    },
-    ["query"],
-  ),
-  async handler(ctx: BuilderCapabilityContext, args: Record<string, unknown>): Promise<Record<string, unknown>> {
-    return ctx.capabilities.searchCapabilities({ orgId: ctx.orgId }, argString(args, "query"));
-  },
-};
+  parameters: Type.Object({
+    query: Type.String({ description: "Search phrase, slug, or tool name." }),
+  }),
+  run: (ctx: BuilderCapabilityContext, input) => ctx.capabilities.searchCapabilities({ orgId: ctx.orgId }, input.query),
+});
 
-export const builderDescribeServer = {
+export const builderDescribeServer = builderTool({
   name: "builder_describe_server",
   description:
     "Return one published connector's complete catalog record, including canonical tools. server_ref is a slug or server id from list or search results.",
-  schema: functionSchema(
-    "builder_describe_server",
-    "Return one published connector's complete catalog record, including canonical tools. server_ref is a slug or server id from list or search results.",
-    {
-      server_ref: { type: "string", description: "Catalog slug or server id." },
-    },
-    ["server_ref"],
-  ),
-  async handler(ctx: BuilderCapabilityContext, args: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const record = await ctx.capabilities.describeServer(
-      { orgId: ctx.orgId },
-      argString(args, "server_ref"),
-    );
-    if (!record) {
-      return { error: "unknown or unpublished connector" };
-    }
-    return record;
+  parameters: Type.Object({
+    server_ref: Type.String({ description: "Catalog slug or server id." }),
+  }),
+  async run(ctx: BuilderCapabilityContext, input) {
+    const record = await ctx.capabilities.describeServer({ orgId: ctx.orgId }, input.server_ref);
+    return record ?? { error: "unknown or unpublished connector" };
   },
-};
+});
 
 export function builderWriteRejection(
   previous: RecipeDocument,
@@ -125,7 +153,7 @@ export function builderWriteRejection(
   return null;
 }
 
-const authorProperties = {
+const authorProperties: ToolSchema = {
   type: "object",
   properties: {
     by: { type: "string", enum: ["builder", "operator"] },
@@ -134,7 +162,7 @@ const authorProperties = {
   additionalProperties: false,
 };
 
-const recipeDocumentParameter = {
+const recipeDocumentParameter: ToolSchema = {
   type: "object",
   properties: {
     format: { type: "string" },
@@ -431,39 +459,23 @@ export function builderWriteToolResult(
 
 const BUILDER_WRITE_RECIPE_DESCRIPTION = `Replace the session's draft recipe with the complete document. Pass expected_body_version from the Session block. ${RECIPE_WRITE_HINT}`;
 
-export const builderWriteRecipe = {
+export const builderWriteRecipe = builderTool({
   name: "builder_write_recipe",
   description: BUILDER_WRITE_RECIPE_DESCRIPTION,
-  schema: functionSchema(
-    "builder_write_recipe",
-    BUILDER_WRITE_RECIPE_DESCRIPTION,
-    {
-      expected_body_version: { type: "integer", description: "The body_version last observed." },
-      recipe: recipeDocumentParameter,
-    },
-    ["expected_body_version", "recipe"],
-  ),
-  async handler(ctx: BuilderToolContext, args: Record<string, unknown>): Promise<BuilderWriteReceipt | BuilderToolRefusal> {
-    if (args.recipe == null || typeof args.recipe !== "object" || Array.isArray(args.recipe)) {
-      return {
-        error:
-          "incomplete builder_write_recipe arguments. The recipe object was missing or truncated; send complete JSON. Shrink task prose, not the roster. This is not a version conflict.",
-      };
-    }
-    const expected = argInteger(args, "expected_body_version", Number.NaN);
-    if (!Number.isInteger(expected)) {
-      return {
-        error:
-          "incomplete builder_write_recipe arguments. expected_body_version is required from the Session block. This is not a version conflict.",
-      };
-    }
+  parameters: Type.Object({
+    expected_body_version: Type.Integer({ description: "The body_version last observed." }),
+    recipe: jsonArgument(recipeDocumentParameter),
+  }),
+  mismatchHint:
+    "The recipe or expected_body_version was missing or truncated: send complete JSON with expected_body_version from the Session block. Shrink task prose, not the roster. This is not a version conflict.",
+  async run(ctx: BuilderToolContext, input): Promise<BuilderWriteReceipt | BuilderToolRefusal> {
     try {
       const row = await getRecipe(ctx.connection, ctx.recipeId);
       if (!row) {
         return { error: "recipe not found" };
       }
       const currentVersion = row.body_version;
-      if (expected !== currentVersion) {
+      if (input.expected_body_version !== currentVersion) {
         return {
           error: "recipe body_version conflict",
           code: "conflict",
@@ -471,33 +483,33 @@ export const builderWriteRecipe = {
         };
       }
       const previous = row.body;
-      const next = parseRecipe(args.recipe);
+      const next = parseRecipe(input.recipe);
       recommendCoachModel(next, ctx.coachModel ?? "");
       const rejected = builderWriteRejection(previous, next);
       if (rejected) {
         return { error: rejected };
       }
-      const written = await writeBuilderRecipe(ctx.connection, { id: ctx.recipeId, body_version: expected }, next, previous);
+      const written = await writeBuilderRecipe(
+        ctx.connection,
+        { id: ctx.recipeId, body_version: input.expected_body_version },
+        next,
+        previous,
+      );
       if (ctx.onRecipeChanged) {
         await ctx.onRecipeChanged(written);
       }
       return builderWriteToolResult(written, next);
     } catch (error) {
-      return recipeWriteRefusal(error);
+      if (error instanceof RecipeConflictError) {
+        return { error: error.message, code: "conflict", body_version: error.body_version };
+      }
+      if (error instanceof RecipeError) {
+        return { error: error.message };
+      }
+      throw error;
     }
   },
-};
-
-/** The refusal a recipe write's domain error becomes; any other error is rethrown. */
-function recipeWriteRefusal(error: unknown): BuilderToolRefusal {
-  if (error instanceof RecipeConflictError) {
-    return { error: error.message, code: "conflict", body_version: error.body_version };
-  }
-  if (error instanceof RecipeError) {
-    return { error: error.message };
-  }
-  throw error;
-}
+});
 
 /** A role the coach wrote without a model is recommended the coach's own. */
 export function recommendCoachModel(recipe: RecipeDocument, coachModel: string): void {
@@ -506,23 +518,18 @@ export function recommendCoachModel(recipe: RecipeDocument, coachModel: string):
     return;
   }
   for (const role of recipe.roles) {
-    if (typeof role.config.model !== "string" || !role.config.model.trim()) {
+    if (recommendedModelOf(role.config) === null) {
       role.config.model = model;
     }
   }
 }
 
-export const builderValidateRecipe = {
+export const builderValidateRecipe = builderTool({
   name: "builder_validate_recipe",
   description:
     "Run mechanical and design validation against the current draft recipe. Findings include operator-removed tools and connectors so you can update standing prompts or ask why they were removed.",
-  schema: functionSchema(
-    "builder_validate_recipe",
-    "Run mechanical and design validation against the current draft recipe. Findings include operator-removed tools and connectors so you can update standing prompts or ask why they were removed.",
-    {},
-    [],
-  ),
-  async handler(ctx: BuilderToolContext): Promise<BuilderValidation | BuilderToolRefusal> {
+  parameters: Type.Object({}),
+  async run(ctx: BuilderToolContext): Promise<BuilderValidation | BuilderToolRefusal> {
     const row = await getRecipe(ctx.connection, ctx.recipeId);
     if (!row) {
       return { error: "recipe not found" };
@@ -530,163 +537,88 @@ export const builderValidateRecipe = {
     const validation = await validateLibraryRecipe(ctx.apply, row);
     return { findings: validation.findings, access_cuts: validation.access_cuts, body_version: validation.body_version };
   },
-};
+});
 
-export const builderSearchConnected = {
+export const builderSearchConnected = builderTool({
   name: "builder_search_connected",
   description:
     "Search an organisation-connected workspace that the catalog marks searchable, such as its pages and databases. Use after that workspace is connected at org scope. Results are suggestions only — confirm with the operator before writing connections.resources. Do not treat an external workspace as the home for queues, seen-sets, or working files.",
-  schema: functionSchema(
-    "builder_search_connected",
+  summary:
     "Search an organisation-connected workspace that the catalog marks searchable. Use after that workspace is connected at org scope.",
-    {
-      query: {
-        type: "string",
-        description: "Search phrase, table name, or empty to list recent records.",
-      },
-      server_ref: {
-        type: "string",
-        description: "Catalog slug or server id. Defaults to the first searchable workspace.",
-      },
-    },
-    [],
-  ),
-  async handler(ctx: BuilderCapabilityContext, args: Record<string, unknown>): Promise<ConnectedSearchResult | BuilderToolRefusal> {
+  parameters: Type.Object({
+    query: Type.Optional(Type.String({ description: "Search phrase, table name, or empty to list recent records." })),
+    server_ref: Type.Optional(
+      Type.String({ description: "Catalog slug or server id. Defaults to the first searchable workspace." }),
+    ),
+  }),
+  async run(ctx: BuilderCapabilityContext, input) {
     if (!ctx.db) {
       return { error: "workspace search is unavailable" };
     }
     return searchConnectedWorkspace(
       { db: ctx.db, mcp: ctx.mcp ?? null },
       ctx.orgId,
-      argString(args, "server_ref"),
-      argString(args, "query"),
+      input.server_ref ?? "",
+      input.query ?? "",
     );
   },
-};
+});
 
-export const builderAskOrgConnection = {
+export const builderAskOrgConnection = builderTool({
   name: "builder_ask_org_connection",
   description:
     "Show a chat widget that asks the operator to connect one published connector to the organisation now. This pauses the turn until they connect or skip. Use this when a shared workspace should be searched during design. Do not keep writing the recipe in the same turn.",
-  schema: functionSchema(
-    "builder_ask_org_connection",
+  summary:
     "Show a chat widget that asks the operator to connect one published connector to the organisation now. This pauses the turn until they connect or skip.",
-    {
-      server_ref: {
-        type: "string",
-        description: "Catalog slug or server id from list or search results.",
-      },
-      reason: {
-        type: "string",
-        description: "Why this organisation login is needed, in one or two sentences.",
-      },
-    },
-    ["server_ref", "reason"],
-  ),
-  async handler(ctx: BuilderCapabilityContext, args: Record<string, unknown>): Promise<OrgConnectWidget | WidgetRefusal> {
+  parameters: Type.Object({
+    server_ref: Type.String({ description: "Catalog slug or server id from list or search results." }),
+    reason: Type.String({ description: "Why this organisation login is needed, in one or two sentences." }),
+  }),
+  async run(ctx: BuilderCapabilityContext, input) {
     if (!ctx.db) {
       return { error: "connection widgets are unavailable" };
     }
-    return buildOrgConnectWidget(ctx.db, ctx.orgId, argString(args, "server_ref"), argString(args, "reason"));
+    return buildOrgConnectWidget(ctx.db, ctx.orgId, input.server_ref, input.reason);
   },
-};
+});
 
-export const builderAskConnection = {
+export const builderAskConnection = builderTool({
   name: "builder_ask_connection",
   description:
     "Show a chat widget that lets the operator connect any published connector at the appropriate scope. This pauses the turn until they connect, confirm, or skip. Organisation logins can happen now. Guild and agent logins are confirmed here and created at apply. Use when the account owner is not the organisation, or the operator should pick the service. Do not keep writing the recipe in the same turn.",
-  schema: functionSchema(
-    "builder_ask_connection",
+  summary:
     "Show a chat widget that lets the operator connect any published connector at org, guild, or agent scope. This pauses the turn until they connect, confirm, or skip.",
-    {
-      reason: {
-        type: "string",
-        description: "Why this login is needed, in one or two sentences.",
-      },
-      server_ref: {
-        type: "string",
-        description: "Optional catalog slug or server id. Omit to let the operator pick.",
-      },
-      recommended_scope: {
-        type: "string",
-        enum: ["org", "guild", "agent"],
-        description:
-          "Best owner for this login. Org can connect now; guild and agent wait for apply.",
-      },
-      allow_scope_change: {
-        type: "boolean",
-        description: "When true, the operator may pick org, guild, or agent. Defaults to true.",
-      },
-    },
-    ["reason"],
-  ),
-  async handler(ctx: BuilderCapabilityContext, args: Record<string, unknown>): Promise<AnyConnectWidget | WidgetRefusal> {
+  parameters: Type.Object({
+    reason: Type.String({ description: "Why this login is needed, in one or two sentences." }),
+    server_ref: Type.Optional(
+      Type.String({ description: "Optional catalog slug or server id. Omit to let the operator pick." }),
+    ),
+    recommended_scope: Type.Optional(ConnectScopeInput),
+    allow_scope_change: Type.Optional(
+      Type.Boolean({ description: "When true, the operator may pick org, guild, or agent. Defaults to true." }),
+    ),
+  }),
+  async run(ctx: BuilderCapabilityContext, input) {
     if (!ctx.db) {
       return { error: "connection widgets are unavailable" };
     }
     return buildAnyConnectWidget(ctx.db, ctx.orgId, {
-      serverRef: argString(args, "server_ref") || undefined,
-      recommendedScope: normalizeConnectScope(argString(args, "recommended_scope", "org"), "org"),
-      allowScopeChange: args.allow_scope_change === false ? false : true,
-      reason: argString(args, "reason"),
+      serverRef: input.server_ref || undefined,
+      recommendedScope: input.recommended_scope ?? "org",
+      allowScopeChange: input.allow_scope_change ?? true,
+      reason: input.reason,
     });
   },
-};
+});
 
-export const builderAskQuestion = {
+export const builderAskQuestion = builderTool({
   name: "builder_ask_question",
   description:
     "Show a Claude-style question card and pause this turn until the operator answers. Use this for facts the runtime cannot know: cadence, matching rules, destination tables, login owner, or an open design choice. Prefer two to four concrete options. Do not keep writing the recipe in the same turn.",
-  schema: functionSchema(
-    "builder_ask_question",
-    "Show a question card and pause until the operator picks an option or types an answer.",
-    {
-      questions: {
-        type: "array",
-        description: "One to four questions. Each pauses the same turn until submitted.",
-        items: {
-          type: "object",
-          properties: {
-            header: { type: "string", description: "Short label, a few words." },
-            question: { type: "string", description: "The question to answer." },
-            options: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  label: { type: "string" },
-                  description: { type: "string" },
-                },
-              },
-            },
-            allow_other: { type: "boolean", description: "Show an Other field. Defaults to true." },
-            multi_select: {
-              type: "boolean",
-              description: "Allow more than one option. Defaults to false.",
-            },
-          },
-          required: ["question"],
-        },
-      },
-      question: {
-        type: "string",
-        description: "Shorthand for a single question when questions[] is omitted.",
-      },
-      header: { type: "string" },
-      options: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: { label: { type: "string" }, description: { type: "string" } },
-        },
-      },
-    },
-    [],
-  ),
-  async handler(_ctx: BuilderCapabilityContext, args: Record<string, unknown>): Promise<QuestionWidget | WidgetRefusal> {
-    return buildQuestionWidget(args);
-  },
-};
+  summary: "Show a question card and pause until the operator picks an option or types an answer.",
+  parameters: QuestionCardInput,
+  run: async (_ctx: BuilderCapabilityContext, input) => buildQuestionWidget(input),
+});
 
 export const BUILDER_CAPABILITY_TOOLS = [
   builderListCapabilities,
@@ -718,6 +650,6 @@ export function builderConversationTools(context: BuilderToolContext): Map<strin
   );
 }
 
-export function builderToolSchemas(): Array<Record<string, unknown>> {
+export function builderToolSchemas(): FunctionTool[] {
   return BUILDER_SESSION_TOOLS.map((tool) => tool.schema);
 }
