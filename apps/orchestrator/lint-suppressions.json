@@ -1094,49 +1094,12 @@
       "count": 3
     }
   },
-  "src/http/cookies.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 2
-    }
-  },
   "src/http/error-handler.ts": {
     "limits/silent-catch": {
       "count": 1
     }
   },
-  "src/http/file-routes.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    }
-  },
-  "src/http/identity.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    }
-  },
-  "src/http/issue-routes.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    }
-  },
-  "src/http/params.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 2
-    }
-  },
   "src/http/sandbox-proxy.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 3
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
     "limits/silent-catch": {
       "count": 1
     },

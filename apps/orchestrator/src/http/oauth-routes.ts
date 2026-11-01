@@ -15,7 +15,7 @@ import {
   GITHUB_OAUTH_STATE_COOKIE,
   githubOauthStateCookie,
 } from "../github/index.js";
-import { cookieSecure, requestCookies } from "./cookies.js";
+import { cookieSecure, requestCookie } from "./cookies.js";
 import type { AppDeps, RouteApp } from "./deps.js";
 import { currentUser, signedInUserOrNull } from "./identity.js";
 
@@ -98,7 +98,7 @@ export async function registerOAuthRoutes(app: RouteApp, deps: AppDeps): Promise
       const callback = {
         code: query.code || undefined,
         state: query.state || undefined,
-        cookieState: requestCookies(request)[GITHUB_OAUTH_STATE_COOKIE] || undefined,
+        cookieState: requestCookie(request, GITHUB_OAUTH_STATE_COOKIE) || undefined,
         error: query.error || undefined,
         errorDescription: query.error_description || undefined,
         installationId: query.installation_id || undefined,

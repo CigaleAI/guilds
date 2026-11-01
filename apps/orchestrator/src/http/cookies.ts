@@ -5,24 +5,18 @@ export type RequestWithHeaders = {
   headers: IncomingHttpHeaders;
 };
 
-/** The request's cookies by name, values decoded. */
-export function requestCookies(request: RequestWithHeaders): Record<string, string> {
+/** The request's cookie `name`, decoded; the last one when it is sent more than once. */
+export function requestCookie(request: RequestWithHeaders, name: string): string | undefined {
   const raw = request.headers.cookie;
   const header = Array.isArray(raw) ? raw.join("; ") : raw;
-  const out: Record<string, string> = {};
-  if (!header) {
-    return out;
-  }
-  for (const part of header.split(";")) {
+  let value: string | undefined;
+  for (const part of (header ?? "").split(";")) {
     const index = part.indexOf("=");
-    if (index === -1) {
-      continue;
+    if (index !== -1 && part.slice(0, index).trim() === name) {
+      value = decodeURIComponent(part.slice(index + 1).trim());
     }
-    const key = part.slice(0, index).trim();
-    const value = part.slice(index + 1).trim();
-    out[key] = decodeURIComponent(value);
   }
-  return out;
+  return value;
 }
 
 /** Whether cookies this server sets carry `Secure`: it is reached over HTTPS. */

@@ -1,8 +1,9 @@
 import { ORG_COOKIE, ORG_HEADER, OrgIdentityError } from "../organisations/index.js";
 import { USER_COOKIE, USER_HEADER, UserIdentityError } from "../users/index.js";
 import type { AppDeps } from "./deps.js";
-import { requestCookies, type RequestWithHeaders } from "./cookies.js";
+import { requestCookie, type RequestWithHeaders } from "./cookies.js";
 import { HttpError } from "./errors.js";
+import type { JsonObject } from "../lib/json.js";
 import type { OrgMembershipRow } from "../db/orgs.js";
 import type { Queryable } from "../db/pg.js";
 import type { UserRow } from "../db/users.js";
@@ -22,15 +23,15 @@ export type IdentityProvider = {
   /** Runs as each response is sent, for a provider that renews a credential. */
   onSend?(request: IdentityRequest, reply: IdentityReply): void;
   /** What its sign-in page needs to know, answered with the mode at `GET /api/auth/config`. */
-  describe?(): Record<string, unknown>;
+  describe?(): JsonObject;
 };
 
 function headerOrCookie(request: IdentityRequest, headerName: string, cookieName: string): string | null {
   const header = request.headers[headerName.toLowerCase()];
-  if (typeof header === "string" && header) {
+  if (header && !Array.isArray(header)) {
     return header;
   }
-  return requestCookies(request)[cookieName] ?? null;
+  return requestCookie(request, cookieName) ?? null;
 }
 
 export async function currentUser(
@@ -50,11 +51,7 @@ export async function currentUser(
     throw new HttpError(401, "not signed in");
   }
   const token = headerOrCookie(request, USER_HEADER, USER_COOKIE);
-  try {
-    return await resolveTokenUser(db, token);
-  } catch (error) {
-    throw identityHttp(error);
-  }
+  return identified(resolveTokenUser(db, token));
 }
 
 /**
@@ -82,11 +79,7 @@ export async function currentOrg(
   user: UserRow,
 ): Promise<OrgMembershipRow> {
   const token = headerOrCookie(request, ORG_HEADER, ORG_COOKIE);
-  try {
-    return await resolveTokenOrg(db, user.id, token);
-  } catch (error) {
-    throw identityHttp(error);
-  }
+  return identified(resolveTokenOrg(db, user.id, token));
 }
 
 async function trustedHeaderUser(
@@ -104,19 +97,21 @@ async function trustedHeaderUser(
   if (!email) {
     throw new HttpError(401, "missing trusted email");
   }
-  try {
-    return await resolveEmailUser(db, email);
-  } catch (error) {
-    throw identityHttp(error);
-  }
+  return identified(resolveEmailUser(db, email));
 }
 
-function identityHttp(error: unknown): HttpError {
-  if (error instanceof HttpError) {
-    return error;
+/** A refusal of the user or organisation a request names, with the status it answers. */
+type IdentityError = UserIdentityError | OrgIdentityError;
+
+function isIdentityError(error: unknown): error is IdentityError {
+  return error instanceof UserIdentityError || error instanceof OrgIdentityError;
+}
+
+/** Awaits the user or organisation a request names, answering a refusal of it as an `HttpError`. */
+async function identified<T>(resolution: Promise<T>): Promise<T> {
+  try {
+    return await resolution;
+  } catch (error) {
+    throw isIdentityError(error) ? new HttpError(error.status, error.detail) : error;
   }
-  if (error instanceof UserIdentityError || error instanceof OrgIdentityError) {
-    return new HttpError(error.status, error.detail);
-  }
-  throw error;
 }

@@ -45,8 +45,12 @@ function filesOf(deps: AppDeps): ArtifactFiles {
 /** A file as an upload carries it: its name, description, and media type, and its bytes. */
 type FileUpload = { name: string; description: string; mime: string; bytes: Buffer };
 
+/** An upload route's request: the headers its schema reads, and the body as Fastify parsed it. */
+type UploadRequest = Pick<FastifyRequest, "body"> & { headers: UploadHeaders };
+
 /** The uploaded file: its name, description, and media type from the headers, its bytes the body. */
-function fileUpload(headers: UploadHeaders, body: unknown): FileUpload {
+function fileUpload(request: UploadRequest): FileUpload {
+  const { headers, body } = request;
   if (!Buffer.isBuffer(body)) {
     throw new HttpError(422, "body must be the file bytes");
   }
@@ -129,7 +133,7 @@ export async function registerFileRoutes(app: RouteApp, deps: AppDeps): Promise<
     { ...upload, schema: { params: AgentParams, headers: UploadHeadersSchema } },
     async (request, reply) => {
       const scope = await agentFiles(deps, request, request.params.agent_id);
-      return uploadFile(deps, reply, scope, fileUpload(request.headers, request.body));
+      return uploadFile(deps, reply, scope, fileUpload(request));
     },
   );
 
@@ -141,7 +145,7 @@ export async function registerFileRoutes(app: RouteApp, deps: AppDeps): Promise<
     { ...upload, schema: { params: GuildParams, headers: UploadHeadersSchema } },
     async (request, reply) => {
       const scope = await guildFiles(deps, request, request.params.guild_id);
-      return uploadFile(deps, reply, scope, fileUpload(request.headers, request.body));
+      return uploadFile(deps, reply, scope, fileUpload(request));
     },
   );
 
@@ -151,7 +155,7 @@ export async function registerFileRoutes(app: RouteApp, deps: AppDeps): Promise<
     { ...upload, schema: { headers: UploadHeadersSchema } },
     async (request, reply) => {
       const scope = await orgFiles(deps, request);
-      return uploadFile(deps, reply, scope, fileUpload(request.headers, request.body));
+      return uploadFile(deps, reply, scope, fileUpload(request));
     },
   );
 
