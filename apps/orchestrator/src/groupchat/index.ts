@@ -12,6 +12,7 @@ import {
   interruptTargets,
   withActiveCursors,
   type ActiveDelivery,
+  type DeliveryStart,
   type GroupDelivery,
   type GroupRunner,
   type PendingAgent,
@@ -593,11 +594,7 @@ export class GroupChat {
     pending: PendingAgent[],
     snapshot: number,
     runner: GroupRunner,
-  ): Promise<{
-    start: PendingAgent[];
-    waitsForRelease: boolean;
-    pick: RecipientPick;
-  }> {
+  ): Promise<DeliveryStart<PendingAgent> & { pick: RecipientPick }> {
     const pick = await this._recipients(guildId, pending, snapshot);
     const actionable = pending.filter((agent) => pick.decision.names.has(agent.name));
     for (const agent of pending) {

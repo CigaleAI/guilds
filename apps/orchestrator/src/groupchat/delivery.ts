@@ -63,6 +63,9 @@ export function withActiveCursors<T extends PendingAgent>(
     .filter((agent) => agent.group_chat_delivered_through < snapshot);
 }
 
+/** The picked agents that start a run now, and whether one of them waits for a lock to come free. */
+export type DeliveryStart<T> = { start: T[]; waitsForRelease: boolean };
+
 /**
  * Which picked agents start a run now. A tagged agent starts as soon as it is free, alongside
  * other group runs. An agent picked without a tag runs alone: it starts only when no other group
@@ -73,7 +76,7 @@ export function deliveriesToStart<T extends Pick<PendingAgent, "id" | "name">>(a
   tagged: ReadonlySet<string>;
   active: ReadonlyMap<string, ActiveDelivery>;
   isBusy: (agentId: string) => boolean;
-}): { start: T[]; waitsForRelease: boolean } {
+}): DeliveryStart<T> {
   const waiting = args.actionable.filter((agent) => !args.active.has(agent.id));
   const idle = waiting.filter((agent) => !args.isBusy(agent.id));
   const start = idle.filter((agent) => args.tagged.has(agent.name));

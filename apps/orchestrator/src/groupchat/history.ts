@@ -1,26 +1,27 @@
-import { jsonObj } from "../db/json.js";
+import type { GroupMessageRow } from "../db/group-chat.js";
 
 export const CONTEXT_HISTORY_LIMIT = 10;
 export const HISTORY_CANDIDATE_LIMIT = 40;
 
-export function storedTags(row: Record<string, unknown>): string[] {
-  const tagged = jsonObj(row.tagged_names);
-  if (!Array.isArray(tagged)) {
-    return [];
-  }
-  return tagged.filter((item): item is string => typeof item === "string");
+/** A public message as a run's history reads it: who wrote it, its text, and the names it tags. */
+export type HistoryMessage = Pick<GroupMessageRow, "author_type" | "author_name" | "content" | "tagged_names">;
+
+/** A public message in a run's history: who sent it, its text, and the names it tags. */
+export type GroupHistoryItem = { sentBy: string; content: string; tagged: string[] };
+
+/** A history item with the seq its message sits at. */
+export type GroupHistoryStateItem = GroupHistoryItem & { seq: number };
+
+/** The names a public message tags, as it stores them. */
+export function storedTags(row: Pick<GroupMessageRow, "tagged_names">): string[] {
+  return row.tagged_names;
 }
 
-function historyItem(row: Record<string, unknown>): {
-  sentBy: string;
-  content: unknown;
-  tagged: string[];
-} {
-  const sentBy = String(row.author_name || (row.author_type === "user" ? "user" : "agent"));
+function historyItem(row: HistoryMessage): GroupHistoryItem {
   return {
-    sentBy,
+    sentBy: row.author_name || row.author_type,
     content: row.content,
-    tagged: storedTags(row),
+    tagged: row.tagged_names,
   };
 }
 
@@ -31,22 +32,17 @@ export function recentGroupRows<R>(rows: R[], limit = CONTEXT_HISTORY_LIMIT): R[
   return rows.slice(-limit);
 }
 
-export function historyStateItem(row: Record<string, unknown>): {
-  seq: number;
-  sentBy: string;
-  content: unknown;
-  tagged: string[];
-} {
+export function historyStateItem(row: HistoryMessage & Pick<GroupMessageRow, "seq">): GroupHistoryStateItem {
   return {
-    seq: Number(row.seq),
+    seq: row.seq,
     ...historyItem(row),
   };
 }
 
 export function groupChatHistory(
-  rows: Array<Record<string, unknown>>,
+  rows: HistoryMessage[],
   options: { limit?: number | null } = {},
-): Array<{ sentBy: string; content: unknown; tagged: string[] }> {
+): GroupHistoryItem[] {
   const items = rows.map(historyItem);
   const limit = options.limit;
   if (limit === undefined || limit === null) {

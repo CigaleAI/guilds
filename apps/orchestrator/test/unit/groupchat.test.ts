@@ -899,8 +899,8 @@ describe("groupchat", { concurrency: 1 }, () => {
 
   test("history_names_the_person_who_posted", () => {
     const history = groupChatHistory([
-      { seq: 1, author_type: "user", author_name: "ada", content: "hi", tagged_names: [] },
-      { seq: 2, author_type: "agent", author_name: "writer", content: "@ada done", tagged_names: ["ada"] },
+      { author_type: "user", author_name: "ada", content: "hi", tagged_names: [] },
+      { author_type: "agent", author_name: "writer", content: "@ada done", tagged_names: ["ada"] },
     ]);
     assert.deepEqual(history, [
       { sentBy: "ada", content: "hi", tagged: [] },

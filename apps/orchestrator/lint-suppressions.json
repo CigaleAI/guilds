@@ -385,20 +385,11 @@
     }
   },
   "src/groupchat/delivery.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
     "limits/inline-parameter-type": {
       "count": 1
     }
   },
   "src/groupchat/history.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 2
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 4
-    },
     "limits/inline-parameter-type": {
       "count": 1
     }
@@ -420,28 +411,7 @@
       "count": 1
     }
   },
-  "src/groupchat/operator.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    },
-    "limits/erased-return-type": {
-      "count": 1
-    }
-  },
-  "src/groupchat/recipients.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
-    }
-  },
-  "src/groupchat/tags.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 3
-    }
-  },
   "src/groupchat/wake.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 5
-    },
     "limits/inline-parameter-type": {
       "count": 1
     }

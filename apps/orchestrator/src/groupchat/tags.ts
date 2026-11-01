@@ -1,4 +1,4 @@
-import { jsonObj } from "../db/json.js";
+import type { GuildAgentRow } from "../db/agents.js";
 import type { GuildOperatorRow } from "../db/guilds.js";
 
 export const USER_TAG = "user";
@@ -18,13 +18,16 @@ export function parseTags(content: string, names: Set<string>): string[] {
   return tagged;
 }
 
+/** A guild member as a tag names it: its name, and the id the tag selects. */
+export type TagMember = Pick<GuildAgentRow, "id" | "name">;
+
 export function taggableNames(
-  members: Array<Record<string, unknown>>,
+  members: Array<Pick<TagMember, "name">>,
   operators: GuildOperatorRow[] = [],
 ): Set<string> {
   const names = new Set<string>();
   for (const member of members) {
-    names.add(String(member.name));
+    names.add(member.name);
   }
   for (const operator of operators) {
     names.add(operator.name);
@@ -41,13 +44,13 @@ export type GroupTags = { names: string[]; agentIds: string[]; userIds: string[]
  */
 export function recognizedTags(
   content: string,
-  members: Array<Record<string, unknown>>,
+  members: TagMember[],
   operators: GuildOperatorRow[] = [],
 ): GroupTags {
   const names = parseTags(content, taggableNames(members, operators));
   const agentIdsByName = new Map<string, string>();
   for (const member of members) {
-    agentIdsByName.set(String(member.name), String(member.id));
+    agentIdsByName.set(member.name, member.id);
   }
   const agentIds: string[] = [];
   const userIds = new Set<string>();
@@ -63,12 +66,4 @@ export function recognizedTags(
     }
   }
   return { names, agentIds, userIds: [...userIds] };
-}
-
-export function storedTagAgentIds(row: Record<string, unknown>): string[] {
-  const tagged = jsonObj(row.tagged_agent_ids);
-  if (!Array.isArray(tagged)) {
-    return [];
-  }
-  return tagged.filter((item): item is string => typeof item === "string");
 }
