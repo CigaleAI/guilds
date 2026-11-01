@@ -4,11 +4,10 @@ import { connect, connectDatabase, validateConnectSettings } from "./connect-tok
 import { getMcpServer, type LoadedConnector } from "../connectors/servers.js";
 import { connectionMetadata, type ConnectionView } from "./view.js";
 import { validateOwner, type OwnerScope } from "../credentials/validate.js";
-import { isPlainRecord } from "../db/json.js";
 import { connectMcp, getMcpConnectionForOwner } from "../db/mcp.js";
 import { githubAppConfig, userAuthorizationUrl } from "../github/index.js";
 import { newId } from "../lib/ids.js";
-import type { JsonObject } from "../lib/json.js";
+import { isJsonObject, type JsonObject } from "../lib/json.js";
 import { relistTools } from "./pool.js";
 import { assertActsFor, ConnectionError, ownerOrgId, serverVisible } from "./visibility.js";
 import {
@@ -71,7 +70,7 @@ async function requireConnectable(
 /** The settings a login's form gives, none when it gives none; settings that are not an object are a 422. */
 function formSettings(form: Payload): Payload | undefined {
   const settings = form.settings;
-  if (settings !== undefined && !isPlainRecord(settings)) {
+  if (settings !== undefined && !isJsonObject(settings)) {
     throw new ConnectionError(422, "settings must be an object");
   }
   return settings;

@@ -4,7 +4,7 @@ import { TEST_MODEL } from "../helpers/models.js";
 import { CONFIG_KEYS } from "../../src/agents/config.js";
 import { validateAgentConfig } from "../../src/agents/validation.js";
 import { loadAccessViewThrough } from "../../src/access/view.js";
-import { isPlainRecord } from "../../src/db/json.js";
+import { isJsonObject } from "../../src/lib/json.js";
 import { captureGuild,
   portableRoleConfig,
   preferRecipeScope,
@@ -69,7 +69,7 @@ const DEFAULT_ACCESS: Record<string, AccessRow[]> = {
 
 /** An agent's config as the box stores it: every setting, with the fixture's own over the defaults. */
 function storedConfig(config: unknown): Record<string, unknown> {
-  return { ...validateAgentConfig({ model: TEST_MODEL }), ...(isPlainRecord(config) ? config : {}) };
+  return { ...validateAgentConfig({ model: TEST_MODEL }), ...(isJsonObject(config) ? config : {}) };
 }
 
 function captureDeps(options: {

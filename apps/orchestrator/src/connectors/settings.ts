@@ -1,4 +1,3 @@
-import { isPlainRecord } from "../db/json.js";
 import type { ConnectionSettings } from "../db/schema/index.js";
 import { isJsonObject } from "../lib/json.js";
 
@@ -20,7 +19,7 @@ export class SettingsError extends Error {
 type Schema = Record<string, unknown>;
 
 function schemaOf(value: unknown): Schema {
-  return isPlainRecord(value) ? value : {};
+  return isJsonObject(value) ? value : {};
 }
 
 function typeMatches(type: unknown, value: unknown): boolean {
@@ -97,7 +96,7 @@ function check(schema: Schema, value: unknown, path: string): void {
   if (Array.isArray(value)) {
     checkArray(schema, value, path);
   }
-  if (isPlainRecord(value)) {
+  if (isJsonObject(value)) {
     checkObject(schema, value, path);
   }
 }
