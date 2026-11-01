@@ -862,17 +862,11 @@
     }
   },
   "src/run.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 2
-    },
     "limits/inline-parameter-type": {
       "count": 1
     }
   },
   "src/schedules/describe.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 2
-    },
     "complexity": {
       "count": 1
     }
@@ -907,15 +901,7 @@
     }
   },
   "src/seed/system.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
     "limits/silent-catch": {
-      "count": 1
-    }
-  },
-  "src/seed/test.ts": {
-    "anti-slop/no-unknown-parameters": {
       "count": 1
     }
   },
