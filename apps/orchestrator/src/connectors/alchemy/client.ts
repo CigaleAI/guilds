@@ -1,6 +1,6 @@
 import { Type, type Static, type TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
-import { decode } from "../../lib/decode.js";
+import { assertMatches } from "../../lib/decode.js";
 import { proxyFetch, withQuery, type FetchFn } from "../../net/http.js";
 import { LIST_DEFAULT, argStr, clipRows, fmtNum, joinParts, rowLimit } from "../format.js";
 import type { ApiGet } from "../types.js";
@@ -279,7 +279,9 @@ async function getJson<T extends TSchema>(
   const fetchFn = options.client ?? proxyFetch(options.proxyUrl ?? "");
   const url = withQuery(`${NFT_HOST.replace("{network}", request.network)}/${key}${request.path}`, request.params);
   const response = await fetchFn(url, { method: "GET", headers: { Accept: "application/json" } });
-  return decode(request.schema, await parsedBody(response), unexpected);
+  const body = await parsedBody(response);
+  assertMatches(request.schema, body, unexpected);
+  return body;
 }
 
 /** The result of the DAS `method` called with `params`, as `schema` describes it. */
@@ -298,13 +300,16 @@ async function das<T extends TSchema>(
     headers: { Accept: "application/json", "Content-Type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: request.method, params: request.params }),
   });
-  const payload = decode(RpcEnvelope, await parsedBody(response), unexpected);
+  const payload = await parsedBody(response);
+  assertMatches(RpcEnvelope, payload, unexpected);
   const error = payload.error;
   if (error) {
     const message = Value.Check(RpcError, error) ? error.message || "Alchemy RPC error" : error;
     throw new AlchemyError(String(message));
   }
-  return decode(request.schema, payload.result, unexpected);
+  const { result } = payload;
+  assertMatches(request.schema, result, unexpected);
+  return result;
 }
 
 /** The DAS params of a holdings page: by owner, or within one collection. */

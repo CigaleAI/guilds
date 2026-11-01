@@ -3,7 +3,7 @@ import path from "node:path";
 import { type Static, Type } from "@sinclair/typebox";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import type pg from "pg";
-import { decode } from "../lib/decode.js";
+import { assertMatches } from "../lib/decode.js";
 
 /**
  * Core's committed migrations, and the checks around applying them. The migrator applies a
@@ -53,8 +53,9 @@ type MigrationJournal = Static<typeof MigrationJournal>;
 /** The folder's journal; one that does not match throws. */
 function readJournal(folder: string): MigrationJournal {
   const file = path.join(folder, "meta", "_journal.json");
-  const journal = JSON.parse(readFileSync(file, "utf8"));
-  return decode(MigrationJournal, journal, (problem) => new Error(`${file}: ${problem}`));
+  const journal: unknown = JSON.parse(readFileSync(file, "utf8"));
+  assertMatches(MigrationJournal, journal, (problem) => new Error(`${file}: ${problem}`));
+  return journal;
 }
 
 /** The tag of each entry of the folder's journal, in order. */

@@ -1,6 +1,6 @@
 import { Type, type Static, type TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
-import { decode } from "../../lib/decode.js";
+import { assertMatches } from "../../lib/decode.js";
 import { proxyFetch, withQuery, type FetchFn } from "../../net/http.js";
 import {
   LIST_DEFAULT,
@@ -297,7 +297,8 @@ async function getJson<T extends TSchema>(
   } catch {
     throw new DexPaprikaError("DexPaprika returned a non-JSON body");
   }
-  return decode(request.schema, payload, unexpected);
+  assertMatches(request.schema, payload, unexpected);
+  return payload;
 }
 
 function requireNetwork(arguments_: Record<string, unknown>): string {

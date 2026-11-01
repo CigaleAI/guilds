@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { Static, TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { AgentFileError, readAgentFile } from "../../lib/agent-file.js";
-import { decode } from "../../lib/decode.js";
+import { assertMatches } from "../../lib/decode.js";
 import { proxyFetch, type FetchFn } from "../../net/http.js";
 import { argStr, clipRows, fmtNum, joinParts } from "../format.js";
 import {
@@ -227,7 +227,9 @@ async function qontoRequest<T extends TSchema>(
     const detail = await errorDetail(last);
     throw new QontoError(messageForStatus(last.status, detail, request.path), last.status);
   }
-  return decode(request.schema, await jsonBody(last), unexpected);
+  const body = await jsonBody(last);
+  assertMatches(request.schema, body, unexpected);
+  return body;
 }
 
 function attachmentIds(row: Transaction): string[] {

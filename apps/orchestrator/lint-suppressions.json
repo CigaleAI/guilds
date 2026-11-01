@@ -1228,14 +1228,6 @@
       "count": 3
     }
   },
-  "src/lib/decode.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
-    }
-  },
   "src/lib/event.ts": {
     "limits/bare-error": {
       "count": 1
@@ -2476,7 +2468,7 @@
       "count": 5
     },
     "anti-slop/no-unsafe-dictionary-type": {
-      "count": 10
+      "count": 7
     },
     "max-params": {
       "count": 1

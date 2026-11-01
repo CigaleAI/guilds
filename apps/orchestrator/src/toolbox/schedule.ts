@@ -1,6 +1,6 @@
 import type { Static, TSchema } from "@sinclair/typebox";
 import { type ChangeActor, runActor } from "../lib/change-actor.js";
-import { decode } from "../lib/decode.js";
+import { assertMatches } from "../lib/decode.js";
 import { ScheduleError } from "../schedules/cron.js";
 import { RoutineChangeInput, RoutineTimingInput, WakeWindowInput } from "../schedules/input.js";
 import { formatScheduleStamp, timingText } from "../schedules/item.js";
@@ -38,7 +38,8 @@ function routineActor(run: ToolRun, call: ToolInvocation): ChangeActor {
 
 /** The arguments `values` name as `schema` describes them; a mismatch is a ScheduleError naming it. */
 function routineArguments<T extends TSchema>(schema: T, values: unknown): Static<T> {
-  return decode(schema, values, (problem) => new ScheduleError(problem));
+  assertMatches(schema, values, (problem) => new ScheduleError(problem));
+  return values;
 }
 
 async function publish(services: ToolServices, run: ToolRun, action: string, scheduleId: string): Promise<void> {

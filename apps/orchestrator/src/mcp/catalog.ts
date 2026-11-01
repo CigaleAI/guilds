@@ -13,7 +13,7 @@ import {
 } from "../connectors/servers.js";
 import { isPlainRecord, jsonObj } from "../db/json.js";
 import { SLUG_PATTERN, ToolInputSchema, type Manifest, type Overrides, type ToolOverride } from "../db/schema/index.js";
-import { decode } from "../lib/decode.js";
+import { assertMatches } from "../lib/decode.js";
 import { newId } from "../lib/ids.js";
 import { generateToolPrefix, isReservedSlug, isReservedToolPrefix } from "../mcp/policy.js";
 import { assertPublicHttpsUrl, EndpointError } from "../net/endpoints.js";
@@ -184,11 +184,11 @@ export function validateEndpointUrl(raw: unknown): string {
 }
 
 export function validateInputSchema(raw: unknown): ToolInputSchema {
-  const obj = jsonObj(raw);
-  if (!isPlainRecord(obj)) {
+  const schema = jsonObj(raw);
+  if (!isPlainRecord(schema)) {
     throw new CatalogError("input_schema must be an object");
   }
-  const schema = decode(ToolInputSchema, obj, (problem) => new CatalogError(`input_schema ${problem}`));
+  assertMatches(ToolInputSchema, schema, (problem) => new CatalogError(`input_schema ${problem}`));
   const encoded = JSON.stringify(schema);
   if (Buffer.byteLength(encoded, "utf8") > SCHEMA_MAX_BYTES) {
     throw new CatalogError("input_schema exceeds size limit");

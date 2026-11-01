@@ -1,5 +1,5 @@
 import { Value } from "@sinclair/typebox/value";
-import { decode } from "../../lib/decode.js";
+import { assertMatches } from "../../lib/decode.js";
 import type { FetchFn } from "../../net/http.js";
 import { ErrorBody, ErrorDetail, SearchResponse } from "./responses.js";
 
@@ -88,5 +88,6 @@ export async function search(query: string, options: SearchOptions): Promise<str
   } catch {
     throw new TavilyError("Tavily returned a non-JSON body");
   }
-  return formatSearch(decode(SearchResponse, payload, unexpected));
+  assertMatches(SearchResponse, payload, unexpected);
+  return formatSearch(payload);
 }

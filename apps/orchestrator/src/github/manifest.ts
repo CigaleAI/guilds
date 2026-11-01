@@ -1,4 +1,4 @@
-import { decode } from "../lib/decode.js";
+import { assertMatches } from "../lib/decode.js";
 import { proxyFetch, readJson } from "../net/http.js";
 import { GITHUB_API, GithubError, githubApiError, unexpectedGithubReply, type GithubServices } from "./index.js";
 import { ManifestConversionReply } from "./responses.js";
@@ -207,7 +207,8 @@ export async function convertManifestCode(
   if (response.status !== 201) {
     throw await githubApiError(response, "GitHub App creation failed");
   }
-  const body = decode(ManifestConversionReply, await readJson(response), unexpectedGithubReply);
+  const body = await readJson(response);
+  assertMatches(ManifestConversionReply, body, unexpectedGithubReply);
   return {
     app_id: credentialField(body.id, "id"),
     slug: credentialField(body.slug, "slug"),

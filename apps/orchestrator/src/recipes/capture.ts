@@ -9,7 +9,7 @@ import {
   type RecipeRole,
   type RecipeSecret,
 } from "../db/schema/index.js";
-import { decode } from "../lib/decode.js";
+import { assertMatches } from "../lib/decode.js";
 import { newId } from "../lib/ids.js";
 import { collectTaskEmbeds } from "../artifacts/embeds.js";
 import { guildTables } from "../artifacts/guild-tables.js";
@@ -370,13 +370,13 @@ async function captureSecrets(capture: Capture, agent: GuildAgentRow): Promise<v
 
 /** An agent as a role, with the connections and secrets it reaches. */
 async function captureAgent(capture: Capture, agent: GuildAgentRow): Promise<void> {
-  const view = await capture.deps.db.loadAccessView({
+  const access = await capture.deps.db.loadAccessView({
     orgId: capture.orgId,
     guildId: capture.guildId,
     agentId: agent.id,
     viewScope: "agent",
   });
-  const access = decode(AgentAccess, view, uncapturable);
+  assertMatches(AgentAccess, access, uncapturable);
   capture.recipe.roles.push(await captureRole(capture, agent, access));
   await captureConnections(capture, access.mcp ?? [], agent.name);
   await captureSecrets(capture, agent);
