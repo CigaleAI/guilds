@@ -3,7 +3,7 @@ import type { CollectionColumn } from "./artifacts.js";
 import type { AccessMode } from "./artifacts.js";
 import type { WakeWindow } from "./agents.js";
 import type { ConnectionResource } from "./coaches.js";
-import type { Manifest } from "./connectors.js";
+import type { Manifest, ToolInputSchema } from "./connectors.js";
 
 // The `guilds.recipe` document `recipes.body` holds: its schema, and the types of the document
 // the box reads it into, with who wrote each reviewable field.
@@ -90,7 +90,7 @@ export type RecipeRole = {
 export type RecipeScript = {
   name: string;
   description: string;
-  parameters: Record<string, unknown> | null;
+  parameters: ToolInputSchema | null;
   source: string;
   secrets: string[];
   author: FieldAuthor;

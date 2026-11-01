@@ -27,9 +27,9 @@ import { nextConversationSeq } from "../db/conversations.js";
 import type { Queryable } from "../db/pg.js";
 import { getStudioDraft, insertStudioDraft, listStudioDraftHeads, lockStudioDraft, updateStudioDraft, type StudioDraftRow, type StudioSessionRow } from "../db/studio.js";
 import { listConversationMessages, type ConversationMessageRow } from "../db/conversations.js";
-import { isPlainRecord } from "../db/json.js";
 import { EVIDENCE_REF_KINDS, type EvidenceRef, type EvidenceRefKind, type EvidenceWarning } from "../db/schema/index.js";
 import type { UserRow } from "../db/users.js";
+import { isJsonObject } from "../lib/json.js";
 
 export type StudioDraftService = {
   createFromTool(
@@ -391,7 +391,7 @@ function isEvidenceRefKind(value: string): value is EvidenceRefKind {
 type CheckedRef = { ref: EvidenceRef } | { warning: EvidenceWarning };
 
 function resolveEvidenceRef(item: unknown, bySeq: Map<number, ConversationMessageRow>): CheckedRef {
-  if (!isPlainRecord(item)) {
+  if (!isJsonObject(item)) {
     return { warning: { reason: "invalid_reference" } };
   }
   const kind = String(item.kind ?? item.type ?? "");

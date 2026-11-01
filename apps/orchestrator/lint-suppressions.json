@@ -776,12 +776,12 @@
   },
   "src/db/schema/agents.ts": {
     "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
+      "count": 1
     }
   },
   "src/db/schema/coaches.ts": {
     "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
+      "count": 1
     }
   },
   "src/db/schema/columns.ts": {
@@ -794,14 +794,9 @@
       "count": 2
     }
   },
-  "src/db/schema/messages.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    }
-  },
   "src/db/schema/recipe-document.ts": {
     "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
+      "count": 1
     }
   },
   "src/db/views.ts": {

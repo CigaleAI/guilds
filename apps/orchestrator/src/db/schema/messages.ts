@@ -1,4 +1,5 @@
 /** The message a run or a coach conversation keeps, and the metadata stored beside it. */
+import type { JsonObject } from "../../lib/json.js";
 import type { Harness, RunTaskSource } from "./agents.js";
 
 /** A tool call as the model makes it, in the Chat Completions shape. */
@@ -38,7 +39,7 @@ export type TokenUsage = {
 export type CostSource = "provider" | "catalog" | "unavailable";
 
 /** A provider's reasoning block as it streams it: its fields are the provider's own. */
-export type ReasoningDetail = Record<string, unknown> & { index?: number };
+export type ReasoningDetail = JsonObject & { index?: number };
 
 /** What a model call records on the assistant message it returns. */
 export type CompletionMetadata = {
