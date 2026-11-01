@@ -34,7 +34,16 @@ import {
   collectionDeleted,
   type CollectionRef,
 } from "./collection-changes.js";
-import { columnCatalog, normalizeIdentity, parseColumnChange, parseColumns, uniqueColumn, type ColumnChange, type ColumnRename } from "./columns.js";
+import {
+  columnCatalog,
+  normalizeIdentity,
+  parseColumnChange,
+  parseColumns,
+  uniqueColumn,
+  type CatalogColumn,
+  type ColumnChange,
+  type ColumnRename,
+} from "./columns.js";
 import { ArtifactError } from "./errors.js";
 import { collectionAccessItem, setAccessRow, writeGrants } from "./grants.js";
 import { collectionDisplayPath } from "./paths.js";
@@ -379,14 +388,28 @@ export async function listCollectionsWithCounts(store: ArtifactStore, actor: Art
   return rows.map((item) => collectionView(item.row, item.mode, counts.get(item.row.id) ?? 0));
 }
 
+/**
+ * A collection as State's catalog lists it: its name, purpose, the reader's access, where it sits,
+ * and its columns. The entry that closes a capped catalog is `truncated`.
+ */
+export type CatalogCollection = {
+  name: string;
+  purpose: string;
+  access: AccessMode;
+  scope: CollectionView["scope"];
+  display_path: string;
+  columns: CatalogColumn[];
+  truncated?: true;
+};
+
 /** The State catalog: name, purpose, access, display path, and columns; capped. */
 export async function collectionCatalog(
   store: ArtifactStore,
   actor: ArtifactActor,
   limit = STATE_COLLECTIONS_MAX,
-): Promise<Array<Record<string, unknown>>> {
+): Promise<CatalogCollection[]> {
   const rows = await accessibleCollections(store, actor);
-  const items: Array<Record<string, unknown>> = rows.slice(0, limit).map((item) => ({
+  const items: CatalogCollection[] = rows.slice(0, limit).map((item) => ({
     name: item.row.name,
     purpose: item.row.purpose,
     access: item.mode,

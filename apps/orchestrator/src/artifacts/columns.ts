@@ -431,8 +431,12 @@ export function describeColumn(column: CollectionColumn): string {
   return `${column.name} (${[type, ...flags].join(", ")})`;
 }
 
+/** A column as State prints it: its name, type, closed list, the flags it sets, and its description. */
+export type CatalogColumn = Pick<CollectionColumn, "name" | "type" | "description"> &
+  Partial<Pick<CollectionColumn, "values">> & { required?: true; unique?: true };
+
 /** The compact column list State prints for a collection. */
-export function columnCatalog(columns: CollectionColumn[]): Array<Record<string, unknown>> {
+export function columnCatalog(columns: CollectionColumn[]): CatalogColumn[] {
   return columns.map((column) => ({
     name: column.name,
     type: column.type,

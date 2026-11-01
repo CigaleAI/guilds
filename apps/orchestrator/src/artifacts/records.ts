@@ -149,6 +149,15 @@ async function insertNewRecord(
   return written;
 }
 
+/** A record added: the record, and the id of the live record its unique column merged it into, null when it is new. */
+export type AddedRecord = { record: RecordView; merged: number | null };
+
+/** A record patched: the record, and the problems the rest of it has against the columns. */
+export type UpdatedRecord = { record: RecordView; warnings: string[] };
+
+/** One page of a collection's records, how many match in all, and the collection's columns. */
+export type RecordsPage = { total: number; records: RecordView[]; columns: CollectionColumn[] };
+
 /** A record as a writer adds it: the collection it goes to, by name, and its body before validation. */
 export type RecordDraft = { collection: string; body: Record<string, unknown> };
 
@@ -168,7 +177,7 @@ export async function addRecord(
   store: ArtifactStore,
   actor: ArtifactActor,
   args: RecordDraft,
-): Promise<{ record: RecordView; merged: number | null }> {
+): Promise<AddedRecord> {
   const collection = await requireWritable(store, actor, args.collection);
   const checked = validateAdd(collection.columns, args.body);
   if (checked.problems.length) {
@@ -202,7 +211,7 @@ export async function updateRecord(
   store: ArtifactStore,
   actor: ArtifactActor,
   args: RecordPatch,
-): Promise<{ record: RecordView; warnings: string[] }> {
+): Promise<UpdatedRecord> {
   const collection = await requireWritable(store, actor, args.collection);
   const id = parseRecordId(args.id);
   const checked = validatePatch(collection.columns, args.body);
@@ -293,7 +302,7 @@ export async function listRecords(
   store: ArtifactStore,
   actor: ArtifactActor,
   args: RecordListing,
-): Promise<{ total: number; records: RecordView[]; columns: CollectionColumn[] }> {
+): Promise<RecordsPage> {
   const collection = await requireReadable(store, actor, args.collection);
   const since = parseSince(args.since);
   const order =

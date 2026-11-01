@@ -59,7 +59,6 @@ export const studioFindArtifacts: StudioTool = studioTool({
         display_path: item.display_path,
         level: item.level,
         kind: item.kind,
-        owner_id: item.owner_id ?? item.agent_id ?? item.guild_id,
         version: item.version,
         title: item.title,
         trust: "untrusted",

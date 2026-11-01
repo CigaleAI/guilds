@@ -52,22 +52,6 @@
       "count": 1
     }
   },
-  "src/artifacts/collection-views.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 10
-    },
-    "limits/erased-return-type": {
-      "count": 7
-    }
-  },
-  "src/artifacts/collections.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
-    }
-  },
   "src/artifacts/columns.ts": {
     "anti-slop/no-known-value-widening": {
       "count": 2
@@ -79,37 +63,12 @@
       "count": 14
     },
     "anti-slop/no-unsafe-dictionary-type": {
-      "count": 9
-    },
-    "limits/erased-return-type": {
-      "count": 1
+      "count": 8
     }
   },
   "src/artifacts/guild-tables.ts": {
     "anti-slop/no-unknown-parameters": {
       "count": 1
-    }
-  },
-  "src/artifacts/host-files.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 2
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 6
-    },
-    "limits/erased-return-type": {
-      "count": 2
-    }
-  },
-  "src/artifacts/notes.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
     }
   },
   "src/artifacts/records.ts": {
@@ -128,23 +87,6 @@
       "count": 14
     },
     "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
-    }
-  },
-  "src/artifacts/store.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 5
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 3
-    },
-    "limits/erased-alias": {
-      "count": 1
-    },
-    "limits/erased-return-type": {
       "count": 2
     }
   },

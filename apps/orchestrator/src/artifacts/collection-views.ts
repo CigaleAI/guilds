@@ -2,7 +2,7 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { ArtifactError } from "./errors.js";
 import type { ArtifactActor } from "./types.js";
-import type { ArtifactStore } from "./store.js";
+import type { ArtifactStore, CollectionView, RecordView } from "./store.js";
 import * as collections from "./collections.js";
 import * as recordStore from "./records.js";
 
@@ -45,7 +45,7 @@ export type RecordValues = Static<typeof RecordValuesSchema>["body"];
 export async function listCollections(
   store: ArtifactStore,
   actor: ArtifactActor,
-): Promise<Array<Record<string, unknown>>> {
+): Promise<CollectionView[]> {
   return collections.listCollectionsWithCounts(store, actor);
 }
 
@@ -53,7 +53,7 @@ export async function createCollection(
   store: ArtifactStore,
   actor: ArtifactActor,
   body: CollectionDraft,
-): Promise<Record<string, unknown>> {
+): Promise<CollectionView> {
   return collections.createCollection(store, actor, {
     name: body.name,
     purpose: body.purpose,
@@ -66,7 +66,7 @@ export async function getCollection(
   store: ArtifactStore,
   actor: ArtifactActor,
   collectionId: string,
-): Promise<Record<string, unknown>> {
+): Promise<CollectionView> {
   return collections.getCollection(store, actor, collectionId);
 }
 
@@ -75,7 +75,7 @@ export async function updateCollection(
   actor: ArtifactActor,
   collectionId: string,
   body: CollectionPatch,
-): Promise<Record<string, unknown>> {
+): Promise<CollectionView> {
   return collections.updateCollection(store, actor, collectionId, {
     ...(body.name !== undefined ? { name: body.name } : {}),
     ...(body.purpose !== undefined ? { purpose: body.purpose } : {}),
@@ -120,7 +120,7 @@ export async function listRecords(
   actor: ArtifactActor,
   collectionId: string,
   query: RecordListQuery,
-): Promise<Record<string, unknown>> {
+): Promise<recordStore.RecordsPage> {
   const collection = await collections.getCollection(store, actor, collectionId);
   const text = (query.query ?? "").trim();
   if (text) {
@@ -154,14 +154,10 @@ export async function listRecords(
   };
 }
 
-function withDisplayPath(
-  orgId: string,
-  collectionName: string,
-  record: Record<string, unknown>,
-): Record<string, unknown> {
+function withDisplayPath(orgId: string, collectionName: string, record: RecordView): RecordView {
   return {
     ...record,
-    display_path: `org/${orgId}/collections/${collectionName}/${String(record.id)}`,
+    display_path: `org/${orgId}/collections/${collectionName}/${record.id}`,
   };
 }
 
@@ -170,7 +166,7 @@ export async function getRecord(
   actor: ArtifactActor,
   collectionId: string,
   recordId: string,
-): Promise<Record<string, unknown>> {
+): Promise<RecordView> {
   const collection = await collections.getCollection(store, actor, collectionId);
   const record = await recordStore.getRecord(store, actor, collection.name, recordId);
   return withDisplayPath(actor.orgId, collection.name, record);
@@ -181,7 +177,7 @@ export async function addRecord(
   actor: ArtifactActor,
   collectionId: string,
   body: RecordValues,
-): Promise<Record<string, unknown>> {
+): Promise<recordStore.AddedRecord> {
   const collection = await collections.getCollection(store, actor, collectionId);
   const result = await recordStore.addRecord(store, actor, { collection: collection.name, body });
   return {
@@ -198,7 +194,7 @@ export async function updateRecord(
   actor: ArtifactActor,
   key: RecordKey,
   body: RecordValues,
-): Promise<Record<string, unknown>> {
+): Promise<recordStore.UpdatedRecord> {
   const collection = await collections.getCollection(store, actor, key.collectionId);
   const result = await recordStore.updateRecord(store, actor, {
     collection: collection.name,
