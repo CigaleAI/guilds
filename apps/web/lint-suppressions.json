@@ -109,16 +109,5 @@
     "react/purity": {
       "count": 1
     }
-  },
-  "src/features/builder/widgets.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 5
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 4
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 4
-    }
   }
 }

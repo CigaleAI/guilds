@@ -1,7 +1,16 @@
 /** Checks that narrow what the server sends before the app reads it as one of its types. */
 
 import type { ErrorReply, ValidationProblem } from "./client";
-import type { LookupItem } from "./types/access";
+import type { ConnectorAuthField, LookupItem } from "./types/access";
+import type {
+  BuilderWidget,
+  ConnectScope,
+  ConnectServer,
+  ConnectWidget,
+  Question,
+  QuestionOption,
+  QuestionWidget,
+} from "./types/builder";
 import type { SecretRequest, SecretRequestAsked } from "./types/secrets";
 import type {
   AccessChange,
@@ -102,6 +111,16 @@ export function isStringList(value: unknown): value is string[] {
 /** Whether a value is text or left out. */
 function isOptionalString(value: unknown): value is string | undefined {
   return value === undefined || isString(value);
+}
+
+/** Whether a value is true or false, or left out. */
+function isOptionalBoolean(value: unknown): value is boolean | undefined {
+  return value === undefined || isBoolean(value);
+}
+
+/** Whether a value is one of a closed set's members. */
+function isOneOf<T>(members: readonly T[], value: unknown): value is T {
+  return members.some((member) => member === value);
 }
 
 /** The check each keyword the app reads passes when a JSON Schema holds it. */
@@ -382,4 +401,92 @@ export function parseStudioWidget(content: string): StudioWidget | null {
   }
   if (body.widget === "studio_task_draft") return parseDraftWidget(body);
   return null;
+}
+
+const connectScopes: readonly ConnectScope[] = ["org", "guild", "agent"];
+
+/** Whether a value names where a login lives: the organisation, the guild or an agent. */
+export function isConnectScope(value: unknown): value is ConnectScope {
+  return isOneOf(connectScopes, value);
+}
+
+const connectorAuths: readonly ConnectServer["auth"][] = ["none", "token", "oauth"];
+
+const oauthSetupStates: readonly ConnectServer["oauth_setup_state"][] = [
+  "not_applicable",
+  "dynamic",
+  "configured",
+  "unsupported",
+];
+
+const connectionStates: readonly ConnectServer["connection_state"][] = [
+  "connected",
+  "registered_not_connected",
+];
+
+/** Whether a value is one input a key login asks for: its name and label, and the flags it sets. */
+function isConnectorAuthField(value: unknown): value is ConnectorAuthField {
+  return (
+    isJsonObject(value) &&
+    hasFields(value, ["name", "label"], isString) &&
+    hasFields(value, ["secret", "optional"], isOptionalBoolean) &&
+    isOptionalString(value.placeholder)
+  );
+}
+
+/** Whether a value is a connector as a connect widget shows it. */
+function isConnectServer(value: unknown): value is ConnectServer {
+  return (
+    isJsonObject(value) &&
+    hasFields(value, ["id", "slug", "display_name"], isString) &&
+    isStringOrNull(value.setup_hint) &&
+    isOneOf(connectorAuths, value.auth) &&
+    isOneOf(oauthSetupStates, value.oauth_setup_state) &&
+    isOneOf(connectionStates, value.connection_state) &&
+    (value.auth_fields === undefined || isListOf(value.auth_fields, isConnectorAuthField))
+  );
+}
+
+/** Whether a widget's body is a connect widget: its scopes, texts, and the server or servers its mode names. */
+function isConnectWidget(body: JsonObject): body is ConnectWidget {
+  const named =
+    (body.mode === "org" && isConnectServer(body.server)) ||
+    (body.mode === "any" &&
+      (body.server === null || isConnectServer(body.server)) &&
+      isListOf(body.servers, isConnectServer));
+  return (
+    named &&
+    isConnectScope(body.recommended_scope) &&
+    isListOf(body.allowed_scopes, isConnectScope) &&
+    hasFields(body, ["already_connected", "await_operator"], isBoolean) &&
+    hasFields(body, ["reason", "title"], isString) &&
+    isStringOrNull(body.storage_hint)
+  );
+}
+
+function isQuestionOption(value: unknown): value is QuestionOption {
+  return isJsonObject(value) && hasFields(value, ["id", "label", "description"], isString);
+}
+
+function isQuestion(value: unknown): value is Question {
+  return (
+    isJsonObject(value) &&
+    hasFields(value, ["id", "header", "question"], isString) &&
+    isListOf(value.options, isQuestionOption) &&
+    hasFields(value, ["allow_other", "multi_select"], isBoolean)
+  );
+}
+
+/** Whether a widget's body is a question card: its title and its questions. */
+function isQuestionWidget(body: JsonObject): body is QuestionWidget {
+  return (
+    body.await_operator === true && isString(body.title) && isListOf(body.questions, isQuestion)
+  );
+}
+
+/** Whether a value is a widget a Builder tool result carries: a connect widget or a question card. */
+export function isBuilderWidget(value: unknown): value is BuilderWidget {
+  if (!isJsonObject(value)) return false;
+  if (value.widget === "connect") return isConnectWidget(value);
+  return value.widget === "question" && isQuestionWidget(value);
 }
