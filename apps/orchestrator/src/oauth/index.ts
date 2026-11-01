@@ -172,10 +172,10 @@ export function startsBrowserOauth(server: LoadedConnector): boolean {
   return server.auth === "oauth";
 }
 
-export function oauthSetupState(
-  server: LoadedConnector,
-  sources?: IntegrationSources,
-): "not_applicable" | "dynamic" | "configured" | "unsupported" {
+/** Whether a connector's OAuth login can be set up on this box, and how; `not_applicable` without OAuth. */
+export type OauthSetupState = "not_applicable" | "dynamic" | "configured" | "unsupported";
+
+export function oauthSetupState(server: LoadedConnector, sources?: IntegrationSources): OauthSetupState {
   if (isGithubApp(server)) {
     return githubAppConfig(sources) ? "configured" : "unsupported";
   }

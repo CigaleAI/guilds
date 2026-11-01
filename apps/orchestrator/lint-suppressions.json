@@ -89,9 +89,6 @@
     }
   },
   "src/capabilities/index.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 2
-    },
     "anti-slop/no-runtime-typeof": {
       "count": 1
     },
@@ -99,16 +96,10 @@
       "count": 1
     },
     "anti-slop/no-unsafe-dictionary-type": {
-      "count": 10
-    },
-    "complexity": {
       "count": 1
     },
     "limits/bare-error": {
       "count": 1
-    },
-    "limits/erased-return-type": {
-      "count": 2
     },
     "typescript/consistent-type-assertions": {
       "count": 1
