@@ -20,7 +20,7 @@ import { newId } from "../lib/ids.js";
 import { EventQueue } from "../lib/event.js";
 import { AdmissionCoordinator } from "../admission/coordinator.js";
 import { OPEN_POLICY, claimCoachRun, type OrgPolicy } from "../policy/index.js";
-import { ConversationRunner } from "../conversation/runner.js";
+import { ConversationRunner, type CoachEvent } from "../conversation/runner.js";
 import type { CapabilityService } from "../capabilities/index.js";
 import { assignGuildLooks } from "../avatars/looks.js";
 import type { AccessCut, AccessEdit } from "../recipes/access-edits.js";
@@ -391,11 +391,11 @@ export class BuilderService {
     return conversationUsageByOrg(this.deps.db, "builder");
   }
 
-  subscribe(sessionId: string): EventQueue<[string, Record<string, unknown>]> {
+  subscribe(sessionId: string): EventQueue<CoachEvent> {
     return this.runner.subscribe(sessionId);
   }
 
-  unsubscribe(sessionId: string, queue: EventQueue<[string, Record<string, unknown>]>): void {
+  unsubscribe(sessionId: string, queue: EventQueue<CoachEvent>): void {
     this.runner.unsubscribe(sessionId, queue);
   }
 

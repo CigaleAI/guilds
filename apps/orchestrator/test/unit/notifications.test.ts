@@ -8,6 +8,8 @@ import {
   messageNotice,
   type NotificationsDatabase,
 } from "../../src/notifications/index.js";
+import type { GroupChatView } from "../../src/groupchat/index.js";
+import type { GroupMessageView } from "../../src/db/views.js";
 
 type Operator = { user_id: string; name: string; role: string };
 
@@ -56,14 +58,33 @@ const scout = {
   config: { model: "x" },
 };
 
-const message = {
-  guild_id: "guild_1",
+const message: GroupMessageView = {
+  id: 70,
   seq: 7,
   author_type: "agent",
   author_name: "scout",
   author_agent_id: "agent_scout",
+  author_user_id: null,
+  source_run_id: "run_1",
   content: "the feed is back",
+  tagged: ["ada"],
+  tagged_agent_ids: [],
   tagged_user_ids: ["user_ada"],
+  created_at: "2026-01-01T00:00:00.000Z",
+};
+
+/** The guild's chat as a cleared or idle event carries it. */
+const chat: GroupChatView = {
+  guild_id: "guild_1",
+  chat_seq: 7,
+  agent_message_count: 0,
+  agent_message_limit: 10,
+  dispatching: false,
+  pending_agent_count: 0,
+  active_agents: [],
+  limit_reached: false,
+  errors: [],
+  last_recipient_decision: null,
 };
 
 const notice = {
@@ -90,15 +111,19 @@ test("a committed message reaches every viewer of the guild, on the streams open
 });
 
 test("a message notice carries the start of the message and the author agent's look", () => {
-  assert.deepEqual(messageNotice(message, scout), notice);
-  const long = messageNotice({ ...message, content: "x".repeat(NOTICE_PREVIEW_LENGTH + 50) }, scout);
-  assert.equal(String(long.preview).length, NOTICE_PREVIEW_LENGTH);
-  const bare = messageNotice(message, { id: "agent_scout", name: "", avatar_shape: null, avatar_color: null });
+  assert.deepEqual(messageNotice("guild_1", message, scout), notice);
+  const long = messageNotice("guild_1", { ...message, content: "x".repeat(NOTICE_PREVIEW_LENGTH + 50) }, scout);
+  assert.equal(long.preview.length, NOTICE_PREVIEW_LENGTH);
+  const bare = messageNotice("guild_1", message, { id: "agent_scout", name: "", avatar_shape: null, avatar_color: null });
   assert.deepEqual(bare.agent, { id: "agent_scout", name: "", avatar_shape: "teardrop", avatar_color: "#7c5cff" });
 });
 
 test("an operator's message has no agent, and an empty one no preview", () => {
-  const theirs = messageNotice({ guild_id: "guild_1", seq: 1, author_type: "user" }, null);
+  const theirs = messageNotice(
+    "guild_1",
+    { ...message, seq: 1, author_type: "user", author_name: "", author_agent_id: null, content: "" },
+    null,
+  );
   assert.equal(theirs.author_name, "");
   assert.equal(theirs.preview, "");
   assert.equal(theirs.agent, null);
@@ -128,7 +153,7 @@ test("an operator's message is announced without looking any agent up", async ()
 test("a message in a guild that is gone reaches nobody", async () => {
   const notifications = hub([], {}, ["user_ada"]);
   const ada = notifications.subscribe("user_ada", "org_1");
-  await notifications.observe("guild_2", "group.message.committed", { ...message, guild_id: "guild_2" });
+  await notifications.observe("guild_2", "group.message.committed", message);
   assert.equal(ada.size, 0);
 });
 
@@ -141,7 +166,7 @@ test("nothing is looked up while no stream is open", async () => {
     },
   });
   await notifications.observe("guild_1", "group.message.committed", message);
-  await notifications.observe("guild_1", "group.cleared", {});
+  await notifications.observe("guild_1", "group.cleared", chat);
   assert.equal(lookups, 0);
 });
 
@@ -158,7 +183,7 @@ test("an issue change pings every operator of the guild", async () => {
   assert.equal(bo.size, 1);
   assert.equal(cy.size, 0);
   assert.deepEqual(await ada.get(), [NOTIFICATIONS_CHANGED, {}]);
-  await notifications.observe("guild_1", "group.idle", {});
+  await notifications.observe("guild_1", "group.idle", chat);
   assert.equal(ada.size, 0, "other guild events leave the inbox alone");
 });
 
@@ -167,7 +192,7 @@ test("a cleared group chat pings every viewer of the guild", async () => {
   const ada = notifications.subscribe("user_ada", "org_1");
   const bo = notifications.subscribe("user_bo", "org_1");
   const cy = notifications.subscribe("user_cy", "org_1");
-  await notifications.observe("guild_1", "group.cleared", {});
+  await notifications.observe("guild_1", "group.cleared", chat);
   assert.equal(ada.size, 1);
   assert.equal(bo.size, 1);
   assert.equal(cy.size, 0);
@@ -215,7 +240,7 @@ test("the inbox lists how many messages are unread in each guild", async () => {
       assert.equal(orgId, "org_1");
       assert.equal(userId, "user_ada");
       return [
-        { guild_id: "guild_1", count: "3" },
+        { guild_id: "guild_1", count: 3 },
         { guild_id: "guild_2", count: 12 },
       ];
     },

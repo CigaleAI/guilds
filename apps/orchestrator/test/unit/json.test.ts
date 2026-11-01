@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { dumpsCompact, isJsonObject, isJsonValue, sortKeys } from "../../src/lib/json.js";
+import { Type } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
+import {
+  JsonObjectSchema,
+  JsonValueSchema,
+  dumpsCompact,
+  isJsonObject,
+  isJsonValue,
+  sortKeys,
+} from "../../src/lib/json.js";
 
 test("isJsonValue accepts every value JSON carries, at any depth", () => {
   for (const value of ["text", 0, -1.5, true, false, null, [], {}, [1, "a", null], { a: [{ b: { c: false } }] }]) {
@@ -25,6 +34,26 @@ test("isJsonObject refuses an array, a scalar, a class instance, and a field JSO
   for (const value of [null, [], "text", 1, true, new Date(0), new Map(), { a: 1n }, { a: { b: () => 1 } }]) {
     assert.equal(isJsonObject(value), false, String(value));
   }
+});
+
+test("JsonValueSchema checks a JSON value at every depth", () => {
+  for (const value of ["text", 0, true, null, [1, "a"], { a: [{ b: { c: false } }] }]) {
+    assert.equal(Value.Check(JsonValueSchema, value), true, JSON.stringify(value));
+  }
+  for (const value of [undefined, 1n, new Date(0), [1, undefined], { a: [new Date(0)] }]) {
+    assert.equal(Value.Check(JsonValueSchema, value), false, String(value));
+  }
+});
+
+test("JsonObjectSchema checks a JSON object at every depth, also as a property", () => {
+  assert.equal(Value.Check(JsonObjectSchema, { a: 1, b: { c: ["d"] } }), true);
+  for (const value of [null, [], "text", new Map(), { a: 1n }, { a: { b: new Date(0) } }]) {
+    assert.equal(Value.Check(JsonObjectSchema, value), false, String(value));
+  }
+  const holder = Type.Object({ settings: Type.Optional(JsonObjectSchema) });
+  assert.equal(Value.Check(holder, { settings: { type: "object" } }), true);
+  assert.equal(Value.Check(holder, { settings: { when: new Date(0) } }), false);
+  assert.equal(Value.Check(holder, {}), true);
 });
 
 test("sortKeys orders every object's keys at every depth and leaves arrays in order", () => {

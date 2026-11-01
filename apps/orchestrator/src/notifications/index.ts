@@ -1,11 +1,18 @@
-import { iso } from "../db/views.js";
-import { issueItem } from "../issues/index.js";
-import { EventQueue } from "../lib/event.js";
+import { iso, type GroupMessageView } from "../db/views.js";
+import { issueItem, type IssueItem } from "../issues/index.js";
+import { EventQueue, type StreamEvent } from "../lib/event.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
 import { getGuild, listGuildViewerIds } from "../db/guilds.js";
-import { listInboxIssues, listInboxMentions, markInboxMentionsRead, type InboxMentionRow } from "../db/issues.js";
-import { listUnreadGroupChats } from "../db/group-chat.js";
+import {
+  listInboxIssues,
+  listInboxMentions,
+  markInboxMentionsRead,
+  type InboxIssueRow,
+  type InboxMentionRow,
+} from "../db/issues.js";
+import { listUnreadGroupChats, type UnreadGroupChatRow } from "../db/group-chat.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
+import type { GuildEvent } from "../groupchat/index.js";
 
 // An operator's inbox is a view over existing rows, not a table of its own:
 // open issues in the guilds they operate, messages tagging them that are past
@@ -38,11 +45,48 @@ function notificationsDatabase(db: Queryable) {
 
 export type NotificationsDatabase = ReturnType<typeof notificationsDatabase>;
 
-type Event = [string, Record<string, unknown>];
-type Queue = EventQueue<Event>;
+/** An agent as the inbox names it: its id, name and look. */
+export type AgentBrief = Pick<AgentRow, "id" | "name" | "avatar_shape" | "avatar_color">;
 
-/** An agent as the inbox names it: its id, name and look, with the look's defaults filled in. */
-function agentBrief(agent: AgentLook): Record<string, unknown> {
+/** A message tagging the operator past their read cursor, with its guild and its author agent's look. */
+export type MentionNotice = Pick<
+  InboxMentionRow,
+  "id" | "guild_id" | "guild_name" | "seq" | "author_type" | "author_name" | "content"
+> & { created_at: string; agent: AgentBrief | null };
+
+/** What a stream learns about a committed message: whose it is and where, the start of it, and its author agent's look. */
+export type MessageNotice = Pick<GroupMessageView, "seq" | "author_type" | "author_name"> & {
+  guild_id: string;
+  preview: string;
+  agent: AgentBrief | null;
+};
+
+/**
+ * An operator's inbox: the open issues of the guilds they operate, the messages tagging them past
+ * their read cursor, and each guild they can see with messages they have not read.
+ */
+export type Inbox = {
+  issues: Array<IssueItem & Pick<InboxIssueRow, "guild_name">>;
+  mentions: MentionNotice[];
+  unread: UnreadGroupChatRow[];
+};
+
+/** That the inbox changed: the event carries nothing, and a stream reads the inbox again. */
+export type InboxChanged = Record<string, never>;
+
+/** What each event of the inbox's stream carries. */
+export type InboxEvents = {
+  "notifications.changed": InboxChanged;
+  "notifications.message": MessageNotice;
+};
+
+/** One event of the inbox's stream. */
+export type InboxEvent = StreamEvent<InboxEvents>;
+
+type Queue = EventQueue<InboxEvent>;
+
+/** An agent as the inbox names it, with the look's defaults filled in. */
+function agentBrief(agent: AgentLook): AgentBrief {
   return {
     id: agent.id,
     name: agent.name,
@@ -57,7 +101,7 @@ type AgentLook = Pick<AgentRow, "id" | "name"> & {
   avatar_color: AgentRow["avatar_color"] | null;
 };
 
-export function mentionItem(row: InboxMentionRow): Record<string, unknown> {
+export function mentionItem(row: InboxMentionRow): MentionNotice {
   return {
     id: row.id,
     guild_id: row.guild_id,
@@ -78,24 +122,18 @@ export function mentionItem(row: InboxMentionRow): Record<string, unknown> {
   };
 }
 
-export function unreadItem(row: Record<string, unknown>): Record<string, unknown> {
-  return { guild_id: String(row.guild_id), count: Number(row.count) };
-}
-
-/**
- * What a stream learns about a committed message: whose it is and where, the start of it, and
- * the look of the agent that wrote it.
- */
+/** The notice of a message committed in the guild, with the look of the agent that wrote it. */
 export function messageNotice(
-  message: Record<string, unknown>,
+  guildId: string,
+  message: GroupMessageView,
   agent: AgentLook | null,
-): Record<string, unknown> {
+): MessageNotice {
   return {
-    guild_id: String(message.guild_id),
-    seq: Number(message.seq),
-    author_type: String(message.author_type),
-    author_name: String(message.author_name ?? ""),
-    preview: String(message.content ?? "").slice(0, NOTICE_PREVIEW_LENGTH),
+    guild_id: guildId,
+    seq: message.seq,
+    author_type: message.author_type,
+    author_name: message.author_name,
+    preview: message.content.slice(0, NOTICE_PREVIEW_LENGTH),
     agent: agent ? agentBrief(agent) : null,
   };
 }
@@ -106,7 +144,7 @@ export class Notifications {
 
   constructor(public db: NotificationsDatabase) {}
 
-  async list(orgId: string, userId: string): Promise<Record<string, unknown>> {
+  async list(orgId: string, userId: string): Promise<Inbox> {
     const [issues, mentions, unread] = await Promise.all([
       this.db.listInboxIssues(orgId, userId, INBOX_ISSUE_LIMIT),
       this.db.listInboxMentions(orgId, userId, INBOX_MENTION_LIMIT),
@@ -115,12 +153,12 @@ export class Notifications {
     return {
       issues: issues.map((row) => ({ ...issueItem(row), guild_name: row.guild_name })),
       mentions: mentions.map(mentionItem),
-      unread: unread.map(unreadItem),
+      unread,
     };
   }
 
   /** Advances this operator's read cursor through each guild that currently has a tag in their inbox. */
-  async markMentionsRead(orgId: string, userId: string): Promise<Record<string, unknown>> {
+  async markMentionsRead(orgId: string, userId: string): Promise<Inbox> {
     const guildIds = await this.db.markInboxMentionsRead(orgId, userId, new Date());
     if (guildIds.length) {
       await this.ping([userId]);
@@ -154,7 +192,7 @@ export class Notifications {
   }
 
   /** Puts the event on each of the user's streams, or on those opened in `orgId` when given. */
-  async _send(userId: string, orgId: string | null, event: Event): Promise<void> {
+  async _send(userId: string, orgId: string | null, event: InboxEvent): Promise<void> {
     for (const [queue, streamOrg] of [...(this._subs.get(userId) ?? [])]) {
       if (orgId !== null && streamOrg !== orgId) {
         continue;
@@ -168,7 +206,7 @@ export class Notifications {
   }
 
   /** Sends the event to everyone who can see the guild, on the streams opened in its organisation. */
-  async _sendToViewers(guildId: string, event: Event): Promise<void> {
+  async _sendToViewers(guildId: string, event: InboxEvent): Promise<void> {
     if (!this._subs.size) {
       return;
     }
@@ -177,22 +215,22 @@ export class Notifications {
       return;
     }
     for (const userId of await this.db.listGuildViewerIds(guildId)) {
-      await this._send(userId, String(guild.org_id), event);
+      await this._send(userId, guild.org_id, event);
     }
   }
 
   /** Tells everyone who can see the guild of a committed message, with its author agent's look. */
-  async _announceMessage(guildId: string, message: Record<string, unknown>): Promise<void> {
+  async _announceMessage(guildId: string, message: GroupMessageView): Promise<void> {
     if (!this._subs.size) {
       return;
     }
-    const agentId = message.author_agent_id ? String(message.author_agent_id) : null;
+    const agentId = message.author_agent_id;
     const agent = agentId ? await this.db.getAgent(agentId) : null;
-    await this._sendToViewers(guildId, [NOTIFICATIONS_MESSAGE, messageNotice(message, agent)]);
+    await this._sendToViewers(guildId, [NOTIFICATIONS_MESSAGE, messageNotice(guildId, message, agent)]);
   }
 
   /** Maps a guild event to the inboxes it changes. */
-  async observe(guildId: string, event: string, data: Record<string, unknown>): Promise<void> {
+  async observe(guildId: string, ...[event, data]: GuildEvent): Promise<void> {
     if (event === "group.message.committed") {
       await this._announceMessage(guildId, data);
       return;

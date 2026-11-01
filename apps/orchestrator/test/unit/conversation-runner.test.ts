@@ -29,7 +29,11 @@ function toolCall(name: string, args = "{}"): ToolCall {
 }
 
 function tool(handler: ConversationTool["handler"]): ConversationTool {
-  return { name: "probe", schema: {}, handler };
+  return {
+    name: "probe",
+    schema: { type: "function", function: { name: "probe", description: "", parameters: { type: "object" } } },
+    handler,
+  };
 }
 
 function generation(tools: Map<string, ConversationTool> = new Map()): ConversationGeneration {
@@ -104,13 +108,18 @@ test("a tool that throws something other than an Error ends the call with a gene
 });
 
 test("a tool call is answered with the handler's result in the bound tool context", async () => {
-  const echoing = tool(async (context, args) => ({ context, args }));
+  let context: unknown = null;
+  const echoing = tool(async (bound, args) => {
+    context = bound;
+    return { args };
+  });
   const turn = {
     ...generation(new Map([["probe", echoing]])),
     bindToolContext: (upcoming: number) => ({ upcoming }),
   };
   const result = await callConversationTool(turn, toolCall("probe", '{"a":1}'), 4, "tool_calls");
-  assert.deepEqual(result, { context: { upcoming: 4 }, args: { a: 1 } });
+  assert.deepEqual(result, { args: { a: 1 } });
+  assert.deepEqual(context, { upcoming: 4 });
 });
 
 test("a call to an unknown tool, or with arguments cut short, is answered with an error", async () => {

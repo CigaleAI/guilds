@@ -1,3 +1,13 @@
+import type { JsonObject } from "./json.js";
+
+/** What each event of a stream carries, by the event's name: the JSON object sent as its data. */
+export type EventPayloads = { [name: string]: JsonObject };
+
+/** One event of a stream whose events `Events` names: the event's name, and the data it carries. */
+export type StreamEvent<Events extends EventPayloads> = {
+  [Name in keyof Events & string]: [name: Name, data: Events[Name]];
+}[keyof Events & string];
+
 export class AsyncEvent {
   private flagged = false;
   private waiters: Array<() => void> = [];

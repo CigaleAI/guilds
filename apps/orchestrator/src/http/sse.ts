@@ -1,81 +1,52 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
-import type { EventQueue } from "../lib/event.js";
+import type { EventPayloads, EventQueue, StreamEvent } from "../lib/event.js";
+import { isObjectNode, type JsonObject, type JsonValue } from "../lib/json.js";
 
 const FLOAT_KEYS = new Set(["cost_usd"]);
 
-export function dumpsSse(value: unknown): string {
-  return encodeValue(value);
-}
+/** A number JSON writes without a fraction or an exponent. */
+const WHOLE_NUMBER = /^-?\d+$/;
 
-function encodeValue(value: unknown): string {
-  if (value === null || value === undefined) {
-    return "null";
-  }
-  if (value === true) {
-    return "true";
-  }
-  if (value === false) {
-    return "false";
-  }
-  if (typeof value === "number") {
-    return encodeNumber(value);
-  }
-  if (typeof value === "string") {
-    return encodeString(value);
-  }
+/**
+ * The value as the stream's JSON: `, ` and `: ` between items, every non-ASCII character escaped,
+ * an object's left-out fields skipped, and a number under a key listed in FLOAT_KEYS written as a
+ * float even when it is whole.
+ */
+export function dumpsSse(value: JsonValue): string {
   if (Array.isArray(value)) {
-    return `[${value.map(encodeValue).join(", ")}]`;
+    return `[${value.map(dumpsSse).join(", ")}]`;
   }
-  if (typeof value === "object") {
+  if (isObjectNode(value)) {
     const parts: string[] = [];
-    const entries: [string, unknown][] = Object.entries(value);
-    for (const [key, item] of entries) {
+    for (const [key, item] of Object.entries(value)) {
       if (item === undefined) {
         continue;
       }
-      parts.push(`${encodeString(key)}: ${encodeEntryValue(key, item)}`);
+      parts.push(`${encodeScalar(key)}: ${encodeEntryValue(key, item)}`);
     }
     return `{${parts.join(", ")}}`;
   }
-  return encodeString(String(value));
+  return encodeScalar(value);
 }
 
-/** A number under a key listed in FLOAT_KEYS is written as a float even when it is whole. */
-function encodeEntryValue(key: string, item: unknown): string {
-  if (typeof item === "number" && FLOAT_KEYS.has(key)) {
-    return encodeFloat(item);
-  }
-  return encodeValue(item);
+function encodeEntryValue(key: string, item: JsonValue): string {
+  const text = dumpsSse(item);
+  return FLOAT_KEYS.has(key) && WHOLE_NUMBER.test(text) ? `${text}.0` : text;
 }
 
-function encodeNumber(value: number): string {
-  if (Number.isInteger(value)) {
-    return String(value);
-  }
-  return encodeFloat(value);
-}
-
-/** Writes a number with a fraction or exponent so a reader parses it as a float. */
-function encodeFloat(value: number): string {
-  if (!Number.isFinite(value)) {
+/** A string, number, boolean or null as JSON text; a number JSON cannot carry is refused. */
+function encodeScalar(value: string | number | boolean | null): string {
+  const json = JSON.stringify(value);
+  if (json === "null" && value !== null) {
     throw new TypeError("sse json cannot encode non-finite numbers");
   }
-  const raw = JSON.stringify(value);
-  if (raw.includes(".") || raw.includes("e") || raw.includes("E")) {
-    return raw;
-  }
-  return `${raw}.0`;
-}
-
-function encodeString(value: string): string {
-  const json = JSON.stringify(value);
   return json.replace(/[\u007f-\uffff]/g, (char) => {
     const code = char.charCodeAt(0).toString(16).padStart(4, "0");
     return `\\u${code}`;
   });
 }
 
-export function frameSse(event: string, data: unknown): string {
+export function frameSse(event: string, data: JsonObject): string {
   return `event: ${event}\ndata: ${dumpsSse(data)}\n\n`;
 }
 
@@ -87,11 +58,11 @@ export const SSE_HEADERS = {
 } as const;
 
 /** Streams a subscription's events to the request as SSE until the client goes away. */
-export async function pipeSse(
+export async function pipeSse<Event extends StreamEvent<EventPayloads>>(
   request: FastifyRequest,
   reply: FastifyReply,
-  subscribe: () => EventQueue<[string, Record<string, unknown>]>,
-  unsubscribe: (queue: EventQueue<[string, Record<string, unknown>]>) => void,
+  subscribe: () => EventQueue<Event>,
+  unsubscribe: (queue: EventQueue<Event>) => void,
 ): Promise<void> {
   const queue = subscribe();
   reply.hijack();

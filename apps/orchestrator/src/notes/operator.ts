@@ -90,7 +90,7 @@ async function announce(
     });
     return;
   }
-  const data = { scope: "agent", agent_id: owner.agent.id, path };
+  const data = { scope: "agent" as const, agent_id: owner.agent.id, path };
   await services.stream.publish(owner.agent.guild_id, "guild.artifacts.changed", data);
 }
 

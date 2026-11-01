@@ -8,12 +8,12 @@ import {
   nextConversationSeq,
   updateConversationSession,
 } from "../db/conversations.js";
-import { isPlainRecord } from "../db/json.js";
 import { isJsonObject, type JsonObject } from "../lib/json.js";
 import type { Queryable } from "../db/pg.js";
-import type { MessagePayload, ToolCall, ToolMessage } from "../db/schema/index.js";
+import type { CompletionMetadata, MessagePayload, ToolCall, ToolMessage } from "../db/schema/index.js";
 import { incrementOrgUsage } from "../db/usage.js";
-import { EventQueue } from "../lib/event.js";
+import { EventQueue, type StreamEvent } from "../lib/event.js";
+import type { FunctionTool } from "../lib/tool-schema.js";
 import { streamCompletion } from "../llm/client.js";
 import { LLMError, type Completion } from "../llm/completion.js";
 import { countInputTokens } from "../llm/tokens.js";
@@ -51,11 +51,48 @@ const INTERRUPTED_CONTENT = "ERROR: execution interrupted";
 
 const EVENT_QUEUE_LIMIT = 4096;
 
+/**
+ * What a coach's tool answers the model, which reads it as the tool message's JSON: `error` when
+ * the call failed, and `await_operator` when the operator answers before the generation goes on.
+ */
+export type ConversationToolResult = JsonObject & { error?: string; await_operator?: boolean };
+
+/** A tool a coach offers: its name, the schema the model is offered, and what answers a call. */
 export type ConversationTool = {
   name: string;
-  schema: Record<string, unknown>;
-  handler: (ctx: unknown, args: JsonObject) => Promise<Record<string, unknown>>;
+  schema: FunctionTool;
+  handler: (ctx: unknown, args: JsonObject) => Promise<ConversationToolResult>;
 };
+
+/** A coach's generation starting or finishing: its session, and its number. */
+export type CoachGenerationEvent = { session_id: string; generation: number };
+
+/** A piece of the model's reply or reasoning as it streams; a reply's piece is also its `content`. */
+export type CoachDelta = { session_id: string; text: string; content?: string };
+
+/** A message the conversation committed. */
+export type CoachMessageCommit = { message: ConversationMessageRow };
+
+/** Why a coach's generation failed, and why the session is blocked when the failure blocks it. */
+export type CoachFailure = { detail: string; blocked_reason?: "input_token_limit" };
+
+/**
+ * What each event of a Studio or Builder session's stream carries. A Studio session announces the
+ * draft a tool created, a Builder session the recipe a tool wrote, each as the tool's result.
+ */
+export type CoachEvents = {
+  "generation.started": CoachGenerationEvent;
+  "assistant.delta": CoachDelta;
+  "assistant.reasoning.delta": CoachDelta;
+  "message.committed": CoachMessageCommit;
+  "draft.changed": ConversationToolResult;
+  "recipe.changed": ConversationToolResult;
+  "generation.finished": CoachGenerationEvent;
+  "session.error": CoachFailure;
+};
+
+/** One event of a coach session's stream. */
+export type CoachEvent = StreamEvent<CoachEvents>;
 
 export type ConversationProjectionBudget = ProjectionBudget;
 
@@ -75,8 +112,8 @@ export type ConversationRunnerDeps = {
   onToolResult?: (
     sessionId: string,
     name: string,
-    result: Record<string, unknown>,
-    publish: (sessionId: string, event: string, data: Record<string, unknown>) => Promise<void>,
+    result: ConversationToolResult,
+    publish: (sessionId: string, ...event: CoachEvent) => Promise<void>,
   ) => Promise<void>;
 };
 
@@ -106,7 +143,7 @@ type CompletionRequest = {
   messages: MessagePayload[];
   temperature: number;
   max_tokens: number;
-  tools: unknown[];
+  tools: FunctionTool[];
 };
 
 /** A completion the model did not return: what the session records as the generation's error. */
@@ -135,7 +172,7 @@ export type ConversationProjection = {
 };
 
 export class ConversationRunner {
-  private subs = new Map<string, Set<EventQueue<[string, Record<string, unknown>]>>>();
+  private subs = new Map<string, Set<EventQueue<CoachEvent>>>();
   private cancels = new Map<string, CancelEvent>();
   private tasks = new Map<string, Promise<void>>();
 
@@ -145,28 +182,28 @@ export class ConversationRunner {
     return { kind: this.deps.kind, sessionId };
   }
 
-  subscribe(sessionId: string): EventQueue<[string, Record<string, unknown>]> {
-    const queue = new EventQueue<[string, Record<string, unknown>]>();
+  subscribe(sessionId: string): EventQueue<CoachEvent> {
+    const queue = new EventQueue<CoachEvent>();
     const listeners = this.subs.get(sessionId) ?? new Set();
     listeners.add(queue);
     this.subs.set(sessionId, listeners);
     return queue;
   }
 
-  unsubscribe(sessionId: string, queue: EventQueue<[string, Record<string, unknown>]>): void {
+  unsubscribe(sessionId: string, queue: EventQueue<CoachEvent>): void {
     const listeners = this.subs.get(sessionId);
     if (!listeners) return;
     listeners.delete(queue);
     if (!listeners.size) this.subs.delete(sessionId);
   }
 
-  async publish(sessionId: string, event: string, data: Record<string, unknown>): Promise<void> {
+  async publish(sessionId: string, ...event: CoachEvent): Promise<void> {
     for (const queue of [...(this.subs.get(sessionId) ?? [])]) {
       if (queue.size >= EVENT_QUEUE_LIMIT) {
         this.unsubscribe(sessionId, queue);
         continue;
       }
-      await queue.put([event, data]);
+      await queue.put(event);
     }
   }
 
@@ -387,8 +424,8 @@ export class ConversationRunner {
     turn: ConversationGeneration,
     messages: MessagePayload[],
     call: ToolCall,
-    finishReason: string,
-  ): Promise<Record<string, unknown>> {
+    finishReason: CompletionMetadata["finish_reason"],
+  ): Promise<ConversationToolResult> {
     const sessionId = turn.session.id;
     const name = call.function.name;
     const upcoming = await nextConversationSeq(this.deps.db, this.deps.kind, sessionId);
@@ -428,7 +465,7 @@ export class ConversationRunner {
     );
     await this.publish(sessionId, "message.committed", { message: committed });
     if (this.deps.onToolResult) {
-      await this.deps.onToolResult(sessionId, name, result, (id, event, data) => this.publish(id, event, data));
+      await this.deps.onToolResult(sessionId, name, result, (id, ...event) => this.publish(id, ...event));
     }
     return result;
   }
@@ -585,7 +622,7 @@ export class ConversationRunner {
 }
 
 /** The function schemas of the tools a generation offers, as the model is sent them. */
-function offeredToolSchemas(turn: ConversationGeneration): Array<Record<string, unknown>> {
+function offeredToolSchemas(turn: ConversationGeneration): FunctionTool[] {
   return [...turn.tools.values()].map((tool) => tool.schema);
 }
 
@@ -618,8 +655,8 @@ export async function callConversationTool(
   turn: ConversationGeneration,
   call: ToolCall,
   upcoming: number,
-  finishReason: string,
-): Promise<Record<string, unknown>> {
+  finishReason: CompletionMetadata["finish_reason"],
+): Promise<ConversationToolResult> {
   const tool = turn.tools.get(call.function.name);
   if (!tool) {
     return { error: `unknown tool ${call.function.name}` };
@@ -639,28 +676,29 @@ export async function callConversationTool(
   }
 }
 
-export function toolArgsAreJsonObject(raw: unknown): boolean {
-  if (isPlainRecord(raw)) {
-    return true;
-  }
-  if (typeof raw !== "string" || !raw.trim()) {
+/** Whether a tool call's arguments, as the model wrote them, are a whole JSON object. */
+export function toolArgsAreJsonObject(raw: ToolCall["function"]["arguments"]): boolean {
+  if (!raw.trim()) {
     return false;
   }
   try {
-    return isPlainRecord(JSON.parse(raw));
+    return isJsonObject(JSON.parse(raw));
   } catch {
     return false;
   }
 }
 
-export function truncatedToolArguments(finishReason: unknown, raw: unknown): boolean {
+/** Whether the step's output was cut at max_tokens in the middle of the call's arguments. */
+export function truncatedToolArguments(
+  finishReason: CompletionMetadata["finish_reason"],
+  raw: ToolCall["function"]["arguments"],
+): boolean {
   return finishReason === "length" && !toolArgsAreJsonObject(raw);
 }
 
-export function parseToolArgs(raw: unknown): JsonObject {
+/** A tool call's arguments as a JSON object; what can be recovered of them when they are not one. */
+export function parseToolArgs(raw: ToolCall["function"]["arguments"]): JsonObject {
   if (!raw) return {};
-  if (isJsonObject(raw)) return raw;
-  if (typeof raw !== "string") return {};
   try {
     const parsed: unknown = JSON.parse(raw);
     if (isJsonObject(parsed)) {
@@ -689,10 +727,15 @@ export function recoverPartialToolArgs(raw: string): JsonObject {
 function decodeJsonStringBody(body: string): string | null {
   try {
     const decoded: unknown = JSON.parse(`"${body}"`);
-    return typeof decoded === "string" ? decoded : null;
+    return isDecodedText(decoded) ? decoded : null;
   } catch {
     return null;
   }
+}
+
+/** Whether what JSON.parse gave back is a string. */
+function isDecodedText(value: unknown): value is string {
+  return typeof value === "string";
 }
 
 function unresolvedCalls(messages: ConversationMessageRow[]): ToolCall[] {

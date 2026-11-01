@@ -42,11 +42,6 @@
       "count": 1
     }
   },
-  "src/builder/index.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
-    }
-  },
   "src/capabilities/index.ts": {
     "anti-slop/no-runtime-typeof": {
       "count": 1
@@ -307,30 +302,8 @@
     }
   },
   "src/conversation/runner.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 3
-    },
     "anti-slop/no-unknown-parameters": {
-      "count": 5
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 12
-    },
-    "limits/erased-return-type": {
       "count": 1
-    }
-  },
-  "src/conversation/templates.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    },
-    "limits/erased-return-type": {
-      "count": 1
-    }
-  },
-  "src/conversation/trust.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 5
     }
   },
   "src/credentials/visibility.ts": {
@@ -393,11 +366,6 @@
       "count": 2
     }
   },
-  "src/generation/events.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    }
-  },
   "src/generation/index.ts": {
     "limits/silent-catch": {
       "count": 1
@@ -417,31 +385,16 @@
     }
   },
   "src/groupchat/delivery.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
     "limits/inline-parameter-type": {
       "count": 1
     }
   },
   "src/groupchat/history.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 2
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 4
-    },
     "limits/inline-parameter-type": {
       "count": 1
     }
   },
   "src/groupchat/index.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 7
-    },
     "complexity": {
       "count": 1
     },
@@ -458,28 +411,7 @@
       "count": 1
     }
   },
-  "src/groupchat/operator.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    },
-    "limits/erased-return-type": {
-      "count": 1
-    }
-  },
-  "src/groupchat/recipients.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
-    }
-  },
-  "src/groupchat/tags.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 3
-    }
-  },
   "src/groupchat/wake.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 5
-    },
     "limits/inline-parameter-type": {
       "count": 1
     }
@@ -509,17 +441,6 @@
       "count": 1
     },
     "max-params": {
-      "count": 2
-    }
-  },
-  "src/http/sse.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 4
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 4
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
       "count": 2
     }
   },
@@ -642,17 +563,6 @@
     },
     "typescript/consistent-type-assertions": {
       "count": 1
-    }
-  },
-  "src/notifications/index.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 4
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 11
-    },
-    "limits/erased-return-type": {
-      "count": 5
     }
   },
   "src/observability/client-errors.ts": {
@@ -866,9 +776,6 @@
     }
   },
   "src/studio/index.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
-    },
     "complexity": {
       "count": 1
     }
@@ -897,9 +804,6 @@
     }
   },
   "src/studio/runner.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
-    },
     "boundary/no-reexport-modules": {
       "count": 1
     },

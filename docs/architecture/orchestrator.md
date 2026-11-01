@@ -425,6 +425,13 @@ One in-process bus carries every event. Each SSE stream sends
 `: connected\n\n`, then live events only. The Builder stream also
 sends a `: keepalive\n\n` comment every 15 seconds.
 
+An event is a name and a JSON object (`StreamEvent` in
+`lib/event.ts`), written as the SSE frame's data by `http/sse.ts`.
+The Studio and Builder, guild, and inbox streams each declare their
+events and what each carries, beside the stream: `CoachEvents` in
+`conversation/runner.ts`, `GuildEvents` in `groupchat/index.ts`, and
+`InboxEvents` in `notifications/index.ts`.
+
 | Event | Stream | Class | What it says |
 |---|---|---|---|
 | `message.committed` | run, Studio, Builder | durable | A message row committed |

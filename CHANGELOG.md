@@ -8,6 +8,11 @@ commands for each effect are in
 
 ## Unreleased
 
+The inbox stream's notice of a new group message names the message's
+guild. A message posted in the chat an operator is watching no
+longer chimes or raises a desktop notification, and a desktop
+notification names the guild it was posted in.
+
 **Breaking for extensions.** `@guildsrun/web`'s API types name what
 the server sends where they held `Record<string, unknown>`: a run's
 and a coach conversation's message payload is a `MessagePayload`, a
