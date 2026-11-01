@@ -755,22 +755,6 @@
       "count": 1
     }
   },
-  "src/db/collections.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 13
-    }
-  },
-  "src/db/columns.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    }
-  },
   "src/db/config-changes.ts": {
     "limits/erased-return-type": {
       "count": 1
@@ -790,17 +774,7 @@
       "count": 1
     }
   },
-  "src/db/machines.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    }
-  },
   "src/db/migrations.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    }
-  },
-  "src/db/orgs.ts": {
     "anti-slop/no-runtime-typeof": {
       "count": 1
     }

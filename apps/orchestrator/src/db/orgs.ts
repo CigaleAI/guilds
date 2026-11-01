@@ -12,9 +12,11 @@ export type OrgCreatedHook = (
   now: Date,
 ) => Promise<void>;
 
+type Org = InferSelectModel<typeof orgs>;
+
 type OrgMember = InferSelectModel<typeof orgMembers>;
 
-export type OrgRow = Omit<InferSelectModel<typeof orgs>, "default_model">;
+export type OrgRow = Omit<Org, "default_model">;
 
 export type OrgMembershipRow = OrgRow & Pick<OrgMember, "role">;
 
@@ -367,13 +369,12 @@ export async function deleteOrgModelProvider(
   return result.rows[0] ?? null;
 }
 
-export async function getOrgDefaultModel(pool: Queryable, orgId: string): Promise<string | null> {
-  const result = await pool.query<{ default_model: string | null }>(
+export async function getOrgDefaultModel(pool: Queryable, orgId: string): Promise<Org["default_model"]> {
+  const result = await pool.query<Pick<Org, "default_model">>(
     `SELECT default_model FROM orgs WHERE id = $1`,
     [orgId],
   );
-  const value = result.rows[0]?.default_model;
-  return typeof value === "string" && value ? value : null;
+  return result.rows[0]?.default_model || null;
 }
 
 export async function setOrgDefaultModel(

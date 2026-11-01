@@ -608,6 +608,15 @@ function readableCollectionsSql(reader: ArtifactReader, values: unknown[]): stri
   return `c.org_id = $${org} AND ${agentModeSql("collection", "a.collection_id", reader, values)} IN ('read', 'write')`;
 }
 
+/**
+ * A `where` term as SQL over a record, and the expression that scores how well a record matches
+ * it: null for a term that only filters.
+ */
+type RecordPredicate = { where: string; score: string | null };
+
+/** A `where` term that ranks the records it matches. */
+type RankedPredicate = RecordPredicate & { score: string };
+
 function escapeLike(text: string): string {
   return text.replace(/[\\%_]/g, (char) => `\\${char}`);
 }
@@ -622,7 +631,7 @@ function fuzzySql(
   expr: string,
   values: unknown[],
   similar: boolean,
-): { where: string; score: string } {
+): RankedPredicate {
   values.push(term);
   const t = values.length;
   values.push(`%${escapeLike(term)}%`);
@@ -640,7 +649,7 @@ function arrayItemsExpr(column: number): string {
 }
 
 /** The open-text predicate, applied to each item of an array column. */
-function fuzzyArraySql(term: string, column: number, values: unknown[]): { where: string; score: string } {
+function fuzzyArraySql(term: string, column: number, values: unknown[]): RankedPredicate {
   const items = arrayItemsExpr(column);
   const match = fuzzySql(term, "item", values, true);
   return {
@@ -655,7 +664,7 @@ function fuzzyArraySql(term: string, column: number, values: unknown[]): { where
  * by substring. Similar spelling is not applied here: against a whole
  * record's text a short token would match too many neighbours.
  */
-function objectQuerySql(query: string, values: unknown[]): { where: string; score: string } {
+function objectQuerySql(query: string, values: unknown[]): RankedPredicate {
   values.push(query);
   const q = values.length;
   const tsquery = `websearch_to_tsquery('simple', $${q})`;
@@ -677,7 +686,7 @@ function datetimeExpr(column: number): string {
 }
 
 /** One `where` term as SQL over the record body. */
-function whereClauseSql(clause: WhereClause, values: unknown[]): { where: string; score: string | null } {
+function whereClauseSql(clause: WhereClause, values: unknown[]): RecordPredicate {
   if (clause.op === "id") {
     values.push(String(clause.id));
     return { where: `a.key = $${values.length}`, score: null };
@@ -718,7 +727,7 @@ function numberClauseSql(
   clause: NumberWhereClause,
   column: number,
   values: unknown[],
-): { where: string; score: null } {
+): RecordPredicate {
   if (clause.op === "eq") {
     values.push(clause.term);
     return { where: `${numberExpr(column)} = $${values.length}::numeric`, score: null };
@@ -742,7 +751,7 @@ function datetimeClauseSql(
   clause: DatetimeWhereClause,
   column: number,
   values: unknown[],
-): { where: string; score: null } {
+): RecordPredicate {
   if (clause.op === "eq") {
     values.push(clause.term);
     return { where: `${datetimeExpr(column)} = $${values.length}::timestamptz`, score: null };

@@ -8,6 +8,7 @@ import {
   DEFAULT_MACHINE_MAX_WORKSPACE_MIB,
   DEFAULT_MACHINE_NAME,
   type AgentConfig,
+  agents,
   machines,
 } from "./schema/index.js";
 
@@ -55,13 +56,13 @@ export type MachineKey = Pick<Machine, "org_id" | "id">;
 /** What an agent on a machine has on, as its config says. */
 export type HostedNeeds = { browser: boolean; coding: boolean };
 
+const AGENT_PLACEMENT_KEYS = ["org_id", "config", "machine_id", "machine_slot"] as const;
+
 /** Where an agent sits, with its organisation and config, locked for the rest of the transaction. */
-export type AgentPlacementRow = {
-  org_id: string;
-  config: Record<string, unknown>;
-  machine_id: string;
-  machine_slot: number;
-};
+export type AgentPlacementRow = Pick<
+  InferSelectModel<typeof agents>,
+  (typeof AGENT_PLACEMENT_KEYS)[number]
+>;
 
 const MACHINE_COLUMNS = pickColumns(machines, MACHINE_KEYS);
 
@@ -284,7 +285,7 @@ export async function lockAgentPlacement(
   agentId: string,
 ): Promise<AgentPlacementRow | null> {
   const result = await db.query<AgentPlacementRow>(
-    `SELECT org_id, config, machine_id, machine_slot FROM agents WHERE id = $1 FOR UPDATE`,
+    `SELECT ${pickColumns(agents, AGENT_PLACEMENT_KEYS)} FROM agents WHERE id = $1 FOR UPDATE`,
     [agentId],
   );
   return result.rows[0] ?? null;
