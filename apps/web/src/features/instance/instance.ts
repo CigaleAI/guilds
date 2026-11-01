@@ -60,10 +60,17 @@ export function connectorSetupGap(
 }
 
 /** The Admin search that opens one integration under Platform keys, and where to come back to. */
+export type IntegrationSetupSearch = {
+  tab: "instance";
+  integration: InstanceIntegration["id"];
+  return_to?: string;
+};
+
+/** The Admin search that sets up one integration, coming back to `returnTo` when it is given. */
 export function setupSearch(
-  integrationId: string,
+  integrationId: InstanceIntegration["id"],
   returnTo?: string,
-): { tab: "instance"; integration: string; return_to?: string } {
+): IntegrationSetupSearch {
   return {
     tab: "instance",
     integration: integrationId,

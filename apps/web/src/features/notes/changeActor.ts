@@ -1,7 +1,9 @@
 import type { FileChange } from "../../api/types/notes";
+import type { RunKind } from "../../api/types/runs";
 import type { ChangeActor } from "@guildsrun/ui";
 
-const runTrigger: Record<string, string> = {
+/** What woke a run, in words, by the run's kind. */
+const runTrigger: Record<RunKind, string> = {
   direct: "direct session",
   group: "group chat",
   schedule: "routine wake-up",

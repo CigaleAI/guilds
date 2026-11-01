@@ -91,6 +91,13 @@ export type GithubAppManifest = {
   setup_on_update: true;
 };
 
+/**
+ * Why creating the GitHub App failed, as the server's redirect back from GitHub names it in
+ * `setup_error`: the callback did not match the session, GitHub refused the code, or the App could
+ * not be stored.
+ */
+export type GithubAppManifestFailure = "state" | "conversion" | "store";
+
 /** `POST /api/admin/instance/keys/github-app/manifest`: where the browser posts the manifest, and the manifest. */
 export type GithubAppManifestStart = {
   action: string;
