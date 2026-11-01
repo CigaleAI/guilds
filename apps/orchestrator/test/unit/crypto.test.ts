@@ -3,14 +3,14 @@ import { createHash, createHmac } from "node:crypto";
 import { test } from "node:test";
 import { decodeMasterKey } from "../../src/config/index.js";
 import { decryptPayload, encryptPayload, environmentFingerprint } from "../../src/credentials/crypto.js";
-import { dumpsCompact } from "../../src/lib/json.js";
+import { dumpsCompact, type JsonObject } from "../../src/lib/json.js";
 import { loadJsonFixture } from "../helpers/fixtures.js";
 
 const vectors = loadJsonFixture<{
   aes_gcm: {
     key_b64: string;
     nonce_b64: string;
-    plaintext: Record<string, unknown>;
+    plaintext: JsonObject;
     plaintext_utf8: string;
     ciphertext_b64: string;
     roundtrip: Record<string, unknown>;

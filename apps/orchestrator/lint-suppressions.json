@@ -1315,26 +1315,6 @@
       "count": 1
     }
   },
-  "src/lib/json.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 2
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 3
-    },
-    "limits/erased-return-type": {
-      "count": 1
-    },
-    "typescript/consistent-type-assertions": {
-      "count": 2
-    }
-  },
   "src/lib/numbers.ts": {
     "anti-slop/no-unknown-parameters": {
       "count": 1
@@ -2821,16 +2801,6 @@
   "test/helpers/recipe-docs.ts": {
     "boundary/no-reexport-modules": {
       "count": 1
-    }
-  },
-  "test/integration/artifacts.test.ts": {
-    "no-useless-rename": {
-      "count": 1
-    }
-  },
-  "test/unit/generation.test.ts": {
-    "no-unreachable": {
-      "count": 2
     }
   }
 }

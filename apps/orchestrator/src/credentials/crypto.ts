@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from "node:crypto";
 import { decodeMasterKey } from "../config/index.js";
-import { dumpsCompact } from "../lib/json.js";
+import { dumpsCompact, isJsonObject } from "../lib/json.js";
 import { CredentialError } from "./validate.js";
 
 export function loadMasterKey(value?: string | null): Buffer {
@@ -23,6 +23,9 @@ export function encryptPayload(
   key?: Buffer | undefined,
   nonce?: Buffer | undefined,
 ): [Buffer, Buffer] {
+  if (!isJsonObject(payload)) {
+    throw new CredentialError("payload must be a JSON object");
+  }
   const master = key ?? loadMasterKey();
   const usedNonce = nonce ?? randomBytes(12);
   const plaintext = Buffer.from(dumpsCompact(payload, true), "utf8");
