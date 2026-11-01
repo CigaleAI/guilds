@@ -19,5 +19,9 @@
     "test:web": "pnpm --filter @guildsrun/web test",
     "prepare": "git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || true",
     "check": "scripts/check.sh"
+  },
+  "devDependencies": {
+    "@oxlint/plugins": "1.90.0",
+    "oxlint": "1.90.0"
   }
 }

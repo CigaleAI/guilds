@@ -27,10 +27,9 @@ flowchart LR
 | `docker-compose.yml`, `docker-compose.watch.yml`, `docker-compose.dev.yml` | The shipped stack, the development overlay, and the two merged ([Deployment](deployment.md#compose-stacks-and-images)) |
 | `setup.sh` | Writes `.env` (state path and generated secrets) and builds the OpenSandbox and runtime images |
 | `.env.example` | Core's settings, by integration ([Configure](../operations/configure.md)) |
-| `scripts/` | `check.sh` (the whole check; with `CHECK_ROOT` it checks an extending repository), `check-suppressions.sh` (refuses a commit that grows a package's lint suppressions outside a rule commit), `images.sh` (the OpenSandbox and runtime images), and `smoke-core-stack.sh` (the shipped stack, end to end) ([Development](../contributing/development.md)) |
+| `scripts/` | `check.sh` (the whole check; with `CHECK_ROOT` it checks an extending repository), `check-suppressions.sh` (refuses a commit that grows a package's lint suppressions outside a rule commit), `lint.mjs` (runs Oxlint on a package and subtracts its `lint-suppressions.json`), `images.sh` (the OpenSandbox and runtime images), and `smoke-core-stack.sh` (the shipped stack, end to end) ([Development](../contributing/development.md)) |
 | `Makefile` | `state`, `opensandbox-image`, `runtime-image`, `core-image`, `build`, `up`, `up-dev`, `dev`, `down`, `reset`, `migrate`, `verify`, `check`, `contract` (`contract-opensandbox` and `contract-model`), `compat-verify`, `soak`; an extending repository's Makefile includes it, with `CORE` naming core's path ([Make targets](../contributing/development.md#make-targets)) |
-| `eslint.boundary.js` | The lint rules holding core code inside core ([Extension points](extension-points.md#how-an-extending-repository-holds-core)) and refusing a module that re-exports another module's exports ([Lint](../contributing/development.md#lint-and-format)) |
-| `eslint.limits.js` | The lint rules for the function and file limits and the syntax the [code guidelines](../contributing/code-guidelines.md) refuse, shared by every package |
+| `lint/` | The Oxlint plugins every package loads: `boundary.js` holds core code inside core ([Extension points](extension-points.md#how-an-extending-repository-holds-core)) and refuses a module that re-exports another module's exports; `limits.js` carries the function and file limits and the syntax the [code guidelines](../contributing/code-guidelines.md) refuse ([Lint](../contributing/development.md#lint-and-format)) |
 | `.github/workflows/` | `verify` (every push: `scripts/check.sh`), `images` (a version tag publishes the orchestrator, runtime, and OpenSandbox server images on ghcr.io) |
 | `.state/` | The local `STATE_ROOT`, not in git ([Deployment](deployment.md#state-on-disk)) |
 
@@ -53,7 +52,8 @@ A repository that extends core holds this one as a submodule
 | `scripts/` | `compat-verify`, `compat-digest`, `dump-baseline-schema`, `patch-http-mcp-catalog`, `build-connector`, `models-dev-snapshot`, `sweep-workspaces`, `typesafe-replay`, `browse-spike` (one fastbrowse task on an agent's sandbox Chrome through the CDP bridge), and `import-cycles` (the import-cycle check of a package's `src/`, which the web app runs too) |
 | `Dockerfile` | The core image: a `web` stage builds `apps/web` and Storybook; the final stage copies `src`, `scripts`, `drizzle`, and the web build |
 | `package.json` | `exports`: the modules another package may import |
-| `eslint-suppressions.json`, `import-cycles.json` | The lint errors and the import cycles that predate their rules; both lists only shrink ([Lint](../contributing/development.md#lint-and-format)) |
+| `.oxlintrc.json` | The package's lint configuration ([Lint](../contributing/development.md#lint-and-format)) |
+| `lint-suppressions.json`, `import-cycles.json` | The lint errors and the import cycles that predate their rules; both lists only shrink ([Lint](../contributing/development.md#lint-and-format)) |
 
 ### `src/` directories
 
@@ -118,7 +118,8 @@ A repository that extends core holds this one as a submodule
 | `public/` | Files served as-is |
 | `vite.app.ts` | `appConfig()`: build and dev-server configuration, shared with an extension |
 | `package.json` | `exports`: what an extension's package may import ([Extension slots](web-app.md#extension-slots)) |
-| `eslint-suppressions.json`, `import-cycles.json` | The lint errors and the import cycles that predate their rules; both lists only shrink |
+| `.oxlintrc.json` | The package's lint configuration |
+| `lint-suppressions.json`, `import-cycles.json` | The lint errors and the import cycles that predate their rules; both lists only shrink |
 | `claude-design-export/` | The first Claude Design export; not the live library |
 
 ### `src/features/`
@@ -158,7 +159,8 @@ One directory per area. The screens are in the
 | `src/foundations/` | Token and icon Storybook boards |
 | `src/writeDesignSystemDoc.ts` | `pnpm design-system-doc` |
 | `.storybook/` | Storybook config |
-| `eslint-suppressions.json` | The lint errors that predate their rules; the list only shrinks |
+| `.oxlintrc.json` | The package's lint configuration |
+| `lint-suppressions.json` | The lint errors that predate their rules; the list only shrinks |
 
 [Design system](design-system.md) explains each one.
 

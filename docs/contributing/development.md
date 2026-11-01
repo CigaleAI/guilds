@@ -343,26 +343,27 @@ migration against applying the SQL files directly.
 
 ## Lint and format
 
-Every package runs ESLint (`pnpm -r lint`) on the recommended and
-typescript-eslint rules. Unused names are allowed when they start
-with `_`. The operator app and the design system also run the
-recommended React Hooks rules, and the design system the Storybook
-rules.
+Every package runs Oxlint (`pnpm -r lint`, about a second for the
+three packages) on its correctness rules. Unused names are allowed
+when they start with `_`. The operator app and the design system
+also run the React Hooks rules. A package's configuration is its
+`.oxlintrc.json`; the rules of this repository are Oxlint plugins
+under `lint/`, which every package's configuration loads.
 
-Every package also runs the boundary rule
-(`eslint.boundary.js`). It fails any file that imports a package
-of an extension or a relative path that leaves this repository. It
-also fails a module that holds a re-export (`export * from`,
-`export { x } from`, or `export { x }` and `export default x` of a
-name the module imports), except an index a tool requires, which
-the package names: the orchestrator's `src/db/schema/index.ts`,
-which drizzle-kit reads.
+Every package runs the boundary plugin (`lint/boundary.js`). It
+fails any file that imports a package of an extension or a
+relative path that leaves this repository. It also fails a module
+that holds a re-export (`export * from`, `export { x } from`, or
+`export { x }` and `export default x` of a name the module
+imports), except an index a tool requires, which the package
+names: the orchestrator's `src/db/schema/index.ts`, which
+drizzle-kit reads.
 
 Every package also runs the limits of the
 [code guidelines](code-guidelines.md#functions) on its source,
-tests and stories excepted (`eslint.limits.js`): `complexity`,
-`max-depth`, an error at five parameters, a
-warning past 800 lines and an error past 1,000, a refusal of
+tests and stories excepted: Oxlint's `complexity`, `max-depth`, an
+error at five parameters, a warning past 800 lines and, from the
+limits plugin (`lint/limits.js`), an error past 1,000, a refusal of
 every type assertion except `as const`, and a refusal of a silent
 catch: a `catch` that neither throws nor returns, a `catch` whose
 only exit is a bare `return;`, and a promise's `.catch()` whose
@@ -372,25 +373,28 @@ function's parameter, and an erased return type: `unknown` or
 `Record<string, unknown>`, alone or as the element of an array or
 the value of a promise, returned by an exported function, an
 exported const's function, or a public method, or named by a type
-alias. A
-package names its command-line modules, which may throw a plain
-`Error`: the orchestrator's `cli/`. The operator app refuses an
-import from `src/features/` in its shared directories, `src/api/`
-and `src/app/`, except in `src/app/router.tsx`, the composition
-root that mounts the features. The orchestrator also requires
-explicit parameter and return types on what a module exports
-(`@typescript-eslint/explicit-module-boundary-types`). It refuses an
-import of `fastify` outside `http/`, the roots, the
-extension points and the observability hooks; a value import of
-`db/` from `http/`;
-an import from `db/` of anything outside `db/` and `lib/`; and an
-import from `lib/` of anything outside `lib/`. Errors that predate
-the rules are recorded in the package's `eslint-suppressions.json`
-(ESLint bulk suppressions). Lint fails on an error that is not in
-the file, and on an entry that no longer matches an error, so the
-list only shrinks; after a fix,
-`pnpm exec eslint <lint args> --prune-suppressions` removes the
-cleared entries. Warnings do not fail lint.
+alias. A package names its command-line modules, which may throw a
+plain `Error`: the orchestrator's `cli/`. The operator app refuses
+an import from `src/features/` in its shared directories,
+`src/api/` and `src/app/`, except in `src/app/router.tsx`, the
+composition root that mounts the features. The orchestrator also
+requires explicit parameter and return types on what a module
+exports (`typescript/explicit-module-boundary-types`). It refuses
+an import of `fastify` outside `http/`, the roots, the extension
+points and the observability hooks; a value import of `db/` from
+`http/`; an import from `db/` of anything outside `db/` and `lib/`;
+and an import from `lib/` of anything outside `lib/`. In the
+orchestrator's tests, reading through an optional chain is the
+assertion that the value is there, so `no-unsafe-optional-chaining`
+is off for them.
+
+`pnpm lint` runs Oxlint through `scripts/lint.mjs`, which subtracts
+the errors that predate the rules, recorded in the package's
+`lint-suppressions.json` as a count per file and rule. Lint fails
+on an error that is not in the file, and on an entry that no
+longer matches an error, so the list only shrinks; after a fix,
+`pnpm --filter <package> lint --write` rewrites the file from the
+errors that remain. Warnings do not fail lint.
 
 Prettier formats with semicolons, double quotes, trailing
 commas, and a width of 100 (`pnpm --filter <package> format`).
@@ -406,7 +410,7 @@ file's `compositionRoots` names the package's
 [composition roots](code-guidelines.md#locality): their own imports
 are left out of the graph, and an import of one is still an edge.
 `cycles --write` rewrites the cycles from the tree as it is and
-keeps `compositionRoots`; like `eslint-suppressions.json`, the
+keeps `compositionRoots`; like `lint-suppressions.json`, the
 cycles only shrink.
 
 ## Documentation
