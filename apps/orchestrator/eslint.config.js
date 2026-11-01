@@ -74,8 +74,8 @@ export default tseslint.config(
     },
   },
   {
-    // A shared directory never imports from a feature (docs/contributing/code-guidelines.md, Shared
-    // code): db/ imports only db/ and lib/, and lib/ only lib/.
+    // A shared directory never imports from a feature (docs/contributing/code-guidelines.md,
+    // Locality): db/ imports only db/ and lib/, and lib/ only lib/.
     files: ["src/db/*.ts"],
     rules: {
       "@typescript-eslint/no-restricted-imports": [
