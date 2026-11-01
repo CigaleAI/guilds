@@ -1,6 +1,7 @@
 /** Checks that narrow what the server sends before the app reads it as one of its types. */
 
 import type { ErrorReply, ValidationProblem } from "./client";
+import type { LookupItem } from "./types/access";
 import type { StudioFocusRequest } from "./types/studio";
 
 /** A value JSON carries: a string, number, boolean or null, or an array or object of them. */
@@ -10,13 +11,21 @@ export type JsonValue = string | number | boolean | null | JsonValue[] | JsonObj
 export type JsonObject = { [key: string]: JsonValue | undefined };
 
 /**
- * A JSON Schema object: the keywords the app reads, its `type`, `properties` and `required`,
- * beside whatever else the schema holds.
+ * A JSON Schema object: the keywords the app reads, beside whatever else the schema holds. Each of
+ * its `properties` is a JSON Schema too.
  */
-export type JsonSchema = JsonObject & {
+export type JsonSchema = {
   type?: string | string[];
-  properties?: JsonObject;
+  title?: string;
+  description?: string;
+  /** The values the schema allows, when it lists them. */
+  enum?: JsonValue[];
+  properties?: { [name: string]: JsonSchema };
   required?: string[];
+  maxItems?: number;
+  /** Marks a connector setting whose values the connector finds by search. */
+  "x-lookup"?: boolean;
+  [keyword: string]: JsonValue | undefined;
 };
 
 /** The value a JSON text holds; undefined when the text is not JSON. */
@@ -74,14 +83,35 @@ export function isStringList(value: unknown): value is string[] {
   return isListOf(value, isString);
 }
 
-/** Whether a value is a JSON Schema object: a JSON object whose keywords the app reads have their types. */
+/** Whether a value is text or left out. */
+function isOptionalString(value: unknown): value is string | undefined {
+  return value === undefined || isString(value);
+}
+
+/** The check each keyword the app reads passes when a JSON Schema holds it. */
+const schemaKeywordChecks = {
+  type: (type) => isString(type) || isStringList(type),
+  title: isString,
+  description: isString,
+  enum: Array.isArray,
+  properties: (properties) =>
+    isJsonObject(properties) && Object.values(properties).every(isJsonSchema),
+  required: isStringList,
+  maxItems: isNumber,
+  "x-lookup": isBoolean,
+} satisfies Record<string, (keyword: JsonValue) => boolean>;
+
+/**
+ * Whether a value is a JSON Schema object: a JSON object whose keywords the app reads have their
+ * types, each of its properties a JSON Schema too.
+ */
 export function isJsonSchema(value: unknown): value is JsonSchema {
-  if (!isJsonObject(value)) return false;
-  const { type, properties, required } = value;
   return (
-    (type === undefined || isString(type) || isStringList(type)) &&
-    (properties === undefined || isJsonObject(properties)) &&
-    (required === undefined || isStringList(required))
+    isJsonObject(value) &&
+    Object.entries(schemaKeywordChecks).every(([keyword, check]) => {
+      const held = value[keyword];
+      return held === undefined || check(held);
+    })
   );
 }
 
@@ -106,6 +136,11 @@ export function isErrorReply(value: unknown): value is ErrorReply {
   const { detail } = value;
   if (isString(detail) || isListOf(detail, isValidationProblem)) return true;
   return isJsonObject(detail) && isString(detail.message);
+}
+
+/** Whether a value is a connector's item a lookup stores: an object whose id, name and symbol are text. */
+export function isLookupItem(value: unknown): value is LookupItem {
+  return isJsonObject(value) && hasFields(value, ["id", "name", "symbol"], isOptionalString);
 }
 
 /** An id or path a focus pin names, null when it names none, or left out. */

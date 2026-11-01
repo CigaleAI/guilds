@@ -173,6 +173,17 @@ export type LoginKeys = Record<ConnectorAuthField["name"], string>;
 /** One value a connector setting may take: what it stores, and how the search box shows it. */
 export type LookupOption = { value: JsonValue; label: string; detail?: string; image?: string };
 
+/**
+ * A lookup value that is one of the connector's items: an object with the id it is known by, and
+ * the name and symbol it shows as, beside whatever else the connector stores.
+ */
+export type LookupItem = {
+  id?: string;
+  name?: string;
+  symbol?: string;
+  [field: string]: JsonValue | undefined;
+};
+
 export type AgentAccess = {
   tools: AccessBinding[];
   mcp: McpServerAccess[];

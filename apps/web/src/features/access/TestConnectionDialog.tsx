@@ -100,7 +100,6 @@ type ResultViewProps = { result: McpToolCallResult };
 
 function ResultView({ result }: ResultViewProps) {
   const shown = prettyResult(result.content);
-  const structured = shown.json !== null && typeof shown.json === "object";
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
       <div className="flex items-center gap-2">
@@ -108,7 +107,7 @@ function ResultView({ result }: ResultViewProps) {
         {result.truncated ? <span className="text-xs text-muted">truncated</span> : null}
         <CopyButton className="ml-auto" text={result.content} what="result" />
       </div>
-      {structured ? (
+      {shown.json ? (
         <div className="max-h-80 overflow-auto rounded-md bg-surface p-3">
           <JsonTree value={shown.json} />
         </div>

@@ -1,4 +1,12 @@
-import { isJsonObject, parseJson, type JsonObject, type JsonValue } from "../../api/wire";
+import {
+  isJsonObject,
+  isNumber,
+  isString,
+  parseJson,
+  type JsonObject,
+  type JsonSchema,
+  type JsonValue,
+} from "../../api/wire";
 
 export type ArgFieldKind = "string" | "number" | "integer" | "boolean" | "enum" | "json";
 
@@ -10,23 +18,21 @@ export type ArgField = {
   values?: string[];
 };
 
-function typeOf(spec: Record<string, unknown>): string {
-  const raw = spec.type;
-  if (typeof raw === "string") return raw;
-  if (Array.isArray(raw)) {
-    const first = raw.find((item) => item !== "null" && typeof item === "string");
-    if (typeof first === "string") return first;
-  }
-  return "";
+/** The type a property's schema names: its one type, or the first besides `null` it lists. */
+function typeOf(spec: JsonSchema): string {
+  const type = spec.type;
+  if (!Array.isArray(type)) return type ?? "";
+  return type.find((item) => item !== "null") ?? "";
 }
 
-function enumValues(spec: Record<string, unknown>): string[] | null {
-  if (!Array.isArray(spec.enum) || spec.enum.length === 0) return null;
-  if (!spec.enum.every((item) => typeof item === "string" || typeof item === "number")) return null;
+/** The values a property's schema lists, as the field's choices; null unless each is text or a number. */
+function enumValues(spec: JsonSchema): string[] | null {
+  if (!spec.enum?.length) return null;
+  if (!spec.enum.every((item) => isString(item) || isNumber(item))) return null;
   return spec.enum.map((item) => String(item));
 }
 
-function fieldKind(spec: Record<string, unknown>): ArgFieldKind {
+function fieldKind(spec: JsonSchema): ArgFieldKind {
   const values = enumValues(spec);
   if (values) return "enum";
   const type = typeOf(spec);
@@ -38,21 +44,16 @@ function fieldKind(spec: Record<string, unknown>): ArgFieldKind {
 }
 
 /** One form field per property on an object schema; a single JSON field when there are none. */
-export function fieldsFromSchema(schema: Record<string, unknown> | undefined): ArgField[] {
-  const properties = isJsonObject(schema?.properties) ? schema.properties : null;
+export function fieldsFromSchema(schema: JsonSchema | undefined): ArgField[] {
+  const properties = schema?.properties;
   if (!properties || !Object.keys(properties).length) {
     return [{ name: "arguments", kind: "json", required: false, description: "JSON object." }];
   }
-  const required = new Set(
-    Array.isArray(schema?.required)
-      ? schema.required.filter((item): item is string => typeof item === "string")
-      : [],
-  );
-  return Object.entries(properties).map(([name, raw]) => {
-    const spec = isJsonObject(raw) ? raw : {};
+  const required = new Set(schema.required);
+  return Object.entries(properties).map(([name, spec]) => {
     const kind = fieldKind(spec);
     const values = kind === "enum" ? (enumValues(spec) ?? undefined) : undefined;
-    const description = typeof spec.description === "string" ? spec.description : undefined;
+    const description = spec.description;
     return {
       name,
       kind,
@@ -63,12 +64,17 @@ export function fieldsFromSchema(schema: Record<string, unknown> | undefined): A
   });
 }
 
-export function emptyArgValues(fields: readonly ArgField[]): Record<string, string> {
-  const values: Record<string, string> = {};
-  for (const field of fields) {
-    values[field.name] = field.kind === "json" && field.name === "arguments" ? "{}" : "";
-  }
-  return values;
+/** What the operator typed in each field of a tool's form, by the field's name. */
+export type ArgTexts = Record<ArgField["name"], string>;
+
+/** Each field's starting text: an empty object for the one JSON field of a schema without properties. */
+export function emptyArgValues(fields: readonly ArgField[]): ArgTexts {
+  return Object.fromEntries(
+    fields.map((field) => [
+      field.name,
+      field.kind === "json" && field.name === "arguments" ? "{}" : "",
+    ]),
+  );
 }
 
 /** What one field's text parses to: the value its kind takes, or why it takes none. */
@@ -102,7 +108,7 @@ const argValueByKind: Record<ArgFieldKind, (name: string, raw: string) => ArgVal
 /** Turns form text into tool arguments. Empty optional fields are omitted. */
 export function parseArgValues(
   fields: readonly ArgField[],
-  values: Record<string, string>,
+  values: ArgTexts,
 ): { arguments: JsonObject } | { error: string } {
   const arguments_: JsonObject = {};
   for (const field of fields) {
@@ -123,10 +129,13 @@ export function parseArgValues(
   return { arguments: arguments_ };
 }
 
-export function prettyResult(content: string): { text: string; json: unknown } {
-  try {
-    return { text: content, json: JSON.parse(content) };
-  } catch {
-    return { text: content, json: null };
-  }
+/**
+ * A tool's result as the test dialog shows it: its text, and the JSON array or object the text
+ * holds, which shows as a tree; null when the text holds neither.
+ */
+export type ToolResultView = { text: string; json: JsonValue[] | JsonObject | null };
+
+export function prettyResult(content: string): ToolResultView {
+  const json = parseJson(content);
+  return { text: content, json: Array.isArray(json) || isJsonObject(json) ? json : null };
 }
