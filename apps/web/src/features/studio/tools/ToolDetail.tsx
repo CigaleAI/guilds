@@ -15,7 +15,7 @@ import {
   type ToolFlag,
 } from "./toolsModel";
 
-const sourceLabel: Record<string, string> = {
+const sourceLabel: Record<NonNullable<StudioTool["source"]>, string> = {
   native: "native tool",
   script: "script tool",
   connector: "connection tool",

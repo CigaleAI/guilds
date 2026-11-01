@@ -84,7 +84,7 @@ export type TimeValue = number | string | null | undefined;
 /** Epoch milliseconds for a number or date string; null when empty or unreadable. */
 export function toMs(value: TimeValue): number | null {
   if (value === null || value === undefined || value === "") return null;
-  const time = typeof value === "number" ? value : new Date(value).getTime();
+  const time = new Date(value).getTime();
   return Number.isFinite(time) ? time : null;
 }
 

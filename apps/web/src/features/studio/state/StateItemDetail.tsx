@@ -142,7 +142,7 @@ function ItemStats({ row }: ItemStatsProps) {
   );
 }
 
-const editLabels: Record<string, { label: string; icon: typeof Pencil }> = {
+const editLabels: Partial<Record<StateItemRow["kind"], { label: string; icon: typeof Pencil }>> = {
   note: { label: "Open text", icon: Pencil },
   memory: { label: "Open text", icon: Pencil },
   table: { label: "Open records", icon: Table },
