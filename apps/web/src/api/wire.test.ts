@@ -7,8 +7,10 @@ import {
   isJsonValue,
   isListOf,
   isNumber,
+  isNovncUi,
   isNumberOrNull,
   isRecordToolArguments,
+  isRfbConnection,
   isShellArguments,
   isStudioToolArguments,
   isString,
@@ -155,4 +157,35 @@ test("a tool call's arguments pass their tool's check when each parameter has it
   assert.equal(isToolLevelArguments({ level: "guild", path: "org/o1/plan.md" }), true);
   assert.equal(isToolLevelArguments({ path: 7 }), false);
   assert.equal(isToolLevelArguments("plan.md"), false);
+});
+
+test("a connection with every method the clipboard bridge calls is noVNC's RFB", () => {
+  const call = () => undefined;
+  const rfb = { focus: call, sendKey: call, clipboardPasteFrom: call, addEventListener: call };
+  assert.equal(isRfbConnection(rfb), true);
+});
+
+test("a connection missing a method the clipboard bridge calls is not noVNC's RFB", () => {
+  const call = () => undefined;
+  assert.equal(isRfbConnection({ focus: call, sendKey: call, addEventListener: call }), false);
+  assert.equal(
+    isRfbConnection({
+      focus: call,
+      sendKey: call,
+      clipboardPasteFrom: "x",
+      addEventListener: call,
+    }),
+    false,
+  );
+  assert.equal(isRfbConnection(null), false);
+});
+
+test("noVNC's UI holds an RFB connection once it connects, and none before", () => {
+  const call = () => undefined;
+  const rfb = { focus: call, sendKey: call, clipboardPasteFrom: call, addEventListener: call };
+  assert.equal(isNovncUi({ rfb }), true);
+  assert.equal(isNovncUi({}), true);
+  assert.equal(isNovncUi({ rfb: null }), true);
+  assert.equal(isNovncUi({ rfb: { focus: call } }), false);
+  assert.equal(isNovncUi(undefined), false);
 });

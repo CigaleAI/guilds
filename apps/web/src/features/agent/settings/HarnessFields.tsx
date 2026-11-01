@@ -272,8 +272,8 @@ export function HarnessField({ form, onChange, errors, agent, carried }: Harness
       <HarnessChoiceFields form={form} onChange={onChange} errors={errors} carried={carried} />
       {missing ? (
         <p className="text-sm text-t-ochre-fg">
-          This machine&apos;s image doesn&apos;t carry {harnessLabel(form.harness)}, so its code
-          tasks fail. Pick another harness, or move the agent to a machine that has it.
+          This machine&apos;s image doesn&apos;t carry {harnessLabel(form.harness || null)}, so its
+          code tasks fail. Pick another harness, or move the agent to a machine that has it.
         </p>
       ) : agent && form.harness ? (
         <HarnessReadiness

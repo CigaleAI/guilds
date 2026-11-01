@@ -13,7 +13,7 @@ class CronDescriptionError extends Error {
   }
 }
 
-const DOW: Record<string, number> = {
+const DOW = {
   "0": 0,
   "1": 1,
   "2": 2,
@@ -32,7 +32,7 @@ const DOW: Record<string, number> = {
   thurs: 4,
   fri: 5,
   sat: 6,
-};
+} satisfies Record<string, number>;
 
 const DOW_NAME = [
   "Sunday",
@@ -44,7 +44,7 @@ const DOW_NAME = [
   "Saturday",
 ] as const;
 
-const MONTH: Record<string, number> = {
+const MONTH = {
   "1": 1,
   "2": 2,
   "3": 3,
@@ -69,7 +69,7 @@ const MONTH: Record<string, number> = {
   oct: 10,
   nov: 11,
   dec: 12,
-};
+} satisfies Record<string, number>;
 
 const MONTH_NAME = [
   "January",

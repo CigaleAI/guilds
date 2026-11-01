@@ -251,3 +251,21 @@ export type AgentSettingsInput = {
   avatar_shape?: string;
   avatar_color?: string;
 };
+
+/**
+ * noVNC's RFB connection to an agent's browser desktop, as the viewer the server serves at
+ * `/api/agents/:agent_id/browser/vnc` holds it: the parts the clipboard bridge uses.
+ */
+export type RfbConnection = {
+  focus: () => void;
+  sendKey: (keysym: number, code: string, down: boolean) => void;
+  clipboardPasteFrom: (text: string) => void;
+  addEventListener: (
+    type: "clipboard",
+    listener: (event: CustomEvent<{ text?: string }>) => void,
+  ) => void;
+  _clipboardServerCapabilitiesActions?: Record<number, boolean>;
+};
+
+/** noVNC's UI module in the browser desktop's viewer: its RFB connection once it connects. */
+export type NovncUi = { rfb?: RfbConnection | null };

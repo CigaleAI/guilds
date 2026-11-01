@@ -2,6 +2,7 @@
 
 import type { ErrorReply, ValidationProblem } from "./client";
 import type { ConnectorAuthField, LookupItem } from "./types/access";
+import type { NovncUi, RfbConnection } from "./types/agents";
 import type {
   BuilderWidget,
   ConnectScope,
@@ -288,6 +289,21 @@ export function isBuilderToolArguments(value: unknown): value is BuilderToolArgu
 /** Whether a tool call's arguments are a bundled search connector's: its query, account and post, as text. */
 export function isConnectorToolArguments(value: unknown): value is ConnectorToolArguments {
   return hasTextParameters(value, ["query", "user", "id"]);
+}
+
+const RFB_METHODS = ["focus", "sendKey", "clipboardPasteFrom", "addEventListener"] as const;
+
+/** Whether a value is noVNC's RFB connection: it has every method the clipboard bridge calls. */
+export function isRfbConnection(value: unknown): value is RfbConnection {
+  if (typeof value !== "object" || value === null) return false;
+  return RFB_METHODS.every((method) => typeof Reflect.get(value, method) === "function");
+}
+
+/** Whether a value is noVNC's UI module: an object whose RFB connection is one, or not there yet. */
+export function isNovncUi(value: unknown): value is NovncUi {
+  if (typeof value !== "object" || value === null) return false;
+  const rfb: unknown = Reflect.get(value, "rfb");
+  return rfb === undefined || rfb === null || isRfbConnection(rfb);
 }
 
 /** Whether a value is a connector's item a lookup stores: an object whose id, name and symbol are text. */

@@ -31,9 +31,9 @@ export function isHarnessEffort(value: unknown): value is HarnessEffort {
   return typeof value === "string" && Object.hasOwn(effortLabels, value);
 }
 
-/** A harness's label; the value itself when the app does not know it. */
-export function harnessLabel(value: unknown): string {
-  return isHarness(value) ? harnessLabels[value] : String(value ?? "");
+/** A harness's label; empty when none is named. */
+export function harnessLabel(harness: Harness | null | undefined): string {
+  return harness ? harnessLabels[harness] : "";
 }
 
 /** Why a harness can be missing from a machine, shown wherever the image decides what can run. */
@@ -365,6 +365,9 @@ export function codingStrip(input: StripInput): CodingStripState {
 /** What a new coding agent's token step holds: a secret picked among the guild's, or a token pasted. */
 export type TokenDraft = { secret: string; pasted: string };
 
+/** How a new agent gets its harness token: its config's aliases, and the secret to add once it exists. */
+export type TokenPlan = { aliases: Record<string, string>; add: string | null };
+
 /**
  * How a new agent gets its harness token: the aliases its config starts with, and the secret to
  * add for it once it exists (its name, granted to the agent alone), when a token was pasted. A
@@ -376,7 +379,7 @@ export function tokenPlan(
   draft: TokenDraft,
   agentName: string,
   guildSecrets: readonly TokenSecret[],
-): { aliases: Record<string, string>; add: string | null } {
+): TokenPlan {
   if (!variable) return { aliases: {}, add: null };
   if (draft.pasted.trim()) {
     const name = freeTokenName(variable, agentName, guildSecrets);

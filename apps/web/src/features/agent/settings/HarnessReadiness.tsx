@@ -43,7 +43,7 @@ function TabLink({ tab, agent }: TabLinkProps) {
 type NotePartViewProps = { part: NotePart; agent: SettingsAgent };
 
 function NotePartView({ part, agent }: NotePartViewProps) {
-  if (typeof part === "string") return part;
+  if ("text" in part) return part.text;
   if ("code" in part) return <code className="font-mono">{part.code}</code>;
   return <TabLink tab={part.tab} agent={agent} />;
 }
@@ -259,7 +259,8 @@ export function HarnessReadiness({
       error: status.isError ? status.error.message : null,
       harness,
     },
-    new Date(),
+    // A login's age reads as of when the harness status was read.
+    new Date(status.dataUpdatedAt),
   );
   const variable = harnessSecrets[harness];
   return (
