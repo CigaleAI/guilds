@@ -1,7 +1,9 @@
 import { COLLECTIONS_SEGMENT } from "../artifacts/paths.js";
-import { isPlainRecord } from "../db/json.js";
+import { Type, type Static } from "@sinclair/typebox";
 import type { ConfigChangeEventRow, FileChangeEventRow, ReadCallRow, WindowRunRow } from "../db/state.js";
 import { iso } from "../db/views.js";
+import { keepMatching } from "../lib/decode.js";
+import { isJsonObject } from "../lib/json.js";
 
 // A guild's state as Studio's State list shows it: every note, table,
 // script, and Memory the guild's agents work on, with who changed and who
@@ -79,8 +81,15 @@ export type ChangeOrigin = Pick<StoredChange, "studio_session_id" | "studio_seq"
 /** The run step a read happened in. */
 type ReadSource = Pick<ReadCallRow, "run_id" | "agent_id" | "created_at" | "call_id">;
 
-/** A tool call's arguments, as the model wrote them. */
-type CallArguments = Record<string, unknown>;
+/** The arguments a read tool names its item by, each kept only when the call gave it as text. */
+const CallArgumentsSchema = Type.Object({
+  path: Type.Optional(Type.String()),
+  collection: Type.Optional(Type.String()),
+  name: Type.Optional(Type.String()),
+});
+
+/** The arguments a read tool names its item by. */
+type CallArguments = Static<typeof CallArgumentsSchema>;
 
 type Agents = ReadonlyMap<string, string>;
 
@@ -92,7 +101,8 @@ export type StateFilter = { kind: StateKind | null; agentId: string | null };
 
 const OTHER_GUILD: StateActor = { kind: "other_guild", id: "", name: "another guild" };
 
-const str = (value: unknown): string | null => (typeof value === "string" && value ? value : null);
+/** An argument's text, or null when the call left it out or blank. */
+const text = (value: string | undefined): string | null => value || null;
 
 function agentActor(agentId: string, agents: Agents): StateActor {
   const name = agents.get(agentId);
@@ -202,25 +212,28 @@ function runReads(run: WindowRunRow, context: StateContext): StateEvent[] {
   return memory ? [...reads, readEvent(memory, source, "memory", context)] : reads;
 }
 
+/** The arguments a stored call names its item by; none when they are not a JSON object. */
 function parseArguments(raw: string | null): CallArguments {
   if (raw === null) return {};
   try {
     const parsed: unknown = JSON.parse(raw);
-    return isPlainRecord(parsed) ? parsed : {};
+    return (isJsonObject(parsed) ? keepMatching(CallArgumentsSchema, parsed) : null) ?? {};
   } catch {
     return {};
   }
 }
 
-/** The item one tool call named, by the tool's own argument. */
-const callTargets: Record<string, (args: CallArguments, call: ReadCallRow, items: StateItem[]) => string | null> = {
-  note_get: (args, _call, items) => itemAt(items, (item) => item.display_path === str(args.path)),
-  file_fetch: (args, _call, items) => itemAt(items, (item) => item.display_path === str(args.path)),
-  record_list: (args, _call, items) => itemAt(items, (item) => item.kind === "table" && item.title === str(args.collection)),
-  record_search: (args, _call, items) =>
-    itemAt(items, (item) => item.kind === "table" && item.title === str(args.collection)),
-  script_run: (args, call, items) => scriptOf(items, call.agent_id, str(args.name)),
-};
+/** The display path of the item one read tool call names, by the tool's own argument. */
+type CallTarget = (args: CallArguments, call: ReadCallRow, items: StateItem[]) => string | null;
+
+/** The read tools that name their item by an argument, by tool name. */
+const callTargets = new Map<string, CallTarget>([
+  ["note_get", (args, _call, items) => itemAt(items, (item) => item.display_path === text(args.path))],
+  ["file_fetch", (args, _call, items) => itemAt(items, (item) => item.display_path === text(args.path))],
+  ["record_list", (args, _call, items) => itemAt(items, (item) => item.kind === "table" && item.title === text(args.collection))],
+  ["record_search", (args, _call, items) => itemAt(items, (item) => item.kind === "table" && item.title === text(args.collection))],
+  ["script_run", (args, call, items) => scriptOf(items, call.agent_id, text(args.name))],
+]);
 
 function scriptOf(items: StateItem[], agentId: string, name: string | null): string | null {
   return itemAt(items, (item) => item.kind === "script" && item.owner_id === agentId && item.title === name);
@@ -230,7 +243,7 @@ function scriptOf(items: StateItem[], agentId: string, name: string | null): str
 function callRead(call: ReadCallRow, context: StateContext): StateEvent | null {
   const name = call.tool_name;
   if (name === null) return null;
-  const target = callTargets[name];
+  const target = callTargets.get(name);
   const path = target
     ? target(parseArguments(call.arguments), call, context.items)
     : scriptOf(context.items, call.agent_id, name);

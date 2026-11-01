@@ -83,10 +83,6 @@ export class StudioRunner {
     this.inner.unsubscribe(sessionId, queue);
   }
 
-  async publish(sessionId: string, event: string, data: Record<string, unknown>): Promise<void> {
-    await this.inner.publish(sessionId, event, data);
-  }
-
   cancel(sessionId: string): void {
     this.inner.cancel(sessionId);
   }

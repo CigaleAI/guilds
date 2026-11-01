@@ -10,6 +10,7 @@ import {
   connectionSummary,
   grantedConnectionIds,
   reachableConnection,
+  type StudioAccessWidget,
 } from "./connections.js";
 import { StudioUnprocessableError } from "./errors.js";
 import { wrapEvidence } from "./system.js";
@@ -48,14 +49,15 @@ export const studioRequestConnectionAccess: StudioTool = studioTool({
     if (reach.connection.status !== "connected") {
       throw new StudioUnprocessableError(`connection is ${String(reach.connection.status)}`);
     }
-    return {
+    const widget: StudioAccessWidget = {
       widget: STUDIO_CONNECTION_ACCESS_WIDGET,
       await_operator: true,
       granted: false,
       connection: summary,
       reason: input.reason.trim(),
-      title: `Grant read access to ${String((summary.server as { display_name: string }).display_name)}`,
+      title: `Grant read access to ${summary.server.display_name}`,
     };
+    return widget;
   },
 });
 

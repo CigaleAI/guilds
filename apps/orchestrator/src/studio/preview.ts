@@ -1,7 +1,7 @@
 import { agentActor } from "../artifacts/actors.js";
 import { ArtifactError } from "../artifacts/errors.js";
 import type { ArtifactActor } from "../artifacts/types.js";
-import type { ArtifactStore } from "../artifacts/store.js";
+import type { ArtifactStore, CollectionView } from "../artifacts/store.js";
 import { enabledToolNames, resolvedMcp, resolvedTools } from "../access/index.js";
 import { agentLogins, agentSecrets, resolveMcpTool } from "../access/runtime.js";
 import { listAgents, type AgentPlaceRow, type AgentRow } from "../db/agents.js";
@@ -17,6 +17,9 @@ import { listServers, type LoadedConnector } from "../connectors/servers.js";
 import { listMcpConnections, type McpConnectionRow } from "../db/mcp.js";
 import { connectionTools } from "../mcp/service.js";
 import { listCollections } from "../artifacts/collections.js";
+
+import type { FunctionTool } from "../lib/tool-schema.js";
+import type { ScriptCatalogItem } from "../scripts/catalog.js";
 
 /** The db/ functions an agent's run state preview reads, and its secrets and logins, on `db`. */
 export function previewDatabase(db: Queryable) {
@@ -39,7 +42,7 @@ export type PreviewDeps = {
 };
 
 /** The collections the agent reaches, or none when artifacts refuses to list them, as a run reads them. */
-async function previewCollections(store: ArtifactStore, actor: ArtifactActor): Promise<unknown[]> {
+async function previewCollections(store: ArtifactStore, actor: ArtifactActor): Promise<CollectionView[]> {
   try {
     return await listCollections(store, actor);
   } catch (error) {
@@ -50,10 +53,10 @@ async function previewCollections(store: ArtifactStore, actor: ArtifactActor): P
   }
 }
 
-export async function previewCurrentState(
-  deps: PreviewDeps,
-  agent: AgentRow,
-): Promise<{ state: Record<string, unknown>; projected_at: string }> {
+/** An agent's State as its next run would read it, and when it was projected. */
+export type StatePreview = { state: ReturnType<typeof collectRunState>; projected_at: string };
+
+export async function previewCurrentState(deps: PreviewDeps, agent: AgentRow): Promise<StatePreview> {
   const projectedAt = new Date().toISOString();
   const orgId = agent.org_id;
   const guildId = agent.guild_id;
@@ -79,14 +82,42 @@ export async function previewCurrentState(
   return { state, projected_at: projectedAt };
 }
 
+/** A connection's tool as Studio lists it: its namespaced and remote names, what it does, and whether it only reads. */
+export type ProjectedTool = { name: string; remote_name: string; description: string; read_only: boolean };
+
+/** A login an agent of the source guild could inherit, with the tools its server lists. */
 export type ProjectedConnection = {
   id: string;
   server: { id: string; slug: string; display_name: string };
-  owner_scope: string;
+  owner_scope: McpConnectionRow["owner_scope"];
   owner_id: string | null;
   account_hint: string;
-  status: string;
-  tools: Array<{ name: string; remote_name: string; description: string; read_only: boolean }>;
+  status: McpConnectionRow["status"];
+  tools: ProjectedTool[];
+};
+
+/** A connection as one agent is offered it: whether its server is on for the agent, and the tools it is offered. */
+export type OfferedConnection = ProjectedConnection & { server_enabled: boolean; offered_tools: string[] };
+
+/** What one agent is offered at run start: native tools, scripts, secret names, and connections. */
+export type ProjectedAccess = {
+  native_tools: string[];
+  scripts: ScriptCatalogItem[];
+  secrets: SecretSummary[];
+  connections: OfferedConnection[];
+};
+
+/** A secret an agent can read, by its name and what it is for. */
+export type SecretSummary = { name: string; description: string };
+
+/**
+ * The function schemas one agent is offered at run start, natives and connection tools; the
+ * newest connection change; and the agent's configuration as text, which a publish compares.
+ */
+export type OfferedToolSchemas = {
+  schemas: FunctionTool[];
+  catalog_revision: string | null;
+  config_hash: string;
 };
 
 function serverSummary(server: LoadedConnector): ProjectedConnection["server"] {
@@ -151,15 +182,7 @@ export async function projectGuildConnections(
 
 // What one agent is offered at run start, projected from bindings and the
 // stored MCP catalog: no remote list, no credential decryption.
-export async function projectAgentAccess(
-  deps: PreviewDeps,
-  agent: AgentPlaceRow,
-): Promise<{
-  native_tools: string[];
-  scripts: Array<Record<string, unknown>>;
-  secrets: Array<{ name: string; description: string }>;
-  connections: Array<ProjectedConnection & { server_enabled: boolean; offered_tools: string[] }>;
-}> {
+export async function projectAgentAccess(deps: PreviewDeps, agent: AgentPlaceRow): Promise<ProjectedAccess> {
   const orgId = agent.org_id;
   const guildId = agent.guild_id;
   const agentId = agent.id;
@@ -174,7 +197,7 @@ export async function projectAgentAccess(
   for (const connection of await deps.db.listMcpConnections(scope)) {
     connections.set(connection.id, connection);
   }
-  const projected: Array<ProjectedConnection & { server_enabled: boolean; offered_tools: string[] }> = [];
+  const projected: OfferedConnection[] = [];
   for (const [item, server] of resolvedMcp(rows, await deps.db.listServers({ owner: { visibleTo: scope.orgId } }), scope)) {
     if (item.connection_id === null) {
       continue;
@@ -202,11 +225,7 @@ export async function projectAgentAccess(
 export async function projectOfferedToolSchemas(
   deps: PreviewDeps,
   agent: Pick<AgentRow, "id" | "guild_id" | "org_id" | "config">,
-): Promise<{
-  schemas: Array<Record<string, unknown>>;
-  catalog_revision: string | null;
-  config_hash: string;
-}> {
+): Promise<OfferedToolSchemas> {
   const orgId = agent.org_id;
   const guildId = agent.guild_id;
   const agentId = agent.id;

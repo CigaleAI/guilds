@@ -6,11 +6,14 @@ export function escapeXml(value: string): string {
     .replaceAll('"', "&quot;");
 }
 
+/** Where evidence sits in its source, each coordinate written as an attribute; one left out or null is not written. */
+export type EvidenceAttributes = { [name: string]: string | number | boolean | null | undefined };
+
 /** Untrusted content shown to the model: where it came from, its text, and where it sits in its source. */
 export type Evidence = {
   source: string;
   body: string;
-  coordinates?: Record<string, unknown>;
+  coordinates?: EvidenceAttributes;
 };
 
 export function wrapEvidence(evidence: Evidence): string {

@@ -3,7 +3,7 @@ import { ArtifactError } from "../artifacts/errors.js";
 import { memoryDiffText, memoryTimeline, type MemoryTimelineEntry } from "../artifacts/memory.js";
 import { artifactAt, parseActorPath } from "../artifacts/notes.js";
 import { listFileChanges, type FileChangeView } from "../db/file-changes.js";
-import { wrapEvidence } from "../conversation/trust.js";
+import { wrapEvidence, type EvidenceAttributes } from "../conversation/trust.js";
 import { isoOrNull } from "../db/views.js";
 import { issueItem } from "../issues/index.js";
 import { scheduleItem } from "../schedules/item.js";
@@ -72,14 +72,13 @@ function trimmedText(value: string | null | undefined): string {
   return (value ?? "").trim();
 }
 
+/** A step or version as a pin names it, a number or its digits; null for one that is not a non-negative integer. */
 function nonNegativeInt(value: number | string | null | undefined): number | null {
-  if (typeof value === "number" && Number.isInteger(value) && value >= 0) {
-    return value;
+  if (value === null || value === undefined) {
+    return null;
   }
-  if (typeof value === "string" && /^\d+$/.test(value.trim())) {
-    return Number(value.trim());
-  }
-  return null;
+  const digits = String(value).trim();
+  return /^\d+$/.test(digits) ? Number(digits) : null;
 }
 
 function excerpt(text: string): string {
@@ -126,17 +125,12 @@ async function guildAgent(
   return agent;
 }
 
-function evidenceBlock(
-  source: string,
-  coordinates: Record<string, unknown>,
-  body: string,
-  tail: string,
-): string {
+function evidenceBlock(source: string, coordinates: EvidenceAttributes, body: string, tail: string): string {
   return `${wrapEvidence({ source, coordinates, body })}\n\n${tail}`;
 }
 
 /** The assistant message of `rows` that made the call `callId`, and the call. */
-function callRequest(rows: MessageRow[], callId: string): { row: MessageRow; call: ToolCall } | undefined {
+function callRequest(rows: MessageRow[], callId: string): CallRequest | undefined {
   for (const row of rows) {
     const call = row.payload.role === "assistant" ? row.payload.tool_calls?.find((item) => item.id === callId) : undefined;
     if (call) {
@@ -149,14 +143,20 @@ function callRequest(rows: MessageRow[], callId: string): { row: MessageRow; cal
 /** Where in a run a focus points: a step by its sequence, or a tool call by its id. */
 type RunPoint = { seq: number | null; callId: string };
 
+/** A tool call of a run: the assistant message that made it, and the call. */
+type CallRequest = { row: MessageRow; call: ToolCall };
+
+/** The messages a run focus names: the step or the call's result, and the message that made the call. */
+type FocusedMessages = { target: MessageRow | undefined; request: CallRequest | undefined };
+
+/** A focus pin as the server resolved it: the focus it stores, and the evidence block the coach reads. */
+export type ResolvedFocus = { focus: StudioFocus; content: string };
+
 /**
  * The message a run focus names: by call id, the call's result and the message that made the
  * call, at least one of which must exist; else the message at `seq`.
  */
-function focusedMessages(
-  rows: MessageRow[],
-  at: RunPoint,
-): { target: MessageRow | undefined; request: { row: MessageRow; call: ToolCall } | undefined } {
+function focusedMessages(rows: MessageRow[], at: RunPoint): FocusedMessages {
   if (at.callId) {
     const target = rows.find((row) => row.payload.role === "tool" && row.payload.tool_call_id === at.callId);
     const request = callRequest(rows, at.callId);
@@ -175,7 +175,7 @@ function focusedMessages(
 async function resolveRun(
   deps: StudioFocusDeps,
   input: StudioFocusRequest,
-): Promise<{ focus: StudioFocus; content: string }> {
+): Promise<ResolvedFocus> {
   const runId = trimmedText(input.run_id);
   const run = runId ? await getRun(deps.db, runId) : null;
   if (!run) {
@@ -189,7 +189,7 @@ async function resolveRun(
   focus.run_id = runId;
   focus.label = `${runKindLabel(kind)} · ${runId}`;
 
-  const coordinates: Record<string, unknown> = {
+  const coordinates: EvidenceAttributes = {
     run_id: runId,
     agent_id: agent.id,
     kind,
@@ -263,7 +263,7 @@ function findEntry(
 async function resolveMemoryVersion(
   deps: StudioFocusDeps,
   input: StudioFocusRequest,
-): Promise<{ focus: StudioFocus; content: string }> {
+): Promise<ResolvedFocus> {
   const agent = await guildAgent(deps, trimmedText(input.agent_id));
   const actor = operatorActor({
     orgId: deps.orgId,
@@ -335,7 +335,7 @@ async function resolveMemoryVersion(
 async function resolveRoutine(
   deps: StudioFocusDeps,
   input: StudioFocusRequest,
-): Promise<{ focus: StudioFocus; content: string }> {
+): Promise<ResolvedFocus> {
   const agent = await guildAgent(deps, trimmedText(input.agent_id));
   const scheduleId = trimmedText(input.schedule_id);
   const row = scheduleId ? await getSchedule(deps.db, agent.id, scheduleId) : null;
@@ -363,7 +363,7 @@ async function resolveRoutine(
         schedule_id: scheduleId,
         agent_id: agent.id,
         cron: item.cron,
-        window: item.window,
+        window: item.window ? JSON.stringify(item.window) : null,
         paused: item.paused,
         instruction_hash: item.instruction_hash,
         next_run_at: item.next_run_at,
@@ -452,7 +452,7 @@ function changeSummary(change: FileChangeView): string {
 async function resolveFile(
   deps: StudioFocusDeps,
   input: StudioFocusRequest,
-): Promise<{ focus: StudioFocus; content: string }> {
+): Promise<ResolvedFocus> {
   const displayPath = trimmedText(input.display_path);
   if (!displayPath) {
     throw new StudioUnprocessableError("focus file needs a display_path");
@@ -520,7 +520,7 @@ async function resolveFile(
 async function resolveIssue(
   deps: StudioFocusDeps,
   input: StudioFocusRequest,
-): Promise<{ focus: StudioFocus; content: string }> {
+): Promise<ResolvedFocus> {
   const issueId = trimmedText(input.issue_id);
   const row = issueId ? await getIssue(deps.db, deps.sourceGuildId, issueId) : null;
   if (!row) {
@@ -591,7 +591,7 @@ function toolFailureLines(rows: GuildToolCallRow[]): string[] {
 async function resolveTool(
   deps: StudioFocusDeps,
   input: StudioFocusRequest,
-): Promise<{ focus: StudioFocus; content: string }> {
+): Promise<ResolvedFocus> {
   const name = trimmedText(input.tool_name).trim();
   if (!TOOL_NAME.test(name)) {
     throw new StudioUnprocessableError("focus tool_name must be a tool name");
@@ -632,7 +632,7 @@ async function resolveTool(
 export async function resolveStudioFocus(
   deps: StudioFocusDeps,
   input: StudioFocusRequest,
-): Promise<{ focus: StudioFocus; content: string }> {
+): Promise<ResolvedFocus> {
   switch (input.kind.trim()) {
     case "run":
       return resolveRun(deps, input);

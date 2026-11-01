@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type { ScheduleDefinition, ScheduleTiming } from "../db/schedules.js";
 import { ScheduleError } from "../schedules/cron.js";
 import { timingText } from "../schedules/item.js";
@@ -6,7 +5,7 @@ import type { RoutineChange } from "../schedules/operator.js";
 import { changedFields, scheduleChanges, type ScheduleChanges } from "../schedules/service.js";
 import type { EditAction } from "./actions.js";
 import type { EditRoutineArguments } from "./edit-arguments.js";
-import type { RoutineTarget } from "./edit-request.js";
+import { jsonHash, type RoutineTarget } from "./edit-request.js";
 import type { EditDeps, EditScope } from "./edits.js";
 import { editActor } from "./actor.js";
 import { StudioUnprocessableError } from "./errors.js";
@@ -67,13 +66,10 @@ export type RoutineReview = {
 export type RoutineCall = { args: EditRoutineArguments; agentId: string | null };
 
 
-function hashOf(value: unknown): string {
-  return createHash("sha256").update(JSON.stringify(value), "utf8").digest("hex");
-}
 
 /** A schedules refusal as a value Studio cannot use; any other error as it is. */
-function scheduleRefusal(error: unknown): unknown {
-  return error instanceof ScheduleError ? new StudioUnprocessableError(error.message) : error;
+function scheduleRefusal(cause: unknown): unknown {
+  return cause instanceof ScheduleError ? new StudioUnprocessableError(cause.message) : cause;
 }
 
 function valid<T>(read: () => T): T {
@@ -120,7 +116,7 @@ async function loadRoutine(rc: RoutineContext, scheduleId: string): Promise<Rout
 }
 
 function definitionHash(agentId: string, definition: Definition): string {
-  return hashOf([
+  return jsonHash([
     agentId,
     definition.timing,
     definition.description,
@@ -162,7 +158,7 @@ function reviewCreate(rc: RoutineContext, call: RoutineCall): RoutineReview {
     action: "create",
     title: `Create routine for ${agent.name}`,
     target: targetOf(agent, null, definition.description),
-    baseHash: hashOf(["absent", agent.id]),
+    baseHash: jsonHash(["absent", agent.id]),
     proposedHash: definitionHash(agent.id, definition),
     live: "",
     proposed: render(agent, definition),
@@ -231,7 +227,7 @@ function reviewDelete(routine: Routine): RoutineReview {
     title: `Delete routine ${routine.definition.description}`,
     target: targetOf(routine.agent, routine.id, routine.definition.description),
     baseHash: definitionHash(routine.agent.id, routine.definition),
-    proposedHash: hashOf(["delete", routine.id]),
+    proposedHash: jsonHash(["delete", routine.id]),
     live: render(routine.agent, routine.definition),
     proposed: "",
     effects: [

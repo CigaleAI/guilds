@@ -84,6 +84,9 @@ export const studioGetGuild: StudioTool = studioTool({
   },
 });
 
+/** Another guild of the organisation as studio_list_guilds lists it: its id, and its name, about and description as evidence. */
+type GuildListing = { guild_id: string; name: string; about: string; description: string };
+
 const ListGuildsArguments = Type.Object({
   cursor: Type.Optional(Type.String()),
   limit: Type.Optional(Type.Integer()),
@@ -102,7 +105,7 @@ export const studioListGuilds: StudioTool = studioTool({
       (row) => row.id !== call.sourceGuildId,
     );
     // A page ends at the limit or where the next guild would pass the byte cap.
-    const guilds: Array<Record<string, unknown>> = [];
+    const guilds: GuildListing[] = [];
     let bytes = 0;
     for (const row of others.slice(offset, offset + limit)) {
       const item = {

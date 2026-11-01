@@ -1,6 +1,8 @@
 // The Studio tools: what a tool is, the call it runs for, and the list Studio offers and dispatches.
 
 import type { ArtifactStore } from "../artifacts/store.js";
+import type { JsonObject } from "../lib/json.js";
+import type { FunctionTool } from "../lib/tool-schema.js";
 import type { Queryable } from "../db/pg.js";
 import type { StudioSessionRow } from "../db/studio.js";
 import type { UserRow } from "../db/users.js";
@@ -41,14 +43,14 @@ export type StudioToolCall = {
   nextMessageSeq?: number;
 };
 
+/**
+ * A Studio tool: its name, the function schema the coach is offered, and its handler of one call's
+ * arguments, which answers the JSON object the coach reads as the call's result.
+ */
 export type StudioTool = {
   name: string;
-  schema: Record<string, unknown>;
-  handler: (
-    deps: StudioToolDeps,
-    call: StudioToolCall,
-    args: Record<string, unknown>,
-  ) => Promise<Record<string, unknown>>;
+  schema: FunctionTool;
+  handler: (deps: StudioToolDeps, call: StudioToolCall, args: JsonObject) => Promise<JsonObject>;
 };
 
 export const STUDIO_TOOLS: StudioTool[] = [
@@ -81,7 +83,7 @@ export const STUDIO_TOOLS: StudioTool[] = [
   studioEditRoutine,
 ];
 
-export function studioToolSchemas(): Array<Record<string, unknown>> {
+export function studioToolSchemas(): FunctionTool[] {
   return STUDIO_TOOLS.map((tool) => tool.schema);
 }
 

@@ -10,7 +10,7 @@ import { capBytes } from "../lib/bytes.js";
 import type { JsonObject } from "../lib/json.js";
 import { STUDIO_TOOL_RESULT_MAX_BYTES } from "./constants.js";
 import { StudioConflictError, StudioNotFoundError, StudioUnprocessableError } from "./errors.js";
-import { projectGuildConnections, type PreviewDeps } from "./preview.js";
+import { projectGuildConnections, type PreviewDeps, type ProjectedConnection } from "./preview.js";
 import { withLockedSession } from "./session-lock.js";
 import type { LiveStudioSession } from "./index.js";
 import { getMcpConnection, type McpConnectionRow } from "../db/mcp.js";
@@ -119,16 +119,39 @@ export function grantedConnectionIds(session: StudioSessionRow): string[] {
   return Array.isArray(raw) ? raw.map((id) => String(id)) : [];
 }
 
-export function connectionSummary(reach: ReachableConnection): Record<string, unknown> {
+/** A login as a Studio tool result names it: its server, whose it is, the account, and whether it is connected. */
+export type StudioConnectionSummary = Pick<ProjectedConnection, "id" | "server" | "owner_scope" | "account_hint" | "status">;
+
+/** The request the coach makes to read through a login: the widget the turn pauses on until the operator grants or declines it. */
+export type StudioAccessWidget = {
+  widget: typeof STUDIO_CONNECTION_ACCESS_WIDGET;
+  await_operator: true;
+  granted: false;
+  connection: StudioConnectionSummary;
+  reason: string;
+  title: string;
+};
+
+/** A login of the source guild as the operator lists it, with whether the session's coach may read through it. */
+export type StudioConnection = Omit<ProjectedConnection, "tools"> & {
+  granted: boolean;
+  readable_tools: string[];
+  tool_count: number;
+};
+
+/** What a read-only tool on a granted login answered: the tool's names, its redacted text, and whether that was cut. */
+export type ConnectionToolResult = { remote_name: string; name: string; content: string; truncated: boolean };
+
+export function connectionSummary(reach: ReachableConnection): StudioConnectionSummary {
   return {
     id: reach.connection.id,
     server: {
-      id: String(reach.server.id),
-      slug: String(reach.server.slug),
-      display_name: String(reach.server.display_name || reach.server.slug),
+      id: reach.server.id,
+      slug: reach.server.slug,
+      display_name: reach.server.display_name || reach.server.slug,
     },
     owner_scope: reach.connection.owner_scope,
-    account_hint: String(reach.connection.account_hint ?? ""),
+    account_hint: reach.connection.account_hint,
     status: reach.connection.status,
   };
 }
@@ -141,7 +164,7 @@ export async function callConnectionTool(args: {
   reach: ReachableConnection;
   tool: string;
   arguments: JsonObject;
-}): Promise<{ remote_name: string; name: string; content: string; truncated: boolean }> {
+}): Promise<ConnectionToolResult> {
   const { connection, server } = args.reach;
   if (connection.status !== "connected") {
     throw new StudioUnprocessableError(`connection is ${connection.status}`);
@@ -180,7 +203,7 @@ export async function callConnectionTool(args: {
 export async function listSessionConnections(
   preview: PreviewDeps,
   session: StudioSessionRow,
-): Promise<Array<Record<string, unknown>>> {
+): Promise<StudioConnection[]> {
   if (!session.source_guild_id) {
     return [];
   }

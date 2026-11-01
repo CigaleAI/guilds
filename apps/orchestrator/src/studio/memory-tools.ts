@@ -31,7 +31,13 @@ async function memoryTimelineFor(
   return (await memoryTimeline(deps.artifacts, actor, agent.id)).entries;
 }
 
-function timelineHeader(entry: MemoryTimelineEntry): Record<string, unknown> {
+/** One Memory version as studio_list_memory_revisions lists it: who wrote it, when, and its line counts, without its content. */
+type MemoryVersionHeader = Pick<
+  MemoryTimelineEntry,
+  "revision_id" | "archive_display_path" | "written_at" | "actor" | "run_id" | "stats" | "content_hash"
+> & { version_index: MemoryTimelineEntry["index"]; live: boolean };
+
+function timelineHeader(entry: MemoryTimelineEntry): MemoryVersionHeader {
   return {
     version_index: entry.index,
     revision_id: entry.revision_id,

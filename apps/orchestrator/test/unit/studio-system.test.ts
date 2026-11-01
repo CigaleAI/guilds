@@ -12,9 +12,18 @@ import {
 import { sliceStudioBytes } from "../../src/studio/paging.js";
 import { resolveSourceGuildAgent } from "../../src/studio/source-guild.js";
 import { STUDIO_TOOLS, studioToolMap } from "../../src/studio/tools.js";
-import { STUDIO_DEFAULT_TEMPERATURE, STUDIO_TASK_EXCERPT_WORDS } from "../../src/studio/constants.js";
+import { STUDIO_DEFAULT_TEMPERATURE, STUDIO_MAX_STEPS, STUDIO_TASK_EXCERPT_WORDS } from "../../src/studio/constants.js";
 import { STUDIO_EDIT_TOOLS } from "../../src/studio/edits.js";
 import { TEST_MODEL } from "../helpers/models.js";
+import { COACH_RUN_LIMITS } from "../../src/policy/index.js";
+import type { CoachSettings } from "../../src/builder/system.js";
+
+const COACH_CONFIG: CoachSettings = {
+  model: TEST_MODEL,
+  temperature: STUDIO_DEFAULT_TEMPERATURE,
+  max_steps: STUDIO_MAX_STEPS,
+  ...COACH_RUN_LIMITS.studio,
+};
 
 test("studio system template tells the coach to use the session UTC clock", () => {
   const text = readStudioSystemTemplate();
@@ -47,7 +56,7 @@ test("studio system template carries the Task shape and what every agent already
 test("studio system prompt marks evidence untrusted and withholds publish", () => {
   const composed = composeStudioSystemMessage(
     "You are the operator's prompt architect.\nYou may not publish.\n",
-    { mode: "optimize", config: { model: TEST_MODEL, temperature: STUDIO_DEFAULT_TEMPERATURE } },
+    { mode: "optimize", config: COACH_CONFIG },
     {
       sourceGuild: {
         id: "guild_1",
@@ -88,7 +97,7 @@ test("studio system message keeps the clock last so the roster stays in the cach
   const compose = (now: string) =>
     composeStudioSystemMessage(
       "Studio.\n",
-      { mode: "optimize", config: { model: TEST_MODEL } },
+      { mode: "optimize", config: COACH_CONFIG },
       {
         sourceGuild: { id: "guild_1", name: "research", about: "" },
         members: [{ id: "a_1", name: "reader", task_excerpt: "Summarize each paper." }],
@@ -256,7 +265,7 @@ test("studio_create_task_draft takes an explicit agent id or name and does not n
     studioToolMap()
       .get("studio_create_task_draft")!
       .handler({} as never, {} as never, { target_agent_id: "a_1", proposed_content: "x", rationale: "r" }),
-    /\/agent_id: Expected required property/,
+    /agent_id is required/,
   );
   const researcher = { id: "a_1", name: "researcher", guild_id: "guild_1", org_id: "org_1" };
   const scout = { id: "a_2", name: "scout", guild_id: "guild_1", org_id: "org_1" };

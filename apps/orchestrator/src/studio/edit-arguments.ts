@@ -135,7 +135,7 @@ export const EditCollectionArguments = Type.Object({
 });
 export type EditCollectionArguments = Static<typeof EditCollectionArguments>;
 
-const ACCESS_SETTINGS = ["on", "off", "inherit"] as const;
+export const ACCESS_SETTINGS = ["on", "off", "inherit"] as const;
 export type AccessSetting = (typeof ACCESS_SETTINGS)[number];
 const ACCESS_SETTING = studioChoice(ACCESS_SETTINGS);
 

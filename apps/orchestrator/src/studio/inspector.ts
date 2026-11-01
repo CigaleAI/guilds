@@ -3,14 +3,16 @@ import type { ArtifactStore } from "../artifacts/store.js";
 import { agentTask } from "../artifacts/task.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
-import { getRun, listMessages, listRunHeaders, routineRunStats, type RunHeaderRow } from "../db/runs.js";
+import { getRun, listMessages, listRunHeaders, routineRunStats, type MessageRow, type RunHeaderRow, type RunRow } from "../db/runs.js";
+import type { RunError } from "../db/schema/index.js";
+import type { ScheduleItem } from "../schedules/item.js";
 import { listSchedules } from "../db/schedules.js";
 import { iso } from "../db/views.js";
 import type { GenerationLoop } from "../generation/index.js";
 import { composeAgentSystemPrompt, hydrateStanding, promptHash, schemasOffer } from "../prompts/index.js";
 import type { Schedules } from "../schedules/service.js";
 import { StudioNotFoundError } from "./errors.js";
-import { previewCurrentState, projectOfferedToolSchemas, type PreviewDeps } from "./preview.js";
+import { previewCurrentState, projectOfferedToolSchemas, type PreviewDeps, type StatePreview } from "./preview.js";
 
 /** What the Studio inspector reads a guild's runs and routines through, built once from the app's services. */
 export type InspectorServices = {
@@ -30,10 +32,37 @@ export const RunHeaderQuerySchema = Type.Object({
 
 export type RunHeaderQuery = Static<typeof RunHeaderQuerySchema>;
 
-type Item = Record<string, unknown>;
+/** A run as the inspector lists it, without its transcript: its prompts' hashes, its routine, and its errors. */
+export type StudioRun = Pick<
+  RunHeaderRow,
+  | "id"
+  | "kind"
+  | "status"
+  | "task_prompt_hash"
+  | "system_prompt_hash"
+  | "memory_prompt_hash"
+  | "schedule_id"
+  | "group_chat_through_seq"
+> & {
+  generating: boolean;
+  instruction_hash: string | null;
+  created_at: string;
+  updated_at: string;
+  error_count: number;
+  last_error: Pick<RunError, "operation" | "message"> | null;
+};
+
+/** A routine as the inspector lists it: the routine, how many runs it woke, and the latest of them. */
+export type StudioRoutine = ScheduleItem & { run_count: number; latest_run: StudioRun | null };
+
+/** A run of the session's guild with its transcript. */
+export type GuildRunView = {
+  run: Pick<RunRow, "id" | "agent_id" | "kind" | "status" | "task_prompt_hash" | "metadata">;
+  messages: MessageRow[];
+};
 
 /** The run facts the inspector lists without loading a transcript. */
-function runHeader(services: InspectorServices, row: RunHeaderRow): Item {
+function runHeader(services: InspectorServices, row: RunHeaderRow): StudioRun {
   const last = row.errors.at(-1);
   return {
     id: row.id,
@@ -58,7 +87,7 @@ export async function listAgentRunHeaders(
   services: InspectorServices,
   agentId: string,
   query: RunHeaderQuery,
-): Promise<Item[]> {
+): Promise<StudioRun[]> {
   const limit = Math.min(Math.max(Number(query.limit) || 100, 1), 500);
   const filter = {
     taskPromptHash: query.task_prompt_hash ?? "",
@@ -76,7 +105,7 @@ export async function readGuildRun(
   services: InspectorServices,
   guildId: string,
   runId: string,
-): Promise<Item> {
+): Promise<GuildRunView> {
   const run = await getRun(services.db, runId);
   const agent = run === null ? null : await getAgent(services.db, run.agent_id);
   if (run === null || agent === null || agent.guild_id !== guildId) {
@@ -99,13 +128,13 @@ export async function readGuildRun(
 export async function listAgentRoutines(
   services: InspectorServices,
   agentId: string,
-): Promise<Item[]> {
+): Promise<StudioRoutine[]> {
   const rows = await listSchedules(services.db, agentId);
   const byRoutine = await routineRunStats(
     services.db,
     rows.map((row) => row.id),
   );
-  const items = [];
+  const items: StudioRoutine[] = [];
   for (const row of rows) {
     const stats = byRoutine.get(row.id);
     items.push({
@@ -126,8 +155,48 @@ export type AgentInspectorDeps = {
   isAgentBusy?: ((agentId: string) => boolean) | undefined;
 };
 
+/** A prompt source as the inspector shows it: whose it is, and whether Studio may propose an edit to it. */
+type InspectedSource = { ownership: "shared" | "operator-owned" | "agent-owned" | "derived"; editable: boolean };
+
+/**
+ * One agent's prompt as the inspector shows it: its Guidelines, Task, State, and Memory, the
+ * effective prompt they compose beside the latest run's, and the tools it is offered.
+ */
+export type StudioInspector = {
+  agent: Pick<AgentRow, "id" | "name" | "focus" | "config">;
+  guidelines: InspectedSource & { content: string; content_hash: string };
+  task: InspectedSource & {
+    display_path: string;
+    version: number;
+    content: string;
+    content_hash: string;
+    effective_hash: string;
+    effective_matches_source: boolean;
+    has_embeds: boolean;
+    embed_warning: string | null;
+  };
+  state: InspectedSource & { projected_at: string; content: StatePreview["state"] };
+  memory: InspectedSource & { content: string; content_hash: string | null; prompt_hash: string };
+  effective_prompt: {
+    content: string;
+    hash: string;
+    task_content: string;
+    sections: { guidelines_hash: string; task_hash: string; memory_hash: string };
+    latest_run: {
+      id: string;
+      kind: RunHeaderRow["kind"];
+      created_at: string;
+      guidelines_match: boolean;
+      task_match: boolean;
+      memory_match: boolean;
+    } | null;
+  };
+  offered_tools: { catalog_revision: string | null; count: number };
+  generating: boolean;
+};
+
 /** One agent as the inspector shows it: its Guidelines, task, state, Memory, and effective prompt beside its latest run. */
-export async function inspectAgent(deps: AgentInspectorDeps, agent: AgentRow): Promise<Record<string, unknown>> {
+export async function inspectAgent(deps: AgentInspectorDeps, agent: AgentRow): Promise<StudioInspector> {
   const task = await agentTask(deps.artifacts, agent);
   const standing = hydrateStanding({
     systemPath: deps.notesSystemPath,

@@ -32,9 +32,9 @@ export class StudioUnprocessableError extends StudioError {
 }
 
 /** An artifacts refusal as Studio reports it, a conflict or a value it cannot use; any other error as it is. */
-export function artifactRefusal(error: unknown): unknown {
-  if (error instanceof ArtifactError) {
-    return error.status === 409 ? new StudioConflictError(error.message) : new StudioUnprocessableError(error.message);
+export function artifactRefusal(cause: unknown): unknown {
+  if (cause instanceof ArtifactError) {
+    return cause.status === 409 ? new StudioConflictError(cause.message) : new StudioUnprocessableError(cause.message);
   }
-  return error;
+  return cause;
 }

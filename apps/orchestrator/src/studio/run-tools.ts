@@ -13,8 +13,14 @@ import { resolveHandle } from "./source-guild.js";
 import { wrapEvidence } from "./system.js";
 import type { StudioTool } from "./tools.js";
 
+/** A run as the coach's listings carry it: enough to pick a run without its transcript. */
+export type CoachRunHeader = Pick<
+  RunHeaderRow,
+  "id" | "kind" | "status" | "task_prompt_hash" | "system_prompt_hash" | "schedule_id"
+> & { instruction_hash: string | null; created_at: string; updated_at: string; error_count: number };
+
 // The run facts a listing carries: enough to pick a run without its transcript.
-export function runHeader(row: RunHeaderRow): Record<string, unknown> {
+export function runHeader(row: RunHeaderRow): CoachRunHeader {
   return {
     id: row.id,
     kind: row.kind,

@@ -223,8 +223,11 @@ function preview(content: string, chars: number): string {
   return content.length > chars ? `${content.slice(0, chars).trimEnd()}…` : content;
 }
 
+/** What a file change touched: its kind, and the collection, `memory.md`, or file name it names. */
+export type WriteTarget = Pick<ActivityWrite, "kind" | "target">;
+
 // What a file change touched: a collection record, a note, a script, or memory.
-export function classifyWrite(displayPath: string, toolName: string | null): { kind: ActivityWriteKind; target: string } {
+export function classifyWrite(displayPath: string, toolName: string | null): WriteTarget {
   const parts = displayPath.split("/");
   const collectionAt = parts.indexOf("collections");
   if (collectionAt >= 0 && parts.length > collectionAt + 1) {

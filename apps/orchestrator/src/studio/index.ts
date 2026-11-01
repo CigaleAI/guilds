@@ -18,7 +18,7 @@ import {
   STUDIO_MAX_STEPS,
 } from "./constants.js";
 import { StudioConflictError, StudioNotFoundError, StudioUnprocessableError } from "./errors.js";
-import { StudioDrafts } from "./drafts.js";
+import { StudioDrafts, type DraftPublication } from "./drafts.js";
 import { StudioRunner } from "./runner.js";
 import { withLockedSession } from "./session-lock.js";
 import {
@@ -29,7 +29,7 @@ import {
 } from "./system.js";
 import { refreshSystemMessage } from "./system-message.js";
 import { inventoryItem, type StudioInventoryItem } from "./inventory.js";
-import { inspectAgent } from "./inspector.js";
+import { inspectAgent, type StudioInspector } from "./inspector.js";
 import { studioToolSchemas, type StudioToolDeps } from "./tools.js";
 import { previewDatabase, type PreviewDeps } from "./preview.js";
 import {
@@ -38,10 +38,10 @@ import {
   grantedConnectionIds,
   listSessionConnections,
   withdrawSessionConnection,
+  type StudioConnection,
   type StudioMcpClient,
 } from "./connections.js";
-import type { StudioFocus } from "../db/schema/index.js";
-import { resolveStudioFocus, STUDIO_FOCUS_SOURCE, type StudioFocusRequest } from "./focus.js";
+import { resolveStudioFocus, STUDIO_FOCUS_SOURCE, type ResolvedFocus, type StudioFocusRequest } from "./focus.js";
 import { isAccessTool } from "./access.js";
 import {
   applyEdit,
@@ -51,6 +51,7 @@ import {
   viewEdit,
   type EditDeps,
   type EditScope,
+  type StudioEditView,
 } from "./edits.js";
 import type { RoutineChange } from "../schedules/operator.js";
 import { getGuild, type GuildRow } from "../db/guilds.js";
@@ -82,7 +83,7 @@ import {
 import type { UserRow } from "../db/users.js";
 import type { AgentRow } from "../db/agents.js";
 import type { OrgMembershipRow } from "../db/orgs.js";
-import type { StudioSourceGuild } from "../db/schema/index.js";
+import type { CoachSessionConfig, StudioSourceGuild } from "../db/schema/index.js";
 import { operatorActor } from "../artifacts/actors.js";
 
 export type StudioServiceDeps = {
@@ -109,6 +110,35 @@ function sourceGuildSnapshot(guild: Pick<GuildRow, "id" | "name" | "about" | "de
   const objective = guild.description.trim();
   return { id: guild.id, name: guild.name, about: guild.about, ...(objective ? { objective } : {}) };
 }
+
+/**
+ * A Studio session as the operator app reads it: where it stands, its guild as the session recorded
+ * it, the logins its coach may read through, and its coach's model and limits.
+ */
+export type StudioSession = Pick<
+  StudioSessionRow,
+  | "id"
+  | "org_id"
+  | "mode"
+  | "status"
+  | "blocked_reason"
+  | "generation_state"
+  | "generation_number"
+  | "source_guild_id"
+  | "selected_target_agent_id"
+  | "parent_session_id"
+  | "created_by_name"
+  | "created_at"
+  | "updated_at"
+  | "archived_at"
+> & {
+  source_guild: StudioSessionRow["source_guild_snapshot"];
+  granted_connection_ids: string[];
+  coach: Pick<CoachSessionConfig, "model" | "temperature" | "max_tokens" | "max_steps" | "max_tool_calls" | "max_input_tokens">;
+};
+
+/** A published or unchanged draft, with whether its target agent is generating now and so reads the new Task on its next run. */
+export type PublishedDraft = DraftPublication & { target_generating: boolean };
 
 /** What an operator opens a Studio session with: its mode, source guild, coach model, and the session it continues. */
 export type StudioSessionRequest = {
@@ -159,7 +189,7 @@ export class StudioService {
     user: UserRow,
     org: OrgMembershipRow,
     request: StudioSessionRequest,
-  ): Promise<Record<string, unknown>> {
+  ): Promise<StudioSession> {
     if (request.mode !== "optimize") {
       throw new StudioUnprocessableError("create mode is not available");
     }
@@ -201,7 +231,7 @@ export class StudioService {
         id: newId("stu"),
         org_id: org.id,
         created_by_user_id: user.id,
-        created_by_name: typeof user.name === "string" ? user.name : "operator",
+        created_by_name: user.name,
         mode: "optimize",
         source_guild_id: guild.id,
         source_guild_snapshot: sourceGuild,
@@ -258,15 +288,15 @@ export class StudioService {
     return id;
   }
 
-  validateTemperature(value: unknown): number {
-    const n = value === undefined || value === null ? STUDIO_DEFAULT_TEMPERATURE : Number(value);
+  validateTemperature(value: number | undefined): number {
+    const n = value ?? STUDIO_DEFAULT_TEMPERATURE;
     if (!Number.isFinite(n) || n < 0 || n > 2) {
       throw new StudioUnprocessableError("temperature must be between 0 and 2");
     }
     return n;
   }
 
-  async listSessions(orgId: string, userId: string): Promise<Array<Record<string, unknown>>> {
+  async listSessions(orgId: string, userId: string): Promise<StudioSession[]> {
     const rows = await listStudioSessions(this.deps.db, orgId, userId);
     const hidden = new Set<string>();
     for (const guildId of new Set(rows.flatMap((row) => (row.source_guild_id ? [row.source_guild_id] : [])))) {
@@ -305,7 +335,7 @@ export class StudioService {
     return session;
   }
 
-  viewSession(row: StudioSessionRow): Record<string, unknown> {
+  viewSession(row: StudioSessionRow): StudioSession {
     const config = row.config_snapshot;
     return {
       id: row.id,
@@ -335,7 +365,7 @@ export class StudioService {
     };
   }
 
-  async listConnections(session: StudioSessionRow): Promise<Array<Record<string, unknown>>> {
+  async listConnections(session: StudioSessionRow): Promise<StudioConnection[]> {
     return listSessionConnections(this.previewDeps(), session);
   }
 
@@ -343,7 +373,7 @@ export class StudioService {
   async grantConnection(
     session: StudioSessionRow,
     connectionId: string,
-  ): Promise<Record<string, unknown>> {
+  ): Promise<StudioSession> {
     return this.viewSession(await grantSessionConnection(this.deps.db, session, connectionId));
   }
 
@@ -351,7 +381,7 @@ export class StudioService {
   async withdrawConnection(
     session: StudioSessionRow,
     connectionId: string,
-  ): Promise<Record<string, unknown>> {
+  ): Promise<StudioSession> {
     return this.viewSession(await withdrawSessionConnection(this.deps.db, session, connectionId));
   }
 
@@ -363,12 +393,12 @@ export class StudioService {
     user: UserRow,
     seq: number,
     decision: "grant" | "decline",
-  ): Promise<Record<string, unknown>> {
+  ): Promise<StudioSession> {
     this.assertLive(session);
     return this.viewSession(await answerLoginRequest(this.deps.db, session, { user, seq, decision }));
   }
 
-  async archive(session: StudioSessionRow): Promise<Record<string, unknown>> {
+  async archive(session: StudioSessionRow): Promise<StudioSession> {
     if (session.generation_state === "generating") {
       throw new StudioConflictError("cannot archive while generating");
     }
@@ -382,7 +412,7 @@ export class StudioService {
     return this.viewSession(updated ?? session);
   }
 
-  async setTarget(session: StudioSessionRow, agentId: string | null): Promise<Record<string, unknown>> {
+  async setTarget(session: StudioSessionRow, agentId: string | null): Promise<StudioSession> {
     return withLockedSession(this.deps.db, session.id, async (client, locked) => {
       if (locked.status !== "active") {
         throw new StudioConflictError("session cannot change inspector");
@@ -403,7 +433,7 @@ export class StudioService {
     });
   }
 
-  async inventory(session: StudioSessionRow): Promise<Array<Record<string, unknown>>> {
+  async inventory(session: StudioSessionRow): Promise<StudioInventoryItem[]> {
     this.assertLive(session);
     const rows = await studioInventory(this.deps.db, session.source_guild_id, session.id);
     return rows.map((row) => inventoryItem(row));
@@ -413,7 +443,7 @@ export class StudioService {
     return inventoryItem(row);
   }
 
-  async inspector(session: StudioSessionRow, agentId: string): Promise<Record<string, unknown>> {
+  async inspector(session: StudioSessionRow, agentId: string): Promise<StudioInspector> {
     this.assertLive(session);
     const agent = await this.requireGuildAgent(session, agentId);
     return inspectAgent(
@@ -432,7 +462,7 @@ export class StudioService {
     session: StudioSessionRow,
     user: UserRow,
     agentId: string,
-  ): Promise<Record<string, unknown>> {
+  ): ReturnType<typeof memoryHistory> {
     this.assertLive(session);
     const agent = await this.requireGuildAgent(session, agentId);
     const actor = operatorActor({
@@ -450,13 +480,13 @@ export class StudioService {
     user: UserRow,
     content: string,
     focusInput?: StudioFocusRequest | null,
-  ): Promise<Record<string, unknown>> {
+  ): Promise<StudioSession> {
     this.assertLive(session);
     if (!content.trim()) {
       throw new StudioUnprocessableError("content must not be empty");
     }
     // Resolve the pin before taking the lock: it reads guild data only.
-    const focus: { focus: StudioFocus; content: string } | null =
+    const focus: ResolvedFocus | null =
       focusInput === undefined || focusInput === null
         ? null
         : await resolveStudioFocus(
@@ -590,7 +620,7 @@ export class StudioService {
     return conversationUsageByOrg(this.deps.db, "studio");
   }
 
-  async cancel(session: StudioSessionRow): Promise<Record<string, unknown>> {
+  async cancel(session: StudioSessionRow): Promise<StudioSession> {
     await updateStudioSession(this.deps.db, session.id, { generation_state: "cancelling" }, new Date());
     this.runner.cancel(session.id);
     return this.viewSession({ ...session, generation_state: "cancelling" });
@@ -608,7 +638,7 @@ export class StudioService {
     session: StudioSessionRow,
     user: UserRow,
     org: OrgMembershipRow,
-  ): Promise<Record<string, unknown>> {
+  ): Promise<StudioSession> {
     if (session.blocked_reason !== "input_token_limit" && session.status !== "blocked") {
       throw new StudioUnprocessableError("session is not blocked on input tokens");
     }
@@ -634,7 +664,7 @@ export class StudioService {
     session: StudioSessionRow,
     user: UserRow,
     draftId: string,
-  ): Promise<Record<string, unknown>> {
+  ): Promise<PublishedDraft> {
     const result = await this.drafts.publish(
       { db: this.deps.db, preview: this.previewDeps(), notesSystemPath: this.deps.notesSystemPath },
       session,
@@ -646,14 +676,11 @@ export class StudioService {
 
   // Tells the source guild its files changed when the draft was published,
   // and adds whether the target agent is generating to the outcome.
-  private async announcePublish(
-    session: StudioSessionRow,
-    result: Record<string, unknown>,
-  ): Promise<Record<string, unknown>> {
+  private async announcePublish(session: StudioSessionRow, result: DraftPublication): Promise<PublishedDraft> {
     if (result.outcome === "published" && this.deps.publishFilesChanged && session.source_guild_id) {
       await this.deps.publishFilesChanged(session.source_guild_id);
     }
-    const targetId = String((result.draft as { target_agent_id?: string } | undefined)?.target_agent_id ?? "");
+    const targetId = result.draft.target_agent_id;
     return {
       ...result,
       target_generating: targetId ? Boolean(this.deps.isAgentBusy?.(targetId)) : false,
@@ -689,7 +716,7 @@ export class StudioService {
     session: StudioSessionRow,
     user: UserRow,
     seq: number,
-  ): Promise<Record<string, unknown>> {
+  ): Promise<StudioEditView> {
     const sourceGuildId = session.source_guild_id;
     if (!sourceGuildId) {
       throw new StudioUnprocessableError("source guild is gone");
@@ -706,7 +733,7 @@ export class StudioService {
     user: UserRow,
     seq: number,
     decision: "apply" | "decline",
-  ): Promise<Record<string, unknown>> {
+  ): Promise<StudioEditView> {
     this.assertLive(session);
     const deps = this.editDeps();
     const scope = this.editScope(session, user);
