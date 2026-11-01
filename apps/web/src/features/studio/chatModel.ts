@@ -1,5 +1,5 @@
 import type { StudioMessage } from "../../api/types/studio";
-import { isRecord } from "../../api/wire";
+import { isJsonObject, type JsonObject } from "../../api/wire";
 
 /**
  * What a coach edit changes: an agent's memory, access, or routine, a note, the guild's
@@ -210,7 +210,7 @@ function nullableTextFields<Key extends string>(
 
 /** One overlay of an access edit; null when it lacks a field or names no known kind or setting. */
 function parseAccessChange(value: unknown): AccessChange | null {
-  if (!isRecord(value)) return null;
+  if (!isJsonObject(value)) return null;
   const kind = accessChangeKinds.find((entry) => entry === value.kind);
   const setting = accessSettings.find((entry) => entry === value.setting);
   if (!kind || !setting || typeof value.id !== "string" || typeof value.label !== "string") {
@@ -246,19 +246,19 @@ function parseEditTarget(target: Record<string, unknown>): EditTarget {
 
 /** An edit request's edit, keeping each field that holds what the field says. */
 export function parseEdit(value: unknown): EditWidget["edit"] {
-  if (!isRecord(value)) return {};
+  if (!isJsonObject(value)) return {};
   const kind = editKinds.find((entry) => entry === value.kind);
   const action = editActions.find((entry) => entry === value.action);
   const { fields, changes } = value;
   return {
     ...(kind ? { kind } : {}),
     ...(action ? { action } : {}),
-    ...(isRecord(value.target) ? { target: parseEditTarget(value.target) } : {}),
+    ...(isJsonObject(value.target) ? { target: parseEditTarget(value.target) } : {}),
     ...(typeof value.base_version === "number" ? { base_version: value.base_version } : {}),
     ...(Array.isArray(fields)
       ? { fields: fields.filter((field) => typeof field === "string") }
       : {}),
-    ...(isRecord(value.lines) ? { lines: parseLineCounts(value.lines) } : {}),
+    ...(isJsonObject(value.lines) ? { lines: parseLineCounts(value.lines) } : {}),
     ...(Array.isArray(changes)
       ? { changes: changes.map(parseAccessChange).filter((change) => change !== null) }
       : {}),
@@ -268,10 +268,10 @@ export function parseEdit(value: unknown): EditWidget["edit"] {
 
 /** The login an access request names, keeping the fields that hold text. */
 export function parseConnection(value: unknown): AccessWidget["connection"] {
-  if (!isRecord(value)) return {};
+  if (!isJsonObject(value)) return {};
   return {
     ...textFields(value, ["id", "owner_scope", "account_hint"]),
-    ...(isRecord(value.server)
+    ...(isJsonObject(value.server)
       ? { server: textFields(value.server, ["id", "slug", "display_name"]) }
       : {}),
   };
@@ -279,7 +279,7 @@ export function parseConnection(value: unknown): AccessWidget["connection"] {
 
 /** A draft widget's fields, when the tool result carries them. */
 function draftWidget(body: Record<string, unknown>): DraftWidget | null {
-  const agent = textFields(isRecord(body.agent) ? body.agent : {}, ["id", "name"]);
+  const agent = textFields(isJsonObject(body.agent) ? body.agent : {}, ["id", "name"]);
   if (typeof body.draft_id !== "string" || agent.id === undefined) return null;
   return {
     kind: "draft",
@@ -301,7 +301,7 @@ export function widgetOf(
   } catch {
     return null;
   }
-  if (!isRecord(body)) return null;
+  if (!isJsonObject(body)) return null;
   if (body.widget === "studio_edit_request") {
     return { kind: "edit", ...textFields(body, ["title", "reason"]), edit: parseEdit(body.edit) };
   }
@@ -333,7 +333,7 @@ export type PinnedFocus = {
 export function focusOf(message: Pick<StudioMessage, "metadata">): PinnedFocus | null {
   const meta = message.metadata ?? {};
   if (meta.source !== "studio_focus") return null;
-  const focus: Record<string, unknown> = isRecord(meta.focus) ? meta.focus : {};
+  const focus: JsonObject = isJsonObject(meta.focus) ? meta.focus : {};
   const { seq } = focus;
   return {
     ...textFields(focus, ["agent_id", "run_id", "schedule_id", "display_path"]),

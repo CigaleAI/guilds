@@ -6,11 +6,13 @@ import {
   isAnyPayload,
   isGroupChatState,
   isGroupMessage,
+  isLiveDelta,
   isMessageNotice,
   isRunContinuation,
   isRunMessage,
   isSessionFailure,
   isStudioMessageCommit,
+  isToolProgressEvent,
   runEventGuards,
   type LiveEventHandlers,
   type RunEvents,
@@ -123,6 +125,45 @@ test("isRunMessage admits a committed run row and refuses one without its payloa
   assert.equal(isRunMessage({ ...runMessage, payload: null }), false);
   assert.equal(isRunMessage({ ...runMessage, cost_usd: "0.002" }), false);
   assert.equal(isRunMessage([]), false);
+});
+
+test("isRunMessage refuses a row whose payload is not a stored message", () => {
+  const tool = { role: "tool", tool_call_id: "c1", content: "ok" };
+  assert.equal(isRunMessage({ ...runMessage, payload: tool }), true);
+  assert.equal(isRunMessage({ ...runMessage, payload: { role: "tool", content: "ok" } }), false);
+  assert.equal(isRunMessage({ ...runMessage, payload: { role: "user", content: 5 } }), false);
+  assert.equal(isRunMessage({ ...runMessage, payload: { role: "robot", content: "hi" } }), false);
+  const call = { id: "c1", type: "function", function: { name: "shell", arguments: "{}" } };
+  const asking = { role: "assistant", content: "", tool_calls: [call] };
+  assert.equal(isRunMessage({ ...runMessage, payload: asking }), true);
+  const malformed = { ...asking, tool_calls: [{ id: "c1" }] };
+  assert.equal(isRunMessage({ ...runMessage, payload: malformed }), false);
+});
+
+test("isLiveDelta admits a run's text and a coach's content, and refuses anything else", () => {
+  assert.equal(isLiveDelta({ text: "run" }), true);
+  assert.equal(isLiveDelta({ session_id: "s1", content: "hi", text: "hi" }), true);
+  assert.equal(isLiveDelta({ content: "hi" }), false);
+  assert.equal(isLiveDelta({ content: 5, text: "run" }), false);
+  assert.equal(isLiveDelta(null), false);
+});
+
+test("isToolProgressEvent admits a call's lines, with or without its session", () => {
+  const progress = { run_id: "r1", tool_call_id: "c1", lines: ["read a.py"] };
+  assert.equal(isToolProgressEvent(progress), true);
+  assert.equal(isToolProgressEvent({ ...progress, session_id: null }), true);
+  assert.equal(isToolProgressEvent({ ...progress, session_id: "s1" }), true);
+  assert.equal(isToolProgressEvent({ ...progress, session_id: 3 }), false);
+});
+
+test("isToolProgressEvent refuses an event that names no call or holds lines that are not text", () => {
+  const progress = { run_id: "r1", tool_call_id: "c1", lines: ["a"] };
+  assert.equal(isToolProgressEvent(null), false);
+  assert.equal(isToolProgressEvent("read a.py"), false);
+  assert.equal(isToolProgressEvent({ run_id: "r1", lines: ["x"] }), false);
+  assert.equal(isToolProgressEvent({ ...progress, tool_call_id: 7 }), false);
+  assert.equal(isToolProgressEvent({ ...progress, lines: ["a", 2, null, "b"] }), false);
+  assert.equal(isToolProgressEvent({ ...progress, lines: "a" }), false);
 });
 
 test("isRunContinuation admits the run that carries on", () => {

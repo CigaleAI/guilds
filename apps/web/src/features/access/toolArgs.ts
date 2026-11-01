@@ -1,4 +1,4 @@
-import { isRecord, parseJson } from "../../api/wire";
+import { isJsonObject, parseJson, type JsonObject, type JsonValue } from "../../api/wire";
 
 export type ArgFieldKind = "string" | "number" | "integer" | "boolean" | "enum" | "json";
 
@@ -39,7 +39,7 @@ function fieldKind(spec: Record<string, unknown>): ArgFieldKind {
 
 /** One form field per property on an object schema; a single JSON field when there are none. */
 export function fieldsFromSchema(schema: Record<string, unknown> | undefined): ArgField[] {
-  const properties = isRecord(schema?.properties) ? schema.properties : null;
+  const properties = isJsonObject(schema?.properties) ? schema.properties : null;
   if (!properties || !Object.keys(properties).length) {
     return [{ name: "arguments", kind: "json", required: false, description: "JSON object." }];
   }
@@ -49,7 +49,7 @@ export function fieldsFromSchema(schema: Record<string, unknown> | undefined): A
       : [],
   );
   return Object.entries(properties).map(([name, raw]) => {
-    const spec = isRecord(raw) ? raw : {};
+    const spec = isJsonObject(raw) ? raw : {};
     const kind = fieldKind(spec);
     const values = kind === "enum" ? (enumValues(spec) ?? undefined) : undefined;
     const description = typeof spec.description === "string" ? spec.description : undefined;
@@ -72,7 +72,7 @@ export function emptyArgValues(fields: readonly ArgField[]): Record<string, stri
 }
 
 /** What one field's text parses to: the value its kind takes, or why it takes none. */
-type ArgValue = { value: unknown } | { error: string };
+type ArgValue = { value: JsonValue } | { error: string };
 
 /** How each kind of field reads its text, by the field's name and its non-empty text. */
 const argValueByKind: Record<ArgFieldKind, (name: string, raw: string) => ArgValue> = {
@@ -103,8 +103,8 @@ const argValueByKind: Record<ArgFieldKind, (name: string, raw: string) => ArgVal
 export function parseArgValues(
   fields: readonly ArgField[],
   values: Record<string, string>,
-): { arguments: Record<string, unknown> } | { error: string } {
-  const arguments_: Record<string, unknown> = {};
+): { arguments: JsonObject } | { error: string } {
+  const arguments_: JsonObject = {};
   for (const field of fields) {
     const raw = (values[field.name] ?? "").trim();
     if (!raw) {
@@ -114,7 +114,7 @@ export function parseArgValues(
     const parsed = argValueByKind[field.kind](field.name, raw);
     if ("error" in parsed) return parsed;
     if (fields.length === 1 && field.kind === "json" && field.name === "arguments") {
-      return isRecord(parsed.value)
+      return isJsonObject(parsed.value)
         ? { arguments: parsed.value }
         : { error: "arguments must be a JSON object." };
     }

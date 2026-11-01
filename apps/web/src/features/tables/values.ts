@@ -1,5 +1,11 @@
-import type { Column, ColumnInput, ColumnType } from "../../api/types/tables";
-import type { RecordCondition, RecordWhere } from "./types";
+import type {
+  Column,
+  ColumnInput,
+  ColumnType,
+  RecordCondition,
+  RecordValue,
+  RecordWhere,
+} from "../../api/types/tables";
 
 export const columnTypes = [
   "text",
@@ -64,7 +70,10 @@ export function fieldText(value: unknown, column: Column): string {
 }
 
 /** What the form's text means for its column: a value, null when empty, or why it cannot be. */
-export function parseField(text: string, column: Column): { value: unknown } | { error: string } {
+export function parseField(
+  text: string,
+  column: Column,
+): { value: RecordValue | null } | { error: string } {
   const trimmed = text.trim();
   if (!trimmed) return { value: null };
   switch (column.type) {

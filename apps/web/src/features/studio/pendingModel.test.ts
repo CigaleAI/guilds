@@ -5,7 +5,7 @@ import { countOpen, draftHead, turnProposals, turnReply } from "./pendingModel";
 
 function message(
   seq: number,
-  payload: Record<string, unknown>,
+  payload: StudioMessage["payload"],
   metadata: Record<string, unknown> | null = null,
 ): StudioMessage {
   return {
@@ -24,7 +24,7 @@ const tool = (
   seq: number,
   body: Record<string, unknown>,
   metadata: Record<string, unknown> | null = null,
-) => message(seq, { role: "tool", content: JSON.stringify(body) }, metadata);
+) => message(seq, { role: "tool", tool_call_id: "c1", content: JSON.stringify(body) }, metadata);
 
 const user = (seq: number) => message(seq, { role: "user", content: "go" });
 

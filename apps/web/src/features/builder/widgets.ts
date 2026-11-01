@@ -1,7 +1,7 @@
 import type { ConnectorAuthField, McpServerAccess } from "../../api/types/access";
 import type { StudioMessage } from "../../api/types/studio";
 import type { AccessEdit } from "../../api/types/recipes";
-import { isRecord } from "../../api/wire";
+import { isJsonObject } from "../../api/wire";
 import { pendingDesignQuestions } from "../recipes/plan/designSystems";
 
 /**
@@ -89,7 +89,7 @@ const text = (value: unknown, fallback = "") => (typeof value === "string" ? val
 
 function isConnectorAuthField(value: unknown): value is ConnectorAuthField {
   return (
-    isRecord(value) &&
+    isJsonObject(value) &&
     typeof value.name === "string" &&
     typeof value.label === "string" &&
     (value.secret === undefined || typeof value.secret === "boolean") &&
@@ -99,7 +99,7 @@ function isConnectorAuthField(value: unknown): value is ConnectorAuthField {
 }
 
 function serverOf(row: unknown): WidgetServer | null {
-  if (!isRecord(row) || typeof row.id !== "string") return null;
+  if (!isJsonObject(row) || typeof row.id !== "string") return null;
   const auth = row.auth === "token" || row.auth === "none" ? row.auth : "oauth";
   const setup = setupStates.find((state) => state === row.oauth_setup_state);
   return {
@@ -119,9 +119,9 @@ function serverOf(row: unknown): WidgetServer | null {
 }
 
 function questionOf(row: unknown, index: number): Question | null {
-  if (!isRecord(row) || !text(row.question).trim()) return null;
+  if (!isJsonObject(row) || !text(row.question).trim()) return null;
   const options = (Array.isArray(row.options) ? row.options : []).flatMap((option, position) => {
-    if (!isRecord(option) || !text(option.label).trim()) return [];
+    if (!isJsonObject(option) || !text(option.label).trim()) return [];
     return [
       {
         id: text(option.id) || `opt-${position + 1}`,
@@ -188,7 +188,7 @@ export function widgetOf(
     if (typeof value !== "string") return null;
     try {
       const parsed: unknown = JSON.parse(value);
-      return isRecord(parsed) ? parsed : null;
+      return isJsonObject(parsed) ? parsed : null;
     } catch {
       return null;
     }

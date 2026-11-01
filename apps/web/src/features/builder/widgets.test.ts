@@ -15,7 +15,7 @@ import {
 } from "./widgets";
 
 const tool = (content: unknown): Pick<StudioMessage, "payload"> => ({
-  payload: { role: "tool", content: JSON.stringify(content) },
+  payload: { role: "tool", tool_call_id: "c1", content: JSON.stringify(content) },
 });
 
 test("a connect widget reads its server, scopes and connection state", () => {
@@ -96,7 +96,10 @@ test("a server keeps the key login inputs it describes and drops the malformed o
 test("a tool result whose content is not an object carries no widget", () => {
   assert.equal(widgetOf(tool(["widget", "connect"])), null);
   assert.equal(widgetOf(tool("connect")), null);
-  assert.equal(widgetOf({ payload: { role: "tool", content: "not json" } }), null);
+  assert.equal(
+    widgetOf({ payload: { role: "tool", tool_call_id: "c1", content: "not json" } }),
+    null,
+  );
 });
 
 test("a question widget accepts the one-question shorthand and nested results", () => {

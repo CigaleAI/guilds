@@ -378,7 +378,7 @@ function ServerTools({
 
 type LoginSettingsProps = {
   server: McpServerAccess;
-  schema: Record<string, unknown>;
+  schema: NonNullable<McpServerAccess["settings_schema"]>;
   owned: string | null;
 };
 

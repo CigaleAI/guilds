@@ -462,7 +462,7 @@ export function FlowView({
 
   /** What a call has reported so far, while it runs. */
   const runningProgress = (call: FlowCall) =>
-    callStatus(call, generating) === "running" ? progress?.[call.id] : undefined;
+    callStatus(call, generating) === "running" ? progress?.get(call.id) : undefined;
 
   /** A code task's harness logo, pulsing while the call runs. */
   const harnessMark = (call: FlowCall): ReactNode => {

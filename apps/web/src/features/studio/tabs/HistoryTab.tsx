@@ -5,6 +5,7 @@ import { useAgent } from "../../../api/queries/agents";
 import { useRun, useRunMessages } from "../../../api/queries/runs";
 import { useStudioInspector, useStudioRoutines, useStudioRuns } from "../../../api/queries/studio";
 import type { RunKind } from "../../../api/types/runs";
+import { isNumber } from "../../../api/wire";
 import type {
   StudioAgent,
   StudioInspector,
@@ -383,7 +384,7 @@ function RunDetail({ agent, runId, header, title, reveal, back }: RunDetailProps
               agent_id: agent.id,
               run_id: runId,
               call_id: call.id,
-              ...(call.result ? { seq: call.result.seq } : {}),
+              ...(call.result && isNumber(call.result.seq) ? { seq: call.result.seq } : {}),
               label: `${agent.name} · ${call.info.name}`,
             })
           }

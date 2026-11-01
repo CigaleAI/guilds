@@ -1,10 +1,23 @@
 /** Checks that narrow what the server sends before the app reads it as one of its types. */
 
+import type { ErrorReply, ValidationProblem } from "./client";
+import type { StudioFocusRequest } from "./types/studio";
+
 /** A value JSON carries: a string, number, boolean or null, or an array or object of them. */
 export type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject;
 
 /** A JSON object. A field held as `undefined` is one JSON leaves out. */
 export type JsonObject = { [key: string]: JsonValue | undefined };
+
+/**
+ * A JSON Schema object: the keywords the app reads, its `type`, `properties` and `required`,
+ * beside whatever else the schema holds.
+ */
+export type JsonSchema = JsonObject & {
+  type?: string | string[];
+  properties?: JsonObject;
+  required?: string[];
+};
 
 /** The value a JSON text holds; undefined when the text is not JSON. */
 export function parseJson(text: string): JsonValue | undefined {
@@ -30,11 +43,6 @@ export function isJsonObject(value: unknown): value is JsonObject {
   const prototype: unknown = Object.getPrototypeOf(value);
   if (prototype !== Object.prototype && prototype !== null) return false;
   return Object.values(value).every((field) => field === undefined || isJsonValue(field));
-}
-
-/** A JSON object, whose fields can be read by name. */
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function isString(value: unknown): value is string {
@@ -66,11 +74,70 @@ export function isStringList(value: unknown): value is string[] {
   return isListOf(value, isString);
 }
 
-/** Whether every named field of a record passes `isField`. */
+/** Whether a value is a JSON Schema object: a JSON object whose keywords the app reads have their types. */
+export function isJsonSchema(value: unknown): value is JsonSchema {
+  if (!isJsonObject(value)) return false;
+  const { type, properties, required } = value;
+  return (
+    (type === undefined || isString(type) || isStringList(type)) &&
+    (properties === undefined || isJsonObject(properties)) &&
+    (required === undefined || isStringList(required))
+  );
+}
+
+/** Whether every named field of a JSON object passes `isField`. */
 export function hasFields(
-  record: Record<string, unknown>,
+  record: JsonObject,
   fields: readonly string[],
-  isField: (value: unknown) => boolean,
+  isField: (value: JsonValue | undefined) => boolean,
 ): boolean {
   return fields.every((field) => isField(record[field]));
+}
+
+function isValidationProblem(value: unknown): value is ValidationProblem {
+  return (
+    isJsonObject(value) && hasFields(value, ["type", "msg"], isString) && isStringList(value.loc)
+  );
+}
+
+/** Whether a failed reply's body carries a `detail` the app can read. */
+export function isErrorReply(value: unknown): value is ErrorReply {
+  if (!isJsonObject(value)) return false;
+  const { detail } = value;
+  if (isString(detail) || isListOf(detail, isValidationProblem)) return true;
+  return isJsonObject(detail) && isString(detail.message);
+}
+
+/** An id or path a focus pin names, null when it names none, or left out. */
+function isFocusText(value: unknown): value is string | null | undefined {
+  return value === undefined || isStringOrNull(value);
+}
+
+/** A step or version a focus pin names, as a number or its digits; null or left out for none. */
+function isFocusIndex(value: unknown): value is number | string | null | undefined {
+  return value === undefined || isNumberOrNull(value) || isString(value);
+}
+
+/** Whether a value is the evidence a Studio message is pinned to: its kind, and ids that are text or null. */
+export function isStudioFocusRequest(value: unknown): value is StudioFocusRequest {
+  return (
+    isJsonObject(value) &&
+    isString(value.kind) &&
+    hasFields(value, ["seq", "version_index"], isFocusIndex) &&
+    hasFields(
+      value,
+      [
+        "agent_id",
+        "run_id",
+        "call_id",
+        "revision_id",
+        "schedule_id",
+        "display_path",
+        "change_id",
+        "issue_id",
+        "tool_name",
+      ],
+      isFocusText,
+    )
+  );
 }

@@ -1,3 +1,4 @@
+import type { JsonObject, JsonSchema } from "../wire";
 import type { RegistryEntry } from "./admin";
 import type { Harness, MachineRef } from "./agents";
 import type { WakeWindow } from "./schedules";
@@ -41,7 +42,7 @@ export type RecipeGuild = {
 export type RecipeScript = {
   name: string;
   description: string;
-  parameters: Record<string, unknown> | null;
+  parameters: JsonSchema | null;
   source: string;
   secrets: string[];
   author: FieldAuthor;
@@ -64,7 +65,8 @@ export type RecipeRole = {
   focus: string;
   avatar_shape: string;
   avatar_color: string;
-  config: Record<string, unknown>;
+  /** The author's agent config keys; validation reports the ones the box does not take. */
+  config: JsonObject;
   task: { body: string; embeds: string[]; author: FieldAuthor };
   scripts: RecipeScript[];
   schedules: RecipeSchedule[];

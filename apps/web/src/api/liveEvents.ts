@@ -5,7 +5,14 @@
 
 import type { AgentBrief, AgentChange } from "./types/agents";
 import type { DeliveryError, GroupChatState, GroupMessage, MessageNotice } from "./types/chat";
-import type { RunContinuation, RunMessage } from "./types/runs";
+import type {
+  LiveDelta,
+  MessagePayload,
+  RunContinuation,
+  RunMessage,
+  ToolCall,
+  ToolProgressEvent,
+} from "./types/runs";
 import type { SessionFailure, StudioMessage, StudioMessageCommit } from "./types/studio";
 import {
   hasFields,
@@ -13,10 +20,11 @@ import {
   isListOf,
   isNumber,
   isNumberOrNull,
-  isRecord,
+  isJsonObject,
   isString,
   isStringList,
   isStringOrNull,
+  type JsonValue,
 } from "./wire";
 
 /** A check that an event's payload has the shape its handler reads. */
@@ -40,7 +48,7 @@ export function dispatchLiveEvent<P>(
   guards: PayloadGuards<P>,
   handlers: LiveEventHandlers<P>,
   name: string,
-  data: unknown,
+  data: JsonValue | undefined,
 ): void {
   if (!isEventOf(guards, name)) return;
   const guard = guards[name];
@@ -58,17 +66,18 @@ function isAuthorType(value: unknown): value is GroupMessage["author_type"] {
 
 function isAgentBrief(value: unknown): value is AgentBrief {
   return (
-    isRecord(value) && hasFields(value, ["id", "name", "avatar_shape", "avatar_color"], isString)
+    isJsonObject(value) &&
+    hasFields(value, ["id", "name", "avatar_shape", "avatar_color"], isString)
   );
 }
 
 function isActiveAgent(value: unknown): value is GroupChatState["active_agents"][number] {
-  return isRecord(value) && hasFields(value, ["id", "name"], isString);
+  return isJsonObject(value) && hasFields(value, ["id", "name"], isString);
 }
 
 function isDeliveryError(value: unknown): value is DeliveryError {
   return (
-    isRecord(value) &&
+    isJsonObject(value) &&
     value.operation === "group.delivery" &&
     hasFields(value, ["at", "agent_id", "error_type", "message"], isString)
   );
@@ -76,7 +85,7 @@ function isDeliveryError(value: unknown): value is DeliveryError {
 
 export function isGroupMessage(data: unknown): data is GroupMessage {
   return (
-    isRecord(data) &&
+    isJsonObject(data) &&
     hasFields(data, ["id", "seq"], isNumber) &&
     isAuthorType(data.author_type) &&
     hasFields(data, ["author_name", "content", "created_at"], isString) &&
@@ -87,7 +96,7 @@ export function isGroupMessage(data: unknown): data is GroupMessage {
 
 export function isGroupChatState(data: unknown): data is GroupChatState {
   return (
-    isRecord(data) &&
+    isJsonObject(data) &&
     isString(data.guild_id) &&
     hasFields(
       data,
@@ -102,12 +111,12 @@ export function isGroupChatState(data: unknown): data is GroupChatState {
 }
 
 export function isAgentChange(data: unknown): data is AgentChange {
-  return isRecord(data) && isString(data.agent_id);
+  return isJsonObject(data) && isString(data.agent_id);
 }
 
 export function isMessageNotice(data: unknown): data is MessageNotice {
   return (
-    isRecord(data) &&
+    isJsonObject(data) &&
     isNumber(data.seq) &&
     isAuthorType(data.author_type) &&
     hasFields(data, ["guild_id", "author_name", "preview"], isString) &&
@@ -115,37 +124,75 @@ export function isMessageNotice(data: unknown): data is MessageNotice {
   );
 }
 
+function isToolCall(value: unknown): value is ToolCall {
+  return (
+    isJsonObject(value) &&
+    hasFields(value, ["id", "type"], isString) &&
+    isJsonObject(value.function) &&
+    hasFields(value.function, ["name", "arguments"], isString)
+  );
+}
+
+/** Whether a value is a stored message: a system, user, assistant or tool message with its text. */
+function isMessagePayload(value: unknown): value is MessagePayload {
+  if (!isJsonObject(value) || !isString(value.content)) return false;
+  if (value.role === "system" || value.role === "user") return true;
+  if (value.role === "tool") return isString(value.tool_call_id);
+  return (
+    value.role === "assistant" &&
+    (value.tool_calls === undefined || isListOf(value.tool_calls, isToolCall))
+  );
+}
+
 export function isRunMessage(data: unknown): data is RunMessage {
   return (
-    isRecord(data) &&
+    isJsonObject(data) &&
     hasFields(data, ["id", "seq"], isNumber) &&
-    hasFields(data, ["payload", "metadata"], isRecord) &&
+    isMessagePayload(data.payload) &&
+    isJsonObject(data.metadata) &&
     isString(data.created_at) &&
     isNumberOrNull(data.cost_usd)
   );
 }
 
+export function isLiveDelta(data: unknown): data is LiveDelta {
+  return (
+    isJsonObject(data) &&
+    isString(data.text) &&
+    (data.content === undefined || isString(data.content))
+  );
+}
+
+export function isToolProgressEvent(data: unknown): data is ToolProgressEvent {
+  return (
+    isJsonObject(data) &&
+    hasFields(data, ["run_id", "tool_call_id"], isString) &&
+    isStringList(data.lines) &&
+    (data.session_id === undefined || isStringOrNull(data.session_id))
+  );
+}
+
 export function isRunContinuation(data: unknown): data is RunContinuation {
-  return isRecord(data) && isString(data.run_id);
+  return isJsonObject(data) && isString(data.run_id);
 }
 
 function isStudioMessage(value: unknown): value is StudioMessage {
   return (
-    isRecord(value) &&
+    isJsonObject(value) &&
     hasFields(value, ["id", "seq", "generation"], isNumber) &&
     hasFields(value, ["session_id", "created_at"], isString) &&
-    isRecord(value.payload) &&
-    (value.metadata === null || isRecord(value.metadata)) &&
+    isMessagePayload(value.payload) &&
+    (value.metadata === null || isJsonObject(value.metadata)) &&
     isNumberOrNull(value.cost_usd)
   );
 }
 
 export function isStudioMessageCommit(data: unknown): data is StudioMessageCommit {
-  return isRecord(data) && isStudioMessage(data.message);
+  return isJsonObject(data) && isStudioMessage(data.message);
 }
 
 export function isSessionFailure(data: unknown): data is SessionFailure {
-  return isRecord(data) && isString(data.detail);
+  return isJsonObject(data) && isString(data.detail);
 }
 
 /** What each event of a guild's stream carries. */
@@ -188,13 +235,13 @@ export const inboxEventGuards: PayloadGuards<InboxEvents> = {
   "notifications.message": isMessageNotice,
 };
 
-/** What each event of a run's stream carries; a live delta and a tool's progress are read by their own readers. */
+/** What each event of a run's stream carries. */
 export type RunEvents = {
   "generation.started": unknown;
-  "assistant.reasoning.delta": unknown;
-  "assistant.delta": unknown;
+  "assistant.reasoning.delta": LiveDelta;
+  "assistant.delta": LiveDelta;
   "message.committed": RunMessage;
-  "tool.progress": unknown;
+  "tool.progress": ToolProgressEvent;
   "run.error": unknown;
   "generation.finished": unknown;
   "run.continued": RunContinuation;
@@ -202,20 +249,20 @@ export type RunEvents = {
 
 export const runEventGuards: PayloadGuards<RunEvents> = {
   "generation.started": isAnyPayload,
-  "assistant.reasoning.delta": isAnyPayload,
-  "assistant.delta": isAnyPayload,
+  "assistant.reasoning.delta": isLiveDelta,
+  "assistant.delta": isLiveDelta,
   "message.committed": isRunMessage,
-  "tool.progress": isAnyPayload,
+  "tool.progress": isToolProgressEvent,
   "run.error": isAnyPayload,
   "generation.finished": isAnyPayload,
   "run.continued": isRunContinuation,
 };
 
-/** What each event of a Studio session's stream carries; a live delta is read by its own reader. */
+/** What each event of a Studio session's stream carries. */
 export type StudioEvents = {
   "generation.started": unknown;
-  "assistant.delta": unknown;
-  "assistant.reasoning.delta": unknown;
+  "assistant.delta": LiveDelta;
+  "assistant.reasoning.delta": LiveDelta;
   "message.committed": StudioMessageCommit;
   "draft.changed": unknown;
   "generation.finished": unknown;
@@ -224,19 +271,19 @@ export type StudioEvents = {
 
 export const studioEventGuards: PayloadGuards<StudioEvents> = {
   "generation.started": isAnyPayload,
-  "assistant.delta": isAnyPayload,
-  "assistant.reasoning.delta": isAnyPayload,
+  "assistant.delta": isLiveDelta,
+  "assistant.reasoning.delta": isLiveDelta,
   "message.committed": isStudioMessageCommit,
   "draft.changed": isAnyPayload,
   "generation.finished": isAnyPayload,
   "session.error": isAnyPayload,
 };
 
-/** What each event of a Builder session's stream carries; a live delta is read by its own reader. */
+/** What each event of a Builder session's stream carries. */
 export type BuilderEvents = {
   "generation.started": unknown;
-  "assistant.delta": unknown;
-  "assistant.reasoning.delta": unknown;
+  "assistant.delta": LiveDelta;
+  "assistant.reasoning.delta": LiveDelta;
   "message.committed": StudioMessageCommit;
   "recipe.changed": unknown;
   "generation.finished": unknown;
@@ -245,8 +292,8 @@ export type BuilderEvents = {
 
 export const builderEventGuards: PayloadGuards<BuilderEvents> = {
   "generation.started": isAnyPayload,
-  "assistant.delta": isAnyPayload,
-  "assistant.reasoning.delta": isAnyPayload,
+  "assistant.delta": isLiveDelta,
+  "assistant.reasoning.delta": isLiveDelta,
   "message.committed": isStudioMessageCommit,
   "recipe.changed": isAnyPayload,
   "generation.finished": isAnyPayload,

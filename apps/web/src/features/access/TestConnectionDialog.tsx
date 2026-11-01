@@ -2,6 +2,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { callConnectionTool } from "../../api/queries/access";
 import type { McpServerAccess, McpToolAccess, McpToolCallResult } from "../../api/types/access";
+import type { JsonObject } from "../../api/wire";
 import {
   Button,
   CopyButton,
@@ -174,7 +175,7 @@ function ToolPicker({ tools, onPick }: ToolPickerProps) {
 }
 
 /** One call of a listed tool on the login under test. */
-type ConnectionToolCall = { name: string; arguments_: Record<string, unknown> };
+type ConnectionToolCall = { name: string; arguments_: JsonObject };
 
 type TestConnectionFormProps = {
   server: McpServerAccess;

@@ -8,19 +8,11 @@ import {
   isListOf,
   isNumber,
   isNumberOrNull,
-  isRecord,
   isString,
   isStringList,
   isStringOrNull,
   parseJson,
 } from "./wire";
-
-test("isRecord admits an object and refuses null, a list and a scalar", () => {
-  assert.equal(isRecord({ a: 1 }), true);
-  assert.equal(isRecord(null), false);
-  assert.equal(isRecord([]), false);
-  assert.equal(isRecord("a"), false);
-});
 
 test("the scalar checks admit their own kind only", () => {
   assert.equal(isString("a"), true);

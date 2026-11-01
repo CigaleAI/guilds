@@ -1,6 +1,6 @@
 import type { OrgRole } from "../../api/types/org";
 import type { Secret, SecretAccessChoice } from "../../api/types/secrets";
-import { isRecord, parseJson } from "../../api/wire";
+import { isJsonObject, parseJson } from "../../api/wire";
 
 /** The server's rules for a secret: an environment variable name and a description the agent reads. */
 export const secretNamePattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -108,7 +108,7 @@ export function askedRequest(argumentsText: unknown, resultText: unknown): Secre
 function askedResult(resultText: unknown): Record<string, unknown> | null {
   if (typeof resultText !== "string") return null;
   const result = parseJson(resultText.split("\n")[0] ?? "");
-  if (!isRecord(result) || result.widget !== "secret_request" || result.status !== "asked") {
+  if (!isJsonObject(result) || result.widget !== "secret_request" || result.status !== "asked") {
     return null;
   }
   return result;
@@ -121,7 +121,7 @@ function askedResult(resultText: unknown): Record<string, unknown> | null {
 function requestArguments(argumentsText: unknown): Record<string, unknown> | null {
   const value = typeof argumentsText === "string" ? parseJson(argumentsText) : argumentsText;
   if (typeof argumentsText === "string" && value === undefined) return null;
-  return isRecord(value) ? value : {};
+  return isJsonObject(value) ? value : {};
 }
 
 /** The note a typed secret value gets for whitespace around it, which saving removes. */
