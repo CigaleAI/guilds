@@ -174,6 +174,15 @@ export function isSecretRequestAsked(value: unknown): value is SecretRequestAske
   );
 }
 
+const STUDIO_FOCUS_KINDS: readonly StudioFocusKind[] = [
+  "run",
+  "memory_version",
+  "routine",
+  "file",
+  "issue",
+  "tool",
+];
+
 /** An id or path a focus pin names, null when it names none, or left out. */
 function isFocusText(value: unknown): value is string | null | undefined {
   return value === undefined || isStringOrNull(value);
@@ -184,11 +193,11 @@ function isFocusIndex(value: unknown): value is number | string | null | undefin
   return value === undefined || isNumberOrNull(value) || isString(value);
 }
 
-/** Whether a value is the evidence a Studio message is pinned to: its kind, and ids that are text or null. */
+/** Whether a value is the evidence a Studio message is pinned to: a kind the server resolves, and ids that are text or null. */
 export function isStudioFocusRequest(value: unknown): value is StudioFocusRequest {
   return (
     isJsonObject(value) &&
-    isString(value.kind) &&
+    STUDIO_FOCUS_KINDS.some((kind) => kind === value.kind) &&
     hasFields(value, ["seq", "version_index"], isFocusIndex) &&
     hasFields(
       value,
@@ -207,15 +216,6 @@ export function isStudioFocusRequest(value: unknown): value is StudioFocusReques
     )
   );
 }
-
-const STUDIO_FOCUS_KINDS: readonly StudioFocusKind[] = [
-  "run",
-  "memory_version",
-  "routine",
-  "file",
-  "issue",
-  "tool",
-];
 
 /** Whether a value is the evidence the server stored on a pinned Studio message: every field of it. */
 export function isStudioFocus(value: unknown): value is StudioFocus {

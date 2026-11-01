@@ -52,7 +52,7 @@ export type NewStudioSession = {
  * one it names none of. A step or version is a number or its digits.
  */
 export type StudioFocusRequest = {
-  kind: string;
+  kind: StudioFocusKind;
   agent_id?: string | null;
   run_id?: string | null;
   seq?: number | string | null;

@@ -14,6 +14,7 @@ import {
   parseJson,
   parseStudioConnection,
   parseStudioEdit,
+  isStudioFocusRequest,
 } from "./wire";
 
 test("the scalar checks admit their own kind only", () => {
@@ -129,4 +130,10 @@ test("parseStudioConnection keeps the text fields of the connection and its serv
     { id: "conn_1", owner_scope: "org", server: { slug: "notion" } },
   );
   assert.deepEqual(parseStudioConnection("conn_1"), {});
+});
+
+test("isStudioFocusRequest admits a pin of a kind the server resolves and refuses another", () => {
+  assert.equal(isStudioFocusRequest({ kind: "issue", issue_id: "iss_1", seq: "3" }), true);
+  assert.equal(isStudioFocusRequest({ kind: "focus", issue_id: "iss_1" }), false);
+  assert.equal(isStudioFocusRequest({ kind: "run", run_id: 7 }), false);
 });
