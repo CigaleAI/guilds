@@ -92,7 +92,7 @@ test("attachRunsToMemoryEntries leaves operator versions without a run", () => {
         actor: { type: "user", id: "user_1", name: "manu", detail: "" },
       }),
     ],
-    new Map([["r_1", { kind: "direct", created_at: "2026-09-20T10:00:00.000Z" }]]),
+    new Map([["r_1", { kind: "direct", status: "completed", schedule_id: null, created_at: "2026-09-20T10:00:00.000Z" }]]),
     new Map(),
   );
   assert.equal(attached[0]?.run?.id, "r_1");

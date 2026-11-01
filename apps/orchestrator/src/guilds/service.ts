@@ -73,12 +73,27 @@ export type GuildOrg = { id: string; slug: string };
 /** The user acting on a guild: who it records as the creator or the author of a change. */
 export type GuildActor = { id: string; name: string };
 
-function nameConflict(error: unknown): unknown {
-  return isUniqueViolation(error) ? new GuildError(409, "guild name already exists") : error;
+/** What a write that failed throws: a taken name as a 409, anything else as it was thrown. */
+function nameConflict(cause: unknown): unknown {
+  return isUniqueViolation(cause) ? new GuildError(409, "guild name already exists") : cause;
 }
 
+/** A guild as the API answers it: its settings and operators; a guild has no database of its own. */
+export type GuildView = Pick<
+  GuildRow,
+  | "id"
+  | "name"
+  | "about"
+  | "description"
+  | "max_agents"
+  | "git_author_email"
+  | "visibility"
+  | "operators"
+  | "routines_enabled"
+> & { database: false };
+
 /** A guild as the API answers it. */
-export function guildItem(row: GuildRow): Record<string, unknown> {
+export function guildItem(row: GuildRow): GuildView {
   return {
     id: row.id,
     name: row.name,
@@ -282,7 +297,7 @@ export async function updateGuildSettings(
   if (visibility && visibility !== guild.visibility) {
     await requireAdministeredGuild(db, guild.id, actor.id);
   }
-  const renamed = typeof name === "string" && name !== guild.name ? name : null;
+  const renamed = name && name !== guild.name ? name : null;
   if (renamed !== null) {
     await assertRenameable(services, guild.id);
   }

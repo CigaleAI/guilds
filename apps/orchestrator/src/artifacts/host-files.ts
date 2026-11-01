@@ -30,7 +30,8 @@ export type HostFileWrite = { path: string; content: string; expectedVersion: nu
 /** A host file as it was read or written: what the page receives, its kind, and its version. */
 type LoadedHostFile = { payload: HostFilePayload; kind: string; version: number };
 
-type HostFilePayload = {
+/** A host file as the page receives it: its path, content and display path, and for a note its id, version and revisions. */
+export type HostFilePayload = {
   /** A note's id, which names it to the access API. */
   id?: string;
   path: string;

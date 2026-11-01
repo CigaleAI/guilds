@@ -59,7 +59,7 @@ export async function setOperatorRole(
   db: Queryable,
   guild: GuildRow,
   userId: string,
-  role: unknown,
+  role: string,
 ): Promise<GuildRow> {
   const validated = validateGuildOperatorRole(role);
   if ((await getMembership(db, guild.org_id, userId)) === null) {

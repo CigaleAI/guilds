@@ -110,14 +110,12 @@ export function orgItem(row: OrgRow & { role?: string }): OrgItem {
   };
 }
 
-export function memberItem(row: OrgMemberRow): {
-  user_id: string;
-  name: string;
-  image: string | null;
-  color: string | null;
-  role: string;
+/** A member of an organisation as the API shows it: the user, their role, and when they joined. */
+export type OrgMemberItem = Pick<OrgMemberRow, "user_id" | "name" | "image" | "color" | "role"> & {
   created_at: string;
-} {
+};
+
+export function memberItem(row: OrgMemberRow): OrgMemberItem {
   return {
     user_id: row.user_id,
     name: row.name,

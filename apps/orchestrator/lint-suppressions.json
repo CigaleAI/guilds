@@ -28,15 +28,6 @@
     }
   },
   "src/attachments/store.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
-    },
-    "limits/erased-return-type": {
-      "count": 1
-    },
     "limits/inline-parameter-type": {
       "count": 2
     }
@@ -534,28 +525,8 @@
       "count": 1
     }
   },
-  "src/guilds/operators.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    }
-  },
   "src/guilds/service.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    },
     "limits/bare-error": {
-      "count": 1
-    },
-    "limits/erased-return-type": {
       "count": 1
     }
   },
@@ -703,14 +674,8 @@
     }
   },
   "src/memory/history.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 5
-    },
-    "limits/erased-return-type": {
-      "count": 1
-    },
     "limits/inline-parameter-type": {
-      "count": 3
+      "count": 2
     }
   },
   "src/memory/index.ts": {
@@ -734,23 +699,12 @@
       "count": 1
     }
   },
-  "src/notes/operator.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 3
-    },
-    "limits/erased-return-type": {
-      "count": 3
-    }
-  },
   "src/notes/paths.ts": {
     "typescript/consistent-type-assertions": {
       "count": 2
     }
   },
   "src/notes/store.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
     "complexity": {
       "count": 1
     },
@@ -810,22 +764,11 @@
     }
   },
   "src/organisations/index.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
     "limits/inline-parameter-type": {
       "count": 1
     },
     "typescript/consistent-type-assertions": {
       "count": 2
-    }
-  },
-  "src/organisations/service.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    },
-    "limits/erased-alias": {
-      "count": 1
     }
   },
   "src/prompts/index.ts": {
