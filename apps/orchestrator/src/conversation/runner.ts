@@ -8,10 +8,9 @@ import {
   nextConversationSeq,
   updateConversationSession,
 } from "../db/conversations.js";
-import { isPlainRecord } from "../db/json.js";
 import { isJsonObject, type JsonObject } from "../lib/json.js";
 import type { Queryable } from "../db/pg.js";
-import type { MessagePayload, ToolCall, ToolMessage } from "../db/schema/index.js";
+import type { CompletionMetadata, MessagePayload, ToolCall, ToolMessage } from "../db/schema/index.js";
 import { incrementOrgUsage } from "../db/usage.js";
 import { EventQueue, type StreamEvent } from "../lib/event.js";
 import type { FunctionTool } from "../lib/tool-schema.js";
@@ -425,7 +424,7 @@ export class ConversationRunner {
     turn: ConversationGeneration,
     messages: MessagePayload[],
     call: ToolCall,
-    finishReason: string,
+    finishReason: CompletionMetadata["finish_reason"],
   ): Promise<ConversationToolResult> {
     const sessionId = turn.session.id;
     const name = call.function.name;
@@ -656,7 +655,7 @@ export async function callConversationTool(
   turn: ConversationGeneration,
   call: ToolCall,
   upcoming: number,
-  finishReason: string,
+  finishReason: CompletionMetadata["finish_reason"],
 ): Promise<ConversationToolResult> {
   const tool = turn.tools.get(call.function.name);
   if (!tool) {
@@ -677,28 +676,29 @@ export async function callConversationTool(
   }
 }
 
-export function toolArgsAreJsonObject(raw: unknown): boolean {
-  if (isPlainRecord(raw)) {
-    return true;
-  }
-  if (typeof raw !== "string" || !raw.trim()) {
+/** Whether a tool call's arguments, as the model wrote them, are a whole JSON object. */
+export function toolArgsAreJsonObject(raw: ToolCall["function"]["arguments"]): boolean {
+  if (!raw.trim()) {
     return false;
   }
   try {
-    return isPlainRecord(JSON.parse(raw));
+    return isJsonObject(JSON.parse(raw));
   } catch {
     return false;
   }
 }
 
-export function truncatedToolArguments(finishReason: unknown, raw: unknown): boolean {
+/** Whether the step's output was cut at max_tokens in the middle of the call's arguments. */
+export function truncatedToolArguments(
+  finishReason: CompletionMetadata["finish_reason"],
+  raw: ToolCall["function"]["arguments"],
+): boolean {
   return finishReason === "length" && !toolArgsAreJsonObject(raw);
 }
 
-export function parseToolArgs(raw: unknown): JsonObject {
+/** A tool call's arguments as a JSON object; what can be recovered of them when they are not one. */
+export function parseToolArgs(raw: ToolCall["function"]["arguments"]): JsonObject {
   if (!raw) return {};
-  if (isJsonObject(raw)) return raw;
-  if (typeof raw !== "string") return {};
   try {
     const parsed: unknown = JSON.parse(raw);
     if (isJsonObject(parsed)) {
@@ -727,10 +727,15 @@ export function recoverPartialToolArgs(raw: string): JsonObject {
 function decodeJsonStringBody(body: string): string | null {
   try {
     const decoded: unknown = JSON.parse(`"${body}"`);
-    return typeof decoded === "string" ? decoded : null;
+    return isDecodedText(decoded) ? decoded : null;
   } catch {
     return null;
   }
+}
+
+/** Whether what JSON.parse gave back is a string. */
+function isDecodedText(value: unknown): value is string {
+  return typeof value === "string";
 }
 
 function unresolvedCalls(messages: ConversationMessageRow[]): ToolCall[] {

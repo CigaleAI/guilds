@@ -31,7 +31,13 @@ export function wrapUntrustedText(label: string, value: string): string {
   return wrapEvidence({ source: label, body: value });
 }
 
-export function excerptBytes(text: string, maxBytes: number): { text: string; truncated: boolean } {
+/** The start of a text, and whether the text went on past it. */
+export type Excerpt = { text: string; truncated: boolean };
+
+/** The start of a text cut at a word, and how many words it holds. */
+export type WordExcerpt = Excerpt & { words: number };
+
+export function excerptBytes(text: string, maxBytes: number): Excerpt {
   const encoded = Buffer.from(text, "utf8");
   if (encoded.length <= maxBytes) {
     return { text, truncated: false };
@@ -39,7 +45,7 @@ export function excerptBytes(text: string, maxBytes: number): { text: string; tr
   return { text: encoded.subarray(0, maxBytes).toString("utf8"), truncated: true };
 }
 
-export function excerptWords(text: string, maxWords: number): { text: string; truncated: boolean; words: number } {
+export function excerptWords(text: string, maxWords: number): WordExcerpt {
   const matches = [...text.matchAll(/\S+/g)];
   if (matches.length <= maxWords) {
     return { text, truncated: false, words: matches.length };

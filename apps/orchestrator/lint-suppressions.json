@@ -302,24 +302,8 @@
     }
   },
   "src/conversation/runner.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 3
-    },
     "anti-slop/no-unknown-parameters": {
-      "count": 5
-    }
-  },
-  "src/conversation/templates.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
       "count": 1
-    },
-    "limits/erased-return-type": {
-      "count": 1
-    }
-  },
-  "src/conversation/trust.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 5
     }
   },
   "src/credentials/visibility.ts": {
