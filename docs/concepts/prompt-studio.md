@@ -425,7 +425,8 @@ Nothing is sent until the operator sends it.
 
 Focus is `agents.focus`. The current State preview uses a pure
 PostgreSQL projector: it starts no sandbox, syncs no connector, and
-decrypts no credential. `studio_sessions.mode` is `optimize`; the
+decrypts no credential. It lists the agent's collections as a run's
+State does, from the same capped catalog. `studio_sessions.mode` is `optimize`; the
 schema also allows `create`, which no route writes.
 
 ### Routes and location

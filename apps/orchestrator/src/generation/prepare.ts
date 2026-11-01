@@ -27,7 +27,7 @@ import {
 } from "../prompts/index.js";
 import { prepareBrowserWorkspace, prepareWorkspace } from "../sandbox/index.js";
 import type { Scripts } from "../scripts/catalog.js";
-import { collectRunState, type RunStateInputs } from "../state/index.js";
+import { collectRunState, type RunState, type RunStateInputs } from "../state/index.js";
 import { SCRIPT_TOOLS } from "../toolbox/script.js";
 import { serializeHistoryDecision } from "../typesafe/group.js";
 import type { ActiveGenerations } from "./active-generations.js";
@@ -35,7 +35,7 @@ import { codingRepositoriesDatabase, guildRepositories, type CodingRepositoriesD
 import { RunRequestError } from "./errors.js";
 import type { AgentMachines } from "./machines.js";
 import type { PreparedRun } from "./snapshot.js";
-import { collectionCatalog } from "../artifacts/collections.js";
+import { collectionCatalog, type CatalogCollection } from "../artifacts/collections.js";
 import { agentTask, taskSnapshot } from "../artifacts/task.js";
 import type { ArtifactStore } from "../artifacts/store.js";
 import { toolArtifacts, type ToolArtifacts } from "../toolbox/artifacts.js";
@@ -258,7 +258,7 @@ export class RunPreparation {
   }
 
   /** The collections the agent can read; none when the box keeps no artifacts or the store refuses. */
-  private async collections(agent: AgentRow): Promise<unknown[]> {
+  private async collections(agent: AgentRow): Promise<CatalogCollection[]> {
     const { artifacts } = this.services;
     if (!artifacts || !agent.org_id) {
       return [];
@@ -280,7 +280,7 @@ export class RunPreparation {
   }
 
   /** The guild's state as the run's system prompt shows it; a notes folder it cannot read is a 422. */
-  private runState(agent: AgentRow, inputs: RunStateInputs): ReturnType<typeof collectRunState> {
+  private runState(agent: AgentRow, inputs: RunStateInputs): RunState {
     try {
       return collectRunState(
         this.services.artifacts ? null : this.services.notes,
