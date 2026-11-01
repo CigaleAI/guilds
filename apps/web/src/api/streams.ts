@@ -32,12 +32,12 @@ import type { GroupChatState, GroupMessage, MessageNotice } from "./types/chat";
 import type { Run, RunMessage } from "./types/runs";
 import type { StudioMessage, StudioSession } from "./types/studio";
 import type { BuilderSession } from "./types/builder";
-import { parseJson } from "./wire";
+import { isString, parseJson, type JsonValue } from "./wire";
 
 type StreamOptions = {
   /** Event names to listen for. */
   events: readonly string[];
-  onEvent: (name: string, data: unknown) => void;
+  onEvent: (name: string, data: JsonValue | undefined) => void;
   /** Runs on every (re)connection. The server replays nothing, so this is where to catch up. */
   onOpen?: () => void;
   /** Delay before reconnecting after the stream drops. */
@@ -64,7 +64,7 @@ export function useEventStream(url: string | null, options: StreamOptions): void
       source.onopen = () => latest.current.onOpen?.();
       for (const name of eventList.split(",")) {
         source.addEventListener(name, (event) => {
-          if (!(event instanceof MessageEvent) || typeof event.data !== "string") return;
+          if (!(event instanceof MessageEvent) || !isString(event.data)) return;
           latest.current.onEvent(name, parseJson(event.data));
         });
       }
@@ -190,12 +190,12 @@ export function useRunStream(
 ): RunStreamState {
   const client = useQueryClient();
   const [live, setLive] = useState<LiveTurn | null>(null);
-  const [progress, setProgress] = useState<ToolProgress>({});
+  const [progress, setProgress] = useState<ToolProgress>(() => new Map());
   const [trackedRun, setTrackedRun] = useState(runId);
   if (trackedRun !== runId) {
     setTrackedRun(runId);
     setLive(null);
-    setProgress({});
+    setProgress(new Map());
   }
   const refreshRun = () => {
     if (!runId) return;
@@ -207,7 +207,7 @@ export function useRunStream(
 
   const showGenerationEnded = () => {
     setLive(null);
-    setProgress({});
+    setProgress(new Map());
     refreshRun();
   };
 
@@ -235,10 +235,12 @@ export function useRunStream(
               ? [...messages, message].sort((a, b) => a.seq - b.seq)
               : messages,
           );
-          if (message.payload.role === "assistant") setLive(null);
+          const { payload } = message;
+          if (payload.role === "assistant") setLive(null);
           // Files, scripts and routines follow the guild's stream; records follow the run's tools.
-          if (message.payload.role === "tool") {
-            setProgress((current) => dropToolProgress(current, message.payload.tool_call_id));
+          if (payload.role === "tool") {
+            const callId = payload.tool_call_id;
+            setProgress((current) => dropToolProgress(current, callId));
             void client.invalidateQueries({ queryKey: tableKeys.databases });
           }
         },

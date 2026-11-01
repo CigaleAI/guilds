@@ -65,9 +65,7 @@ function useRunRefresh(agentId: string) {
 export function useStartRun(agentId: string) {
   const refresh = useRunRefresh(agentId);
   return useMutation({
-    mutationFn: async (input: string | NewRun) => {
-      const message = typeof input === "string" ? input : input.message;
-      const files = typeof input === "string" ? undefined : input.files;
+    mutationFn: async ({ message, files }: NewRun) => {
       const attachment_ids = await attachmentIdsOf(files);
       return api<Run>(`/api/agents/${encodeURIComponent(agentId)}/runs`, {
         method: "POST",

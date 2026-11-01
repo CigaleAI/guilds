@@ -5,9 +5,8 @@ import { applyLiveDelta, liveDeltaText, liveTurnActive } from "./liveTurn";
 test("liveDeltaText reads coach content and run text", () => {
   assert.equal(liveDeltaText({ content: "hello", text: "hello" }), "hello");
   assert.equal(liveDeltaText({ text: "run" }), "run");
-  assert.equal(liveDeltaText({ content: "" }), "");
-  assert.equal(liveDeltaText({ content: 5, text: "run" }), "run");
-  assert.equal(liveDeltaText(null), "");
+  assert.equal(liveDeltaText({ content: "", text: "" }), "");
+  assert.equal(liveDeltaText({ content: "", text: "run" }), "run");
 });
 
 test("applyLiveDelta accumulates reasoning then text", () => {
@@ -15,7 +14,7 @@ test("applyLiveDelta accumulates reasoning then text", () => {
   assert.deepEqual(thought, { reasoning: "think ", text: "" });
   const more = applyLiveDelta(thought, "assistant.reasoning.delta", { text: "hard" });
   assert.deepEqual(more, { reasoning: "think hard", text: "" });
-  const reply = applyLiveDelta(more, "assistant.delta", { content: "done" });
+  const reply = applyLiveDelta(more, "assistant.delta", { content: "done", text: "done" });
   assert.deepEqual(reply, { reasoning: "think hard", text: "done" });
 });
 

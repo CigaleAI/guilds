@@ -5,9 +5,11 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { ApiError, api } from "../client";
+import type { JsonObject } from "../wire";
 import { noteKeys } from "./notes";
 import type {
   AccessBinding,
+  LoginKeys,
   AccessList,
   AccessRow,
   AccessTarget,
@@ -174,11 +176,7 @@ export function useDisconnectServer() {
 }
 
 /** Calls one listed tool on a connected login so the operator can see what it returns. */
-export function callConnectionTool(
-  connectionId: string,
-  tool: string,
-  arguments_: Record<string, unknown>,
-) {
+export function callConnectionTool(connectionId: string, tool: string, arguments_: JsonObject) {
   return api<McpToolCallResult>(`/api/mcp/connections/${encodeURIComponent(connectionId)}/call`, {
     method: "POST",
     body: { tool, arguments: arguments_ },
@@ -289,7 +287,7 @@ export function lookupWithCredentials(
   serverId: string,
   property: string,
   q: string,
-  credentials: Record<string, unknown>,
+  credentials: LoginKeys,
 ) {
   return api<{ options: LookupOption[] }>(
     `/api/mcp/servers/${encodeURIComponent(serverId)}/lookup`,
@@ -308,7 +306,7 @@ export function lookupWithLogin(connectionId: string, property: string, q: strin
 export function useSaveSettings(connectionId: string) {
   const refresh = useAccessRefresh();
   return useMutation({
-    mutationFn: (settings: Record<string, unknown>) =>
+    mutationFn: (settings: JsonObject) =>
       api<McpConnection>(`/api/mcp/connections/${encodeURIComponent(connectionId)}/settings`, {
         method: "PUT",
         body: { settings },

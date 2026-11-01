@@ -8,6 +8,15 @@ commands for each effect are in
 
 ## Unreleased
 
+**Breaking for extensions.** `@guildsrun/web`'s API types name what
+the server sends where they held `Record<string, unknown>`: a run's
+and a coach conversation's message payload is a `MessagePayload`, a
+run message's metadata a `MessageMetadata`, a tool's input schema and
+a script's parameters a `JsonSchema`, a record's values `RecordValue`s
+and a records query's `where` a `RecordWhere` (`api/types/tables`). `api`
+sends a `JsonValue` body. `api/wire` drops `isRecord`: `isJsonObject`
+narrows a JSON object, and `isJsonSchema` a JSON Schema object.
+
 **Breaking for extensions.** The packages lint with Oxlint instead
 of ESLint. An extending repository loads the boundary rule from
 `lint/boundary.js` into a package's `.oxlintrc.json`;

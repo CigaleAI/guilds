@@ -17,7 +17,7 @@ import {
 
 function message(
   seq: number,
-  payload: Record<string, unknown>,
+  payload: StudioMessage["payload"],
   metadata: Record<string, unknown> | null = null,
 ): StudioMessage {
   return {
@@ -35,6 +35,7 @@ function message(
 test("edit and access requests are read from tool results", () => {
   const edit = message(4, {
     role: "tool",
+    tool_call_id: "c1",
     content: JSON.stringify({
       widget: "studio_edit_request",
       title: "Tidy memory",
@@ -81,6 +82,7 @@ test("edit and access requests are read from tool results", () => {
   assert.equal(editTargetLabel({ kind: "routine", target: { agent_id: "a_1" } }), "a_1 · routine");
   const access = message(5, {
     role: "tool",
+    tool_call_id: "c1",
     content: JSON.stringify({
       widget: "studio_connection_access",
       connection: { id: "conn_1", server: { id: "mcp_x", slug: "x", display_name: "X" } },
@@ -89,7 +91,10 @@ test("edit and access requests are read from tool results", () => {
   const login = widgetOf(access);
   assert.ok(login?.kind === "access");
   assert.equal(connectionLabel(login.connection), "X");
-  assert.equal(widgetOf(message(6, { role: "tool", content: '{"rows":[]}' })), null);
+  assert.equal(
+    widgetOf(message(6, { role: "tool", tool_call_id: "c1", content: '{"rows":[]}' })),
+    null,
+  );
   assert.equal(widgetOf(message(7, { role: "assistant", content: "hi" })), null);
 });
 
@@ -98,7 +103,7 @@ test("a focused message names what it was pinned to", () => {
     focusOf(
       message(
         1,
-        { role: "user" },
+        { role: "user", content: "" },
         { source: "studio_focus", focus: { kind: "run", label: "Group run" } },
       ),
     ),
@@ -107,7 +112,7 @@ test("a focused message names what it was pinned to", () => {
       label: "Group run",
     },
   );
-  assert.equal(focusOf(message(2, { role: "user" }, { source: "ui" })), null);
+  assert.equal(focusOf(message(2, { role: "user", content: "" }, { source: "ui" })), null);
 });
 
 test("a turn's requests are answered by one reply once each is decided", () => {
@@ -152,6 +157,7 @@ test("a Task draft is read from its tool result and answered in the coach's word
   const draft = widgetOf(
     message(6, {
       role: "tool",
+      tool_call_id: "c1",
       content: JSON.stringify({
         widget: "studio_task_draft",
         agent: { id: "a_1", name: "wallet" },
@@ -183,6 +189,7 @@ test("a Task draft is read from its tool result and answered in the coach's word
     widgetOf(
       message(7, {
         role: "tool",
+        tool_call_id: "c1",
         content: JSON.stringify({ widget: "studio_task_draft", agent: { id: "a_1" } }),
       }),
     ),
@@ -192,6 +199,7 @@ test("a Task draft is read from its tool result and answered in the coach's word
     widgetOf(
       message(8, {
         role: "tool",
+        tool_call_id: "c1",
         content: JSON.stringify({
           widget: "studio_task_draft",
           agent: { id: "a_1" },
@@ -262,7 +270,7 @@ test("a focus keeps the ids that locate it and drops a field of the wrong type",
     focusOf(
       message(
         3,
-        { role: "user" },
+        { role: "user", content: "" },
         {
           source: "studio_focus",
           focus: { kind: 4, run_id: "r_1", seq: null, call_id: 9, revision_id: null },
@@ -271,8 +279,11 @@ test("a focus keeps the ids that locate it and drops a field of the wrong type",
     ),
     { kind: "focus", label: "Pinned evidence", run_id: "r_1", seq: null, revision_id: null },
   );
-  assert.deepEqual(focusOf(message(4, { role: "user" }, { source: "studio_focus", focus: [] })), {
-    kind: "focus",
-    label: "Pinned evidence",
-  });
+  assert.deepEqual(
+    focusOf(message(4, { role: "user", content: "" }, { source: "studio_focus", focus: [] })),
+    {
+      kind: "focus",
+      label: "Pinned evidence",
+    },
+  );
 });

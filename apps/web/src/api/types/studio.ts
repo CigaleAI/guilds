@@ -1,4 +1,4 @@
-import type { RunError, RunKind } from "./runs";
+import type { MessagePayload, RunError, RunKind } from "./runs";
 import type { Schedule } from "./schedules";
 import type { BindingScope, McpConnectionStatus } from "./access";
 
@@ -47,8 +47,27 @@ export type NewStudioSession = {
   parent?: string;
 };
 
+/**
+ * The evidence an operator pins to a Studio message: its kind and the ids that name it, null for
+ * one it names none of. A step or version is a number or its digits.
+ */
+export type StudioFocusRequest = {
+  kind: string;
+  agent_id?: string | null;
+  run_id?: string | null;
+  seq?: number | string | null;
+  call_id?: string | null;
+  revision_id?: string | null;
+  version_index?: number | string | null;
+  schedule_id?: string | null;
+  display_path?: string | null;
+  change_id?: string | null;
+  issue_id?: string | null;
+  tool_name?: string | null;
+};
+
 /** The operator's message to the coach, pinned to what `focus` names when given. */
-export type StudioMessageInput = { content: string; focus?: unknown };
+export type StudioMessageInput = { content: string; focus?: StudioFocusRequest };
 
 /** What the operator does with a Task draft; `content` is the revised text of a revision. */
 export type StudioDraftAction = {
@@ -170,7 +189,7 @@ export type StudioMessage = {
   session_id: string;
   seq: number;
   generation: number;
-  payload: Record<string, unknown>;
+  payload: MessagePayload;
   metadata: Record<string, unknown> | null;
   cost_usd: number | null;
   created_at: string;

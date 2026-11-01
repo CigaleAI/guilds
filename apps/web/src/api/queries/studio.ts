@@ -345,11 +345,11 @@ export function useStudioState(
   agent: string | null,
   kind: string | null,
 ) {
-  const query: Record<string, string> = {
+  const query = {
     hours: String(hours),
     ...(agent ? { agent } : {}),
     ...(kind ? { kind } : {}),
-  };
+  } satisfies Record<string, string>;
   return useQuery({
     queryKey: studioKeys.studioState(id, query),
     queryFn: () =>

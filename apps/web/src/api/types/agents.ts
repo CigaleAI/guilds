@@ -3,6 +3,9 @@
  * them. Timestamps are ISO-8601 in UTC.
  */
 
+import type { AgentAccess } from "./access";
+import type { SecretRef } from "./secrets";
+
 export type Agent = {
   id: string;
   guild_id: string;
@@ -189,7 +192,7 @@ export type AgentDetail = Agent & {
   config: AgentConfig;
   /** The agent's home, measured after its last generation; null before one. */
   workspace_mib: number | null;
-  access: Record<string, unknown>;
+  access: AgentAccess & { secrets: SecretRef[] };
 };
 
 /** A new agent of a guild; without `machine_id` it goes on the organisation's only machine. */

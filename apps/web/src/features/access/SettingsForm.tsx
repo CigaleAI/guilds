@@ -1,7 +1,7 @@
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ConnectorFacts, LookupOption, McpServerAccess } from "../../api/types/access";
-import { isRecord } from "../../api/wire";
+import { isJsonObject, type JsonValue } from "../../api/wire";
 import { Icon, SearchField, Select, TextField } from "@guildsrun/ui";
 
 const searchDelayMs = 300;
@@ -26,7 +26,7 @@ type SettingsFormProps = {
 
 /** A JSON value's fields: an object's own, none for any other value. */
 function record(value: unknown): Record<string, unknown> {
-  return isRecord(value) ? value : {};
+  return isJsonObject(value) ? value : {};
 }
 
 /** What a stored value shows as: an object's name or symbol, else the value itself. */
@@ -80,7 +80,7 @@ type SettingInputProps = {
   disabled: boolean;
   search: SettingsSearch;
   /** Undefined for a setting this scope can only read. */
-  onChange: ((next: unknown) => void) | undefined;
+  onChange: ((next: JsonValue | undefined) => void) | undefined;
 };
 
 /** One setting as the input its schema calls for: a lookup, a choice, yes or no, or text. */
@@ -157,7 +157,7 @@ type LookupSettingProps = {
   disabled: boolean;
   value: unknown;
   search: (query: string) => Promise<LookupOption[]>;
-  onChange: ((next: unknown) => void) | undefined;
+  onChange: ((next: JsonValue | undefined) => void) | undefined;
 };
 
 /** A setting marked `x-lookup`: a list of picks when its schema holds an array, one pick otherwise. */
@@ -190,7 +190,7 @@ type TextSettingProps = {
   hint: string;
   disabled: boolean;
   value: unknown;
-  onChange: ((next: unknown) => void) | undefined;
+  onChange: ((next: JsonValue | undefined) => void) | undefined;
 };
 
 /** A setting typed in: a number for a numeric schema, cleared to unset when emptied; text otherwise. */
@@ -298,9 +298,9 @@ function Heading({ label, hint }: HeadingProps) {
 }
 
 type LookupListProps = LookupFieldProps & {
-  items: unknown[];
+  items: JsonValue[];
   max: number | undefined;
-  onChange?: (next: unknown[]) => void;
+  onChange?: (next: JsonValue[]) => void;
 };
 
 /** A list setting filled from a search: chips for what is stored, a search box to add more. */
@@ -373,7 +373,7 @@ function LookupList({ label, hint, disabled, search, items, max, onChange }: Loo
   );
 }
 
-type LookupOneProps = LookupFieldProps & { current: unknown; onChange?: (next: unknown) => void };
+type LookupOneProps = LookupFieldProps & { current: unknown; onChange?: (next: JsonValue) => void };
 
 /** A single setting picked from a search, such as one folder. */
 function LookupOne({ label, hint, disabled, search, current, onChange }: LookupOneProps) {

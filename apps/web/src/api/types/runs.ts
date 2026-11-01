@@ -1,4 +1,6 @@
-import type { AgentConfig } from "./agents";
+import type { JsonSchema } from "../wire";
+import type { AgentConfig, Harness } from "./agents";
+import type { SecretRef } from "./secrets";
 
 /**
  * Shapes of the orchestrator's JSON API for runs, as the app reads them. Timestamps are ISO-8601 in
@@ -20,7 +22,7 @@ export type RunError = {
 export type OfferedTool = {
   type?: string;
   name?: string;
-  function?: { name?: string; description?: string; parameters?: Record<string, unknown> };
+  function?: { name?: string; description?: string; parameters?: JsonSchema };
 };
 
 export type RunConfigSnapshot = AgentConfig & {
@@ -32,7 +34,7 @@ export type RunConfigSnapshot = AgentConfig & {
     slug: string;
     tools: { name: string; remote_name: string }[];
   }[];
-  secrets: { id: string; name: string; description: string }[];
+  secrets: SecretRef[];
 };
 
 export type Run = {
@@ -80,13 +82,22 @@ export type HarnessLog = {
   unparsed: number;
 };
 
-/** `tool.progress` on a run's stream: the lines a running tool call reported since the last event. */
+/**
+ * `tool.progress` on a run's stream: the lines a running tool call reported since the last event,
+ * and the harness session it runs in when it has one.
+ */
 export type ToolProgressEvent = {
   run_id: string;
   tool_call_id: string;
   lines: string[];
-  session_id: string | null;
+  session_id?: string | null;
 };
+
+/**
+ * `assistant.delta` or `assistant.reasoning.delta` on a run's or a coach session's stream: the text
+ * the model wrote since the last one. A coach's reply frames carry it as `content` too.
+ */
+export type LiveDelta = { text: string; content?: string };
 
 /** `run.continued` on a run's stream: the run of its chain that carries on. */
 export type RunContinuation = { run_id: string };
@@ -103,12 +114,145 @@ export type RunRepositoryChange = {
   deletions: number;
 };
 
+/** A tool call as the model makes it, in the Chat Completions shape. */
+export type ToolCall = {
+  id: string;
+  type: string;
+  function: { name: string; arguments: string };
+};
+
+export type SystemMessage = { role: "system"; content: string };
+
+export type UserMessage = { role: "user"; content: string };
+
+export type AssistantMessage = { role: "assistant"; content: string; tool_calls?: ToolCall[] };
+
+export type ToolMessage = { role: "tool"; tool_call_id: string; content: string };
+
+/** A stored message, as the model reads it. */
+export type MessagePayload = SystemMessage | UserMessage | AssistantMessage | ToolMessage;
+
+export type TokenUsage = {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+};
+
+/** What a model call records on the assistant message it returns. */
+export type CompletionMetadata = {
+  usage: TokenUsage;
+  latency_ms: number;
+  finish_reason: string;
+  model: string;
+  response_id: string | null;
+  provider_request_id: string | null;
+  cost_usd: number;
+  cost_source: "provider" | "catalog" | "unavailable";
+  /** The catalog's pricing version, when the catalog priced the call. */
+  pricing_version?: string;
+  reasoning?: string;
+};
+
+/**
+ * What one `browse` call spent: the browsing service's own tokens and cost (`jev_*`), the model
+ * it drove the page with (`llm_*`), and their sum.
+ */
+export type BrowserUsageMetadata = {
+  model: string;
+  jev_input_tokens: number;
+  jev_output_tokens: number;
+  jev_cost_usd: number;
+  llm_input_tokens: number;
+  llm_output_tokens: number;
+  llm_cost_usd: number;
+  cost_usd: number;
+};
+
+/** The fields a native tool reports about its call, kept on the call's result. */
+export type ReportedToolMetadata = {
+  exit_code?: number | null;
+  /** The directory a `shell` command ended in. */
+  cwd?: string;
+  path?: string;
+  /** The first and last line a `file_read` returned; null for a binary or empty file. */
+  range?: [number, number] | null;
+  content_hash?: string;
+  lines?: number;
+  log_path?: string | null;
+  timed_out?: boolean;
+  background_id?: string;
+  /** A background command's state, as `shell_status` read it. */
+  state?: string;
+  matches?: number;
+  files?: number;
+  harness?: Harness;
+  status?: string;
+  session_id?: string | null;
+  repository?: string | null;
+  files_changed?: number;
+  insertions?: number;
+  deletions?: number;
+  start_sha?: string | null;
+  end_sha?: string | null;
+  /** The page a `browse` call ended on; null when it never loaded one. */
+  final_url?: string | null;
+  /** The browser actions a `browse` call took. */
+  steps?: number;
+  /** What a `browse` call spent, counted in the usage counters apart from model calls. */
+  browser_usage?: BrowserUsageMetadata;
+};
+
+/** What a tool call records on its result: the call, how its output was kept, and what the tool reported. */
+export type ToolResultMetadata = {
+  tool_name: string;
+  tool_call_id: string;
+  duration_ms: number;
+  output_filter: string;
+  truncated: boolean;
+  original_bytes: number;
+  stored_bytes: number;
+  error: string | null;
+  /** The tool calls the run has left after this one. */
+  remaining_tool_calls?: number;
+  /** The step whose result a repeated read of an unchanged range points to. */
+  repeat_of?: number;
+} & ReportedToolMetadata;
+
+/** Where a run's opening or operator message came from. */
+export type RunMessageSource =
+  "system" | "ui" | "continuation" | "schedule" | "group_chat" | "handoff";
+
+/** What a run's system or user message records about where it came from. */
+export type RunInputMetadata = {
+  source: RunMessageSource;
+  attachments?: MessageAttachment[];
+  previous_run_id?: string;
+  schedule_id?: string;
+  instruction_hash?: string;
+  group_message_id?: number;
+  group_seq?: number;
+  author_type?: string;
+  author_name?: string;
+  tagged?: string[];
+  you_were_tagged?: boolean;
+  recipients?: string[];
+};
+
+/**
+ * The metadata of a run's message. Which fields it carries depends on the message: an assistant
+ * message has the completion's, a tool result the call's, a system or user message its source.
+ * `generation` numbers every message but the system prompt.
+ */
+export type MessageMetadata = { generation?: number } & Partial<RunInputMetadata> &
+  Partial<CompletionMetadata> &
+  Partial<ToolResultMetadata>;
+
 /** One row of a run: system prompt, user turn, assistant turn (with tool calls) or tool result. */
 export type RunMessage = {
   id: number;
   seq: number;
-  payload: Record<string, unknown>;
-  metadata: Record<string, unknown>;
+  payload: MessagePayload;
+  metadata: MessageMetadata;
   created_at: string;
   /** The cost stored beside the message: a model reply's, or a tool result's spend such as a `browse` call's; null when it records none. */
   cost_usd: number | null;

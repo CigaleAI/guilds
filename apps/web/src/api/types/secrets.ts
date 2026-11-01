@@ -29,6 +29,9 @@ export type Secret = {
   can_manage: boolean;
 };
 
+/** A secret as an agent's environment carries it: its id, name and description. */
+export type SecretRef = { id: string; name: string; description: string };
+
 /** Who gets a secret; neither organisation-wide nor granted leaves it unassigned. */
 export type SecretAccessChoice = { org_wide: boolean; guild_ids: string[]; agent_ids: string[] };
 
