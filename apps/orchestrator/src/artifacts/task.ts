@@ -62,7 +62,7 @@ function readTaskTemplate(templatesRoot: string): string | null {
   }
 }
 
-function isMissingFile(error: unknown): boolean {
+function isMissingFile(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 

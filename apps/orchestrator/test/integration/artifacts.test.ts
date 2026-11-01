@@ -10,6 +10,7 @@ import { revisionDisplayPath } from "../../src/artifacts/paths.js";
 import { addAgent } from "../../src/agents/service.js";
 import { systemActor } from "../helpers/agents.js";
 import type { Database } from "../../src/db/client.js";
+import type { JsonObject, JsonValue } from "../../src/lib/json.js";
 import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { invokeTool } from "../../src/toolbox/index.js";
@@ -464,7 +465,7 @@ describe("artifact store", { concurrency: 1 }, () => {
     );
     assert.equal((await listRecords(store, searcher, { collection: "packets" })).total, 0);
 
-    const add = (body: Record<string, unknown>) => addRecord(store, searcher, { collection: "packets", body });
+    const add = (body: JsonObject) => addRecord(store, searcher, { collection: "packets", body });
     const zebra = await add({ project: "Zebra", handled: true, chain: "claimed Zcash launchpad", status: "blocked", novelty: 1, seen_at: "2025-03-14T08:00:00Z" });
     const zecord = await add({ project: "Zecord", handled: false, chain: "Solana", status: "open", novelty: 3, seen_at: "2025-03-14T09:00:00+01:00" });
     const anthood = await add({ project: "AntHood", handled: false, chain: "Robinhood Chain", status: "open", novelty: 1, seen_at: "2025-03-13T08:00:00Z" });
@@ -551,7 +552,7 @@ describe("artifact store", { concurrency: 1 }, () => {
     await assert.rejects(() => list({ since: "last week" }), /ISO 8601/);
 
     // search: whole words, OR, phrase, exclusion, single-token substring; never fuzzy
-    const search = async (args: { collection?: string; query: string; where?: unknown }) =>
+    const search = async (args: { collection?: string; query: string; where?: JsonValue }) =>
       (await searchRecords(store, searcher, args)).records.map((row) => `${row.collection}/${row.id}`);
     assert.deepEqual(await search({ query: "Solana" }), ["packets/2"]);
     assert.deepEqual(await search({ query: "Zcash mainnet" }), ["packets/1"]);
@@ -699,7 +700,7 @@ describe("artifact store", { concurrency: 1 }, () => {
     assert.deepEqual(first.record.kind, ["work"]);
     assert.deepEqual(empty.record.tags, []);
 
-    const list = async (where: Record<string, unknown>) =>
+    const list = async (where: JsonObject) =>
       (await listRecords(store, tagger, { collection: "tagged-notes", where })).records.map((row) => row.id);
     assert.deepEqual(await list({ tags: "crm" }), [1, 2]);
     assert.deepEqual(await list({ tags: "cr" }), [1, 2]);

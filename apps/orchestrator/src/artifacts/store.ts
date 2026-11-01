@@ -1,13 +1,13 @@
 import { createHash } from "node:crypto";
-import { readAgentMode } from "../db/artifact-access.js";
+import { readAgentMode, type ArtifactMode } from "../db/artifact-access.js";
 import { countLiveArtifacts, type ArtifactRow } from "../db/artifacts.js";
 import { formatOperationalTimestamp } from "../db/codecs.js";
 import type { RecordRow } from "../db/collections.js";
-import type { CollectionColumn, RecordBody, AccessMode } from "../db/schema/index.js";
+import type { ArtifactContent, CollectionColumn, RecordBody, RecordValue, AccessMode } from "../db/schema/index.js";
 import type { Queryable } from "../db/pg.js";
 import { reachedMode } from "./access.js";
 import { ArtifactError } from "./errors.js";
-import { displayPathFor } from "./paths.js";
+import { displayPathFor, type ArtifactLocation } from "./paths.js";
 import {
   LIVE_ARTIFACTS_MAX,
   WRITE_MAX_BYTES,
@@ -43,7 +43,40 @@ export type CollectionView = {
   count?: number;
 };
 
-export type RecordView = Record<string, unknown>;
+/**
+ * A record's own fields as tools and the API return them: its id and collection, its display path
+ * where the caller gives it, and who last wrote it, when, and at which version.
+ */
+type RecordFields = {
+  id: number;
+  collection: string | null;
+  display_path?: string;
+  created_at: string;
+  updated_at: string;
+  updated_by: string;
+  version: number;
+};
+
+/** A record as tools and the API return it: its own fields, and its value in each column it fills, by column name. */
+export type RecordView = RecordFields & { [column: string]: RecordValue | null };
+
+/** A note, Memory, script, or file as tools and the API return it: where it sits, who wrote it last and when, and its text. */
+export type ArtifactTextView = {
+  display_path: string;
+  kind: ArtifactKind;
+  level: ArtifactLevel;
+  key: string;
+  title: string | null;
+  author: string;
+  version: number;
+  updated_at: string;
+  /** The reader's mode, on a row read for a reader. */
+  access?: ArtifactMode;
+  content: string | null;
+};
+
+/** A note as the Host lists it: `path` is its file name, `id` names it to the access API. */
+export type HostNoteView = Pick<ArtifactTextView, "display_path" | "kind" | "title" | "version"> & { id: string; path: string };
 
 /** A collection by name with the reader's mode on it. */
 export type CollectionDescription = {
@@ -185,15 +218,7 @@ export function rowDisplayPath(row: ArtifactRow): string {
 }
 
 /** What `displayPathFor` needs of a row. */
-export function rowAsDisplay(row: ArtifactRow): {
-  orgId: string;
-  level: ArtifactLevel;
-  ownerId: string;
-  kind: ArtifactKind;
-  collectionName?: string | null;
-  path: string;
-  key: string;
-} {
+export function rowAsDisplay(row: ArtifactRow): ArtifactLocation {
   return {
     orgId: row.org_id,
     level: row.level,
@@ -205,7 +230,7 @@ export function rowAsDisplay(row: ArtifactRow): {
   };
 }
 
-export function hashArtifactContent(text: string | null, json: unknown = null): string {
+export function hashArtifactContent(text: string | null, json: ArtifactContent | null = null): string {
   const body = text ?? JSON.stringify(json ?? {});
   return createHash("sha256").update(body, "utf8").digest("hex");
 }
@@ -221,10 +246,12 @@ export function isRecordRow(row: ArtifactRow): row is RecordRow {
 }
 
 /** A note, Memory, script, or file as tools and the API return it; a record as `recordView` does. */
-export function artifactView(row: ArtifactRow): Record<string, unknown> {
-  if (isRecordRow(row)) {
-    return recordViewWithPath(row);
-  }
+export function artifactView(row: ArtifactRow): ArtifactTextView | RecordView {
+  return isRecordRow(row) ? recordViewWithPath(row) : artifactTextView(row);
+}
+
+/** A note, Memory, script, or file as tools and the API return it. */
+export function artifactTextView(row: ArtifactRow): ArtifactTextView {
   return {
     display_path: rowDisplayPath(row),
     kind: row.kind,
@@ -269,8 +296,8 @@ export function recordViewWithPath(row: RecordRow): RecordView {
   };
 }
 
-/** A note as the Host lists it: `path` is its file name, `id` names it to the access API. */
-export function hostNoteView(row: ArtifactRow): Record<string, unknown> {
+/** A note as the Host lists it. */
+export function hostNoteView(row: ArtifactRow): HostNoteView {
   return {
     id: row.id,
     path: row.key,

@@ -9,8 +9,9 @@ import {
   planGuildTableChange,
 } from "../../src/artifacts/guild-tables.js";
 import type { AccessEntry } from "../../src/artifacts/types.js";
+import type { JsonObject } from "../../src/lib/json.js";
 
-const COLUMNS = [
+const COLUMNS: [JsonObject, JsonObject, JsonObject] = [
   { name: "project", type: "text", description: "project name", required: true },
   { name: "status", type: "text", description: "queue state", values: ["new", "done"] },
   { name: "owner", type: "text", description: "who follows it" },

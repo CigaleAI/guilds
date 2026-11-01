@@ -27,6 +27,7 @@ import { recordChangeIfAny, recordConfigChange } from "../db/config-changes.js";
 import { getGuild } from "../db/guilds.js";
 import { isUniqueViolation, type Queryable, withTransaction } from "../db/pg.js";
 import type { CollectionColumn, AccessMode } from "../db/schema/index.js";
+import type { JsonValue } from "../lib/json.js";
 import { type AccessRaise, accessRaises, defaultGrants, reachedMode } from "./access.js";
 import {
   collectionCleared,
@@ -34,7 +35,16 @@ import {
   collectionDeleted,
   type CollectionRef,
 } from "./collection-changes.js";
-import { columnCatalog, normalizeIdentity, parseColumnChange, parseColumns, uniqueColumn, type ColumnChange, type ColumnRename } from "./columns.js";
+import {
+  columnCatalog,
+  normalizeIdentity,
+  parseColumnChange,
+  parseColumns,
+  uniqueColumn,
+  type CatalogColumn,
+  type ColumnChange,
+  type ColumnRename,
+} from "./columns.js";
 import { ArtifactError } from "./errors.js";
 import { collectionAccessItem, setAccessRow, writeGrants } from "./grants.js";
 import { collectionDisplayPath } from "./paths.js";
@@ -48,18 +58,26 @@ import {
 } from "./types.js";
 
 
-/** What a collection's update may change; a field left out keeps its value. */
-export type CollectionChanges = { name?: string; purpose?: string; columns?: unknown; guildId?: string | null };
+/**
+ * What a collection's update may change; a field left out keeps its value. `columns` is the full
+ * column list as sent, which `parseColumnChange` checks.
+ */
+export type CollectionChanges = {
+  name?: string;
+  purpose?: string;
+  columns?: JsonValue | undefined;
+  guildId?: string | null;
+};
 
 /**
- * A collection as the operator defines it: its name, purpose and columns, the guild that owns it,
- * none for an organisation table, and the access list it is raised to as it is created, when one
- * is given.
+ * A collection as the operator defines it: its name, purpose and column list as sent, which
+ * `parseColumns` checks, the guild that owns it, none for an organisation table, and the access
+ * list it is raised to as it is created, when one is given.
  */
 export type NewCollection = {
   name: string;
   purpose: string;
-  columns?: unknown;
+  columns?: JsonValue | undefined;
   guildId?: string | null;
   access?: AccessRaise;
 };
@@ -379,14 +397,28 @@ export async function listCollectionsWithCounts(store: ArtifactStore, actor: Art
   return rows.map((item) => collectionView(item.row, item.mode, counts.get(item.row.id) ?? 0));
 }
 
+/**
+ * A collection as State's catalog lists it: its name, purpose, the reader's access, where it sits,
+ * and its columns. The entry that closes a capped catalog is `truncated`.
+ */
+export type CatalogCollection = {
+  name: string;
+  purpose: string;
+  access: AccessMode;
+  scope: CollectionView["scope"];
+  display_path: string;
+  columns: CatalogColumn[];
+  truncated?: true;
+};
+
 /** The State catalog: name, purpose, access, display path, and columns; capped. */
 export async function collectionCatalog(
   store: ArtifactStore,
   actor: ArtifactActor,
   limit = STATE_COLLECTIONS_MAX,
-): Promise<Array<Record<string, unknown>>> {
+): Promise<CatalogCollection[]> {
   const rows = await accessibleCollections(store, actor);
-  const items: Array<Record<string, unknown>> = rows.slice(0, limit).map((item) => ({
+  const items: CatalogCollection[] = rows.slice(0, limit).map((item) => ({
     name: item.row.name,
     purpose: item.row.purpose,
     access: item.mode,

@@ -385,7 +385,7 @@ function assertOrgTableKept(table: GuildTableLive, checked: CheckedCollectionCha
 function definitionChanges(
   table: GuildTableLive,
   shape: GuildTableShape,
-  columns: unknown,
+  columns: CollectionChanges["columns"],
 ): CollectionChanges | null {
   const changes: CollectionChanges = {
     ...(shape.name !== table.name ? { name: shape.name } : {}),
