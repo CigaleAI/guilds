@@ -14,7 +14,7 @@ export function fastifyRequestIdOptions() {
 
 export function requestPath(request: FastifyRequest): string {
   const route = request.routeOptions?.url;
-  if (typeof route === "string" && route.length > 0) {
+  if (route) {
     return route;
   }
   const raw = request.url ?? "";
@@ -22,9 +22,12 @@ export function requestPath(request: FastifyRequest): string {
   return query === -1 ? raw : raw.slice(0, query);
 }
 
-/** Writes the line of a request that failed with `status`, at `level`, with its request id and path. */
-export function logHttpError(level: LogLevel, error: unknown, request: FastifyRequest, status: number): void {
-  const message = error instanceof Error ? error.message : "internal error";
+/**
+ * Writes the line of a request that failed with `status`, at `level`, with its request id and path.
+ * `cause` is the value thrown: the line reports it, its type and its stack or text.
+ */
+export function logHttpError(level: LogLevel, cause: unknown, request: FastifyRequest, status: number): void {
+  const message = cause instanceof Error ? cause.message : "internal error";
   writeLog(
     level,
     message,
@@ -35,9 +38,8 @@ export function logHttpError(level: LogLevel, error: unknown, request: FastifyRe
       method: request.method,
       path: requestPath(request),
       status,
-      error_type: error instanceof Error ? error.name : "Error",
     },
-    error,
+    cause,
   );
 }
 

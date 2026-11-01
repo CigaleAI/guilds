@@ -1490,29 +1490,11 @@
     }
   },
   "src/observability/http.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
     "typescript/explicit-module-boundary-types": {
       "count": 1
     }
   },
   "src/observability/log.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 4
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 5
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 3
-    },
     "complexity": {
       "count": 1
     },
@@ -1529,9 +1511,6 @@
     }
   },
   "src/observability/sentry.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 3
-    },
     "limits/silent-catch": {
       "count": 3
     }

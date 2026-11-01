@@ -56,17 +56,6 @@ export function sentryEnabled(): boolean {
   return Boolean(Sentry.getClient());
 }
 
-function asError(message: string, error: unknown): Error {
-  if (error instanceof Error) {
-    return error;
-  }
-  const wrapped = new Error(message);
-  if (error !== undefined && error !== null) {
-    wrapped.cause = error;
-  }
-  return wrapped;
-}
-
 function setTag(scope: Scope, key: string, value: string | number | null | undefined): void {
   if (value === undefined || value === null || value === "") {
     return;
@@ -74,8 +63,9 @@ function setTag(scope: Scope, key: string, value: string | number | null | undef
   scope.setTag(key, String(value));
 }
 
+/** What reaches Sentry. `exception` takes the Error a line reports; a line that reports none is sent as its message. */
 export const sentryCapture = {
-  exception(level: LogLevel, message: string, fields: LogFields, error?: unknown): void {
+  exception(level: LogLevel, message: string, fields: LogFields, error: Error | null): void {
     if (level !== "error") {
       return;
     }
@@ -100,7 +90,7 @@ export const sentryCapture = {
         scope.setTag("error_type", fields.error_type);
       }
       scope.setExtra("message", message);
-      Sentry.captureException(asError(message, error));
+      Sentry.captureException(error ?? new Error(message));
     });
   },
   log(level: LogLevel, message: string, attributes: LogAttributes): void {
@@ -127,11 +117,12 @@ export function captureLog(level: LogLevel, message: string, attributes: LogAttr
   }
 }
 
+/** Sends an error line to Sentry as an exception: the Error it reports, or one made from its message. */
 export function captureLogError(
   level: LogLevel,
   message: string,
   fields: LogFields,
-  error?: unknown,
+  error: Error | null,
 ): void {
   if (level !== "error") {
     return;

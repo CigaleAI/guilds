@@ -13,17 +13,19 @@ export const LOG_KEYS = [
   "error_type",
   "message",
   "traceback",
-] as const;
+] as const satisfies readonly (keyof LogLine)[];
 
-export const LOG_EXTRA_KEYS = [
+/** The extras that are text, redacted before they are written. */
+const TEXT_EXTRA_KEYS = [
   "machine_id",
   "source",
   "request_id",
   "session_id",
   "path",
   "method",
-  "status",
-] as const;
+] as const satisfies readonly (keyof LogExtras & keyof LogFields)[];
+
+export const LOG_EXTRA_KEYS = [...TEXT_EXTRA_KEYS, "status"] as const satisfies readonly (keyof LogExtras)[];
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
@@ -44,11 +46,36 @@ export type LogFields = {
   status?: number | null;
 };
 
-function envSecrets(): Record<string, string> {
-  const secrets: Record<string, string> = {};
+/** The fields a line carries after its `LOG_KEYS` when they are set, redacted, in `LOG_EXTRA_KEYS` order. */
+type LogExtras = {
+  machine_id?: string;
+  source?: string;
+  request_id?: string;
+  session_id?: string;
+  path?: string;
+  method?: string;
+  status?: number;
+};
+
+/** A log line as written to stdout: the fields every line has, in `LOG_KEYS` order, then its extras. */
+export type LogLine = {
+  timestamp: string;
+  level: LogLevel;
+  run_id: string | null;
+  guild_id: string | null;
+  agent_id: string | null;
+  operation: string | null;
+  error_type: string | null;
+  message: string;
+  traceback: string | null;
+} & LogExtras;
+
+/** The secret values this process's environment holds, by variable name. */
+function envSecrets(): Map<string, string> {
+  const secrets = new Map<string, string>();
   for (const [name, value] of Object.entries(process.env)) {
     if (value && SECRET_NAME_RE.test(name)) {
-      secrets[name] = value;
+      secrets.set(name, value);
     }
   }
   return secrets;
@@ -58,8 +85,8 @@ export function redactText(
   text: string,
   extra: Record<string, string> = {},
 ): string {
-  const merged = { ...envSecrets(), ...extra };
-  const items = Object.entries(merged).sort((a, b) => b[1].length - a[1].length);
+  const merged = new Map([...envSecrets(), ...Object.entries(extra)]);
+  const items = [...merged].sort((a, b) => b[1].length - a[1].length);
   let redacted = text;
   for (const [name, value] of items) {
     if (value) {
@@ -73,21 +100,27 @@ function formatTimestamp(date: Date): string {
   return date.toISOString();
 }
 
-function extraValue(value: string | number | null | undefined): string | number | null {
-  if (value === undefined || value === null || value === "") {
-    return null;
+/** The extras `fields` sets, text redacted; an empty text or a status that is not finite is left out. */
+function lineExtras(fields: LogFields): LogExtras {
+  const extras: LogExtras = {};
+  for (const key of TEXT_EXTRA_KEYS) {
+    const value = fields[key];
+    if (value) {
+      extras[key] = redactText(value);
+    }
   }
-  if (typeof value === "number") {
-    return Number.isFinite(value) ? value : null;
+  if (fields.status != null && Number.isFinite(fields.status)) {
+    extras.status = fields.status;
   }
-  return redactText(value);
+  return extras;
 }
 
+/** Writes lines; `warn` and `error` take the value thrown, when there is one, as their `cause`. */
 export type Logger = {
   debug(message: string, fields?: LogFields): void;
   info(message: string, fields?: LogFields): void;
-  warn(message: string, fields?: LogFields, error?: unknown): void;
-  error(message: string, fields?: LogFields, error?: unknown): void;
+  warn(message: string, fields?: LogFields, cause?: unknown): void;
+  error(message: string, fields?: LogFields, cause?: unknown): void;
 };
 
 function writeFd(fd: number, chunk: string, fallback: NodeJS.WriteStream): void {
@@ -108,12 +141,10 @@ export const logWriter = {
 function unblockStdio(): void {
   for (const stream of [process.stdout, process.stderr]) {
     const handle = (stream as { _handle?: { setBlocking?: (v: boolean) => void } })._handle;
-    if (handle && typeof handle.setBlocking === "function") {
-      try {
-        handle.setBlocking(true);
-      } catch {
-        /* ignore */
-      }
+    try {
+      handle?.setBlocking?.(true);
+    } catch {
+      /* ignore */
     }
   }
 }
@@ -150,72 +181,65 @@ function mirrorToConsole(level: LogLevel, message: string, fields: LogFields, tr
   writeFd(2, text, process.stderr);
 }
 
+/** What a line reports of a thrown value: the Error it is or wraps, and its stack or the value as text. */
+type ThrownReport = {
+  error: Error;
+  traceback: string;
+};
+
+/**
+ * Decides once what a thrown value is. An Error reports itself and its stack; any other value is
+ * wrapped in an Error with the line's message that carries it as its cause, and is reported as
+ * text. Nothing thrown reports nothing.
+ */
+function thrownReport(message: string, cause: unknown): ThrownReport | null {
+  if (cause instanceof Error) {
+    return { error: cause, traceback: cause.stack ?? cause.message };
+  }
+  if (cause === undefined || cause === null) {
+    return null;
+  }
+  return { error: new Error(message, { cause }), traceback: String(cause) };
+}
+
+/** Writes one line at `level`, with `fields` and, when there is one, the value thrown as its `cause`. */
 export function writeLog(
   level: LogLevel,
   message: string,
   fields: LogFields = {},
-  error?: unknown,
+  cause?: unknown,
 ): void {
-  let errorType = fields.error_type ?? null;
-  let traceback: string | null = null;
-  if (error instanceof Error) {
-    errorType = errorType ?? error.name;
-    traceback = redactText(error.stack ?? error.message);
-  } else if (error !== undefined && error !== null) {
-    traceback = redactText(String(error));
-  }
-  const payload: Record<(typeof LOG_KEYS)[number], unknown> = {
+  const thrown = thrownReport(message, cause);
+  const line: LogLine = {
     timestamp: formatTimestamp(new Date()),
     level,
     run_id: fields.run_id ?? null,
     guild_id: fields.guild_id ?? null,
     agent_id: fields.agent_id ?? null,
     operation: fields.operation ?? null,
-    error_type: errorType,
+    error_type: fields.error_type ?? thrown?.error.name ?? null,
     message: redactText(message),
-    traceback,
+    traceback: thrown ? redactText(thrown.traceback) : null,
+    ...lineExtras(fields),
   };
-  const ordered: Record<string, unknown> = {};
-  for (const key of LOG_KEYS) {
-    ordered[key] = payload[key];
-  }
-  const extras: Record<(typeof LOG_EXTRA_KEYS)[number], string | number | null | undefined> = {
-    machine_id: fields.machine_id,
-    source: fields.source,
-    request_id: fields.request_id,
-    session_id: fields.session_id,
-    path: fields.path,
-    method: fields.method,
-    status: fields.status,
-  };
-  for (const key of LOG_EXTRA_KEYS) {
-    const value = extraValue(extras[key]);
-    if (value !== null) {
-      ordered[key] = value;
-    }
-  }
   try {
-    logWriter.write(`${JSON.stringify(ordered)}\n`);
-    mirrorToConsole(level, String(payload.message), fields, traceback);
+    logWriter.write(`${JSON.stringify(line)}\n`);
+    mirrorToConsole(level, line.message, fields, line.traceback);
   } catch (failed) {
     const fallback = `[error] log write failed: ${failed instanceof Error ? failed.message : String(failed)}\n[${level}] ${message}\n`;
     writeFd(2, fallback, process.stderr);
   }
-  captureLog(level, String(payload.message), logAttributes(ordered));
-  captureLogError(level, String(payload.message), fields, error);
+  captureLog(level, line.message, logAttributes(line));
+  captureLogError(level, line.message, fields, thrown?.error ?? null);
 }
 
 const NOT_ATTRIBUTES = new Set(["timestamp", "level", "message"]);
 
-function isAttributeValue(value: unknown): value is string | number {
-  return typeof value === "string" || typeof value === "number";
-}
-
 /** The fields of a written line, already redacted, without the ones Sentry Logs sets itself. */
-function logAttributes(ordered: Record<string, unknown>): LogAttributes {
+function logAttributes(line: LogLine): LogAttributes {
   const attributes: LogAttributes = {};
-  for (const [key, value] of Object.entries(ordered)) {
-    if (!NOT_ATTRIBUTES.has(key) && isAttributeValue(value)) {
+  for (const [key, value] of Object.entries(line)) {
+    if (!NOT_ATTRIBUTES.has(key) && value !== null && value !== undefined) {
       attributes[key] = value;
     }
   }
@@ -230,11 +254,11 @@ export function createLogger(): Logger {
     info(message, fields) {
       writeLog("info", message, fields);
     },
-    warn(message, fields, error) {
-      writeLog("warn", message, fields, error);
+    warn(message, fields, cause) {
+      writeLog("warn", message, fields, cause);
     },
-    error(message, fields, error) {
-      writeLog("error", message, fields, error);
+    error(message, fields, cause) {
+      writeLog("error", message, fields, cause);
     },
   };
 }
@@ -244,24 +268,12 @@ export function configureLogging(): Logger {
   return createLogger();
 }
 
-/** An error's class name for a log line's `error_type`; `Error` when it has none. */
-export function errorName(error: unknown): string {
-  if (
-    error &&
-    typeof error === "object" &&
-    "name" in error &&
-    typeof error.name === "string" &&
-    error.name
-  ) {
-    return error.name;
-  }
-  return "Error";
+/** The class name of a thrown value for a log line's `error_type`: an Error's name, or `Error`. */
+export function errorName(cause: unknown): string {
+  return cause instanceof Error && cause.name ? cause.name : "Error";
 }
 
-/** An error's message, or the thrown value as text. */
-export function errorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return String(error);
+/** The message of a thrown value: an Error's message, or the value as text. */
+export function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }
