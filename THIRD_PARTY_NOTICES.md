@@ -28,6 +28,7 @@ the work below, each under its own terms.
 | Playwright | The runtime image's build installs it with pip | Apache-2.0 |
 | Node.js | The runtime image's build downloads it from nodejs.org | MIT |
 | ttyd | The runtime image's build downloads it from its GitHub releases | MIT |
+| anti-slop, by Dillon Mulroy (https://github.com/dmmulroy/anti-slop) | Seven of its Oxlint rules and their tests are copied under `lint/anti-slop/`, beside its licence; nothing of it ships | MIT |
 | gost | The runtime image's build downloads it from its GitHub releases | MIT |
 | GitHub CLI (`gh`) | The runtime image's build downloads it from its GitHub releases | MIT |
 | mise | The runtime image's build downloads it from its GitHub releases | MIT |
