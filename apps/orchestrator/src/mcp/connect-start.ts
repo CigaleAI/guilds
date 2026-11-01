@@ -8,6 +8,7 @@ import { isPlainRecord } from "../db/json.js";
 import { connectMcp, getMcpConnectionForOwner } from "../db/mcp.js";
 import { githubAppConfig, userAuthorizationUrl } from "../github/index.js";
 import { newId } from "../lib/ids.js";
+import type { JsonObject } from "../lib/json.js";
 import { relistTools } from "./pool.js";
 import { assertActsFor, ConnectionError, ownerOrgId, serverVisible } from "./visibility.js";
 import {
@@ -37,7 +38,7 @@ export type ConnectionStart = {
   serverId: string;
   ownerScope: string;
   ownerId: string | null | undefined;
-  form: Record<string, unknown>;
+  form: JsonObject;
   redirectUri: string;
 };
 

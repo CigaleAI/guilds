@@ -1,6 +1,7 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { encryptPayload } from "../credentials/crypto.js";
 import { newId } from "../lib/ids.js";
+import type { JsonObject } from "../lib/json.js";
 import { PolicyError } from "../policy/index.js";
 import { modelCatalog, type ModelCatalog } from "./catalog.js";
 import { listProviderModels } from "./client.js";
@@ -311,7 +312,7 @@ export class ModelsService {
         ? validateChosenModels(provider, existing.models)
         : validateChosenModels(provider, input.models);
     await this.listModels(provider, apiKey, baseURL);
-    const payload: Record<string, unknown> = { api_key: apiKey };
+    const payload: JsonObject = { api_key: apiKey };
     if (baseURL) {
       payload.base_url = baseURL;
     }

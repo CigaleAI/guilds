@@ -2,13 +2,14 @@
 // payload, the binding to its owner, and ending a sign-in that did not finish.
 import type { LoadedConnector } from "../connectors/servers.js";
 import type { RemoteInfo } from "../connectors/types.js";
-import { asBuffer, decryptPayload, encryptPayload } from "../credentials/crypto.js";
+import { decryptPayload, encryptPayload } from "../credentials/crypto.js";
 import { updateConnector } from "../db/connectors.js";
 import { isPlainRecord } from "../db/json.js";
 import { bindMcpConnection, getMcpConnectionByOauthState, type McpConnectionRow } from "../db/mcp.js";
 import type { Queryable } from "../db/pg.js";
 import type { Manifest } from "../db/schema/index.js";
 import { newId } from "../lib/ids.js";
+import type { JsonObject } from "../lib/json.js";
 import { DESCRIPTION_MAX } from "./catalog.js";
 import type { McpPool } from "./pool.js";
 import { retireLogin } from "./service.js";
@@ -23,7 +24,7 @@ export type ConnectFlowServices = {
   masterKey: Buffer | undefined;
 };
 
-export type Payload = Record<string, unknown>;
+export type Payload = JsonObject;
 
 export function messageOf(caught: unknown): string {
   return caught instanceof Error ? caught.message : String(caught);
@@ -34,7 +35,7 @@ export function encrypt(services: ConnectFlowServices, payload: Payload): [Buffe
 }
 
 export function decrypt(services: ConnectFlowServices, row: McpConnectionRow): Payload {
-  return decryptPayload(asBuffer(row.ciphertext), asBuffer(row.nonce), services.masterKey);
+  return decryptPayload(row.ciphertext, row.nonce, services.masterKey);
 }
 
 /** A login's pending payload; null when it no longer decrypts. */

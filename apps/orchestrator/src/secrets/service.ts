@@ -3,6 +3,7 @@ import { requireVisibleAgent } from "../agents/access.js";
 import { encryptPayload } from "../credentials/crypto.js";
 import {
   secretPayload,
+  type SecretPayload,
   validateSecretDescription,
   validateSecretName,
 } from "../credentials/validate.js";
@@ -85,7 +86,7 @@ export type SecretListScope = { guildId: string | null; agentId: string | null }
 
 type Metadata = Record<string, unknown>;
 
-function encrypt(services: SecretServices, payload: Record<string, unknown>): [Buffer, Buffer] {
+function encrypt(services: SecretServices, payload: SecretPayload): [Buffer, Buffer] {
   return services.masterKey ? encryptPayload(payload, services.masterKey) : encryptPayload(payload);
 }
 

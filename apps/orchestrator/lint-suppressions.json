@@ -725,31 +725,6 @@
       "count": 1
     }
   },
-  "src/credentials/crypto.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 3
-    },
-    "limits/erased-return-type": {
-      "count": 1
-    },
-    "typescript/consistent-type-assertions": {
-      "count": 1
-    }
-  },
-  "src/credentials/validate.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    }
-  },
   "src/credentials/visibility.ts": {
     "limits/inline-parameter-type": {
       "count": 1
@@ -1426,9 +1401,6 @@
     }
   },
   "src/llm/models.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
     "anti-slop/no-runtime-typeof": {
       "count": 1
     },
@@ -1436,7 +1408,7 @@
       "count": 2
     },
     "anti-slop/no-unsafe-dictionary-type": {
-      "count": 4
+      "count": 3
     }
   },
   "src/llm/payload.ts": {
@@ -1524,21 +1496,12 @@
     "anti-slop/no-unknown-parameters": {
       "count": 1
     },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    },
-    "limits/erased-alias": {
-      "count": 1
-    },
     "limits/silent-catch": {
       "count": 1
     }
   },
   "src/mcp/connect-start.ts": {
     "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
       "count": 1
     }
   },
@@ -1763,16 +1726,13 @@
   },
   "src/oauth/index.ts": {
     "anti-slop/no-known-value-widening": {
-      "count": 4
+      "count": 2
     },
     "anti-slop/no-runtime-typeof": {
       "count": 18
     },
     "anti-slop/no-unsafe-dictionary-type": {
-      "count": 18
-    },
-    "limits/erased-return-type": {
-      "count": 4
+      "count": 9
     }
   },
   "src/observability/client-errors.ts": {
@@ -2152,7 +2112,7 @@
       "count": 2
     },
     "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
+      "count": 1
     },
     "limits/erased-alias": {
       "count": 1
@@ -2165,9 +2125,6 @@
   },
   "src/seed/system.ts": {
     "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
       "count": 1
     },
     "limits/silent-catch": {

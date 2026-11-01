@@ -14,6 +14,7 @@ import { saveOauthClient, type LoadedConnector } from "../connectors/servers.js"
 import { isPlainRecord } from "../db/json.js";
 import { saveMcpConnection, type McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
+import { isJsonObject, type JsonObject } from "../lib/json.js";
 import type { Manifest, OAuthClient, OAuthClientCredentials } from "../db/schema/index.js";
 import { connectorIntegration } from "../connectors/instance.js";
 
@@ -115,7 +116,7 @@ export type OAuthClientServices = OAuthHttp & {
 
 /** The services a login's tokens are refreshed through: the network, and the cipher of its stored payload. */
 export type TokenRefreshServices = OAuthHttp & {
-  decrypt: (ciphertext: Buffer, nonce: Buffer) => Record<string, unknown>;
+  decrypt: (ciphertext: Buffer, nonce: Buffer) => JsonObject;
   encrypt?: typeof encryptPayload;
 };
 
@@ -291,10 +292,10 @@ function expiryOf(tokens: Record<string, unknown>, now: Date): string | null {
  * leaves out are kept from `existing`, the payload it replaces.
  */
 export function tokenPayload(
-  tokens: Record<string, unknown>,
+  tokens: JsonObject,
   now: Date,
-  existing: Record<string, unknown> = {},
-): Record<string, unknown> {
+  existing: JsonObject = {},
+): JsonObject {
   const access = tokens.access_token;
   if (typeof access !== "string" || !access) {
     throw new OAuthError("token response is missing access_token");
@@ -303,7 +304,7 @@ export function tokenPayload(
   if (typeof refresh !== "string" || !refresh) {
     refresh = existing.refresh_token;
   }
-  const payload: Record<string, unknown> = {
+  const payload: JsonObject = {
     access_token: access,
     refresh_token: typeof refresh === "string" ? refresh : null,
     token_type: tokens.token_type || "Bearer",
@@ -376,7 +377,7 @@ export function accessExpired(payload: Record<string, unknown>, now: Date, skewM
   return now.getTime() + skewMs >= expires;
 }
 
-export function pendingOauthPayload(codeVerifier: string, redirectUri: string, replaces = false): Record<string, unknown> {
+export function pendingOauthPayload(codeVerifier: string, redirectUri: string, replaces = false): JsonObject {
   return {
     oauth: {
       code_verifier: codeVerifier,
@@ -592,7 +593,7 @@ async function tokenRequest(
   fields: Record<string, string>,
   clientSecret: string | null | undefined,
   http: OAuthHttp,
-): Promise<Record<string, unknown>> {
+): Promise<JsonObject> {
   const params = new URLSearchParams(fields);
   if (clientSecret) {
     params.set("client_secret", clientSecret);
@@ -614,7 +615,7 @@ async function tokenRequest(
     throw new OAuthError(`token request failed: ${response.status}`);
   }
   const payload: unknown = text ? JSON.parse(text) : {};
-  if (!isPlainRecord(payload)) {
+  if (!isJsonObject(payload)) {
     throw new OAuthError("token response is not an object");
   }
   return payload;
@@ -624,7 +625,7 @@ export async function exchangeCode(
   discovery: OAuthDiscovery,
   grant: AuthorizationCodeGrant,
   http: OAuthHttp = {},
-): Promise<Record<string, unknown>> {
+): Promise<JsonObject> {
   return tokenRequest(
     discovery,
     {
@@ -644,7 +645,7 @@ export async function refreshTokens(
   discovery: OAuthDiscovery,
   grant: RefreshTokenGrant,
   http: OAuthHttp = {},
-): Promise<Record<string, unknown>> {
+): Promise<JsonObject> {
   return tokenRequest(
     discovery,
     {
