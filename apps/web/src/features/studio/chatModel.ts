@@ -1,89 +1,14 @@
-import type { StudioMessage } from "../../api/types/studio";
-import { isJsonObject, type JsonObject } from "../../api/wire";
-
-/**
- * What a coach edit changes: an agent's memory, access, or routine, a note, the guild's
- * descriptions, or a table.
- */
-export type EditTarget = {
-  agent_id?: string;
-  agent_name?: string;
-  display_path?: string;
-  title?: string;
-  guild_id?: string;
-  guild_name?: string;
-  /** A table's id, null until the table a create request names exists. */
-  collection_id?: string | null;
-  /** A table's name. */
-  name?: string;
-  /** A routine's id, null until the routine a create request names exists. */
-  schedule_id?: string | null;
-  /** A routine's one-line label. */
-  description?: string;
-};
-
-/** What a coach edit can change. */
-const editKinds = ["memory", "note", "guild", "collection", "access", "routine"] as const;
-
-/** What a table, routine, or note edit does to its target. */
-const editActions = ["create", "edit", "delete"] as const;
-
-/** The lines an edit adds and removes. */
-export type LineCounts = { added?: number; removed?: number };
-
-export type EditWidget = {
-  kind: "edit";
-  title?: string;
-  reason?: string;
-  edit: {
-    kind?: (typeof editKinds)[number];
-    /** What a table, routine, or note edit does to its target; a note edit without one changes its text. */
-    action?: (typeof editActions)[number];
-    target?: EditTarget;
-    base_version?: number;
-    /** The guild fields a guild edit changes. */
-    fields?: string[];
-    lines?: LineCounts;
-    /** An access edit's changes, one per tool or connection. */
-    changes?: AccessChange[];
-    /** Whether an access edit turns on anything the agent cannot use today. */
-    widens?: boolean;
-  };
-};
-
-/** What an access overlay sets: a native tool, a connection, or one tool of a connection. */
-const accessChangeKinds = ["native_tool", "mcp", "mcp_tool"] as const;
-
-/** How an access overlay sets its tool or connection. */
-const accessSettings = ["on", "off", "inherit"] as const;
-
-/** One overlay an access edit writes. */
-export type AccessChange = {
-  kind: (typeof accessChangeKinds)[number];
-  id: string;
-  label: string;
-  setting: (typeof accessSettings)[number];
-};
-
-/** A Task draft the coach wrote, decided like an edit: published, edited and published, or discarded. */
-export type DraftWidget = {
-  kind: "draft";
-  agent: { id: string; name: string };
-  draft_id: string;
-  rationale?: string;
-};
-
-export type AccessWidget = {
-  kind: "access";
-  title?: string;
-  reason?: string;
-  connection: {
-    id?: string;
-    server?: { id?: string; slug?: string; display_name?: string };
-    owner_scope?: string;
-    account_hint?: string;
-  };
-};
+import type {
+  AccessWidget,
+  DraftWidget,
+  EditKind,
+  EditTarget,
+  EditWidget,
+  StudioFocus,
+  StudioMessage,
+  StudioWidget,
+} from "../../api/types/studio";
+import { parseStudioWidget } from "../../api/wire";
 
 /**
  * What an edit changes, in words: "wallet · Memory", "wallet · access", "wallet · Daily sweep", a
@@ -99,18 +24,16 @@ function editAgentName(target: EditTarget): string {
 }
 
 /** What each kind of edit changes, in words; an edit without a kind changes the guild. */
-const editTargetLabels: Record<
-  (typeof editKinds)[number],
-  (target: EditTarget, edit: EditWidget["edit"]) => string
-> = {
-  memory: (target) => `${editAgentName(target)} · Memory`,
-  access: (target) => `${editAgentName(target)} · access`,
-  collection: (target) => `${target.name || "table"} · table`,
-  routine: (target) => `${editAgentName(target)} · ${target.description || "routine"}`,
-  note: (target) => target.title || target.display_path?.split("/").pop() || "note",
-  guild: (target, edit) =>
-    `${target.guild_name || "guild"} · ${edit.fields?.join(" + ") || "description"}`,
-};
+const editTargetLabels: Record<EditKind, (target: EditTarget, edit: EditWidget["edit"]) => string> =
+  {
+    memory: (target) => `${editAgentName(target)} · Memory`,
+    access: (target) => `${editAgentName(target)} · access`,
+    collection: (target) => `${target.name || "table"} · table`,
+    routine: (target) => `${editAgentName(target)} · ${target.description || "routine"}`,
+    note: (target) => target.title || target.display_path?.split("/").pop() || "note",
+    guild: (target, edit) =>
+      `${target.guild_name || "guild"} · ${edit.fields?.join(" + ") || "description"}`,
+  };
 
 /** The login an access request names, with its account when it has one. */
 export function connectionLabel(connection: AccessWidget["connection"]): string {
@@ -121,18 +44,13 @@ export function connectionLabel(connection: AccessWidget["connection"]): string 
 /** The operator's answer to one request, in the words the coach reads. */
 export type RequestDecision = { accepted: boolean; line: string };
 
-const APPLY_NOUNS: Record<string, string> = { note: "note", routine: "routine" };
-
 /** The apply button's words: what applying a create or delete makes, else "Apply edit". */
 export function applyLabel(edit: EditWidget["edit"]): string {
-  const noun = APPLY_NOUNS[edit.kind ?? ""] ?? "table";
+  const noun = edit.kind === "note" || edit.kind === "routine" ? edit.kind : "table";
   if (edit.action === "create") return `Create ${noun}`;
   if (edit.action === "delete") return `Delete ${noun}`;
   return "Apply edit";
 }
-
-/** A request the coach made in its turn: an edit, a login, or a Task draft. */
-export type StudioWidget = EditWidget | AccessWidget | DraftWidget;
 
 /** What became of a draft: the outcome of the last version the operator saw. */
 export type DraftOutcome = "published" | "edited" | "discarded";
@@ -182,164 +100,16 @@ export function batchReply(decisions: readonly (RequestDecision | null)[]): stri
   return [...all.map((decision) => decision.line), next].join(" ");
 }
 
-/** The fields of a JSON object that hold text, by name; a field of another type is left out. */
-function textFields<Key extends string>(
-  record: Record<string, unknown>,
-  keys: readonly Key[],
-): Partial<Record<Key, string>> {
-  const fields: Partial<Record<Key, string>> = {};
-  for (const key of keys) {
-    const value = record[key];
-    if (typeof value === "string") fields[key] = value;
-  }
-  return fields;
-}
-
-/** The fields of a JSON object that hold text or null, by name; one of another type is left out. */
-function nullableTextFields<Key extends string>(
-  record: Record<string, unknown>,
-  keys: readonly Key[],
-): Partial<Record<Key, string | null>> {
-  const fields: Partial<Record<Key, string | null>> = {};
-  for (const key of keys) {
-    const value = record[key];
-    if (typeof value === "string" || value === null) fields[key] = value;
-  }
-  return fields;
-}
-
-/** One overlay of an access edit; null when it lacks a field or names no known kind or setting. */
-function parseAccessChange(value: unknown): AccessChange | null {
-  if (!isJsonObject(value)) return null;
-  const kind = accessChangeKinds.find((entry) => entry === value.kind);
-  const setting = accessSettings.find((entry) => entry === value.setting);
-  if (!kind || !setting || typeof value.id !== "string" || typeof value.label !== "string") {
-    return null;
-  }
-  return { kind, id: value.id, label: value.label, setting };
-}
-
-/** The line counts of an edit, keeping the counts that are numbers. */
-function parseLineCounts(lines: Record<string, unknown>): LineCounts {
-  return {
-    ...(typeof lines.added === "number" ? { added: lines.added } : {}),
-    ...(typeof lines.removed === "number" ? { removed: lines.removed } : {}),
-  };
-}
-
-/** What an edit names as its target, keeping the fields of the type each holds. */
-function parseEditTarget(target: Record<string, unknown>): EditTarget {
-  return {
-    ...textFields(target, [
-      "agent_id",
-      "agent_name",
-      "display_path",
-      "title",
-      "guild_id",
-      "guild_name",
-      "name",
-      "description",
-    ]),
-    ...nullableTextFields(target, ["collection_id", "schedule_id"]),
-  };
-}
-
-/** An edit request's edit, keeping each field that holds what the field says. */
-export function parseEdit(value: unknown): EditWidget["edit"] {
-  if (!isJsonObject(value)) return {};
-  const kind = editKinds.find((entry) => entry === value.kind);
-  const action = editActions.find((entry) => entry === value.action);
-  const { fields, changes } = value;
-  return {
-    ...(kind ? { kind } : {}),
-    ...(action ? { action } : {}),
-    ...(isJsonObject(value.target) ? { target: parseEditTarget(value.target) } : {}),
-    ...(typeof value.base_version === "number" ? { base_version: value.base_version } : {}),
-    ...(Array.isArray(fields)
-      ? { fields: fields.filter((field) => typeof field === "string") }
-      : {}),
-    ...(isJsonObject(value.lines) ? { lines: parseLineCounts(value.lines) } : {}),
-    ...(Array.isArray(changes)
-      ? { changes: changes.map(parseAccessChange).filter((change) => change !== null) }
-      : {}),
-    ...(typeof value.widens === "boolean" ? { widens: value.widens } : {}),
-  };
-}
-
-/** The login an access request names, keeping the fields that hold text. */
-export function parseConnection(value: unknown): AccessWidget["connection"] {
-  if (!isJsonObject(value)) return {};
-  return {
-    ...textFields(value, ["id", "owner_scope", "account_hint"]),
-    ...(isJsonObject(value.server)
-      ? { server: textFields(value.server, ["id", "slug", "display_name"]) }
-      : {}),
-  };
-}
-
-/** A draft widget's fields, when the tool result carries them. */
-function draftWidget(body: Record<string, unknown>): DraftWidget | null {
-  const agent = textFields(isJsonObject(body.agent) ? body.agent : {}, ["id", "name"]);
-  if (typeof body.draft_id !== "string" || agent.id === undefined) return null;
-  return {
-    kind: "draft",
-    agent: { id: agent.id, name: agent.name ?? agent.id },
-    draft_id: body.draft_id,
-    ...textFields(body, ["rationale"]),
-  };
-}
-
 /** A tool result that asks the operator to decide: an edit to apply, a login to grant, a draft. */
 export function widgetOf(
   message: Pick<StudioMessage, "payload"> | null | undefined,
 ): StudioWidget | null {
-  if (!message || message.payload.role !== "tool" || typeof message.payload.content !== "string")
-    return null;
-  let body: unknown;
-  try {
-    body = JSON.parse(message.payload.content);
-  } catch {
-    return null;
-  }
-  if (!isJsonObject(body)) return null;
-  if (body.widget === "studio_edit_request") {
-    return { kind: "edit", ...textFields(body, ["title", "reason"]), edit: parseEdit(body.edit) };
-  }
-  if (body.widget === "studio_connection_access") {
-    return {
-      kind: "access",
-      ...textFields(body, ["title", "reason"]),
-      connection: parseConnection(body.connection),
-    };
-  }
-  if (body.widget === "studio_task_draft") return draftWidget(body);
-  return null;
+  if (!message || message.payload.role !== "tool") return null;
+  return parseStudioWidget(message.payload.content);
 }
 
-/** What a message was pinned to: its kind and label, and the ids that locate it. */
-export type PinnedFocus = {
-  kind: string;
-  label: string;
-  agent_id?: string;
-  run_id?: string;
-  seq?: number | null;
-  call_id?: string | null;
-  revision_id?: string | null;
-  schedule_id?: string;
-  display_path?: string;
-};
-
 /** What an operator's message was pinned to, when it carried a focus. */
-export function focusOf(message: Pick<StudioMessage, "metadata">): PinnedFocus | null {
-  const meta = message.metadata ?? {};
-  if (meta.source !== "studio_focus") return null;
-  const focus: JsonObject = isJsonObject(meta.focus) ? meta.focus : {};
-  const { seq } = focus;
-  return {
-    ...textFields(focus, ["agent_id", "run_id", "schedule_id", "display_path"]),
-    ...nullableTextFields(focus, ["call_id", "revision_id"]),
-    ...(typeof seq === "number" || seq === null ? { seq } : {}),
-    kind: typeof focus.kind === "string" ? focus.kind : "focus",
-    label: typeof focus.label === "string" ? focus.label : "Pinned evidence",
-  };
+export function focusOf(message: Pick<StudioMessage, "metadata">): StudioFocus | null {
+  const metadata = message.metadata;
+  return metadata?.source === "studio_focus" ? (metadata.focus ?? null) : null;
 }

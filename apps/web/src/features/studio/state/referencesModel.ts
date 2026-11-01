@@ -194,11 +194,11 @@ export function linkLabel(edge: ReferenceEdge): string {
 
 export type ReferenceLink = { edge: ReferenceEdge; node: ReferenceNode | undefined; id: string };
 
+/** A node's links: what it embeds or names, and what embeds or names it. */
+export type ReferenceLinks = { out: ReferenceLink[]; in: ReferenceLink[] };
+
 /** What a node embeds or names, and what embeds or names it. */
-export function referenceLinks(
-  data: StudioReferences,
-  id: string,
-): { out: ReferenceLink[]; in: ReferenceLink[] } {
+export function referenceLinks(data: StudioReferences, id: string): ReferenceLinks {
   const byId = new Map(data.nodes.map((node) => [node.id, node]));
   return {
     out: data.edges

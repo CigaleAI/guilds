@@ -13,7 +13,12 @@ import type {
   ToolCall,
   ToolProgressEvent,
 } from "./types/runs";
-import type { SessionFailure, StudioMessage, StudioMessageCommit } from "./types/studio";
+import type {
+  ConversationMessageMetadata,
+  SessionFailure,
+  StudioMessage,
+  StudioMessageCommit,
+} from "./types/studio";
 import {
   hasFields,
   isBoolean,
@@ -24,6 +29,7 @@ import {
   isString,
   isStringList,
   isStringOrNull,
+  isStudioFocus,
   type JsonValue,
 } from "./wire";
 
@@ -176,13 +182,18 @@ export function isRunContinuation(data: unknown): data is RunContinuation {
   return isJsonObject(data) && isString(data.run_id);
 }
 
+/** Whether a value is a coach message's metadata: a JSON object, its focus, when it has one, whole. */
+function isConversationMessageMetadata(value: unknown): value is ConversationMessageMetadata {
+  return isJsonObject(value) && (value.focus === undefined || isStudioFocus(value.focus));
+}
+
 function isStudioMessage(value: unknown): value is StudioMessage {
   return (
     isJsonObject(value) &&
     hasFields(value, ["id", "seq", "generation"], isNumber) &&
     hasFields(value, ["session_id", "created_at"], isString) &&
     isMessagePayload(value.payload) &&
-    (value.metadata === null || isJsonObject(value.metadata)) &&
+    (value.metadata === null || isConversationMessageMetadata(value.metadata)) &&
     isNumberOrNull(value.cost_usd)
   );
 }

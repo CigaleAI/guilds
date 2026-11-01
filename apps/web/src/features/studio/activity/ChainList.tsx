@@ -261,13 +261,15 @@ type TriggerChipProps = {
 type TriggerLook = { label: string; hint: string; icon: LucideIcon };
 
 /** How each kind of start shows as a chip. */
-const triggerLooks: {
+type TriggerLooks = {
   [Kind in ChainStart["kind"]]: (
     start: ChainStartOf<Kind>,
     chain: Chain,
     index: ActivityIndex,
   ) => TriggerLook;
-} = {
+};
+
+const triggerLooks: TriggerLooks = {
   routine: (start, _chain, index) => {
     const routine = start.scheduleId ? index.routines.get(start.scheduleId) : undefined;
     return {

@@ -1,6 +1,12 @@
 import { Link } from "@tanstack/react-router";
 import { Segmented, Select, cn, tabsList, tabsTrigger } from "@guildsrun/ui";
-import { studioStateKinds, studioStateViews, studioTabLabel, type StudioSearch } from "../location";
+import {
+  studioStateKinds,
+  studioStateViews,
+  studioTabLabel,
+  type StudioSearch,
+  type StudioStateKind,
+} from "../location";
 import { useStudio } from "../StudioContext";
 import { StateList } from "./StateList";
 import { ReferencesView } from "./ReferencesView";
@@ -28,7 +34,12 @@ export function StateSection() {
   );
 }
 
-const kindLabel: Record<string, string> = {
+/** What State's list shows: every kind of item, or one. */
+type StateKindFilter = StudioStateKind | "all";
+
+const stateKindFilters: readonly StateKindFilter[] = ["all", ...studioStateKinds];
+
+const kindLabel: Record<StateKindFilter, string> = {
   all: "All",
   note: "Notes",
   table: "Tables",
@@ -82,10 +93,7 @@ function StateBar() {
             const kind = studioStateKinds.find((entry) => entry === value);
             goInPlace(kind ? { ...rest, kind } : rest);
           }}
-          options={["all", ...studioStateKinds].map((value) => ({
-            value,
-            label: kindLabel[value] ?? value,
-          }))}
+          options={stateKindFilters.map((value) => ({ value, label: kindLabel[value] }))}
         />
       ) : null}
     </div>
