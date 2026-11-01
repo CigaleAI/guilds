@@ -1,5 +1,6 @@
 import type { CollectionColumn } from "../db/schema/index.js";
-import { checkBoolean, checkDatetime, checkNumber, checkText, columnNamed, type Checked } from "./columns.js";
+import { isObjectNode, type JsonObject, type JsonValue } from "../lib/json.js";
+import { checkBoolean, checkDatetime, checkNumber, checkText, columnNamed, isFiniteNumber, isText, type Checked } from "./columns.js";
 import type { OrderClause, WhereClause } from "../db/collections.js";
 import { ArtifactError } from "./errors.js";
 import { FIND_DEFAULT, FIND_MAX } from "./types.js";
@@ -15,9 +16,9 @@ export const SYSTEM_ORDER_COLUMNS = ["id", "created_at", "updated_at"] as const;
  * scalar value in the body, depth first. Keys are left out so that a column
  * name shared by every record never matches.
  */
-export function searchBlobFor(id: string, body: unknown): string {
+export function searchBlobFor(id: string, body: JsonObject): string {
   const parts: string[] = [id];
-  const visit = (value: unknown): void => {
+  const visit = (value: JsonValue | undefined): void => {
     if (value === null || value === undefined) {
       return;
     }
@@ -25,7 +26,7 @@ export function searchBlobFor(id: string, body: unknown): string {
       for (const item of value) visit(item);
       return;
     }
-    if (typeof value === "object") {
+    if (isObjectNode(value)) {
       for (const item of Object.values(value)) visit(item);
       return;
     }
@@ -36,13 +37,17 @@ export function searchBlobFor(id: string, body: unknown): string {
   return truncateUtf8(parts.join(" "), SEARCH_BLOB_MAX_BYTES);
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+/** The text a count or an id as a caller sends it reads as: a number's, or a text trimmed; empty for anything else. */
+function numberText(value: JsonValue | undefined): string {
+  if (isFiniteNumber(value)) {
+    return String(value);
+  }
+  return isText(value) ? value.trim() : "";
 }
 
 /** A positive integer record id from a number or a numeric string. */
-export function parseRecordId(value: unknown, label = "id"): number {
-  const text = typeof value === "number" ? String(value) : typeof value === "string" ? value.trim() : "";
+export function parseRecordId(value: JsonValue | undefined, label = "id"): number {
+  const text = numberText(value);
   if (!/^\d+$/.test(text) || Number(text) < 1 || !Number.isSafeInteger(Number(text))) {
     throw new ArtifactError(`${label} must be a positive integer`, 422);
   }
@@ -58,11 +63,11 @@ export function parseRecordId(value: unknown, label = "id"): number {
  * or by a `gte` / `lte` range; boolean and `id` exactly; `null` matches a
  * missing or null value.
  */
-export function parseWhere(value: unknown, columns: CollectionColumn[]): WhereClause[] {
+export function parseWhere(value: JsonValue | undefined, columns: CollectionColumn[]): WhereClause[] {
   if (value === null || value === undefined) {
     return [];
   }
-  if (!isPlainObject(value)) {
+  if (!isObjectNode(value)) {
     throw new ArtifactError("where must be an object of column: term", 422);
   }
   const entries = Object.entries(value);
@@ -72,7 +77,7 @@ export function parseWhere(value: unknown, columns: CollectionColumn[]): WhereCl
   return entries.map(([name, raw]) => parseClause(name, raw, columns));
 }
 
-function parseClause(name: string, raw: unknown, columns: CollectionColumn[]): WhereClause {
+function parseClause(name: string, raw: JsonValue | undefined, columns: CollectionColumn[]): WhereClause {
   const label = `where.${name}`;
   if (name === "id") {
     return { column: "id", op: "id", id: parseRecordId(raw, label) };
@@ -85,10 +90,10 @@ function parseClause(name: string, raw: unknown, columns: CollectionColumn[]): W
   if (raw === null) {
     return { column: name, type: column.type, op: "null" };
   }
-  if (isPlainObject(raw)) {
+  if (raw !== undefined && isObjectNode(raw)) {
     return parseRange(label, column, raw);
   }
-  if (typeof raw === "string" && raw.trim().length > WHERE_TERM_MAX) {
+  if (isText(raw) && raw.trim().length > WHERE_TERM_MAX) {
     throw new ArtifactError(`${label}: term must be at most ${WHERE_TERM_MAX} characters`, 422);
   }
   return parseTerm(label, column, raw);
@@ -98,8 +103,8 @@ function parseClause(name: string, raw: unknown, columns: CollectionColumn[]): W
  * The clause one term makes on its column: by substring or similar spelling on text without a
  * closed list and on an open array, by item on a closed array, exactly otherwise.
  */
-function parseTerm(label: string, column: CollectionColumn, raw: unknown): WhereClause {
-  const term = typeof raw === "string" ? raw.trim() : raw;
+function parseTerm(label: string, column: CollectionColumn, raw: JsonValue | undefined): WhereClause {
+  const term = isText(raw) ? raw.trim() : raw;
   switch (column.type) {
     case "array":
       return parseArrayTerm(label, column, raw);
@@ -117,7 +122,7 @@ function parseTerm(label: string, column: CollectionColumn, raw: unknown): Where
 }
 
 /** The clause a term makes on an array column: an item of its closed list, or a substring of an item when it has none. */
-function parseArrayTerm(label: string, column: CollectionColumn, raw: unknown): WhereClause {
+function parseArrayTerm(label: string, column: CollectionColumn, raw: JsonValue | undefined): WhereClause {
   const term = textTerm(label, raw);
   if (column.values && !column.values.includes(term)) {
     throw new ArtifactError(`${label}: expected one of ${column.values.join(", ")}; ${gotText(raw)}`, 422);
@@ -126,8 +131,8 @@ function parseArrayTerm(label: string, column: CollectionColumn, raw: unknown): 
 }
 
 /** A term that must be text, trimmed; a 422 when it is not text or is empty. */
-function textTerm(label: string, raw: unknown): string {
-  if (typeof raw !== "string" || !raw.trim()) {
+function textTerm(label: string, raw: JsonValue | undefined): string {
+  if (!isText(raw) || !raw.trim()) {
     throw new ArtifactError(`${label}: expected text; ${gotText(raw)}`, 422);
   }
   return raw.trim();
@@ -141,7 +146,7 @@ function checkedTerm<T>(label: string, column: CollectionColumn, checked: Checke
   return checked.value;
 }
 
-function parseRange(label: string, column: CollectionColumn, raw: Record<string, unknown>): WhereClause {
+function parseRange(label: string, column: CollectionColumn, raw: JsonObject): WhereClause {
   if (column.type !== "number" && column.type !== "datetime") {
     throw new ArtifactError(`${label}: a range needs a number or datetime column`, 422);
   }
@@ -167,10 +172,10 @@ function parseRange(label: string, column: CollectionColumn, raw: Record<string,
   };
 }
 
-function gotText(value: unknown): string {
+function gotText(value: JsonValue | undefined): string {
   if (value === undefined) return "got nothing";
   if (Array.isArray(value)) return "got a list";
-  if (typeof value === "object" && value !== null) return "got an object";
+  if (isObjectNode(value)) return "got an object";
   return `got ${JSON.stringify(value)}`;
 }
 
@@ -179,7 +184,7 @@ function gotText(value: unknown): string {
  * is not an array, `id`, `created_at`, or `updated_at`; a string `"column"`
  * or `"column desc"` is accepted too.
  */
-export function parseOrder(value: unknown, columns: CollectionColumn[]): OrderClause | null {
+export function parseOrder(value: JsonValue | undefined, columns: CollectionColumn[]): OrderClause | null {
   if (value === null || value === undefined || value === "") {
     return null;
   }
@@ -203,26 +208,26 @@ export function parseOrder(value: unknown, columns: CollectionColumn[]): OrderCl
 type OrderRequest = { column: string; direction: string };
 
 /** What an `order` argument asks for, from `"column"`, `"column desc"`, or `{ column, direction }`; ascending unless it says otherwise. */
-function readOrderRequest(value: unknown): OrderRequest {
-  if (typeof value === "string") {
+function readOrderRequest(value: JsonValue): OrderRequest {
+  if (isText(value)) {
     const parts = value.trim().split(/\s+/);
     return { column: parts[0] ?? "", direction: (parts[1] ?? "asc").toLowerCase() };
   }
-  if (isPlainObject(value)) {
+  if (isObjectNode(value)) {
     return {
-      column: typeof value.column === "string" ? value.column.trim() : "",
-      direction: typeof value.direction === "string" ? value.direction.trim().toLowerCase() : "asc",
+      column: isText(value.column) ? value.column.trim() : "",
+      direction: isText(value.direction) ? value.direction.trim().toLowerCase() : "asc",
     };
   }
   throw new ArtifactError("order must be { column, direction }", 422);
 }
 
 /** The `since` argument: an ISO 8601 timestamp, returned normalised to UTC. */
-export function parseSince(value: unknown): string | null {
+export function parseSince(value: JsonValue | undefined): string | null {
   if (value === null || value === undefined || value === "") {
     return null;
   }
-  const date = typeof value === "string" ? new Date(value.trim()) : new Date(NaN);
+  const date = isText(value) ? new Date(value.trim()) : new Date(NaN);
   if (Number.isNaN(date.getTime())) {
     throw new ArtifactError("since must be an ISO 8601 timestamp", 422);
   }
@@ -234,22 +239,22 @@ export function findLimit(limit: number | undefined): number {
   return Math.min(Math.max(limit ?? FIND_DEFAULT, 1), FIND_MAX);
 }
 
-export function parseLimit(value: unknown, fallback: number, max: number): number {
+export function parseLimit(value: JsonValue | undefined, fallback: number, max: number): number {
   if (value === null || value === undefined || value === "") {
     return fallback;
   }
-  const text = typeof value === "number" ? String(value) : typeof value === "string" ? value.trim() : "";
+  const text = numberText(value);
   if (!/^\d+$/.test(text)) {
     throw new ArtifactError("limit must be a positive integer", 422);
   }
   return Math.min(Math.max(Number(text), 1), max);
 }
 
-export function parseOffset(value: unknown): number {
+export function parseOffset(value: JsonValue | undefined): number {
   if (value === null || value === undefined || value === "") {
     return 0;
   }
-  const text = typeof value === "number" ? String(value) : typeof value === "string" ? value.trim() : "";
+  const text = numberText(value);
   if (!/^\d+$/.test(text)) {
     throw new ArtifactError("offset must be a non-negative integer", 422);
   }

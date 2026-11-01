@@ -1,16 +1,32 @@
 // Collections and their records as the Tables page and the settings surfaces show them.
 import { Type, type Static } from "@sinclair/typebox";
+import { isJsonValue, type JsonValue } from "../lib/json.js";
 import { ArtifactError } from "./errors.js";
 import type { ArtifactActor } from "./types.js";
 import type { ArtifactStore, CollectionView, RecordView } from "./store.js";
 import * as collections from "./collections.js";
 import * as recordStore from "./records.js";
 
+/**
+ * A column as the Tables page declares it, before the collection checks it: its name, type and
+ * description, its flags and closed list when it sets them, and `rename_from`, the current column
+ * it renames, in a replacement of a live collection's columns.
+ */
+const ColumnDeclarationSchema = Type.Object({
+  name: Type.String(),
+  type: Type.String(),
+  description: Type.Optional(Type.String()),
+  required: Type.Optional(Type.Boolean()),
+  unique: Type.Optional(Type.Boolean()),
+  values: Type.Optional(Type.Union([Type.Array(Type.String()), Type.Null()])),
+  rename_from: Type.Optional(Type.String()),
+});
+
 /** A new collection: its name and purpose, its columns (checked by the collection), and its guild. */
 export const CollectionDraftSchema = Type.Object({
   name: Type.String(),
   purpose: Type.String(),
-  columns: Type.Optional(Type.Unknown()),
+  columns: Type.Optional(Type.Array(ColumnDeclarationSchema)),
   guild_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
@@ -35,9 +51,12 @@ export const RecordListQuerySchema = Type.Object({
 
 export type RecordListQuery = Static<typeof RecordListQuerySchema>;
 
+/** What a record holds in one column as the page sends it: text or a datetime, a number, a boolean, a list of text, or null to clear it. */
+const RecordCellSchema = Type.Union([Type.String(), Type.Number(), Type.Boolean(), Type.Array(Type.String()), Type.Null()]);
+
 /** A record's values by column, which the collection's columns check. */
 export const RecordValuesSchema = Type.Object({
-  body: Type.Record(Type.String(), Type.Unknown()),
+  body: Type.Record(Type.String(), RecordCellSchema),
 });
 
 export type RecordValues = Static<typeof RecordValuesSchema>["body"];
@@ -100,15 +119,21 @@ export async function clearRecords(
   await collections.clearRecords(store, actor, collectionId);
 }
 
-function parseJsonQuery(raw: string | undefined, label: string): unknown {
+/** The JSON a query string parameter holds; undefined when it is absent or empty. */
+function parseJsonQuery(raw: string | undefined, label: string): JsonValue | undefined {
   if (raw === undefined || raw === "") {
     return undefined;
   }
+  let parsed: unknown;
   try {
-    return JSON.parse(raw);
+    parsed = JSON.parse(raw);
   } catch {
     throw new ArtifactError(`${label} must be JSON`, 422);
   }
+  if (!isJsonValue(parsed)) {
+    throw new ArtifactError(`${label} must be JSON`, 422);
+  }
+  return parsed;
 }
 
 /**

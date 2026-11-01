@@ -52,44 +52,6 @@
       "count": 1
     }
   },
-  "src/artifacts/columns.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 2
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 16
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 14
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 8
-    }
-  },
-  "src/artifacts/guild-tables.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    }
-  },
-  "src/artifacts/records.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 3
-    }
-  },
-  "src/artifacts/search.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 15
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 14
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
-    }
-  },
   "src/attachments/hydrate.ts": {
     "anti-slop/no-unsafe-dictionary-type": {
       "count": 3
@@ -2143,7 +2105,7 @@
       "count": 2
     },
     "anti-slop/no-unsafe-dictionary-type": {
-      "count": 3
+      "count": 2
     },
     "typescript/explicit-module-boundary-types": {
       "count": 1

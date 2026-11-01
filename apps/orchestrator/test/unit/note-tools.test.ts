@@ -6,6 +6,7 @@ import { parseColumns } from "../../src/artifacts/columns.js";
 import { ArtifactError } from "../../src/artifacts/errors.js";
 import type { NoteRewrite } from "../../src/artifacts/notes.js";
 import type { CollectionColumn } from "../../src/db/schema/index.js";
+import type { JsonObject } from "../../src/lib/json.js";
 import { invokeTool } from "../../src/toolbox/index.js";
 import { noteRowAt } from "../helpers/artifacts.js";
 import { toolFixture, type ToolFixture } from "../helpers/toolbox.js";
@@ -28,7 +29,7 @@ class FakeStore {
   records = new Map<string, Array<Record<string, unknown>>>();
   calls: Array<{ method: string; args: unknown }> = [];
 
-  declare(name: string, columns: unknown[], access: "read" | "write" = "write", count = 0): void {
+  declare(name: string, columns: JsonObject[], access: "read" | "write" = "write", count = 0): void {
     this.collections.set(name, { name, columns: parseColumns(columns), access, count });
     this.records.set(name, []);
   }

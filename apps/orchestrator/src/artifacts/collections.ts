@@ -27,6 +27,7 @@ import { recordChangeIfAny, recordConfigChange } from "../db/config-changes.js";
 import { getGuild } from "../db/guilds.js";
 import { isUniqueViolation, type Queryable, withTransaction } from "../db/pg.js";
 import type { CollectionColumn, AccessMode } from "../db/schema/index.js";
+import type { JsonValue } from "../lib/json.js";
 import { type AccessRaise, accessRaises, defaultGrants, reachedMode } from "./access.js";
 import {
   collectionCleared,
@@ -57,18 +58,26 @@ import {
 } from "./types.js";
 
 
-/** What a collection's update may change; a field left out keeps its value. */
-export type CollectionChanges = { name?: string; purpose?: string; columns?: unknown; guildId?: string | null };
+/**
+ * What a collection's update may change; a field left out keeps its value. `columns` is the full
+ * column list as sent, which `parseColumnChange` checks.
+ */
+export type CollectionChanges = {
+  name?: string;
+  purpose?: string;
+  columns?: JsonValue | undefined;
+  guildId?: string | null;
+};
 
 /**
- * A collection as the operator defines it: its name, purpose and columns, the guild that owns it,
- * none for an organisation table, and the access list it is raised to as it is created, when one
- * is given.
+ * A collection as the operator defines it: its name, purpose and column list as sent, which
+ * `parseColumns` checks, the guild that owns it, none for an organisation table, and the access
+ * list it is raised to as it is created, when one is given.
  */
 export type NewCollection = {
   name: string;
   purpose: string;
-  columns?: unknown;
+  columns?: JsonValue | undefined;
   guildId?: string | null;
   access?: AccessRaise;
 };

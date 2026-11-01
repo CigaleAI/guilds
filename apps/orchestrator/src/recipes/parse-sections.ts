@@ -2,6 +2,7 @@ import { parseColumns } from "../artifacts/columns.js";
 import { ArtifactError } from "../artifacts/errors.js";
 import { normalizeNoteKey } from "../artifacts/paths.js";
 import { COLLECTION_NAME_RE, PURPOSE_MAX, isAccessMode } from "../artifacts/types.js";
+import { isJsonValue } from "../lib/json.js";
 import { loadManifest, ManifestError, recipeManifestProblem } from "../connectors/manifest.js";
 import {
   SYSTEM_RESOLUTIONS,
@@ -39,8 +40,12 @@ import { builderAuthor, operatorAuthor, RECIPE_HINT_MAX, RECIPE_LIST_MAX, RECIPE
 // setup cards, repositories, and the design record.
 
 function parseColumnsAt(value: unknown, path: string): CollectionColumn[] {
+  const declared = value ?? [];
+  if (!isJsonValue(declared)) {
+    throw new RecipeError(`${path} must be JSON`);
+  }
   try {
-    return parseColumns(value ?? []);
+    return parseColumns(declared);
   } catch (error) {
     if (error instanceof ArtifactError) {
       throw new RecipeError(`${path}: ${error.message}`);

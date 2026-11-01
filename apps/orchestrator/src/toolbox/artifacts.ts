@@ -1,6 +1,6 @@
 import { ArtifactError } from "../artifacts/errors.js";
 import { isArtifactLevel, type ArtifactActor } from "../artifacts/types.js";
-import { argInteger, argRecord, argString, functionSchema } from "./schema.js";
+import { argInteger, argString, functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
 import type { ToolServices } from "./services.js";
 import { callActor, type Tool, type ToolInvocation, type ToolRun } from "./types.js";
@@ -23,7 +23,7 @@ import {
 import type { ArtifactStore } from "../artifacts/store.js";
 import { writeMemory } from "../artifacts/memory.js";
 import type { ArtifactRow } from "../db/artifacts.js";
-import { isPlainRecord } from "../db/json.js";
+import { isJsonObject, isJsonValue, type JsonObject } from "../lib/json.js";
 import { bindQuery } from "../db/pg.js";
 
 /** The artifact functions the note, record, and Memory tools call, on `store`. */
@@ -270,16 +270,12 @@ export const noteDelete: Tool = {
   },
 };
 
-function bodyArg(args: Record<string, unknown>): Record<string, unknown> {
+function bodyArg(args: Record<string, unknown>): JsonObject {
   const body = args.body;
-  if (!isPlainRecord(body)) {
+  if (!isJsonObject(body)) {
     throw new ArtifactError("body must be a JSON object of column: value", 422);
   }
   return body;
-}
-
-function optional<T>(value: T | undefined | null): T | undefined {
-  return value === null || value === undefined ? undefined : value;
 }
 
 const WHERE_DESCRIPTION =
@@ -318,8 +314,8 @@ export const recordSearch: Tool = {
     const result = await store(services).searchRecords(actor(run, call), {
       ...(argString(args, "collection").trim() ? { collection: argString(args, "collection").trim() } : {}),
       query: argString(args, "query"),
-      where: optional(argRecord(args, "where")),
-      limit: optional(args.limit),
+      where: isJsonObject(args.where) ? args.where : undefined,
+      limit: isJsonValue(args.limit) ? args.limit : undefined,
     });
     return JSON.stringify({ records: result.records });
   },
@@ -359,11 +355,11 @@ export const recordList: Tool = {
     const args = call.arguments;
     const result = await store(services).listRecordsWithHint(actor(run, call), {
       collection: argString(args, "collection").trim(),
-      where: optional(argRecord(args, "where")),
+      where: isJsonObject(args.where) ? args.where : undefined,
       since: argString(args, "since").trim() || undefined,
-      order: optional(args.order),
-      limit: optional(args.limit),
-      offset: optional(args.offset),
+      order: isJsonValue(args.order) ? args.order : undefined,
+      limit: isJsonValue(args.limit) ? args.limit : undefined,
+      offset: isJsonValue(args.offset) ? args.offset : undefined,
     });
     return JSON.stringify({
       total: result.total,
@@ -429,7 +425,7 @@ export const recordUpdate: Tool = {
     const args = call.arguments;
     const result = await store(services).updateRecord(actor(run, call), {
       collection: argString(args, "collection").trim(),
-      id: args.id,
+      id: isJsonValue(args.id) ? args.id : null,
       body: bodyArg(args),
     });
     await publish(services, run, `org/${actor(run, call).orgId}/collections/${String(result.record.collection)}/${String(result.record.id)}`);
@@ -457,7 +453,10 @@ export const recordRemove: Tool = {
   async handler(services, run, _hooks, call) {
     const args = call.arguments;
     const collection = argString(args, "collection").trim();
-    const removed = await store(services).removeRecord(actor(run, call), { collection, id: args.id });
+    const removed = await store(services).removeRecord(actor(run, call), {
+      collection,
+      id: isJsonValue(args.id) ? args.id : null,
+    });
     await publish(services, run, `org/${actor(run, call).orgId}/collections/${collection}/${removed}`);
     return JSON.stringify({ removed });
   },

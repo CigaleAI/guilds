@@ -1,4 +1,5 @@
 import { COLUMN_TYPES, type CollectionColumn, type ColumnType, type RecordBody, type RecordValue } from "../db/schema/index.js";
+import { isObjectNode, type JsonObject, type JsonValue } from "../lib/json.js";
 import { ArtifactError } from "./errors.js";
 
 /**
@@ -19,19 +20,30 @@ export const ARRAY_ITEM_MAX = 200;
 const COLUMN_FIELDS = new Set(["name", "type", "description", "required", "unique", "values"]);
 const DATETIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/;
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function isColumnType(value: unknown): value is ColumnType {
+function isColumnType(value: JsonValue | undefined): value is ColumnType {
   return COLUMN_TYPES.some((type) => type === value);
 }
 
+/** Whether a value a caller sends is text, as a text or datetime column holds. */
+export function isText(value: JsonValue | undefined): value is string {
+  return typeof value === "string";
+}
+
+/** Whether a value a caller sends is a finite number, as a number column holds. */
+export function isFiniteNumber(value: JsonValue | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+/** Whether a value a caller sends is true or false, as a boolean column holds. */
+function isTrueOrFalse(value: JsonValue | undefined): value is boolean {
+  return value === true || value === false;
+}
+
 /**
- * Validates a column list as the operator or a recipe declares it and returns
- * it normalised. Throws a 422 naming the first rule broken.
+ * Validates a column list as the operator, a coach, or a recipe sends it and
+ * returns it normalised. Throws a 422 naming the first rule broken.
  */
-export function parseColumns(raw: unknown): CollectionColumn[] {
+export function parseColumns(raw: JsonValue): CollectionColumn[] {
   if (!Array.isArray(raw)) {
     throw new ArtifactError("columns must be an array", 422);
   }
@@ -40,7 +52,7 @@ export function parseColumns(raw: unknown): CollectionColumn[] {
   }
   const seen = new Set<string>();
   const columns = raw.map((item, index) => {
-    if (!isPlainObject(item)) {
+    if (!isObjectNode(item)) {
       throw new ArtifactError(`column ${index + 1}: must be an object`, 422);
     }
     const name = parseColumnName(item, index);
@@ -58,8 +70,8 @@ export function parseColumns(raw: unknown): CollectionColumn[] {
 }
 
 /** The name a declared column gives itself, at `index` in its list: it matches COLUMN_NAME_RE and is not reserved. */
-function parseColumnName(item: Record<string, unknown>, index: number): string {
-  const name = typeof item.name === "string" ? item.name.trim() : "";
+function parseColumnName(item: JsonObject, index: number): string {
+  const name = isText(item.name) ? item.name.trim() : "";
   const label = name || `column ${index + 1}`;
   if (!COLUMN_NAME_RE.test(name)) {
     throw new ArtifactError(`${describe(label)}: name must match ${COLUMN_NAME_RE.source}`, 422);
@@ -71,7 +83,7 @@ function parseColumnName(item: Record<string, unknown>, index: number): string {
 }
 
 /** One declared column named `name`, normalised: known fields only, its type, description, flags, and closed list. */
-function parseColumn(name: string, item: Record<string, unknown>): CollectionColumn {
+function parseColumn(name: string, item: JsonObject): CollectionColumn {
   for (const field of Object.keys(item)) {
     if (!COLUMN_FIELDS.has(field)) {
       throw new ArtifactError(`column "${name}": unknown field "${field}"`, 422);
@@ -94,8 +106,8 @@ function parseColumn(name: string, item: Record<string, unknown>): CollectionCol
 }
 
 /** A column's description: text of 1 to COLUMN_DESCRIPTION_MAX characters once trimmed. */
-function parseColumnDescription(name: string, raw: unknown): string {
-  const description = typeof raw === "string" ? raw.trim() : "";
+function parseColumnDescription(name: string, raw: JsonValue | undefined): string {
+  const description = isText(raw) ? raw.trim() : "";
   if (!description) {
     throw new ArtifactError(`column "${name}": description is required`, 422);
   }
@@ -112,12 +124,12 @@ function parseColumnDescription(name: string, raw: unknown): string {
 function parseColumnFlags(
   name: string,
   type: ColumnType,
-  item: Record<string, unknown>,
+  item: JsonObject,
 ): Pick<CollectionColumn, "required" | "unique"> {
-  if (item.required !== undefined && typeof item.required !== "boolean") {
+  if (item.required !== undefined && !isTrueOrFalse(item.required)) {
     throw new ArtifactError(`column "${name}": required must be true or false`, 422);
   }
-  if (item.unique !== undefined && typeof item.unique !== "boolean") {
+  if (item.unique !== undefined && !isTrueOrFalse(item.unique)) {
     throw new ArtifactError(`column "${name}": unique must be true or false`, 422);
   }
   const unique = item.unique === true;
@@ -128,7 +140,7 @@ function parseColumnFlags(
 }
 
 /** The closed list of a text or array column, null when it declares none. */
-function parseColumnValues(name: string, type: ColumnType, raw: unknown): string[] | null {
+function parseColumnValues(name: string, type: ColumnType, raw: JsonValue | undefined): string[] | null {
   if (raw === undefined || raw === null) {
     return null;
   }
@@ -150,13 +162,13 @@ function describe(label: string): string {
   return label.startsWith("column ") ? label : `column "${label}"`;
 }
 
-function parseValues(raw: unknown): string[] | null {
+function parseValues(raw: JsonValue): string[] | null {
   if (!Array.isArray(raw) || raw.length === 0 || raw.length > COLUMN_VALUES_MAX) {
     return null;
   }
   const values: string[] = [];
   for (const item of raw) {
-    if (typeof item !== "string") {
+    if (!isText(item)) {
       return null;
     }
     const text = item.trim();
@@ -176,11 +188,11 @@ export function uniqueColumn(columns: CollectionColumn[]): CollectionColumn | nu
   return columns.find((column) => column.unique) ?? null;
 }
 
-function got(value: unknown): string {
+function got(value: JsonValue | undefined): string {
   if (value === null) return "got null";
   if (Array.isArray(value)) return "got a list";
-  if (typeof value === "object") return "got an object";
-  if (typeof value === "string") {
+  if (value !== undefined && isObjectNode(value)) return "got an object";
+  if (isText(value)) {
     const text = value.length > 40 ? `${value.slice(0, 40)}…` : value;
     return `got ${JSON.stringify(text)}`;
   }
@@ -196,7 +208,7 @@ export type Checked<T> = { ok: true; value: T } | ValueProblem;
 /** A value checked against a column of any type. */
 export type CheckedValue = Checked<RecordValue>;
 
-function valueProblem(column: CollectionColumn, value: unknown, expected: string): ValueProblem {
+function valueProblem(column: CollectionColumn, value: JsonValue | undefined, expected: string): ValueProblem {
   return { ok: false, problem: `column "${column.name}": expected ${expected}; ${got(value)}` };
 }
 
@@ -204,7 +216,7 @@ function valueProblem(column: CollectionColumn, value: unknown, expected: string
  * Checks one value against its column. Returns the value to store (datetime
  * values are normalised to UTC) or the problem, phrased for the model.
  */
-export function checkValue(column: CollectionColumn, value: unknown): CheckedValue {
+export function checkValue(column: CollectionColumn, value: JsonValue | undefined): CheckedValue {
   switch (column.type) {
     case "text":
       return checkText(column, value);
@@ -220,8 +232,8 @@ export function checkValue(column: CollectionColumn, value: unknown): CheckedVal
 }
 
 /** A text column's value: text, and one of the column's values when it has a closed list. */
-export function checkText(column: CollectionColumn, value: unknown): Checked<string> {
-  if (typeof value !== "string") {
+export function checkText(column: CollectionColumn, value: JsonValue | undefined): Checked<string> {
+  if (!isText(value)) {
     return valueProblem(column, value, column.values ? `one of ${column.values.join(", ")}` : "text");
   }
   if (column.values && !column.values.includes(value)) {
@@ -231,31 +243,31 @@ export function checkText(column: CollectionColumn, value: unknown): Checked<str
 }
 
 /** A number column's value: a finite number. */
-export function checkNumber(column: CollectionColumn, value: unknown): Checked<number> {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
+export function checkNumber(column: CollectionColumn, value: JsonValue | undefined): Checked<number> {
+  if (!isFiniteNumber(value)) {
     return valueProblem(column, value, "number");
   }
   return { ok: true, value };
 }
 
 /** A boolean column's value: true or false. */
-export function checkBoolean(column: CollectionColumn, value: unknown): Checked<boolean> {
-  if (typeof value !== "boolean") {
+export function checkBoolean(column: CollectionColumn, value: JsonValue | undefined): Checked<boolean> {
+  if (!isTrueOrFalse(value)) {
     return valueProblem(column, value, "true or false");
   }
   return { ok: true, value };
 }
 
 /** A datetime column's value: an ISO 8601 datetime with a timezone, normalised to UTC. */
-export function checkDatetime(column: CollectionColumn, value: unknown): Checked<string> {
-  const normalised = typeof value === "string" ? normalizeDatetime(value) : null;
+export function checkDatetime(column: CollectionColumn, value: JsonValue | undefined): Checked<string> {
+  const normalised = isText(value) ? normalizeDatetime(value) : null;
   if (!normalised) {
     return valueProblem(column, value, "an ISO 8601 datetime with a timezone");
   }
   return { ok: true, value: normalised };
 }
 
-function checkArrayValue(column: CollectionColumn, value: unknown): Checked<string[]> {
+function checkArrayValue(column: CollectionColumn, value: JsonValue | undefined): Checked<string[]> {
   const expected = column.values ? `a list of ${column.values.join(", ")}` : "a list of text";
   if (!Array.isArray(value)) {
     return valueProblem(column, value, expected);
@@ -264,10 +276,9 @@ function checkArrayValue(column: CollectionColumn, value: unknown): Checked<stri
     return valueProblem(column, value, `a list of at most ${ARRAY_ITEMS_MAX} text items`);
   }
   const stored: string[] = [];
-  for (let index = 0; index < value.length; index++) {
-    const item = value[index];
+  for (const [index, item] of value.entries()) {
     const label = `item ${index + 1}`;
-    if (typeof item !== "string" || !item) {
+    if (!isText(item) || !item) {
       return { ok: false, problem: `column "${column.name}": ${label}: expected text; ${got(item)}` };
     }
     if (item.length > ARRAY_ITEM_MAX) {
@@ -305,14 +316,18 @@ function unknownColumn(columns: CollectionColumn[], name: string): string {
   return `column "${name}": unknown column; declared columns are ${declared || "(none)"}`;
 }
 
+/** A new record's body checked against the columns: the body it stores, and every problem found. */
+export type CheckedRecord = { body: RecordBody; problems: string[] };
+
+/** A patch checked against the columns: the values it sets, the columns it clears, and every problem found. */
+export type CheckedRecordPatch = { set: RecordBody; clear: string[]; problems: string[] };
+
 /**
- * Validates the whole body of a new record. Unknown columns, missing required
- * columns, and values of the wrong shape are all reported at once.
+ * Validates the whole body of a new record, each value as the caller sent it.
+ * Unknown columns, missing required columns, and values of the wrong shape are
+ * all reported at once.
  */
-export function validateAdd(
-  columns: CollectionColumn[],
-  body: Record<string, unknown>,
-): { body: RecordBody; problems: string[] } {
+export function validateAdd(columns: CollectionColumn[], body: JsonObject): CheckedRecord {
   const problems: string[] = [];
   const stored: RecordBody = {};
   for (const name of Object.keys(body)) {
@@ -339,13 +354,10 @@ export function validateAdd(
 }
 
 /**
- * Validates the columns present in a patch. `null` clears an optional column
- * and is a problem on a required one.
+ * Validates the columns present in a patch, each value as the caller sent it.
+ * `null` clears an optional column and is a problem on a required one.
  */
-export function validatePatch(
-  columns: CollectionColumn[],
-  patch: Record<string, unknown>,
-): { set: RecordBody; clear: string[]; problems: string[] } {
+export function validatePatch(columns: CollectionColumn[], patch: JsonObject): CheckedRecordPatch {
   const problems: string[] = [];
   const set: RecordBody = {};
   const clear: string[] = [];
@@ -377,7 +389,7 @@ export function validatePatch(
 }
 
 /** Problems a stored record has against the current columns. */
-export function recordProblems(columns: CollectionColumn[], body: Record<string, unknown>): string[] {
+export function recordProblems(columns: CollectionColumn[], body: RecordBody): string[] {
   const problems: string[] = [];
   for (const name of Object.keys(body)) {
     if (!columnNamed(columns, name)) {
@@ -386,7 +398,7 @@ export function recordProblems(columns: CollectionColumn[], body: Record<string,
   }
   for (const column of columns) {
     const value = body[column.name];
-    if (value === undefined || value === null) {
+    if (value === undefined) {
       if (column.required) {
         problems.push(`column "${column.name}": required`);
       }
@@ -405,21 +417,18 @@ export function recordRejected(problems: string[]): ArtifactError {
 }
 
 /** The normalised unique value the store compares records by. */
-export function normalizeIdentity(column: CollectionColumn, value: unknown): string | null {
-  if (value === null || value === undefined) {
-    return null;
-  }
+export function normalizeIdentity(column: CollectionColumn, value: RecordValue | undefined): string | null {
   if (column.type === "number") {
-    return typeof value === "number" && Number.isFinite(value) ? String(value) : null;
+    return isFiniteNumber(value) ? String(value) : null;
   }
-  if (typeof value !== "string") {
+  if (!isText(value)) {
     return null;
   }
   const text = value.normalize("NFC").trim().toLowerCase();
   return text || null;
 }
 
-export function identityFor(columns: CollectionColumn[], body: Record<string, unknown>): string | null {
+export function identityFor(columns: CollectionColumn[], body: RecordBody): string | null {
   const column = uniqueColumn(columns);
   return column ? normalizeIdentity(column, body[column.name]) : null;
 }
@@ -459,18 +468,18 @@ export type ColumnChange = { columns: CollectionColumn[]; renamed: ColumnRename[
  * is a column whose `rename_from` names a previous column; the field is
  * consumed here and never stored.
  */
-export function parseColumnChange(previous: CollectionColumn[], raw: unknown): ColumnChange {
+export function parseColumnChange(previous: CollectionColumn[], raw: JsonValue): ColumnChange {
   if (!Array.isArray(raw)) {
     throw new ArtifactError("columns must be an array", 422);
   }
   const renamed: ColumnRename[] = [];
-  const stripped = raw.map((item) => {
-    if (!isPlainObject(item) || !("rename_from" in item)) {
+  const stripped = raw.map((item): JsonValue => {
+    if (!isObjectNode(item) || !("rename_from" in item)) {
       return item;
     }
     const { rename_from: from, ...rest } = item;
-    const to = typeof rest.name === "string" ? rest.name.trim() : "";
-    if (typeof from !== "string" || !previous.some((column) => column.name === from)) {
+    const to = isText(rest.name) ? rest.name.trim() : "";
+    if (!isText(from) || !previous.some((column) => column.name === from)) {
       throw new ArtifactError(`column "${to}": rename_from must name a current column`, 422);
     }
     if (from !== to) {
