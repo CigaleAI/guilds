@@ -1242,7 +1242,7 @@ describe("artifact store", { concurrency: 1 }, () => {
       guildId: "guild_flat",
       agentId: "a_flat",
     });
-    const { row: row } = await writeNote(store, alpha, { level: "agent", key: "exploration.md", content: "looked here\n" });
+    const { row } = await writeNote(store, alpha, { level: "agent", key: "exploration.md", content: "looked here\n" });
     assert.equal(row.path, "");
     assert.equal(artifactView(row).display_path, "org/org_home/agents/a_flat/exploration.md");
     await assert.rejects(

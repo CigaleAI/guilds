@@ -258,8 +258,7 @@ describe("generation", { concurrency: 1 }, () => {
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), new FakeSandboxes());
     live.countInputTokens = () => 9;
     live.streamCompletion = async function* shouldNotRun() {
-      throw new Error("model should not be called");
-      yield ["done", completionReply("nope")];
+      yield await Promise.reject(new Error("model should not be called"));
     };
     await loop.generator.generate("r_1", 1);
     assert.ok(db.messages.every((row) => (row.payload as Record<string, unknown>).role !== "assistant"));
@@ -1461,8 +1460,7 @@ describe("generation", { concurrency: 1 }, () => {
     restoreBindings();
     const { loop, db } = await seededLoop();
     live.streamCompletion = async function* boom() {
-      throw new LLMError("request timed out");
-      yield ["done", completionReply("nope")];
+      yield await Promise.reject(new LLMError("request timed out"));
     };
     const created = await loop.runs.createRun("a_1", "hello");
     await waitTask(loop, String(created.id));

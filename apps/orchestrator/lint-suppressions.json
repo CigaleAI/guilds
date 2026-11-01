@@ -2802,15 +2802,5 @@
     "boundary/no-reexport-modules": {
       "count": 1
     }
-  },
-  "test/integration/artifacts.test.ts": {
-    "no-useless-rename": {
-      "count": 1
-    }
-  },
-  "test/unit/generation.test.ts": {
-    "no-unreachable": {
-      "count": 2
-    }
   }
 }
