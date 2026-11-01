@@ -1,6 +1,6 @@
 import { HARNESSES, type Harness } from "../db/schema/index.js";
 import { HARNESS_INFO, isHarnessOff } from "./harnesses.js";
-import { EFFORTS, type Effort } from "../db/schema/index.js";
+import { EFFORTS, type AgentConfig, type Effort, type RecipeRole } from "../db/schema/index.js";
 
 
 const EFFORT_SET = new Set<string>(EFFORTS);
@@ -93,8 +93,8 @@ export function harnessEffortsFor(harness: Harness, modelId: string | null): rea
   return findHarnessModel(harness, modelId)?.efforts ?? UNLISTED_EFFORTS[harness];
 }
 
-/** The effort the agent's harness runs at; null leaves it to the harness. */
-export function harnessEffortOf(config: Record<string, unknown> | null | undefined): Effort | null {
+/** The effort the harness of an agent's config, or of a recipe role's as its author wrote it, runs at; null leaves it to the harness. */
+export function harnessEffortOf(config: AgentConfig | RecipeRole["config"] | null | undefined): Effort | null {
   return isEffort(config?.harness_effort) ? config.harness_effort : null;
 }
 

@@ -373,19 +373,8 @@
     }
   },
   "src/coding/harness-models.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    },
     "limits/inline-parameter-type": {
       "count": 1
-    }
-  },
-  "src/coding/harnesses.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
     }
   },
   "src/coding/repositories.ts": {
