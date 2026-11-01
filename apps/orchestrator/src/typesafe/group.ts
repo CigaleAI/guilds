@@ -8,16 +8,23 @@ import {
 import type { GroupMessageRow } from "../db/group-chat.js";
 import type { IntegrationSources } from "../instance/integrations.js";
 import type { HistoryRouting, TypeSafeUsage } from "../db/schema/index.js";
-import type { GroupRouter, HistoryDecision, RecipientDecision } from "../groupchat/router.js";
+import type {
+  GroupRouter,
+  HistoryDecision,
+  RecipientDecision,
+  RoutedMember,
+  RoutedMessage,
+} from "../groupchat/router.js";
 import { writeLog } from "../observability/log.js";
 import {
   TypeSafeError,
   createTypeSafeClient,
   requireChoice,
   requireNoul,
+  type TypeSafeChoiceQuestion,
   type TypeSafeClient,
   type TypeSafeCriteriaValue,
-  type TypeSafeQuestion,
+  type TypeSafeRequest,
 } from "./client.js";
 
 export const NONE_RECIPIENT = "none";
@@ -39,8 +46,8 @@ export const RECIPIENT_WINDOW = 4;
  * the members whose cursor is behind.
  */
 export type RecipientSnapshot = {
-  rows: Array<Record<string, unknown>>;
-  members: Array<Record<string, unknown>>;
+  rows: RoutedMessage[];
+  members: RoutedMember[];
   pendingNames: string[];
 };
 
@@ -87,24 +94,19 @@ function clip(value: string, max: number): string {
   return `${text.slice(0, max).trimEnd()}…`;
 }
 
-function clipContent(content: unknown, max: number): unknown {
-  return typeof content === "string" ? clip(content, max) : content;
+function stateItem(row: RoutedMessage, max: number) {
+  return { ...historyStateItem(row), content: clip(row.content, max) };
 }
 
-function stateItem(row: Record<string, unknown>, max: number) {
-  const item = historyStateItem(row);
-  return { ...item, content: clipContent(item.content, max) };
-}
-
-function memberNames(members: Array<Record<string, unknown>>): string[] {
-  return members.map((member) => String(member.name));
+function memberNames(members: RoutedMember[]): string[] {
+  return members.map((member) => member.name);
 }
 
 // Choice option for one agent: labelled fields, as the docs recommend for
 // options that are easy to confuse.
-function agentOption(member: Record<string, unknown>): TypeSafeCriteriaValue {
-  const focus = String(member.focus ?? "").trim();
-  const task = clip(String(member.task ?? ""), AGENT_TASK_PREVIEW_CHARS);
+function agentOption(member: RoutedMember): TypeSafeCriteriaValue {
+  const focus = member.focus.trim();
+  const task = clip(member.task, AGENT_TASK_PREVIEW_CHARS);
   if (!focus && !task) {
     return null;
   }
@@ -145,7 +147,7 @@ export async function classifyGroupRecipients(
   // Only agents whose cursor is behind can act on this snapshot. The author of
   // the latest message is never pending, so it never appears as an option.
   const pending = new Set(snapshot.pendingNames);
-  const roster = snapshot.members.filter((member) => pending.has(String(member.name)));
+  const roster = snapshot.members.filter((member) => pending.has(member.name));
   const window = recentGroupRows(snapshot.rows, RECIPIENT_WINDOW);
   const latestRow = window[window.length - 1];
   if (!roster.length || !latestRow) {
@@ -154,11 +156,11 @@ export async function classifyGroupRecipients(
   // Define `none` by what the message asks, not by surface genre: listing
   // genres (status, chatter) makes the model file any message that reads like
   // one under none, whatever it asks.
-  const criteria: Record<string, TypeSafeCriteriaValue> = {
+  const criteria: TypeSafeChoiceQuestion["criteria"] = {
     [NONE_RECIPIENT]: "The message asks no agent to do, answer, or record anything.",
   };
   for (const member of roster) {
-    criteria[String(member.name)] = agentOption(member);
+    criteria[member.name] = agentOption(member);
   }
   const result = await client.evaluate({
     state: {
@@ -210,11 +212,8 @@ function alwaysKeptSeqs(window: GroupMessageRow[], agentName: string): number[] 
 
 // One yes/no Noul per candidate row (the rerank pattern); agent and focus
 // live in state once instead of being repeated in every question.
-function keepQuestions(
-  window: GroupMessageRow[],
-  always: number[],
-): Record<string, TypeSafeQuestion> {
-  const questions: Record<string, TypeSafeQuestion> = {};
+function keepQuestions(window: GroupMessageRow[], always: number[]): TypeSafeRequest["questions"] {
+  const questions: TypeSafeRequest["questions"] = {};
   for (const row of window) {
     const seq = Number(row.seq);
     if (always.includes(seq)) {
@@ -342,7 +341,7 @@ export function createGroupRouter(options: GroupRouterOptions = {}): GroupRouter
       return client.configured;
     },
     async recipients(args) {
-      const pendingNames = args.pending.map((agent) => String(agent.name)).filter(Boolean);
+      const pendingNames = args.pending.map((agent) => agent.name).filter(Boolean);
       const tagged = args.taggedNames ?? new Set<string>();
       // What the tag rules alone would deliver: the no-key behaviour.
       const ruleNames = args.ruleNames ?? tagged;

@@ -68,6 +68,8 @@ class MemoryGroupDB {
       id: agentId,
       guild_id: guildId,
       name,
+      focus: "",
+      task: "",
       created_at: this.created,
       group_chat_delivered_through:
         options.deliveredThrough === undefined ? seq : options.deliveredThrough,

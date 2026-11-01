@@ -354,9 +354,9 @@ test("classifyGroupRecipients offers only pending agents, with focus and task pr
     {
       rows: [chatRow(1, "Write the note.")],
       members: [
-        { id: "a_1", name: "researcher", focus: "papers" },
-        { id: "a_2", name: "writer", focus: "notes", task: longTask },
-        { id: "a_4", name: "poster", focus: "posts" },
+        { name: "researcher", focus: "papers", task: "" },
+        { name: "writer", focus: "notes", task: longTask },
+        { name: "poster", focus: "posts", task: "" },
       ],
       pendingNames: ["researcher", "writer"],
     },
@@ -391,7 +391,7 @@ test("classifyGroupRecipients skips the call when nobody is pending", async () =
   const classified = await classifyGroupRecipients(
     {
       rows: [chatRow(1, "Done.", { author: "writer" })],
-      members: [{ id: "a_1", name: "writer" }],
+      members: [{ name: "writer", focus: "", task: "" }],
       pendingNames: [],
     },
     createTypeSafeClient({
@@ -409,7 +409,7 @@ test("classifyGroupRecipients clips the latest message body for the state", asyn
   await classifyGroupRecipients(
     {
       rows: [chatRow(1, body)],
-      members: [{ id: "a_1", name: "writer" }],
+      members: [{ name: "writer", focus: "", task: "" }],
       pendingNames: ["writer"],
     },
     createTypeSafeClient({
@@ -433,7 +433,7 @@ test("classifyGroupRecipients sends prior rows as context, not as latest", async
   await classifyGroupRecipients(
     {
       rows,
-      members: [{ id: "a_1", name: "writer" }],
+      members: [{ name: "writer", focus: "", task: "" }],
       pendingNames: ["writer"],
     },
     createTypeSafeClient({
@@ -463,8 +463,8 @@ test("createGroupRouter falls back to the tag rules when confidence is low", asy
     client: createTypeSafeClient({ evaluate: async () => choiceResult("writer", 0.31) }),
   });
   const members = [
-    { id: "a_1", name: "researcher" },
-    { id: "a_2", name: "writer" },
+    { id: "a_1", name: "researcher", focus: "", task: "" },
+    { id: "a_2", name: "writer", focus: "", task: "" },
   ];
   const decision = await router.recipients({
     rows: [chatRow(1, "Hmm.")],
@@ -543,17 +543,14 @@ test("createGroupRouter falls back to everyone and last N when evaluate throws",
     }),
   });
   const members = [
-    { id: "a_1", name: "researcher" },
-    { id: "a_2", name: "writer" },
+    { id: "a_1", name: "researcher", focus: "", task: "" },
+    { id: "a_2", name: "writer", focus: "", task: "" },
   ];
   const rows = Array.from({ length: 12 }, (_, index) => chatRow(index + 1, `m${index + 1}`));
   const recipients = await router.recipients({
     rows,
     members,
-    pending: [
-      { name: "researcher", group_chat_delivered_through: 0 },
-      { name: "writer", group_chat_delivered_through: 0 },
-    ],
+    pending: [{ name: "researcher" }, { name: "writer" }],
     taggedNames: new Set(["writer"]),
   });
   assert.equal(recipients.source, "fallback");
@@ -633,7 +630,7 @@ test("recipient question wording states the criterion, not genres or examples", 
   await classifyGroupRecipients(
     {
       rows: [chatRow(1, "hello")],
-      members: [{ id: "a_1", name: "writer", focus: "notes" }],
+      members: [{ name: "writer", focus: "notes", task: "" }],
       pendingNames: ["writer"],
     },
     createTypeSafeClient({
