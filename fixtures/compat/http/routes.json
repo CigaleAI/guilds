@@ -13511,7 +13511,8 @@
                         "description": "agent, guild, or org; omit for every level you can read"
                       },
                       "limit": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "at most 100, default 20"
                       }
                     },
                     "required": []
@@ -13743,7 +13744,8 @@
                         "description": "agent, guild, or org; omit for every level you can read"
                       },
                       "limit": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "at most 100, default 20"
                       }
                     },
                     "required": []
@@ -14343,7 +14345,8 @@
                         "description": "agent, guild, or org; omit for every level you can read"
                       },
                       "limit": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "at most 100, default 20"
                       }
                     },
                     "required": []
@@ -14575,7 +14578,8 @@
                         "description": "agent, guild, or org; omit for every level you can read"
                       },
                       "limit": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "at most 100, default 20"
                       }
                     },
                     "required": []
@@ -15264,7 +15268,8 @@
                         "description": "agent, guild, or org; omit for every level you can read"
                       },
                       "limit": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "at most 100, default 20"
                       }
                     },
                     "required": []
@@ -15496,7 +15501,8 @@
                         "description": "agent, guild, or org; omit for every level you can read"
                       },
                       "limit": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "at most 100, default 20"
                       }
                     },
                     "required": []
@@ -16096,7 +16102,8 @@
                         "description": "agent, guild, or org; omit for every level you can read"
                       },
                       "limit": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "at most 100, default 20"
                       }
                     },
                     "required": []
@@ -16328,7 +16335,8 @@
                         "description": "agent, guild, or org; omit for every level you can read"
                       },
                       "limit": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "at most 100, default 20"
                       }
                     },
                     "required": []
@@ -16930,7 +16938,8 @@
                         "description": "agent, guild, or org; omit for every level you can read"
                       },
                       "limit": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "at most 100, default 20"
                       }
                     },
                     "required": []
@@ -17162,7 +17171,8 @@
                         "description": "agent, guild, or org; omit for every level you can read"
                       },
                       "limit": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "at most 100, default 20"
                       }
                     },
                     "required": []
@@ -28408,7 +28418,8 @@
                         "description": "agent, guild, or org; omit for every level you can read"
                       },
                       "limit": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "at most 100, default 20"
                       }
                     },
                     "required": []
@@ -28640,7 +28651,8 @@
                         "description": "agent, guild, or org; omit for every level you can read"
                       },
                       "limit": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "at most 100, default 20"
                       }
                     },
                     "required": []
@@ -29242,7 +29254,8 @@
                         "description": "agent, guild, or org; omit for every level you can read"
                       },
                       "limit": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "at most 100, default 20"
                       }
                     },
                     "required": []
@@ -29474,7 +29487,8 @@
                         "description": "agent, guild, or org; omit for every level you can read"
                       },
                       "limit": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "at most 100, default 20"
                       }
                     },
                     "required": []
@@ -30074,7 +30088,8 @@
                         "description": "agent, guild, or org; omit for every level you can read"
                       },
                       "limit": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "at most 100, default 20"
                       }
                     },
                     "required": []
@@ -30306,7 +30321,8 @@
                         "description": "agent, guild, or org; omit for every level you can read"
                       },
                       "limit": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "at most 100, default 20"
                       }
                     },
                     "required": []
@@ -30908,7 +30924,8 @@
                         "description": "agent, guild, or org; omit for every level you can read"
                       },
                       "limit": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "at most 100, default 20"
                       }
                     },
                     "required": []
@@ -31140,7 +31157,8 @@
                         "description": "agent, guild, or org; omit for every level you can read"
                       },
                       "limit": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "at most 100, default 20"
                       }
                     },
                     "required": []
@@ -31740,7 +31758,8 @@
                         "description": "agent, guild, or org; omit for every level you can read"
                       },
                       "limit": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "at most 100, default 20"
                       }
                     },
                     "required": []
@@ -31972,7 +31991,8 @@
                         "description": "agent, guild, or org; omit for every level you can read"
                       },
                       "limit": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "at most 100, default 20"
                       }
                     },
                     "required": []
@@ -32763,7 +32783,8 @@
                         "description": "agent, guild, or org; omit for every level you can read"
                       },
                       "limit": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "at most 100, default 20"
                       }
                     },
                     "required": []
@@ -32995,7 +33016,8 @@
                         "description": "agent, guild, or org; omit for every level you can read"
                       },
                       "limit": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "at most 100, default 20"
                       }
                     },
                     "required": []
