@@ -822,11 +822,6 @@
       "count": 1
     }
   },
-  "src/toolbox/output.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    }
-  },
   "src/toolbox/shell.ts": {
     "limits/silent-catch": {
       "count": 1
