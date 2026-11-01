@@ -1248,26 +1248,6 @@
       "count": 1
     }
   },
-  "src/lib/tool-schema.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 5
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 3
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 3
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 11
-    },
-    "complexity": {
-      "count": 1
-    },
-    "limits/erased-return-type": {
-      "count": 2
-    }
-  },
   "src/llm/anthropic.ts": {
     "anti-slop/no-known-value-widening": {
       "count": 2
@@ -2454,7 +2434,7 @@
       "count": 1
     },
     "anti-slop/no-unsafe-dictionary-type": {
-      "count": 4
+      "count": 3
     },
     "max-params": {
       "count": 1
@@ -2468,7 +2448,7 @@
       "count": 5
     },
     "anti-slop/no-unsafe-dictionary-type": {
-      "count": 7
+      "count": 6
     },
     "max-params": {
       "count": 1
@@ -2563,7 +2543,7 @@
       "count": 3
     },
     "anti-slop/no-unsafe-dictionary-type": {
-      "count": 6
+      "count": 5
     },
     "limits/erased-return-type": {
       "count": 1

@@ -3,7 +3,7 @@ import type { ConnectorTool } from "../connectors/types.js";
 import { isPlainRecord, jsonObj } from "../db/json.js";
 import type { McpToolRow } from "../db/mcp.js";
 import { ToolInputSchema } from "../db/schema/index.js";
-import { llmToolParameters } from "../lib/tool-schema.js";
+import { isToolSchema, llmToolParameters } from "../lib/tool-schema.js";
 import { McpError } from "./errors.js";
 import { namespacedName } from "../connectors/naming.js";
 
@@ -23,7 +23,7 @@ export function mcpSchema(tool: Pick<ListedTool, "namespaced_name" | "descriptio
     function: {
       name: tool.namespaced_name,
       description: tool.description,
-      parameters: llmToolParameters(parameters),
+      parameters: isToolSchema(parameters) ? llmToolParameters(parameters) : parameters,
     },
   };
 }

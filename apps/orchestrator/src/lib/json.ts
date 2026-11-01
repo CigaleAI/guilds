@@ -21,7 +21,7 @@ export function isJsonObject(value: unknown): value is JsonObject {
 }
 
 /** Whether a JSON value is an object, and not an array or a scalar. */
-function isObjectNode(value: JsonValue): value is JsonObject {
+export function isObjectNode(value: JsonValue): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 

@@ -10,6 +10,7 @@ import {
   removeManagedScript,
 } from "../scripts/materialise.js";
 import { argString, functionSchema } from "./schema.js";
+import { isToolSchema } from "../lib/tool-schema.js";
 import { identityOutput } from "./output.js";
 import { commandOutput, executeCommand } from "./shell.js";
 import type { ToolServices } from "./services.js";
@@ -266,7 +267,7 @@ export function dynamicScriptTools(snapshot: RunScriptSnapshot[]): Record<string
   const tools: Record<string, Tool> = {};
   for (const row of firstClassSnapshots(snapshot)) {
     const parameters = row.parameters ?? { type: "object" };
-    const properties = isPlainRecord(parameters.properties) ? parameters.properties : {};
+    const properties = isToolSchema(parameters) ? parameters.properties ?? {} : {};
     const required = Array.isArray(parameters.required)
       ? parameters.required.filter((item): item is string => typeof item === "string" && item in properties)
       : [];

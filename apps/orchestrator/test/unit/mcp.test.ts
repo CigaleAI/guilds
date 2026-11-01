@@ -169,6 +169,16 @@ test("offered Cigale schema marks optional strings for omit", () => {
   assert.equal("description" in properties.agentId, false);
 });
 
+test("mcpSchema offers a schema that is not a JSON Schema as the remote declared it", () => {
+  const input_schema = {
+    type: "object",
+    properties: { id: { type: "string", format: "uuid", required: true } },
+    additionalProperties: false,
+  };
+  const schema = mcpSchema({ namespaced_name: "remote_lookup", description: "Look up", input_schema });
+  assert.deepEqual((schema.function as { parameters: unknown }).parameters, input_schema);
+});
+
 test("mcpSchema drops format uuid from optional properties", () => {
   const schema = mcpSchema({
     namespaced_name: "cigale_generate_reply_options",

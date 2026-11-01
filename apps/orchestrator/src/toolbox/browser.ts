@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 import { commandOutput, executeCommand } from "./shell.js";
 import { argString, functionSchema } from "./schema.js";
+import type { ToolSchemaProperties } from "../lib/tool-schema.js";
 import { identityOutput } from "./output.js";
 import type { Tool, ToolHooks, ToolInvocation, ToolRun } from "./types.js";
 
@@ -44,7 +45,7 @@ async function runBrowserOp(
 function tool(
   name: string,
   description: string,
-  properties: Record<string, unknown>,
+  properties: ToolSchemaProperties,
   required: string[],
   handler: Tool["handler"],
 ): Tool {

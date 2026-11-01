@@ -4,6 +4,7 @@ import { isPlainRecord } from "../db/json.js";
 import type { MessageMetadata, ReportedToolMetadata } from "../db/schema/index.js";
 import { keepMatching } from "../lib/decode.js";
 import { isJsonObject, type JsonObject } from "../lib/json.js";
+import type { ToolSchemaProperties } from "../lib/tool-schema.js";
 import { stderrOf, stdoutOf, type CommandResult } from "../sandbox/sdk.js";
 import { executeCommand } from "./shell.js";
 import { functionSchema } from "./schema.js";
@@ -146,7 +147,7 @@ export async function runCodeHelper(
 function tool(
   name: string,
   description: string,
-  properties: Record<string, unknown>,
+  properties: ToolSchemaProperties,
   required: string[],
   handler: Tool["handler"],
 ): Tool {

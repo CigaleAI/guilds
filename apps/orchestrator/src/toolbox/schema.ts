@@ -1,10 +1,10 @@
 import { isPlainRecord } from "../db/json.js";
-import { llmToolParameters } from "../lib/tool-schema.js";
+import { llmToolParameters, type ToolSchemaProperties } from "../lib/tool-schema.js";
 
 export function functionSchema(
   name: string,
   description: string,
-  properties: Record<string, unknown>,
+  properties: ToolSchemaProperties,
   required: string[],
 ): Record<string, unknown> {
   return {
