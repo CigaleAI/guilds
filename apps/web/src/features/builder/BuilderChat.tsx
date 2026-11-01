@@ -8,21 +8,15 @@ import type { FlowSegment } from "../agent/runs/runFlowModel";
 import { CoachLog, type CoachRow } from "../coach/CoachLog";
 import { answered } from "../coach/coachRows";
 import { ConnectCard, QuestionCard } from "./BuilderWidgets";
-import { pendingQuestions, widgetOf, type BuilderWidget } from "./widgets";
+import { pendingQuestions, widgetOf } from "./widgets";
 
 const coach = { name: "coach", tone: "signal" as const };
-
-/** A request no reply has settled: a connect card that still waits, or questions. */
-function waiting(widget: BuilderWidget): boolean {
-  if (widget.kind === "question") return true;
-  return !(widget.recommendedScope === "org" && widget.alreadyConnected);
-}
 
 /** True while a request in the conversation still waits for the operator. */
 export function openRequest(messages: readonly StudioMessage[]): boolean {
   return messages.some((message) => {
     const widget = widgetOf(message);
-    return widget !== null && waiting(widget) && !answered(messages, message.seq);
+    return widget !== null && widget.await_operator && !answered(messages, message.seq);
   });
 }
 
@@ -44,8 +38,8 @@ export function BuilderChat({ session, messages, live }: BuilderChatProps) {
   const active = session.status === "active";
   const idle = active && !generating && !post.isPending;
   const pending = useMemo(
-    () => pendingQuestions(session.recipe, answeredHere),
-    [session.recipe, answeredHere],
+    () => pendingQuestions(session.recipe.body, answeredHere),
+    [session.recipe.body, answeredHere],
   );
   const blocked = openRequest(messages ?? []) || pending !== null;
 
@@ -60,10 +54,10 @@ export function BuilderChat({ session, messages, live }: BuilderChatProps) {
       step.calls.flatMap((call) => {
         const widget = widgetOf(call.result);
         if (!widget || !call.result) return [];
-        const key = `${widget.kind}-${call.result.seq}`;
+        const key = `${widget.widget}-${call.result.seq}`;
         const props = { answered: answered(rows, call.result.seq), live: idle, onReply: send };
         return [
-          widget.kind === "connect" ? (
+          widget.widget === "connect" ? (
             <ConnectCard key={key} {...props} widget={widget} />
           ) : (
             <QuestionCard key={key} {...props} widget={widget} />

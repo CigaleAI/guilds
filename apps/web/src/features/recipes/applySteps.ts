@@ -13,11 +13,11 @@ export function checklistSteps(checklist: readonly ApplyStep[]): ApplyStep[] {
 
 export const stepClosed = (step: Pick<ApplyStep, "status">) => step.status !== "open";
 
+/** How far the apply checklist is: steps done of the total. */
+export type ChecklistProgress = { done: number; total: number };
+
 /** Done and total, counting the two milestones already reached: recipe validated, guild created. */
-export function checklistProgress(checklist: readonly ApplyStep[]): {
-  done: number;
-  total: number;
-} {
+export function checklistProgress(checklist: readonly ApplyStep[]): ChecklistProgress {
   const steps = checklistSteps(checklist);
   return { done: 2 + steps.filter(stepClosed).length, total: 2 + steps.length };
 }
@@ -33,10 +33,13 @@ export function stepServer(step: Pick<ApplyStep, "id" | "kind">): string | null 
 }
 
 /** The guild's view of a login step's connector, and whether the guild is signed in to it. */
+export type StepConnector = { server: McpServerAccess | null; connected: boolean };
+
+/** The connector a login step is for, as the guild sees it. */
 export function stepConnector(
   step: Pick<ApplyStep, "id" | "kind">,
   servers: readonly McpServerAccess[] | undefined,
-): { server: McpServerAccess | null; connected: boolean } {
+): StepConnector {
   const slug = stepServer(step);
   const server = slug ? (servers?.find((item) => item.slug === slug) ?? null) : null;
   return { server, connected: server?.status === "connected" };

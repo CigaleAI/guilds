@@ -11,7 +11,7 @@ import {
   useReviewRecipe,
 } from "../../api/queries/recipes";
 import { useCapabilities } from "../../api/queries/builder";
-import type { RecipeRow } from "../../api/types/recipes";
+import type { RecipeDocument, RecipeRow } from "../../api/types/recipes";
 import { Button, PageError, SkeletonRows, toast, Icon, Tag } from "@guildsrun/ui";
 import { PendingAccessBar } from "./plan/PendingAccessBar";
 import { isRecipeApproved, recipeStatusLabel } from "./plan/recipeDraft";
@@ -31,7 +31,7 @@ const sourceLabel: Record<RecipeRow["source_kind"], string> = {
 };
 
 /** Saves the recipe as a JSON file named after it. */
-function download(name: string, body: unknown) {
+function download(name: string, body: RecipeDocument) {
   const url = URL.createObjectURL(
     new Blob([JSON.stringify(body, null, 2)], { type: "application/json" }),
   );

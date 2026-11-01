@@ -104,7 +104,7 @@ test("the API's row and preview shapes feed the plan directly", () => {
     connections: [],
     secrets: [],
   };
-  const plan = planFromRecipe(row, preview);
+  const plan = planFromRecipe(row.body, preview);
   assert.equal(plan.guild.name, "Desk");
   assert.equal(plan.actions.find((item) => item.server === "crm")?.kind, "reuse");
   assert.equal(plan.actions.find((item) => item.kind === "secret")?.required, false);

@@ -55,13 +55,8 @@ export function scheduleCadence(
   return window ? describeWindow(window) : cadenceLabel(cron);
 }
 
-function isFiveFieldCron(value: unknown): boolean {
-  return (
-    String(value || "")
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean).length === 5
-  );
+function isFiveFieldCron(cadence: string | null | undefined): boolean {
+  return (cadence ?? "").trim().split(/\s+/).filter(Boolean).length === 5;
 }
 
 type RoutineInput = {

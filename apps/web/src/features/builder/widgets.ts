@@ -1,201 +1,46 @@
-import type { ConnectorAuthField, McpServerAccess } from "../../api/types/access";
+import type {
+  BuilderWidget,
+  ConnectScope,
+  ConnectServer,
+  ConnectWidget,
+  Question,
+  QuestionWidget,
+} from "../../api/types/builder";
 import type { StudioMessage } from "../../api/types/studio";
 import type { AccessEdit } from "../../api/types/recipes";
-import { isJsonObject } from "../../api/wire";
+import { isBuilderWidget, parseJson } from "../../api/wire";
 import { pendingDesignQuestions } from "../recipes/plan/designSystems";
+import type { RecipeDraft } from "../recipes/plan/recipeDraft";
 
 /**
  * The Builder coach's requests to the operator, read from its tool results: a login to connect or
  * plan for, or questions to answer. Each answer goes back to the coach as the operator's message.
  */
 
-const connectScopes = ["org", "guild", "agent"] as const;
-
-export type ConnectScope = (typeof connectScopes)[number];
-
-export function isConnectScope(value: unknown): value is ConnectScope {
-  return connectScopes.some((scope) => scope === value);
-}
-
-type OauthSetupState = McpServerAccess["oauth_setup_state"];
-
-const setupStates: readonly OauthSetupState[] = [
-  "not_applicable",
-  "dynamic",
-  "configured",
-  "unsupported",
-];
-
-/** A connector the coach names, as the widget carries it. */
-export type WidgetServer = {
-  id: string;
-  slug: string;
-  display_name: string;
-  auth: "token" | "oauth" | "none";
-  setup_hint: string | null;
-  /** The inputs a key login asks for. */
-  auth_fields?: ConnectorAuthField[];
-  connection_state?: "connected" | "registered_not_connected";
-  /** Whether this server can start the connector's sign-in; `unsupported` until a platform admin sets it up. */
-  oauth_setup_state?: OauthSetupState;
-};
-
-export type ConnectWidget = {
-  kind: "connect";
-  /** `org`: connect this server to the organisation now. `any`: pick a server and where it logs in. */
-  mode: "org" | "any";
-  title: string;
-  reason: string;
-  storageHint: string | null;
-  server: WidgetServer | null;
-  servers: WidgetServer[];
-  recommendedScope: ConnectScope;
-  allowedScopes: ConnectScope[];
-  alreadyConnected: boolean;
-};
-
 /** The server a connect widget's card starts on: the one it names, else the first it offers. */
 export function initialServerId(widget: ConnectWidget): string {
-  return widget.server?.id ?? widget.servers[0]?.id ?? "";
+  const offered = widget.mode === "any" ? widget.servers[0] : undefined;
+  return widget.server?.id ?? offered?.id ?? "";
 }
 
 /** The server a connect card signs in to: the one picked when it offers several, else its own. */
-export function pickedServer(widget: ConnectWidget, picked: string): WidgetServer | null {
+export function pickedServer(widget: ConnectWidget, picked: string): ConnectServer | null {
   if (widget.mode !== "any") return widget.server;
   return widget.servers.find((item) => item.id === picked) ?? widget.server;
 }
 
 /** How a connect card names its server: by its display name, its slug, or as "the service". */
-export function serverName(server: WidgetServer | null): string {
+export function serverName(server: ConnectServer | null): string {
   return server?.display_name || server?.slug || "the service";
-}
-
-export type QuestionOption = { id: string; label: string; description: string };
-
-export type Question = {
-  id: string;
-  header: string;
-  question: string;
-  options: QuestionOption[];
-  allowOther: boolean;
-  multiSelect: boolean;
-};
-
-export type QuestionWidget = { kind: "question"; title: string; questions: Question[] };
-
-export type BuilderWidget = ConnectWidget | QuestionWidget;
-
-const text = (value: unknown, fallback = "") => (typeof value === "string" ? value : fallback);
-
-function isConnectorAuthField(value: unknown): value is ConnectorAuthField {
-  return (
-    isJsonObject(value) &&
-    typeof value.name === "string" &&
-    typeof value.label === "string" &&
-    (value.secret === undefined || typeof value.secret === "boolean") &&
-    (value.optional === undefined || typeof value.optional === "boolean") &&
-    (value.placeholder === undefined || typeof value.placeholder === "string")
-  );
-}
-
-function serverOf(row: unknown): WidgetServer | null {
-  if (!isJsonObject(row) || typeof row.id !== "string") return null;
-  const auth = row.auth === "token" || row.auth === "none" ? row.auth : "oauth";
-  const setup = setupStates.find((state) => state === row.oauth_setup_state);
-  return {
-    id: row.id,
-    slug: text(row.slug),
-    display_name: text(row.display_name) || text(row.slug),
-    auth,
-    setup_hint: typeof row.setup_hint === "string" ? row.setup_hint : null,
-    ...(Array.isArray(row.auth_fields)
-      ? { auth_fields: row.auth_fields.filter(isConnectorAuthField) }
-      : {}),
-    ...(row.connection_state === "connected" || row.connection_state === "registered_not_connected"
-      ? { connection_state: row.connection_state }
-      : {}),
-    ...(setup ? { oauth_setup_state: setup } : {}),
-  };
-}
-
-function questionOf(row: unknown, index: number): Question | null {
-  if (!isJsonObject(row) || !text(row.question).trim()) return null;
-  const options = (Array.isArray(row.options) ? row.options : []).flatMap((option, position) => {
-    if (!isJsonObject(option) || !text(option.label).trim()) return [];
-    return [
-      {
-        id: text(option.id) || `opt-${position + 1}`,
-        label: text(option.label).trim(),
-        description: text(option.description).trim(),
-      },
-    ];
-  });
-  return {
-    id: text(row.id) || `q-${index + 1}`,
-    header: text(row.header) || "Question",
-    question: text(row.question).trim(),
-    options,
-    allowOther: options.length === 0 || row.allow_other !== false,
-    multiSelect: row.multi_select === true,
-  };
-}
-
-/** A question widget: its questions, or the one-question shorthand; null when none is readable. */
-function questionWidgetOf(body: Record<string, unknown>): QuestionWidget | null {
-  const raw = Array.isArray(body.questions) ? body.questions : body.question ? [body] : [];
-  const questions = raw.flatMap((item, index) => questionOf(item, index) ?? []);
-  return questions.length
-    ? { kind: "question", title: text(body.title) || "Question", questions }
-    : null;
-}
-
-/** A connect widget: the server or servers it names and where their login may live. */
-function connectWidgetOf(body: Record<string, unknown>): ConnectWidget {
-  const recommended = isConnectScope(body.recommended_scope) ? body.recommended_scope : "org";
-  const allowed = (Array.isArray(body.allowed_scopes) ? body.allowed_scopes : []).filter(
-    isConnectScope,
-  );
-  return {
-    kind: "connect",
-    mode: body.mode === "any" ? "any" : "org",
-    title: text(body.title) || "Connect a service",
-    reason: text(body.reason),
-    storageHint: typeof body.storage_hint === "string" ? body.storage_hint : null,
-    server: serverOf(body.server),
-    servers: (Array.isArray(body.servers) ? body.servers : []).flatMap(
-      (item) => serverOf(item) ?? [],
-    ),
-    recommendedScope: recommended,
-    allowedScopes: allowed.length ? allowed : [recommended],
-    alreadyConnected: body.already_connected === true,
-  };
-}
-
-function widgetFrom(body: Record<string, unknown>): BuilderWidget | null {
-  if (body.widget === "question") return questionWidgetOf(body);
-  if (body.widget === "connect") return connectWidgetOf(body);
-  return null;
 }
 
 /** The request a tool result carries, when it carries one. */
 export function widgetOf(
   message: Pick<StudioMessage, "payload"> | null | undefined,
 ): BuilderWidget | null {
-  if (!message) return null;
-  const role = message.payload.role;
-  if (role !== undefined && role !== "tool") return null;
-  const parse = (value: unknown): Record<string, unknown> | null => {
-    if (typeof value !== "string") return null;
-    try {
-      const parsed: unknown = JSON.parse(value);
-      return isJsonObject(parsed) ? parsed : null;
-    } catch {
-      return null;
-    }
-  };
-  const body = parse(message.payload.content);
-  if (!body) return null;
-  return widgetFrom(body) ?? (parse(body.content) ? widgetFrom(parse(body.content) ?? {}) : null);
+  if (message?.payload.role !== "tool") return null;
+  const body = parseJson(message.payload.content);
+  return isBuilderWidget(body) ? body : null;
 }
 
 /** One answer to a question: the options picked and any words of the operator's own. */
@@ -230,10 +75,10 @@ export function answerMessage(
 
 /** The design's open questions the operator has not answered here, as one question widget. */
 export function pendingQuestions(
-  recipe: unknown,
+  doc: RecipeDraft | null | undefined,
   answered: ReadonlySet<string>,
 ): QuestionWidget | null {
-  const questions = pendingDesignQuestions(recipe).flatMap((system, index): Question[] => {
+  const questions = pendingDesignQuestions(doc).flatMap((system, index): Question[] => {
     const id = system.name || `pending-${index + 1}`;
     if (answered.has(id)) return [];
     const reason = (system.reason ?? "").replace(/^\s*Open question\.?\s*/i, "").trim();
@@ -243,14 +88,15 @@ export function pendingQuestions(
         header: system.name || "Open question",
         question: reason || "Please answer this before the coach continues.",
         options: [],
-        allowOther: true,
-        multiSelect: false,
+        allow_other: true,
+        multi_select: false,
       },
     ];
   });
   return questions.length
     ? {
-        kind: "question",
+        widget: "question",
+        await_operator: true,
         title: questions.length === 1 ? "Open question" : `${questions.length} open questions`,
         questions,
       }

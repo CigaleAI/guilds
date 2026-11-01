@@ -58,15 +58,11 @@ export type PlanScript = {
 };
 
 function taskBody(role: RoleDraft): string {
-  const task = role.task;
-  if (!task) return "";
-  if (typeof task === "string") return task;
-  return String(task.body || "");
+  return role.task?.body || "";
 }
 
 function taskAuthor(role: RoleDraft): AuthorDraft | null {
-  const task = role.task;
-  return task && typeof task === "object" ? task.author || null : null;
+  return role.task?.author || null;
 }
 
 function rolesFromCreatedAgents(

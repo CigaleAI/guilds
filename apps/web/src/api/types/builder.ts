@@ -1,4 +1,4 @@
-import type { ConnectorFacts } from "./access";
+import type { ConnectorAuthField, ConnectorFacts } from "./access";
 import type { OrgModels } from "./models";
 import type { RecipeRow } from "./recipes";
 
@@ -60,3 +60,62 @@ export type BuilderSessionSummary = Omit<BuilderSession, "recipe"> & {
 
 /** A Builder session to start: its coach's model, and the operator's description of the guild. */
 export type NewBuilderSession = { model: string; brief: string };
+
+/** Where a login a connect widget asks for lives (builder/widgets.ts). */
+export type ConnectScope = "org" | "guild" | "agent";
+
+/** A connector as a connect widget shows it; a token connector names the fields its login asks for (builder/widgets.ts). */
+export type ConnectServer = Pick<
+  CapabilityServer,
+  "slug" | "display_name" | "auth" | "oauth_setup_state" | "setup_hint" | "connection_state"
+> & { id: string; auth_fields?: ConnectorAuthField[] };
+
+/** What a connect widget shows in either mode: the scopes offered, whether it waits on the operator, and why (builder/widgets.ts). */
+type ConnectWidgetFields = {
+  widget: "connect";
+  recommended_scope: ConnectScope;
+  allowed_scopes: ConnectScope[];
+  /** The organisation already has a login to the server it names, at the scope it recommends. */
+  already_connected: boolean;
+  await_operator: boolean;
+  reason: string;
+  title: string;
+  storage_hint: string | null;
+};
+
+/** The widget that asks the operator to connect one connector to the organisation now (builder/widgets.ts). */
+export type OrgConnectWidget = ConnectWidgetFields & { mode: "org"; server: ConnectServer };
+
+/** The widget that lets the operator connect any published connector, the one the coach named first when it named one (builder/widgets.ts). */
+export type AnyConnectWidget = ConnectWidgetFields & {
+  mode: "any";
+  server: ConnectServer | null;
+  servers: ConnectServer[];
+};
+
+/** A widget that asks the operator for a login (builder/widgets.ts). */
+export type ConnectWidget = OrgConnectWidget | AnyConnectWidget;
+
+/** One choice of a question card (builder/widgets.ts). */
+export type QuestionOption = { id: string; label: string; description: string };
+
+/** One question of a question card: its choices, and whether the operator may type another answer or pick several (builder/widgets.ts). */
+export type Question = {
+  id: string;
+  header: string;
+  question: string;
+  options: QuestionOption[];
+  allow_other: boolean;
+  multi_select: boolean;
+};
+
+/** The card that pauses the coach until the operator answers its questions (builder/widgets.ts). */
+export type QuestionWidget = {
+  widget: "question";
+  await_operator: true;
+  title: string;
+  questions: Question[];
+};
+
+/** A widget a Builder tool result carries, which pauses the coach on the operator (builder/widgets.ts). */
+export type BuilderWidget = ConnectWidget | QuestionWidget;

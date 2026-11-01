@@ -10,7 +10,6 @@ import {
   type HandoffDraft,
   type NoteDraft,
   type RecipeDraft,
-  type RecipeSource,
   type RepositoryDraft,
   type SecretDraft,
   type SystemDraft,
@@ -107,7 +106,10 @@ function overlaySecrets(overlay: PlanOverlay): readonly SecretDraft[] {
  * routines, connectors, secrets, collections, and notes, and supplies agents when the recipe has
  * no roles.
  */
-export function planFromRecipe(recipe: RecipeSource, overlay: PlanOverlay = {}): RecipePlan {
+export function planFromRecipe(
+  recipe: RecipeDraft | null | undefined,
+  overlay: PlanOverlay = {},
+): RecipePlan {
   const doc = recipeBody(recipe);
   const design = asObject(doc.design);
   const creates = asObject(overlay.creates);
