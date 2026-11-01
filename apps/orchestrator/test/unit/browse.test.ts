@@ -40,9 +40,12 @@ function capturedLogs(work: () => void): Array<Record<string, unknown>> {
 
 // fastbrowseEnv
 
+/** Each pinned variable's value, by name. */
+const PINNED = new Map<string, string>(Object.entries(FASTBROWSE_PINNED_ENV));
+
 /** The variables of `env` that differ from their pinned value. */
 function routeOf(env: Record<string, string>): Record<string, string> {
-  return Object.fromEntries(Object.entries(env).filter(([name, value]) => FASTBROWSE_PINNED_ENV[name] !== value));
+  return Object.fromEntries(Object.entries(env).filter(([name, value]) => PINNED.get(name) !== value));
 }
 
 /** Asserts that `env` sets every pinned variable, and only those. */
@@ -57,7 +60,7 @@ test("the pinned environment blanks every key, endpoint, and model, routes Jev t
     }
   }
   for (const purpose of ["PLAN", "READ", "FIELD_TEXT", "SHORTCUT", "RECOVER", "COMPOSE", "VERIFY"]) {
-    assert.equal(FASTBROWSE_PINNED_ENV[`FASTBROWSE_LLM_MODEL_${purpose}`], "");
+    assert.equal(PINNED.get(`FASTBROWSE_LLM_MODEL_${purpose}`), "");
   }
   assert.equal(FASTBROWSE_PINNED_ENV.FASTBROWSE_DECISION_SOURCE, "typesafe");
   assert.equal(FASTBROWSE_PINNED_ENV.FASTBROWSE_JEV_SOURCE, "typesafe");

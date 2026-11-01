@@ -22,7 +22,17 @@ export const CLAY_BODY_VARIANTS = [
   "stack",
 ] as const;
 
-const CLAY_BODY_SET = new Set<string>(CLAY_BODY_VARIANTS);
+/** One of the clay style's bodies. */
+export type ClayBodyVariant = (typeof CLAY_BODY_VARIANTS)[number];
+
+/** A clay avatar's look: the seed it is drawn from, and the body it is given when the shape names one. */
+export type ClayShape = { seed: string; bodyVariant?: ClayBodyVariant };
+
+/** Whether a word of a shape names one of the clay bodies. */
+function isClayBodyVariant(word: string): word is ClayBodyVariant {
+  return CLAY_BODY_VARIANTS.some((variant) => variant === word);
+}
+
 const clayStyle = new Style(definition);
 
 function hexDigits(value: string): string {
@@ -44,21 +54,18 @@ function darkenHex(hex: string, amount: number): string {
     .join("");
 }
 
-export function parseClayShape(raw: string): {
-  seed: string;
-  bodyVariant?: (typeof CLAY_BODY_VARIANTS)[number];
-} {
+export function parseClayShape(raw: string): ClayShape {
   const text = raw.trim().toLowerCase();
   const dash = text.indexOf("-");
   if (dash > 0) {
     const body = text.slice(0, dash);
     const rest = text.slice(dash + 1);
-    if (rest && CLAY_BODY_SET.has(body)) {
-      return { seed: rest, bodyVariant: body as (typeof CLAY_BODY_VARIANTS)[number] };
+    if (rest && isClayBodyVariant(body)) {
+      return { seed: rest, bodyVariant: body };
     }
   }
-  if (CLAY_BODY_SET.has(text)) {
-    return { seed: text, bodyVariant: text as (typeof CLAY_BODY_VARIANTS)[number] };
+  if (isClayBodyVariant(text)) {
+    return { seed: text, bodyVariant: text };
   }
   return { seed: text || DEFAULT_AVATAR_SHAPE };
 }

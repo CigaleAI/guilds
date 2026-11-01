@@ -32,45 +32,13 @@
       "count": 2
     }
   },
-  "src/avatars/clay.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 3
-    },
-    "typescript/consistent-type-assertions": {
-      "count": 2
-    }
-  },
   "src/avatars/index.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 4
-    },
     "boundary/no-reexport-modules": {
-      "count": 1
-    },
-    "typescript/consistent-type-assertions": {
       "count": 1
     }
   },
   "src/avatars/looks.ts": {
     "complexity": {
-      "count": 1
-    }
-  },
-  "src/browse/bridge.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 2
-    }
-  },
-  "src/browse/env.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 4
-    }
-  },
-  "src/browse/runner.ts": {
-    "anti-slop/no-unknown-parameters": {
       "count": 1
     }
   },
@@ -555,45 +523,9 @@
       "count": 2
     }
   },
-  "src/instance/integrations.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    }
-  },
-  "src/instance/keys.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 2
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    }
-  },
   "src/instrument.ts": {
     "limits/silent-catch": {
       "count": 1
-    }
-  },
-  "src/issues/index.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 4
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 4
-    },
-    "limits/inline-parameter-type": {
-      "count": 1
-    },
-    "typescript/consistent-type-assertions": {
-      "count": 2
     }
   },
   "src/lib/agent-file.ts": {
@@ -837,30 +769,6 @@
       "count": 1
     }
   },
-  "src/registry/code.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
-    }
-  },
-  "src/registry/index.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 2
-    }
-  },
-  "src/registry/install.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    }
-  },
   "src/run.ts": {
     "limits/inline-parameter-type": {
       "count": 1
@@ -1050,30 +958,7 @@
       "count": 1
     }
   },
-  "src/users/directory.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    }
-  },
   "src/users/index.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 2
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 2
-    },
-    "limits/inline-parameter-type": {
-      "count": 1
-    },
     "typescript/consistent-type-assertions": {
       "count": 2
     }

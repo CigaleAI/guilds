@@ -15,7 +15,7 @@ import type { Queryable } from "../db/pg.js";
 // Code connectors live under CONNECTORS_ROOT, one folder per version: `<root>/<slug>/<version>/`
 // holding connector.json, adapter.js, and logo.svg. The row's version names the folder that serves.
 
-const HOOKS = ["validate", "lookup", "list", "call", "state"] as const;
+const HOOKS = ["validate", "lookup", "list", "call", "state"] as const satisfies readonly (keyof Adapter)[];
 
 /** The version of each code connector this process serves, by slug. */
 const served = new Map<string, string>();
@@ -69,33 +69,32 @@ export function removeCodePackage(root: string, slug: string, keep: string | nul
   }
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
+/** A bundled adapter's module: the adapter is its default export. */
+type AdapterModule = { default: Adapter };
 
-/** Whether an adapter's field is a hook it may carry: a function, or absent. */
-function isHook(value: unknown): boolean {
-  return value === undefined || typeof value === "function";
-}
-
-/** Whether an object is an adapter: each hook it carries is a function. */
-function isAdapter(value: Record<string, unknown>): value is Adapter {
-  return HOOKS.every((hook) => isHook(value[hook]));
+/**
+ * Asserts that an imported `adapter.js` is an adapter's module: its default export is an object,
+ * and each hook it carries is a function. Throws a `RegistryPackageError` naming what is not.
+ */
+function assertAdapterModule(module: unknown): asserts module is AdapterModule {
+  const exported = typeof module === "object" && module !== null && "default" in module ? module.default : undefined;
+  if (typeof exported !== "object" || exported === null) {
+    throw new RegistryPackageError("adapter.js has no default export object");
+  }
+  for (const hook of HOOKS) {
+    const field: unknown = Reflect.get(exported, hook);
+    if (field !== undefined && typeof field !== "function") {
+      throw new RegistryPackageError(`adapter.js exports ${hook} that is not a function`);
+    }
+  }
 }
 
 /** The adapter a bundled `adapter.js` exports by default, its hooks checked to be functions. */
 async function importAdapter(file: string, version: string): Promise<Adapter> {
   // The version in the URL gives each version its own module; a new version never reuses an old one.
   const module: unknown = await import(`${pathToFileURL(file).href}?v=${encodeURIComponent(version)}`);
-  const adapter = isObject(module) ? module.default : undefined;
-  if (!isObject(adapter)) {
-    throw new RegistryPackageError("adapter.js has no default export object");
-  }
-  if (!isAdapter(adapter)) {
-    const hook = HOOKS.find((name) => !isHook(adapter[name]));
-    throw new RegistryPackageError(`adapter.js exports ${hook} that is not a function`);
-  }
-  return adapter;
+  assertAdapterModule(module);
+  return module.default;
 }
 
 /** Who published a code connector, and whether the registry verified it, as its entry records. */

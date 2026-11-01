@@ -15,9 +15,9 @@ import {
 } from "../db/issues.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 
-export const ISSUE_KINDS = ["tool_failure", "truncated", "api", "other"] as const;
-export const ISSUE_SEVERITIES = ["low", "medium", "high"] as const;
-export const ISSUE_STATUSES = ["open", "resolved"] as const;
+export const ISSUE_KINDS = ["tool_failure", "truncated", "api", "other"] as const satisfies readonly IssueRow["kind"][];
+export const ISSUE_SEVERITIES = ["low", "medium", "high"] as const satisfies readonly IssueRow["severity"][];
+export const ISSUE_STATUSES = ["open", "resolved"] as const satisfies readonly IssueRow["status"][];
 export const ISSUE_SUMMARY_MAX = 200;
 export const ISSUE_DETAIL_MAX = 4000;
 export const ISSUE_TOOL_NAME_MAX = 120;
@@ -50,15 +50,20 @@ function issuesDatabase(db: Queryable) {
 
 export type IssuesDatabase = ReturnType<typeof issuesDatabase>;
 
-function oneOf<T extends string>(value: unknown, allowed: readonly T[], label: string): T {
-  if (typeof value === "string" && (allowed as readonly string[]).includes(value)) {
-    return value as T;
+/** Whether `value` is one of `allowed`: a kind, a severity or a status an issue may have. */
+function isOneOf<T extends string>(allowed: readonly T[], value: string): value is T {
+  return allowed.some((item) => item === value);
+}
+
+function oneOf<T extends string>(value: string, allowed: readonly T[], label: string): T {
+  if (isOneOf(allowed, value)) {
+    return value;
   }
   throw new IssueError(`${label} must be ${allowed.join(", ")}`);
 }
 
-function requiredText(value: unknown, label: string, max: number): string {
-  const text = typeof value === "string" ? value.trim() : "";
+function requiredText(value: string, label: string, max: number): string {
+  const text = value.trim();
   if (!text) {
     throw new IssueError(`${label} is required`);
   }
@@ -69,21 +74,35 @@ function requiredText(value: unknown, label: string, max: number): string {
 }
 
 /** The trimmed text, or an empty string when the value is missing or blank. */
-function optionalText(value: unknown, label: string, max: number): string {
-  const text = typeof value === "string" ? value.trim() : "";
+function optionalText(value: string | undefined, label: string, max: number): string {
+  const text = (value ?? "").trim();
   if (text.length > max) {
     throw new IssueError(`${label} is at most ${max} characters`);
   }
   return text;
 }
 
-function optionalId(value: unknown): string | null {
-  if (typeof value !== "string") {
-    return null;
-  }
-  const text = value.trim();
-  return text || null;
+/** The trimmed id, or null when it is blank. */
+function optionalId(value: string): string | null {
+  return value.trim() || null;
 }
+
+/**
+ * An issue as an agent reports it, before it is checked: the guild, agent and run it is reported
+ * from, and the kind, severity, summary, detail and tool the agent gave. A severity left out or
+ * blank is `medium`.
+ */
+export type IssueReport = {
+  guildId: string;
+  agentId: string;
+  agentName: string;
+  runId: string;
+  kind: string;
+  severity?: string | undefined;
+  summary: string;
+  detail: string;
+  toolName?: string | undefined;
+};
 
 /** An issue as the API and the tools show it, with the agent that reported it. */
 export type IssueItem = Pick<
@@ -138,20 +157,10 @@ export function issueItem(row: GuildIssueRow): IssueItem {
 export class Issues {
   constructor(public db: IssuesDatabase) {}
 
-  async create(args: {
-    guildId: string;
-    agentId: string;
-    agentName: string;
-    runId: string;
-    kind: unknown;
-    severity?: unknown;
-    summary: unknown;
-    detail: unknown;
-    toolName?: unknown;
-  }): Promise<IssueRow> {
+  async create(args: IssueReport): Promise<IssueRow> {
     const kind = oneOf(args.kind, ISSUE_KINDS, "kind");
     const severity =
-      args.severity === undefined || args.severity === null || args.severity === ""
+      args.severity === undefined || args.severity === ""
         ? "medium"
         : oneOf(args.severity, ISSUE_SEVERITIES, "severity");
     const summary = requiredText(args.summary, "summary", ISSUE_SUMMARY_MAX);
@@ -188,7 +197,7 @@ export class Issues {
   }
 
   async listForGuild(guildId: string, status?: string): Promise<IssueItem[]> {
-    let filter: string | null = null;
+    let filter: IssueRow["status"] | null = null;
     if (status !== undefined && status !== "" && status !== "all") {
       filter = oneOf(status, ISSUE_STATUSES, "status");
     }

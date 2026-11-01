@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import type { AddressInfo } from "node:net";
 import type { Duplex } from "node:stream";
 import { request as undiciRequest } from "undici";
 import WebSocket, { WebSocketServer } from "ws";
@@ -103,10 +104,10 @@ async function forwardDevToolsRequest(
 }
 
 /** Answers a request the relay did not answer with a 502, or ends it when its answer had begun. */
-function answerRelayFailure(request: IncomingMessage, response: ServerResponse, error: unknown): void {
-  writeLog("warn", `CDP bridge request: ${errorMessage(error)}`, {
+function answerRelayFailure(request: IncomingMessage, response: ServerResponse, cause: unknown): void {
+  writeLog("warn", `CDP bridge request: ${errorMessage(cause)}`, {
     operation: "browse.bridge",
-    error_type: errorName(error),
+    error_type: errorName(cause),
     method: request.method ?? null,
   });
   if (response.headersSent) {
@@ -200,6 +201,11 @@ function bridgeDevToolsSocket(
   });
 }
 
+/** Whether a server's address is a TCP one, with a port: not a pipe's path, nor none while it is not listening. */
+function isTcpAddress(address: AddressInfo | string | null): address is AddressInfo {
+  return address !== null && typeof address !== "string";
+}
+
 async function listenOnLoopback(server: Server): Promise<number> {
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
@@ -209,7 +215,7 @@ async function listenOnLoopback(server: Server): Promise<number> {
     });
   });
   const address = server.address();
-  if (address === null || typeof address === "string") {
+  if (!isTcpAddress(address)) {
     throw new CdpBridgeError("the CDP bridge has no TCP port");
   }
   return address.port;
@@ -229,8 +235,8 @@ export async function openCdpBridge(target: CdpTarget): Promise<CdpBridge> {
   };
   let port = 0;
   const server = createServer((request, response) => {
-    forwardDevToolsRequest(target, port, request, response).then(undefined, (error: unknown) => {
-      answerRelayFailure(request, response, error);
+    forwardDevToolsRequest(target, port, request, response).then(undefined, (cause: unknown) => {
+      answerRelayFailure(request, response, cause);
     });
   });
   server.on("upgrade", (request: IncomingMessage, socket: Duplex, head: Buffer) => {

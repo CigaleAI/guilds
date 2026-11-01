@@ -8,7 +8,6 @@ import { integrationState, REGISTRY } from "../../src/instance/integrations.js";
 import { codeManifestProblem, registryUrl } from "../../src/registry/client.js";
 import {
   assertSigned,
-  canonicalJson,
   compareVersions,
   parseIndex,
   pickEntry,
@@ -22,6 +21,7 @@ import {
   signIndex,
 } from "../../src/registry/index.js";
 import { codeEntry } from "../../src/registry/code.js";
+import { dumpsCompact } from "../../src/lib/json.js";
 import { readTarball } from "../../src/registry/tar.js";
 import { tempDir } from "../helpers/env.js";
 import { endpointManifest, fakeRegistry, registryKeys, tarball } from "../helpers/registry.js";
@@ -43,10 +43,12 @@ test("versions order numerically and the newest is picked unless one is named", 
   assert.equal(pickEntry(entries, "3.0.0"), null);
 });
 
-test("an index that does not match the schema is refused as a bad gateway", () => {
+test("an index that is not JSON or does not match the schema is refused as a bad gateway", () => {
   const isIndexError = (error: unknown) => error instanceof RegistryIndexError && error.status === 502;
-  assert.throws(() => parseIndex({ generated_at: "x", connectors: [{ slug: "Bad" }], recipes: [] }), isIndexError);
-  assert.throws(() => parseIndex([]), isIndexError);
+  assert.throws(() => parseIndex(JSON.stringify({ generated_at: "x", connectors: [{ slug: "Bad" }], recipes: [] })), isIndexError);
+  assert.throws(() => parseIndex("[]"), isIndexError);
+  assert.throws(() => parseIndex("{"), isIndexError);
+  assert.throws(() => parseIndex("{"), /registry index is not JSON/);
 });
 
 test("a tarball reads back its files and refuses a path that leaves it", () => {
@@ -195,8 +197,8 @@ test("a package may carry a bundled adapter, never its source", async () => {
   await assert.rejects(() => registry.client.connectorPackage(source!), /bundled adapter\.js/);
 });
 
-test("canonical JSON sorts keys at every depth and drops undefined", () => {
-  assert.equal(canonicalJson({ b: [{ d: 1, c: undefined, a: "x" }], a: null }), '{"a":null,"b":[{"a":"x","d":1}]}');
+test("the bytes an index signature covers sort keys at every depth and drop undefined", () => {
+  assert.equal(dumpsCompact({ b: [{ d: 1, c: undefined, a: "x" }], a: null }), '{"a":null,"b":[{"a":"x","d":1}]}');
 });
 
 test("a client with a key reads only an index that key signed", async () => {
@@ -216,7 +218,7 @@ test("a client with a key reads only an index that key signed", async () => {
   const unsigned = fakeRegistry({ verifyWith: keys.publicKey });
   await assert.rejects(() => unsigned.client.index(), /unsigned/);
 
-  const index = parseIndex({ generated_at: "2026-10-01T00:00:00Z", connectors: [], recipes: [] });
+  const index = parseIndex(JSON.stringify({ generated_at: "2026-10-01T00:00:00Z", connectors: [], recipes: [] }));
   const good = signIndex(index, keys.privateKey);
   assertSigned(good, registryPublicKey(keys.publicKey));
   assert.throws(() => assertSigned({ ...good, generated_at: "2030-01-01T00:00:00Z" }, registryPublicKey(keys.publicKey)), /does not verify/);

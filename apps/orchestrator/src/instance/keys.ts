@@ -1,3 +1,5 @@
+import { Type } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
 import type { InferSelectModel } from "drizzle-orm";
 import { decryptPayload, encryptPayload } from "../credentials/crypto.js";
 import { writeLog } from "../observability/log.js";
@@ -5,12 +7,12 @@ import {
   IntegrationValueError,
   setInstanceKeys,
   type Integration,
+  type IntegrationValues,
   type InstanceKeyRow,
   type InstanceKeySnapshot,
 } from "./integrations.js";
-import { isPlainRecord } from "../db/json.js";
 import type { Queryable } from "../db/pg.js";
-import type { JsonObject } from "../lib/json.js";
+import { isJsonObject, type JsonObject } from "../lib/json.js";
 import type { instanceKeys } from "../db/schema/index.js";
 import type { UserRow } from "../db/users.js";
 
@@ -21,7 +23,16 @@ type StoredInstanceKey = Pick<
 > & { set_by_name: UserRow["name"] | null; set_by_email: UserRow["email"] };
 
 /** A stored key's values, or the name of the error that kept them from decrypting under the master key. */
-type DecryptedValues = { readable: true; values: Record<string, string> } | { readable: false; errorType: string };
+type DecryptedValues = { readable: true; values: IntegrationValues } | { readable: false; errorType: string };
+
+/** A field's value as a stored key's payload holds it: text. */
+const StoredFieldValue = Type.String();
+
+/**
+ * A store integration's values as the instance admin sends them, before they are trimmed: text
+ * under the names of its fields, a field left out or blank for one left unset.
+ */
+export type SubmittedKeyValues = { readonly [field: string]: string | undefined };
 
 /**
  * A key write the box refuses: an unknown or env-sourced integration, a missing required field, a
@@ -42,30 +53,40 @@ export class InstanceKeyError extends Error {
 }
 
 /**
- * The values a write stores for an integration: each field trimmed, every required field present
- * and non-empty, an optional field left out when empty, nothing the integration does not declare.
- * Values the integration's own `validate` refuses are a 422 with its message.
+ * Asserts that what the instance admin sent for `integration` is its values: an object that names
+ * only the integration's fields, each one text. Throws an `InstanceKeyError` naming the first
+ * problem.
  */
-export function validateKeyValues(integration: Integration, raw: unknown): Record<string, string> {
-  if (integration.source !== "store") {
-    throw new InstanceKeyError(`${integration.label} is read from the environment`);
-  }
-  if (!isPlainRecord(raw)) {
+export function assertKeyValues(integration: Integration, sent: unknown): asserts sent is SubmittedKeyValues {
+  if (!isJsonObject(sent)) {
     throw new InstanceKeyError("values must be an object");
   }
   const known = new Set(integration.fields.map((field) => field.name));
-  const unknown = Object.keys(raw).find((name) => !known.has(name));
-  if (unknown !== undefined) {
-    throw new InstanceKeyError(`${integration.label} has no field ${unknown}`);
+  const stray = Object.keys(sent).find((name) => !known.has(name));
+  if (stray !== undefined) {
+    throw new InstanceKeyError(`${integration.label} has no field ${stray}`);
+  }
+  for (const field of integration.fields) {
+    const value = sent[field.name];
+    if (value !== undefined && typeof value !== "string") {
+      throw new InstanceKeyError(`${field.label} must be a string`);
+    }
+  }
+}
+
+/**
+ * The values a write stores for an integration: each field trimmed, every required field present
+ * and non-empty, an optional field left out when empty. Values the integration's own `validate`
+ * refuses are a 422 with its message.
+ */
+export function validateKeyValues(integration: Integration, sent: SubmittedKeyValues): IntegrationValues {
+  if (integration.source !== "store") {
+    throw new InstanceKeyError(`${integration.label} is read from the environment`);
   }
   const values: Record<string, string> = {};
   const missing: string[] = [];
   for (const field of integration.fields) {
-    const value = raw[field.name];
-    if (value !== undefined && typeof value !== "string") {
-      throw new InstanceKeyError(`${field.label} must be a string`);
-    }
-    const trimmed = (value ?? "").trim();
+    const trimmed = (sent[field.name] ?? "").trim();
     if (trimmed) {
       values[field.name] = trimmed;
     } else if (!field.optional) {
@@ -80,7 +101,7 @@ export function validateKeyValues(integration: Integration, raw: unknown): Recor
 }
 
 /** Refuses with a 422 the values `integration`'s own `validate` refuses. */
-function assertIntegrationAccepts(integration: Integration, values: Record<string, string>): void {
+function assertIntegrationAccepts(integration: Integration, values: IntegrationValues): void {
   try {
     integration.validate?.(values);
   } catch (error) {
@@ -97,7 +118,7 @@ function setByOf(row: StoredInstanceKey): string | null {
 
 /** A stored key's values, each trimmed and the empty ones left out, decrypted under `masterKey`. */
 function decryptStoredValues(row: StoredInstanceKey, masterKey: Buffer | undefined): DecryptedValues {
-  let payload: Record<string, unknown>;
+  let payload: JsonObject;
   try {
     payload = decryptPayload(row.ciphertext, row.nonce, masterKey);
   } catch (error) {
@@ -105,7 +126,7 @@ function decryptStoredValues(row: StoredInstanceKey, masterKey: Buffer | undefin
   }
   const values: Record<string, string> = {};
   for (const [name, value] of Object.entries(payload)) {
-    if (typeof value === "string" && value.trim()) {
+    if (Value.Check(StoredFieldValue, value) && value.trim()) {
       values[name] = value.trim();
     }
   }
@@ -125,7 +146,7 @@ export class InstanceKeys {
   private snapshot: InstanceKeySnapshot = {};
 
   /** The values the process holds for an integration, or null while it has none. */
-  current(integrationId: string): Record<string, string> | null {
+  current(integrationId: string): IntegrationValues | null {
     return this.snapshot[integrationId]?.values ?? null;
   }
 
@@ -162,10 +183,10 @@ export class InstanceKeys {
   /** Stores an integration's values, replacing what it had, and reloads the snapshot. */
   async put(
     integration: Integration,
-    values: Record<string, string>,
+    values: IntegrationValues,
     userId: string | null,
     now = new Date(),
-  ): Promise<{ previous: Record<string, string> | null }> {
+  ): Promise<{ previous: IntegrationValues | null }> {
     const previous = this.current(integration.id);
     const [ciphertext, nonce] = encryptPayload(values, this.masterKey);
     await this.db.query(
@@ -183,7 +204,7 @@ export class InstanceKeys {
   }
 
   /** Removes an integration's values and reloads the snapshot. */
-  async remove(integrationId: string): Promise<{ previous: Record<string, string> | null }> {
+  async remove(integrationId: string): Promise<{ previous: IntegrationValues | null }> {
     const previous = this.current(integrationId);
     await this.db.query(`DELETE FROM instance_keys WHERE integration = $1`, [integrationId]);
     await this.load();

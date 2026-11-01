@@ -4,8 +4,9 @@ import {
   installedIntegrations,
   type Integration,
   type IntegrationStatus,
+  type IntegrationValues,
 } from "../instance/integrations.js";
-import { InstanceKeyError, validateKeyValues, type InstanceKeys } from "../instance/keys.js";
+import { assertKeyValues, InstanceKeyError, validateKeyValues, type InstanceKeys } from "../instance/keys.js";
 import { applyKeyChange, listAuditedIntegrationStatuses, type PlatformLoginServices } from "./instance.js";
 
 /**
@@ -24,7 +25,7 @@ export type InstanceKeyWrite = { integrationId: string; values: unknown; confirm
 export type InstanceKeyRemoval = { integrationId: string; confirmed: boolean };
 
 /** A store integration and the values it is given. */
-export type InstanceKeyValues = { integration: Integration; values: Record<string, string> };
+export type InstanceKeyValues = { integration: Integration; values: IntegrationValues };
 
 /** An integration once its values changed, as the instance admin sees it, and how many logins the change disconnected. */
 export type InstanceKeyChange = { integration: IntegrationStatus; disconnected: number };
@@ -75,7 +76,9 @@ export async function writeInstanceKey(
   userId: string,
 ): Promise<InstanceKeyChange> {
   const integration = integrationOf(services, write.integrationId);
-  const values = validateKeyValues(integration, write.values ?? {});
+  const sent = write.values ?? {};
+  assertKeyValues(integration, sent);
+  const values = validateKeyValues(integration, sent);
   if (!write.confirmed) {
     await assertKeyChangeConfirmed(db, integration, services.keys.current(integration.id), values);
   }
