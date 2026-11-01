@@ -29,18 +29,14 @@ const BROWSER_AND_CODING_TOOLS: ReadonlySet<string> = new Set<string>([
   ...HARNESS_TOOLS,
 ]);
 
-function nameMatchesToolList(name: string, tools: readonly string[] | string): boolean {
-  return typeof tools === "string" ? name === tools : tools.includes(name);
-}
-
 function isHiddenByOfferedFlag(name: string, options: ToolSwitches): boolean {
-  const gates: Array<[boolean, readonly string[] | string]> = [
+  const gates: Array<[boolean, readonly string[]]> = [
     [options.scripting !== false, SCRIPT_TOOLS],
-    [options.memory !== false, "memory_write"],
+    [options.memory !== false, ["memory_write"]],
     [Boolean(options.schedules), SCHEDULE_TOOLS],
-    [Boolean(options.direct), "secret_request"],
+    [Boolean(options.direct), ["secret_request"]],
   ];
-  return gates.some(([allowed, tools]) => !allowed && nameMatchesToolList(name, tools));
+  return gates.some(([allowed, tools]) => !allowed && tools.includes(name));
 }
 
 function offeredNativeNames(names: string[], options: ToolSwitches): string[] {

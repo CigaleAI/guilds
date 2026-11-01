@@ -1726,123 +1726,17 @@
     }
   },
   "src/toolbox/artifacts.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 2
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
-    },
     "typescript/explicit-module-boundary-types": {
       "count": 1
     }
   },
-  "src/toolbox/browse.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 2
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 5
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 3
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
-    }
-  },
-  "src/toolbox/browser.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 3
-    },
-    "max-params": {
-      "count": 1
-    }
-  },
-  "src/toolbox/code.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 5
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 6
-    },
-    "max-params": {
-      "count": 1
-    }
-  },
-  "src/toolbox/file.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
-    }
-  },
-  "src/toolbox/harness-ops.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 2
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
-    },
-    "limits/erased-return-type": {
-      "count": 1
-    }
-  },
-  "src/toolbox/harness-result.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 2
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 2
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    }
-  },
-  "src/toolbox/harness-setup.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
-    }
-  },
   "src/toolbox/harness.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 7
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 3
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 10
-    },
     "limits/silent-catch": {
       "count": 3
     }
   },
   "src/toolbox/index.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    },
     "boundary/no-reexport-modules": {
-      "count": 1
-    },
-    "limits/erased-return-type": {
-      "count": 1
-    }
-  },
-  "src/toolbox/offered.ts": {
-    "anti-slop/no-runtime-typeof": {
       "count": 1
     }
   },
@@ -1851,67 +1745,20 @@
       "count": 1
     }
   },
-  "src/toolbox/schedule.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    }
-  },
   "src/toolbox/schema.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
     "anti-slop/no-runtime-typeof": {
       "count": 3
     },
     "anti-slop/no-unsafe-dictionary-type": {
-      "count": 5
-    },
-    "limits/erased-return-type": {
-      "count": 1
-    }
-  },
-  "src/toolbox/script.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
       "count": 2
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 2
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 3
-    },
-    "limits/erased-return-type": {
-      "count": 1
-    }
-  },
-  "src/toolbox/services.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
     }
   },
   "src/toolbox/shell.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    },
     "limits/silent-catch": {
       "count": 1
     },
     "max-depth": {
       "count": 2
-    }
-  },
-  "src/toolbox/types.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 4
     }
   },
   "src/usage/index.ts": {

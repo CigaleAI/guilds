@@ -205,9 +205,11 @@ test("builder system message keeps the clock last so the static prefix stays cac
 });
 
 test("builder write hint is stated once, in the write tool's description", async () => {
-  const fn = (builderWriteRecipe.schema as { function: { description: string; parameters: { properties: { recipe: Record<string, unknown> } } } }).function;
+  const fn = builderWriteRecipe.schema.function;
   assert.ok(fn.description.includes(RECIPE_WRITE_HINT));
-  assert.equal("description" in fn.parameters.properties.recipe, false);
+  const recipe = fn.parameters.properties?.recipe;
+  assert.ok(typeof recipe === "object");
+  assert.equal("description" in recipe, false);
   const listed = await builderListCapabilities.handler({
     orgId: "org_1",
     capabilities: { async listCapabilities() { return { native: [] }; } },

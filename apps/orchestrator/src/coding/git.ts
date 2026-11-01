@@ -10,7 +10,7 @@ import {
 } from "../github/tokens.js";
 import { getMcpConnection, type McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
-import type { SandboxFiles } from "../toolbox/types.js";
+import type { SandboxFiles } from "../sandbox/sdk.js";
 import type { AgentRow } from "../db/agents.js";
 import type { CodingRepository } from "./repositories.js";
 

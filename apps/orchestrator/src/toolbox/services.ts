@@ -7,6 +7,7 @@ import type { Issues } from "../issues/index.js";
 import type { NotesStore } from "../notes/store.js";
 import type { Schedules } from "../schedules/service.js";
 import type { Scripts } from "../scripts/catalog.js";
+import type { JsonObject } from "../lib/json.js";
 import type { ToolArtifacts } from "./artifacts.js";
 import type { GroupChat } from "./types.js";
 
@@ -59,5 +60,5 @@ export function toolServices(db: Queryable, services: ToolServicesBesideDatabase
 
 /** The stream a run's subscribers read, which a running tool call publishes its progress on. */
 export type ToolEvents = {
-  publish(runId: string, event: string, data: Record<string, unknown>): Promise<void>;
+  publish(runId: string, event: string, data: JsonObject): Promise<void>;
 };
