@@ -2,6 +2,7 @@
 
 import type { ErrorReply, ValidationProblem } from "./client";
 import type { LookupItem } from "./types/access";
+import type { SecretRequest, SecretRequestAsked } from "./types/secrets";
 import type { StudioFocusRequest } from "./types/studio";
 
 /** A value JSON carries: a string, number, boolean or null, or an array or object of them. */
@@ -141,6 +142,21 @@ export function isErrorReply(value: unknown): value is ErrorReply {
 /** Whether a value is a connector's item a lookup stores: an object whose id, name and symbol are text. */
 export function isLookupItem(value: unknown): value is LookupItem {
   return isJsonObject(value) && hasFields(value, ["id", "name", "symbol"], isOptionalString);
+}
+
+/** Whether a value is a secret_request call's arguments: the name, description and reason, as text. */
+export function isSecretRequest(value: unknown): value is SecretRequest {
+  return isJsonObject(value) && hasFields(value, ["name", "description", "reason"], isString);
+}
+
+/** Whether a value is the line a secret_request result opens with when it asked the operator. */
+export function isSecretRequestAsked(value: unknown): value is SecretRequestAsked {
+  return (
+    isJsonObject(value) &&
+    value.widget === "secret_request" &&
+    value.status === "asked" &&
+    isString(value.name)
+  );
 }
 
 /** An id or path a focus pin names, null when it names none, or left out. */

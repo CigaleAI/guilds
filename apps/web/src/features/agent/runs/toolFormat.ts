@@ -1,3 +1,4 @@
+import type { ToolCall } from "../../../api/types/runs";
 import { isJsonObject, isJsonValue, parseJson, type JsonValue } from "../../../api/wire";
 import { formatCost } from "../../../app/format";
 import { diffstat } from "../chat/changes";
@@ -16,7 +17,7 @@ export type RunMessage = {
 /** One tool call as the model requested it in an assistant message's `tool_calls`. */
 export type ToolCallRequest = {
   id?: unknown;
-  function?: { name?: unknown; arguments?: unknown };
+  function?: { name?: unknown; arguments?: ToolCall["function"]["arguments"] };
 };
 
 /**
