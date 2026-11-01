@@ -125,7 +125,7 @@ whatever the file's media type.
 
 | Tool | Parameters | Does |
 |---|---|---|
-| `file_find` | `query`, `level`, `limit` (default 20) | Searches the files the agent may read by name and description; an empty `query` lists them. Returns `{ files }`, each `{ id, display_path, name, description, mime, bytes, level, owner_id, version, author, updated_at, access }` |
+| `file_find` | `query`, `level`, `limit` (default 20, at most 100) | Searches the files the agent may read by name and description; an empty `query` lists them. Returns `{ files }`, each `{ id, display_path, name, description, mime, bytes, level, owner_id, version, author, updated_at, access }` |
 | `file_fetch` | `path` (required), `home_path` | Copies the file into the home at `home_path`, default `shared/<name>`. Returns `{ home_path, ...file }` |
 | `file_put` | `home_path`, `level`, `description` (required), `name`, `mime` | Copies the file at `home_path` into the store at `level` under `name` (default its own name). Returns the display path |
 | `file_delete` | `path` (required) | Deletes the file. Needs `write` |

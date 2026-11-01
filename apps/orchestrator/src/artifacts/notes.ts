@@ -37,11 +37,9 @@ import {
   type ParsedDisplayPath,
 } from "./paths.js";
 import { removeRecord } from "./records.js";
-import { parseRecordId } from "./search.js";
+import { findLimit, parseRecordId } from "./search.js";
 import { artifactMode, artifactView, assertBytes, assertLiveCount, assertRead, assertWrite, hashArtifactContent, hostNoteView, isRecordRow, ownerFor, reachesOwner, recordViewWithPath, type ArtifactOwnerRef, type ArtifactStore, type StateArtifact, rowDisplayPath } from "./store.js";
 import {
-  FIND_DEFAULT,
-  FIND_MAX,
   SEARCH_TEXT_MAX,
   type AccessEntry,
   type ArtifactActor,
@@ -314,7 +312,7 @@ export async function findNotes(
   actor: ArtifactActor,
   args: NoteSearch,
 ): Promise<{ notes: Array<Record<string, unknown>> }> {
-  const limit = Math.min(Math.max(args.limit ?? FIND_DEFAULT, 1), FIND_MAX);
+  const limit = findLimit(args.limit);
   const query = (args.query ?? "").trim();
   const rows = query
     ? await searchArtifactsByKind(store.db, actor, "note", { query, level: args.level, limit })

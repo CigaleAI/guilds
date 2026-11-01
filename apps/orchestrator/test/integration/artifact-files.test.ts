@@ -30,6 +30,7 @@ import { accessList, grantAccess } from "../../src/artifacts/access-lists.js";
 import { deleteByDisplayPath, listStateArtifacts } from "../../src/artifacts/notes.js";
 import { toolArtifacts } from "../../src/toolbox/artifacts.js";
 import { toolFixture } from "../helpers/toolbox.js";
+import { FIND_MAX } from "../../src/artifacts/types.js";
 
 const dbName = uniqueDbName("agent_platform_files");
 let database: Database;
@@ -240,5 +241,15 @@ describe("shared files", { concurrency: 1 }, () => {
     await deleteSharedFile({ files }, beta, agentFile.id);
     await assert.rejects(() => files.loadFileById(beta, agentFile.id), /artifact not found/);
     assert.equal(published.length, 3, "a write without a publisher announces nothing");
+  });
+
+  test("a find returns at least one file and at most the cap, whatever limit it asks", async () => {
+    for (let index = 0; index <= FIND_MAX; index += 1) {
+      await files.putFile(alpha, { level: "agent", name: `batch-${index}.txt`, description: "Batch", mime: "", bytes: Buffer.from("b") });
+    }
+    assert.equal((await files.findFiles(alpha, { level: "agent", limit: -5 })).length, 1);
+    assert.equal((await files.findFiles(alpha, { level: "agent", limit: FIND_MAX * 10 })).length, FIND_MAX);
+    assert.equal((await files.findFiles(alpha, { query: "batch", limit: -5 })).length, 1);
+    assert.equal((await files.findFiles(alpha, { query: "batch", limit: FIND_MAX * 10 })).length, FIND_MAX);
   });
 });

@@ -2,6 +2,7 @@ import type { CollectionColumn } from "../db/schema/index.js";
 import { checkBoolean, checkDatetime, checkNumber, checkText, columnNamed, type Checked } from "./columns.js";
 import type { OrderClause, WhereClause } from "../db/collections.js";
 import { ArtifactError } from "./errors.js";
+import { FIND_DEFAULT, FIND_MAX } from "./types.js";
 
 /** Byte cap for the flattened value text that `record_search` indexes. */
 export const SEARCH_BLOB_MAX_BYTES = 32 * 1024;
@@ -226,6 +227,11 @@ export function parseSince(value: unknown): string | null {
     throw new ArtifactError("since must be an ISO 8601 timestamp", 422);
   }
   return date.toISOString();
+}
+
+/** How many artifacts a find returns: `limit`, or FIND_DEFAULT without one, kept between 1 and FIND_MAX. */
+export function findLimit(limit: number | undefined): number {
+  return Math.min(Math.max(limit ?? FIND_DEFAULT, 1), FIND_MAX);
 }
 
 export function parseLimit(value: unknown, fallback: number, max: number): number {
