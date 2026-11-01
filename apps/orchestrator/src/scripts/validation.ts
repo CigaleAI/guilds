@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { Value } from "@sinclair/typebox/value";
 import { isJsonObject } from "../lib/json.js";
-import { ToolInputSchema } from "../db/schema/index.js";
+import { ToolInputSchema, type SecretRef } from "../db/schema/index.js";
 
 export const SCRIPTS_DIR = "scripts";
 export const SCRIPT_NAME = /^[a-z][a-z0-9_-]{0,62}$/;
@@ -139,24 +139,12 @@ export function assertAvailableScriptName(
   }
 }
 
-export function environmentCatalog(
-  secrets: Array<Record<string, unknown>> | null | undefined,
-): Array<{ name: string; description: string }> {
-  const items: Array<{ name: string; description: string }> = [];
-  for (const ref of secrets ?? []) {
-    if (!ref || typeof ref !== "object") {
-      continue;
-    }
-    const name = ref.name;
-    if (typeof name !== "string" || !name) {
-      continue;
-    }
-    const description = ref.description;
-    items.push({
-      name,
-      description: typeof description === "string" ? description : "",
-    });
-  }
+/** A secret as a run's environment lists it: the variable's name and what it is for, never its value. */
+export type EnvironmentEntry = Pick<SecretRef, "name" | "description">;
+
+/** The agent's secrets as its environment lists them, by name. */
+export function environmentCatalog(secrets: SecretRef[] | null | undefined): EnvironmentEntry[] {
+  const items = (secrets ?? []).map(({ name, description }) => ({ name, description }));
   items.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   return items;
 }

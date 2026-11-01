@@ -18,6 +18,7 @@ import {
 import { LOW_TOOL_CALL_BUDGET } from "../../src/toolbox/index.js";
 import { loadJsonFixture, loadTextFixture, templatesRoot } from "../helpers/fixtures.js";
 import { tempDir } from "../helpers/env.js";
+import { emptyRunState } from "../helpers/state.js";
 
 const hashes = loadJsonFixture<{
   abc: string;
@@ -134,7 +135,7 @@ test("hydrate compose is exact against the R0 fixture", () => {
   const composed = composeSystemPrompt(
     standing,
     task ?? "",
-    { group: { members: [], history: [] } },
+    emptyRunState(),
     EMPTY_MEMORY,
   );
   assert.equal(task, "Do the work.\n");
@@ -330,7 +331,7 @@ test("compose omits the memory section when memory is off", () => {
   const composed = composeSystemPrompt(
     "You are an agent in a guild.\n",
     "Assist the user.\n",
-    { group: { members: [], history: [] } },
+    emptyRunState(),
     EMPTY_MEMORY,
     caps,
   );
@@ -353,7 +354,7 @@ test("compose keeps memory but omits memory_write when the write tool is off", (
   const composed = composeSystemPrompt(
     "You are an agent in a guild.\n",
     "Assist the user.\n",
-    { group: { members: [], history: [] } },
+    emptyRunState(),
     EMPTY_MEMORY,
     caps,
   );
@@ -389,13 +390,7 @@ test("compose_system_prompt has four parts", () => {
   const composed = composeSystemPrompt(
     "You are an agent in a guild.\n",
     "Assist the user.\n",
-    {
-      group: { members: [], history: [] },
-      shared: [],
-      notes: [],
-      scripts: [],
-      environment: [],
-    },
+    emptyRunState({ shared: [], notes: [] }),
     EMPTY_MEMORY,
   );
   assert.ok(composed.startsWith("<guidelines>"));

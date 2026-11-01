@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { secretPayload } from "../../src/credentials/validate.js";
+import { secretPayload, validateSecretName } from "../../src/credentials/validate.js";
 import {
   CONFIG_KEYS,
   DEFAULT_KEEP_TOOL_RESULT_GENERATIONS,
@@ -530,4 +530,11 @@ test("secretPayload keeps a value without the whitespace around it and refuses o
   assert.deepEqual(secretPayload("correct horse battery"), { value: "correct horse battery" });
   assert.throws(() => secretPayload(" \t\n"), /value must contain non-whitespace text/);
   assert.throws(() => secretPayload(42), /value must contain non-whitespace text/);
+});
+
+test("a secret's name is required and is an environment variable name", () => {
+  assert.equal(validateSecretName(" API_TOKEN "), "API_TOKEN");
+  assert.throws(() => validateSecretName(undefined), /name is required/);
+  assert.throws(() => validateSecretName("  "), /name is required/);
+  assert.throws(() => validateSecretName("api-token"), /environment variable name/);
 });

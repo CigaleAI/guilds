@@ -37,6 +37,7 @@ import { serverRow } from "../helpers/servers.js";
 import { connectionRow } from "../helpers/servers.js";
 import { MemoryMcpDatabase } from "../helpers/mcp-database.js";
 import { restoreConnectorsAfterEach, runConnectors } from "../helpers/installed.js";
+import { emptyRunState } from "../helpers/state.js";
 
 restoreConnectorsAfterEach();
 
@@ -454,7 +455,7 @@ test("a connector's prompt guidance renders only when its tools are offered", ()
   try {
     assert.deepEqual(connectorGuidance(["guided"]), ["Cite the page you read."]);
     assert.deepEqual(connectorGuidance(["notion"]), []);
-    const prompt = composeSystemPrompt("Be brief.", "Work.", {}, "", undefined, connectorGuidance(["guided"]));
+    const prompt = composeSystemPrompt("Be brief.", "Work.", emptyRunState(), "", undefined, connectorGuidance(["guided"]));
     assert.match(prompt, /<guidelines>\nBe brief\.\n\nCite the page you read\.\n<\/guidelines>/);
   } finally {
     installConnectors([]);

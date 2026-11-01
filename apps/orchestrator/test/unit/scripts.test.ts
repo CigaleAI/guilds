@@ -66,8 +66,7 @@ test("environment_catalog sorts and skips values", () => {
   assert.deepEqual(
     environmentCatalog([
       { name: "WALLET_PRIVATE_KEY", description: "signs USDC", id: "s1" },
-      { name: "API_TOKEN", description: "read-only Cigale" },
-      { id: "s2" },
+      { name: "API_TOKEN", description: "read-only Cigale", id: "s2" },
     ]),
     [
       { name: "API_TOKEN", description: "read-only Cigale" },

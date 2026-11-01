@@ -403,15 +403,6 @@
     }
   },
   "src/directories/index.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
-    },
-    "limits/erased-return-type": {
-      "count": 1
-    },
     "limits/inline-parameter-type": {
       "count": 1
     },
@@ -772,15 +763,6 @@
     }
   },
   "src/prompts/index.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 4
-    },
     "complexity": {
       "count": 1
     },
@@ -789,9 +771,6 @@
     },
     "max-params": {
       "count": 2
-    },
-    "typescript/consistent-type-assertions": {
-      "count": 1
     }
   },
   "src/recipes/access-edits.ts": {
@@ -914,11 +893,6 @@
       "count": 1
     },
     "max-params": {
-      "count": 1
-    }
-  },
-  "src/scripts/validation.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
       "count": 1
     }
   },

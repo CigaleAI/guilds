@@ -4,6 +4,8 @@ import path from "node:path";
 import { renderMemorySection } from "../memory/index.js";
 import { installedManifests } from "../connectors/servers.js";
 import { agentHome } from "../lib/agent-file.js";
+import type { FunctionTool } from "../lib/tool-schema.js";
+import type { RunState } from "../state/index.js";
 
 export class PromptError extends Error {
   constructor(message: string) {
@@ -16,13 +18,9 @@ export function promptHash(text: string): string {
   return createHash("sha256").update(text, "utf8").digest("hex");
 }
 
-export function schemasOffer(schemas: Array<Record<string, unknown>>, name: string): boolean {
-  return schemas.some((schema) => {
-    const fn = schema.function;
-    return Boolean(
-      fn && typeof fn === "object" && !Array.isArray(fn) && (fn as { name?: unknown }).name === name,
-    );
-  });
+/** Whether the offered tools include the one named `name`. */
+export function schemasOffer(schemas: readonly FunctionTool[], name: string): boolean {
+  return schemas.some((schema) => schema.function.name === name);
 }
 
 export const TASK_INTRO =
@@ -143,7 +141,10 @@ function guidelinesBody(standing: string): string {
   return text.replace(/\s+$/, "");
 }
 
-function capabilityTagPatterns(name: string): { block: RegExp; inline: RegExp } {
+/** What finds a capability tag in standing text: a tag on lines of its own, and one inline. */
+type CapabilityTagPatterns = { block: RegExp; inline: RegExp };
+
+function capabilityTagPatterns(name: string): CapabilityTagPatterns {
   return {
     block: new RegExp(`<capability name="${name}">\\n([\\s\\S]*?)\\n</capability>\\n?`, "g"),
     inline: new RegExp(`<capability name="${name}">([\\s\\S]*?)</capability>`, "g"),
@@ -209,7 +210,7 @@ const PREVIEW_CAPS = {
 export function composeAgentSystemPrompt(
   standing: string,
   task: string,
-  state: Record<string, unknown>,
+  state: RunState,
   memory: string,
   memoryEnabled = true,
   memoryWrite = memoryEnabled,
@@ -232,7 +233,7 @@ export function connectorGuidance(offeredSlugs: Iterable<string>): string[] {
 export function composeSystemPrompt(
   standing: string,
   task: string,
-  state: Record<string, unknown>,
+  state: RunState,
   memory: string,
   caps?: StandingCaps,
   guidance: readonly string[] = [],
@@ -260,7 +261,7 @@ export function composeSystemPrompt(
   return `${parts.join("\n\n")}\n`;
 }
 
-export function attachState(system: string, state: Record<string, unknown>): string {
+export function attachState(system: string, state: RunState): string {
   return `${system.replace(/\s+$/, "")}\n\n${STATE_PREFIX}${JSON.stringify(state, null, 2)}\n`;
 }
 

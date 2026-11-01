@@ -9,6 +9,7 @@ import { STATE_INTRO, composeSystemPrompt } from "../../src/prompts/index.js";
 import { collectRunState } from "../../src/state/index.js";
 import { QUOTES } from "../helpers/quotes.js";
 import { connectionRow, serverRow } from "../helpers/servers.js";
+import { emptyRunState } from "../helpers/state.js";
 
 installConnectors([QUOTES]);
 
@@ -25,10 +26,10 @@ test("collect_run_state adds connector entries beside core's keys", () => {
 });
 
 test("compose explains a connector's State key only when State carries it", () => {
-  const bare = composeSystemPrompt("Be brief.", "Do the work.", { group: {} }, "");
+  const bare = composeSystemPrompt("Be brief.", "Do the work.", emptyRunState(), "");
   assert.ok(bare.includes(STATE_INTRO));
   assert.ok(!bare.includes(QUOTES_INTRO));
-  const quoted = composeSystemPrompt("Be brief.", "Do the work.", { group: {}, quotes: [{ id: "ethereum", price: 3200 }] }, "");
+  const quoted = composeSystemPrompt("Be brief.", "Do the work.", emptyRunState({ quotes: [{ id: "ethereum", price: 3200 }] }), "");
   assert.ok(quoted.includes(`${STATE_INTRO} ${QUOTES_INTRO}`));
 });
 
