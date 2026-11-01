@@ -1,6 +1,6 @@
 import { requireVisibleAgent } from "../agents/access.js";
 import { getMcpServer } from "../connectors/servers.js";
-import { bindingItem } from "../mcp/view.js";
+import { bindingItem, type BindingView } from "../mcp/view.js";
 import { getAgent } from "../db/agents.js";
 import { getBinding, upsertPlatformBinding, type BindingKey } from "../db/bindings.js";
 import { getGuild } from "../db/guilds.js";
@@ -106,7 +106,7 @@ export async function setBinding(
   db: Queryable,
   user: UserRow,
   request: BindingRequest,
-): Promise<ReturnType<typeof bindingItem>> {
+): Promise<BindingView> {
   const [catalogKind, catalogId] = validateCatalog(request.catalogKind, request.catalogId);
   const [scope, scopeId] = validateScope(request.scope, request.scopeId);
   const key = { catalogKind, catalogId, scope, scopeId };

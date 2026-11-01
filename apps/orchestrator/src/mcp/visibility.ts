@@ -7,18 +7,23 @@ import type { Queryable } from "../db/pg.js";
 import { requireVisibleGuild } from "../guilds/access.js";
 import { canSeeGuild } from "../guilds/operators.js";
 import type { LoadedConnector } from "../connectors/servers.js";
-import type { JsonObject } from "../lib/json.js";
 
-/** A request about a connector login refused, with the HTTP status it answers with. */
+/** A refusal of a sign-in this box is not set up for: what it says, and the setup state the page shows. */
+export type SetupRefusal = { message: string; setup_state: "unsupported" };
+
+/**
+ * A request about a connector login refused, with the HTTP status it answers with. A refusal
+ * that names a setup state is a sign-in this box is not set up for, and its detail says so.
+ */
 export class ConnectionError extends Error {
   status: number;
-  detail: string | JsonObject;
+  detail: string | SetupRefusal;
 
-  constructor(status: number, detail: string | JsonObject) {
-    super(typeof detail === "string" ? detail : String(detail.message ?? ""));
+  constructor(status: number, message: string, setupState?: SetupRefusal["setup_state"]) {
+    super(message);
     this.name = "ConnectionError";
     this.status = status;
-    this.detail = detail;
+    this.detail = setupState === undefined ? message : { message, setup_state: setupState };
   }
 }
 

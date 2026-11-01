@@ -7,6 +7,7 @@ import { callTool, connectionTools } from "../mcp/service.js";
 import { storedTokenRedactions } from "../oauth/index.js";
 import { redact } from "../secrets/index.js";
 import { capBytes } from "../lib/bytes.js";
+import type { JsonObject } from "../lib/json.js";
 import { STUDIO_TOOL_RESULT_MAX_BYTES } from "./constants.js";
 import { StudioConflictError, StudioNotFoundError, StudioUnprocessableError } from "./errors.js";
 import { projectGuildConnections, type PreviewDeps } from "./preview.js";
@@ -139,7 +140,7 @@ export async function callConnectionTool(args: {
   mcp: StudioMcpClient;
   reach: ReachableConnection;
   tool: string;
-  arguments: Record<string, unknown>;
+  arguments: JsonObject;
 }): Promise<{ remote_name: string; name: string; content: string; truncated: boolean }> {
   const { connection, server } = args.reach;
   if (connection.status !== "connected") {

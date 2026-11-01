@@ -408,7 +408,7 @@ const StoredSignIn = Type.Object({
 });
 
 /** The sign-in a login's payload holds; a field of another type is one it does not hold. */
-function storedSignIn(payload: JsonObject): Static<typeof StoredSignIn> {
+export function storedSignIn(payload: JsonObject): Static<typeof StoredSignIn> {
   return keepMatching(StoredSignIn, payload) ?? {};
 }
 

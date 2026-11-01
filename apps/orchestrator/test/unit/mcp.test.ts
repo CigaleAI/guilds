@@ -6,7 +6,8 @@ import { CONNECTORS } from "../../src/connectors/index.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import { decodeMasterKey } from "../../src/config/index.js";
 import { McpDisconnectedError, McpError } from "../../src/mcp/errors.js";
-import { mcpSchema } from "../../src/mcp/tools.js";
+import { mcpSchema, remoteConnectorTool } from "../../src/mcp/tools.js";
+import type { ToolSchema } from "../../src/lib/tool-schema.js";
 import { CatalogError, validateInputSchema } from "../../src/mcp/catalog.js";
 import { CALL_TOOL_TIMEOUT_MS, McpSession, rpcPayload } from "../../src/mcp/session.js";
 import { authHeaders } from "../../src/mcp/login-auth.js";
@@ -251,14 +252,14 @@ test("mcpSchema drops format on nullable required properties", () => {
     schema.function as {
       parameters: {
         properties: {
-          campaignId: { anyOf: Array<Record<string, unknown>> };
-          window: Record<string, unknown>;
+          campaignId?: { anyOf: ToolSchema[] };
+          window?: ToolSchema;
         };
       };
     }
   ).parameters.properties;
-  assert.equal("format" in properties.campaignId.anyOf[0]!, false);
-  assert.equal("format" in properties.window, false);
+  assert.equal("format" in properties.campaignId!.anyOf[0]!, false);
+  assert.equal("format" in properties.window!, false);
 });
 
 test("isReadOnlyRemote classifies tools Studio may proxy", () => {
@@ -360,6 +361,39 @@ test("a 404 on a session's request starts it over; a JSON-RPC 400 or a second re
     (error: unknown) => error instanceof McpError && error.status === 404,
   );
   assert.equal(always.seen.filter((method) => method.startsWith("tools/call")).length, 2);
+});
+
+test("a listed tool whose input schema is not a JSON Schema the box reads is offered taking any object, and its server checks the call", async () => {
+  const listing = {
+    jsonrpc: "2.0",
+    id: 2,
+    result: {
+      tools: [
+        { name: "lookup", inputSchema: { type: "object", properties: { id: { type: "string", required: true } } } },
+        { name: "search", inputSchema: { type: "object", properties: { q: { type: "string" } } }, annotations: { readOnlyHint: true } },
+        { name: "ping" },
+      ],
+    },
+  };
+  const endpoint = sessionEndpoint(() => ({ status: 200, body: JSON.stringify(listing) }));
+  const tools = (await new McpSession("https://mcp.example.com/mcp", {}, endpoint.fetchFn).listTools()).map(remoteConnectorTool);
+  assert.deepEqual(
+    tools.map((tool) => [tool.name, tool.input_schema, tool.read_only_hint]),
+    [
+      ["lookup", { type: "object" }, null],
+      ["search", { type: "object", properties: { q: { type: "string" } } }, true],
+      ["ping", { type: "object" }, null],
+    ],
+  );
+});
+
+test("a listing with a tool that names none fails", async () => {
+  const listing = { jsonrpc: "2.0", id: 2, result: { tools: [{ name: "ping" }, { name: "  ", description: "Blank" }] } };
+  const endpoint = sessionEndpoint(() => ({ status: 200, body: JSON.stringify(listing) }));
+  await assert.rejects(
+    new McpSession("https://mcp.example.com/mcp", {}, endpoint.fetchFn).listTools(),
+    (error: unknown) => error instanceof McpError && error.message === "mcp tool is missing a name",
+  );
 });
 
 test("rpc payload that is not JSON is an McpError with its status and what it said", () => {

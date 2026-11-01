@@ -1,5 +1,6 @@
 import { isPlainRecord } from "../db/json.js";
 import type { ConnectionSettings } from "../db/schema/index.js";
+import { isJsonObject } from "../lib/json.js";
 
 /**
  * A login's settings: the document a connector's `settings_schema` describes, stored beside the
@@ -103,7 +104,7 @@ function check(schema: Schema, value: unknown, path: string): void {
 
 /** Checks a settings document against a manifest's `settings_schema`; throws `SettingsError` naming the first problem. */
 export function validateSettings(schema: Record<string, unknown>, value: unknown): ConnectionSettings {
-  if (!isPlainRecord(value)) {
+  if (!isJsonObject(value)) {
     throw new SettingsError("settings must be object");
   }
   check(schema, value, "settings");

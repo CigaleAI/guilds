@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { JsonObject } from "../../src/lib/json.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import { McpDisconnectedError, McpError } from "../../src/mcp/errors.js";
 import {
@@ -38,7 +39,7 @@ function connection(overrides: Partial<McpConnectionRow> = {}): McpConnectionRow
 
 function call(args: {
   tool?: string;
-  arguments?: Record<string, unknown>;
+  arguments?: JsonObject;
   connection?: McpConnectionRow;
   tools?: Array<ReturnType<typeof listed>>;
   mcp?: (remoteName: string, arguments_: Record<string, unknown>) => Promise<string>;

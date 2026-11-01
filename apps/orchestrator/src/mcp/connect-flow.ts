@@ -4,7 +4,6 @@ import type { LoadedConnector } from "../connectors/servers.js";
 import type { RemoteInfo } from "../connectors/types.js";
 import { decryptPayload, encryptPayload } from "../credentials/crypto.js";
 import { updateConnector } from "../db/connectors.js";
-import { isPlainRecord } from "../db/json.js";
 import { bindMcpConnection, getMcpConnectionByOauthState, type McpConnectionRow } from "../db/mcp.js";
 import type { Queryable } from "../db/pg.js";
 import type { Manifest } from "../db/schema/index.js";
@@ -13,7 +12,7 @@ import type { JsonObject } from "../lib/json.js";
 import { DESCRIPTION_MAX } from "./catalog.js";
 import type { McpPool } from "./pool.js";
 import { retireLogin } from "./service.js";
-import { pendingReplaces } from "../oauth/index.js";
+import { pendingReplaces, storedSignIn, type PendingSignIn } from "../oauth/index.js";
 
 /** What connector logins are made through, built once from the app's services. */
 export type ConnectFlowServices = {
@@ -26,8 +25,9 @@ export type ConnectFlowServices = {
 
 export type Payload = JsonObject;
 
-export function messageOf(caught: unknown): string {
-  return caught instanceof Error ? caught.message : String(caught);
+/** What a failure says, `cause` being the value thrown: an error's message, or the value as text. */
+export function messageOf(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }
 
 export function encrypt(services: ConnectFlowServices, payload: Payload): [Buffer, Buffer] {
@@ -47,9 +47,9 @@ function pendingPayload(services: ConnectFlowServices, row: McpConnectionRow): P
   }
 }
 
-/** A pending payload's `oauth` object; none when it holds none. */
-export function oauthOf(pending: Payload): Payload {
-  return isPlainRecord(pending.oauth) ? pending.oauth : {};
+/** A pending payload's sign-in under way, each field of it the payload holds as the field is typed; none when it holds none. */
+export function oauthOf(pending: Payload): Partial<PendingSignIn> {
+  return storedSignIn(pending).oauth ?? {};
 }
 
 /** Binds a login to its owner, so its owner's agents use it. */

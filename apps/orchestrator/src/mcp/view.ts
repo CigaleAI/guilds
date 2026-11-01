@@ -1,10 +1,29 @@
 import { isoOrNull } from "../db/views.js";
+import type { BindingRow } from "../db/bindings.js";
 import type { McpConnectionRow } from "../db/mcp.js";
 import type { ConnectionSettings } from "../db/schema/index.js";
 import { awaitingSettings } from "../connectors/login.js";
-import { connectorFacts, type LoadedConnector } from "../connectors/servers.js";
+import { connectorFacts, type ConnectorFacts, type LoadedConnector } from "../connectors/servers.js";
 
-export function serverItem(row: LoadedConnector): Record<string, unknown> {
+/** A connector as an organisation's members see it: its copy, its endpoint, how it signs in, and its facts. */
+export type ServerView = Pick<
+  LoadedConnector,
+  | "id"
+  | "slug"
+  | "display_name"
+  | "transport"
+  | "auth"
+  | "description"
+  | "limitations"
+  | "setup_hint"
+  | "enabled"
+  | "owner_org_id"
+  | "tool_prefix"
+  | "oauth_strategy"
+> &
+  ConnectorFacts & { config: Pick<LoadedConnector["config"], "url"> };
+
+export function serverItem(row: LoadedConnector): ServerView {
   return {
     id: row.id,
     slug: row.slug,
@@ -54,14 +73,17 @@ export function connectionMetadata(row: McpConnectionRow): ConnectionView {
   };
 }
 
-export function bindingItem(row: Record<string, unknown>): Record<string, unknown> {
+/** A binding as the API shows it: what it turns on or off, where, and the login a connector's binding uses. */
+export type BindingView = Pick<BindingRow, "id" | "catalog_kind" | "catalog_id" | "scope" | "scope_id" | "enabled" | "connection_id">;
+
+export function bindingItem(row: BindingRow): BindingView {
   return {
     id: row.id,
     catalog_kind: row.catalog_kind,
     catalog_id: row.catalog_id,
     scope: row.scope,
     scope_id: row.scope_id,
-    enabled: Boolean(row.enabled),
-    connection_id: row.connection_id ?? null,
+    enabled: row.enabled,
+    connection_id: row.connection_id,
   };
 }

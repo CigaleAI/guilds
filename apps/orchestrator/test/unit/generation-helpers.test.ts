@@ -106,6 +106,7 @@ test("mcpIndex maps each connection tool to its connection and remote name, neve
 });
 
 test("configSnapshot offers each connection tool's schema and keeps the connection's tools by name", () => {
+  const schema = { type: "function" as const, function: { name: "ok", description: "", parameters: { type: "object" } } };
   const snapshot = configSnapshot(AGENT_CONFIG, {
     tools: [],
     secrets: [],
@@ -114,11 +115,11 @@ test("configSnapshot offers each connection tool's schema and keeps the connecti
         connection_id: "conn_1",
         server_id: "srv_notion",
         slug: "notion",
-        tools: [{ name: "ok", remote_name: "r", schema: { type: "object" } }],
+        tools: [{ name: "ok", remote_name: "r", schema }],
       },
     ],
   }, "schedule");
-  assert.equal(snapshot.tools.some((tool) => tool.type === "object"), true);
+  assert.equal(snapshot.tools.includes(schema), true);
   assert.deepEqual(snapshot.mcp[0]?.tools, [{ name: "ok", remote_name: "r" }]);
 });
 

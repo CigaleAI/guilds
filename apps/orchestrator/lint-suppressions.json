@@ -419,7 +419,7 @@
       "count": 2
     },
     "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
+      "count": 1
     }
   },
   "src/connectors/drive/content.ts": {
@@ -441,10 +441,7 @@
       "count": 8
     },
     "anti-slop/no-unsafe-dictionary-type": {
-      "count": 10
-    },
-    "limits/erased-return-type": {
-      "count": 1
+      "count": 6
     }
   },
   "src/connectors/drive/upload.ts": {
@@ -570,11 +567,6 @@
       "count": 14
     }
   },
-  "src/connectors/types.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
-    }
-  },
   "src/connectors/x/client.ts": {
     "anti-slop/no-known-value-widening": {
       "count": 4
@@ -658,11 +650,6 @@
   },
   "src/db/schema/columns.ts": {
     "typescript/explicit-module-boundary-types": {
-      "count": 1
-    }
-  },
-  "src/db/schema/connectors.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
       "count": 1
     }
   },
@@ -1259,31 +1246,11 @@
     }
   },
   "src/mcp/connect-flow.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
     "limits/silent-catch": {
       "count": 1
     }
   },
-  "src/mcp/connect-start.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    }
-  },
   "src/mcp/connect-token.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 3
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 2
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 7
-    },
     "limits/erased-return-type": {
       "count": 1
     }
@@ -1291,120 +1258,15 @@
   "src/mcp/connections.ts": {
     "anti-slop/no-unknown-parameters": {
       "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    },
-    "limits/erased-alias": {
-      "count": 1
-    }
-  },
-  "src/mcp/github-app-manifest.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 2
-    }
-  },
-  "src/mcp/github-install.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 2
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 2
-    }
-  },
-  "src/mcp/login-auth.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 3
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 2
     }
   },
   "src/mcp/operator-call.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    },
     "limits/inline-parameter-type": {
       "count": 1
     }
   },
-  "src/mcp/pool.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 2
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 2
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 9
-    },
-    "limits/erased-return-type": {
-      "count": 2
-    }
-  },
   "src/mcp/servers.ts": {
     "anti-slop/no-unknown-parameters": {
-      "count": 1
-    }
-  },
-  "src/mcp/service.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    }
-  },
-  "src/mcp/session.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 3
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 8
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 6
-    },
-    "limits/erased-return-type": {
-      "count": 2
-    }
-  },
-  "src/mcp/tools.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 4
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 4
-    },
-    "limits/erased-return-type": {
-      "count": 1
-    }
-  },
-  "src/mcp/view.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 2
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 3
-    },
-    "limits/erased-return-type": {
-      "count": 2
-    }
-  },
-  "src/mcp/visibility.ts": {
-    "anti-slop/no-runtime-typeof": {
       "count": 1
     }
   },
@@ -1956,7 +1818,7 @@
       "count": 1
     },
     "anti-slop/no-unsafe-dictionary-type": {
-      "count": 3
+      "count": 2
     },
     "complexity": {
       "count": 1
@@ -2332,13 +2194,13 @@
       "count": 1
     },
     "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
+      "count": 1
     },
     "boundary/no-reexport-modules": {
       "count": 1
     },
     "limits/erased-return-type": {
-      "count": 2
+      "count": 1
     }
   },
   "src/toolbox/offered.ts": {

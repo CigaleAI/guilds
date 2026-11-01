@@ -142,10 +142,7 @@ function githubSignIn(ownerScope: string, redirectUri: string, replaces: boolean
   }
   const github = githubAppConfig();
   if (github === null) {
-    throw new ConnectionError(422, {
-      message: "the GitHub App is not configured",
-      setup_state: "unsupported",
-    });
+    throw new ConnectionError(422, "the GitHub App is not configured", "unsupported");
   }
   const oauthState = newState();
   // GitHub sends nobody back from editing an existing installation, so Connect never starts on
@@ -181,7 +178,7 @@ async function browserSignIn(
     };
   } catch (error) {
     if (error instanceof OAuthUnsupportedError) {
-      throw new ConnectionError(422, { message: error.message, setup_state: "unsupported" });
+      throw new ConnectionError(422, error.message, "unsupported");
     }
     throw error instanceof OAuthError ? new ConnectionError(502, error.message) : error;
   }
@@ -198,10 +195,7 @@ export async function startConnection(
   start: ConnectionStart,
 ): Promise<StartedConnection> {
   const { db } = services;
-  const [ownerScope, ownerId] = validateOwner(
-    start.ownerScope,
-    typeof start.ownerId === "string" ? start.ownerId : null,
-  );
+  const [ownerScope, ownerId] = validateOwner(start.ownerScope, start.ownerId ?? null);
   await assertActsFor(db, ownerScope, ownerId, userId);
   const server = await requireConnectable(services, start, ownerId);
   if (server.auth === "token") {

@@ -12,6 +12,7 @@ import {
 } from "./folder.js";
 import { DRIVE_CREATE_FILE_DESCRIPTION, DRIVE_CREATE_FILE_SCHEMA, createDriveFile } from "./upload.js";
 import type { ToolInputSchema } from "../../db/schema/index.js";
+import type { JsonObject } from "../../lib/json.js";
 import { ConnectorError, requiredCredential, type Adapter, type ConnectorTool } from "../types.js";
 
 /** Listed tools whose description and schema Drive replaces: they take a workspace path, not bytes. */
@@ -90,7 +91,7 @@ const adapter: Adapter = {
       throw new ConnectorError("Drive connection is missing a folder", 422);
     }
     const scoped = { accessToken, folderId, client: ctx.http };
-    let constrained: Record<string, unknown>;
+    let constrained: JsonObject;
     let handled: string | null;
     try {
       constrained = await constrainDriveTool(name, args, scoped);

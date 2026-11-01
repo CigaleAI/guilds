@@ -47,7 +47,7 @@ export type ManifestOutcome = { returnTo: string | null } | { failure: ManifestF
 
 /** A path on this app the callback may send the admin back to; never another origin. */
 function sameOriginPath(value: string | undefined): string | null {
-  if (typeof value !== "string") {
+  if (value === undefined) {
     return null;
   }
   const path = value.trim();
@@ -57,16 +57,21 @@ function sameOriginPath(value: string | undefined): string | null {
   return path;
 }
 
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+/** What a failure says, `cause` being the value thrown: an error's message, or the value as text. */
+function errorText(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }
 
-function errorType(error: unknown): string {
-  return error instanceof Error ? error.name : "Error";
+/** The kind of a failure, `cause` being the value thrown: an error's name, or `Error`. */
+function errorType(cause: unknown): string {
+  return cause instanceof Error ? cause.name : "Error";
 }
+
+/** The GitHub App integration's values: the App GitHub returns, without the address of its page. */
+type GithubAppValues = Omit<ConvertedGithubApp, "html_url">;
 
 /** The App GitHub returns, in the GitHub App integration's fields. */
-function githubAppValues(converted: ConvertedGithubApp): Record<string, string> {
+function githubAppValues(converted: ConvertedGithubApp): GithubAppValues {
   return {
     app_id: converted.app_id,
     slug: converted.slug,
