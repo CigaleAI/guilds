@@ -1,0 +1,7 @@
+{
+  "src/api/client.ts": {
+    "typescript/consistent-type-assertions": {
+      "count": 2
+    }
+  }
+}

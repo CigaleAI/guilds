@@ -1,0 +1,86 @@
+{
+  // Lint for the operator app: the rules of docs/contributing/code-guidelines.md as
+  // docs/contributing/development.md (Lint and format) lists them. `pnpm lint` runs Oxlint on
+  // this file through scripts/lint.mjs, which subtracts lint-suppressions.json.
+  "$schema": "../../node_modules/oxlint/configuration_schema.json",
+  "ignorePatterns": ["node_modules/**", "claude-design-export/**"],
+  "jsPlugins": [
+    { "name": "limits", "specifier": "../../lint/limits.js" },
+    { "name": "boundary", "specifier": "../../lint/boundary.js" }
+  ],
+  "plugins": ["eslint", "typescript", "oxc", "react"],
+  "categories": { "correctness": "error" },
+  "env": { "browser": true },
+  "rules": {
+    "no-unused-vars": ["error", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
+    // The react plugin is on for its hooks rules alone.
+    "react-hooks/rules-of-hooks": "error",
+    "react-hooks/exhaustive-deps": "warn",
+    "react/jsx-key": "off",
+    "react/purity": "off",
+    // Core may not import hosted code, nor a path outside this repository, and a module does not
+    // hand on another module's exports.
+    "boundary/no-hosted-imports": [
+      "error",
+      {
+        "source": ".",
+        "hosted": [],
+        "leaks": {},
+        "packages": ["@guildsrun/hosted-web", "@guildsrun/hosted-server"],
+        "repository": "../.."
+      }
+    ],
+    "boundary/no-reexport-modules": ["error", { "source": ".", "indexes": [] }]
+  },
+  "overrides": [
+    {
+      // The function and file limits, and the syntax the guidelines refuse, on the source.
+      "files": ["src/**/*.ts", "src/**/*.tsx"],
+      "rules": {
+        "complexity": ["error", 11],
+        "max-depth": ["error", 3],
+        "max-params": ["error", 4],
+        "max-lines": ["warn", { "max": 800, "skipBlankLines": false, "skipComments": false }],
+        "limits/file-lines": ["error", { "max": 1000 }],
+        "typescript/consistent-type-assertions": ["error", { "assertionStyle": "never" }],
+        "limits/silent-catch": "error",
+        "limits/bare-error": "error",
+        "limits/inline-parameter-type": "error",
+        "limits/erased-return-type": "error",
+        "limits/erased-alias": "error"
+      }
+    },
+    {
+      // A shared directory never imports from a feature: api/ and app/ import nothing under
+      // features/. The router is the composition root that mounts the features, and the exception.
+      "files": ["src/api/**", "src/app/**"],
+      "rules": {
+        "typescript/no-restricted-imports": [
+          "error",
+          { "patterns": [{ "group": ["**/features/**"], "message": "A shared directory never imports from a feature." }] }
+        ]
+      }
+    },
+    {
+      "files": ["src/app/router.tsx"],
+      "rules": { "typescript/no-restricted-imports": "off" }
+    },
+    {
+      // Tests, stories and scripts are not held to the limits.
+      "files": ["**/*.test.ts", "**/*.test.tsx", "**/*.stories.tsx", "test/**", "scripts/**"],
+      "rules": {
+        "complexity": "off",
+        "max-depth": "off",
+        "max-params": "off",
+        "max-lines": "off",
+        "limits/file-lines": "off",
+        "typescript/consistent-type-assertions": "off",
+        "limits/silent-catch": "off",
+        "limits/bare-error": "off",
+        "limits/inline-parameter-type": "off",
+        "limits/erased-return-type": "off",
+        "limits/erased-alias": "off"
+      }
+    }
+  ]
+}
