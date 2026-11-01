@@ -6,6 +6,15 @@ it: a function's name and signature say what it does, what it
 needs, and what it returns, and behaviour lives next to the code
 that uses it.
 
+Most of this code is written by agents and read by people, and a
+name and a signature are all either has to go on. The types are
+therefore the application's data model, not a check to pass: a
+type names a thing the application has, holds that thing's fields,
+and is the one abstraction every caller of it shares. A change that
+satisfies a rule without naming a thing (a looser type, a cast, a
+helper that hides the shape) makes the model wrong, and review
+refuses it.
+
 Oxlint and the import-cycle check
 ([Lint](development.md#lint-and-format)) enforce these rules:
 
@@ -302,6 +311,21 @@ TypeScript is strict everywhere. Input is validated at the edge,
 once: TypeBox schemas on routes, a validation module per domain
 for what arrives from the operator or the model. Inside the domain
 the types are trusted. `any` does not appear.
+
+Every value that crosses a function boundary has a type that names
+what it is in the application (`CreateGuildPayload`,
+`ScheduleUpdate`, `Agent["name"]`). That type is declared once,
+where the thing is owned, and imported by everyone who handles it;
+before writing a type, search for the one that exists, because two
+types for one thing are two models. A value that arrives from
+outside (a request, a model's output, a connector's response, a
+stored JSON column) is parsed once, at the edge, into such a type,
+and after that no function asks what it is. `unknown` appears only
+as the parameter of that parser or of a type predicate.
+`Record<string, unknown>` is not a type: it says that nobody has
+decided what the value is. Where the application truly makes no
+claim about a shape, the value is `JsonValue` or `JsonObject`, and
+the place that reads a field out of it is where a type is missing.
 
 A repository returns typed rows. Row types are derived from the
 Drizzle schema in `db/schema/`, never written out by hand: a table's

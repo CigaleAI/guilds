@@ -81,6 +81,12 @@ commits are what the reviewer reads.
     (`part`, `step`, `handle`);
   - moves a cast into a one-line helper, or removes it by widening a
     type to `unknown`;
+  - removes an `unknown` or a `Record<string, unknown>` by replacing
+    it with another type that names nothing (`object`, `{}`,
+    `JsonValue` for a value whose shape the application knows), or
+    by moving the parse out of the edge module;
+  - declares a type a second time instead of importing the one its
+    owner declares;
   - moves code under a test, stories or scripts path to leave the
     lint globs;
   - raises a limit, widens an ignore list, or regenerates a
