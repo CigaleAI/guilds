@@ -31,15 +31,13 @@ from its [form](https://github.com/CigaleAI/guilds/issues/new/choose).
 The form labels it `bug`, `feature request`, or `chore`. A feature
 needs only its **Why** to be opened; the proposal can stay open.
 
-An issue is **ready** when a maintainer has labelled it `ready`,
-and that label is given only when every field holds an answer and
-no field holds a question:
+An issue is complete when every field holds an answer and no
+field holds a question:
 
-- **Outcome.** One sentence in the imperative. It is the pull
-  request's title.
+- **Outcome.** One sentence in the imperative.
 - **Why.** The job the operator is doing and what goes wrong today
   without the change. For a chore, what the broken rule costs.
-  Never the solution. It is the pull request's *Why*.
+  Never the solution.
 - **Where.** The doc page that describes the behaviour today, and
   the entry point: a route, an agent tool, a Studio view, or a
   domain directory.
@@ -55,16 +53,12 @@ no field holds a question:
   tests, and docs page; no concept the [glossary](GLOSSARY.md)
   lacks; no schema change unless the issue is the migration and
   nothing else; three commits or fewer. A larger need is split into
-  issues each ready on its own before any is labelled.
+  issues each complete on its own.
 - **Out of scope.** What stays as it is.
 - **Breaks.** None, or the route, event, type, export, or storage
   format that changes.
 
-A ready issue is implemented as one pull request
-([Pull requests](contributing/pull-requests.md)) whose *Why* names
-it. An agent takes only a ready issue, and answers a missing field
-with a comment, not a guess. Security issues never go through this
-path ([Security](#security)).
+Security issues never go through this path ([Security](#security)).
 
 ## Versions
 

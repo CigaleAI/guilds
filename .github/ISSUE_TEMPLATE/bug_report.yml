@@ -5,12 +5,12 @@ body:
   - type: markdown
     attributes:
       value: |
-        One bug per issue. What makes it ready is in [Issues](https://github.com/CigaleAI/guilds/blob/main/docs/CONTRIBUTING.md#issues). A security issue is reported privately instead ([SECURITY.md](https://github.com/CigaleAI/guilds/blob/main/SECURITY.md)).
+        One bug per issue. What a complete issue holds is in [Issues](https://github.com/CigaleAI/guilds/blob/main/docs/CONTRIBUTING.md#issues). A security issue is reported privately instead ([SECURITY.md](https://github.com/CigaleAI/guilds/blob/main/SECURITY.md)).
   - type: input
     id: outcome
     attributes:
       label: Outcome
-      description: One sentence in the imperative. It is the pull request's title.
+      description: One sentence in the imperative.
     validations:
       required: true
   - type: textarea

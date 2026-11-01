@@ -42,11 +42,9 @@ commits are what the reviewer reads.
   when the why is not obvious.
 - **Description**: three parts, for a reader who has not seen the
   conversation that produced the change.
-  - *Why*: the problem, the request, or the issue the pull request
-    exists for, and what is wrong without it. A pull request that
-    implements an issue names it
-    ([Issues](../CONTRIBUTING.md#issues)). For a refactor, the rule
-    the code breaks and the chore issue that names it. A pull
+  - *Why*: the problem or the request the pull request exists
+    for, and what is wrong without it. For a refactor, the rule
+    the code breaks ([Code guidelines](code-guidelines.md)). A pull
     request whose reason cannot be stated is not opened.
   - *What*: what changes, and what is deliberately left out.
   - *Breaks*: anything that is not backward compatible: a changed

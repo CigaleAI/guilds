@@ -5,12 +5,12 @@ body:
   - type: markdown
     attributes:
       value: |
-        One feature per issue. The Why is enough to open it; the other fields make it ready ([Issues](https://github.com/CigaleAI/guilds/blob/main/docs/CONTRIBUTING.md#issues)).
+        One feature per issue. The Why is enough to open it; the other fields complete it ([Issues](https://github.com/CigaleAI/guilds/blob/main/docs/CONTRIBUTING.md#issues)).
   - type: input
     id: outcome
     attributes:
       label: Outcome
-      description: One sentence in the imperative. It is the pull request's title.
+      description: One sentence in the imperative.
   - type: textarea
     id: why
     attributes:
