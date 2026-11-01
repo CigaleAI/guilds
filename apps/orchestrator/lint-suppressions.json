@@ -518,12 +518,6 @@
   "src/connectors/servers.ts": {
     "anti-slop/no-runtime-typeof": {
       "count": 4
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
     }
   },
   "src/connectors/settings.ts": {
@@ -1229,19 +1223,7 @@
     }
   },
   "src/mcp/catalog.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 2
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 5
-    },
     "anti-slop/no-unknown-parameters": {
-      "count": 6
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    },
-    "limits/erased-return-type": {
       "count": 1
     }
   },
@@ -1262,11 +1244,6 @@
   },
   "src/mcp/operator-call.ts": {
     "limits/inline-parameter-type": {
-      "count": 1
-    }
-  },
-  "src/mcp/servers.ts": {
-    "anti-slop/no-unknown-parameters": {
       "count": 1
     }
   },

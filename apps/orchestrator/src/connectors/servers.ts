@@ -196,8 +196,8 @@ export function overriddenCopyFields(server: LoadedConnector): CopyField[] {
  */
 export function editCopyOverrides(
   overrides: Overrides,
-  edit: Readonly<Record<string, unknown>>,
-  checks: Readonly<Record<CopyField, (value: unknown) => string>>,
+  edit: Readonly<Partial<Record<CopyField, string | null | undefined>>>,
+  checks: Readonly<Record<CopyField, (value: string) => string>>,
 ): Overrides {
   const next: Overrides = { ...overrides };
   for (const field of OVERRIDE_FIELDS) {

@@ -248,11 +248,8 @@ test("edit_copy_overrides_clears_on_null_replaces_with_the_checked_value_and_kee
     limitations: (value: unknown) => String(value),
     setup_hint: (value: unknown) => String(value),
   };
-  const edited = editCopyOverrides(
-    { display_name: "Old", limitations: "Keep", tools: { a: { default: true } } },
-    { display_name: null, description: "new", setup_hint: undefined, slug: "ignored" },
-    checks,
-  );
+  const edit = { display_name: null, description: "new", setup_hint: undefined, slug: "ignored" };
+  const edited = editCopyOverrides({ display_name: "Old", limitations: "Keep", tools: { a: { default: true } } }, edit, checks);
   assert.deepEqual(edited, { limitations: "Keep", description: "checked new", tools: { a: { default: true } } });
 });
 

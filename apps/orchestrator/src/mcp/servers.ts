@@ -11,11 +11,11 @@ import {
   type ConnectorPatch,
 } from "./catalog.js";
 
-/** The 409 for a connector whose slug or tool prefix another one holds; any other error as it is. */
-function nameConflict(error: unknown): unknown {
-  return isUniqueViolation(error)
+/** What a failed write of a connector leaves as, `cause` being the value thrown: the 409 for a slug or tool prefix another one holds, anything else as it is. */
+function nameConflict(cause: unknown): unknown {
+  return isUniqueViolation(cause)
     ? new CatalogError("slug or tool prefix already exists", 409)
-    : error;
+    : cause;
 }
 
 /** The connectors the platform offers every organisation. */
