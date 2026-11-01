@@ -213,7 +213,7 @@ test("builder write hint is stated once, in the write tool's description", async
   const listed = await builderListCapabilities.handler({
     orgId: "org_1",
     capabilities: { async listCapabilities() { return { native: [] }; } },
-  } as never);
+  } as never, {});
   assert.equal("recipe_write" in listed, false);
 });
 

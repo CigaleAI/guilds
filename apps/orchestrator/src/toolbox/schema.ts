@@ -74,19 +74,3 @@ export function wholeWithin(value: JsonValue | undefined, range: WholeRange): nu
   const whole = isNumber(value) && Number.isFinite(value) ? Math.trunc(value) : range.fallback;
   return Math.max(range.min, Math.min(range.max, whole));
 }
-
-export function argString(args: Record<string, unknown>, name: string, fallback = ""): string {
-  const value = args[name];
-  return typeof value === "string" ? value : fallback;
-}
-
-export function argInteger(args: Record<string, unknown>, name: string, fallback: number): number {
-  const value = args[name];
-  if (typeof value === "number" && Number.isInteger(value)) {
-    return value;
-  }
-  if (typeof value === "string" && /^-?\d+$/.test(value.trim())) {
-    return Number(value.trim());
-  }
-  return fallback;
-}
