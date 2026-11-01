@@ -24,7 +24,8 @@ import { invokeTool } from "../../src/toolbox/index.js";
 import { tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
-import { insertGuild } from "../../src/db/guilds.js";
+import { deleteAgent } from "../../src/db/agents.js";
+import { deleteGuild, insertGuild } from "../../src/db/guilds.js";
 import { agentConfig } from "../helpers/generation.js";
 import { accessList, grantAccess } from "../../src/artifacts/access-lists.js";
 import { deleteByDisplayPath, listStateArtifacts } from "../../src/artifacts/notes.js";
@@ -241,6 +242,28 @@ describe("shared files", { concurrency: 1 }, () => {
     await deleteSharedFile({ files }, beta, agentFile.id);
     await assert.rejects(() => files.loadFileById(beta, agentFile.id), /artifact not found/);
     assert.equal(published.length, 3, "a write without a publisher announces nothing");
+  });
+
+  test("deleting an agent or a guild drops the access lists of the files it holds", async () => {
+    await insertGuild(db, { guildId: "guild_gone", name: "gone", orgId: "org_home", about: "" }, new Date());
+    await seedAgent("a_gone", "guild_gone", "gone");
+    const gone = agentActor({ orgId: "org_home", guildId: "guild_gone", agentId: "a_gone", agentName: "gone" });
+    const upload = { name: "left.txt", description: "Left behind", mime: "", bytes: Buffer.from("left") };
+    const agentFile = await files.putFile(gone, { level: "agent", ...upload });
+    const guildFile = await files.putFile(gone, { level: "guild", ...upload });
+    for (const file of [agentFile, guildFile]) {
+      await grantAccess(store, operator, { kind: "file", id: file.id }, { type: "guild", id: "guild_alpha", mode: "read" });
+    }
+    const accessRows = async (fileId: string) =>
+      (await db.query<{ n: number }>(`SELECT count(*)::int AS n FROM artifact_access WHERE target_kind = 'file' AND target_id = $1`, [fileId])).rows[0]?.n;
+
+    const guildRows = await accessRows(guildFile.id);
+    assert.ok((await accessRows(agentFile.id) ?? 0) > 0);
+    await deleteAgent(db, "a_gone");
+    assert.equal(await accessRows(agentFile.id), 0, "the agent's file loses its access list");
+    assert.equal(await accessRows(guildFile.id), guildRows, "the guild's file keeps its access list while the guild stands");
+    await deleteGuild(db, "guild_gone");
+    assert.equal(await accessRows(guildFile.id), 0, "the guild's file loses its access list");
   });
 
   test("a find returns at least one file and at most the cap, whatever limit it asks", async () => {
