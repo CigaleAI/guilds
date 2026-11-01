@@ -3,11 +3,11 @@ import {
   createContext,
   createElement,
   useContext,
-  useRef,
   useMemo,
   type ComponentProps,
   type JSX,
 } from "react";
+import type { Element, ElementContent } from "hast";
 import ReactMarkdown, { type Components, type ExtraProps, type Options } from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
@@ -178,7 +178,7 @@ function Paragraph({ node: _node, className, ...props }: Props<"p">) {
 
 function Link({ node: _node, className, href, ...props }: Props<"a">) {
   const { tone } = useContext(Settings);
-  const external = typeof href === "string" && /^https?:\/\//i.test(href);
+  const external = href !== undefined && /^https?:\/\//i.test(href);
   return (
     <a
       href={href}
@@ -192,7 +192,7 @@ function Link({ node: _node, className, href, ...props }: Props<"a">) {
 function ListItem({ node: _node, className, ...props }: Props<"li">) {
   const { density, tone } = useContext(Settings);
   const kind = useContext(ListKind);
-  const isTask = typeof className === "string" && className.includes("task-list-item");
+  const isTask = className?.includes("task-list-item") ?? false;
   const style = isTask
     ? "list-none"
     : kind?.ordered
@@ -223,17 +223,23 @@ function languageOf(node: Props<"pre">["node"]): string | null {
   return found ? found.slice("language-".length) : null;
 }
 
+/** The text a node holds, as the DOM's `textContent` reads it. */
+function textOf(node: Element | ElementContent): string {
+  if (node.type === "text") return node.value;
+  if (node.type === "element") return node.children.map(textOf).join("");
+  return "";
+}
+
 function CodeBlock({ node, className, ...props }: Props<"pre">) {
   const { density } = useContext(Settings);
-  const pre = useRef<HTMLPreElement>(null);
   const language = languageOf(node);
   return (
     <InsidePre.Provider value={true}>
       <div className="relative">
-        <pre ref={pre} className={cn(codeBlock({ density }), "pr-16", className)} {...props} />
+        <pre className={cn(codeBlock({ density }), "pr-16", className)} {...props} />
         <div className="absolute top-1 right-1 flex items-center gap-1">
           {language ? <span className="font-mono text-2xs text-muted">{language}</span> : null}
-          <CopyButton text={() => pre.current?.textContent ?? ""} what="code" size={24} />
+          <CopyButton text={node ? textOf(node) : ""} what="code" size={24} />
         </div>
       </div>
     </InsidePre.Provider>
@@ -297,17 +303,17 @@ function Strong({ node: _node, className, ...props }: Props<"strong">) {
 
 /** The link a span carries: an `![[path]]` embed or a `[[path]]` reference. */
 function spanLink(node: Props<"span">["node"]): { path: string; mode: EmbedMode } | null {
-  const embed = node?.properties?.dataEmbed;
-  if (typeof embed === "string") return { path: embed, mode: "embed" };
-  const reference = node?.properties?.dataReference;
-  return typeof reference === "string" ? { path: reference, mode: "reference" } : null;
+  const embed = node?.properties.dataEmbed;
+  if (embed !== undefined) return { path: embed, mode: "embed" };
+  const reference = node?.properties.dataReference;
+  return reference !== undefined ? { path: reference, mode: "reference" } : null;
 }
 
 /** Spans only come from the embed and mention plugins; raw HTML never reaches the tree. */
 function Span({ node, className, ...props }: Props<"span">) {
   const { tone, onOpenEmbed, isBrokenEmbed } = useContext(Settings);
-  const handle = node?.properties?.dataMention;
-  if (typeof handle === "string") return <Mention handle={handle} tone={tone} />;
+  const handle = node?.properties.dataMention;
+  if (handle !== undefined) return <Mention handle={handle} tone={tone} />;
   const link = spanLink(node);
   if (link) {
     return (

@@ -8,7 +8,7 @@ export type WorkspaceHeaderProps = Omit<ComponentProps<"header">, "children" | "
   /** What the session works on: a guild, or the recipe being designed. */
   title: ReactNode;
   /** Details in mono, such as "coach · openrouter/openai/gpt-5 · temp 0.2"; they truncate first. */
-  meta?: ReactNode;
+  meta?: string;
   /** The session's state, such as "active · idle"; `live` fills it cyan, `hint` is its tooltip. */
   status?: { label: string; live: boolean; hint?: string };
   /** Trailing controls: Buttons in their `on-panel` variant. */
@@ -37,7 +37,7 @@ export function WorkspaceHeader({
       <h1 className="min-w-0 truncate type-h2">{title}</h1>
       {meta ? (
         <span
-          title={typeof meta === "string" ? meta : undefined}
+          title={meta}
           className="min-w-24 flex-1 basis-full truncate font-mono text-xs text-on-panel-muted sm:basis-0"
         >
           {meta}

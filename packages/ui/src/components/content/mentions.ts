@@ -1,5 +1,12 @@
 import { replaceInText, spanNode, type MdNode } from "./textNodes";
 
+declare module "hast" {
+  interface Properties {
+    /** The tagged handle, without its `@`, on the span `remarkMentions` makes of it. */
+    dataMention?: string | undefined;
+  }
+}
+
 /** `@handle` as the orchestrator reads tags in a group-chat message. */
 export const MENTION_PATTERN = /(?<![A-Za-z0-9-])@([a-z][a-z0-9-]{0,62})\b/g;
 

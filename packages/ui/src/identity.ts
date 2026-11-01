@@ -46,14 +46,14 @@ export const identityTint: Record<IdentityTone, string> = {
   dusk: "bg-id-dusk-tint",
 };
 
-/** Colours agents stored before this palette, each paired with the tone of the same hue. */
-const earlierHex: Record<string, IdentityTone> = {
-  "#3b82f6": "signal",
-  "#14b8a6": "tide",
-  "#a3e635": "moss",
-  "#fbbf24": "ochre",
-  "#ff4d8d": "rosewood",
-  "#7c5cff": "dusk",
+/** The colour agents stored for each tone before this palette, of the same hue. */
+const earlierHex: Record<IdentityTone, string> = {
+  signal: "#3b82f6",
+  tide: "#14b8a6",
+  moss: "#a3e635",
+  ochre: "#fbbf24",
+  rosewood: "#ff4d8d",
+  dusk: "#7c5cff",
 };
 
 function rgbOf(hex: string): [number, number, number] | null {
@@ -72,7 +72,9 @@ function distance([r1, g1, b1]: [number, number, number], [r2, g2, b2]: [number,
 /** The identity tone for an agent's stored colour; any other hex takes the nearest palette colour. */
 export function identityToneOf(color: string): IdentityTone {
   const hex = color.trim().toLowerCase();
-  const exact = identityTones.find((tone) => identityHex[tone] === hex) ?? earlierHex[hex];
+  const exact =
+    identityTones.find((tone) => identityHex[tone] === hex) ??
+    identityTones.find((tone) => earlierHex[tone] === hex);
   if (exact) return exact;
   const rgb = rgbOf(hex);
   if (!rgb) return "dusk";

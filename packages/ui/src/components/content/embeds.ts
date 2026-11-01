@@ -1,5 +1,14 @@
 import { replaceInText, spanNode, type MdNode } from "./textNodes";
 
+declare module "hast" {
+  interface Properties {
+    /** The display path of an `![[path]]` embed, on the span `remarkEmbeds` makes of it. */
+    dataEmbed?: string | undefined;
+    /** The display path of a `[[path]]` reference, on the span `remarkEmbeds` makes of it. */
+    dataReference?: string | undefined;
+  }
+}
+
 /**
  * `![[display-path]]` embeds: an operator's link to a note or a table whose text is added to the
  * prompt at run time. `[[display-path]]` references: a link the agent reads itself when it needs
