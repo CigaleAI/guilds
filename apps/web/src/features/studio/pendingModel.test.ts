@@ -1,12 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { StudioDraft, StudioMessage } from "../../api/types/studio";
+import type {
+  ConversationMessageMetadata,
+  StudioDraft,
+  StudioMessage,
+} from "../../api/types/studio";
 import { countOpen, draftHead, turnProposals, turnReply } from "./pendingModel";
 
 function message(
   seq: number,
   payload: StudioMessage["payload"],
-  metadata: Record<string, unknown> | null = null,
+  metadata: ConversationMessageMetadata | null = null,
 ): StudioMessage {
   return {
     id: seq,
@@ -23,7 +27,7 @@ function message(
 const tool = (
   seq: number,
   body: Record<string, unknown>,
-  metadata: Record<string, unknown> | null = null,
+  metadata: ConversationMessageMetadata | null = null,
 ) => message(seq, { role: "tool", tool_call_id: "c1", content: JSON.stringify(body) }, metadata);
 
 const user = (seq: number) => message(seq, { role: "user", content: "go" });
@@ -31,10 +35,10 @@ const user = (seq: number) => message(seq, { role: "user", content: "go" });
 const edit = (
   seq: number,
   edit: Record<string, unknown>,
-  metadata: Record<string, unknown> | null = null,
+  metadata: ConversationMessageMetadata | null = null,
 ) => tool(seq, { widget: "studio_edit_request", edit }, metadata);
 
-const login = (seq: number, metadata: Record<string, unknown> | null = null) =>
+const login = (seq: number, metadata: ConversationMessageMetadata | null = null) =>
   tool(
     seq,
     {

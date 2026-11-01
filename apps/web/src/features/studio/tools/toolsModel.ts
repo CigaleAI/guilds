@@ -1,5 +1,4 @@
-import type { StudioTool, StudioToolCall } from "../../../api/types/studio";
-import type { AccessChange } from "../chatModel";
+import type { AccessChange, StudioTool, StudioToolCall } from "../../../api/types/studio";
 import type { Proposal } from "../pendingModel";
 
 /** The windows Tools offers, in hours: a day, three days, a week. */

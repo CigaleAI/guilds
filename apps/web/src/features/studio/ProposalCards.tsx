@@ -1,16 +1,9 @@
 import { Eye } from "lucide-react";
 import type { ReactNode } from "react";
 import { useStudioEdits } from "../../api/queries/studio";
-import type { StudioEdit } from "../../api/types/studio";
+import type { AccessWidget, DraftWidget, EditWidget, StudioEdit } from "../../api/types/studio";
 import { Button, DiffView, diffLines, Icon, Tag, cn, toast } from "@guildsrun/ui";
-import {
-  applyLabel,
-  connectionLabel,
-  editTargetLabel,
-  type AccessWidget,
-  type DraftWidget,
-  type EditWidget,
-} from "./chatModel";
+import { applyLabel, connectionLabel, editTargetLabel } from "./chatModel";
 import type { Proposal } from "./pendingModel";
 import { useStudio } from "./StudioContext";
 

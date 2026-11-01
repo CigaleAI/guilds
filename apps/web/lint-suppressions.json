@@ -4,11 +4,6 @@
       "count": 2
     }
   },
-  "src/api/types/studio.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    }
-  },
   "src/features/agent/CodingStrip.tsx": {
     "react/purity": {
       "count": 1
@@ -210,42 +205,6 @@
   "src/features/studio/activity/wakeEffects.ts": {
     "anti-slop/no-runtime-typeof": {
       "count": 1
-    }
-  },
-  "src/features/studio/chatModel.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 14
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 3
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 5
-    }
-  },
-  "src/features/studio/location.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 2
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 3
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
-    }
-  },
-  "src/features/studio/pendingModel.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 2
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 4
     }
   },
   "src/features/studio/state/StateItemDetail.tsx": {

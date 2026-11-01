@@ -1,4 +1,13 @@
-import type { StudioDraft, StudioMessage } from "../../api/types/studio";
+import type {
+  AccessWidget,
+  ConversationMessageMetadata,
+  DraftWidget,
+  EditKind,
+  EditWidget,
+  StudioDraft,
+  StudioMessage,
+  StudioWidget,
+} from "../../api/types/studio";
 import {
   batchReply,
   connectionLabel,
@@ -7,11 +16,7 @@ import {
   draftDecision,
   editTargetLabel,
   widgetOf,
-  type AccessWidget,
-  type DraftWidget,
-  type EditWidget,
   type RequestDecision,
-  type StudioWidget,
 } from "./chatModel";
 import type { StudioSearch, StudioSection } from "./location";
 
@@ -55,9 +60,9 @@ function turnRequests(messages: readonly StudioMessage[]): ProposalRequest[] {
   });
 }
 
-function editState(widget: EditWidget, metadata: Record<string, unknown>): Settled {
+function editState(widget: EditWidget, metadata: ConversationMessageMetadata): Settled {
   const status = metadata.edit_status;
-  if (status !== "applied" && status !== "declined") return open;
+  if (status === undefined) return open;
   return {
     state: "decided",
     decision: status === "applied" ? acceptedDecision(widget) : declinedDecision(widget),
@@ -66,7 +71,7 @@ function editState(widget: EditWidget, metadata: Record<string, unknown>): Settl
 
 function loginState(
   widget: AccessWidget,
-  metadata: Record<string, unknown>,
+  metadata: ConversationMessageMetadata,
   granted: readonly string[],
 ): Settled {
   const id = widget.connection.id;
@@ -119,7 +124,10 @@ const agentPlace = (agent: string | undefined, search: Omit<StudioSearch, "secti
       }
     : { place: "agents" as const, agentId: null, location: { section: "agents" as const } };
 
-const editPlaces: Record<string, (edit: EditWidget["edit"]) => Placed> = {
+const guildPlace: Placed = { place: "guild", agentId: null, location: { section: "guild" } };
+
+/** Where each kind of edit is decided; an edit without a kind changes the guild. */
+const editPlaces: Record<EditKind, (edit: EditWidget["edit"]) => Placed> = {
   memory: (edit) => agentPlace(edit.target?.agent_id, { tab: "memory" }),
   routine: (edit) =>
     agentPlace(edit.target?.agent_id, {
@@ -151,9 +159,8 @@ const editPlaces: Record<string, (edit: EditWidget["edit"]) => Placed> = {
     agentId: edit.target?.agent_id ?? null,
     location: { section: "tools" },
   }),
+  guild: () => guildPlace,
 };
-
-const guildPlace: Placed = { place: "guild", agentId: null, location: { section: "guild" } };
 
 /** Where each kind of proposal is decided, and the words that name it. */
 function placeOf(widget: StudioWidget): Placed & Pick<Proposal, "label" | "alone"> {
@@ -173,13 +180,13 @@ function placeOf(widget: StudioWidget): Placed & Pick<Proposal, "label" | "alone
       alone: true,
     };
   }
-  const placed = editPlaces[widget.edit.kind ?? ""]?.(widget.edit) ?? guildPlace;
+  const placed = editPlaces[widget.edit.kind ?? "guild"](widget.edit);
   return { ...placed, label: editTargetLabel(widget.edit), alone: widget.edit.widens === true };
 }
 
 function settle(
   widget: StudioWidget,
-  metadata: Record<string, unknown>,
+  metadata: ConversationMessageMetadata,
   drafts: readonly StudioDraft[],
   granted: readonly string[],
 ): Settled {
@@ -192,7 +199,7 @@ function settle(
 export type ProposalRequest = {
   seq: number;
   widget: StudioWidget;
-  metadata: Record<string, unknown>;
+  metadata: ConversationMessageMetadata;
 };
 
 /**
@@ -233,11 +240,11 @@ export function turnReply(proposals: readonly Proposal[]): string | null {
 }
 
 /** How many open proposals each key holds, such as each section or each agent. */
-export function countOpen(
+export function countOpen<Key extends string>(
   proposals: readonly Proposal[],
-  keyOf: (proposal: Proposal) => string | null,
-): Record<string, number> {
-  const counts: Record<string, number> = {};
+  keyOf: (proposal: Proposal) => Key | null,
+): Partial<Record<Key, number>> {
+  const counts: Partial<Record<Key, number>> = {};
   for (const proposal of proposals) {
     const key = proposal.state === "open" ? keyOf(proposal) : null;
     if (key) counts[key] = (counts[key] ?? 0) + 1;

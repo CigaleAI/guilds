@@ -3,7 +3,22 @@
 import type { ErrorReply, ValidationProblem } from "./client";
 import type { LookupItem } from "./types/access";
 import type { SecretRequest, SecretRequestAsked } from "./types/secrets";
-import type { StudioFocusRequest } from "./types/studio";
+import type {
+  AccessChange,
+  AccessChangeKind,
+  AccessSetting,
+  AccessWidget,
+  DraftWidget,
+  EditAction,
+  EditKind,
+  EditTarget,
+  EditWidget,
+  LineCounts,
+  StudioFocus,
+  StudioFocusKind,
+  StudioFocusRequest,
+  StudioWidget,
+} from "./types/studio";
 
 /** A value JSON carries: a string, number, boolean or null, or an array or object of them. */
 export type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject;
@@ -191,4 +206,180 @@ export function isStudioFocusRequest(value: unknown): value is StudioFocusReques
       isFocusText,
     )
   );
+}
+
+const STUDIO_FOCUS_KINDS: readonly StudioFocusKind[] = [
+  "run",
+  "memory_version",
+  "routine",
+  "file",
+  "issue",
+  "tool",
+];
+
+/** Whether a value is the evidence the server stored on a pinned Studio message: every field of it. */
+export function isStudioFocus(value: unknown): value is StudioFocus {
+  return (
+    isJsonObject(value) &&
+    STUDIO_FOCUS_KINDS.some((kind) => kind === value.kind) &&
+    hasFields(value, ["agent_id", "agent_name", "label"], isString) &&
+    hasFields(value, ["seq", "version_index"], isNumberOrNull) &&
+    hasFields(
+      value,
+      [
+        "run_id",
+        "call_id",
+        "tool_name",
+        "revision_id",
+        "schedule_id",
+        "display_path",
+        "change_id",
+        "issue_id",
+      ],
+      isStringOrNull,
+    )
+  );
+}
+
+const EDIT_KINDS: readonly EditKind[] = [
+  "memory",
+  "note",
+  "guild",
+  "collection",
+  "access",
+  "routine",
+];
+
+const EDIT_ACTIONS: readonly EditAction[] = ["create", "edit", "delete"];
+
+const ACCESS_CHANGE_KINDS: readonly AccessChangeKind[] = ["native_tool", "mcp", "mcp_tool"];
+
+const ACCESS_SETTINGS: readonly AccessSetting[] = ["on", "off", "inherit"];
+
+/** The fields of a JSON object that hold text, by name; a field of another type is left out. */
+function textFields<Key extends string>(
+  record: JsonObject,
+  keys: readonly Key[],
+): Partial<Record<Key, string>> {
+  const fields: Partial<Record<Key, string>> = {};
+  for (const key of keys) {
+    const value = record[key];
+    if (isString(value)) fields[key] = value;
+  }
+  return fields;
+}
+
+/** The fields of a JSON object that hold text or null, by name; one of another type is left out. */
+function nullableTextFields<Key extends string>(
+  record: JsonObject,
+  keys: readonly Key[],
+): Partial<Record<Key, string | null>> {
+  const fields: Partial<Record<Key, string | null>> = {};
+  for (const key of keys) {
+    const value = record[key];
+    if (isStringOrNull(value)) fields[key] = value;
+  }
+  return fields;
+}
+
+/** One overlay of an access edit; null when it lacks a field or names no known kind or setting. */
+function parseAccessChange(value: unknown): AccessChange | null {
+  if (!isJsonObject(value)) return null;
+  const kind = ACCESS_CHANGE_KINDS.find((entry) => entry === value.kind);
+  const setting = ACCESS_SETTINGS.find((entry) => entry === value.setting);
+  if (!kind || !setting || !isString(value.id) || !isString(value.label)) return null;
+  return { kind, id: value.id, label: value.label, setting };
+}
+
+/** The line counts of an edit, keeping the counts that are numbers. */
+function parseLineCounts(lines: JsonObject): LineCounts {
+  return {
+    ...(isNumber(lines.added) ? { added: lines.added } : {}),
+    ...(isNumber(lines.removed) ? { removed: lines.removed } : {}),
+  };
+}
+
+/** What an edit names as its target, keeping the fields of the type each holds. */
+function parseEditTarget(target: JsonObject): EditTarget {
+  return {
+    ...textFields(target, [
+      "agent_id",
+      "agent_name",
+      "display_path",
+      "title",
+      "guild_id",
+      "guild_name",
+      "name",
+      "description",
+    ]),
+    ...nullableTextFields(target, ["collection_id", "schedule_id"]),
+  };
+}
+
+/** An edit request's edit, keeping each field that holds what the field says. */
+export function parseStudioEdit(value: unknown): EditWidget["edit"] {
+  if (!isJsonObject(value)) return {};
+  const kind = EDIT_KINDS.find((entry) => entry === value.kind);
+  const action = EDIT_ACTIONS.find((entry) => entry === value.action);
+  const { fields, changes } = value;
+  return {
+    ...(kind ? { kind } : {}),
+    ...(action ? { action } : {}),
+    ...(isJsonObject(value.target) ? { target: parseEditTarget(value.target) } : {}),
+    ...(isNumber(value.base_version) ? { base_version: value.base_version } : {}),
+    ...(Array.isArray(fields) ? { fields: fields.filter(isString) } : {}),
+    ...(isJsonObject(value.lines) ? { lines: parseLineCounts(value.lines) } : {}),
+    ...(Array.isArray(changes)
+      ? { changes: changes.map(parseAccessChange).filter((change) => change !== null) }
+      : {}),
+    ...(isBoolean(value.widens) ? { widens: value.widens } : {}),
+  };
+}
+
+/** The login an access request names, keeping the fields that hold text. */
+export function parseStudioConnection(value: unknown): AccessWidget["connection"] {
+  if (!isJsonObject(value)) return {};
+  return {
+    ...textFields(value, ["id", "owner_scope", "account_hint"]),
+    ...(isJsonObject(value.server)
+      ? { server: textFields(value.server, ["id", "slug", "display_name"]) }
+      : {}),
+  };
+}
+
+/** A draft widget's fields, when the tool result carries them. */
+function parseDraftWidget(body: JsonObject): DraftWidget | null {
+  const agent = textFields(isJsonObject(body.agent) ? body.agent : {}, ["id", "name"]);
+  if (!isString(body.draft_id) || agent.id === undefined) return null;
+  return {
+    kind: "draft",
+    agent: { id: agent.id, name: agent.name ?? agent.id },
+    draft_id: body.draft_id,
+    ...textFields(body, ["rationale"]),
+  };
+}
+
+/**
+ * The request a coach's tool result text carries for the operator: an edit to apply, a login to
+ * grant, or a Task draft; null when the text is not JSON or names no such widget.
+ */
+export function parseStudioWidget(content: string): StudioWidget | null {
+  const body = parseJson(content);
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return null;
+  if (body.widget === "studio_edit_request") {
+    return {
+      kind: "edit",
+      ...textFields(body, ["title", "reason"]),
+      edit: parseStudioEdit(body.edit),
+    };
+  }
+  if (body.widget === "studio_connection_access") {
+    return {
+      kind: "access",
+      ...textFields(body, ["title", "reason"]),
+      connection: parseStudioConnection(body.connection),
+    };
+  }
+  if (body.widget === "studio_task_draft") return parseDraftWidget(body);
+  return null;
 }

@@ -17,6 +17,7 @@ import {
   type LiveEventHandlers,
   type RunEvents,
 } from "./liveEvents";
+import type { JsonValue } from "./wire";
 
 const groupMessage = {
   id: 1,
@@ -175,6 +176,44 @@ test("isStudioMessageCommit admits the committed coach row and refuses a bare ro
   assert.equal(isStudioMessageCommit({ message: studioMessage }), true);
   assert.equal(isStudioMessageCommit({ message: { ...studioMessage, cost_usd: "0.002" } }), false);
   assert.equal(isStudioMessageCommit(studioMessage), false);
+});
+
+const runFocus = {
+  kind: "run",
+  agent_id: "a1",
+  agent_name: "Scout",
+  label: "Group run",
+  run_id: "r1",
+  seq: 4,
+  call_id: null,
+  tool_name: null,
+  revision_id: null,
+  version_index: null,
+  schedule_id: null,
+  display_path: null,
+  change_id: null,
+  issue_id: null,
+};
+
+/** A committed operator row pinned to `focus`. */
+const pinned = (focus: JsonValue) => ({
+  message: {
+    ...studioMessage,
+    payload: { role: "user", content: "" },
+    metadata: { generation: 1, source: "studio_focus", focus },
+  },
+});
+
+test("isStudioMessageCommit admits a pinned row whose focus is the one the server stores", () => {
+  assert.equal(isStudioMessageCommit(pinned(runFocus)), true);
+});
+
+test("isStudioMessageCommit refuses a pinned row whose focus is not a focus", () => {
+  assert.equal(isStudioMessageCommit(pinned([])), false);
+  assert.equal(isStudioMessageCommit(pinned({ ...runFocus, kind: 4 })), false);
+  assert.equal(isStudioMessageCommit(pinned({ ...runFocus, kind: "focus" })), false);
+  assert.equal(isStudioMessageCommit(pinned({ ...runFocus, call_id: 9 })), false);
+  assert.equal(isStudioMessageCommit(pinned({ kind: "run", label: "Group run" })), false);
 });
 
 test("isSessionFailure admits a failure with its detail", () => {
