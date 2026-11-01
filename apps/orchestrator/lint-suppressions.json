@@ -27,21 +27,10 @@
       "count": 2
     },
     "anti-slop/no-unsafe-dictionary-type": {
-      "count": 3
+      "count": 2
     },
     "limits/bare-error": {
       "count": 1
-    }
-  },
-  "src/agents/view.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 2
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
-    },
-    "limits/erased-return-type": {
-      "count": 2
     }
   },
   "src/app.ts": {

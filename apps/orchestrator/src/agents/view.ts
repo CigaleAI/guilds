@@ -1,6 +1,30 @@
 import type { AgentRow, GuildAgentRow } from "../db/agents.js";
+import type { AgentConfig } from "../db/schema/index.js";
 
-export function agentItem(row: GuildAgentRow, generating = false): Record<string, unknown> {
+/** A machine as an agent payload names it. */
+export type MachineRef = {
+  id: GuildAgentRow["machine_id"];
+  name: GuildAgentRow["machine_name"];
+  box: GuildAgentRow["machine_box"];
+};
+
+/**
+ * An agent as its guild's list shows it: its profile, whether it browses and codes, the machine
+ * it runs on, and whether a run is generating for it right now.
+ */
+export type AgentItem = Pick<
+  GuildAgentRow,
+  "id" | "guild_id" | "name" | "focus" | "avatar_shape" | "avatar_color" | "machine_id"
+> &
+  Pick<AgentConfig, "browser" | "coding"> & {
+    machine: MachineRef;
+    generating: boolean;
+  };
+
+/** An agent as its page shows it: its list item with its wake triggers, its config, and its home's size. */
+export type AgentDetail = AgentItem & Pick<AgentRow, "wake_triggers" | "config" | "workspace_mib">;
+
+export function agentItem(row: GuildAgentRow, generating = false): AgentItem {
   return {
     id: row.id,
     guild_id: row.guild_id,
@@ -16,7 +40,7 @@ export function agentItem(row: GuildAgentRow, generating = false): Record<string
   };
 }
 
-export function agentDetail(row: AgentRow, generating = false): Record<string, unknown> {
+export function agentDetail(row: AgentRow, generating = false): AgentDetail {
   return {
     ...agentItem(row, generating),
     wake_triggers: row.wake_triggers,

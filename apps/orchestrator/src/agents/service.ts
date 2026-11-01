@@ -49,7 +49,7 @@ import {
   validateFocus,
   validateWakeTriggers,
 } from "./validation.js";
-import { agentItem } from "./view.js";
+import { agentItem, type AgentItem } from "./view.js";
 
 /** What agents are created, changed, moved and deleted through, built once from the app's services. */
 export type AgentServices = {
@@ -166,7 +166,7 @@ function nameConflict(error: unknown): unknown {
 export async function listGuildAgents(
   services: AgentServices,
   guildId: string,
-): Promise<Array<Record<string, unknown>>> {
+): Promise<AgentItem[]> {
   return (await listAgents(services.db, guildId)).map((row) =>
     agentItem(row, isBusy(services, row.id)),
   );
