@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { agentGitIdentity, cloneFailures } from "../../src/coding/git.js";
+import { codingRepository } from "../helpers/repositories.js";
 
 test("agent git identity defaults to the platform domain", () => {
   assert.deepEqual(agentGitIdentity({ id: "a_1", name: "researcher" }), {
@@ -37,10 +38,10 @@ test("a clone that needed credentials says whether the repository had a token or
       { name: "moved", error: "fatal: repository 'https://git.example.com/moved.git/' not found" },
     ],
     [
-      { name: "private", url: "https://github.com/acme/private", connection_id: null },
-      { name: "picked", url: "https://github.com/acme/picked", connection_id: "conn_a" },
-      { name: "mirror", url: "https://git.example.com/mirror.git", connection_id: null },
-      { name: "moved", url: "https://git.example.com/moved.git", connection_id: null },
+      codingRepository({ name: "private", url: "https://github.com/acme/private", connection_id: null }),
+      codingRepository({ name: "picked", url: "https://github.com/acme/picked", connection_id: "conn_a" }),
+      codingRepository({ name: "mirror", url: "https://git.example.com/mirror.git", connection_id: null }),
+      codingRepository({ name: "moved", url: "https://git.example.com/moved.git", connection_id: null }),
     ],
     { picked: { token: "ghs_x", expires_at: "2099-01-01T00:00:00Z", host: "github.com", path: "acme/picked" } },
   );

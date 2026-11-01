@@ -33,6 +33,7 @@ import { TEST_CREDENTIALS } from "./models.js";
 import type { AgentPlaceRow, AgentRow, AgentScriptRow, FoundHarnessLogin, NewAgentScript } from "../../src/db/agents.js";
 import { Scripts, type ScriptDatabase } from "../../src/scripts/catalog.js";
 import { RepositoryTokens } from "../../src/coding/git.js";
+import type { CodingRepository } from "../../src/coding/repositories.js";
 import type { GroupDelivery, NewDirectRun, NewGroupRun, NewMessage, NewScheduleRun } from "../../src/db/runs.js";
 import type { ScheduleRow, PlannedWake } from "../../src/db/schedules.js";
 import { Schedules, type ScheduleDatabase } from "../../src/schedules/service.js";
@@ -468,7 +469,7 @@ export class FakeDB {
   }
 
   /** A run's repository tokens, minted and recorded through this fake. */
-  repositoryTokens(repositories: Array<Record<string, unknown>>): RepositoryTokens {
+  repositoryTokens(repositories: CodingRepository[]): RepositoryTokens {
     return new RepositoryTokens(this as never, repositories);
   }
 
@@ -696,7 +697,7 @@ export class RecordingDB {
   }
 
   /** A run's repository tokens, minted and recorded through this fake. */
-  repositoryTokens(repositories: Array<Record<string, unknown>>): RepositoryTokens {
+  repositoryTokens(repositories: CodingRepository[]): RepositoryTokens {
     return new RepositoryTokens(this as never, repositories);
   }
 

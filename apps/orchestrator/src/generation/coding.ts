@@ -7,7 +7,7 @@ import {
   RepositoryTokenInstallationGoneError,
 } from "../coding/git.js";
 import { retireInstallationGone } from "../coding/guild-repositories.js";
-import { codingRepositories } from "../coding/repositories.js";
+import { codingRepositories, type CodingRepository } from "../coding/repositories.js";
 import { clearHarnessLogin, getAgent, markHarnessLogin, type AgentRow } from "../db/agents.js";
 import { getGuild, listGuildRepositories } from "../db/guilds.js";
 import { isPlainRecord } from "../db/json.js";
@@ -75,7 +75,7 @@ async function githubConnectionOf(
 export async function guildRepositories(
   db: CodingRepositoriesDatabase,
   agent: AgentRow,
-): Promise<Array<Record<string, unknown>>> {
+): Promise<CodingRepository[]> {
   return codingRepositories(await db.listGuildRepositories(agent.guild_id), await githubConnectionOf(db, agent));
 }
 
