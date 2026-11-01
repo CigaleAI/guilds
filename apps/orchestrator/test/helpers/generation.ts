@@ -41,7 +41,7 @@ import { Issues, type IssuesDatabase } from "../../src/issues/index.js";
 import { GroupChat, type GroupChatDatabase } from "../../src/groupchat/index.js";
 import { defaultGroupRouter } from "../../src/typesafe/group.js";
 import type { AgentConfig, CompletionMetadata, RunConfigSnapshot, SecretRef, ToolCall } from "../../src/db/schema/index.js";
-import { validateAgentConfig } from "../../src/agents/config.js";
+import { validateAgentConfig } from "../../src/agents/validation.js";
 
 export const AGENT_CONFIG: AgentConfig = {
   model: "openrouter/openai/gpt-5.6-luna",

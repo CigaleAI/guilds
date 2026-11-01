@@ -8,8 +8,8 @@ import {
   DEFAULT_MAX_STEPS,
   DEFAULT_MAX_TOKENS,
   DEFAULT_TEMPERATURE,
-  validateAgentConfig,
 } from "../../src/agents/config.js";
+import { validateAgentConfig } from "../../src/agents/validation.js";
 import { operatorAuthor, linkedInNotionRecipe, huskLeadMatcherRecipe } from "../helpers/recipe-docs.js";
 import { validateRecipe } from "../../src/recipes/validate.js";
 import type { ApplyPlan, PlannedConnection } from "../../src/db/schema/index.js";

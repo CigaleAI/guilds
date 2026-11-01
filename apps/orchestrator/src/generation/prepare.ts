@@ -1,7 +1,7 @@
 import { existsSync, statSync } from "node:fs";
 import { agentLogins, agentRuntime, type RuntimeAccess } from "../access/runtime.js";
-import { isOptimizedBrowserOn, validateAgentConfig } from "../agents/config.js";
-import { AgentValidationError } from "../agents/validation.js";
+import { isOptimizedBrowserOn } from "../agents/config.js";
+import { AgentValidationError, validateAgentConfig } from "../agents/validation.js";
 import { agentActor } from "../artifacts/actors.js";
 import { ArtifactError } from "../artifacts/errors.js";
 import { stateRepositories } from "../coding/repositories.js";

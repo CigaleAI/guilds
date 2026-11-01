@@ -1,7 +1,7 @@
 import { writeBinding } from "../access/bindings.js";
 import { addAgent } from "../agents/service.js";
 import { writeAgentTask } from "../artifacts/task.js";
-import { validateAgentConfig } from "../agents/config.js";
+import { validateAgentConfig } from "../agents/validation.js";
 import { operatorActor } from "../artifacts/actors.js";
 import { createCollection, deleteCollection } from "../artifacts/collections.js";
 import { ArtifactError } from "../artifacts/errors.js";

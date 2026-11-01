@@ -1,3 +1,4 @@
+import type { DatabaseError } from "pg";
 import type { ArtifactActor } from "../artifacts/types.js";
 import type { ArtifactStore } from "../artifacts/store.js";
 import { ensureAgentRows } from "../artifacts/memory.js";
@@ -22,7 +23,6 @@ import {
 import { GuildNameTaken, RowMissing } from "../db/errors.js";
 import { recordFileChange } from "../db/file-changes.js";
 import { getGuild, type GuildRow } from "../db/guilds.js";
-import { isPlainRecord } from "../db/json.js";
 import { isUniqueViolation, type Queryable, withTransaction } from "../db/pg.js";
 import type { AgentConfig } from "../db/schema/index.js";
 import type { GenerationLoop } from "../generation/index.js";
@@ -40,9 +40,11 @@ import {
   type OrgPolicy,
 } from "../policy/index.js";
 import { AgentError } from "./errors.js";
-import { assertCodingAgent, validateAgentConfig, withCodingLimits } from "./config.js";
 import {
   AgentValidationError,
+  assertCodingAgent,
+  validateAgentConfig,
+  validateNewAgentConfig,
   validateAgentName,
   validateAvatarColor,
   validateAvatarShape,
@@ -97,17 +99,6 @@ export type AgentSettingsPatch = {
 /** An agent's validated config and the profile fields it changes. */
 export type AgentSettings = { config: AgentConfig; profile: AgentConfigPatch };
 
-/** A request's agent config as an object; an absent one is empty, anything else is refused. */
-function configObject(raw: unknown): Record<string, unknown> {
-  if (raw === undefined || raw === null) {
-    return {};
-  }
-  if (!isPlainRecord(raw)) {
-    throw new AgentValidationError("config must be an object");
-  }
-  return raw;
-}
-
 /**
  * Refuses the agent-optimized browser while the System One key is not on, or while its model's
  * provider is not connected for the organisation.
@@ -154,12 +145,16 @@ function isBusy(services: AgentServices, agentId: string): boolean {
   return services.generation?.isAgentBusy(agentId) ?? false;
 }
 
-/** The 409 for a name another agent or an operator of the guild holds; any other error as it is. */
-function nameConflict(error: unknown): unknown {
-  if (error instanceof GuildNameTaken) {
-    return new AgentError(409, error.message);
-  }
-  return isUniqueViolation(error) ? new AgentError(409, "agent name already exists") : error;
+/** A write refused for its name: an operator of the guild holds it, or the database finds another agent's. */
+type NameConflict = GuildNameTaken | DatabaseError;
+
+function isNameConflict(error: unknown): error is NameConflict {
+  return error instanceof GuildNameTaken || isUniqueViolation(error);
+}
+
+/** The 409 a name conflict answers with. */
+function nameConflictError(error: NameConflict): AgentError {
+  return new AgentError(409, error instanceof GuildNameTaken ? error.message : "agent name already exists");
 }
 
 /** The guild's agents as its page lists them, each marked while it generates. */
@@ -270,7 +265,7 @@ export async function createAgent(
   const wakeTriggers = validateWakeTriggers(request.wakeTriggers);
   const avatarShape = validateAvatarShape(request.avatarShape);
   const avatarColor = validateAvatarColor(request.avatarColor);
-  const config = validateAgentConfig(withCodingLimits(configObject(request.config)));
+  const config = validateNewAgentConfig(request.config);
   assertCodingAgent(config);
   await assertModelConnected(services.modelCredentials, guild.org_id, config.model);
   await assertBrowserOptimizedReady(services, guild.org_id, config);
@@ -295,7 +290,7 @@ export async function createAgent(
   try {
     return await addAgent(services, draft, { ...operator, guildId: guild.id, agentId }, new Date());
   } catch (error) {
-    throw nameConflict(error);
+    throw isNameConflict(error) ? nameConflictError(error) : error;
   }
 }
 
@@ -317,7 +312,7 @@ async function assertCanEnable(
   services: AgentServices,
   agent: AgentRow,
   config: AgentConfig,
-  previous: Record<string, unknown>,
+  previous: AgentConfig,
 ): Promise<void> {
   if (config.browser && !previous.browser) {
     await assertCanEnableBrowser(services.policy, services.db, agent.org_id, false);
@@ -367,7 +362,7 @@ async function writeAgentSettings(
         needs: { browser: Boolean(previous.browser), coding: Boolean(previous.coding) },
       });
     }
-    throw nameConflict(error);
+    throw isNameConflict(error) ? nameConflictError(error) : error;
   }
   if (row === null) {
     throw new AgentError(404, "agent not found");
@@ -403,7 +398,7 @@ export async function reconfigureAgent(
   userId: string,
   patch: AgentSettingsPatch,
 ): Promise<AgentRow> {
-  const config = validateAgentConfig(configObject(patch.config));
+  const config = validateAgentConfig(patch.config);
   const previous = agent.config;
   assertCodingAgent(config, previous);
   await assertModelConnected(services.modelCredentials, agent.org_id, config.model);
@@ -416,8 +411,8 @@ export async function reconfigureAgent(
   });
   await assertCanEnable(services, agent, config, previous);
   const profile = validateAgentProfile(patch);
-  const renamed =
-    typeof profile.name === "string" && profile.name !== agent.name ? profile.name : null;
+  const name = profile.name ?? agent.name;
+  const renamed = name !== agent.name ? name : null;
   if (renamed !== null) {
     assertRenameable(services, agent);
   }

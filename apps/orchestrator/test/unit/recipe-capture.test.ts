@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { TEST_MODEL } from "../helpers/models.js";
-import { CONFIG_KEYS, validateAgentConfig } from "../../src/agents/config.js";
+import { CONFIG_KEYS } from "../../src/agents/config.js";
+import { validateAgentConfig } from "../../src/agents/validation.js";
 import { loadAccessViewThrough } from "../../src/access/view.js";
 import { isPlainRecord } from "../../src/db/json.js";
 import { captureGuild,

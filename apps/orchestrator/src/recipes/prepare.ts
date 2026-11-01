@@ -5,7 +5,7 @@ import type {
   RecipeRole,
   RecipeSchedule,
 } from "../db/schema/index.js";
-import { isValidSecretAliases } from "../agents/config.js";
+import { isValidSecretAliases } from "../agents/validation.js";
 import { harnessModelOf, harnessOf } from "../coding/harnesses.js";
 import { harnessEffortOf, harnessEffortsFor } from "../coding/harness-models.js";
 import { INSTRUCTION_MAX, validateCron } from "../schedules/cron.js";
