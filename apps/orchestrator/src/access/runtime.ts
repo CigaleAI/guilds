@@ -21,13 +21,14 @@ import {
   type Resolved,
 } from "./index.js";
 import type { AgentPlaceRow } from "../db/agents.js";
-import type { RunMcpConnection, RunMcpTool, SecretRef } from "../db/schema/index.js";
+import type { AgentConfig, RunMcpConnection, RunMcpTool, SecretRef } from "../db/schema/index.js";
+import type { SecretEnv } from "./types.js";
 
 export const PLATFORM_SEED_TOOLS = ACCESS_NATIVE_TOOLS;
 
 /** A connection an agent reaches, with each tool it is offered and that tool's schema for the model. */
 export type RuntimeMcpConnection = Omit<RunMcpConnection, "tools"> & {
-  tools: Array<RunMcpTool & { schema: Record<string, unknown> }>;
+  tools: Array<RunMcpTool & Pick<ConnectionTool, "schema">>;
 };
 
 export type RuntimeAccess = {
@@ -284,10 +285,7 @@ export async function agentRuntime(
  * The environment with each alias set to the value of the secret it names, when that secret is in
  * it; an alias wins over a variable of its own name.
  */
-export function applySecretAliases(
-  env: Record<string, string>,
-  aliases: Record<string, string>,
-): Record<string, string> {
+export function applySecretAliases(env: SecretEnv, aliases: AgentConfig["secret_aliases"]): SecretEnv {
   const aliased = { ...env };
   for (const [alias, source] of Object.entries(aliases)) {
     if (source in env) {
@@ -304,8 +302,8 @@ export function applySecretAliases(
 export async function snapshotEnvValuesThrough(
   db: AccessDatabase,
   secretRefs: SecretRef[],
-): Promise<Record<string, string>> {
-  const values: Record<string, string> = {};
+): Promise<SecretEnv> {
+  const values: SecretEnv = {};
   for (const { id, name } of secretRefs) {
     const secret = await db.getSecret(id);
     if (secret === null || secret === undefined) {
@@ -329,6 +327,6 @@ export async function snapshotEnvValuesThrough(
 export async function snapshotEnvValues(
   db: Queryable,
   secretRefs: SecretRef[],
-): Promise<Record<string, string>> {
+): Promise<SecretEnv> {
   return snapshotEnvValuesThrough(accessDatabase(db), secretRefs);
 }
