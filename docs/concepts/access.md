@@ -495,6 +495,7 @@ Every entry carries its effective value, the scope it comes from
 `access.secrets` added.
 
 Code: `apps/orchestrator/src/access/view.ts`,
+`apps/orchestrator/src/access/types.ts` (the view's types),
 `apps/orchestrator/src/http/access-routes.ts`.
 
 Every connector's access entry carries `oauth_setup_state`:

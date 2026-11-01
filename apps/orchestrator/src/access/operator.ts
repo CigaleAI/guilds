@@ -106,7 +106,7 @@ export async function setBinding(
   db: Queryable,
   user: UserRow,
   request: BindingRequest,
-): Promise<Record<string, unknown>> {
+): Promise<ReturnType<typeof bindingItem>> {
   const [catalogKind, catalogId] = validateCatalog(request.catalogKind, request.catalogId);
   const [scope, scopeId] = validateScope(request.scope, request.scopeId);
   const key = { catalogKind, catalogId, scope, scopeId };

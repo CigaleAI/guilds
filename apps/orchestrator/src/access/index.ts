@@ -6,6 +6,7 @@ import { awaitingSettings } from "../connectors/login.js";
 import type { BindingKey, BindingRow, BindingState } from "../db/bindings.js";
 import type { McpConnectionRow } from "../db/mcp.js";
 import type { ToolInputSchema } from "../db/schema/index.js";
+import type { AccessBinding, AccessView, McpServerAccess, McpToolAccess } from "./types.js";
 
 export const NOTE_TOOLS = [
   "note_find",
@@ -53,6 +54,8 @@ export const BROWSER_CAPABILITY_TOOLS = [
 ] as const;
 export const ACCESS_NATIVE_TOOLS = NATIVE_TOOLS;
 export const CATALOG_KINDS = ["native_tool", "mcp", "mcp_tool"] as const;
+/** What a binding switches: a native tool, a connector, or one of a connector's tools. */
+export type CatalogKind = (typeof CATALOG_KINDS)[number];
 export const SCOPES = ["platform", "org", "guild", "agent"] as const;
 
 /** A refused binding request, with the HTTP status it answers with: 422 unless it says otherwise. */
@@ -111,7 +114,7 @@ export type BoundConnector = {
 export type ScopeConnectors = {
   servers: LoadedConnector[];
   connections: McpConnectionRow[];
-  listedTools: Record<string, Array<Record<string, unknown>>>;
+  listedTools: Record<string, McpToolAccess[]>;
 };
 
 export type Resolved = {
@@ -126,6 +129,11 @@ export type Resolved = {
 /** Whether `value` is one of `names`. */
 function isOneOf<T extends string>(names: readonly T[], value: string): value is T {
   return names.some((name) => name === value);
+}
+
+/** Whether `value` names a kind of catalog item. */
+export function isCatalogKind(value: string): value is CatalogKind {
+  return isOneOf(CATALOG_KINDS, value);
 }
 
 export function validateScope(
@@ -148,10 +156,10 @@ export function validateScope(
 }
 
 export function validateCatalog(catalogKind: string, catalogId: string): [string, string] {
-  if (!isOneOf(CATALOG_KINDS, catalogKind)) {
+  if (!isCatalogKind(catalogKind)) {
     throw new BindingError("catalog_kind must be native_tool, mcp, or mcp_tool");
   }
-  if (typeof catalogId !== "string" || !catalogId.trim()) {
+  if (!catalogId.trim()) {
     throw new BindingError("catalog_id is required");
   }
   const id = catalogId.trim();
@@ -332,7 +340,7 @@ export function resolvedMcp(
   return servers.map((server) => [resolveItem(rows, "mcp", server.id, scope), server]);
 }
 
-export function toolView(item: Resolved): Record<string, unknown> {
+export function toolView(item: Resolved): AccessBinding {
   return {
     name: item.catalog_id,
     enabled: item.enabled,
@@ -354,7 +362,7 @@ export function mcpToolView(
   item: Resolved,
   listed: ListedToolFields,
   serverSource: string | null,
-): Record<string, unknown> {
+): McpToolAccess {
   return {
     name: listed.namespaced_name,
     remote_name: listed.remote_name,
@@ -370,8 +378,8 @@ export function mcpView(
   item: Resolved,
   server: LoadedConnector,
   connection: McpConnectionRow | null,
-  tools: Array<Record<string, unknown>>,
-): Record<string, unknown> {
+  tools: McpToolAccess[],
+): McpServerAccess {
   const overlay =
     item.overlay === null
       ? null
@@ -379,7 +387,7 @@ export function mcpView(
           enabled: item.overlay.enabled,
           connection_id: item.overlay.connection_id,
         };
-  const view: Record<string, unknown> = {
+  return {
     id: server.id,
     slug: server.slug,
     name: server.display_name,
@@ -403,7 +411,6 @@ export function mcpView(
     settings: connection === null ? {} : connection.settings,
     needs_settings: connection !== null && awaitingSettings(connection),
   };
-  return view;
 }
 
 /** The tools and connectors a scope sees, each resolved from `rows` for it. */
@@ -411,7 +418,7 @@ export function accessPayload(
   rows: ResolvableBinding[],
   scope: ResolutionScope,
   connectors: ScopeConnectors,
-): Record<string, unknown> {
+): AccessView {
   const tools = resolvedTools(rows, scope).map(toolView);
   const byConnection = new Map<string, McpConnectionRow>();
   for (const connection of connectors.connections) {
