@@ -4,12 +4,12 @@ import { AgentFileError, homeOfDirectory, readAgentFile } from "../lib/agent-fil
 import { CredentialError, secretPayload, validateSecretDescription, validateSecretName } from "../credentials/validate.js";
 import { encryptPayload } from "../credentials/crypto.js";
 import { newId } from "../lib/ids.js";
-import { secretGrants } from "./access.js";
 import {
   countSecretsCreatedByAgent,
   getSecretByName,
   insertSecret,
   updateSecret,
+  type SecretRow,
 } from "../db/secrets.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 
@@ -165,12 +165,11 @@ export async function storeAgentSecretThrough(
 }
 
 /** This agent created the secret and is its only grant. */
-function ownsAlone(row: Record<string, unknown>, agentId: string): boolean {
+function ownsAlone(row: SecretRow, agentId: string): boolean {
   if (row.org_wide || row.created_by_agent_id !== agentId) {
     return false;
   }
-  const grants = secretGrants(row);
-  return grants.length === 1 && grants[0]!.agent_id === agentId;
+  return row.grants.length === 1 && row.grants[0]!.agent_id === agentId;
 }
 
 /** Removes the value file once its secret is saved. */

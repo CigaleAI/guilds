@@ -1229,41 +1229,8 @@
       "count": 1
     }
   },
-  "src/secrets/access.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 8
-    },
-    "limits/erased-return-type": {
-      "count": 1
-    },
-    "typescript/consistent-type-assertions": {
-      "count": 1
-    }
-  },
   "src/secrets/agent.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    },
     "limits/silent-catch": {
-      "count": 1
-    }
-  },
-  "src/secrets/index.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    }
-  },
-  "src/secrets/service.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 2
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    },
-    "limits/erased-alias": {
       "count": 1
     }
   },
