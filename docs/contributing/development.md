@@ -388,6 +388,30 @@ orchestrator's tests, reading through an optional chain is the
 assertion that the value is there, so `no-unsafe-optional-chaining`
 is off for them.
 
+Every package also runs, on the same source, the rules vendored from
+anti-slop (`lint/anti-slop/`, [Third-party
+notices](../../THIRD_PARTY_NOTICES.md)), which refuse a type or a
+construct that carries no evidence
+([Types and errors](code-guidelines.md#types-and-errors)):
+`no-unknown-parameters` (a parameter typed `unknown`, or a union
+holding it, except the subject of a type predicate and an error's
+`cause`), `no-object-parameters` (a parameter typed `object`),
+`no-unsafe-dictionary-type` (a dictionary whose value type is
+`unknown`, `any`, `object` or `{}`, in any position but a generic
+constraint), `no-runtime-typeof` (a `typeof` check that narrows a
+value outside a type guard; a probe for `"undefined"` is allowed),
+`no-known-value-widening` (a `Record<string, T>` annotation on a
+value whose keys are known, where `satisfies` keeps them),
+`no-reduce-accumulator-copy` with Oxlint's
+`oxc/no-accumulating-spread` (a reducer that copies its
+accumulator), and `no-module-mocking`, on tests too (a `vi.mock`
+or `jest.mock`). The modules that parse what arrives from outside
+take `unknown` and check it, so `no-unknown-parameters` and
+`no-runtime-typeof` are off in a domain's `validation`, `validate`
+and `parse` modules in the orchestrator and in `src/api/wire.ts`
+in the operator app. The operator app and the design system also
+run the React correctness rules, `jsx-key` among them.
+
 `pnpm lint` runs Oxlint through `scripts/lint.mjs`, which subtracts
 the errors that predate the rules, recorded in the package's
 `lint-suppressions.json` as a count per file and rule. Lint fails

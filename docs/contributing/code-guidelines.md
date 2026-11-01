@@ -19,6 +19,12 @@ Oxlint and the import-cycle check
 - an export whose return type is `unknown` or
   `Record<string, unknown>`, and a type alias that is only one of
   them;
+- a parameter typed `unknown` or `object`, outside a type predicate
+  and the modules that parse input; a dictionary whose value type
+  is `unknown`, `any`, `object` or `{}`; a `typeof` check outside a
+  type guard; a `Record<string, T>` annotation on a value whose
+  keys are known; a reducer that copies its accumulator; and a
+  module mock in a test;
 - explicit types on what an orchestrator module exports;
 - imports of `fastify`, a value import of `db/` from `http/`, and
   what `db/` and `lib/` import;

@@ -1,7 +1,552 @@
 {
+  "src/api/attachments.ts": {
+    "anti-slop/no-known-value-widening": {
+      "count": 1
+    }
+  },
   "src/api/client.ts": {
+    "anti-slop/no-known-value-widening": {
+      "count": 1
+    },
+    "anti-slop/no-runtime-typeof": {
+      "count": 4
+    },
+    "anti-slop/no-unknown-parameters": {
+      "count": 2
+    },
     "typescript/consistent-type-assertions": {
       "count": 2
+    }
+  },
+  "src/api/clientLog.ts": {
+    "anti-slop/no-unknown-parameters": {
+      "count": 1
+    }
+  },
+  "src/api/files.ts": {
+    "anti-slop/no-known-value-widening": {
+      "count": 1
+    }
+  },
+  "src/api/liveEvents.ts": {
+    "anti-slop/no-unknown-parameters": {
+      "count": 1
+    }
+  },
+  "src/api/liveTurn.ts": {
+    "anti-slop/no-runtime-typeof": {
+      "count": 3
+    },
+    "anti-slop/no-unknown-parameters": {
+      "count": 2
+    }
+  },
+  "src/api/queries/access.ts": {
+    "anti-slop/no-unsafe-dictionary-type": {
+      "count": 3
+    }
+  },
+  "src/api/queries/recipes.ts": {
+    "anti-slop/no-unknown-parameters": {
+      "count": 1
+    }
+  },
+  "src/api/queries/runs.ts": {
+    "anti-slop/no-runtime-typeof": {
+      "count": 2
+    }
+  },
+  "src/api/queries/studio.ts": {
+    "anti-slop/no-known-value-widening": {
+      "count": 1
+    }
+  },
+  "src/api/queries/tables.ts": {
+    "anti-slop/no-unsafe-dictionary-type": {
+      "count": 1
+    }
+  },
+  "src/api/session.ts": {
+    "anti-slop/no-known-value-widening": {
+      "count": 2
+    }
+  },
+  "src/api/streams.ts": {
+    "anti-slop/no-runtime-typeof": {
+      "count": 1
+    },
+    "anti-slop/no-unknown-parameters": {
+      "count": 1
+    }
+  },
+  "src/api/toolProgress.ts": {
+    "anti-slop/no-known-value-widening": {
+      "count": 3
+    },
+    "anti-slop/no-runtime-typeof": {
+      "count": 3
+    },
+    "anti-slop/no-unknown-parameters": {
+      "count": 5
+    }
+  },
+  "src/api/types/access.ts": {
+    "anti-slop/no-unsafe-dictionary-type": {
+      "count": 4
+    }
+  },
+  "src/api/types/admin.ts": {
+    "anti-slop/no-unsafe-dictionary-type": {
+      "count": 3
+    }
+  },
+  "src/api/types/agents.ts": {
+    "anti-slop/no-unsafe-dictionary-type": {
+      "count": 1
+    }
+  },
+  "src/api/types/recipes.ts": {
+    "anti-slop/no-unsafe-dictionary-type": {
+      "count": 2
+    }
+  },
+  "src/api/types/runs.ts": {
+    "anti-slop/no-unsafe-dictionary-type": {
+      "count": 3
+    }
+  },
+  "src/api/types/scripts.ts": {
+    "anti-slop/no-unsafe-dictionary-type": {
+      "count": 1
+    }
+  },
+  "src/api/types/studio.ts": {
+    "anti-slop/no-unsafe-dictionary-type": {
+      "count": 2
+    }
+  },
+  "src/api/types/tables.ts": {
+    "anti-slop/no-unsafe-dictionary-type": {
+      "count": 4
+    }
+  },
+  "src/api/wire.ts": {
+    "anti-slop/no-unsafe-dictionary-type": {
+      "count": 2
+    }
+  },
+  "src/app/agents.ts": {
+    "anti-slop/no-known-value-widening": {
+      "count": 4
+    }
+  },
+  "src/app/format.ts": {
+    "anti-slop/no-unknown-parameters": {
+      "count": 1
+    }
+  },
+  "src/app/returnTrail.ts": {
+    "anti-slop/no-known-value-widening": {
+      "count": 3
+    }
+  },
+  "src/app/router.tsx": {
+    "anti-slop/no-runtime-typeof": {
+      "count": 6
+    },
+    "anti-slop/no-unknown-parameters": {
+      "count": 1
+    },
+    "anti-slop/no-unsafe-dictionary-type": {
+      "count": 8
+    }
+  },
+  "src/features/access/ConnectDialogs.tsx": {
+    "anti-slop/no-unsafe-dictionary-type": {
+      "count": 1
+    }
+  },
+  "src/features/access/ServerCard.tsx": {
+    "anti-slop/no-unsafe-dictionary-type": {
+      "count": 1
+    }
+  },
+  "src/features/access/SettingsForm.tsx": {
+    "anti-slop/no-runtime-typeof": {
+      "count": 9
+    },
+    "anti-slop/no-unknown-parameters": {
+      "count": 7
+    },
+    "anti-slop/no-unsafe-dictionary-type": {
+      "count": 4
+    }
+  },
+  "src/features/access/TestConnectionDialog.tsx": {
+    "anti-slop/no-runtime-typeof": {
+      "count": 1
+    },
+    "anti-slop/no-unsafe-dictionary-type": {
+      "count": 1
+    }
+  },
+  "src/features/access/access.ts": {
+    "anti-slop/no-known-value-widening": {
+      "count": 4
+    }
+  },
+  "src/features/access/secrets.ts": {
+    "anti-slop/no-runtime-typeof": {
+      "count": 5
+    },
+    "anti-slop/no-unknown-parameters": {
+      "count": 4
+    },
+    "anti-slop/no-unsafe-dictionary-type": {
+      "count": 2
+    }
+  },
+  "src/features/access/toolArgs.ts": {
+    "anti-slop/no-known-value-widening": {
+      "count": 3
+    },
+    "anti-slop/no-runtime-typeof": {
+      "count": 6
+    },
+    "anti-slop/no-unsafe-dictionary-type": {
+      "count": 6
+    }
+  },
+  "src/features/admin/InstanceTab.tsx": {
+    "anti-slop/no-known-value-widening": {
+      "count": 4
+    }
+  },
+  "src/features/admin/githubManifest.ts": {
+    "anti-slop/no-unsafe-dictionary-type": {
+      "count": 1
+    }
+  },
+  "src/features/admin/toolSchema.ts": {
+    "anti-slop/no-unsafe-dictionary-type": {
+      "count": 1
+    }
+  },
+  "src/features/agent/CodingStrip.tsx": {
+    "react/purity": {
+      "count": 1
+    }
+  },
+  "src/features/agent/CreateCodingAgent.tsx": {
+    "react/jsx-key": {
+      "count": 5
+    }
+  },
+  "src/features/agent/browser/AgentBrowser.tsx": {
+    "anti-slop/no-runtime-typeof": {
+      "count": 2
+    }
+  },
+  "src/features/agent/chat/FlowView.tsx": {
+    "anti-slop/no-runtime-typeof": {
+      "count": 4
+    },
+    "anti-slop/no-unknown-parameters": {
+      "count": 2
+    },
+    "anti-slop/no-unsafe-dictionary-type": {
+      "count": 1
+    }
+  },
+  "src/features/agent/chat/ToolCallDetail.tsx": {
+    "anti-slop/no-known-value-widening": {
+      "count": 2
+    },
+    "anti-slop/no-runtime-typeof": {
+      "count": 1
+    }
+  },
+  "src/features/agent/chat/Transcript.tsx": {
+    "anti-slop/no-runtime-typeof": {
+      "count": 1
+    },
+    "anti-slop/no-unsafe-dictionary-type": {
+      "count": 1
+    }
+  },
+  "src/features/agent/chat/callDetail.ts": {
+    "anti-slop/no-runtime-typeof": {
+      "count": 3
+    },
+    "anti-slop/no-unknown-parameters": {
+      "count": 4
+    }
+  },
+  "src/features/agent/harness.ts": {
+    "anti-slop/no-known-value-widening": {
+      "count": 3
+    },
+    "anti-slop/no-unknown-parameters": {
+      "count": 1
+    }
+  },
+  "src/features/agent/prompt/AgentPrompt.tsx": {
+    "anti-slop/no-unknown-parameters": {
+      "count": 1
+    }
+  },
+  "src/features/agent/routine/describeTiming.ts": {
+    "anti-slop/no-known-value-widening": {
+      "count": 2
+    }
+  },
+  "src/features/agent/runs/runFlowModel.ts": {
+    "anti-slop/no-known-value-widening": {
+      "count": 2
+    },
+    "anti-slop/no-runtime-typeof": {
+      "count": 1
+    },
+    "anti-slop/no-unsafe-dictionary-type": {
+      "count": 4
+    }
+  },
+  "src/features/agent/runs/toolFormat.ts": {
+    "anti-slop/no-runtime-typeof": {
+      "count": 23
+    },
+    "anti-slop/no-unknown-parameters": {
+      "count": 9
+    },
+    "anti-slop/no-unsafe-dictionary-type": {
+      "count": 5
+    }
+  },
+  "src/features/agent/runs/toolKinds.ts": {
+    "anti-slop/no-runtime-typeof": {
+      "count": 2
+    },
+    "anti-slop/no-unknown-parameters": {
+      "count": 4
+    }
+  },
+  "src/features/agent/scripts/scriptParameters.ts": {
+    "anti-slop/no-unsafe-dictionary-type": {
+      "count": 1
+    }
+  },
+  "src/features/agent/settings/HarnessReadiness.tsx": {
+    "anti-slop/no-runtime-typeof": {
+      "count": 1
+    },
+    "react/purity": {
+      "count": 1
+    }
+  },
+  "src/features/builder/widgets.ts": {
+    "anti-slop/no-runtime-typeof": {
+      "count": 5
+    },
+    "anti-slop/no-unknown-parameters": {
+      "count": 5
+    },
+    "anti-slop/no-unsafe-dictionary-type": {
+      "count": 4
+    }
+  },
+  "src/features/coach/coachRows.ts": {
+    "anti-slop/no-unsafe-dictionary-type": {
+      "count": 1
+    }
+  },
+  "src/features/instance/instance.ts": {
+    "anti-slop/no-known-value-widening": {
+      "count": 1
+    }
+  },
+  "src/features/machines/machines.ts": {
+    "anti-slop/no-known-value-widening": {
+      "count": 3
+    }
+  },
+  "src/features/notes/changeActor.ts": {
+    "anti-slop/no-known-value-widening": {
+      "count": 1
+    }
+  },
+  "src/features/recipes/RecipePage.tsx": {
+    "anti-slop/no-unknown-parameters": {
+      "count": 1
+    }
+  },
+  "src/features/recipes/applySteps.ts": {
+    "anti-slop/no-known-value-widening": {
+      "count": 2
+    }
+  },
+  "src/features/recipes/plan/designSystems.ts": {
+    "anti-slop/no-unknown-parameters": {
+      "count": 1
+    }
+  },
+  "src/features/recipes/plan/planActions.ts": {
+    "anti-slop/no-known-value-widening": {
+      "count": 1
+    }
+  },
+  "src/features/recipes/plan/planAgents.ts": {
+    "anti-slop/no-runtime-typeof": {
+      "count": 2
+    }
+  },
+  "src/features/recipes/plan/planConnectors.ts": {
+    "anti-slop/no-known-value-widening": {
+      "count": 2
+    }
+  },
+  "src/features/recipes/plan/planHandoffs.ts": {
+    "anti-slop/no-known-value-widening": {
+      "count": 1
+    }
+  },
+  "src/features/recipes/plan/planNotes.ts": {
+    "anti-slop/no-known-value-widening": {
+      "count": 2
+    }
+  },
+  "src/features/recipes/plan/planRoutines.ts": {
+    "anti-slop/no-unknown-parameters": {
+      "count": 1
+    }
+  },
+  "src/features/recipes/plan/planSections.ts": {
+    "anti-slop/no-known-value-widening": {
+      "count": 1
+    }
+  },
+  "src/features/recipes/plan/recipeDraft.ts": {
+    "anti-slop/no-runtime-typeof": {
+      "count": 1
+    },
+    "anti-slop/no-unknown-parameters": {
+      "count": 3
+    }
+  },
+  "src/features/shell/foldedGuilds.ts": {
+    "anti-slop/no-runtime-typeof": {
+      "count": 1
+    }
+  },
+  "src/features/studio/LoginsPopover.tsx": {
+    "anti-slop/no-known-value-widening": {
+      "count": 1
+    }
+  },
+  "src/features/studio/ProposalCards.tsx": {
+    "anti-slop/no-known-value-widening": {
+      "count": 1
+    },
+    "anti-slop/no-runtime-typeof": {
+      "count": 4
+    }
+  },
+  "src/features/studio/activity/ChainList.tsx": {
+    "anti-slop/no-known-value-widening": {
+      "count": 1
+    }
+  },
+  "src/features/studio/activity/activityModel.ts": {
+    "anti-slop/no-runtime-typeof": {
+      "count": 1
+    }
+  },
+  "src/features/studio/activity/wakeEffects.ts": {
+    "anti-slop/no-runtime-typeof": {
+      "count": 1
+    }
+  },
+  "src/features/studio/chatModel.ts": {
+    "anti-slop/no-known-value-widening": {
+      "count": 1
+    },
+    "anti-slop/no-runtime-typeof": {
+      "count": 14
+    },
+    "anti-slop/no-unknown-parameters": {
+      "count": 3
+    },
+    "anti-slop/no-unsafe-dictionary-type": {
+      "count": 6
+    }
+  },
+  "src/features/studio/investigate.ts": {
+    "anti-slop/no-unsafe-dictionary-type": {
+      "count": 1
+    }
+  },
+  "src/features/studio/location.ts": {
+    "anti-slop/no-known-value-widening": {
+      "count": 1
+    },
+    "anti-slop/no-runtime-typeof": {
+      "count": 2
+    },
+    "anti-slop/no-unknown-parameters": {
+      "count": 3
+    },
+    "anti-slop/no-unsafe-dictionary-type": {
+      "count": 2
+    }
+  },
+  "src/features/studio/pendingModel.ts": {
+    "anti-slop/no-known-value-widening": {
+      "count": 2
+    },
+    "anti-slop/no-unsafe-dictionary-type": {
+      "count": 4
+    }
+  },
+  "src/features/studio/state/StateItemDetail.tsx": {
+    "anti-slop/no-known-value-widening": {
+      "count": 1
+    }
+  },
+  "src/features/studio/state/StateList.tsx": {
+    "anti-slop/no-known-value-widening": {
+      "count": 2
+    }
+  },
+  "src/features/studio/state/StateSection.tsx": {
+    "anti-slop/no-known-value-widening": {
+      "count": 1
+    }
+  },
+  "src/features/studio/state/referencesModel.ts": {
+    "anti-slop/no-known-value-widening": {
+      "count": 1
+    }
+  },
+  "src/features/studio/state/stateModel.ts": {
+    "anti-slop/no-known-value-widening": {
+      "count": 1
+    }
+  },
+  "src/features/studio/tools/ToolDetail.tsx": {
+    "anti-slop/no-known-value-widening": {
+      "count": 1
+    }
+  },
+  "src/features/studio/tools/ToolsSection.tsx": {
+    "anti-slop/no-known-value-widening": {
+      "count": 1
+    }
+  },
+  "src/features/tables/values.ts": {
+    "anti-slop/no-runtime-typeof": {
+      "count": 6
+    },
+    "anti-slop/no-unknown-parameters": {
+      "count": 3
     }
   }
 }

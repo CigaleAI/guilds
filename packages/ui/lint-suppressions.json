@@ -1,5 +1,8 @@
 {
   "src/components/actions/CopyButton.tsx": {
+    "anti-slop/no-runtime-typeof": {
+      "count": 1
+    },
     "limits/silent-catch": {
       "count": 1
     }
@@ -13,11 +16,25 @@
     }
   },
   "src/components/content/JsonTree.tsx": {
+    "anti-slop/no-object-parameters": {
+      "count": 1
+    },
+    "anti-slop/no-runtime-typeof": {
+      "count": 4
+    },
+    "anti-slop/no-unsafe-dictionary-type": {
+      "count": 1
+    },
     "limits/inline-parameter-type": {
       "count": 2
     },
     "typescript/consistent-type-assertions": {
       "count": 1
+    }
+  },
+  "src/components/content/Markdown.tsx": {
+    "anti-slop/no-runtime-typeof": {
+      "count": 5
     }
   },
   "src/components/content/OfferedTools.tsx": {
@@ -58,6 +75,11 @@
       "count": 1
     }
   },
+  "src/components/content/textNodes.ts": {
+    "anti-slop/no-unsafe-dictionary-type": {
+      "count": 1
+    }
+  },
   "src/components/controls/Composer.tsx": {
     "complexity": {
       "count": 2
@@ -83,6 +105,11 @@
   },
   "src/components/controls/Slider.tsx": {
     "complexity": {
+      "count": 1
+    }
+  },
+  "src/components/controls/Tabs.tsx": {
+    "anti-slop/no-runtime-typeof": {
       "count": 1
     }
   },
@@ -131,6 +158,11 @@
       "count": 1
     }
   },
+  "src/components/navigation/AgentHeader.tsx": {
+    "anti-slop/no-runtime-typeof": {
+      "count": 1
+    }
+  },
   "src/components/navigation/AgentRow.tsx": {
     "limits/inline-parameter-type": {
       "count": 1
@@ -148,6 +180,11 @@
   },
   "src/components/navigation/UtilityLink.tsx": {
     "complexity": {
+      "count": 1
+    }
+  },
+  "src/components/navigation/WorkspaceHeader.tsx": {
+    "anti-slop/no-runtime-typeof": {
       "count": 1
     }
   },
@@ -181,6 +218,9 @@
     }
   },
   "src/components/runs/GenerationHero.tsx": {
+    "anti-slop/no-known-value-widening": {
+      "count": 1
+    },
     "complexity": {
       "count": 1
     }
@@ -198,6 +238,11 @@
       "count": 3
     },
     "typescript/consistent-type-assertions": {
+      "count": 1
+    }
+  },
+  "src/identity.ts": {
+    "anti-slop/no-known-value-widening": {
       "count": 1
     }
   },
@@ -220,6 +265,9 @@
     }
   },
   "src/writeDesignSystemDoc.ts": {
+    "anti-slop/no-known-value-widening": {
+      "count": 2
+    },
     "complexity": {
       "count": 3
     },
