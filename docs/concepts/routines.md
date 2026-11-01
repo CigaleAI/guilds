@@ -153,7 +153,7 @@ chip. The guild **Settings** tab edits the same switch
 | Rule | Value or behaviour |
 | --- | --- |
 | Timing | exactly one of cron or random window |
-| Cron | five fields, UTC; at save, the next two wake-ups at least 5 minutes apart |
+| Cron | five fields, UTC; every two wake-ups of a day at least 5 minutes apart, the day's last and the next day's first included |
 | Window times | 24-hour `HH:MM`; start and end must differ |
 | Window timezone | an IANA name, such as `Europe/Paris` |
 | Wake-ups a day | positive; must leave at least 5 minutes per wake-up |
@@ -241,7 +241,10 @@ are in [Artifacts](artifacts.md#configuration-change-log).
 ### Firing
 
 `fireDueSchedules` (`apps/orchestrator/src/generation/runs.ts`) runs
-on the 30-second tick (`SCHEDULER_TICK_MS`). It skips a busy agent and
+on each tick. The scheduler waits `schedulerTickMs` between ticks:
+30 seconds, set in `LOOP_TIMINGS`
+(`apps/orchestrator/src/generation/index.ts`), with no setting in
+`.env`. It skips a busy agent and
 does not advance `next_run_at`, so the routine is delayed, not queued
 as a second job and not skipped forever. Every other outcome, a failed
 create (bad prompts, bad config) included, sets `last_run_at` to the

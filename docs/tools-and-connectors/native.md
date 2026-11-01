@@ -21,14 +21,15 @@ tools do not reach the memory archive.
 
 | Tool | Parameters | Does |
 |---|---|---|
-| `note_find` | `query`, `level`, `limit` (default 20) | Searches the notes the agent may read. An empty `query` lists them. `level` is `agent`, `guild`, or `org`; omitted, every level. Returns `{ notes }`, each with its `access`: `read` or `write` |
+| `note_find` | `query`, `level`, `limit` (default 20, at most 100) | Searches the notes the agent may read. An empty `query` lists them. `level` is `agent`, `guild`, or `org`; omitted, every level. Returns `{ notes }`, each with its `access`: `read` or `write` |
 | `note_get` | `path` (required) | Reads one note by its display path. A soft-deleted note returns a tombstone |
 | `note_write` | `content` (required), and `level` with `key`, or `path` | With `level` and `key`, writes the agent's note at that level: a new note only at `agent` or `guild` level, an existing one with `write` on it. With `path`, rewrites any existing note the agent may write. `key` is the `.md` file name. Returns the display path |
 | `note_delete` | `path` (required) | Soft-deletes a note the agent may write. `task.md` and `memory.md` cannot be deleted |
 
-A collection or record path is refused with a pointer to the record
-tools. A script is refused with a pointer to the script tools, and a
-file with a pointer to the file tools.
+A record path is refused with a pointer to the record tools. A
+collection path is refused too: collections are the operator's. A
+script is refused with a pointer to the script tools, and a file with
+a pointer to the file tools.
 
 An agent always reaches its own agent-level notes. Every other note
 is reached through its access list
@@ -42,7 +43,7 @@ home and the store; they never pass through the model.
 
 | Tool | Parameters | Does |
 |---|---|---|
-| `file_find` | `query`, `level`, `limit` (default 20) | Searches the files the agent may read by name and description. An empty `query` lists them. `level` is `agent`, `guild`, or `org`; omitted, every level. Returns `{ files }`, each with its `access`: `read` or `write` |
+| `file_find` | `query`, `level`, `limit` (default 20, at most 100) | Searches the files the agent may read by name and description. An empty `query` lists them. `level` is `agent`, `guild`, or `org`; omitted, every level. Returns `{ files }`, each with its `access`: `read` or `write` |
 | `file_fetch` | `path` (required), `home_path` | Copies the file into the agent's home, at `home_path` or `shared/<name>`. Returns that path with the file's name, description, media type, and size |
 | `file_put` | `home_path`, `level`, `description` (required), `name`, `mime` | Copies a file from the home into the store at `level` under `name`, its own name by default. A new file only at `agent` or `guild` level; a file of that name is replaced with `write` on it. Returns the display path |
 | `file_delete` | `path` (required) | Deletes a file the agent may write |
@@ -118,7 +119,7 @@ modes, and each offers its own tools:
 | Mode | Runs when | Tools |
 |---|---|---|
 | Step-by-step | `browser` is on and the agent-optimized browser is not | The eight tools below |
-| Agent-optimized | `browser_optimized` is on and the System One [platform key](platform-keys.md) is on | `browse` and `browser_eval` |
+| Agent-optimized | `browser` and `browser_optimized` are on, and the System One [platform key](platform-keys.md) is on | `browse` and `browser_eval` |
 
 `browse` delegates a whole web task on the agent's Chrome and is
 offered in place of the seven step tools; `browser_eval` is offered in

@@ -40,7 +40,7 @@ does not reach the container.
 | Variable | Value |
 |---|---|
 | `STATE_ROOT` | An absolute path on this host. The stack keeps its state under it. A relative path is refused, because the sandbox server mounts each machine's directory by this path |
-| `SECRETS_MASTER_KEY` | 32 random bytes, as hex or base64 (`./setup.sh` writes hex). It encrypts every stored credential: connector logins, model keys, platform keys, and secrets. `.env` holds its only copy. A lost key loses them all. The server refuses to start without it, and refuses the all-zero key |
+| `SECRETS_MASTER_KEY` | 32 random bytes, as hex, base64, or base64url (`./setup.sh` writes hex). It encrypts every stored credential: connector logins, model keys, platform keys, and secrets. `.env` holds its only copy. A lost key loses them all. The server refuses to start without it, and refuses the all-zero key unless `ALLOW_ZERO_MASTER_KEY=1` ([Development](#development)) |
 | `POSTGRES_PASSWORD` | The database password. Generated |
 | `OPENSANDBOX_API_KEY` | The key the server and the sandbox server share. Generated |
 
@@ -87,8 +87,8 @@ read-only.
 | Integration | Variables | Switches on | Without it |
 |---|---|---|---|
 | Error reporting | `SENTRY_DSN` ([Error reporting](#error-reporting)) | Errors, traces, logs, and runtime metrics sent to Sentry ([Maintain](maintain.md#logs-and-metrics)) | Structured logs only |
-| Registry | `REGISTRY_URL`, the guilds.run registry while unset. `REGISTRY_PUBLIC_KEY` to require a signed index | Installing connectors and recipes from a registry ([Connector registry](../tools-and-connectors/connector-registry.md)) | Set empty, the box is offline. Nothing installs, and recipe apply names a missing connector unknown |
-| Connector code | `CONNECTORS_CODE_TIER=1` | Registry connectors that carry adapter code, from an index `REGISTRY_PUBLIC_KEY` verifies ([Code tier](../tools-and-connectors/connector-registry.md#code-tier)) | A code install is refused, and code already on disk is not loaded |
+| Registry | `REGISTRY_URL`, `https://registry.guilds.run` while unset. `REGISTRY_PUBLIC_KEY`, optional, to require a signed index | Installing connectors and recipes from a registry ([Connector registry](../tools-and-connectors/connector-registry.md)) | Set empty, the box is offline. Nothing installs, and recipe apply names a missing connector unknown |
+| Connector code | `CONNECTORS_CODE_TIER=1`. The code lives under `CONNECTORS_ROOT`, which the Compose file sets | Registry connectors that carry adapter code, from an index `REGISTRY_PUBLIC_KEY` verifies ([Code tier](../tools-and-connectors/connector-registry.md#code-tier)) | A code install is refused, and code already on disk is not loaded |
 
 No integration serves a model provider. Each organisation connects
 its own keys under **Settings**, **Model keys**
@@ -104,7 +104,7 @@ its own keys under **Settings**, **Model keys**
 | `TRUSTED_PROXY_SECRET` | | The secret the proxy sends in `X-Guilds-Proxy-Secret`. Required by `trusted-header` |
 | `TRUSTED_HEADER_EMAIL` | `X-Forwarded-Email` | The header the proxy sends the email in |
 | `OPERATOR_EMAIL` | | Your own email. Boot gives it to the box's first user. Required by `trusted-header` |
-| `ADAPTER_PROXY_URL` | empty | A forward proxy for the HTTP calls of connector adapters and remote MCP servers. Empty, they go direct |
+| `ADAPTER_PROXY_URL` | empty | A forward proxy for the HTTP calls of connector adapters, remote MCP servers, and the GitHub App. Empty, they go direct |
 
 Connectors that sign in with OAuth return to
 `<PUBLIC_BASE_URL>/api/mcp/oauth/callback`. While `PUBLIC_BASE_URL`
@@ -145,10 +145,16 @@ machines, not by `.env`. Owners and admins create and size them under
 
 ## Development
 
-The `make contract-model` target reads these from `.env`. The
-shipped stack does not use them
-([Development](../contributing/development.md#tests)):
+The shipped stack does not use these.
 
-- `MODEL_CONTRACT_MODEL`, a `{provider}/{model}` id
-- `MODEL_CONTRACT_API_KEY`
-- `MODEL_CONTRACT_BASE_URL`, for a local endpoint
+| Variable | Default | Role |
+|---|---|---|
+| `ALLOW_ZERO_MASTER_KEY` | | `1` lets the server start on the all-zero `SECRETS_MASTER_KEY`. The development stack sets it, and the Makefile gives that stack the all-zero key |
+| `TEMPLATES_ROOT` | the orchestrator's `src/prompts` | The directory of agent templates, with the shared `system.md`. It must exist |
+| `MODEL_CONTRACT_MODEL` | | A `{provider}/{model}` id for the live model contract |
+| `MODEL_CONTRACT_API_KEY` | | The key the contract runs with |
+| `MODEL_CONTRACT_BASE_URL` | | A local endpoint's URL |
+
+`make contract-model` reads the three `MODEL_CONTRACT_` values from
+`.env`, and stops while the model or the key is empty
+([Development](../contributing/development.md#tests)).

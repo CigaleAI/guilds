@@ -60,7 +60,7 @@ any other card.
 ### Where a request shows
 
 Every request of the coach's latest turn is one pending item. It shows
-in five places, and deciding it in any of them clears it from all:
+in four places, and deciding it in any of them clears it from all:
 
 | Place | What it shows |
 |---|---|
@@ -88,12 +88,15 @@ the turn was settled before the page opened, **Continue** sends it.
 
 ### Cards
 
-A card shows the target, its added and removed line counts, and the
-base version. While it is pending, it shows the live text beside the
+A card is titled by its target: `<agent> · Memory`,
+`<agent> · access`, `<name> · table`, `<agent> · <routine>`, the
+note's title, or `<guild> · <fields>` for the guild's text. It shows
+the coach's reason, the added and removed line counts, and the base
+version. While it is pending, it shows the live text beside the
 proposal as a diff (one per changed field for the guild's short
 description and description). Its apply button and **Decline** each
 resolve that one request. A card whose target changed since shows as
-stale.
+stale, and can only be declined.
 
 While more than one card of a turn is open, a line under the cards
 counts what is left, with **Apply all** and **Decline all**. They
@@ -110,7 +113,7 @@ version, and outcome; its diff and **Publish**, **Edit**, and
 | Collection | The collection before and after as text: a header with the owner, the purpose, one line per column, then its access: the organisation's row when it has one, the source guild's row, one line per member row, and the rows outside the guild | **Create table**, **Delete table**, or **Apply edit** |
 | Routine | The routine before and after as text: the agent, the description, the timing in words, whether it is paused, and the instruction | **Create routine**, **Delete routine**, or **Apply edit** |
 | Access | The agent's access before and after as text: one line per native tool, and one per connection with a line per connection tool. A change that widens access says it is decided on its own | **Apply edit** |
-| Login | The server and its account | **Grant read access** |
+| Login | The server, its account, and the scope of the login | **Grant read access** |
 
 Collection, routine, and access cards also list what applying does:
 
@@ -173,7 +176,7 @@ session lock:
 - Memory and notes go through `writeMemory` / `writeNoteAt` with the
   expected version, so they produce a memory revision and a
   `file_changes` row that carries the edit tool's call id and name.
-- The guild goes through `updateGuild` and refreshes the session's
+- The guild goes through `updateGuildText` and refreshes the session's
   `source_guild_snapshot`, so the next turn's system message holds the
   new text. Guild text keeps no content history; its change log
   records who changed which field.
@@ -409,4 +412,4 @@ request. A login request is read back the same way: its content is a
 | `apps/orchestrator/src/connectors/servers.ts` | `isReadOnlyRemote` |
 | `apps/web/src/features/studio/pendingModel.ts` | The turn's requests: where each lands and what was answered |
 | `apps/web/src/features/studio/approvals.ts` | Deciding requests from anywhere and the reply that continues the coach |
-| `apps/web/src/features/studio/ProposalCards.tsx`, `ApprovalTray.tsx`, `chatModel.ts` | The cards and the header tray |
+| `apps/web/src/features/studio/ProposalCards.tsx`, `ApprovalTray.tsx`, `chatModel.ts` | The cards and the header tray, and each request's title and apply button by kind |

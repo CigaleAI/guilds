@@ -1,7 +1,7 @@
 # Code map
 
-Where code lives and what each directory is for. Each row links to
-the page that explains it.
+Where code lives and what each directory is for. A row links to the
+page that explains it, where there is one.
 
 ```mermaid
 flowchart LR
@@ -22,14 +22,15 @@ flowchart LR
 | `apps/web/` | The React operator app, served at the site root ([Web app](web-app.md)) |
 | `packages/ui/` | `@guildsrun/ui`, the design system ([Design system](design-system.md)) |
 | `runtime/` | The `agent-runtime:0.4` image every machine runs, and the helpers baked into it |
-| `fixtures/compat/` | Frozen HTTP, SSE, schema, crypto, and adapter contracts |
+| `fixtures/compat/` | The frozen contracts `compat-verify` checks the code against, one folder per area (HTTP, SSE, WebSocket, codecs, crypto, adapters, and more), indexed in `manifest.json` |
 | `docs/` | This documentation |
 | `docker-compose.yml`, `docker-compose.watch.yml`, `docker-compose.dev.yml` | The shipped stack, the development overlay, and the two merged ([Deployment](deployment.md#compose-stacks-and-images)) |
 | `setup.sh` | Writes `.env` (state path and generated secrets) and builds the OpenSandbox and runtime images |
 | `.env.example` | Core's settings, by integration ([Configure](../operations/configure.md)) |
-| `scripts/` | `check.sh` (the whole check; with `CHECK_ROOT` it checks an extending repository), `images.sh` (the OpenSandbox and runtime images), `smoke-core-stack.sh` (the shipped stack, end to end) ([Development](../contributing/development.md)) |
-| `Makefile` | `state`, `opensandbox-image`, `runtime-image`, `core-image`, `build`, `up`, `dev`, `down`, `reset`, `migrate`, `verify`, `check`, `contract`, `compat-verify`, `soak`; an extending repository's Makefile includes it, with `CORE` naming core's path |
+| `scripts/` | `check.sh` (the whole check; with `CHECK_ROOT` it checks an extending repository), `check-suppressions.sh` (refuses a commit that grows a package's lint suppressions outside a rule commit), `images.sh` (the OpenSandbox and runtime images), and `smoke-core-stack.sh` (the shipped stack, end to end) ([Development](../contributing/development.md)) |
+| `Makefile` | `state`, `opensandbox-image`, `runtime-image`, `core-image`, `build`, `up`, `up-dev`, `dev`, `down`, `reset`, `migrate`, `verify`, `check`, `contract` (`contract-opensandbox` and `contract-model`), `compat-verify`, `soak`; an extending repository's Makefile includes it, with `CORE` naming core's path ([Make targets](../contributing/development.md#make-targets)) |
 | `eslint.boundary.js` | The lint rules holding core code inside core ([Extension points](extension-points.md#how-an-extending-repository-holds-core)) and refusing a module that re-exports another module's exports ([Lint](../contributing/development.md#lint-and-format)) |
+| `eslint.limits.js` | The lint rules for the function and file limits and the syntax the [code guidelines](../contributing/code-guidelines.md) refuse, shared by every package |
 | `.github/workflows/` | `verify` (every push: `scripts/check.sh`), `images` (a version tag publishes the orchestrator, runtime, and OpenSandbox server images on ghcr.io) |
 | `.state/` | The local `STATE_ROOT`, not in git ([Deployment](deployment.md#state-on-disk)) |
 
@@ -49,60 +50,62 @@ A repository that extends core holds this one as a submodule
 | `src/app.ts` | The Fastify app: the web build, `/storybook`, `/health`, `/avatars/:style.svg`, client-error intake, domain routes |
 | `drizzle/` | `0001_baseline` (with `0001.notes.md`), then numbered migrations ([PostgreSQL](orchestrator.md#postgresql)) |
 | `test/` | `unit/`, `integration/`, `contract/`, `helpers/` ([Tests](orchestrator.md#tests)) |
-| `scripts/` | `compat-verify`, `compat-digest`, `dump-baseline-schema`, `patch-http-mcp-catalog`, `build-connector`, `models-dev-snapshot`, `sweep-workspaces`, `typesafe-replay`, `browse-spike` (one fastbrowse task on an agent's sandbox Chrome through the CDP bridge) |
+| `scripts/` | `compat-verify`, `compat-digest`, `dump-baseline-schema`, `patch-http-mcp-catalog`, `build-connector`, `models-dev-snapshot`, `sweep-workspaces`, `typesafe-replay`, `browse-spike` (one fastbrowse task on an agent's sandbox Chrome through the CDP bridge), and `import-cycles` (the import-cycle check of a package's `src/`, which the web app runs too) |
 | `Dockerfile` | The core image: a `web` stage builds `apps/web` and Storybook; the final stage copies `src`, `scripts`, `drizzle`, and the web build |
 | `package.json` | `exports`: the modules another package may import |
+| `eslint-suppressions.json`, `import-cycles.json` | The lint errors and the import cycles that predate their rules; both lists only shrink ([Lint](../contributing/development.md#lint-and-format)) |
 
 ### `src/` directories
 
 | Directory | What it holds |
 | --- | --- |
-| `http/` | One `*-routes.ts` file per domain, registered in `routes.ts`; the `AUTH_MODE` seam (`identity.ts`), the host and origin check (`origin.ts`), the mapping of domain errors to HTTP (`errors.ts`), SSE, the sandbox proxies (`sandbox-proxy.ts`), and the web build (`web-app.ts`) |
-| `generation/` | `GenerationLoop`, a run's config snapshot and the prepared run it is created from (`snapshot.ts`), the tools a generation offers (`offered-tools.ts`), the tool calls of a run, run in order and resolved when a generation stops without their results (`tool-calls.ts`), its named errors and the failures it logs and carries on past (`errors.ts`), a run's event stream (`events.ts`), the machines' containers with their idle stops and each agent's Chrome and terminal (`machines.ts`), the preparation of a run's prompts and State (`prepare.ts`), the model calls with their history projection and cancel (`completion.ts`), the steps of a coding run and the diffs, logs, and harness checks read outside one (`coding.ts`), a coding agent's harness view and a run's changes as an operator reviews them (`run-review.ts`), the disk limits of an agent's home and its machine (`workspace.ts`), the secrets of the runs under way and the values their output is redacted with (`run-secrets.ts`), the creation of direct, group, schedule, and continuation runs and the scheduler (`runs.ts`), a generation from its setup through its model steps to its end (`generate.ts`), run chains and their hand-off (`chain.ts`), the generations in progress (`active-generations.ts`), idle stops (`idle.ts`), and the runs an operator opens and talks to (`operator.ts`) ([Generation](orchestrator.md#generation)) |
-| `toolbox/` | Native tools, their named errors (`errors.ts`), the sandbox command runner (`shell.ts`), the result pipeline (`output.ts`), `browse` and its arguments (`browse.ts`), and `code_task`: the call and its poll loop (`harness.ts`), the brief (`harness-brief.ts`), the harness checks (`harness-setup.ts`), the `guilds-harness` ops with the checkpoints and the kept log (`harness-ops.ts`), and the result the agent reads (`harness-result.ts`) ([Native tools](../tools-and-connectors/native.md)) |
-| `connectors/` | One folder per connector, the manifest schema, the adapter contract, the connector registry, the servers configured from them and the tools each offers (`servers.ts`), the naming of their tools (`naming.ts`), the platform logins and integrations they bring and each integration's status as an operator or the instance admin sees it (`instance.ts`), and the instance admin's writes and removals of a store integration's values (`instance-keys.ts`) ([Connectors](../tools-and-connectors/connectors.md)) |
-| `registry/` | Installing connectors from a registry, the code tier, and the instance admin's registry view and changes, each served in this process without a restart (`admin.ts`) ([Connector registry](../tools-and-connectors/connector-registry.md)) |
-| `mcp/` | `McpPool`, the catalog and its policy, the catalog's servers as the instance admin and an organisation's managers change them (`servers.ts`), an operator's direct tool call (`operator-call.ts`), the logins an operator reads, uses and sets up, with the GitHub login an operator sees (`connections.ts`), a server, a login and a binding as the API shows them (`view.ts`), who sees a connector and a login (`visibility.ts`), and the connect flows: a token login connected (`connect-token.ts`), a login started (`connect-start.ts`), the provider's callback (`connect-callback.ts`), a GitHub App installation traded, picked or installed (`github-install.ts`), and the box's GitHub App registered from a manifest (`github-app-manifest.ts`) |
-| `oauth/` | The OAuth mechanics of each manifest's `auth.oauth`: discovery, client registration, PKCE and state, the code exchange, token refresh and expiry, and the redaction values of a connection's stored tokens (`index.ts`), and the callback and installation-picker pages (`html.ts`) |
+| `http/` | One `*-routes.ts` file per domain, registered in `routes.ts`, and what the routes share: who a request is from under each `AUTH_MODE` (`identity.ts`), the host and origin check (`origin.ts`), domain errors as HTTP answers (`errors.ts`, `error-handler.ts`), SSE (`sse.ts`), the sandbox proxies (`sandbox-proxy.ts`), and the web build (`web-app.ts`) |
+| `generation/` | `GenerationLoop` (`index.ts`) and everything a run goes through: its config snapshot, the preparation of its prompts and State, the model calls, its tool calls, its event stream, the machines' containers, coding runs and their review, run chains, idle stops, and the runs an operator opens (`operator.ts`) ([Generation](orchestrator.md#generation)) |
+| `toolbox/` | The native tools, one module per family, the tools a run offers (`offered.ts`), the sandbox command runner (`shell.ts`), the output pipeline (`output.ts`), and `code_task` over the `guilds-harness` ops (`harness*.ts`) ([Native tools](../tools-and-connectors/native.md)) |
+| `connectors/` | One folder per connector core ships, the manifest schema (`manifest.ts`), the adapter contract (`types.ts`), the installed connectors (`registry.ts`), the servers configured from them (`servers.ts`), and the platform integrations they bring (`instance.ts`, `instance-keys.ts`) ([Connectors](../tools-and-connectors/connectors.md)) |
+| `registry/` | Installing connectors from a registry, the code tier, and the instance admin's registry view and changes (`admin.ts`), each applied without a restart ([Connector registry](../tools-and-connectors/connector-registry.md)) |
+| `mcp/` | `McpPool` (`pool.ts`), the catalog and its policy, MCP sessions, logins and the tools they list, an operator's direct tool call, who sees a connector and a login, and the connect flows (`connect-*.ts`, `github-install.ts`, `github-app-manifest.ts`) |
+| `oauth/` | The OAuth mechanics of a manifest's `auth.oauth` (`index.ts`), and the callback and installation-picker pages (`html.ts`) |
 | `github/` | The GitHub App, its manifest flow, and the installation tokens minted for a login's repositories ([GitHub](../tools-and-connectors/github.md)) |
-| `coding/` | Guild repositories and the GitHub logins they use (`guild-repositories.ts`), a coding run's git side, the harnesses (`harnesses.ts`), and each harness's models and efforts (`harness-models.ts`) ([Coding agents](../concepts/coding/index.md)) |
-| `machines/` | Tiers, sizes, slots, placement and its access, an organisation's machines as its members manage them (`service.ts`), and the boot layout of agent homes ([Machines](../concepts/machines.md)) |
-| `access/` | Binding resolution, a run's tools, MCP, and secrets, the access view a scope's page shows (`view.ts`), an agent's page with the writes it makes, each answered with the page (`agent-page.ts`), and the bindings an operator sets (`operator.ts`) ([Access](../concepts/access.md)) |
-| `credentials/` | AES-GCM, environment fingerprints, and validation |
+| `coding/` | Guild repositories and the GitHub logins they use (`guild-repositories.ts`), a coding agent's git side (`git.ts`), the harnesses (`harnesses.ts`), and each harness's models and efforts (`harness-models.ts`) ([Coding agents](../concepts/coding/index.md)) |
+| `machines/` | Tiers, sizes, slots, placement and who may place on a machine, an organisation's machines as its members manage them (`service.ts`), and the boot layout of agent homes ([Machines](../concepts/machines.md)) |
+| `access/` | Binding resolution and its change log, a run's tools, MCP, and secrets (`runtime.ts`), the access view a scope's page shows (`view.ts`), an agent's page (`agent-page.ts`), and the bindings an operator sets (`operator.ts`) ([Access](../concepts/access.md)) |
+| `credentials/` | AES-GCM and environment fingerprints (`crypto.ts`), owner and secret validation, and the scopes a credential is visible at |
 | `secrets/` | Who reaches and manages a secret, `secret_store`, redaction, and an organisation's secrets as its members manage them (`service.ts`) ([Secrets](../concepts/secrets.md)) |
-| `db/` | Pool, codecs, Drizzle schema, one query module per table family (`users.ts`, `agents.ts`, `runs.ts`, …), seeds, and the migration check |
+| `db/` | Pool and migrations (`client.ts`, `migrations.ts`), codecs, the Drizzle schema (`schema/`), and one query module per table family (`users.ts`, `agents.ts`, `runs.ts`, …) ([PostgreSQL](orchestrator.md#postgresql)) |
+| `seed/` | The database at boot (`connect.ts`): core's and an extension's migrations and seeds, the installed connectors' rows (`system.ts`), the native tool catalog (`catalog.ts`), and a fresh box's first user and organisation (`operator.ts`) |
 | `attachments/` | Chat images: sniffing, upload, and hydration |
-| `artifacts/` | One module per sub-domain over the artifact store (`store.ts`): notes (`notes.ts`), Memory (`memory.ts`), collections (`collections.ts`), records (`records.ts`), and access lists (`access-lists.ts`), with `ArtifactFiles` (`files.ts`) for shared files and the lists, downloads, uploads, and deletes an operator makes of them, each upload and delete announced to the file's guild (`operator-files.ts`); their queries are `db/artifacts.ts`, `db/collections.ts`, and `db/artifact-access.ts`; the files an operator's pages read and write at each level (`host-files.ts`) and the collection views (`collection-views.ts`) ([Artifacts](../concepts/artifacts.md), [Access](../concepts/access.md)) |
-| `notes/` | `NotesStore` (`store.ts`): `system.md` and the routine shadow files; the store the generation unit tests use; the layout of an agent's folder and the checks a relative path passes against it (`paths.ts`), an agent folder of the earlier layout lifted into it at boot (`migrate.ts`), and the store's error (`errors.ts`); and an operator's notes on a guild, agent or organisation page (`operator.ts`) |
-| `directories/` | State listing over `NotesStore` for those tests |
+| `artifacts/` | The artifact store (`store.ts`) with one module per sub-domain (notes, Memory, collections, records, access lists), shared files (`files.ts`, `operator-files.ts`), the files an operator's pages read and write (`host-files.ts`), and the collection views ([Artifacts](../concepts/artifacts.md), [Access](../concepts/access.md)) |
+| `notes/` | `NotesStore` (`store.ts`): the `system.md` template and each agent's folder on disk, with its Task, Memory, notes, and routine files; the checks a relative path passes (`paths.ts`); and an operator's notes on a guild, agent, or organisation page (`operator.ts`) |
+| `directories/` | The listing of an agent's private and shared notes, scripts, and environment that its State shows |
 | `memory/` | Hydration, the cap, the archive, and the version history ([Memory](../concepts/memory.md)) |
-| `prompts/` | Prompt composition and the `system.md` and `task.md` templates ([System prompt](../concepts/system-prompt.md)) |
+| `prompts/` | Prompt composition and the `system.md`, `task.md`, and `memory.md` templates ([System prompt](../concepts/system-prompt.md)) |
 | `state/` | The State JSON a run sees |
-| `groupchat/` | `GroupChat`: posts, clears, the event stream, and the dispatcher (`index.ts`); group history (`history.ts`); tags (`tags.ts`); the recipient rules (`recipients.ts`) and the recipient router (`router.ts`); the deliveries the dispatcher starts and the runs an interruption stops (`delivery.ts`); the message a woken group run reads (`wake.ts`); and what an operator reads and posts (`operator.ts`) ([Group chat](../concepts/group-chat.md)) |
-| `typesafe/` | The System One client, which group routing asks |
+| `groupchat/` | `GroupChat` (`index.ts`): posts, clears, the event stream, and the dispatcher; group history, tags, the recipient rules and router, deliveries, the message a woken group run reads, and what an operator reads and posts (`operator.ts`) ([Group chat](../concepts/group-chat.md)) |
+| `typesafe/` | The System One client, which group routing asks, and the replay that `typesafe-replay` runs |
 | `schedules/` | Routine timing, the `Schedules` service, and the routine writes an operator makes, each announced to the agent's guild (`operator.ts`) ([Routines](../concepts/routines.md)) |
-| `scripts/` | The agent `script` catalog, its materialisation, and the listing an operator reads and the script writes an operator makes, each write announced to the agent's guild (`operator.ts`) ([Scripts](../concepts/scripts.md)) |
-| `sandbox/` | `RunSandboxes`, core's sandbox provider (`index.ts`), the OpenSandbox SDK adapter: its shapes, the readers of a command result's fields under either spelling, its loading, and the wrappers over its JS signatures (`sdk.ts`), and the orphan sweep (`sweep.ts`) |
-| `browse/` | The agent-optimized browser: the `browse` call's service (`service.ts`), the fastbrowse run (`runner.ts`), fastbrowse's environment from the System One key and the browser model's credentials (`env.ts`), the result text and step lines (`format.ts`), browser usage from fastbrowse's cost lines (`cost.ts`), and the loopback CDP bridge to an agent's DevTools relay (`bridge.ts`) |
+| `scripts/` | The agent `script` catalog, its materialisation, and the listing and script writes an operator makes, each write announced to the agent's guild (`operator.ts`) ([Scripts](../concepts/scripts.md)) |
+| `sandbox/` | `RunSandboxes`, core's sandbox provider (`index.ts`), the OpenSandbox SDK adapter (`sdk.ts`), and the orphan sweep (`sweep.ts`) |
+| `browse/` | The agent-optimized browser behind `browse`: the call's service (`service.ts`), the fastbrowse run and its environment, the result text, browser usage from fastbrowse's cost lines, and the loopback CDP bridge to an agent's DevTools relay (`bridge.ts`) |
 | `llm/` | Providers, the models.dev catalog, credentials, the model client, tokens, and cost ([Model client](orchestrator.md#model-client)) |
 | `policy/` | `OrgPolicy` and the checks core runs against it |
-| `avatars/` | [DiceBear](https://www.dicebear.com/) SVGs in seven styles (critters, cameo, pixelbot, bottts-neutral, clay, cutouts, voxel-bot); `looks.ts` assigns a guild family and a variant per builder role |
+| `avatars/` | SVG avatars in seven styles: six from [DiceBear](https://www.dicebear.com/) and the clay default (`clay.ts`); `looks.ts` assigns a guild a mascot set and each builder role a look |
 | `issues/` | Guild issues from `report_issue`, and the statuses an operator sets, each announced to the guild (`operator.ts`) |
 | `notifications/` | The inbox view and its per-user stream |
 | `usage/` | Usage counter keys, deltas, and tree (`index.ts`), and the organisation, guild, and agent listings (`view.ts`) |
-| `studio/` | Prompt Studio: sessions, tools, drafts, edit, table, and routine requests, focus pins, the activity ledger, and the runs and routines the inspector reads (`inspector.ts`) ([Prompt Studio](../concepts/prompt-studio.md)) |
+| `studio/` | Prompt Studio: sessions, the coach's tools, drafts and edits, focus pins, the activity ledger, and the runs and routines the inspector reads (`inspector.ts`) ([Prompt Studio](../concepts/prompt-studio.md)) |
 | `builder/` | The guild builder: sessions, tools, widgets, and workspace search ([Guild builder](../concepts/guild-builder.md)) |
 | `recipes/` | The `guilds.recipe` schema, capture, rewrite, validation, and apply ([Recipes](../concepts/recipes.md)) |
-| `conversation/` | The shared coach runner and tool-result projection |
-| `admission/` | `AdmissionCoordinator`: the generation slots that agent runs, Studio and Builder take under the box's cap and each organisation's plan (`coordinator.ts`) |
+| `conversation/` | The coach runner Studio and Builder share (`runner.ts`), tool-result projection, and the prompt sections both coaches read (`*.md`, `templates.ts`) |
+| `admission/` | `AdmissionCoordinator` (`coordinator.ts`): the generation slots that agent runs, Studio, and Builder take under the box's cap and each organisation's plan |
 | `capabilities/` | The catalog facts the builder may name |
-| `guilds/`, `agents/`, `organisations/`, `users/` | Validation, persistence, who sees what (`access.ts`), the API views (`view.ts`), and what an operator creates, changes and deletes (`service.ts`, `operators.ts`, `directory.ts`) |
+| `guilds/`, `agents/`, `organisations/`, `users/` | One directory per entity: its validation, who sees it (`access.ts`), how the API shows it, and the service it is created, changed, and deleted through (`service.ts`; `directory.ts` for users, with `identity.ts` naming the user a request is from) |
 | `config/` | Environment → `AppConfig` ([Configuration](orchestrator.md#configuration)) |
-| `instance/` | Instance keys: the integration registry, the encrypted store, and the confirmation a GitHub App change needs ([Instance keys](extension-points.md#instance-keys)) |
+| `instance/` | Instance keys: the integration registry (`integrations.ts`), the encrypted store (`keys.ts`), and the confirmation a GitHub App change needs (`changes.ts`) ([Instance keys](extension-points.md#instance-keys)) |
 | `cli/` | `seed:system`, `seed:operator`, `migrate`, and `pnpm connector` |
 | `observability/` | Logs, request ids, client-error intake, Sentry, and runtime metrics ([Observability](orchestrator.md#observability)) |
 | `net/` | Outbound HTTP and endpoint validation |
-| `lib/` | Shared helpers: ids, paths, locks, the event queue, the clock, JSON, names, numbers, change actors (`change-actor.ts`), an agent's home files (`agent-file.ts`), the blob store under attachments and shared files (`blob-store.ts`), and the headers a forwarding proxy leaves out with the WebSocket URL of an HTTP upstream (`forwarding.ts`) |
+| `lib/` | Shared helpers with no domain of their own: ids, paths, locks, the clock, JSON and schema decoding, names, emails, numbers, the event queue, change actors, an agent's home files, the blob store under attachments and shared files (`blob-store.ts`), and what a forwarding proxy sends upstream (`forwarding.ts`) |
 
 ## `apps/web/`
 
@@ -110,11 +113,12 @@ A repository that extends core holds this one as a submodule
 | --- | --- |
 | `src/main.tsx`, `index.html` | Entry: mounts the app with no slot filled |
 | `src/mount.tsx` | `mount(slots)` ([Boot](web-app.md#boot)) |
-| `src/app/` | The app frame: providers, identity, routes, slots, theme, storage helpers, formatting, the rules a guild, agent or repository name follows (`names.ts`), the list beside its selected item (`MasterDetail.tsx`), and the back button (`returnTrail.ts`) |
-| `src/api/` | The typed API client, identity, the API types and the queries (`types/` and `queries/`, one module per domain, [Code paths](web-app.md#code-paths)), streams, and the client error log ([State and events](web-app.md#state-and-events)) |
+| `src/app/` | The app frame: providers (`App.tsx`), identity, routes (`router.tsx`), slots, theme, browser storage, formatting (`format.ts`), the rules a guild, agent, or repository name follows (`names.ts`), the list beside its selected item (`MasterDetail.tsx`), and the back button (`returnTrail.ts`, `ReturnButton.tsx`) |
+| `src/api/` | The typed API client, identity and session, the JSON value type and the guards that narrow a server's reply (`wire.ts`), the API types and the queries (`types/` and `queries/`, one module per domain, [Code paths](web-app.md#code-paths)), streams, and the client error log ([State and events](web-app.md#state-and-events)) |
 | `public/` | Files served as-is |
 | `vite.app.ts` | `appConfig()`: build and dev-server configuration, shared with an extension |
 | `package.json` | `exports`: what an extension's package may import ([Extension slots](web-app.md#extension-slots)) |
+| `eslint-suppressions.json`, `import-cycles.json` | The lint errors and the import cycles that predate their rules; both lists only shrink |
 | `claude-design-export/` | The first Claude Design export; not the live library |
 
 ### `src/features/`
@@ -126,19 +130,19 @@ One directory per area. The screens are in the
 | --- | --- |
 | `shell/` | Sidebar and rail, unread counts, account menu, new-message chime and desktop notifications |
 | `home/` | `/`, the empty state, and the not-found page |
-| `guild/` | Guild workspace, group chat with its message queue, guild menu, and guild pages |
-| `agent/` | Create-agent dialogs, the agent inspector's tabs, and the repositories a guild's coding agents clone (`GuildRepositories.tsx`, `CodingRepositories.tsx`) |
-| `agent/runs/` | A run's rows grouped into generations, steps, and tool calls |
+| `guild/` | Guild workspace and its menu, group chat with its message queue and budget, the State tab, and the guild pages (`pages/`) |
+| `agent/` | Create-agent dialogs, the agent inspector with a folder for most of its tabs (`chat/`, `prompt/`, `memory/`, `routine/`, `scripts/`, `browser/`, `cli/`, `history/`, `settings/`), and the repositories a guild's coding agents clone (`GuildRepositories.tsx`, `CodingRepositories.tsx`) |
+| `agent/runs/` | How a run's rows read: grouped into generations, steps, and tool calls (`runFlowModel.ts`), each call's kind (`toolKinds.ts`), and its arguments and result as text (`toolFormat.ts`) |
 | `notes/` | The notes browser, the provenance strip (`LatestChange.tsx`, `changeActor.ts`), and the notes and tables a Task or a note embeds (`embeds.ts`, `InsertPicker.tsx`, `EmbedPreview.tsx`) |
 | `files/` | The files browser: upload, download, access, and delete of shared files |
-| `access/` | One scope's tools and secrets |
-| `tables/` | The Tables page |
-| `studio/` | Prompt Studio |
+| `access/` | One scope's tools, logins, and secrets, access lists and reach, and the repositories a GitHub login serves (`GithubRepositories.tsx`) |
+| `tables/` | The Tables page and the State › Tables sub-tabs |
+| `studio/` | Prompt Studio: the workspace and its sections, with `activity/`, `state/`, `tabs/`, and `tools/` |
 | `builder/` | The guild builder |
 | `coach/` | What Studio and Builder share: the coach log and the split |
-| `recipes/` | Recipe library, recipe page, apply preview, and checklist |
-| `admin/` | Connector catalog, platform keys, and users |
-| `settings/` | Organisation settings |
+| `recipes/` | Recipe library, recipe page, apply preview, checklist, and the plan a recipe is reviewed as (`plan/`) |
+| `admin/` | Connector catalog and registry, platform keys, and users |
+| `settings/` | Organisation settings and its members |
 | `machines/` | Machines tab, dialog, meters, and picker |
 | `models/` | Model setup, the model pickers, and the link to Settings, Model keys (`ModelKeysLink.tsx`) |
 | `instance/` | What a missing platform key means for a screen |
@@ -150,10 +154,11 @@ One directory per area. The screens are in the
 | --- | --- |
 | `src/index.ts` | Public barrel, a client module |
 | `src/theme.css`, `src/tokens.css`, `src/motion.css` | Tailwind entry, tokens, and motion |
-| `src/primitives/`, `src/components/` | Library modules, stories beside each |
+| `src/primitives/`, `src/components/` | Library modules, with their stories beside them |
 | `src/foundations/` | Token and icon Storybook boards |
 | `src/writeDesignSystemDoc.ts` | `pnpm design-system-doc` |
 | `.storybook/` | Storybook config |
+| `eslint-suppressions.json` | The lint errors that predate their rules; the list only shrinks |
 
 [Design system](design-system.md) explains each one.
 
@@ -173,9 +178,9 @@ helper that acts for one agent takes its id, or reads its home from
 | `guilds-git-credential` | The git credential helper: the installation token of the guild repository git talks to |
 | `git-template/` | The git template whose `prepare-commit-msg` hook adds the `Guild-Run` and `Guild-Agent` trailers |
 | `guilds-script-run` | Runs a named Python script with `GUILDS_SCRIPT_ARGS` on stdin |
-| `agent-browser-start <agent id> <slot> <language>` | One agent's Xtigervnc display, Chrome, noVNC, and gost DevTools relay, which sets each request's Host to Chrome's, on its slot's ports |
-| `agent-cli-start <agent id> <slot>` | One agent's ttyd with bash in its home; prints the secret path segment it serves under |
-| `agent-stop <agent id> browser\|all\|purge` | Stops one agent's browser, or its browser and terminal; `purge` also removes its `/run/guilds/<agent id>/` files |
+| `agent-browser-start <agent id> <display> <vnc port> <devtools port> <cdp relay port> <novnc port> <language>` | One agent's Xtigervnc display, Chrome, noVNC, and gost DevTools relay, which sets each request's Host to Chrome's, on the display and ports its slot sets |
+| `agent-cli-start <agent id> <terminal port> <first port> <last port>` | One agent's ttyd with bash in its home and its port block; prints the secret path segment it serves under |
+| `agent-stop <agent id> browser\|all\|purge` | Stops one agent's browser, or with `all` its terminal and background commands too; `purge` also removes its `/run/guilds/<agent id>/` files |
 | `agent-lib.sh` | Shell helpers the `agent-*` scripts share |
 | `guilds-browser` | Playwright over the agent's CDP port for the browser tools ([Browser](../concepts/browser.md)) |
 | `guilds-locale` | Timezone from the egress IP; Chrome language from `GUILDS_BROWSER_LANGUAGE` (default en-US) |

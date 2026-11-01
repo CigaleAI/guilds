@@ -67,8 +67,8 @@ summary, the agent, the guild, and the detail. Its actions:
   that raised it.
 - **Investigate in Studio**, on an open issue, creates a Studio
   session on the issue's guild with the organisation's default model.
-  A toast asks for a default on Model keys when none is set. It opens
-  the inspector on the reporting agent's History tab at the run that
+  A toast asks for a default on Model keys when none is set. The
+  session opens on the reporting agent's History, at the run that
   raised the issue, and pins the issue to the coach composer with a
   drafted question ([Prompt Studio](prompt-studio.md)).
 

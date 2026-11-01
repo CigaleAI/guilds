@@ -32,9 +32,9 @@ and what it produced.
 
 Wakes form **chains**. A chain starts at a wake that no other wake in
 the window started: a routine firing, an operator message (one chain
-even when it woke several agents), a direct chat, or an agent's post
-from before the window. It then follows each post to the wakes it
-started until none are left.
+even when it woke several agents), a direct chat, an agent's post
+from before the window, or a message the ledger does not include. It
+then follows each post to the wakes it started until none are left.
 
 ```mermaid
 flowchart LR
@@ -54,7 +54,9 @@ wake failed.
 ## In the app
 
 **Topology** shows the activity over a window of 1 h, 6 h, 24 h, 3 d,
-or 7 d.
+or 7 d. Beside the window, a line counts the chains and the wakes,
+the wakes by outcome, and what they cost. A legend names the
+outcomes.
 
 A wake that is still generating is drawn up to now. **Refresh** reads
 the activity again.
@@ -85,14 +87,15 @@ stored with the run adds **inferred**. A wake an operator's message
 started names whose message it was: yours, or the person's who posted
 it. A post that woke two agents
 continues on a branch row, and long chains scroll sideways. Chains
-that produced nothing are hidden until the filter is cleared. A map
+that produced nothing are hidden while **Hide chains that produced
+nothing** is ticked. A map
 selection lists only the chains that pass through it, including those
 that produced nothing, and highlights the hop in each row.
 
 Clicking the start of a chain opens what it carried: the routine's
 timing and instruction with **Open routine**, the operator's message
-with **Open group chat**, the direct chat's opening message, or the
-earlier post.
+with **Open group chat**, the direct chat's opening message with
+**Open in History**, or the earlier post with **Open the post**.
 
 Clicking an agent in a chain opens its wake:
 
@@ -188,12 +191,15 @@ once, is 422.
 
 A map selection is part of the session's inspector location:
 `section=agents&item=link:<from>><to>` or `section=agents&item=node:<id>` (see
-[Prompt Studio](prompt-studio.md#routes-and-location)). The window and
-the open view (**Map** or **Per agent**) persist in `localStorage`.
+[Prompt Studio](prompt-studio.md#routes-and-location)). The window
+(`studio.activity.hours`) and the open view, **Map** or **Per agent**
+(`studio.activity.tab`), persist in `localStorage`.
 
 ### Code paths
 
 | Path | What it holds |
 |---|---|
 | `apps/orchestrator/src/studio/activity.ts` | The activity ledger |
-| `apps/web/src/features/studio/activity/` | The map, the chains list, and the per-agent view |
+| `apps/web/src/features/studio/activity/activityModel.ts` | The chains, the map, and each agent's inputs and outputs, built from the ledger |
+| `apps/web/src/features/studio/activity/mapLayout.ts` | Where the map draws its boxes and lines |
+| `apps/web/src/features/studio/activity/` | The views: the ledger with its window, the map, the chains list, the start and wake details, and the per-agent view |

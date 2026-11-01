@@ -14,16 +14,17 @@ key.
 ## 2. Enter it on the box
 
 Open the account menu at the bottom of the sidebar. Click **Admin**.
-Open **Platform keys**. Find **Web search**. Paste the key into
-**Tavily API key** and click **Save**.
+Open the **Platform keys** tab. Click **Web search** to open it.
+Paste the key into **Tavily API key** and click **Save**.
 
-The key takes effect at once.
+You should see **Web search** tagged **On**. The key takes effect at
+once.
 
 ## 3. Check the agent has it
 
-Click the agent in the sidebar. Open its **Tools** tab. Under the
-integrations, **Tavily** is connected, and its tool `tavily_search`
-is on.
+Click the agent in the sidebar. Open its **Tools** tab. Under
+**Integrations**, **Web search** is connected, and its search tool is
+on.
 
 ## 4. Use it
 
@@ -33,16 +34,16 @@ Send a message in **Group chat** that needs the web:
 @researcher What is one news headline from today? Name the source.
 ```
 
-The reply cites what it found. Click **Inspect run**. One step shows
-a `tavily_search` call, with the query the agent chose and the
+The reply cites what it found. Click **Inspect run**. One step reads
+**Search:** followed by the query the agent chose. Open it to see the
 results it got back.
 
 ## Good to know
 
 - Every agent on the box gets the tool. You can turn it off for one
   agent, one guild, or one organisation on their **Tools** tab.
-- An organisation can connect a Tavily key of its own instead, under
-  **Settings**, **Tools**. Its agents then run on that key.
+- An organisation can connect a Tavily key of its own instead, on
+  the **Tools** tab of **Settings**. Its agents then run on that key.
 - Web search is one of several platform keys.
   [Configure](../operations/configure.md#platform-keys) lists them all.
 

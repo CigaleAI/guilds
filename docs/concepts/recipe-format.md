@@ -226,6 +226,9 @@ Validation errors with `config.unknown` on any other key.
 - `config.model` is a recommendation, kept exactly as written. Apply
   lets the operator pick the model; see
   [Applying recipes](applying-recipes.md#models-and-harnesses).
+- `config.browser_optimized` and `config.browser_model` are
+  configuration keys, so a recipe may carry them. Apply ignores them:
+  every agent it creates browses with the step-by-step browser tools.
 
 Schedules:
 
@@ -386,10 +389,8 @@ work in, by `name` and a one-line `purpose`.
 carries `proposed_by` (`operator` or `builder`), which is required, and
 `accepted` (default `false`).
 
-The lists below name the values the Builder and capture write for
-`resolution`, `reason`, and `kind`. The parser refuses a `systems`
-`resolution` outside its list, and checks only that `reason` and
-`kind` are strings.
+The parser refuses a `systems` `resolution`, a `specialization`
+`reason`, or a `handoffs` `kind` outside the values listed below.
 
 | List | Entry |
 |---|---|

@@ -38,8 +38,10 @@ prompt.
 
 An agent runs one thing at a time, whatever the kind. While it
 generates, a new direct message is refused, a group delivery waits,
-and a due routine waits for a later tick. Different agents generate at
-the same time, on one machine or on several.
+and a due routine waits for a later tick of the scheduler, which
+checks every 30 seconds ([Routines](routines.md#the-ticker)).
+Different agents generate at the same time, on one machine or on
+several.
 
 ### Generations
 
@@ -68,10 +70,14 @@ run's snapshot. The orchestrator never retries a provider call by
 itself.
 
 The **snapshot** freezes the agent at run creation: its model
-settings, its switches, and the exact tools it was offered. Changing
-the agent later affects new runs only. Secrets are the exception: they
-are looked up again at every generation, so a new grant reaches an
-open chat ([Secrets](secrets.md)).
+settings, its switches, and the tools it may be offered. Changing the
+agent later affects new runs, with two exceptions:
+
+- Each generation offers only the snapshot's tools that the agent's
+  bindings and switches still grant. A tool turned off leaves an open
+  chat at its next generation. A tool turned on reaches new runs only.
+- Secrets are looked up again at every generation, so a new grant
+  reaches an open chat ([Secrets](secrets.md)).
 
 ### Limits that end a run
 
@@ -186,6 +192,7 @@ An ended run shows a banner under the transcript:
 | Max input tokens | 100000 by default; counted with `js-tiktoken` |
 | Full tool results kept | the current turn only, by default |
 | Results never stubbed | under 2048 bytes |
+| Routine check | every 30 seconds |
 | Coding run hand-off | at 70% of max input tokens |
 | Runs in a chain | at most 5 |
 | Images per message | at most 4, 10 MiB each, JPEG, PNG, GIF, or WebP |
@@ -281,13 +288,18 @@ tool-call identity in `file_changes` ([Artifacts](artifacts.md)).
    the run snapshot on the stored rows to rebuild what was sent.
 4. An assistant row is the response to that projection of the prefix
    preceding it.
-5. Model parameters and tool schemas stay fixed for the run.
+5. Model parameters stay fixed for the run. Each generation offers
+   the snapshot's tool schemas that the live bindings and switches
+   still grant, and never one the snapshot lacks.
 6. Automatic provider retries are off.
 7. Tool results enter history only after the output pipeline.
 
 ### Snapshot
 
-The run stores an immutable snapshot.
+The run stores an immutable snapshot. It holds the agent's config at
+run creation, less `max_scripts` and `max_workspace_mib`, with
+`projection_policy_version`, the offered `tools`, `mcp`, `secrets`,
+and the `scripts` ([Scripts](scripts.md#snapshot)).
 
 Model settings include `max_tool_calls`, `max_input_tokens`,
 `keep_tool_result_generations`, `projection_policy_version`, and
@@ -307,7 +319,8 @@ The complete tool schemas offered to the model:
 - `secret_store`;
 - `secret_request` on direct runs;
 - `report_issue`, always;
-- the six schedule tools, when bound, on direct and group chat runs;
+- the seven schedule tools, when bound, on direct and group chat
+  runs;
 - `group_post` when that binding is on;
 - the browser tools of its mode when `browser` is true: the eight
   step-by-step tools, or `browse` and `browser_eval` while
@@ -321,6 +334,14 @@ The snapshot also stores the agent's secrets as `[{id, name,
 description}]` and a slim `mcp` list of `{connection_id, server_id,
 slug, tools: [{name, remote_name}]}`.
 
+Each generation narrows the snapshot's native tools to those the
+agent's live bindings and switches still grant. Connection tools stay
+as snapshotted. A snapshot that froze `browse` keeps it while the
+agent's config keeps the agent-optimized browser on; its calls answer
+that the System One key is missing while the key is off. Such a run
+logs `browse.integration_off` once and records
+`metadata.browse_integration_off_at`.
+
 Each generation re-resolves the agent's secrets (organisation-wide,
 granted to its guild, granted to it), writes them onto the snapshot,
 and decrypts their values. A later grant, removal, or rotation reaches
@@ -329,13 +350,16 @@ a generation-start error.
 
 ### Generation
 
-At start, the loop ensures the agent's machine is up and checks the
-disk caps. A home or machine over its cap fails the generation with
-`workspace.full` ([Agent home](agent-home.md#the-disk-cap)). After the
-generation it measures and stores both sizes. A coding run is checked
-further before the model is called: harness picked, guild
-repositories, harness installed and credentialed, repositories
-prepared ([Coding agents](coding/index.md)).
+At start, the loop cancels the machine's idle timer, ensures the
+machine is up, and checks the disk caps. A home or machine over its
+cap fails the generation with `workspace.full`
+([Agent home](agent-home.md#the-disk-cap)). After the generation it
+measures and stores both sizes. When the last generation on the
+machine ends, the idle timer starts again
+([Machines](machines.md#idle-timer)). A coding run is checked further
+before the model is called: harness picked, guild repositories,
+harness installed and credentialed, repositories prepared
+([Coding agents](coding/index.md)).
 
 It loads every payload in order and repeats the loop up to
 `max_steps` times. Each step filters every tool result through the
@@ -424,6 +448,9 @@ keep the input cap above.
    run without being released, the first run's subscribers get
    `run.continued` with the new `run_id`, and the new run generates.
 
+A continuation that cannot be created records `generation.continue`,
+and the run stays as it is.
+
 A schedule continuation keeps the routine's `schedule_id` and
 `instruction_hash`. A group continuation keeps the delivery's
 `group_chat_through_seq` and completes itself. The group delivery
@@ -464,11 +491,13 @@ those interruption results. Startup does not replay a model call. An
 unresolved `code_task` is stopped and checkpointed first
 ([Code tools](coding/code-tools.md)).
 
-For an interrupted group-triggered run that the operator has not
-resumed, startup also marks it completed, advances the agent's group
-cursor through the stored snapshot, and resumes dispatch. An
-interrupted schedule-triggered run that the operator has not resumed
-is marked completed. A resumed run stays active.
+An interrupted group or schedule run that the operator has not
+resumed records `generation.interrupted` (`orchestrator restarted`)
+and is marked completed. For a group run, startup also advances the
+agent's group cursor through the stored snapshot, and group dispatch
+resumes. A direct run, or a resumed one, stays active. Startup then
+starts the idle timer of every running machine on which no agent
+generates.
 
 ### Resume
 
@@ -514,13 +543,29 @@ results.
 | `GET /api/runs/:id/messages` | its rows in order | 200 | 404 |
 | `POST /api/runs/:id/messages` | appends `content`, with optional attachment ids, and starts a generation | 202 | 422 empty, a `content` that is neither a string nor null, or `attachment_ids` that are neither a list of strings nor null; 409 one-shot not resumed, continued, ended, or generating |
 | `POST /api/runs/:id/resume` | reopens a completed run | 200 | 409 continued or capped |
-| `POST /api/runs/:id/cancel` | cancels the current generation | 202, or 204 with nothing to cancel | |
+| `POST /api/runs/:id/cancel` | cancels the current generation | 202, or 204 with nothing to cancel | 404; 409 `run is not active` |
 | `GET /api/runs/:id/stream` | the run's SSE stream | 200 | |
 
 ### Code
 
-- `apps/orchestrator/src/generation/`: the busy lock, the loop,
-  `deliverGroupRun`, `deliverScheduleRun`, `chain.ts`
+- `apps/orchestrator/src/generation/`: the generation loop
+  (`index.ts`), one module per part:
+  - `active-generations.ts`: the busy lock, one generation per agent
+  - `runs.ts`: creating runs, `deliverGroupRun`,
+    `deliverScheduleRun`, and the scheduler
+  - `prepare.ts` and `snapshot.ts`: the composed prompt and the
+    snapshot
+  - `generate.ts`: the steps of a generation and the offered tools
+    (`offered-tools.ts`)
+  - `completion.ts`: model calls, input counting, and credentials
+  - `tool-calls.ts`: tool calls and interruption results
+  - `events.ts`: committed rows, run errors, and stream events
+  - `run-secrets.ts`: the secrets of each generation
+  - `chain.ts`: hand-offs and continuations
+  - `workspace.ts`: the disk caps
+  - `machines.ts` and `idle.ts`: machines, Chrome, the terminal, and
+    idle timers
+  - `operator.ts`: what the HTTP routes call
 - `apps/orchestrator/src/conversation/projection.ts`: tool-result
   stubbing
 - `apps/orchestrator/src/attachments/`: uploads and image hydration

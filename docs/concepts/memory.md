@@ -83,7 +83,7 @@ run needs something this one learned
 The agent's `memory` switch turns Memory off. Then the system prompt
 has no `<memory>` section, the Guidelines drop their memory
 instructions, and `memory_write` is not offered, whatever the tool
-bindings say. The Memory tab stays.
+bindings say. The **State › Memory** view stays.
 
 `memory_write` is also a tool binding. Turning only the tool off
 keeps the `<memory>` section in the prompt, without write rules or
@@ -172,8 +172,10 @@ memory_write(content: str) -> str
   can turn it off. When it resolves off, the run does not offer it,
   Guidelines and Memory do not name it, and the row still hydrates.
 
-Code: `apps/orchestrator/src/toolbox/memory.ts`,
-`apps/orchestrator/src/memory/index.ts`.
+Code: `apps/orchestrator/src/toolbox/memory.ts` (the tool),
+`apps/orchestrator/src/memory/index.ts` (the cap and the Memory
+section), `apps/orchestrator/src/artifacts/memory.ts` (the write and
+the archive).
 
 ### The `memory` config key
 
@@ -185,7 +187,8 @@ and may call `memory_write`. When it is `false`:
 - the Task intro does not mention `memory_write`
 - `memory_write` is not offered, whatever the bindings say
 
-The Memory tab stays. Missing means on. It is not itself a binding.
+The State › Memory view stays. Missing means on. It is not itself a
+binding.
 
 ### The Memory section
 

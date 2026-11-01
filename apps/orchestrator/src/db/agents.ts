@@ -246,7 +246,7 @@ export async function deleteAgent(pool: Queryable, agentId: string): Promise<voi
     await client.query(
       `DELETE FROM artifact_access
         WHERE (subject_type = 'agent' AND subject_id = $1)
-           OR (target_kind = 'note' AND target_id IN (SELECT id FROM artifacts WHERE agent_id = $1))`,
+           OR (target_kind IN ('note', 'file') AND target_id IN (SELECT id FROM artifacts WHERE agent_id = $1))`,
       [agentId],
     );
     // A secret granted only to this agent goes with it.

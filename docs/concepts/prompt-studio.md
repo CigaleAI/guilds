@@ -168,9 +168,10 @@ sections:
 
 In **Agents**, each agent tab shows the agent's avatar, its Task
 version, a draft tag, a warning marker, and how many requests wait on
-it. **Topology** counts the agents and clears the target. With more
-than four agents a filter joins the tabs. An agent opens on the tab that holds a request the
-coach waits on, and otherwise on **Prompt**. A tab that holds one
+it. The **Draft** tab counts the agent's open drafts. **Topology**
+counts the agents and clears the target. With more than four agents a
+filter joins the tabs. An agent opens on the tab that holds a request
+the coach waits on, and otherwise on **Prompt**. A tab that holds one
 carries a dot, and that tab shows the request's card above its view.
 
 Where the inspector points is part of the URL, so a link opens the
@@ -180,9 +181,10 @@ session's target; the other sections clear it. A routine's run offers
 the way back to its routine. On a narrow screen the section bar and
 the agent tabs scroll sideways.
 
-The coach log shows the coach's reasoning as it streams, then its
-reply. Settings › **Usage** shows the coach's spend as a **Studio
-coach** row ([Usage](usage.md)).
+The coach log is the same as the Builder's: the coach's tool steps,
+then its reasoning and its reply as they stream, and a note when a
+reply hit the output limit. Settings › **Usage** shows the coach's
+spend as a **Studio coach** row ([Usage](usage.md)).
 
 ### Agent tabs
 
@@ -192,8 +194,8 @@ selected item on the right.
 
 | Tab | List | Selected item |
 |---|---|---|
-| **Prompt** | none | The live Task and its version, with **Edit in agent**. A note embed chip opens that note in **State**; a collection embed opens State's tables. Then what a run gets: the effective prompt, the exact opening system message the next run would store, with note embeds expanded to their text and collection embeds replaced by the collection's name, split into guidelines, task, state, and (when Memory is on) memory. An embed the agent cannot reach shows as the marker its run gets ([Task](task.md#embed-expansion)). It says whether the latest run used this Task and this memory. Banners say when the agent is running and when the embeds hold more than the 64 KB budget |
-| **Draft** | none | The pending draft: why, a side-by-side diff against its base version, **Publish**, **Edit**, **Discard**. A draft over a Task that changed since shows as conflicted |
+| **Prompt** | none | The live Task and its version, with **Edit in agent**. An embed opens that note or table in **State**. Then what a run gets: the effective prompt, the exact opening system message the next run would store, with note embeds expanded to their text and collection embeds replaced by the collection's name, split into guidelines, task, state, and (when Memory is on) memory. An embed the agent cannot reach shows as the marker its run gets ([Task](task.md#embed-expansion)). It says whether the latest run used this Task and this memory. Banners say when the agent is running and when the embeds hold more than the 64 KB budget |
+| **Draft** | none | The pending draft: its number and status, a **removes a lot** tag when it deletes much of the Task, why, and a side-by-side diff against its base version. **Publish** and **Discard** ask for confirmation first. **Edit** opens the proposed Task in a dialog, and your version replaces the coach's. A draft over a Task that changed since says **the live Task changed** |
 | **History** | Every run: what started it, time, older Task, generating, error count; filters by kind, errors, and current Task | The run transcript, as in the agent's Chat tab: offered tools, system prompt sections with note text filled in, the run flow; whether it ran on the current Task, guidelines, and memory; **Open in agent** |
 | **Memory** | Every version memory has held, newest first: version, author (run kind, person, or agent), added and removed lines; filter by author | Diff against the previous version, or the whole version. **Open step** on a version a run wrote opens the run at its `memory_write` call |
 | **Routines** | Description, timing, next wake or paused, run count; active first | The instruction as Markdown, a banner while the guild's routines are off, then the runs that routine started, marked when they fired with an older instruction. A run opens in **History**. **Edit in agent** |
@@ -448,7 +450,9 @@ A pinned file opens in State with the file selected; a pinned record
 opens its table. **Investigate in Studio** opens
 `section=agents&agent=<id>&tab=history&item=<run id>`.
 
-The splitter's share persists in `localStorage`. The pinned issue of a
+The splitter's share persists in `localStorage` (`studio.split`), and
+so do the windows of State (`studio.state.hours`) and Tools
+(`studio.tools.hours`). The pinned issue of a
 session started from **Investigate in Studio** waits in
 `sessionStorage`.
 
@@ -633,7 +637,9 @@ The coach loop is the shared conversation runner
 - subscribe-before-snapshot SSE
 
 The run limits come from the organisation policy; core's defaults are
-in `apps/orchestrator/src/studio/constants.ts`. A generation past the
+`COACH_RUN_LIMITS` in `apps/orchestrator/src/policy/index.ts`. The
+step cap and the tools' caps are in
+`apps/orchestrator/src/studio/constants.ts`. A generation past the
 month's `monthlyCoachRuns` is refused with 409.
 
 Usage is charged to the global and organisation counters and to
@@ -837,7 +843,7 @@ app also re-reads the session and its messages every 2.5 s
 | `apps/orchestrator/src/studio/inventory.ts` | The roster as the inventory lists it, with its warnings |
 | `apps/orchestrator/src/studio/inspector.ts` | The agent inspector: an agent's prompt sources, runs, and routines |
 | `apps/orchestrator/src/conversation/` | The shared conversation runner, and the blocks shared with the Builder: prompt placement, content trust, writing, the Task shape, and what every agent already reads |
-| `apps/orchestrator/src/studio/constants.ts` | Core's run limits and caps |
+| `apps/orchestrator/src/studio/constants.ts` | The step cap, the default temperature, and the tools' caps |
 | `apps/orchestrator/src/studio/tools.ts` | The coach's tool list, and the call each tool runs for |
 | `apps/orchestrator/src/studio/*-tools.ts` | The coach's tools, one file per sub-domain: prompt, task, memory, run, routine, guild, file, collection, access, and connection |
 | `apps/orchestrator/src/studio/arguments.ts`, `edit-arguments.ts` | A tool's arguments: the schema the model is offered and the decode of a call against it; the edit tools' parameters, which a recorded call is read by again |

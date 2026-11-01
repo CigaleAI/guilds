@@ -93,12 +93,15 @@ Paths use ids, not names. Renaming a guild or an agent does not
 change its paths, and a reused name gets fresh paths.
 
 A tool returns the display path of what it wrote. That path is the
-canonical way to link to the item elsewhere. A short `[[name]]` in
-prose is plain text and is never rewritten into a link.
+canonical way to link to the item elsewhere. In a Task or a note,
+`![[display path]]` embeds the item and `[[display path]]` references
+it ([Notes](notes.md#embeds-and-references)). Nothing rewrites other
+text into a link.
 
 The model never supplies an organisation, guild, or agent id. For a
-note it sends a `level` and a `key` (the file name). For a record it
-sends the collection name and the record id.
+note it sends a `level` and a `key` (the file name), or the display
+path of a note that exists. For a record it sends the collection name
+and the record id.
 
 ### Every change is recorded
 
@@ -120,6 +123,7 @@ A provenance strip under a file says who changed it last and when.
 It appears:
 
 - in the notes browser ([Notes](notes.md))
+- in the files browser ([Files](files.md))
 - on the agent's **Prompt** tab ([Task](task.md))
 - on the agent's **State** tab, in the **Memory** and **Scripts**
   views ([Memory](memory.md), [Scripts](scripts.md))
@@ -246,7 +250,7 @@ another type is 422 naming the field, before the caller is identified.
 A run-owned change in the history expands to the run's agent,
 guild, kind, status, and routine. Each change carries `studio`:
 `{ session_id, seq }` for a change applied from a Studio card, or
-null. Changes written before the Studio link existed carry null.
+null otherwise.
 
 A path with no recorded change but a live row falls back to that
 row's last-saved facts: `recorded: false`, the saver's name, the
@@ -267,6 +271,7 @@ change, in the same transaction as the write:
 | `guild_text` | a guild's about or description changes |
 | `collection` | **Delete all** removes at least one record, a collection is deleted, a column is renamed or removed, or a row of its access list is added, changed, or removed |
 | `note` | a row of a note's access list is added, changed, or removed ([Access](access.md#access-lists)) |
+| `file` | a row of a file's access list is added, changed, or removed |
 
 A write that changes nothing logs nothing.
 
@@ -274,7 +279,7 @@ A write that changes nothing logs nothing.
 |---|---|
 | `id` | the change id (`cchg_…`) |
 | `org_id`, `guild_id`, `agent_id` | where the target sits; the guild and organisation follow from the agent or guild |
-| `target_kind`, `target_id` | the target: a schedule id, a catalog id (tool or connector), a guild id, a collection id, or a note's artifact id |
+| `target_kind`, `target_id` | the target: a schedule id, a catalog id (tool or connector), a guild id, a collection id, or a note's or a file's artifact id |
 | `operation` | `create`, `update`, or `delete` |
 | `summary` | one line in words, such as `Paused "Morning digest"` |
 | `actor_type`, `actor_id`, `actor_name` | `user`, `agent`, or `run`, and who |
@@ -284,8 +289,7 @@ A write that changes nothing logs nothing.
 
 `listConfigChanges` reads one target's changes, newest first. Deleting
 the organisation, guild, or agent deletes its rows; deleting the run or
-the Studio session clears the link. Changes made before the log
-existed have no row.
+the Studio session clears the link.
 
 Code: `apps/orchestrator/src/db/config-changes.ts`.
 
@@ -301,7 +305,7 @@ Code: `apps/orchestrator/src/db/config-changes.ts`.
 - The bytes of files: the blob store ([Files](files.md#storage)).
 - Run transcripts: run rows ([Runs](runs.md)).
 
-`note_find` and `record_search` search the store only. Scripts and
-files are artifact kinds with their own tools. Note and record search
-skip them, and the notes browser does not list them
-([Scripts](scripts.md), [Files](files.md)).
+`note_find` searches notes only, and `record_search` records only.
+Scripts and files are artifact kinds with their own tools, and the
+notes browser does not list them ([Scripts](scripts.md),
+[Files](files.md)).

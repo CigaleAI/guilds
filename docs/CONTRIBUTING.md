@@ -28,7 +28,8 @@ contains and what its reviewer checks is in
 
 An issue is a bug, a feature, or a chore, one per issue, opened
 from its [form](https://github.com/CigaleAI/guilds/issues/new/choose).
-A feature needs only its **Why**; the proposal can stay open.
+The form labels it `bug`, `feature request`, or `chore`. A feature
+needs only its **Why** to be opened; the proposal can stay open.
 
 An issue is **ready** when a maintainer has labelled it `ready`,
 and that label is given only when every field holds an answer and
@@ -83,6 +84,10 @@ in one release take the highest digit.
 
 The entry is the version, the effect, and what an operator can
 see. Changes not yet tagged sit under **Unreleased** at the top.
+There each change is one paragraph that opens with its effect in
+bold: **No impact.**, **Rebuild.**, or **Breaking.** A break that
+does not reach every box names whom it reaches, such as
+**Breaking for extensions.**
 
 The commands a box runs for each effect are in
 [Maintain](operations/maintain.md#update).

@@ -79,7 +79,7 @@ export const fileFind: Tool = {
     {
       query: { type: "string" },
       level: { type: "string", description: "agent, guild, or org; omit for every level you can read" },
-      limit: { type: "integer" },
+      limit: { type: "integer", description: "at most 100, default 20" },
     },
     [],
   ),

@@ -130,8 +130,8 @@ timeout plus 30 seconds.
 
 The helper caps each result at `CODE_RESULT_MAX_BYTES` (default 8192,
 at least 1024). The platform pipeline then runs unchanged: redaction,
-the 64 KiB cap, and the `remaining_tool_calls` trailer
-([Runs](../runs.md)).
+the `TOOL_RESULT_MAX_BYTES` cap (default 64 KiB), and the
+`remaining_tool_calls` trailer ([Runs](../runs.md)).
 
 ### Working directory
 
@@ -244,6 +244,9 @@ Beside the fields every tool call records:
 ### Code
 
 `apps/orchestrator/src/toolbox/code.ts` (the four check tools and the
-transport), `runtime/guilds-code`, and in the app
-`apps/web/src/features/agent/chat/ToolCallDetail.tsx` and
+transport), `apps/orchestrator/src/toolbox/shell.ts` (one sandbox
+command, stopped by a cancel), `apps/orchestrator/src/toolbox/output.ts`
+(the output pipeline), `runtime/guilds-code`, and in the app
+`apps/web/src/features/agent/chat/ToolCallDetail.tsx`,
+`apps/web/src/features/agent/chat/callDetail.ts`, and
 `apps/web/src/features/agent/runs/toolFormat.ts`.

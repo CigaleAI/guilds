@@ -134,7 +134,7 @@ export function translateConnectFailure(error: unknown, server: LoadedConnector)
 }
 
 /** The login's settings checked against the manifest's `settings_schema`; a setting it refuses is a 422. */
-function validateConnectSettings(server: LoadedConnector, values: Record<string, unknown>): SettingsOutcome {
+export function validateConnectSettings(server: LoadedConnector, values: Record<string, unknown>): SettingsOutcome {
   try {
     return settingsOutcome(server, values);
   } catch (error) {

@@ -126,23 +126,33 @@ name, and its description. Its buttons are:
 
 Below the header is the plan: everything the recipe creates and needs.
 
-- The plan header names the smallest machine the recipe's agents need
-  ("Needs a machine of at least …"). Hovering it gives the
-  [sizing rules](machines.md).
+- The plan header shows the guild's about text and goal, and a count
+  tile each for agents, connectors, routines, tables, and secrets.
+  A tile opens its section. The header also names the smallest
+  machine the recipe's agents need ("Needs a machine of at least …",
+  whose hover gives the [sizing rules](machines.md)) and the group
+  message limit.
+- A banner counts the blocking issues and gives the first one.
+- The plan folds into sections: **Agents**, **Routines**,
+  **Connectors & Integrations**, **Repositories**, **Tables**,
+  **Notes**, **Handoffs**, and **External setup**. Repositories,
+  Handoffs, and External setup show only when the recipe has some.
 - Each agent has a card. Pills count its connectors, routines, and
-  tools. A routines pill at 0 carries a warning icon; its hover gives
-  the coach's advice.
+  tools; pressing one lists them. The routines pill carries a warning
+  icon when the checks flag the agent's routines; its hover gives the
+  coach's advice.
 - A **Capabilities** row lists **Browser**, whose hover gives the
   login step and notes, and **Coding**, with the
   [harness](coding/harnesses.md) the role names, or *no harness yet*.
 - Each agent's **Task** folds open. It has a copy button and
-  **Edit Task**, which lets you rewrite it and **Save Task**.
-- Expanding a connector lists its catalog tools per agent. You can
-  switch a tool off, or **Remove** the connector (**Keep** undoes it).
-  A bar then appears with **Save access** and **Discard**.
-- The plan lists the recipe's repositories.
-- An issues list under the plan shows the findings of the checks, five
-  at a time.
+  **Edit Task**, which lets you rewrite it and **Save Task**. Each
+  script folds open under it.
+- Each connector card shows its login, its setup, and its tools per
+  agent. You can switch a tool off, or **Remove** the connector
+  (**Keep** undoes it). A bar then appears with **Save access** and
+  **Discard**.
+- An issues list under the plan shows the findings no card shows,
+  five at a time, with **Show all**.
 
 Agent cards leave out the `harness.credential` finding: only apply and
 the agent's own setup act on it. The issues list leaves out
@@ -179,17 +189,17 @@ What capture writes:
 - `meta.name` and `guild.name_suggestion` are the guild's name.
   `meta.description` and `guild.about` are its about text.
   `guild.objective` is the guild's description.
-  `guild.group_agent_message_limit` is the guild's limit (20 when
-  unset).
+  `guild.group_agent_message_limit` is the guild's limit.
 - Each agent becomes a role whose `role` and `name_suggestion` are the
   agent's name. Its focus, wake triggers, avatar, and Task travel. The
   Task is marked `author: { by: "operator", reviewed: true }`, like
   every captured field.
-- The role's `config` keeps only agent configuration keys, with
-  defaults filled in. The machine size keys `box`, `cpu`, and
-  `memory_mib` stay behind: apply places the agents on a machine of its
-  own. When the agent has more scripts than `max_scripts`, `max_scripts`
-  is raised to the number of scripts.
+- The role's `config` keeps the agent's configuration keys. The
+  agent-optimized browser stays behind (`browser_optimized` and
+  `browser_model`): it needs the applying box's System One key and a
+  model of the applying organisation, so the role browses with the
+  step-by-step browser tools. When the agent has more scripts than
+  `max_scripts`, `max_scripts` is raised to the number of scripts.
 - `config.browser` travels, plus empty login instructions. The
   Chromium profile does not.
 - `config.coding` travels. `config.harness` travels as it is; an agent
@@ -390,7 +400,7 @@ POST   /api/recipes/registry/import   { name, version? }
 | `DELETE /api/recipes/:id` | `{ ok: true }` |
 | `GET /api/recipes/:id/export` | The document; 409 while draft |
 | `POST /api/recipes/import` | 201 with the imported draft |
-| `GET /api/recipes/registry` | `{ offline, url, recipes }`, the newest entry of each recipe |
+| `GET /api/recipes/registry` | `{ offline, url, recipes }`: the newest entry of each recipe, with the `versions` the registry offers |
 | `POST /api/recipes/registry/import` | 201 with the imported draft; 404 when the registry has no such recipe; 409 while offline |
 
 A document that does not parse is 422 with the parser's message (see

@@ -26,7 +26,7 @@ flowchart TD
   guild[Guild] --> agents[Agents, up to max_agents]
   guild --> chat[One group chat]
   guild --> ops[Operators]
-  guild --> notes[Guild-level notes]
+  guild --> notes[Guild-level notes and files]
   guild --> tables[The guild's own collections]
   guild --> repos[Repositories]
 ```
@@ -37,17 +37,17 @@ flowchart TD
   ([Group chat](group-chat.md)).
 - **Operators.** The people the guild works for
   ([Operators](operators.md)).
-- **Guild-level notes.** Each starts read and written by its agents
-  ([Notes](notes.md)).
+- **Guild-level notes and files.** Each starts read and written by
+  its agents ([Notes](notes.md), [Files](files.md)).
 - **Its own collections.** A collection that belongs to the guild
   starts read and written by its agents
   ([Collections](collections.md)).
 - **Repositories** its coding agents work in
   ([Repositories](coding/repositories.md)).
 
-Which notes and collections an agent reaches is set on each item,
-in its access list. A row for the guild covers every agent of the
-guild ([Access](access.md#access-lists-for-notes-collections-and-files)).
+Which notes, files, and collections an agent reaches is set on each
+item, in its access list. A row for the guild covers every agent of
+the guild ([Access](access.md#access-lists-for-notes-collections-and-files)).
 
 ### Purpose: short description and description
 
@@ -111,13 +111,15 @@ and secrets granted elsewhere stay, and so do the machines
 
 The sidebar lists the current organisation's guilds.
 
-- A guild row shows its name, a lock when private, and its unread
-  count ([Group chat](group-chat.md#what-the-operator-has-read)).
+- A guild row shows its name, a lock when private, its agent count
+  against the agent limit, and its unread count
+  ([Group chat](group-chat.md#what-the-operator-has-read)).
 - It folds open to its agents and an **Add agent** row
   ([Agents](agents.md#sidebar)).
 - **+** on the **Guilds** header opens the create-guild dialog.
 
-The footer links to **Inbox** ([Inbox and issues](inbox.md)),
+The footer links to **Inbox**, with its count
+([Inbox and issues](inbox.md)),
 **Builder** ([Guild builder](guild-builder.md)), **Recipes**
 ([Recipes](recipes.md)), and **Tables**
 ([Collections](collections.md)). The account button sits below them
@@ -181,9 +183,9 @@ The tabs, one route each:
 |---|---|
 | **Group chat** | [Group chat](group-chat.md) |
 | **Settings** | Below |
-| **State** (Files, Tables, Access) | [Notes](notes.md), [Collections](collections.md#what-a-guild-or-an-agent-reaches), [Access](access.md#what-a-guild-or-an-agent-reaches) |
+| **State** (Notes, Files, Tables, Access) | [Notes](notes.md), [Files](files.md), [Collections](collections.md#what-a-guild-or-an-agent-reaches), [Access](access.md#what-a-guild-or-an-agent-reaches) |
 | **Routines** | [Routines](routines.md) |
-| **Issues** | [Inbox and issues](inbox.md) |
+| **Issues**, with the count of open issues | [Inbox and issues](inbox.md) |
 | **Tools**, **Secrets** | [Access](access.md) |
 | **Usage** | [Usage](usage.md) |
 
@@ -249,7 +251,7 @@ The `guilds` table:
 | `visibility` | `org` or `private`; default `org`. An empty value or `null` also means `org` |
 | `routines_enabled` | Whether routines fire, default true ([Routines](routines.md)) |
 | `git_author_email` | The commit author email, empty for none ([Repositories](coding/repositories.md)) |
-| `group_chat_seq`, `group_agent_message_count`, `group_agent_message_limit`, `group_chat_errors`, `group_chat_cleared_at` | Group-chat state ([Group chat](group-chat.md)). Every create path sets `group_agent_message_limit` to 200 |
+| `group_chat_seq`, `group_agent_message_count`, `group_agent_message_limit`, `group_chat_errors`, `group_chat_cleared_at` | Group-chat state ([Group chat](group-chat.md)). `group_agent_message_limit` defaults to 200; a recipe apply sets the recipe's |
 | `created_at`, `updated_at` | Timestamps |
 
 About and description reach the State snapshot as `group.about` and

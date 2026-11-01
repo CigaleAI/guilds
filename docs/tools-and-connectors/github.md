@@ -34,8 +34,9 @@ GitHub sends you back to **Platform keys**, and **GitHub App** reads
 **On**. If it shows **Couldn't create the GitHub App** instead,
 nothing was stored: start again.
 
-The App asks for read and write access to Contents and Pull requests,
-and read access to Metadata. It is private and receives no webhooks.
+The App asks for read and write access to Contents, Pull requests,
+and Issues, and read access to Actions, Checks, Commit statuses, and
+Metadata. It is private and receives no webhooks.
 
 ## Step 2: Connect GitHub
 
@@ -150,9 +151,10 @@ permissions `contents: write`, `pull_requests: write`,
 and `metadata: read`. It sets no setup URL. Its `url` is the box's
 address. Its callback URLs are
 `<PUBLIC_BASE_URL>/api/mcp/oauth/callback` and, when the admin
-reached the box at another address, that address's callback too. A box on the public internet also names an
-inactive webhook at `<address>/api/github/webhook`. A loopback or
-private address omits it: GitHub refuses a hook URL it cannot reach.
+reached the box at another address, that address's callback too. A
+box on the public internet also names an inactive webhook at
+`<address>/api/github/webhook`. A loopback or private address omits
+it: GitHub refuses a hook URL it cannot reach.
 
 GitHub redirects to
 `GET /api/admin/instance/keys/github-app/manifest/callback?code&state`.
@@ -187,9 +189,9 @@ guild, or an agent; any other scope is a 422.
    own authorization hop returns a new `code` with the
    `installation_id`, traded without `redirect_uri`. A setup redirect
    (`setup_action` `install` or `update`) with `installation_id` and
-   no `code` starts user authorization with the same `state`. An id in the URL alone proves nothing. The user
-   token is discarded. A refused callback deletes a new pending
-   connection.
+   no `code` starts user authorization with the same `state`. An id
+   in the URL alone proves nothing. The user token is discarded. A
+   refused callback deletes a new pending connection.
 3. The connection stores the installation id, takes the account's
    login as `account_hint`, becomes `connected`, and writes its
    enabled binding.
@@ -237,7 +239,7 @@ take. A login with none picked adds no key.
 ### Repositories
 
 `GET /api/mcp/connections/:id/github/repositories` lists what the
-installation reaches: `name`, `full_name`, `owner`, `private`,
+installation reaches: `id`, `name`, `full_name`, `owner`, `private`,
 `default_branch`, `url`.
 
 `PUT /api/mcp/connections/:id/github/selected` stores

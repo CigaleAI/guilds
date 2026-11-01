@@ -28,7 +28,8 @@ no button.
 
 Messages, notes, Tasks, and instructions render as GitHub Markdown
 that keeps single line breaks. `![[…]]` embeds, `[[…]]` references,
-and tagged handles show as chips. Code blocks show their language and a copy button.
+and tagged handles show as chips. Code blocks show their language
+and a copy button.
 
 ## Screens
 
@@ -42,7 +43,7 @@ and tagged handles show as chips. Code blocks show their language and a copy but
 | Sidebar: agent rows and **Add agent** | every page | [Agents](../concepts/agents.md) |
 | Collapsed rail (⌘B / Ctrl+B): the same entries, guild unread badges, and **Settings** | every page | [Guilds](../concepts/guilds.md) |
 | Account menu: **Organisation** switch, **Theme**, **Desktop notifications** (when the browser supports them), **Settings**, **Admin**, **Sign out** | every page | [Organisations](../concepts/organisations.md), [Users](../concepts/users.md), [Inbox and issues](../concepts/inbox.md) |
-| **Create guild** dialog | from the sidebar | [Guilds](../concepts/guilds.md) |
+| **Create a guild** dialog | from the sidebar or the empty Home | [Guilds](../concepts/guilds.md) |
 | **Create an agent**: choice of agent or coding agent | from **Add agent** or the guild's **New agent** | [Agents](../concepts/agents.md) |
 | **Create an agent** (Identity, Model, Machine) | from **Add agent** | [Agents](../concepts/agents.md), [Machines](../concepts/machines.md), [Agent home](../concepts/agent-home.md) for **Disk** |
 | **Create a coding agent** (Identity, Machine, Harness, Lead model, Repositories) | from **Add agent** | [Coding agents](../concepts/coding/index.md), [Harnesses](../concepts/coding/harnesses.md), [Repositories](../concepts/coding/repositories.md) |

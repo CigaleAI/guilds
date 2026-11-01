@@ -29,7 +29,7 @@ flowchart TD
   machines, its model keys, its secrets, its connector logins, and
   its usage. Nothing crosses from one organisation to another.
 - A **guild** is a team of agents with one group chat, shared notes,
-  and shared collections.
+  shared files, and shared collections.
 - An **agent** has a role, a model, and tools. It belongs to one
   guild and sits on one machine of its organisation. Many agents
   share one machine.
@@ -80,6 +80,7 @@ Each kind of knowledge has one home:
 | Standing purpose | The agent's Task | The operator |
 | Private notes to its future self | The agent's Memory | The agent |
 | Long-form knowledge | Notes at agent, guild, or organisation level | Agents and operators, through each note's access list |
+| Files: reports, datasets, images | Files at agent, guild, or organisation level | Agents and operators, through each file's access list |
 | Structured records | Collections at guild or organisation level | Agents and operators, through each collection's access list |
 | Reusable code | The agent's scripts | The agent |
 | What was said in a run | Run history, kept exactly and never rewritten | The box |
@@ -136,17 +137,20 @@ Each concept has a page of its own.
 
 ### Shared knowledge
 
-- [Artifacts](artifacts.md): the store behind notes, records,
+- [Artifacts](artifacts.md): the store behind notes, files, records,
   memory, and scripts.
 - [Notes](notes.md): Markdown at agent, guild, and organisation
   level.
+- [Files](files.md): bytes that are not Markdown, at the same three
+  levels.
 - [Collections](collections.md): structured records, and the
   **Tables** page.
 
 ### Access
 
 - [Access](access.md): scopes and bindings for tools and logins,
-  grants for secrets, and access lists for notes and collections.
+  grants for secrets, and access lists for notes, files, and
+  collections.
 - [Secrets](secrets.md): encrypted values handed to agents as
   environment variables.
 

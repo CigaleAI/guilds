@@ -39,8 +39,13 @@ in the Task show as their inlined bodies, the nested hop included.
 
 ### Messages
 
-- Operator messages and final replies are bubbles. A run woken by the
-  group chat or a routine says so.
+- Operator messages and final replies are bubbles. An operator
+  message shows its images above its text.
+- A run woken by the group chat opens with a note, **Woken by the
+  group chat**, with the message number and its author. A run woken by
+  a routine opens with **Woken by a routine**.
+- A system row after the system prompt shows as an info banner,
+  **System note**.
 - A reply with reasoning shows it as a collapsed block above the text.
   While the agent generates, reasoning streams into that block. The
   block collapses when the reply starts.
@@ -56,8 +61,9 @@ in the Task show as their inlined bodies, the nested hop included.
 Consecutive model steps that called tools render as one **run flow**
 per generation. Its header shows:
 
-- the title, which names the model on hover, and how the generation
-  ended: **Done**, **Running…**, or its error count
+- the title, **Generation N**, which names the model on hover, and
+  how the generation ended: **Done**, **Running…**, or its error
+  count
 - its time (model and tool time on hover), steps, tool calls, failed
   calls, tokens, and cost: the model replies' cost and the spend of
   any tool result that records one, such as a `browse` call's
@@ -144,6 +150,11 @@ place of its result mark.
   names the step it points to.
 - A `secret_store` call reads **Stored NAME**. A `secret_request` call
   reads **Asked for NAME**.
+- A `browse` call reads **Browse**, or **Browse from** and its start
+  address, then its status when it did not complete, and its cost.
+
+While a call runs, its latest six progress lines show under its
+card, such as each step of a `browse` call.
 
 Opening a call expands its card onto its arguments and result. Each
 shows as a folding JSON tree or raw text, with a copy button. Its
@@ -206,28 +217,44 @@ declines by replying in the chat ([Secrets](secrets.md)).
 
 The transcript is the body of the agent's **Chat** tab
 ([Runs](runs.md#in-the-app)). `?run=<run id>` opens a run's
-transcript, streaming while it generates. `&call=<tool call id>` or
-`&seq=<n>` also opens that step, lit, and scrolls to it.
+transcript, streaming while it generates. With it, `&call=<tool call
+id>` or `&seq=<n>` also opens that step, lit, and scrolls to it.
+`history=true` opens the **History** drawer beside it.
 
 ## Reference
 
 ### Live updates
 
 The transcript renders committed rows. Reasoning, text deltas, and
-`code_task` progress lines stream over the run's SSE stream before
+the progress lines of a running call, such as `code_task` or
+`browse`, stream over the run's SSE stream before
 their row lands ([Runs](runs.md#streaming)). On reconnect the view
 reloads the ordered history, then consumes new events.
 
 ### Code
 
 - `apps/web/src/features/agent/chat/Transcript.tsx`: the tabs, the
-  bubbles, the typing indicator, and the error banner
+  error banner, and one component per row kind: `UserTurn` (an
+  operator message or a wake note), `AgentTurn` (a reply),
+  `TranscriptMessage` (which of those a row is, or a system note),
+  `TranscriptFlow` (a run flow and its secret request cards), and
+  `LiveReply` (the reply streaming in, or the typing indicator)
 - `apps/web/src/features/agent/chat/FlowView.tsx`: run flows, steps,
   and the toolbar
+- `apps/web/src/features/agent/chat/ToolCallDetail.tsx` and
+  `callDetail.ts`: an opened call's views and metadata
 - `apps/web/src/features/agent/runs/runFlowModel.ts`: how rows and
-  run errors group into flows
+  run errors group into flows, steps, and calls
+- `apps/web/src/features/agent/runs/toolKinds.ts`: each tool's kind,
+  level, and whether it writes tracked state
+- `apps/web/src/features/agent/runs/toolFormat.ts`: a call's short
+  line, its arguments, and its outcome
+- `apps/web/src/features/agent/chat/ChangesPanel.tsx`: the
+  **Changes** panel
 - `apps/web/src/features/agent/chat/SecretRequestCard.tsx`: the
   secret request card
+- `apps/web/src/features/agent/chat/SessionChrome.tsx`: the Chat
+  search parameters, the open session, and the tab-strip buttons
 - `packages/ui/src/components/runs/ToolCall.tsx`: the tool call card
 - `packages/ui/src/components/conversation/TypingIndicator.tsx`: the
   typing dots

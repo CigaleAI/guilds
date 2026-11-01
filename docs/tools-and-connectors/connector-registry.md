@@ -38,8 +38,8 @@ A box reads `<REGISTRY_URL>/index.json`:
 }
 ```
 
-- There is one entry per published version. `path` is relative to the
-  index.
+- There is one entry per published version. A version is
+  `major.minor.patch`. `path` is relative to the index.
 - An entry may carry `experimental: true`: its publisher is still
   trying it out. An install accepts it only explicitly, and the row
   keeps the mark beside `verified`.
@@ -55,6 +55,9 @@ under one directory:
 - `connector.json`
 - an optional `logo.svg`
 - `adapter.js`, for a connector with code
+
+A package that ships `adapter.ts` instead of the bundled `adapter.js`
+is refused.
 
 The index, a package, and an unpacked package are each at most
 16 MiB.
@@ -74,13 +77,17 @@ An install (`apps/orchestrator/src/registry/`) runs these steps:
 5. It validates `connector.json` with the loader, and its slug against
    the entry's.
 6. It refuses what the package may not claim (below).
-7. It writes a platform row: `source` `registry`, the entry's
-   `version`, `verified`, and `publisher`, on at install. The tool
-   prefix is generated against every prefix on the box.
-8. A key or client the connector declares of its own appears under
-   **Admin**, **Platform keys** as `connector:<slug>`. Until a platform
-   admin fills it, **Connector catalog** and **Tools** mark the
-   connector **Not set up**, with a **Set up** link there
+7. It places the package's code, when it carries any
+   ([Code tier](#code-tier)).
+8. It writes a platform row: `source` `registry`, the entry's
+   `version`, `verified`, experimental mark, and `publisher`, on at
+   install. The tool prefix is generated against every prefix on the
+   box.
+9. A key or client the connector declares of its own appears under
+   **Admin**, **Platform keys** with the id `connector:<slug>`. Until a
+   platform admin fills it, **Connector catalog** marks the connector
+   **Not set up**, with a **Set up** link there. **Tools** marks a
+   connector whose own OAuth client is unset the same way
    ([A connector's own key or client](platform-keys.md#a-connectors-own-key-or-client)).
 
 ### What a package may not claim
@@ -107,7 +114,10 @@ A package with code needs the code tier and a verified index
 
 ## Updating and removing
 
-An update moves a registry row to the newest entry. It replaces:
+An update moves a registry row to the newest entry, when that entry
+is newer than the row's version. Without a slug, it moves every
+registry row. The entry must pass the same acceptance as an install.
+It replaces:
 
 - the manifest
 - the version
@@ -129,11 +139,25 @@ A `core` or `local` row is neither updated nor removed this way.
 ## In the app and the CLI
 
 The instance admin installs under **Admin**, **Connector catalog**,
-**Install from the registry**. An install, update, or removal from
-Admin takes effect in the running server at once. **Reload
-connectors** does the same for what the CLI changed. Each of these
-also rebuilds the connector-declared platform keys and resyncs
-platform logins.
+**Install from the registry**. The dialog lists the newest version of
+each connector the registry offers, with its tags:
+
+- **Install** (or **Install unverified**, **Install experimental**)
+  when the box does not hold it
+- **Update to v1.2.0**, naming the newest version, and **Remove** for
+  a registry install behind it, and **Remove** alone when it is
+  current
+- **Installed** when the slug comes from another source
+
+An unverified or experimental install or update, and every removal,
+asks for confirmation first. While the box is offline, the dialog says
+so.
+
+An install, update, or removal from Admin takes effect in the running
+server at once. **Reload connectors** does the same for what the CLI
+changed. Each of these also rebuilds the connector-declared platform
+keys, resyncs platform logins, and makes every login list its tools
+again on its next use.
 
 From the orchestrator's directory (`docker compose exec orchestrator`
 on the Compose stack):
@@ -195,14 +219,17 @@ status, because a bundle carries its own copy of the class.
 
 | Route | Does |
 | --- | --- |
-| `GET /api/admin/registry` | `{ offline, url, connectors }`: the newest entry of each connector, with `installed` (`source`, `version`) when the box holds it |
+| `GET /api/admin/registry` | `{ offline, url, connectors }`: the newest entry of each connector, with `versions` (every version the index offers, newest first) and `installed` (`source`, `version`) when the box holds it |
 | `POST /api/admin/registry/connectors` | Installs `{ slug, version?, unverified?, experimental? }`. 201 with the catalog row |
 | `POST /api/admin/registry/connectors/:slug/update` | Updates one connector, `{ unverified?, experimental? }`. Answers `{ moved }` |
 | `DELETE /api/admin/registry/connectors/:slug` | Removes one connector. 204 |
-| `POST /api/admin/registry/reload` | Serves what the database now holds, after a CLI change |
+| `POST /api/admin/registry/reload` | Serves what the database now holds, after a CLI change. Answers `{ loaded, removed, failed }`, slugs of code connectors |
 
 Every route needs an instance admin, and anyone else gets 404
 whatever they send. `slug` and `version` are strings, `unverified`
 and `experimental` booleans; another type is 422 naming the field.
 While the box is offline, an install or update is a 409. A removal
-works offline.
+works offline. A registry that cannot be reached, or an index that is
+invalid or unsigned where a signature is required, is a 502. A package
+that does not match its entry or does not load is a 422. A slug or
+version the registry does not offer is a 404.

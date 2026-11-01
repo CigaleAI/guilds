@@ -76,8 +76,9 @@ Opening the block shows the views every tool call has
 | **Log** | The kept harness log, once the result names it: **Steps**, each event as a progress line, or **JSON**, the raw events |
 | **Metadata** | **Status**, **Harness**, **Repository**, **Session**, **Changes**, **Checkpoints** (start → end, as short commit ids), and **Harness log**, whose path opens **Log** |
 
-A running task opens on **Result**. **Log** reads the log from the
-agent's machine, waking it. "Loading the log from the agent's machine…"
+A task opens on **Result** once it has progress or an error, else on
+**Arguments**. **Log** reads the log from the agent's machine, waking
+it. "Loading the log from the agent's machine…"
 shows while it loads. "Couldn't load the harness log" shows with the
 reason when it cannot be read, such as a log already pruned from the
 agent's home.
@@ -113,12 +114,15 @@ other [code tools](code-tools.md).
 
 ### Steps
 
-1. **Harness.** No harness picked fails the call with
+1. **Harness and brief.** No harness picked fails the call with
    `harness.missing`. A harness the box turns off fails it with
    `harness.off` ([Turning a harness off](harnesses.md#turning-a-harness-off)).
+   A blank `brief` fails it with `brief is required`.
 2. **Repository.** `repo`, else the guild's only repository. A guild
-   without repositories, an unknown name, or a missing `repo` with
-   several repositories is an error naming the guild's repositories.
+   without repositories is an error that says the operator adds them
+   in the guild's Repositories. An unknown name, or a missing `repo`
+   with several repositories, is an error naming the guild's
+   repositories. `notes` that is not a list of strings is an error.
    With `session_id`, the agent passes the repository the session
    started in; the orchestrator does not check the pair
    ([Sessions](#sessions)).
@@ -198,10 +202,10 @@ When `stop` reports that the harness did not exit, the detail reads
 The call's state then stays under `/run/guilds/<agent id>/harness/`
 until the container goes.
 
-**Metadata.** Beside the fields every tool call records: `harness`,
-`status`, `session_id`, `repository`, `exit_code`, `duration_ms`,
-`files_changed`, `insertions`, `deletions`, `start_sha`, `end_sha`,
-and `log_path`.
+**Metadata.** Beside the fields every tool call records, such as
+`duration_ms`: `harness`, `status`, `session_id`, `repository`,
+`exit_code`, `files_changed`, `insertions`, `deletions`, `start_sha`,
+`end_sha`, and `log_path`.
 
 ### Process
 
@@ -252,7 +256,11 @@ waking it, as the task diff is read:
   ([SEC-32](../../architecture/security-register.md#sec-32--the-harness-log-the-app-reads-is-redacted-only-with-the-agents-secret-values)).
 - A call that is not a `code_task`, or whose result names no harness
   and log, is 404 ("that call has no harness log"), and the machine is
-  not woken. A log already pruned from the agent's home is 404 too.
+  not woken. A log already pruned from the agent's home is 404 too:
+  "that log is no longer kept: an agent's home keeps its 20 most
+  recent runs".
+- A log that cannot be read from the machine, secrets that cannot be
+  read to redact it, or a box without generation is 503.
 
 ### Harness environment
 
@@ -338,6 +346,10 @@ harness owns its session state.
 `apps/orchestrator/src/toolbox/harness.ts` (`code_task`),
 `harness-brief.ts` (the brief), `harness-setup.ts` (the harness
 checks), `harness-ops.ts` (the ops, the checkpoints, the harness log),
-`harness-result.ts` (the result), `runtime/guilds-harness` (the ops and
-the drivers), and in the app `apps/web/src/features/agent/chat/FlowView.tsx`
-and `apps/web/src/features/agent/chat/ToolCallDetail.tsx`.
+`harness-result.ts` (the result),
+`apps/orchestrator/src/generation/coding.ts` (a lost task stopped at
+startup, and the harness log read for the app),
+`runtime/guilds-harness` (the ops and the drivers), and in the app
+`apps/web/src/features/agent/chat/FlowView.tsx`,
+`apps/web/src/features/agent/chat/ToolCallDetail.tsx`, and
+`apps/web/src/features/agent/chat/callDetail.ts`.

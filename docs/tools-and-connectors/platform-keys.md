@@ -22,9 +22,11 @@ An integration reads its values from one of two sources:
   **Platform keys**. They are kept encrypted in `instance_keys`.
 - **`env`**: the values come from the environment at start.
 
-An integration is `on` when every required field is set. It is `off`
-when no required field is set, and `incomplete` otherwise. A default
-value does not count as set.
+An integration is `on` when every required field has a value. It is
+`off` when no required field has one, and `incomplete` otherwise. An
+`env` field's default is its value while the variable is unset. Set
+empty, the field has no value. A field's `set` flag counts only a
+value given: a default does not set it.
 
 ## Integrations the box ships
 
@@ -92,13 +94,25 @@ at runtime cannot do that
 
 ## In the app
 
-- **Admin**, **Platform keys** lists every integration with its state.
-  A platform admin enters or clears a `store` integration's values
-  there. An `env` integration shows which variables are set.
-- **Tools** marks a connector whose integration is not on **Not set
-  up**. It names the missing fields and disables **Connect**. A
+- **Admin**, **Platform keys** lists every integration with its state
+  (**On**, **Incomplete**, **Off**) and its source (**Platform key** or
+  **Environment**). Expanding a `store` integration shows one input
+  per field, never a stored value. **Save** stores the values, or
+  **Replace** once it is on; **Remove** clears them after a
+  confirmation. The GitHub App also offers **Create the GitHub App**.
+  An `env` integration shows each variable as set, missing, not set,
+  or optional; a change takes a restart.
+- A change that would disconnect GitHub logins asks **Replace
+  anyway?** or **Remove anyway?** with the count first
+  ([Replacing the App](github.md#replacing-the-app)).
+- **Connector catalog** marks a connector whose integration is not on
+  **Not set up**, with a **Set up** link to its integration.
+- **Tools** marks an OAuth connector whose client is not set up **Not
+  set up**. It names the missing fields and disables **Connect**. A
   platform admin also gets **Set up**, which opens Platform keys on
-  that integration ([Access](../concepts/access.md#tools)).
+  that integration ([Access](../concepts/access.md#tools)). A token
+  connector whose platform key is off keeps **Connect**: an
+  organisation may connect a key of its own.
 
 ## Reference
 
@@ -107,22 +121,33 @@ at runtime cannot do that
 | Route | Who | Does |
 |---|---|---|
 | `GET /api/instance` | Any user | The box's `auth_mode` and every integration's status |
-| `PUT /api/admin/instance/keys/:integration` | Instance admin | Stores `{ values }` for a `store` integration |
-| `DELETE /api/admin/instance/keys/:integration` | Instance admin | Clears a `store` integration; an `env` one is a 400 |
+| `PUT /api/admin/instance/keys/:integration` | Instance admin | Stores `{ values, confirm_replace? }` for a `store` integration |
+| `DELETE /api/admin/instance/keys/:integration?confirm_replace=` | Instance admin | Clears a `store` integration; an `env` one is a 400 |
 | `POST /api/admin/instance/keys/github-app/manifest` | Instance admin | Starts creating the GitHub App ([Manifest flow](github.md#manifest-flow)) |
 
 A route for the instance admin is 404 to anyone else, whatever they
-send. `PUT` takes a boolean `confirm_replace`, and the manifest start
-string `name`, `owner` and `return_to`; another type is 422 naming the
-field. A `PUT` whose values the integration refuses beyond its fields
-is 422 with the reason: `system-one` takes a blank `provider` or
-`typesafe`, and another names the providers it accepts.
+send. An unknown integration is a 404. `PUT` takes a boolean
+`confirm_replace`, and the manifest start string `name`, `owner` and
+`return_to`; another type is 422 naming the field. `DELETE` reads
+`confirm_replace` as `1` or `true`.
+
+A `PUT` is a 400 for an `env` integration, a field the integration
+does not have, a value that is not a string, or a required field left
+blank. Values are trimmed, and a blank optional field is left out. A
+`PUT` whose values the integration refuses beyond its fields is 422
+with the reason: `system-one` takes a blank `provider` or `typesafe`,
+and another names the providers it accepts.
+
+Without `confirm_replace`, a write or a removal that replaces or
+removes the GitHub App while GitHub logins exist is a 409 with
+`{ message, replaces_app: true, connections }`.
 
 `PUT` and `DELETE` answer `{ integration, disconnected }`.
 `disconnected` counts the GitHub logins a replaced or removed App
 disconnected ([Replacing the App](github.md#replacing-the-app)).
 After every write, platform logins follow their integration's new
-state without a restart.
+state without a restart, and every login lists its tools again on its
+next use.
 
 ### Status fields
 

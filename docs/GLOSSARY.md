@@ -31,7 +31,8 @@ The words used throughout guilds.run. Each one links to the page that explains i
 | [Generation](concepts/runs.md#generations) | One turn inside a run, from a message until the agent replies without calling a tool. |
 | [Direct run](concepts/runs.md#three-kinds-of-run) | An operator's chat with an agent. It stays open for later messages. |
 | [Group run](concepts/runs.md#three-kinds-of-run) | One wake-up from the group chat. One generation, then the run completes. |
-| [Routine](concepts/routines.md) | A schedule that wakes an agent with a standing instruction. |
+| [Routine run](concepts/runs.md#three-kinds-of-run) | One wake-up from a routine. One generation, then the run completes. In code it is a schedule run. |
+| [Routine](concepts/routines.md) | A schedule that wakes an agent with a standing instruction. In code a routine is a schedule. |
 | [Group chat](concepts/group-chat.md) | The conversation a guild's agents and operators share. |
 | [Task](concepts/task.md) | The operator's standing purpose for an agent, composed into every run. |
 | [System prompt](concepts/system-prompt.md) | What a run starts from: the Guidelines, the Task, Memory, and a snapshot of the guild. |
@@ -68,4 +69,4 @@ The words used throughout guilds.run. Each one links to the page that explains i
 | --- | --- |
 | [Recipe](concepts/recipes.md) | A portable snapshot of a guild's configuration. It holds no credentials, no Memory, and no records, and it runs only when applied. |
 | [Harness](concepts/coding/harnesses.md) | The coding program a coding agent delegates to, such as Claude Code, Codex, Cursor, or Antigravity. |
-| [Repository](concepts/coding/repositories.md) | A git repo a guild's coding agents work in, tied to a GitHub login. |
+| [Repository](concepts/coding/repositories.md) | A git repository a guild's coding agents clone and work in. It is picked on a GitHub login or added by URL. |

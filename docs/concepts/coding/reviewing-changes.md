@@ -77,10 +77,11 @@ commit made elsewhere, such as from the **CLI** tab, gets none.
 ### The Changes panel
 
 On the **Chat** tab, a coding run's transcript ends with a **Changes**
-panel once the run has checkpoints. Each repository shows its name,
-its branch, and its diffstat, such as "3 files · +40 −2", or "no
-changes". **Show diff** fetches the run's diff from the agent's
-machine, and **Hide diff** folds it. It is disabled with no changes.
+panel once an end checkpoint has recorded the run's repositories. Each
+repository shows its name, its branch, and its diffstat, such as
+"3 files · +40 −2", or "no changes". **Show diff** fetches the run's
+diff from the agent's machine, and **Hide diff** folds it. It is
+disabled with no changes.
 
 ### The Diff of a code task
 
@@ -164,7 +165,8 @@ GET /api/runs/:id/tasks/:call_id/diff         one code_task's start..end
   ("that call has no task diff"). The task diff names the call's
   repository.
 - Missing checkpoints in the repository, or a failing `git diff`, is
-  404. Generation unavailable is 503.
+  404. Secrets that cannot be read to redact the diff, or a box
+  without generation, is 503.
 
 ### Commit trailers
 
@@ -179,6 +181,12 @@ repository that sets its own hooks path skips it.
 
 `runtime/guilds-code` (`checkpoint`, `diff`),
 `runtime/git-template/hooks/prepare-commit-msg`,
-`apps/orchestrator/src/generation/run-review.ts`,
-`apps/orchestrator/src/http/coding-routes.ts`, and in the app
-`apps/web/src/features/agent/chat/ChangesPanel.tsx`.
+`apps/orchestrator/src/generation/coding.ts` (the run's checkpoints and
+reading a diff from the machine),
+`apps/orchestrator/src/generation/run-review.ts` (which diff a request
+names), `apps/orchestrator/src/http/coding-routes.ts`, and in the app
+`apps/web/src/features/agent/chat/ChangesPanel.tsx` (the panel and the
+diff view), `apps/web/src/features/agent/chat/changes.ts` (the
+diffstat and line colours), and
+`apps/web/src/features/agent/chat/ToolCallDetail.tsx` (a code task's
+**Diff**).

@@ -41,8 +41,10 @@ Cross-organisation and non-member access returns 404.
 
 ## State on disk
 
-`STATE_ROOT` is one absolute host path (`.state` in the checkout
-unless `.env` says otherwise). It holds the host-side trees:
+`STATE_ROOT` is one absolute host path. `./setup.sh` sets it to
+`.state` in the checkout when `.env` names none. `make` uses `.state`
+under the directory it runs in, unless the environment sets
+`STATE_ROOT`, and passes it to Compose. It holds the host-side trees:
 
 - `workspaces/`: the **sandbox** tree: one directory per machine id,
   bind-mounted at `/home` in that machine's container, with one home
@@ -54,10 +56,11 @@ unless `.env` says otherwise). It holds the host-side trees:
   (`allowed_host_paths`).
 - `postgres/`: the Compose Postgres data directory.
 - `opensandbox/`: the OpenSandbox server's SQLite lifecycle store.
-- `notes/`: `NOTES_ROOT`. The file-backed `NotesStore`
-  (`src/notes/store.ts`) resolves `system.md` here. The artifact
-  store and `schedules.instruction` are canonical. The tree is
-  required to exist at boot.
+- `notes/`: `NOTES_ROOT`. The file tree of `NotesStore`
+  (`src/notes/store.ts`): a folder per organisation, guild, and
+  agent, by slug and name, which a rename moves and a deletion
+  removes. The artifact store and `schedules.instruction` are
+  canonical. The tree is required to exist at boot.
 - `attachments/`: `ATTACHMENTS_ROOT`. Chat images, one file per
   attachment under its organisation's directory.
 - `connectors/`: `CONNECTORS_ROOT`. The code of registry connectors
@@ -65,8 +68,8 @@ unless `.env` says otherwise). It holds the host-side trees:
   ([Connector registry](../tools-and-connectors/connector-registry.md)).
 
 The path is absolute because OpenSandbox bind-mounts each machine
-directory by that same path. `make state` creates the trees. `./setup.sh`
-writes the path into `.env`.
+directory by that same path. `./setup.sh` writes the path into `.env`
+and creates the trees. `make state` creates them too.
 
 Notes, collection records, `memory`, and scripts are artifact rows.
 `task` is a column on the agent. Display paths are the unique
@@ -103,28 +106,58 @@ use organisation, guild, and agent ids for the same reason.
 
 | Target | Files | Services |
 | --- | --- | --- |
-| `docker compose up` | `docker-compose.yml` | postgres, opensandbox, orchestrator on the core image: the stack as shipped ([Install](../getting-started/install.md)). Only the orchestrator is published, on `127.0.0.1:8080` |
+| `docker compose up` | `docker-compose.yml` | postgres, opensandbox, orchestrator on the core image: the stack as shipped ([Install](../getting-started/install.md)). Only the orchestrator is published, on `127.0.0.1:${ORCHESTRATOR_PORT}`, 8080 by default |
 | `make up` (dev) | `docker-compose.dev.yml` = `docker-compose.yml` + `docker-compose.watch.yml` | The same three, with the development overlay |
 
-The stack mounts the Docker socket. Sandboxes are containers it
-starts beside itself.
+The OpenSandbox service mounts the Docker socket. Sandboxes are
+containers it starts beside the stack.
+
+Ports:
+
+- the orchestrator listens on 8080 in its container, published on
+  loopback at `ORCHESTRATOR_PORT`
+- the OpenSandbox server listens on 8080 inside the Compose network
+  only (`OPENSANDBOX_URL` is `http://opensandbox:8080`)
+- PostgreSQL listens on 5432 inside the Compose network; the
+  development overlay publishes it on loopback
+- `make dev` serves the operator app's Vite server on 5173, on
+  loopback
+- each agent's browser, terminal, and own servers use the ports of
+  its slot in its machine's container
+  ([Slots and ports](../concepts/machines.md#slots-and-ports))
 
 `./setup.sh` builds two images on the host (`scripts/images.sh`):
 
-- the OpenSandbox server from its pinned commit
-  (`guilds-opensandbox-server:<commit>`)
-- `agent-runtime:0.4`, which every machine runs, from `runtime/`
+- the OpenSandbox server from its pinned commit, tagged with the
+  commit's first eight characters
+  (`guilds-opensandbox-server:473ff611`), built once
+- `agent-runtime:0.4`, which every machine runs, from `runtime/`,
+  rebuilt from Docker's cache each time
+
+The runtime's build arguments choose what it carries. `BROWSER` is
+`chrome` by default: Google Chrome on amd64, and Debian's Chromium
+on arm64, where Google publishes no Chrome. `chromium` keeps
+Debian's Chromium everywhere. `HARNESSES` names the proprietary coding
+harnesses it installs, `claude-code cursor antigravity` by default.
+Codex is always installed. Each tool's version is a build argument
+of its own (`CODEX_VERSION`, `CLAUDE_CODE_VERSION`, `CURSOR_VERSION`,
+`ANTIGRAVITY_VERSION`, `NODE_VERSION`, `GH_VERSION`, `MISE_VERSION`,
+`TTYD_VERSION`, `GOST_VERSION`). `SANDBOX_IMAGE` in `.env` names
+another runtime image.
 
 The orchestrator service runs the core image
-(`apps/orchestrator/Dockerfile`, `guilds-orchestrator:local`).
-`docker-compose.yml` builds it from the checkout. A `web` stage
+(`apps/orchestrator/Dockerfile`, `guilds-orchestrator:local`, or
+`ORCHESTRATOR_IMAGE`). `docker-compose.yml` builds it from the
+checkout, and `make core-image` builds it alone. A `web` stage
 builds `apps/web` and Storybook. The final stage copies `src`,
-`scripts`, `drizzle`, and that build.
+`scripts`, `drizzle`, `drizzle.config.ts`, and that build, and runs
+`node` as PID 1 so a SIGTERM reaches the server.
 
 A version tag publishes the orchestrator, runtime, and OpenSandbox
-server images on ghcr.io (`.github/workflows/images.yml`). That
-runtime carries Chromium and none of the proprietary coding
-harnesses.
+server images on ghcr.io (`.github/workflows/images.yml`), for amd64
+and arm64. That runtime is built with `BROWSER=chromium` and
+`HARNESSES` empty: it carries Chromium and none of the proprietary
+coding harnesses.
 
 The extending repository's image is this Dockerfile built in its
 workspace, plus its own package
@@ -138,7 +171,10 @@ its own.
 The sandbox profile is the `opensandbox-config` in
 `docker-compose.yml`:
 
-- the Docker provider on `runc`
+- the Docker runtime on bridge networking, with
+  `opensandbox/execd:v1.1.0` as the command daemon
+- host mounts limited to `STATE_ROOT/workspaces`
+  (`allowed_host_paths`)
 - one sandbox and one persistent directory per machine, one home per
   agent in it
 - dropped capabilities (`AUDIT_WRITE`, `MKNOD`, `NET_ADMIN`,
@@ -146,7 +182,8 @@ The sandbox profile is the `opensandbox-config` in
   `SYS_TTY_CONFIG`)
 - `no_new_privileges`
 - `pids_limit` 4096
-- CPU and memory limits per sandbox, set by the machine's tier
+- CPU and memory limits per sandbox, set by the machine's tier or
+  custom size
 
 ### Development overlay
 
@@ -166,8 +203,8 @@ serves it at the site root.
 
 `make dev` brings the stack up and runs the app's Vite server on
 `127.0.0.1:5173`. The Vite server reloads the UI in place on every
-edit. It proxies `/api`, `/avatars`, and `/health` to the
-orchestrator on 8080.
+edit. It proxies `/api`, `/avatars`, and `/health`, WebSockets
+included, to the orchestrator at `127.0.0.1:8080`.
 
 ## Trust boundary
 

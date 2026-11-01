@@ -241,12 +241,11 @@ needs:
 - A credential card with a badge: **Active token** or **Logged in**
   with "Ready for code tasks", else **Setup needed** with
   "Authentication required", or **Check failed** when the credentials
-  could not be checked. Without a granted token, it says how to set one
-  up: choose a subscription token above, or log in from the **CLI** tab
-  with the harness's login command. When a login was seen, it starts
-  with "Runs on its login, last seen `<when>`." A granted token reads
-  "Runs on the secret `<name>`", with "as `<variable>`" when it is
-  another name.
+  could not be checked. A granted token shows the badge alone. Without
+  one, the card says how to set one up: choose a subscription token
+  above, or log in from the **CLI** tab with the harness's login
+  command. When a login was seen, it starts with "Runs on its login,
+  last seen `<when>`."
 - **Check login**, shown when the harness has no granted secret,
   wakes the machine and looks for the login in the agent's home. It
   toasts "Logged in as `<account>`", "Login found" when the login does
@@ -388,10 +387,16 @@ The account is null when the file does not say.
 
 No credential is an error naming the fix: the secret to grant, with
 the variable it is read as when an alias names another secret, and the
-login to run. For example, "Claude Code has no credential: grant the
-secret TEAM_TOKEN (read as CLAUDE_CODE_OAUTH_TOKEN) to the agent, or
-log in from the agent's CLI tab with `claude, then /login`". At a
-generation's start it is the run error `harness.credential`.
+login to run:
+
+```text
+<Harness> has no credential: grant the secret <secret> (read as <variable>) to the agent, or log in from the agent's CLI tab with `<login>`
+```
+
+The "(read as …)" part shows only when an alias names another secret.
+Codex and Antigravity have no secret, so their fix names the login
+alone. At a generation's start it is the run error
+`harness.credential`.
 
 A CLI missing from the image is "`<Harness>` is not installed in this
 machine's image", with the fix: "rebuild the runtime image, which
@@ -415,8 +420,8 @@ the CLI's version ([Result](code-tasks.md#result)).
 | `CURSOR_VERSION` | `2026.10.01-e373342` | The Cursor CLI release tarball, checksum-verified per architecture |
 | `ANTIGRAVITY_VERSION` | `1.4.0-5281842794987520` | The Antigravity CLI release tarball, checksum-verified per architecture |
 
-The published image is built with `HARNESSES` empty, as it is built
-with Chromium. To build an image with Codex alone:
+The published image is built with `HARNESSES` empty, and with
+`BROWSER=chromium`. To build an image with Codex alone:
 
 ```text
 docker build --build-arg HARNESSES= --tag agent-runtime:0.4 runtime/
@@ -537,11 +542,19 @@ What a repository can still steer is recorded in
 
 ### Code
 
-`apps/orchestrator/src/coding/harnesses.ts` (the harnesses, `HARNESSES_OFF`,
-credential fixes), `apps/orchestrator/src/coding/harness-models.ts` (the
-catalogue), `apps/orchestrator/src/generation/run-review.ts` (the harness
-view and check), `apps/orchestrator/src/http/coding-routes.ts` (routes),
-`runtime/guilds-harness` (drivers), `runtime/agy`, `runtime/Dockerfile`,
-and in the app `apps/web/src/features/agent/settings/HarnessFields.tsx`,
-`apps/web/src/features/agent/settings/HarnessReadiness.tsx`, and
+`apps/orchestrator/src/coding/harnesses.ts` (the harnesses, the ones
+the box turns off, credential fixes),
+`apps/orchestrator/src/coding/harness-models.ts` (the catalogue),
+`apps/orchestrator/src/config/index.ts` (reading `HARNESSES_OFF`),
+`apps/orchestrator/src/toolbox/harness-setup.ts` (the harness checks
+and their errors), `apps/orchestrator/src/generation/coding.ts` (the
+check at a generation's start and from Settings, and the login
+records), `apps/orchestrator/src/generation/run-review.ts` (the harness
+view), `apps/orchestrator/src/http/coding-routes.ts` (routes),
+`runtime/guilds-harness` (drivers), `runtime/agy`,
+`runtime/claude-code-managed-settings.json`, `runtime/Dockerfile`, and
+in the app `apps/web/src/features/agent/harness.ts`,
+`apps/web/src/features/agent/settings/HarnessFields.tsx`,
+`apps/web/src/features/agent/settings/HarnessReadiness.tsx`,
+`apps/web/src/features/agent/settings/credentialNote.ts`, and
 `apps/web/src/features/agent/CreateCodingAgent.tsx`.

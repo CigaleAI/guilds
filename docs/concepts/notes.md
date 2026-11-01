@@ -89,7 +89,7 @@ with `note_find`, then reads one with `note_get`. Each note
 `note_write` returns the note's display path. That path is how the
 agent links to the note elsewhere, for example from its Memory.
 
-### Embeds
+### Embeds and references
 
 An operator embeds a note in an agent's Task with
 `![[display-path]]`. Each run then carries the note's text in its
@@ -108,30 +108,41 @@ is not reachable, and the run still starts
 A note that a live Task embeds cannot be deleted. A note that only
 another note embeds can be, and that embed then stops reaching a file.
 
-A display path written in a note without `![[…]]` names the other
-note without embedding it. Prompt Studio's **References** view shows
+A reference, `[[display-path]]`, adds only the path. The run keeps it
+as text, and the agent reads the note with `note_get` when it needs
+it. A display path written without brackets names the note the same
+way. Prompt Studio's **References** view shows
 what embeds or names each note, which agents' prompts it reaches, and
 each broken embed with its reason, including the agents whose runs
 cannot reach it ([Prompt Studio](prompt-studio.md#state)).
 
 ## In the app
 
-The agent's **State** tab and the guild's **State** tab share one
-notes browser. The agent's view is **State › Notes**. The guild's
-view is **State › Notes**.
+The agent's **State › Notes** and the guild's **State › Notes** are
+one notes browser.
 
-- The agent's **Notes** view shows three scopes: **Agent**, **Guild**,
-  and **Org**.
-- The guild's **Notes** view shows **Guild** and **Org**.
+- The agent's view shows three scopes: **Agent**, **Guild**, and
+  **Org**.
+- The guild's view shows **Guild** and **Org**.
 
 In both:
 
-- Each scope lists its notes side by side, with no folders.
-- **New note** takes a name. The name cannot hold a `/`, and it gets
-  `.md` added. At the agent level it cannot be `task.md` or
-  `memory.md`.
-- A note opens in the same Markdown editor as the Task. Its embed
-  picker inserts other notes and collections.
+- A switch above the list picks the scope, with each scope's count.
+- Each scope lists its notes side by side, with no folders. The
+  search box filters them by name and title.
+- **New note** takes a name, `untitled` at first. The name cannot
+  hold a `/`, and it gets `.md` added. It cannot be `task.md`,
+  `memory.md`, or the name of a note the scope holds.
+- A note opens in the same Markdown editor as the Task, in preview
+  first. Its header shows `~/<scope>/<name>`, with **Access**, a copy
+  button, and a delete button. In Studio it also has **Ask the
+  coach**.
+- - **Insert** adds a note, a table, or a column. A note goes in as
+  **Embed** (`![[…]]`) or **Reference** (`[[…]]`). A table goes in as
+  an embed, and a column as `` `table.column` `` ([Task](task.md)).
+- Clicking an embed previews it: the note's text, or the table's
+  purpose. An embed that leads to no note or table the operator can
+  see is marked as not reachable.
 - Unsaved edits are kept per note while the operator moves between
   notes. Leaving the page with unsaved edits asks **Leave without
   saving?**, with **Discard changes**.
@@ -142,7 +153,8 @@ In both:
   ([Artifact store](artifacts.md#every-change-is-recorded)).
 - A link with a display path opens that note first. A `note_write`
   chip in the chat leads there.
-- Notes can be created and deleted.
+- Deleting a note asks first. A note a live Task embeds is not
+  deleted.
 
 The notes browser lists notes only. The agent's Task and Memory have
 their own tabs ([Task](task.md), [Memory](memory.md)). Scripts appear
@@ -171,7 +183,7 @@ or a note's deletion. The operator applies or declines each one
 | Note name | one `.md` file name, no `/`, no folders |
 | Reserved at the agent level | `task.md`, `memory.md` |
 | Size of one write | 256 KB |
-| Live notes per owner | 10 000, counted with Memory and scripts |
+| Live notes per owner | 10 000, counted with Memory, scripts, and files |
 | `note_find` results | 20 by default, 100 at most |
 | Who reaches a note | its owner agent for an agent-level note, and the subjects on its access list |
 | Starting access | agent level: no row; guild level: the guild at `write`; org level: the organisation at `read` |
@@ -245,7 +257,7 @@ Other errors:
 | `note_write` with neither `path` nor a valid `level` | 422 `level must be agent, guild, or org` |
 | `note_write` with a `path` that names no live note | 404 `artifact not found` |
 | more than 256 KB | 422 `write exceeds 256 KB` |
-| the owner already holds 10 000 live notes, Memory, and scripts | 422 `artifact limit reached` |
+| the owner already holds 10 000 live notes, Memory, scripts, and files | 422 `artifact limit reached` |
 | deleting a note embedded in a live Task | 409 `note is embedded in task (<agent ids>)` |
 
 ### Access list
@@ -256,7 +268,8 @@ A note's access list is its `artifact_access` rows with `target_kind`
 `PUT /api/notes/:note_id/access`. Each change is logged against the
 note ([Access](access.md#access-lists)).
 
-Code: `apps/orchestrator/src/artifacts/access.ts`.
+Code: `apps/orchestrator/src/artifacts/access-lists.ts`,
+`apps/orchestrator/src/artifacts/access.ts`.
 
 ### App routes
 
@@ -304,8 +317,10 @@ A write's `content` is a string, empty when left out, and its
 a field of another type, and a `display_path` given more than once are
 422 naming the field, before the caller is identified.
 
-The guild and agent routes need a guild the caller can see. The
-`/api/org/…` routes need only organisation membership.
+The routes go through `apps/orchestrator/src/notes/operator.ts` and
+`apps/orchestrator/src/artifacts/host-files.ts`. The guild and agent
+routes need a guild the caller can see. The `/api/org/…` routes need
+only organisation membership.
 `/api/org/embeddable-notes` lists and returns notes of every guild
 and agent, except those of private guilds the caller does not operate
 ([SEC-37](../architecture/security-register.md#sec-37--any-organisation-member-can-read-and-change-a-private-guilds-notes-and-databases-through-organisation-wide-routes)).

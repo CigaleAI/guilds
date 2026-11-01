@@ -8,6 +8,7 @@ import { createsWritable, defaultGrants } from "./access.js";
 import { ArtifactError } from "./errors.js";
 import { recordFileChange } from "../db/file-changes.js";
 import { FILES_SEGMENT, normalizeFileName, parseDisplayPath } from "./paths.js";
+import { findLimit } from "./search.js";
 import { artifactMode, assertLiveCount, assertRead, assertWrite, ownerFor, type ArtifactStore, rowDisplayPath } from "./store.js";
 import type { ArtifactRow } from "../db/artifacts.js";
 import {
@@ -210,9 +211,10 @@ export class ArtifactFiles {
     args: FileSearch,
   ): Promise<FileView[]> {
     const query = (args.query ?? "").trim();
+    const limit = findLimit(args.limit);
     const rows = query
-      ? await searchArtifactsByKind(this.store.db, actor, "file", { query, level: args.level, limit: args.limit })
-      : await listArtifactsByKind(this.store.db, actor, "file", { level: args.level, limit: args.limit });
+      ? await searchArtifactsByKind(this.store.db, actor, "file", { query, level: args.level, limit })
+      : await listArtifactsByKind(this.store.db, actor, "file", { level: args.level, limit });
     return rows.map((row) => this.view(row));
   }
 

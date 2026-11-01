@@ -24,8 +24,8 @@ providers, its models, and its spend.
 A run is one provider, that provider's key, and one of the models the
 organisation chose. Anthropic is called through its Messages API;
 every other provider through its OpenAI-compatible Chat Completions
-endpoint. Only the orchestrator calls a provider. The key is sent to that provider and nowhere else. An agent
-never sees it.
+endpoint. Only the orchestrator calls a provider. The key is sent to
+that provider and nowhere else. An agent never sees it.
 
 ```mermaid
 flowchart LR
@@ -87,7 +87,7 @@ Three kinds of key reach the box. Only the first is a model key.
 |---|---|---|
 | Model key | The organisation, for its agents' runs | **Settings**, **Model keys** |
 | Secret | The organisation, handed to the agents it names as an environment variable | **Secrets** ([Secrets](secrets.md)) |
-| Platform key | The box, for everyone on it: web search, System One, the GitHub App, Google | **Admin**, **Platform keys** ([Configure](../operations/configure.md#platform-keys)). Sentry and the registry are `.env` settings |
+| Platform key | The box, for everyone on it: web search, System One, the GitHub App, Google | **Admin**, **Platform keys** ([Configure](../operations/configure.md#platform-keys)). Sentry, the registry, and connector code are `.env` settings |
 
 An agent's commands get secrets only.
 
@@ -174,7 +174,7 @@ organisation's default. **Clear default** leaves none.
 
 **Investigate in Studio** on an issue needs a default, and asks for
 one on Model keys when there is none
-([Operators](operators.md)).
+([Inbox and issues](inbox.md#issue-cards)).
 
 Unticking the default model, or removing its provider, clears the
 default.
@@ -216,7 +216,7 @@ run as they were.
 | Chosen models per provider | At most 500 |
 | Default model | One chosen model on a connected marketplace provider, or none |
 | Coding API models | Only on an agent with **Coding** on. Never the default |
-| Key check | One request to the provider, up to ten seconds. Nothing is saved on failure |
+| Key check | The provider lists its models for the key, within ten seconds. Nothing is saved on failure |
 | Spend cap | None in guilds.run. Only the provider's own |
 | Key shown | Its last four characters only |
 | Local endpoint base URL | Required. Starts with `http://` or `https://` |
@@ -326,10 +326,11 @@ tab is `/settings?tab=keys`.
 
 ### The key check
 
-**Connect**, **Replace**, and **Save models** send one request to
-the provider:
-`GET {base URL}/models` with the key as a bearer token. They wait up
-to ten seconds. The key is saved when that request succeeds.
+**Connect**, **Replace**, and **Save models** ask the provider for
+its model list with the key. A Chat Completions provider gets
+`GET {base URL}/models` with the key as a bearer token. Anthropic gets
+its Models API list. Each request waits up to ten seconds. The key is
+saved when the provider answers.
 
 A `401` or `403` reads `<Provider> rejected the key`. Another status
 reads `<Provider> did not accept the key (<status>)`. A connection
@@ -339,7 +340,9 @@ so a failed Replace leaves the previous key and models in place.
 ### The catalog
 
 The catalog is [models.dev](https://models.dev). The box fetches it
-once an hour and keeps a snapshot for a box without network
+on the first read, and again on a read once its copy is over an hour
+old. A failed fetch keeps the last copy. Before any fetch, a bundled
+snapshot serves a box without network
 ([Configure](../operations/configure.md#model-catalog)). A model
 is listed when it calls tools, is not deprecated, and takes and
 returns text.

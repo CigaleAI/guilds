@@ -80,8 +80,11 @@ sequenceDiagram
 - A script created during the run is not in the snapshot. It still
   runs through `script_run`, using its live source. It becomes a tool
   of its own only from the next run.
-- Deleting a script during the run removes it from the snapshot and
-  from the agent's home. It stops running at once.
+- `script_delete` during the run removes the script from the
+  snapshot and from the agent's home. It stops running at once.
+- An edit or a delete in the Scripts view changes the catalog only.
+  For a script in the snapshot of a run under way, it reaches the
+  next run.
 - Listing during a run reads the live catalog, so it can show a newer
   body than the run will execute.
 
@@ -112,7 +115,7 @@ is off. It shows the agent's scripts, one card each:
 tool the agent calls with arguments. **Add script** is disabled once
 the agent has as many scripts as its cap. **Remove all scripts**
 deletes every script after a confirmation. A script deleted here
-leaves the agent's home, with its tool if it had one.
+is gone from the next run, with its tool if it had one.
 
 On an agent with scripting off, the view's address shows **This agent
 has no scripting**.
@@ -207,9 +210,11 @@ from the live catalog
    through `script_run`;
 3. remove managed files whose names are in neither set.
 
-`script_create` and Scripts view writes update PostgreSQL
-immediately. They write through to a running machine only for names
-absent from the current run's snapshot. The run-time effects of an
+`script_create` writes PostgreSQL at once, and writes through to the
+running machine only for a name absent from the current run's
+snapshot. `script_delete` removes the file from the machine too.
+Scripts view writes change PostgreSQL only; the machine's copy
+follows at the next materialisation. The run-time effects of an
 edit, a create, and a delete are in
 [Each run keeps its own copy](#each-run-keeps-its-own-copy).
 

@@ -33,19 +33,27 @@ virtual screen of 1280×720.
 
 ```mermaid
 flowchart LR
-  Agent[Agent's run] -- browser tools --> PW[Playwright]
+  Agent[Agent's run] -- step-by-step tools --> PW[Playwright<br/>on the machine]
   PW -- DevTools port --> Chrome[Agent's Chrome<br/>profile in its home]
+  Agent -- browse --> FB[fastbrowse<br/>in the orchestrator]
+  FB -- DevTools relay --> Chrome
   Chrome --- Display[Virtual display 1280×720]
   Display -- noVNC --> Tab[Browser tab<br/>operator]
 ```
 
+The step-by-step tools drive Chrome with Playwright, inside the
+machine. `browse` runs fastbrowse in the orchestrator. It reaches the
+same Chrome through the slot's DevTools relay. The keys `browse` uses
+stay in the orchestrator: the machine sees only DevTools traffic.
+
 ### When Chrome runs
 
-Chrome starts on the agent's first browser call in a generation, or
-when the operator opens its Browser tab. Opening the tab wakes the
-machine first if it is down. Chrome stops 5 minutes after the agent's
-last browser call or the operator's last input in the tab. Its
-profile and logins stay in the agent's home.
+Chrome starts on a browser call while it is down, or when the
+operator opens its Browser tab. Opening the tab wakes the machine
+first if it is down. Chrome stops 5 minutes after the agent's last
+browser call or the operator's last input in the tab. Each step of a
+running `browse` call counts as a browser call. Its profile and
+logins stay in the agent's home.
 
 Turning the browser off, or changing its language, stops that agent's
 Chrome only. Other agents on the machine keep theirs. The next start
@@ -138,7 +146,7 @@ show it.
 | Display | 1280×720, fixed |
 | Language | `en-US` by default; one of a fixed list of tags |
 | Timezone | from the machine's public IP |
-| Chrome start | first browser call in a generation, or opening the Browser tab |
+| Chrome start | a browser call while Chrome is down, or opening the Browser tab |
 | Chrome stop | 5 minutes after the last browser call or tab input; on browser off or a language change |
 | Profile and logins | kept in the agent's home across runs and containers |
 | Browser agents per organisation | the plan may cap them; no cap in core |
@@ -211,6 +219,27 @@ over its loopback CDP port.
 
 `browser_screenshot` writes `screenshots/latest.jpg` in the agent's
 home.
+
+### The `browse` path
+
+A `browse` call runs fastbrowse in the orchestrator's own process
+(`apps/orchestrator/src/browse/`):
+
+1. It starts the agent's Chrome when it is down, as every browser
+   tool does.
+2. It asks the sandbox host for the endpoint of the slot's relay
+   port, `9400+slot`, and the headers that endpoint takes.
+3. It opens a loopback CDP bridge in front of that endpoint, and
+   gives fastbrowse the bridge's port.
+4. fastbrowse runs the task with two keys: the System One key for
+   its own service, Jev, and the organisation's model key for the
+   agent's `browser_model`. Neither key enters the machine.
+5. Each step is published as the call's `tool.progress`, redacted
+   with the run's secrets. It restarts the Chrome's idle timer.
+6. The call stops when the run is cancelled, or 30 seconds past its
+   own `max_seconds`.
+
+Its cost counts as browser usage ([Usage](usage.md#browse-calls)).
 
 ### HTTP
 

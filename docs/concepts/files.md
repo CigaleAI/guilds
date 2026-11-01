@@ -84,13 +84,24 @@ The agent's **State** tab and the guild's **State** tab each have a
   **Guild**, and **Org**.
 - The guild's **State › Files** shows **Guild** and **Org**.
 
-In both, each scope lists its files with name, description, size,
-media type, and who changed it last. Opening a file shows its
-provenance strip ([Artifact store](artifacts.md#in-the-app)), and
-offers **Download**, **Access**, and **Delete**. **Upload** adds a
-file to the scope with a description; a file of the same name is
-replaced. The **Access** dialog is the one notes use
-([Access](access.md#the-access-panel)).
+In both:
+
+- A switch above the list picks the scope, with each scope's count.
+- Each scope lists its files with name, description, size, media
+  type, who changed it last, and when. The search box filters them by
+  name and description.
+- An open file shows its provenance strip
+  ([Artifact store](artifacts.md#in-the-app)), then its description,
+  type, size, version, and display path.
+- Its header offers **Access**, **Download**, and a delete button.
+  The **Access** dialog is the one notes use
+  ([Access](access.md#the-access-panel)).
+- Deleting asks first. Agents that fetched the file keep their
+  copies.
+- **Upload a file** takes a file and a description of at most 400
+  characters. It refuses an empty file, a file over 10 MiB, or no
+  description before it sends anything. A file of the same name in
+  the scope is replaced. The media type is the one the browser gives.
 
 A download is always a saved file, never a page the browser renders,
 whatever the file's media type.
@@ -106,7 +117,7 @@ whatever the file's media type.
 | Description | required, at most 400 characters |
 | Media type | from the uploader, else from the name's extension, else `application/octet-stream` |
 | Creating at `org` level | operators only |
-| Download | `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff` |
+| Download | `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`, `Cache-Control: private, no-store` |
 
 ## Reference
 
@@ -127,7 +138,7 @@ Errors:
 | replacing or deleting a file the agent only reads | 422 `write not allowed` |
 | creating a file at `org` level | 422 `write not allowed` |
 | `home_path` outside the home, a link out of it, a folder, or missing | 422 with the reason |
-| a file over 10 MiB | 422 `file exceeds 10 MiB` |
+| `file_put` of a file over 10 MiB | 422 `file_path is larger than 10485760 bytes` |
 | an empty file | 422 `file is empty` |
 | the organisation's files would exceed 1 GiB | 422 `file storage limit reached` |
 | the owner already holds 10 000 live notes, Memory, scripts, and files | 422 `artifact limit reached` |
@@ -145,7 +156,8 @@ A file's access list is its `artifact_access` rows with `target_kind`
 `file` and the file's id. Operators read it with
 `GET /api/files/:file_id/access` and replace it with
 `PUT /api/files/:file_id/access`. Each change is logged against the
-file ([Access](access.md#access-lists)).
+file ([Access](access.md#access-lists)). Deleting the file deletes its
+rows.
 
 ### App routes
 
@@ -160,7 +172,7 @@ file ([Access](access.md#access-lists)).
 
 ```text
 GET    /api/agents/:agent_id/files   the agent's files the caller may read
-POST   /api/agents/:agent_id/files   the bytes as the body; X-Filename, X-Description, and optional X-Mime headers, URI-encoded
+POST   /api/agents/:agent_id/files   the bytes as an application/octet-stream body; X-Filename and X-Description headers, URI-encoded, and an optional X-Mime
 GET    /api/guilds/:guild_id/files
 POST   /api/guilds/:guild_id/files
 GET    /api/org/files
@@ -170,7 +182,10 @@ DELETE /api/files/:file_id           204
 ```
 
 A listing or an upload answers the file as `file_find` does. An upload
-is 201. A file of the same name at the same level is replaced. The
+is 201. A file of the same name at the same level is replaced. An
+upload without `X-Filename` or `X-Description` is 422
+`X-Filename and X-Description are required`. An upload over 10 MiB is
+422 `file exceeds 10 MiB`, and an empty one 422 `file is empty`. The
 agent and guild routes need a guild the caller can see; the
 organisation routes need organisation membership. A file of a private
 guild the caller does not operate is 404 by every route
