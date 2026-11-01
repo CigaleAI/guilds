@@ -5,6 +5,7 @@ import { liveTurnActive, type LiveTurn } from "../../../api/liveTurn";
 import type { ToolProgress } from "../../../api/toolProgress";
 import type { AgentDetail } from "../../../api/types/agents";
 import type { MessageAttachment, Run, RunMessage } from "../../../api/types/runs";
+import type { SecretRequest } from "../../../api/types/secrets";
 import { isJsonObject } from "../../../api/wire";
 import { agentLook } from "../../../app/agents";
 import { isoTime, messageTime } from "../../../app/format";
@@ -25,7 +26,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@guildsrun/ui";
-import { askedRequest, type SecretRequest } from "../../access/secrets";
+import { askedRequest } from "../../access/secrets";
 import {
   buildFlowSegments,
   turnReasoning,
@@ -146,11 +147,13 @@ function WakeNote({ icon, children }: WakeNoteProps) {
 }
 
 /** The secret_request calls in a flow that asked the operator, each with its call id. */
-function secretRequests(flow: FlowSegment): Array<{ id: string; request: SecretRequest }> {
+function secretRequests(
+  flow: FlowSegment<RunMessage>,
+): Array<{ id: string; request: SecretRequest }> {
   return flow.steps.flatMap((step) =>
     step.calls.flatMap((call) => {
       if (call.call.function?.name !== "secret_request") return [];
-      const request = askedRequest(call.call.function.arguments, call.result?.payload?.content);
+      const request = askedRequest(call.call.function.arguments, call.result?.payload.content);
       return request ? [{ id: `${call.id}:${call.position}`, request }] : [];
     }),
   );
@@ -235,7 +238,7 @@ function TranscriptMessage({ agent, message }: TranscriptMessageProps) {
 type TranscriptFlowProps = {
   agent: AgentDetail;
   run: Run;
-  flow: FlowSegment;
+  flow: FlowSegment<RunMessage>;
   progress: ToolProgress | undefined;
   reveal: RevealStep | undefined;
   onAskCall: ((call: FlowCall) => void) | undefined;

@@ -35,49 +35,6 @@
       "count": 8
     }
   },
-  "src/features/access/SettingsForm.tsx": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 9
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 3
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 4
-    }
-  },
-  "src/features/access/TestConnectionDialog.tsx": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    }
-  },
-  "src/features/access/access.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 4
-    }
-  },
-  "src/features/access/secrets.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 5
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 4
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
-    }
-  },
-  "src/features/access/toolArgs.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 3
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 6
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 4
-    }
-  },
   "src/features/admin/InstanceTab.tsx": {
     "anti-slop/no-known-value-widening": {
       "count": 4

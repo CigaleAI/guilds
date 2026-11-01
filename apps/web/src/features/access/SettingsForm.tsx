@@ -1,7 +1,7 @@
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ConnectorFacts, LookupOption, McpServerAccess } from "../../api/types/access";
-import { isJsonObject, type JsonValue } from "../../api/wire";
+import { isLookupItem, isString, type JsonSchema, type JsonValue } from "../../api/wire";
 import { Icon, SearchField, Select, TextField } from "@guildsrun/ui";
 
 const searchDelayMs = 300;
@@ -24,41 +24,32 @@ type SettingsFormProps = {
   disabled?: boolean;
 };
 
-/** A JSON value's fields: an object's own, none for any other value. */
-function record(value: unknown): Record<string, unknown> {
-  return isJsonObject(value) ? value : {};
-}
-
-/** What a stored value shows as: an object's name or symbol, else the value itself. */
-function itemLabel(item: unknown): string {
-  const row = record(item);
-  if (typeof row.name === "string" && row.name) {
-    return typeof row.symbol === "string" && row.symbol ? `${row.symbol} · ${row.name}` : row.name;
+/** What a stored value shows as: a connector item's name or symbol, else the value itself. */
+function itemLabel(item: JsonValue): string {
+  if (isLookupItem(item)) {
+    if (item.name) return item.symbol ? `${item.symbol} · ${item.name}` : item.name;
+    if (item.id !== undefined) return item.id;
   }
-  if (typeof row.id === "string") return row.id;
-  return typeof item === "string" ? item : JSON.stringify(item);
+  return isString(item) ? item : JSON.stringify(item);
 }
 
-function itemKey(item: unknown): string {
-  const row = record(item);
-  return typeof row.id === "string"
-    ? row.id
-    : typeof item === "string"
-      ? item
-      : JSON.stringify(item);
+/** What tells one stored value from another: a connector item's id, else the value itself. */
+function itemKey(item: JsonValue): string {
+  if (isLookupItem(item) && item.id !== undefined) return item.id;
+  return isString(item) ? item : JSON.stringify(item);
 }
 
 /** Every property of a connector's settings, each as the input its schema calls for. */
 export function SettingsForm({ schema, value, onChange, search, disabled }: SettingsFormProps) {
-  const properties = Object.entries(record(schema.properties));
-  const required = new Set(Array.isArray(schema.required) ? schema.required.map(String) : []);
+  const properties = Object.entries(schema.properties ?? {});
+  const required = new Set(schema.required);
   return (
     <div className="flex flex-col gap-4">
-      {properties.map(([name, raw]) => (
+      {properties.map(([name, property]) => (
         <SettingInput
           key={name}
           name={name}
-          property={record(raw)}
+          property={property}
           required={required.has(name)}
           value={value[name]}
           disabled={Boolean(disabled) || !onChange}
@@ -73,10 +64,10 @@ export function SettingsForm({ schema, value, onChange, search, disabled }: Sett
 type SettingInputProps = {
   name: string;
   /** The property's JSON Schema. */
-  property: Record<string, unknown>;
+  property: JsonSchema;
   required: boolean;
-  /** What the login stores for the property. */
-  value: unknown;
+  /** What the login stores for the property; undefined when it stores nothing. */
+  value: JsonValue | undefined;
   disabled: boolean;
   search: SettingsSearch;
   /** Undefined for a setting this scope can only read. */
@@ -93,8 +84,8 @@ function SettingInput({
   search,
   onChange,
 }: SettingInputProps) {
-  const label = `${typeof property.title === "string" ? property.title : name}${required ? "" : " (optional)"}`;
-  const hint = typeof property.description === "string" ? property.description : "";
+  const label = `${property.title ?? name}${required ? "" : " (optional)"}`;
+  const hint = property.description ?? "";
   if (property["x-lookup"] === true) {
     return (
       <LookupSetting
@@ -108,7 +99,7 @@ function SettingInput({
       />
     );
   }
-  if (Array.isArray(property.enum)) {
+  if (property.enum) {
     return (
       <Select
         tone="surface"
@@ -151,11 +142,11 @@ function SettingInput({
 }
 
 type LookupSettingProps = {
-  property: Record<string, unknown>;
+  property: JsonSchema;
   label: string;
   hint: string;
   disabled: boolean;
-  value: unknown;
+  value: JsonValue | undefined;
   search: (query: string) => Promise<LookupOption[]>;
   onChange: ((next: JsonValue | undefined) => void) | undefined;
 };
@@ -176,7 +167,7 @@ function LookupSetting({
       <LookupList
         {...field}
         items={Array.isArray(value) ? value : []}
-        max={typeof property.maxItems === "number" ? property.maxItems : undefined}
+        max={property.maxItems}
         {...(onChange ? { onChange } : {})}
       />
     );
@@ -185,11 +176,11 @@ function LookupSetting({
 }
 
 type TextSettingProps = {
-  property: Record<string, unknown>;
+  property: JsonSchema;
   label: string;
   hint: string;
   disabled: boolean;
-  value: unknown;
+  value: JsonValue | undefined;
   onChange: ((next: JsonValue | undefined) => void) | undefined;
 };
 
@@ -373,14 +364,17 @@ function LookupList({ label, hint, disabled, search, items, max, onChange }: Loo
   );
 }
 
-type LookupOneProps = LookupFieldProps & { current: unknown; onChange?: (next: JsonValue) => void };
+type LookupOneProps = LookupFieldProps & {
+  current: JsonValue | undefined;
+  onChange?: (next: JsonValue) => void;
+};
 
 /** A single setting picked from a search, such as one folder. */
 function LookupOne({ label, hint, disabled, search, current, onChange }: LookupOneProps) {
   const lookup = useLookup(search);
   const [picked, setPicked] = useState<LookupOption | null>(null);
   const shown =
-    picked && itemKey(picked.value) === itemKey(current)
+    picked && current !== undefined && itemKey(picked.value) === itemKey(current)
       ? picked.label
       : current
         ? itemLabel(current)

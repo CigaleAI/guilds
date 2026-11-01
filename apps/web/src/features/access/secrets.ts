@@ -1,6 +1,7 @@
 import type { OrgRole } from "../../api/types/org";
-import type { Secret, SecretAccessChoice } from "../../api/types/secrets";
-import { isJsonObject, parseJson } from "../../api/wire";
+import type { ToolCall, ToolMessage } from "../../api/types/runs";
+import type { Secret, SecretAccessChoice, SecretRequest } from "../../api/types/secrets";
+import { isSecretRequest, isSecretRequestAsked, parseJson } from "../../api/wire";
 
 /** The server's rules for a secret: an environment variable name and a description the agent reads. */
 export const secretNamePattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -86,42 +87,20 @@ export function requestState(
   return secret ? { kind: "elsewhere", secret } : { kind: "missing" };
 }
 
-/** A secret_request call's arguments, as the agent wrote them. */
-export type SecretRequest = { name: string; description: string; reason: string };
-
 /**
- * The request a secret_request call carries, when its result asked the operator; null for a call
+ * The request a secret_request call carries, when its result asked the operator: the name the
+ * result asked for, with the description and reason the call's arguments give. Null for a call
  * that failed, is still running, or found the name already set.
  */
-export function askedRequest(argumentsText: unknown, resultText: unknown): SecretRequest | null {
-  const result = askedResult(resultText);
-  const args = requestArguments(argumentsText);
-  if (!result || !args) return null;
-  return {
-    name: String(result.name ?? args.name ?? ""),
-    description: typeof args.description === "string" ? args.description : "",
-    reason: typeof args.reason === "string" ? args.reason : "",
-  };
-}
-
-/** The first line of a secret_request result, when it says the operator was asked; null otherwise. */
-function askedResult(resultText: unknown): Record<string, unknown> | null {
-  if (typeof resultText !== "string") return null;
-  const result = parseJson(resultText.split("\n")[0] ?? "");
-  if (!isJsonObject(result) || result.widget !== "secret_request" || result.status !== "asked") {
-    return null;
-  }
-  return result;
-}
-
-/**
- * A secret_request call's arguments, as text or already parsed: their fields, none when they are
- * no object, and null when the text is not JSON.
- */
-function requestArguments(argumentsText: unknown): Record<string, unknown> | null {
-  const value = typeof argumentsText === "string" ? parseJson(argumentsText) : argumentsText;
-  if (typeof argumentsText === "string" && value === undefined) return null;
-  return isJsonObject(value) ? value : {};
+export function askedRequest(
+  argumentsText: ToolCall["function"]["arguments"] | undefined,
+  resultText: ToolMessage["content"] | undefined,
+): SecretRequest | null {
+  const asked = resultText === undefined ? undefined : parseJson(resultText.split("\n")[0] ?? "");
+  if (!isSecretRequestAsked(asked) || argumentsText === undefined) return null;
+  const request = parseJson(argumentsText);
+  if (!isSecretRequest(request)) return null;
+  return { name: asked.name, description: request.description, reason: request.reason };
 }
 
 /** The note a typed secret value gets for whitespace around it, which saving removes. */

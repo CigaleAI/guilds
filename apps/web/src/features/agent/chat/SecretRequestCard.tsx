@@ -4,7 +4,7 @@ import { useCreateSecret, useSecrets, useSetSecretAccess } from "../../../api/qu
 import { useSendRunMessage } from "../../../api/queries/runs";
 import type { AgentDetail } from "../../../api/types/agents";
 import type { Run } from "../../../api/types/runs";
-import type { Secret, SecretAccessChoice } from "../../../api/types/secrets";
+import type { Secret, SecretAccessChoice, SecretRequest } from "../../../api/types/secrets";
 import { useIdentity } from "../../../app/identity";
 import { Button, Segmented, TextField, Banner, toast, Icon } from "@guildsrun/ui";
 import { SecretReach } from "../../access/AccessSecrets";
@@ -14,7 +14,6 @@ import {
   requestState,
   secretDescriptionMax,
   withAgent,
-  type SecretRequest,
 } from "../../access/secrets";
 
 type Target = "agent" | "guild" | "org";
