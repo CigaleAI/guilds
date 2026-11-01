@@ -1,6 +1,6 @@
 import { Type } from "@sinclair/typebox";
 import { isJsonObject, type JsonObject, type JsonValue } from "../lib/json.js";
-import { ScriptError } from "../scripts/validation.js";
+import { ScriptError, validateScriptParameters } from "../scripts/validation.js";
 import type { AgentScript } from "../scripts/catalog.js";
 import type { RunScriptSnapshot } from "../db/schema/index.js";
 import { liveExtraRows } from "../scripts/snapshot.js";
@@ -88,7 +88,7 @@ export const scriptCreate = nativeTool({
       args.name,
       args.description,
       args.source,
-      args.parameters ?? null,
+      validateScriptParameters(args.parameters),
       { reservedNames: run.connection_tool_names, maxScripts: run.max_scripts },
     );
     if (run.sandbox?.files) {

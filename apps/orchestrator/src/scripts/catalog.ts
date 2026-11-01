@@ -11,7 +11,6 @@ import {
   scriptSourceHash,
   validateScriptDescription,
   validateScriptName,
-  validateScriptParameters,
   validateScriptSource,
 } from "./validation.js";
 import {
@@ -136,17 +135,16 @@ export class Scripts {
   async create(
     actor: ArtifactActor,
     agentId: string,
-    name: unknown,
-    description: unknown,
-    source: unknown,
-    parameters: unknown = null,
+    name: string,
+    description: string,
+    source: string,
+    parameters: ToolInputSchema | null = null,
     options: { reservedNames?: Iterable<string>; maxScripts?: number } = {},
   ): Promise<AgentScript> {
     const token = validateScriptName(name);
     assertAvailableScriptName(token, options.reservedNames ?? []);
     const text = validateScriptDescription(description);
     const body = validateScriptSource(source);
-    const schema = validateScriptParameters(parameters);
     const digest = scriptSourceHash(body);
     const now = new Date();
     const maxScripts = options.maxScripts ?? DEFAULT_MAX_SCRIPTS;
@@ -164,7 +162,7 @@ export class Scripts {
           agentId,
           name: token,
           description: text,
-          parameters: schema,
+          parameters,
           source: body,
           sourceHash: digest,
         },
@@ -181,7 +179,7 @@ export class Scripts {
     );
   }
 
-  async get(agentId: string, name: unknown): Promise<AgentScript> {
+  async get(agentId: string, name: string): Promise<AgentScript> {
     const token = validateScriptName(name);
     return this.lock.run(async () => {
       const row = await this.db.getAgentScript(agentId, token);
@@ -192,7 +190,7 @@ export class Scripts {
     });
   }
 
-  async delete(actor: ArtifactActor, agentId: string, name: unknown): Promise<AgentScript> {
+  async delete(actor: ArtifactActor, agentId: string, name: string): Promise<AgentScript> {
     const token = validateScriptName(name);
     return this.lock.run(async () => {
       const row = await this.db.removeAgentScript(actor, agentId, token);

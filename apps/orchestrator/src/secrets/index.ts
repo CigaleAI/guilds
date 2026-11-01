@@ -1,3 +1,5 @@
+import type { SecretEnv } from "../access/types.js";
+
 export class MissingSecretError extends Error {
   name = "MissingSecretError";
   secretName: string;
@@ -8,11 +10,12 @@ export class MissingSecretError extends Error {
   }
 }
 
+/** The value of each named secret in `env`, by its name; a name with no value throws `MissingSecretError`. */
 export function resolveSecrets(
   names: string[],
   env: NodeJS.ProcessEnv = process.env,
-): Record<string, string> {
-  const values: Record<string, string> = {};
+): SecretEnv {
+  const values: SecretEnv = {};
   for (const name of names) {
     const value = env[name];
     if (value === undefined || value === "") {

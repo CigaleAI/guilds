@@ -483,38 +483,6 @@
       "count": 1
     }
   },
-  "src/github/index.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 2
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 2
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    }
-  },
-  "src/github/manifest.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 3
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    }
-  },
-  "src/github/repositories.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    }
-  },
-  "src/github/tokens.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 3
-    }
-  },
   "src/groupchat/delivery.ts": {
     "anti-slop/no-known-value-widening": {
       "count": 1
@@ -1048,9 +1016,6 @@
     }
   },
   "src/scripts/catalog.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 6
-    },
     "limits/inline-parameter-type": {
       "count": 1
     },
@@ -1059,16 +1024,7 @@
     }
   },
   "src/scripts/materialise.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 2
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
     "complexity": {
-      "count": 1
-    },
-    "limits/inline-parameter-type": {
       "count": 1
     },
     "limits/silent-catch": {
@@ -1083,41 +1039,8 @@
       "count": 1
     }
   },
-  "src/secrets/access.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 8
-    },
-    "limits/erased-return-type": {
-      "count": 1
-    },
-    "typescript/consistent-type-assertions": {
-      "count": 1
-    }
-  },
   "src/secrets/agent.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    },
     "limits/silent-catch": {
-      "count": 1
-    }
-  },
-  "src/secrets/index.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    }
-  },
-  "src/secrets/service.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 2
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    },
-    "limits/erased-alias": {
       "count": 1
     }
   },
