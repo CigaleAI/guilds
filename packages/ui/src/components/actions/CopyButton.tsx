@@ -3,8 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import { IconButton, type IconButtonProps } from "./IconButton";
 
 export type CopyButtonProps = Omit<IconButtonProps, "icon" | "label" | "onClick"> & {
-  /** The text to copy, or a function that makes it when clicked. */
-  text: string | (() => string);
+  /** The text to copy. */
+  text: string;
   /** What is copied, such as "arguments"; the button reads "Copy arguments". */
   what?: string;
 };
@@ -23,7 +23,7 @@ export function CopyButton({
 
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(typeof text === "function" ? text() : text);
+      await navigator.clipboard.writeText(text);
       setCopied(true);
       clearTimeout(reset.current);
       reset.current = setTimeout(() => setCopied(false), 1500);

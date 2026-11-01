@@ -1,8 +1,5 @@
 {
   "src/components/actions/CopyButton.tsx": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
     "limits/silent-catch": {
       "count": 1
     }
@@ -16,25 +13,8 @@
     }
   },
   "src/components/content/JsonTree.tsx": {
-    "anti-slop/no-object-parameters": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 4
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    },
     "limits/inline-parameter-type": {
       "count": 2
-    },
-    "typescript/consistent-type-assertions": {
-      "count": 1
-    }
-  },
-  "src/components/content/Markdown.tsx": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 5
     }
   },
   "src/components/content/OfferedTools.tsx": {
@@ -72,11 +52,6 @@
   },
   "src/components/content/promptBlocks.ts": {
     "typescript/consistent-type-assertions": {
-      "count": 1
-    }
-  },
-  "src/components/content/textNodes.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
       "count": 1
     }
   },
