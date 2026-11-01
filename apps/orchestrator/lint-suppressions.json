@@ -2409,20 +2409,6 @@
       "count": 4
     }
   },
-  "src/typesafe/client.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 3
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 4
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 7
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 3
-    }
-  },
   "src/usage/index.ts": {
     "anti-slop/no-known-value-widening": {
       "count": 6

@@ -299,6 +299,14 @@ test("evaluateSystemOne fails closed on missing, out-of-range or unknown answers
   await assert.rejects(
     () =>
       run(
+        { pick: { type: "choice", choice: "a", probabilities: { a: 1 } } },
+        { pick: { type: "choice", instructions: "?", criteria: { a: null, b: null } } },
+      ),
+    /invalid TypeSafe choice answer pick/,
+  );
+  await assert.rejects(
+    () =>
+      run(
         { level: { type: "score", score: "high" } },
         {
           level: { type: "score", instructions: "?", criteria: ["low", "high"] },
