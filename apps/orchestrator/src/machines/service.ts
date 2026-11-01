@@ -31,7 +31,9 @@ import {
   validateMachineInput,
   type MachineBody,
   type MachineInput,
+  type MachineAgent,
   type MachineRow,
+  type MachineSize,
   type MachineWithAgents,
 } from "./index.js";
 
@@ -46,16 +48,29 @@ export type MachineServices = {
 /** A member of the organisation acting on its machines: their membership, and who they are. */
 export type MachineMember = { membership: OrgMembershipRow; userId: string };
 
+/** An agent on a machine as the viewer sees it: who it is, its guild, and what it runs there. */
+export type MachineItemAgent = Pick<MachineAgent, "id" | "name" | "guild_id" | "guild_name" | "browser" | "coding">;
+
 /**
  * A machine as the operator app shows it: its size, the agents on it, their planned load (the sum
  * of their minimums), and its disk with what its agents' own caps reserve of it. Agents of guilds
  * the viewer cannot see count toward the planned load, the reserved disk, and `hidden_agents`,
  * with no name or guild.
  */
+export type MachineItem = Pick<MachineRow, "id" | "name" | "box" | "max_workspace_mib" | "workspace_mib" | "harnesses"> &
+  MachineSize & {
+    allocated_workspace_mib: number;
+    planned_cpu: number;
+    planned_mib: number;
+    agents: MachineItemAgent[];
+    hidden_agents: number;
+  };
+
+/** The machine as the operator app shows it to a viewer who sees the guilds `visibleGuildIds` names. */
 export function machineItem(
   machine: MachineWithAgents,
   visibleGuildIds: ReadonlySet<string>,
-): Record<string, unknown> {
+): MachineItem {
   const size = machineSize(machine);
   const visible = machine.agents.filter((agent) => visibleGuildIds.has(agent.guild_id));
   const planned = plannedLoad(machine.agents);
@@ -94,7 +109,7 @@ async function viewMachine(
   db: Queryable,
   member: MachineMember,
   machineId: string,
-): Promise<Record<string, unknown>> {
+): Promise<MachineItem> {
   const orgId = member.membership.id;
   const row = await getMachineWithAgents(db, orgId, machineId);
   if (row === null) {
@@ -107,17 +122,15 @@ async function viewMachine(
 export async function listOrgMachines(
   db: Queryable,
   member: MachineMember,
-): Promise<Array<Record<string, unknown>>> {
+): Promise<MachineItem[]> {
   const orgId = member.membership.id;
   const visible = await visibleGuildIds(db, orgId, member.userId);
   return (await listMachines(db, orgId)).map((row) => machineItem(machineWithAgentsFromRow(row), visible));
 }
 
-/** The refusal of a name the organisation already gives another machine; any other error as it is. */
-function nameConflict(error: unknown, machine: MachineInput): unknown {
-  return isUniqueViolation(error)
-    ? new MachineError(409, `${machine.name} is already a machine of this organisation`)
-    : error;
+/** The refusal of a name the organisation already gives another machine. */
+function nameConflict(machine: MachineInput): MachineError {
+  return new MachineError(409, `${machine.name} is already a machine of this organisation`);
 }
 
 /**
@@ -139,7 +152,7 @@ async function addMachine(
       return machineFromRow(await insertMachine(client, orgId, machine, new Date()));
     });
   } catch (error) {
-    throw nameConflict(error, machine);
+    throw isUniqueViolation(error) ? nameConflict(machine) : error;
   }
 }
 
@@ -176,7 +189,7 @@ async function resizeMachine(
       return { before: machineFromRow(current), after: machineFromRow(after) };
     });
   } catch (error) {
-    throw nameConflict(error, machine);
+    throw isUniqueViolation(error) ? nameConflict(machine) : error;
   }
 }
 
@@ -207,7 +220,7 @@ export async function createMachine(
   services: MachineServices,
   member: MachineMember,
   input: MachineBody,
-): Promise<Record<string, unknown>> {
+): Promise<MachineItem> {
   assertManagesMachines(member);
   const orgId = member.membership.id;
   const machine = await addMachine(
@@ -225,7 +238,7 @@ export async function changeMachine(
   member: MachineMember,
   machineId: string,
   input: MachineBody,
-): Promise<Record<string, unknown>> {
+): Promise<MachineItem> {
   assertManagesMachines(member);
   const orgId = member.membership.id;
   const current = await getMachine(services.db, orgId, machineId);

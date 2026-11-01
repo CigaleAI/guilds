@@ -111,18 +111,18 @@ export async function moveAgent(
 /** What placements are decided through, built once from the app's services. */
 export type PlacementServices = { db: Queryable; policy: OrgPolicy };
 
-/** What an agent's placement is decided over: the machine a request names, the agent's needs, and its machine now. */
-export type PlacementRequest = { requested: unknown; needs: AgentNeeds; machineId?: string };
+/** What an agent's placement is decided over: the `machine_id` a request names, the agent's needs, and its machine now. */
+export type PlacementRequest = { requested: string | null | undefined; needs: AgentNeeds; machineId?: string };
 
 /** The machine an agent goes on, the policy's cap on agents there, and whether it changes machine. */
 export type Placement = { machine: MachineRow; maxAgentsPerMachine: number | null; moves: boolean };
 
 /** A request's `machine_id`: a machine id, or null when the request names none. */
-export function validateMachineId(value: unknown): string | null {
+export function validateMachineId(value: string | null | undefined): string | null {
   if (value === undefined || value === null) {
     return null;
   }
-  if (typeof value !== "string" || !value) {
+  if (!value) {
     throw new MachineError(422, "machine_id must be a machine id");
   }
   return value;
