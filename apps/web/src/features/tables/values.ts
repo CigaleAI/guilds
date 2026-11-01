@@ -6,6 +6,7 @@ import type {
   RecordValue,
   RecordWhere,
 } from "../../api/types/tables";
+import { isBoolean, isNumber, isString } from "../../api/wire";
 
 export const columnTypes = [
   "text",
@@ -40,27 +41,26 @@ function isAllowedValue(column: Column, text: string): boolean {
   return !column.values?.length || column.values.includes(text);
 }
 
-/** Whether a value that is set fits each column type. */
-const fitsType: Record<ColumnType, (value: unknown, column: Column) => boolean> = {
-  text: (value, column) => typeof value === "string" && isAllowedValue(column, value),
-  number: (value) => typeof value === "number",
-  boolean: (value) => typeof value === "boolean",
-  datetime: (value) => typeof value === "string" && !Number.isNaN(Date.parse(value)),
+/** Whether a value that is set holds each column type; a changed column can leave another behind. */
+const fitsType: Record<ColumnType, (value: RecordValue, column: Column) => boolean> = {
+  text: (value, column) => isString(value) && isAllowedValue(column, value),
+  number: isNumber,
+  boolean: isBoolean,
+  datetime: (value) => isString(value) && !Number.isNaN(Date.parse(value)),
   array: (value, column) =>
-    Array.isArray(value) &&
-    value.every((item) => typeof item === "string" && isAllowedValue(column, item)),
+    Array.isArray(value) && value.every((item) => isAllowedValue(column, item)),
 };
 
 /** Whether a stored value still fits its column; a changed column can leave old values behind. */
-export function fits(value: unknown, column: Column): boolean {
+export function fits(value: RecordValue | null | undefined, column: Column): boolean {
   return value === null || value === undefined || fitsType[column.type](value, column);
 }
 
 /** A value as the form shows it: arrays as comma-separated text, datetimes in local time. */
-export function fieldText(value: unknown, column: Column): string {
+export function fieldText(value: RecordValue | null | undefined, column: Column): string {
   if (value === null || value === undefined) return "";
   if (column.type === "array" && Array.isArray(value)) return value.join(", ");
-  if (column.type === "datetime" && typeof value === "string") {
+  if (column.type === "datetime" && isString(value)) {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return value;
     const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
