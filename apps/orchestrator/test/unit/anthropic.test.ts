@@ -3,7 +3,7 @@ import http from "node:http";
 import { test } from "node:test";
 import { messagesFromHistory, messagesRequestBody } from "../../src/llm/anthropic.js";
 import { listProviderModels, streamCompletion } from "../../src/llm/client.js";
-import { LLMError, MODEL_USER_AGENT, type ModelEvent } from "../../src/llm/completion.js";
+import { LLMError, MODEL_USER_AGENT, type ModelEvent, type ModelRequest } from "../../src/llm/completion.js";
 import { providerById } from "../../src/llm/providers.js";
 
 function anthropic() {
@@ -96,13 +96,16 @@ test("messagesFromHistory lifts the system prompt, pairs tool calls with their r
   ]);
 });
 
-test("messagesFromHistory skips parts and tool calls that are not objects of the OpenAI shape", () => {
+test("messagesFromHistory skips empty text and images it cannot address, and reads arguments that are not an object as no input", () => {
   const { messages } = messagesFromHistory([
-    { role: "user", content: [null, "text", { type: "text", text: 5 }, { type: "image_url", image_url: "x" }, { type: "text", text: "kept" }] },
+    {
+      role: "user",
+      content: [{ type: "text", text: "" }, { type: "image_url", image_url: { url: "ftp://blobs.example/a.png" } }, { type: "text", text: "kept" }],
+    },
     {
       role: "assistant",
       content: "",
-      tool_calls: [null, { id: 1, function: { name: "read" } }, { id: "call_1", function: "read" }, { id: "call_2", function: { name: "read", arguments: "[1]" } }],
+      tool_calls: [{ id: "call_2", type: "function", function: { name: "read", arguments: "[1]" } }],
     },
   ]);
   assert.deepEqual(messages, [
@@ -122,7 +125,7 @@ test("messagesFromHistory fails on an inline image of a media type the Messages 
 });
 
 test("messagesRequestBody fails on a tool whose parameters are not an object schema, and on an effort the API does not take", () => {
-  const base = { model: "anthropic/claude-opus-5-5", messages: [{ role: "user", content: "hi" }], temperature: 0, max_tokens: 64 };
+  const base: ModelRequest = { model: "anthropic/claude-opus-5-5", messages: [{ role: "user", content: "hi" }], temperature: 0, max_tokens: 64 };
   const tool = (parameters: unknown) => [{ type: "function", function: { name: "read", parameters } }];
   assert.deepEqual(messagesRequestBody({ ...base, tools: tool("none") }).tools, [
     { name: "read", input_schema: { type: "object", properties: {} } },
@@ -145,7 +148,7 @@ test("messagesRequestBody fails on a tool whose parameters are not an object sch
 });
 
 test("messagesRequestBody asks for adaptive thinking at the level's effort, and a temperature only without it", () => {
-  const base = {
+  const base: Omit<ModelRequest, "model"> = {
     messages: [{ role: "system", content: "rules" }, { role: "user", content: "hi" }],
     temperature: 0.4,
     max_tokens: 64,

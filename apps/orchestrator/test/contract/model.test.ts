@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { streamCompletion } from "../../src/llm/client.js";
-import type { ModelRequest } from "../../src/llm/completion.js";
+import type { ModelMessage, ModelRequest } from "../../src/llm/completion.js";
 import { parseModelId } from "../../src/llm/providers.js";
 
 // The live contract: MODEL_CONTRACT_MODEL names a {provider}/{model} on any provider core speaks
@@ -20,7 +20,7 @@ function contractModel(): string {
   return model;
 }
 
-async function stream(messages: Array<Record<string, unknown>>, extra: {
+async function stream(messages: ModelMessage[], extra: {
   tools?: unknown[];
   tool_choice?: unknown;
   max_tokens: number;

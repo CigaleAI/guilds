@@ -20,7 +20,7 @@ import {
   type ModelCredentialsProvider,
 } from "../llm/credentials.js";
 import { streamCompletion } from "../llm/client.js";
-import { LLMError, type Completion, type ModelEvent } from "../llm/completion.js";
+import { LLMError, type Completion, type ModelEvent, type ModelMessage } from "../llm/completion.js";
 import { countInputTokens } from "../llm/tokens.js";
 import { PolicyError, type OrgPolicy } from "../policy/index.js";
 import type { CancelEvent } from "../toolbox/index.js";
@@ -64,7 +64,7 @@ export type ModelCompletionServices = {
 /** One call of the model: the history it is sent and the settings from the run's snapshot. */
 export type CompletionRequest = {
   model: string;
-  messages: Array<Record<string, unknown>>;
+  messages: ModelMessage[];
   temperature: number;
   max_tokens: number;
   tools: unknown[] | null;
@@ -74,7 +74,7 @@ export type CompletionRequest = {
 /** A run's history as the model is sent it: the rows as projected, and their payloads with images. */
 export type ModelHistory = {
   rows: MessageRow[];
-  payloads: Array<Record<string, unknown>>;
+  payloads: ModelMessage[];
 };
 
 /** The input tokens the run's history takes with the schemas it is offered. */
@@ -85,7 +85,7 @@ export function historyTokens(snapshot: RunConfigSnapshot, history: ModelHistory
 /** A model call with the settings of the run's snapshot. */
 export function completionRequest(
   snapshot: RunConfigSnapshot,
-  messages: Array<Record<string, unknown>>,
+  messages: ModelMessage[],
   schemas: unknown[],
 ): CompletionRequest {
   return {
