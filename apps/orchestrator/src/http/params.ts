@@ -1,4 +1,5 @@
 import { Type } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
 import type { FastifyRequest } from "fastify";
 import { HttpError } from "./errors.js";
 
@@ -10,6 +11,9 @@ export const AgentParams = Type.Object({ agent_id: Type.String() });
 
 /** The path of a route under one organisation. */
 export const OrgParams = Type.Object({ org_id: Type.String() });
+
+/** The path a wildcard route matched, as Fastify names it. */
+const WildcardParams = Type.Object({ "*": Type.String() });
 
 /** The path with its percent-encoding decoded, or null when that encoding is malformed. */
 function decodedPath(raw: string): string | null {
@@ -28,11 +32,8 @@ export function filePathParam(request: FastifyRequest): string {
     throw new HttpError(404, "Not Found");
   }
   const params = request.params;
-  const named = (key: string) =>
-    params && typeof params === "object" && key in params ? Reflect.get(params, key) : undefined;
-  const fromParams = named("*") ?? named("file_path");
-  if (typeof fromParams === "string" && fromParams) {
-    return fromParams;
+  if (Value.Check(WildcardParams, params) && params["*"]) {
+    return params["*"];
   }
   const marker = "/notes/";
   const index = pathname.lastIndexOf(marker);
