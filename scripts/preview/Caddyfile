@@ -1,0 +1,10 @@
+# The preview's proxy (docker-compose.preview.yml): one basic-auth user, `preview`, whose bcrypt
+# hash arrives in PREVIEW_PASSWORD_HASH, in front of the orchestrator. The reverse proxy keeps the
+# request's Host header, the tunnel's hostname that PUBLIC_BASE_URL names, and passes WebSockets
+# and event streams through.
+:80 {
+	basic_auth {
+		preview {$PREVIEW_PASSWORD_HASH}
+	}
+	reverse_proxy orchestrator:8080
+}

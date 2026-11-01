@@ -67,6 +67,8 @@ as that user.
 | `make soak` | Against a running stack: health, the guild list, and the OAuth callback page. It then creates and deletes a guild, restarts the orchestrator, and reads the migration, seed, binding, and run tables |
 | `make check` | `scripts/check.sh`: what CI runs ([Check](#check)) |
 | `make compat-verify` | The fixture digests alone |
+| `make preview` | `scripts/preview-stack.sh up`: this checkout as a preview behind a password, at a `trycloudflare.com` URL ([CI](#ci)) |
+| `make preview-down` | `scripts/preview-stack.sh down`: removes that preview |
 
 The extending repository sets the variables the Makefile reads
 ([Extension points](../architecture/extension-points.md)).
@@ -201,6 +203,46 @@ orchestrator and the runtime are tagged with the ref name and
 
 The release tag is the version in the
 [changelog](../../CHANGELOG.md).
+
+`.github/workflows/preview.yml` serves a pull request as a
+preview. It runs for a pull request from this repository that
+carries the `preview` label: when the label is added, and on every
+push after. A push cancels the running preview and starts a new
+one. A pull request from a fork never runs it. The job runs in the
+`preview` environment, which holds the secrets `PREVIEW_PASSWORD`
+and `PREVIEW_MODEL_KEY` and the variable `PREVIEW_MODEL`.
+
+| | Preview |
+| --- | --- |
+| What it serves | The pull request's head commit, with the orchestrator built from it, at a random `trycloudflare.com` hostname, behind basic auth: the user `preview` and the password `PREVIEW_PASSWORD` |
+| What it holds | The operator; the provider `PREVIEW_MODEL` names, connected with `PREVIEW_MODEL_KEY`, with that model chosen and made the organisation's default; a guild `preview` with an agent `preview` on that model, without a browser |
+| Where the URL is | The pull request's deployment in the `preview` environment, shown as its View deployment button. The deployment carries the URL and no credential |
+| Who holds the password | The `preview` environment, and whoever the maintainers give it to |
+| When it ends | A review submitted after the deployment, the `preview` label removed, or forty-five minutes after the deployment. The job then tears the preview down and marks the deployment inactive, as it does when a step fails or the job is cancelled |
+| Bounds | The model key's credit limit, the job's timeout of 75 minutes, and the same-repository rule |
+
+`scripts/preview-stack.sh up` starts the preview, in CI and
+locally (`make preview`), and prints one line: its URL. It runs a
+copy of the checkout under its own Compose project, port, image tag
+and state directory, all named by `PREVIEW_PORT` (18090 by
+default). The state directory is `guilds-preview-<port>` under
+`$TMPDIR`, or `/tmp` when it is unset. It adds
+`docker-compose.preview.yml` to the product stack: Caddy, which asks
+for the password and proxies to the orchestrator with the request's
+`Host` header, and `cloudflared`, a quick tunnel to Caddy. Neither
+publishes a port. The tunnel starts first, because the orchestrator
+serves only loopback hosts and the host of `PUBLIC_BASE_URL`, which
+is the tunnel's hostname. The script then starts the stack, seeds it
+over loopback, and checks that the URL refuses a request without
+the password and serves the operator app with it. The password is
+written only as a bcrypt hash, and the key to no file. The agent
+runtime image is pulled, `PREVIEW_RUNTIME_IMAGE`
+(`ghcr.io/cigaleai/guilds-agent-runtime:latest` by default), not
+built. A preview whose pull fails still starts, and no agent machine
+starts in it. A provider that refuses the key leaves the preview
+without the model and the agent. `scripts/preview-stack.sh down`
+(`make preview-down`) removes the containers, the built image, and
+the state directory.
 
 ## Tests
 
