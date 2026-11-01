@@ -14,6 +14,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+import type { JsonValue } from "../../lib/json.js";
 import { agents } from "./agents.js";
 import { artifacts } from "./artifacts.js";
 import { timestamptz } from "./columns.js";
@@ -41,7 +42,7 @@ export type EvidenceRef = {
   tool_message_seq: number;
   content_hash: string;
   excerpt: string;
-  [coordinate: string]: unknown;
+  [coordinate: string]: JsonValue | undefined;
 };
 
 /** A reference the coach cited that did not check out, and why. */

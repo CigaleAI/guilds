@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import type { Stream } from "openai/streaming";
 import type { ReasoningDetail } from "../db/schema/index.js";
+import { isJsonObject } from "../lib/json.js";
 import { listMessagesModels, streamMessages } from "./anthropic.js";
 import { modelCatalog } from "./catalog.js";
 import {
@@ -166,7 +167,7 @@ function applyToolCallDelta(acc: ToolCallAcc[], delta: ToolCallDelta[]): void {
 }
 
 function isReasoningDetail(value: unknown): value is ReasoningDetail {
-  return isPlainObject(value) && (value.index === undefined || typeof value.index === "number");
+  return isJsonObject(value) && (value.index === undefined || typeof value.index === "number");
 }
 
 function toolCallDeltaOf(part: unknown): ToolCallDelta[] {

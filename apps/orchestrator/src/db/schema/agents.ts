@@ -18,6 +18,7 @@ import {
 import { Type, type Static } from "@sinclair/typebox";
 import { sql } from "drizzle-orm";
 import { timestamptz } from "./columns.js";
+import type { ToolInputSchema } from "./connectors.js";
 import type { MessageMetadata, MessagePayload } from "./messages.js";
 import { guilds, machines, orgs, users } from "./organisations.js";
 
@@ -96,7 +97,7 @@ export type RunScriptSnapshot = {
   id: string;
   name: string;
   description: string;
-  parameters: Record<string, unknown> | null;
+  parameters: ToolInputSchema | null;
   source: string;
   source_hash: string;
 };
