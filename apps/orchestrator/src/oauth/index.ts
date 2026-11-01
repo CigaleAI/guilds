@@ -1,6 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { Type } from "@sinclair/typebox";
-import { Value } from "@sinclair/typebox/value";
+import { Type, type Static } from "@sinclair/typebox";
 import { proxyFetch, type FetchFn } from "../net/http.js";
 import { decryptPayload, encryptPayload } from "../credentials/crypto.js";
 import { githubAppConfig } from "../github/index.js";
@@ -11,9 +10,9 @@ import {
   type IntegrationSources,
 } from "../instance/integrations.js";
 import { saveOauthClient, type LoadedConnector } from "../connectors/servers.js";
-import { isPlainRecord } from "../db/json.js";
 import { saveMcpConnection, type McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
+import { keepMatching } from "../lib/decode.js";
 import { isJsonObject, type JsonObject } from "../lib/json.js";
 import type { Manifest, OAuthClient, OAuthClientCredentials } from "../db/schema/index.js";
 import { connectorIntegration } from "../connectors/instance.js";
@@ -28,7 +27,7 @@ type OAuthProvider = {
   accessType: string | null;
 };
 
-const OAUTH_PROVIDERS: Readonly<Record<string, OAuthProvider>> = {
+const OAUTH_PROVIDERS = {
   [GOOGLE_CONNECTORS.id]: {
     integration: GOOGLE_CONNECTORS,
     clientId: "client_id",
@@ -43,7 +42,7 @@ const OAUTH_PROVIDERS: Readonly<Record<string, OAuthProvider>> = {
     },
     accessType: "offline",
   },
-};
+} satisfies Record<Integration["id"], OAuthProvider>;
 
 /** The effective manifest's OAuth block for a server, or null for a non-OAuth one. */
 function manifestOauth(server: LoadedConnector): NonNullable<Manifest["auth"]["oauth"]> | null {
@@ -275,81 +274,95 @@ export function clientCoversRedirect(client: OAuthClient, redirectUri: string): 
   return client.redirect_uris.includes(redirectUri);
 }
 
-/** The account fields a token response may leave out, kept from the payload it replaces. */
-const ACCOUNT_FIELDS: readonly string[] = ["user_id", "workspace_id", "email_domain"];
+/** The account a login signed in as, as far as its provider names it; a token response that leaves one out keeps the one it replaces. */
+const ACCOUNT_FIELDS = {
+  user_id: Type.Optional(Type.String({ minLength: 1 })),
+  workspace_id: Type.Optional(Type.String({ minLength: 1 })),
+  email_domain: Type.Optional(Type.String({ minLength: 1 })),
+};
+
+/** What a provider's token endpoint answers a grant with (RFC 6749 §5.1): the access token, and the rest when it names them. */
+const TokenResponse = Type.Object({
+  access_token: Type.String({ minLength: 1 }),
+  refresh_token: Type.Optional(Type.String({ minLength: 1 })),
+  expires_in: Type.Optional(Type.Integer()),
+  token_type: Type.Optional(Type.String({ minLength: 1 })),
+  scope: Type.Optional(Type.String()),
+  ...ACCOUNT_FIELDS,
+});
+export type TokenResponse = Static<typeof TokenResponse>;
+
+/**
+ * The token payload a login stores from its provider's token responses: the access token and its type, the refresh token,
+ * expiry and account when the provider names them, and whether its sign-in replaced a login that signed in before.
+ */
+const LoginTokens = Type.Object({
+  access_token: Type.String({ minLength: 1 }),
+  refresh_token: Type.Optional(Type.String({ minLength: 1 })),
+  token_type: Type.String({ minLength: 1 }),
+  expires_at: Type.Optional(Type.String({ minLength: 1 })),
+  ...ACCOUNT_FIELDS,
+  oauth_replaces: Type.Optional(Type.Literal(true)),
+});
+export type LoginTokens = Static<typeof LoginTokens>;
+
+/** What a stored login's payload holds of its tokens: each field of them it has, as the field is typed. */
+const StoredTokens = Type.Partial(LoginTokens);
+export type StoredTokens = Static<typeof StoredTokens>;
+
+/** The tokens a stored login's payload holds; a field of another type is one it does not hold. */
+function storedTokens(payload: JsonObject): StoredTokens {
+  return keepMatching(StoredTokens, payload) ?? {};
+}
 
 /** The instant a token response's `expires_in` ends, counted from `now`, or null when it names none. */
-function expiryOf(tokens: Record<string, unknown>, now: Date): string | null {
-  const expiresIn = tokens.expires_in;
-  if (typeof expiresIn !== "number" || !Number.isInteger(expiresIn)) {
-    return null;
-  }
-  return new Date(now.getTime() + expiresIn * 1000).toISOString();
+function expiryOf(tokens: TokenResponse, now: Date): string | null {
+  return tokens.expires_in === undefined ? null : new Date(now.getTime() + tokens.expires_in * 1000).toISOString();
 }
 
 /**
  * The payload a login stores from a token response received at `now`: the fields the response
  * leaves out are kept from `existing`, the payload it replaces.
  */
-export function tokenPayload(
-  tokens: JsonObject,
-  now: Date,
-  existing: JsonObject = {},
-): JsonObject {
-  const access = tokens.access_token;
-  if (typeof access !== "string" || !access) {
-    throw new OAuthError("token response is missing access_token");
-  }
-  let refresh = tokens.refresh_token;
-  if (typeof refresh !== "string" || !refresh) {
-    refresh = existing.refresh_token;
-  }
-  const payload: JsonObject = {
-    access_token: access,
-    refresh_token: typeof refresh === "string" ? refresh : null,
-    token_type: tokens.token_type || "Bearer",
-    expires_at: expiryOf(tokens, now) ?? existing.expires_at,
-    ...Object.fromEntries(ACCOUNT_FIELDS.map((field) => [field, tokens[field] || existing[field]])),
-    oauth_replaces: tokens.oauth_replaces === true || existing.oauth_replaces === true ? true : undefined,
+export function tokenPayload(tokens: TokenResponse, now: Date, existing: StoredTokens = {}): LoginTokens {
+  const { expires_in: _expiresIn, scope: _scope, ...response } = tokens;
+  const expiresAt = expiryOf(tokens, now);
+  return {
+    ...existing,
+    ...response,
+    token_type: response.token_type ?? "Bearer",
+    ...(expiresAt === null ? {} : { expires_at: expiresAt }),
   };
-  return Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== null && value !== undefined));
 }
 
-export function accountHint(payload: Record<string, unknown>): string {
-  const domain = payload.email_domain;
-  if (typeof domain === "string" && domain.trim()) {
-    return domain.trim();
-  }
-  const workspace = payload.workspace_id;
-  if (typeof workspace === "string" && workspace.trim()) {
-    return workspace.trim();
-  }
-  return "";
+/** The account a login's tokens name for the operator: its email domain, else its workspace; empty when they name neither. */
+export function accountHint(tokens: LoginTokens): string {
+  return tokens.email_domain?.trim() || tokens.workspace_id?.trim() || "";
 }
+
+/** The secrets a login's payload holds, whatever its connector: each one a string where the payload has it. */
+const LoginSecrets = Type.Partial(
+  Type.Object({
+    access_token: Type.String(),
+    refresh_token: Type.String(),
+    token: Type.String(),
+    evm_private_key: Type.String(),
+    solana_private_key: Type.String(),
+    alchemy_key: Type.String(),
+    opensea_key: Type.String(),
+    uniswap_key: Type.String(),
+    login: Type.String(),
+    secret_key: Type.String(),
+  }),
+);
 
 /** The payload fields of a login that hold a secret, whatever its connector. */
-export const TOKEN_FIELDS: readonly string[] = [
-  "access_token",
-  "refresh_token",
-  "token",
-  "evm_private_key",
-  "solana_private_key",
-  "alchemy_key",
-  "opensea_key",
-  "uniswap_key",
-  "login",
-  "secret_key",
-];
+export const TOKEN_FIELDS: readonly string[] = Object.keys(LoginSecrets.properties);
 
-export function tokenRedactions(payload: Record<string, unknown>, connectionId: string): Record<string, string> {
-  const values: Record<string, string> = {};
-  for (const key of TOKEN_FIELDS) {
-    const value = payload[key];
-    if (typeof value === "string" && value) {
-      values[`mcp_${connectionId}_${key}`] = value;
-    }
-  }
-  return values;
+/** The secrets a login's payload holds, each one named for the connection and field it is redacted as. */
+export function tokenRedactions(payload: JsonObject, connectionId: string): Record<string, string> {
+  const secrets = Object.entries(keepMatching(LoginSecrets, payload) ?? {}).filter(([, value]) => value);
+  return Object.fromEntries(secrets.map(([key, value]) => [`mcp_${connectionId}_${key}`, value]));
 }
 
 /**
@@ -365,47 +378,55 @@ export function storedTokenRedactions(connection: McpConnectionRow, masterKey?: 
 }
 
 /** Whether a login's access token has expired at `now`, or expires within `skewMs` of it. */
-export function accessExpired(payload: Record<string, unknown>, now: Date, skewMs = 60_000): boolean {
-  const raw = payload.expires_at;
-  if (typeof raw !== "string" || !raw) {
+export function accessExpired(payload: JsonObject, now: Date, skewMs = 60_000): boolean {
+  const expiresAt = storedTokens(payload).expires_at;
+  if (expiresAt === undefined) {
     return false;
   }
-  const expires = Date.parse(raw);
+  const expires = Date.parse(expiresAt);
   if (Number.isNaN(expires)) {
     return false;
   }
   return now.getTime() + skewMs >= expires;
 }
 
-export function pendingOauthPayload(codeVerifier: string, redirectUri: string, replaces = false): JsonObject {
-  return {
-    oauth: {
-      code_verifier: codeVerifier,
-      redirect_uri: redirectUri,
-      replaces,
-    },
-  };
+/** A sign-in under way: the PKCE verifier it was requested with, the URL the provider returns to, and whether it replaces a login. */
+const PendingSignIn = Type.Object({
+  code_verifier: Type.String(),
+  redirect_uri: Type.String(),
+  replaces: Type.Boolean(),
+});
+export type PendingSignIn = Static<typeof PendingSignIn>;
+
+/** The payload a login holds while its sign-in is under way: the sign-in, under `oauth`. */
+export type PendingSignInPayload = { oauth: PendingSignIn };
+
+/** What a login's payload holds of a sign-in under way, and whether its tokens were stored by a sign-in that replaced a login. */
+const StoredSignIn = Type.Object({
+  oauth: Type.Optional(Type.Partial(PendingSignIn)),
+  oauth_replaces: Type.Optional(Type.Literal(true)),
+});
+
+/** The sign-in a login's payload holds; a field of another type is one it does not hold. */
+function storedSignIn(payload: JsonObject): Static<typeof StoredSignIn> {
+  return keepMatching(StoredSignIn, payload) ?? {};
 }
 
-export function pendingReplaces(payload: Record<string, unknown>): boolean {
-  if (payload.oauth_replaces === true) {
-    return true;
-  }
-  const oauth = payload.oauth;
-  return isPlainRecord(oauth) && oauth.replaces === true;
+export function pendingOauthPayload(codeVerifier: string, redirectUri: string, replaces = false): PendingSignInPayload {
+  return { oauth: { code_verifier: codeVerifier, redirect_uri: redirectUri, replaces } };
 }
 
-export function pendingOauth(payload: Record<string, unknown>): [string, string] {
-  const oauth = payload.oauth;
-  if (!isPlainRecord(oauth)) {
+export function pendingReplaces(payload: JsonObject): boolean {
+  const stored = storedSignIn(payload);
+  return stored.oauth_replaces === true || stored.oauth?.replaces === true;
+}
+
+export function pendingOauth(payload: JsonObject): [string, string] {
+  const signIn = storedSignIn(payload).oauth;
+  if (signIn?.code_verifier === undefined || signIn.redirect_uri === undefined) {
     throw new OAuthError("connection is missing oauth state");
   }
-  const verifier = oauth.code_verifier;
-  const redirectUri = oauth.redirect_uri;
-  if (typeof verifier !== "string" || typeof redirectUri !== "string") {
-    throw new OAuthError("connection is missing oauth state");
-  }
-  return [verifier, redirectUri];
+  return [signIn.code_verifier, signIn.redirect_uri];
 }
 
 function resourceMetadataUrls(mcpUrl: string): string[] {
@@ -434,17 +455,17 @@ function authServerMetadataUrl(issuer: string): string {
 }
 
 /** The JSON object `text` holds, or null when it is not JSON or holds anything else. */
-function parseJsonObject(text: string): Record<string, unknown> | null {
+function parseJsonObject(text: string): JsonObject | null {
   try {
     const payload: unknown = JSON.parse(text);
-    return isPlainRecord(payload) ? payload : null;
+    return isJsonObject(payload) ? payload : null;
   } catch {
     return null;
   }
 }
 
 /** The first JSON object one of `urls` answers, tried in order. */
-async function getJson(fetchFn: FetchFn, urls: string[]): Promise<Record<string, unknown>> {
+async function getJson(fetchFn: FetchFn, urls: string[]): Promise<JsonObject> {
   let last = "discovery failed";
   for (const url of urls) {
     const response = await fetchFn(url, { method: "GET", headers: { Accept: "application/json" } });
@@ -466,25 +487,37 @@ function oauthFetch(http: OAuthHttp): FetchFn {
   return http.client ?? proxyFetch(http.proxyUrl ?? "");
 }
 
-/** What a login reads of a protected resource's metadata: the resource it names, and its first authorization server. */
-type ProtectedResource = {
-  resource: string;
-  authorizationServer: string;
-};
+/** A protected resource's metadata (RFC 9728), as far as a login reads it: the resource it names, its authorization servers, and the scopes it supports. */
+const ProtectedResourceMetadata = Type.Object({
+  resource: Type.Optional(Type.String()),
+  authorization_servers: Type.Array(Type.String()),
+  scopes_supported: Type.Optional(Type.Array(Type.String())),
+});
+
+/** What a login reads of a protected resource's metadata: the resource it names, its first authorization server, and the scopes it supports when it names them. */
+type ProtectedResource = { resource: string; authorizationServer: string; scopes: string[] | null };
 
 /** The protected resource `metadata` describes, the resource defaulting to `mcpUrl`. */
-function protectedResourceOf(metadata: Record<string, unknown>, mcpUrl: string): ProtectedResource {
-  const resource = metadata.resource;
-  const servers = metadata.authorization_servers;
-  const first: unknown = Array.isArray(servers) ? servers[0] : undefined;
-  if (typeof first !== "string") {
+function protectedResourceOf(metadata: JsonObject, mcpUrl: string): ProtectedResource {
+  const parsed = keepMatching(ProtectedResourceMetadata, metadata);
+  const authorizationServer = parsed?.authorization_servers[0];
+  if (parsed === null || authorizationServer === undefined) {
     throw new OAuthError("protected resource metadata is missing authorization_servers");
   }
   return {
-    resource: typeof resource === "string" && resource.trim() ? resource.trim() : mcpUrl,
-    authorizationServer: first,
+    resource: parsed.resource?.trim() || mcpUrl,
+    authorizationServer,
+    scopes: parsed.scopes_supported ?? null,
   };
 }
+
+/** An authorization server's metadata (RFC 8414), as far as a login reads it: its endpoints, and the scopes it supports. */
+const AuthorizationServerMetadata = Type.Object({
+  authorization_endpoint: Type.String(),
+  token_endpoint: Type.String(),
+  registration_endpoint: Type.Optional(Type.String()),
+  scopes_supported: Type.Optional(Type.Array(Type.String())),
+});
 
 function scopedDiscovery(server: LoadedConnector, discovery: OAuthDiscovery): OAuthDiscovery {
   const scopes = manifestOauth(server)?.scopes;
@@ -522,29 +555,25 @@ export async function discover(
   options: OAuthHttp = {},
 ): Promise<OAuthDiscovery> {
   const fetchFn = oauthFetch(options);
-  const resourceMeta = await getJson(fetchFn, resourceMetadataUrls(mcpUrl));
-  const { resource, authorizationServer } = protectedResourceOf(resourceMeta, mcpUrl);
-  const asMeta = await getJson(fetchFn, [authServerMetadataUrl(authorizationServer)]);
-  const authorization = asMeta.authorization_endpoint;
-  const token = asMeta.token_endpoint;
-  if (typeof authorization !== "string" || typeof token !== "string") {
+  const resourceMetadata = await getJson(fetchFn, resourceMetadataUrls(mcpUrl));
+  const { resource, authorizationServer, scopes } = protectedResourceOf(resourceMetadata, mcpUrl);
+  const serverMetadata = await getJson(fetchFn, [authServerMetadataUrl(authorizationServer)]);
+  const metadata = keepMatching(AuthorizationServerMetadata, serverMetadata);
+  if (metadata === null) {
     throw new OAuthError("authorization server metadata is missing endpoints");
   }
-  const registration = asMeta.registration_endpoint;
-  const scopes = resourceMeta.scopes_supported ?? asMeta.scopes_supported ?? [];
   return {
     resource,
-    authorization_endpoint: authorization.trim(),
-    token_endpoint: token.trim(),
-    registration_endpoint:
-      typeof registration === "string" && registration.trim() ? registration.trim() : null,
-    scopes: Array.isArray(scopes) ? scopes.filter((scope): scope is string => typeof scope === "string") : [],
+    authorization_endpoint: metadata.authorization_endpoint.trim(),
+    token_endpoint: metadata.token_endpoint.trim(),
+    registration_endpoint: metadata.registration_endpoint?.trim() || null,
+    scopes: scopes ?? metadata.scopes_supported ?? [],
     access_type: null,
   };
 }
 
-/** What a dynamic client registration answers: the client's id, and a secret when the server issues one. */
-const Registration = Type.Object({ client_id: Type.String(), client_secret: Type.Optional(Type.Unknown()) });
+/** What a dynamic client registration answers (RFC 7591 §3.2.1): the client's id, and a secret when the server issues one. */
+const ClientRegistration = Type.Object({ client_id: Type.String(), client_secret: Type.Optional(Type.String()) });
 
 export async function registerClient(
   discovery: OAuthDiscovery,
@@ -573,19 +602,24 @@ export async function registerClient(
     );
   }
   const payload: unknown = text ? JSON.parse(text) : {};
-  if (!Value.Check(Registration, payload)) {
+  const registration = isJsonObject(payload) ? keepMatching(ClientRegistration, payload) : null;
+  if (registration === null) {
     throw new OAuthError("client registration did not return a client_id");
   }
   return {
-    client_id: payload.client_id,
-    client_secret: typeof payload.client_secret === "string" ? payload.client_secret : null,
+    client_id: registration.client_id,
+    client_secret: registration.client_secret ?? null,
     redirect_uris: [redirectUri],
   };
 }
 
+/** What a provider answers a request it refuses with (RFC 6749 §5.2): the error code. */
+const ErrorResponse = Type.Object({ error: Type.String() });
+
 async function tokenError(response: Response, text: string): Promise<string | null> {
-  const error = parseJsonObject(text)?.error;
-  return typeof error === "string" ? error : null;
+  const payload = parseJsonObject(text);
+  const refusal = payload === null ? null : keepMatching(ErrorResponse, payload);
+  return refusal?.error ?? null;
 }
 
 async function tokenRequest(
@@ -593,7 +627,7 @@ async function tokenRequest(
   fields: Record<string, string>,
   clientSecret: string | null | undefined,
   http: OAuthHttp,
-): Promise<JsonObject> {
+): Promise<TokenResponse> {
   const params = new URLSearchParams(fields);
   if (clientSecret) {
     params.set("client_secret", clientSecret);
@@ -618,14 +652,18 @@ async function tokenRequest(
   if (!isJsonObject(payload)) {
     throw new OAuthError("token response is not an object");
   }
-  return payload;
+  const tokens = keepMatching(TokenResponse, payload);
+  if (tokens === null) {
+    throw new OAuthError("token response is missing access_token");
+  }
+  return tokens;
 }
 
 export async function exchangeCode(
   discovery: OAuthDiscovery,
   grant: AuthorizationCodeGrant,
   http: OAuthHttp = {},
-): Promise<JsonObject> {
+): Promise<TokenResponse> {
   return tokenRequest(
     discovery,
     {
@@ -645,7 +683,7 @@ export async function refreshTokens(
   discovery: OAuthDiscovery,
   grant: RefreshTokenGrant,
   http: OAuthHttp = {},
-): Promise<JsonObject> {
+): Promise<TokenResponse> {
   return tokenRequest(
     discovery,
     {
@@ -727,9 +765,9 @@ export async function refreshConnection(
   services: TokenRefreshServices,
 ): Promise<McpConnectionRow> {
   const now = new Date();
-  const payload = services.decrypt(connection.ciphertext, connection.nonce);
+  const payload = storedTokens(services.decrypt(connection.ciphertext, connection.nonce));
   const refresh = payload.refresh_token;
-  if (typeof refresh !== "string" || !refresh) {
+  if (refresh === undefined) {
     throw new OAuthReauthError("connection has no refresh token");
   }
   const discovery = await serverDiscovery(server, services);

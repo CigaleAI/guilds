@@ -1514,9 +1514,6 @@
     },
     "anti-slop/no-runtime-typeof": {
       "count": 2
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
     }
   },
   "src/mcp/operator-call.ts": {
@@ -1678,17 +1675,6 @@
     },
     "limits/erased-return-type": {
       "count": 5
-    }
-  },
-  "src/oauth/index.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 2
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 18
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 9
     }
   },
   "src/observability/client-errors.ts": {

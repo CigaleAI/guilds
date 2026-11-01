@@ -8,6 +8,7 @@ import type { McpConnectionRow } from "../db/mcp.js";
 import type { Manifest } from "../db/schema/index.js";
 import { GithubInstallationGoneError } from "../github/index.js";
 import { mintLoginToken, RepositoryAccessError, type RepositoryToken } from "../github/tokens.js";
+import type { JsonObject } from "../lib/json.js";
 import type { FetchFn } from "../net/http.js";
 import { accessExpired, isGithubApp, OAuthReauthError, refreshConnection, TOKEN_FIELDS } from "../oauth/index.js";
 import { McpDisconnectedError, McpError } from "./errors.js";
@@ -36,7 +37,7 @@ export function isOauth(server: LoadedConnector): boolean {
   return server.auth === "oauth";
 }
 
-function connectionPayload(connection: McpConnectionRow): Record<string, unknown> | null {
+function connectionPayload(connection: McpConnectionRow): JsonObject | null {
   try {
     return decryptPayload(connection.ciphertext, connection.nonce);
   } catch {
