@@ -1194,9 +1194,6 @@
     }
   },
   "src/scripts/catalog.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 6
-    },
     "limits/inline-parameter-type": {
       "count": 1
     },
@@ -1205,16 +1202,7 @@
     }
   },
   "src/scripts/materialise.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 2
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
     "complexity": {
-      "count": 1
-    },
-    "limits/inline-parameter-type": {
       "count": 1
     },
     "limits/silent-catch": {

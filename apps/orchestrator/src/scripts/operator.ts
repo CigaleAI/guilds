@@ -1,6 +1,7 @@
 import type { ArtifactActor } from "../artifacts/types.js";
 import type { AgentRow } from "../db/agents.js";
 import { scriptDisplayPath, scriptItem, type AgentScript, type ScriptItem, type Scripts } from "./catalog.js";
+import { validateScriptParameters } from "./validation.js";
 
 /** How an agent's scripts changed: one written, one deleted, or every one deleted. */
 export type ScriptChangeAction = "create" | "delete" | "clear";
@@ -32,7 +33,7 @@ export async function listOperatorScripts(scripts: Scripts, agent: ScriptOwner):
   }));
 }
 
-/** A script as an operator writes it: its name, what it does, its source, and the parameters it takes. */
+/** A script as an operator writes it: its name, what it does, its source, and the parameters it takes, not yet checked. */
 export type ScriptDraft = { name: string; description: string; source: string; parameters: unknown };
 
 /** Writes the script for the agent as `actor`, within the agent's cap, and announces it to the agent's guild. */
@@ -48,7 +49,7 @@ export async function createScript(
     draft.name,
     draft.description,
     draft.source,
-    draft.parameters,
+    validateScriptParameters(draft.parameters),
     { maxScripts: agent.config.max_scripts },
   );
   await deps.publishScriptsChanged?.(agent.guild_id, { agentId: agent.id, action: "create", name: script.name });

@@ -21,7 +21,7 @@ import {
 } from "../../src/scripts/snapshot.js";
 import type { RunScriptSnapshot } from "../../src/db/schema/index.js";
 import { type AgentScript, Scripts } from "../../src/scripts/catalog.js";
-import { NATIVE_TOOL_NAMES, ScriptError, scriptSourceHash } from "../../src/scripts/validation.js";
+import { NATIVE_TOOL_NAMES, ScriptError, scriptSourceHash, validateScriptParameters } from "../../src/scripts/validation.js";
 import {
   REGISTRY,
   dynamicScriptTools,
@@ -447,11 +447,8 @@ test("schema-collision-rejection", async () => {
     (error: unknown) =>
       error instanceof ScriptError && error.message === "collides with a native or connection tool name",
   );
-  await assert.rejects(
-    () =>
-      scripts.create(scriptOperator, "a_1", "priced", "why", "print(1)\n", {
-        type: "string",
-      }),
+  assert.throws(
+    () => validateScriptParameters({ type: "string" }),
     (error: unknown) =>
       error instanceof ScriptError && error.message === "parameters must be a JSON Schema object",
   );

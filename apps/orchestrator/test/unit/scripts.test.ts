@@ -53,6 +53,13 @@ test("validate_script_parameters accepts object or null", () => {
   assert.deepEqual(validateScriptParameters(schema), schema);
   assert.throws(() => validateScriptParameters(["to"]), /JSON object/);
   assert.throws(() => validateScriptParameters("object"), /JSON object/);
+  const notSchema = (error: unknown) =>
+    error instanceof ScriptError && error.message === "parameters must be a JSON Schema object";
+  assert.throws(() => validateScriptParameters({ type: "string" }), notSchema);
+  assert.throws(
+    () => validateScriptParameters({ type: "object", properties: { to: { type: "string", required: true } } }),
+    notSchema,
+  );
 });
 
 test("environment_catalog sorts and skips values", () => {
@@ -69,35 +76,13 @@ test("environment_catalog sorts and skips values", () => {
   );
 });
 
-test("create rejects native collisions and non-object schemas", async () => {
+test("create rejects native collisions", async () => {
   const scripts = new Scripts(new MemoryScriptDB());
   await assert.rejects(
     () => scripts.create(scriptOperator, "a_1", "note_find", "why", "print(1)\n"),
     (error: unknown) =>
       error instanceof ScriptError &&
       error.message === "collides with a native or connection tool name",
-  );
-  await assert.rejects(
-    () =>
-      scripts.create(scriptOperator, "a_1", "priced", "why", "print(1)\n", {
-        type: "string",
-      }),
-    (error: unknown) =>
-      error instanceof ScriptError && error.message === "parameters must be a JSON Schema object",
-  );
-  await assert.rejects(
-    () =>
-      scripts.create(scriptOperator, "a_1", "priced", "why", "print(1)\n", {
-        type: "object",
-        properties: { to: { type: "string", required: true } },
-      }),
-    (error: unknown) =>
-      error instanceof ScriptError && error.message === "parameters must be a JSON Schema object",
-  );
-  await assert.rejects(
-    () => scripts.create(scriptOperator, "a_1", "priced", "why", "print(1)\n", ["to"]),
-    (error: unknown) =>
-      error instanceof ScriptError && error.message === "parameters must be a JSON object",
   );
 });
 
