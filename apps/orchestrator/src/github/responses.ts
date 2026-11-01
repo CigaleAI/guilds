@@ -1,9 +1,7 @@
 import { Type, type Static, type TSchema } from "@sinclair/typebox";
 
 // The GitHub replies this module reads. Each object keeps the fields GitHub sends beyond the ones
-// named; a field read only when it has the type expected is `Shown`.
-
-const Shown = Type.Optional(Type.Unknown());
+// named.
 
 function Nullable<T extends TSchema>(schema: T) {
   return Type.Optional(Type.Union([schema, Type.Null()]));
@@ -54,12 +52,16 @@ export type RepositoryReply = Static<typeof RepositoryReply>;
 /** One page of the repositories an installation reaches. */
 export const RepositoriesPage = Type.Object({ repositories: Type.Array(RepositoryReply) });
 
-/** A new App from a manifest code: each credential is read only when it holds a value. */
+/** A credential of a new App: GitHub sends its id as a number and the others as strings. */
+const ManifestCredential = Type.Union([Type.String(), Type.Number()]);
+export type ManifestCredential = Static<typeof ManifestCredential>;
+
+/** A new App from a manifest code: its credentials, each read only when it holds a value, and its page. */
 export const ManifestConversionReply = Type.Object({
-  id: Shown,
-  slug: Shown,
-  pem: Shown,
-  client_id: Shown,
-  client_secret: Shown,
-  html_url: Shown,
+  id: Type.Optional(ManifestCredential),
+  slug: Type.Optional(ManifestCredential),
+  pem: Type.Optional(ManifestCredential),
+  client_id: Type.Optional(ManifestCredential),
+  client_secret: Type.Optional(ManifestCredential),
+  html_url: Type.Optional(Type.String()),
 });

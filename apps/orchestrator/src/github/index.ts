@@ -168,7 +168,8 @@ export function unexpectedGithubReply(problem: string): GithubError {
   return new GithubError(`GitHub returned an unexpected reply at ${problem}`);
 }
 
-function apiHeaders(authorization: string): Record<string, string> {
+/** The headers every call to GitHub's REST API sends: its media type and version, who calls, and the credential. */
+function apiHeaders(authorization: string) {
   return {
     Accept: "application/vnd.github+json",
     Authorization: authorization,
@@ -201,10 +202,12 @@ export async function exchangeUserCode(
   redirectUri: string | undefined,
   services: GithubServices = {},
 ): Promise<string> {
-  const payload: Record<string, string> = { client_id: config.clientId, client_secret: config.clientSecret, code };
-  if (redirectUri) {
-    payload.redirect_uri = redirectUri;
-  }
+  const payload = {
+    client_id: config.clientId,
+    client_secret: config.clientSecret,
+    code,
+    ...(redirectUri ? { redirect_uri: redirectUri } : {}),
+  };
   const response = await fetcher(services)(`${GITHUB_WEB}/login/oauth/access_token`, {
     method: "POST",
     headers: { Accept: "application/json", "Content-Type": "application/json", "User-Agent": "guilds.run" },
@@ -226,7 +229,7 @@ function installationFrom(reply: InstallationReply): GithubInstallation {
   return {
     id: reply.id,
     account: reply.account?.login ?? "",
-    appId: typeof reply.app_id === "string" ? Number(reply.app_id) : (reply.app_id ?? null),
+    appId: reply.app_id === undefined || reply.app_id === null ? null : Number(reply.app_id),
     updatedAt: reply.updated_at ?? "",
   };
 }
@@ -236,7 +239,7 @@ function ofThisApp(item: GithubInstallation, appId: string): boolean {
 }
 
 function parseInstallationId(raw: string | number | undefined): number | null {
-  const id = typeof raw === "number" ? raw : Number(raw);
+  const id = Number(raw);
   return Number.isInteger(id) && id > 0 ? id : null;
 }
 
@@ -434,13 +437,8 @@ export async function installationToken(
   services: GithubServices = {},
   now = new Date(),
 ): Promise<InstallationToken> {
-  const body: Record<string, unknown> = {};
-  if (request.repositoryIds) {
-    body.repository_ids = request.repositoryIds;
-  }
-  if (request.permissions) {
-    body.permissions = request.permissions;
-  }
+  // JSON leaves out a field the request does not set: GitHub then asks for no such scope.
+  const body = { repository_ids: request.repositoryIds, permissions: request.permissions };
   const response = await fetcher(services)(`${GITHUB_API}/app/installations/${request.installationId}/access_tokens`, {
     method: "POST",
     headers: { ...apiHeaders(`Bearer ${appJwt(config, now)}`), "Content-Type": "application/json" },
