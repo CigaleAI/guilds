@@ -2,6 +2,7 @@ import { Type, type Static, type TObject } from "@sinclair/typebox";
 import type { ConversationTool } from "../conversation/runner.js";
 import type { RecipeApply } from "../recipes/apply.js";
 import { parseRecipe } from "../recipes/parse.js";
+import { recommendedModelOf } from "../recipes/parse-roles.js";
 import { RECIPE_WRITE_HINT } from "./constants.js";
 import {
   searchConnectedWorkspace,
@@ -517,7 +518,7 @@ export function recommendCoachModel(recipe: RecipeDocument, coachModel: string):
     return;
   }
   for (const role of recipe.roles) {
-    if (typeof role.config.model !== "string" || !role.config.model.trim()) {
+    if (recommendedModelOf(role.config) === null) {
       role.config.model = model;
     }
   }

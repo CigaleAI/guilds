@@ -7,8 +7,7 @@ import { currentOrg, currentUser } from "./identity.js";
 import { frameSse, SSE_HEADERS } from "./sse.js";
 import { ApplyChoicesSchema } from "../recipes/apply.js";
 import { parseReviewAction, ReviewSchema } from "../recipes/review.js";
-import { parseAccessEdits } from "../recipes/access-edits.js";
-import { parseRecipe } from "../recipes/parse.js";
+import { parseAccessEdits, parseRecipe } from "../recipes/parse.js";
 
 /** A new Builder session: the coach's model and, optionally, its temperature. */
 const BuilderSessionSchema = Type.Object({

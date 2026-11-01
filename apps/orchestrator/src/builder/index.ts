@@ -33,6 +33,7 @@ import {
   reviewRecipe,
   validateLibraryRecipe,
   writeRecipe,
+  writeRecipeDocument,
   type RecipeValidation,
 } from "../recipes/library.js";
 import { getRecipe, type RecipeRow } from "../db/recipes.js";
@@ -404,12 +405,7 @@ export class BuilderService {
     expectedVersion: number,
     document: RecipeDocument,
   ): Promise<RecipeRow> {
-    return writeRecipe(
-      this.deps.db,
-      { id: session.recipe_id, body_version: expectedVersion },
-      { body: document, name: document.meta.name, description: document.meta.description },
-      new Date(),
-    );
+    return writeRecipeDocument(this.deps.db, { id: session.recipe_id, body_version: expectedVersion }, document);
   }
 
   async reviewField(

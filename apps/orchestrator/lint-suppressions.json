@@ -88,11 +88,6 @@
       "count": 2
     }
   },
-  "src/builder/tools.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    }
-  },
   "src/capabilities/index.ts": {
     "anti-slop/no-known-value-widening": {
       "count": 2
@@ -1065,9 +1060,6 @@
     }
   },
   "src/recipes/access-edits.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 2
-    },
     "limits/inline-parameter-type": {
       "count": 1
     }
@@ -1083,11 +1075,6 @@
   "src/recipes/checklist.ts": {
     "limits/inline-parameter-type": {
       "count": 2
-    }
-  },
-  "src/recipes/library.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
     }
   },
   "src/recipes/lifecycle.ts": {
