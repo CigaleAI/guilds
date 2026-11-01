@@ -1,10 +1,7 @@
 import type { ToolKind, ToolLevel } from "@guildsrun/ui";
-import {
-  parseToolArgs,
-  type RunMessage,
-  type ToolArguments,
-  type ToolCallRequest,
-} from "./toolFormat";
+import type { RunConfigSnapshot, StepMessage, ToolCall } from "../../../api/types/runs";
+import { isToolLevelArguments, type JsonObject } from "../../../api/wire";
+import { parseToolArgs } from "./toolFormat";
 
 /** How a recorded tool call reads in the run view: its effect, the level it touched, and the connected server that served it. */
 export type ToolCallInfo = {
@@ -14,19 +11,8 @@ export type ToolCallInfo = {
   server: string | null;
 };
 
-/** A tool the run offered the model, as its config snapshot lists it. */
-export type OfferedTool = { name?: string; function?: { name?: string } };
-
-/** A connected server in the run's config snapshot, with the tools it contributed. */
-export type ConnectedServer = { slug?: string; tools?: readonly { name?: string }[] };
-
 /** The parts of a run that say which tools it offered and which connected servers served them. */
-export type RunWithTools = {
-  config_snapshot?: {
-    tools?: readonly OfferedTool[];
-    mcp?: readonly ConnectedServer[];
-  } | null;
-};
+export type RunWithTools = { config_snapshot: Pick<RunConfigSnapshot, "tools" | "mcp"> };
 
 /** `mutates` marks a tool that changes tracked state: a note, memory, record, collection, script or source code. */
 type ToolEntry = { kind: ToolKind; level?: ToolLevel; mutates?: true };
@@ -50,7 +36,7 @@ const LEVEL_BY_ARGUMENT: Readonly<Record<string, ToolLevel>> = Object.freeze({
   org: "org",
 });
 
-const LEVEL_LABELS: Readonly<Record<string, string>> = Object.freeze({
+const LEVEL_LABELS: Readonly<Record<ToolLevel, string>> = Object.freeze({
   local: "local",
   guild: "guild",
   org: "org",
@@ -148,8 +134,7 @@ function lookup<T>(table: Readonly<Record<string, T>>, key: string): T | undefin
 }
 
 /** The level a display path such as `org/o1/guilds/g1/plan.md` belongs to; null when it is not one. */
-export function levelFromDisplayPath(path: unknown): ToolLevel | null {
-  if (typeof path !== "string") return null;
+export function levelFromDisplayPath(path: string): ToolLevel | null {
   const match = DISPLAY_PATH_RE.exec(path.trim());
   if (!match) return null;
   if (match[1] === "agents") return "local";
@@ -160,13 +145,9 @@ export function levelFromDisplayPath(path: unknown): ToolLevel | null {
 /** The connected server slug for each tool a run's connected servers contributed, by tool name. */
 export function connectedToolServers(run: RunWithTools | null | undefined): Map<string, string> {
   const servers = new Map<string, string>();
-  const list = run?.config_snapshot?.mcp;
-  if (!Array.isArray(list)) return servers;
-  for (const entry of list) {
-    const tools = entry?.tools;
-    if (!Array.isArray(tools)) continue;
-    for (const tool of tools) {
-      if (tool?.name) servers.set(String(tool.name), String(entry.slug || ""));
+  for (const entry of run?.config_snapshot.mcp ?? []) {
+    for (const tool of entry.tools) {
+      if (tool.name) servers.set(tool.name, entry.slug);
     }
   }
   return servers;
@@ -175,45 +156,48 @@ export function connectedToolServers(run: RunWithTools | null | undefined): Map<
 /** The names of every tool the run offered the model. */
 export function offeredToolNames(run: RunWithTools | null | undefined): Set<string> {
   const names = new Set<string>();
-  const tools = run?.config_snapshot?.tools;
-  if (!Array.isArray(tools)) return names;
-  for (const tool of tools) {
-    const name = tool?.function?.name || tool?.name;
-    if (name) names.add(String(name));
+  for (const tool of run?.config_snapshot.tools ?? []) {
+    const name = tool.function?.name || tool.name;
+    if (name) names.add(name);
   }
   return names;
 }
 
-function firstLine(content: unknown): string {
-  if (typeof content !== "string") return "";
+function firstLine(content: string): string {
   const end = content.indexOf("\n");
   return end === -1 ? content : content.slice(0, end);
 }
 
+/** Where a call's arguments point; nowhere when they name no level or path as text. */
+function pointedLevel(args: JsonObject): ToolLevel | null {
+  if (!isToolLevelArguments(args)) return null;
+  const explicit = lookup(LEVEL_BY_ARGUMENT, (args.level ?? "").toLowerCase());
+  if (explicit) return explicit;
+  return levelFromDisplayPath(args.path ?? "") || levelFromDisplayPath(args.path_prefix ?? "");
+}
+
 function derivedLevel(
   name: string,
-  args: ToolArguments,
-  resultMsg: RunMessage | null | undefined,
+  args: JsonObject,
+  resultMsg: StepMessage | null | undefined,
 ): ToolLevel | null {
-  const explicit = lookup(LEVEL_BY_ARGUMENT, String(args.level || "").toLowerCase());
-  if (explicit) return explicit;
-  const fromArgs = levelFromDisplayPath(args.path) || levelFromDisplayPath(args.path_prefix);
+  const fromArgs = pointedLevel(args);
   if (fromArgs) return fromArgs;
-  const fromResult = levelFromDisplayPath(firstLine(resultMsg?.payload?.content));
+  const fromResult = levelFromDisplayPath(firstLine(resultMsg?.payload.content ?? ""));
   if (fromResult) return fromResult;
   return name.includes("_find") ? "all" : null;
 }
 
-function touchesMemory(args: ToolArguments): boolean {
-  return MEMORY_PATH_RE.test(String(args.path || ""));
+function touchesMemory(args: JsonObject): boolean {
+  return isToolLevelArguments(args) && MEMORY_PATH_RE.test(args.path ?? "");
 }
 
 /** How a call of a tool the app knows reads: its kind and level, a read of the agent's memory counting as memory. */
 function knownToolInfo(
   name: string,
   entry: ToolEntry,
-  args: ToolArguments,
-  resultMsg: RunMessage | null | undefined,
+  args: JsonObject,
+  resultMsg: StepMessage | null | undefined,
 ): ToolCallInfo {
   const memory = entry.kind === "read" && touchesMemory(args);
   const kind = memory ? "memory" : entry.kind;
@@ -222,22 +206,19 @@ function knownToolInfo(
 }
 
 /** The tool a recorded call names: its request's, else its result's; empty when neither names one. */
-function calledToolName(
-  call: ToolCallRequest | null | undefined,
-  resultMsg: RunMessage | null | undefined,
-): string {
-  return String(call?.function?.name || resultMsg?.metadata?.tool_name || "");
+function calledToolName(call: ToolCall, resultMsg: StepMessage | null | undefined): string {
+  return call.function.name || resultMsg?.metadata.tool_name || "";
 }
 
 /** Classifies a recorded tool call by effect, level, and serving connected server, using its result and the run's snapshot. */
 export function classifyToolCall(
-  call: ToolCallRequest | null | undefined,
-  resultMsg?: RunMessage | null,
+  call: ToolCall,
+  resultMsg?: StepMessage | null,
   run?: RunWithTools | null,
 ): ToolCallInfo {
   const name = calledToolName(call, resultMsg);
   const entry = lookup(TABLE, name);
-  if (entry) return knownToolInfo(name, entry, parseToolArgs(call?.function?.arguments), resultMsg);
+  if (entry) return knownToolInfo(name, entry, parseToolArgs(call.function.arguments), resultMsg);
   const servers = connectedToolServers(run);
   if (servers.has(name)) {
     return { name, kind: "connected", level: null, server: servers.get(name) || null };
@@ -258,27 +239,16 @@ export function isScriptRun(info: ToolCallInfo): boolean {
   return info.name === "script_run";
 }
 
-function isToolKind(value: unknown): value is ToolKind {
-  const kinds: readonly unknown[] = TOOL_KINDS;
-  return kinds.includes(value);
-}
-
-/** The kind to show for any value: itself when it is a known kind, `unknown` otherwise. */
-export function kindLabel(kind: unknown): ToolKind {
-  return isToolKind(kind) ? kind : "unknown";
-}
-
 /** The label for a level ("all levels" for a search across every level); empty for no level. */
-export function levelLabel(level: unknown): string {
-  return lookup(LEVEL_LABELS, String(level)) || "";
+export function levelLabel(level: ToolLevel | null): string {
+  return level ? LEVEL_LABELS[level] : "";
 }
 
 /** A one-line summary of the kinds of calls made, in kind order with counts, such as "memory · read × 2 · write". */
 export function kindBreakdown(infos: readonly ToolCallInfo[]): string {
   const counts = new Map<ToolKind, number>();
   for (const info of infos) {
-    const kind = kindLabel(info.kind);
-    counts.set(kind, (counts.get(kind) || 0) + 1);
+    counts.set(info.kind, (counts.get(info.kind) || 0) + 1);
   }
   return TOOL_KINDS.filter((kind) => counts.has(kind))
     .map((kind) => {

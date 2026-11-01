@@ -325,7 +325,7 @@ export function AgentPrompt() {
     });
 
   /** Tells why the Task did not save: someone saved it meanwhile, or the error it failed with. */
-  const reportSaveFailure = (error: unknown) => {
+  const reportSaveFailure = (error: Error) => {
     if (error instanceof ApiError && error.status === 409) {
       void task.refetch();
       toast({
@@ -337,7 +337,7 @@ export function AgentPrompt() {
       toast({
         kind: "error",
         title: "Couldn't save the Task",
-        description: error instanceof Error ? error.message : String(error),
+        description: error.message,
       });
     }
   };
@@ -353,6 +353,7 @@ export function AgentPrompt() {
     try {
       return await save.mutateAsync(taskInput(content, expected));
     } catch (error) {
+      if (!(error instanceof Error)) throw error;
       reportSaveFailure(error);
       return null;
     }

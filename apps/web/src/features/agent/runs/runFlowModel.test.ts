@@ -9,23 +9,23 @@ import {
   turnText,
   turnUsage,
 } from "./runFlowModel";
-import type { FlowSegment, RunError, Segment } from "./runFlowModel";
+import type { FlowSegment, Segment } from "./runFlowModel";
+import type {
+  MessageMetadata,
+  MessagePayload,
+  RunError,
+  RunMessage,
+  ToolCall,
+} from "../../../api/types/runs";
 
-type Row = {
-  id: number;
-  seq: number;
-  payload: Record<string, unknown>;
-  metadata: Record<string, unknown>;
-  created_at: string;
-  cost_usd: number | null;
-};
+type Row = RunMessage;
 
 let seq = 0;
 /** A message row; its stored cost is a model reply's `cost_usd` unless `cost_usd` names another. */
 function row(
-  payload: Record<string, unknown>,
-  metadata: Record<string, unknown> = {},
-  cost_usd: number | null = typeof metadata.cost_usd === "number" ? metadata.cost_usd : null,
+  payload: MessagePayload,
+  metadata: MessageMetadata = {},
+  cost_usd: number | null = metadata.cost_usd ?? null,
 ): Row {
   seq += 1;
   return {
@@ -38,27 +38,18 @@ function row(
   };
 }
 
-function call(
-  id: string,
-  name: string,
-  args: Record<string, unknown> = {},
-): Record<string, unknown> {
+function call(id: string, name: string, args: Record<string, unknown> = {}): ToolCall {
   return { id, type: "function", function: { name, arguments: JSON.stringify(args) } };
 }
 
-function toolRow(
-  callId: string,
-  name: string,
-  content: string,
-  extra: Record<string, unknown> = {},
-): Row {
+function toolRow(callId: string, name: string, content: string, extra: MessageMetadata = {}): Row {
   return row(
     { role: "tool", tool_call_id: callId, content },
     { generation: extra.generation ?? 1, tool_name: name, duration_ms: 9, error: null, ...extra },
   );
 }
 
-function assistantMeta(extra: Record<string, unknown> = {}): Record<string, unknown> {
+function assistantMeta(extra: MessageMetadata = {}): MessageMetadata {
   return {
     generation: 1,
     latency_ms: 1200,
@@ -76,6 +67,11 @@ function flowAt(segments: readonly Segment<Row>[], index: number): FlowSegment<R
 }
 
 const run = { id: "r_1", errors: [] as RunError[], config_snapshot: { mcp: [], tools: [] } };
+
+/** A run error recorded at a time, in a generation, by the operation that failed. */
+function runError(at: string, generation: number, operation: string, message: string): RunError {
+  return { at, generation, operation, error_type: "RunError", message };
+}
 
 function sampleMessages(): Row[] {
   seq = 0;
@@ -158,19 +154,9 @@ test("run errors attach to the flow of their generation, others stay unattached"
   const withErrors = {
     ...run,
     errors: [
-      {
-        at: "2026-09-21T08:01:00Z",
-        generation: 2,
-        operation: "generation.cancelled",
-        message: "cancelled",
-      },
-      {
-        at: "2026-09-21T08:02:00Z",
-        generation: 7,
-        operation: "llm.complete",
-        message: "provider down",
-      },
-      { at: "2026-09-21T08:03:00Z", operation: "workspace.create", message: "no generation" },
+      runError("2026-09-21T08:01:00Z", 2, "generation.cancelled", "cancelled"),
+      runError("2026-09-21T08:02:00Z", 7, "llm.complete", "provider down"),
+      runError("2026-09-21T08:03:00Z", 0, "workspace.create", "no generation"),
     ],
   };
   const { segments, unattachedErrors } = buildFlowSegments(sampleMessages(), withErrors);
@@ -195,7 +181,7 @@ test("a user row inside a generation splits the flow but keeps step numbering", 
       { role: "assistant", content: "done without memory" },
       assistantMeta({ finish_reason: "stop" }),
     ),
-    row({ role: "user", content: "Memory: this wake…" }, { generation: 1, source: "memory" }),
+    row({ role: "user", content: "Memory: this wake…" }, { generation: 1, source: "ui" }),
     row(
       { role: "assistant", content: "", tool_calls: [call("c2", "memory_write")] },
       assistantMeta(),
@@ -248,19 +234,19 @@ test("each tool result that names no call gets a step of its own", () => {
 
 test("a turn's usage is the object it recorded, and empty otherwise", () => {
   seq = 0;
-  assert.deepEqual(turnUsage(row({ role: "assistant" }, assistantMeta())), {
+  assert.deepEqual(turnUsage(row({ role: "assistant", content: "" }, assistantMeta())), {
     input_tokens: 1000,
     output_tokens: 50,
     cache_read_tokens: 0,
   });
-  assert.deepEqual(turnUsage(row({ role: "assistant" }, { usage: [1000] })), {});
+  assert.deepEqual(turnUsage(row({ role: "assistant", content: "" }, { generation: 1 })), {});
   assert.deepEqual(turnUsage(null), {});
 });
 
 test("flowStats sums time, tokens, cost, and counts errors and running calls", () => {
   const { segments } = buildFlowSegments(sampleMessages(), {
     ...run,
-    errors: [{ generation: 1, operation: "generation.max_steps", message: "max_steps reached" }],
+    errors: [runError("2026-09-21T08:01:00Z", 1, "generation.max_steps", "max_steps reached")],
   });
   const first = flowStats(flowAt(segments, 2));
   assert.equal(first.steps, 2);

@@ -43,21 +43,16 @@ import {
   formatDuration,
   formatTokens,
   friendlyToolCall,
-  messageContentText,
   parseToolArgs,
   previewText,
   summarizeCalls,
   toolOutcome,
 } from "../runs/toolFormat";
-import {
-  TOOL_KINDS,
-  isMutation,
-  isScriptRun,
-  kindLabel,
-  levelFromDisplayPath,
-} from "../runs/toolKinds";
+import { TOOL_KINDS, isMutation, isScriptRun, levelFromDisplayPath } from "../runs/toolKinds";
 import type { ToolProgress } from "../../../api/toolProgress";
 import type { Harness } from "../../../api/types/agents";
+import type { CodeTaskArguments, StepMetadata } from "../../../api/types/runs";
+import { isCodeTaskArguments, isNamedToolArguments } from "../../../api/wire";
 import { formatCost } from "../../../app/format";
 import { harnessLabels } from "../harness";
 import { HarnessLogo } from "../HarnessLogo";
@@ -71,11 +66,6 @@ const PROGRESS_TAIL = 6;
 
 /** Reasoning longer than this, or of more than one line, unfolds onto the rest with **more**. */
 const THOUGHT_LINE = 120;
-
-function numberOf(value: unknown): number {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : 0;
-}
 
 /** Why a call failed; a call with no result failed too once its run stopped generating. */
 function callError(call: FlowCall, generating: boolean): string | null {
@@ -125,10 +115,10 @@ function totalDuration(calls: readonly FlowCall[]): number {
 }
 
 function callDuration(call: FlowCall): number {
-  return numberOf(callMetadata(call).duration_ms);
+  return callMetadata(call).duration_ms ?? 0;
 }
 
-function turnMeta(step: FlowStep): Record<string, unknown> {
+function turnMeta(step: FlowStep): StepMetadata {
   return step.turn?.metadata ?? {};
 }
 
@@ -162,15 +152,15 @@ function stepCues(steps: readonly FlowStep[], generating: boolean): FlowStepCues
   const calls = steps.flatMap((step) => step.calls);
   const metas = steps.map(turnMeta);
   const usages = steps.map((step) => turnUsage(step.turn));
-  const sum = (values: unknown[]) =>
-    values.reduce<number>((total, value) => total + numberOf(value), 0);
+  const sum = (values: readonly (number | undefined)[]) =>
+    values.reduce<number>((total, value) => total + (value ?? 0), 0);
   const modelMs = sum(metas.map((meta) => meta.latency_ms));
   const toolMs = totalDuration(calls);
   const input = sum(usages.map((usage) => usage.input_tokens));
   const output = sum(usages.map((usage) => usage.output_tokens));
   const cached = sum(usages.map((usage) => usage.cache_read_tokens));
   const costs = steps.map(stepCostUsd).filter((cost) => cost !== null);
-  const kinds = new Set(calls.map((call) => kindLabel(call.info.kind)));
+  const kinds = new Set(calls.map((call) => call.info.kind));
   const facts: StepFact[] = [];
   if (input + output) {
     facts.push({
@@ -199,11 +189,9 @@ function stepCues(steps: readonly FlowStep[], generating: boolean): FlowStepCues
 }
 
 /** The tag a finish reason earns: the token budget, or any reason other than stopping or calling tools. */
-function stopTag(reason: unknown): string | undefined {
+function stopTag(reason: StepMetadata["finish_reason"]): string | undefined {
   if (reason === "length") return "max tokens";
-  return typeof reason === "string" && reason && reason !== "tool_calls" && reason !== "stop"
-    ? `stopped: ${reason}`
-    : undefined;
+  return reason && reason !== "tool_calls" && reason !== "stop" ? `stopped: ${reason}` : undefined;
 }
 
 /** The agent inspector that links to what a call touched open in. */
@@ -224,15 +212,15 @@ function callLink(call: FlowCall, inspector: Inspector): ReactNode {
         </CallLink>
       );
     case "script_create": {
-      const name = parseToolArgs(call.call?.function?.arguments).name;
-      return name ? (
+      const args = parseToolArgs(call.call.function.arguments);
+      return isNamedToolArguments(args) && args.name ? (
         <CallLink to="/guilds/$guildId/agents/$agentId/state/scripts" params={inspector}>
-          {String(name)}
+          {args.name}
         </CallLink>
       ) : null;
     }
     case "note_write": {
-      const path = firstLine(messageContentText(call.result?.payload));
+      const path = firstLine(call.result?.payload.content ?? "");
       if (!levelFromDisplayPath(path)) return null;
       return (
         <CallLink
@@ -350,16 +338,18 @@ export function cardServer(call: FlowCall): string | null {
 
 /** The repository a code task works in: the one its result names, else the one it was asked for. */
 export function taskRepository(call: FlowCall): string {
-  const named = callMetadata(call).repository;
-  const asked = parseToolArgs(call.call?.function?.arguments).repo;
-  const repository = typeof named === "string" ? named : asked;
-  return typeof repository === "string" ? repository : "";
+  return callMetadata(call).repository ?? taskArguments(call)?.repo ?? "";
+}
+
+/** The arguments a code task was called with; none when they are not a code task's. */
+function taskArguments(call: FlowCall): CodeTaskArguments | null {
+  const args = parseToolArgs(call.call.function.arguments);
+  return isCodeTaskArguments(args) ? args : null;
 }
 
 /** The prompt a code task was given; empty when its arguments carry none. */
 export function taskPrompt(call: FlowCall): string {
-  const brief = parseToolArgs(call.call?.function?.arguments).brief;
-  return typeof brief === "string" ? brief : "";
+  return taskArguments(call)?.brief ?? "";
 }
 
 /** A call's status as a code task's block shows it. */
@@ -426,9 +416,7 @@ export function FlowView({
   const calls = flow.steps.flatMap((step) => step.calls);
   const failedCalls = calls.filter((call) => callError(call, generating)).length;
   const mutations = calls.filter((call) => isMutation(call.info)).length;
-  const model = flow.steps
-    .map((step) => turnMeta(step).model)
-    .find((value): value is string => typeof value === "string");
+  const model = flow.steps.map((step) => turnMeta(step).model).find((value) => value !== undefined);
   const status = generationStatus(stats, generating);
   const statLabels = generationStats(stats, failedCalls);
   const answered = flow.steps.some((step) => stepText(step));

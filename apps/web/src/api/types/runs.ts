@@ -121,6 +121,79 @@ export type ToolCall = {
   function: { name: string; arguments: string };
 };
 
+/*
+ * A tool call's arguments are JSON text the model wrote to the tool's schema. Each type below names
+ * the parameters of a group of built-in tools that the run view reads, with the type the schema
+ * gives each one; a parameter the model left out is absent.
+ */
+
+/** A note tool's arguments (`note_find`, `note_get`, `note_write`, `note_delete`, and the older `artifact_*` and `note_read`/`note_list`). */
+export type NoteToolArguments = {
+  query?: string;
+  path?: string;
+  key?: string;
+  /** The level an older `note_list` listed. */
+  scope?: string;
+};
+
+/** A record tool's arguments: the collection it works in, the search it runs, and the record it names. */
+export type RecordToolArguments = { collection?: string; query?: string; id?: number };
+
+/** A file tool's arguments (`file_find`, `file_fetch`, `file_put`, `file_delete`): the search, the file, and the home path it shares. */
+export type FileToolArguments = { query?: string; path?: string; home_path?: string };
+
+/** Where a note or file call points: the level it names, or the display path it reads or lists under. */
+export type ToolLevelArguments = { level?: string; path?: string; path_prefix?: string };
+
+/** A `shell` call's arguments: the command, and whether it runs in the background. */
+export type ShellArguments = { command?: string; background?: boolean };
+
+/** A `shell_status` call's arguments: the background command it checks, and whether it stops it. */
+export type ShellStatusArguments = { id?: string; stop?: boolean };
+
+/** A `file_read` call's arguments: the file, and the line it reads from. */
+export type FileReadArguments = { path?: string; offset?: number };
+
+/** A `code_search` call's arguments: the pattern, whether it matches lines or file names, and where. */
+export type CodeSearchArguments = { pattern?: string; mode?: string; path?: string };
+
+/** A `code_task` call's arguments: the brief, the repository, and the harness session it resumes. */
+export type CodeTaskArguments = { brief?: string; repo?: string; session_id?: string };
+
+/** The name a call gives the script (`script_run`, `script_create`) or the secret (`secret_store`) it works on. */
+export type NamedToolArguments = { name?: string };
+
+/** A `report_issue` call's arguments: the issue's summary. */
+export type ReportIssueArguments = { summary?: string };
+
+/** A `browse` call's arguments: the task it delegates, and the page it starts from. */
+export type BrowseArguments = { task?: string; start?: string };
+
+/** A step-by-step browser tool's arguments: the page it opens, and the way it scrolls. */
+export type BrowserToolArguments = { url?: string; direction?: string };
+
+/**
+ * A Studio tool's arguments: the agent it addresses, by id, by the target it names or by name, and
+ * what an edit it proposes does to the note, table or routine it names.
+ */
+export type StudioToolArguments = {
+  agent_id?: string;
+  target_agent_id?: string;
+  agent_name?: string;
+  action?: string;
+  key?: string;
+  name?: string;
+  collection?: string;
+  /** The connection tool `studio_call_connection_tool` calls. */
+  tool?: string;
+};
+
+/** A Builder tool's arguments: the capability search it runs, and the connector it describes. */
+export type BuilderToolArguments = { query?: string; server_ref?: string };
+
+/** A bundled search connector's arguments (Tavily, TwitterAPI.io): the query, the account and the post it reads. */
+export type ConnectorToolArguments = { query?: string; user?: string; id?: string };
+
 export type SystemMessage = { role: "system"; content: string };
 
 export type UserMessage = { role: "user"; content: string };
@@ -257,6 +330,16 @@ export type RunMessage = {
   /** The cost stored beside the message: a model reply's, or a tool result's spend such as a `browse` call's; null when it records none. */
   cost_usd: number | null;
 };
+
+/**
+ * What a conversation's message records about its step, in a run or a coach conversation alike:
+ * its generation, the completion a model call records, and the call a tool result records.
+ */
+export type StepMetadata = { generation?: number } & Partial<CompletionMetadata> &
+  Partial<ToolResultMetadata>;
+
+/** A recorded message of a model conversation, a run's or a coach's, as its steps read it. */
+export type StepMessage = Omit<RunMessage, "metadata"> & { metadata: StepMetadata };
 
 /** An uploaded chat image the operator attached to a direct-chat message. */
 export type ChatAttachment = {

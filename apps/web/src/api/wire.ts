@@ -2,6 +2,7 @@
 
 import type { ErrorReply, ValidationProblem } from "./client";
 import type { ConnectorAuthField, LookupItem } from "./types/access";
+import type { NovncUi, RfbConnection } from "./types/agents";
 import type {
   BuilderWidget,
   ConnectScope,
@@ -11,6 +12,24 @@ import type {
   QuestionOption,
   QuestionWidget,
 } from "./types/builder";
+import type {
+  BrowseArguments,
+  BrowserToolArguments,
+  BuilderToolArguments,
+  CodeSearchArguments,
+  CodeTaskArguments,
+  ConnectorToolArguments,
+  FileReadArguments,
+  FileToolArguments,
+  NamedToolArguments,
+  NoteToolArguments,
+  RecordToolArguments,
+  ReportIssueArguments,
+  ShellArguments,
+  ShellStatusArguments,
+  StudioToolArguments,
+  ToolLevelArguments,
+} from "./types/runs";
 import type { SecretRequest, SecretRequestAsked } from "./types/secrets";
 import type {
   AccessChange,
@@ -171,6 +190,120 @@ export function isErrorReply(value: unknown): value is ErrorReply {
   const { detail } = value;
   if (isString(detail) || isListOf(detail, isValidationProblem)) return true;
   return isJsonObject(detail) && isString(detail.message);
+}
+
+/** Whether a value is a number, or left out. */
+function isOptionalNumber(value: unknown): value is number | undefined {
+  return value === undefined || isNumber(value);
+}
+
+/** Whether a value is a JSON object whose every named parameter is text, or left out. */
+function hasTextParameters(value: unknown, names: readonly string[]): value is JsonObject {
+  return isJsonObject(value) && hasFields(value, names, isOptionalString);
+}
+
+/** Whether a tool call's arguments are a note tool's: its query, path, key and listed level, as text. */
+export function isNoteToolArguments(value: unknown): value is NoteToolArguments {
+  return hasTextParameters(value, ["query", "path", "key", "scope"]);
+}
+
+/** Whether a tool call's arguments are a record tool's: its collection and query as text, its record's id a number. */
+export function isRecordToolArguments(value: unknown): value is RecordToolArguments {
+  return hasTextParameters(value, ["collection", "query"]) && isOptionalNumber(value.id);
+}
+
+/** Whether a tool call's arguments are a file tool's: its query, path and home path, as text. */
+export function isFileToolArguments(value: unknown): value is FileToolArguments {
+  return hasTextParameters(value, ["query", "path", "home_path"]);
+}
+
+/** Whether a tool call's arguments name where it points: its level, path and path prefix, as text. */
+export function isToolLevelArguments(value: unknown): value is ToolLevelArguments {
+  return hasTextParameters(value, ["level", "path", "path_prefix"]);
+}
+
+/** Whether a tool call's arguments are a `shell` call's: its command as text, `background` true or false. */
+export function isShellArguments(value: unknown): value is ShellArguments {
+  return hasTextParameters(value, ["command"]) && isOptionalBoolean(value.background);
+}
+
+/** Whether a tool call's arguments are a `shell_status` call's: its id as text, `stop` true or false. */
+export function isShellStatusArguments(value: unknown): value is ShellStatusArguments {
+  return hasTextParameters(value, ["id"]) && isOptionalBoolean(value.stop);
+}
+
+/** Whether a tool call's arguments are a `file_read` call's: its path as text, its offset a number. */
+export function isFileReadArguments(value: unknown): value is FileReadArguments {
+  return hasTextParameters(value, ["path"]) && isOptionalNumber(value.offset);
+}
+
+/** Whether a tool call's arguments are a `code_search` call's: its pattern, mode and path, as text. */
+export function isCodeSearchArguments(value: unknown): value is CodeSearchArguments {
+  return hasTextParameters(value, ["pattern", "mode", "path"]);
+}
+
+/** Whether a tool call's arguments are a `code_task` call's: its brief, repository and session, as text. */
+export function isCodeTaskArguments(value: unknown): value is CodeTaskArguments {
+  return hasTextParameters(value, ["brief", "repo", "session_id"]);
+}
+
+/** Whether a tool call's arguments name its script or secret as text. */
+export function isNamedToolArguments(value: unknown): value is NamedToolArguments {
+  return hasTextParameters(value, ["name"]);
+}
+
+/** Whether a tool call's arguments are a `report_issue` call's: its summary as text. */
+export function isReportIssueArguments(value: unknown): value is ReportIssueArguments {
+  return hasTextParameters(value, ["summary"]);
+}
+
+/** Whether a tool call's arguments are a `browse` call's: its task and start page, as text. */
+export function isBrowseArguments(value: unknown): value is BrowseArguments {
+  return hasTextParameters(value, ["task", "start"]);
+}
+
+/** Whether a tool call's arguments are a browser tool's: its URL and direction, as text. */
+export function isBrowserToolArguments(value: unknown): value is BrowserToolArguments {
+  return hasTextParameters(value, ["url", "direction"]);
+}
+
+/** Whether a tool call's arguments are a Studio tool's: the agent, action and subject it names, as text. */
+export function isStudioToolArguments(value: unknown): value is StudioToolArguments {
+  return hasTextParameters(value, [
+    "agent_id",
+    "target_agent_id",
+    "agent_name",
+    "action",
+    "key",
+    "name",
+    "collection",
+    "tool",
+  ]);
+}
+
+/** Whether a tool call's arguments are a Builder tool's: its query and connector, as text. */
+export function isBuilderToolArguments(value: unknown): value is BuilderToolArguments {
+  return hasTextParameters(value, ["query", "server_ref"]);
+}
+
+/** Whether a tool call's arguments are a bundled search connector's: its query, account and post, as text. */
+export function isConnectorToolArguments(value: unknown): value is ConnectorToolArguments {
+  return hasTextParameters(value, ["query", "user", "id"]);
+}
+
+const RFB_METHODS = ["focus", "sendKey", "clipboardPasteFrom", "addEventListener"] as const;
+
+/** Whether a value is noVNC's RFB connection: it has every method the clipboard bridge calls. */
+export function isRfbConnection(value: unknown): value is RfbConnection {
+  if (typeof value !== "object" || value === null) return false;
+  return RFB_METHODS.every((method) => typeof Reflect.get(value, method) === "function");
+}
+
+/** Whether a value is noVNC's UI module: an object whose RFB connection is one, or not there yet. */
+export function isNovncUi(value: unknown): value is NovncUi {
+  if (typeof value !== "object" || value === null) return false;
+  const rfb: unknown = Reflect.get(value, "rfb");
+  return rfb === undefined || rfb === null || isRfbConnection(rfb);
 }
 
 /** Whether a value is a connector's item a lookup stores: an object whose id, name and symbol are text. */

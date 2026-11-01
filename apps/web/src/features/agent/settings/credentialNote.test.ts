@@ -46,13 +46,16 @@ function read(check: CredentialCheck): string | null {
 }
 
 function readPart(part: NotePart): string {
-  if (typeof part === "string") return part;
+  if ("text" in part) return part.text;
   return "code" in part ? part.code : `[${part.tab}]`;
 }
 
 test("says why the credentials could not be checked, muted", () => {
   const note = harnessCredentialNote(check({}, { error: "Network down" }), now);
-  assert.deepEqual(note, { muted: true, parts: ["Couldn't check its credentials: Network down"] });
+  assert.deepEqual(note, {
+    muted: true,
+    parts: [{ text: "Couldn't check its credentials: Network down" }],
+  });
 });
 
 test("says nothing while the credentials load", () => {

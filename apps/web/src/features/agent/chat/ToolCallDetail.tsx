@@ -13,8 +13,9 @@ import {
   ToolCallTags,
   cn,
 } from "@guildsrun/ui";
+import type { StepMessage } from "../../../api/types/runs";
 import type { FlowCall } from "../runs/runFlowModel";
-import type { RunMessage } from "../runs/toolFormat";
+import type { JsonTreeValue } from "../runs/toolFormat";
 import {
   callArguments,
   callMetadata,
@@ -85,7 +86,8 @@ const markdownViews = [
 
 type PayloadProps = {
   text: string;
-  json: unknown;
+  /** The body as JSON, when it is an object or an array; null for text. */
+  json: JsonTreeValue | null;
   what: string;
   markdown?: boolean;
 };
@@ -95,7 +97,7 @@ type PayloadProps = {
  * rendered Markdown when `markdown` is set.
  */
 function Payload({ text, json, what, markdown = false }: PayloadProps) {
-  const structured = json !== null && typeof json === "object";
+  const structured = json !== null;
   const views = structured ? treeViews : markdown ? markdownViews : null;
   const [raw, setRaw] = useState(false);
   return (
@@ -138,7 +140,7 @@ function ArgumentsPane({ call }: ArgumentsPaneProps) {
   );
 }
 
-type ReturnedPayloadProps = { result: RunMessage };
+type ReturnedPayloadProps = { result: StepMessage };
 
 function ReturnedPayload({ result }: ReturnedPayloadProps) {
   const returned = returnedData(result);
@@ -310,15 +312,18 @@ function DetailPane({ view, call, run, onView }: DetailPaneProps) {
   );
 }
 
-const callViews: { value: DetailView; label: string }[] = [
+/** A view a call opens on, as its switch offers it. */
+type DetailViewOption = { value: DetailView; label: string };
+
+const callViews: DetailViewOption[] = [
   { value: "arguments", label: "Arguments" },
   { value: "result", label: "Result" },
   { value: "metadata", label: "Metadata" },
 ];
 
-const taskDiffView: { value: DetailView; label: string } = { value: "diff", label: "Diff" };
+const taskDiffView = { value: "diff", label: "Diff" } satisfies DetailViewOption;
 
-const taskLogView: { value: DetailView; label: string } = { value: "log", label: "Log" };
+const taskLogView = { value: "log", label: "Log" } satisfies DetailViewOption;
 
 /** The views a call opens on: a code task's diff and log once it has them. */
 function detailViews(call: FlowCall, runId: string | undefined) {
