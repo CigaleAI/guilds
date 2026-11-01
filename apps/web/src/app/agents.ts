@@ -14,7 +14,12 @@ const artStyles = [
   "clay",
 ] as const;
 
-function styleAndSeed(shape: string): { style: string; seed: string } {
+type ArtStyle = (typeof artStyles)[number];
+
+/** An agent's mascot: the art style drawing it and the seed that varies it within the style. */
+type Mascot = { style: ArtStyle; seed: string };
+
+function mascotOf(shape: string): Mascot {
   const text = shape.trim().toLowerCase();
   for (const style of artStyles) {
     if (text.startsWith(`${style}:`) || text.startsWith(`${style}-`)) {
@@ -24,10 +29,13 @@ function styleAndSeed(shape: string): { style: string; seed: string } {
   return { style: "clay", seed: text };
 }
 
+/** How an agent looks everywhere: its identity colour, and the image of its mascot drawn in it. */
+export type AgentLook = { tone: IdentityTone; src?: string };
+
 /** How an agent looks everywhere: its identity colour and its mascot, drawn in that colour. */
-export function agentLook(agent: Styled): { tone: IdentityTone; src?: string } {
+export function agentLook(agent: Styled): AgentLook {
   const tone = identityToneOf(agent.avatar_color);
-  const { style, seed } = styleAndSeed(agent.avatar_shape);
+  const { style, seed } = mascotOf(agent.avatar_shape);
   if (!seed) return { tone };
   const color = identityHex[tone].slice(1);
   return { tone, src: `/avatars/${style}.svg?seed=${encodeURIComponent(seed)}&color=${color}` };

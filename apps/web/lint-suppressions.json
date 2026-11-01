@@ -9,21 +9,6 @@
       "count": 1
     }
   },
-  "src/app/agents.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 4
-    }
-  },
-  "src/app/format.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    }
-  },
-  "src/app/returnTrail.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 3
-    }
-  },
   "src/features/admin/InstanceTab.tsx": {
     "anti-slop/no-known-value-widening": {
       "count": 4
