@@ -4,6 +4,7 @@ import type { OrgPolicy } from "../policy/index.js";
 import {
   ConversationRunner,
   generationLive,
+  type CoachEvent,
   type ConversationTool,
 } from "../conversation/runner.js";
 import {
@@ -75,11 +76,11 @@ export class StudioRunner {
     });
   }
 
-  subscribe(sessionId: string): EventQueue<[string, Record<string, unknown>]> {
+  subscribe(sessionId: string): EventQueue<CoachEvent> {
     return this.inner.subscribe(sessionId);
   }
 
-  unsubscribe(sessionId: string, queue: EventQueue<[string, Record<string, unknown>]>): void {
+  unsubscribe(sessionId: string, queue: EventQueue<CoachEvent>): void {
     this.inner.unsubscribe(sessionId, queue);
   }
 

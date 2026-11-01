@@ -2,14 +2,14 @@ import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import { appendRunError, insertMessage, nextSeq, type MessageRow } from "../db/runs.js";
 import type { MessageMetadata, MessagePayload } from "../db/schema/index.js";
 import { messageItem } from "../db/views.js";
-import { EventQueue } from "../lib/event.js";
+import { EventQueue, type EventPayloads, type StreamEvent } from "../lib/event.js";
 import type { JsonObject } from "../lib/json.js";
 import { errorMessage, errorName, redactText, writeLog } from "../observability/log.js";
 
 const EVENT_QUEUE_LIMIT = 4096;
 
 /** One event on a run's stream: its name and its data. */
-export type RunEvent = [string, Record<string, unknown>];
+export type RunEvent = StreamEvent<EventPayloads>;
 
 /** The db/ functions a run's messages and errors are written through. */
 export type RunEventsDatabase = {

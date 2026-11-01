@@ -18,13 +18,11 @@ import { sql } from "drizzle-orm";
 import { agents } from "./agents.js";
 import { bytea, timestamptz } from "./columns.js";
 import { guilds, orgs, users } from "./organisations.js";
-import type { JsonValue } from "../../lib/json.js";
+import { JsonObjectSchema, type JsonValue } from "../../lib/json.js";
 import { isToolSchema, type ToolSchema } from "../../lib/tool-schema.js";
 
 /** A connector slug: also the folder name, the server id after `mcp_`, and a folder connector's tool prefix. */
 export const SLUG_PATTERN = "^[a-z][a-z0-9_]{0,62}$";
-
-const JsonObject = Type.Record(Type.String(), Type.Unknown());
 
 // The kind runs isToolSchema, so the check covers every depth and Value.Check agrees with the type.
 TypeRegistry.Set("ToolSchema", (_schema, value) => isToolSchema(value));
@@ -117,7 +115,7 @@ export const ManifestSchema = Type.Object(
         { additionalProperties: false },
       ),
     ),
-    settings_schema: Type.Optional(JsonObject),
+    settings_schema: Type.Optional(JsonObjectSchema),
     state: Type.Optional(
       Type.Object({ key: Type.String({ pattern: "^[a-z][a-z0-9_]*$" }), intro: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
     ),

@@ -1,3 +1,5 @@
+import { Kind, Type, TypeRegistry } from "@sinclair/typebox";
+
 /** A value JSON carries: a string, number, boolean or null, or an array or object of them. */
 export type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject;
 
@@ -19,6 +21,16 @@ export function isJsonObject(value: unknown): value is JsonObject {
   if (prototype !== Object.prototype && prototype !== null) return false;
   return Object.values(value).every((field) => field === undefined || isJsonValue(field));
 }
+
+// The kinds run isJsonValue and isJsonObject, so Value.Check agrees with the type at every depth.
+TypeRegistry.Set("JsonValue", (_schema, value) => isJsonValue(value));
+TypeRegistry.Set("JsonObject", (_schema, value) => isJsonObject(value));
+
+/** The TypeBox schema of a JSON value, checked at every depth. */
+export const JsonValueSchema = Type.Unsafe<JsonValue>({ [Kind]: "JsonValue" });
+
+/** The TypeBox schema of a JSON object, checked at every depth. */
+export const JsonObjectSchema = Type.Unsafe<JsonObject>({ [Kind]: "JsonObject", type: "object" });
 
 /** Whether a JSON value is an object, and not an array or a scalar. */
 export function isObjectNode(value: JsonValue): value is JsonObject {

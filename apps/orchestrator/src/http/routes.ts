@@ -40,9 +40,7 @@ import { registerUserRoutes } from "./user-routes.js";
 export async function registerDomainRoutes(app: RouteApp, deps: RouteDeps): Promise<void> {
   const notifications = operatorNotifications(deps.db);
 
-  deps.generation?.groupChat.observe((guildId, event, data) =>
-    notifications.observe(guildId, event, data),
-  );
+  deps.generation?.groupChat.observe((guildId, ...event) => notifications.observe(guildId, ...event));
   await registerMeRoutes(app, deps);
   await registerCodingRoutes(app, deps);
   await registerModelProviderRoutes(app, deps);

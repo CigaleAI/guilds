@@ -1,4 +1,5 @@
 import { Type, type Static } from "@sinclair/typebox";
+import { JsonObjectSchema, type JsonObject as JsonObjectValue } from "../../lib/json.js";
 
 // The Drive API responses the connector reads, and the parts of a remote Drive tool result it
 // filters. Each object keeps the fields Drive sends beyond the ones named; Drive leaves out a
@@ -56,8 +57,8 @@ export const ErrorBody = Type.Object({
 export const Reasoned = Type.Object({ reason: Type.String() });
 
 /** Any JSON object: a remote tool result, its structured content, or a page of its listing. */
-export const JsonObject = Type.Record(Type.String(), Type.Unknown());
-export type JsonObject = Static<typeof JsonObject>;
+export const JsonObject = JsonObjectSchema;
+export type JsonObject = JsonObjectValue;
 
 /** A text part of a remote tool result's content. */
 export const TextPart = Type.Object({ text: Type.String() });

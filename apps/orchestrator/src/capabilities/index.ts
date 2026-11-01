@@ -97,10 +97,21 @@ export type CapabilityHit = {
 /** A capability search: its text, and the best twenty hits. */
 export type CapabilitySearch = { query: string; hits: CapabilityHit[] };
 
+/** A group of native tools the Builder offers a role: its id, what it is for, and the tools in it. */
+export type NativeCapabilityGroup = {
+  id: (typeof NATIVE_CAPABILITY_GROUPS)[number]["id"];
+  label: string;
+  description: string;
+  tools: string[];
+};
+
+/** A tool every agent is offered, whatever its groups. */
+export type AlwaysOfferedTool = { name: string; description: string };
+
 /** What the Builder and the recipe pages can use: native tools, connectors, models, plan caps and room, and the month's usage. */
 export type BuilderCapabilities = {
-  native: typeof NATIVE_CAPABILITY_GROUPS;
-  always_offered: typeof ALWAYS_OFFERED_TOOLS;
+  native: NativeCapabilityGroup[];
+  always_offered: AlwaysOfferedTool[];
   browser: typeof BROWSER_CAPABILITY;
   coding: typeof CODING_CAPABILITY;
   catalog: CapabilityServer[];
@@ -259,8 +270,8 @@ export class CapabilityService {
     const month = utcMonth();
     const usage = usageFields(await getOrgMonthlyUsage(this.db, ctx.orgId, month));
     const payload: BuilderCapabilities = {
-      native: NATIVE_CAPABILITY_GROUPS,
-      always_offered: ALWAYS_OFFERED_TOOLS,
+      native: NATIVE_CAPABILITY_GROUPS.map((group) => ({ ...group, tools: [...group.tools] })),
+      always_offered: ALWAYS_OFFERED_TOOLS.map((tool) => ({ ...tool })),
       browser: BROWSER_CAPABILITY,
       coding: CODING_CAPABILITY,
       catalog,
