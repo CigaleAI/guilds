@@ -2,8 +2,8 @@ import type { RuntimeAccess } from "../access/runtime.js";
 import { isOptimizedBrowserOn } from "../agents/config.js";
 import { RUN_PROJECTION_POLICY_VERSION } from "../conversation/projection.js";
 import type { GroupMessageRow } from "../db/group-chat.js";
-import type { AgentRow } from "../db/agents.js";
-import type { RunRow } from "../db/runs.js";
+import type { AgentRow, GuildAgentRow } from "../db/agents.js";
+import type { NewRun, RunRow } from "../db/runs.js";
 import type {
   AgentConfig,
   RunConfigSnapshot,
@@ -70,7 +70,7 @@ export type PreparedRun = {
   agent: AgentRow;
   config: AgentConfig;
   access: RuntimeAccess;
-  members: Array<Record<string, unknown>>;
+  members: GuildAgentRow[];
   historyRows: GroupMessageRow[];
   standing: string;
   system: string;
@@ -82,11 +82,9 @@ export type PreparedRun = {
 };
 
 /** The hashes of the prompts a prepared run starts from, as the run row keeps them. */
-export function preparedPromptHashes(prepared: PreparedRun): {
-  systemPromptHash: string;
-  taskPromptHash: string;
-  memoryPromptHash: string;
-} {
+export function preparedPromptHashes(
+  prepared: PreparedRun,
+): Pick<NewRun, "systemPromptHash" | "taskPromptHash" | "memoryPromptHash"> {
   return {
     systemPromptHash: promptHash(prepared.standing),
     taskPromptHash: promptHash(prepared.task),

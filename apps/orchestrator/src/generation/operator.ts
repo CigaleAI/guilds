@@ -2,7 +2,7 @@ import type { AttachmentRef, AttachmentService } from "../attachments/index.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
 import { listMessages, type RunRow } from "../db/runs.js";
-import { messageItem } from "../db/views.js";
+import { messageItem, type RunView } from "../db/views.js";
 import { RunRequestError } from "./errors.js";
 import type { GenerationLoop } from "./index.js";
 
@@ -15,11 +15,11 @@ export type RunOperatorServices = {
   attachments: AttachmentService | null;
 };
 
-/** A run an operator opens: its first message, or null for a run that waits for one, and its images. */
-export type RunStart = { message: unknown; attachmentIds: string[] };
+/** A run an operator opens: its first message, absent or null for a run that waits for one, and its images. */
+export type RunStart = { message?: string | null | undefined; attachmentIds: string[] };
 
-/** A message an operator adds to a run, and its images. */
-export type RunMessage = { content: unknown; attachmentIds: string[] };
+/** A message an operator adds to a run, its text absent or null when it carries only images, and its images. */
+export type RunMessage = { content?: string | null | undefined; attachmentIds: string[] };
 
 /** The generation loop; a box without one runs nothing (503). */
 export function generationLoopOf(services: Pick<RunOperatorServices, "loop">): GenerationLoop {
@@ -29,17 +29,14 @@ export function generationLoopOf(services: Pick<RunOperatorServices, "loop">): G
   return services.loop;
 }
 
-/** A request's `attachment_ids`: attachment ids, none when absent. */
-export function validateAttachmentIds(raw: unknown): string[] {
+/** A request's `attachment_ids`, trimmed; none when absent. A blank id is refused. */
+export function validateAttachmentIds(raw: string[] | null | undefined): string[] {
   if (raw === undefined || raw === null) {
     return [];
   }
-  if (!Array.isArray(raw)) {
-    throw new RunRequestError(422, "attachment_ids must be an array");
-  }
   const ids: string[] = [];
   for (const item of raw) {
-    if (typeof item !== "string" || !item.trim()) {
+    if (!item.trim()) {
       throw new RunRequestError(422, "attachment_ids must be attachment ids");
     }
     ids.push(item.trim());
@@ -75,10 +72,10 @@ export async function startRun(
   agent: AgentRow,
   userId: string,
   start: RunStart,
-): Promise<{ run: Record<string, unknown>; withMessage: boolean }> {
+): Promise<{ run: RunView; withMessage: boolean }> {
   const ids = start.attachmentIds;
   const raw = start.message;
-  const message = raw === undefined || raw === null ? (ids.length ? "" : null) : String(raw);
+  const message = raw === undefined || raw === null ? (ids.length ? "" : null) : raw;
   if (message !== null && !message.trim() && !ids.length) {
     throw new RunRequestError(422, "message must not be empty");
   }
@@ -92,14 +89,13 @@ export async function postRunMessage(
   services: RunOperatorServices,
   run: RunRow,
   message: RunMessage,
-): Promise<Record<string, unknown>> {
+): Promise<RunView> {
   const agent = await getAgent(services.db, run.agent_id);
   if (agent === null) {
     throw new RunRequestError(404, "run not found");
   }
   const ids = message.attachmentIds;
-  const content =
-    message.content === undefined || message.content === null ? "" : String(message.content);
+  const content = message.content ?? "";
   if (!content.trim() && !ids.length) {
     throw new RunRequestError(422, "content must not be empty");
   }

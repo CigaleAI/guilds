@@ -10,7 +10,7 @@ import {
 } from "../db/runs.js";
 import type { RunMetadata } from "../db/schema/index.js";
 import { listDueSchedules, markScheduleFired, type ScheduleRow } from "../db/schedules.js";
-import { iso, runItem } from "../db/views.js";
+import { iso, runItem, type RunView } from "../db/views.js";
 import { DeliveryBusyError, DeliveryCreateError, type GroupDelivery } from "../groupchat/delivery.js";
 import { groupChatUserMessage, wakeMessage } from "../groupchat/wake.js";
 import { newId } from "../lib/ids.js";
@@ -108,7 +108,7 @@ export class Runs {
     message: string | null,
     attachments: AttachmentRef[] = [],
     startedByUserId: string | null = null,
-  ): Promise<Record<string, unknown>> {
+  ): Promise<RunView> {
     const opening = message === null && attachments.length ? "" : message;
     const prepared = await this.preparation.prepare(agentId, null);
     if (opening !== null && this.generations.isAgentBusy(agentId)) {

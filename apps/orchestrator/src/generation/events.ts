@@ -3,6 +3,7 @@ import { appendRunError, insertMessage, nextSeq, type MessageRow } from "../db/r
 import type { MessageMetadata, MessagePayload } from "../db/schema/index.js";
 import { messageItem } from "../db/views.js";
 import { EventQueue } from "../lib/event.js";
+import type { JsonObject } from "../lib/json.js";
 import { errorMessage, errorName, redactText, writeLog } from "../observability/log.js";
 
 const EVENT_QUEUE_LIMIT = 4096;
@@ -61,7 +62,7 @@ export class RunEvents {
     }
   }
 
-  async publish(runId: string, event: string, data: Record<string, unknown>): Promise<void> {
+  async publish(runId: string, event: string, data: JsonObject): Promise<void> {
     for (const queue of [...(this.subscribers.get(runId) ?? [])]) {
       if (queue.size >= EVENT_QUEUE_LIMIT) {
         this.unsubscribe(runId, queue);
@@ -84,26 +85,26 @@ export class RunEvents {
   }
 
   /** Logs the error, keeps it, redacted, in the run's errors, and publishes it. */
-  async recordError(turn: RunGeneration, operation: string, error: unknown): Promise<void> {
+  async recordError(turn: RunGeneration, operation: string, cause: unknown): Promise<void> {
     writeLog(
       "error",
-      errorMessage(error),
+      errorMessage(cause),
       {
         run_id: turn.log.run_id ?? turn.runId,
         agent_id: turn.log.agent_id ?? null,
         guild_id: turn.log.guild_id ?? null,
         operation,
-        error_type: errorName(error),
+        error_type: errorName(cause),
       },
-      error,
+      cause,
     );
     const now = new Date();
     const entry = {
       at: now.toISOString(),
       generation: turn.generation,
       operation,
-      error_type: errorName(error),
-      message: redactText(errorMessage(error)),
+      error_type: errorName(cause),
+      message: redactText(errorMessage(cause)),
     };
     await this.db.appendRunError(turn.runId, entry, now);
     await this.publish(turn.runId, "run.error", entry);

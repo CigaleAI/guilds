@@ -136,7 +136,7 @@ describe("generation", { concurrency: 1 }, () => {
       temperature: 0,
       max_tokens: 32,
       max_steps: 30,
-      tools: [{ type: "function" as const, function: { name: "script_run", arguments: "{}" } }],
+      tools: [{ type: "function" as const, function: { name: "script_run", description: "", parameters: { type: "object" } } }],
       secrets: [],
     };
     const db = new FakeDB(snapshot);
@@ -195,7 +195,7 @@ describe("generation", { concurrency: 1 }, () => {
       max_steps: 30,
       max_tool_calls: 1,
       max_input_tokens: 100000,
-      tools: [{ type: "function" as const, function: { name: "script_run", arguments: "{}" } }],
+      tools: [{ type: "function" as const, function: { name: "script_run", description: "", parameters: { type: "object" } } }],
       secrets: [],
     };
     const db = new FakeDB(snapshot);
@@ -438,7 +438,7 @@ describe("generation", { concurrency: 1 }, () => {
       temperature: 0,
       max_tokens: 32,
       max_steps: 30,
-      tools: [{ type: "function" as const, function: { name: "notion_search", arguments: "{}" } }],
+      tools: [{ type: "function" as const, function: { name: "notion_search", description: "", parameters: { type: "object" } } }],
       mcp: [
         {
           connection_id: "conn_u",
@@ -489,7 +489,7 @@ describe("generation", { concurrency: 1 }, () => {
       temperature: 0,
       max_tokens: 32,
       max_steps: 30,
-      tools: [{ type: "function" as const, function: { name: "notion_search", arguments: "{}" } }],
+      tools: [{ type: "function" as const, function: { name: "notion_search", description: "", parameters: { type: "object" } } }],
       mcp: [
         {
           connection_id: "conn_u",
@@ -1135,7 +1135,7 @@ describe("generation", { concurrency: 1 }, () => {
       temperature: 0,
       max_tokens: 32,
       max_steps: 30,
-      tools: [{ type: "function" as const, function: { name: "note_find", arguments: "{}" } }],
+      tools: [{ type: "function" as const, function: { name: "note_find", description: "", parameters: { type: "object" } } }],
       secrets: [],
     };
     const db = new FakeDB(snapshot);
@@ -1168,8 +1168,8 @@ describe("generation", { concurrency: 1 }, () => {
       max_steps: 30,
       browser: true,
       tools: [
-        { type: "function" as const, function: { name: "browser_navigate", arguments: "{}" } },
-        { type: "function" as const, function: { name: "note_find", arguments: "{}" } },
+        { type: "function" as const, function: { name: "browser_navigate", description: "", parameters: { type: "object" } } },
+        { type: "function" as const, function: { name: "note_find", description: "", parameters: { type: "object" } } },
       ],
       secrets: [],
     };
@@ -1613,7 +1613,7 @@ describe("generation", { concurrency: 1 }, () => {
       temperature: 0,
       max_tokens: 32,
       max_steps: 30,
-      tools: [{ type: "function" as const, function: { name: "script_run", arguments: "{}" } }],
+      tools: [{ type: "function" as const, function: { name: "script_run", description: "", parameters: { type: "object" } } }],
       secrets: [],
     };
     const db = new FakeDB(snapshot);
@@ -1671,7 +1671,7 @@ describe("generation", { concurrency: 1 }, () => {
       temperature: 0,
       max_tokens: 32,
       max_steps: 30,
-      tools: [{ type: "function" as const, function: { name: "script_run", arguments: "{}" } }],
+      tools: [{ type: "function" as const, function: { name: "script_run", description: "", parameters: { type: "object" } } }],
       secrets: [],
     };
     const db = new FakeDB(snapshot);
@@ -1880,7 +1880,7 @@ describe("generation", { concurrency: 1 }, () => {
       temperature: 0,
       max_tokens: 32,
       max_steps: 30,
-      tools: [{ type: "function" as const, function: { name: "script_run", arguments: "{}" } }],
+      tools: [{ type: "function" as const, function: { name: "script_run", description: "", parameters: { type: "object" } } }],
       scripts: [
         {
           id: "script_1",
@@ -2110,7 +2110,7 @@ describe("generation", { concurrency: 1 }, () => {
       tools: [],
       secrets: [],
     };
-    const db = new FakeDB({ ...snapshot, tools: [{ type: "function" as const, function: { name: "script_run", arguments: "{}" } }] });
+    const db = new FakeDB({ ...snapshot, tools: [{ type: "function" as const, function: { name: "script_run", description: "", parameters: { type: "object" } } }] });
     db.agent.org_id = "org_1";
     db.secrets = [liveSecret()];
     const sandboxes = new FakeSandboxes();

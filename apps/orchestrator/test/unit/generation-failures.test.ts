@@ -177,7 +177,7 @@ describe("generation failures carried on past", { concurrency: 1 }, () => {
   test("a_connection_tool_call_that_fails_is_its_result_and_is_logged", async () => {
     restoreLive();
     const db = new FakeDB({
-      tools: [{ type: "function" as const, function: { name: "notion_search", arguments: "{}" } }],
+      tools: [{ type: "function" as const, function: { name: "notion_search", description: "", parameters: { type: "object" } } }],
       mcp: [
         {
           connection_id: "conn_u",

@@ -6,6 +6,7 @@ import { isOptimizedBrowserOn } from "../../src/agents/config.js";
 import { generationLive } from "../../src/generation/completion.js";
 import { liveOfferedNames, toolSchemaName, type OfferedToolSettings } from "../../src/generation/offered-tools.js";
 import { setInstanceKeys } from "../../src/instance/integrations.js";
+import type { FunctionTool } from "../../src/lib/tool-schema.js";
 import { logWriter } from "../../src/observability/log.js";
 import { assertAvailableScriptName } from "../../src/scripts/validation.js";
 import { BROWSE_TOOL, BROWSER_TOOLS, OPTIMIZED_BROWSER_TOOLS } from "../../src/toolbox/browser.js";
@@ -79,7 +80,7 @@ async function generateWithLiveConfig(
     max_tokens: 32,
     max_steps: 30,
     browser: true,
-    tools: frozen.map((name) => ({ type: "function" as const, function: { name, arguments: "{}" } })),
+    tools: frozen.map((name) => ({ type: "function" as const, function: { name, description: "", parameters: { type: "object" } } })),
     secrets: [],
   });
   db.agent.config = { ...AGENT_CONFIG, ...config };
@@ -96,7 +97,7 @@ async function generateWithLiveConfig(
   const stream = fakeStream(db, []);
   const offered: string[][] = [];
   generationLive.streamCompletion = (request) => {
-    offered.push((request.tools ?? []).map((tool) => toolSchemaName(tool as Record<string, unknown>)));
+    offered.push((request.tools ?? []).map((tool) => toolSchemaName(tool as FunctionTool)));
     return stream(request);
   };
   const operations = await loggedOperations(async () => {
@@ -212,7 +213,7 @@ async function createdOptimizedRun(): Promise<{ tools: string[]; system: string 
   loop.generateInBackground = () => undefined;
   db.agent.config = { ...AGENT_CONFIG, browser: true, browser_optimized: true, browser_model: AGENT_CONFIG.model };
   await loop.runs.createRun("a_1", null);
-  const snapshot = db.run?.config_snapshot as { tools: Array<Record<string, unknown>> };
+  const snapshot = db.run?.config_snapshot as { tools: FunctionTool[] };
   return { tools: snapshot.tools.map(toolSchemaName), system: String(db.create_args?.system_content) };
 }
 

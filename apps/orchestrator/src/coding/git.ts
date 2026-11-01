@@ -1,3 +1,4 @@
+import { Type, type Static } from "@sinclair/typebox";
 import { GithubInstallationGoneError, parseGithubUrl, type TokenPermissions } from "../github/index.js";
 import {
   loginAccount,
@@ -26,7 +27,8 @@ const CODING_PERMISSIONS: TokenPermissions = { contents: "write", pull_requests:
 export type GitIdentity = { name: string; email: string };
 
 /** A repository the helper's `git_setup` could not clone, and git's error for it. */
-export type CloneFailure = { name: string; error: string };
+export const CloneFailure = Type.Object({ name: Type.String(), error: Type.String() });
+export type CloneFailure = Static<typeof CloneFailure>;
 
 /** The agent's git identity: its name, and a valid email (guild override or the platform default). */
 export function agentGitIdentity(
