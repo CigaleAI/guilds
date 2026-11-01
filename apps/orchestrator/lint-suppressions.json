@@ -345,30 +345,7 @@
     }
   },
   "src/coding/git.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 6
-    },
-    "limits/erased-return-type": {
-      "count": 1
-    },
     "limits/inline-parameter-type": {
-      "count": 3
-    }
-  },
-  "src/coding/guild-repositories.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    },
-    "limits/erased-alias": {
       "count": 1
     }
   },
@@ -378,26 +355,8 @@
     }
   },
   "src/coding/repositories.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 2
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 11
-    },
     "complexity": {
-      "count": 2
-    },
-    "limits/erased-return-type": {
-      "count": 3
-    },
-    "typescript/consistent-type-assertions": {
-      "count": 3
+      "count": 1
     }
   },
   "src/compose.ts": {
@@ -758,9 +717,6 @@
       "count": 2
     },
     "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
       "count": 1
     }
   },

@@ -9,6 +9,7 @@ import {
   codingRepositories,
   validateGithubRepositories,
   validateRepositoryInput,
+  type CodingRepository,
 } from "../../src/coding/repositories.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import {
@@ -37,6 +38,7 @@ import {
   manifestAction,
 } from "../../src/github/manifest.js";
 import { HEX_MASTER_KEY, storeKeys } from "../helpers/env.js";
+import { codingRepository } from "../helpers/repositories.js";
 import { connectionRow } from "../helpers/servers.js";
 
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -408,10 +410,10 @@ test("repository tokens: one per connection, limited to its repositories, refres
   const tokens = new RepositoryTokens(
     db as never,
     [
-      { name: "shop", url: "https://github.com/acme/shop", connection_id: "conn_a", github_id: 101 },
-      { name: "site", url: "https://github.com/acme/site.git", connection_id: "conn_a", github_id: "102" },
-      { name: "infra", url: "https://github.com/other/infra", connection_id: "conn_b", github_id: 201 },
-      { name: "public", url: "https://git.example.com/public.git", connection_id: null },
+      codingRepository({ name: "shop", url: "https://github.com/acme/shop", connection_id: "conn_a", github_id: 101 }),
+      codingRepository({ name: "site", url: "https://github.com/acme/site.git", connection_id: "conn_a", github_id: 102 }),
+      codingRepository({ name: "infra", url: "https://github.com/other/infra", connection_id: "conn_b", github_id: 201 }),
+      codingRepository({ name: "public", url: "https://git.example.com/public.git", connection_id: null }),
     ],
     { app: APP, fetch: fake.fetch, masterKey: MASTER, now: () => now },
   );
@@ -479,10 +481,10 @@ test("a repository stored without an id finds it by its path, and one GitHub ren
       ],
     });
   });
-  const rows: Array<Record<string, unknown>> = [
-    { name: "shop", url: "https://github.com/OldName/old-shop", connection_id: "conn_a", github_id: 101 },
-    { name: "site", url: "https://github.com/acme/site", connection_id: "conn_a" },
-    { name: "docs", url: "https://github.com/OldOwner/docs", connection_id: "conn_a" },
+  const rows: CodingRepository[] = [
+    codingRepository({ name: "shop", url: "https://github.com/OldName/old-shop", connection_id: "conn_a", github_id: 101 }),
+    codingRepository({ name: "site", url: "https://github.com/acme/site", connection_id: "conn_a" }),
+    codingRepository({ name: "docs", url: "https://github.com/OldOwner/docs", connection_id: "conn_a" }),
   ];
   const tokens = new RepositoryTokens(db as never, rows, { app: APP, fetch: fake.fetch, masterKey: MASTER });
   await tokens.mint();
@@ -516,7 +518,7 @@ test("a repository the App no longer reaches is named, whether it has an id or n
   });
   const unnamed = new RepositoryTokens(
     db as never,
-    [{ name: "gone", url: "https://github.com/acme/gone", connection_id: "conn_a" }],
+    [codingRepository({ name: "gone", url: "https://github.com/acme/gone", connection_id: "conn_a" })],
     { app: APP, fetch: reaches101.fetch, masterKey: MASTER },
   );
   await assert.rejects(
@@ -527,8 +529,8 @@ test("a repository the App no longer reaches is named, whether it has an id or n
   const revoked = new RepositoryTokens(
     db as never,
     [
-      { name: "shop", url: "https://github.com/acme/shop", connection_id: "conn_a", github_id: 101 },
-      { name: "infra", url: "https://github.com/acme/infra", connection_id: "conn_a", github_id: 103 },
+      codingRepository({ name: "shop", url: "https://github.com/acme/shop", connection_id: "conn_a", github_id: 101 }),
+      codingRepository({ name: "infra", url: "https://github.com/acme/infra", connection_id: "conn_a", github_id: 103 }),
     ],
     { app: APP, fetch: reaches101.fetch, masterKey: MASTER },
   );
@@ -541,13 +543,13 @@ test("a repository the App no longer reaches is named, whether it has an id or n
 test("a disconnected connection is refused; GitHub refusing the installation names the login it was minted for", async () => {
   const offline = new RepositoryTokens(
     { getMcpConnection: async (id: string) => connection(id, "disconnected", 11) } as never,
-    [{ name: "shop", url: "https://github.com/acme/shop", connection_id: "conn_a" }],
+    [codingRepository({ name: "shop", url: "https://github.com/acme/shop", connection_id: "conn_a" })],
     { app: APP, masterKey: MASTER },
   );
   await assert.rejects(offline.mint(), (error: unknown) => error instanceof RepositoryAccessError && /disconnected/.test(error.message));
   const gone = new RepositoryTokens(
     { getMcpConnection: async (id: string) => connection(id, "connected", 11) } as never,
-    [{ name: "shop", url: "https://github.com/acme/shop", connection_id: "conn_a", github_id: 101 }],
+    [codingRepository({ name: "shop", url: "https://github.com/acme/shop", connection_id: "conn_a", github_id: 101 })],
     { app: APP, masterKey: MASTER, fetch: fakeFetch(() => json(403, { message: "suspended" })).fetch },
   );
   await assert.rejects(
@@ -606,8 +608,8 @@ test("a GitHub login stores the repositories its coding agents clone", () => {
   });
   const cloned = codingRepositories(
     [
-      { name: "shop", url: "https://github.com/acme/shop", default_branch: "main", connection_id: "conn_front" },
-      { name: "docs", url: "https://git.example.com/docs.git", default_branch: "main", connection_id: null },
+      codingRepository({ name: "shop", url: "https://github.com/acme/shop", default_branch: "main", connection_id: "conn_front" }),
+      codingRepository({ name: "docs", url: "https://git.example.com/docs.git", default_branch: "main", connection_id: null }),
     ],
     github,
   );
