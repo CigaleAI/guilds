@@ -1,5 +1,6 @@
 import { WAKE_TRIGGERS_MAX } from "../agents/validation.js";
-import type { WakeWindow, RecipeRole, RecipeSchedule, RecipeScript } from "../db/schema/index.js";
+import { ToolInputSchema, type WakeWindow, type RecipeRole, type RecipeSchedule, type RecipeScript } from "../db/schema/index.js";
+import { assertMatches } from "../lib/decode.js";
 import { RecipeError } from "./errors.js";
 import {
   asBool,
@@ -43,15 +44,23 @@ function parseHandle(value: unknown, path: string, fallback = ""): string {
   return name;
 }
 
+/** A script's parameters as a JSON Schema object, or null when the script declares none. */
+function parseParameters(value: unknown, path: string): ToolInputSchema | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  const parameters = assertObject(value, path);
+  assertMatches(ToolInputSchema, parameters, () => new RecipeError(`${path} must be a JSON Schema object`));
+  return parameters;
+}
+
 function parseScript(value: unknown, path: string): RecipeScript {
   const record = assertObject(value, path);
   assertKeys(record, ["name", "description", "parameters", "source", "secrets", "author"], path);
-  const parameters =
-    record.parameters === undefined || record.parameters === null ? null : assertObject(record.parameters, `${path}.parameters`);
   return {
     name: asString(record.name, `${path}.name`),
     description: asString(record.description, `${path}.description`),
-    parameters,
+    parameters: parseParameters(record.parameters, `${path}.parameters`),
     source: boundedText(record.source, `${path}.source`, RECIPE_TASK_MAX_BYTES),
     secrets: textList(record.secrets, `${path}.secrets`),
     author: parseAuthor(record.author, builderAuthor()),

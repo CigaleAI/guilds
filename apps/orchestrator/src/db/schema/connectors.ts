@@ -13,28 +13,25 @@ import {
   unique,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import { Type, type Static } from "@sinclair/typebox";
+import { Kind, Type, TypeRegistry, type Static } from "@sinclair/typebox";
 import { sql } from "drizzle-orm";
 import { agents } from "./agents.js";
 import { bytea, timestamptz } from "./columns.js";
 import { guilds, orgs, users } from "./organisations.js";
+import { isToolSchema, type ToolSchema } from "../../lib/tool-schema.js";
 
 /** A connector slug: also the folder name, the server id after `mcp_`, and a folder connector's tool prefix. */
 export const SLUG_PATTERN = "^[a-z][a-z0-9_]{0,62}$";
 
 const JsonObject = Type.Record(Type.String(), Type.Unknown());
 
-/**
- * A tool's input as a JSON Schema object: the keys the box reads, its `type`, `properties`
- * and `required`, beside whatever else the schema holds.
- */
-export const ToolInputSchema = Type.Object({
-  type: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])),
-  properties: Type.Optional(JsonObject),
-  required: Type.Optional(Type.Array(Type.String())),
-});
+// The kind runs isToolSchema, so the check covers every depth and Value.Check agrees with the type.
+TypeRegistry.Set("ToolSchema", (_schema, value) => isToolSchema(value));
 
-export type ToolInputSchema = Static<typeof ToolInputSchema> & { [keyword: string]: unknown };
+/** A tool's input as a JSON Schema object, every keyword tool calling reads checked at every depth. */
+export const ToolInputSchema = Type.Unsafe<ToolSchema>({ [Kind]: "ToolSchema", type: "object" });
+
+export type ToolInputSchema = ToolSchema;
 
 /** A header an endpoint's session sends beside its credential: a custom `X-` header, letters, digits, and dashes. */
 const HEADER_NAME_PATTERN = "^[Xx]-[A-Za-z0-9-]+$";

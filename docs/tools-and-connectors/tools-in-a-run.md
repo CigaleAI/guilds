@@ -94,13 +94,12 @@ Before a connector tool is called, an empty or blank string is
 dropped when its key is optional on the tool's schema, nested objects
 included. An empty string for a required key is sent as is.
 
-The orchestrator reads a schema's `type`, `description`, `format`,
-`required`, `properties`, `items`, `prefixItems`, `anyOf`, `oneOf` and
-`allOf`, at every depth. A schema in which one of them holds what JSON
-Schema does not allow there is not changed: a connector tool's reaches
-the model as declared, and its calls are sent as the model makes them.
-A script whose parameters are such a schema is offered without
-parameters.
+A tool schema whose `type`, `description`, `format`, `required`,
+`properties`, `items`, `prefixItems`, `anyOf`, `oneOf` or `allOf`
+holds, at any depth, what JSON Schema does not allow there is refused
+where it enters: a connector manifest, an admin's tool edit and a
+script's parameters are rejected, and a remote server's tool is listed
+with an empty object schema.
 
 ### Handlers
 

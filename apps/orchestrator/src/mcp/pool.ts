@@ -25,7 +25,7 @@ import { utcMonth } from "../db/usage.js";
 import { TOKEN_REFRESH_MS } from "../github/tokens.js";
 import { newId } from "../lib/ids.js";
 import { isJsonObject } from "../lib/json.js";
-import { isToolSchema, omitEmptyOptionalStrings } from "../lib/tool-schema.js";
+import { omitEmptyOptionalStrings } from "../lib/tool-schema.js";
 import { proxyFetch, type FetchFn } from "../net/http.js";
 import { writeLog } from "../observability/log.js";
 import type { OrgPolicy } from "../policy/index.js";
@@ -473,9 +473,8 @@ export class McpPool {
     try {
       const listed = listedFromRows(await this.database.listMcpTools(connection.id));
       const tool = listed.find((item) => item.remote_name === call.tool);
-      const schema = tool?.input_schema;
-      const argumentsForCall = isToolSchema(schema) && isJsonObject(call.arguments)
-        ? omitEmptyOptionalStrings(call.arguments, schema)
+      const argumentsForCall = tool !== undefined && isJsonObject(call.arguments)
+        ? omitEmptyOptionalStrings(call.arguments, tool.input_schema)
         : call.arguments;
       try {
         return await this.invokeCall(connection, server, { ...call, arguments: argumentsForCall });

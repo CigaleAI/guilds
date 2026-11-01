@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { isPlainRecord } from "../db/json.js";
-import type { ToolInputSchema } from "../db/schema/index.js";
+import { Value } from "@sinclair/typebox/value";
+import { ToolInputSchema } from "../db/schema/index.js";
 
 export const SCRIPTS_DIR = "scripts";
 export const SCRIPT_NAME = /^[a-z][a-z0-9_-]{0,62}$/;
@@ -118,7 +119,7 @@ export function validateScriptParameters(
   if (!isPlainRecord(value)) {
     throw new ScriptError("parameters must be a JSON object");
   }
-  if (value.type !== "object") {
+  if (value.type !== "object" || !Value.Check(ToolInputSchema, value)) {
     throw new ScriptError("parameters must be a JSON Schema object");
   }
   return value;

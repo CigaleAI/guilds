@@ -215,6 +215,15 @@ test("recipe schema rejects unknown keys and duplicate routine keys", () => {
   assert.throws(() => parseRecipe(linkedin), /duplicate routine key/);
 });
 
+test("a recipe script's parameters are a JSON Schema object at every depth", () => {
+  const recipe = linkedInNotionRecipe();
+  const script = { name: "lookup", description: "Look up", source: "print(1)\n", secrets: [], author: builderAuthor() };
+  recipe.roles[0]!.scripts = [{ ...script, parameters: { type: "object", properties: { id: { type: "string" } } } }];
+  assert.deepEqual(parseRecipe(recipe).roles[0]?.scripts[0]?.parameters, { type: "object", properties: { id: { type: "string" } } });
+  const role = { ...recipe.roles[0]!, scripts: [{ ...script, parameters: { type: "object", properties: { id: { required: true } } } }] };
+  assert.throws(() => parseRecipe({ ...recipe, roles: [role] }), /roles\[0\]\.scripts\[0\]\.parameters must be a JSON Schema object/);
+});
+
 test("recipe roles carry optional, capped wake triggers", () => {
   const recipe = linkedInNotionRecipe();
   const omitted = { ...recipe, roles: recipe.roles.map(({ wake_triggers: _omit, ...role }) => role) };
