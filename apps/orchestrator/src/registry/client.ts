@@ -10,7 +10,6 @@ import {
   registryPublicKey,
   RegistryError,
   RegistryFetchError,
-  RegistryIndexError,
   RegistryPackageError,
   type RegistryConnectorEntry,
   type RegistryIndex,
@@ -98,13 +97,7 @@ export class RegistryClient {
 
   async index(): Promise<RegistryIndex> {
     const body = await this.bytes("index.json", PACKAGE_MAX_BYTES);
-    let raw: unknown;
-    try {
-      raw = JSON.parse(body.toString("utf8"));
-    } catch {
-      throw new RegistryIndexError("registry index is not JSON");
-    }
-    const index = parseIndex(raw);
+    const index = parseIndex(body.toString("utf8"));
     if (this.publicKey) {
       assertSigned(index, this.publicKey);
     }

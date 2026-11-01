@@ -31,6 +31,9 @@ export type IntegrationProvides = {
   connectors?: readonly string[];
 };
 
+/** A store integration's values as they are stored: each field's trimmed text, by field name, an empty field left out. */
+export type IntegrationValues = Readonly<Record<string, string>>;
+
 export type Integration = {
   id: string;
   label: string;
@@ -45,7 +48,7 @@ export type Integration = {
    * `IntegrationValueError` that says why. It sees the values as they are stored: trimmed, with an
    * empty optional field left out.
    */
-  validate?(values: Readonly<Record<string, string>>): void;
+  validate?(values: IntegrationValues): void;
 };
 
 /** Values a write gives that the integration refuses beyond its fields. */
@@ -74,7 +77,7 @@ export type IntegrationStatus = {
 };
 
 /** A store integration's decrypted values with who wrote them, as the process holds them. */
-export type InstanceKeyRow = { values: Record<string, string>; updated_at: string; set_by: string | null };
+export type InstanceKeyRow = { values: IntegrationValues; updated_at: string; set_by: string | null };
 
 /** Every store integration's row, by integration id. */
 export type InstanceKeySnapshot = Readonly<Record<string, InstanceKeyRow>>;
@@ -244,7 +247,7 @@ export function setInstanceKeys(next: InstanceKeySnapshot): void {
   snapshot = next;
 }
 
-function sourcesOf(sources?: IntegrationSources): { env: NodeJS.ProcessEnv; keys: InstanceKeySnapshot } {
+function sourcesOf(sources?: IntegrationSources): Required<IntegrationSources> {
   return { env: sources?.env ?? process.env, keys: sources?.keys ?? snapshot };
 }
 
@@ -294,9 +297,9 @@ export function integrationState(integration: Integration, sources?: Integration
 /** Whether `values` holds a value under the name of every field of the integration. */
 function holdsEveryField<const I extends Integration>(
   integration: I,
-  values: Record<string, string>,
+  values: IntegrationValues,
 ): values is Record<FieldName<I>, string> {
-  return integration.fields.every((field) => typeof values[field.name] === "string");
+  return integration.fields.every((field) => Object.hasOwn(values, field.name));
 }
 
 /** Every field's trimmed value while the integration is on, else null. */

@@ -1,7 +1,8 @@
 import { SLUG_PATTERN } from "../db/schema/index.js";
 import { createPrivateKey, createPublicKey, sign, verify, type KeyObject } from "node:crypto";
 import { Type, type Static } from "@sinclair/typebox";
-import { Value } from "@sinclair/typebox/value";
+import { assertMatches } from "../lib/decode.js";
+import { dumpsCompact } from "../lib/json.js";
 
 /**
  * A registry's index: what it offers, one entry per published version. `path` is the package's
@@ -102,12 +103,15 @@ export class RegistryNotFoundError extends RegistryError {
   }
 }
 
-/** Checks a parsed index; throws `RegistryIndexError` naming the first problem. */
-export function parseIndex(raw: unknown): RegistryIndex {
-  if (!Value.Check(RegistryIndexSchema, raw)) {
-    const first = Value.Errors(RegistryIndexSchema, raw).First();
-    throw new RegistryIndexError(`registry index ${first ? `${first.path || "/"}: ${first.message}` : "is invalid"}`);
+/** The index a registry serves as JSON text; throws `RegistryIndexError` when it is not JSON, or naming the first problem. */
+export function parseIndex(text: string): RegistryIndex {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    throw new RegistryIndexError("registry index is not JSON");
   }
+  assertMatches(RegistryIndexSchema, raw, (problem) => new RegistryIndexError(`registry index ${problem}`));
   return raw;
 }
 
@@ -152,24 +156,10 @@ export function latestEntries<E extends { version: string }>(
     .sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
 }
 
-/** JSON with every object's keys sorted and no whitespace: the bytes a signature covers. */
-export function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map(canonicalJson).join(",")}]`;
-  }
-  if (value && typeof value === "object") {
-    const fields: [string, unknown][] = Object.entries(value);
-    const entries = fields
-      .filter(([, item]) => item !== undefined)
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-    return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`).join(",")}}`;
-  }
-  return JSON.stringify(value);
-}
-
+/** The bytes an index's signature covers: the index without it, as JSON with sorted keys and no whitespace. */
 function unsignedBytes(index: RegistryIndex): Buffer {
   const { signature: _signature, ...rest } = index;
-  return Buffer.from(canonicalJson(rest), "utf8");
+  return Buffer.from(dumpsCompact(rest), "utf8");
 }
 
 /** An Ed25519 public key from base64 SPKI DER, as `REGISTRY_PUBLIC_KEY` holds it. */

@@ -602,28 +602,6 @@
       "count": 2
     }
   },
-  "src/instance/integrations.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    }
-  },
-  "src/instance/keys.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 2
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    }
-  },
   "src/instrument.ts": {
     "limits/silent-catch": {
       "count": 1
@@ -964,30 +942,6 @@
   },
   "src/recipes/validate.ts": {
     "limits/inline-parameter-type": {
-      "count": 1
-    }
-  },
-  "src/registry/code.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
-    }
-  },
-  "src/registry/index.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 2
-    }
-  },
-  "src/registry/install.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
       "count": 1
     }
   },
