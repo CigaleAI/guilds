@@ -167,8 +167,11 @@ stays `pending` until its settings are saved
 OAuth logins leave the login pending and write its enabled binding on
 a successful callback ([OAuth](#oauth)). The GitHub App follows its
 own install flow ([GitHub](github.md#connect-flow)). A connector with
-auth `none` stores a pending login and its enabled binding at once,
-with no sign-in.
+auth `none` has no sign-in: its login and enabled binding are stored
+at once, with the form's settings. The login connects and its tools
+are listed at once, unless it lacks a required setting; then it stays
+`pending` until its settings are saved
+([Login settings](#login-settings)).
 
 ### Login settings
 

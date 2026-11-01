@@ -1,6 +1,6 @@
-// Starting an operator's connector login: a token login connects at once; an OAuth or GitHub
-// App login is stored pending and leaves for the provider's consent page.
-import { connect, connectDatabase } from "./connect-token.js";
+// Starting an operator's connector login: a token login and a login with no auth connect at
+// once; an OAuth or GitHub App login is stored pending and leaves for the provider's consent page.
+import { connect, connectDatabase, validateConnectSettings } from "./connect-token.js";
 import { getMcpServer, type LoadedConnector } from "../connectors/servers.js";
 import { connectionMetadata, type ConnectionView } from "./view.js";
 import { validateOwner, type OwnerScope } from "../credentials/validate.js";
@@ -8,6 +8,7 @@ import { isPlainRecord } from "../db/json.js";
 import { connectMcp, getMcpConnectionForOwner } from "../db/mcp.js";
 import { githubAppConfig, userAuthorizationUrl } from "../github/index.js";
 import { newId } from "../lib/ids.js";
+import { relistTools } from "./pool.js";
 import { assertActsFor, ConnectionError, ownerOrgId, serverVisible } from "./visibility.js";
 import {
   authorizationUrl,
@@ -66,6 +67,15 @@ async function requireConnectable(
   return server;
 }
 
+/** The settings a login's form gives, none when it gives none; settings that are not an object are a 422. */
+function formSettings(form: Payload): Payload | undefined {
+  const settings = form.settings;
+  if (settings !== undefined && !isPlainRecord(settings)) {
+    throw new ConnectionError(422, "settings must be an object");
+  }
+  return settings;
+}
+
 /** Connects a token login at once with the form's credentials and settings. */
 async function connectWithToken(
   services: ConnectFlowServices,
@@ -73,22 +83,55 @@ async function connectWithToken(
   owner: ConnectionOwner,
   form: Payload,
 ): Promise<StartedConnection> {
-  const settings = form.settings;
-  if (settings !== undefined && !isPlainRecord(settings)) {
-    throw new ConnectionError(422, "settings must be an object");
-  }
+  const settings = formSettings(form);
   const input = { server, ...owner, credentials: form, ...(settings ? { settings } : {}) };
   const { connection } = await connect(connectDatabase(services.db), services, input, new Date());
   await fillFromEndpoint(services, connection, server);
   return { connection: connectionMetadata(connection), githubState: null };
 }
 
+/**
+ * Stores a login with no auth, bound to its owner, with the form's settings: connected at once
+ * when they hold every setting the server requires, and its tools listed; pending otherwise,
+ * until its settings are saved.
+ */
+async function connectWithoutAuth(
+  services: ConnectFlowServices,
+  server: LoadedConnector,
+  owner: ConnectionOwner,
+  form: Payload,
+): Promise<StartedConnection> {
+  const settings = validateConnectSettings(server, formSettings(form) ?? {});
+  const [ciphertext, nonce] = encrypt(services, {});
+  const connection = await connectMcp(
+    services.db,
+    {
+      connectionId: newId("conn"),
+      bindingId: newId("bind"),
+      serverId: server.id,
+      ...owner,
+      ciphertext,
+      nonce,
+      oauthState: null,
+      bind: true,
+      status: settings.kind === "complete" ? "connected" : "pending",
+      accountHint: "",
+      settings: settings.values,
+    },
+    new Date(),
+  );
+  if (services.mcp !== null && connection.status === "connected") {
+    await relistTools(services.mcp, connection, server, { force: true });
+  }
+  await fillFromEndpoint(services, connection, server);
+  return { connection: connectionMetadata(connection), githubState: null };
+}
+
 /** A sign-in's first hop: the provider's consent page, the state it returns with, and the payload kept until then. */
 type SignIn = {
-  authorize: string | undefined;
-  oauthState: string | null;
+  authorize: string;
+  oauthState: string;
   payload: Payload;
-  bind: boolean;
 };
 
 /** A GitHub App sign-in starts with user authorization; the callback then picks or installs. */
@@ -110,7 +153,6 @@ function githubSignIn(ownerScope: string, redirectUri: string, replaces: boolean
     authorize: userAuthorizationUrl(github, oauthState, redirectUri),
     oauthState,
     payload: pendingOauthPayload("", redirectUri, replaces),
-    bind: false,
   };
 }
 
@@ -135,7 +177,6 @@ async function browserSignIn(
       authorize,
       oauthState,
       payload: pendingOauthPayload(verifier, redirectUri, replaces),
-      bind: false,
     };
   } catch (error) {
     if (error instanceof OAuthUnsupportedError) {
@@ -146,9 +187,9 @@ async function browserSignIn(
 }
 
 /**
- * Starts a login for an owner the user acts for. A token login connects at once; an OAuth or
- * GitHub App login is stored pending and answers the provider's authorization URL; a login with
- * no auth is stored pending and bound.
+ * Starts a login for an owner the user acts for. A token login connects at once; a login with no
+ * auth is bound and connects at once unless its required settings are missing; an OAuth or
+ * GitHub App login is stored pending and answers the provider's authorization URL.
  */
 export async function startConnection(
   services: ConnectFlowServices,
@@ -169,13 +210,14 @@ export async function startConnection(
   if (existing !== null && existing.status === "connected") {
     throw new ConnectionError(409, "already connected; disconnect first");
   }
-  const replaces = existing !== null;
   const github = isGithubApp(server);
+  if (!github && !startsBrowserOauth(server)) {
+    return connectWithoutAuth(services, server, { ownerScope, ownerId }, start.form);
+  }
+  const replaces = existing !== null;
   const signIn: SignIn = github
     ? githubSignIn(ownerScope, start.redirectUri, replaces)
-    : startsBrowserOauth(server)
-      ? await browserSignIn(services, server, start.redirectUri, replaces)
-      : { authorize: undefined, oauthState: null, payload: {}, bind: true };
+    : await browserSignIn(services, server, start.redirectUri, replaces);
   const [ciphertext, nonce] = encrypt(services, signIn.payload);
   const row = await connectMcp(
     db,
@@ -188,17 +230,17 @@ export async function startConnection(
       ciphertext,
       nonce,
       oauthState: signIn.oauthState,
-      bind: signIn.bind,
+      bind: false,
       status: "pending",
       accountHint: "",
     },
     new Date(),
   );
-  const connection: StartedLogin = connectionMetadata(row);
-  if (signIn.authorize !== undefined) {
-    connection.authorization_url = signIn.authorize;
+  const connection: StartedLogin = {
+    ...connectionMetadata(row),
+    authorization_url: signIn.authorize,
     // Where the consent step sends the operator, shown before they go.
-    connection.authorization_host = new URL(signIn.authorize).host;
-  }
+    authorization_host: new URL(signIn.authorize).host,
+  };
   return { connection, githubState: github ? signIn.oauthState : null };
 }

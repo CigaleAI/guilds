@@ -1,10 +1,16 @@
 import assert from "node:assert/strict";
+import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
+import { installConnectors } from "../../src/connectors/index.js";
+import { folderEntry } from "../../src/connectors/registry.js";
 import { getMcpServer } from "../../src/connectors/servers.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import { connect } from "../../src/seed/connect.js";
-import { connectMcp, getMcpConnection, saveMcpConnection } from "../../src/db/mcp.js";
+import { projectConnectors } from "../../src/seed/system.js";
+import { listBindingsForConnection } from "../../src/db/bindings.js";
+import { connectMcp, getMcpConnection } from "../../src/db/mcp.js";
+import { ConnectError } from "../../src/mcp/connect-token.js";
 import { ConnectionError } from "../../src/mcp/visibility.js";
 import { completeOAuthCallback, type OAuthCallback } from "../../src/mcp/connect-callback.js";
 import type { ConnectFlowServices } from "../../src/mcp/connect-flow.js";
@@ -19,7 +25,19 @@ import { agentScripts } from "../../src/scripts/catalog.js";
 import { agentSchedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
+import { restoreConnectorsAfterEach } from "../helpers/installed.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import quotesAdapter from "../helpers/quotes/adapter.js";
+import quotesManifest from "../helpers/quotes/connector.json" with { type: "json" };
+
+restoreConnectorsAfterEach();
+
+/** Quotes signed in to with no auth: a connector with no sign-in whose settings require pinned symbols. */
+const OPEN_QUOTES = folderEntry(
+  { ...quotesManifest, auth: { kind: "none" } },
+  quotesAdapter,
+  fileURLToPath(new URL("../helpers/quotes", import.meta.url)),
+);
 
 const dbName = uniqueDbName("agent_platform_connect_flow");
 const JSON_HOME = {
@@ -64,7 +82,9 @@ test(
   { timeout: 60_000 },
   async () => {
     process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
+    installConnectors([OPEN_QUOTES]);
     const database = await connect(await createIsolatedDatabase(dbName));
+    await projectConnectors(database.pool);
     const notes = new NotesStore(tempDir("guilds-connect-flow-notes-"), templatesRoot());
     await notes.ensureSystemPrompt();
     const db = database.pool;
@@ -111,29 +131,38 @@ test(
       await assert.rejects(start(openId, "platform"), refusedWith(400, /platform/));
       await assert.rejects(start("srv_missing"), refusedWith(404, /server/));
       await assert.rejects(start(tokenId, "org", { settings: "x" }), refusedWith(422, /settings/));
+      await assert.rejects(start(openId, "org", { settings: "x" }), refusedWith(422, /settings/));
       const opened = await start(openId);
       assert.equal(opened.githubState, null);
-      assert.equal(opened.connection.status, "pending");
+      assert.equal(opened.connection.status, "connected", "a login with no auth and no settings connects at once");
       assert.equal(
         opened.connection.authorization_url,
         undefined,
         "a login with no auth leaves for no consent page",
       );
-      const openLogin = await getMcpConnection(db, String(opened.connection.id));
-      assert.ok(openLogin);
-      await saveMcpConnection(
-        db,
-        openLogin.id,
-        {
-          ciphertext: openLogin.ciphertext,
-          nonce: openLogin.nonce,
-          status: "connected",
-          accountHint: "",
-          oauthState: null,
-        },
-        new Date(),
+      const openBindings = await listBindingsForConnection(db, String(opened.connection.id));
+      assert.deepEqual(
+        openBindings.map((binding) => binding.enabled),
+        [true],
+        "a login with no auth is bound to its owner at once",
       );
       await assert.rejects(start(openId), refusedWith(409, /already connected/));
+
+      await assert.rejects(
+        start(OPEN_QUOTES.id, "org", { settings: { symbols: [] } }),
+        (error: unknown) => error instanceof ConnectError && error.status === 422,
+      );
+      const awaiting = await start(OPEN_QUOTES.id);
+      assert.equal(awaiting.connection.status, "pending", "a login with no auth waits for its required settings");
+      assert.equal(
+        (await listBindingsForConnection(db, String(awaiting.connection.id))).length,
+        1,
+        "a login with no auth that waits for its settings is bound",
+      );
+      const pinned = await start(OPEN_QUOTES.id, "org", { settings: { symbols: [{ id: "btc" }] } });
+      assert.equal(pinned.connection.status, "connected", "a login with no auth given its required settings connects");
+      const pinnedLogin = await getMcpConnection(db, String(pinned.connection.id));
+      assert.deepEqual(pinnedLogin?.settings, { symbols: [{ id: "btc" }] });
 
       const github = await getMcpServer(db, "mcp_github");
       assert.ok(github, "core installs the GitHub connector");
