@@ -16,6 +16,7 @@ import {
   pendingOauth,
   pendingReplaces,
   tokenPayload,
+  type LoginTokens,
 } from "../oauth/index.js";
 
 import {
@@ -28,7 +29,6 @@ import {
   messageOf,
   oauthOf,
   type ConnectFlowServices,
-  type Payload,
 } from "./connect-flow.js";
 import { completeGithubAuth } from "./github-install.js";
 import { relistTools } from "./pool.js";
@@ -84,7 +84,7 @@ async function finishOauthConnection(
   services: ConnectFlowServices,
   row: McpConnectionRow,
   server: LoadedConnector,
-  stored: Payload,
+  stored: LoginTokens,
 ): Promise<void> {
   const now = new Date();
   const [ciphertext, nonce] = encrypt(services, stored);
@@ -110,7 +110,7 @@ async function finishOauthConnection(
 async function awaitSettings(
   services: ConnectFlowServices,
   row: McpConnectionRow,
-  stored: Payload,
+  stored: LoginTokens,
 ): Promise<void> {
   const now = new Date();
   const [ciphertext, nonce] = encrypt(services, stored);
