@@ -1,5 +1,5 @@
 import type { ToolCall } from "../../../api/types/runs";
-import { isJsonObject, isJsonValue, parseJson, type JsonValue } from "../../../api/wire";
+import { isJsonObject, isJsonValue, isNumber, parseJson, type JsonValue } from "../../../api/wire";
 import { formatCost } from "../../../app/format";
 import { diffstat } from "../chat/changes";
 
@@ -449,7 +449,9 @@ function browseOutcome(metadata: Record<string, unknown>): string {
     typeof metadata.status === "string" && metadata.status !== "complete" ? metadata.status : "";
   const usage = metadata.browser_usage;
   const cost =
-    usage && typeof usage === "object" && "cost_usd" in usage ? formatCost(usage.cost_usd) : "";
+    usage && typeof usage === "object" && "cost_usd" in usage && isNumber(usage.cost_usd)
+      ? formatCost(usage.cost_usd)
+      : "";
   return [status.replaceAll("_", " "), cost].filter(Boolean).join(" · ");
 }
 

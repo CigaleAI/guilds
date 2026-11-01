@@ -16,7 +16,7 @@ export type Place = {
   fullLabel: string;
 };
 
-const agentTabs: Record<string, string> = {
+const agentTabs = {
   "": "Chat",
   history: "Chat",
   prompt: "Prompt",
@@ -28,9 +28,9 @@ const agentTabs: Record<string, string> = {
   secrets: "Secrets",
   usage: "Usage",
   settings: "Settings",
-};
+} satisfies Record<string, string>;
 
-const guildTabs: Record<string, string> = {
+const guildTabs = {
   "": "Group chat",
   settings: "Settings",
   state: "State",
@@ -39,9 +39,9 @@ const guildTabs: Record<string, string> = {
   tools: "Tools",
   secrets: "Secrets",
   usage: "Usage",
-};
+} satisfies Record<string, string>;
 
-const pages: Record<string, string> = {
+const pages = {
   "": "Home",
   inbox: "Inbox",
   settings: "Settings",
@@ -51,7 +51,7 @@ const pages: Record<string, string> = {
   studio: "Studio",
   tables: "Tables",
   applies: "Recipes",
-};
+} satisfies Record<string, string>;
 
 function tabLabel(tabs: Record<string, string>, tab: string): string {
   return tabs[tab] ?? tab.charAt(0).toUpperCase() + tab.slice(1);
