@@ -1,5 +1,3 @@
-import { Type } from "@sinclair/typebox";
-import { Value } from "@sinclair/typebox/value";
 import { writeBinding } from "../access/bindings.js";
 import { loadAccessView } from "../access/view.js";
 import { getMcpServerBySlug } from "../connectors/servers.js";
@@ -157,11 +155,14 @@ function closeAsSkipped(step: ApplyStep, now: Date): void {
   step.closed_at = now.toISOString();
 }
 
+/** A checklist with one step skipped, and the warning the skip adds to the apply. */
+export type ChecklistSkip = { checklist: ApplyStep[]; warning: ApplyWarning };
+
 export function skipApplyChecklistStep(
   checklist: ApplyStep[],
   stepId: string,
   now = new Date(),
-): { checklist: ApplyStep[]; warning: ApplyWarning } {
+): ChecklistSkip {
   const next = checklist.map((item) => ({ ...item }));
   const step = next.find((item) => item.id === stepId);
   if (!step) {
@@ -320,11 +321,6 @@ type StepCheck = { ok: true } | { ok: false; reason: string };
 
 const PASSED: StepCheck = { ok: true };
 
-/** The guild's servers as the access view lists them: each one's slug, status, and connection. */
-const AccessServers = Type.Array(
-  Type.Object({ slug: Type.Unknown(), status: Type.Unknown(), connection_id: Type.Optional(Type.Unknown()) }),
-);
-
 /** The connection the guild reaches `slug` through, when it is connected. */
 async function guildConnection(apply: RecipeApply, row: RecipeApplyRow, slug: string): Promise<string | null> {
   const access = await loadAccessView(apply.db, {
@@ -332,12 +328,11 @@ async function guildConnection(apply: RecipeApply, row: RecipeApplyRow, slug: st
     guildId: applyGuild(row),
     viewScope: "guild",
   });
-  const servers = Value.Check(AccessServers, access.mcp) ? access.mcp : [];
-  const mcp = servers.find((item) => item.slug === slug);
+  const mcp = access.mcp.find((item) => item.slug === slug);
   if (mcp?.status !== "connected") {
     return null;
   }
-  return typeof mcp.connection_id === "string" ? mcp.connection_id : "";
+  return mcp.connection_id ?? "";
 }
 
 /** A connection step passes once the guild reaches the server; its overlays are then bound and their step closes. */

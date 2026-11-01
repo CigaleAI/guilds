@@ -268,7 +268,10 @@ test("unreviewed builder fields and import reset", () => {
     role.browser.author = resetReview(role.browser.author);
   }
   assert.ok(unreviewedFields(imported).includes("roles.watcher.task"));
-  assert.equal(hasForbiddenSecrets({ ciphertext: "nope" }), true);
+  assert.equal(hasForbiddenSecrets(imported), false);
+  const leaking = parseRecipe(linkedInNotionRecipe());
+  leaking.roles[0]!.config.ciphertext = "nope";
+  assert.equal(hasForbiddenSecrets(leaking), true);
 });
 
 test("LinkedIn and crypto fixtures are structurally valid without per-field confirm", () => {

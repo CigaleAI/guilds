@@ -6,13 +6,13 @@ import type { AccessEntry } from "../artifacts/types.js";
 export type CapturedGuild = { guildId: string; members: Map<string, string> };
 
 /**
- * The guild's mode on an item, and the roles of the members the item's access list lets write
- * where the guild's mode does not.
+ * What an item's access list gives a captured guild: the guild's mode on it, null when the guild
+ * does not reach it, and the roles of the members it lets write where the guild's mode does not.
  */
-function guildAccessOn(
-  entries: AccessEntry[],
-  guild: CapturedGuild,
-): { guild: AccessMode | null; writers: string[] } {
+type GuildAccess = Pick<RecipeCollection, "writers"> & { guild: AccessMode | null };
+
+/** The guild's mode on an item, and the roles of the members its access list lets write. */
+function guildAccessOn(entries: AccessEntry[], guild: CapturedGuild): GuildAccess {
   const guildMode = effectiveAccess(entries, { guildId: guild.guildId, agentId: null });
   if (guildMode === "write") {
     return { guild: guildMode, writers: [] };

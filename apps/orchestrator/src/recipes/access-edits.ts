@@ -1,4 +1,4 @@
-import { isPlainRecord } from "../db/json.js";
+import { isJsonObject } from "../lib/json.js";
 import { RecipeError } from "./errors.js";
 import { asBool, asString, assertObject } from "./parse-fields.js";
 import type { RecipeConnection, RecipeDocument } from "../db/schema/index.js";
@@ -128,7 +128,7 @@ function parseAccessEdit(item: unknown, index: number): AccessEdit {
 
 /** The edits of a request: a list, or `{ edits }`. */
 export function parseAccessEdits(value: unknown): AccessEdit[] {
-  const raw = Array.isArray(value) ? value : isPlainRecord(value) ? value.edits : undefined;
+  const raw = Array.isArray(value) ? value : isJsonObject(value) ? value.edits : undefined;
   if (!Array.isArray(raw)) {
     throw new RecipeError("edits must be an array");
   }

@@ -479,11 +479,6 @@
       "count": 1
     }
   },
-  "src/db/schema/recipe-document.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    }
-  },
   "src/db/views.ts": {
     "anti-slop/no-runtime-typeof": {
       "count": 1
@@ -1126,15 +1121,7 @@
       "count": 1
     }
   },
-  "src/recipes/access.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 2
-    }
-  },
   "src/recipes/capture.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 2
-    },
     "limits/inline-parameter-type": {
       "count": 2
     },
@@ -1143,19 +1130,13 @@
     }
   },
   "src/recipes/checklist.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
     "limits/inline-parameter-type": {
       "count": 2
     }
   },
   "src/recipes/library.ts": {
     "anti-slop/no-unknown-parameters": {
-      "count": 2
+      "count": 1
     }
   },
   "src/recipes/lifecycle.ts": {
@@ -1172,66 +1153,17 @@
     }
   },
   "src/recipes/parse-fields.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 2
-    },
     "limits/erased-return-type": {
-      "count": 2
-    }
-  },
-  "src/recipes/parse-roles.ts": {
-    "anti-slop/no-unsafe-dictionary-type": {
       "count": 1
-    }
-  },
-  "src/recipes/parse-sections.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 3
     }
   },
   "src/recipes/plan.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 2
-    },
     "limits/inline-parameter-type": {
       "count": 2
-    }
-  },
-  "src/recipes/prepare.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 4
-    },
-    "limits/erased-return-type": {
-      "count": 1
     }
   },
   "src/recipes/review.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 2
-    },
     "limits/inline-parameter-type": {
-      "count": 1
-    }
-  },
-  "src/recipes/rewrite.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    }
-  },
-  "src/recipes/schema.ts": {
-    "anti-slop/no-unknown-parameters": {
       "count": 1
     }
   },

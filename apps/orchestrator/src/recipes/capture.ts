@@ -1,4 +1,3 @@
-import { Type } from "@sinclair/typebox";
 import { getMcpServerBySlug } from "../connectors/servers.js";
 import {
   HARNESSES,
@@ -9,7 +8,6 @@ import {
   type RecipeRole,
   type RecipeSecret,
 } from "../db/schema/index.js";
-import { assertMatches } from "../lib/decode.js";
 import { newId } from "../lib/ids.js";
 import { collectTaskEmbeds } from "../artifacts/embeds.js";
 import { guildTables } from "../artifacts/guild-tables.js";
@@ -18,6 +16,7 @@ import type { ArtifactActor } from "../artifacts/types.js";
 import type { ArtifactStore } from "../artifacts/store.js";
 import type { ArtifactRow } from "../db/artifacts.js";
 import { loadAccessView } from "../access/view.js";
+import type { AccessView, McpServerAccess } from "../access/types.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { Schedules } from "../schedules/service.js";
 import { rowTiming } from "../schedules/timing.js";
@@ -66,7 +65,10 @@ export type CaptureDeps = {
   schedules: Schedules;
 };
 
-export function recipeScope(value: unknown): "org" | "guild" | "agent" {
+/** The scope a recipe recommends for what a server's login or binding scope reaches; the guild for any scope a recipe does not carry. */
+export function recipeScope(
+  value: McpServerAccess["connection_owner_scope"] | McpServerAccess["source_scope"],
+): "org" | "guild" | "agent" {
   return value === "org" || value === "agent" ? value : "guild";
 }
 
@@ -144,36 +146,6 @@ export function portableRoleConfig(config: AgentConfig): RecipeRole["config"] {
   };
 }
 
-/** A tool as the access view lists it: its name, and whether the agent has it on. */
-const ToolView = Type.Object({ name: Type.String(), enabled: Type.Boolean() });
-
-/** A server as an agent's access view lists it, with the fields a recipe connection is captured from. */
-const ServerView = Type.Object({
-  slug: Type.String(),
-  enabled: Type.Boolean(),
-  auth: Type.Optional(Type.Unknown()),
-  description: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-  setup_hint: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-  org_owned: Type.Optional(Type.Boolean()),
-  source_scope: Type.Optional(Type.Unknown()),
-  connection_owner_scope: Type.Optional(Type.Unknown()),
-  tools: Type.Optional(Type.Array(ToolView)),
-});
-
-type ServerView = (typeof ServerView)["static"];
-
-/** The parts of an agent's access view a capture reads: its native tools and its servers. */
-const AgentAccess = Type.Object({
-  tools: Type.Array(ToolView),
-  mcp: Type.Optional(Type.Array(ServerView)),
-});
-
-type AgentAccess = (typeof AgentAccess)["static"];
-
-function uncapturable(problem: string): RecipeError {
-  return new RecipeError(`the guild cannot be captured: unexpected view at ${problem}`);
-}
-
 /** The guild fields a capture reads. */
 export type CapturedGuildRow = Pick<GuildRow, "id" | "org_id" | "name" | "about" | "description" | "group_agent_message_limit">;
 
@@ -246,7 +218,7 @@ async function captureSchedules(capture: Capture, agentId: string, role: string)
 }
 
 /** The role an agent becomes: its config made portable, its task, scripts, routines and native tools. */
-async function captureRole(capture: Capture, agent: GuildAgentRow, access: AgentAccess): Promise<RecipeRole> {
+async function captureRole(capture: Capture, agent: GuildAgentRow, access: AccessView): Promise<RecipeRole> {
   const role = agent.name;
   const { config } = agent;
   const taskBody = (await capture.deps.db.getAgentTask(capture.orgId, agent.id))?.content_text ?? "";
@@ -269,11 +241,6 @@ async function captureRole(capture: Capture, agent: GuildAgentRow, access: Agent
   };
 }
 
-/** The auth a server's connection takes, as the access view names it; token when it names none. */
-function connectionAuth(value: unknown): RecipeConnection["auth"] {
-  return value === "oauth" || value === "none" || value === "token" ? value : "token";
-}
-
 type RecipeScope = "org" | "guild" | "agent";
 
 /** Settles a scope several roles share: the widest one, naming a role only while it stays an agent's. */
@@ -287,16 +254,16 @@ function widenScope(entry: { recommended_scope: RecipeScope; recommended_role?: 
 }
 
 /** The scope a role reaches a server at: its connection's owner, else the binding that turns it on. */
-function serverScope(server: ServerView): RecipeScope {
+function serverScope(server: McpServerAccess): RecipeScope {
   return recipeScope(server.connection_owner_scope ?? server.source_scope);
 }
 
 /** A recipe connection for a server, as the first role that has it reaches it. */
-async function newConnection(capture: Capture, server: ServerView, role: string): Promise<RecipeConnection> {
+async function newConnection(capture: Capture, server: McpServerAccess, role: string): Promise<RecipeConnection> {
   const scope = serverScope(server);
   const connection: RecipeConnection = {
     server: server.slug,
-    auth: connectionAuth(server.auth),
+    auth: server.auth,
     recommended_scope: scope,
     hint: clippedHint(server.description),
     setup: server.setup_hint ?? "",
@@ -315,7 +282,7 @@ async function newConnection(capture: Capture, server: ServerView, role: string)
 }
 
 /** Joins a further role's server to its recipe connection: the wider scope, and the setup and hint it lacked. */
-function joinConnection(connection: RecipeConnection, server: ServerView, role: string): void {
+function joinConnection(connection: RecipeConnection, server: McpServerAccess, role: string): void {
   widenScope(connection, serverScope(server), role);
   if (!connection.setup && server.setup_hint) {
     connection.setup = server.setup_hint;
@@ -326,7 +293,7 @@ function joinConnection(connection: RecipeConnection, server: ServerView, role: 
 }
 
 /** The servers a role has on, as recipe connections with the role's tool overlay. */
-async function captureConnections(capture: Capture, servers: ServerView[], role: string): Promise<void> {
+async function captureConnections(capture: Capture, servers: McpServerAccess[], role: string): Promise<void> {
   for (const server of servers.filter((item) => item.enabled)) {
     let connection = capture.recipe.connections.find((item) => item.server === server.slug);
     if (connection) {
@@ -335,7 +302,7 @@ async function captureConnections(capture: Capture, servers: ServerView[], role:
       connection = await newConnection(capture, server, role);
       capture.recipe.connections.push(connection);
     }
-    const tools = Object.fromEntries((server.tools ?? []).map((tool) => [tool.name, tool.enabled]));
+    const tools = Object.fromEntries(server.tools.map((tool) => [tool.name, tool.enabled]));
     connection.roles[role] = { enabled: server.enabled, tools };
   }
 }
@@ -376,9 +343,8 @@ async function captureAgent(capture: Capture, agent: GuildAgentRow): Promise<voi
     agentId: agent.id,
     viewScope: "agent",
   });
-  assertMatches(AgentAccess, access, uncapturable);
   capture.recipe.roles.push(await captureRole(capture, agent, access));
-  await captureConnections(capture, access.mcp ?? [], agent.name);
+  await captureConnections(capture, access.mcp, agent.name);
   await captureSecrets(capture, agent);
 }
 

@@ -9,6 +9,7 @@ import { isValidSecretAliases } from "../agents/validation.js";
 import { harnessModelOf, harnessOf } from "../coding/harnesses.js";
 import { harnessEffortOf, harnessEffortsFor } from "../coding/harness-models.js";
 import { INSTRUCTION_MAX, validateCron } from "../schedules/cron.js";
+import { recommendedModelOf } from "./parse-roles.js";
 import { builderAuthor } from "./schema.js";
 
 // A recipe as apply creates it: each role's config settled, its task filled from its focus and
@@ -66,17 +67,17 @@ export function roleCodes(role: RecipeRole): boolean {
 }
 
 /** The harness the recipe names, while the role applies with it; else null. */
-function keptRecipeHarness(roleConfig: Record<string, unknown>, applied: Harness | null): Harness | null {
+function keptRecipeHarness(roleConfig: RecipeRole["config"], applied: Harness | null): Harness | null {
   return applied !== null && applied === harnessOf(roleConfig) ? applied : null;
 }
 
 /** The recipe's harness model, kept only while the role applies with the harness the recipe names. */
-function appliedHarnessModel(roleConfig: Record<string, unknown>, applied: Harness | null): string | null {
+function appliedHarnessModel(roleConfig: RecipeRole["config"], applied: Harness | null): string | null {
   return keptRecipeHarness(roleConfig, applied) === null ? null : harnessModelOf(roleConfig);
 }
 
 /** The recipe's harness effort, kept only with the recipe's harness and when its model runs at it. */
-function appliedHarnessEffort(roleConfig: Record<string, unknown>, applied: Harness | null): Effort | null {
+function appliedHarnessEffort(roleConfig: RecipeRole["config"], applied: Harness | null): Effort | null {
   const kept = keptRecipeHarness(roleConfig, applied);
   const effort = harnessEffortOf(roleConfig);
   if (kept === null || effort === null) {
@@ -96,14 +97,13 @@ export type RoleChoice = { model?: string | undefined; harness?: Harness | undef
  * tools. Every other setting the role leaves out takes its
  * default when `validateAgentConfig` reads the config. The machine the agent goes on is the apply's.
  */
-export function configFromRecipeRole(role: RecipeRole, choice: RoleChoice = {}): Record<string, unknown> {
+export function configFromRecipeRole(role: RecipeRole, choice: RoleChoice = {}): RecipeRole["config"] {
   const roleConfig = { ...role.config };
-  const recommended = typeof roleConfig.model === "string" ? roleConfig.model.trim() : "";
   const coding = roleCodes(role);
   const applied = coding ? (choice.harness ?? harnessOf(roleConfig)) : null;
   return {
     ...roleConfig,
-    model: choice.model ?? recommended,
+    model: choice.model ?? recommendedModelOf(roleConfig) ?? "",
     browser: roleBrowses(role),
     browser_optimized: false,
     browser_model: null,
