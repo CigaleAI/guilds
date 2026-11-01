@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { MessageMetadata, RunMessage, ToolCall } from "../../../api/types/runs";
 import type { FlowCall } from "../runs/runFlowModel";
 import {
   callArguments,
@@ -12,15 +13,31 @@ import {
   toolCallFacts,
 } from "./callDetail";
 
+function toolCall(name: string, args: string): ToolCall {
+  return { id: "call_1", type: "function", function: { name, arguments: args } };
+}
+
+/** A committed tool result with its body and metadata. */
+function result(content: string, metadata: MessageMetadata = {}): RunMessage {
+  return {
+    id: 1,
+    seq: 1,
+    payload: { role: "tool", tool_call_id: "call_1", content },
+    metadata,
+    created_at: "2026-05-01T12:00:00Z",
+    cost_usd: null,
+  };
+}
+
 function flowCall(
   name: string,
-  metadata: Record<string, unknown> | null,
+  metadata: MessageMetadata | null,
   patch: Partial<FlowCall> = {},
 ): FlowCall {
   return {
     id: "call_1",
-    call: { function: { name, arguments: '{"path":"a.py"}' } },
-    result: metadata ? { metadata, created_at: "2026-05-01T12:00:00Z" } : null,
+    call: toolCall(name, '{"path":"a.py"}'),
+    result: metadata ? result("", metadata) : null,
     position: 0,
     info: { name, kind: "execute", level: null, server: null },
     error: null,
@@ -28,7 +45,7 @@ function flowCall(
   };
 }
 
-const codeTask = {
+const codeTask: MessageMetadata = {
   tool_name: "code_task",
   status: "completed",
   harness: "codex",
@@ -101,7 +118,7 @@ test("a code task shows no checkpoints without both shas", () => {
 });
 
 test("another tool lists how it ran, without code task facts", () => {
-  const metadata = {
+  const metadata: MessageMetadata = {
     duration_ms: 1200,
     output_filter: "tail",
     exit_code: 0,
@@ -131,34 +148,32 @@ test("another tool lists how it ran, without code task facts", () => {
   ]);
 });
 
-test("a call's metadata is empty before its result, or when it is not an object", () => {
+test("a call's metadata is empty before its result", () => {
   assert.deepEqual(callMetadata(flowCall("shell", null)), {});
-  const listed = flowCall("shell", null, {
-    result: { metadata: [] as unknown as Record<string, unknown> },
-  });
-  assert.deepEqual(callMetadata(listed), {});
+  assert.deepEqual(callMetadata(flowCall("shell", { exit_code: 0 })), { exit_code: 0 });
 });
 
 test("a call's arguments come from its function call", () => {
   assert.deepEqual(callArguments(flowCall("read", null)).parsed, { path: "a.py" });
-  assert.equal(callArguments(flowCall("read", null, { call: {} })).isEmpty, true);
+  assert.equal(callArguments(flowCall("read", null, { call: toolCall("read", "") })).isEmpty, true);
 });
 
 test("a result's returned data leaves out the remaining tool calls line", () => {
-  const returned = returnedData({ payload: { content: "done\n\nremaining_tool_calls: 4" } });
+  const returned = returnedData(result("done\n\nremaining_tool_calls: 4"));
   assert.equal(returned.text, "done");
 });
 
 test("a code task's returned data leaves out its closing log line", () => {
-  const returned = returnedData({
-    payload: { content: "completed · codex\n\nDone.\n\nlog: .runs/r1/c1.harness.jsonl" },
-    metadata: { tool_name: "code_task" },
-  });
+  const returned = returnedData(
+    result("completed · codex\n\nDone.\n\nlog: .runs/r1/c1.harness.jsonl", {
+      tool_name: "code_task",
+    }),
+  );
   assert.equal(returned.text, "completed · codex\n\nDone.");
 });
 
 test("another tool's returned data keeps a log line", () => {
-  const returned = returnedData({ payload: { content: "ok\nlog: kept" } });
+  const returned = returnedData(result("ok\nlog: kept"));
   assert.equal(returned.text, "ok\nlog: kept");
 });
 

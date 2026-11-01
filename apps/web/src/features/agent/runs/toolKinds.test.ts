@@ -1,31 +1,38 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { RunMessage, ToolCallRequest } from "./toolFormat";
+import type { RunMessage, ToolCall } from "../../../api/types/runs";
 import {
   classifyToolCall,
   connectedToolServers,
   isMutation,
   isScriptRun,
   kindBreakdown,
-  kindLabel,
   levelFromDisplayPath,
+  levelLabel,
   offeredToolNames,
 } from "./toolKinds";
 
-test("a known kind shows as itself and any other value as unknown", () => {
-  assert.equal(kindLabel("memory"), "memory");
-  assert.equal(kindLabel("teleport"), "unknown");
-  assert.equal(kindLabel(null), "unknown");
+test("a level reads as its label, and no level as nothing", () => {
+  assert.equal(levelLabel("guild"), "guild");
+  assert.equal(levelLabel("all"), "all levels");
+  assert.equal(levelLabel(null), "");
 });
 
-function call(name: string, args: Record<string, unknown> = {}): ToolCallRequest {
-  return { id: "c1", function: { name, arguments: JSON.stringify(args) } };
+function call(name: string, args: Record<string, unknown> = {}): ToolCall {
+  return { id: "c1", type: "function", function: { name, arguments: JSON.stringify(args) } };
 }
 
-function result(content: string): RunMessage {
+function result(
+  content: string,
+  metadata: RunMessage["metadata"] = { tool_name: "note_get" },
+): RunMessage {
   return {
+    id: 1,
+    seq: 1,
     payload: { role: "tool", tool_call_id: "c1", content },
-    metadata: { tool_name: "note_get" },
+    metadata,
+    created_at: "2026-09-21T08:00:00Z",
+    cost_usd: null,
   };
 }
 
@@ -53,7 +60,6 @@ test("levelFromDisplayPath reads the owner prefix", () => {
   assert.equal(levelFromDisplayPath("org/o1/shared.md"), "org");
   assert.equal(levelFromDisplayPath("org/o1/collections/deals/7"), "org");
   assert.equal(levelFromDisplayPath("plan.md"), null);
-  assert.equal(levelFromDisplayPath(42), null);
 });
 
 test("writes take their level from the level argument", () => {
@@ -213,7 +219,13 @@ test("offered names outside the table and the mcp list are first-class scripts",
 test("names nothing explains are unknown, including without a run", () => {
   assert.equal(classifyToolCall(call("weekly_pnl")).kind, "unknown");
   assert.equal(classifyToolCall(call("mystery"), null, run).kind, "unknown");
-  assert.equal(classifyToolCall({}, { metadata: { tool_name: "memory_write" } }).kind, "memory");
+  assert.equal(
+    classifyToolCall(
+      { id: "c1", type: "function", function: { name: "", arguments: "" } },
+      result("ok", { tool_name: "memory_write" }),
+    ).kind,
+    "memory",
+  );
   assert.equal(classifyToolCall(call("note_get", { path: 7 })).level, null);
 });
 

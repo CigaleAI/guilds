@@ -1,5 +1,5 @@
+import type { StepMessage } from "../../api/types/runs";
 import type { StudioMessage } from "../../api/types/studio";
-import type { RunMessage } from "../agent/runs/toolFormat";
 
 /**
  * A coach conversation as run rows, so the run flow model groups its steps and tool calls. Each
@@ -7,7 +7,7 @@ import type { RunMessage } from "../agent/runs/toolFormat";
  */
 export function asRunMessages(
   messages: readonly StudioMessage[],
-): (StudioMessage & RunMessage & { metadata: NonNullable<StudioMessage["metadata"]> })[] {
+): (StudioMessage & StepMessage & { metadata: NonNullable<StudioMessage["metadata"]> })[] {
   return messages.map((message) => ({
     ...message,
     metadata: { ...(message.metadata ?? {}), generation: message.generation },

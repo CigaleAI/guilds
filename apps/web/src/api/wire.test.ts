@@ -8,9 +8,13 @@ import {
   isListOf,
   isNumber,
   isNumberOrNull,
+  isRecordToolArguments,
+  isShellArguments,
+  isStudioToolArguments,
   isString,
   isStringList,
   isStringOrNull,
+  isToolLevelArguments,
   parseJson,
   parseStudioConnection,
   parseStudioEdit,
@@ -136,4 +140,19 @@ test("isStudioFocusRequest admits a pin of a kind the server resolves and refuse
   assert.equal(isStudioFocusRequest({ kind: "issue", issue_id: "iss_1", seq: "3" }), true);
   assert.equal(isStudioFocusRequest({ kind: "focus", issue_id: "iss_1" }), false);
   assert.equal(isStudioFocusRequest({ kind: "run", run_id: 7 }), false);
+});
+
+test("a tool call's arguments pass their tool's check when each parameter has its schema's type", () => {
+  assert.equal(isShellArguments({ command: "ls", background: true }), true);
+  assert.equal(isShellArguments({ command: "ls", timeout_seconds: 30 }), true);
+  assert.equal(isShellArguments({}), true);
+  assert.equal(isShellArguments({ command: ["ls"] }), false);
+  assert.equal(isShellArguments({ command: "ls", background: "yes" }), false);
+  assert.equal(isRecordToolArguments({ collection: "deals", id: 42, body: {} }), true);
+  assert.equal(isRecordToolArguments({ collection: "deals", id: "42" }), false);
+  assert.equal(isStudioToolArguments({ action: "create", agent_id: "scout" }), true);
+  assert.equal(isStudioToolArguments({ agent_id: 7 }), false);
+  assert.equal(isToolLevelArguments({ level: "guild", path: "org/o1/plan.md" }), true);
+  assert.equal(isToolLevelArguments({ path: 7 }), false);
+  assert.equal(isToolLevelArguments("plan.md"), false);
 });

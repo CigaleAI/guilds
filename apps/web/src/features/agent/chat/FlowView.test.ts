@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { MessageMetadata, RunMessage, ToolCall } from "../../../api/types/runs";
 import type { FlowCall, FlowSegment, FlowStats } from "../runs/runFlowModel";
 import {
   callHint,
@@ -11,10 +12,26 @@ import {
   taskStatus,
 } from "./FlowView";
 
+function codeTaskCall(args: string): ToolCall {
+  return { id: "c1", type: "function", function: { name: "code_task", arguments: args } };
+}
+
+/** A recorded message at a sequence, with the metadata it carries. */
+function message(seq: number, metadata: MessageMetadata = {}): RunMessage {
+  return {
+    id: seq,
+    seq,
+    payload: { role: "assistant", content: "" },
+    metadata,
+    created_at: "2026-09-21T08:00:00Z",
+    cost_usd: null,
+  };
+}
+
 function flowCall(id: string, patch: Partial<FlowCall> = {}): FlowCall {
   return {
     id,
-    call: { function: { name: "code_task", arguments: '{"brief":"Fix it","repo":"guilds/api"}' } },
+    call: codeTaskCall('{"brief":"Fix it","repo":"guilds/api"}'),
     result: null,
     position: 1,
     info: { name: "code_task", kind: "execute", level: null, server: null },
@@ -39,15 +56,15 @@ const stats: FlowStats = {
 };
 
 test("a reveal opens the call it names, by id or by its result's sequence", () => {
-  const first = flowCall("c1", { result: { seq: 4 } });
-  const second = flowCall("c2", { result: { seq: 6 } });
+  const first = flowCall("c1", { result: message(4) });
+  const second = flowCall("c2", { result: message(6) });
   const flow: FlowSegment = {
     type: "flow",
     generation: 1,
     key: "f",
     steps: [
-      { index: 1, turn: { seq: 3 }, calls: [first] },
-      { index: 2, turn: { seq: 5 }, calls: [second] },
+      { index: 1, turn: message(3), calls: [first] },
+      { index: 2, turn: message(5), calls: [second] },
     ],
     errors: [],
   };
@@ -84,18 +101,15 @@ test("a card names its connected server unless the tool's name carries it", () =
 test("a code task's repository is the one its result names, else the one it was asked for", () => {
   const asked = flowCall("c1");
   assert.equal(taskRepository(asked), "guilds/api");
-  const named = flowCall("c1", { result: { metadata: { repository: "guilds/web" } } });
+  const named = flowCall("c1", { result: message(4, { repository: "guilds/web" }) });
   assert.equal(taskRepository(named), "guilds/web");
-  const none = flowCall("c1", { call: { function: { name: "code_task", arguments: "{}" } } });
+  const none = flowCall("c1", { call: codeTaskCall("{}") });
   assert.equal(taskRepository(none), "");
 });
 
 test("a code task's prompt is its brief, and empty without one", () => {
   assert.equal(taskPrompt(flowCall("c1")), "Fix it");
-  assert.equal(
-    taskPrompt(flowCall("c1", { call: { function: { arguments: '{"brief":3}' } } })),
-    "",
-  );
+  assert.equal(taskPrompt(flowCall("c1", { call: codeTaskCall('{"brief":3}') })), "");
 });
 
 test("a code task's block reads a finished call as done", () => {

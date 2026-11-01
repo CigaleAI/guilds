@@ -1,26 +1,23 @@
 import type { ToolKind } from "@guildsrun/ui";
-import { isJsonObject, type JsonObject } from "../../../api/wire";
-import { messageContentText, toolResultError } from "./toolFormat";
-import type { RunMessage, ToolCallRequest } from "./toolFormat";
+import type {
+  MessagePayload,
+  Run,
+  RunError,
+  StepMessage,
+  TokenUsage,
+  ToolCall,
+} from "../../../api/types/runs";
+import { toolResultError } from "./toolFormat";
 import { classifyToolCall, kindBreakdown } from "./toolKinds";
 import type { RunWithTools, ToolCallInfo } from "./toolKinds";
 
-/** An error recorded on a run; `generation` ties it to the generation it ended. */
-export type RunError = {
-  at?: string;
-  generation?: number;
-  operation?: string;
-  message?: string;
-  error_type?: string;
-};
-
 /** A run as the flow reads it: its id, recorded errors, and the tools its config snapshot offered. */
-export type FlowRun = RunWithTools & { id?: string; errors?: readonly RunError[] };
+export type FlowRun = RunWithTools & Pick<Run, "id" | "errors">;
 
 /** One requested tool call with its recorded result, its position in the batch from 1, and its classification. */
-export type FlowCall<M extends RunMessage = RunMessage> = {
+export type FlowCall<M extends StepMessage = StepMessage> = {
   id: string;
-  call: ToolCallRequest;
+  call: ToolCall;
   result: M | null;
   position: number;
   info: ToolCallInfo;
@@ -28,14 +25,14 @@ export type FlowCall<M extends RunMessage = RunMessage> = {
 };
 
 /** One model step: the assistant message that requested a batch of calls, numbered within its generation; a result with no matching request has neither. */
-export type FlowStep<M extends RunMessage = RunMessage> = {
+export type FlowStep<M extends StepMessage = StepMessage> = {
   index: number | null;
   turn: M | null;
   calls: FlowCall<M>[];
 };
 
 /** A stretch of consecutive tool-calling steps in one generation, with the run errors that ended it. */
-export type FlowSegment<M extends RunMessage = RunMessage> = {
+export type FlowSegment<M extends StepMessage = StepMessage> = {
   type: "flow";
   generation: number | null;
   key: string;
@@ -44,10 +41,10 @@ export type FlowSegment<M extends RunMessage = RunMessage> = {
 };
 
 /** A message shown as a plain chat row. */
-export type MessageSegment<M extends RunMessage = RunMessage> = { type: "message"; msg: M };
+export type MessageSegment<M extends StepMessage = StepMessage> = { type: "message"; msg: M };
 
 /** One entry of the run's chat: a plain message or a tool flow. */
-export type Segment<M extends RunMessage = RunMessage> = FlowSegment<M> | MessageSegment<M>;
+export type Segment<M extends StepMessage = StepMessage> = FlowSegment<M> | MessageSegment<M>;
 
 /** Totals for a flow's header: steps, calls, failures, time, tokens, cost, and the kinds of calls made. */
 export type FlowStats = {
@@ -65,30 +62,31 @@ export type FlowStats = {
   reasoning: number;
 };
 
+/** A run's messages split into chat rows and tool flows, with the run errors no flow holds. */
+export type FlowSegments<M extends StepMessage = StepMessage> = {
+  segments: Segment<M>[];
+  unattachedErrors: RunError[];
+};
+
 /** One bar of a flow's timeline: a step's model latency or one tool's run time. */
 export type TimelineSegment = { kind: ToolKind | "model"; ms: number; label: string };
 
-function metaOf(msg: RunMessage | null | undefined): Record<string, unknown> {
-  return msg?.metadata ?? {};
+/** A flow's timeline: its bars in order, and the time they add up to. */
+export type FlowTimeline = { segments: TimelineSegment[]; total: number };
+
+function generationOf(msg: StepMessage): number | null {
+  const value = msg.metadata.generation ?? 0;
+  return value > 0 ? value : null;
 }
 
-function payloadOf(msg: RunMessage | null | undefined): Record<string, unknown> {
-  return msg?.payload ?? {};
-}
-
-function generationOf(msg: RunMessage): number | null {
-  const value = Number(metaOf(msg).generation);
-  return Number.isFinite(value) && value > 0 ? value : null;
-}
-
-function makeCall<M extends RunMessage>(
-  call: ToolCallRequest,
+function makeCall<M extends StepMessage>(
+  call: ToolCall,
   result: M | null,
   run: FlowRun | null,
   position: number,
 ): FlowCall<M> {
   return {
-    id: call?.id ? String(call.id) : "",
+    id: call.id,
     call,
     result,
     position,
@@ -98,30 +96,30 @@ function makeCall<M extends RunMessage>(
 }
 
 /** The id of the call a tool result answers; empty when it names none. */
-function answeredCallId(payload: Record<string, unknown>): string {
-  return payload.tool_call_id ? String(payload.tool_call_id) : "";
+function answeredCallId(payload: MessagePayload): string {
+  return payload.role === "tool" ? payload.tool_call_id : "";
 }
 
 /** The tool results among a run's messages, by the id of the call each answers. */
-function resultsByCallId<M extends RunMessage>(rows: readonly M[]): Map<string, M> {
+function resultsByCallId<M extends StepMessage>(rows: readonly M[]): Map<string, M> {
   const results = new Map<string, M>();
   for (const msg of rows) {
-    const payload = payloadOf(msg);
-    const callId = answeredCallId(payload);
-    if (payload.role === "tool" && callId) results.set(callId, msg);
+    const callId = answeredCallId(msg.payload);
+    if (callId) results.set(callId, msg);
   }
   return results;
 }
 
 /** The step of a tool result whose request the run does not hold: one call, named by the result's tool. */
-function orphanResultStep<M extends RunMessage>(
+function orphanResultStep<M extends StepMessage>(
   msg: M,
   callId: string,
   run: FlowRun | null,
 ): FlowStep<M> {
-  const orphanCall: ToolCallRequest = {
+  const orphanCall: ToolCall = {
     id: callId,
-    function: { name: metaOf(msg).tool_name || "tool", arguments: "" },
+    type: "function",
+    function: { name: msg.metadata.tool_name || "tool", arguments: "" },
   };
   return { index: null, turn: null, calls: [makeCall(orphanCall, msg, run, 1)] };
 }
@@ -138,15 +136,15 @@ function claimResult(handled: Set<string>, callId: string): boolean {
 }
 
 /** The tool calls an assistant message requested; empty when it requested none. */
-function requestedCalls(payload: Record<string, unknown>): readonly ToolCallRequest[] {
-  return Array.isArray(payload.tool_calls) ? payload.tool_calls : [];
+function requestedCalls(payload: MessagePayload): readonly ToolCall[] {
+  return payload.role === "assistant" ? (payload.tool_calls ?? []) : [];
 }
 
 /** Splits a run's ordered messages into chat rows and tool flows, pairing each call with its result and attaching run errors to their flow. */
-export function buildFlowSegments<M extends RunMessage>(
+export function buildFlowSegments<M extends StepMessage>(
   messages: readonly M[] | null | undefined,
   run: FlowRun | null = null,
-): { segments: Segment<M>[]; unattachedErrors: RunError[] } {
+): FlowSegments<M> {
   const rows: readonly M[] = Array.isArray(messages) ? messages : [];
   const results = resultsByCallId(rows);
   const handled = new Set<string>();
@@ -159,7 +157,7 @@ export function buildFlowSegments<M extends RunMessage>(
     current = {
       type: "flow",
       generation,
-      key: `${run?.id ?? "run"}:${generation ?? "none"}:${msg.seq ?? msg.id ?? segments.length}`,
+      key: `${run?.id ?? "run"}:${generation ?? "none"}:${msg.seq}`,
       steps: [],
       errors: [],
     };
@@ -168,24 +166,22 @@ export function buildFlowSegments<M extends RunMessage>(
   };
 
   for (const msg of rows) {
-    const payload = payloadOf(msg);
-    const role = payload.role || "assistant";
-    if (role === "tool") {
+    const { payload } = msg;
+    if (payload.role === "tool") {
       const callId = answeredCallId(payload);
       if (!claimResult(handled, callId)) continue;
       flowFor(generationOf(msg), msg).steps.push(orphanResultStep(msg, callId, run));
       continue;
     }
-    if (role === "assistant") {
+    if (payload.role === "assistant") {
       const generation = generationOf(msg);
       const stepIndex = (stepsByGeneration.get(generation) || 0) + 1;
       stepsByGeneration.set(generation, stepIndex);
       const calls = requestedCalls(payload);
       if (calls.length) {
         const items = calls.map((call, position) => {
-          const id = call?.id ? String(call.id) : "";
-          if (id) handled.add(id);
-          return makeCall(call, id ? (results.get(id) ?? null) : null, run, position + 1);
+          if (call.id) handled.add(call.id);
+          return makeCall(call, results.get(call.id) ?? null, run, position + 1);
         });
         flowFor(generation, msg).steps.push({ index: stepIndex, turn: msg, calls: items });
         continue;
@@ -198,15 +194,15 @@ export function buildFlowSegments<M extends RunMessage>(
   return { segments, unattachedErrors };
 }
 
-function attachRunErrors<M extends RunMessage>(
+function attachRunErrors<M extends StepMessage>(
   segments: readonly Segment<M>[],
   errors: readonly RunError[] | undefined,
 ): RunError[] {
   const unattached: RunError[] = [];
-  for (const entry of Array.isArray(errors) ? errors : []) {
-    const generation = Number(entry?.generation);
+  for (const entry of errors ?? []) {
+    const { generation } = entry;
     const target =
-      Number.isFinite(generation) && generation > 0
+      generation > 0
         ? segments.findLast(
             (segment): segment is FlowSegment<M> =>
               segment.type === "flow" && segment.generation === generation,
@@ -219,30 +215,29 @@ function attachRunErrors<M extends RunMessage>(
 }
 
 /** The text an assistant message said alongside its tool calls. */
-export function turnText(msg: RunMessage | null | undefined): string {
-  return messageContentText(payloadOf(msg));
+export function turnText(msg: StepMessage | null | undefined): string {
+  return msg?.payload.content ?? "";
 }
 
 /** The reasoning recorded for an assistant message; empty when there is none. */
-export function turnReasoning(msg: RunMessage | null | undefined): string {
-  const value = metaOf(msg).reasoning;
-  return typeof value === "string" && value.trim() ? value : "";
+export function turnReasoning(msg: StepMessage | null | undefined): string {
+  const value = msg?.metadata.reasoning ?? "";
+  return value.trim() ? value : "";
 }
 
 /** The token usage recorded for an assistant message; empty when there is none. */
-export function turnUsage(msg: RunMessage | null | undefined): JsonObject {
-  const usage = metaOf(msg).usage;
-  return isJsonObject(usage) ? usage : {};
+export function turnUsage(msg: StepMessage | null | undefined): Partial<TokenUsage> {
+  return msg?.metadata.usage ?? {};
 }
 
 /** How long the model took to write an assistant message, in ms; 0 when it is not recorded. */
-function turnLatencyMs(msg: RunMessage): number {
-  return Number(metaOf(msg).latency_ms) || 0;
+function turnLatencyMs(msg: StepMessage): number {
+  return msg.metadata.latency_ms ?? 0;
 }
 
 /** How long a call's tool ran, in ms; 0 before its result, or when it is not recorded. */
-function resultDurationMs(result: RunMessage | null): number {
-  return Number(metaOf(result).duration_ms) || 0;
+function resultDurationMs(result: StepMessage | null): number {
+  return result?.metadata.duration_ms ?? 0;
 }
 
 /**
@@ -278,8 +273,8 @@ export function flowStats(flow: FlowSegment): FlowStats {
     if (step.turn) {
       const usage = turnUsage(step.turn);
       modelMs += turnLatencyMs(step.turn);
-      inputTokens += Number(usage.input_tokens) || 0;
-      outputTokens += Number(usage.output_tokens) || 0;
+      inputTokens += usage.input_tokens ?? 0;
+      outputTokens += usage.output_tokens ?? 0;
       if (turnReasoning(step.turn)) reasoning += 1;
     }
     for (const item of step.calls) {
@@ -307,7 +302,7 @@ export function flowStats(flow: FlowSegment): FlowStats {
 }
 
 /** The flow's timeline bars in order: each step's model latency, then each of its tools' run times. */
-export function flowTimeline(flow: FlowSegment): { segments: TimelineSegment[]; total: number } {
+export function flowTimeline(flow: FlowSegment): FlowTimeline {
   const segments: TimelineSegment[] = [];
   for (const step of flow.steps) {
     const label = step.index === null ? "Tool result" : `Step ${step.index}`;
