@@ -376,6 +376,8 @@ function UploadDialog({ open, onOpenChange, page, guildId, listed, onUploaded }:
   const [access, setAccess] = useState<AccessRow>(pageAccess);
   const [touched, setTouched] = useState(false);
   const problem = uploadProblem(file, description);
+  const expectedVersion = file ? uploadExpectedVersion(file.name, listed) : 0;
+  const replacing = file !== null && expectedVersion > 0;
 
   const close = () => {
     setFile(null);
@@ -396,7 +398,7 @@ function UploadDialog({ open, onOpenChange, page, guildId, listed, onUploaded }:
         description,
         access,
         homeGuildId: guildId,
-        expectedVersion: uploadExpectedVersion(file.name, listed),
+        expectedVersion,
       },
       {
         onSuccess: (item) => {
@@ -435,8 +437,16 @@ function UploadDialog({ open, onOpenChange, page, guildId, listed, onUploaded }:
                 onChange={(event) => setDescription(event.currentTarget.value)}
                 {...(touched && problem ? { error: problem } : {})}
               />
-              <HomeGuildField guildId={guildId} />
-              <StartingAccessField value={access} onChange={setAccess} disabled={upload.isPending} />
+              {replacing ? (
+                <Banner tone="info" title={`Replaces ${file.name}`}>
+                  The listed file of this name is replaced, and keeps its home and access list.
+                </Banner>
+              ) : (
+                <>
+                  <HomeGuildField guildId={guildId} />
+                  <StartingAccessField value={access} onChange={setAccess} disabled={upload.isPending} />
+                </>
+              )}
               {upload.isError ? (
                 <Banner tone="error" title="Couldn't upload the file">
                   {uploadFailure(upload.error, upload.variables?.expectedVersion)}

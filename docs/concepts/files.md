@@ -136,9 +136,12 @@ and closed, and says what it holds when it holds nothing.
   characters, and the file's first access row: a subject and a mode.
   The row starts as the page's guild or agent at `write`; any subject
   and mode can be picked instead. The dialog shows the file's
-  **Home**, the page's guild, read only, beside the row. It refuses an
-  empty file, a file over 10 MiB, or no description before it sends
-  anything. The dialog reads: "A file of the same name in this list is
+  **Home**, the page's guild, read only, beside the row. When the
+  chosen file's name is the name of a file in the page's sections,
+  the dialog shows **Replaces `<name>`**, saying that file keeps its
+  home and access list, in place of the **Home** and the access row.
+  It refuses an empty file, a file over 10 MiB, or no description
+  before it sends anything. The dialog reads: "A file of the same name in this list is
   replaced and keeps its access list and home; a name another file of
   the organisation holds is refused." It sends the version of the file
   of that name in the page's sections, so it replaces that version, or
