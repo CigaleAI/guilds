@@ -1,7 +1,8 @@
 import path from "node:path";
 import { AgentFileError, readAgentFile } from "../../lib/agent-file.js";
 import { DRIVE_FOLDER_MIME, DriveFolderError, driveJson, mcpFile, type DriveClientOptions, type DriveRequestInit } from "./folder.js";
-import { given, type CreateFileArguments } from "./parameters.js";
+import { given } from "../format.js";
+import type { CreateFileArguments } from "./parameters.js";
 import { DriveFile } from "./responses.js";
 
 export const MAX_DRIVE_UPLOAD_BYTES = 25 * 1024 * 1024;

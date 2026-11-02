@@ -2,13 +2,13 @@ import type { Static, TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { isJsonValue, isObjectNode, type JsonObject, type JsonValue } from "../../lib/json.js";
 import { proxyFetch, type FetchFn } from "../../net/http.js";
+import { given } from "../format.js";
 import { decodeBody, type ConnectorApi } from "../response.js";
-import {
-  given,
-  type CreateFileArguments,
-  type FileReference,
-  type ListRecentFilesArguments,
-  type SearchFilesArguments,
+import type {
+  CreateFileArguments,
+  FileReference,
+  ListRecentFilesArguments,
+  SearchFilesArguments,
 } from "./parameters.js";
 import {
   DriveFile,

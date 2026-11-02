@@ -182,7 +182,10 @@ self-contained ESM file whose default export is the adapter. Its only
 runtime input is the context the pool passes it.
 `pnpm build:connector <folder> <package.tgz>` bundles a connector
 folder (`connector.json`, `adapter.ts`, `logo.svg`) into that package.
-It prints the package's SHA-256 and size for the index.
+The package's `connector.json` is the loaded manifest: each tool the
+bundled adapter runs carries the JSON Schema of its parameters as its
+`input_schema`. It prints the package's SHA-256 and size for the
+index.
 
 The code runs inside the orchestrator process, so the tier is an
 opt-in, the `connector-code` platform key:

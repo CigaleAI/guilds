@@ -15,13 +15,14 @@ import type {
   Manifest,
   OAuthClient,
   Overrides,
+  SettingsSchema,
   ToolInputSchema,
 } from "../db/schema/index.js";
 import { installedConnectors } from "./index.js";
 import { authFields, matchesPattern } from "./manifest.js";
 import { nameMutates, namespacedName } from "./naming.js";
 import type { ConnectorEntry, ConnectorSource } from "./registry.js";
-import { settingsComplete, validateSettings, type SettingsSchema } from "./settings.js";
+import { settingsComplete, validateSettings } from "./settings.js";
 import type { Adapter, ConnectorTool } from "./types.js";
 
 /** The copy fields an override may replace. */

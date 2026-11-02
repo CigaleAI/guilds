@@ -18,7 +18,7 @@ import { sql } from "drizzle-orm";
 import { agents } from "./agents.js";
 import { bytea, timestamptz } from "./columns.js";
 import { guilds, orgs, users } from "./organisations.js";
-import { JsonObjectSchema, type JsonValue } from "../../lib/json.js";
+import { JsonValueSchema, type JsonValue } from "../../lib/json.js";
 import { isToolSchema, type ToolSchema } from "../../lib/tool-schema.js";
 
 /** A connector slug: also the folder name, the server id after `mcp_`, and a folder connector's tool prefix. */
@@ -35,15 +35,65 @@ export type ToolInputSchema = ToolSchema;
 /** A header an endpoint's session sends beside its credential: a custom `X-` header, letters, digits, and dashes. */
 const HEADER_NAME_PATTERN = "^[Xx]-[A-Za-z0-9-]+$";
 
-const ManifestTool = Type.Object(
-  {
-    name: Type.String({ minLength: 1 }),
-    description: Type.String(),
-    input_schema: ToolInputSchema,
-    mutating: Type.Optional(Type.Boolean()),
-  },
-  { additionalProperties: false },
+/** What a manifest says of a tool beside its input schema: its name, its description, and whether it changes anything. */
+const TOOL_FIELDS = {
+  name: Type.String({ minLength: 1 }),
+  description: Type.String(),
+  mutating: Type.Optional(Type.Boolean()),
+};
+
+/**
+ * A tool as a `connector.json` lists it. A tool the connector's code runs has no `input_schema`
+ * here: the loader takes it from the parameters the code declares. A tool the endpoint runs
+ * carries its own.
+ */
+const ListedTool = Type.Object({ ...TOOL_FIELDS, input_schema: Type.Optional(ToolInputSchema) }, { additionalProperties: false });
+
+/** A tool of a loaded manifest: what its listing says, with the JSON Schema of its input. */
+const ManifestTool = Type.Object({ ...TOOL_FIELDS, input_schema: ToolInputSchema }, { additionalProperties: false });
+
+/** A type name a settings schema may give a value. */
+const SettingsTypeName = Type.Union([
+  Type.Literal("object"),
+  Type.Literal("array"),
+  Type.Literal("string"),
+  Type.Literal("number"),
+  Type.Literal("integer"),
+  Type.Literal("boolean"),
+]);
+
+export type SettingsTypeName = Static<typeof SettingsTypeName>;
+
+const Count = Type.Optional(Type.Integer({ minimum: 0 }));
+
+/**
+ * The JSON Schema of a login's settings, or of a part of them: the keywords the settings form
+ * shows and a login's settings are checked against, each holding what JSON Schema puts there.
+ * `x-lookup` marks a property the adapter's `lookup` fills. Another keyword is kept and checks
+ * nothing.
+ */
+export const SettingsSchema = Type.Recursive(
+  (Node) =>
+    Type.Object({
+      type: Type.Optional(SettingsTypeName),
+      title: Type.Optional(Type.String()),
+      description: Type.Optional(Type.String()),
+      properties: Type.Optional(Type.Record(Type.String(), Node)),
+      required: Type.Optional(Type.Array(Type.String())),
+      additionalProperties: Type.Optional(Type.Boolean()),
+      items: Type.Optional(Node),
+      minItems: Count,
+      maxItems: Count,
+      minLength: Count,
+      maxLength: Count,
+      pattern: Type.Optional(Type.String()),
+      enum: Type.Optional(Type.Array(JsonValueSchema)),
+      "x-lookup": Type.Optional(Type.Boolean()),
+    }),
+  { $id: "SettingsSchema" },
 );
+
+export type SettingsSchema = Static<typeof SettingsSchema>;
 
 const AuthField = Type.Object(
   {
@@ -105,7 +155,7 @@ export const ManifestSchema = Type.Object(
     description: Type.String(),
     limitations: Type.Optional(Type.String()),
     setup_hint: Type.Optional(Type.String()),
-    tools: Type.Optional(Type.Array(ManifestTool)),
+    tools: Type.Optional(Type.Array(ListedTool)),
     policy: Type.Optional(
       Type.Object(
         {
@@ -115,7 +165,7 @@ export const ManifestSchema = Type.Object(
         { additionalProperties: false },
       ),
     ),
-    settings_schema: Type.Optional(JsonObjectSchema),
+    settings_schema: Type.Optional(SettingsSchema),
     state: Type.Optional(
       Type.Object({ key: Type.String({ pattern: "^[a-z][a-z0-9_]*$" }), intro: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
     ),
@@ -134,8 +184,13 @@ export const ManifestSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export type Manifest = Static<typeof ManifestSchema>;
+/** A `connector.json` as it is written, which `ManifestSchema` checks. */
+export type ManifestSource = Static<typeof ManifestSchema>;
+export type ListedTool = Static<typeof ListedTool>;
 export type ManifestTool = Static<typeof ManifestTool>;
+
+/** A loaded manifest: its `connector.json`, each tool it lists with its input schema. */
+export type Manifest = Omit<ManifestSource, "tools"> & { tools?: ManifestTool[] };
 export type AuthField = Static<typeof AuthField>;
 
 /** An admin's edit to one tool, by name: its copy, its schema, and whether it starts On. */

@@ -1,5 +1,3 @@
-import type { JsonObject, JsonValue } from "../lib/json.js";
-
 export const LIST_DEFAULT = 15;
 export const LIST_CAP = 30;
 
@@ -37,30 +35,18 @@ function fmtFinite(value: number): string {
   return pythonG(value, magnitude >= 1_000_000 || magnitude < 0.001 ? 4 : 6);
 }
 
-/** Text as a number when it reads as one without its commas, `$` and `%`; else the trimmed text, `-` when empty. */
-function fmtText(value: string): string {
-  const stripped = value.trim();
-  if (!stripped) {
+/**
+ * A number as a provider sends it, as a number or as text, in six significant digits: text reads
+ * as one without its commas, `$` and `%`. `-` when it is absent or blank; text that reads as no
+ * finite number, trimmed.
+ */
+export function fmtNum(value: string | number | null | undefined): string {
+  const text = String(value ?? "").trim();
+  if (!text) {
     return "-";
   }
-  const numeric = Number(stripped.replaceAll(",", "").replaceAll("$", "").replaceAll("%", ""));
-  return Number.isNaN(numeric) ? stripped : fmtNum(numeric);
-}
-
-export function fmtNum(value: unknown): string {
-  if (value === null || value === undefined || value === "") {
-    return "-";
-  }
-  if (typeof value === "boolean") {
-    return value ? "true" : "false";
-  }
-  if (typeof value === "string") {
-    return fmtText(value);
-  }
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return fmtFinite(value);
-  }
-  return String(value);
+  const numeric = Number(text.replaceAll(",", "").replaceAll("$", "").replaceAll("%", ""));
+  return Number.isFinite(numeric) ? fmtFinite(numeric) : text;
 }
 
 export function clipRows(rows: string[], limit: number): string {
@@ -75,9 +61,9 @@ export function clipRows(rows: string[], limit: number): string {
   return shown.join("\n");
 }
 
-/** Whitespace-collapsed text cut to `limit` with an ellipsis. */
-export function clipText(value: unknown, limit: number): string {
-  const text = String(value || "").replace(/\s+/g, " ").trim();
+/** Whitespace-collapsed text cut to `limit` with an ellipsis; empty when there is none. */
+export function clipText(value: string | undefined, limit: number): string {
+  const text = (value ?? "").replace(/\s+/g, " ").trim();
   if (!text) {
     return "";
   }
@@ -87,48 +73,23 @@ export function clipText(value: unknown, limit: number): string {
   return `${text.slice(0, limit - 1).trimEnd()}…`;
 }
 
-export function joinParts(...parts: unknown[]): string {
-  const values: string[] = [];
-  for (const part of parts) {
-    if (part === null || part === undefined) {
-      continue;
+/** The parts of a row that are present, a number as it is and text trimmed, two spaces apart; a blank part is left out. */
+export function joinParts(...parts: Array<string | number | null | undefined>): string {
+  return parts
+    .map((part) => part?.toString().trim() ?? "")
+    .filter(Boolean)
+    .join("  ");
+}
+
+/** The first of the texts that is not blank, trimmed: an argument's spellings, then its default; empty when none is. */
+export function given(...texts: Array<string | undefined>): string {
+  for (const text of texts) {
+    const trimmed = text?.trim();
+    if (trimmed) {
+      return trimmed;
     }
-    const text = String(part).trim();
-    if (text) {
-      values.push(text);
-    }
   }
-  return values.join("  ");
-}
-
-/** The argument `key` as trimmed text; `fallback` when it is absent or null. */
-export function argStr(arguments_: JsonObject, key: string, fallback = ""): string {
-  return String(arguments_[key] ?? fallback).trim();
-}
-
-/** Whether an argument is a finite number. */
-function isFiniteNumber(value: JsonValue): value is number {
-  return typeof value === "number" && Number.isFinite(value);
-}
-
-/** The argument `key` as a whole number: a number truncated, a boolean as 1 or 0, or text of digits; `fallback` otherwise. */
-export function argInt(arguments_: JsonObject, key: string, fallback: number): number {
-  const value = arguments_[key] ?? fallback;
-  if (value === true || value === false) {
-    return value ? 1 : 0;
-  }
-  if (isFiniteNumber(value)) {
-    return Math.trunc(value);
-  }
-  const text = String(value).trim();
-  if (!/^-?\d+$/.test(text)) {
-    return fallback;
-  }
-  return Number.parseInt(text, 10);
-}
-
-export function rowLimit(arguments_: JsonObject): number {
-  return listRows(argInt(arguments_, "limit", LIST_DEFAULT));
+  return "";
 }
 
 /** The rows a list shows for a call's `limit`: `LIST_DEFAULT` when it is absent, kept between 1 and `LIST_CAP`. */
@@ -159,12 +120,12 @@ export function downsample<T>(points: T[], count = 48): T[] {
   return Array.from({ length: count }, (_, index) => points[pythonRound(index * step)]!);
 }
 
-export function tsSec(value: unknown): string {
-  const stamp = Number(value);
-  if (!Number.isFinite(stamp)) {
+/** A timestamp in whole seconds: one in milliseconds is cut to seconds; `-` when it is not finite. */
+export function tsSec(value: number): string {
+  if (!Number.isFinite(value)) {
     return "-";
   }
-  let seconds = Math.trunc(stamp);
+  let seconds = Math.trunc(value);
   if (seconds > 10_000_000_000) {
     seconds = Math.trunc(seconds / 1000);
   }

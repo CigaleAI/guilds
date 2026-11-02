@@ -24,10 +24,12 @@ narrows a JSON object, and `isJsonSchema` a JSON Schema object.
 
 A coded connector's tools (Alchemy, CoinGecko, DexPaprika, Drive,
 Gmail, Qonto, Tavily, TwitterAPI.io, X) refuse a call whose arguments
-do not match the parameters their manifests list, naming the first
+do not match the parameters their code declares, naming the first
 mismatch: a `limit` or a `fileId` sent as another type is refused
 rather than read as one, on a tool the endpoint runs too, and only the
-spellings a tool's listing offers are read. A provider response field
+spellings a tool's listing offers are read. An argument that takes one
+of a list of values is offered as that list, and a value outside it,
+in another case too, is refused. A provider response field
 of another type than the one the provider documents fails the call as
 an unexpected response at that field rather than printing as it came.
 
@@ -35,15 +37,25 @@ an unexpected response at that field rather than printing as it came.
 runs once with `adapterTool` (`connectors/tools.js`): its name, the
 TypeBox schema of its parameters, and its work on the arguments
 decoded against them, a mismatch refused as a 422. `toolsAdapter(tools,
-hooks)` makes the adapter, and the registry refuses an entry whose
-manifest lists another `input_schema` for one of its tools. A client
-decodes a provider's response with `decodeResponse`
-(`connectors/response.js`). `loadManifest` and `folderEntry` take the
-manifest as a `JsonValue`. `validateSettings` (`connectors/settings.js`)
-takes the manifest's `SettingsSchema` and asserts the document is
-`ConnectionSettings` instead of returning it. `argStr`, `argInt` and
-`rowLimit` (`connectors/format.js`) take the arguments as a
-`JsonObject`.
+hooks)` makes the adapter. Its `connector.json` lists such a tool
+without an `input_schema`: `loadManifest(raw, folder, tools)` gives
+the loaded manifest the JSON Schema of the tool's parameters, and
+refuses a listed `input_schema` for a tool the code runs and a tool
+that lists none and that no code runs; `folderEntry` passes the
+adapter's tools, and `pnpm build:connector` writes the derived
+schemas into the package. The registry refuses code that runs a tool
+a manifest without an endpoint does not list. A manifest's
+`settings_schema` is a `SettingsSchema` (`db/schema`), its keywords
+checked at every depth when the manifest loads, and `validateSettings`
+(`connectors/settings.js`) takes it and asserts the document is
+`ConnectionSettings` instead of returning it. A client decodes a
+provider's response with `decodeResponse` (`connectors/response.js`).
+`loadManifest` and `folderEntry` take the manifest as a `JsonValue`.
+`connectors/format.js` keeps one row clamp, `listRows(limit)`, and one
+argument trim, `given(...texts)`, beside the `Paged` parameters
+(`connectors/tools.js`); `argStr`, `argInt` and `rowLimit` are gone,
+and `fmtNum`, `clipText`, `joinParts` and `tsSec` take the decoded
+fields they format.
 
 **Breaking for extensions.** The packages lint with Oxlint instead
 of ESLint. An extending repository loads the boundary rule from

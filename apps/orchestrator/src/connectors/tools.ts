@@ -1,7 +1,8 @@
 // The tools a connector's code runs: each one's parameters declared once as a TypeBox schema, and
 // every call's arguments decoded against it before the tool's work, as a native tool's are.
-import type { Static, TObject } from "@sinclair/typebox";
+import { Type, type Static, type TObject } from "@sinclair/typebox";
 import { decodeArguments } from "../lib/tool-schema.js";
+import { LIST_CAP, LIST_DEFAULT } from "./format.js";
 import { ConnectorError, type Adapter, type AdapterTool, type ConnectorContext, type Credentials } from "./types.js";
 
 /**
@@ -13,6 +14,20 @@ export type ConnectorToolDefinition<P extends TObject> = {
   parameters: P;
   run: (input: Static<P>, creds: Credentials, ctx: ConnectorContext) => Promise<string>;
 };
+
+/**
+ * The parameters of a tool that lists rows a page at a time: the rows the page holds, which
+ * `listRows` keeps within the cap, and the key of the page a previous one named.
+ */
+export const Paged = {
+  limit: Type.Optional(Type.Integer({ description: `Rows this page. Default ${LIST_DEFAULT}, max ${LIST_CAP}.` })),
+  page_key: Type.Optional(Type.String({ description: "Continue from a previous page_key." })),
+};
+
+const PagedParameters = Type.Object(Paged);
+
+/** The arguments of a call for one page of rows. */
+export type PagedArguments = Static<typeof PagedParameters>;
 
 /** An adapter's hooks beside its tools. Its `call`, when it has one, runs a call to a name none of the tools has. */
 export type AdapterHooks = Omit<Adapter, "tools">;

@@ -21,18 +21,7 @@
   "tools": [
     {
       "name": "search",
-      "description": "Search the live web. query is natural language. The result is title, URL, and snippet for each source.",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "query": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "query"
-        ]
-      }
+      "description": "Search the live web. query is natural language. The result is title, URL, and snippet for each source."
     }
   ],
   "prompt": {
