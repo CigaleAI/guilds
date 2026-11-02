@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { ItemSections, ListedItem } from "../../api/types/access";
-import type { ViewerMode } from "@guildsrun/ui";
+import type { ItemSections, ListedItem, ViewerMode } from "../../api/types/access";
 import { filterSections, findOpenItem, homeLabel, isUnreached, listedItems } from "./listedItems";
 
 function item(name: string, viewer_mode: ViewerMode): ListedItem {

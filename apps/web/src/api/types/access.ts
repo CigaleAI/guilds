@@ -3,7 +3,6 @@
  * Timestamps are ISO-8601 in UTC.
  */
 
-import type { ViewerMode } from "@guildsrun/ui";
 import type { JsonObject, JsonSchema, JsonValue } from "../wire";
 
 /** A repository a GitHub connection's installation reaches. */
@@ -31,14 +30,28 @@ export type AccessTarget = { kind: "note" | "collection" | "file"; id: string };
 /** Who an access row names: the organisation, a guild, or one agent. */
 export type AccessSubjectType = "org" | "guild" | "agent";
 
-/** An access row's mode; `none` is for an agent row only and shuts that agent out. */
-export type AccessListMode = AccessMode | "none";
+/**
+ * The mode an agent has on an item: it reads and writes, it reads, or nothing. An access row gives
+ * it, `none` only on an agent's own row, where it shuts that agent out; an agent's page shows the
+ * mode the agent ends up with, `none` when no row reaches it.
+ */
+export type AgentAccessMode = AccessMode | "none";
+
+/**
+ * How a guild's agents reach an item, as the guild's page shows it: an organisation row or the
+ * guild's own row gives all of them write or read (`all_write`, `all_read`); only rows of single
+ * agents reach some of them (`some`); or no row reaches any (`none`).
+ */
+export type GuildViewerMode = "all_write" | "all_read" | "some" | "none";
+
+/** How the guild or the agent whose page lists an item reaches it. */
+export type ViewerMode = AgentAccessMode | GuildViewerMode;
 
 /** Who one access row names. */
 export type AccessSubject = { type: AccessSubjectType; id: string };
 
 /** One row of an access list as it is sent: the subject and its mode. */
-export type AccessRow = AccessSubject & { mode: AccessListMode };
+export type AccessRow = AccessSubject & { mode: AgentAccessMode };
 
 /**
  * One row of an access list as it is read, with the subject's name and guild: an agent's guild, a

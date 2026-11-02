@@ -1,26 +1,26 @@
 import type {
   AccessEntry,
-  AccessListMode,
+  AgentAccessMode,
   AccessRow,
   AccessSubject,
   AccessSubjectType,
 } from "../../api/types/access";
 
 /** The modes a row of each subject type takes: only an agent row can shut its agent out. */
-export const accessModes: Record<AccessSubjectType, readonly AccessListMode[]> = {
+export const accessModes: Record<AccessSubjectType, readonly AgentAccessMode[]> = {
   org: ["read", "write"],
   guild: ["read", "write"],
   agent: ["none", "read", "write"],
 };
 
-export const accessModeLabel: Record<AccessListMode, string> = {
+export const accessModeLabel: Record<AgentAccessMode, string> = {
   none: "None",
   read: "Read",
   write: "Read & write",
 };
 
 /** The modes a row of this subject type can take, as a picker offers them. */
-export function modeOptions(type: AccessSubjectType): { value: AccessListMode; label: string }[] {
+export function modeOptions(type: AccessSubjectType): { value: AgentAccessMode; label: string }[] {
   return accessModes[type].map((mode) => ({ value: mode, label: accessModeLabel[mode] }));
 }
 
@@ -42,7 +42,7 @@ function rowsOf(entries: readonly AccessEntry[]): AccessRow[] {
 export function withMode(
   entries: readonly AccessEntry[],
   subject: AccessSubject,
-  mode: AccessListMode,
+  mode: AgentAccessMode,
 ): AccessRow[] {
   return rowsOf(entries).map((row) => (isSubject(row, subject) ? { ...row, mode } : row));
 }
@@ -59,7 +59,7 @@ export function withSubject(entries: readonly AccessEntry[], added: AccessRow): 
 }
 
 /** The mode a row of this type takes: the one asked for when the type allows it, else read. */
-export function modeForType(type: AccessSubjectType, mode: AccessListMode): AccessListMode {
+export function modeForType(type: AccessSubjectType, mode: AgentAccessMode): AgentAccessMode {
   return accessModes[type].includes(mode) ? mode : "read";
 }
 

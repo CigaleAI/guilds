@@ -1,4 +1,5 @@
-import type { AgentViewerMode, InsertKind } from "@guildsrun/ui";
+import type { InsertKind } from "@guildsrun/ui";
+import type { AgentAccessMode } from "../../api/types/access";
 import type { EmbeddableNote, EmbeddableNotes, ListedEmbeddableNote } from "../../api/types/notes";
 import type { Collection } from "../../api/types/tables";
 import { homeLabel } from "../access/listedItems";
@@ -12,7 +13,7 @@ export type Choice = {
   note?: EmbeddableNote;
   collection?: Collection;
   /** How the Task's agent reaches the note, when the picker lists the agent's sections. */
-  mode?: AgentViewerMode;
+  mode?: AgentAccessMode;
 };
 
 /** A named group of choices; a section says `empty` when it holds none. */

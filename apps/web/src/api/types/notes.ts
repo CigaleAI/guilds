@@ -1,5 +1,4 @@
-import type { AgentViewerMode } from "@guildsrun/ui";
-import type { AccessRow, ItemSections, ListedItem } from "./access";
+import type { AccessRow, AgentAccessMode, ItemSections, ListedItem } from "./access";
 import type { RunKind } from "./runs";
 
 /**
@@ -51,7 +50,7 @@ export type EmbeddableNote = {
 export type ListedEmbeddableNote = EmbeddableNote &
   ListedItem & {
     id: string;
-    viewer_mode: AgentViewerMode;
+    viewer_mode: AgentAccessMode;
   };
 
 /**
