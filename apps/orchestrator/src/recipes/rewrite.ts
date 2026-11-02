@@ -7,8 +7,8 @@ const DISPLAY_EMBED_RE = /!\[\[([^\]]+)\]\]/g;
 const PATH_START = String.raw`(?<![\w./-])`;
 const PATH_END = String.raw`\.md(?![\w-])`;
 const KEY_CHARS = String.raw`[^\s/\\\`'"()<>\[\]|]`;
-/** A note's destination path written as plain text: `agent/<role>/<key>`, `guild/<key>`, or `org/<key>`. */
-const RECIPE_NOTE_PATH = String.raw`${PATH_START}(?:agent\/[a-z][a-z0-9-]{0,62}|guild|org)\/${KEY_CHARS}+?${PATH_END}`;
+/** A note's destination path written as plain text: `org/<key>`. */
+const RECIPE_NOTE_PATH = String.raw`${PATH_START}org\/${KEY_CHARS}+?${PATH_END}`;
 /** A live note display path written as plain text: `org/<org_id>/…/<key>`. */
 const DISPLAY_NOTE_PATH = String.raw`${PATH_START}org\/(?:${KEY_CHARS}+\/)+?${KEY_CHARS}+?${PATH_END}`;
 const RECIPE_PATH_RE = new RegExp(`!\\[\\[([^\\]]+)\\]\\]|(${RECIPE_NOTE_PATH})`, "g");
@@ -31,11 +31,9 @@ export function rewriteRolesToNames(text: string, roleToName: Map<string, string
   });
 }
 
-export function recipeNotePath(note: Pick<RecipeNote, "level" | "role" | "key">): string {
-  if (note.level === "agent") {
-    return `agent/${note.role || "_"}/${note.key}`;
-  }
-  return `${note.level}/${note.key}`;
+/** The path a recipe names one of its notes by: `org/<key>`. */
+export function recipeNotePath(note: Pick<RecipeNote, "key">): string {
+  return `org/${note.key}`;
 }
 
 export function rewriteHrefsToRecipeIds(text: string, hrefToNoteId: Map<string, string>): string {

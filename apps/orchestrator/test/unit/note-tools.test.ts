@@ -14,8 +14,9 @@ import { toolFixture, type ToolFixture } from "../helpers/toolbox.js";
 type Stored = {
   display_path: string;
   kind: string;
-  level: string;
-  owner_id: string;
+  /** The agents whose own row reaches the note; every agent when the note is shared. */
+  readers: string[];
+  shared: boolean;
   key: string;
   content_text?: string;
 };
@@ -44,26 +45,26 @@ class FakeStore {
     return { display_path: row.display_path, content: row.content_text };
   }
 
-  async writeNote(actor: ArtifactActor, args: { level: string; key: string; content: string }) {
-    const ownerId = args.level === "agent" ? actor.agentId : args.level === "guild" ? actor.guildId : actor.orgId;
-    const prefix =
-      args.level === "agent"
-        ? `org/${actor.orgId}/agents/${ownerId}/`
-        : args.level === "guild"
-          ? `org/${actor.orgId}/guilds/${ownerId}/`
-          : `org/${actor.orgId}/`;
-    const display = `${prefix}${args.key}`;
+  async writeNote(actor: ArtifactActor, args: { key: string; content: string }) {
+    this.calls.push({ method: "writeNote", args });
+    const display = `org/${actor.orgId}/${args.key}`;
     const row: Stored = {
       display_path: display,
       kind: "note",
-      level: args.level,
-      owner_id: String(ownerId),
+      readers: [String(actor.agentId)],
+      shared: false,
       key: args.key,
       content_text: args.content,
     };
     this.rows = this.rows.filter((item) => item.display_path !== display);
     this.rows.push(row);
     return { href: display, row: noteRowAt(display, args.content) };
+  }
+
+  /** Opens a note to every agent, as an operator's row for the organisation would. */
+  share(path: string): void {
+    const row = this.rows.find((item) => item.display_path === path);
+    if (row) row.shared = true;
   }
 
   async writeNoteAt(actor: ArtifactActor, path: string, { content }: NoteRewrite) {
@@ -135,11 +136,9 @@ class FakeStore {
     return Number(args.id);
   }
 
-  /** The default access lists: the organisation reads org notes, a guild its own, an agent its own. */
+  /** A note's access list: its creator's row, and the organisation's once shared. */
   private readable(actor: ArtifactActor, row: Stored) {
-    if (row.level === "org") return true;
-    if (row.level === "guild") return actor.operator || actor.guildId === row.owner_id;
-    return actor.operator || actor.agentId === row.owner_id;
+    return actor.operator || row.shared || row.readers.includes(String(actor.agentId));
   }
 }
 
@@ -182,19 +181,19 @@ const SCOUT_COLUMNS = [
   { name: "status", type: "text", description: "queue state", values: ["new", "done"] },
 ];
 
-test("note_write stores an agent note directly under the agent", async () => {
+test("note_write stores a note by key directly under the organisation", async () => {
   const store = new FakeStore();
   const toolCtx = ctx(store);
   const stored = await invoke(toolCtx, "note_write", {
-    level: "agent",
     key: "acme.md",
     content: "hello\n",
   });
-  assert.equal(stored.content, "org/org_1/agents/a_1/acme.md");
+  assert.equal(stored.content, "org/org_1/acme.md");
   assert.equal(stored.metadata.error, null);
+  assert.deepEqual(store.calls.at(-1), { method: "writeNote", args: { key: "acme.md", content: "hello\n" } });
   const found = await invoke(toolCtx, "note_find", { query: "" });
   assert.deepEqual(Object.keys(parse(found.content)), ["notes"]);
-  assert.match(found.content, /agents\/a_1\/acme.md/);
+  assert.match(found.content, /org\/org_1\/acme.md/);
   const got = await invoke(toolCtx, "note_get", { path: stored.content });
   assert.match(got.content, /hello/);
 });
@@ -207,29 +206,27 @@ test("an agent cannot reach its memory archive", async () => {
   assert.match((await invoke(toolCtx, "note_delete", { path: archived })).content, /ERROR: unknown artifact path/);
 });
 
-test("agent cannot read another agent's private note", async () => {
+test("agent cannot read another agent's note its access list does not give it", async () => {
   const store = new FakeStore();
   const researcher = ctx(store, { agentId: "a_1" });
   await invoke(researcher, "note_write", {
-    level: "agent",
     key: "secret.md",
     content: "private",
   });
   const scout = ctx(store, { agentId: "a_2" });
   const missing = await invoke(scout, "note_get", {
-    path: "org/org_1/agents/a_1/secret.md",
+    path: "org/org_1/secret.md",
   });
   assert.match(missing.content, /ERROR: artifact not found/);
 });
 
-test("note_write reports the store's refusal of a level the agent cannot write", async () => {
+test("note_write reports the store's refusal of a note the agent cannot write", async () => {
   const store = new FakeStore();
   const toolCtx = ctx(store);
   store.writeNote = async () => {
     throw new Error("write not allowed");
   };
   const result = await invoke(toolCtx, "note_write", {
-    level: "guild",
     key: "brief.md",
     content: "x",
   });
@@ -239,7 +236,8 @@ test("note_write reports the store's refusal of a level the agent cannot write",
 test("note_write with a path rewrites that existing note", async () => {
   const store = new FakeStore();
   const writer = ctx(store, { agentId: "a_1", guildId: "guild_1" });
-  const created = await invoke(writer, "note_write", { level: "guild", key: "brief.md", content: "v1" });
+  const created = await invoke(writer, "note_write", { key: "brief.md", content: "v1" });
+  store.share(created.content);
   const peer = ctx(store, { agentId: "a_2", guildId: "guild_1" });
   const rewritten = await invoke(peer, "note_write", { path: created.content, content: "v2" });
   assert.equal(rewritten.content, created.content);
@@ -247,10 +245,10 @@ test("note_write with a path rewrites that existing note", async () => {
   assert.match((await invoke(peer, "note_get", { path: created.content })).content, /v2/);
 });
 
-test("note_write needs a path or a level", async () => {
+test("note_write needs a path or a key", async () => {
   const store = new FakeStore();
-  const result = await invoke(ctx(store), "note_write", { key: "brief.md", content: "x" });
-  assert.match(result.content, /level must be agent, guild, or org/);
+  const result = await invoke(ctx(store), "note_write", { content: "x" });
+  assert.match(result.content, /key or path is required/);
 });
 
 test("note tools point at the record tools for collection paths", async () => {

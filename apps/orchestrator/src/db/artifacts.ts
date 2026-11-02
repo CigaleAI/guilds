@@ -13,9 +13,6 @@ export type ArtifactRow = Pick<
   Artifact,
   | "id"
   | "org_id"
-  | "level"
-  | "owner_id"
-  | "guild_id"
   | "agent_id"
   | "origin_guild_id"
   | "kind"
@@ -45,22 +42,23 @@ export type HashedArtifactRow = ArtifactRow & Pick<Artifact, "content_hash">;
 /** A row read with its tombstone, when it is deleted. */
 export type ArtifactOrTombstoneRow = ArtifactRow & Pick<Artifact, "deleted_at">;
 
-/** A note, file, Memory, or script by where it sits: its owner, its folder, and its file name. */
-export type ArtifactAddress = Pick<Artifact, "org_id" | "level" | "owner_id" | "path" | "key">;
+/**
+ * A note, file, Memory, or script by where it sits: its organisation, the agent a Memory or a script
+ * belongs to (null for a note or a file), its folder, and its file name.
+ */
+export type ArtifactAddress = Pick<Artifact, "org_id" | "agent_id" | "path" | "key">;
 
-/** Who an artifact belongs to: its organisation, its owner, and the guild and agent it sits in. */
-export type ArtifactOwner = Pick<Artifact, "org_id" | "owner_id" | "guild_id" | "agent_id">;
-
-/** A new note as written: where it sits, who created it from which guild, and its text. */
-export type NewNote = ArtifactAddress &
-  ArtifactOwner &
-  Pick<Artifact, "origin_guild_id" | "title" | "content_text" | "search_text" | "content_hash">;
+/** A new note as written: its organisation and key, the guild its creator wrote from, and its text. */
+export type NewNote = Pick<
+  Artifact,
+  "org_id" | "key" | "origin_guild_id" | "title" | "content_text" | "search_text" | "content_hash"
+>;
 
 /** A note's new text, its title, and the hash of the text. */
 export type NoteContent = Pick<Artifact, "id" | "content_text" | "search_text" | "title" | "content_hash">;
 
-/** An agent's Memory row as created: the agent, its guild, and its first text. */
-export type NewMemoryRow = Pick<Artifact, "org_id" | "guild_id" | "key" | "content_text" | "content_hash"> & {
+/** An agent's Memory row as created: the agent, the guild it sits in, and its first text. */
+export type NewMemoryRow = Pick<Artifact, "org_id" | "origin_guild_id" | "key" | "content_text" | "content_hash"> & {
   agent_id: string;
 };
 
@@ -74,15 +72,9 @@ export type MemoryRevisionRow = InferSelectModel<typeof memoryRevisions>;
 /** A Memory text being archived: whose it is, the text, and what replaced it. */
 export type MemoryRevision = Pick<MemoryRevisionRow, "org_id" | "agent_id" | "content_text" | "replaced_by_detail">;
 
-/** The name of the organisation, guild, or agent that owns the artifact `a`, or its id when it has none. */
-export const OWNER_NAME_SQL = `COALESCE(CASE a.level
-    WHEN 'org' THEN (SELECT o.name FROM orgs o WHERE o.id = a.owner_id)
-    WHEN 'guild' THEN (SELECT g.name FROM guilds g WHERE g.id = a.owner_id)
-    ELSE (SELECT ag.name FROM agents ag WHERE ag.id = a.owner_id) END, a.owner_id)`;
-
 /** The columns of the artifact `a` that make an `ArtifactRow`, with its collection `c` joined. */
 export const ARTIFACT_SELECT = `
-  a.id, a.org_id, a.level, a.owner_id, a.guild_id, a.agent_id, a.origin_guild_id,
+  a.id, a.org_id, a.agent_id, a.origin_guild_id,
   a.kind, a.collection_id, c.name AS collection_name, a.path, a.key, a.title,
   a.content_text, a.content_json, a.search_text, a.mime, a.bytes, a.version,
   a.created_by_name, a.updated_by_name, a.created_at, a.updated_at
@@ -90,22 +82,33 @@ export const ARTIFACT_SELECT = `
 
 /** The RETURNING list of an artifact write that makes an `ArtifactRow`. */
 export const ARTIFACT_RETURNING = `
-  id, org_id, level, owner_id, guild_id, agent_id, origin_guild_id, kind, collection_id,
+  id, org_id, agent_id, origin_guild_id, kind, collection_id,
   (SELECT name FROM artifact_collections WHERE id = collection_id) AS collection_name,
   path, key, title, content_text, content_json,
   search_text, mime, bytes, version, created_by_name, updated_by_name, created_at, updated_at
 `;
 
-/** The predicate over the artifact `a` leaving out the items of guilds and agents hidden from the reader. */
+/**
+ * The predicate over the artifact `a` leaving out what is hidden from the reader: the Memory and
+ * scripts of its hidden agents, and every note and file whose access list is not empty and names
+ * only its hidden guilds and agents. A note or a file with no row is hidden from no one.
+ */
 export function hiddenScope(reader: ArtifactReader, values: unknown[]): string {
   values.push(reader.hidden.guildIds, reader.hidden.agentIds);
-  return `NOT ((a.level = 'guild' AND a.owner_id = ANY($${values.length - 1}::text[]))
-            OR (a.level = 'agent' AND a.owner_id = ANY($${values.length}::text[])))`;
+  const [guilds, agents] = [values.length - 1, values.length];
+  const listed = `SELECT 1 FROM artifact_access x WHERE x.target_kind = a.kind AND x.target_id = a.id`;
+  const hiddenRow = `((x.subject_type = 'guild' AND x.subject_id = ANY($${guilds}::text[]))
+                      OR (x.subject_type = 'agent' AND x.subject_id = ANY($${agents}::text[])))`;
+  return `NOT COALESCE(CASE
+      WHEN a.agent_id IS NOT NULL THEN a.agent_id = ANY($${agents}::text[])
+      WHEN a.kind IN ('note', 'file') THEN EXISTS (${listed}) AND NOT EXISTS (${listed} AND NOT ${hiddenRow})
+    END, false)`;
 }
 
 /**
- * The SQL for the reader's mode on the artifact `a`: `write` for the operator and for an agent's
- * own items, a note's or a file's access list otherwise; `none` or NULL when it does not reach it.
+ * The SQL for the reader's mode on the artifact `a`: `write` for the operator and for an agent's own
+ * Memory and scripts, a note's or a file's access list otherwise; `none` or NULL when it does not
+ * reach it.
  */
 export function artifactModeSql(reader: ArtifactReader, values: unknown[]): string {
   if (reader.operator) {
@@ -113,9 +116,21 @@ export function artifactModeSql(reader: ArtifactReader, values: unknown[]): stri
   }
   values.push(reader.agentId ?? "");
   const own = values.length;
-  return `CASE WHEN a.level = 'agent' AND a.owner_id = $${own} THEN 'write'
+  return `CASE WHEN a.agent_id IS NOT NULL THEN CASE WHEN a.agent_id = $${own} THEN 'write' END
                WHEN a.kind = 'note' THEN ${agentModeSql("note", "a.id", reader, values)}
                WHEN a.kind = 'file' THEN ${agentModeSql("file", "a.id", reader, values)} END`;
+}
+
+/**
+ * The predicate over the artifact `a` for a note or a file whose access list has a row for the
+ * guild whose id is the SQL `guildId`, or for one of its agents.
+ */
+export function guildRowScope(guildId: string): string {
+  return `EXISTS (SELECT 1 FROM artifact_access x
+                   WHERE x.target_kind = a.kind AND x.target_id = a.id
+                     AND ((x.subject_type = 'guild' AND x.subject_id = ${guildId})
+                          OR (x.subject_type = 'agent'
+                              AND x.subject_id IN (SELECT ag.id FROM agents ag WHERE ag.guild_id = ${guildId}))))`;
 }
 
 /** The predicate over the artifact `a` for every note, file, Memory, and script the reader may read. */
@@ -134,14 +149,6 @@ function modeJoin(reader: ArtifactReader, values: unknown[]): string {
 /** `readScope` over an artifact `a` whose mode `modeJoin` already gives. */
 function joinedReadScope(reader: ArtifactReader, values: unknown[]): string {
   return reader.operator ? hiddenScope(reader, values) : `m.access IN ('read', 'write')`;
-}
-
-function levelFilter(level: Artifact["level"] | undefined, values: unknown[]): string {
-  if (!level) {
-    return "";
-  }
-  values.push(level);
-  return ` AND a.level = $${values.length}`;
 }
 
 /** An agent's live Memory row with the hash of its text, or null when it has none. */
@@ -170,12 +177,12 @@ export async function insertMemoryRow(
 ): Promise<ArtifactRow | null> {
   const result = await db.query<ArtifactRow>(
     `INSERT INTO artifacts (
-       id, org_id, level, owner_id, guild_id, agent_id, origin_guild_id, kind,
+       id, org_id, agent_id, origin_guild_id, kind,
        collection_id, path, key, content_text, search_text, content_hash, version,
        created_by_type, created_by_id, created_by_name,
        updated_by_type, updated_by_id, updated_by_name, created_at, updated_at
      ) VALUES (
-       $1,$2,'agent',$3,$4,$3,$4,'memory',NULL,'',$5,$6,$5,$7,1,
+       $1,$2,$3,$4,'memory',NULL,'',$5,$6,$5,$7,1,
        $8,$9,$10,$8,$9,$10,$11,$11
      )
      ON CONFLICT DO NOTHING
@@ -184,7 +191,7 @@ export async function insertMemoryRow(
       newId("art"),
       memory.org_id,
       memory.agent_id,
-      memory.guild_id,
+      memory.origin_guild_id,
       memory.key,
       memory.content_text,
       memory.content_hash,
@@ -326,17 +333,17 @@ export async function listMemoryRevisions(
   return result.rows;
 }
 
-/** The live note at an address, with the hash of its text; null when there is none. */
-export async function getLiveNote(db: Queryable, at: ArtifactAddress): Promise<HashedArtifactRow | null> {
+/** The organisation's live note with this key, with the hash of its text; null when there is none. */
+export async function getLiveNote(db: Queryable, orgId: string, key: string): Promise<HashedArtifactRow | null> {
   const result = await db.query<HashedArtifactRow>(
     `SELECT ${ARTIFACT_SELECT}, a.content_hash
        FROM artifacts a
        LEFT JOIN artifact_collections c ON c.id = a.collection_id
-      WHERE a.org_id = $1 AND a.level = $2 AND a.owner_id = $3
+      WHERE a.org_id = $1 AND a.agent_id IS NULL
         AND a.kind = 'note' AND a.collection_id IS NULL
-        AND a.path = $4 AND a.key = $5 AND a.deleted_at IS NULL
+        AND a.path = '' AND a.key = $2 AND a.deleted_at IS NULL
       LIMIT 1`,
-    [at.org_id, at.level, at.owner_id, at.path, at.key],
+    [orgId, key],
   );
   return result.rows[0] ?? null;
 }
@@ -381,25 +388,20 @@ export async function insertNote(
 ): Promise<ArtifactRow> {
   const result = await db.query<ArtifactRow>(
     `INSERT INTO artifacts (
-       id, org_id, level, owner_id, guild_id, agent_id, origin_guild_id, kind,
+       id, org_id, agent_id, origin_guild_id, kind,
        collection_id, path, key, title, content_text, content_json, search_text,
        content_hash, version,
        created_by_type, created_by_id, created_by_name,
        updated_by_type, updated_by_id, updated_by_name, created_at, updated_at
      ) VALUES (
-       $1,$2,$3,$4,$5,$6,$7,'note',NULL,$8,$9,$10,$11,NULL,$12,$13,1,
-       $14,$15,$16,$14,$15,$16,$17,$17
+       $1,$2,NULL,$3,'note',NULL,'',$4,$5,$6,NULL,$7,$8,1,
+       $9,$10,$11,$9,$10,$11,$12,$12
      )
      RETURNING ${ARTIFACT_RETURNING}`,
     [
       newId("art"),
       note.org_id,
-      note.level,
-      note.owner_id,
-      note.guild_id,
-      note.agent_id,
       note.origin_guild_id,
-      note.path,
       note.key,
       note.title,
       note.content_text,
@@ -424,11 +426,11 @@ export async function getArtifactAt(db: Queryable, at: ArtifactAddress): Promise
     `SELECT ${ARTIFACT_SELECT}
        FROM artifacts a
        LEFT JOIN artifact_collections c ON c.id = a.collection_id
-      WHERE a.org_id = $1 AND a.level = $2 AND a.owner_id = $3
-        AND a.path = $4 AND a.key = $5 AND a.collection_id IS NULL
+      WHERE a.org_id = $1 AND a.agent_id IS NOT DISTINCT FROM $2
+        AND a.path = $3 AND a.key = $4 AND a.collection_id IS NULL
         AND a.deleted_at IS NULL
       LIMIT 1`,
-    [at.org_id, at.level, at.owner_id, at.path, at.key],
+    [at.org_id, at.agent_id, at.path, at.key],
   );
   return result.rows[0] ?? null;
 }
@@ -442,10 +444,11 @@ export async function getArtifactOrTombstoneAt(
     `SELECT ${ARTIFACT_SELECT}, a.deleted_at
        FROM artifacts a
        LEFT JOIN artifact_collections c ON c.id = a.collection_id
-      WHERE a.org_id = $1 AND a.level = $2 AND a.owner_id = $3
-        AND a.path = $4 AND a.key = $5 AND a.collection_id IS NULL
+      WHERE a.org_id = $1 AND a.agent_id IS NOT DISTINCT FROM $2
+        AND a.path = $3 AND a.key = $4 AND a.collection_id IS NULL
+      ORDER BY a.deleted_at IS NULL DESC, a.deleted_at DESC
       LIMIT 1`,
-    [at.org_id, at.level, at.owner_id, at.path, at.key],
+    [at.org_id, at.agent_id, at.path, at.key],
   );
   return result.rows[0] ?? null;
 }
@@ -484,15 +487,12 @@ export async function softDeleteArtifact(
   return result.rows[0]?.version ?? null;
 }
 
-/** How many live notes, Memory, scripts, and files an owner holds. */
-export async function countLiveArtifacts(
-  db: Queryable,
-  owner: Pick<Artifact, "org_id" | "level" | "owner_id">,
-): Promise<number> {
+/** How many live notes and files the organisation holds. */
+export async function countLiveNotesAndFiles(db: Queryable, orgId: string): Promise<number> {
   const result = await db.query<{ n: number }>(
     `SELECT COUNT(*)::int AS n FROM artifacts
-      WHERE org_id = $1 AND level = $2 AND owner_id = $3 AND deleted_at IS NULL AND kind <> 'object'`,
-    [owner.org_id, owner.level, owner.owner_id],
+      WHERE org_id = $1 AND deleted_at IS NULL AND kind IN ('note', 'file')`,
+    [orgId],
   );
   return result.rows[0]?.n ?? 0;
 }
@@ -509,54 +509,69 @@ export async function listAgentsEmbedding(db: Queryable, orgId: string, displayP
   return result.rows.map((row) => row.agent_id);
 }
 
-/** One owner's notes or files: the owner's level and id, and the kind. */
-export type OwnerArtifactsKey = Pick<Artifact, "level" | "owner_id"> & { kind: "note" | "file" };
+/** The two kinds an access list governs, which an organisation, a guild, or an agent page lists. */
+export type ListedKind = Extract<Artifact["kind"], "note" | "file">;
 
-/** The live notes or files one owner holds that the reader may read, by key. */
-export async function listOwnerArtifacts(
-  db: Queryable,
-  reader: ArtifactReader,
-  owner: OwnerArtifactsKey,
-): Promise<ArtifactRow[]> {
-  const values: unknown[] = [reader.orgId, owner.level, owner.owner_id, owner.kind];
+/** The organisation's live notes or files the reader may read, by key. */
+export async function listOrgArtifacts(db: Queryable, reader: ArtifactReader, kind: ListedKind): Promise<ArtifactRow[]> {
+  const values: unknown[] = [reader.orgId, kind];
   const result = await db.query<ArtifactRow>(
     `SELECT ${ARTIFACT_SELECT}
        FROM artifacts a
        LEFT JOIN artifact_collections c ON c.id = a.collection_id
-      WHERE a.org_id = $1 AND a.level = $2 AND a.owner_id = $3 AND a.deleted_at IS NULL
-        AND a.kind = $4 AND (${readScope(reader, values)})
+      WHERE a.org_id = $1 AND a.deleted_at IS NULL AND a.kind = $2
+        AND (${readScope(reader, values)})
       ORDER BY a.key`,
     values,
   );
   return result.rows;
 }
 
-/** A guild and its agents, the owners of a guild's artifacts below the organisation. */
-export type GuildArtifactOwners = { guildId: string; agentIds: string[] };
-
-/** The live notes, Memory, scripts, and files of one guild, its agents, and the organisation that the reader may read. */
+/** The live notes or files whose access list has a row for the guild or one of its agents, that the reader may read, by key. */
 export async function listGuildArtifacts(
   db: Queryable,
   reader: ArtifactReader,
-  owners: GuildArtifactOwners,
+  guildId: string,
+  kind: ListedKind,
 ): Promise<ArtifactRow[]> {
-  const values: unknown[] = [reader.orgId, owners.guildId, owners.agentIds];
+  const values: unknown[] = [reader.orgId, kind, guildId];
   const result = await db.query<ArtifactRow>(
     `SELECT ${ARTIFACT_SELECT}
        FROM artifacts a
        LEFT JOIN artifact_collections c ON c.id = a.collection_id
-      WHERE a.org_id = $1 AND a.deleted_at IS NULL AND a.kind IN ('note', 'memory', 'script', 'file')
-        AND (a.level = 'org'
-             OR (a.level = 'guild' AND a.owner_id = $2)
-             OR (a.level = 'agent' AND a.owner_id = ANY($3::text[])))
+      WHERE a.org_id = $1 AND a.deleted_at IS NULL AND a.kind = $2 AND ${guildRowScope("$3")}
         AND (${readScope(reader, values)})
-      ORDER BY a.level, a.owner_id, a.key`,
+      ORDER BY a.key`,
     values,
   );
   return result.rows;
 }
 
-/** Up to 500 live notes of the organisation the reader may read, by level and key. */
+/**
+ * What one guild's state holds that the reader may read: its agents' Memory and scripts, and the
+ * notes and files whose access list has a row for the guild or one of its agents.
+ */
+export async function listGuildStateArtifacts(
+  db: Queryable,
+  reader: ArtifactReader,
+  guildId: string,
+): Promise<ArtifactRow[]> {
+  const values: unknown[] = [reader.orgId, guildId];
+  const result = await db.query<ArtifactRow>(
+    `SELECT ${ARTIFACT_SELECT}
+       FROM artifacts a
+       LEFT JOIN artifact_collections c ON c.id = a.collection_id
+      WHERE a.org_id = $1 AND a.deleted_at IS NULL
+        AND ((a.kind IN ('memory', 'script') AND a.agent_id IN (SELECT ag.id FROM agents ag WHERE ag.guild_id = $2))
+             OR (a.kind IN ('note', 'file') AND ${guildRowScope("$2")}))
+        AND (${readScope(reader, values)})
+      ORDER BY a.kind, a.agent_id NULLS FIRST, a.key`,
+    values,
+  );
+  return result.rows;
+}
+
+/** Up to 500 live notes of the organisation the reader may read, by key. */
 export async function listReadableNotes(db: Queryable, reader: ArtifactReader): Promise<ArtifactRow[]> {
   const values: unknown[] = [reader.orgId];
   const result = await db.query<ArtifactRow>(
@@ -565,24 +580,21 @@ export async function listReadableNotes(db: Queryable, reader: ArtifactReader): 
        LEFT JOIN artifact_collections c ON c.id = a.collection_id
       WHERE a.org_id = $1 AND a.kind = 'note' AND a.deleted_at IS NULL
         AND (${readScope(reader, values)})
-      ORDER BY a.level, a.key
+      ORDER BY a.key
       LIMIT 500`,
     values,
   );
   return result.rows;
 }
 
-/** What a search or listing of notes or files reads: an optional level and a row cap. */
-export type ArtifactListing = { level: Artifact["level"] | undefined; limit: number };
-
-/** A search of notes or files: a listing and the words it matches. */
-export type ArtifactSearch = ArtifactListing & { query: string };
+/** A search of notes or files: the words it matches and a row cap. */
+export type ArtifactSearch = { query: string; limit: number };
 
 /** The notes or files the reader may read whose search document or search text matches `query`, best first. */
 export async function searchArtifactsByKind(
   db: Queryable,
   reader: ArtifactReader,
-  kind: "note" | "file",
+  kind: ListedKind,
   search: ArtifactSearch,
 ): Promise<ArtifactRow[]> {
   const values: unknown[] = [reader.orgId, kind];
@@ -592,7 +604,6 @@ export async function searchArtifactsByKind(
        ${modeJoin(reader, values)}
       WHERE a.deleted_at IS NULL AND a.kind = $2 AND a.org_id = $1
         AND (${joinedReadScope(reader, values)})`;
-  sql += levelFilter(search.level, values);
   values.push(search.query);
   const qIndex = values.length;
   values.push(search.limit);
@@ -606,12 +617,12 @@ export async function searchArtifactsByKind(
   return result.rows;
 }
 
-/** The notes or files the reader may read, by level then key. */
+/** The notes or files the reader may read, by key, up to `limit`. */
 export async function listArtifactsByKind(
   db: Queryable,
   reader: ArtifactReader,
-  kind: "note" | "file",
-  listing: ArtifactListing,
+  kind: ListedKind,
+  limit: number,
 ): Promise<ArtifactRow[]> {
   const values: unknown[] = [reader.orgId, kind];
   let sql = `SELECT ${ARTIFACT_SELECT}, m.access
@@ -620,40 +631,44 @@ export async function listArtifactsByKind(
        ${modeJoin(reader, values)}
       WHERE a.deleted_at IS NULL AND a.kind = $2 AND a.org_id = $1
         AND (${joinedReadScope(reader, values)})`;
-  sql += levelFilter(listing.level, values);
-  values.push(listing.limit);
-  sql += ` ORDER BY a.level, a.key LIMIT $${values.length}`;
+  values.push(limit);
+  sql += ` ORDER BY a.key LIMIT $${values.length}`;
   const result = await db.query<ArtifactRow>(sql, values);
   return result.rows;
 }
 
-/** The live notes `reacher` reads, without those of guilds `reader` cannot see, with their owner's name. */
-export async function listReachedNotes(
+/** A row read with the mode an agent reaches it with. */
+export type ReachedArtifactRow = ArtifactRow & { access: ArtifactMode };
+
+/** The live notes or files `reacher` reads, without those hidden from `reader`, by key. */
+export async function listReachedArtifacts(
   db: Queryable,
   reader: ArtifactReader,
   reacher: ArtifactReader,
-): Promise<Array<ArtifactRow & { access: ArtifactMode; owner_name: string }>> {
-  const values: unknown[] = [reader.orgId];
+  kind: ListedKind,
+): Promise<ReachedArtifactRow[]> {
+  const values: unknown[] = [reader.orgId, kind];
   const mode = artifactModeSql(reacher, values);
   const hidden = readScope(reader, values);
-  const result = await db.query<ArtifactRow & { access: ArtifactMode; owner_name: string }>(
+  const result = await db.query<ReachedArtifactRow>(
     `SELECT * FROM (
-       SELECT ${ARTIFACT_SELECT}, ${mode} AS access, ${OWNER_NAME_SQL} AS owner_name
+       SELECT ${ARTIFACT_SELECT}, ${mode} AS access
          FROM artifacts a
          LEFT JOIN artifact_collections c ON c.id = a.collection_id
-        WHERE a.org_id = $1 AND a.kind = 'note' AND a.deleted_at IS NULL AND (${hidden})
+        WHERE a.org_id = $1 AND a.kind = $2 AND a.deleted_at IS NULL AND (${hidden})
      ) reached
       WHERE reached.access IN ('read', 'write')
-      ORDER BY reached.level, reached.owner_id, reached.key`,
+      ORDER BY reached.key`,
     values,
   );
   return result.rows;
 }
 
-/** A new file as written: where it sits, who created it from which guild, and its description, type, and size. */
-export type NewFile = ArtifactAddress &
-  ArtifactOwner &
-  Pick<Artifact, "id" | "origin_guild_id" | "title" | "search_text" | "mime" | "bytes" | "content_hash">;
+/** A new file as written: its id, organisation and name, the guild its creator wrote from, and its description, type, and size. */
+export type NewFile = Pick<
+  Artifact,
+  "id" | "org_id" | "key" | "origin_guild_id" | "title" | "search_text" | "mime" | "bytes" | "content_hash"
+>;
 
 /** A file's new description, type, size, and hash, over the version it replaces. */
 export type FileContent = Pick<Artifact, "id" | "title" | "search_text" | "mime" | "bytes" | "content_hash" | "version">;
@@ -661,25 +676,20 @@ export type FileContent = Pick<Artifact, "id" | "title" | "search_text" | "mime"
 export async function insertFile(db: Queryable, file: NewFile, actor: ChangeActor, now: Date): Promise<ArtifactRow> {
   const result = await db.query<ArtifactRow>(
     `INSERT INTO artifacts (
-       id, org_id, level, owner_id, guild_id, agent_id, origin_guild_id, kind,
+       id, org_id, agent_id, origin_guild_id, kind,
        collection_id, path, key, title, content_text, content_json, search_text, mime, bytes,
        content_hash, version,
        created_by_type, created_by_id, created_by_name,
        updated_by_type, updated_by_id, updated_by_name, created_at, updated_at
      ) VALUES (
-       $1,$2,$3,$4,$5,$6,$7,'file',NULL,$8,$9,$10,NULL,NULL,$11,$12,$13,$14,1,
-       $15,$16,$17,$15,$16,$17,$18,$18
+       $1,$2,NULL,$3,'file',NULL,'files',$4,$5,NULL,NULL,$6,$7,$8,$9,1,
+       $10,$11,$12,$10,$11,$12,$13,$13
      )
      RETURNING ${ARTIFACT_RETURNING}`,
     [
       file.id,
       file.org_id,
-      file.level,
-      file.owner_id,
-      file.guild_id,
-      file.agent_id,
       file.origin_guild_id,
-      file.path,
       file.key,
       file.title,
       file.search_text,

@@ -58,11 +58,12 @@ test("organisation-wide note, table, and change routes keep a private guild to i
       payload: { name: "keeper", config: { model: TEST_MODEL, browser: false } },
     });
     assert.equal(agent.statusCode, 201, agent.body);
+    const agentId = String(agent.json().id);
     const note = await app.inject({
       method: "PUT",
-      url: `/api/guilds/${guildId}/notes/plans.md`,
+      url: "/api/org/notes/plans.md",
       headers: { ...OWNER, ...JSON_BODY },
-      payload: { content: "# Plans\n\nkept in the vault" },
+      payload: { content: "# Plans\n\nkept in the vault", access: { type: "guild", id: guildId, mode: "write" } },
     });
     assert.equal(note.statusCode, 200, note.body);
     const notePath = String(note.json().display_path);
@@ -95,6 +96,49 @@ test("organisation-wide note, table, and change routes keep a private guild to i
       headers: TEAMMATE,
     });
     assert.equal(memberNote.statusCode, 404);
+    assert.equal((await app.inject({ method: "GET", url: "/api/org/notes/plans.md", headers: TEAMMATE })).statusCode, 404);
+    const memberOrgNotes = await app.inject({ method: "GET", url: "/api/org/notes", headers: TEAMMATE });
+    assert.ok(!(memberOrgNotes.json() as Array<{ path: string }>).some((item) => item.path === "plans.md"));
+    const memberOverwrite = await app.inject({
+      method: "PUT",
+      url: "/api/org/notes/plans.md",
+      headers: { ...TEAMMATE, ...JSON_BODY },
+      payload: { content: "taken over" },
+    });
+    assert.equal(memberOverwrite.statusCode, 422, "a hidden note is not written over");
+    assert.equal((await app.inject({ method: "DELETE", url: "/api/org/notes/plans.md", headers: TEAMMATE })).statusCode, 404);
+
+    // A note whose only row names an agent of the private guild is hidden too; a row outside it, or no row, shows it.
+    const keeperNote = await app.inject({
+      method: "PUT",
+      url: "/api/org/notes/keeper.md",
+      headers: { ...OWNER, ...JSON_BODY },
+      payload: { content: "the keeper's", access: { type: "agent", id: agentId, mode: "write" } },
+    });
+    assert.equal(keeperNote.statusCode, 200, keeperNote.body);
+    assert.equal((await app.inject({ method: "GET", url: "/api/org/notes/keeper.md", headers: TEAMMATE })).statusCode, 404);
+    const keeperId = String(keeperNote.json().id);
+    const opened = await app.inject({
+      method: "PUT",
+      url: `/api/notes/${keeperId}/access`,
+      headers: { ...OWNER, ...JSON_BODY },
+      payload: { subjects: [{ type: "agent", id: agentId, mode: "write" }, { type: "org", id: "org_home", mode: "read" }] },
+    });
+    assert.equal(opened.statusCode, 200, opened.body);
+    const shown = await app.inject({ method: "GET", url: "/api/notes/" + keeperId + "/access", headers: TEAMMATE });
+    assert.deepEqual(
+      (shown.json() as { subjects: Array<{ type: string }> }).subjects.map((entry) => entry.type),
+      ["org"],
+      "the private guild's agent row stays out of the list a member reads",
+    );
+    const emptied = await app.inject({
+      method: "PUT",
+      url: `/api/notes/${keeperId}/access`,
+      headers: { ...OWNER, ...JSON_BODY },
+      payload: { subjects: [] },
+    });
+    assert.equal(emptied.statusCode, 200, emptied.body);
+    assert.equal((await app.inject({ method: "GET", url: "/api/org/notes/keeper.md", headers: TEAMMATE })).statusCode, 200);
 
     const memberTables = await app.inject({ method: "GET", url: "/api/collections", headers: TEAMMATE });
     assert.ok(!(memberTables.json() as Array<{ id: string }>).some((item) => item.id === tableId));

@@ -56,7 +56,8 @@ const OTHER_GUILD = "guild_other";
 const AGENT = "a_svc";
 const operator = operatorActor({ orgId: ORG, actorId: "user_operator", actorName: "operator", guildId: GUILD });
 const agent = agentActor({ orgId: ORG, guildId: GUILD, agentId: AGENT, agentName: "svc" });
-const rulesPath = `org/${ORG}/guilds/${GUILD}/rules.md`;
+const rulesPath = `org/${ORG}/rules.md`;
+const guildWrite = [{ type: "guild" as const, id: GUILD, mode: "write" as const }];
 const shutPath = `org/${ORG}/shut.md`;
 
 before(async () => {
@@ -71,8 +72,12 @@ before(async () => {
     systemActor(ORG, { guildId: GUILD, agentId: AGENT }),
     new Date(),
   );
-  await writeNote(store, operator, { level: "guild", key: "rules.md", content: "Cite sources.\n" });
-  const { row: shut } = await writeNote(store, operator, { level: "org", key: "shut.md", content: "Not for agents.\n" });
+  await writeNote(store, operator, { key: "rules.md", content: "Cite sources.\n", startingAccess: guildWrite });
+  const { row: shut } = await writeNote(store, operator, {
+    key: "shut.md",
+    content: "Not for agents.\n",
+    startingAccess: [{ type: "org", id: ORG, mode: "read" }],
+  });
   await grantAccess(store, operator, { kind: "note", id: shut.id }, { type: "agent", id: AGENT, mode: "none" });
 });
 
@@ -100,15 +105,15 @@ describe("artifact service", { concurrency: 1 }, () => {
     assert.equal(task.hasEmbeds, true);
     assert.deepEqual(task.expanded, {
       ok: true,
-      text: `Follow <rules path="${rulesPath}" level="guild">\nCite sources.\n</rules> and ${unreachableMarker(shutPath)}\n`,
+      text: `Follow <rules path="${rulesPath}">\nCite sources.\n</rules> and ${unreachableMarker(shutPath)}\n`,
     });
     assert.equal(task.memory?.content_text, "- keep it short\n");
     assert.equal(task.memoryText, "- keep it short\n");
   });
 
   test("agentTask reports a Task whose embeds pass the embed budget as not inlined", async () => {
-    await writeNote(store, operator, { level: "guild", key: "large.md", content: "x".repeat(EMBED_BUDGET + 1) });
-    const row = await agentWithTask(`Read ![[org/${ORG}/guilds/${GUILD}/large.md]]\n`);
+    await writeNote(store, operator, { key: "large.md", content: "x".repeat(EMBED_BUDGET + 1), startingAccess: guildWrite });
+    const row = await agentWithTask(`Read ![[org/${ORG}/large.md]]\n`);
     const task = await agentTask(store, row);
     assert.deepEqual(task.expanded, { ok: false, error: "embed budget exceeded" });
     assert.equal(task.text, row.task);
@@ -127,7 +132,7 @@ describe("artifact service", { concurrency: 1 }, () => {
       await expandTaskText(store, row, `Use ![[${shutPath}]]\n`),
       `Use ${unreachableMarker(shutPath)}\n`,
     );
-    await assert.rejects(expandTaskText(store, row, `Read ![[org/${ORG}/guilds/${GUILD}/large.md]]\n`), {
+    await assert.rejects(expandTaskText(store, row, `Read ![[org/${ORG}/large.md]]\n`), {
       name: "ArtifactError",
       message: "embed budget exceeded",
     });
@@ -189,7 +194,7 @@ describe("artifact service", { concurrency: 1 }, () => {
     assert.equal(live.kind === "row" && live.deleted, false);
     assert.equal(live.kind === "row" ? live.row.content_text : null, "Cite sources.\n");
 
-    const { row: gone } = await writeNote(store, operator, { level: "guild", key: "gone.md", content: "bye\n" });
+    const { row: gone } = await writeNote(store, operator, { key: "gone.md", content: "bye\n" });
     await deleteByDisplayPath(store, operator, rowDisplayPath(gone));
     const deleted = await artifactAt(store, operator, rowDisplayPath(gone));
     assert.equal(deleted.kind === "row" && deleted.deleted, true);
@@ -269,25 +274,27 @@ describe("artifact service", { concurrency: 1 }, () => {
     assert.deepEqual(await notesNamed(store, operator, new Set()), []);
   });
 
-  test("readStateNotes reads the guild's agents' notes, then its own, then the organisation's, with their text", async () => {
-    const { href: ownPath } = await writeNote(store, agent, { level: "agent", key: "own.md", content: "Mine.\n" });
-    const notes = await readStateNotes(store, operator, { guildId: GUILD, agentIds: [AGENT] });
+  test("readStateNotes reads the notes whose list names the guild or one of its agents, by file name, with their text", async () => {
+    const { href: ownPath } = await writeNote(store, agent, { key: "own.md", content: "Mine.\n" });
+    const { href: elsewhere } = await writeNote(store, operator, { key: "elsewhere.md", content: "Not here.\n" });
+    const notes = await readStateNotes(store, operator, GUILD);
     const hrefs = notes.map((note) => note.href);
     assert.ok(hrefs.indexOf(ownPath) < hrefs.indexOf(rulesPath));
     assert.ok(hrefs.indexOf(rulesPath) < hrefs.indexOf(shutPath));
     assert.equal(notes.find((note) => note.href === ownPath)?.row.content_text, "Mine.\n");
     assert.equal(notes.find((note) => note.href === rulesPath)?.row.content_text, "Cite sources.\n");
+    assert.ok(!hrefs.includes(elsewhere), "a note with only the organisation's row is not the guild's");
   });
 
   test("readStateNotes leaves out a note the reader cannot read", async () => {
-    const hrefs = (await readStateNotes(store, agent, { guildId: GUILD, agentIds: [AGENT] })).map((note) => note.href);
+    const hrefs = (await readStateNotes(store, agent, GUILD)).map((note) => note.href);
     assert.ok(hrefs.includes(rulesPath));
     assert.ok(!hrefs.includes(shutPath));
   });
 
   test("readStateNotes fails when reading a listed note fails for a reason other than the store refusing it", async () => {
-    // The agent's, the guild's and the organisation's listings run first; every read after them fails.
-    const listings = 3;
+    // The guild's listing runs first; every read after it fails.
+    const listings = 1;
     let queries = 0;
     const failing = new Proxy(db, {
       get(target, property) {
@@ -302,7 +309,7 @@ describe("artifact service", { concurrency: 1 }, () => {
       },
     });
     await assert.rejects(
-      readStateNotes(artifactStore(failing, templatesRoot()), operator, { guildId: GUILD, agentIds: [AGENT] }),
+      readStateNotes(artifactStore(failing, templatesRoot()), operator, GUILD),
       /connection lost/,
     );
   });
@@ -394,11 +401,11 @@ describe("artifact service", { concurrency: 1 }, () => {
     assert.equal(found.hint, null);
   });
 
-  test("writeNote writes under the owner the level names for the actor and says where the note sits", async () => {
-    const written = await writeNote(store, agent, { level: "agent", key: " own.md ", content: "mine\n" });
-    assert.equal(written.href, `org/${ORG}/agents/${AGENT}/own.md`);
+  test("writeNote writes the organisation's note at its key and says where the note sits", async () => {
+    const written = await writeNote(store, agent, { key: " own.md ", content: "mine\n" });
+    assert.equal(written.href, `org/${ORG}/own.md`);
     assert.equal(written.row.key, "own.md");
-    assert.equal(written.row.owner_id, AGENT);
+    assert.equal(written.row.agent_id, null);
   });
 
   test("taskEmbedRun walks the Task as the agent reads it and names the inlined embeds the agent cannot read", async () => {

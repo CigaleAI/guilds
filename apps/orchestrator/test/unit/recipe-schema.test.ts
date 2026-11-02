@@ -146,34 +146,31 @@ function withNote(note: Record<string, unknown>): unknown {
   return recipe;
 }
 
-test("a note's guild mode defaults to what its level gives and its writers to none", () => {
-  const modes = (["org", "guild", "agent"] as const).map((level) => {
-    const note = parseRecipe(withNote({ level, role: level === "agent" ? "reader" : undefined })).notes[0]!;
-    return [level, note.guild ?? null, note.writers];
-  });
-  assert.deepEqual(modes, [
-    ["org", "read", []],
-    ["guild", "write", []],
-    ["agent", null, []],
-  ]);
+test("a note that states no access has no guild mode and no writers", () => {
+  const note = parseRecipe(withNote({})).notes[0]!;
+  assert.equal(note.guild, undefined);
+  assert.deepEqual(note.writers, []);
 });
 
-test("a note carries a guild mode and writers beyond its level's rows", () => {
-  const note = parseRecipe(withNote({ level: "agent", role: "writer", guild: "read", writers: ["reader", " reader "] })).notes[0]!;
+test("a note carries the guild mode and the writers it states", () => {
+  const note = parseRecipe(withNote({ guild: "read", writers: ["reader", " reader "] })).notes[0]!;
   assert.equal(note.guild, "read");
   assert.deepEqual(note.writers, ["reader"]);
-  assert.equal(parseRecipe(withNote({ level: "org", guild: "write" })).notes[0]?.guild, "write");
+  assert.equal(parseRecipe(withNote({ guild: "write" })).notes[0]?.guild, "write");
 });
 
-test("a note's guild mode is read or write and a guild note keeps guild write without writers", () => {
-  assert.throws(() => parseRecipe(withNote({ level: "org", guild: "none" })), /notes\[0\]\.guild must be read or write/);
-  assert.throws(() => parseRecipe(withNote({ level: "org", writers: "reader" })), /notes\[0\]\.writers must be an array/);
-  assert.throws(() => parseRecipe(withNote({ level: "guild", guild: "read" })), /notes\[0\] takes guild write and no writers/);
-  assert.throws(() => parseRecipe(withNote({ level: "guild", writers: ["reader"] })), /notes\[0\] takes guild write and no writers/);
+test("a note's guild mode is read or write and its writers a list", () => {
+  assert.throws(() => parseRecipe(withNote({ guild: "none" })), /notes\[0\]\.guild must be read or write/);
+  assert.throws(() => parseRecipe(withNote({ writers: "reader" })), /notes\[0\]\.writers must be an array/);
+});
+
+test("a note has no level or role", () => {
+  assert.throws(() => parseRecipe(withNote({ level: "guild" })), /unknown key notes\[0\]\.level; a note has no level or role/);
+  assert.throws(() => parseRecipe(withNote({ role: "reader" })), /unknown key notes\[0\]\.role; a note has no level or role/);
 });
 
 test("a note's writers must be roles of the recipe", () => {
-  const recipe = parseRecipe(withNote({ level: "org", writers: ["archivist"] }));
+  const recipe = parseRecipe(withNote({ writers: ["archivist"] }));
   const findings = validateRecipe(recipe, { ...ctx, publishedServers: new Set(["mail", "crm"]) });
   const writer = findings.find((item) => item.code === "note.writer");
   assert.ok(writer);
@@ -185,15 +182,15 @@ test("a note's writers must be roles of the recipe", () => {
 test("plain-text note paths must name a recipe note", () => {
   const recipe = parseRecipe(fixtureDeskRecipe());
   recipe.notes = [
-    { id: "rules", level: "guild", key: "rules.md", body: "Rules.\n", kind: "seed", author: operatorAuthor(), writers: [] },
+    { id: "rules", key: "rules.md", body: "Rules.\n", kind: "seed", author: operatorAuthor(), writers: [] },
   ];
-  recipe.roles[0]!.task.body += "\n\nRead guild/rules.md, then note_get agent/reader/playbook.md.";
+  recipe.roles[0]!.task.body += "\n\nRead org/rules.md, then note_get org/playbook.md.";
   const findings = validateRecipe(recipe, { ...ctx, publishedServers: new Set(["mail", "crm"]) });
   const unknown = findings.filter((item) => item.code === "task.note_path");
   assert.equal(unknown.length, 1);
   assert.equal(unknown[0]?.severity, "error");
   assert.equal(unknown[0]?.path, "roles.reader.task");
-  assert.match(unknown[0]?.message ?? "", /agent\/reader\/playbook\.md/);
+  assert.match(unknown[0]?.message ?? "", /org\/playbook\.md/);
 });
 
 test("recipe schema rejects unknown keys and duplicate routine keys", () => {
@@ -403,7 +400,6 @@ test("applyReview covers schedules, notes, and external cards", () => {
   const recipe = parseRecipe(linkedInNotionRecipe(builderAuthor()));
   recipe.notes.push({
     id: "playbook",
-    level: "guild",
     key: "playbook.md",
     body: "Keep the queue moving.",
     kind: "seed",
@@ -466,8 +462,8 @@ test("unknown key errors list allowed keys and common aliases", () => {
     /unknown key roles\[0\]\.name; use `role`.*allowed: role, name_suggestion/,
   );
   assert.throws(
-    () => parseRecipe({ ...base, notes: [{ name: "playbook", level: "agent", purpose: "x" }] }),
-    /unknown key notes\[0\]\.name; notes use `id`, `level`, `key`, and `body`/,
+    () => parseRecipe({ ...base, notes: [{ name: "playbook", purpose: "x" }] }),
+    /unknown key notes\[0\]\.name; notes use `id`, `key`, `body`, `guild`, and `writers`/,
   );
   assert.throws(
     () => parseRecipe({ ...base, collections: [{ name: "queue", purpose: "x", role: "scout" }] }),
@@ -477,16 +473,16 @@ test("unknown key errors list allowed keys and common aliases", () => {
 
 test("recipe notes are flat: a path property or a key with a folder is rejected", () => {
   const base = emptyRecipe({ source: { kind: "file" } });
-  const note = { id: "brief", level: "guild", key: "brief.md", body: "Short.", kind: "seed" };
+  const note = { id: "brief", key: "brief.md", body: "Short.", kind: "seed" };
   const parsed = parseRecipe({ ...base, notes: [note] });
   assert.deepEqual(
-    parsed.notes.map((item) => ({ level: item.level, key: item.key })),
-    [{ level: "guild", key: "brief.md" }],
+    parsed.notes.map((item) => item.key),
+    ["brief.md"],
   );
   assert.equal("path" in (parsed.notes[0] ?? {}), false);
   assert.throws(
     () => parseRecipe({ ...base, notes: [{ ...note, path: "research" }] }),
-    /unknown key notes\[0\]\.path; notes have no folders.*allowed: id, level, role, key, body, kind, author/,
+    /unknown key notes\[0\]\.path; notes have no folders.*allowed: id, key, body, kind, author/,
   );
   assert.throws(
     () => parseRecipe({ ...base, notes: [{ ...note, path: "" }] }),

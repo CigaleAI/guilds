@@ -12,13 +12,12 @@ import { isJsonObject } from "../lib/json.js";
 // state-data.ts fetch the rows.
 
 export type StateKind = "note" | "memory" | "script" | "file" | "table";
-export type StateLevel = "agent" | "guild" | "org";
 
 export type StateItem = {
   display_path: string;
   kind: StateKind;
-  level: StateLevel;
-  owner_id: string;
+  /** The agent whose Memory or script it is; null for a note, a file, and a table. */
+  agent_id: string | null;
   title: string;
   /** Bytes of text, or records for a table. */
   size: number;
@@ -206,7 +205,7 @@ function runReads(run: WindowRunRow, context: StateContext): StateEvent[] {
     ...(run.task_source?.embeds ?? []).map((embed) => embed.display_path),
     ...(run.task_source?.collections ?? []),
   ].filter((path) => context.items.some((item) => item.display_path === path));
-  const memory = itemAt(context.items, (item) => item.kind === "memory" && item.owner_id === run.agent_id);
+  const memory = itemAt(context.items, (item) => item.kind === "memory" && item.agent_id === run.agent_id);
   const source: ReadSource = { run_id: run.run_id, agent_id: run.agent_id, created_at: run.created_at, call_id: null };
   const reads = [...new Set(embedded)].map((path) => readEvent(path, source, "embed", context));
   return memory ? [...reads, readEvent(memory, source, "memory", context)] : reads;
@@ -236,7 +235,7 @@ const callTargets = new Map<string, CallTarget>([
 ]);
 
 function scriptOf(items: StateItem[], agentId: string, name: string | null): string | null {
-  return itemAt(items, (item) => item.kind === "script" && item.owner_id === agentId && item.title === name);
+  return itemAt(items, (item) => item.kind === "script" && item.agent_id === agentId && item.title === name);
 }
 
 /** What one tool call read: the note, table, or script it names, or the script tool it is. */
@@ -324,7 +323,7 @@ export function stateRow(item: StateItem, events: StateEvent[]): StateRow {
 /** The list's rows, narrowed to one kind or to items one agent changed or read when asked. */
 export function stateRows(items: StateItem[], events: StateEvent[], filter: StateFilter): StateRow[] {
   const touched = (item: StateItem) =>
-    item.owner_id === filter.agentId ||
+    item.agent_id === filter.agentId ||
     events.some((event) => event.path === item.display_path && event.actor.id === filter.agentId);
   return items
     .filter((item) => !filter.kind || item.kind === filter.kind)

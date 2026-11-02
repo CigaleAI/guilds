@@ -12,18 +12,19 @@ test("a file name is one path segment without folders, dots, or control characte
   }
 });
 
-test("a file sits under files/ in its owner, and its display path parses back", () => {
-  assert.equal(fileDisplayPath("org_1", "agent", "a_1", "report.pdf"), "org/org_1/agents/a_1/files/report.pdf");
-  assert.equal(fileDisplayPath("org_1", "guild", "guild_1", "data.csv"), "org/org_1/guilds/guild_1/files/data.csv");
-  assert.equal(fileDisplayPath("org_1", "org", "org_1", "logo.png"), "org/org_1/files/logo.png");
-  assert.deepEqual(parseDisplayPath("org/org_1/guilds/guild_1/files/data.csv"), {
+test("a file sits under files/ in its organisation, and its display path parses back", () => {
+  assert.equal(fileDisplayPath("org_1", "logo.png"), "org/org_1/files/logo.png");
+  assert.deepEqual(parseDisplayPath("org/org_1/files/data.csv"), {
     kind: "artifact",
     orgId: "org_1",
-    level: "guild",
-    ownerId: "guild_1",
+    agentId: null,
     path: "files",
     key: "data.csv",
   });
+});
+
+test("a file path under a guild or an agent names nothing", () => {
+  assert.throws(() => parseDisplayPath("org/org_1/guilds/guild_1/files/data.csv"), ArtifactError);
 });
 
 test("the media type follows the name when the client sends none, and is checked when it does", () => {

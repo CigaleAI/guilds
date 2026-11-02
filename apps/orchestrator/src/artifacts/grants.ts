@@ -45,24 +45,12 @@ export type AccessItem = {
   target: AccessTarget;
   orgId: string;
   guildId: string | null;
-  /** The agent that owns an agent-level note, which always writes it. */
-  ownerAgentId: string | null;
   label: string;
 };
 
 /** How a change-log line names a subject. */
 export function subjectLabel(type: AccessSubject, name: string): string {
   return type === "org" ? "the organisation" : `${type} ${name}`;
-}
-
-/** Refuses a row naming the agent that owns the item: it always writes its own note or file. */
-export function assertNotOwner(item: AccessItem, grant: AccessGrant, where = ""): void {
-  if (grant.type === "agent" && grant.id === item.ownerAgentId) {
-    throw new ArtifactError(
-      `${where}the agent that owns the ${item.target.kind} always writes it`,
-      422,
-    );
-  }
 }
 
 /** The change-log entry for one subject's row on `item` going to `mode`, or removed when null. */
@@ -90,7 +78,6 @@ export function collectionAccessItem(
     target: { kind: "collection", id: collection.id },
     orgId: collection.org_id,
     guildId: collection.guild_id,
-    ownerAgentId: null,
     label: `the table ${collection.name}`,
   };
 }
@@ -152,7 +139,6 @@ export async function setAccessRow(
   if (mode === null) {
     await removeGrants(client, target, [grant]);
   } else {
-    assertNotOwner(item, grant);
     name = await requireSubject(client, actor, grant);
     await writeGrants(client, actor, target, [{ ...grant, mode }]);
   }

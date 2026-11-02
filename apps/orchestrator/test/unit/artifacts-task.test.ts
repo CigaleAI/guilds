@@ -60,7 +60,7 @@ test("resolveTaskContent throws when task.md exists but cannot be read", () => {
 
 test("expandTaskEmbeds inlines the notes a Task embeds", async () => {
   const expanded = await expandTaskEmbeds(noteSource("Rules"), actor, "Follow ![[org/org_1/rules.md]]");
-  assert.deepEqual(expanded, { ok: true, text: 'Follow <rules path="org/org_1/rules.md" level="org">\nRules\n</rules>' });
+  assert.deepEqual(expanded, { ok: true, text: 'Follow <rules path="org/org_1/rules.md">\nRules\n</rules>' });
 });
 
 test("expandTaskEmbeds returns the refusal when the embeds pass the embed budget", async () => {

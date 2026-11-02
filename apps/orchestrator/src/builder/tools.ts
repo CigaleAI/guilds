@@ -220,7 +220,7 @@ const recipeDocumentParameter: ToolSchema = {
                 type: "array",
                 items: { type: "string" },
                 description:
-                  "guild/<key>, org/<key>, or agent/<role>/<key> for each ![[…]] in task.body. A bare filename does not inline.",
+                  "org/<key> for each ![[…]] in task.body. A bare filename does not inline.",
               },
               author: authorProperties,
             },
@@ -351,8 +351,6 @@ const recipeDocumentParameter: ToolSchema = {
         type: "object",
         properties: {
           id: { type: "string" },
-          level: { type: "string", enum: ["org", "guild", "agent"] },
-          role: { type: "string" },
           key: { type: "string", description: "A .md file name with no /. Notes have no folders." },
           body: { type: "string" },
           kind: { type: "string" },
@@ -361,13 +359,13 @@ const recipeDocumentParameter: ToolSchema = {
             type: "string",
             enum: ["read", "write"],
             description:
-              "The mode every agent in the guild gets. A guild note is always write; an org note defaults to read; an agent note reaches only its role unless set.",
+              "The mode every agent in the guild gets. Without guild or writers, the guild writes the note.",
           },
           writers: {
             type: "array",
             items: { type: "string" },
             description:
-              "An org or agent note: role handles whose agents get write on its access list. A guild note takes none.",
+              "Role handles whose agents get write on its access list. A note only one role reads and writes has that role here and no guild.",
           },
         },
         additionalProperties: false,

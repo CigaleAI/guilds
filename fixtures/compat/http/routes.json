@@ -12652,13 +12652,18 @@
       "name": "guild-file-write",
       "request": {
         "method": "PUT",
-        "path": "/api/guilds/<id:guild:3>/notes/note.md",
+        "path": "/api/org/notes/note.md",
         "headers": {
           "X-Guilds-User": "user_operator",
           "X-Guilds-Org": "org_home"
         },
         "json": {
-          "content": "shared note\n"
+          "content": "shared note\n",
+          "access": {
+            "type": "guild",
+            "id": "<id:guild:3>",
+            "mode": "write"
+          }
         },
         "params": null
       },
@@ -12672,7 +12677,7 @@
           "id": "<id:art:1>",
           "path": "note.md",
           "content": "shared note\n",
-          "display_path": "org/org_home/guilds/<id:guild:3>/note.md",
+          "display_path": "org/org_home/note.md",
           "version": 1
         }
       }
@@ -12681,7 +12686,7 @@
       "name": "guild-file-read",
       "request": {
         "method": "GET",
-        "path": "/api/guilds/<id:guild:3>/notes/note.md",
+        "path": "/api/org/notes/note.md",
         "headers": {
           "X-Guilds-User": "user_operator",
           "X-Guilds-Org": "org_home"
@@ -12699,7 +12704,7 @@
           "id": "<id:art:1>",
           "path": "note.md",
           "content": "shared note\n",
-          "display_path": "org/org_home/guilds/<id:guild:3>/note.md",
+          "display_path": "org/org_home/note.md",
           "version": 1
         }
       }
@@ -12731,8 +12736,7 @@
               "guild_id": "<id:guild:3>",
               "guild_name": "research"
             }
-          ],
-          "owner_agent_id": null
+          ]
         }
       }
     },
@@ -12797,8 +12801,7 @@
               "guild_id": "<id:guild:3>",
               "guild_name": "research"
             }
-          ],
-          "owner_agent_id": null
+          ]
         }
       }
     },
@@ -12858,12 +12861,8 @@
           "notes": [
             {
               "id": "<id:art:1>",
-              "display_path": "org/org_home/guilds/<id:guild:3>/note.md",
+              "display_path": "org/org_home/note.md",
               "title": "note.md",
-              "level": "guild",
-              "owner_id": "<id:guild:3>",
-              "owner_name": "research",
-              "guild_id": "<id:guild:3>",
               "mode": "write"
             }
           ],
@@ -12898,7 +12897,7 @@
       "name": "guild-file-escape",
       "request": {
         "method": "PUT",
-        "path": "/api/guilds/<id:guild:3>/notes/../escape.md",
+        "path": "/api/org/notes/../escape.md",
         "headers": {
           "X-Guilds-User": "user_operator",
           "X-Guilds-Org": "org_home"
@@ -13433,17 +13432,12 @@
         "params": null
       },
       "response": {
-        "status": 200,
+        "status": 404,
         "headers": {
-          "content-length": "27",
           "content-type": "application/json"
         },
         "json": {
-          "id": "<id:art:2>",
-          "path": "scratch.md",
-          "content": "x",
-          "display_path": "org/org_home/agents/<id:a:1>/scratch.md",
-          "version": 1
+          "detail": "Not Found"
         }
       }
     },
@@ -13506,10 +13500,6 @@
                         "type": "string",
                         "description": "Optional. Omit this key when unused; do not pass an empty value."
                       },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org; omit for every level you can read"
-                      },
                       "limit": {
                         "type": "integer",
                         "description": "at most 100, default 20"
@@ -13541,17 +13531,13 @@
                 "type": "function",
                 "function": {
                   "name": "note_write",
-                  "description": "Create or update a Markdown note. With level (agent, guild, or org) and key, write your own note at that level: a new note is created at agent or guild level, and an org note is updated only when it exists and you have write access. With path, rewrite any existing note whose access is write. key is the .md file name (for example queries.md); notes have no folders. Do not pass org, guild, or agent ids.",
+                  "description": "Create or update a Markdown note. With key, write the note of that name: an existing note is updated when your access to it is write and refused otherwise, and a missing one is created, written by you alone until an operator shares it. With path, rewrite the existing note that display path names, when your access to it is write. key is the .md file name (for example queries.md); notes have no folders, and one name is one note across the organisation. Do not pass org, guild, or agent ids.",
                   "parameters": {
                     "type": "object",
                     "properties": {
                       "path": {
                         "type": "string",
-                        "description": "the display path of an existing note to rewrite; omit level and key"
-                      },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org; with key, when path is omitted"
+                        "description": "the display path of an existing note to rewrite; omit key"
                       },
                       "key": {
                         "type": "string",
@@ -13739,10 +13725,6 @@
                         "type": "string",
                         "description": "Optional. Omit this key when unused; do not pass an empty value."
                       },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org; omit for every level you can read"
-                      },
                       "limit": {
                         "type": "integer",
                         "description": "at most 100, default 20"
@@ -13779,17 +13761,13 @@
                 "type": "function",
                 "function": {
                   "name": "file_put",
-                  "description": "Share a file from your home at a level.",
+                  "description": "Share a file from your home.",
                   "parameters": {
                     "type": "object",
                     "properties": {
                       "home_path": {
                         "type": "string",
                         "description": "the file in your home, relative to it or absolute under it"
-                      },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org"
                       },
                       "description": {
                         "type": "string",
@@ -13806,7 +13784,6 @@
                     },
                     "required": [
                       "home_path",
-                      "level",
                       "description"
                     ]
                   }
@@ -14340,10 +14317,6 @@
                         "type": "string",
                         "description": "Optional. Omit this key when unused; do not pass an empty value."
                       },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org; omit for every level you can read"
-                      },
                       "limit": {
                         "type": "integer",
                         "description": "at most 100, default 20"
@@ -14375,17 +14348,13 @@
                 "type": "function",
                 "function": {
                   "name": "note_write",
-                  "description": "Create or update a Markdown note. With level (agent, guild, or org) and key, write your own note at that level: a new note is created at agent or guild level, and an org note is updated only when it exists and you have write access. With path, rewrite any existing note whose access is write. key is the .md file name (for example queries.md); notes have no folders. Do not pass org, guild, or agent ids.",
+                  "description": "Create or update a Markdown note. With key, write the note of that name: an existing note is updated when your access to it is write and refused otherwise, and a missing one is created, written by you alone until an operator shares it. With path, rewrite the existing note that display path names, when your access to it is write. key is the .md file name (for example queries.md); notes have no folders, and one name is one note across the organisation. Do not pass org, guild, or agent ids.",
                   "parameters": {
                     "type": "object",
                     "properties": {
                       "path": {
                         "type": "string",
-                        "description": "the display path of an existing note to rewrite; omit level and key"
-                      },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org; with key, when path is omitted"
+                        "description": "the display path of an existing note to rewrite; omit key"
                       },
                       "key": {
                         "type": "string",
@@ -14573,10 +14542,6 @@
                         "type": "string",
                         "description": "Optional. Omit this key when unused; do not pass an empty value."
                       },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org; omit for every level you can read"
-                      },
                       "limit": {
                         "type": "integer",
                         "description": "at most 100, default 20"
@@ -14613,17 +14578,13 @@
                 "type": "function",
                 "function": {
                   "name": "file_put",
-                  "description": "Share a file from your home at a level.",
+                  "description": "Share a file from your home.",
                   "parameters": {
                     "type": "object",
                     "properties": {
                       "home_path": {
                         "type": "string",
                         "description": "the file in your home, relative to it or absolute under it"
-                      },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org"
                       },
                       "description": {
                         "type": "string",
@@ -14640,7 +14601,6 @@
                     },
                     "required": [
                       "home_path",
-                      "level",
                       "description"
                     ]
                   }
@@ -15263,10 +15223,6 @@
                         "type": "string",
                         "description": "Optional. Omit this key when unused; do not pass an empty value."
                       },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org; omit for every level you can read"
-                      },
                       "limit": {
                         "type": "integer",
                         "description": "at most 100, default 20"
@@ -15298,17 +15254,13 @@
                 "type": "function",
                 "function": {
                   "name": "note_write",
-                  "description": "Create or update a Markdown note. With level (agent, guild, or org) and key, write your own note at that level: a new note is created at agent or guild level, and an org note is updated only when it exists and you have write access. With path, rewrite any existing note whose access is write. key is the .md file name (for example queries.md); notes have no folders. Do not pass org, guild, or agent ids.",
+                  "description": "Create or update a Markdown note. With key, write the note of that name: an existing note is updated when your access to it is write and refused otherwise, and a missing one is created, written by you alone until an operator shares it. With path, rewrite the existing note that display path names, when your access to it is write. key is the .md file name (for example queries.md); notes have no folders, and one name is one note across the organisation. Do not pass org, guild, or agent ids.",
                   "parameters": {
                     "type": "object",
                     "properties": {
                       "path": {
                         "type": "string",
-                        "description": "the display path of an existing note to rewrite; omit level and key"
-                      },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org; with key, when path is omitted"
+                        "description": "the display path of an existing note to rewrite; omit key"
                       },
                       "key": {
                         "type": "string",
@@ -15496,10 +15448,6 @@
                         "type": "string",
                         "description": "Optional. Omit this key when unused; do not pass an empty value."
                       },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org; omit for every level you can read"
-                      },
                       "limit": {
                         "type": "integer",
                         "description": "at most 100, default 20"
@@ -15536,17 +15484,13 @@
                 "type": "function",
                 "function": {
                   "name": "file_put",
-                  "description": "Share a file from your home at a level.",
+                  "description": "Share a file from your home.",
                   "parameters": {
                     "type": "object",
                     "properties": {
                       "home_path": {
                         "type": "string",
                         "description": "the file in your home, relative to it or absolute under it"
-                      },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org"
                       },
                       "description": {
                         "type": "string",
@@ -15563,7 +15507,6 @@
                     },
                     "required": [
                       "home_path",
-                      "level",
                       "description"
                     ]
                   }
@@ -16097,10 +16040,6 @@
                         "type": "string",
                         "description": "Optional. Omit this key when unused; do not pass an empty value."
                       },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org; omit for every level you can read"
-                      },
                       "limit": {
                         "type": "integer",
                         "description": "at most 100, default 20"
@@ -16132,17 +16071,13 @@
                 "type": "function",
                 "function": {
                   "name": "note_write",
-                  "description": "Create or update a Markdown note. With level (agent, guild, or org) and key, write your own note at that level: a new note is created at agent or guild level, and an org note is updated only when it exists and you have write access. With path, rewrite any existing note whose access is write. key is the .md file name (for example queries.md); notes have no folders. Do not pass org, guild, or agent ids.",
+                  "description": "Create or update a Markdown note. With key, write the note of that name: an existing note is updated when your access to it is write and refused otherwise, and a missing one is created, written by you alone until an operator shares it. With path, rewrite the existing note that display path names, when your access to it is write. key is the .md file name (for example queries.md); notes have no folders, and one name is one note across the organisation. Do not pass org, guild, or agent ids.",
                   "parameters": {
                     "type": "object",
                     "properties": {
                       "path": {
                         "type": "string",
-                        "description": "the display path of an existing note to rewrite; omit level and key"
-                      },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org; with key, when path is omitted"
+                        "description": "the display path of an existing note to rewrite; omit key"
                       },
                       "key": {
                         "type": "string",
@@ -16330,10 +16265,6 @@
                         "type": "string",
                         "description": "Optional. Omit this key when unused; do not pass an empty value."
                       },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org; omit for every level you can read"
-                      },
                       "limit": {
                         "type": "integer",
                         "description": "at most 100, default 20"
@@ -16370,17 +16301,13 @@
                 "type": "function",
                 "function": {
                   "name": "file_put",
-                  "description": "Share a file from your home at a level.",
+                  "description": "Share a file from your home.",
                   "parameters": {
                     "type": "object",
                     "properties": {
                       "home_path": {
                         "type": "string",
                         "description": "the file in your home, relative to it or absolute under it"
-                      },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org"
                       },
                       "description": {
                         "type": "string",
@@ -16397,7 +16324,6 @@
                     },
                     "required": [
                       "home_path",
-                      "level",
                       "description"
                     ]
                   }
@@ -16933,10 +16859,6 @@
                         "type": "string",
                         "description": "Optional. Omit this key when unused; do not pass an empty value."
                       },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org; omit for every level you can read"
-                      },
                       "limit": {
                         "type": "integer",
                         "description": "at most 100, default 20"
@@ -16968,17 +16890,13 @@
                 "type": "function",
                 "function": {
                   "name": "note_write",
-                  "description": "Create or update a Markdown note. With level (agent, guild, or org) and key, write your own note at that level: a new note is created at agent or guild level, and an org note is updated only when it exists and you have write access. With path, rewrite any existing note whose access is write. key is the .md file name (for example queries.md); notes have no folders. Do not pass org, guild, or agent ids.",
+                  "description": "Create or update a Markdown note. With key, write the note of that name: an existing note is updated when your access to it is write and refused otherwise, and a missing one is created, written by you alone until an operator shares it. With path, rewrite the existing note that display path names, when your access to it is write. key is the .md file name (for example queries.md); notes have no folders, and one name is one note across the organisation. Do not pass org, guild, or agent ids.",
                   "parameters": {
                     "type": "object",
                     "properties": {
                       "path": {
                         "type": "string",
-                        "description": "the display path of an existing note to rewrite; omit level and key"
-                      },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org; with key, when path is omitted"
+                        "description": "the display path of an existing note to rewrite; omit key"
                       },
                       "key": {
                         "type": "string",
@@ -17166,10 +17084,6 @@
                         "type": "string",
                         "description": "Optional. Omit this key when unused; do not pass an empty value."
                       },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org; omit for every level you can read"
-                      },
                       "limit": {
                         "type": "integer",
                         "description": "at most 100, default 20"
@@ -17206,17 +17120,13 @@
                 "type": "function",
                 "function": {
                   "name": "file_put",
-                  "description": "Share a file from your home at a level.",
+                  "description": "Share a file from your home.",
                   "parameters": {
                     "type": "object",
                     "properties": {
                       "home_path": {
                         "type": "string",
                         "description": "the file in your home, relative to it or absolute under it"
-                      },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org"
                       },
                       "description": {
                         "type": "string",
@@ -17233,7 +17143,6 @@
                     },
                     "required": [
                       "home_path",
-                      "level",
                       "description"
                     ]
                   }
@@ -28149,7 +28058,7 @@
       "name": "guild-file-delete",
       "request": {
         "method": "DELETE",
-        "path": "/api/guilds/<id:guild:3>/notes/note.md",
+        "path": "/api/org/notes/note.md",
         "headers": {
           "X-Guilds-User": "user_operator",
           "X-Guilds-Org": "org_home"
@@ -28168,13 +28077,18 @@
       "name": "guild-file-rewrite",
       "request": {
         "method": "PUT",
-        "path": "/api/guilds/<id:guild:3>/notes/note.md",
+        "path": "/api/org/notes/note.md",
         "headers": {
           "X-Guilds-User": "user_operator",
           "X-Guilds-Org": "org_home"
         },
         "json": {
-          "content": "shared note\n"
+          "content": "shared note\n",
+          "access": {
+            "type": "guild",
+            "id": "<id:guild:3>",
+            "mode": "write"
+          }
         },
         "params": null
       },
@@ -28188,7 +28102,7 @@
           "id": "<id:art:3>",
           "path": "note.md",
           "content": "shared note\n",
-          "display_path": "org/org_home/guilds/<id:guild:3>/note.md",
+          "display_path": "org/org_home/note.md",
           "version": 1
         }
       }
@@ -28413,10 +28327,6 @@
                         "type": "string",
                         "description": "Optional. Omit this key when unused; do not pass an empty value."
                       },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org; omit for every level you can read"
-                      },
                       "limit": {
                         "type": "integer",
                         "description": "at most 100, default 20"
@@ -28448,17 +28358,13 @@
                 "type": "function",
                 "function": {
                   "name": "note_write",
-                  "description": "Create or update a Markdown note. With level (agent, guild, or org) and key, write your own note at that level: a new note is created at agent or guild level, and an org note is updated only when it exists and you have write access. With path, rewrite any existing note whose access is write. key is the .md file name (for example queries.md); notes have no folders. Do not pass org, guild, or agent ids.",
+                  "description": "Create or update a Markdown note. With key, write the note of that name: an existing note is updated when your access to it is write and refused otherwise, and a missing one is created, written by you alone until an operator shares it. With path, rewrite the existing note that display path names, when your access to it is write. key is the .md file name (for example queries.md); notes have no folders, and one name is one note across the organisation. Do not pass org, guild, or agent ids.",
                   "parameters": {
                     "type": "object",
                     "properties": {
                       "path": {
                         "type": "string",
-                        "description": "the display path of an existing note to rewrite; omit level and key"
-                      },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org; with key, when path is omitted"
+                        "description": "the display path of an existing note to rewrite; omit key"
                       },
                       "key": {
                         "type": "string",
@@ -28646,10 +28552,6 @@
                         "type": "string",
                         "description": "Optional. Omit this key when unused; do not pass an empty value."
                       },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org; omit for every level you can read"
-                      },
                       "limit": {
                         "type": "integer",
                         "description": "at most 100, default 20"
@@ -28686,17 +28588,13 @@
                 "type": "function",
                 "function": {
                   "name": "file_put",
-                  "description": "Share a file from your home at a level.",
+                  "description": "Share a file from your home.",
                   "parameters": {
                     "type": "object",
                     "properties": {
                       "home_path": {
                         "type": "string",
                         "description": "the file in your home, relative to it or absolute under it"
-                      },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org"
                       },
                       "description": {
                         "type": "string",
@@ -28713,7 +28611,6 @@
                     },
                     "required": [
                       "home_path",
-                      "level",
                       "description"
                     ]
                   }
@@ -29249,10 +29146,6 @@
                         "type": "string",
                         "description": "Optional. Omit this key when unused; do not pass an empty value."
                       },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org; omit for every level you can read"
-                      },
                       "limit": {
                         "type": "integer",
                         "description": "at most 100, default 20"
@@ -29284,17 +29177,13 @@
                 "type": "function",
                 "function": {
                   "name": "note_write",
-                  "description": "Create or update a Markdown note. With level (agent, guild, or org) and key, write your own note at that level: a new note is created at agent or guild level, and an org note is updated only when it exists and you have write access. With path, rewrite any existing note whose access is write. key is the .md file name (for example queries.md); notes have no folders. Do not pass org, guild, or agent ids.",
+                  "description": "Create or update a Markdown note. With key, write the note of that name: an existing note is updated when your access to it is write and refused otherwise, and a missing one is created, written by you alone until an operator shares it. With path, rewrite the existing note that display path names, when your access to it is write. key is the .md file name (for example queries.md); notes have no folders, and one name is one note across the organisation. Do not pass org, guild, or agent ids.",
                   "parameters": {
                     "type": "object",
                     "properties": {
                       "path": {
                         "type": "string",
-                        "description": "the display path of an existing note to rewrite; omit level and key"
-                      },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org; with key, when path is omitted"
+                        "description": "the display path of an existing note to rewrite; omit key"
                       },
                       "key": {
                         "type": "string",
@@ -29482,10 +29371,6 @@
                         "type": "string",
                         "description": "Optional. Omit this key when unused; do not pass an empty value."
                       },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org; omit for every level you can read"
-                      },
                       "limit": {
                         "type": "integer",
                         "description": "at most 100, default 20"
@@ -29522,17 +29407,13 @@
                 "type": "function",
                 "function": {
                   "name": "file_put",
-                  "description": "Share a file from your home at a level.",
+                  "description": "Share a file from your home.",
                   "parameters": {
                     "type": "object",
                     "properties": {
                       "home_path": {
                         "type": "string",
                         "description": "the file in your home, relative to it or absolute under it"
-                      },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org"
                       },
                       "description": {
                         "type": "string",
@@ -29549,7 +29430,6 @@
                     },
                     "required": [
                       "home_path",
-                      "level",
                       "description"
                     ]
                   }
@@ -30083,10 +29963,6 @@
                         "type": "string",
                         "description": "Optional. Omit this key when unused; do not pass an empty value."
                       },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org; omit for every level you can read"
-                      },
                       "limit": {
                         "type": "integer",
                         "description": "at most 100, default 20"
@@ -30118,17 +29994,13 @@
                 "type": "function",
                 "function": {
                   "name": "note_write",
-                  "description": "Create or update a Markdown note. With level (agent, guild, or org) and key, write your own note at that level: a new note is created at agent or guild level, and an org note is updated only when it exists and you have write access. With path, rewrite any existing note whose access is write. key is the .md file name (for example queries.md); notes have no folders. Do not pass org, guild, or agent ids.",
+                  "description": "Create or update a Markdown note. With key, write the note of that name: an existing note is updated when your access to it is write and refused otherwise, and a missing one is created, written by you alone until an operator shares it. With path, rewrite the existing note that display path names, when your access to it is write. key is the .md file name (for example queries.md); notes have no folders, and one name is one note across the organisation. Do not pass org, guild, or agent ids.",
                   "parameters": {
                     "type": "object",
                     "properties": {
                       "path": {
                         "type": "string",
-                        "description": "the display path of an existing note to rewrite; omit level and key"
-                      },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org; with key, when path is omitted"
+                        "description": "the display path of an existing note to rewrite; omit key"
                       },
                       "key": {
                         "type": "string",
@@ -30316,10 +30188,6 @@
                         "type": "string",
                         "description": "Optional. Omit this key when unused; do not pass an empty value."
                       },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org; omit for every level you can read"
-                      },
                       "limit": {
                         "type": "integer",
                         "description": "at most 100, default 20"
@@ -30356,17 +30224,13 @@
                 "type": "function",
                 "function": {
                   "name": "file_put",
-                  "description": "Share a file from your home at a level.",
+                  "description": "Share a file from your home.",
                   "parameters": {
                     "type": "object",
                     "properties": {
                       "home_path": {
                         "type": "string",
                         "description": "the file in your home, relative to it or absolute under it"
-                      },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org"
                       },
                       "description": {
                         "type": "string",
@@ -30383,7 +30247,6 @@
                     },
                     "required": [
                       "home_path",
-                      "level",
                       "description"
                     ]
                   }
@@ -30919,10 +30782,6 @@
                         "type": "string",
                         "description": "Optional. Omit this key when unused; do not pass an empty value."
                       },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org; omit for every level you can read"
-                      },
                       "limit": {
                         "type": "integer",
                         "description": "at most 100, default 20"
@@ -30954,17 +30813,13 @@
                 "type": "function",
                 "function": {
                   "name": "note_write",
-                  "description": "Create or update a Markdown note. With level (agent, guild, or org) and key, write your own note at that level: a new note is created at agent or guild level, and an org note is updated only when it exists and you have write access. With path, rewrite any existing note whose access is write. key is the .md file name (for example queries.md); notes have no folders. Do not pass org, guild, or agent ids.",
+                  "description": "Create or update a Markdown note. With key, write the note of that name: an existing note is updated when your access to it is write and refused otherwise, and a missing one is created, written by you alone until an operator shares it. With path, rewrite the existing note that display path names, when your access to it is write. key is the .md file name (for example queries.md); notes have no folders, and one name is one note across the organisation. Do not pass org, guild, or agent ids.",
                   "parameters": {
                     "type": "object",
                     "properties": {
                       "path": {
                         "type": "string",
-                        "description": "the display path of an existing note to rewrite; omit level and key"
-                      },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org; with key, when path is omitted"
+                        "description": "the display path of an existing note to rewrite; omit key"
                       },
                       "key": {
                         "type": "string",
@@ -31152,10 +31007,6 @@
                         "type": "string",
                         "description": "Optional. Omit this key when unused; do not pass an empty value."
                       },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org; omit for every level you can read"
-                      },
                       "limit": {
                         "type": "integer",
                         "description": "at most 100, default 20"
@@ -31192,17 +31043,13 @@
                 "type": "function",
                 "function": {
                   "name": "file_put",
-                  "description": "Share a file from your home at a level.",
+                  "description": "Share a file from your home.",
                   "parameters": {
                     "type": "object",
                     "properties": {
                       "home_path": {
                         "type": "string",
                         "description": "the file in your home, relative to it or absolute under it"
-                      },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org"
                       },
                       "description": {
                         "type": "string",
@@ -31219,7 +31066,6 @@
                     },
                     "required": [
                       "home_path",
-                      "level",
                       "description"
                     ]
                   }
@@ -31753,10 +31599,6 @@
                         "type": "string",
                         "description": "Optional. Omit this key when unused; do not pass an empty value."
                       },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org; omit for every level you can read"
-                      },
                       "limit": {
                         "type": "integer",
                         "description": "at most 100, default 20"
@@ -31788,17 +31630,13 @@
                 "type": "function",
                 "function": {
                   "name": "note_write",
-                  "description": "Create or update a Markdown note. With level (agent, guild, or org) and key, write your own note at that level: a new note is created at agent or guild level, and an org note is updated only when it exists and you have write access. With path, rewrite any existing note whose access is write. key is the .md file name (for example queries.md); notes have no folders. Do not pass org, guild, or agent ids.",
+                  "description": "Create or update a Markdown note. With key, write the note of that name: an existing note is updated when your access to it is write and refused otherwise, and a missing one is created, written by you alone until an operator shares it. With path, rewrite the existing note that display path names, when your access to it is write. key is the .md file name (for example queries.md); notes have no folders, and one name is one note across the organisation. Do not pass org, guild, or agent ids.",
                   "parameters": {
                     "type": "object",
                     "properties": {
                       "path": {
                         "type": "string",
-                        "description": "the display path of an existing note to rewrite; omit level and key"
-                      },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org; with key, when path is omitted"
+                        "description": "the display path of an existing note to rewrite; omit key"
                       },
                       "key": {
                         "type": "string",
@@ -31986,10 +31824,6 @@
                         "type": "string",
                         "description": "Optional. Omit this key when unused; do not pass an empty value."
                       },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org; omit for every level you can read"
-                      },
                       "limit": {
                         "type": "integer",
                         "description": "at most 100, default 20"
@@ -32026,17 +31860,13 @@
                 "type": "function",
                 "function": {
                   "name": "file_put",
-                  "description": "Share a file from your home at a level.",
+                  "description": "Share a file from your home.",
                   "parameters": {
                     "type": "object",
                     "properties": {
                       "home_path": {
                         "type": "string",
                         "description": "the file in your home, relative to it or absolute under it"
-                      },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org"
                       },
                       "description": {
                         "type": "string",
@@ -32053,7 +31883,6 @@
                     },
                     "required": [
                       "home_path",
-                      "level",
                       "description"
                     ]
                   }
@@ -32778,10 +32607,6 @@
                         "type": "string",
                         "description": "Optional. Omit this key when unused; do not pass an empty value."
                       },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org; omit for every level you can read"
-                      },
                       "limit": {
                         "type": "integer",
                         "description": "at most 100, default 20"
@@ -32813,17 +32638,13 @@
                 "type": "function",
                 "function": {
                   "name": "note_write",
-                  "description": "Create or update a Markdown note. With level (agent, guild, or org) and key, write your own note at that level: a new note is created at agent or guild level, and an org note is updated only when it exists and you have write access. With path, rewrite any existing note whose access is write. key is the .md file name (for example queries.md); notes have no folders. Do not pass org, guild, or agent ids.",
+                  "description": "Create or update a Markdown note. With key, write the note of that name: an existing note is updated when your access to it is write and refused otherwise, and a missing one is created, written by you alone until an operator shares it. With path, rewrite the existing note that display path names, when your access to it is write. key is the .md file name (for example queries.md); notes have no folders, and one name is one note across the organisation. Do not pass org, guild, or agent ids.",
                   "parameters": {
                     "type": "object",
                     "properties": {
                       "path": {
                         "type": "string",
-                        "description": "the display path of an existing note to rewrite; omit level and key"
-                      },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org; with key, when path is omitted"
+                        "description": "the display path of an existing note to rewrite; omit key"
                       },
                       "key": {
                         "type": "string",
@@ -33011,10 +32832,6 @@
                         "type": "string",
                         "description": "Optional. Omit this key when unused; do not pass an empty value."
                       },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org; omit for every level you can read"
-                      },
                       "limit": {
                         "type": "integer",
                         "description": "at most 100, default 20"
@@ -33051,17 +32868,13 @@
                 "type": "function",
                 "function": {
                   "name": "file_put",
-                  "description": "Share a file from your home at a level.",
+                  "description": "Share a file from your home.",
                   "parameters": {
                     "type": "object",
                     "properties": {
                       "home_path": {
                         "type": "string",
                         "description": "the file in your home, relative to it or absolute under it"
-                      },
-                      "level": {
-                        "type": "string",
-                        "description": "agent, guild, or org"
                       },
                       "description": {
                         "type": "string",
@@ -33078,7 +32891,6 @@
                     },
                     "required": [
                       "home_path",
-                      "level",
                       "description"
                     ]
                   }
@@ -33738,13 +33550,12 @@
         "params": null
       },
       "response": {
-        "status": 422,
+        "status": 404,
         "headers": {
-          "content-length": "36",
           "content-type": "application/json"
         },
         "json": {
-          "detail": "cannot delete this file"
+          "detail": "Not Found"
         }
       }
     }

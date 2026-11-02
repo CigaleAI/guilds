@@ -244,9 +244,7 @@ export async function agentNameTaken(pool: Queryable, name: string): Promise<boo
 export async function deleteAgent(pool: Queryable, agentId: string): Promise<void> {
   await withTransaction(pool, async (client) => {
     await client.query(
-      `DELETE FROM artifact_access
-        WHERE (subject_type = 'agent' AND subject_id = $1)
-           OR (target_kind IN ('note', 'file') AND target_id IN (SELECT id FROM artifacts WHERE agent_id = $1))`,
+      `DELETE FROM artifact_access WHERE subject_type = 'agent' AND subject_id = $1`,
       [agentId],
     );
     // A secret granted only to this agent goes with it.
@@ -540,13 +538,13 @@ export async function upsertAgentScript(
         )
       : await client.query<ScriptQueryRow>(
           `INSERT INTO artifacts (
-             id, org_id, level, owner_id, guild_id, agent_id, origin_guild_id, kind,
+             id, org_id, agent_id, origin_guild_id, kind,
              collection_id, path, key, title, content_text, content_json, search_text,
              content_hash, version,
              created_by_type, created_by_id, created_by_name,
              updated_by_type, updated_by_id, updated_by_name, created_at, updated_at
            ) VALUES (
-             $1,$2,'agent',$3,$4,$3,$4,'script',NULL,'scripts',$5,$6,$7,$8::jsonb,$9,$10,1,
+             $1,$2,$3,$4,'script',NULL,'scripts',$5,$6,$7,$8::jsonb,$9,$10,1,
              $11,$12,$13,$11,$12,$13,$14,$14
            )
            RETURNING ${SCRIPT_RETURNING}`,

@@ -59,8 +59,6 @@ export type EditBase =
   | {
       kind: "note";
       displayPath: string;
-      level: "agent" | "guild" | "org";
-      ownerId: string;
       title: string | null;
       guildId: string;
       version: number;
@@ -629,13 +627,7 @@ async function applyContent(deps: EditDeps, scope: EditScope, record: EditRecord
       });
       return { version: row.version };
     }
-    const actor = {
-      ...editActor(scope, {
-        guildId: base.guildId,
-        ...(base.level === "agent" ? { agentId: base.ownerId } : {}),
-      }),
-      toolCall,
-    };
+    const actor = { ...editActor(scope, { guildId: base.guildId }), toolCall };
     const written = await writeNoteAt(deps.artifacts, actor, base.displayPath, {
       content: proposed,
       expectedVersion: base.version,

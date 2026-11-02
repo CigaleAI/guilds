@@ -249,10 +249,15 @@ function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/** A note only one role reaches: the guild has no mode on it and one role writes it. */
+function isOneRoleNote(note: RecipeNote): boolean {
+  return note.guild === undefined && note.writers.length === 1;
+}
+
 /** Shared notes that describe several roles, so each reader carries the others' work. */
 function sharedNoteRoles(recipe: RecipeDocument): RecipeFinding[] {
   return recipe.notes.flatMap((note) => {
-    if (note.level === "agent" || !noteReaders(recipe, note).length) return [];
+    if (isOneRoleNote(note) || !noteReaders(recipe, note).length) return [];
     const named = recipe.roles
       .map((role) => role.role)
       .filter((role) => new RegExp(`(^|[^a-z0-9-])${escapeRegExp(role)}($|[^a-z0-9-])`, "i").test(note.body));
@@ -262,7 +267,7 @@ function sharedNoteRoles(recipe: RecipeDocument): RecipeFinding[] {
         "design.shared_note_roles",
         "warning",
         `notes.${note.id}`,
-        `this shared note describes several roles (${named.join(", ")}), so every role that reads it carries the others' work on each wake. Keep only what every reader uses and move each role's part into its own agent note.`,
+        `this shared note describes several roles (${named.join(", ")}), so every role that reads it carries the others' work on each wake. Keep only what every reader uses and move each role's part into a note that role alone writes.`,
       ),
     ];
   });

@@ -47,22 +47,10 @@ export function capturedTableAccess(
   return { guild: access.guild ?? "read", writers: access.writers };
 }
 
-/**
- * What a note's access list gives the captured guild, as a recipe carries it.
- * A guild note keeps the guild's `write`; the owner of an agent note reaches
- * it without a row, so it is never one of its writers.
- */
-export function capturedNoteAccess(
-  entries: AccessEntry[],
-  note: Pick<RecipeNote, "level" | "role">,
-  guild: CapturedGuild,
-): Pick<RecipeNote, "guild" | "writers"> {
-  if (note.level === "guild") {
-    return { guild: "write", writers: [] };
-  }
+/** What a note's access list gives the captured guild, as a recipe carries it: the guild's mode and the roles that write it. */
+export function capturedNoteAccess(entries: AccessEntry[], guild: CapturedGuild): Pick<RecipeNote, "guild" | "writers"> {
   const access = guildAccessOn(entries, guild);
-  const writers = access.writers.filter((role) => role !== note.role);
-  return access.guild === null ? { writers } : { guild: access.guild, writers };
+  return access.guild === null ? { writers: access.writers } : { guild: access.guild, writers: access.writers };
 }
 
 /** The agents apply created for `roles`, skipping a role it did not create. */

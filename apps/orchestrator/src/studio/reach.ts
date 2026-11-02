@@ -1,14 +1,17 @@
 import { parseDisplayPath, type ParsedDisplayPath } from "../artifacts/paths.js";
+import { loadParsed } from "../artifacts/notes.js";
 import { listAgents } from "../db/agents.js";
+import { hasGuildRow } from "../db/artifact-access.js";
 import type { Queryable } from "../db/pg.js";
 import { type ArtifactStore } from "../artifacts/store.js";
 import { operatorActor } from "../artifacts/actors.js";
 import { describeCollection } from "../artifacts/collections.js";
 
 // What a Studio session reaches outside its own transcript: the source
-// guild, its agents, the organisation's notes, and the tables the source
-// guild's agents can be given (its own and the organisation's). Another
-// guild's agents, notes, Memory, and tables stay out of reach.
+// guild, its agents' Task, Memory, and scripts, the notes and files whose
+// access list has a row for the source guild or one of its agents, and the
+// tables the source guild's agents can be given (its own and the
+// organisation's). Every other note, file, Memory, and table stays out of reach.
 
 /** The stores a reach check reads through. */
 export type StudioReachDeps = {
@@ -52,13 +55,14 @@ export async function studioReachesParsed(
   if (parsed.kind === "revision") {
     return (await sourceAgentIds(deps, scope)).has(parsed.agentId);
   }
-  if (parsed.level === "agent") {
-    return (await sourceAgentIds(deps, scope)).has(parsed.ownerId);
+  if (parsed.agentId !== null) {
+    return (await sourceAgentIds(deps, scope)).has(parsed.agentId);
   }
-  if (parsed.level === "guild") {
-    return parsed.ownerId === scope.sourceGuildId;
+  const row = await loadParsed(deps.artifacts, parsed);
+  if (!row || (row.kind !== "note" && row.kind !== "file")) {
+    return false;
   }
-  return parsed.level === "org";
+  return hasGuildRow(deps.db, { kind: row.kind, id: row.id }, scope.sourceGuildId);
 }
 
 /** Whether a display path lies inside what the session reaches; a malformed path does not. */

@@ -12,6 +12,7 @@ import {
   writeNote,
 } from "../artifacts/notes.js";
 import { hashArtifactContent } from "../artifacts/store.js";
+import type { AccessGrant } from "../artifacts/types.js";
 import { listAgents, type GuildAgentRow } from "../db/agents.js";
 import { getGuild } from "../db/guilds.js";
 import { editActor } from "./actor.js";
@@ -26,16 +27,12 @@ import {
 } from "./edit-request.js";
 import type { EditBase, EditDeps, EditScope } from "./edits.js";
 import { StudioConflictError, StudioUnprocessableError, artifactRefusal } from "./errors.js";
+import { studioReachesParsed } from "./reach.js";
 
 // One tool creates, edits, or deletes a note. An edit replaces an existing
 // note's body like a Memory edit; a create or delete is reviewed as a plan.
 export const STUDIO_NOTE_TOOL = "studio_edit_note";
 export type NoteAction = "create" | "delete";
-
-async function sourceAgentIds(deps: EditDeps, scope: EditScope): Promise<Set<string>> {
-  const agents = await listAgents(deps.db, scope.sourceGuildId);
-  return new Set(agents.map((row) => row.id));
-}
 
 export async function loadNoteBase(
   deps: EditDeps,
@@ -48,10 +45,7 @@ export async function loadNoteBase(
     if (parsed.kind !== "artifact") {
       throw new StudioUnprocessableError("only notes can be edited here; records and memory revisions are not notes");
     }
-    if (parsed.level === "agent" && !(await sourceAgentIds(deps, scope)).has(parsed.ownerId)) {
-      throw new StudioUnprocessableError("artifact is not in the source guild");
-    }
-    if (parsed.level === "guild" && parsed.ownerId !== scope.sourceGuildId) {
+    if (!(await studioReachesParsed(deps, scope, parsed))) {
       throw new StudioUnprocessableError("artifact is not in the source guild");
     }
     const view = await artifactAt(deps.artifacts, actor, displayPath);
@@ -68,10 +62,8 @@ export async function loadNoteBase(
     return {
       kind: "note",
       displayPath: view.href,
-      level: row.level,
-      ownerId: row.owner_id,
       title: row.title,
-      guildId: row.guild_id ?? scope.sourceGuildId,
+      guildId: scope.sourceGuildId,
       version: row.version,
       content: row.content_text ?? "",
     };
@@ -83,13 +75,12 @@ export async function loadNoteBase(
 type NotePlan =
   | {
       action: "create";
-      level: "agent" | "guild" | "org";
       key: string;
       title: string | null;
       content: string;
-      agentId: string | null;
+      startingAccess: AccessGrant[];
     }
-  | { action: "delete"; displayPath: string; guildId: string; agentId: string | null };
+  | { action: "delete"; displayPath: string; guildId: string };
 
 /**
  * A note proposed into or out of existence, checked against the live files: the
@@ -133,16 +124,11 @@ async function reviewNoteCreate(
   args: EditNoteArguments,
   agentId: string | null,
 ): Promise<NoteReview> {
-  const { level, content = "" } = args;
-  if (level === undefined) {
-    throw new StudioUnprocessableError("level must be agent, guild, or org");
-  }
+  const { content = "" } = args;
   const title = (args.title ?? "").trim() || null;
-  // An agent note's owner is the agent the handle names; whether that agent is in the guild is checked below.
-  const ownerId = { agent: agentId ?? "", guild: scope.sourceGuildId, org: scope.orgId }[level];
   let planned: PlannedNote;
   try {
-    planned = planNote({ orgId: scope.orgId, ownerId }, { level, key: args.key ?? "", content, ...(title ? { title } : {}) });
+    planned = planNote(scope.orgId, { key: args.key ?? "", content, ...(title ? { title } : {}) });
   } catch (error) {
     throw artifactRefusal(error);
   }
@@ -151,18 +137,19 @@ async function reviewNoteCreate(
   }
   assertContent(content);
   let reader: string;
-  if (level === "agent") {
+  let startingAccess: AccessGrant[];
+  if (agentId !== null) {
     const agents = await listAgents(deps.db, scope.sourceGuildId);
     const agent = agents.find((row) => row.id === agentId);
     if (!agent) {
-      throw new StudioUnprocessableError("an agent note needs agent_id: a live agent of the source guild");
+      throw new StudioUnprocessableError("agent_id must name a live agent of the source guild");
     }
-    reader = `Only ${agent.name} reads it.`;
-  } else if (level === "guild") {
-    const guild = await getGuild(deps.db, scope.sourceGuildId);
-    reader = `Every agent of ${guild?.name ?? "the guild"} that reads guild notes reaches it.`;
+    reader = `Only ${agent.name} reads and writes it.`;
+    startingAccess = [{ type: "agent", id: agent.id, mode: "write" }];
   } else {
-    reader = "Every agent in the organisation that reads organisation notes reaches it.";
+    const guild = await getGuild(deps.db, scope.sourceGuildId);
+    reader = `Every agent of ${guild?.name ?? "the guild"} reads and writes it.`;
+    startingAccess = [{ type: "guild", id: scope.sourceGuildId, mode: "write" }];
   }
   const { href: displayPath, key } = planned;
   const live = await liveNoteAt(deps, scope, displayPath);
@@ -172,7 +159,7 @@ async function reviewNoteCreate(
   return {
     action: "create",
     title: `Create ${title || key}`,
-    target: { display_path: displayPath, title, level, ...(level === "agent" ? { agent_id: ownerId } : {}) },
+    target: { display_path: displayPath, title, ...(agentId !== null ? { agent_id: agentId } : {}) },
     baseVersion: null,
     baseHash: createHash("sha256").update(JSON.stringify(["absent", displayPath]), "utf8").digest("hex"),
     proposedHash: planned.hash,
@@ -182,7 +169,7 @@ async function reviewNoteCreate(
       `Creates ${displayPath}. ${reader}`,
       "An agent reads it once its Task embeds it or names it for note_get.",
     ],
-    plan: { action: "create", level, key, title, content, agentId: level === "agent" ? ownerId : null },
+    plan: { action: "create", key, title, content, startingAccess },
   };
 }
 
@@ -210,19 +197,14 @@ async function reviewNoteDelete(
   return {
     action: "delete",
     title: `Delete ${base.title || base.displayPath.split("/").pop() || "note"}`,
-    target: { display_path: base.displayPath, title: base.title, level: base.level },
+    target: { display_path: base.displayPath, title: base.title },
     baseVersion: base.version,
     baseHash: hashArtifactContent(base.content),
     proposedHash: createHash("sha256").update(JSON.stringify(["delete", base.displayPath]), "utf8").digest("hex"),
     live: base.content,
     proposed: "",
     effects,
-    plan: {
-      action: "delete",
-      displayPath: base.displayPath,
-      guildId: base.guildId,
-      agentId: base.level === "agent" ? base.ownerId : null,
-    },
+    plan: { action: "delete", displayPath: base.displayPath, guildId: base.guildId },
   };
 }
 
@@ -241,14 +223,11 @@ export async function reviewRecordedNote(
 }
 
 export async function applyNote(deps: EditDeps, scope: EditScope, plan: NotePlan): Promise<number | null> {
-  const toolActor = editActor(scope, {
-    ...(plan.action === "delete" ? { guildId: plan.guildId } : {}),
-    ...(plan.agentId ? { agentId: plan.agentId } : {}),
-  });
+  const toolActor = editActor(scope, plan.action === "delete" ? { guildId: plan.guildId } : {});
   try {
     if (plan.action === "create") {
       const written = await writeNote(deps.artifacts, toolActor, {
-        level: plan.level,
+        startingAccess: plan.startingAccess,
         key: plan.key,
         content: plan.content,
         ...(plan.title ? { title: plan.title } : {}),

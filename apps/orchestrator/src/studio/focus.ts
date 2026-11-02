@@ -396,16 +396,14 @@ async function loadFileForFocus(
       throw new StudioUnprocessableError("focus on a collection is not supported; pick a record");
     }
     let agent: AgentRow | null = null;
-    if (parsed.kind === "revision" || (parsed.kind === "artifact" && parsed.level === "agent")) {
-      agent = await guildAgent(deps, parsed.kind === "revision" ? parsed.agentId : parsed.ownerId);
+    const agentId = parsed.kind === "revision" || parsed.kind === "artifact" ? parsed.agentId : null;
+    if (agentId !== null) {
+      agent = await guildAgent(deps, agentId);
     } else if (!(await studioReachesParsed(deps, deps, parsed))) {
-      throw new StudioUnprocessableError(
-        "focus file is not in the source guild or the organisation's shared files",
-      );
+      throw new StudioUnprocessableError("focus file is not in the source guild's reach");
     }
     if (
       parsed.kind === "artifact" &&
-      parsed.level === "agent" &&
       parsed.path === "" &&
       parsed.key === "task.md" &&
       agent

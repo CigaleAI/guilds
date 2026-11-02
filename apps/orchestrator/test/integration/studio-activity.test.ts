@@ -191,7 +191,7 @@ test("studio activity lists each wake with what started it and what it produced"
     ...agentActor({ orgId: "org_home", guildId: "guild_act", agentId: "a_desk", agentName: "desk", runId: "r_desk" }),
     toolCall: { id: "call_note", name: "note_write" },
   };
-  await writeNote(artifacts, deskActor, { level: "agent", key: "leads.md", content: "- one\n", title: "Leads" });
+  await writeNote(artifacts, deskActor, { key: "leads.md", content: "- one\n", title: "Leads" });
   await appendRunError(
     db,
     "r_desk",

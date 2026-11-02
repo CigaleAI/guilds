@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { readAgentMode, type ArtifactMode } from "../db/artifact-access.js";
-import { countLiveArtifacts, type ArtifactRow } from "../db/artifacts.js";
+import { isHiddenByList, readAgentMode, type ArtifactMode } from "../db/artifact-access.js";
+import { countLiveNotesAndFiles, type ArtifactRow } from "../db/artifacts.js";
 import { formatOperationalTimestamp } from "../db/codecs.js";
 import type { RecordRow } from "../db/collections.js";
 import type { ArtifactContent, CollectionColumn, RecordBody, RecordValue, AccessMode } from "../db/schema/index.js";
@@ -13,7 +13,6 @@ import {
   WRITE_MAX_BYTES,
   type ArtifactActor,
   type ArtifactKind,
-  type ArtifactLevel,
 } from "./types.js";
 
 /** What notes, Memory, collections, records, and access lists are read and written through. */
@@ -64,7 +63,6 @@ export type RecordView = RecordFields & { [column: string]: RecordValue | null }
 export type ArtifactTextView = {
   display_path: string;
   kind: ArtifactKind;
-  level: ArtifactLevel;
   key: string;
   title: string | null;
   author: string;
@@ -92,8 +90,8 @@ export type CollectionDescription = {
 export type StateArtifact = {
   display_path: string;
   kind: "note" | "memory" | "script" | "file";
-  level: ArtifactLevel;
-  owner_id: string;
+  /** The agent whose Memory or script it is; null for a note or a file. */
+  agent_id: string | null;
   title: string;
   /** Bytes of its text. */
   size: number;
@@ -109,12 +107,6 @@ export type ReachedNote = {
   id: string;
   display_path: string;
   title: string;
-  level: ArtifactLevel;
-  owner_id: string;
-  /** The name of the organisation, guild, or agent that owns the note. */
-  owner_name: string;
-  /** The guild of a guild or agent note; null for an organisation note. */
-  guild_id: string | null;
   mode: AccessMode;
 };
 
@@ -123,75 +115,56 @@ export type ReachedTable = Pick<CollectionView, "id" | "name" | "purpose" | "dis
   mode: AccessMode;
 };
 
-/** The owner an artifact at a level sits under for an actor. */
-export type ArtifactOwnerRef = { orgId: string; ownerId: string; guildId: string | null; agentId: string | null };
-
-/** The owner a level names for the actor: itself, its own guild, or the organisation. */
-export function ownerFor(actor: ArtifactActor, level: ArtifactLevel): ArtifactOwnerRef {
-  if (level === "agent") {
-    if (!actor.agentId) throw new ArtifactError("write not allowed", 422);
-    return { orgId: actor.orgId, ownerId: actor.agentId, guildId: actor.guildId, agentId: actor.agentId };
-  }
-  if (level === "guild") {
-    if (!actor.guildId) throw new ArtifactError("write not allowed", 422);
-    return { orgId: actor.orgId, ownerId: actor.guildId, guildId: actor.guildId, agentId: null };
-  }
-  return { orgId: actor.orgId, ownerId: actor.orgId, guildId: null, agentId: null };
-}
-
 export function assertBytes(content: string): void {
   if (Buffer.byteLength(content, "utf8") > WRITE_MAX_BYTES) {
     throw new ArtifactError("write exceeds 256 KB", 422);
   }
 }
 
-/** A 422 when the owner already holds the most live notes, Memory, scripts, and files it may. */
-export async function assertLiveCount(
-  store: ArtifactStore,
-  orgId: string,
-  level: ArtifactLevel,
-  ownerId: string,
-): Promise<void> {
-  const count = await countLiveArtifacts(store.db, { org_id: orgId, level, owner_id: ownerId });
-  if (count >= LIVE_ARTIFACTS_MAX) {
+/** A 422 when the organisation already holds the most live notes and files it may. */
+export async function assertLiveCount(store: ArtifactStore, orgId: string): Promise<void> {
+  if ((await countLiveNotesAndFiles(store.db, orgId)) >= LIVE_ARTIFACTS_MAX) {
     throw new ArtifactError("artifact limit reached", 422);
   }
 }
 
-/** Whether a guild- or agent-level owner sits in a private guild the operator actor cannot see. */
-function isHiddenOwner(actor: ArtifactActor, level: ArtifactLevel, ownerId: string): boolean {
-  if (level === "guild") {
-    return actor.hidden.guildIds.includes(ownerId);
-  }
-  return level === "agent" && actor.hidden.agentIds.includes(ownerId);
-}
-
 /**
- * Whether the actor reaches what an owner holds outside any access list: a
- * Task, a Memory, a script, a Memory revision. The operator reaches all but
- * hidden guilds'; an agent reaches its own.
+ * Whether the actor reaches what one agent holds outside any access list: its Task, Memory,
+ * scripts, and Memory revisions. The operator reaches every agent's but a hidden guild's; an agent
+ * reaches its own.
  */
-export function reachesOwner(actor: ArtifactActor, level: ArtifactLevel, ownerId: string): boolean {
+export function reachesAgent(actor: ArtifactActor, agentId: string): boolean {
   if (actor.operator) {
-    return !isHiddenOwner(actor, level, ownerId);
+    return !actor.hidden.agentIds.includes(agentId);
   }
-  return level === "agent" && ownerId === actor.agentId;
+  return agentId === actor.agentId;
+}
+
+/** Whether a note or a file is hidden from an operator actor: its list names only guilds and agents it does not reach. */
+export async function isHiddenItem(store: ArtifactStore, actor: ArtifactActor, row: Pick<ArtifactRow, "id" | "kind">): Promise<boolean> {
+  if (row.kind !== "note" && row.kind !== "file") {
+    return false;
+  }
+  return isHiddenByList(store.db, { kind: row.kind, id: row.id }, actor.hidden);
 }
 
 /**
- * The actor's mode on a note, file, Memory, or script: the operator writes all
- * but hidden guilds' items, an agent writes its own, and a note or a file
- * follows its access list. Null when the actor does not reach it.
+ * The actor's mode on a note, file, Memory, or script: an agent's Memory and scripts are written by
+ * that agent and the operators who reach it; a note or a file is written by every operator it is not
+ * hidden from, and reached by an agent through its access list. Null when the actor does not reach it.
  */
 export async function artifactMode(store: ArtifactStore, actor: ArtifactActor, row: ArtifactRow): Promise<AccessMode | null> {
   if (row.org_id !== actor.orgId) {
     return null;
   }
-  if (actor.operator || (row.level === "agent" && row.owner_id === actor.agentId)) {
-    return reachesOwner(actor, row.level, row.owner_id) ? "write" : null;
+  if (row.agent_id !== null) {
+    return reachesAgent(actor, row.agent_id) ? "write" : null;
   }
   if (row.kind !== "note" && row.kind !== "file") {
     return null;
+  }
+  if (actor.operator) {
+    return (await isHiddenItem(store, actor, row)) ? null : "write";
   }
   return reachedMode(await readAgentMode(store.db, actor, { kind: row.kind, id: row.id }));
 }
@@ -221,8 +194,7 @@ export function rowDisplayPath(row: ArtifactRow): string {
 export function rowAsDisplay(row: ArtifactRow): ArtifactLocation {
   return {
     orgId: row.org_id,
-    level: row.level,
-    ownerId: row.owner_id,
+    agentId: row.agent_id,
     kind: row.kind,
     collectionName: row.collection_name,
     path: row.path,
@@ -255,7 +227,6 @@ export function artifactTextView(row: ArtifactRow): ArtifactTextView {
   return {
     display_path: rowDisplayPath(row),
     kind: row.kind,
-    level: row.level,
     key: row.key,
     title: row.title,
     author: row.updated_by_name,

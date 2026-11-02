@@ -256,8 +256,8 @@ describe("code_task with the Claude Code driver", () => {
 
   test("notes are appended to the brief under their display paths", async () => {
     const notes: Record<string, string> = {
-      "org/org_1/guilds/guild_1/conventions.md": "Use tabs.",
-      "org/org_1/guilds/guild_1/large.md": "x".repeat(70 * 1024),
+      "org/org_1/conventions.md": "Use tabs.",
+      "org/org_1/large.md": "x".repeat(70 * 1024),
     };
     const fakeStore = {
       async artifactAt(_actor: unknown, displayPath: string) {
@@ -275,10 +275,10 @@ describe("code_task with the Claude Code driver", () => {
     const brief = await buildBrief(ctx.services, ctx.run.artifact_actor, "Tidy greet.py.", Object.keys(notes));
     assert.ok(brief.startsWith(BRIEF_PREAMBLE));
     assert.ok(brief.includes("# Task\n\nTidy greet.py."));
-    assert.ok(brief.includes("# org/org_1/guilds/guild_1/conventions.md\n\nUse tabs."));
-    assert.ok(brief.includes("Not included, past the 64 KiB cap for notes: org/org_1/guilds/guild_1/large.md"));
+    assert.ok(brief.includes("# org/org_1/conventions.md\n\nUse tabs."));
+    assert.ok(brief.includes("Not included, past the 64 KiB cap for notes: org/org_1/large.md"));
     await assert.rejects(
-      () => buildBrief(ctx.services, ctx.run.artifact_actor, "x", ["org/org_1/guilds/guild_1/missing.md"]),
+      () => buildBrief(ctx.services, ctx.run.artifact_actor, "x", ["org/org_1/missing.md"]),
       /notes: .*missing\.md/,
     );
   });

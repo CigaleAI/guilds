@@ -73,7 +73,7 @@ export type ApplyInventory = {
     native_tools: string[];
   }>;
   collections: CollectionPlan[];
-  notes: Array<{ key: string; level: string; role: string | null; guild: string | null; writers: string[] }>;
+  notes: Array<{ key: string; guild: string | null; writers: string[] }>;
   scripts: Array<{ role: string; name: string; description: string }>;
   routines: Array<{
     role: string;

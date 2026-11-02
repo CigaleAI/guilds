@@ -7,7 +7,7 @@ import {
   type AccessGrant,
   type AccessSubjectRef,
   type AgentAccessMode,
-  type ArtifactLevel,
+  type ArtifactActor,
 } from "./types.js";
 import type { AccessMode } from "../db/schema/index.js";
 
@@ -17,23 +17,17 @@ export function reachedMode(value: AgentAccessMode | null): AccessMode | null {
 }
 
 /**
- * The rows a new item starts with: a guild's item is written by its guild,
- * an organisation's item read by the organisation, an agent's item reached by
- * its agent alone.
+ * The row a new note or file starts with when its creator names none: an agent writes what it
+ * creates, and what an operator creates is written by the whole organisation.
  */
-export function defaultGrants(level: ArtifactLevel, ownerId: string): AccessGrant[] {
-  if (level === "guild") {
-    return [{ type: "guild", id: ownerId, mode: "write" }];
+export function creatorGrant(actor: Pick<ArtifactActor, "orgId" | "agentId" | "operator">): AccessGrant {
+  if (actor.operator) {
+    return { type: "org", id: actor.orgId, mode: "write" };
   }
-  if (level === "org") {
-    return [{ type: "org", id: ownerId, mode: "read" }];
+  if (!actor.agentId) {
+    throw new ArtifactError("write not allowed", 422);
   }
-  return [];
-}
-
-/** Whether the default rows of a new item at `level` let a non-operator writer write it. */
-export function createsWritable(level: ArtifactLevel): boolean {
-  return level === "agent" || defaultGrants(level, "").some((grant) => grant.mode === "write");
+  return { type: "agent", id: actor.agentId, mode: "write" };
 }
 
 /**
@@ -61,13 +55,14 @@ export function subjectAt(index: number): string {
   return `subjects[${index}]: `;
 }
 
+/** One subject of an access list and its mode, as the operator sends it. */
+export const SubjectEntrySchema = Type.Object({ type: Type.String(), id: Type.String(), mode: Type.String() });
+
 /** An item's access list as the operator sends it: the full list, one entry per subject. */
-export const AccessListSchema = Type.Object({
-  subjects: Type.Array(Type.Object({ type: Type.String(), id: Type.String(), mode: Type.String() })),
-});
+export const AccessListSchema = Type.Object({ subjects: Type.Array(SubjectEntrySchema) });
 
 /** One subject of an access list as the operator sends it, before its type and mode are checked. */
-export type SubjectEntry = Static<typeof AccessListSchema>["subjects"][number];
+export type SubjectEntry = Static<typeof SubjectEntrySchema>;
 
 /** The full list the operator sends, one row per subject. */
 export function parseGrants(value: SubjectEntry[]): AccessGrant[] {

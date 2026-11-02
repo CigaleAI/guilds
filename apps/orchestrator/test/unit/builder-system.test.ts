@@ -41,17 +41,17 @@ test("builder write example is a valid recipe using real field names", () => {
   assert.equal(parsed.roles[0]?.schedules[0]?.key, "scout-sweep");
   assert.equal(typeof parsed.roles[0]?.schedules[0]?.instruction, "string");
   assert.deepEqual(
-    parsed.notes.map((note) => note.level),
-    ["agent", "agent"],
+    parsed.notes.map((note) => note.writers),
+    [["scout"], ["archivist"]],
   );
   assert.equal(parsed.notes[0]?.id, "playbook");
   for (const note of example.notes as Array<Record<string, unknown>>) {
     assert.equal("path" in note, false);
     assert.match(String(note.key), /^[^/]+\.md$/);
   }
-  assert.match(parsed.roles[0]?.task.body ?? "", /note_get agent\/scout\/playbook\.md/);
-  assert.equal(parsed.roles[1]?.task.embeds[0], "agent/archivist/notion-map.md");
-  assert.match(parsed.roles[1]?.task.body ?? "", /!\[\[agent\/archivist\/notion-map\.md\]\]/);
+  assert.match(parsed.roles[0]?.task.body ?? "", /note_get org\/playbook\.md/);
+  assert.equal(parsed.roles[1]?.task.embeds[0], "org/notion-map.md");
+  assert.match(parsed.roles[1]?.task.body ?? "", /!\[\[org\/notion-map\.md\]\]/);
   assert.equal(parsed.roles[0]?.native_tools.tavily_search, undefined);
   assert.equal(parsed.roles[0]?.native_tools.record_add, true);
   assert.equal(parsed.roles[1]?.native_tools.record_add, false);
@@ -276,8 +276,6 @@ test("builder_write_recipe tool schema names role and task.body", () => {
     "id",
     "key",
     "kind",
-    "level",
-    "role",
     "writers",
   ]);
   const roleProps = recipe.recipe.properties.roles.items.properties;

@@ -3,7 +3,6 @@
 
 import { Type, type Static } from "typebox";
 import { AGENT_ROW_MODES, GUILD_ROW_MODES } from "../artifacts/access-lists.js";
-import { ARTIFACT_LEVELS } from "../artifacts/types.js";
 import { EDIT_ACTIONS } from "./actions.js";
 import { studioChoice, studioMap } from "./arguments.js";
 
@@ -34,13 +33,12 @@ export const EditNoteArguments = Type.Object({
   base_version: Type.Optional(
     Type.Integer({ description: "edit and delete: the note version the proposal was built from." }),
   ),
-  level: Type.Optional(
-    studioChoice(ARTIFACT_LEVELS, {
+  agent_id: Type.Optional(
+    Type.String({
       description:
-        "create: agent is one agent's own file, guild is read by the source guild's agents, org is read across the organisation.",
+        "create: a source-guild agent id or name that alone reads and writes the new note; omit for every agent of the source guild to read and write it.",
     }),
   ),
-  agent_id: Type.Optional(Type.String({ description: "create at level agent: source-guild agent id or name." })),
   key: Type.Optional(Type.String({ description: "create: file name ending in .md, no folders, for example playbook.md." })),
   title: Type.Optional(Type.String({ description: "create: short title shown in Files." })),
   content: Type.Optional(

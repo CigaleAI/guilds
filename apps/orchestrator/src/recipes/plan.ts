@@ -471,8 +471,6 @@ function inventoryFromRecipe(recipe: RecipeDocument, plan: InventoryPlan): Apply
     collections: plan.collections,
     notes: recipe.notes.map((item) => ({
       key: item.key,
-      level: item.level,
-      role: item.role ?? null,
       guild: item.guild ?? null,
       writers: item.writers,
     })),

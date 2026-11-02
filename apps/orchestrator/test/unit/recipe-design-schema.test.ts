@@ -123,7 +123,6 @@ test("validation warns when a builder design loads roles with what their work do
 
   example.notes.push({
     id: "roles",
-    level: "guild",
     key: "roles.md",
     body: "The scout finds candidates. The archivist writes them to Notion.",
     kind: "seed",
@@ -131,7 +130,7 @@ test("validation warns when a builder design loads roles with what their work do
     writers: [],
   } as (typeof example.notes)[number]);
   for (const role of example.roles) {
-    role.task.body = `${role.task.body}\n\n![[guild/roles.md]]`;
+    role.task.body = `${role.task.body}\n\n![[org/roles.md]]`;
   }
   example.roles[0]!.native_tools = { note_get: true };
   example.connections[1]!.roles.archivist!.tools = {};

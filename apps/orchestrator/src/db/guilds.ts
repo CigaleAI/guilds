@@ -258,8 +258,7 @@ export async function deleteGuild(pool: Queryable, guildId: string): Promise<voi
       `DELETE FROM artifact_access
         WHERE (subject_type = 'guild' AND subject_id = $1)
            OR (subject_type = 'agent' AND subject_id IN (SELECT id FROM agents WHERE guild_id = $1))
-           OR (target_kind = 'collection' AND target_id IN (SELECT id FROM artifact_collections WHERE guild_id = $1))
-           OR (target_kind IN ('note', 'file') AND target_id IN (SELECT id FROM artifacts WHERE guild_id = $1))`,
+           OR (target_kind = 'collection' AND target_id IN (SELECT id FROM artifact_collections WHERE guild_id = $1))`,
       [guildId],
     );
     // A secret whose every grant goes with the guild goes with it.

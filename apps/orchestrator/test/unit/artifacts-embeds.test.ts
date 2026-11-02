@@ -34,7 +34,6 @@ test("inlineTaskEmbeds expands one nested hop", async () => {
         return {
           row: {
             kind: "note",
-            level: "org",
             title: "schema",
             key: "schema.md",
             content_text: "Body ![[org/org_1/secret.md]]",
@@ -45,7 +44,6 @@ test("inlineTaskEmbeds expands one nested hop", async () => {
         return {
           row: {
             kind: "note",
-            level: "org",
             title: "secret",
             key: "secret.md",
             content_text: "secret was loaded ![[org/org_1/third.md]]",
@@ -63,7 +61,7 @@ test("inlineTaskEmbeds expands one nested hop", async () => {
   );
   assert.equal(
     inlined,
-    "Follow <schema path=\"org/org_1/schema.md\" level=\"org\">\nBody <secret path=\"org/org_1/secret.md\" level=\"org\">\nsecret was loaded ![[org/org_1/third.md]]\n</secret>\n</schema> and again schema\n",
+    "Follow <schema path=\"org/org_1/schema.md\">\nBody <secret path=\"org/org_1/secret.md\">\nsecret was loaded ![[org/org_1/third.md]]\n</secret>\n</schema> and again schema\n",
   );
   assert.ok(!inlined.includes("![[org/org_1/schema.md]]"));
   assert.ok(!inlined.includes("![[org/org_1/secret.md]]"));
@@ -78,7 +76,6 @@ test("inlineTaskEmbeds puts the unreachable marker in place of a nested note it 
         return {
           row: {
             kind: "note",
-            level: "org",
             title: "schema",
             key: "schema.md",
             content_text: "Body ![[org/org_1/secret.md]]",
@@ -95,7 +92,7 @@ test("inlineTaskEmbeds puts the unreachable marker in place of a nested note it 
   );
   assert.equal(
     inlined,
-    `<schema path="org/org_1/schema.md" level="org">\nBody ${unreachableMarker("org/org_1/secret.md")}\n</schema>`,
+    `<schema path="org/org_1/schema.md">\nBody ${unreachableMarker("org/org_1/secret.md")}\n</schema>`,
   );
 });
 
@@ -109,7 +106,6 @@ test("inlineTaskEmbeds replaces a nested collection path with the table name", a
         return {
           row: {
             kind: "note",
-            level: "agent",
             title: "process",
             key: "process.md",
             content_text: "Write ![[org/org_1/collections/leads]]",
@@ -126,7 +122,7 @@ test("inlineTaskEmbeds replaces a nested collection path with the table name", a
   );
   assert.equal(
     inlined,
-    "Follow <process path=\"org/org_1/process.md\" level=\"agent\">\nWrite leads\n</process>\n",
+    "Follow <process path=\"org/org_1/process.md\">\nWrite leads\n</process>\n",
   );
 });
 
@@ -134,10 +130,10 @@ test("inlineTaskEmbeds replaces each unique embed in place", async () => {
   const store = {
     async getByDisplayPath(_actor: unknown, href: string) {
       if (href === "org/org_1/a.md") {
-        return { row: { kind: "note", level: "org", title: "A", key: "a.md", content_text: "alpha" } };
+        return { row: { kind: "note", title: "A", key: "a.md", content_text: "alpha" } };
       }
       if (href === "org/org_1/b.md") {
-        return { row: { kind: "note", level: "guild", title: "B", key: "b.md", content_text: "beta" } };
+        return { row: { kind: "note", title: "B", key: "b.md", content_text: "beta" } };
       }
       throw new ArtifactError("artifact not found", 404);
     },
@@ -149,7 +145,7 @@ test("inlineTaskEmbeds replaces each unique embed in place", async () => {
   );
   assert.equal(
     inlined,
-    "Start <a path=\"org/org_1/a.md\" level=\"org\">\nalpha\n</a> middle <b path=\"org/org_1/b.md\" level=\"guild\">\nbeta\n</b> end\n",
+    "Start <a path=\"org/org_1/a.md\">\nalpha\n</a> middle <b path=\"org/org_1/b.md\">\nbeta\n</b> end\n",
   );
 });
 
@@ -166,7 +162,7 @@ test("embedTagName names the element after the file", () => {
 test("inlineTaskEmbeds marks every embed that does not resolve to a readable note the same way", async () => {
   const store = {
     async getByDisplayPath(_actor: unknown, href: string) {
-      if (href === "org/org_1/record") return { row: { kind: "object", level: "org", key: "x", content_json: {} } };
+      if (href === "org/org_1/record") return { row: { kind: "object", key: "x", content_json: {} } };
       if (href === "org/org_1/gone.md") return { tombstone: true, row: { kind: "note" } };
       throw new ArtifactError("artifact not found", 404);
     },
@@ -190,7 +186,7 @@ test("unreachableMarker names the path and says the file is not reachable", () =
 test("inlineTaskEmbeds still refuses a Task past the embed budget", async () => {
   const store = {
     async getByDisplayPath() {
-      return { row: { kind: "note", level: "org", key: "big.md", content_text: "x".repeat(EMBED_BUDGET + 1) } };
+      return { row: { kind: "note", key: "big.md", content_text: "x".repeat(EMBED_BUDGET + 1) } };
     },
   };
   await assert.rejects(
@@ -226,7 +222,7 @@ test("inlineTaskEmbeds reads each embed as the actor it is given", async () => {
   const store = {
     async getByDisplayPath(actor: { operator: boolean }) {
       seen.push(actor.operator);
-      if (actor.operator) return { row: { kind: "note", level: "org", key: "rules.md", content_text: "secret rules" } };
+      if (actor.operator) return { row: { kind: "note", key: "rules.md", content_text: "secret rules" } };
       throw new ArtifactError("artifact not found", 404);
     },
   };
@@ -242,7 +238,7 @@ test("snapshotTaskEmbeds and snapshotTaskCollections keep only what the actor ca
       return name === "leads" ? { name: "leads" } : null;
     },
     async getByDisplayPath(_actor: unknown, href: string) {
-      if (href === "org/org_1/a.md") return { row: { kind: "note", level: "org", key: "a.md", version: 2, content_text: "a" } };
+      if (href === "org/org_1/a.md") return { row: { kind: "note", key: "a.md", version: 2, content_text: "a" } };
       throw new ArtifactError("artifact not found", 404);
     },
   };
@@ -300,7 +296,7 @@ test("inspectTaskEmbeds flags leftover recipe links and files that are not reach
   const store = {
     async getByDisplayPath(_actor: unknown, href: string) {
       if (href === "org/org_1/schema.md") {
-        return { row: { kind: "note", level: "org", title: "schema", key: "schema.md", content_text: "ok" } };
+        return { row: { kind: "note", title: "schema", key: "schema.md", content_text: "ok" } };
       }
       return { row: null };
     },
@@ -331,7 +327,6 @@ test("inspectTaskEmbeds walks one nested hop", async () => {
         return {
           row: {
             kind: "note",
-            level: "agent",
             title: "process",
             key: "process.md",
             content_text: "See ![[org/org_1/schema.md]] and ![[org/org_1/collections/leads]]",
@@ -339,7 +334,7 @@ test("inspectTaskEmbeds walks one nested hop", async () => {
         };
       }
       if (href === "org/org_1/schema.md") {
-        return { row: { kind: "note", level: "org", title: "schema", key: "schema.md", content_text: "ok" } };
+        return { row: { kind: "note", title: "schema", key: "schema.md", content_text: "ok" } };
       }
       return { row: null };
     },

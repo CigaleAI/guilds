@@ -16,7 +16,6 @@ import { userRow } from "../helpers/users.js";
 import { operatorActor } from "../../src/artifacts/actors.js";
 import { rowDisplayPath } from "../../src/artifacts/store.js";
 import type { ArtifactRow } from "../../src/db/artifacts.js";
-import type { ArtifactLevel } from "../../src/artifacts/types.js";
 import { artifactRow, noteRowAt } from "../helpers/artifacts.js";
 import { serverRow } from "../helpers/servers.js";
 
@@ -128,7 +127,7 @@ function captureDeps(options: {
       listAgents: async () => agents.map((agent) => ({ ...agent, config: storedConfig(agent.config) })),
       getAgentTask: async (_orgId: string, agentId: string) =>
         agentId === "a_scout"
-          ? { content_text: options.task ?? "Ping @scout and keep @user. See ![[org/org_1/guilds/guild_live/playbook.md]]" }
+          ? { content_text: options.task ?? "Ping @scout and keep @user. See ![[org/org_1/playbook.md]]" }
           : { content_text: "Draft the reply." },
       listSchedules: async (agentId: string) =>
         agentId === "a_scout"
@@ -167,7 +166,7 @@ function captureDeps(options: {
       notesNamed: async (_actor: unknown, names: ReadonlySet<string>) =>
         (
           options.notes ?? [
-            noteRowAt("org/org_1/guilds/guild_live/playbook.md", "Hand off to @writer."),
+            noteRowAt("org/org_1/playbook.md", "Hand off to @writer."),
             noteRowAt("org/org_1/agents/a_scout/memory.md", "lived memory"),
           ]
         )
@@ -260,7 +259,7 @@ test("captureGuild writes a portable snapshot from a live guild", async () => {
   assert.equal(recipe.roles.find((role) => role.role === "writer")?.wake_triggers, "");
   assert.equal(scout.task.body.includes("@{scout}"), true);
   assert.equal(scout.task.body.includes("@user"), true);
-  assert.equal(scout.task.body.includes("![[guild/playbook.md]]"), true);
+  assert.equal(scout.task.body.includes("![[org/playbook.md]]"), true);
   assert.equal("connection_id" in scout.config, false);
   assert.equal("sandbox_id" in scout.config, false);
   assert.equal(scout.schedules[0]?.instruction.includes("@{writer}"), true);
@@ -329,16 +328,15 @@ test("captureGuild carries what each note's access list gives the guild and its 
     guild_id: "guild_other",
     guild_name: "other",
   };
-  const note = (id: string, level: ArtifactLevel, key: string, ownerId = "org_1") =>
-    artifactRow({ id, level, key, owner_id: ownerId, content_text: "Body." });
+  const note = (id: string, key: string) => artifactRow({ id, key, content_text: "Body." });
   const recipe = await captureGuild(
     captureDeps({
       notes: [
-        note("n_org", "org", "glossary.md"),
-        note("n_open", "org", "open.md"),
-        note("n_guild", "guild", "rules.md", "guild_live"),
-        note("n_map", "agent", "map.md", "a_scout"),
-        note("n_own", "agent", "own.md", "a_writer"),
+        note("n_org", "glossary.md"),
+        note("n_open", "open.md"),
+        note("n_guild", "rules.md"),
+        note("n_map", "map.md"),
+        note("n_own", "own.md"),
       ],
       access: {
         n_org: [ORG_ROW, guildRow("write"), otherGuildRow],
@@ -358,16 +356,13 @@ test("captureGuild carries what each note's access list gives the guild and its 
     "glossary.md": ["write", []],
     // the organisation's read row is the guild's mode; a member's own write row makes it a writer
     "open.md": ["read", ["writer"]],
-    // a guild note is written by its whole guild
-    "rules.md": ["write", []],
-    // the owner reaches its note without a row, so only the other member is a writer
-    "map.md": ["read", ["writer"]],
-    // an agent note nobody else reaches carries no guild mode
+    // the guild's read row is its mode, and a member's write row makes its role a writer
+    "rules.md": ["read", ["scout"]],
+    // every member with a write row of its own is a writer
+    "map.md": ["read", ["scout", "writer"]],
+    // a note no row of the guild reaches carries no guild mode and no writers
     "own.md": [null, []],
   });
-  // an agent note is the role of the agent that owns it
-  const roles = Object.fromEntries(recipe.notes.map((item) => [item.key, item.role ?? null]));
-  assert.deepEqual(roles, { "glossary.md": null, "open.md": null, "rules.md": null, "map.md": "scout", "own.md": "writer" });
 });
 
 test("captureGuild lists the guild's repositories by name, without their URLs", async () => {

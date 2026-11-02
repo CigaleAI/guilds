@@ -8,9 +8,6 @@ export function artifactRow(overrides: Partial<ArtifactRow> = {}): ArtifactRow {
   return {
     id: "art_1",
     org_id: "org_1",
-    level: "org",
-    owner_id: "org_1",
-    guild_id: null,
     agent_id: null,
     origin_guild_id: null,
     kind: "note",
@@ -41,10 +38,7 @@ export function noteRowAt(displayPath: string, content: string, overrides: Parti
   }
   return artifactRow({
     org_id: parsed.orgId,
-    level: parsed.level,
-    owner_id: parsed.ownerId,
-    guild_id: parsed.level === "guild" ? parsed.ownerId : null,
-    agent_id: parsed.level === "agent" ? parsed.ownerId : null,
+    agent_id: parsed.agentId,
     path: parsed.path,
     key: parsed.key,
     content_text: content,

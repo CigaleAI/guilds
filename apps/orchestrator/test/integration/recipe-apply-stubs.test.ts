@@ -461,7 +461,6 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
     mixed.notes = [
       {
         id: "desk-rules",
-        level: "guild",
         key: "desk-rules.md",
         body: "Skip thread ids already in seen-ids.\n",
         kind: "seed",
@@ -470,18 +469,15 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
       },
       {
         id: "crm-map",
-        level: "agent",
-        role: "writer",
         key: "crm-map.md",
         body: "Map the sender to one CRM person.\n",
         kind: "seed",
         author: operatorAuthor(),
         guild: "read",
-        writers: ["reader"],
+        writers: ["writer", "reader"],
       },
       {
         id: "mixed-glossary",
-        level: "org",
         key: "mixed-glossary.md",
         body: "Thread: one mail conversation.\n",
         kind: "seed",
@@ -490,11 +486,11 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
         writers: [],
       },
     ];
-    mixed.roles[0]!.task.body += "\n\n![[guild/desk-rules.md]]";
-    mixed.roles[0]!.task.embeds = ["guild/desk-rules.md"];
-    mixed.roles[1]!.task.body += "\n\n![[agent/writer/crm-map.md]]\n\nThen note_get guild/desk-rules.md.";
-    mixed.roles[1]!.schedules[0]!.instruction += " Read agent/writer/crm-map.md first.";
-    mixed.roles[1]!.task.embeds = ["agent/writer/crm-map.md"];
+    mixed.roles[0]!.task.body += "\n\n![[org/desk-rules.md]]";
+    mixed.roles[0]!.task.embeds = ["org/desk-rules.md"];
+    mixed.roles[1]!.task.body += "\n\n![[org/crm-map.md]]\n\nThen note_get org/desk-rules.md.";
+    mixed.roles[1]!.schedules[0]!.instruction += " Read org/crm-map.md first.";
+    mixed.roles[1]!.task.embeds = ["org/crm-map.md"];
     const mixedId = await importReady(mixed);
     const mixedApply = await applyRecipe(mixedId, "fixture-desk-mixed");
     const mixedAgents = await listAgents(db, mixedApply.guild_id);
@@ -502,9 +498,9 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
     const mixedWriter = mixedAgents.find((row) => row.name === "mixed-writer");
     assert.ok(mixedReader && mixedWriter);
 
-    // Recipe notes land flat at their owner, and task embeds point at the written files.
-    const rulesPath = `org/org_home/guilds/${mixedApply.guild_id}/desk-rules.md`;
-    const mapPath = `org/org_home/agents/${mixedWriter.id}/crm-map.md`;
+    // Recipe notes land flat at the organisation, and task embeds point at the written files.
+    const rulesPath = "org/org_home/desk-rules.md";
+    const mapPath = "org/org_home/crm-map.md";
     const mixedReaderTask = await getAgentTask(db, "org_home", String(mixedReader.id));
     const mixedWriterTask = await getAgentTask(db, "org_home", String(mixedWriter.id));
     assert.ok(mixedReaderTask?.content_text.includes(`![[${rulesPath}]]`));
@@ -526,15 +522,18 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
     const mapNote = await getByDisplayPath(artifacts, noteReader, mapPath);
     assert.equal(mapNote.row?.key, "crm-map.md");
     assert.equal(mapNote.row?.path, "");
-    // Each note's access list gains the recipe's guild mode and writers on top of its level's rows.
+    // Each note's access list is the recipe's guild mode and writers; a note that states neither is written by the guild.
     const mixedGuild = { type: "guild", id: mixedApply.guild_id };
     const mapAccess = await noteAccess(String(mapNote.row?.id));
     assert.equal(modeOf(mapAccess, mixedGuild), "read");
     assert.equal(modeOf(mapAccess, { type: "agent", id: String(mixedReader.id) }), "write");
-    assert.equal(modeOf(await noteAccess(String(rulesNote.row?.id)), mixedGuild), "write");
+    assert.equal(modeOf(mapAccess, { type: "agent", id: String(mixedWriter.id) }), "write");
+    const rulesAccess = await noteAccess(String(rulesNote.row?.id));
+    assert.deepEqual(rulesAccess.length, 1);
+    assert.equal(modeOf(rulesAccess, mixedGuild), "write");
     const glossary = await getByDisplayPath(artifacts, noteReader, "org/org_home/mixed-glossary.md");
     const glossaryAccess = await noteAccess(String(glossary.row?.id));
-    assert.equal(modeOf(glossaryAccess, { type: "org", id: "org_home" }), "read");
+    assert.equal(modeOf(glossaryAccess, { type: "org", id: "org_home" }), null);
     assert.equal(modeOf(glossaryAccess, mixedGuild), "write");
     const mixedReaderBindings = await listBindingsCovering(db, {
       orgId: "org_home",

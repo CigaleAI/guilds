@@ -539,9 +539,10 @@ test(
       const numberedOrgNote = await put(brief, { content: 5 });
       assert.equal(numberedOrgNote.statusCode, 422);
       assert.deepEqual(numberedOrgNote.json().detail[0].loc, ["body", "content"]);
-      const numberedGuildNote = await put(`${guild}/notes/brief.md`, { content: 5 });
-      assert.equal(numberedGuildNote.statusCode, 422);
-      assert.deepEqual(numberedGuildNote.json().detail[0].loc, ["body", "content"]);
+      const numberedAccess = await put(brief, { content: "x", access: { type: "org", id: "org_x", mode: 5 } });
+      assert.equal(numberedAccess.statusCode, 422);
+      assert.deepEqual(numberedAccess.json().detail[0].loc, ["body", "access", "mode"]);
+      assert.equal((await put(`${guild}/notes/brief.md`, { content: "x" })).statusCode, 404, "a guild has no note of its own");
       const displayPath = String(written.json().display_path);
       assert.equal((await get(brief)).json().content, "# Brief\n");
       assert.deepEqual(
@@ -564,12 +565,11 @@ test(
       assert.equal((await remove(brief)).statusCode, 204);
       assert.equal((await get(brief)).statusCode, 404);
 
-      const log = `${agent}/notes/log.md`;
-      const stale = await put(log, { content: "day one\n", expected_version: "first" });
+      const stale = await put(`${agent}/notes/task.md`, { content: "day one\n", expected_version: "first" });
       assert.equal(stale.statusCode, 422, "an expected version is a number");
       assert.deepEqual(stale.json().detail[0].loc, ["body", "expected_version"]);
-      assert.equal((await put(log, { content: "day one\n" })).statusCode, 200);
-      assert.equal((await remove(log)).statusCode, 204);
+      assert.equal((await put(`${agent}/notes/memory.md`, { content: "day one\n" })).statusCode, 200);
+      assert.equal((await get(`${agent}/notes/log.md`)).statusCode, 404, "an agent's notes routes serve its Task and Memory alone");
       assert.equal((await get(`${agent}/memory`)).statusCode, 200);
     } finally {
       await app.close();

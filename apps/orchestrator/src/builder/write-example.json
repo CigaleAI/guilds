@@ -20,7 +20,7 @@
       "focus": "Find new candidates and write them to the queue.",
       "config": { "browser": false, "scripting": false },
       "task": {
-        "body": "Scout: you find new candidates for the desk and queue them for the archivist.\n\n## Inputs\n- The web, through search.\n- `seen-set`: the keys already queued, by lower-case candidate name.\n\n## Work\n- Judge each find against the playbook. Revise the playbook when a sweep shows what separates a real candidate from noise.\n- Never queue a key already in `seen-set`.\n\n## Outputs\n- `scout-queue`: one record per new candidate, with name, source_url, and status `new`. The archivist drains it; you do not archive.\n- `seen-set`: the candidate's key and source, once queued.\n\n## Files\n- note_get agent/scout/playbook.md: what a real candidate looks like. Yours to revise.",
+        "body": "Scout: you find new candidates for the desk and queue them for the archivist.\n\n## Inputs\n- The web, through search.\n- `seen-set`: the keys already queued, by lower-case candidate name.\n\n## Work\n- Judge each find against the playbook. Revise the playbook when a sweep shows what separates a real candidate from noise.\n- Never queue a key already in `seen-set`.\n\n## Outputs\n- `scout-queue`: one record per new candidate, with name, source_url, and status `new`. The archivist drains it; you do not archive.\n- `seen-set`: the candidate's key and source, once queued.\n\n## Files\n- note_get org/playbook.md: what a real candidate looks like. Yours to revise.",
         "embeds": []
       },
       "scripts": [],
@@ -44,8 +44,8 @@
       "focus": "Read the queue and write the durable record.",
       "config": { "browser": false, "scripting": false },
       "task": {
-        "body": "Archivist: you turn queued candidates into durable archive records.\n\n## Inputs\n- `scout-queue`: records with status `new`, written by the scout.\n\n## Work\n- Archive each new record as a page in the Archive database, mapped by the file below.\n- Reject a record with no usable source, and say why.\n\n## Outputs\n- `scout-queue`: the same record set to `archived`, or `rejected` with a reason. The scout fills the queue; you do not scout.\n\n## Files\n- The map below says which Notion property each `scout-queue` column lands in. The operator edits it.\n\n![[agent/archivist/notion-map.md]]",
-        "embeds": ["agent/archivist/notion-map.md"]
+        "body": "Archivist: you turn queued candidates into durable archive records.\n\n## Inputs\n- `scout-queue`: records with status `new`, written by the scout.\n\n## Work\n- Archive each new record as a page in the Archive database, mapped by the file below.\n- Reject a record with no usable source, and say why.\n\n## Outputs\n- `scout-queue`: the same record set to `archived`, or `rejected` with a reason. The scout fills the queue; you do not scout.\n\n## Files\n- The map below says which Notion property each `scout-queue` column lands in. The operator edits it.\n\n![[org/notion-map.md]]",
+        "embeds": ["org/notion-map.md"]
       },
       "scripts": [],
       "schedules": [
@@ -97,19 +97,17 @@
   "notes": [
     {
       "id": "playbook",
-      "level": "agent",
-      "role": "scout",
       "key": "playbook.md",
       "body": "# Candidate playbook\n\nA real candidate:\n- has its own source page with a name and a date\n- matches the desk's subject\n\nNoise:\n- a page that repeats another source\n- an entry with no date\n\nStill to learn: which sources yield the most real candidates.",
-      "kind": "seed"
+      "kind": "seed",
+      "writers": ["scout"]
     },
     {
       "id": "notion-map",
-      "level": "agent",
-      "role": "archivist",
       "key": "notion-map.md",
       "body": "# Archive map\n\n| scout-queue column | Archive property |\n| --- | --- |\n| name | Name (title) |\n| source_url | Source (URL) |\n\nStill to confirm: the property that holds the archive date.",
-      "kind": "seed"
+      "kind": "seed",
+      "writers": ["archivist"]
     }
   ],
   "connections": [

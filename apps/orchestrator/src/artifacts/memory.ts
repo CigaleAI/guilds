@@ -13,8 +13,8 @@ import { compareColumnTimestamps, formatColumnTimestamp } from "../db/codecs.js"
 import { recordFileChange } from "../db/file-changes.js";
 import { type Queryable, stamp, withTransaction } from "../db/pg.js";
 import { ArtifactError } from "./errors.js";
-import { displayPathFor, HISTORY_ARCHIVE_SEGMENT, MEMORY_KEY, revisionDisplayPath } from "./paths.js";
-import { assertBytes, hashArtifactContent, reachesOwner, type ArtifactStore, rowDisplayPath } from "./store.js";
+import { HISTORY_ARCHIVE_SEGMENT, MEMORY_KEY, memoryDisplayPath, revisionDisplayPath } from "./paths.js";
+import { assertBytes, hashArtifactContent, reachesAgent, type ArtifactStore, rowDisplayPath } from "./store.js";
 import { MEMORY_REVISIONS_MAX, type ArtifactActor } from "./types.js";
 
 /** The text an agent's Memory holds before anything writes it. */
@@ -52,7 +52,7 @@ async function createMemory(store: ArtifactStore, actor: ArtifactActor, owner: M
       client,
       {
         org_id: owner.orgId,
-        guild_id: owner.guildId,
+        origin_guild_id: owner.guildId,
         agent_id: owner.agentId,
         key: MEMORY_KEY,
         content_text: EMPTY_MEMORY,
@@ -189,7 +189,7 @@ export async function listRevisions(
   actor: ArtifactActor,
   agentId: string,
 ): Promise<MemoryRevisionView[]> {
-  if (!actor.operator || !reachesOwner(actor, "agent", agentId)) {
+  if (!actor.operator || !reachesAgent(actor, agentId)) {
     return [];
   }
   return (await listMemoryRevisions(store.db, actor.orgId, agentId)).map((row) => {
@@ -390,7 +390,7 @@ export async function memoryTimeline(store: ArtifactStore, actor: ArtifactActor,
   const live = await getMemoryRow(store, actor, agentId);
   const revisions = await listRevisions(store, actor, agentId);
   return {
-    displayPath: displayPathFor({ orgId: actor.orgId, level: "agent", ownerId: agentId, kind: "memory", path: "", key: MEMORY_KEY }),
+    displayPath: memoryDisplayPath(actor.orgId, agentId),
     live: live ? { version: live.version, contentHash: live.content_hash } : null,
     entries: buildMemoryTimeline({ live: { content: live?.content_text ?? "" }, revisions }),
   };

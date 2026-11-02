@@ -5,34 +5,29 @@ import { planNote } from "../../src/artifacts/notes.js";
 
 const sha256 = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
 
-test("planNote places a draft directly under the owner its level names", () => {
-  const draft = { key: " plan.md ", content: "body\n" };
-  assert.equal(planNote({ orgId: "org_1", ownerId: "a_1" }, { ...draft, level: "agent" }).href, "org/org_1/agents/a_1/plan.md");
-  assert.equal(planNote({ orgId: "org_1", ownerId: "guild_1" }, { ...draft, level: "guild" }).href, "org/org_1/guilds/guild_1/plan.md");
-  assert.equal(planNote({ orgId: "org_1", ownerId: "org_1" }, { ...draft, level: "org" }).href, "org/org_1/plan.md");
+test("planNote places a draft directly under its organisation", () => {
+  assert.equal(planNote("org_1", { key: " plan.md ", content: "body\n" }).href, "org/org_1/plan.md");
 });
 
 test("planNote returns the file name as a write stores it", () => {
-  assert.equal(planNote({ orgId: "org_1", ownerId: "org_1" }, { level: "org", key: " plan.md ", content: "" }).key, "plan.md");
+  assert.equal(planNote("org_1", { key: " plan.md ", content: "" }).key, "plan.md");
 });
 
-test("planNote refuses a key that is not a note file name, and the Task and Memory names at agent level", () => {
-  const owner = { orgId: "org_1", ownerId: "a_1" };
-  assert.throws(() => planNote(owner, { level: "agent", key: "research/plan.md", content: "" }), {
+test("planNote refuses a key that is not a note file name", () => {
+  assert.throws(() => planNote("org_1", { key: "research/plan.md", content: "" }), {
     name: "ArtifactError",
     message: "note key must be a .md file name; notes have no folders",
   });
-  assert.throws(() => planNote(owner, { level: "agent", key: "task.md", content: "" }), {
-    name: "ArtifactError",
-    message: "task.md is reserved",
-  });
-  assert.equal(planNote({ orgId: "org_1", ownerId: "org_1" }, { level: "org", key: "task.md", content: "" }).href, "org/org_1/task.md");
+});
+
+test("planNote places task.md and memory.md like any other note, apart from an agent's own", () => {
+  assert.equal(planNote("org_1", { key: "task.md", content: "" }).href, "org/org_1/task.md");
+  assert.equal(planNote("org_1", { key: "memory.md", content: "" }).href, "org/org_1/memory.md");
 });
 
 test("planNote hashes the title with the hash of the text, an absent title as null", () => {
-  const owner = { orgId: "org_1", ownerId: "org_1" };
-  const titled = planNote(owner, { level: "org", key: "plan.md", title: "Plan", content: "body\n" });
-  const untitled = planNote(owner, { level: "org", key: "plan.md", content: "body\n" });
+  const titled = planNote("org_1", { key: "plan.md", title: "Plan", content: "body\n" });
+  const untitled = planNote("org_1", { key: "plan.md", content: "body\n" });
   assert.equal(titled.hash, sha256(JSON.stringify(["Plan", sha256("body\n")])));
   assert.equal(untitled.hash, sha256(JSON.stringify([null, sha256("body\n")])));
 });

@@ -1,6 +1,7 @@
-import { Type, type Static } from "typebox";
+import { Type } from "typebox";
 import type { FastifyRequest } from "fastify";
 import { requireVisibleAgent } from "../agents/access.js";
+import { SubjectEntrySchema } from "../artifacts/access.js";
 import { loadOperatorActor } from "../artifacts/actors.js";
 import {
   latestFileChanges,
@@ -10,12 +11,14 @@ import {
 import type { ArtifactActor } from "../artifacts/types.js";
 import { requireVisibleGuild } from "../guilds/access.js";
 import {
-  deleteOwnerNote,
-  listOwnerNotes,
+  deleteOrgNote,
+  listPageNotes,
+  readAgentFile,
   readMemoryHistory,
-  readOwnerNote,
-  writeOwnerNote,
-  type NotesOwner,
+  readOrgNote,
+  writeAgentFile,
+  writeOrgNote,
+  type NotesPage,
   type OperatorNotesServices,
 } from "../notes/operator.js";
 import type { RouteApp, RouteDeps } from "./deps.js";
@@ -24,13 +27,20 @@ import { currentOrg, currentUser } from "./identity.js";
 import { AgentParams, filePathParam, GuildParams } from "./params.js";
 import type { UserRow } from "../db/users.js";
 
-/** A note's content, and the version the writer edited when they name one. */
+/** A note's content, and the subject and mode of the row its access list starts with when the write creates it. */
 const NoteWriteSchema = Type.Object({
+  content: Type.Optional(Type.String()),
+  access: Type.Optional(SubjectEntrySchema),
+});
+
+/** An agent's `task.md` or `memory.md` content, and the version the writer edited when they name one. */
+const AgentFileWriteSchema = Type.Object({
   content: Type.Optional(Type.String()),
   expected_version: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
 });
 
-type NoteWriteBody = Static<typeof NoteWriteSchema>;
+/** The files an agent's notes routes read and write by name: its Task and its Memory. */
+const AGENT_FILES = ["task.md", "memory.md"] as const;
 
 /** The file a change log or the embeddable notes name by its display path. */
 const DisplayPathQuerySchema = Type.Object({ display_path: Type.Optional(Type.String()) });
@@ -43,8 +53,8 @@ const DisplayPathsSchema = Type.Object({
   display_paths: Type.Optional(Type.Array(Type.String())),
 });
 
-/** Whose notes a route reads or writes, and the user it does it for. */
-type NoteScope = { owner: NotesOwner; user: UserRow };
+/** The page whose notes a route lists, and the user it lists them for. */
+type NoteScope = { page: NotesPage; user: UserRow };
 
 /** The paths a list names, trimmed, without the empty ones. */
 function pathsOf(items: string[]): string[] {
@@ -52,8 +62,9 @@ function pathsOf(items: string[]): string[] {
 }
 
 /**
- * The notes of a guild, an agent and the organisation, an agent's memory history, the change
- * log of a file, and the notes an organisation can embed.
+ * The organisation's notes by key, the notes a guild's and an agent's pages list, an agent's Task
+ * and Memory, an agent's memory history, the change log of a file, and the notes an organisation
+ * can embed.
  */
 export async function registerNoteRoutes(app: RouteApp, deps: RouteDeps): Promise<void> {
   const { db } = deps;
@@ -66,96 +77,69 @@ export async function registerNoteRoutes(app: RouteApp, deps: RouteDeps): Promis
   async function guildNotes(request: FastifyRequest, guildId: string): Promise<NoteScope> {
     const user = await currentUser(db, request, deps);
     const guild = await requireVisibleGuild(db, guildId, user.id);
-    return { owner: { level: "guild", guild }, user };
+    return { page: { scope: "guild", guild }, user };
   }
 
   async function agentNotes(request: FastifyRequest, agentId: string): Promise<NoteScope> {
     const user = await currentUser(db, request, deps);
     const agent = await requireVisibleAgent(db, agentId, user.id);
-    return { owner: { level: "agent", agent }, user };
+    return { page: { scope: "agent", agent }, user };
   }
 
-  async function orgNotes(request: FastifyRequest): Promise<NoteScope> {
+  async function orgScope(request: FastifyRequest): Promise<{ orgId: string; user: UserRow }> {
     const user = await currentUser(db, request, deps);
     const org = await currentOrg(db, request, user);
-    return { owner: { level: "org", orgId: String(org.id) }, user };
+    return { orgId: String(org.id), user };
   }
 
-  // One owner's notes: the list, and one note read, written and deleted by the path the
-  // wildcard names.
-  const listNotes = (scope: NoteScope) =>
-    notesRead(listOwnerNotes(services, scope.owner, scope.user));
-  const readNote = (scope: NoteScope, request: FastifyRequest) =>
-    notesRead(readOwnerNote(services, scope.owner, scope.user, filePathParam(request)));
-  const writeNote = (scope: NoteScope, request: FastifyRequest, body: NoteWriteBody) => {
-    const write = {
-      path: filePathParam(request),
-      content: body.content ?? "",
-      expectedVersion: body.expected_version,
-    };
-    return writeOwnerNote(services, scope.owner, scope.user, write);
-  };
-  const deleteNote = (scope: NoteScope, request: FastifyRequest) =>
-    deleteOwnerNote(services, scope.owner, scope.user, filePathParam(request));
+  const listNotes = (scope: NoteScope) => notesRead(listPageNotes(services, scope.page, scope.user));
 
   app.get("/api/guilds/:guild_id/notes", { schema: { params: GuildParams } }, async (request) =>
     listNotes(await guildNotes(request, request.params.guild_id)),
-  );
-
-  app.get("/api/guilds/:guild_id/notes/*", { schema: { params: GuildParams } }, async (request) =>
-    readNote(await guildNotes(request, request.params.guild_id), request),
-  );
-
-  app.put(
-    "/api/guilds/:guild_id/notes/*",
-    { schema: { params: GuildParams, body: NoteWriteSchema } },
-    async (request) =>
-      writeNote(await guildNotes(request, request.params.guild_id), request, request.body),
-  );
-
-  app.delete(
-    "/api/guilds/:guild_id/notes/*",
-    { schema: { params: GuildParams } },
-    async (request, reply) => {
-      await deleteNote(await guildNotes(request, request.params.guild_id), request);
-      return reply.code(204).send();
-    },
   );
 
   app.get("/api/agents/:agent_id/notes", { schema: { params: AgentParams } }, async (request) =>
     listNotes(await agentNotes(request, request.params.agent_id)),
   );
 
-  app.get("/api/agents/:agent_id/notes/*", { schema: { params: AgentParams } }, async (request) =>
-    readNote(await agentNotes(request, request.params.agent_id), request),
-  );
+  for (const name of AGENT_FILES) {
+    app.get(`/api/agents/:agent_id/notes/${name}`, { schema: { params: AgentParams } }, async (request) => {
+      const user = await currentUser(db, request, deps);
+      const agent = await requireVisibleAgent(db, request.params.agent_id, user.id);
+      return notesRead(readAgentFile(services, agent, user, name));
+    });
 
-  app.put(
-    "/api/agents/:agent_id/notes/*",
-    { schema: { params: AgentParams, body: NoteWriteSchema } },
-    async (request) =>
-      writeNote(await agentNotes(request, request.params.agent_id), request, request.body),
-  );
+    app.put(
+      `/api/agents/:agent_id/notes/${name}`,
+      { schema: { params: AgentParams, body: AgentFileWriteSchema } },
+      async (request) => {
+        const user = await currentUser(db, request, deps);
+        const agent = await requireVisibleAgent(db, request.params.agent_id, user.id);
+        const write = { path: name, content: request.body.content ?? "", expectedVersion: request.body.expected_version };
+        return writeAgentFile(services, agent, user, write);
+      },
+    );
+  }
 
-  app.delete(
-    "/api/agents/:agent_id/notes/*",
-    { schema: { params: AgentParams } },
-    async (request, reply) => {
-      await deleteNote(await agentNotes(request, request.params.agent_id), request);
-      return reply.code(204).send();
-    },
-  );
+  app.get("/api/org/notes", async (request) => {
+    const { orgId, user } = await orgScope(request);
+    return listNotes({ page: { scope: "org", orgId }, user });
+  });
 
-  app.get("/api/org/notes", async (request) => listNotes(await orgNotes(request)));
+  app.get("/api/org/notes/*", async (request) => {
+    const { orgId, user } = await orgScope(request);
+    return notesRead(readOrgNote(services, orgId, user, filePathParam(request)));
+  });
 
-  app.get("/api/org/notes/*", async (request) => readNote(await orgNotes(request), request));
-
-  app.put("/api/org/notes/*", { schema: { body: NoteWriteSchema } }, async (request) =>
-    writeNote(await orgNotes(request), request, request.body),
-  );
+  app.put("/api/org/notes/*", { schema: { body: NoteWriteSchema } }, async (request) => {
+    const { orgId, user } = await orgScope(request);
+    const write = { path: filePathParam(request), content: request.body.content ?? "", access: request.body.access };
+    return writeOrgNote(services, orgId, user, write);
+  });
 
   app.delete("/api/org/notes/*", async (request, reply) => {
-    await deleteNote(await orgNotes(request), request);
+    const { orgId, user } = await orgScope(request);
+    await deleteOrgNote(services, orgId, user, filePathParam(request));
     return reply.code(204).send();
   });
 

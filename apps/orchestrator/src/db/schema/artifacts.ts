@@ -7,6 +7,7 @@ import {
   json,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   unique,
   uniqueIndex,
@@ -119,9 +120,7 @@ export const artifacts = pgTable(
   {
     id: text("id").primaryKey(),
     org_id: text("org_id").notNull(),
-    level: text("level", { enum: ["agent", "guild", "org"] }).notNull(),
-    owner_id: text("owner_id").notNull(),
-    guild_id: text("guild_id"),
+    /** The agent a Memory or a script belongs to; null on a note, a file, and a record. */
     agent_id: text("agent_id"),
     origin_guild_id: text("origin_guild_id"),
     kind: text("kind", { enum: ["note", "object", "memory", "script", "file"] }).notNull(),
@@ -159,7 +158,6 @@ export const artifacts = pgTable(
     deleted_at: timestamptz("deleted_at"),
   },
   (table) => [
-    check("artifacts_level_check", sql`${table.level} IN ('agent', 'guild', 'org')`),
     check("artifacts_kind_check", sql`${table.kind} IN ('note', 'object', 'memory', 'script', 'file')`),
     foreignKey({
       columns: [table.org_id],
@@ -175,6 +173,32 @@ export const artifacts = pgTable(
     uniqueIndex("artifacts_record_identity")
       .on(table.collection_id, table.identity)
       .where(sql`${table.deleted_at} IS NULL AND ${table.identity} IS NOT NULL`),
+  ],
+);
+
+/** A note or a file whose name was taken by another when names became unique per organisation: where it was, and where it is. */
+export const artifactRenames = pgTable(
+  "artifact_renames",
+  {
+    org_id: text("org_id").notNull(),
+    artifact_id: text("artifact_id").notNull(),
+    old_display_path: text("old_display_path").notNull(),
+    new_display_path: text("new_display_path").notNull(),
+    renamed_at: timestamptz("renamed_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ name: "artifact_renames_pkey", columns: [table.artifact_id, table.renamed_at] }),
+    foreignKey({
+      columns: [table.org_id],
+      foreignColumns: [orgs.id],
+      name: "artifact_renames_org_id_fkey",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.artifact_id],
+      foreignColumns: [artifacts.id],
+      name: "artifact_renames_artifact_id_fkey",
+    }).onDelete("cascade"),
+    index("artifact_renames_by_org").on(table.org_id, table.renamed_at),
   ],
 );
 

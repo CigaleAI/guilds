@@ -5,11 +5,11 @@ import { validateAgentConfig } from "../agents/validation.js";
 import { operatorActor } from "../artifacts/actors.js";
 import { createCollection, deleteCollection } from "../artifacts/collections.js";
 import { ArtifactError } from "../artifacts/errors.js";
-import type { ArtifactActor } from "../artifacts/types.js";
+import type { AccessGrant, ArtifactActor } from "../artifacts/types.js";
 import type { CollectionView } from "../artifacts/store.js";
-import type { AccessRaise } from "../artifacts/access.js";
+import { accessRaises, type AccessRaise } from "../artifacts/access.js";
 import { raiseAccess } from "../artifacts/access-lists.js";
-import { writeNote } from "../artifacts/notes.js";
+import { isNoteKeyTaken, writeNote } from "../artifacts/notes.js";
 import { deleteAgent } from "../db/agents.js";
 import { deleteGuild } from "../db/guilds.js";
 import type { OrgMembershipRow } from "../db/orgs.js";
@@ -142,18 +142,29 @@ function appliedAccess(
   };
 }
 
-/** Writes one recipe note at its level as `actor`, with the access list the recipe gives it, remembering where it went. */
-async function writeRecipeNote(
-  skeleton: Skeleton,
-  note: RecipeNote,
-  actor: ArtifactActor,
-): Promise<void> {
-  const written = await writeNote(skeleton.apply.artifacts, actor, {
-    level: note.level,
-    key: note.key,
+/**
+ * The rows a recipe note starts with: the new guild at its `guild` mode and its writers' agents at
+ * write, leaving out a writer the guild's row already lets write; a note that states neither is
+ * written by the new guild.
+ */
+function recipeNoteAccess(skeleton: Skeleton, note: RecipeNote): AccessGrant[] {
+  const rows = accessRaises([], appliedAccess(skeleton, note));
+  return rows.length ? rows : [{ type: "guild", id: skeleton.guildId, mode: "write" }];
+}
+
+/**
+ * Creates one recipe note as the operator, with the access list the recipe gives it, remembering
+ * where it went. A key the organisation already uses takes the new guild's name as a prefix.
+ */
+async function writeRecipeNote(skeleton: Skeleton, note: RecipeNote): Promise<void> {
+  const taken = await isNoteKeyTaken(skeleton.apply.artifacts, skeleton.source.org.id, note.key);
+  const written = await writeNote(skeleton.apply.artifacts, skeleton.actor, {
+    key: taken ? `${skeleton.guildName}-${note.key}` : note.key,
     content: note.body,
     title: note.key,
-    access: appliedAccess(skeleton, note),
+    startingAccess: recipeNoteAccess(skeleton, note),
+    // No live note has version 0, so a note of that key written meanwhile is a conflict, not overwritten.
+    expectedVersion: 0,
   });
   rememberNoteHref(skeleton, note, written.href);
 }
@@ -199,19 +210,10 @@ async function createAgent(skeleton: Skeleton, role: RecipeRole, recipe: RecipeD
   skeleton.roleToAgent.set(role.role, agentId);
 }
 
-/**
- * Writes the recipe's notes once its agents exist, each with its access list: the organisation's
- * and guild's first, then each agent note under its role's agent.
- */
+/** Writes the recipe's notes once its agents exist, each with its access list. */
 async function writeNotes(skeleton: Skeleton, recipe: RecipeDocument): Promise<void> {
-  for (const note of recipe.notes.filter((item) => item.level !== "agent")) {
-    await writeRecipeNote(skeleton, note, skeleton.actor);
-  }
-  for (const note of recipe.notes.filter((item) => item.level === "agent")) {
-    const agentId = note.role ? skeleton.roleToAgent.get(note.role) : skeleton.created.agents[0];
-    if (agentId) {
-      await writeRecipeNote(skeleton, note, agentOperator(skeleton, agentId));
-    }
+  for (const note of recipe.notes) {
+    await writeRecipeNote(skeleton, note);
   }
 }
 

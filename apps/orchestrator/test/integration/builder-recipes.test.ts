@@ -430,7 +430,6 @@ test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => 
       columns: [{ name: "email", type: "text", description: "the lead's email", required: true, unique: true }],
     });
     const { row: glossary } = await writeNote(artifacts, captureActor, {
-      level: "org",
       key: "capture-glossary.md",
       content: "Lead: a person worth a reply.\n",
     });
@@ -457,7 +456,7 @@ test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => 
       version: number;
       roles: Array<{ task: { body: string } }>;
       collections: Array<{ name: string; scope: string; guild: string; writers: string[] }>;
-      notes: Array<{ key: string; level: string; guild?: string; writers: string[] }>;
+      notes: Array<{ key: string; guild?: string; writers: string[] }>;
     };
     assert.equal(capturedRecipe.version, 2);
     assert.ok(capturedRecipe.roles[0]?.task.body.includes("@{scout}"));
@@ -466,9 +465,9 @@ test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => 
       capturedRecipe.collections.map(({ name, scope, guild, writers }) => ({ name, scope, guild, writers })),
       [{ name: "capture-shared", scope: "org", guild: "read", writers: [] }],
     );
-    // An organisation note the guild writes keeps the guild's write.
+    // A note the guild writes carries the guild's write, and no level.
     const capturedGlossary = capturedRecipe.notes.find((note) => note.key === "capture-glossary.md");
-    assert.equal(capturedGlossary?.level, "org");
+    assert.equal(capturedGlossary !== undefined && "level" in capturedGlossary, false);
     assert.equal(capturedGlossary?.guild, "write");
     assert.deepEqual(capturedGlossary?.writers, []);
 
