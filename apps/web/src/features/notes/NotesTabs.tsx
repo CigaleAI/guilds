@@ -21,7 +21,7 @@ export function AgentNotesTab() {
   );
 }
 
-/** The guild's State Notes view: the notes open to it or its agents, and every note; `?path=` opens one first. */
+/** The guild's State Notes view: the notes open to it, its agents or the organisation, and every note; `?path=` opens one first. */
 export function GuildNotesTab() {
   const { org } = useIdentity();
   const { guildId } = useParams({ from: "/guilds/$guildId" });

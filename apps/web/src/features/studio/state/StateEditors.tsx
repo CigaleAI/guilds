@@ -8,7 +8,7 @@ import { useStudio } from "../StudioContext";
 type NoteEditorProps = { path: string };
 
 /**
- * The notes browser opened at one note: the notes open to the session's guild or its agents, and
+ * The notes browser opened at one note: the notes open to the session's guild, its agents or the organisation, and
  * every note, with changes opened in Studio.
  */
 export function NoteEditor({ path }: NoteEditorProps) {

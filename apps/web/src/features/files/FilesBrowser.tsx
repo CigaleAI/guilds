@@ -54,7 +54,7 @@ const noFiles: FileItem[] = [];
 /** What each page's list holds, as its empty state says. */
 const emptyFiles: Record<AccessSubject["type"], string> = {
   agent: "Files this agent reads appear here.",
-  guild: "Files open to this guild or its agents appear here.",
+  guild: "Files open to this guild, its agents or the organisation appear here.",
   org: "Every file of the organisation appears here.",
 };
 

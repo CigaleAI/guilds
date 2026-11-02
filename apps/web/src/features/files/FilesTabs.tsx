@@ -21,7 +21,7 @@ export function AgentFilesTab() {
   );
 }
 
-/** The guild's State Files view: the files open to it or its agents, and every file; `?path=` opens one first. */
+/** The guild's State Files view: the files open to it, its agents or the organisation, and every file; `?path=` opens one first. */
 export function GuildFilesTab() {
   const { org } = useIdentity();
   const { guildId } = useParams({ from: "/guilds/$guildId" });

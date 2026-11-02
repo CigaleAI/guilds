@@ -70,7 +70,7 @@ const noNotes: NoteItem[] = [];
 /** What each page's list holds, as its empty state says. */
 const emptyNotes: Record<AccessSubject["type"], string> = {
   agent: "Notes this agent reads appear here.",
-  guild: "Notes open to this guild or its agents appear here.",
+  guild: "Notes open to this guild, its agents or the organisation appear here.",
   org: "Every note of the organisation appears here.",
 };
 
