@@ -393,10 +393,11 @@ broken:
 2. create the guild (or attach an empty one)
 3. create the agents on the chosen machine, each with empty Memory and
    a first Task whose `@{role}` tags already name the new agents
-4. create guild- and org-level seed notes, then agent-level seed notes
-   (a note without a role goes to the first agent). Each seed note's
-   access list is raised to the recipe's `guild` and `writers` as it is
-   written (see [Access](#access))
+4. create the seed notes, each with the access list the recipe's
+   `guild` and `writers` give it, the new guild at `write` when they
+   give none (see [Access](#access)). A key the organisation already
+   holds takes the new guild's name as a prefix,
+   `<guild name>-<key>`
 5. for each role in turn:
    - rewrite the Task's note links
      ([embeds and note paths](recipe-format.md#embeds-and-tags)) to

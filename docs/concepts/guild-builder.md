@@ -212,17 +212,16 @@ the recipe records.
 - **Routines.** Each trigger is a `schedules` row, recorded under the
   same `key` in `design.routines` with a cadence and a dedupe
   collection whose unique column carries the identity.
-- **Narrow roles.** A role's own rules and working files are
-  agent-level notes. A guild- or organisation-level note holds only
-  what every role that embeds it uses. No note describes each role's
+- **Narrow roles.** A role's own rules and working files are notes
+  that role alone writes: the role in `writers` and no `guild`. A note
+  the guild reaches holds only what every role that embeds it uses. No note describes each role's
   job: agents see their peers' `focus` in State. The coach sets
   `false` in `native_tools` and in each connection role's `tools` for
   every tool a role does not call, and turns `config.scripting` off
   for a role that writes no scripts.
 - **Working files.** A file the agent revises is named in the Task and
   read with `note_get`. A file that must enter every run is embedded
-  with `![[guild/<key>]]`, `![[org/<key>]]`, or
-  `![[agent/<role>/<key>]]` ([Task](task.md)). Tasks name systems and
+  with `![[org/<key>]]` ([Task](task.md)). Tasks name systems and
   outcomes, not namespaced tool ids.
 - **Coding.** A role that reads, changes, runs, and ships code sets
   `config.coding`. Its code tools (`code_task`, `shell`,

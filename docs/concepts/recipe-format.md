@@ -69,12 +69,11 @@ their files will live. It uses placeholders instead:
 
 - **Role tags.** A tag to another agent is written `@{role}`. Apply
   replaces it with the new agent's name. `@user` stays as it is.
-- **Note links.** A Task embeds a seed note by its place in the
-  recipe: `![[guild/<key>]]`, `![[org/<key>]]`, or
-  `![[agent/<role>/<key>]]`. A Task or routine that names a working
+- **Note links.** A Task embeds a seed note by its key in the
+  recipe: `![[org/<key>]]`. A Task or routine that names a working
   note for `note_get` uses the same path as plain text, for example
-  `note_get agent/<role>/<key>`. Apply writes the note, then points
-  both at the note's live path.
+  `note_get org/<key>`. Apply writes the note, then points both at
+  the note's live path.
 
 ### Who wrote each field
 
@@ -144,7 +143,7 @@ The document is stored in PostgreSQL and downloads as JSON.
     browser: { required, instructions, author }
   }],
   collections: [{ name, purpose, columns, scope?: "guild" | "org", guild?: "read" | "write", writers?: [role] }],
-  notes: [{ id, level, role?, key, body, kind: "seed", author, guild?: "read" | "write", writers?: [role] }],
+  notes: [{ id, key, body, kind: "seed", author, guild?: "read" | "write", writers?: [role] }],
   connections: [{
     server, auth, recommended_scope, recommended_role?, hint,
     setup, resources?, manifest?, author,
@@ -274,33 +273,31 @@ collection whose columns accept the recipe's; see
 
 ### notes
 
-- `notes[].key` is a `.md` file name with no `/`. Notes are flat at
-  their level. A note carrying `path` is refused on import and on
-  write.
-- `level` is `org`, `guild`, or `agent`. An `agent` note names its
-  `role`; a role that does not exist is the `note.role` error.
+- `notes[].key` is a `.md` file name with no `/`. Notes are flat, and
+  a key names one note across the organisation. A note carrying
+  `path` is refused on import and on write.
+- A note carrying `level` or `role` is refused with a hint naming
+  `guild` and `writers`.
 - `id` defaults to `note-<n>`. `body` is at most 256 KiB. `kind` is
   always `seed`.
-- `guild` and `writers` shape a note's access like a collection's, on
-  top of the rows the note starts with at its level. `guild` (`read` or
-  `write`) is the new guild's mode on the note's access list. `writers`
-  lists the roles whose agents get their own `write` row. A writer that
+- `guild` and `writers` are the note's whole access list, shaped like
+  a collection's. `guild` (`read` or `write`) is the new guild's row.
+  `writers` lists the roles whose agents get their own `write` row; a
+  writer the guild's row already lets write gets none. A writer that
   is not a role is the `note.writer` error.
-- A `guild` note takes `guild: "write"` (its default) and no
-  `writers`. Anything else is refused. An `org` note's `guild` defaults
-  to `read`, which the organisation's starting row already gives. An
-  `agent` note has no `guild` unless the recipe sets one: it starts
-  reached by its role's agent alone.
+- A note that states neither `guild` nor `writers` starts with the new
+  guild at `write`. A note that states only one writer, and no
+  `guild`, is reached by that role's agent alone.
 - As for collections, a recipe carries no rows for other guilds or
   their agents, and no agent row of `read` or `none`.
+- Apply creates each note under its key. When the organisation
+  already holds a live note of that key, the note is created as
+  `<guild name>-<key>` instead, and every link to it points there.
 
 ### Embeds and tags
 
-`task.body` embed syntax after capture is the destination file:
-
-- `![[guild/<key>]]`
-- `![[org/<key>]]`
-- `![[agent/<role>/<key>]]`
+`task.body` embed syntax after capture is the destination file,
+`![[org/<key>]]`.
 
 A leftover `![[recipe:<note-id>]]` still applies when `notes[].id`
 matches. An embed that is none of these, nor a live display path, is
@@ -308,8 +305,7 @@ the `task.embed` error.
 
 The same destination paths may appear as plain text in `task.body` and
 schedule `instruction`, where an agent reads the note with `note_get`.
-A plain-text `guild/<key>.md`, `org/<key>.md`, or
-`agent/<role>/<key>.md` that matches no note in `notes[]` is the
+A plain-text `org/<key>.md` that matches no note in `notes[]` is the
 `task.note_path` error.
 
 Apply rewrites embeds and plain-text note paths to live display paths.
@@ -455,7 +451,6 @@ findings `collection.conflict` and `machine.*`
 | `script.literal_secret` | error | A script's source holds what looks like a literal credential |
 | `review.script` | info | A Builder-written script nobody reviewed yet |
 | `collection.writer` | error | A collection writer is not a role |
-| `note.role` | error | An agent note names an unknown role |
 | `note.writer` | error | A note writer is not a role |
 | `connection.missing` | warning | The recipe has no connectors |
 | `server.organisation`, `server.registry`, `server.unknown` | error | The box lacks a connection's server (see [connections](#connections)) |
@@ -475,7 +470,7 @@ findings `collection.conflict` and `machine.*`
 | `design.unused_access` | warning | A connection no role enables |
 | `design.cadence_collision` | warning | A hand-off consumer shares its producer's cadence |
 | `design.orphan_collection` | warning | A collection no hand-off or dedupe routine uses |
-| `design.shared_note_roles` | warning | In a Builder recipe with two or more roles, a guild or organisation note that a role embeds or names mentions two or more role handles |
+| `design.shared_note_roles` | warning | In a Builder recipe with two or more roles, a note that more than one role reaches (the guild has a row on it, or it has other than one writer), and that a role embeds or names, mentions two or more role handles |
 | `design.untyped_collection` | error | A collection declares no columns |
 | `design.handoff_state` | error | A hand-off collection has no required text column with `values` |
 | `design.collection_access` | error | A hand-off producer or consumer, or the role of a dedupe routine, cannot write the collection: `guild` is not `write` and the role is not in `writers` |
