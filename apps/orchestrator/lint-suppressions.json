@@ -104,17 +104,6 @@
       "count": 3
     }
   },
-  "src/connectors/coingecko/client.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 2
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 7
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 5
-    }
-  },
   "src/connectors/dexpaprika/client.ts": {
     "anti-slop/no-known-value-widening": {
       "count": 5

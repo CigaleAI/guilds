@@ -4,7 +4,6 @@ import { decodeMasterKey } from "../../src/config/index.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import {
   CoinGeckoError,
-  callTool,
   formatChart,
   formatCoin,
   formatMovers,
@@ -13,14 +12,16 @@ import {
   formatTrending,
   ping,
   searchCoins,
-  searchTool,
   simplePrices,
 } from "../../src/connectors/coingecko/client.js";
+import type { ChartPoint } from "../../src/connectors/coingecko/responses.js";
 import { agentToolConnection } from "../../src/access/runtime.js";
 import { McpError } from "../../src/mcp/errors.js";
 import { McpPool, OPERATOR_CALLER } from "../../src/mcp/pool.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
-import { ConnectorError } from "../../src/connectors/types.js";
+import { ConnectorError, type ConnectorContext } from "../../src/connectors/types.js";
+import type { JsonObject } from "../../src/lib/json.js";
+import type { FetchFn } from "../../src/net/http.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { mockFetch } from "../helpers/http.js";
 import { serverRow } from "../helpers/servers.js";
@@ -31,8 +32,24 @@ import { restoreConnectorsAfterEach, runConnectors } from "../helpers/installed.
 restoreConnectorsAfterEach();
 
 const KEY = decodeMasterKey(HEX_MASTER_KEY);
-const TOOLS = CONNECTORS.bySlug("coingecko")!.manifest.tools!;
+const COINGECKO = CONNECTORS.bySlug("coingecko")!;
+const TOOLS = COINGECKO.manifest.tools!;
 
+/** Runs the CoinGecko tool `name` on `args` with the key cg-test, fetching through `http`. */
+function callCoinGecko(name: string, args: JsonObject, http: FetchFn = mockFetch(() => ({ status: 500, json: {} }))) {
+  const ctx: ConnectorContext = {
+    http,
+    remote: { initialize: async () => ({ name: "", instructions: "" }), list: async () => [], call: async () => "" },
+    connection_id: "conn_cg",
+    settings: {},
+  };
+  return COINGECKO.adapter.call!(name, args, { token: "cg-test" }, ctx);
+}
+
+/** Whether `error` is the connector error a call is refused with: `status`, its message matching `pattern`. */
+function refused(status: number | null, pattern: RegExp) {
+  return (error: unknown) => error instanceof ConnectorError && error.status === status && pattern.test(error.message);
+}
 
 test("formatSearch drops images and exchanges", () => {
   const payload = {
@@ -138,12 +155,12 @@ test("formatMovers and formatSupply drop images", () => {
 });
 
 test("formatChart downsamples and keeps price only", () => {
-  const prices = Array.from({ length: 200 }, (_, index) => [1_710_000_000_000 + index * 60_000, 65_000 + index]);
+  const prices = Array.from({ length: 200 }, (_, index): ChartPoint => [1_710_000_000_000 + index * 60_000, 65_000 + index]);
   const stored = formatChart(
     {
       prices,
-      market_caps: prices.map(([ts]) => [ts, 1e12]),
-      total_volumes: prices.map(([ts]) => [ts, 2e10]),
+      market_caps: prices.map(([ts]): ChartPoint => [ts, 1e12]),
+      total_volumes: prices.map(([ts]): ChartPoint => [ts, 2e10]),
     },
     "bitcoin usd 7d",
   );
@@ -180,17 +197,15 @@ test("formatTrending drops media", () => {
 test("search uses the pro key header", async () => {
   let url = "";
   let key = "";
-  const stored = await searchTool(
+  const stored = await callCoinGecko(
+    "search",
     { query: "bitcoin" },
-    {
-      apiKey: "cg-test",
-      client: mockFetch((requestUrl, init) => {
-        url = requestUrl;
-        const headers = init?.headers as Record<string, string>;
-        key = headers["x-cg-pro-api-key"] ?? headers["X-CG-PRO-API-KEY"] ?? "";
-        return { status: 200, json: { coins: [{ id: "bitcoin", symbol: "btc", name: "Bitcoin" }] } };
-      }),
-    },
+    mockFetch((requestUrl, init) => {
+      url = requestUrl;
+      const headers = init?.headers as Record<string, string>;
+      key = headers["x-cg-pro-api-key"] ?? headers["X-CG-PRO-API-KEY"] ?? "";
+      return { status: 200, json: { coins: [{ id: "bitcoin", symbol: "btc", name: "Bitcoin" }] } };
+    }),
   );
   assert.equal(url, "https://pro-api.coingecko.com/api/v3/search?query=bitcoin");
   assert.equal(key, "cg-test");
@@ -198,21 +213,60 @@ test("search uses the pro key header", async () => {
 });
 
 test("search refuses a body that is not JSON or does not match its schema", async () => {
-  const answering = (result: { json?: unknown; text?: string }) => ({
-    apiKey: "cg-test",
-    client: mockFetch(() => ({ status: 200, ...result })),
+  const answering = (result: { json?: unknown; text?: string }) => mockFetch(() => ({ status: 200, ...result }));
+  await assert.rejects(
+    () => callCoinGecko("search", { query: "bitcoin" }, answering({ json: { coins: "none" } })),
+    refused(null, /^CoinGecko returned an unexpected response at \/coins: /),
+  );
+  await assert.rejects(
+    () => callCoinGecko("search", { query: "bitcoin" }, answering({ json: { coins: [{ id: "bitcoin", market_cap_rank: "1" }] } })),
+    refused(null, /^CoinGecko returned an unexpected response at \/coins\/0\/market_cap_rank: /),
+  );
+  await assert.rejects(
+    () => callCoinGecko("chart", { id: "bitcoin" }, answering({ json: { prices: [[1_710_000_000_000]] } })),
+    refused(null, /^CoinGecko returned an unexpected response at \/prices\/0: /),
+  );
+  await assert.rejects(
+    () => callCoinGecko("search", { query: "bitcoin" }, answering({ text: "not json" })),
+    refused(null, /^CoinGecko returned a non-JSON body$/),
+  );
+});
+
+test("a tool decodes its arguments before it calls CoinGecko", async () => {
+  const fetched: string[] = [];
+  const http = mockFetch((url) => {
+    fetched.push(url);
+    return { status: 200, json: { coins: [] } };
   });
-  await assert.rejects(
-    () => searchTool({ query: "bitcoin" }, answering({ json: { coins: "none" } })),
-    (error: unknown) =>
-      error instanceof CoinGeckoError &&
-      /^CoinGecko returned an unexpected response at \/coins: /.test(error.message),
+  assert.equal(await callCoinGecko("search", { query: "bitcoin", limit: null }, http), "no results");
+  await assert.rejects(callCoinGecko("search", { query: "bitcoin", limit: "5" }, http), refused(422, /^\/limit: /));
+  await assert.rejects(callCoinGecko("search", {}, http), refused(422, /^query is required$/));
+  await assert.rejects(callCoinGecko("coin", { platform: "ethereum" }, http), /id, or platform and address, is required/);
+  await assert.rejects(callCoinGecko("chart", { platform: "ethereum", address: "0xabc", kind: "ohlc" }, http), /ohlc requires coin id/);
+  await assert.rejects(callCoinGecko("chart", { id: "bitcoin", kind: "line" }, http), /kind must be price or ohlc/);
+  assert.deepEqual(fetched, ["https://pro-api.coingecko.com/api/v3/search?query=bitcoin"]);
+});
+
+test("chart reads a contract's price series and a coin's candles", async () => {
+  const fetched: string[] = [];
+  const http = mockFetch((url) => {
+    fetched.push(url);
+    return url.includes("/ohlc")
+      ? { status: 200, json: [[1_710_000_000_000, 1, 2, 0.5, 1.5]] }
+      : { status: 200, json: { prices: [[1_710_000_000_000, 6.1]], market_caps: [[1_710_000_000_000, 3e9]] } };
+  });
+  assert.equal(
+    await callCoinGecko("chart", { platform: "ethereum", address: "0xabc", series: "price,mcap", days: "1" }, http),
+    "ethereum:0xabc usd 1d n=1\nt  p  m\n1710000000  6.1  3e+09",
   );
-  await assert.rejects(
-    () => searchTool({ query: "bitcoin" }, answering({ text: "not json" })),
-    (error: unknown) =>
-      error instanceof CoinGeckoError && error.message === "CoinGecko returned a non-JSON body",
+  assert.equal(
+    await callCoinGecko("chart", { id: "bitcoin", kind: "ohlc", vs: "eur" }, http),
+    "bitcoin eur 7d ohlc n=1\nt  o  h  l  c\n1710000000  1  2  0.5  1.5",
   );
+  assert.deepEqual(fetched, [
+    "https://pro-api.coingecko.com/api/v3/coins/ethereum/contract/0xabc/market_chart?vs_currency=usd&days=1",
+    "https://pro-api.coingecko.com/api/v3/coins/bitcoin/ohlc?vs_currency=eur&days=7",
+  ]);
 });
 
 test("ping rejects unauthorized", async () => {
@@ -222,8 +276,8 @@ test("ping rejects unauthorized", async () => {
   );
 });
 
-test("callTool unknown name", async () => {
-  await assert.rejects(() => callTool("onchain", {}, { apiKey: "cg-test" }), /unknown CoinGecko tool/);
+test("a call to a tool CoinGecko does not have is refused", async () => {
+  await assert.rejects(() => callCoinGecko("onchain", {}), refused(404, /^unknown tool onchain$/));
 });
 
 test("sync CoinGecko writes the curated catalog", async () => {
@@ -335,25 +389,22 @@ test("searchCoins returns structured coin matches", async () => {
 
 test("prices tool quotes each requested id once", async () => {
   let url = "";
-  const text = await callTool(
+  const text = await callCoinGecko(
     "prices",
     { ids: "Ethereum, gone, ethereum" },
-    {
-      apiKey: "cg-test",
-      client: mockFetch((requestUrl) => {
-        url = requestUrl;
-        return {
-          status: 200,
-          json: { ethereum: { usd: 3200.5, usd_24h_change: 1.5, last_updated_at: 1_790_000_000 } },
-        };
-      }),
-    },
+    mockFetch((requestUrl) => {
+      url = requestUrl;
+      return {
+        status: 200,
+        json: { ethereum: { usd: 3200.5, usd_24h_change: 1.5, last_updated_at: 1_790_000_000 } },
+      };
+    }),
   );
   assert.equal(new URL(url).searchParams.get("ids"), "ethereum,gone");
   const [eth, gone] = text.split("\n");
   assert.match(eth!, /^ethereum\s+p=3,?200\.5\s+chg_24h=\+1\.5%\s+1790000000$/);
   assert.match(gone!, /^gone\s+no price$/);
-  await assert.rejects(() => callTool("prices", { ids: " , " }, { apiKey: "cg-test" }), /ids is required/);
+  await assert.rejects(() => callCoinGecko("prices", { ids: " , " }), /ids is required/);
 });
 
 function toolDb(options: { toolOff?: boolean; serverOff?: boolean; status?: string; listed?: boolean } = {}) {
