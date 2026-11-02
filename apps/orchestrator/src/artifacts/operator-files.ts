@@ -1,23 +1,14 @@
 import { creatorGrant, parseGrant, type SubjectEntry } from "./access.js";
 import { guildsOnList } from "./access-lists.js";
 import { loadOperatorActor } from "./actors.js";
-import type { ArtifactFiles, FileView } from "./files.js";
-import type { ArtifactStore } from "./store.js";
+import type { ArtifactFiles, FileView, PageFileView } from "./files.js";
+import type { ArtifactStore, PageSections } from "./store.js";
 import type { ArtifactActor } from "./types.js";
+import type { AgentViewerMode, GuildViewerMode } from "../db/artifact-lists.js";
 import type { AgentRow } from "../db/agents.js";
 import type { GuildRow } from "../db/guilds.js";
 import type { Queryable } from "../db/pg.js";
 import type { UserRow } from "../db/users.js";
-
-/**
- * The page whose files a listing shows: the organisation's lists every file, a guild's the files
- * whose access list has a row for the guild, one of its agents, or the organisation, an agent's the
- * files it reads.
- */
-export type FilesPage =
-  | { scope: "agent"; agent: AgentRow }
-  | { scope: "guild"; guild: GuildRow }
-  | { scope: "org"; orgId: string };
 
 /** What an operator's file lists run with: the database their actor is loaded from, and the shared files. */
 export type SharedFileReadDeps = { db: Queryable; files: ArtifactFiles };
@@ -50,28 +41,33 @@ export type SharedFileUpload = {
 /** A file as an operator downloads it: its view, which names it and gives its media type, and its bytes. */
 export type SharedFileDownload = { file: FileView; bytes: Buffer };
 
-/** The user as the artifact actor of the page's scope, with the private guilds they do not operate hidden from them. */
-export async function loadSharedFileActor(db: Queryable, page: FilesPage, user: UserRow): Promise<ArtifactActor> {
-  if (page.scope === "agent") {
-    const { agent } = page;
-    return loadOperatorActor(db, user, { orgId: agent.org_id, guildId: agent.guild_id, agentId: agent.id });
-  }
-  if (page.scope === "guild") {
-    return loadOperatorActor(db, user, { orgId: page.guild.org_id, guildId: page.guild.id });
-  }
-  return loadOperatorActor(db, user, { orgId: page.orgId });
+/** Every file of the organisation `user` may read, by name. */
+export async function listOrgSharedFiles(
+  deps: SharedFileReadDeps,
+  orgId: string,
+  user: UserRow,
+): Promise<Array<PageFileView<GuildViewerMode>>> {
+  return deps.files.listOrgFiles(await loadOperatorActor(deps.db, user, { orgId }));
 }
 
-/** The files the page lists that `user` may read, by name. */
-export async function listSharedFiles(deps: SharedFileReadDeps, page: FilesPage, user: UserRow): Promise<FileView[]> {
-  const actor = await loadSharedFileActor(deps.db, page, user);
-  if (page.scope === "agent") {
-    return deps.files.listAgentFiles(actor, { agentId: page.agent.id, guildId: page.agent.guild_id });
-  }
-  if (page.scope === "guild") {
-    return deps.files.listGuildFiles(actor, page.guild.id);
-  }
-  return deps.files.listOrgFiles(actor);
+/** The files the guild's page lists for `user`, in its two sections. */
+export async function listGuildSharedFiles(
+  deps: SharedFileReadDeps,
+  guild: GuildRow,
+  user: UserRow,
+): Promise<PageSections<PageFileView<GuildViewerMode>>> {
+  const actor = await loadOperatorActor(deps.db, user, { orgId: guild.org_id, guildId: guild.id });
+  return deps.files.listGuildFiles(actor, guild.id);
+}
+
+/** The files the agent's page lists for `user`, in its two sections. */
+export async function listAgentSharedFiles(
+  deps: SharedFileReadDeps,
+  agent: AgentRow,
+  user: UserRow,
+): Promise<PageSections<PageFileView<AgentViewerMode>>> {
+  const actor = await loadOperatorActor(deps.db, user, { orgId: agent.org_id, guildId: agent.guild_id, agentId: agent.id });
+  return deps.files.listAgentFiles(actor, { agentId: agent.id, guildId: agent.guild_id });
 }
 
 /** The file with this id and its current bytes, as `actor` reaches it. */

@@ -1,15 +1,17 @@
 import { Type, type Static } from "typebox";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import type { SubjectEntry } from "../artifacts/access.js";
-import { ArtifactFiles, type FileView } from "../artifacts/files.js";
+import { loadOperatorActor } from "../artifacts/actors.js";
+import type { ArtifactFiles } from "../artifacts/files.js";
 import {
   deleteSharedFile,
-  listSharedFiles,
-  loadSharedFileActor,
+  listAgentSharedFiles,
+  listGuildSharedFiles,
+  listOrgSharedFiles,
   readSharedFile,
   uploadSharedFile,
-  type FilesPage,
   type SharedFileDownload,
+  type SharedFileReadDeps,
   type SharedFileUpload,
   type SharedFileWriteDeps,
 } from "../artifacts/operator-files.js";
@@ -17,7 +19,6 @@ import { FILE_MAX_BYTES, type ArtifactActor } from "../artifacts/types.js";
 import { requireVisibleGuild } from "../guilds/access.js";
 import { requireVisibleAgent } from "../agents/access.js";
 import { attachmentDisposition } from "../attachments/index.js";
-import type { UserRow } from "../db/users.js";
 import type { AppDeps, RouteApp, RouteDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
 import { currentOrg, currentUser } from "./identity.js";
@@ -103,36 +104,16 @@ function fileUpload(request: UploadRequest): SharedFileUpload {
   };
 }
 
-/** The page whose files a list route names, and the user it lists them for. */
-type FileScope = { page: FilesPage; user: UserRow };
-
-async function agentFiles(deps: AppDeps, request: FastifyRequest, agentId: string): Promise<FileScope> {
-  const user = await currentUser(deps.db, request, deps);
-  const agent = await requireVisibleAgent(deps.db, agentId, user.id);
-  return { page: { scope: "agent", agent }, user };
-}
-
-async function guildFiles(deps: AppDeps, request: FastifyRequest, guildId: string): Promise<FileScope> {
-  const user = await currentUser(deps.db, request, deps);
-  const guild = await requireVisibleGuild(deps.db, guildId, user.id);
-  return { page: { scope: "guild", guild }, user };
-}
-
-async function orgFiles(deps: AppDeps, request: FastifyRequest): Promise<FileScope> {
-  const user = await currentUser(deps.db, request, deps);
-  const org = await currentOrg(deps.db, request, user);
-  return { page: { scope: "org", orgId: org.id }, user };
-}
-
 /** The user as the artifact actor of their organisation. */
 async function orgActor(deps: AppDeps, request: FastifyRequest): Promise<ArtifactActor> {
-  const scope = await orgFiles(deps, request);
-  return await loadSharedFileActor(deps.db, scope.page, scope.user);
+  const user = await currentUser(deps.db, request, deps);
+  const org = await currentOrg(deps.db, request, user);
+  return loadOperatorActor(deps.db, user, { orgId: org.id });
 }
 
-/** The files a page lists that the user may read. */
-async function listFiles(deps: AppDeps, scope: FileScope): Promise<FileView[]> {
-  return await listSharedFiles({ db: deps.db, files: filesOf(deps) }, scope.page, scope.user);
+/** What a file list runs with: the database the user's actor is loaded from, and the shared files. */
+function fileReads(deps: AppDeps): SharedFileReadDeps {
+  return { db: deps.db, files: filesOf(deps) };
 }
 
 /** What a file write runs with: the artifact store, the shared files, and the announcement of each change. */
@@ -157,15 +138,23 @@ function sendBytes(reply: FastifyReply, download: SharedFileDownload): FastifyRe
 export async function registerFileRoutes(app: RouteApp, deps: RouteDeps): Promise<void> {
   const upload = { bodyLimit: FILE_MAX_BYTES + 4096 };
 
-  app.get("/api/agents/:agent_id/files", { schema: { params: AgentParams } }, async (request) =>
-    listFiles(deps, await agentFiles(deps, request, request.params.agent_id)),
-  );
+  app.get("/api/agents/:agent_id/files", { schema: { params: AgentParams } }, async (request) => {
+    const user = await currentUser(deps.db, request, deps);
+    const agent = await requireVisibleAgent(deps.db, request.params.agent_id, user.id);
+    return listAgentSharedFiles(fileReads(deps), agent, user);
+  });
 
-  app.get("/api/guilds/:guild_id/files", { schema: { params: GuildParams } }, async (request) =>
-    listFiles(deps, await guildFiles(deps, request, request.params.guild_id)),
-  );
+  app.get("/api/guilds/:guild_id/files", { schema: { params: GuildParams } }, async (request) => {
+    const user = await currentUser(deps.db, request, deps);
+    const guild = await requireVisibleGuild(deps.db, request.params.guild_id, user.id);
+    return listGuildSharedFiles(fileReads(deps), guild, user);
+  });
 
-  app.get("/api/org/files", async (request) => listFiles(deps, await orgFiles(deps, request)));
+  app.get("/api/org/files", async (request) => {
+    const user = await currentUser(deps.db, request, deps);
+    const org = await currentOrg(deps.db, request, user);
+    return listOrgSharedFiles(fileReads(deps), org.id, user);
+  });
   app.post(
     "/api/org/files",
     { ...upload, schema: { headers: UploadHeadersSchema } },

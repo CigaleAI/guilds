@@ -195,14 +195,18 @@ which holds every file.
 ```text
 GET    /api/org/files                every file of the organisation the caller may read, by name
 POST   /api/org/files                the bytes as an application/octet-stream body; X-Filename and X-Description headers, URI-encoded, an optional X-Mime, an optional X-Expected-Version, and optional X-Access-Type, X-Access-Id, and X-Access-Mode
-GET    /api/guilds/:guild_id/files   the files whose access list has a row for the guild, one of its agents, or the organisation
-GET    /api/agents/:agent_id/files   the files the agent reads
+GET    /api/guilds/:guild_id/files   { own, shared }: the guild's page, by name
+GET    /api/agents/:agent_id/files   { own, shared }: the agent's page, by name
 GET    /api/files/:file_id           the bytes, as a download
 DELETE /api/files/:file_id           204
 ```
 
-A listing or an upload answers each file in the shape `file_find`
-gives; on the agent route, `access` is the agent's mode. An upload is
+An upload answers the file in the shape `file_find` gives. A listing
+answers each file in the operator's list shape, which is that shape
+without `access`, with `home` and `viewer_mode`, as notes have them:
+the guild and agent pages list `own` and `shared` sections, and
+`viewer_mode` is the page viewer's
+([Notes](notes.md#http)). `file_find` keeps its own shape. An upload is
 201. A file of the same name in the organisation is replaced, and
 keeps its access list. `X-Expected-Version` is a whole number: `0`
 means the file must not exist yet, and a live file of that name is

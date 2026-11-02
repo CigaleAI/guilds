@@ -127,9 +127,16 @@ test("operators upload with a starting row, list per page, download, share, and 
 
     const listed = await app.inject({ method: "GET", url: `/api/guilds/${guildId}/files`, headers: OWNER });
     assert.equal(listed.statusCode, 200);
-    assert.deepEqual((listed.json() as Array<{ id: string }>).map((item) => item.id), [file.id]);
+    const guildPage = listed.json() as { own: unknown[]; shared: Array<{ id: string; home: null; viewer_mode: string }> };
+    assert.deepEqual(guildPage.own, [], "an upload that names no home is the organisation's");
+    assert.deepEqual(guildPage.shared.map((item) => [item.id, item.home, item.viewer_mode]), [[file.id, null, "all_write"]]);
+    assert.equal("access" in (guildPage.shared[0] ?? {}), false);
     const agentFiles = await app.inject({ method: "GET", url: `/api/agents/${agentId}/files`, headers: OWNER });
-    assert.deepEqual((agentFiles.json() as Array<{ id: string }>).map((item) => item.id), [file.id], "the guild's row reaches its agent");
+    assert.deepEqual(
+      (agentFiles.json() as { shared: Array<{ id: string; viewer_mode: string }> }).shared.map((item) => [item.id, item.viewer_mode]),
+      [[file.id, "write"]],
+      "the guild's row reaches its agent",
+    );
 
     const download = await app.inject({ method: "GET", url: `/api/files/${file.id}`, headers: OWNER });
     assert.equal(download.statusCode, 200);
@@ -158,12 +165,15 @@ test("operators upload with a starting row, list per page, download, share, and 
     );
     const orgFiles = await app.inject({ method: "GET", url: `/api/org/files`, headers: OWNER });
     assert.equal(orgFiles.statusCode, 200);
-    assert.deepEqual((orgFiles.json() as Array<{ id: string }>).map((item) => item.id).sort(), [file.id, htmlId].sort());
+    assert.deepEqual(
+      Object.fromEntries((orgFiles.json() as Array<{ id: string; viewer_mode: string }>).map((item) => [item.id, item.viewer_mode])),
+      { [file.id]: "some", [htmlId]: "all_write" },
+    );
     const guildAfter = await app.inject({ method: "GET", url: `/api/guilds/${guildId}/files`, headers: OWNER });
     assert.deepEqual(
-      (guildAfter.json() as Array<{ id: string }>).map((item) => item.id).sort(),
+      (guildAfter.json() as { shared: Array<{ id: string }> }).shared.map((item) => item.id).sort(),
       [file.id, htmlId].sort(),
-      "a guild page lists what names the guild and what the organisation's row reaches",
+      "a guild page shares what names the guild and what the organisation's row reaches",
     );
 
     // A member who does not operate the private guild does not see a file only the guild's row reaches, by list or by id.

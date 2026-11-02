@@ -1,8 +1,8 @@
 import type { InferSelectModel } from "drizzle-orm";
-import { type ArtifactMode, type ArtifactReader } from "./artifact-access.js";
+import { agentModeSql, type ArtifactMode, type ArtifactReader } from "./artifact-access.js";
 import { ARTIFACT_SELECT, artifactModeSql, guildScopeSql, hiddenScope, readScope, type ArtifactRow } from "./artifacts.js";
 import type { Queryable } from "./pg.js";
-import type { artifacts } from "./schema/index.js";
+import type { artifacts, guilds } from "./schema/index.js";
 
 type Artifact = InferSelectModel<typeof artifacts>;
 
@@ -19,15 +19,134 @@ function joinedReadScope(reader: ArtifactReader, values: unknown[]): string {
 /** The two kinds an access list governs, which an organisation, a guild, or an agent page lists. */
 export type ListedKind = Extract<Artifact["kind"], "note" | "file">;
 
-/** The organisation's live notes or files the reader may read, by key. */
-export async function listOrgArtifacts(db: Queryable, reader: ArtifactReader, kind: ListedKind): Promise<ArtifactRow[]> {
+/**
+ * The mode an organisation's or a guild's list shows for an item: `all_write` or `all_read` when an
+ * organisation row, or the guild's own row, reaches every agent, the better mode when both do;
+ * `some` when only rows of single agents reach some of them; `none` when no row reaches any.
+ */
+export type GuildViewerMode = "all_write" | "all_read" | "some" | "none";
+
+/** The mode an agent's list shows for an item: the agent's own mode on it, `none` when no row reaches it. */
+export type AgentViewerMode = "write" | "read" | "none";
+
+/**
+ * A note or a file as a page lists it: its row, the name of the guild it is homed in (null when it
+ * is the organisation's), and the page viewer's mode on it.
+ */
+export type PageArtifactRow<Mode> = ArtifactRow & {
+  home_name: InferSelectModel<typeof guilds>["name"] | null;
+  viewer_mode: Mode;
+};
+
+/** A row a guild's or an agent's page lists, with whether it is homed in the page's guild. */
+export type SectionedArtifactRow<Mode> = PageArtifactRow<Mode> & { homed: boolean };
+
+/** A join giving each artifact `a` the name of the guild it is homed in, as `hg.name`. */
+const HOME_JOIN = `LEFT JOIN guilds hg ON hg.id = a.origin_guild_id`;
+
+/** A join giving each artifact `a` the organisation's viewer mode on it (`GuildViewerMode`), as `v.viewer_mode`. */
+const ORG_VIEWER_JOIN = `CROSS JOIN LATERAL (
+    SELECT CASE max(x.mode) FILTER (WHERE x.subject_type = 'org')
+             WHEN 'write' THEN 'all_write' WHEN 'read' THEN 'all_read'
+             ELSE CASE WHEN bool_or(x.mode <> 'none') THEN 'some' ELSE 'none' END
+           END AS viewer_mode
+      FROM artifact_access x
+     WHERE x.target_kind = a.kind AND x.target_id = a.id) v`;
+
+/**
+ * A join giving each artifact `a` the viewer mode (`GuildViewerMode`) of the guild whose id is the
+ * SQL `guildId`, as `v.viewer_mode`, from one pass over the item's rows.
+ */
+function guildViewerJoin(guildId: string): string {
+  return `CROSS JOIN LATERAL (
+    SELECT CASE max(x.mode) FILTER (WHERE x.subject_type = 'org' OR (x.subject_type = 'guild' AND x.subject_id = ${guildId}))
+             WHEN 'write' THEN 'all_write' WHEN 'read' THEN 'all_read'
+             ELSE CASE WHEN bool_or(x.subject_type = 'agent' AND x.mode <> 'none'
+                                    AND x.subject_id IN (SELECT ag.id FROM agents ag WHERE ag.guild_id = ${guildId}))
+                       THEN 'some' ELSE 'none' END
+           END AS viewer_mode
+      FROM artifact_access x
+     WHERE x.target_kind = a.kind AND x.target_id = a.id) v`;
+}
+
+/**
+ * The predicate over the artifact `a` for an item a guild's page lists: homed in the guild whose id
+ * is the SQL `guildId`, or in its scope (`guildScopeSql`).
+ */
+function onGuildPage(guildId: string): string {
+  return `(COALESCE(a.origin_guild_id = ${guildId}, false) OR ${guildScopeSql(guildId)})`;
+}
+
+/** The organisation's live notes or files the reader may read, by key, with the organisation's viewer mode. */
+export async function listOrgArtifacts(
+  db: Queryable,
+  reader: ArtifactReader,
+  kind: ListedKind,
+): Promise<Array<PageArtifactRow<GuildViewerMode>>> {
   const values: unknown[] = [reader.orgId, kind];
-  const result = await db.query<ArtifactRow>(
-    `SELECT ${ARTIFACT_SELECT}
+  const result = await db.query<PageArtifactRow<GuildViewerMode>>(
+    `SELECT ${ARTIFACT_SELECT}, hg.name AS home_name, v.viewer_mode
        FROM artifacts a
        LEFT JOIN artifact_collections c ON c.id = a.collection_id
+       ${HOME_JOIN}
+       ${ORG_VIEWER_JOIN}
       WHERE a.org_id = $1 AND a.deleted_at IS NULL AND a.kind = $2
         AND (${readScope(reader, values)})
+      ORDER BY a.key`,
+    values,
+  );
+  return result.rows;
+}
+
+/**
+ * The live notes or files a guild's page lists for the operator `reader`, by key: those homed in the
+ * guild, whatever their rows, and those in its scope, each with the guild's viewer mode. Nothing
+ * hidden from the reader.
+ */
+export async function listGuildPageArtifacts(
+  db: Queryable,
+  reader: ArtifactReader,
+  guildId: string,
+  kind: ListedKind,
+): Promise<Array<SectionedArtifactRow<GuildViewerMode>>> {
+  const values: unknown[] = [reader.orgId, kind, guildId];
+  const result = await db.query<SectionedArtifactRow<GuildViewerMode>>(
+    `SELECT ${ARTIFACT_SELECT}, hg.name AS home_name, v.viewer_mode,
+            COALESCE(a.origin_guild_id = $3, false) AS homed
+       FROM artifacts a
+       LEFT JOIN artifact_collections c ON c.id = a.collection_id
+       ${HOME_JOIN}
+       ${guildViewerJoin("$3")}
+      WHERE a.org_id = $1 AND a.deleted_at IS NULL AND a.kind = $2 AND ${onGuildPage("$3")}
+        AND (${hiddenScope(reader, values)})
+      ORDER BY a.key`,
+    values,
+  );
+  return result.rows;
+}
+
+/**
+ * The live notes or files an agent's page lists for the operator `reader`, by key: what the page of
+ * the agent's guild lists, each with the agent's viewer mode, `reacher` reading as the agent.
+ * Nothing hidden from the reader.
+ */
+export async function listAgentPageArtifacts(
+  db: Queryable,
+  reader: ArtifactReader,
+  reacher: ArtifactReader,
+  kind: ListedKind,
+): Promise<Array<SectionedArtifactRow<AgentViewerMode>>> {
+  const values: unknown[] = [reader.orgId, kind, reacher.guildId ?? ""];
+  const mode = agentModeSql(kind, "a.id", reacher, values);
+  const result = await db.query<SectionedArtifactRow<AgentViewerMode>>(
+    `SELECT ${ARTIFACT_SELECT}, hg.name AS home_name, v.viewer_mode,
+            COALESCE(a.origin_guild_id = $3, false) AS homed
+       FROM artifacts a
+       LEFT JOIN artifact_collections c ON c.id = a.collection_id
+       ${HOME_JOIN}
+       CROSS JOIN LATERAL (SELECT COALESCE(${mode}, 'none') AS viewer_mode) v
+      WHERE a.org_id = $1 AND a.deleted_at IS NULL AND a.kind = $2 AND ${onGuildPage("$3")}
+        AND (${hiddenScope(reader, values)})
       ORDER BY a.key`,
     values,
   );

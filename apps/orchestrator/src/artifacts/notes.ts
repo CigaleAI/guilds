@@ -14,13 +14,16 @@ import {
   type ArtifactRow,
 } from "../db/artifacts.js";
 import {
+  listAgentPageArtifacts,
   listArtifactsByKind,
   listGuildArtifacts,
+  listGuildPageArtifacts,
   listGuildStateArtifacts,
   listOrgArtifacts,
-  listReachedArtifacts,
   listReadableNotes,
   searchArtifactsByKind,
+  type AgentViewerMode,
+  type GuildViewerMode,
 } from "../db/artifact-lists.js";
 import { getRecordOrTombstone } from "../db/collections.js";
 import { recordFileChange, type ChangeTarget } from "../db/file-changes.js";
@@ -42,7 +45,7 @@ import {
 } from "./paths.js";
 import { removeRecord } from "./records.js";
 import { findLimit, parseRecordId } from "./search.js";
-import { artifactMode, artifactTextView, assertBytes, assertLiveCount, assertRead, assertWrite, hashArtifactContent, hostNoteView, isRecordRow, reachesAgent, recordViewWithPath, type ArtifactStore, type ArtifactTextView, type HostNoteView, type StateArtifact, rowDisplayPath } from "./store.js";
+import { artifactMode, artifactTextView, assertBytes, assertLiveCount, assertRead, assertWrite, hashArtifactContent, hostNoteView, isRecordRow, pageSections, reachesAgent, recordViewWithPath, type ArtifactStore, type ArtifactTextView, type HostNoteView, type PageSections, type StateArtifact, rowDisplayPath } from "./store.js";
 import {
   NO_HIDDEN_GUILDS,
   SEARCH_TEXT_MAX,
@@ -385,14 +388,22 @@ export async function findNotes(
   return { notes: rows.map(artifactTextView) };
 }
 
-/** Every note of the organisation the actor reads, as the Host lists them. */
-export async function listOrgNotes(store: ArtifactStore, actor: ArtifactActor): Promise<HostNoteView[]> {
+/** Every note of the organisation the actor reads, as the Host lists them, with the organisation's viewer mode. */
+export async function listOrgNotes(store: ArtifactStore, actor: ArtifactActor): Promise<Array<HostNoteView<GuildViewerMode>>> {
   return (await listOrgArtifacts(store.db, actor, "note")).map(hostNoteView);
 }
 
-/** The notes whose access list has a row for the guild, one of its agents, or the organisation, that the actor reads, as the Host lists them. */
-export async function listGuildNotes(store: ArtifactStore, actor: ArtifactActor, guildId: string): Promise<HostNoteView[]> {
-  return (await listGuildArtifacts(store.db, actor, guildId, "note")).map(hostNoteView);
+/**
+ * The notes a guild's page lists for the actor, with the guild's viewer mode: in `own` those homed
+ * in the guild, whatever their rows; in `shared` those homed elsewhere or in the organisation whose
+ * access list has a row for the guild, one of its agents, or the organisation.
+ */
+export async function listGuildNotes(
+  store: ArtifactStore,
+  actor: ArtifactActor,
+  guildId: string,
+): Promise<PageSections<HostNoteView<GuildViewerMode>>> {
+  return pageSections(await listGuildPageArtifacts(store.db, actor, guildId, "note"), hostNoteView);
 }
 
 /** An agent whose reach a listing reads: the agent and the guild it sits in. */
@@ -403,9 +414,13 @@ export function agentReader(actor: ArtifactActor, agent: ReachingAgent): Artifac
   return { ...actor, operator: false, guildId: agent.guildId, agentId: agent.agentId, hidden: NO_HIDDEN_GUILDS };
 }
 
-/** The notes the agent reads, without those hidden from the actor, as the Host lists them. */
-export async function listAgentNotes(store: ArtifactStore, actor: ArtifactActor, agent: ReachingAgent): Promise<HostNoteView[]> {
-  return (await listReachedArtifacts(store.db, actor, agentReader(actor, agent), "note")).map(hostNoteView);
+/** The notes an agent's page lists for the actor: the sections of its guild's page, each note with the agent's viewer mode. */
+export async function listAgentNotes(
+  store: ArtifactStore,
+  actor: ArtifactActor,
+  agent: ReachingAgent,
+): Promise<PageSections<HostNoteView<AgentViewerMode>>> {
+  return pageSections(await listAgentPageArtifacts(store.db, actor, agentReader(actor, agent), "note"), hostNoteView);
 }
 
 /**

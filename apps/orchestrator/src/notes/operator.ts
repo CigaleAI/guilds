@@ -2,7 +2,7 @@ import { loadOperatorActor } from "../artifacts/actors.js";
 import { creatorGrant, parseGrant, type SubjectEntry } from "../artifacts/access.js";
 import { guildsOnList } from "../artifacts/access-lists.js";
 import type { ArtifactActor } from "../artifacts/types.js";
-import type { ArtifactStore, HostNoteView } from "../artifacts/store.js";
+import type { ArtifactStore, HostNoteView, PageSections } from "../artifacts/store.js";
 import {
   deleteHostNote,
   ensureAgentArtifacts,
@@ -16,6 +16,7 @@ import {
 import { listAgentNotes, listGuildNotes, listOrgNotes } from "../artifacts/notes.js";
 import { noteDisplayPath } from "../artifacts/paths.js";
 import { ArtifactError } from "../artifacts/errors.js";
+import type { AgentViewerMode, GuildViewerMode } from "../db/artifact-lists.js";
 import { getLiveNote } from "../db/artifacts.js";
 import type { AgentRow } from "../db/agents.js";
 import type { GuildRow } from "../db/guilds.js";
@@ -31,16 +32,6 @@ export type OperatorNotesServices = {
   /** The guild streams a change is announced on; absent on a box without a generation loop. */
   stream: Pick<GroupChat, "publish"> | null;
 };
-
-/**
- * The page whose notes a listing shows: the organisation's lists every note, a guild's the notes
- * whose access list has a row for the guild, one of its agents, or the organisation, an agent's the
- * notes it reads.
- */
-export type NotesPage =
-  | { scope: "org"; orgId: string }
-  | { scope: "guild"; guild: GuildRow }
-  | { scope: "agent"; agent: AgentRow };
 
 /**
  * A note as an operator writes it by key: its key, its content, the version they edited when they
@@ -99,17 +90,33 @@ function validateExpectedVersion(value: number | null | undefined): number | und
   return value;
 }
 
-/** The notes the page lists, as the user reads them. */
-export async function listPageNotes(services: OperatorNotesServices, page: NotesPage, user: UserRow): Promise<HostNoteView[]> {
-  if (page.scope === "org") {
-    return listOrgNotes(services.artifacts, await loadOperatorActor(services.db, user, { orgId: page.orgId }));
-  }
-  if (page.scope === "guild") {
-    const actor = await loadOperatorActor(services.db, user, { orgId: page.guild.org_id, guildId: page.guild.id });
-    return listGuildNotes(services.artifacts, actor, page.guild.id);
-  }
-  const actor = await agentActorFor(services, page.agent, user);
-  return listAgentNotes(services.artifacts, actor, { agentId: page.agent.id, guildId: page.agent.guild_id });
+/** Every note of the organisation the user reads, as the Host lists them. */
+export async function listOrgPageNotes(
+  services: OperatorNotesServices,
+  orgId: string,
+  user: UserRow,
+): Promise<Array<HostNoteView<GuildViewerMode>>> {
+  return listOrgNotes(services.artifacts, await loadOperatorActor(services.db, user, { orgId }));
+}
+
+/** The notes the guild's page lists for the user, in its two sections. */
+export async function listGuildPageNotes(
+  services: OperatorNotesServices,
+  guild: GuildRow,
+  user: UserRow,
+): Promise<PageSections<HostNoteView<GuildViewerMode>>> {
+  const actor = await loadOperatorActor(services.db, user, { orgId: guild.org_id, guildId: guild.id });
+  return listGuildNotes(services.artifacts, actor, guild.id);
+}
+
+/** The notes the agent's page lists for the user, in its two sections. */
+export async function listAgentPageNotes(
+  services: OperatorNotesServices,
+  agent: AgentRow,
+  user: UserRow,
+): Promise<PageSections<HostNoteView<AgentViewerMode>>> {
+  const actor = await agentActorFor(services, agent, user);
+  return listAgentNotes(services.artifacts, actor, { agentId: agent.id, guildId: agent.guild_id });
 }
 
 /** The organisation's note with this key. */

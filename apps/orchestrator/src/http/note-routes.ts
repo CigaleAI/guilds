@@ -12,13 +12,14 @@ import type { ArtifactActor } from "../artifacts/types.js";
 import { requireVisibleGuild } from "../guilds/access.js";
 import {
   deleteOrgNote,
-  listPageNotes,
+  listAgentPageNotes,
+  listGuildPageNotes,
+  listOrgPageNotes,
   readAgentFile,
   readMemoryHistory,
   readOrgNote,
   writeAgentFile,
   writeOrgNote,
-  type NotesPage,
   type OperatorNotesServices,
 } from "../notes/operator.js";
 import type { RouteApp, RouteDeps } from "./deps.js";
@@ -57,9 +58,6 @@ const DisplayPathsSchema = Type.Object({
   display_paths: Type.Optional(Type.Array(Type.String())),
 });
 
-/** The page whose notes a route lists, and the user it lists them for. */
-type NoteScope = { page: NotesPage; user: UserRow };
-
 /** The paths a list names, trimmed, without the empty ones. */
 function pathsOf(items: string[]): string[] {
   return items.map((item) => item.trim()).filter(Boolean);
@@ -78,33 +76,23 @@ export async function registerNoteRoutes(app: RouteApp, deps: RouteDeps): Promis
     stream: deps.generation?.groupChat ?? null,
   };
 
-  async function guildNotes(request: FastifyRequest, guildId: string): Promise<NoteScope> {
-    const user = await currentUser(db, request, deps);
-    const guild = await requireVisibleGuild(db, guildId, user.id);
-    return { page: { scope: "guild", guild }, user };
-  }
-
-  async function agentNotes(request: FastifyRequest, agentId: string): Promise<NoteScope> {
-    const user = await currentUser(db, request, deps);
-    const agent = await requireVisibleAgent(db, agentId, user.id);
-    return { page: { scope: "agent", agent }, user };
-  }
-
   async function orgScope(request: FastifyRequest): Promise<{ orgId: string; user: UserRow }> {
     const user = await currentUser(db, request, deps);
     const org = await currentOrg(db, request, user);
     return { orgId: String(org.id), user };
   }
 
-  const listNotes = (scope: NoteScope) => notesRead(listPageNotes(services, scope.page, scope.user));
+  app.get("/api/guilds/:guild_id/notes", { schema: { params: GuildParams } }, async (request) => {
+    const user = await currentUser(db, request, deps);
+    const guild = await requireVisibleGuild(db, request.params.guild_id, user.id);
+    return notesRead(listGuildPageNotes(services, guild, user));
+  });
 
-  app.get("/api/guilds/:guild_id/notes", { schema: { params: GuildParams } }, async (request) =>
-    listNotes(await guildNotes(request, request.params.guild_id)),
-  );
-
-  app.get("/api/agents/:agent_id/notes", { schema: { params: AgentParams } }, async (request) =>
-    listNotes(await agentNotes(request, request.params.agent_id)),
-  );
+  app.get("/api/agents/:agent_id/notes", { schema: { params: AgentParams } }, async (request) => {
+    const user = await currentUser(db, request, deps);
+    const agent = await requireVisibleAgent(db, request.params.agent_id, user.id);
+    return notesRead(listAgentPageNotes(services, agent, user));
+  });
 
   for (const name of AGENT_FILES) {
     app.get(`/api/agents/:agent_id/notes/${name}`, { schema: { params: AgentParams } }, async (request) => {
@@ -127,7 +115,7 @@ export async function registerNoteRoutes(app: RouteApp, deps: RouteDeps): Promis
 
   app.get("/api/org/notes", async (request) => {
     const { orgId, user } = await orgScope(request);
-    return listNotes({ page: { scope: "org", orgId }, user });
+    return notesRead(listOrgPageNotes(services, orgId, user));
   });
 
   app.get("/api/org/notes/*", async (request) => {

@@ -182,18 +182,22 @@ describe("shared files", { concurrency: 1 }, () => {
     });
     assert.equal((await files.loadFile(beta, files.view(brief).display_path)).access, "read");
     await assert.rejects(() => files.loadFile(alpha, files.view(brief).display_path), /artifact not found/);
-    assert.deepEqual((await files.listGuildFiles(operator, "guild_beta")).map((file) => file.name).includes("beta-brief.txt"), true);
-    assert.deepEqual((await files.listGuildFiles(operator, "guild_alpha")).map((file) => file.name).includes("beta-brief.txt"), false);
-    assert.deepEqual((await files.listAgentFiles(operator, { agentId: "a_beta", guildId: "guild_beta" })).map((file) => file.name).sort(), [
-      "beta-brief.txt",
-      "figures.csv",
-      "logo.png",
-    ]);
-    assert.deepEqual((await files.listAgentFiles(operator, { agentId: "a_alpha", guildId: "guild_alpha" })).map((file) => file.name).sort(), [
-      "figures.csv",
-      "logo.png",
-    ]);
-    assert.deepEqual((await files.listOrgFiles(operator)).map((file) => file.name).sort(), ["beta-brief.txt", "figures.csv", "logo.png"]);
+    const modes = (listed: Array<{ name: string; viewer_mode: string }>) => listed.map((file) => [file.name, file.viewer_mode]);
+    const betaPage = await files.listGuildFiles(operator, "guild_beta");
+    assert.deepEqual(modes(betaPage.own), []);
+    assert.deepEqual(modes(betaPage.shared), [["beta-brief.txt", "all_read"], ["figures.csv", "all_read"], ["logo.png", "all_write"]]);
+    // the agent made figures.csv, so it is homed in the agent's guild
+    const alphaPage = await files.listGuildFiles(operator, "guild_alpha");
+    assert.deepEqual(modes(alphaPage.own), [["figures.csv", "some"]]);
+    assert.deepEqual(alphaPage.own[0]?.home, { id: "guild_alpha", name: "alpha" });
+    assert.deepEqual(modes(alphaPage.shared), [["logo.png", "all_write"]]);
+    assert.equal("access" in (alphaPage.own[0] ?? {}), false);
+    const betaAgentPage = await files.listAgentFiles(operator, { agentId: "a_beta", guildId: "guild_beta" });
+    assert.deepEqual(modes(betaAgentPage.shared), [["beta-brief.txt", "read"], ["figures.csv", "read"], ["logo.png", "write"]]);
+    const alphaAgentPage = await files.listAgentFiles(operator, { agentId: "a_alpha", guildId: "guild_alpha" });
+    assert.deepEqual(modes(alphaAgentPage.own), [["figures.csv", "write"]]);
+    assert.deepEqual(modes(alphaAgentPage.shared), [["logo.png", "write"]]);
+    assert.deepEqual(modes(await files.listOrgFiles(operator)), [["beta-brief.txt", "some"], ["figures.csv", "some"], ["logo.png", "all_write"]]);
   });
 
   test("an agent's file is reached by that agent alone, and the note tools point at the file tools", async () => {

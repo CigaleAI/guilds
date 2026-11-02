@@ -285,9 +285,9 @@ The notes browser reads and writes notes over these routes, acting as
 the operator:
 
 ```text
-GET    /api/org/notes                     every note of the organisation, by key: id, path, display_path, kind, title, version
-GET    /api/guilds/:guild_id/notes        the notes whose access list has a row for the guild, one of its agents, or the organisation
-GET    /api/agents/:agent_id/notes        the notes the agent reads
+GET    /api/org/notes                     every note of the organisation, by key
+GET    /api/guilds/:guild_id/notes        { own, shared }: the guild's page, by key
+GET    /api/agents/:agent_id/notes        { own, shared }: the agent's page, by key
 GET    /api/org/notes/*                   one note, by key
 PUT    /api/org/notes/*                   { content, expected_version?, access? }
 DELETE /api/org/notes/*                   204
@@ -298,7 +298,24 @@ GET    /api/org/embeddable-notes?display_path=…   one note: display_path, titl
 ```
 
 Every listing leaves out the notes hidden from the caller. A listing
-gives each note its `id`, which names it to the access routes. A
+gives each note `{ id, path, display_path, kind, title, version, home,
+viewer_mode }`: `id` names it to the access routes, `home` is
+`{ id, name }` of the guild the note is homed in, null for the
+organisation's.
+
+A guild's and an agent's page list two sections. `own` holds the notes
+homed in the page's guild, whatever their rows. `shared` holds the
+notes homed elsewhere or in the organisation whose access list has a
+row for the guild, one of its agents, or the organisation. The agent's
+page lists the sections of its guild's page.
+
+`viewer_mode` is what the page's viewer reaches:
+
+| List | `viewer_mode` |
+|---|---|
+| The organisation's | `all_write` or `all_read` from an organisation row; `some` when only guild or agent rows reach agents; `none` when no row reaches one |
+| A guild's | `all_write` or `all_read` from an organisation row or the guild's own row, the better of the two; `some` when only rows of the guild's agents reach them; `none` when no row reaches one |
+| An agent's | the agent's mode: `write`, `read`, or `none` when no row reaches it | A
 read or a write answers `{ id, path, display_path, content, version }`;
 `task.md` and `memory.md` carry no `id`. A deleted or missing note is
 404. The agent routes serve `task.md` and `memory.md` alone
