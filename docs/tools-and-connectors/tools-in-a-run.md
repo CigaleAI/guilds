@@ -80,8 +80,12 @@ port, `http://127.0.0.1:<9300 + slot>`, and leaves Chrome running
 
 ### Schemas
 
-Every tool, native or connector, declares a JSON Schema. Before a
-schema reaches the model, the orchestrator changes it:
+Every tool, native or connector, declares a JSON Schema. A tool whose
+code declares its parameters in TypeBox, native or connector, is
+offered the JSON Schema they serialise to, with a choice among
+constants of one type (a union of literals) offered as `{ type, enum }`
+beside the choice's own `description`. Before a schema reaches the
+model, the orchestrator changes it:
 
 - `format` is removed from optional and nullable properties, nested
   objects and array items included.

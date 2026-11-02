@@ -54,13 +54,74 @@ export function isToolSchema(value: unknown): value is ToolSchema {
   return isJsonObject(value) && isSchemaNode(value);
 }
 
-/** `parameters` as the JSON Schema they serialise to, which is what the model is offered: TypeBox's own marks left out. */
+/**
+ * `parameters` as the JSON Schema the model is offered: what they serialise to, TypeBox's own
+ * marks left out, and each choice among constants of one type (a union of literals) as that
+ * type's `enum`.
+ */
 export function offeredParameters(parameters: TObject): ToolSchema {
   const offered: unknown = JSON.parse(JSON.stringify(parameters));
   if (!isToolSchema(offered)) {
     throw new TypeError("a tool's parameters must serialise to a JSON Schema object");
   }
-  return offered;
+  return withEnums(offered);
+}
+
+/** A type name whose values a JSON Schema `enum` lists. */
+const ENUM_TYPES = new Set(["string", "number", "integer", "boolean"]);
+
+/** One alternative of a union of literals: a constant and the type it has, and nothing else. */
+type ConstAlternative = { type: string; const: string | number | boolean };
+
+/** Whether a value is a string, a number or a boolean. */
+function isPrimitive(value: JsonValue | undefined): value is string | number | boolean {
+  return value !== undefined && value !== null && !Array.isArray(value) && !isObjectNode(value);
+}
+
+/** Whether a schema is one alternative of a union of literals: only `type` and `const`, the constant of that type. */
+function isConstAlternative(spec: ToolSubschema): spec is ToolSchema & ConstAlternative {
+  if (!isSchemaObject(spec) || Object.keys(spec).length !== 2 || !isString(spec.type) || !ENUM_TYPES.has(spec.type)) {
+    return false;
+  }
+  return isPrimitive(spec.const);
+}
+
+/** The constants of `alternatives` when they are a union of literals of one type, with that type; null otherwise. */
+function literalChoice(alternatives: ToolSubschema[]): { type: string; values: Array<string | number | boolean> } | null {
+  if (!alternatives.every(isConstAlternative)) {
+    return null;
+  }
+  const [first] = alternatives;
+  return first !== undefined && alternatives.every((alternative) => alternative.type === first.type)
+    ? { type: first.type, values: alternatives.map((alternative) => alternative.const) }
+    : null;
+}
+
+/** `spec` with every union of literals under it, and its own, as `{ type, enum }`; its other keywords kept. */
+function withEnums(spec: ToolSchema): ToolSchema {
+  const next: ToolSchema = { ...spec };
+  if (next.properties !== undefined) {
+    next.properties = Object.fromEntries(Object.entries(next.properties).map(([name, item]) => [name, subschemaWithEnums(item)]));
+  }
+  if (next.items !== undefined) {
+    next.items = Array.isArray(next.items) ? next.items.map(subschemaWithEnums) : subschemaWithEnums(next.items);
+  }
+  for (const keyword of LIST_KEYWORDS) {
+    const schemas = next[keyword];
+    if (schemas !== undefined) {
+      next[keyword] = schemas.map(subschemaWithEnums);
+    }
+  }
+  const choice = next.anyOf === undefined ? null : literalChoice(next.anyOf);
+  if (choice === null) {
+    return next;
+  }
+  delete next.anyOf;
+  return { ...next, type: choice.type, enum: choice.values };
+}
+
+function subschemaWithEnums(spec: ToolSubschema): ToolSubschema {
+  return isSchemaObject(spec) ? withEnums(spec) : spec;
 }
 
 /** Whether a JSON object's keywords tool calling reads hold what JSON Schema puts there, at every depth. */
