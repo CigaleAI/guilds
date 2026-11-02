@@ -15,7 +15,7 @@ ALTER TABLE public.artifact_renames ADD CONSTRAINT artifact_renames_artifact_id_
 --> statement-breakpoint
 CREATE INDEX artifact_renames_by_org ON public.artifact_renames USING btree (org_id, renamed_at);
 --> statement-breakpoint
--- An agent's own note or file: the agent writes it, now through a row of its list.
+-- An agent-level note or file has a row for its agent at write.
 INSERT INTO public.artifact_access (
 	id, org_id, target_kind, target_id, subject_type, subject_id, mode,
 	created_by_type, created_by_id, created_by_name, created_at,
@@ -28,6 +28,21 @@ SELECT 'aacc_' || upper(substr(md5(random()::text || clock_timestamp()::text || 
   FROM public.artifacts a
  WHERE a.kind IN ('note', 'file') AND a.level = 'agent' AND a.deleted_at IS NULL
 ON CONFLICT (target_kind, target_id, subject_type, subject_id) DO UPDATE SET mode = 'write';
+--> statement-breakpoint
+-- A tombstone keeps its rows, so a deleted guild- or agent-level note or file has a row for its
+-- guild or its agent at write, and stays hidden from whom its live self was hidden from.
+INSERT INTO public.artifact_access (
+	id, org_id, target_kind, target_id, subject_type, subject_id, mode,
+	created_by_type, created_by_id, created_by_name, created_at,
+	updated_by_type, updated_by_id, updated_by_name, updated_at
+)
+SELECT 'aacc_' || upper(substr(md5(random()::text || clock_timestamp()::text || a.id), 1, 26)),
+       a.org_id, a.kind, a.id, a.level, a.owner_id, 'write',
+       a.created_by_type, a.created_by_id, a.created_by_name, a.created_at,
+       a.created_by_type, a.created_by_id, a.created_by_name, a.created_at
+  FROM public.artifacts a
+ WHERE a.kind IN ('note', 'file') AND a.level IN ('guild', 'agent') AND a.deleted_at IS NOT NULL
+ON CONFLICT (target_kind, target_id, subject_type, subject_id) DO NOTHING;
 --> statement-breakpoint
 -- Every live note and file, with the display path it had and the name of the organisation, guild,
 -- or agent that held it.
@@ -215,7 +230,7 @@ SELECT org_id, chr(1) || id || chr(2), old_display_path, new_display_path
   FROM artifact_moves
  WHERE old_display_path <> new_display_path;
 --> statement-breakpoint
--- Every embed and every mention of a moved item's display path now names where it is.
+-- Every embed and every mention of a moved item's old display path names its new one.
 UPDATE public.agents a
    SET task = r.task, task_hash = encode(sha256(convert_to(r.task, 'UTF8')), 'hex')
   FROM (SELECT id, pg_temp.rewrite_paths(task, org_id) AS task FROM public.agents) r
@@ -257,7 +272,7 @@ UPDATE public.recipes r
    SET body = pg_temp.rewrite_json(r.body, r.org_id, false)
  WHERE strpos(r.body::text, 'org/' || r.org_id || '/') > 0;
 --> statement-breakpoint
--- A Studio draft of a moved item names it where it is now.
+-- A Studio draft of a moved item names the item's new display path.
 UPDATE public.studio_drafts d
    SET source_display_path = m.new_display_path
   FROM artifact_moves m

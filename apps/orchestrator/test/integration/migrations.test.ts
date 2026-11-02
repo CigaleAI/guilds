@@ -388,6 +388,8 @@ test("the list-only migration gives agent items their row, renames names several
       minute: 5,
     });
     await item({ id: "art_gone", level: "agent", owner: "a_2", kind: "note", path: "", key: "gone.md", text: "gone", minute: 6, deleted: true });
+    await item({ id: "art_gone_guild", level: "guild", owner: "guild_a", kind: "file", path: "files", key: "gone.csv", text: null, minute: 6, deleted: true });
+    await item({ id: "art_gone_org", level: "org", owner: "org_1", kind: "note", path: "", key: "gone-org.md", text: "gone", minute: 6, deleted: true });
     await item({ id: "art_data", level: "agent", owner: "a_1", kind: "file", path: "files", key: "data.csv", text: null, minute: 7 });
     await item({ id: "art_memory", level: "agent", owner: "a_1", kind: "memory", path: "", key: "memory.md", text: "Mine is org/org_1/agents/a_2/mine.md", minute: 8 });
     await pool.query(
@@ -423,6 +425,9 @@ test("the list-only migration gives agent items their row, renames names several
     assert.deepEqual(access.rows, [
       { target_kind: "note", target_id: "art_agent_plan", subject_type: "agent", subject_id: "a_1", mode: "write" },
       { target_kind: "file", target_id: "art_data", subject_type: "agent", subject_id: "a_1", mode: "write" },
+      // a tombstone keeps a row for its former guild or agent; an organisation tombstone needs none
+      { target_kind: "note", target_id: "art_gone", subject_type: "agent", subject_id: "a_2", mode: "write" },
+      { target_kind: "file", target_id: "art_gone_guild", subject_type: "guild", subject_id: "guild_a", mode: "write" },
       { target_kind: "note", target_id: "art_guild_plan", subject_type: "guild", subject_id: "guild_a", mode: "write" },
       { target_kind: "note", target_id: "art_mine", subject_type: "agent", subject_id: "a_2", mode: "write" },
     ]);
