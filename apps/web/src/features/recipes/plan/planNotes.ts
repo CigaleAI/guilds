@@ -1,5 +1,3 @@
-import type { AccessMode } from "../../../api/types/access";
-import type { RecipeNote } from "../../../api/types/recipes";
 import { asArray, type NoteDraft } from "./recipeDraft";
 import { writersSuffix } from "./planCollections";
 
@@ -21,24 +19,15 @@ export function notesFromRecipe(
   });
 }
 
-/** The guild's mode a note's level gives when the recipe names none. */
-const NOTE_GUILD_DEFAULT: Record<RecipeNote["level"], AccessMode | undefined> = {
-  org: "read",
-  guild: "write",
-  agent: undefined,
-};
-
-/** The guild's mode on a note: the recipe's, or what the note's level gives. */
-function noteGuildMode(item: NoteDraft): AccessMode | undefined {
-  return item.guild || NOTE_GUILD_DEFAULT[item.level || "guild"];
-}
-
-/** Who reaches a note: the guild's mode, or its role alone, with the roles that write on top. */
+/**
+ * Who reaches a note: the guild's mode with the roles that write on top, the writing roles alone,
+ * or the guild writing it when the recipe states neither.
+ */
 export function noteAccessLabel(item: NoteDraft): string {
-  const guild = noteGuildMode(item);
-  const writers = writersSuffix(asArray(item.writers).map((role) => String(role)));
-  if (guild) return `guild ${guild}${writers}`;
-  return `@${item.role || "agent"}${writers || " only"}`;
+  const writers = asArray(item.writers).map((role) => String(role));
+  if (item.guild) return `guild ${item.guild}${writersSuffix(writers)}`;
+  if (writers.length) return `${writers.map((role) => `@${role}`).join(", ")} write`;
+  return "guild write";
 }
 
 /** A note's title: its key or id, or "note". */
@@ -57,10 +46,9 @@ export function noteSnippet(body: string | null | undefined): string {
   return cleaned.length > 88 ? `${cleaned.slice(0, 85)}…` : cleaned;
 }
 
-/** A note's card: title, owner, who reaches it, snippet, where apply writes it, and its body. */
+/** A note's card: title, who reaches it, snippet, the key apply writes it at, and its body. */
 export type NoteCard = {
   title: string;
-  owner: string;
   access: string;
   snippet: string;
   destination: string;
@@ -71,16 +59,11 @@ export type NoteCard = {
 export function noteCard(item: NoteDraft): NoteCard {
   const title = noteTitle(item);
   const body = String(item.body || "");
-  const dest = item.key || title;
   return {
     title,
-    owner: item.role ? `${item.level || "agent"} · ${item.role}` : item.level || "guild",
     access: noteAccessLabel(item),
     snippet: noteSnippet(body),
-    destination:
-      item.level === "agent" && item.role
-        ? `agent/${item.role}/${dest}`
-        : `${item.level || "guild"}/${dest}`,
+    destination: item.key || title,
     body,
   };
 }

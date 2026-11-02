@@ -69,7 +69,6 @@ export function deskRecipe(): RecipeDraft {
     notes: [
       {
         id: "style",
-        level: "guild",
         key: "style.md",
         body: "# Style\n\nKeep replies short.",
         author: builder,
