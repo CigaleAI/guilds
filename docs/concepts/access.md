@@ -28,8 +28,8 @@ given something extra. Nobody has to repeat a setting for each agent,
 and narrowing one agent never touches the others.
 
 Notes, collections, and files are shared knowledge. Who reads them and who
-writes them is decided item by item. A guild can open one note to a
-second guild without opening all its notes, and one table can be
+writes them is decided item by item. One note can be opened to a
+second guild without opening any other, and one table can be
 written by two guilds while the rest of the organisation reads it.
 
 ## How it works
@@ -147,9 +147,10 @@ login and show on its card in the **Tools** view.
 
 ### Access lists for notes, collections, and files
 
-Every [note](notes.md), every [collection](collections.md), and every
-[file](files.md) carries one access list. A row of the list names a subject and gives it a
-mode:
+A note or a file has an access list and nothing else. Every
+[collection](collections.md) carries one too, beside the guild or
+organisation that owns it. A row of the list names a subject and
+gives it a mode:
 
 | Subject | Modes | Covers |
 | --- | --- | --- |
@@ -180,28 +181,38 @@ So an agent row can hold one agent back below its guild, with `none`
 or `read`, or raise it above its guild, with `write`. An item an agent
 cannot read behaves for it as if it did not exist.
 
-A note's or a file's level and a collection's owning guild are placement only.
-They decide the item's display path and where it is listed. They do
-not decide who reaches it. Moving a collection between a guild and
-the organisation leaves its access list as it is.
+Nothing about who reaches a note or a file comes from who created it
+or from where. A note's or a file's name is unique in its
+organisation, and its display path names the organisation and the
+name alone. A collection's owning guild is placement only: it decides
+the collection's display path and where it is listed, not who reaches
+it, and moving a collection between a guild and the organisation
+leaves its access list as it is.
 
-When an item is created, it gets starting rows. They are ordinary
+When an item is created, it gets its starting rows. They are ordinary
 rows, shown and changed like any other:
 
-| The item is placed | Starting rows |
+| The item | Starting rows |
 | --- | --- |
-| in a guild | that guild at `write` |
-| at the organisation | the organisation at `read` |
-| on one agent (a note or a file) | none |
+| A note or a file an agent creates | that agent at `write` |
+| A note or a file an operator creates | the one row the operator names; the organisation at `write` when they name none |
+| A recipe's note | the rows the recipe states; the new guild at `write` when it states none ([Recipe format](recipe-format.md#notes)) |
+| A collection placed in a guild | that guild at `write` |
+| A collection placed at the organisation | the organisation at `read` |
 
 Some things sit outside the access lists:
 
-- An agent always reads and writes its own agent-level notes and
-  files, its [Memory](memory.md), and its [scripts](scripts.md). Memory and
-  scripts belong to one agent and have no access list.
-- Operators reach every note, collection, and file, except those of a
-  private guild they do not operate: its guild-level notes and files,
-  its agents' notes and files, and its own collections ([Guilds](guilds.md#visibility)).
+- An agent's [Memory](memory.md), its [Task](task.md), and its
+  [scripts](scripts.md) belong to that agent and have no access list.
+  The agent always reads and writes them.
+- An operator reads and writes every note and file, except one that
+  is hidden from them: its access list is not empty, and every row on
+  it names a private guild they do not operate or an agent of such a
+  guild. A note or a file with no row is hidden from no operator. An
+  operator also reaches every collection, Memory, Task, and script,
+  except a private guild's own collections and its agents' Memory,
+  Tasks, and scripts when they do not operate it
+  ([Guilds](guilds.md#visibility)).
 
 Agents never change an access list. Only an operator does.
 
@@ -321,17 +332,16 @@ save leaves them as they are.
 
 The **Access** sub-tab of a guild's **State** lists the tables and
 notes that guild's agents reach. The **Access** sub-tab of an agent's
-**State** lists what that one agent reaches, its own notes included.
-Each item carries a tag with the mode it ends up with: read, or read
-and write. The listing is read only. Its **Tables** and **Notes**
-sections always show, with **None.** when one is empty.
+**State** lists what that one agent reaches. Each item carries a tag
+with the mode it ends up with: read, or read and write. The listing
+is read only. Its **Tables** and **Notes** sections always show, with
+**None.** when one is empty.
 
 Each item opens where its access is changed:
 
 - a table opens its **Access** tab on the **Tables** page
-- an organisation note opens in the current guild's **State › Notes**
-- a guild note opens in that guild's **State › Notes**
-- an agent note opens in that agent's **State › Notes**
+- a note opens in the **State › Notes** of the guild or the agent
+  whose reach is shown
 
 ## Rules and limits
 
@@ -347,8 +357,11 @@ Each item opens where its access is changed:
 | Who writes a guild's or an agent's switch | Any member of the organisation who can see the guild |
 | An agent's mode on a note, a collection, or a file | Its own row when it has one; otherwise the better of its guild's row and the organisation's row; no row is no access |
 | `none` | Agent rows only |
-| Starting rows | Placed in a guild: the guild at `write`. Placed at the organisation: the organisation at `read`. An agent's note or file: none |
-| Always reached | An agent's own notes, files, Memory, and scripts |
+| What decides who reaches a note or a file | Its access list alone |
+| Starting rows of a note or a file | One row: the creating agent at `write`, or the subject the operator names (the organisation at `write` by default) |
+| Starting rows of a collection | Placed in a guild: the guild at `write`. Placed at the organisation: the organisation at `read` |
+| Always reached by an agent | Its own Memory, Task, and scripts |
+| Hidden from an operator | A note or a file whose rows all name private guilds they do not operate or those guilds' agents; never one with no row |
 | Who changes an access list | Any member of the organisation, on items they can see; never an agent |
 
 What an operator relies on about secrets, machines, and redaction is
@@ -528,37 +541,44 @@ agent's own row; when there is none, the greater of its guild's row
 and the organisation's row; when there is neither, no access. `none`
 and no row both mean no access. Every note, file, and record tool,
 State, and every listing an agent gets apply it. An operator actor skips it
-and reaches every item except those of the private guilds it does
-not operate. The same rule over an item's listed rows
+and writes every note and file except the hidden ones
+(`hiddenScope` in `apps/orchestrator/src/db/artifacts.ts`): a list
+that is not empty and whose every row names a guild in the
+operator's hidden set or an agent of one. The same rule over an item's listed rows
 (`effectiveAccess` in `apps/orchestrator/src/artifacts/access.ts`)
 gives the modes Studio shows for a table and the access a recipe
 captures and raises.
 
-An agent reaches its own agent-level notes and files, its Memory, and
-its scripts without a row. Memory and scripts never have rows. An
-agent's note or file can still be given rows, which open it to other
-agents; no row names the agent that owns it.
+An agent reaches its own Memory, Task, and scripts without a row.
+They never have rows. A note or a file is reached through its rows
+alone, the agent that created it included.
 
-Creating an item writes its starting rows in the same transaction:
-`guild` at `write` for a guild note or file or a guild's own
-collection, `org` at `read` for an organisation note, file, or
-collection, and no row for an agent note or file. Changing a
-collection's owner leaves its rows as they are.
+Creating a note or a file writes its one starting row in the same
+transaction: the creating agent at `write`, or the subject and mode
+the operator's write names, the organisation at `write` when it names
+none (`creatorGrant` in `apps/orchestrator/src/artifacts/access.ts`).
+Creating a collection writes `guild` at `write` for a guild's own
+collection and `org` at `read` for an organisation collection.
+Changing a collection's owner leaves its rows as they are.
 
 Rows go away:
 
 - with their note, file, or collection, when it is deleted
 - with a guild: the rows naming the guild or one of its agents, and
-  the rows on its own collections and on its and its agents' notes
-- with an agent: the rows naming it and the rows on its notes
+  the rows on its own collections
+- with an agent: the rows naming it
+
+Notes and files outlive the guilds and agents their rows named. One
+whose rows are all gone has an empty list: no agent reaches it, and
+every operator does.
 
 ```text
-GET  /api/notes/:note_id/access                { subjects, owner_agent_id }
-PUT  /api/notes/:note_id/access                { subjects: [{ type, id, mode }] }; answers { subjects, owner_agent_id }
-GET  /api/files/:file_id/access                { subjects, owner_agent_id }
-PUT  /api/files/:file_id/access                { subjects: [{ type, id, mode }] }; answers { subjects, owner_agent_id }
-GET  /api/collections/:collection_id/access    { subjects, owner_agent_id }
-PUT  /api/collections/:collection_id/access    { subjects: [{ type, id, mode }] }; answers { subjects, owner_agent_id }
+GET  /api/notes/:note_id/access                { subjects }
+PUT  /api/notes/:note_id/access                { subjects: [{ type, id, mode }] }; answers { subjects }
+GET  /api/files/:file_id/access                { subjects }
+PUT  /api/files/:file_id/access                { subjects: [{ type, id, mode }] }; answers { subjects }
+GET  /api/collections/:collection_id/access    { subjects }
+PUT  /api/collections/:collection_id/access    { subjects: [{ type, id, mode }] }; answers { subjects }
 GET  /api/guilds/:guild_id/reach               { notes, tables }
 GET  /api/agents/:agent_id/reach               { notes, tables }
 ```
@@ -569,9 +589,7 @@ Each entry of `subjects` is
 subject belongs to; both are null for the organisation. The list is
 ordered: the organisation, then guilds, then agents by guild and name.
 Rows of private guilds the caller does not operate, and of their
-agents, are left out. `owner_agent_id` is the agent that owns an
-agent-level note or file, which always writes it; it is null for every
-other item.
+agents, are left out.
 
 `PUT` takes the full list and replaces the list with it. A subject
 left out loses its row. Rows the caller cannot see are not in the
@@ -591,9 +609,8 @@ list, `subjects[<index>]: `.
 | An `org` or `guild` row whose mode is not `read` or `write` | 422 `mode must be read or write` |
 | An `agent` row whose mode is not `none`, `read`, or `write` | 422 `mode must be none, read, or write` |
 | The same subject twice | 422 `the subject appears more than once`, at the second |
-| A row naming the agent that owns the note or file | 422 `the agent that owns the note always writes it`, with `file` for a file |
 | A collection that is not live, or a private guild's own one the caller does not operate | 404 `unknown collection` |
-| A note or file that is not live, or one of a private guild the caller does not operate | 404 `note not found` or `file not found` |
+| A note or file that is not live, or one hidden from the caller | 404 `note not found` or `file not found` |
 | A subject that does not exist, is outside the organisation, or is in a private guild the caller does not operate | 422 `unknown org`, `unknown guild`, or `unknown agent` |
 
 Each subject whose row changes appends one `config_changes` row, with
@@ -605,7 +622,7 @@ removed row. The summary names the subject (`the organisation`,
 path>`, `the file <display path>`, or `the table <name>`):
 
 ```text
-Gave guild research read on the note org/o_…/guilds/g_…/glossary.md
+Gave guild research read on the note org/o_…/glossary.md
 Gave agent scout read and write on the table leads
 Gave agent scout no access on the table leads
 Removed agent scout from the access of the table leads
@@ -615,17 +632,14 @@ A `PUT` that changes nothing appends nothing.
 
 The `reach` routes are read only. They answer what the guild's agents
 reach through the guild's and the organisation's rows, or what one
-agent reaches, its own notes included:
+agent reaches:
 
-- `notes`: `[{ id, display_path, title, level, owner_id, owner_name, guild_id, mode }]`;
-  `owner_name` names the organisation, guild, or agent that owns the
-  note, and `guild_id` is the guild of a guild or agent note, null for
-  an organisation note
+- `notes`: `[{ id, display_path, title, mode }]`
 - `tables`: `[{ id, name, purpose, display_path, scope, guild, mode }]`
 
-`mode` is `read` or `write`. Items of private guilds the caller does
-not operate are left out. A guild or an agent the caller cannot see
-is 404.
+`mode` is `read` or `write`. Notes hidden from the caller, and the
+tables of private guilds the caller does not operate, are left out. A
+guild or an agent the caller cannot see is 404.
 
 Any member of the organisation may call these routes. No role is
 required.
