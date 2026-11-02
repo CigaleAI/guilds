@@ -636,6 +636,13 @@ Removed agent scout from the access of the table leads
 
 A `PUT` that changes nothing appends nothing.
 
+A `PUT` on a note's or a file's list publishes
+`guild.artifacts.changed`, as a write of the item does, on the stream
+of each guild whose page listed the item before the change or lists it
+after: its home guild, and the guilds its rows reach
+([Notes](notes.md#http), [Files](files.md#http)). A `PUT` on a
+collection's list publishes nothing.
+
 The `reach` routes are read only. They answer what the guild's agents
 reach through the guild's and the organisation's rows, or what one
 agent reaches:

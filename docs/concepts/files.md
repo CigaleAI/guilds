@@ -233,10 +233,13 @@ organisation routes need organisation membership. A file hidden from
 the caller is left out of every listing and is 404 by every route
 ([SEC-55](../architecture/security-register.md#sec-55--a-notes-or-a-files-reach-came-from-its-owner-as-well-as-its-access-list)).
 
-An upload or a delete publishes the file's change to each guild in
-the file's scope: every guild of the organisation when its access
-list has an organisation row, otherwise each guild a row names,
-through a row for the guild or for one of its agents.
+An upload or a delete publishes the file's change to each guild whose
+page lists the file: its home guild, and each guild in its scope,
+which is every guild of the organisation when its access list has an
+organisation row, otherwise each guild a row names, through a row for
+the guild or for one of its agents. A replaced access list publishes
+it the same way, to the guilds whose page listed the file before the
+change and those that list it after.
 
 ### Storage
 

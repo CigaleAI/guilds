@@ -292,6 +292,21 @@ describe("shared files", { concurrency: 1 }, () => {
       ["guild_alpha", orgPath],
       ["guild_beta", orgPath],
     ]);
+    published.length = 0;
+    await uploadSharedFile(deps, operator, {
+      name: "homed-brief.txt",
+      ...upload,
+      homeGuildId: "guild_alpha",
+      access: { type: "guild", id: "guild_beta", mode: "read" },
+    });
+    assert.deepEqual(
+      published,
+      [
+        ["guild_alpha", { displayPath: "org/org_home/files/homed-brief.txt" }],
+        ["guild_beta", { displayPath: "org/org_home/files/homed-brief.txt" }],
+      ],
+      "an upload is announced to its home guild too",
+    );
     await assert.rejects(
       () => uploadSharedFile(deps, operator, { name: "bad.txt", ...upload, access: { type: "team", id: "x", mode: "read" } }),
       /access: type must be org, guild, or agent/,
@@ -299,7 +314,7 @@ describe("shared files", { concurrency: 1 }, () => {
 
     await deleteSharedFile({ artifacts: store, files }, operator, agentFile.id);
     await assert.rejects(() => files.loadFileById(operator, agentFile.id), /artifact not found/);
-    assert.equal(published.length, 7, "a write without a publisher announces nothing");
+    assert.equal(published.length, 2, "a write without a publisher announces nothing");
   });
 
   test("deleting an agent or a guild drops the rows naming it; a file others reach survives, one only it reached goes with its history", async () => {

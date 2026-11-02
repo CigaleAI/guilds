@@ -1,5 +1,5 @@
 import { creatorGrant, parseGrant, type SubjectEntry } from "./access.js";
-import { guildsOnList } from "./access-lists.js";
+import { guildsShowing } from "./access-lists.js";
 import { loadOperatorActor } from "./actors.js";
 import type { ArtifactFiles, FileView, PageFileView } from "./files.js";
 import { homedActor, type ArtifactStore, type PageSections } from "./store.js";
@@ -91,7 +91,7 @@ async function announceFile(deps: SharedFileWriteDeps, guildIds: string[], displ
 
 /**
  * Stores the upload as the organisation's file of its name, or a new version of the file of that
- * name, and announces it to each guild its access list names. ArtifactError 404 when the home names
+ * name, and announces it to each guild whose page lists it. ArtifactError 404 when the home names
  * a guild that is unknown or hidden from the actor.
  */
 export async function uploadSharedFile(
@@ -108,14 +108,14 @@ export async function uploadSharedFile(
     ...(expectedVersion !== undefined ? { expectedVersion } : {}),
   });
   const view = deps.files.view(row);
-  await announceFile(deps, await guildsOnList(deps.artifacts, actor, { kind: "file", id: row.id }), view.display_path);
+  await announceFile(deps, await guildsShowing(deps.artifacts, actor, { kind: "file", id: row.id }), view.display_path);
   return view;
 }
 
-/** Deletes the file with this id as `actor`, and announces it to each guild its access list named. */
+/** Deletes the file with this id as `actor`, and announces it to each guild whose page listed it. */
 export async function deleteSharedFile(deps: SharedFileWriteDeps, actor: ArtifactActor, fileId: string): Promise<void> {
   const row = await deps.files.loadFileById(actor, fileId);
-  const guilds = await guildsOnList(deps.artifacts, actor, { kind: "file", id: row.id });
+  const guilds = await guildsShowing(deps.artifacts, actor, { kind: "file", id: row.id });
   await deps.files.deleteFile(actor, row);
   await announceFile(deps, guilds, deps.files.view(row).display_path);
 }

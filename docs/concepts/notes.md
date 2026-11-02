@@ -347,11 +347,14 @@ caller does not operate is 404 `unknown guild`. A note that exists and
 is hidden from the caller is 422 `write not allowed`.
 
 A note write or delete publishes `guild.artifacts.changed` on the
-stream of each guild in the note's scope: every guild of the
-organisation when its access list has an organisation row, otherwise
-each guild a row names, through a row for the guild or for one of its
-agents. A Task or Memory write publishes it
-on the agent's guild.
+stream of each guild whose page lists the note: its home guild, and
+each guild in its scope, which is every guild of the organisation when
+its access list has an organisation row, otherwise each guild a row
+names, through a row for the guild or for one of its agents. A
+replaced access list publishes it the same way, to the guilds whose
+page listed the note before the change and those that list it after
+([Access](access.md#access-lists)). A Task or Memory write publishes
+it on the agent's guild.
 
 A write's `content` is a string, empty when left out. Its
 `expected_version` is an integer on `PUT /api/org/notes/*`, and a

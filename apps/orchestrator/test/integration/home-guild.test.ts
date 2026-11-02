@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { buildApp } from "../../src/app.js";
+import type { ItemAccessChange } from "../../src/artifacts/access-lists.js";
 import { ArtifactFiles } from "../../src/artifacts/files.js";
 import { artifactStore } from "../../src/artifacts/store.js";
 import type { Database } from "../../src/db/client.js";
@@ -33,6 +34,7 @@ let TEAMMATE: Record<string, string>;
 let vaultId: string;
 let openId: string;
 let keeperId: string;
+const accessChanges: Array<[string, ItemAccessChange]> = [];
 
 before(async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
@@ -47,6 +49,9 @@ before(async () => {
     notes,
     artifacts,
     files: new ArtifactFiles(artifacts, new MemoryBlobStore()),
+    publishItemAccessChanged: async (guildId, change) => {
+      accessChanges.push([guildId, change]);
+    },
     scripts: agentScripts(db),
     schedules: agentSchedules(db),
   });
@@ -224,4 +229,48 @@ test("an agent's embeddable notes are its page's two sections, each note with it
   assert.equal(hidden.statusCode, 404, "an agent of a private guild the caller does not operate is not found");
   const flat = await app.inject({ method: "GET", url: "/api/org/embeddable-notes", headers: OWNER });
   assert.ok(Array.isArray(flat.json()), "without an agent the list stays flat");
+});
+
+test("replacing a note's or a file's access list tells the guilds that listed it, the guilds that list it now, and its home guild", async () => {
+  const thirdId = await createGuild("third", "org");
+  const note = await app.inject({
+    method: "PUT",
+    url: "/api/org/notes/moving.md",
+    headers: { ...OWNER, ...JSON_BODY },
+    payload: { content: "moves between guilds", home_guild_id: vaultId, access: { type: "guild", id: openId, mode: "read" } },
+  });
+  assert.equal(note.statusCode, 200, note.body);
+  accessChanges.length = 0;
+  const replaced = await app.inject({
+    method: "PUT",
+    url: `/api/notes/${String(note.json().id)}/access`,
+    headers: { ...OWNER, ...JSON_BODY },
+    payload: { subjects: [{ type: "guild", id: thirdId, mode: "write" }] },
+  });
+  assert.equal(replaced.statusCode, 200, replaced.body);
+  const change = { kind: "note", displayPath: "org/org_home/moving.md" };
+  assert.deepEqual(accessChanges, [[vaultId, change], [openId, change], [thirdId, change]]);
+
+  const file = await app.inject({
+    method: "POST",
+    url: "/api/org/files",
+    headers: { ...OWNER, ...BYTES, "x-filename": "moving.txt", "x-description": "d", "x-home-guild": openId },
+    payload: Buffer.from("x"),
+  });
+  assert.equal(file.statusCode, 201, file.body);
+  accessChanges.length = 0;
+  const fileReplaced = await app.inject({
+    method: "PUT",
+    url: `/api/files/${String(file.json().id)}/access`,
+    headers: { ...OWNER, ...JSON_BODY },
+    payload: { subjects: [{ type: "guild", id: thirdId, mode: "read" }] },
+  });
+  assert.equal(fileReplaced.statusCode, 200, fileReplaced.body);
+  const fileChange = { kind: "file", displayPath: "org/org_home/files/moving.txt" };
+  // the organisation row the upload started with put the file on every guild's page before the change
+  assert.deepEqual(
+    accessChanges.map(([guildId]) => guildId).sort(),
+    [openId, vaultId, thirdId].sort(),
+  );
+  assert.ok(accessChanges.every(([, item]) => JSON.stringify(item) === JSON.stringify(fileChange)));
 });

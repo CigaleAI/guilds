@@ -1,6 +1,6 @@
 import { loadOperatorActor } from "../artifacts/actors.js";
 import { creatorGrant, parseGrant, type SubjectEntry } from "../artifacts/access.js";
-import { guildsOnList } from "../artifacts/access-lists.js";
+import { guildsShowing } from "../artifacts/access-lists.js";
 import type { ArtifactActor } from "../artifacts/types.js";
 import { homedActor, type ArtifactStore, type HostNoteView, type PageSections } from "../artifacts/store.js";
 import {
@@ -71,7 +71,7 @@ async function agentActorFor(services: OperatorNotesServices, agent: AgentRow, u
   return actor;
 }
 
-/** Announces a changed note on the stream of each guild its access list names. */
+/** Announces a changed note on the stream of each guild whose page lists it. */
 async function announceNote(services: OperatorNotesServices, guildIds: string[], path: string): Promise<void> {
   if (services.stream === null) {
     return;
@@ -81,10 +81,10 @@ async function announceNote(services: OperatorNotesServices, guildIds: string[],
   }
 }
 
-/** The guilds the access list of the organisation's note at `key` names; none when there is no such note. */
+/** The guilds whose pages list the organisation's note at `key`; none when there is no such note. */
 async function noteGuilds(services: OperatorNotesServices, actor: ArtifactActor, key: string): Promise<string[]> {
   const live = await getLiveNote(services.db, actor.orgId, key);
-  return live ? guildsOnList(services.artifacts, actor, { kind: "note", id: live.id }) : [];
+  return live ? guildsShowing(services.artifacts, actor, { kind: "note", id: live.id }) : [];
 }
 
 /** A request's `expected_version`: a version, or undefined when it names none. */
@@ -150,7 +150,7 @@ export async function readOrgNote(
 
 /**
  * Writes the organisation's note at the write's key, creating it with the write's starting row and
- * home when it is missing, and announces it on the stream of each guild its access list names.
+ * home when it is missing, and announces it on the stream of each guild whose page lists it.
  * ArtifactError 404 when the home names a guild that is unknown or hidden from the user.
  */
 export async function writeOrgNote(
@@ -166,13 +166,13 @@ export async function writeOrgNote(
   const hostWrite = { path: write.path, content: write.content, expectedVersion: write.expectedVersion, startingAccess };
   const written = await writeHostNote(hostServices, actor, hostWrite);
   if (written.id) {
-    const guilds = await guildsOnList(services.artifacts, actor, { kind: "note", id: written.id });
+    const guilds = await guildsShowing(services.artifacts, actor, { kind: "note", id: written.id });
     await announceNote(services, guilds, written.display_path);
   }
   return written;
 }
 
-/** Deletes the organisation's note with this key, and announces it on the stream of each guild its access list named. */
+/** Deletes the organisation's note with this key, and announces it on the stream of each guild whose page listed it. */
 export async function deleteOrgNote(
   services: OperatorNotesServices,
   orgId: string,
