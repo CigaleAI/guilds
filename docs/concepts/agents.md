@@ -461,13 +461,13 @@ already generating`). It then:
 - stops the agent's Chrome and terminal on its machine, and removes
   its home and its `/run/guilds/<agent id>/` files; the machine's
   container stays up for the other agents on it;
-- deletes the access-list rows that name the agent, and the rows on
-  its notes (`artifact_access`);
+- deletes the access-list rows that name the agent
+  (`artifact_access`); notes and files stay;
 - deletes every secret granted only to that agent;
 - deletes the agent row.
 
 PostgreSQL cascades the agent's runs, messages, schedules, secret
-grants, connections, scoped bindings, and agent-level artifacts. A
+grants, connections, scoped bindings, Memory, and scripts. A
 secret the agent stored that reaches others stays, with no creator.
 
 The agent's usage counter goes with it. Guild, organisation, and

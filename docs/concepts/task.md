@@ -216,11 +216,11 @@ creation:
   is inlined. Depth is 2. The budget is 64 KB of embedded note text in
   total.
 - Each note body is wrapped in an element named after its file name
-  without `.md`, reduced to letters, digits, `_`, and `-`, with
-  `path` and `level` attributes:
+  without `.md`, reduced to letters, digits, `_`, and `-`, with a
+  `path` attribute:
 
   ```text
-  <style-guide path="org/o_…/guilds/guild_…/style-guide.md" level="guild">
+  <style-guide path="org/o_…/style-guide.md">
   …note text…
   </style-guide>
   ```
@@ -235,7 +235,7 @@ creation:
 - Any other embed becomes the marker, with the path escaped:
 
   ```text
-  <unreachable path="org/o_…/guilds/guild_…/style-guide.md" message="This file is not reachable." />
+  <unreachable path="org/o_…/style-guide.md" message="This file is not reachable." />
   ```
 
   This covers a path that is missing, deleted, out of the agent's

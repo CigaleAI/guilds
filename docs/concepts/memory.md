@@ -209,8 +209,8 @@ never mentions earlier versions.
 
 ### Storage
 
-Memory is an `artifacts` row of `kind` `memory`, at the agent level,
-with key `memory.md`. Agent create inserts an empty row. A missing
+Memory is an `artifacts` row of `kind` `memory`, with the agent's
+`agent_id` and key `memory.md`. Agent create inserts an empty row. A missing
 row hydrates as empty, and the next write recreates it. Its display
 path is `org/<org_id>/agents/<agent_id>/memory.md`. It is not
 deletable (422 `cannot delete this file`).
