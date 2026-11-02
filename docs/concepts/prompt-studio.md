@@ -728,7 +728,10 @@ actor, count, share }`), `writers`, `last_change` (`{ at, actor }`),
 and `flags` (`no_agent_read`, `writers`, `deletes_others_rows`,
 `untouched`). An actor is `{ kind: person | agent | other_guild, id,
 name }`. Items are read with the viewer's own permissions, so a
-private guild's or a hidden item never appears. Changes come from
+private guild's or a hidden item never appears. A change counts on the
+item whose artifact made it, and a record's change on the table whose
+collection holds the record, so a name or a table name another item
+held before brings none of its changes. Changes come from
 `file_changes` and the table and note entries of `config_changes`
 (a table's shape and access, a note's access); reads from
 `runs.metadata.task_source` (`embeds` and `collections`, recorded at

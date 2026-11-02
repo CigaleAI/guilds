@@ -254,7 +254,8 @@ reads, or an agent's Task the caller reaches, and only those items'
 changes are returned. A name a hidden deleted note or file held, and
 another item holds now, shows only the visible item's changes. Memory
 history and Studio's file history, focus, and State read changes the
-same way; Studio counts a change on the item whose artifact made it.
+same way; Studio counts a change on the item whose artifact made it,
+and a record's change on the table whose collection holds it.
 
 A run-owned change in the history expands to the run's agent,
 guild, kind, status, and routine. Each change carries `studio`:

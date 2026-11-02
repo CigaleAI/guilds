@@ -75,7 +75,9 @@ missing note cannot be written. Routines are created paused. If any
 step fails, everything the apply created so far is removed: its
 guild and agents, its collections, and every seed note it wrote,
 soft-deleted by id, whatever rows the note carries. An abort removes
-the same. The
+the same. When the undo cannot delete everything, the apply fails with
+both its failure and what was left in place (see
+[Activate and abort](#activate-and-abort)). The
 [steps](#create) are listed under Reference.
 
 ### The checklist
@@ -513,7 +515,18 @@ other step is open it is 422 (`checklist still open: …`).
 then moves the row to `aborted`. It deletes every agent, collection,
 and seed note the apply made, whatever rows a note carries, and the
 guild when the apply created it. On an empty guild the operator
-brought, the guild stays and what the apply made in it goes. Reused
+brought, the guild stays and what the apply made in it goes. An abort
+acts as the user who aborts, so the change log credits them.
+
+The undo runs its deletions one at a time, in order: the agents, the
+created guild, the collections, then the notes. It goes on past a
+deletion that fails and reports each one. When any is left, abort is
+409 with code `apply_undo_failed` and the message `undoing the apply
+left part of it in place: <each failed deletion and why>`, and the
+apply is not marked aborted. A failed step whose undo leaves something
+behind answers with the same code, its message prefixed with the
+step's own failure, and that failure's status when it has one, else
+409. Reused
 collections and their records stay. Org-level logins created during
 the checklist stay. A `ready` apply cannot be aborted (422).
 
