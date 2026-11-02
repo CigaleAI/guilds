@@ -5,7 +5,7 @@ import { listSchedules } from "../db/schedules.js";
 import type { ChangeActor } from "../lib/change-actor.js";
 import type { RecipeApply } from "./apply.js";
 import { appliedRecipe, blockingApplySteps, browserLoginAgentIds, deferLaunchSteps } from "./checklist.js";
-import { RecipeError } from "./errors.js";
+import { ApplyUndoError, RecipeError } from "./errors.js";
 import { schedulesForRole } from "./prepare.js";
 import { undoApply, type AppliedItems } from "./undo.js";
 
@@ -82,13 +82,19 @@ async function appliedItems(apply: RecipeApply, row: RecipeApplyRow): Promise<Ap
   };
 }
 
-/** Aborts an apply that is not ready yet, deleting what it made as a failed apply does. */
-export async function abortApply(apply: RecipeApply, row: RecipeApplyRow): Promise<RecipeApplyRow> {
+/**
+ * Aborts an apply that is not ready yet as `actor`, deleting what it made as a failed apply does;
+ * an undo that leaves part of it in place is an ApplyUndoError, and the apply stays as it was.
+ */
+export async function abortApply(apply: RecipeApply, row: RecipeApplyRow, actor: ChangeActor): Promise<RecipeApplyRow> {
   if (row.status === "ready") {
     throw new RecipeError("completed apply cannot be aborted");
   }
-  const actor = operatorActor({ orgId: row.org_id, actorId: row.created_by_user_id ?? row.org_id, actorName: "operator" });
-  await undoApply(apply, actor, await appliedItems(apply, row));
+  const artifactActor = operatorActor({ orgId: row.org_id, actorId: actor.actorId, actorName: actor.actorName });
+  const failures = await undoApply(apply, artifactActor, await appliedItems(apply, row));
+  if (failures.length) {
+    throw new ApplyUndoError(failures);
+  }
   const aborted = await markApplyAborted(apply.db, row.id, new Date());
   if (!aborted) {
     throw new RecipeError("apply not found", 404);

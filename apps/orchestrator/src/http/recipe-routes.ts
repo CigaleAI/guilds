@@ -348,7 +348,7 @@ export async function registerRecipeRoutes(app: RouteApp, deps: AppDeps): Promis
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
       const row = await ownedApply(deps, request.params.apply_id, org);
-      return await abortApply(applyOf(deps), row);
+      return await abortApply(applyOf(deps), row, userActor(user));
     },
   );
 }

@@ -33,7 +33,7 @@ import { assertCanCreateAgents, assertCanCreateGuild, assertCanPlaceAgents } fro
 import { agentsOfRoles } from "./access.js";
 import type { ApplyChoices, RecipeApply } from "./apply.js";
 import { checklistFromPlan, grantReusedSecrets, writeOverlays } from "./checklist.js";
-import { RecipeConflictError, RecipeError } from "./errors.js";
+import { ApplyUndoError, RecipeConflictError, RecipeError } from "./errors.js";
 import { plannedAgents, previewApply, roleHarnessMap, roleModelMap } from "./plan.js";
 import { clippedInstruction, prepareRecipeForApply, roleBrowses, roleCodes, roleTaskText, schedulesForRole, withTrailingNewline } from "./prepare.js";
 import { recipeNotePath, rewriteRecipePathsToDisplayPaths, rewriteRolesToNames } from "./rewrite.js";
@@ -359,10 +359,10 @@ async function bindReusedConnections(skeleton: Skeleton, planned: PlannedConnect
   return bound;
 }
 
-/** Removes what the skeleton created so far, as an abort of the apply would. */
-async function rollBack(skeleton: Skeleton): Promise<void> {
+/** Removes what the skeleton created so far, as an abort of the apply would; returns each deletion that failed. */
+async function rollBack(skeleton: Skeleton): Promise<string[]> {
   const { guild, ...made } = skeleton.created;
-  await undoApply(skeleton.apply, skeleton.actor, { ...made, guildId: guild ? skeleton.guildId : null });
+  return undoApply(skeleton.apply, skeleton.actor, { ...made, guildId: guild ? skeleton.guildId : null });
 }
 
 /** Creates everything the skeleton holds and records the apply with its plan and checklist. */
@@ -442,7 +442,11 @@ export async function createSkeleton(
   try {
     applied = await build(skeleton, recipe, preview, choices);
   } catch (error) {
-    await rollBack(skeleton);
+    // The failure is thrown as it is when the undo is whole, else as the cause of what the undo left.
+    const left = await rollBack(skeleton);
+    if (left.length) {
+      throw new ApplyUndoError(left, error instanceof Error ? error : undefined);
+    }
     throw error;
   }
   // Granted once the apply stands: a rolled-back guild would take a secret whose only grant it held.

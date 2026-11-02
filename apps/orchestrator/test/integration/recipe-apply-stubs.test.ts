@@ -29,6 +29,7 @@ import { connectMcp } from "../../src/db/mcp.js";
 import { listSchedules } from "../../src/db/schedules.js";
 import { listBindingsCovering } from "../../src/db/bindings.js";
 import { getByDisplayPath } from "../../src/artifacts/notes.js";
+import { writeAgentTask } from "../../src/artifacts/task.js";
 import { artifactStore } from "../../src/artifacts/store.js";
 import { operatorActor } from "../../src/artifacts/actors.js";
 
@@ -618,6 +619,55 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
       assert.equal((await getByDisplayPath(artifacts, noteReader, `org/org_home/${key}`)).tombstone, true, `${key} goes with the abort`);
     }
     assert.deepEqual(await listAgents(db, abortApplied.guild_id), []);
+
+    const abort = (applyId: string) => app.inject({ method: "POST", url: `/api/applies/${applyId}/abort`, headers: AUTH });
+    const applyStatus = async (applyId: string) =>
+      (await db.query<{ status: string }>("SELECT status FROM recipe_applies WHERE id = $1", [applyId])).rows[0]?.status;
+    const solo = (guildName: string, prefix: string, key: string) => {
+      const recipe = repeat(guildName, prefix);
+      recipe.notes = [{ id: key, key, body: "Mine.\n", kind: "seed", author: operatorAuthor(), writers: [] }];
+      recipe.roles[0]!.task.body = recipe.roles[0]!.task.body.replace("![[org/desk-rules.md]]", `![[org/${key}]]`);
+      recipe.roles[0]!.task.embeds = [`org/${key}`];
+      return recipe;
+    };
+
+    // An item whose rows name only two of the apply's agents goes with the second of them.
+    const shareApplied = await applyRecipe(await importReady(solo("fixture-desk-share", "share", "share-rules.md")), "fixture-desk-share");
+    const shareAgents = await listAgents(db, shareApplied.guild_id);
+    const sharedNote = await app.inject({
+      method: "PUT",
+      url: "/api/org/notes/share-between.md",
+      headers: { ...AUTH, "content-type": "application/json" },
+      payload: { content: "Between the two.\n", access: { type: "agent", id: String(shareAgents[0]?.id), mode: "write" } },
+    });
+    assert.equal(sharedNote.statusCode, 200, sharedNote.body);
+    const sharedAccess = await app.inject({
+      method: "PUT",
+      url: `/api/notes/${String(sharedNote.json().id)}/access`,
+      headers: { ...AUTH, "content-type": "application/json" },
+      payload: { subjects: shareAgents.map((agent) => ({ type: "agent", id: String(agent.id), mode: "write" })) },
+    });
+    assert.equal(sharedAccess.statusCode, 200, sharedAccess.body);
+    assert.equal((await abort(shareApplied.id)).statusCode, 200);
+    assert.equal(
+      (await getByDisplayPath(artifacts, noteReader, "org/org_home/share-between.md")).tombstone,
+      true,
+      "a note only the apply's agents reached goes with them",
+    );
+
+    // A deletion the store refuses is reported, and the apply is not marked aborted.
+    // The note is read by the whole organisation, so the guild's deletion does not take it and its own deletion is refused.
+    const embedding = solo("fixture-desk-embed", "embed", "embed-rules.md");
+    embedding.notes[0]!.org = "read";
+    const embedApplied = await applyRecipe(await importReady(embedding), "fixture-desk-embed");
+    await writeAgentTask(db, noteReader, String(mixedReader.id), { content: "Follow ![[org/org_home/embed-rules.md]]\n" });
+    const refusedAbort = await abort(embedApplied.id);
+    assert.equal(refusedAbort.statusCode, 409, refusedAbort.body);
+    assert.match(refusedAbort.body, /undoing the apply left part of it in place: note [^:]+: note is embedded in task/);
+    assert.notEqual(await applyStatus(embedApplied.id), "aborted");
+    assert.equal((await getByDisplayPath(artifacts, noteReader, "org/org_home/embed-rules.md")).tombstone, undefined);
+    await writeAgentTask(db, noteReader, String(mixedReader.id), { content: "Read the inbox.\n" });
+
     const mixedReaderBindings = await listBindingsCovering(db, {
       orgId: "org_home",
       guildId: mixedApply.guild_id,
