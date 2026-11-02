@@ -24,21 +24,23 @@ export const NFT_HOST = "https://{network}.g.alchemy.com/nft/v3";
 export const SOLANA_RPC = "https://solana-mainnet.g.alchemy.com/v2";
 export const PING_OWNER = "0x0000000000000000000000000000000000000000";
 
+/** The names a call gives the chains the tools take. */
+const CHAIN_NAMES = [
+  Type.Literal("ethereum"),
+  Type.Literal("polygon"),
+  Type.Literal("base"),
+  Type.Literal("arbitrum"),
+  Type.Literal("bsc"),
+  Type.Literal("optimism"),
+  Type.Literal("ink"),
+  Type.Literal("robinhood"),
+  Type.Literal("solana"),
+];
+
 /** A chain the tools take, by the name a call gives it; a call that names none is on ethereum. */
-export const ChainName = Type.Union(
-  [
-    Type.Literal("ethereum"),
-    Type.Literal("polygon"),
-    Type.Literal("base"),
-    Type.Literal("arbitrum"),
-    Type.Literal("bsc"),
-    Type.Literal("optimism"),
-    Type.Literal("ink"),
-    Type.Literal("robinhood"),
-    Type.Literal("solana"),
-  ],
-  { description: "Default ethereum." },
-);
+export const ChainName = Type.Union(CHAIN_NAMES, {
+  description: `${CHAIN_NAMES.map((name) => name.const).join(", ")}. Default ethereum.`,
+});
 
 /** A chain the tools take. */
 export type Chain = Static<typeof ChainName>;

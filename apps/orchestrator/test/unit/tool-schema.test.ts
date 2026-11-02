@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isToolSchema, llmToolParameters, omitEmptyOptionalStrings } from "../../src/lib/tool-schema.js";
+import { Type } from "@sinclair/typebox";
+import {
+  decodeArguments,
+  isToolSchema,
+  llmToolParameters,
+  offeredParameters,
+  omitEmptyOptionalStrings,
+} from "../../src/lib/tool-schema.js";
 
 test("omitEmptyOptionalStrings drops empty optional keys only", () => {
   const schema = {
@@ -78,4 +85,33 @@ test("omitEmptyOptionalStrings drops empty optional keys of nested objects", () 
     omitEmptyOptionalStrings({ filter: { label: " ", id: "" } }, schema),
     { filter: { id: "" } },
   );
+});
+
+test("offeredParameters offers a union of literals of one type as that type's enum, keeping its description", () => {
+  const Side = Type.Union([Type.Literal("debit"), Type.Literal("credit")], { description: "Side." });
+  const offered = offeredParameters(
+    Type.Object({
+      side: Type.Optional(Side),
+      sides: Type.Array(Side),
+      level: Type.Union([Type.Literal(1), Type.Literal(2)]),
+      mixed: Type.Union([Type.Literal("a"), Type.Literal(1)]),
+      either: Type.Union([Type.String(), Type.Number()]),
+      nested: Type.Object({ side: Side }),
+    }),
+  );
+  const properties = offered.properties ?? {};
+  assert.deepEqual(properties.side, { description: "Side.", type: "string", enum: ["debit", "credit"] });
+  assert.deepEqual(properties.sides, { type: "array", items: { description: "Side.", type: "string", enum: ["debit", "credit"] } });
+  assert.deepEqual(properties.level, { type: "number", enum: [1, 2] });
+  assert.deepEqual(properties.mixed, { anyOf: [{ const: "a", type: "string" }, { const: 1, type: "number" }] });
+  assert.deepEqual(properties.either, { anyOf: [{ type: "string" }, { type: "number" }] });
+  assert.deepEqual(properties.nested, {
+    type: "object",
+    required: ["side"],
+    properties: { side: { description: "Side.", type: "string", enum: ["debit", "credit"] } },
+  });
+  assert.deepEqual(offered.required, ["sides", "level", "mixed", "either", "nested"]);
+  const parameters = Type.Object({ side: Side });
+  assert.deepEqual(decodeArguments(parameters, { side: "credit" }, (problem) => new Error(problem)), { side: "credit" });
+  assert.throws(() => decodeArguments(parameters, { side: "both" }, (problem) => new Error(problem)), /^Error: \/side: /);
 });
