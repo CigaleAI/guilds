@@ -81,7 +81,6 @@ test("candidates leave out listed subjects and empty groups, agents grouped by g
       ],
     ]),
     taken: list,
-    ownerAgentId: null,
   });
   assert.deepEqual(
     groups.map((group) => [group.label, group.options.map((option) => option.value)]),
@@ -92,31 +91,6 @@ test("candidates leave out listed subjects and empty groups, agents grouped by g
   );
   assert.equal(findCandidate(groups, "agent:a_2")?.label, "scribe");
   assert.equal(findCandidate(groups, "agent:a_1"), undefined);
-});
-
-test("candidates never offer the note's owner agent", () => {
-  const groups = accessCandidates({
-    org: { id: "org_1", name: "Acme" },
-    guilds: [{ id: "g_1", name: "Research" }],
-    agentsByGuild: new Map([
-      [
-        "g_1",
-        [
-          { id: "a_1", name: "scout" },
-          { id: "a_2", name: "scribe" },
-        ],
-      ],
-    ]),
-    taken: [org],
-    ownerAgentId: "a_2",
-  });
-  assert.deepEqual(
-    groups.map((group) => [group.label, group.options.map((option) => option.value)]),
-    [
-      ["Guilds", ["guild:g_1"]],
-      ["Agents · Research", ["agent:a_1"]],
-    ],
-  );
 });
 
 test("a row's caption says what it covers, an agent's with its guild", () => {

@@ -2,6 +2,7 @@ import type {
   AccessEntry,
   AccessListMode,
   AccessRow,
+  AccessSubject,
   AccessSubjectType,
 } from "../../api/types/access";
 
@@ -18,14 +19,12 @@ export const accessModeLabel: Record<AccessListMode, string> = {
   write: "Read & write",
 };
 
-type Subject = { type: AccessSubjectType; id: string };
-
 /** One key per subject, as an access list holds at most one row for each. */
-export function subjectKey(subject: Subject): string {
+export function subjectKey(subject: AccessSubject): string {
   return `${subject.type}:${subject.id}`;
 }
 
-function isSubject(row: Subject, subject: Subject): boolean {
+function isSubject(row: AccessSubject, subject: AccessSubject): boolean {
   return subjectKey(row) === subjectKey(subject);
 }
 
@@ -37,14 +36,14 @@ function rowsOf(entries: readonly AccessEntry[]): AccessRow[] {
 /** The full list with one subject's mode changed. */
 export function withMode(
   entries: readonly AccessEntry[],
-  subject: Subject,
+  subject: AccessSubject,
   mode: AccessListMode,
 ): AccessRow[] {
   return rowsOf(entries).map((row) => (isSubject(row, subject) ? { ...row, mode } : row));
 }
 
 /** The full list without one subject's row. */
-export function withoutSubject(entries: readonly AccessEntry[], subject: Subject): AccessRow[] {
+export function withoutSubject(entries: readonly AccessEntry[], subject: AccessSubject): AccessRow[] {
   return rowsOf(entries).filter((row) => !isSubject(row, subject));
 }
 
@@ -60,7 +59,7 @@ export function modeForType(type: AccessSubjectType, mode: AccessListMode): Acce
 }
 
 /** A subject the add picker offers, keyed by `subjectKey`. */
-export type AccessCandidate = Subject & { value: string; label: string; description?: string };
+export type AccessCandidate = AccessSubject & { value: string; label: string; description?: string };
 
 export type AccessCandidateGroup = { label: string; options: AccessCandidate[] };
 
@@ -80,24 +79,16 @@ type CandidateSource = {
   org: Named;
   guilds: readonly Named[];
   agentsByGuild: ReadonlyMap<string, readonly Named[]>;
-  taken: readonly AccessEntry[];
-  /** The agent that owns the note; it always writes its own note, so no row names it. */
-  ownerAgentId: string | null;
+  /** The subjects already on the list, which the picker does not offer again. */
+  taken: readonly AccessSubject[];
 };
-
-/** The subjects the picker never offers: those on the list, and the note's owner agent. */
-function hiddenSubjects(input: CandidateSource): Set<string> {
-  const hidden = new Set(input.taken.map(subjectKey));
-  if (input.ownerAgentId) hidden.add(subjectKey({ type: "agent", id: input.ownerAgentId }));
-  return hidden;
-}
 
 /**
  * The subjects not yet on the list, by kind: the organisation, the guilds, then each guild's
- * agents, the note's owner agent left out. Empty groups are left out.
+ * agents. Empty groups are left out.
  */
 export function accessCandidates(input: CandidateSource): AccessCandidateGroup[] {
-  const hidden = hiddenSubjects(input);
+  const hidden = new Set(input.taken.map(subjectKey));
   const groups: AccessCandidateGroup[] = [
     { label: "Organisation", options: [candidate("org", input.org, "Every agent")] },
     {

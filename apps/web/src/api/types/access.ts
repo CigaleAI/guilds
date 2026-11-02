@@ -24,7 +24,7 @@ export type GithubSelectedRepository = {
 
 export type AccessMode = "read" | "write";
 
-/** What carries an access list: a note or a table. */
+/** What carries an access list: a note, a table, or a file. */
 export type AccessTarget = { kind: "note" | "collection" | "file"; id: string };
 
 /** Who an access row names: the organisation, a guild, or one agent. */
@@ -33,8 +33,11 @@ export type AccessSubjectType = "org" | "guild" | "agent";
 /** An access row's mode; `none` is for an agent row only and shuts that agent out. */
 export type AccessListMode = AccessMode | "none";
 
+/** Who one access row names. */
+export type AccessSubject = { type: AccessSubjectType; id: string };
+
 /** One row of an access list as it is sent: the subject and its mode. */
-export type AccessRow = { type: AccessSubjectType; id: string; mode: AccessListMode };
+export type AccessRow = AccessSubject & { mode: AccessListMode };
 
 /**
  * One row of an access list as it is read, with the subject's name and guild: an agent's guild, a
@@ -46,24 +49,14 @@ export type AccessEntry = AccessRow & {
   guild_name: string | null;
 };
 
-/**
- * An item's access list: the organisation's row, then guilds', then agents'. `owner_agent_id` is
- * the agent that owns an agent-level note: it always writes its own note, so no row names it. It
- * is null for tables and for guild and organisation notes.
- */
-export type AccessList = { subjects: AccessEntry[]; owner_agent_id: string | null };
+/** An item's access list: the organisation's row, then guilds', then agents'. */
+export type AccessList = { subjects: AccessEntry[] };
 
 /** A note a guild's or an agent's rows reach, with the mode it ends up with. */
 export type ReachedNote = {
   id: string;
   display_path: string;
   title: string;
-  level: "agent" | "guild" | "org";
-  owner_id: string;
-  /** The name of the organisation, guild or agent that owns the note. */
-  owner_name: string;
-  /** The guild of a guild or agent note; null for an organisation note. */
-  guild_id: string | null;
   mode: AccessMode;
 };
 

@@ -41,7 +41,7 @@ function modeOptions(type: AccessEntry["type"]) {
 type AccessListPanelProps = { target: AccessTarget; intro: string };
 
 /**
- * A note's or a table's access list: one row per organisation, guild or agent, each with its
+ * A note's, a file's or a table's access list: one row per organisation, guild or agent, each with its
  * mode. Every change sends the full list and shows the list the server keeps.
  */
 export function AccessListPanel({ target, intro }: AccessListPanelProps) {
@@ -70,7 +70,6 @@ export function AccessListPanel({ target, intro }: AccessListPanelProps) {
       />
       <AddAccessRow
         taken={entries}
-        ownerAgentId={access.data.owner_agent_id}
         disabled={save.isPending}
         onAdd={(row) => saveRows(withSubject(entries, row))}
       />
@@ -122,7 +121,6 @@ function AccessRows({ entries, disabled, onMode, onRemove }: AccessRowsProps) {
 
 type AddAccessRowProps = {
   taken: readonly AccessEntry[];
-  ownerAgentId: string | null;
   disabled: boolean;
   onAdd: (row: AccessRow) => void;
 };
@@ -131,13 +129,13 @@ type AddAccessRowProps = {
  * Picks a subject not yet on the list and the mode its row starts with; each add starts the next
  * one over at read.
  */
-function AddAccessRow({ taken, ownerAgentId, disabled, onAdd }: AddAccessRowProps) {
+function AddAccessRow({ taken, disabled, onAdd }: AddAccessRowProps) {
   const { org } = useIdentity();
   const guilds = useGuilds().data ?? [];
   const agentsByGuild = useAgentsByGuild(guilds.map((guild) => guild.id));
   const [picked, setPicked] = useState("");
   const [mode, setMode] = useState<AccessListMode>("read");
-  const groups = accessCandidates({ org, guilds, agentsByGuild, taken, ownerAgentId });
+  const groups = accessCandidates({ org, guilds, agentsByGuild, taken });
   const subject = findCandidate(groups, picked);
 
   if (!groups.length) return null;

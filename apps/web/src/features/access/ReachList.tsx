@@ -4,13 +4,12 @@ import { useReach } from "../../api/queries/access";
 import type { AccessMode, ReachSubject, ReachedNote, ReachedTable } from "../../api/types/access";
 import { Banner, SkeletonRows, Tag } from "@guildsrun/ui";
 import { accessModeLabel } from "./accessList";
-import { noteLink, notePlacement } from "./reach";
 
 const intros: Record<ReachSubject["type"], string> = {
   guild:
     "The notes and tables every agent of this guild reaches through the rows of this guild and of the organisation. An agent's own row can widen or narrow it.",
   agent:
-    "The notes and tables this agent reaches: its own notes, and every item whose access list gives it, its guild or the organisation a row.",
+    "The notes and tables this agent reaches: every item whose access list gives it, its guild or the organisation a row.",
 };
 
 const editHint = "Change who reaches an item on the item: a table's Access tab, a note's Access.";
@@ -72,45 +71,20 @@ function TableRow({ table }: TableRowProps) {
   );
 }
 
-type NoteTitleProps = { note: ReachedNote; guildId: string };
-
-function NoteTitle({ note, guildId }: NoteTitleProps) {
-  const link = noteLink(note, guildId);
-  const className = "w-fit font-mono text-sm font-medium hover:underline";
-  if (!link) return <span className="font-mono text-sm font-medium">{note.title}</span>;
-  if (link.agentId) {
-    return (
-      <Link
-        to="/guilds/$guildId/agents/$agentId/state/notes"
-        params={{ guildId: link.guildId, agentId: link.agentId }}
-        search={{ path: link.path }}
-        className={className}
-      >
-        {note.title}
-      </Link>
-    );
-  }
-  return (
-    <Link
-      to="/guilds/$guildId/state/notes"
-      params={{ guildId: link.guildId }}
-      search={{ path: link.path }}
-      className={className}
-    >
-      {note.title}
-    </Link>
-  );
-}
-
 type NoteRowProps = { note: ReachedNote; guildId: string };
 
+/** A note the subject reaches, linked to the organisation's notes as the listed guild's notes view shows them. */
 function NoteRow({ note, guildId }: NoteRowProps) {
   return (
     <div className={rowClass}>
-      <div className="flex min-w-0 flex-1 flex-col">
-        <NoteTitle note={note} guildId={guildId} />
-        <span className="truncate text-xs text-muted">{notePlacement(note)}</span>
-      </div>
+      <Link
+        to="/guilds/$guildId/state/notes"
+        params={{ guildId }}
+        search={{ path: note.display_path }}
+        className="min-w-0 flex-1 truncate font-mono text-sm font-medium hover:underline"
+      >
+        {note.title}
+      </Link>
       <ModeTag mode={note.mode} />
     </div>
   );
