@@ -668,6 +668,52 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
     assert.equal((await getByDisplayPath(artifacts, noteReader, "org/org_home/embed-rules.md")).tombstone, undefined);
     await writeAgentTask(db, noteReader, String(mixedReader.id), { content: "Read the inbox.\n" });
 
+    // An abort of an apply into an existing guild leaves the guild and what it held before alone.
+    const json = { ...AUTH, "content-type": "application/json" };
+    const hostGuild = await app.inject({ method: "POST", url: "/api/guilds", headers: json, payload: { name: "fixture-host" } });
+    assert.equal(hostGuild.statusCode, 201, hostGuild.body);
+    const hostId = String(hostGuild.json().id);
+    const hostNote = await app.inject({
+      method: "PUT",
+      url: "/api/org/notes/host-rules.md",
+      headers: json,
+      payload: { content: "The host's.\n", access: { type: "guild", id: hostId, mode: "write" } },
+    });
+    assert.equal(hostNote.statusCode, 200, hostNote.body);
+    const hostTable = await app.inject({
+      method: "POST",
+      url: "/api/collections",
+      headers: json,
+      payload: { name: "host-ledger", purpose: "The host's own table", guild_id: hostId },
+    });
+    assert.equal(hostTable.statusCode, 201, hostTable.body);
+    const intoHost = async (prefix: string, key: string) => {
+      const response = await app.inject({
+        method: "POST",
+        url: `/api/recipes/${await importReady(solo(`fixture-desk-${prefix}`, prefix, key))}/apply`,
+        headers: json,
+        payload: { guild_id: hostId },
+      });
+      assert.equal(response.statusCode, 201, response.body);
+      return response.json() as { id: string };
+    };
+    const assertHostKept = async () => {
+      const guilds = (await app.inject({ method: "GET", url: "/api/guilds", headers: AUTH })).json() as Array<{ id: string }>;
+      assert.ok(guilds.some((guild) => guild.id === hostId), "the guild stays");
+      assert.equal((await getByDisplayPath(artifacts, noteReader, "org/org_home/host-rules.md")).row?.content_text, "The host's.\n");
+      assert.ok((await listCollections()).some((table) => table.id === String(hostTable.json().id)), "the guild's own table stays");
+    };
+    const addedApply = await intoHost("added", "added-rules.md");
+    assert.equal((await abort(addedApply.id)).statusCode, 200);
+    await assertHostKept();
+    assert.equal((await getByDisplayPath(artifacts, noteReader, "org/org_home/added-rules.md")).tombstone, true);
+    assert.deepEqual(await listAgents(db, hostId), [], "the apply's own agents go");
+
+    // A plan that records nothing it made deletes nothing that stood before.
+    const unrecordedApply = await intoHost("unrecorded", "unrecorded-rules.md");
+    await db.query("UPDATE recipe_applies SET plan = plan - 'created' WHERE id = $1", [unrecordedApply.id]);
+    assert.equal((await abort(unrecordedApply.id)).statusCode, 200);
+    await assertHostKept();
     const mixedReaderBindings = await listBindingsCovering(db, {
       orgId: "org_home",
       guildId: mixedApply.guild_id,
