@@ -31,6 +31,7 @@ import {
 import { AccessListDialog } from "../access/AccessListDialog";
 import { HomeGuildField } from "../access/HomeGuildField";
 import { findOpenItem, homeLabel, isUnreached, listedItems } from "../access/listedItems";
+import { sectionCopy } from "../access/sectionCopy";
 import { StartingAccessField } from "../access/StartingAccessField";
 import { LatestChange, type OpenChangeStep } from "../notes/LatestChange";
 import { attemptFileDownload } from "./download";
@@ -48,16 +49,6 @@ type FilesBrowserProps = {
 };
 
 const noFiles: ItemSections<FileItem> = { own: [], shared: [] };
-
-/** What the guild's own section holds when it holds nothing, by page. */
-const emptyOwnFiles: Record<ReachSubject["type"], string> = {
-  guild: "Files made in this guild appear here.",
-  agent: "Files made in this agent's guild appear here.",
-};
-
-/** What the shared section holds, as it says when it holds nothing. */
-const emptySharedFiles =
-  "Files from elsewhere that a row for this guild, its agents or the organisation reaches appear here.";
 
 const fileAccessIntro = "Who reads and writes this file.";
 
@@ -200,12 +191,13 @@ function FileListContent({ page, list, shown, searching, selectedPath, onPick }:
   if (list.isError) {
     return <Banner tone="error" title="Couldn't load the files" meta={list.error.message} />;
   }
+  const copy = sectionCopy("file", page.type);
   return (
     <div className="flex flex-col gap-3">
       <SectionList
-        label="Guild files"
+        label={copy.ownLabel}
         count={shown.own.length}
-        empty={searching ? "No files match." : emptyOwnFiles[page.type]}
+        empty={searching ? copy.noMatch : copy.ownEmpty}
       >
         {shown.own.map((item) => (
           <FileRow
@@ -217,9 +209,9 @@ function FileListContent({ page, list, shown, searching, selectedPath, onPick }:
         ))}
       </SectionList>
       <SectionList
-        label="Shared with this guild"
+        label={copy.sharedLabel}
         count={shown.shared.length}
-        empty={searching ? "No files match." : emptySharedFiles}
+        empty={searching ? copy.noMatch : copy.sharedEmpty}
       >
         {shown.shared.map((item) => (
           <FileRow

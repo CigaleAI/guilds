@@ -156,7 +156,7 @@ export function InsertPicker({ kind, notes, collections, orgId, onPick }: Insert
               <ChoiceList
                 groups={groups}
                 copy={copy}
-                query={query}
+                searching={query.trim() !== ""}
                 showLabels={kind === "note"}
                 selected={selected}
                 onSelect={select}
@@ -255,7 +255,8 @@ function ModeSwitch({ mode, onModeChange }: ModeSwitchProps) {
 type ChoiceListProps = {
   groups: ChoiceGroups | undefined;
   copy: PickerCopy;
-  query: string;
+  /** Whether a search is typed, so an empty list says nothing matches. */
+  searching: boolean;
   showLabels: boolean;
   selected: string | null;
   onSelect: (path: string) => void;
@@ -266,7 +267,7 @@ type ChoiceListProps = {
  * The choices as they load: one list under its groups' labels, or the agent's two sections, each
  * folding closed under its label with its count.
  */
-function ChoiceList({ groups, copy, query, showLabels, ...rowProps }: ChoiceListProps) {
+function ChoiceList({ groups, copy, searching, showLabels, ...rowProps }: ChoiceListProps) {
   if (!groups) return <SkeletonRows rows={4} label="Loading" />;
   if (groups.layout === "sections") {
     return (
@@ -276,7 +277,7 @@ function ChoiceList({ groups, copy, query, showLabels, ...rowProps }: ChoiceList
             key={group.label}
             label={group.label}
             count={group.choices.length}
-            empty={query ? "No notes match." : group.empty}
+            empty={group.empty}
           >
             {group.choices.map((choice) => (
               <ChoiceRow key={choice.path} choice={choice} copy={copy} {...rowProps} />
@@ -290,8 +291,8 @@ function ChoiceList({ groups, copy, query, showLabels, ...rowProps }: ChoiceList
     return (
       <EmptyState
         icon={copy.icon}
-        title={query ? "Nothing matches" : copy.emptyTitle}
-        description={query ? "Try another name." : copy.emptyDescription}
+        title={searching ? "Nothing matches" : copy.emptyTitle}
+        description={searching ? "Try another name." : copy.emptyDescription}
       />
     );
   }

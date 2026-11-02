@@ -97,6 +97,9 @@ export type ReachSubject = { type: "guild" | "agent"; id: string };
  */
 type ItemHome = { id: string; name: string };
 
+/** The two kinds of item a guild's or an agent's page lists by home. */
+export type ListedKind = Extract<AccessTarget["kind"], "note" | "file">;
+
 /**
  * A note or a file as a guild's or an agent's page lists it: where it sits, its home guild (null
  * for the organisation), and how the page's guild or agent reaches it.

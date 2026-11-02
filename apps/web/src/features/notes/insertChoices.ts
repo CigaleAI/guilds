@@ -3,6 +3,7 @@ import type { AgentAccessMode } from "../../api/types/access";
 import type { EmbeddableNote, EmbeddableNotes, ListedEmbeddableNote } from "../../api/types/notes";
 import type { Collection } from "../../api/types/tables";
 import { homeLabel } from "../access/listedItems";
+import { sectionCopy } from "../access/sectionCopy";
 import { collectionDisplayPath } from "./embeds";
 
 /** One note or table the insert picker offers, by its display path. */
@@ -16,7 +17,10 @@ export type Choice = {
   mode?: AgentAccessMode;
 };
 
-/** A named group of choices; a section says `empty` when it holds none. */
+/**
+ * A named group of choices; a section says `empty` when it holds none: what it lists, or that no
+ * choice matches the search.
+ */
 type ChoiceGroup = { label: string; empty?: string; choices: Choice[] };
 
 /**
@@ -71,22 +75,23 @@ function tableGroups(collections: readonly Collection[], orgId: string): ChoiceG
   return { layout: "list", groups: [{ label: "Tables", choices }] };
 }
 
-function noteGroups(notes: EmbeddableNotes): ChoiceGroups {
+/** The notes as the picker groups them; a section says what it holds, or that nothing matches the search. */
+function noteGroups(notes: EmbeddableNotes, searching: boolean): ChoiceGroups {
   if (!("own" in notes)) {
     return { layout: "list", groups: [{ label: "Notes", choices: notes.map(noteChoice) }] };
   }
+  const copy = sectionCopy("note", "agent");
   return {
     layout: "sections",
     groups: [
       {
-        label: "Guild notes",
-        empty: "Notes made in this agent's guild appear here.",
+        label: copy.ownLabel,
+        empty: searching ? copy.noMatch : copy.ownEmpty,
         choices: notes.own.map(ownNoteChoice),
       },
       {
-        label: "Shared with this guild",
-        empty:
-          "Notes from elsewhere that a row for this guild, its agents or the organisation reaches appear here.",
+        label: copy.sharedLabel,
+        empty: searching ? copy.noMatch : copy.sharedEmpty,
         choices: notes.shared.map(sharedNoteChoice),
       },
     ],
@@ -101,7 +106,7 @@ export function choiceGroups(
 ): ChoiceGroups | undefined {
   const listed =
     kind === "note"
-      ? sources.notes && noteGroups(sources.notes)
+      ? sources.notes && noteGroups(sources.notes, query.trim() !== "")
       : sources.collections && tableGroups(sources.collections, sources.orgId);
   if (!listed) return undefined;
   const groups = listed.groups.map((group) => ({

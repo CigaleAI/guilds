@@ -43,6 +43,7 @@ import type { InsertKind } from "@guildsrun/ui";
 import { AccessListDialog } from "../access/AccessListDialog";
 import { HomeGuildField } from "../access/HomeGuildField";
 import { findOpenItem, homeLabel, isUnreached, listedItems } from "../access/listedItems";
+import { sectionCopy } from "../access/sectionCopy";
 import { StartingAccessField } from "../access/StartingAccessField";
 import { EmbedPreview } from "./EmbedPreview";
 import { embedIsBroken } from "./embeds";
@@ -64,16 +65,6 @@ type NotesBrowserProps = {
 };
 
 const noNotes: ItemSections<NoteItem> = { own: [], shared: [] };
-
-/** What the guild's own section holds when it holds nothing, by page. */
-const emptyOwnNotes: Record<ReachSubject["type"], string> = {
-  guild: "Notes made in this guild appear here.",
-  agent: "Notes made in this agent's guild appear here.",
-};
-
-/** What the shared section holds, as it says when it holds nothing. */
-const emptySharedNotes =
-  "Notes from elsewhere that a row for this guild, its agents or the organisation reaches appear here.";
 
 const noteAccessIntro = "Who reads and writes this note.";
 
@@ -248,12 +239,13 @@ function NoteListContent({ page, list, shown, searching, selectedPath, onPick }:
   if (list.isError) {
     return <Banner tone="error" title="Couldn't load the notes" meta={list.error.message} />;
   }
+  const copy = sectionCopy("note", page.type);
   return (
     <div className="flex flex-col gap-3">
       <SectionList
-        label="Guild notes"
+        label={copy.ownLabel}
         count={shown.own.length}
-        empty={searching ? "No notes match." : emptyOwnNotes[page.type]}
+        empty={searching ? copy.noMatch : copy.ownEmpty}
       >
         {shown.own.map((item) => (
           <NoteRow
@@ -265,9 +257,9 @@ function NoteListContent({ page, list, shown, searching, selectedPath, onPick }:
         ))}
       </SectionList>
       <SectionList
-        label="Shared with this guild"
+        label={copy.sharedLabel}
         count={shown.shared.length}
-        empty={searching ? "No notes match." : emptySharedNotes}
+        empty={searching ? copy.noMatch : copy.sharedEmpty}
       >
         {shown.shared.map((item) => (
           <NoteRow

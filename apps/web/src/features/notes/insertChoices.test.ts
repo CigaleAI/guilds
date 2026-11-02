@@ -82,6 +82,18 @@ test("a search keeps both sections, empty or not, and drops an empty group of a 
   assert.ok(none && holdsNoChoice(none));
 });
 
+test("an empty section says what it lists, or that no note matches a typed search", () => {
+  const empty = { own: [], shared: [] };
+  const listedEmpties = (query: string) =>
+    choiceGroups("note", { notes: empty, ...noCollections }, query)?.groups.map((group) => group.empty);
+  assert.deepEqual(listedEmpties(""), [
+    "Notes made in this agent's guild appear here.",
+    "Notes from elsewhere that a row for this guild, its agents or the organisation reaches appear here.",
+  ]);
+  assert.deepEqual(listedEmpties("   "), listedEmpties(""));
+  assert.deepEqual(listedEmpties("zzz"), ["No notes match.", "No notes match."]);
+});
+
 test("tables are listed for a table or a column, and nothing loads until the list does", () => {
   const orders: Collection = {
     id: "c_1",
