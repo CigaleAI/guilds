@@ -6,7 +6,6 @@ import {
   SEARCH_QUERY_TYPE,
   SEARCH_WINDOW,
   TwitterApiIoError,
-  callTool,
   constrainSearchQuery,
   formatPost,
   formatPosts,
@@ -16,8 +15,9 @@ import {
   formatUsers,
   ping,
   postId,
-  postsTool,
-  searchTool,
+  posts,
+  search,
+  type ListPage,
 } from "../../src/connectors/twitterapiio/client.js";
 import { McpError } from "../../src/mcp/errors.js";
 import { McpPool, OPERATOR_CALLER } from "../../src/mcp/pool.js";
@@ -42,48 +42,57 @@ const fixture = loadJsonFixture<{
   trends: string;
 }>("adapters/twitterapiio.json");
 const KEY = decodeMasterKey(HEX_MASTER_KEY);
-const TOOLS = CONNECTORS.bySlug("twitterapiio")!.manifest.tools!;
+const TWITTERAPIIO = CONNECTORS.bySlug("twitterapiio")!;
+const TOOLS = TWITTERAPIIO.manifest.tools!;
+const FIRST_PAGE: ListPage = { rows: 15, cursor: undefined };
+
+/** A call's context whose HTTP client answers every request with `json` and records its URL. */
+function contextAnswering(fetched: string[], json: unknown) {
+  return {
+    http: mockFetch((url) => {
+      fetched.push(url);
+      return { status: 200, json };
+    }),
+    remote: { initialize: async () => ({ name: "", instructions: "" }), list: async () => [], call: async () => "" },
+    connection_id: "conn_twitterapiio",
+    settings: {},
+  };
+}
 
 
 test("formatSearch is compact TSV", () => {
-  const stored = formatSearch(
-    {
-      tweets: [{
-        id: "123",
-        createdAt: "2026-09-13T12:00:00.000Z",
-        text: "hello world",
-        likeCount: 12,
-        retweetCount: 3,
-        replyCount: 1,
-        quoteCount: 0,
-        author: {
-          id: "44196397",
-          userName: "elonmusk",
-          name: "Elon Musk",
-          profilePicture: "https://example.com/elon.jpg",
-        },
-      }],
-      has_next_page: true,
-      next_cursor: "page-2",
-    },
-    "from:elonmusk",
-  );
+  const page = {
+    tweets: [{
+      id: "123",
+      createdAt: "2026-09-13T12:00:00.000Z",
+      text: "hello world",
+      likeCount: 12,
+      retweetCount: 3,
+      replyCount: 1,
+      quoteCount: 0,
+      author: {
+        id: "44196397",
+        userName: "elonmusk",
+        name: "Elon Musk",
+        profilePicture: "https://example.com/elon.jpg",
+      },
+    }],
+    has_next_page: true,
+    next_cursor: "page-2",
+  };
+  const stored = formatSearch(page, "from:elonmusk");
   assert.equal(stored, fixture.search);
   assert.ok(!stored.includes("example.com"));
 });
 
 test("formatPosts caps rows and clips text", () => {
-  const payload = {
-    data: {
-      tweets: Array.from({ length: 20 }, (_, index) => ({
-        id: String(index),
-        text: "word ".repeat(80).trim(),
-        likeCount: index,
-        author: { userName: "x", name: "X" },
-      })),
-    },
-  };
-  const stored = formatPosts(payload, 3);
+  const tweets = Array.from({ length: 20 }, (_, index) => ({
+    id: String(index),
+    text: "word ".repeat(80).trim(),
+    likeCount: index,
+    author: { userName: "x", name: "X" },
+  }));
+  const stored = formatPosts(tweets, {}, 3);
   const lines = stored.split("\n");
   assert.equal(lines.length, 4);
   assert.equal(lines.at(-1), "+17 more");
@@ -92,42 +101,40 @@ test("formatPosts caps rows and clips text", () => {
 });
 
 test("formatUser and formatPost keep metrics", () => {
-  const user = formatUser({
-    data: {
-      id: "44196397",
-      userName: "elonmusk",
-      name: "Elon Musk",
-      isBlueVerified: true,
-      verifiedType: "blue",
-      createdAt: "2026-09-13T12:00:00.000Z",
-      description: "bio",
-      profilePicture: "https://example.com/elon.jpg",
-      followers: 1,
-      following: 2,
-      statusesCount: 3,
-    },
-  });
+  const profile = {
+    id: "44196397",
+    userName: "elonmusk",
+    name: "Elon Musk",
+    isBlueVerified: true,
+    verifiedType: "blue",
+    createdAt: "2026-09-13T12:00:00.000Z",
+    description: "bio",
+    profilePicture: "https://example.com/elon.jpg",
+    followers: 1,
+    following: 2,
+    statusesCount: 3,
+  };
+  const user = formatUser(profile);
   assert.equal(user, fixture.user);
   assert.ok(!user.includes("elon.jpg"));
   const stored = formatPost({
-    tweets: [{
-      id: "1",
-      text: "one",
-      likeCount: 1,
-      author: { userName: "x", name: "X" },
-    }],
+    id: "1",
+    text: "one",
+    likeCount: 1,
+    author: { userName: "x", name: "X" },
   });
   assert.equal(stored, fixture.post);
 });
 
 test("formatUsers and formatTrends keep compact rows", () => {
   assert.equal(
-    formatUsers({
-      followers: [{ id: "2", userName: "alice", name: "Alice", followers: 10, following: 4 }],
-    }, "followers"),
+    formatUsers(
+      [{ id: "2", userName: "alice", screen_name: "alice", name: "Alice", followers_count: 10, friends_count: 4 }],
+      {},
+    ),
     fixture.followers,
   );
-  assert.equal(formatTrends({ data: [{ name: "#AI", tweetCount: 12345 }] }), fixture.trends);
+  assert.equal(formatTrends([{ trend: { name: "#AI", rank: 1 } }]), fixture.trends);
 });
 
 test("constrainSearchQuery pins Top window", () => {
@@ -149,8 +156,9 @@ test("postId accepts URLs", () => {
 test("search sends x-api-key", async () => {
   let url = "";
   let auth = "";
-  const stored = await searchTool(
-    { query: "from:x since:2020-01-01", sort: "Latest" },
+  const stored = await search(
+    "from:x since:2020-01-01",
+    FIRST_PAGE,
     {
       apiKey: "tok-test",
       client: mockFetch((requestUrl, init) => {
@@ -180,13 +188,13 @@ test("search refuses a body that is not JSON or does not match its schema", asyn
     client: mockFetch(() => ({ status: 200, ...result })),
   });
   await assert.rejects(
-    () => searchTool({ query: "from:x" }, answering({ json: { tweets: "none" } })),
+    () => search("from:x", FIRST_PAGE, answering({ json: { tweets: "none" } })),
     (error: unknown) =>
       error instanceof TwitterApiIoError &&
       /^TwitterAPI.io returned an unexpected response at \/tweets: /.test(error.message),
   );
   await assert.rejects(
-    () => searchTool({ query: "from:x" }, answering({ text: "not json" })),
+    () => search("from:x", FIRST_PAGE, answering({ text: "not json" })),
     (error: unknown) =>
       error instanceof TwitterApiIoError &&
       error.message === "TwitterAPI.io returned a non-JSON body",
@@ -195,8 +203,9 @@ test("search refuses a body that is not JSON or does not match its schema", asyn
 
 test("posts resolves username then last tweets", async () => {
   let url = "";
-  const stored = await postsTool(
-    { user: "@elonmusk" },
+  const stored = await posts(
+    "@elonmusk",
+    FIRST_PAGE,
     {
       apiKey: "tok-test",
       client: mockFetch((requestUrl) => {
@@ -222,8 +231,37 @@ test("ping rejects unauthorized", async () => {
   );
 });
 
-test("callTool unknown name", async () => {
-  await assert.rejects(() => callTool("tweet", {}, { apiKey: "tok-test" }), /unknown TwitterAPI.io tool/);
+test("a body whose status is an error throws its message", async () => {
+  await assert.rejects(
+    () => posts("nobody", FIRST_PAGE, {
+      apiKey: "tok-test",
+      client: mockFetch(() => ({ status: 200, json: { status: "error", msg: "user not found", data: null } })),
+    }),
+    (error: unknown) => error instanceof TwitterApiIoError && error.message === "user not found",
+  );
+});
+
+test("the tools decode their arguments before they call TwitterAPI.io", async () => {
+  const fetched: string[] = [];
+  const ctx = contextAnswering(fetched, { followers: [], has_next_page: false });
+  const creds = { token: "tok-test" };
+  assert.equal(
+    await TWITTERAPIIO.adapter.call!("followers", { user: "@alice", limit: 50, page_key: "p2", sort: "Latest" }, creds, ctx),
+    "no results",
+  );
+  const query = new URL(fetched[0]!).searchParams;
+  assert.equal(query.get("userName"), "alice");
+  assert.equal(query.get("pageSize"), "30");
+  assert.equal(query.get("cursor"), "p2");
+  await assert.rejects(
+    TWITTERAPIIO.adapter.call!("followers", { user: "alice", limit: "5" }, creds, ctx),
+    (error: unknown) => error instanceof ConnectorError && error.status === 422 && /^\/limit: /.test(error.message),
+  );
+  await assert.rejects(
+    TWITTERAPIIO.adapter.call!("tweet", {}, creds, ctx),
+    (error: unknown) => error instanceof ConnectorError && error.status === 404,
+  );
+  assert.equal(fetched.length, 1);
 });
 
 test("sync TwitterAPI.io writes the curated catalog", async () => {

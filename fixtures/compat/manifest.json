@@ -11,7 +11,7 @@
       "path": "adapters/twitterapiio.json",
       "source": "src/adapters/twitterapiio.ts formatSearch",
       "generator_version": "1",
-      "sha256": "6785bc63f049cddb28d8773842dc9d2be47fd92054c0f21eb5780bdf457d21bb"
+      "sha256": "30fa4414fb18132a9140c8fa49956b4ce4d84f6549d6998481ff669093795fcb"
     },
     {
       "path": "bindings/resolution.json",

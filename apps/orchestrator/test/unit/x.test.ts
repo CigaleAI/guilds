@@ -4,15 +4,15 @@ import { decodeMasterKey } from "../../src/config/index.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import {
   XError,
-  callTool,
   formatPost,
   formatPosts,
   formatSearch,
   formatUser,
   ping,
   postId,
-  postsTool,
-  searchTool,
+  posts,
+  search,
+  type ListPage,
 } from "../../src/connectors/x/client.js";
 import { McpError } from "../../src/mcp/errors.js";
 import { McpPool, OPERATOR_CALLER } from "../../src/mcp/pool.js";
@@ -28,7 +28,22 @@ import { restoreConnectorsAfterEach, runConnectors } from "../helpers/installed.
 restoreConnectorsAfterEach();
 
 const KEY = decodeMasterKey(HEX_MASTER_KEY);
-const TOOLS = CONNECTORS.bySlug("x")!.manifest.tools!;
+const X = CONNECTORS.bySlug("x")!;
+const TOOLS = X.manifest.tools!;
+const FIRST_PAGE: ListPage = { rows: 15, token: undefined };
+
+/** A call's context whose HTTP client answers every request with `json` and records its URL. */
+function contextAnswering(fetched: string[], json: unknown) {
+  return {
+    http: mockFetch((url) => {
+      fetched.push(url);
+      return { status: 200, json };
+    }),
+    remote: { initialize: async () => ({ name: "", instructions: "" }), list: async () => [], call: async () => "" },
+    connection_id: "conn_x",
+    settings: {},
+  };
+}
 
 
 test("formatSearch is compact TSV", () => {
@@ -125,8 +140,9 @@ test("postId accepts URLs", () => {
 test("search sends a bearer token", async () => {
   let url = "";
   let auth = "";
-  const stored = await searchTool(
-    { query: "from:x" },
+  const stored = await search(
+    "from:x",
+    FIRST_PAGE,
     {
       apiKey: "tok-test",
       client: mockFetch((requestUrl, init) => {
@@ -156,21 +172,22 @@ test("search refuses a body that is not JSON or does not match its schema", asyn
     client: mockFetch(() => ({ status: 200, ...result })),
   });
   await assert.rejects(
-    () => searchTool({ query: "from:x" }, answering({ json: { meta: "none" } })),
+    () => search("from:x", FIRST_PAGE, answering({ json: { meta: "none" } })),
     (error: unknown) =>
       error instanceof XError &&
       /^X returned an unexpected response at \/meta: /.test(error.message),
   );
   await assert.rejects(
-    () => searchTool({ query: "from:x" }, answering({ text: "not json" })),
+    () => search("from:x", FIRST_PAGE, answering({ text: "not json" })),
     (error: unknown) => error instanceof XError && error.message === "X returned a non-JSON body",
   );
 });
 
 test("posts resolves username then timeline", async () => {
   const seen: string[] = [];
-  const stored = await postsTool(
-    { user: "@elonmusk" },
+  const stored = await posts(
+    "@elonmusk",
+    FIRST_PAGE,
     {
       apiKey: "tok-test",
       client: mockFetch((requestUrl) => {
@@ -197,8 +214,23 @@ test("ping rejects unauthorized", async () => {
   );
 });
 
-test("callTool unknown name", async () => {
-  await assert.rejects(() => callTool("tweet", {}, { apiKey: "tok-test" }), /unknown X tool/);
+test("the tools decode their arguments before they call X", async () => {
+  const fetched: string[] = [];
+  const ctx = contextAnswering(fetched, { meta: { result_count: 0 } });
+  const creds = { token: "tok-test" };
+  assert.equal(await X.adapter.call!("search", { query: "from:x", limit: 50, page_key: "p2" }, creds, ctx), "no results");
+  const query = new URL(fetched[0]!).searchParams;
+  assert.equal(query.get("max_results"), "30");
+  assert.equal(query.get("pagination_token"), "p2");
+  await assert.rejects(
+    X.adapter.call!("search", { query: "from:x", limit: "5" }, creds, ctx),
+    (error: unknown) => error instanceof ConnectorError && error.status === 422 && /^\/limit: /.test(error.message),
+  );
+  await assert.rejects(
+    X.adapter.call!("tweet", {}, creds, ctx),
+    (error: unknown) => error instanceof ConnectorError && error.status === 404,
+  );
+  assert.equal(fetched.length, 1);
 });
 
 test("sync X writes the curated catalog", async () => {

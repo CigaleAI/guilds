@@ -1,16 +1,25 @@
+import type { Static, TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
-import type { JsonObject } from "../../lib/json.js";
-import { assertMatches } from "../../lib/decode.js";
 import { proxyFetch, withQuery, type FetchFn } from "../../net/http.js";
-import { LIST_DEFAULT, argStr, clipRows, clipText, fmtNum, joinParts, rowLimit } from "../format.js";
+import { decodeResponse, type ConnectorApi } from "../response.js";
+import { LIST_DEFAULT, clipRows, clipText, fmtNum, joinParts } from "../format.js";
+import type { ApiGet } from "../types.js";
 import {
-  Entry,
-  EntryList,
+  AccountResponse,
   ErrorBody,
-  ErrorEntry,
-  ErrorList,
-  TwitterBody,
-  type ListKey,
+  FailedBody,
+  FollowersResponse,
+  FollowingsResponse,
+  TimelineResponse,
+  TrendsResponse,
+  TweetsResponse,
+  UserInfoResponse,
+  UsersResponse,
+  type Paging,
+  type Trend,
+  type Tweet,
+  type UserInfo,
+  type UserProfile,
 } from "./responses.js";
 
 export const API_BASE = "https://api.twitterapi.io";
@@ -31,6 +40,22 @@ export class TwitterApiIoError extends Error {
   }
 }
 
+/** The page of a list a call asks for: how many rows it shows, and the cursor of the page to start at. */
+export type ListPage = { rows: number; cursor: string | undefined };
+
+/** A user as a row shows them, from either shape TwitterAPI.io sends a user in. */
+type UserFacts = {
+  id: string | undefined;
+  userName: string | undefined;
+  name: string | undefined;
+  /** The verification mark: the kind of verification, or `verified`; null when unverified. */
+  mark: string | null;
+  followers: number | undefined;
+  following: number | undefined;
+  posts: number | undefined;
+  createdAt: string | undefined;
+};
+
 export function postId(value: string): string {
   const text = value.trim().split("#", 1)[0]!.split("?", 1)[0]!;
   const match = STATUS_ID.exec(text);
@@ -44,260 +69,197 @@ export function isUserId(value: string): boolean {
   return /^\d+$/.test(value) && value.length >= 5;
 }
 
-function handle(value: unknown): string {
-  const text = String(value || "").trim().replace(/^@+/, "");
-  return text ? `@${text}` : "";
+/** Text, trimmed; null when it is blank or absent. */
+function text(value: string | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
 }
 
-function screenName(value: unknown): string {
-  return String(value || "").trim().replace(/^@+/, "");
+/** A username without its leading `@`s. */
+function screenName(value: string): string {
+  return value.trim().replace(/^@+/, "");
 }
 
-/** `value` as an entry with at least one field; none otherwise. */
-function entry(value: unknown): Entry | null {
-  return Value.Check(Entry, value) && Object.keys(value).length ? value : null;
+function handle(userName: string | undefined): string {
+  const name = screenName(userName ?? "");
+  return name ? `@${name}` : "";
 }
 
-function pick(item: Entry, ...keys: string[]): unknown {
-  for (const key of keys) {
-    if (item[key] !== undefined && item[key] !== null && item[key] !== "") {
-      return item[key];
-    }
-  }
-  return undefined;
+/** What a row shows of a user info. */
+function infoFacts(user: UserInfo): UserFacts {
+  return {
+    id: user.id,
+    userName: user.userName,
+    name: user.name,
+    mark: user.isBlueVerified === true ? (text(user.verifiedType) ?? "verified") : null,
+    followers: user.followers,
+    following: user.following,
+    posts: user.statusesCount,
+    createdAt: user.createdAt,
+  };
 }
 
-function authorOf(item: Entry): Entry {
-  return entry(item.author) ?? entry(item.user) ?? {};
+/** What a row shows of a listed profile. */
+function profileFacts(user: UserProfile): UserFacts {
+  return {
+    id: user.id,
+    userName: user.userName ?? user.screen_name,
+    name: user.name,
+    mark: user.isBlueVerified === true || user.verified === true ? "verified" : null,
+    followers: user.followers_count,
+    following: user.friends_count ?? user.following_count,
+    posts: user.statuses_count,
+    createdAt: user.created_at,
+  };
 }
 
-/** The entries a body lists under `key`: at its top, as `data` itself, or under `data`. */
-function listed(payload: TwitterBody, key: ListKey): Entry[] {
-  const top = payload[key] ?? [];
-  if (top.length) {
-    return top;
-  }
-  if (Value.Check(EntryList, payload.data)) {
-    return payload.data;
-  }
-  const inner = entry(payload.data)?.[key];
-  return Value.Check(EntryList, inner) ? inner : [];
+function userRow(user: UserFacts): string {
+  return joinParts(
+    user.id,
+    handle(user.userName),
+    user.name,
+    user.mark,
+    `followers=${fmtNum(user.followers)}`,
+    `following=${fmtNum(user.following)}`,
+    `posts=${fmtNum(user.posts)}`,
+    user.createdAt,
+  );
 }
 
-function pageKeyOf(payload: TwitterBody): string {
-  const data = entry(payload.data);
-  const hasNext = payload.has_next_page ?? data?.has_next_page;
-  const cursor = payload.next_cursor ?? data?.next_cursor;
-  if (hasNext === false) {
-    return "";
-  }
-  return typeof cursor === "string" && cursor.trim() ? cursor.trim() : "";
+function postRow(item: Tweet): string {
+  const author = item.author;
+  return joinParts(
+    item.id,
+    handle(author?.userName),
+    author?.name,
+    item.createdAt,
+    `likes=${fmtNum(item.likeCount)}`,
+    `rts=${fmtNum(item.retweetCount)}`,
+    `replies=${fmtNum(item.replyCount)}`,
+    `quotes=${fmtNum(item.quoteCount)}`,
+    clipText(item.text, TEXT_CAP),
+  );
 }
 
-function withPage(body: string, payload: TwitterBody): string {
-  if (body === "no results") {
+/** The rows, with the page key of the next page when there is one. */
+function withPage(body: string, paging: Paging): string {
+  if (body === "no results" || paging.has_next_page === false) {
     return body;
   }
-  const token = pageKeyOf(payload);
+  const token = text(paging.next_cursor);
   return token ? `${body}\npage=${token}` : body;
 }
 
-function postRow(item: Entry): string {
-  const author = authorOf(item);
-  return joinParts(
-    pick(item, "id"),
-    handle(pick(author, "userName", "username", "screen_name")),
-    pick(author, "name"),
-    pick(item, "createdAt", "created_at"),
-    `likes=${fmtNum(pick(item, "likeCount", "likes", "like_count"))}`,
-    `rts=${fmtNum(pick(item, "retweetCount", "retweets", "retweet_count"))}`,
-    `replies=${fmtNum(pick(item, "replyCount", "replies", "reply_count"))}`,
-    `quotes=${fmtNum(pick(item, "quoteCount", "quotes", "quote_count"))}`,
-    clipText(pick(item, "text"), TEXT_CAP),
-  );
-}
-
-/** The verification mark of a user: its kind, or `verified`; none when unverified. */
-function verifiedMark(item: Entry): string[] {
-  if (item.isBlueVerified !== true && item.verified !== true) {
-    return [];
-  }
-  const kind = pick(item, "verifiedType", "verified_type");
-  return [typeof kind === "string" && kind.trim() ? kind.trim() : "verified"];
-}
-
-function userRow(item: Entry): string {
-  return joinParts(
-    pick(item, "id"),
-    handle(pick(item, "userName", "username", "screen_name")),
-    pick(item, "name"),
-    ...verifiedMark(item),
-    `followers=${fmtNum(pick(item, "followers", "followers_count"))}`,
-    `following=${fmtNum(pick(item, "following", "friends_count", "following_count"))}`,
-    `posts=${fmtNum(pick(item, "statusesCount", "statuses_count", "tweet_count"))}`,
-    pick(item, "createdAt", "created_at"),
-  );
-}
-
-/** The user a body describes: its `data`, its `user`, or the body itself when it carries an id. */
-function userOf(payload: TwitterBody): Entry | null {
-  return entry(payload.data) ?? entry(payload.user) ?? (payload.id ? entry(payload) : null);
-}
-
-export function formatUser(payload: TwitterBody): string {
-  const item = userOf(payload);
-  if (!item || pick(item, "id", "userName", "username") === undefined) {
+export function formatUser(user: UserInfo | null | undefined): string {
+  if (!user || (!user.id && !user.userName)) {
     return "no results";
   }
-  const head = userRow(item);
-  const bio = clipText(pick(item, "description", "bio"), TEXT_CAP);
+  const head = userRow(infoFacts(user));
+  const bio = clipText(user.description, TEXT_CAP);
   return [head, bio].filter(Boolean).join("\n") || "no results";
 }
 
-export function formatPosts(payload: TwitterBody, limit = LIST_DEFAULT): string {
-  const rows = listed(payload, "tweets").map(postRow).filter(Boolean);
-  return withPage(clipRows(rows, limit), payload);
+export function formatPosts(tweets: readonly Tweet[], paging: Paging, limit = LIST_DEFAULT): string {
+  return withPage(clipRows(tweets.map(postRow).filter(Boolean), limit), paging);
 }
 
-export function formatSearch(payload: TwitterBody, query: string, limit = LIST_DEFAULT): string {
-  const body = formatPosts(payload, limit);
+export function formatSearch(page: TweetsResponse, query: string, limit = LIST_DEFAULT): string {
+  const tweets = page.tweets ?? [];
+  const body = formatPosts(tweets, page, limit);
   if (body === "no results") {
     return body;
   }
-  const count = listed(payload, "tweets").length;
-  return [joinParts(query, `n=${fmtNum(count)}`), body].join("\n");
+  return [joinParts(query, `n=${fmtNum(tweets.length)}`), body].join("\n");
 }
 
-export function formatPost(payload: TwitterBody): string {
-  const item = listed(payload, "tweets")[0] ?? entry(payload.data) ?? entry(payload.tweet);
+export function formatPost(item: Tweet | undefined): string {
   if (!item) {
     return "no results";
   }
   const row = postRow(item);
-  const conversation = pick(item, "conversationId", "conversation_id");
-  let extra = "";
-  if (
-    typeof conversation === "string"
-    && conversation.trim()
-    && conversation.trim() !== String(pick(item, "id") ?? "").trim()
-  ) {
-    extra = `conversation=${conversation.trim()}`;
-  }
+  const conversation = text(item.conversationId);
+  const extra = conversation && conversation !== text(item.id) ? `conversation=${conversation}` : "";
   return [row, extra].filter(Boolean).join("\n") || "no results";
 }
 
-export function formatUsers(payload: TwitterBody, key: "followers" | "followings", limit = LIST_DEFAULT): string {
-  const rows = listed(payload, key).map(userRow).filter(Boolean);
-  return withPage(clipRows(rows, limit), payload);
+export function formatUsers(users: readonly UserProfile[], paging: Paging, limit = LIST_DEFAULT): string {
+  const rows = users.map((user) => userRow(profileFacts(user))).filter(Boolean);
+  return withPage(clipRows(rows, limit), paging);
 }
 
-export function formatTrends(payload: TwitterBody, limit = LIST_DEFAULT): string {
-  const rows = listed(payload, "trends").map((item) =>
-    joinParts(pick(item, "name"), `tweets=${fmtNum(pick(item, "tweetCount", "tweet_volume", "tweet_count"))}`),
-  ).filter(Boolean);
+export function formatTrends(trends: readonly Trend[], limit = LIST_DEFAULT): string {
+  const rows = trends.flatMap(({ trend }) =>
+    trend?.name ? [joinParts(trend.name, `rank=${fmtNum(trend.rank)}`)] : [],
+  );
   return clipRows(rows, limit);
 }
 
-function trimmed(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
 /** The message of an error body: its text, or the first entry's of its list. */
-function errorMessage(payload: unknown): string | null {
-  if (!Value.Check(ErrorBody, payload)) {
-    return null;
+function errorMessage(body: ErrorBody): string | null {
+  const detail = body.detail;
+  if (Array.isArray(detail)) {
+    return text(detail[0]?.msg ?? detail[0]?.message);
   }
-  const detail = payload.detail ?? payload.msg ?? payload.message ?? payload.error;
-  if (Value.Check(ErrorList, detail) && Value.Check(ErrorEntry, detail[0])) {
-    const first = detail[0];
-    return trimmed(first.msg ?? first.message);
-  }
-  return trimmed(detail);
+  return text(detail ?? body.msg ?? body.message);
 }
 
-async function errorDetail(response: Response): Promise<string> {
-  const text = await response.text();
-  let payload: unknown;
-  try {
-    payload = text ? JSON.parse(text) : {};
-  } catch {
-    const stripped = text.trim();
-    return stripped || `TwitterAPI.io HTTP ${response.status}`;
-  }
-  return errorMessage(payload) ?? `TwitterAPI.io HTTP ${response.status}`;
-}
-
-function assertSuccess(payload: TwitterBody): void {
-  const status = payload.status;
-  if (typeof status === "string" && status.toLowerCase() === "error") {
-    const message = payload.msg ?? payload.message ?? payload.error;
-    throw new TwitterApiIoError(trimmed(message) ?? "TwitterAPI.io returned an error");
-  }
-}
+/** TwitterAPI.io's API as the client reads its responses. */
+const TWITTERAPIIO: ConnectorApi<typeof ErrorBody> = {
+  name: "TwitterAPI.io",
+  error: (message, status) => new TwitterApiIoError(message, status),
+  errorBody: ErrorBody,
+  errorMessage,
+};
 
 type TwitterApiIoOptions = { client?: FetchFn; proxyUrl?: string };
 
 type ToolOptions = TwitterApiIoOptions & { apiKey: string };
 
-function unexpected(problem: string): TwitterApiIoError {
-  return new TwitterApiIoError(`TwitterAPI.io returned an unexpected response at ${problem}`);
-}
-
-async function getJson(
-  path: string,
-  params: Record<string, string>,
+/** The response at the request's path with its query, as its schema describes it; a body whose status is an error throws. */
+async function getJson<T extends TSchema>(
+  request: ApiGet<T>,
   apiKey: string,
   options: TwitterApiIoOptions = {},
-): Promise<TwitterBody> {
+): Promise<Static<T>> {
   const key = apiKey.trim();
   if (!key) {
     throw new TwitterApiIoError("TwitterAPI.io API key is missing", 401);
   }
   const fetchFn = options.client ?? proxyFetch(options.proxyUrl ?? "");
-  const response = await fetchFn(withQuery(`${API_BASE}${path}`, params), {
+  const response = await fetchFn(withQuery(`${API_BASE}${request.path}`, request.params), {
     method: "GET",
     headers: { "x-api-key": key, Accept: "application/json" },
   });
-  if (response.status >= 400) {
-    throw new TwitterApiIoError(await errorDetail(response), response.status);
+  const payload = await decodeResponse(TWITTERAPIIO, response, request.schema);
+  if (Value.Check(FailedBody, payload)) {
+    throw new TwitterApiIoError(text(payload.msg) ?? "TwitterAPI.io returned an error");
   }
-  let payload: unknown;
-  try {
-    payload = JSON.parse(await response.text());
-  } catch {
-    throw new TwitterApiIoError("TwitterAPI.io returned a non-JSON body");
-  }
-  assertMatches(TwitterBody, payload, unexpected);
-  assertSuccess(payload);
   return payload;
 }
 
-function userParam(value: string): Record<string, string> {
-  const handleValue = screenName(value);
-  if (!handleValue) {
+/** The username a call names, without its `@`; refused when it is blank. */
+function requiredUser(value: string): string {
+  const name = screenName(value);
+  if (!name) {
     throw new TwitterApiIoError("user is required");
   }
-  if (isUserId(handleValue)) {
-    return { userId: handleValue };
-  }
-  return { userName: handleValue };
+  return name;
 }
 
-function userNameParam(value: string): Record<string, string> {
-  const handleValue = screenName(value);
-  if (!handleValue) {
-    throw new TwitterApiIoError("user is required");
-  }
-  return { userName: handleValue };
+/** The query naming a user by id or by username. */
+function userQuery(value: string) {
+  const name = requiredUser(value);
+  return isUserId(name) ? { userId: name } : { userName: name };
 }
 
-function cursorParams(arguments_: JsonObject): Record<string, string> {
-  const pageKey = argStr(arguments_, "page_key");
-  return pageKey ? { cursor: pageKey } : {};
+/** The query of the page a call starts at. */
+function cursorQuery(page: ListPage) {
+  return page.cursor ? { cursor: page.cursor } : {};
 }
 
-function pageSize(arguments_: JsonObject): string {
-  return String(Math.max(20, Math.min(200, rowLimit(arguments_))));
+/** The rows a followers or followings page asks TwitterAPI.io for. */
+function pageSize(page: ListPage): string {
+  return String(Math.max(20, Math.min(200, page.rows)));
 }
 
 export function constrainSearchQuery(query: string): string {
@@ -309,139 +271,136 @@ export function constrainSearchQuery(query: string): string {
 }
 
 export async function ping(apiKey: string, options: TwitterApiIoOptions = {}): Promise<void> {
-  await getJson("/oapi/my/info", {}, apiKey, options);
+  await getJson({ path: "/oapi/my/info", params: {}, schema: AccountResponse }, apiKey, options);
 }
 
-export async function searchTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
-  const query = constrainSearchQuery(argStr(arguments_, "query"));
-  const limit = rowLimit(arguments_);
+/** Top posts of the last 24 hours matching `query`. */
+export async function search(query: string, page: ListPage, options: ToolOptions): Promise<string> {
+  const constrained = constrainSearchQuery(query);
+  const params = { query: constrained, queryType: SEARCH_QUERY_TYPE, ...cursorQuery(page) };
   const payload = await getJson(
-    "/twitter/tweet/advanced_search",
-    { query, queryType: SEARCH_QUERY_TYPE, ...cursorParams(arguments_) },
+    { path: "/twitter/tweet/advanced_search", params, schema: TweetsResponse },
     options.apiKey,
     options,
   );
-  return formatSearch(payload, query, limit);
+  return formatSearch(payload, constrained, page.rows);
 }
 
-export async function userTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
-  const user = screenName(argStr(arguments_, "user"));
-  if (!user) {
-    throw new TwitterApiIoError("user is required");
+/** One profile, by username or user id. */
+export async function user(value: string, options: ToolOptions): Promise<string> {
+  const name = requiredUser(value);
+  if (isUserId(name)) {
+    const payload = await getJson(
+      { path: "/twitter/user/batch_info_by_ids", params: { userIds: name }, schema: UsersResponse },
+      options.apiKey,
+      options,
+    );
+    return formatUser(payload.users?.[0]);
   }
-  const params = isUserId(user) ? { userIds: user } : { userName: user };
-  const path = isUserId(user) ? "/twitter/user/batch_info_by_ids" : "/twitter/user/info";
-  const payload = await getJson(path, params, options.apiKey, options);
-  if (isUserId(user)) {
-    const first = payload.users?.[0];
-    return first ? formatUser({ data: first }) : "no results";
-  }
-  return formatUser(payload);
-}
-
-export async function postsTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
-  const limit = rowLimit(arguments_);
   const payload = await getJson(
-    "/twitter/user/last_tweets",
-    { ...userParam(argStr(arguments_, "user")), ...cursorParams(arguments_) },
+    { path: "/twitter/user/info", params: { userName: name }, schema: UserInfoResponse },
     options.apiKey,
     options,
   );
-  return formatPosts(payload, limit);
+  return formatUser(payload.data);
 }
 
-export async function postTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
-  const tweetId = postId(argStr(arguments_, "id"));
-  const payload = await getJson("/twitter/tweets", { tweet_ids: tweetId }, options.apiKey, options);
-  return formatPost(payload);
-}
-
-export async function followersTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
-  const limit = rowLimit(arguments_);
+/** The last posts of one account, by username or user id. */
+export async function posts(value: string, page: ListPage, options: ToolOptions): Promise<string> {
   const payload = await getJson(
-    "/twitter/user/followers",
-    { ...userNameParam(argStr(arguments_, "user")), pageSize: pageSize(arguments_), ...cursorParams(arguments_) },
+    {
+      path: "/twitter/user/last_tweets",
+      params: { ...userQuery(value), ...cursorQuery(page) },
+      schema: TimelineResponse,
+    },
     options.apiKey,
     options,
   );
-  return formatUsers(payload, "followers", limit);
+  return formatPosts(payload.data?.tweets ?? [], payload, page.rows);
 }
 
-export async function followingTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
-  const limit = rowLimit(arguments_);
+/** One post, by id or status URL. */
+export async function post(value: string, options: ToolOptions): Promise<string> {
   const payload = await getJson(
-    "/twitter/user/followings",
-    { ...userNameParam(argStr(arguments_, "user")), pageSize: pageSize(arguments_), ...cursorParams(arguments_) },
+    { path: "/twitter/tweets", params: { tweet_ids: postId(value) }, schema: TweetsResponse },
     options.apiKey,
     options,
   );
-  return formatUsers(payload, "followings", limit);
+  return formatPost(payload.tweets?.[0]);
 }
 
-export async function mentionsTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
-  const limit = rowLimit(arguments_);
+/** The accounts following one user. */
+export async function followers(value: string, page: ListPage, options: ToolOptions): Promise<string> {
   const payload = await getJson(
-    "/twitter/user/mentions",
-    { ...userNameParam(argStr(arguments_, "user")), ...cursorParams(arguments_) },
+    {
+      path: "/twitter/user/followers",
+      params: { userName: requiredUser(value), pageSize: pageSize(page), ...cursorQuery(page) },
+      schema: FollowersResponse,
+    },
     options.apiKey,
     options,
   );
-  return formatPosts(payload, limit);
+  return formatUsers(payload.followers ?? [], payload, page.rows);
 }
 
-export async function repliesTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
-  const limit = rowLimit(arguments_);
+/** The accounts one user follows. */
+export async function following(value: string, page: ListPage, options: ToolOptions): Promise<string> {
   const payload = await getJson(
-    "/twitter/tweet/replies",
-    { tweetId: postId(argStr(arguments_, "id")), ...cursorParams(arguments_) },
+    {
+      path: "/twitter/user/followings",
+      params: { userName: requiredUser(value), pageSize: pageSize(page), ...cursorQuery(page) },
+      schema: FollowingsResponse,
+    },
     options.apiKey,
     options,
   );
-  return formatPosts(payload, limit);
+  return formatUsers(payload.followings ?? [], payload, page.rows);
 }
 
-export async function quotesTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
-  const limit = rowLimit(arguments_);
+/** Posts that mention one user. */
+export async function mentions(value: string, page: ListPage, options: ToolOptions): Promise<string> {
   const payload = await getJson(
-    "/twitter/tweet/quotes",
-    { tweetId: postId(argStr(arguments_, "id")), ...cursorParams(arguments_) },
+    {
+      path: "/twitter/user/mentions",
+      params: { userName: requiredUser(value), ...cursorQuery(page) },
+      schema: TweetsResponse,
+    },
     options.apiKey,
     options,
   );
-  return formatPosts(payload, limit);
+  return formatPosts(payload.tweets ?? [], payload, page.rows);
 }
 
-export async function trendsTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
-  const limit = rowLimit(arguments_);
-  const woeid = argStr(arguments_, "woeid") || WORLDWIDE_WOEID;
-  if (!/^\d+$/.test(woeid)) {
+/** The posts a post's list at `path` holds: its replies or its quotes. */
+async function postList(path: string, value: string, page: ListPage, options: ToolOptions): Promise<string> {
+  const payload = await getJson(
+    { path, params: { tweetId: postId(value), ...cursorQuery(page) }, schema: TweetsResponse },
+    options.apiKey,
+    options,
+  );
+  return formatPosts(payload.tweets ?? [], payload, page.rows);
+}
+
+/** The replies under one post. */
+export async function replies(value: string, page: ListPage, options: ToolOptions): Promise<string> {
+  return postList("/twitter/tweet/replies", value, page, options);
+}
+
+/** The quote posts of one post. */
+export async function quotes(value: string, page: ListPage, options: ToolOptions): Promise<string> {
+  return postList("/twitter/tweet/quotes", value, page, options);
+}
+
+/** The trending topics at a Yahoo WOEID; worldwide when it is absent. */
+export async function trends(woeid: string | undefined, rows: number, options: ToolOptions): Promise<string> {
+  const place = woeid?.trim() || WORLDWIDE_WOEID;
+  if (!/^\d+$/.test(place)) {
     throw new TwitterApiIoError("woeid must be digits");
   }
-  const payload = await getJson("/twitter/trends", { woeid, count: String(limit) }, options.apiKey, options);
-  return formatTrends(payload, limit);
-}
-
-const HANDLERS: Record<string, (arguments_: JsonObject, options: ToolOptions) => Promise<string>> = {
-  search: searchTool,
-  user: userTool,
-  posts: postsTool,
-  post: postTool,
-  followers: followersTool,
-  following: followingTool,
-  mentions: mentionsTool,
-  replies: repliesTool,
-  quotes: quotesTool,
-  trends: trendsTool,
-};
-
-export async function callTool(
-  name: string,
-  arguments_: JsonObject,
-  options: ToolOptions,
-): Promise<string> {
-  const handler = HANDLERS[name];
-  if (!handler) {
-    throw new TwitterApiIoError(`unknown TwitterAPI.io tool ${name}`);
-  }
-  return handler(arguments_, options);
+  const payload = await getJson(
+    { path: "/twitter/trends", params: { woeid: place, count: String(rows) }, schema: TrendsResponse },
+    options.apiKey,
+    options,
+  );
+  return formatTrends(payload.trends ?? [], rows);
 }

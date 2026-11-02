@@ -4,5 +4,5 @@
   "posts": "1  @x  X  likes=1  rts=-  replies=-  quotes=-  one",
   "post": "1  @x  X  likes=1  rts=-  replies=-  quotes=-  one",
   "followers": "2  @alice  Alice  followers=10  following=4  posts=-",
-  "trends": "#AI  tweets=12345"
+  "trends": "#AI  rank=1"
 }
