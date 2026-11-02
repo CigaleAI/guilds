@@ -133,9 +133,12 @@ export async function listFileChanges(db: Queryable, orgId: string, target: Chan
     return [];
   }
   const result = await db.query<FileChangeRow>(
-    `${CHANGE_SELECT}
-      WHERE fc.org_id = $1 AND (fc.artifact_id = ANY($2::text[]) OR fc.task_agent_id = $3)
-      ORDER BY fc.created_at DESC, fc.id DESC`,
+    `SELECT * FROM (
+       ${CHANGE_SELECT} WHERE fc.org_id = $1 AND fc.artifact_id = ANY($2::text[])
+       UNION ALL
+       ${CHANGE_SELECT} WHERE fc.org_id = $1 AND fc.task_agent_id = $3
+     ) changes
+     ORDER BY created_at DESC, id DESC`,
     [orgId, target.artifactIds, target.taskAgentId],
   );
   return result.rows.map((row) => mapChange(orgId, row));
@@ -167,11 +170,16 @@ export async function listLatestFileChanges(
     return {};
   }
   const result = await db.query<FileChangeRow & { requested_path: string }>(
-    `SELECT DISTINCT ON (p.path) p.path AS requested_path, named.*
+    `SELECT DISTINCT ON (p.path) p.path AS requested_path, latest.*
        FROM unnest($2::text[], $3::text[], $4::text[]) AS p(path, artifact_id, task_agent_id)
-       JOIN (${CHANGE_SELECT} WHERE fc.org_id = $1) named
-         ON named.artifact_id = p.artifact_id OR named.task_agent_id = p.task_agent_id
-      ORDER BY p.path, named.created_at DESC, named.id DESC`,
+       CROSS JOIN LATERAL (
+         (${CHANGE_SELECT} WHERE fc.org_id = $1 AND fc.artifact_id = p.artifact_id
+           ORDER BY fc.created_at DESC, fc.id DESC LIMIT 1)
+         UNION ALL
+         (${CHANGE_SELECT} WHERE fc.org_id = $1 AND fc.task_agent_id = p.task_agent_id
+           ORDER BY fc.created_at DESC, fc.id DESC LIMIT 1)
+       ) latest
+      ORDER BY p.path, latest.created_at DESC, latest.id DESC`,
     [orgId, paths, artifactIds, taskAgentIds],
   );
   const latest: Record<string, FileChangeView> = {};

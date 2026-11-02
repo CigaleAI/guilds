@@ -278,6 +278,9 @@ UPDATE public.studio_drafts d
   FROM artifact_moves m
  WHERE d.source_artifact_id = m.id AND d.source_display_path IS DISTINCT FROM m.new_display_path;
 --> statement-breakpoint
+-- A history is read by the item it is of: an artifact's changes, or an agent's Task's.
+CREATE INDEX file_changes_by_task_agent ON public.file_changes USING btree (task_agent_id, created_at);
+--> statement-breakpoint
 -- A moved item's change history follows it to its new display path.
 UPDATE public.file_changes f
    SET display_path = m.new_display_path
