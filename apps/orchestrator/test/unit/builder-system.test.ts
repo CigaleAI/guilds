@@ -83,7 +83,7 @@ test("builder system prompt maps Memory and routines onto recipe fields", () => 
   assert.match(text, /long-lived records/);
   assert.match(text, /connections\[\]\.resources/);
   assert.match(text, /You are a system designer/);
-  assert.match(text, /!\[\[agent\/scout\/playbook\.md\]\]/);
+  assert.match(text, /!\[\[org\/playbook\.md\]\]/);
   assert.doesNotMatch(text, /<path>/);
   assert.match(text, /A leftover `recipe:<id>` still/);
   assert.match(text, /builder_ask_question/);

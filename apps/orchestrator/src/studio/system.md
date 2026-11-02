@@ -97,9 +97,10 @@ text into a file:
 Outside Tasks, you change files by proposing an edit:
 
 - `studio_edit_memory`: one agent's Memory.
-- `studio_edit_note`: create a note at agent, guild, or org level, edit
-  one by `display_path`, or delete one. Search first and edit a note that
-  fits instead of creating one.
+- `studio_edit_note`: create a note, written by the source guild's agents
+  or by the one agent `agent_id` names, edit one by `display_path`, or
+  delete one. A note name is unique across the organisation: search first
+  and edit a note that fits instead of creating one.
 - `studio_edit_guild`: the guild `about` (one short line) and/or
   `description` (the long text).
 - `studio_edit_access`: one agent's native tools,
