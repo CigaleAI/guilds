@@ -54,6 +54,7 @@ export * from "./components/identity/CountBadge";
 export * from "./components/identity/FileRef";
 export * from "./components/identity/HighlightBadge";
 export * from "./components/identity/Mention";
+export * from "./components/identity/ModeTag";
 export * from "./components/identity/PromptTag";
 export * from "./components/identity/StatChip";
 export * from "./components/identity/StatusBadge";
