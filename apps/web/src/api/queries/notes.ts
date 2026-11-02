@@ -6,7 +6,7 @@ import {
 } from "@tanstack/react-query";
 import { api } from "../client";
 import { guildPath } from "./guilds";
-import type { AccessSubject } from "../types/access";
+import type { ItemSections, ReachSubject } from "../types/access";
 import type {
   EmbeddableNote,
   EmbeddedNote,
@@ -36,7 +36,7 @@ export const noteKeys = {
   fileChanges: (displayPath: string) => ["artifacts", "changes", displayPath] as const,
   liveMemory: (agentId: string) => ["artifacts", "live-memory", agentId] as const,
   noteLists: ["artifacts", "notes"] as const,
-  noteList: (page: AccessSubject) => ["artifacts", "notes", page.type, page.id] as const,
+  noteList: (page: ReachSubject) => ["artifacts", "notes", page.type, page.id] as const,
   note: (key: string) => ["artifacts", "note", key] as const,
 };
 
@@ -177,13 +177,8 @@ export function useFileChanges(displayPath: string | undefined) {
   });
 }
 
-/**
- * The route that lists a page's notes: the organisation's lists every note, a guild's the notes
- * whose access list names the guild, one of its agents or the organisation, an agent's the notes
- * it reads.
- */
-function noteListPath(page: AccessSubject): string {
-  if (page.type === "org") return "/api/org/notes";
+/** The route that lists a guild's or an agent's notes, by home. */
+function noteListPath(page: ReachSubject): string {
   return `/api/${page.type === "guild" ? "guilds" : "agents"}/${encodeURIComponent(page.id)}/notes`;
 }
 
@@ -192,12 +187,11 @@ function notePath(key: string): string {
   return `/api/org/notes/${encodeURIComponent(key)}`;
 }
 
-/** The notes a page lists, or nothing when there is no page. */
-export function useNoteList(page: AccessSubject | null) {
+/** A guild's or an agent's notes: those homed in its guild, and those shared with it. */
+export function useNoteSections(page: ReachSubject) {
   return useQuery({
-    queryKey: page ? noteKeys.noteList(page) : noteKeys.noteLists,
-    queryFn: () => api<NoteItem[]>(page ? noteListPath(page) : ""),
-    enabled: Boolean(page),
+    queryKey: noteKeys.noteList(page),
+    queryFn: () => api<ItemSections<NoteItem>>(noteListPath(page)),
   });
 }
 
@@ -212,7 +206,8 @@ export function useNote(key: string | null) {
 
 /**
  * Writes the organisation's note at the input's key, creating it with the input's first access row
- * when no note has that key, and refused (409) when the note is not at the version the input expects.
+ * and home when no note has that key, and refused (409) when the note is not at the version the
+ * input expects.
  */
 export function writeOrgNote(input: NoteInput): Promise<FileContent> {
   const { path, ...body } = input;

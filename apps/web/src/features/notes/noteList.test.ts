@@ -1,38 +1,40 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { ItemSections } from "../../api/types/access";
 import type { NoteItem } from "../../api/types/notes";
-import { buildTree, newNotePath } from "./noteList";
+import { newNotePath, searchNotes } from "./noteList";
 
-function file(path: string): NoteItem {
+function file(path: string, title: string | null = null): NoteItem {
   return {
     id: `n_${path}`,
     path,
     display_path: `org/o/${path}`,
     kind: "note",
-    title: null,
+    title,
     version: 1,
+    home: null,
+    viewer_mode: "read",
   };
 }
 
-const notes = [file("process.md"), file("scoring.md"), file("sources.md")];
+const notes: ItemSections<NoteItem> = {
+  own: [file("process.md"), file("scoring.md", "How we score leads")],
+  shared: [file("sources.md"), file("leads.md")],
+};
 
-test("a list's tree is its notes side by side, without a folder", () => {
-  assert.deepEqual(
-    buildTree(notes).map((node) => [node.id, node.name, node.kind]),
-    [
-      ["org/o/process.md", "process.md", "file"],
-      ["org/o/scoring.md", "scoring.md", "file"],
-      ["org/o/sources.md", "sources.md", "file"],
-    ],
-  );
+const keys = (sections: ItemSections<NoteItem>) => ({
+  own: sections.own.map((note) => note.path),
+  shared: sections.shared.map((note) => note.path),
 });
 
-test("search keeps the matching notes", () => {
-  assert.deepEqual(
-    buildTree(notes, "scoring").map((node) => node.name),
-    ["scoring.md"],
-  );
-  assert.deepEqual(buildTree(notes, "nothing"), []);
+test("without a search, both sections keep every note", () => {
+  assert.deepEqual(searchNotes(notes, "  "), notes);
+});
+
+test("search keeps the notes whose key or title matches, in each section", () => {
+  assert.deepEqual(keys(searchNotes(notes, "Leads")), { own: ["scoring.md"], shared: ["leads.md"] });
+  assert.deepEqual(keys(searchNotes(notes, "sources")), { own: [], shared: ["sources.md"] });
+  assert.deepEqual(keys(searchNotes(notes, "nothing")), { own: [], shared: [] });
 });
 
 test("a new note's name gets .md and refuses folders and reserved names", () => {

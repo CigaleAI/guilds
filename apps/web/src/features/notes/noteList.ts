@@ -1,18 +1,17 @@
+import type { ItemSections } from "../../api/types/access";
 import type { NoteItem } from "../../api/types/notes";
-import type { FileTreeNode } from "@guildsrun/ui";
+import { filterSections } from "../access/listedItems";
+
 /** Names a note cannot take: the agent's Task and memory live under them. */
 const reservedFiles = ["task.md", "memory.md"];
 
-function matches(item: NoteItem, query: string): boolean {
+/** A page's notes whose key or title holds the search, in each section; all of them without one. */
+export function searchNotes(sections: ItemSections<NoteItem>, query: string): ItemSections<NoteItem> {
   const needle = query.trim().toLowerCase();
-  return !needle || `${item.path} ${item.title ?? ""}`.toLowerCase().includes(needle);
-}
-
-/** A list's notes that match the search, side by side in the server's order. */
-export function buildTree(items: readonly NoteItem[], query = ""): FileTreeNode[] {
-  return items
-    .filter((item) => matches(item, query))
-    .map((item) => ({ id: item.display_path, name: item.path, kind: "file" }));
+  if (!needle) return sections;
+  return filterSections(sections, (item) =>
+    `${item.path} ${item.title ?? ""}`.toLowerCase().includes(needle),
+  );
 }
 
 /**

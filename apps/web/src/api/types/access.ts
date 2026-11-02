@@ -3,6 +3,7 @@
  * Timestamps are ISO-8601 in UTC.
  */
 
+import type { ViewerMode } from "@guildsrun/ui";
 import type { JsonObject, JsonSchema, JsonValue } from "../wire";
 
 /** A repository a GitHub connection's installation reaches. */
@@ -76,6 +77,26 @@ export type Reach = { notes: ReachedNote[]; tables: ReachedTable[] };
 
 /** A guild, whose rows its agents share, or one agent. */
 export type ReachSubject = { type: "guild" | "agent"; id: string };
+
+/**
+ * The guild a note or a file belongs to: the guild it was made in. It groups the item on that
+ * guild's pages and never decides who reaches it.
+ */
+export type HomeGuild = { id: string; name: string };
+
+/**
+ * A note or a file as a guild's or an agent's page lists it: where it sits, its home guild (null
+ * for the organisation), and how the page's guild or agent reaches it.
+ */
+export type ListedItem = { display_path: string; home: HomeGuild | null; viewer_mode: ViewerMode };
+
+/**
+ * A guild's or an agent's list of notes or files, by home: `own` holds the items homed in the
+ * page's guild, whether or not a row reaches them; `shared` the items homed elsewhere or in the
+ * organisation that a row for the guild, one of its agents or the organisation reaches. Each
+ * section is ordered by name.
+ */
+export type ItemSections<Item extends ListedItem> = { own: Item[]; shared: Item[] };
 
 /** Where a binding is set, from the widest to the narrowest; the narrowest set one wins. */
 export type BindingScope = "platform" | "org" | "guild" | "agent";

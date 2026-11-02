@@ -1,4 +1,4 @@
-import type { AccessRow } from "./access";
+import type { AccessRow, ListedItem } from "./access";
 import type { RunKind } from "./runs";
 
 /**
@@ -63,12 +63,14 @@ export type FileChange = {
   recorded?: boolean;
 };
 
-/** One of the organisation's notes as a notes list holds it; `path` is its key, such as `process.md`. */
-export type NoteItem = {
+/**
+ * One of the organisation's notes as a guild's or an agent's notes list holds it; `path` is its
+ * key, such as `process.md`.
+ */
+export type NoteItem = ListedItem & {
   /** The note's id, which names it to the access API. */
   id: string;
   path: string;
-  display_path: string;
   kind: "note";
   title: string | null;
   version: number;
@@ -84,15 +86,17 @@ export type FileContent = {
 };
 
 /**
- * A note's text by its key, the row its access list starts with when the write creates it (without
- * one, the organisation writes it), and the version the writer expects: 0 when the note must not
- * exist yet, the version it read otherwise. The server refuses (409) a write whose version does not
- * match; without one, the write is not checked.
+ * A note's text by its key; when the write creates the note, the row its access list starts with
+ * (without one, the organisation writes it) and the guild it is homed in (without one, the
+ * organisation); and the version the writer expects: 0 when the note must not exist yet, the
+ * version it read otherwise. The server refuses (409) a write whose version does not match; without
+ * one, the write is not checked. A note keeps the home it was created with.
  */
 export type NoteInput = {
   path: string;
   content: string;
   access?: AccessRow;
+  home_guild_id?: string;
   expected_version?: number;
 };
 

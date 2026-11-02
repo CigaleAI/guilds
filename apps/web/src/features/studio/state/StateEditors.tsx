@@ -1,6 +1,5 @@
 import { useDatabase } from "../../../api/queries/tables";
 import { Banner, SkeletonRows } from "@guildsrun/ui";
-import { useIdentity } from "../../../app/identity";
 import { RecordsPanel } from "../../tables/RecordsPanel";
 import { NotesBrowser } from "../../notes/NotesBrowser";
 import { useStudio } from "../StudioContext";
@@ -8,11 +7,10 @@ import { useStudio } from "../StudioContext";
 type NoteEditorProps = { path: string };
 
 /**
- * The notes browser opened at one note: the notes open to the session's guild, its agents or the organisation, and
- * every note, with changes opened in Studio.
+ * The notes browser of the session's guild opened at one note: the guild's own notes and those
+ * shared with it, with changes opened in Studio.
  */
 export function NoteEditor({ path }: NoteEditorProps) {
-  const { org } = useIdentity();
   const { session, openStep, ask } = useStudio();
   const guildId = session.source_guild_id;
   return (
@@ -20,10 +18,7 @@ export function NoteEditor({ path }: NoteEditorProps) {
       <NotesBrowser
         key={path}
         guildId={guildId}
-        scopes={[
-          { title: "Guild", page: { type: "guild", id: guildId } },
-          { title: "Org", page: { type: "org", id: org.id } },
-        ]}
+        page={{ type: "guild", id: guildId }}
         initialPath={path}
         onAsk={(item) =>
           ask({

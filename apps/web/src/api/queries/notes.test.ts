@@ -20,19 +20,25 @@ function recordRequests(): SentRequest[] {
   return sent;
 }
 
-test("a new note is written at its key in the organisation with its first row and expected version 0", async () => {
+test("a new note is written at its key in the organisation with its first row, its home and expected version 0", async () => {
   const sent = recordRequests();
   await writeOrgNote({
     path: "plan.md",
     content: "",
     access: { type: "guild", id: "g1", mode: "write" },
+    home_guild_id: "g1",
     expected_version: 0,
   });
   assert.deepEqual(sent, [
     {
       url: "/api/org/notes/plan.md",
       method: "PUT",
-      body: { content: "", access: { type: "guild", id: "g1", mode: "write" }, expected_version: 0 },
+      body: {
+        content: "",
+        access: { type: "guild", id: "g1", mode: "write" },
+        home_guild_id: "g1",
+        expected_version: 0,
+      },
     },
   ]);
 });
