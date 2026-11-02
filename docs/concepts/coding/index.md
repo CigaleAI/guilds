@@ -24,7 +24,8 @@ guild and pass work along as branches
 
 Coding CLIs are tuned for code work, and many operators already pay
 for one. A coding agent puts that CLI under an agent that knows the
-guild: its notes, its collections, its Memory, and its chat. The agent
+guild: the notes and collections shared with it, its Memory, and its
+chat. The agent
 passes the harness what it needs, answers the harness's questions, or
 takes them to the operator. The harness sees only the brief.
 

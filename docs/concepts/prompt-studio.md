@@ -203,7 +203,7 @@ selected item on the right.
 | **Versions** | The live Task and archived versions, with who replaced each and when | Diff against the previous version. **Restore from Prompt** opens the agent's Prompt tab |
 
 **Notes** and **Tables** after the tabs are links: they open
-**State** filtered to the agent, on its notes or its tables.
+**State** filtered to the agent, on the notes or the tables.
 
 Studio does not stream a run. A generating run shows its committed
 steps under a banner with **Refresh**, and **Open in agent** opens it
