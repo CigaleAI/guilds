@@ -25,10 +25,12 @@ import { currentOrg, currentUser } from "./identity.js";
 import { AgentParams, GuildParams } from "./params.js";
 
 /**
- * An upload's headers: the file's name and description, URL-encoded, its media type, and the
- * subject and mode of the row its access list starts with when the upload creates it.
+ * An upload's headers: the file's name and description, URL-encoded, its media type, and, when the
+ * upload creates it, the subject and mode of the row its access list starts with and the guild it
+ * is homed in.
  */
 const UploadHeadersSchema = Type.Object({
+  "x-home-guild": Type.Optional(Type.String()),
   "x-filename": Type.Optional(Type.String()),
   "x-description": Type.Optional(Type.String()),
   "x-mime": Type.Optional(Type.String()),
@@ -83,7 +85,13 @@ function uploadExpectedVersion(headers: UploadHeaders): number | undefined {
   return Number(raw);
 }
 
-/** The uploaded file: its name, description, media type, expected version, and starting row from the headers, its bytes the body. */
+/** The guild an upload is homed in, from its header; none when it names none. */
+function uploadHome(headers: UploadHeaders): string | undefined {
+  const guildId = (headers["x-home-guild"] ?? "").trim();
+  return guildId || undefined;
+}
+
+/** The uploaded file: its name, description, media type, expected version, starting row, and home from the headers, its bytes the body. */
 function fileUpload(request: UploadRequest): SharedFileUpload {
   const { headers, body } = request;
   if (!Buffer.isBuffer(body)) {
@@ -101,6 +109,7 @@ function fileUpload(request: UploadRequest): SharedFileUpload {
     bytes: body,
     expectedVersion: uploadExpectedVersion(headers),
     access: uploadAccess(headers),
+    homeGuildId: uploadHome(headers),
   };
 }
 

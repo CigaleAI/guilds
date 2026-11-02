@@ -29,13 +29,15 @@ import { AgentParams, filePathParam, GuildParams } from "./params.js";
 import type { UserRow } from "../db/users.js";
 
 /**
- * A note's content, the version the writer edited (0 for a note that must not exist yet), and the
- * subject and mode of the row its access list starts with when the write creates it.
+ * A note's content, the version the writer edited (0 for a note that must not exist yet), and, when
+ * the write creates it, the subject and mode of the row its access list starts with and the guild
+ * it is homed in.
  */
 const NoteWriteSchema = Type.Object({
   content: Type.Optional(Type.String()),
   expected_version: Type.Optional(Type.Integer()),
   access: Type.Optional(SubjectEntrySchema),
+  home_guild_id: Type.Optional(Type.String()),
 });
 
 /** An agent's `task.md` or `memory.md` content, and the version the writer edited when they name one. */
@@ -130,6 +132,7 @@ export async function registerNoteRoutes(app: RouteApp, deps: RouteDeps): Promis
       content: request.body.content ?? "",
       expectedVersion: request.body.expected_version,
       access: request.body.access,
+      homeGuildId: request.body.home_guild_id,
     };
     return writeOrgNote(services, orgId, user, write);
   });

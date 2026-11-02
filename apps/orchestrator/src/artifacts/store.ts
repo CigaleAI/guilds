@@ -173,6 +173,20 @@ export async function requireGuild(store: ArtifactStore, actor: ArtifactActor, g
 }
 
 /**
+ * The operator actor whose new notes and files are homed in the guild `homeGuildId` names, or in
+ * the organisation when it names none. ArtifactError 404 when the guild is unknown or hidden from
+ * the actor.
+ */
+export async function homedActor(
+  store: ArtifactStore,
+  actor: ArtifactActor,
+  homeGuildId: string | undefined,
+): Promise<ArtifactActor> {
+  const guildId = homeGuildId === undefined ? null : await requireGuild(store, actor, homeGuildId);
+  return { ...actor, guildId };
+}
+
+/**
  * Whether a note or a file is hidden from an operator actor: it is homed in a guild hidden from them,
  * or its list names only guilds and agents it does not reach.
  */

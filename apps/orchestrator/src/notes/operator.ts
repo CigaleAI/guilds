@@ -2,7 +2,7 @@ import { loadOperatorActor } from "../artifacts/actors.js";
 import { creatorGrant, parseGrant, type SubjectEntry } from "../artifacts/access.js";
 import { guildsOnList } from "../artifacts/access-lists.js";
 import type { ArtifactActor } from "../artifacts/types.js";
-import type { ArtifactStore, HostNoteView, PageSections } from "../artifacts/store.js";
+import { homedActor, type ArtifactStore, type HostNoteView, type PageSections } from "../artifacts/store.js";
 import {
   deleteHostNote,
   ensureAgentArtifacts,
@@ -35,14 +35,16 @@ export type OperatorNotesServices = {
 
 /**
  * A note as an operator writes it by key: its key, its content, the version they edited when they
- * say (0 for a note that must not exist yet), and the subject and mode of the row its access list
- * starts with when the write creates it; without one, the organisation writes it.
+ * say (0 for a note that must not exist yet), and, when the write creates it, the subject and mode
+ * of the row its access list starts with (without one, the organisation writes it) and the guild it
+ * is homed in (without one, the organisation).
  */
 export type NoteWrite = {
   path: string;
   content: string;
   expectedVersion: number | undefined;
   access: SubjectEntry | undefined;
+  homeGuildId: string | undefined;
 };
 
 /** An agent's `task.md` or `memory.md` as an operator writes it: its name, its content, and the version they edited, when they say. */
@@ -131,8 +133,9 @@ export async function readOrgNote(
 }
 
 /**
- * Writes the organisation's note at the write's key, creating it with the write's starting row when
- * it is missing, and announces it on the stream of each guild its access list names.
+ * Writes the organisation's note at the write's key, creating it with the write's starting row and
+ * home when it is missing, and announces it on the stream of each guild its access list names.
+ * ArtifactError 404 when the home names a guild that is unknown or hidden from the user.
  */
 export async function writeOrgNote(
   services: OperatorNotesServices,
@@ -140,7 +143,8 @@ export async function writeOrgNote(
   user: UserRow,
   write: NoteWrite,
 ): Promise<HostFilePayload> {
-  const actor = await loadOperatorActor(services.db, user, { orgId });
+  const operator = await loadOperatorActor(services.db, user, { orgId });
+  const actor = await homedActor(services.artifacts, operator, write.homeGuildId);
   const startingAccess = [write.access ? parseGrant(write.access, "access: ") : creatorGrant(actor)];
   const hostServices = { store: services.artifacts, db: services.db };
   const hostWrite = { path: write.path, content: write.content, expectedVersion: write.expectedVersion, startingAccess };

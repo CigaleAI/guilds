@@ -289,7 +289,7 @@ GET    /api/org/notes                     every note of the organisation, by key
 GET    /api/guilds/:guild_id/notes        { own, shared }: the guild's page, by key
 GET    /api/agents/:agent_id/notes        { own, shared }: the agent's page, by key
 GET    /api/org/notes/*                   one note, by key
-PUT    /api/org/notes/*                   { content, expected_version?, access? }
+PUT    /api/org/notes/*                   { content, expected_version?, access?, home_guild_id? }
 DELETE /api/org/notes/*                   204
 GET    /api/agents/:agent_id/notes/task.md, …/memory.md
 PUT    /api/agents/:agent_id/notes/task.md, …/memory.md    { content, expected_version? }
@@ -333,8 +333,12 @@ with; without it the organisation writes the note. An update ignores
 it. An `access` with a bad type, id, or mode is 422 with the message
 the access routes give, prefixed `access: `; a subject that does not
 exist or is hidden from the caller is 422 `unknown org`,
-`unknown guild`, or `unknown agent`. A note that exists and is hidden
-from the caller is 422 `write not allowed`.
+`unknown guild`, or `unknown agent`. `home_guild_id` is the guild a
+created note is homed in; without it the note is the organisation's.
+An update keeps the note's home. A `home_guild_id` naming a guild that
+does not exist, is outside the organisation, or is a private guild the
+caller does not operate is 404 `unknown guild`. A note that exists and
+is hidden from the caller is 422 `write not allowed`.
 
 A note write or delete publishes `guild.artifacts.changed` on the
 stream of each guild in the note's scope: every guild of the

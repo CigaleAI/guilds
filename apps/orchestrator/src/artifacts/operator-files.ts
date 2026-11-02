@@ -2,7 +2,7 @@ import { creatorGrant, parseGrant, type SubjectEntry } from "./access.js";
 import { guildsOnList } from "./access-lists.js";
 import { loadOperatorActor } from "./actors.js";
 import type { ArtifactFiles, FileView, PageFileView } from "./files.js";
-import type { ArtifactStore, PageSections } from "./store.js";
+import { homedActor, type ArtifactStore, type PageSections } from "./store.js";
 import type { ArtifactActor } from "./types.js";
 import type { AgentViewerMode, GuildViewerMode } from "../db/artifact-lists.js";
 import type { AgentRow } from "../db/agents.js";
@@ -26,8 +26,9 @@ export type SharedFileWriteDeps = {
 
 /**
  * A file as an operator uploads it: its name, description, media type, and bytes, the version they
- * replace when they say (0 for a file that must not exist yet), and the subject and mode of the row
- * its access list starts with when the upload creates it; without one, the organisation writes it.
+ * replace when they say (0 for a file that must not exist yet), and, when the upload creates it,
+ * the subject and mode of the row its access list starts with (without one, the organisation writes
+ * it) and the guild it is homed in (without one, the organisation).
  */
 export type SharedFileUpload = {
   name: string;
@@ -36,6 +37,7 @@ export type SharedFileUpload = {
   bytes: Buffer;
   expectedVersion: number | undefined;
   access: SubjectEntry | undefined;
+  homeGuildId: string | undefined;
 };
 
 /** A file as an operator downloads it: its view, which names it and gives its media type, and its bytes. */
@@ -89,14 +91,16 @@ async function announceFile(deps: SharedFileWriteDeps, guildIds: string[], displ
 
 /**
  * Stores the upload as the organisation's file of its name, or a new version of the file of that
- * name, and announces it to each guild its access list names.
+ * name, and announces it to each guild its access list names. ArtifactError 404 when the home names
+ * a guild that is unknown or hidden from the actor.
  */
 export async function uploadSharedFile(
   deps: SharedFileWriteDeps,
-  actor: ArtifactActor,
+  operator: ArtifactActor,
   upload: SharedFileUpload,
 ): Promise<FileView> {
-  const { access, expectedVersion, ...file } = upload;
+  const { access, expectedVersion, homeGuildId, ...file } = upload;
+  const actor = await homedActor(deps.artifacts, operator, homeGuildId);
   const startingAccess = [access ? parseGrant(access, "access: ") : creatorGrant(actor)];
   const row = await deps.files.putFile(actor, {
     ...file,

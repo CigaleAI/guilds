@@ -267,7 +267,7 @@ describe("shared files", { concurrency: 1 }, () => {
         published.push([guildId, change]);
       },
     };
-    const upload = { description: "The brief", mime: "", bytes: Buffer.from("brief"), expectedVersion: undefined };
+    const upload = { description: "The brief", mime: "", bytes: Buffer.from("brief"), expectedVersion: undefined, homeGuildId: undefined };
     const guildFile = await uploadSharedFile(deps, operator, {
       name: "brief.txt",
       ...upload,

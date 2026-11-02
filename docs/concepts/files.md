@@ -194,7 +194,7 @@ which holds every file.
 
 ```text
 GET    /api/org/files                every file of the organisation the caller may read, by name
-POST   /api/org/files                the bytes as an application/octet-stream body; X-Filename and X-Description headers, URI-encoded, an optional X-Mime, an optional X-Expected-Version, and optional X-Access-Type, X-Access-Id, and X-Access-Mode
+POST   /api/org/files                the bytes as an application/octet-stream body; X-Filename and X-Description headers, URI-encoded, an optional X-Mime, an optional X-Expected-Version, optional X-Access-Type, X-Access-Id, and X-Access-Mode, and an optional X-Home-Guild
 GET    /api/guilds/:guild_id/files   { own, shared }: the guild's page, by name
 GET    /api/agents/:agent_id/files   { own, shared }: the agent's page, by name
 GET    /api/files/:file_id           the bytes, as a download
@@ -221,7 +221,11 @@ with the row the three `X-Access-*` headers name, a subject type
 organisation writes it. Some of the three without the others is 422
 `X-Access-Type, X-Access-Id, and X-Access-Mode go together`, and a bad
 row is 422 with the message the access routes give, prefixed
-`access: `. An upload without `X-Filename` or `X-Description` is 422
+`access: `. A new file is homed in the guild `X-Home-Guild` names;
+without it the file is the organisation's. A replaced file keeps its
+home. An `X-Home-Guild` naming a guild that does not exist, is outside
+the organisation, or is a private guild the caller does not operate is
+404 `unknown guild`. An upload without `X-Filename` or `X-Description` is 422
 `X-Filename and X-Description are required`. An upload over 10 MiB is
 422 `file exceeds 10 MiB`, and an empty one 422 `file is empty`. The
 guild and agent routes need a guild the caller can see; the
