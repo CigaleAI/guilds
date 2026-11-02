@@ -120,38 +120,127 @@ SELECT m.org_id, m.id, m.old_display_path, m.new_display_path, now()
   FROM artifact_moves m
  WHERE m.new_key <> m.old_key;
 --> statement-breakpoint
--- Every embed and every mention of a moved item's display path now names where it is, longest
--- path first so that no path is rewritten inside a longer one.
-DO $$
+-- Paths that moved, by the organisation or recipe they are rewritten in. A text is rewritten in two
+-- passes, every old path to its token then every token to its new path, so a new path that is
+-- another item's old one is not rewritten again.
+CREATE TEMPORARY TABLE path_moves (scope text NOT NULL, token text NOT NULL, old_path text NOT NULL, new_path text NOT NULL);
+--> statement-breakpoint
+-- `body` with each whole occurrence of `old_path` replaced by `new_path`: the character before it
+-- is not part of a path, and the character after it neither continues the path nor is a dot that
+-- starts a longer name (`a.csv` inside `a.csv.gz`).
+CREATE FUNCTION pg_temp.replace_path(body text, old_path text, new_path text) RETURNS text
+LANGUAGE plpgsql IMMUTABLE AS $$
+DECLARE
+  done text := '';
+  rest text := body;
+  at integer;
+  before text;
+  after text;
+  beyond text;
+BEGIN
+  IF body IS NULL THEN
+    RETURN NULL;
+  END IF;
+  LOOP
+    at := strpos(rest, old_path);
+    EXIT WHEN at = 0;
+    before := CASE WHEN at > 1 THEN substr(rest, at - 1, 1) ELSE right(done, 1) END;
+    after := substr(rest, at + length(old_path), 1);
+    beyond := substr(rest, at + length(old_path) + 1, 1);
+    IF before !~ '[A-Za-z0-9_./-]' AND after !~ '[A-Za-z0-9_/-]' AND NOT (after = '.' AND beyond ~ '[A-Za-z0-9_-]') THEN
+      done := done || substr(rest, 1, at - 1) || new_path;
+      rest := substr(rest, at + length(old_path));
+    ELSE
+      done := done || substr(rest, 1, at);
+      rest := substr(rest, at + 1);
+    END IF;
+  END LOOP;
+  RETURN done || rest;
+END $$;
+--> statement-breakpoint
+-- `body` with every path that moved in `at_scope` rewritten, longest first, through its token.
+CREATE FUNCTION pg_temp.rewrite_paths(body text, at_scope text) RETURNS text
+LANGUAGE plpgsql STABLE AS $$
 DECLARE
   moved record;
+  result text := body;
 BEGIN
-  FOR moved IN
-    SELECT org_id, old_display_path AS old_path, new_display_path AS new_path
-      FROM artifact_moves
-     WHERE old_display_path <> new_display_path
-     ORDER BY length(old_display_path) DESC, old_display_path
-  LOOP
-    UPDATE public.agents
-       SET task = replace(task, moved.old_path, moved.new_path),
-           task_hash = encode(sha256(convert_to(replace(task, moved.old_path, moved.new_path), 'UTF8')), 'hex')
-     WHERE org_id = moved.org_id AND strpos(task, moved.old_path) > 0;
-    UPDATE public.task_revisions
-       SET content_text = replace(content_text, moved.old_path, moved.new_path)
-     WHERE org_id = moved.org_id AND strpos(content_text, moved.old_path) > 0;
-    UPDATE public.artifacts
-       SET content_text = replace(content_text, moved.old_path, moved.new_path),
-           content_hash = encode(sha256(convert_to(replace(content_text, moved.old_path, moved.new_path), 'UTF8')), 'hex')
-     WHERE org_id = moved.org_id AND kind IN ('note', 'memory') AND content_text IS NOT NULL
-       AND strpos(content_text, moved.old_path) > 0;
-    UPDATE public.recipes
-       SET body = replace(body::text, moved.old_path, moved.new_path)::jsonb
-     WHERE org_id = moved.org_id AND strpos(body::text, moved.old_path) > 0;
-    UPDATE public.studio_drafts
-       SET source_display_path = moved.new_path
-     WHERE org_id = moved.org_id AND source_display_path = moved.old_path;
+  IF body IS NULL THEN
+    RETURN NULL;
+  END IF;
+  FOR moved IN SELECT * FROM path_moves WHERE scope = at_scope ORDER BY length(old_path) DESC, old_path LOOP
+    IF strpos(result, moved.old_path) > 0 THEN
+      result := pg_temp.replace_path(result, moved.old_path, moved.token);
+    END IF;
   END LOOP;
+  FOR moved IN SELECT * FROM path_moves WHERE scope = at_scope LOOP
+    result := replace(result, moved.token, moved.new_path);
+  END LOOP;
+  RETURN result;
 END $$;
+--> statement-breakpoint
+-- A recipe's `agent/<role>/<key>` and `guild/<key>` note paths, written as `org/<key>`.
+CREATE FUNCTION pg_temp.collapse_recipe_paths(body text) RETURNS text
+LANGUAGE sql IMMUTABLE AS $$
+  SELECT regexp_replace(body, '(?<![A-Za-z0-9_./-])(?:agent/[a-z][a-z0-9-]{0,62}|guild)/([^[:space:]/\\`''"()<>\[\]|]+?\.md)(?![A-Za-z0-9_-])', 'org/\1', 'g')
+$$;
+--> statement-breakpoint
+-- A JSON value with every string in it rewritten as `rewrite_paths` does, and as
+-- `collapse_recipe_paths` does too when `collapse`; strings are rewritten decoded, not as JSON text.
+CREATE FUNCTION pg_temp.rewrite_json(j jsonb, at_scope text, collapse boolean) RETURNS jsonb
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+  text_value text;
+BEGIN
+  CASE jsonb_typeof(j)
+    WHEN 'string' THEN
+      text_value := pg_temp.rewrite_paths(j #>> '{}', at_scope);
+      RETURN to_jsonb(CASE WHEN collapse THEN pg_temp.collapse_recipe_paths(text_value) ELSE text_value END);
+    WHEN 'array' THEN
+      RETURN COALESCE(
+        (SELECT jsonb_agg(pg_temp.rewrite_json(e, at_scope, collapse) ORDER BY i)
+           FROM jsonb_array_elements(j) WITH ORDINALITY AS t(e, i)),
+        '[]'::jsonb);
+    WHEN 'object' THEN
+      RETURN COALESCE(
+        (SELECT jsonb_object_agg(k, pg_temp.rewrite_json(v, at_scope, collapse)) FROM jsonb_each(j) AS t(k, v)),
+        '{}'::jsonb);
+    ELSE
+      RETURN j;
+  END CASE;
+END $$;
+--> statement-breakpoint
+INSERT INTO path_moves (scope, token, old_path, new_path)
+SELECT org_id, chr(1) || id || chr(2), old_display_path, new_display_path
+  FROM artifact_moves
+ WHERE old_display_path <> new_display_path;
+--> statement-breakpoint
+-- Every embed and every mention of a moved item's display path now names where it is.
+UPDATE public.agents a
+   SET task = r.task, task_hash = encode(sha256(convert_to(r.task, 'UTF8')), 'hex')
+  FROM (SELECT id, pg_temp.rewrite_paths(task, org_id) AS task FROM public.agents) r
+ WHERE r.id = a.id AND r.task <> a.task;
+--> statement-breakpoint
+UPDATE public.task_revisions t
+   SET content_text = r.content_text
+  FROM (SELECT id, pg_temp.rewrite_paths(content_text, org_id) AS content_text FROM public.task_revisions) r
+ WHERE r.id = t.id AND r.content_text <> t.content_text;
+--> statement-breakpoint
+UPDATE public.artifacts a
+   SET content_text = r.content_text, content_hash = encode(sha256(convert_to(r.content_text, 'UTF8')), 'hex')
+  FROM (SELECT id, pg_temp.rewrite_paths(content_text, org_id) AS content_text
+          FROM public.artifacts WHERE kind IN ('note', 'memory') AND content_text IS NOT NULL) r
+ WHERE r.id = a.id AND r.content_text <> a.content_text;
+--> statement-breakpoint
+UPDATE public.recipes r
+   SET body = pg_temp.rewrite_json(r.body, r.org_id, false)
+ WHERE strpos(r.body::text, 'org/' || r.org_id || '/') > 0;
+--> statement-breakpoint
+-- A Studio draft of a moved item names it where it is now.
+UPDATE public.studio_drafts d
+   SET source_display_path = m.new_display_path
+  FROM artifact_moves m
+ WHERE d.source_artifact_id = m.id AND d.source_display_path IS DISTINCT FROM m.new_display_path;
 --> statement-breakpoint
 -- A moved item's change history follows it to its new display path.
 UPDATE public.file_changes f
@@ -206,10 +295,11 @@ UPDATE public.recipes r
        FROM jsonb_array_elements(r.body->'notes') WITH ORDINALITY AS e(n, ord)))
  WHERE jsonb_typeof(r.body->'notes') = 'array';
 --> statement-breakpoint
--- A recipe names a note as `org/<key>`: the `agent/<role>/` and `guild/` paths go.
+-- A recipe names a note as `org/<key>`: the `agent/<role>/` and `guild/` paths go, in every
+-- string of the recipe as it reads decoded.
 UPDATE public.recipes
-   SET body = regexp_replace(body::text, '(?<![A-Za-z0-9_./-])(?:agent/[a-z][a-z0-9-]{0,62}|guild)/([^[:space:]/\\`''"()<>\[\]|]+?\.md)(?![A-Za-z0-9_-])', 'org/\1', 'g')::jsonb
- WHERE body::text ~ '(agent/[a-z][a-z0-9-]{0,62}|guild)/[^[:space:]/\\`''"()<>\[\]|]+?\.md';
+   SET body = pg_temp.rewrite_json(body, 'recipe:' || id, true)
+ WHERE body::text ~ '(agent/[a-z][a-z0-9-]{0,62}|guild)/';
 --> statement-breakpoint
 -- A pending apply's preview lists its notes without a level or a role.
 UPDATE public.recipe_applies a
@@ -217,3 +307,13 @@ UPDATE public.recipe_applies a
      SELECT COALESCE(jsonb_agg((e.n - 'level' - 'role') ORDER BY e.ord), '[]'::jsonb)
        FROM jsonb_array_elements(a.preview->'creates'->'notes') WITH ORDINALITY AS e(n, ord)))
  WHERE jsonb_typeof(a.preview->'creates'->'notes') = 'array';
+--> statement-breakpoint
+DROP FUNCTION pg_temp.rewrite_json(jsonb, text, boolean);
+--> statement-breakpoint
+DROP FUNCTION pg_temp.collapse_recipe_paths(text);
+--> statement-breakpoint
+DROP FUNCTION pg_temp.rewrite_paths(text, text);
+--> statement-breakpoint
+DROP FUNCTION pg_temp.replace_path(text, text, text);
+--> statement-breakpoint
+DROP TABLE path_moves;

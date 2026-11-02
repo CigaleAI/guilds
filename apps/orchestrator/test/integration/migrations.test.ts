@@ -25,6 +25,7 @@ const configDb = uniqueDbName("agent_platform_migrate_config");
 const systemOneDb = uniqueDbName("agent_platform_migrate_system_one");
 const browserConfigDb = uniqueDbName("agent_platform_migrate_browser_config");
 const listOnlyDb = uniqueDbName("agent_platform_migrate_list_only");
+const listOnlyPathsDb = uniqueDbName("agent_platform_migrate_list_only_paths");
 
 after(async () => {
   await dropIsolatedDatabase(freshDb);
@@ -35,6 +36,7 @@ after(async () => {
   await dropIsolatedDatabase(systemOneDb);
   await dropIsolatedDatabase(browserConfigDb);
   await dropIsolatedDatabase(listOnlyDb);
+  await dropIsolatedDatabase(listOnlyPathsDb);
 });
 
 test("each migration is recorded once however often the chain is applied", async () => {
@@ -484,6 +486,79 @@ test("the list-only migration gives agent items their row, renames names several
       /artifacts_natural_key/,
       "a note name is unique in its organisation",
     );
+  } finally {
+    await pool.end();
+  }
+});
+
+test("the list-only migration rewrites each moved path once and only where it is a whole path", async () => {
+  const pool = await createPool(await createIsolatedDatabase(listOnlyPathsDb), reportPoolError);
+  try {
+    const folder = chainBefore("0020_access_list_only");
+    await migrate(drizzle(pool), { migrationsFolder: folder, migrationsSchema: "public", migrationsTable: "__drizzle_migrations" });
+    const at = (minutes: number) => new Date(Date.parse("2026-10-01T00:00:00.000Z") + minutes * 60_000).toISOString();
+    const by = "'user', 'user_1', 'operator'";
+    await pool.query("INSERT INTO public.orgs (id, name, slug, created_at, updated_at) VALUES ('org_1', 'Org', 'org', $1, $1)", [at(0)]);
+    await pool.query("INSERT INTO public.guilds (id, name, org_id, created_at, updated_at) VALUES ('guild_a', 'desk', 'org_1', $1, $1)", [at(0)]);
+    await pool.query(
+      "INSERT INTO public.machines (id, org_id, name, box, created_at, updated_at) VALUES ('mach_1', 'org_1', 'default', 'standard', $1, $1)",
+      [at(0)],
+    );
+    await pool.query(
+      `INSERT INTO public.agents (id, guild_id, name, config, created_at, updated_at, org_id, task, task_hash, task_updated_at, machine_id, machine_slot)
+       VALUES ('a_1', 'guild_a', 'scout', $1, $2, $2, 'org_1', '', '', $2, 'mach_1', 0)`,
+      [JSON.stringify(agentConfig({ model: "openrouter/openai/gpt-5.6-luna" })), at(0)],
+    );
+    const item = (id: string, level: "agent" | "org", kind: "note" | "file", key: string, minute: number, text: string | null) =>
+      pool.query(
+        `INSERT INTO public.artifacts (id, org_id, level, owner_id, guild_id, agent_id, kind, path, key, title, content_text, search_text,
+                                       mime, bytes, content_hash, created_by_type, created_by_id, created_by_name,
+                                       updated_by_type, updated_by_id, updated_by_name, created_at, updated_at)
+         VALUES ($1, 'org_1', $2, $3, $4, $5, $6, $7, $8, $9, $10, $8, $11, $12, 'h', ${by}, ${by}, $13, $13)`,
+        [
+          id, level, level === "agent" ? "a_1" : "org_1", level === "agent" ? "guild_a" : null, level === "agent" ? "a_1" : null,
+          kind, kind === "file" ? "files" : "", key, kind === "file" ? "A file" : null, text,
+          kind === "file" ? "text/csv" : null, kind === "file" ? 3 : null, at(minute),
+        ],
+      );
+    // The agent's plan is the older, so the organisation's, younger, is the one renamed.
+    await item("art_agent_plan", "agent", "note", "plan.md", 1, "agent");
+    await item("art_org_plan", "org", "note", "plan.md", 2, "org");
+    await item("art_csv", "agent", "file", "a.csv", 3, null);
+    await item("art_gz", "org", "file", "a.csv.gz", 4, null);
+    await item(
+      "art_links",
+      "org",
+      "note",
+      "links.md",
+      5,
+      "A ![[org/org_1/agents/a_1/plan.md]] B ![[org/org_1/plan.md]] C org/org_1/agents/a_1/files/a.csv. " +
+        "Keep org/org_1/agents/a_1/files/a.csv.gz and org/org_1/files/a.csv.gz. End org/org_1/plan.md.",
+    );
+    const recipe = {
+      notes: [
+        { id: "g", level: "guild", key: "plan.md", body: "Plan.", kind: "seed", writers: [] },
+        { id: "k", level: "agent", role: "scout", key: "k.md", body: "Kept.", kind: "seed", writers: [] },
+      ],
+      roles: [{ role: "scout", task: { body: "Steps:\nguild/plan.md\tthen agent/scout/k.md" } }],
+    };
+    await pool.query(
+      `INSERT INTO public.recipes (id, org_id, name, body, source_kind, created_at, updated_at) VALUES ('rcp_1', 'org_1', 'desk', $1, 'file', $2, $2)`,
+      [JSON.stringify(recipe), at(0)],
+    );
+
+    await applyMigrations(pool);
+
+    const keys = await pool.query<{ id: string; key: string }>("SELECT id, key FROM public.artifacts WHERE id IN ('art_agent_plan', 'art_org_plan')");
+    assert.deepEqual(Object.fromEntries(keys.rows.map((row) => [row.id, row.key])), { art_agent_plan: "plan.md", art_org_plan: "org-plan.md" });
+    const links = await pool.query<{ content_text: string }>("SELECT content_text FROM public.artifacts WHERE id = 'art_links'");
+    assert.equal(
+      links.rows[0]?.content_text,
+      "A ![[org/org_1/plan.md]] B ![[org/org_1/org-plan.md]] C org/org_1/files/a.csv. " +
+        "Keep org/org_1/agents/a_1/files/a.csv.gz and org/org_1/files/a.csv.gz. End org/org_1/org-plan.md.",
+    );
+    const body = (await pool.query<{ body: { roles: Array<{ task: { body: string } }> } }>("SELECT body FROM public.recipes WHERE id = 'rcp_1'")).rows[0]?.body;
+    assert.equal(body?.roles[0]?.task.body, "Steps:\norg/plan.md\tthen org/k.md");
   } finally {
     await pool.end();
   }
