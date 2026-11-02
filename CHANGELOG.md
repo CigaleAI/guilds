@@ -8,15 +8,15 @@ commands for each effect are in
 
 ## Unreleased
 
-**Breaking.** A note or a file has an access list and nothing else:
-no level and no owner. A name is one note or one file across the
+**Breaking.** A note or a file has an access list, which alone decides
+who reaches it, and no level and no owner. A name is one note or one file across the
 organisation, at `org/<org>/<key>` or `org/<org>/files/<name>`; Memory,
 Tasks, and scripts stay at `org/<org>/agents/<agent>/…`. An agent
 creates a note or a file written by itself alone, and reaches any other
 through its rows; an operator creates one with the row it names, the
 organisation at write by default, and writes every note and file but
-those whose rows all name private guilds it does not operate or their
-agents. Deleting a guild or an agent also removes the notes and files,
+those homed in private guilds it does not operate and those whose rows
+all name such guilds or their agents. Deleting a guild or an agent also removes the notes and files,
 live or deleted, only its rows reached, with their change history; a
 deleted note or file keeps its rows, so it stays hidden where it was. A path's change history shows only the
 changes of the items held there that the reader reads, so a name
@@ -37,9 +37,7 @@ upload dialog the version of the file of that name in the page's
 list, or `0` when the list holds none; the note routes under
 `/api/guilds/:id/notes/*` and `/api/agents/:id/notes/*` (but `task.md`
 and `memory.md`) and the upload routes `POST /api/guilds/:id/files` and
-`POST /api/agents/:id/files` are gone. A guild's page lists the notes
-and files whose rows name the guild, one of its agents, or the
-organisation, and an agent's page what the agent reads. The access
+`POST /api/agents/:id/files` are gone. The access
 routes answer `{ subjects }` without `owner_agent_id`, and the reach
 routes list notes as `{ id, display_path, title, mode }`. A recipe's
 notes have no `level` or `role`, which import refuses, take `org`
@@ -58,6 +56,37 @@ gain `org: read`, and `guild: read` where they stated no `guild`; an
 agent note with a role gains that role as a writer; an agent note
 without one is written by the guild; and a key it held at several levels is renamed to
 `<role>-<key>`, `guild-<key>`, or `org-<key>`.
+
+**Breaking.** Every note and file has a home guild: the guild it was
+made in, or none for the organisation's. A guild's and an agent's
+**State › Notes** and **State › Files** list two sections, the items
+homed in the guild (**Guild notes**, **Guild files**) and those
+**Shared with this guild** through a row for the guild, one of its
+agents, or the organisation, each section counted and folding. Each
+item is tagged with how the page's guild or agent reaches it, and an
+item no row reaches is greyed and opens its access list. The **New
+note** and **Upload a file** dialogs home the item in the page's guild
+and show it beside the first access row, which starts at the page's
+guild or agent at write. An operator who cannot see a private guild
+sees none of the notes and files homed in it, whatever their rows
+say, an organisation row included; Prompt Studio's lists and tools
+apply the same rule. Which agent reaches an item is still its access
+list alone. A Task's **Insert › Note** lists the agent's two sections
+and does not insert a note the agent cannot reach.
+`GET /api/guilds/:id/notes`, `/api/guilds/:id/files`,
+`/api/agents/:id/notes`, and `/api/agents/:id/files` answer
+`{ own, shared }`; every note and file listing gives each item `home`
+and `viewer_mode`; `PUT /api/org/notes/*` takes `home_guild_id` and
+`POST /api/org/files` `X-Home-Guild`, either 404 `unknown guild` for a
+guild that is unknown or hidden from the caller;
+`GET /api/org/embeddable-notes?agent_id=…` answers the agent's sections;
+replacing a note's or a file's access list announces
+`guild.artifacts.changed` to each guild that listed the item or lists
+it now. A guild's deletion leaves the items homed in it that stay
+without a home. Updating clears every home that names no guild of the
+item's organisation, gives each note and file without one the one
+guild its access list names when the list has no organisation row,
+and drops the `artifact_renames` table.
 
 The inbox stream's notice of a new group message names the message's
 guild. A message posted in the chat an operator is watching no
