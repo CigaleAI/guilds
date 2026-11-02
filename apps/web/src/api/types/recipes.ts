@@ -92,9 +92,10 @@ export type RecipeCollection = {
 };
 
 /**
- * A seed note apply writes in the organisation. `guild` is the applied guild's mode on its access
- * list (absent on a note the guild does not reach beyond its writers) and `writers` lists the roles
- * whose agents get a write row; a note that states neither is written by the applied guild
+ * A seed note apply writes in the organisation. `org` is the organisation's mode on its access list
+ * (absent on a note the organisation's row does not reach), `guild` the applied guild's (absent on
+ * a note the guild does not reach beyond its writers), and `writers` lists the roles whose agents
+ * get a write row; a note that states none of them is written by the applied guild
  * (db/schema/recipe-document.ts).
  */
 export type RecipeNote = {
@@ -104,6 +105,7 @@ export type RecipeNote = {
   body: string;
   kind: "seed";
   author: FieldAuthor;
+  org?: AccessMode;
   guild?: AccessMode;
   writers: string[];
 };
@@ -342,7 +344,7 @@ export type ApplyCreates = {
   guild: { name: string; about: string; objective: string };
   agents: CreatedAgent[];
   collections: CollectionPlan[];
-  notes: Array<{ key: string; guild: AccessMode | null; writers: string[] }>;
+  notes: Array<{ key: string; org: AccessMode | null; guild: AccessMode | null; writers: string[] }>;
   scripts: Array<{ role: string; name: string; description: string }>;
   routines: CreatedRoutine[];
   connections: PlannedConnection[];

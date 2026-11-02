@@ -20,12 +20,13 @@ export function notesFromRecipe(
 }
 
 /**
- * Who reaches a note: the guild's mode with the roles that write on top, the writing roles alone,
- * or the guild writing it when the recipe states neither.
+ * Who reaches a note: the organisation's and the guild's modes with the roles that write on top,
+ * the writing roles alone, or the guild writing it when the recipe states none of them.
  */
 export function noteAccessLabel(item: NoteDraft): string {
   const writers = asArray(item.writers).map((role) => String(role));
-  if (item.guild) return `guild ${item.guild}${writersSuffix(writers)}`;
+  const modes = [item.org ? `org ${item.org}` : "", item.guild ? `guild ${item.guild}` : ""].filter(Boolean);
+  if (modes.length) return `${modes.join(" · ")}${writersSuffix(writers)}`;
   if (writers.length) return `${writers.map((role) => `@${role}`).join(", ")} write`;
   return "guild write";
 }

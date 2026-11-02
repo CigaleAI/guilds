@@ -9,8 +9,8 @@ test("apply notes keep the recipe body matched by id or key", () => {
   const plan = planFromRecipe(recipe, {
     creates: {
       notes: [
-        { key: "style.md", guild: null, writers: [] },
-        { key: "new.md", guild: "read", writers: ["writer"] },
+        { key: "style.md", org: null, guild: null, writers: [] },
+        { key: "new.md", org: "read", guild: "read", writers: ["writer"] },
       ],
     },
   });
@@ -37,8 +37,14 @@ test("noteCard shows the title, who reaches it, first line, and the key apply wr
   assert.equal(noteSnippet("x".repeat(100)), `${"x".repeat(85)}…`);
 });
 
-test("noteAccessLabel shows the guild's mode with the roles that write, the writers alone, or the guild writing it", () => {
+test("noteAccessLabel shows the organisation's and the guild's modes with the roles that write, the writers alone, or the guild writing it", () => {
   assert.equal(noteAccessLabel({ guild: "read" }), "guild read");
+  assert.equal(noteAccessLabel({ org: "read" }), "org read");
+  assert.equal(
+    noteAccessLabel({ org: "read", guild: "write", writers: ["reader"] }),
+    "org read · guild write · writers: @reader",
+  );
+  assert.equal(noteAccessLabel({ org: "read", guild: null }), "org read");
   assert.equal(noteAccessLabel({ guild: "read", writers: ["reader"] }), "guild read · writers: @reader");
   assert.equal(noteAccessLabel({ writers: ["reader", "writer"] }), "@reader, @writer write");
   assert.equal(noteAccessLabel({}), "guild write");
