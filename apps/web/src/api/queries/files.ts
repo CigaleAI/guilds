@@ -36,15 +36,19 @@ export function useFileList(page: AccessSubject | null) {
   });
 }
 
-/** Stores a file in the organisation; a file of the same name is replaced. */
+/**
+ * Stores a file in the organisation; a file of the same name is replaced when the upload's expected
+ * version allows. Every files list is refreshed either way, so a refused upload sees the file that
+ * refused it.
+ */
 export function useUploadFile() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (upload: FileUpload) => uploadFile(upload),
     onSuccess: (item) => {
-      void client.invalidateQueries({ queryKey: fileKeys.fileLists });
       void client.invalidateQueries({ queryKey: noteKeys.latestChange(item.display_path) });
     },
+    onSettled: () => void client.invalidateQueries({ queryKey: fileKeys.fileLists }),
   });
 }
 

@@ -21,7 +21,10 @@ export type FileItem = {
 };
 
 /**
- * A file to store in the organisation: its bytes, what it is, and the row its access list starts
- * with when the upload creates it. A file of the same name is replaced and keeps its access list.
+ * A file to store in the organisation: its bytes, what it is, the row its access list starts with
+ * when the upload creates it, and the version the uploader expects: 0 when no file may have its
+ * name yet, the version it read of the file it replaces otherwise. The server refuses (409) an
+ * upload whose version does not match; without one, a file of the same name is replaced unchecked.
+ * A replaced file keeps its access list.
  */
-export type FileUpload = { file: File; description: string; access: AccessRow };
+export type FileUpload = { file: File; description: string; access: AccessRow; expectedVersion?: number };

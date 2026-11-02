@@ -50,6 +50,21 @@ test("uploadFile sends the file to the organisation with its first access row, a
   assert.equal(sent[0]?.headers.get("X-Access-Type"), "guild");
   assert.equal(sent[0]?.headers.get("X-Access-Id"), "g1");
   assert.equal(sent[0]?.headers.get("X-Access-Mode"), "write");
+  assert.equal(sent[0]?.headers.get("X-Expected-Version"), null);
+});
+
+test("uploadFile sends the version it expects: 0 to only create, the loaded one to replace", async () => {
+  const sent: Headers[] = [];
+  globalThis.fetch = async (_input, init) => {
+    sent.push(new Headers(init?.headers));
+    return Response.json(item);
+  };
+  await uploadFile({ ...upload, expectedVersion: 0 });
+  await uploadFile({ ...upload, expectedVersion: 3 });
+  assert.deepEqual(
+    sent.map((headers) => headers.get("X-Expected-Version")),
+    ["0", "3"],
+  );
 });
 
 test("uploadFile fails with an ApiError on a reply that is not a file", async () => {

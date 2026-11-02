@@ -12,10 +12,10 @@ export const FILE_MAX_BYTES = 10 * 1024 * 1024;
 
 /**
  * Stores a file's bytes in the organisation with its description, its access list starting with
- * the upload's row; a file of the same name is replaced.
+ * the upload's row; a file of the same name is replaced when the upload's expected version allows.
  */
 export async function uploadFile(upload: FileUpload): Promise<FileItem> {
-  const { file, description, access } = upload;
+  const { file, description, access, expectedVersion } = upload;
   const response = await fetch(uploadPath, {
     method: "POST",
     headers: {
@@ -29,6 +29,7 @@ export async function uploadFile(upload: FileUpload): Promise<FileItem> {
       "X-Access-Type": access.type,
       "X-Access-Id": access.id,
       "X-Access-Mode": access.mode,
+      ...(expectedVersion !== undefined ? { "X-Expected-Version": String(expectedVersion) } : {}),
     },
     credentials: "same-origin",
     body: file,

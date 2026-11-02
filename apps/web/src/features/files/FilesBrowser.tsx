@@ -30,7 +30,7 @@ import { AccessListPanel } from "../access/AccessListPanel";
 import { StartingAccessField } from "../access/StartingAccessField";
 import { LatestChange, type OpenChangeStep } from "../notes/LatestChange";
 import { attemptFileDownload } from "./download";
-import { fileMeta, filterFiles, uploadProblem } from "./fileList";
+import { fileMeta, filterFiles, uploadExpectedVersion, uploadFailure, uploadProblem } from "./fileList";
 
 /**
  * A page whose files the browser lists: an agent's lists the files it reads, a guild's the files
@@ -207,6 +207,7 @@ function ScopeFiles({
         open={uploading}
         onOpenChange={setUploading}
         scope={scope}
+        listed={items}
         onUploaded={(file) => pickFile(file.display_path)}
       />
     </div>
@@ -370,14 +371,17 @@ type UploadDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   scope: FileScope;
+  /** The files the page lists: one of the same name is the file the upload replaces. */
+  listed: readonly FileItem[];
   onUploaded: (file: FileItem) => void;
 };
 
 /**
  * Picks a file, says what it is, and names who reaches it first, the page's subject at write
- * unless the operator picks another; a file of the same name in the organisation is replaced.
+ * unless the operator picks another. A file of the same name in the page's list is replaced over
+ * the version the list loaded; any other upload only creates.
  */
-function UploadDialog({ open, onOpenChange, scope, onUploaded }: UploadDialogProps) {
+function UploadDialog({ open, onOpenChange, scope, listed, onUploaded }: UploadDialogProps) {
   const upload = useUploadFile();
   const pageAccess: AccessRow = { ...scope.page, mode: "write" };
   const [file, setFile] = useState<File | null>(null);
@@ -400,7 +404,7 @@ function UploadDialog({ open, onOpenChange, scope, onUploaded }: UploadDialogPro
     setTouched(true);
     if (problem || !file) return;
     upload.mutate(
-      { file, description, access },
+      { file, description, access, expectedVersion: uploadExpectedVersion(file.name, listed) },
       {
         onSuccess: (item) => {
           onUploaded(item);
@@ -417,7 +421,7 @@ function UploadDialog({ open, onOpenChange, scope, onUploaded }: UploadDialogPro
         <form onSubmit={submit} className="flex min-h-0 flex-col">
           <DialogHeader
             title="Upload a file"
-            description="A file of the same name in the organisation is replaced and keeps its access list."
+            description="A file of the same name in this list is replaced and keeps its access list; a name another file of the organisation holds is refused."
           />
           <DialogBody>
             <div className="flex flex-col gap-3">
@@ -441,7 +445,7 @@ function UploadDialog({ open, onOpenChange, scope, onUploaded }: UploadDialogPro
               <StartingAccessField value={access} onChange={setAccess} disabled={upload.isPending} />
               {upload.isError ? (
                 <Banner tone="error" title="Couldn't upload the file">
-                  {upload.error.message}
+                  {uploadFailure(upload.error, upload.variables?.expectedVersion)}
                 </Banner>
               ) : null}
             </div>
