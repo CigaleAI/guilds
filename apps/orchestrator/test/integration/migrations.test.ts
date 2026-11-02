@@ -216,6 +216,8 @@ test("the access-list migration moves table rows, gives live guild and org items
       { target_kind: "collection", target_id: "acol_org", subject_type: "guild", subject_id: "guild_b", mode: "read" },
       { target_kind: "collection", target_id: "acol_org", subject_type: "org", subject_id: "org_1", mode: "read" },
       { target_kind: "collection", target_id: "acol_own", subject_type: "guild", subject_id: "guild_a", mode: "write" },
+      // a deleted guild note gets its guild's row from the list-only migration further down the chain
+      { target_kind: "note", target_id: "art_deleted", subject_type: "guild", subject_id: "guild_a", mode: "write" },
       { target_kind: "note", target_id: "art_guild", subject_type: "guild", subject_id: "guild_a", mode: "write" },
       { target_kind: "note", target_id: "art_org", subject_type: "org", subject_id: "org_1", mode: "read" },
     ]);
