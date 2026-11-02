@@ -58,7 +58,7 @@ and a copy button.
 | Guild **State › Files** | `/guilds/<id>/state/files` | [Files](../concepts/files.md) |
 | Agent **State › Files** | `/guilds/<id>/agents/<agent id>/state/files` | [Files](../concepts/files.md) |
 | File **Access**, **Download**, **Delete**, and **Upload a file** | the files browser: Guild **State › Files**, Agent **State › Files** | [Files](../concepts/files.md#in-the-app) |
-| Note **Access** button and the **Access to `<path>`** dialog | the header of an open note in the notes browser: Guild **State › Notes**, Agent **State › Notes**, Studio | [Access](../concepts/access.md#the-access-panel), [Notes](../concepts/notes.md) |
+| Note **Access** button and the **Access to `<path>`** dialog | the header of an open note, and a greyed note, in the notes browser: Guild **State › Notes**, Agent **State › Notes**, Studio | [Access](../concepts/access.md#the-access-panel), [Notes](../concepts/notes.md) |
 | Guild **State › Tables** | `/guilds/<id>/state/tables` | [Collections](../concepts/collections.md#what-a-guild-or-an-agent-reaches) |
 | Guild **State › Access** | `/guilds/<id>/state/access` | [Access](../concepts/access.md#what-a-guild-or-an-agent-reaches), [Notes](../concepts/notes.md), [Collections](../concepts/collections.md) |
 | Guild **Routines** tab | `/guilds/<id>/routines` | [Routines](../concepts/routines.md) |

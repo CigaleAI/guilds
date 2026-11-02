@@ -72,11 +72,11 @@ A repository that extends core holds this one as a submodule
 | `access/` | Binding resolution and its change log, a run's tools, MCP, and secrets (`runtime.ts`), the access view a scope's page shows (`view.ts`), an agent's page (`agent-page.ts`), and the bindings an operator sets (`operator.ts`) ([Access](../concepts/access.md)) |
 | `credentials/` | AES-GCM and environment fingerprints (`crypto.ts`), owner and secret validation, and the scopes a credential is visible at |
 | `secrets/` | Who reaches and manages a secret, `secret_store`, redaction, and an organisation's secrets as its members manage them (`service.ts`) ([Secrets](../concepts/secrets.md)) |
-| `db/` | Pool and migrations (`client.ts`, `migrations.ts`), codecs, the Drizzle schema (`schema/`), and one query module per table family (`users.ts`, `agents.ts`, `runs.ts`, …) ([PostgreSQL](orchestrator.md#postgresql)) |
+| `db/` | Pool and migrations (`client.ts`, `migrations.ts`), codecs, the Drizzle schema (`schema/`), one query module per table family (`users.ts`, `agents.ts`, `runs.ts`, …), and the note and file listings (`artifact-lists.ts`): an organisation's, a guild's and an agent's page lists with each item's home and the viewer's mode, searches, and what an agent or a guild's state reads ([PostgreSQL](orchestrator.md#postgresql)) |
 | `seed/` | The database at boot (`connect.ts`): core's and an extension's migrations and seeds, the installed connectors' rows (`system.ts`), the native tool catalog (`catalog.ts`), and a fresh box's first user and organisation (`operator.ts`) |
 | `attachments/` | Chat images: sniffing, upload, and hydration |
 | `artifacts/` | The artifact store (`store.ts`) with one module per sub-domain (notes, Memory, collections, records, access lists), shared files (`files.ts`, `operator-files.ts`), the files an operator's pages read and write (`host-files.ts`), and the collection views ([Artifacts](../concepts/artifacts.md), [Access](../concepts/access.md)) |
-| `notes/` | `NotesStore` (`store.ts`): the `system.md` template and each agent's folder on disk, with its Task, Memory, notes, and routine files; the checks a relative path passes (`paths.ts`); and the organisation's notes as an operator reads and writes them, listed for the organisation, a guild, or an agent page (`operator.ts`) |
+| `notes/` | `NotesStore` (`store.ts`): the `system.md` template and each agent's folder on disk, with its Task, Memory, notes, and routine files; the checks a relative path passes (`paths.ts`); and the organisation's notes as an operator reads and writes them, listed for the organisation, and in two sections for a guild's or an agent's page (`operator.ts`) |
 | `directories/` | The listing of an agent's private and shared notes, scripts, and environment that its State shows |
 | `memory/` | Hydration, the cap, the archive, and the version history ([Memory](../concepts/memory.md)) |
 | `prompts/` | Prompt composition and the `system.md`, `task.md`, and `memory.md` templates ([System prompt](../concepts/system-prompt.md)) |
@@ -135,8 +135,8 @@ One directory per area. The screens are in the
 | `agent/` | Create-agent dialogs, the agent inspector with a folder for most of its tabs (`chat/`, `prompt/`, `memory/`, `routine/`, `scripts/`, `browser/`, `cli/`, `history/`, `settings/`), and the repositories a guild's coding agents clone (`GuildRepositories.tsx`, `CodingRepositories.tsx`) |
 | `agent/runs/` | How a run's rows read: grouped into generations, steps, and tool calls (`runFlowModel.ts`), each call's kind (`toolKinds.ts`), and its arguments and result as text (`toolFormat.ts`) |
 | `notes/` | The notes browser, the provenance strip (`LatestChange.tsx`, `changeActor.ts`), and the notes and tables a Task or a note embeds (`embeds.ts`, `InsertPicker.tsx`, `EmbedPreview.tsx`) |
-| `files/` | The files browser: upload, download, access, and delete of shared files |
-| `access/` | One scope's tools, logins, and secrets, access lists and reach, and the repositories a GitHub login serves (`GithubRepositories.tsx`) |
+| `files/` | The files browser: its two sections, upload, download, access, and delete of shared files |
+| `access/` | One scope's tools, logins, and secrets, access lists and reach, the access dialog a note or a file opens (`AccessListDialog.tsx`), the sections, greyed rows and home labels the notes and files browsers share (`listedItems.ts`), the home a new item gets (`HomeGuildField.tsx`), and the repositories a GitHub login serves (`GithubRepositories.tsx`) |
 | `tables/` | The Tables page and the State › Tables sub-tabs |
 | `studio/` | Prompt Studio: the workspace and its sections, with `activity/`, `state/`, `tabs/`, and `tools/` |
 | `builder/` | The guild builder |

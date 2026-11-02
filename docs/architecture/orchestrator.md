@@ -450,7 +450,7 @@ events and what each carries, beside the stream: `CoachEvents` in
 | `group.limit_reached` | guild | durable | The guild's message budget is spent |
 | `group.idle` | guild | durable | Group dispatch has nothing left to deliver |
 | `group.delivery.started`, `group.delivery.finished`, `group.delivery.failed` | guild | durable | A delivery run's progress |
-| `guild.artifacts.changed` | guild | invalidation | A note, file, record, or agent item the guild reaches changed, announced on every guild of the organisation when the item's access list has an organisation row: `{ path, scope?, agent_id? }`, `scope` `agent` for an agent's Task or Memory and `files` for a shared file; re-read them |
+| `guild.artifacts.changed` | guild | invalidation | A note, file, record, or agent item the guild's page shows changed. An agent's write is announced on its guild. An operator's write or delete of a note or a file, and a replaced access list of one, are announced on each guild whose page lists the item, before or after the change: its home guild and the guilds in its scope, every guild of the organisation when its access list has an organisation row. `{ path, scope?, agent_id? }`, `scope` `agent` for an agent's Task or Memory and `files` for a shared file; re-read them |
 | `guild.issues.changed` | guild | invalidation | Re-read the guild's issues |
 | `agent.scripts.changed` | guild | invalidation | Re-read an agent's scripts |
 | `agent.routines.changed` | guild | invalidation | Re-read an agent's routines |
@@ -551,6 +551,19 @@ Notes and files are `artifacts` of the organisation, with no
 among its live files. Memory and scripts are `artifacts` with the
 agent's `agent_id`, unique per agent.
 
+`artifacts.origin_guild_id` is the guild an item was made in, null for
+the organisation, written at insert and never changed. It references
+`guilds(id)` with `ON DELETE SET NULL`
+(`artifacts_origin_guild_id_fkey`), and `artifacts_by_origin_guild`
+indexes (`org_id`, `origin_guild_id`). On a note or a file it is the
+home guild: the guild and agent pages list the items homed in their
+guild apart from those shared with it, and an operator never reaches
+an item homed in a guild hidden from them. No agent's mode reads it
+([Artifact store](../concepts/artifacts.md#kinds)). The page lists
+come from `src/db/artifact-lists.ts`, which reads each item's home and
+the page viewer's mode in the listing's own query, one lateral join
+per row, with no query per item.
+
 Collections live in `artifact_collections` (name, purpose, typed
 `columns`, `next_id`). Their records live in `artifacts` (`kind`
 `object`, `key` the id, `identity` the normalised unique value).
@@ -568,8 +581,9 @@ the organisation at `write` by default. A new guild collection starts
 with its guild at `write`, a new organisation collection with the
 organisation at `read`. A deleted note or file keeps its rows on its
 tombstone. Rows go with the guild or agent they name, and a note or a
-file that only those rows reached is deleted with them
-([Access](../concepts/access.md#access-lists)).
+file, live or deleted, that only those rows reached is removed with
+them, with its `file_changes` and the `config_changes` of its access
+list ([Access](../concepts/access.md#access-lists)).
 
 The standing task lives on `agents.task`. Agent names are globally
 unique.
