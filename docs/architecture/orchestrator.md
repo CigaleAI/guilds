@@ -450,7 +450,7 @@ events and what each carries, beside the stream: `CoachEvents` in
 | `group.limit_reached` | guild | durable | The guild's message budget is spent |
 | `group.idle` | guild | durable | Group dispatch has nothing left to deliver |
 | `group.delivery.started`, `group.delivery.finished`, `group.delivery.failed` | guild | durable | A delivery run's progress |
-| `guild.artifacts.changed` | guild | invalidation | Re-read the guild's notes, files, Memory, and records |
+| `guild.artifacts.changed` | guild | invalidation | A note, file, record, or agent item the guild reaches changed: `{ path, scope?, agent_id? }`, `scope` `agent` for an agent's Task or Memory and `files` for a shared file; re-read them |
 | `guild.issues.changed` | guild | invalidation | Re-read the guild's issues |
 | `agent.scripts.changed` | guild | invalidation | Re-read an agent's scripts |
 | `agent.routines.changed` | guild | invalidation | Re-read an agent's routines |

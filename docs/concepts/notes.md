@@ -131,7 +131,9 @@ In both:
   browsed scope at `write`: the agent on **Agent**, the guild on
   **Guild**, the organisation on **Org**. Any subject and mode can be
   picked instead. The name cannot hold a `/`, and it gets `.md` added.
-  It cannot be the name of a note the organisation already holds.
+  It cannot be the name of a note the organisation already holds:
+  the dialog creates the note only while no note of that name is
+  live, and shows the refusal otherwise.
 - A note opens in the same Markdown editor as the Task, in preview
   first. Its header shows its name, with **Access**, a copy button,
   and a delete button. In Studio it also has **Ask the coach**.
@@ -144,7 +146,10 @@ In both:
 - Unsaved edits are kept per note while the operator moves between
   notes. Leaving the page with unsaved edits asks **Leave without
   saving?**, with **Discard changes**.
-- Save, or Cmd/Ctrl+S, writes the note.
+- Save, or Cmd/Ctrl+S, writes the note over the version the editor
+  loaded. When someone saved the note in the meantime, the save is
+  refused with the warning **Someone saved the note while you were
+  editing**, and the operator's text stays in the editor.
 - A provenance strip under the file header says who saved it last.
   **Open step** opens the run that wrote it in its agent's Chat tab
   at that tool call. **History** lists every recorded change
@@ -283,7 +288,7 @@ GET    /api/org/notes                     every note of the organisation, by key
 GET    /api/guilds/:guild_id/notes        the notes whose access list has a row for the guild, one of its agents, or the organisation
 GET    /api/agents/:agent_id/notes        the notes the agent reads
 GET    /api/org/notes/*                   one note, by key
-PUT    /api/org/notes/*                   { content, access? }
+PUT    /api/org/notes/*                   { content, expected_version?, access? }
 DELETE /api/org/notes/*                   204
 GET    /api/agents/:agent_id/notes/task.md, …/memory.md
 PUT    /api/agents/:agent_id/notes/task.md, …/memory.md    { content, expected_version? }
@@ -296,11 +301,16 @@ gives each note its `id`, which names it to the access routes. A
 read or a write answers `{ id, path, display_path, content, version }`;
 `task.md` and `memory.md` carry no `id`. A deleted or missing note is
 404. The agent routes serve `task.md` and `memory.md` alone
-([Task](task.md), [Memory](memory.md)); only `task.md` checks
-`expected_version`.
+([Task](task.md), [Memory](memory.md)); of the two, only `task.md`
+checks `expected_version`.
 
 `PUT /api/org/notes/*` updates the live note of that key, or creates
-it. `access`, `{ type, id, mode }`, is the row a created note starts
+it. `expected_version` is an integer: `0` means the note must not
+exist yet, and a live note of that key is 409 `artifact already
+exists`; any other value must be the live note's version, else 409
+`version conflict`; left out, the write is not checked. The New note
+dialog sends `0`, and the editor sends the version it loaded.
+`access`, `{ type, id, mode }`, is the row a created note starts
 with; without it the organisation writes the note. An update ignores
 it. An `access` with a bad type, id, or mode is 422 with the message
 the access routes give, prefixed `access: `; a subject that does not
@@ -313,8 +323,9 @@ stream of each guild its access list names, through a row for the
 guild or for one of its agents. A Task or Memory write publishes it
 on the agent's guild.
 
-A write's `content` is a string, empty when left out, and its
-`expected_version` a number or null. A body that is not a JSON object,
+A write's `content` is a string, empty when left out. Its
+`expected_version` is an integer on `PUT /api/org/notes/*`, and a
+number or null on the `task.md` and `memory.md` routes. A body that is not a JSON object,
 a field of another type, and a `display_path` given more than once are
 422 naming the field, before the caller is identified.
 
