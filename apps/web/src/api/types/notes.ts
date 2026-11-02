@@ -1,4 +1,5 @@
-import type { AccessRow, ListedItem } from "./access";
+import type { AgentViewerMode } from "@guildsrun/ui";
+import type { AccessRow, ItemSections, ListedItem } from "./access";
 import type { RunKind } from "./runs";
 
 /**
@@ -42,6 +43,22 @@ export type EmbeddableNote = {
   updated_at: string;
   content: string;
 };
+
+/**
+ * A note an agent's Task can embed, as the agent's page lists it: its id, its home, and how the
+ * agent reaches it.
+ */
+export type ListedEmbeddableNote = EmbeddableNote &
+  ListedItem & {
+    id: string;
+    viewer_mode: AgentViewerMode;
+  };
+
+/**
+ * The notes a Task or a note can embed: the operator's list across the organisation, or an agent's
+ * page's two sections, where the agent reads only the notes it reaches.
+ */
+export type EmbeddableNotes = readonly EmbeddableNote[] | ItemSections<ListedEmbeddableNote>;
 
 /** One note as an embed reads it, by its display path: where it sits, its title, and its text. */
 export type EmbeddedNote = { display_path: string; title: string; content: string };

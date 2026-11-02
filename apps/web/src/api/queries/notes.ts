@@ -1,15 +1,11 @@
-import {
-  useMutation,
-  useQueries,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../client";
 import { guildPath } from "./guilds";
 import type { ItemSections, ReachSubject } from "../types/access";
 import type {
   EmbeddableNote,
   EmbeddedNote,
+  ListedEmbeddableNote,
   EmbedStatus,
   FileContent,
   NoteItem,
@@ -30,6 +26,8 @@ export const noteKeys = {
   agentTask: (agentId: string) => ["artifacts", "task", agentId] as const,
   agentMemory: (agentId: string) => ["artifacts", "memory", agentId] as const,
   embeddableNotes: ["artifacts", "embeddable-notes"] as const,
+  agentEmbeddableNotes: (agentId: string) =>
+    ["artifacts", "embeddable-notes", "agent", agentId] as const,
   embedStatuses: ["artifacts", "embed-status"] as const,
   embedStatus: (guildId: string) => ["artifacts", "embed-status", guildId] as const,
   latestChange: (displayPath: string) => ["artifacts", "latest-change", displayPath] as const,
@@ -81,8 +79,7 @@ export function useAgentTask(agentId: string) {
 export function useSaveTask(agentId: string, guildId: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (body: TaskInput) =>
-      api<TaskFile>(taskPath(agentId), { method: "PUT", body }),
+    mutationFn: (body: TaskInput) => api<TaskFile>(taskPath(agentId), { method: "PUT", body }),
     onSuccess: (task) => {
       client.setQueryData(noteKeys.agentTask(agentId), task);
       void client.invalidateQueries({ queryKey: noteKeys.embedStatus(guildId) });
@@ -130,6 +127,20 @@ export function useEmbeddableNotes() {
   return useQuery({
     queryKey: noteKeys.embeddableNotes,
     queryFn: () => api<EmbeddableNote[]>("/api/org/embeddable-notes"),
+  });
+}
+
+/**
+ * The notes the agent's Task can embed, in its page's two sections, each with the agent's mode on
+ * it; the agent reads only those it reaches.
+ */
+export function useAgentEmbeddableNotes(agentId: string) {
+  return useQuery({
+    queryKey: noteKeys.agentEmbeddableNotes(agentId),
+    queryFn: () =>
+      api<ItemSections<ListedEmbeddableNote>>(
+        `/api/org/embeddable-notes?agent_id=${encodeURIComponent(agentId)}`,
+      ),
   });
 }
 
