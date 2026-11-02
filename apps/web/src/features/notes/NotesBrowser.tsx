@@ -2,6 +2,7 @@ import { useBlocker } from "@tanstack/react-router";
 import { ArrowLeft, Copy, FilePlus, FileText, Pin, ShieldCheck, Trash2 } from "lucide-react";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { ApiError } from "../../api/client";
 import { useCollections } from "../../api/queries/tables";
 import {
   useDeleteNote,
@@ -75,8 +76,8 @@ const emptyNotes: Record<AccessSubject["type"], string> = {
 };
 
 /**
- * Notes by page: each page's list, and the open note in an editor. Notes are last-writer-wins;
- * embeds work as in the Task.
+ * Notes by page: each page's list, and the open note in an editor. A save over a version someone
+ * saved since is refused and the text kept; embeds work as in the Task.
  */
 export function NotesBrowser({ scopes, guildId, onOpenStep, initialPath, onAsk }: NotesBrowserProps) {
   const initialScope = initialPath ? scopes.find((item) => item.page.type === "org")?.page.type : undefined;
@@ -431,18 +432,28 @@ function NoteView({
           onDiscard={() => onDraft(null)}
           onSave={() =>
             save.mutate(
-              { path: item.path, content: value },
+              {
+                path: item.path,
+                content: value,
+                ...(file.data?.version !== undefined ? { expected_version: file.data.version } : {}),
+              },
               {
                 onSuccess: () => {
                   onDraft(null);
                   toast({ kind: "success", title: `${item.path} saved` });
                 },
-                onError: (error) =>
+                onError: (error) => {
+                  if (!(error instanceof ApiError && error.status === 409)) {
+                    toast({ kind: "error", title: "Couldn't save the note", description: error.message });
+                    return;
+                  }
+                  void file.refetch();
                   toast({
-                    kind: "error",
-                    title: "Couldn't save the note",
-                    description: error.message,
-                  }),
+                    kind: "warning",
+                    title: "Someone saved the note while you were editing",
+                    description: "Your text is kept. Compare it with theirs before saving.",
+                  });
+                },
               },
             )
           }
@@ -548,7 +559,7 @@ type NewNoteDialogProps = {
 
 /**
  * Names a new note of the organisation and who reaches it first, the page's subject at write
- * unless the operator picks another; a refusal from the server shows in the dialog.
+ * unless the operator picks another. It only creates: a name another note holds is refused.
  */
 function NewNoteDialog({ open, onOpenChange, scope, onCreated }: NewNoteDialogProps) {
   const save = useSaveNote();
@@ -571,7 +582,7 @@ function NewNoteDialog({ open, onOpenChange, scope, onCreated }: NewNoteDialogPr
     setTouched(true);
     if ("error" in result) return;
     save.mutate(
-      { path: result.path, content: "", access },
+      { path: result.path, content: "", access, expected_version: 0 },
       {
         onSuccess: (file) => {
           onCreated(file);
@@ -601,7 +612,9 @@ function NewNoteDialog({ open, onOpenChange, scope, onCreated }: NewNoteDialogPr
             <StartingAccessField value={access} onChange={setAccess} disabled={save.isPending} />
             {save.isError ? (
               <Banner tone="error" title="Couldn't create the note">
-                {save.error.message}
+                {save.error instanceof ApiError && save.error.status === 409
+                  ? "A note with this name already exists in the organisation."
+                  : save.error.message}
               </Banner>
             ) : null}
           </DialogBody>

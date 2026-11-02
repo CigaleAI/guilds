@@ -84,10 +84,17 @@ export type FileContent = {
 };
 
 /**
- * A note's text by its key, and the row its access list starts with when the write creates it;
- * without one, the organisation writes it.
+ * A note's text by its key, the row its access list starts with when the write creates it (without
+ * one, the organisation writes it), and the version the writer expects: 0 when the note must not
+ * exist yet, the version it read otherwise. The server refuses (409) a write whose version does not
+ * match; without one, the write is not checked.
  */
-export type NoteInput = { path: string; content: string; access?: AccessRow };
+export type NoteInput = {
+  path: string;
+  content: string;
+  access?: AccessRow;
+  expected_version?: number;
+};
 
 /** Who wrote a memory version. */
 export type MemoryActor = {

@@ -211,14 +211,19 @@ export function useNote(key: string | null) {
 }
 
 /**
- * Writes the organisation's note at a key, creating it with the input's first access row when no
- * note has that key. Notes are last-writer-wins: a save replaces whatever is there.
+ * Writes the organisation's note at the input's key, creating it with the input's first access row
+ * when no note has that key, and refused (409) when the note is not at the version the input expects.
  */
+export function writeOrgNote(input: NoteInput): Promise<FileContent> {
+  const { path, ...body } = input;
+  return api<FileContent>(notePath(path), { method: "PUT", body });
+}
+
+/** Writes the organisation's note at a key through `writeOrgNote`, and refreshes what lists or shows it. */
 export function useSaveNote() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ path, content, access }: NoteInput) =>
-      api<FileContent>(notePath(path), { method: "PUT", body: { content, ...(access ? { access } : {}) } }),
+    mutationFn: writeOrgNote,
     onSuccess: (file, { path }) => {
       client.setQueryData(noteKeys.note(path), file);
       void client.invalidateQueries({ queryKey: noteKeys.noteLists });
