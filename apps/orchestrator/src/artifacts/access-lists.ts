@@ -1,5 +1,6 @@
 import { getLiveArtifact, listReachedArtifacts } from "../db/artifacts.js";
 import { recordConfigChange } from "../db/config-changes.js";
+import { listGuilds } from "../db/guilds.js";
 import { withTransaction } from "../db/pg.js";
 import {
   type AccessRaise,
@@ -102,9 +103,15 @@ export async function replaceAccess(
   });
 }
 
-/** The guilds an item's access list names, through a guild row or one of the guild's agents, each once. */
+/**
+ * The guilds whose scope an item is in, each once: every guild of the organisation when its access
+ * list has an organisation row, else the guilds a guild row or one of a guild's agents' rows names.
+ */
 export async function guildsOnList(store: ArtifactStore, actor: ArtifactActor, target: AccessTarget): Promise<string[]> {
   const entries = await loadEntries(store.db, actor, target);
+  if (entries.some((entry) => entry.type === "org")) {
+    return (await listGuilds(store.db, actor.orgId)).map((guild) => guild.id);
+  }
   return [...new Set(entries.flatMap((entry) => (entry.guild_id === null ? [] : [entry.guild_id])))];
 }
 

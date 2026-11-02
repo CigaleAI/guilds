@@ -228,10 +228,11 @@ test("operators upload with a starting row, list per page, download, share, and 
       published,
       [
         [guildId, { displayPath: guildPath }],
+        [guildId, { displayPath: "org/org_home/files/page.html" }],
         [guildId, { displayPath: guildPath }],
         [guildId, { displayPath: guildPath }],
       ],
-      "an upload, a replacement and a deletion are each announced to every guild the file's list names",
+      "an upload, a replacement and a deletion are each announced to every guild whose scope the file is in",
     );
   } finally {
     await app.close();

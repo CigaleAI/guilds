@@ -277,10 +277,16 @@ describe("shared files", { concurrency: 1 }, () => {
     const orgFile = await uploadSharedFile(deps, operator, { name: "org-brief.txt", ...upload, access: undefined });
     await deleteSharedFile(deps, operator, guildFile.id);
     await deleteSharedFile(deps, operator, orgFile.id);
+    const orgPath = { displayPath: "org/org_home/files/org-brief.txt" };
     assert.deepEqual(published, [
       ["guild_beta", { displayPath: "org/org_home/files/brief.txt" }],
       ["guild_alpha", { displayPath: "org/org_home/files/alpha-brief.txt" }],
+      // an organisation row puts the file in every guild's scope
+      ["guild_alpha", orgPath],
+      ["guild_beta", orgPath],
       ["guild_beta", { displayPath: "org/org_home/files/brief.txt" }],
+      ["guild_alpha", orgPath],
+      ["guild_beta", orgPath],
     ]);
     await assert.rejects(
       () => uploadSharedFile(deps, operator, { name: "bad.txt", ...upload, access: { type: "team", id: "x", mode: "read" } }),
@@ -289,7 +295,7 @@ describe("shared files", { concurrency: 1 }, () => {
 
     await deleteSharedFile({ artifacts: store, files }, operator, agentFile.id);
     await assert.rejects(() => files.loadFileById(operator, agentFile.id), /artifact not found/);
-    assert.equal(published.length, 3, "a write without a publisher announces nothing");
+    assert.equal(published.length, 7, "a write without a publisher announces nothing");
   });
 
   test("deleting an agent or a guild drops the rows naming it; a file others reach survives, one only it reached goes", async () => {
