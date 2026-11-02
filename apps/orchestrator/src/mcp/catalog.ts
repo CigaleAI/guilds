@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { loadManifest, ManifestError, SLUG_RE } from "../connectors/manifest.js";
 import {
   connectorFacts,
@@ -16,7 +16,7 @@ import {
 import { SLUG_PATTERN, ToolInputSchema, type Manifest, type Overrides, type ToolOverride } from "../db/schema/index.js";
 import { assertMatches } from "../lib/decode.js";
 import { newId } from "../lib/ids.js";
-import { isJsonObject } from "../lib/json.js";
+import { JsonObjectSchema, type JsonObject } from "../lib/json.js";
 import { generateToolPrefix, isReservedSlug, isReservedToolPrefix } from "../mcp/policy.js";
 import { assertPublicHttpsUrl, EndpointError } from "../net/endpoints.js";
 import { oauthSetupState } from "../oauth/index.js";
@@ -67,7 +67,7 @@ export type ConnectorPatch = Static<typeof ConnectorPatchSchema>;
 /** A change to one of a connector's tools; null clears that edit, and a field left out keeps it. */
 export const ToolEditSchema = Type.Object({
   description: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-  input_schema: Type.Optional(Type.Unknown()),
+  input_schema: Type.Optional(Type.Union([JsonObjectSchema, Type.Null()])),
   default: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
 });
 
@@ -212,10 +212,7 @@ export function validateEndpointUrl(raw: string): string {
   }
 }
 
-export function validateInputSchema(raw: unknown): ToolInputSchema {
-  if (!isJsonObject(raw)) {
-    throw new CatalogError("input_schema must be an object");
-  }
+export function validateInputSchema(raw: JsonObject): ToolInputSchema {
   assertMatches(ToolInputSchema, raw, (problem) => new CatalogError(`input_schema ${problem}`));
   const encoded = JSON.stringify(raw);
   if (Buffer.byteLength(encoded, "utf8") > SCHEMA_MAX_BYTES) {

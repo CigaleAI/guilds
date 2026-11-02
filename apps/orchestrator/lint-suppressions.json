@@ -254,11 +254,6 @@
       "count": 1
     }
   },
-  "src/mcp/catalog.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    }
-  },
   "src/mcp/connect-flow.ts": {
     "limits/silent-catch": {
       "count": 1
@@ -266,11 +261,6 @@
   },
   "src/mcp/connect-token.ts": {
     "limits/erased-return-type": {
-      "count": 1
-    }
-  },
-  "src/mcp/connections.ts": {
-    "anti-slop/no-unknown-parameters": {
       "count": 1
     }
   },

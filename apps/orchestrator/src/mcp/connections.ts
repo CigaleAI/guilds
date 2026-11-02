@@ -20,7 +20,7 @@ import {
 import type { Queryable } from "../db/pg.js";
 import { GITHUB_SLUG } from "../github/index.js";
 import { requireVisibleGuild } from "../guilds/access.js";
-import { isJsonObject } from "../lib/json.js";
+import { isJsonObject, type JsonObject } from "../lib/json.js";
 import { relistTools, type McpPool, type SettingsLookup } from "./pool.js";
 import { awaitingSettings } from "../connectors/login.js";
 import { callOwnedConnectionTool, type OperatorToolResult } from "./operator-call.js";
@@ -220,7 +220,7 @@ export async function lookupWithLogin(
 export async function saveConnectionSettings(
   services: ConnectionServices,
   connection: McpConnectionRow,
-  settings: unknown,
+  settings: JsonObject,
 ): Promise<ConnectionView> {
   assertNotPlatform(connection);
   const server = await requireServer(services.db, connection.mcp_server_id);
@@ -234,11 +234,10 @@ export async function saveConnectionSettings(
   const mcp = poolOf(services, "settings are unavailable");
   // The check refuses settings that lack a property the schema requires, so a login waiting
   // for its settings connects with any it accepts.
-  const valid = settings ?? null;
-  validateSettings(schema, valid);
+  validateSettings(schema, settings);
   let accountHint: string;
   try {
-    accountHint = await mcp.validateLogin(connection, server, valid);
+    accountHint = await mcp.validateLogin(connection, server, settings);
   } catch (error) {
     throw translateConnectFailure(error, server);
   }
@@ -246,8 +245,8 @@ export async function saveConnectionSettings(
     services.db,
     connection.id,
     awaitingSettings(connection)
-      ? { settings: valid, status: "connected", account_hint: accountHint }
-      : { settings: valid, account_hint: accountHint },
+      ? { settings, status: "connected", account_hint: accountHint }
+      : { settings, account_hint: accountHint },
     new Date(),
   );
   if (row === null) {
