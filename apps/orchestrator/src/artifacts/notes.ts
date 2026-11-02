@@ -52,6 +52,9 @@ import {
 /** A parsed display path that names a note, file, Memory, or script by where it sits. */
 export type ArtifactPath = Extract<ParsedDisplayPath, { kind: "artifact" }>;
 
+/** A parsed display path that names a record of a collection. */
+export type RecordPath = Extract<ParsedDisplayPath, { kind: "record" }>;
+
 /** A parsed display path that names an archived Memory revision. */
 export type RevisionPath = Extract<ParsedDisplayPath, { kind: "revision" }>;
 
@@ -342,9 +345,7 @@ export async function readableChangeTarget(store: ArtifactStore, actor: Artifact
     return none;
   }
   if (parsed.kind === "record") {
-    const collection = await describeCollection(store, actor, parsed.collectionName);
-    const record = collection ? await getRecordOrTombstone(store.db, collection.id, parseRecordId(parsed.recordId)) : null;
-    return record ? { artifactIds: [record.id], taskAgentId: null } : none;
+    return readableRecordTarget(store, actor, parsed);
   }
   if (parsed.agentId !== null && parsed.path === "" && parsed.key === TASK_KEY) {
     return reachesAgent(actor, parsed.agentId) ? { artifactIds: [], taskAgentId: parsed.agentId } : none;
@@ -352,6 +353,17 @@ export async function readableChangeTarget(store: ArtifactStore, actor: Artifact
   const rows = await listArtifactsEverAt(store.db, addressOf(parsed));
   const readable = await Promise.all(rows.map(async (row) => ((await artifactMode(store, actor, row)) === null ? [] : [row.id])));
   return { artifactIds: readable.flat(), taskAgentId: null };
+}
+
+/** The record a record path names, live or deleted, when the actor reads its collection; nothing otherwise. */
+async function readableRecordTarget(
+  store: ArtifactStore,
+  actor: ArtifactActor,
+  parsed: RecordPath,
+): Promise<ChangeTarget> {
+  const collection = await describeCollection(store, actor, parsed.collectionName);
+  const record = collection ? await getRecordOrTombstone(store.db, collection.id, parseRecordId(parsed.recordId)) : null;
+  return { artifactIds: record ? [record.id] : [], taskAgentId: null };
 }
 
 /** A search of the notes an actor reads: the words to match, and how many to return. */

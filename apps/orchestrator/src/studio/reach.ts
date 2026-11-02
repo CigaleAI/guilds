@@ -1,5 +1,5 @@
 import { parseDisplayPath, TASK_KEY, type ParsedDisplayPath } from "../artifacts/paths.js";
-import { loadParsed } from "../artifacts/notes.js";
+import { loadParsed, type RecordPath } from "../artifacts/notes.js";
 import { parseRecordId } from "../artifacts/search.js";
 import { listAgents } from "../db/agents.js";
 import { isInGuildScope } from "../db/artifact-access.js";
@@ -65,6 +65,18 @@ function studioTableActor(scope: StudioReachScope) {
   return operatorActor({ orgId: scope.orgId, actorId: "studio", actorName: "studio", guildId: scope.sourceGuildId });
 }
 
+/** The record a record path names, live or deleted, when its table is one the session reaches; nothing otherwise. */
+async function studioRecordTarget(
+  deps: StudioReachDeps,
+  scope: StudioReachScope,
+  parsed: RecordPath,
+): Promise<ChangeTarget> {
+  const table = await describeCollection(deps.artifacts, studioTableActor(scope), parsed.collectionName);
+  const reached = table !== null && studioReachesTable(scope.sourceGuildId, table.guild_id);
+  const record = reached ? await getRecordOrTombstone(deps.db, table.id, parseRecordId(parsed.recordId)) : null;
+  return { artifactIds: record ? [record.id] : [], taskAgentId: null };
+}
+
 /**
  * Whose changes a display path's history shows the session: every note or file that sat at the
  * path, live or deleted, in the source guild's scope; a source agent's Task, Memory, or script; a
@@ -80,12 +92,7 @@ export async function studioChangeTarget(
     return none;
   }
   if (parsed.kind === "record") {
-    const table = await describeCollection(deps.artifacts, studioTableActor(scope), parsed.collectionName);
-    if (!table || !studioReachesTable(scope.sourceGuildId, table.guild_id)) {
-      return none;
-    }
-    const record = await getRecordOrTombstone(deps.db, table.id, parseRecordId(parsed.recordId));
-    return record ? { artifactIds: [record.id], taskAgentId: null } : none;
+    return studioRecordTarget(deps, scope, parsed);
   }
   const address = { org_id: parsed.orgId, agent_id: parsed.agentId, path: parsed.path, key: parsed.key };
   if (parsed.agentId !== null) {
