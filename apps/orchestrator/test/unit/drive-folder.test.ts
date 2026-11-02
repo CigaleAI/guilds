@@ -5,7 +5,9 @@ import {
   DRIVE_FOLDER_MIME,
   DriveFolderError,
   assertPickedDriveFolder,
-  constrainDriveTool,
+  assertReachesFolder,
+  constrainCreate,
+  constrainSearch,
   driveJson,
   fileInDriveFolder,
   filterDriveToolResult,
@@ -81,7 +83,7 @@ test("fileInDriveFolder walks parents", async () => {
   assert.equal(await fileInDriveFolder("tok", "doc_1", "other", { client }), false);
 });
 
-test("constrainDriveTool pins creates and rejects files outside the folder", async () => {
+test("Drive pins creates to the connected folder and rejects files outside it", async () => {
   const client = mockFetch((url) => {
     const path = new URL(url).pathname;
     if (path.endsWith("/files/inside")) {
@@ -99,19 +101,20 @@ test("constrainDriveTool pins creates and rejects files outside the folder", asy
     return { status: 404 };
   });
   const scoped = { accessToken: "tok", folderId: "folder_1", client };
-  assert.deepEqual(await constrainDriveTool("create_file", { title: "n" }, scoped), {
+  assert.deepEqual(await constrainCreate(scoped, { title: "n" }), {
     title: "n",
     parentId: "folder_1",
   });
-  await constrainDriveTool("read_file_content", { fileId: "inside" }, scoped);
+  await assertReachesFolder(scoped, { fileId: "inside" });
   await assert.rejects(
-    () => constrainDriveTool("read_file_content", { fileId: "outside" }, scoped),
+    () => assertReachesFolder(scoped, { fileId: "outside" }),
     /limited to the connected folder/,
   );
   await assert.rejects(
-    () => constrainDriveTool("search_files", { query: "parentId != 'folder_1'" }, scoped),
-    /cannot exclude/,
+    () => assertReachesFolder(scoped, { fileId: "inside", parentId: "outside" }),
+    /limited to the connected folder/,
   );
+  await assert.rejects(() => constrainSearch(scoped, "parentId != 'folder_1'"), /cannot exclude/);
 });
 
 test("filterDriveToolResult keeps files in the connected folder", async () => {
@@ -236,14 +239,15 @@ test("driveJson decodes a response against its schema and refuses one that does 
       error instanceof DriveFolderError &&
       /^Drive returned an unexpected response at \/parents\/0: /.test(error.message),
   );
-  for (const text of ["[]", "not json"]) {
-    await assert.rejects(
-      () => driveJson("tok", request, answering({ text })),
-      (error: unknown) =>
-        error instanceof DriveFolderError &&
-        error.message === "Drive folder lookup returned a non-object",
-    );
-  }
+  await assert.rejects(
+    () => driveJson("tok", request, answering({ text: "[]" })),
+    (error: unknown) =>
+      error instanceof DriveFolderError && /^Drive returned an unexpected response at \/: /.test(error.message),
+  );
+  await assert.rejects(
+    () => driveJson("tok", request, answering({ text: "not json" })),
+    (error: unknown) => error instanceof DriveFolderError && error.message === "Drive returned a non-JSON body",
+  );
 });
 
 test("translateDriveSearchQuery maps MCP terms", () => {
@@ -326,4 +330,37 @@ test("Drive's adapter looks up folders by name or link and validates the picked 
     () => drive.validate!({ access_token: "tok" }, ctx({ folder_id: "root" })),
     (error: unknown) => error instanceof ConnectorError && error.status === 422,
   );
+});
+
+test("Drive decodes each call's arguments and forwards only calls inside the folder", async () => {
+  const forwarded: string[] = [];
+  const ctx = {
+    http: mockFetch((url) => {
+      const path = new URL(url).pathname;
+      if (path.endsWith("/files/inside")) {
+        return { status: 200, json: { id: "inside", name: "In", mimeType: "text/plain", parents: ["folder_1"] } };
+      }
+      return { status: 404 };
+    }),
+    remote: {
+      initialize: async () => ({ name: "", instructions: "" }),
+      list: async () => [],
+      call: async (name: string) => {
+        forwarded.push(name);
+        return "remote";
+      },
+    },
+    connection_id: "conn_drive",
+    settings: { folder_id: "folder_1" },
+  };
+  const creds = { access_token: "tok" };
+  const refused = (pattern: RegExp) => (error: unknown) =>
+    error instanceof ConnectorError && error.status === 422 && pattern.test(error.message);
+  assert.equal(await drive.call!("get_drive_info", { fileId: "inside" }, creds, ctx), "remote");
+  await assert.rejects(drive.call!("get_drive_info", { fileId: 7 }, creds, ctx), refused(/^\/fileId: /));
+  await assert.rejects(drive.call!("get_drive_info", { parent_id: "outside" }, creds, ctx), refused(/limited to the connected folder/));
+  assert.deepEqual(forwarded, ["get_drive_info"]);
+  await assert.rejects(drive.call!("download_file_content", {}, creds, ctx), refused(/^fileId is required$/));
+  await assert.rejects(drive.call!("search_files", { pageSize: "10" }, creds, ctx), refused(/^\/pageSize: /));
+  await assert.rejects(drive.call!("get_file_metadata", { file_id: "outside" }, creds, ctx), refused(/limited to the connected folder/));
 });

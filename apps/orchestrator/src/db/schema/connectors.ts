@@ -165,9 +165,9 @@ export type GithubRepositorySelection = {
 
 /**
  * A login's settings: the values its connector's `settings_schema` describes, by property. A
- * GitHub login's also list the repositories it picked.
+ * GitHub login's also list the repositories it picked; a Drive login's name the folder it picked.
  */
-export type ConnectionSettings = { repositories?: GithubRepositorySelection[]; [property: string]: JsonValue | undefined };
+export type ConnectionSettings = { repositories?: GithubRepositorySelection[]; folder_id?: string; [property: string]: JsonValue | undefined };
 
 /** An OAuth client's credentials: its id, and the secret a confidential client holds. */
 export type OAuthClientCredentials = { client_id: string; client_secret: string | null };

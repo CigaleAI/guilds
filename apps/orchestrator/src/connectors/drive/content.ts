@@ -1,36 +1,26 @@
 import path from "node:path";
 import { AgentFileError, agentDisplayPath, writeAgentFile } from "../../lib/agent-file.js";
-import { MAX_DRIVE_UPLOAD_BYTES } from "./upload.js";
+import { jsonPost, MAX_DRIVE_UPLOAD_BYTES, type DriveFileWrite } from "./upload.js";
 import {
   DRIVE_FOLDER_MIME,
   DriveFolderError,
-  driveArg,
   driveBytes,
   driveJson,
+  mcpFile,
   type DriveClientOptions,
-  type DriveLogin,
+  type McpFile,
 } from "./folder.js";
-import type { ToolInputSchema } from "../../db/schema/index.js";
-import { DriveFile, PermissionList } from "./responses.js";
+import {
+  given,
+  type CopyFileArguments,
+  type DownloadFileArguments,
+  type FileArguments,
+  type ReadFileArguments,
+} from "./parameters.js";
+import { DriveFile, PermissionList, type Permission } from "./responses.js";
 
 export const DRIVE_DOWNLOAD_FILE_DESCRIPTION =
   "Download a file from the connected Drive folder into the agent workspace. Pass an optional file_path in your home. The result is that path, not file bytes.";
-
-export const DRIVE_DOWNLOAD_FILE_SCHEMA: ToolInputSchema = {
-  type: "object",
-  properties: {
-    fileId: { type: "string", description: "Drive file id." },
-    file_path: {
-      type: "string",
-      description: "Destination path in your home. Defaults to the file's title in the workspace root.",
-    },
-    exportMimeType: {
-      type: "string",
-      description: "For Google Docs, Sheets, or Slides, the MIME type to export to.",
-    },
-  },
-  required: ["fileId"],
-};
 
 const GOOGLE_APP = "application/vnd.google-apps.";
 const FILE_FIELDS = "id,name,mimeType,parents,size,description,fileExtension,webViewLink,createdTime,modifiedTime,viewedByMeTime,sharedWithMeTime,owners(emailAddress),capabilities(canAddChildren)";
@@ -39,8 +29,8 @@ function fileUrl(fileId: string, query: string): string {
   return `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?${query}`;
 }
 
-function requireFileId(arguments_: Record<string, unknown>, tool: string): string {
-  const fileId = driveArg(arguments_, "fileId", "file_id");
+function requireFileId(arguments_: FileArguments, tool: string): string {
+  const fileId = given(arguments_.fileId, arguments_.file_id);
   if (!fileId) {
     throw new DriveFolderError(`${tool} requires fileId`);
   }
@@ -59,19 +49,23 @@ const META_FIELDS = [
   ["sharedWithMeTime", "sharedWithMeTime"],
 ] as const;
 
-/** The fields every file carries: its id, title, first parent and type, empty when Drive has none. */
-function mcpFileHead(payload: DriveFile): Record<string, string | boolean> {
-  return {
-    id: payload.id ?? "",
-    title: payload.name ?? "",
-    parentId: (payload.parents ?? []).find(Boolean) ?? "",
-    mimeType: payload.mimeType ?? "",
-  };
-}
+/** A file's metadata as the Drive MCP tools return it: the file, with each other field Drive has a value for. */
+type McpFileMeta = McpFile & {
+  fileSize?: string;
+  description?: string;
+  fileExtension?: string;
+  viewUrl?: string;
+  createdTime?: string;
+  modifiedTime?: string;
+  viewedByMeTime?: string;
+  sharedWithMeTime?: string;
+  owner?: string;
+  canAddChildren?: boolean;
+};
 
 /** A file's metadata as the Drive MCP tools return it. */
-function mcpFileFromMeta(payload: DriveFile): Record<string, string | boolean> {
-  const file = mcpFileHead(payload);
+function mcpFileFromMeta(payload: DriveFile): McpFileMeta {
+  const file: McpFileMeta = mcpFile(payload);
   for (const [from, to] of META_FIELDS) {
     const value = payload[from];
     if (value) {
@@ -143,23 +137,24 @@ async function fetchFileBytes(
   return { bytes, mimeType: contentType.split(";")[0]?.trim() || mimeType };
 }
 
-const EXT_BY_MIME: Record<string, string> = {
-  "application/json": ".json",
-  "application/pdf": ".pdf",
-  "application/zip": ".zip",
-  "image/jpeg": ".jpg",
-  "image/png": ".png",
-  "image/webp": ".webp",
-  "text/csv": ".csv",
-  "text/html": ".html",
-  "text/markdown": ".md",
-  "text/plain": ".txt",
-};
+/** The extension a downloaded file is given by its type, when its title has none. */
+const EXT_BY_MIME = new Map([
+  ["application/json", ".json"],
+  ["application/pdf", ".pdf"],
+  ["application/zip", ".zip"],
+  ["image/jpeg", ".jpg"],
+  ["image/png", ".png"],
+  ["image/webp", ".webp"],
+  ["text/csv", ".csv"],
+  ["text/html", ".html"],
+  ["text/markdown", ".md"],
+  ["text/plain", ".txt"],
+]);
 
 function downloadFileName(title: string, fileId: string, mimeType: string): string {
   let name = title.trim().replace(/[/\\]/g, "-").replace(/^\.+/, "") || fileId;
   if (!path.extname(name)) {
-    const ext = EXT_BY_MIME[mimeType];
+    const ext = EXT_BY_MIME.get(mimeType);
     if (ext) {
       name = `${name}${ext}`;
     }
@@ -179,7 +174,7 @@ function textReadable(mimeType: string): boolean {
 
 export async function getDriveFileMetadata(
   accessToken: string,
-  arguments_: Record<string, unknown>,
+  arguments_: FileArguments,
   options: DriveClientOptions,
 ): Promise<string> {
   const payload = await loadFile(accessToken, requireFileId(arguments_, "get_file_metadata"), options);
@@ -188,11 +183,9 @@ export async function getDriveFileMetadata(
 
 const PERMISSION_FIELDS = ["role", "displayName", "type", "emailAddress"] as const;
 
-type Permission = NonNullable<PermissionList["permissions"]>[number];
-
 /** A permission with the fields Drive gave it. */
-function permissionView(row: Permission): Record<string, string> {
-  const permission: Record<string, string> = {};
+function permissionView(row: Permission): Permission {
+  const permission: Permission = {};
   for (const field of PERMISSION_FIELDS) {
     const value = row[field];
     if (value !== undefined) {
@@ -204,7 +197,7 @@ function permissionView(row: Permission): Record<string, string> {
 
 export async function getDriveFilePermissions(
   accessToken: string,
-  arguments_: Record<string, unknown>,
+  arguments_: FileArguments,
   options: DriveClientOptions,
 ): Promise<string> {
   const fileId = requireFileId(arguments_, "get_file_permissions");
@@ -216,7 +209,7 @@ export async function getDriveFilePermissions(
 
 export async function downloadDriveFileContent(
   accessToken: string,
-  arguments_: Record<string, unknown>,
+  arguments_: DownloadFileArguments,
   options: DriveClientOptions,
   workspaceDir?: string,
 ): Promise<string> {
@@ -226,9 +219,9 @@ export async function downloadDriveFileContent(
   const fileId = requireFileId(arguments_, "download_file_content");
   const meta = await loadFile(accessToken, fileId, options);
   const title = meta.name ?? "";
-  const exportMimeType = driveArg(arguments_, "exportMimeType", "export_mime_type");
+  const exportMimeType = given(arguments_.exportMimeType);
   const downloaded = await fetchFileBytes(accessToken, { id: fileId, mimeType: meta.mimeType ?? "", exportMimeType }, options);
-  const requested = driveArg(arguments_, "file_path", "filePath");
+  const requested = given(arguments_.file_path);
   let resolved: string;
   try {
     resolved = await writeAgentFile(
@@ -251,16 +244,19 @@ export async function downloadDriveFileContent(
   });
 }
 
+/** What `read_file_content` returns: the file's text, or the marks of what it cannot return. */
+type FileContent = { fileContent?: string; commentsNotSupported?: true; textFormattingNotSupported?: true };
+
 export async function readDriveFileContent(
   accessToken: string,
-  arguments_: Record<string, unknown>,
+  arguments_: ReadFileArguments,
   options: DriveClientOptions,
 ): Promise<string> {
   const fileId = requireFileId(arguments_, "read_file_content");
   const meta = await loadFile(accessToken, fileId, options);
   const mimeType = meta.mimeType ?? "";
   const includeComments = arguments_.includeComments === true || arguments_.include_comments === true;
-  const result: Record<string, unknown> = {};
+  const result: FileContent = {};
   if (includeComments) {
     result.commentsNotSupported = true;
   }
@@ -287,13 +283,13 @@ export async function readDriveFileContent(
 
 export async function copyDriveFile(
   accessToken: string,
-  arguments_: Record<string, unknown>,
+  arguments_: CopyFileArguments,
   options: DriveClientOptions,
 ): Promise<string> {
   const fileId = requireFileId(arguments_, "copy_file");
-  const title = driveArg(arguments_, "title", "title");
-  const parentId = driveArg(arguments_, "parentId", "parent_id");
-  const body: Record<string, unknown> = {};
+  const title = given(arguments_.title);
+  const parentId = given(arguments_.parentId, arguments_.parent_id);
+  const body: DriveFileWrite = {};
   if (title) {
     body.name = title;
   }
@@ -305,34 +301,9 @@ export async function copyDriveFile(
     {
       url: `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}/copy?supportsAllDrives=true&fields=id,name,mimeType,parents`,
       schema: DriveFile,
-      init: { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
+      init: jsonPost(body),
     },
     options,
   );
   return JSON.stringify(mcpFileFromMeta(payload));
-}
-
-export async function callDriveFileTool(
-  remoteName: string,
-  arguments_: Record<string, unknown>,
-  login: DriveLogin,
-  workspaceDir?: string,
-): Promise<string | null> {
-  const { accessToken } = login;
-  if (remoteName === "get_file_metadata") {
-    return getDriveFileMetadata(accessToken, arguments_, login);
-  }
-  if (remoteName === "get_file_permissions") {
-    return getDriveFilePermissions(accessToken, arguments_, login);
-  }
-  if (remoteName === "download_file_content") {
-    return downloadDriveFileContent(accessToken, arguments_, login, workspaceDir);
-  }
-  if (remoteName === "read_file_content") {
-    return readDriveFileContent(accessToken, arguments_, login);
-  }
-  if (remoteName === "copy_file") {
-    return copyDriveFile(accessToken, arguments_, login);
-  }
-  return null;
 }
