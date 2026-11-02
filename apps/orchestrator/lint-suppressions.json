@@ -104,17 +104,6 @@
       "count": 3
     }
   },
-  "src/connectors/dexpaprika/client.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 5
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 4
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    }
-  },
   "src/connectors/drive/adapter.ts": {
     "anti-slop/no-known-value-widening": {
       "count": 1
