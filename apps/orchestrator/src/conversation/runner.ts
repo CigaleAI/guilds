@@ -57,11 +57,14 @@ const EVENT_QUEUE_LIMIT = 4096;
  */
 export type ConversationToolResult = JsonObject & { error?: string; await_operator?: boolean };
 
-/** A tool a coach offers: its name, the schema the model is offered, and what answers a call. */
-export type ConversationTool = {
+/**
+ * A tool a coach offers: its name, the schema the model is offered, and what answers a call, in
+ * the coach's tool context `C`.
+ */
+export type ConversationTool<C> = {
   name: string;
   schema: FunctionTool;
-  handler: (ctx: unknown, args: JsonObject) => Promise<ConversationToolResult>;
+  handler: (ctx: C, args: JsonObject) => Promise<ConversationToolResult>;
 };
 
 /** A coach's generation starting or finishing: its session, and its number. */
@@ -119,17 +122,18 @@ export type ConversationRunnerDeps = {
 
 /**
  * One generation of a coach conversation: the session and the operator it answers, its number,
- * the context and system prompt it is sent, the tools it offers, and its limits.
+ * the context and system prompt it is sent, the tools it offers, the context `C` its tools are
+ * called in, and its limits.
  */
-export type ConversationGeneration = {
+export type ConversationGeneration<C> = {
   session: StudioSessionRow | BuilderSessionRow;
   user: UserRow;
   generation: number;
   generationContext: string;
   systemContent?: string;
-  tools: Map<string, ConversationTool>;
-  toolContext: unknown;
-  bindToolContext?: (upcoming: number) => unknown;
+  tools: Map<string, ConversationTool<C>>;
+  /** The context a tool call runs in, given the seq its result takes in the session's messages. */
+  toolContext: (upcoming: number) => C;
   maxTokens: number;
   maxSteps: number;
   maxToolCalls: number;
@@ -215,7 +219,7 @@ export class ConversationRunner {
     await this.tasks.get(sessionId);
   }
 
-  start(args: ConversationGeneration): void {
+  start<C>(args: ConversationGeneration<C>): void {
     const sessionId = args.session.id;
     const task = this.run(args).finally(() => {
       if (this.tasks.get(sessionId) === task) {
@@ -233,7 +237,7 @@ export class ConversationRunner {
     await updateConversationSession(this.deps.db, this.session(session.id), { generation_state: "idle", generation_token: null }, new Date());
   }
 
-  private async run(turn: ConversationGeneration): Promise<void> {
+  private async run<C>(turn: ConversationGeneration<C>): Promise<void> {
     const sessionId = turn.session.id;
     const orgId = turn.session.org_id;
     const cancel = new CancelEvent();
@@ -274,7 +278,7 @@ export class ConversationRunner {
    * tool calls. The generation stops after a step that is cancelled, would pass the input limit,
    * fails, calls no tool, or awaits the operator.
    */
-  private async takeStep(turn: ConversationGeneration, cancel: CancelEvent, progress: GenerationProgress): Promise<StepEnd> {
+  private async takeStep<C>(turn: ConversationGeneration<C>, cancel: CancelEvent, progress: GenerationProgress): Promise<StepEnd> {
     const sessionId = turn.session.id;
     if (cancel.aborted) {
       await this.repair(sessionId, turn.generation, "cancelled");
@@ -309,7 +313,7 @@ export class ConversationRunner {
   }
 
   /** The history as this step sends it to the model; the seqs it stubs join the generation's. */
-  private async projectHistory(turn: ConversationGeneration, progress: GenerationProgress): Promise<MessagePayload[]> {
+  private async projectHistory<C>(turn: ConversationGeneration<C>, progress: GenerationProgress): Promise<MessagePayload[]> {
     const history = await listConversationMessages(this.deps.db, this.deps.kind, turn.session.id);
     const stubbedThisStep: number[] = [];
     const minUnstubbed = turn.minUnstubbed ?? this.deps.minUnstubbedToolResults;
@@ -359,8 +363,8 @@ export class ConversationRunner {
   }
 
   /** Commits the model's message with the projection it answered, and charges its usage to the organisation. */
-  private async commitCompletion(
-    turn: ConversationGeneration,
+  private async commitCompletion<C>(
+    turn: ConversationGeneration<C>,
     messages: MessagePayload[],
     completion: Completion,
     progress: GenerationProgress,
@@ -395,8 +399,8 @@ export class ConversationRunner {
    * Runs the completion's tool calls in order; a call past the generation's limit is answered
    * with an error. True when a result awaits the operator.
    */
-  private async runToolCalls(
-    turn: ConversationGeneration,
+  private async runToolCalls<C>(
+    turn: ConversationGeneration<C>,
     messages: MessagePayload[],
     completion: Completion,
     progress: GenerationProgress,
@@ -420,8 +424,8 @@ export class ConversationRunner {
    * Calls the tool and commits its result as the next message, or an error when the result
    * would put the next prompt over the input limit, then hands the result to `onToolResult`.
    */
-  private async runToolCall(
-    turn: ConversationGeneration,
+  private async runToolCall<C>(
+    turn: ConversationGeneration<C>,
     messages: MessagePayload[],
     call: ToolCall,
     finishReason: CompletionMetadata["finish_reason"],
@@ -471,8 +475,8 @@ export class ConversationRunner {
   }
 
   /** The model's completion of a step; a provider failure or a cancel ends with its message as a typed failure. */
-  private async requestCompletion(
-    turn: ConversationGeneration,
+  private async requestCompletion<C>(
+    turn: ConversationGeneration<C>,
     request: CompletionRequest,
     cancel: CancelEvent,
   ): Promise<Completion | CompletionFailure> {
@@ -483,8 +487,8 @@ export class ConversationRunner {
     }
   }
 
-  private async complete(
-    turn: ConversationGeneration,
+  private async complete<C>(
+    turn: ConversationGeneration<C>,
     request: CompletionRequest,
     cancel: CancelEvent,
   ): Promise<Completion> {
@@ -622,7 +626,7 @@ export class ConversationRunner {
 }
 
 /** The function schemas of the tools a generation offers, as the model is sent them. */
-function offeredToolSchemas(turn: ConversationGeneration): FunctionTool[] {
+function offeredToolSchemas<C>(turn: ConversationGeneration<C>): FunctionTool[] {
   return [...turn.tools.values()].map((tool) => tool.schema);
 }
 
@@ -651,8 +655,8 @@ export function projectConversationHistory(args: ConversationProjection): Messag
  * A tool that is unknown, whose arguments the step's output cut short, or that throws, ends with
  * its error as the result, which the model reads.
  */
-export async function callConversationTool(
-  turn: ConversationGeneration,
+export async function callConversationTool<C>(
+  turn: ConversationGeneration<C>,
   call: ToolCall,
   upcoming: number,
   finishReason: CompletionMetadata["finish_reason"],
@@ -667,10 +671,7 @@ export async function callConversationTool(
     };
   }
   try {
-    return await tool.handler(
-      turn.bindToolContext ? turn.bindToolContext(upcoming) : turn.toolContext,
-      parseToolArgs(call.function.arguments),
-    );
+    return await tool.handler(turn.toolContext(upcoming), parseToolArgs(call.function.arguments));
   } catch (error) {
     return { error: error instanceof Error ? error.message : "tool failed" };
   }
