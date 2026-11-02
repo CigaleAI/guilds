@@ -572,13 +572,14 @@ rule still covers it and its change history. History is read by item,
 so a name a hidden deleted item held does not show that item's
 changes once another item holds it
 ([Artifact store](artifacts.md#file-provenance)). Deleting a guild or
-an agent removes the rows naming it, and with them every live note
-and file those rows alone reached: an item whose list
-that leaves empty is deleted too, as the operator who deleted the
-guild or the agent, and its deletion is recorded in its history. Its
-tombstone has no row left, so its history shows to every operator. A
-note or a file that another row still reaches stays, without the
-removed rows.
+an agent removes the rows naming it, and with them every note and
+file those rows alone reached. A deleted item whose list that leaves
+empty is removed with its change history and the log of its access
+list, so no operator reads what it was. A live item whose list that
+leaves empty is deleted too, as the operator who deleted the guild or
+the agent, and its deletion is recorded in its history. Its tombstone
+has no row left, so its history shows to every operator. A note or a
+file that another row still reaches stays, without the removed rows.
 
 ```text
 GET  /api/notes/:note_id/access                { subjects }

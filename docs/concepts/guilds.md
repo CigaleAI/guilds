@@ -341,9 +341,9 @@ It holds every agent of the guild while it runs. It then:
 - deletes the guild's and its agents' usage counters
 - soft-deletes the guild's own collections with their records
 - deletes the access-list rows that name the guild or its agents,
-  and the rows on its own collections, and soft-deletes, as the
-  deleting operator, every live note and file those rows alone
-  reached
+  and the rows on its own collections; every deleted note and file
+  those rows alone reached is removed with its change history, and
+  every live one is soft-deleted as the deleting operator
 - deletes every secret, not organisation-wide, whose grants all name
   the guild or its agents
 - deletes the guild row

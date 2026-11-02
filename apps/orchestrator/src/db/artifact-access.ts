@@ -191,6 +191,27 @@ export async function deleteAccessList(db: Queryable, target: AccessTargetRef): 
   ]);
 }
 
+/**
+ * Removes each deleted note and file in `ids` whose access list is empty, with its change history
+ * (its `file_changes` rows go by cascade) and its access list's entries in the configuration log.
+ */
+export async function deleteUnlistedTombstones(db: Queryable, ids: string[]): Promise<void> {
+  if (!ids.length) {
+    return;
+  }
+  await db.query(
+    `WITH gone AS (
+       DELETE FROM artifacts a
+        WHERE a.id = ANY($1::text[]) AND a.deleted_at IS NOT NULL AND a.kind IN ('note', 'file')
+          AND NOT EXISTS (SELECT 1 FROM artifact_access x WHERE x.target_kind = a.kind AND x.target_id = a.id)
+       RETURNING a.org_id, a.kind, a.id
+     )
+     DELETE FROM config_changes c USING gone
+      WHERE c.org_id = gone.org_id AND c.target_kind = gone.kind AND c.target_id = gone.id`,
+    [ids],
+  );
+}
+
 /** The name of an access subject of the organisation, and the guild it sits in; null when it has none such. */
 const SUBJECT_SQL: Record<AccessRow["subject_type"], string> = {
   org: `SELECT name, NULL::text AS guild_id FROM orgs WHERE id = $1 AND id = $2`,

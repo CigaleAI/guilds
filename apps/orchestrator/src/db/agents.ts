@@ -1,6 +1,7 @@
 import type { InferSelectModel } from "drizzle-orm";
 import type { ChangeActor } from "../lib/change-actor.js";
 import { newId } from "../lib/ids.js";
+import { deleteUnlistedTombstones } from "./artifact-access.js";
 import { retireUnlistedArtifacts } from "./artifacts.js";
 import { GuildNameTaken, RowMissing } from "./errors.js";
 import { guildOperatorsColumn, type GuildOperatorRow } from "./guilds.js";
@@ -243,8 +244,8 @@ export async function agentNameTaken(pool: Queryable, name: string): Promise<boo
 }
 
 /**
- * Deletes an agent with the access rows naming it; a note or a file only those rows reached is
- * deleted with it, as `actor`.
+ * Deletes an agent with the access rows naming it. A live note or file only those rows reached is
+ * deleted with it, as `actor`; a deleted one only those rows reached is removed with its history.
  */
 export async function deleteAgent(pool: Queryable, agentId: string, actor: ChangeActor): Promise<void> {
   await withTransaction(pool, async (client) => {
@@ -253,7 +254,10 @@ export async function deleteAgent(pool: Queryable, agentId: string, actor: Chang
        RETURNING target_kind, target_id`,
       [agentId],
     );
-    await retireUnlistedArtifacts(client, named.rows.map((row) => row.target_id), actor, new Date());
+    const items = named.rows.map((row) => row.target_id);
+    // Tombstones go before the retirement, so the items this deletion retires keep their history.
+    await deleteUnlistedTombstones(client, items);
+    await retireUnlistedArtifacts(client, items, actor, new Date());
     // A secret granted only to this agent goes with it.
     await client.query(
       `DELETE FROM secrets s

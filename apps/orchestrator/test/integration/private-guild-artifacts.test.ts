@@ -10,15 +10,23 @@ import { templatesRoot } from "../helpers/fixtures.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { insertUser } from "../../src/db/users.js";
+import { OPERATOR_ACTOR } from "../helpers/agents.js";
 import { insertMember } from "../../src/db/orgs.js";
+import { deleteAgent } from "../../src/db/agents.js";
+import { listConfigChanges } from "../../src/db/config-changes.js";
+import { listFileChanges } from "../../src/db/file-changes.js";
+import { deleteGuild } from "../../src/db/guilds.js";
+import { listWindowConfigChanges, listWindowFileChanges } from "../../src/db/state.js";
 
 const OWNER = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 const JSON_BODY = { "content-type": "application/json" };
 
 const dbName = uniqueDbName("agent_platform_private_guild_artifacts");
+const deletionDbName = uniqueDbName("agent_platform_private_guild_deletion");
 
 after(async () => {
   await dropIsolatedDatabase(dbName);
+  await dropIsolatedDatabase(deletionDbName);
 });
 
 test("organisation-wide note, table, and change routes keep a private guild to its operators", { timeout: 60_000 }, async () => {
@@ -219,6 +227,107 @@ test("organisation-wide note, table, and change routes keep a private guild to i
 
     const ownerTable = await app.inject({ method: "GET", url: `/api/collections/${tableId}`, headers: OWNER });
     assert.equal(ownerTable.statusCode, 200);
+  } finally {
+    await app.close();
+    await database.close();
+  }
+});
+
+test("deleting a private guild or one of its agents removes the deleted notes only it reached, with every change to them", { timeout: 60_000 }, async () => {
+  process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
+  const database = await connect(await createIsolatedDatabase(deletionDbName));
+  const notes = new NotesStore(tempDir("guilds-private-deletion-notes-"), templatesRoot());
+  await notes.ensureSystemPrompt();
+  const db = database.pool;
+  await connectModelProvider(db, "org_home", "deepinfra");
+  const app = await buildApp(database, { db, notes, scripts: agentScripts(db), schedules: agentSchedules(db) });
+  const teammate = await insertUser(db, { userId: "user_teammate_attic", name: "teammate-attic", image: null, email: "attic@example.com" }, new Date());
+  await insertMember(db, { org_id: "org_home", user_id: String(teammate.id), role: "member" }, new Date());
+  const TEAMMATE = { "X-Guilds-User": String(teammate.id), "X-Guilds-Org": "org_home" };
+  const opened = new Date(0);
+
+  try {
+    const guild = await app.inject({
+      method: "POST",
+      url: "/api/guilds",
+      headers: { ...OWNER, ...JSON_BODY },
+      payload: { name: "attic", visibility: "private" },
+    });
+    assert.equal(guild.statusCode, 201, guild.body);
+    const guildId = String(guild.json().id);
+    const agent = await app.inject({
+      method: "POST",
+      url: `/api/guilds/${guildId}/agents`,
+      headers: { ...OWNER, ...JSON_BODY },
+      payload: { name: "porter", config: { model: TEST_MODEL, browser: false } },
+    });
+    assert.equal(agent.statusCode, 201, agent.body);
+    const agentId = String(agent.json().id);
+    const write = async (key: string, subjects: Array<{ type: string; id: string; mode: string }>) => {
+      const created = await app.inject({
+        method: "PUT",
+        url: `/api/org/notes/${key}`,
+        headers: { ...OWNER, ...JSON_BODY },
+        payload: { content: `# ${key}`, access: subjects[0] },
+      });
+      assert.equal(created.statusCode, 200, created.body);
+      const id = String(created.json().id);
+      const listed = await app.inject({ method: "PUT", url: `/api/notes/${id}/access`, headers: { ...OWNER, ...JSON_BODY }, payload: { subjects } });
+      assert.equal(listed.statusCode, 200, listed.body);
+      return { id, path: String(created.json().display_path) };
+    };
+    const remove = async (key: string) =>
+      assert.equal((await app.inject({ method: "DELETE", url: `/api/org/notes/${key}`, headers: OWNER })).statusCode, 204);
+    const guildOnly = await write("attic-plans.md", [
+      { type: "guild", id: guildId, mode: "write" },
+      { type: "agent", id: agentId, mode: "read" },
+    ]);
+    await remove("attic-plans.md");
+    const agentOnly = await write("porter-log.md", [{ type: "agent", id: agentId, mode: "write" }]);
+    await remove("porter-log.md");
+    const shared = await write("attic-shared.md", [
+      { type: "guild", id: guildId, mode: "write" },
+      { type: "org", id: "org_home", mode: "read" },
+    ]);
+    await remove("attic-shared.md");
+    const live = await write("attic-live.md", [{ type: "guild", id: guildId, mode: "write" }]);
+
+    const history = async (path: string, headers: Record<string, string>) =>
+      ((await app.inject({ method: "GET", url: `/api/file-changes?display_path=${encodeURIComponent(path)}`, headers })).json() as Array<{
+        operation: string;
+      }>).map((change) => change.operation);
+    assert.deepEqual(await history(guildOnly.path, OWNER), ["delete", "create"]);
+    assert.deepEqual(await history(guildOnly.path, TEAMMATE), [], "a private guild's deleted note is hidden while the guild lives");
+
+    await deleteAgent(db, agentId, OPERATOR_ACTOR);
+    assert.deepEqual(await history(agentOnly.path, OWNER), [], "a deleted note only the agent reached goes with the agent");
+    assert.deepEqual(await history(guildOnly.path, OWNER), ["delete", "create"], "a deleted note its guild still reaches stays");
+    await deleteGuild(db, guildId, OPERATOR_ACTOR);
+
+    for (const headers of [OWNER, TEAMMATE]) {
+      assert.deepEqual(await history(guildOnly.path, headers), []);
+      const latest = await app.inject({
+        method: "POST",
+        url: "/api/file-changes/latest",
+        headers: { ...headers, ...JSON_BODY },
+        payload: { display_paths: [guildOnly.path, agentOnly.path] },
+      });
+      assert.deepEqual(latest.json(), {});
+      assert.equal((await app.inject({ method: "GET", url: `/api/notes/${guildOnly.id}/access`, headers })).statusCode, 404);
+    }
+    const removed = [guildOnly.id, agentOnly.id];
+    for (const id of removed) {
+      assert.deepEqual(await listFileChanges(db, "org_home", { artifactIds: [id], taskAgentId: null }), [], "no history is read by the note's id");
+      assert.deepEqual(await listConfigChanges(db, "org_home", { kind: "note", id }), [], "no access change is read by the note's id");
+    }
+    const window = { since: opened, until: new Date() };
+    const fileChanges = await listWindowFileChanges(db, "org_home", window);
+    assert.deepEqual(fileChanges.filter((change) => removed.includes(change.artifact_id ?? "")), [], "no file change lists a removed note");
+    const configChanges = await listWindowConfigChanges(db, "org_home", window);
+    assert.deepEqual(configChanges.filter((change) => removed.includes(change.target_id)), [], "no access change lists a removed note");
+
+    assert.deepEqual(await history(shared.path, OWNER), ["delete", "create"], "a deleted note the organisation still reaches keeps its history");
+    assert.deepEqual(await history(live.path, OWNER), ["delete", "create"], "a live note only the guild reached is deleted with it and keeps its history");
   } finally {
     await app.close();
     await database.close();

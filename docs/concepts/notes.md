@@ -351,8 +351,8 @@ notes. Its search document is the content; its search text is the
 title and key. Deletion sets `deleted_at`; the tombstone keeps its
 access rows, so a note hidden from an operator stays hidden once
 deleted. Deleting a guild or an agent deletes every live note whose
-only rows named it or its agents
-([Access](access.md#access-lists)).
+only rows named it or its agents, and removes every deleted one with
+its change history ([Access](access.md#access-lists)).
 
 Code: `apps/orchestrator/src/artifacts/notes.ts`,
 `apps/orchestrator/src/artifacts/memory.ts`,
