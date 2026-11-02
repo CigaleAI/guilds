@@ -22,6 +22,20 @@ and a records query's `where` a `RecordWhere` (`api/types/tables`). `api`
 sends a `JsonValue` body. `api/wire` drops `isRecord`: `isJsonObject`
 narrows a JSON object, and `isJsonSchema` a JSON Schema object.
 
+**Breaking for extensions.** A connector's code declares each tool it
+runs once with `adapterTool` (`connectors/tools.js`): its name, the
+TypeBox schema of its parameters, and its work on the arguments
+decoded against them, a mismatch refused as a 422. `toolsAdapter(tools,
+hooks)` makes the adapter, and the registry refuses an entry whose
+manifest lists another `input_schema` for one of its tools. A client
+decodes a provider's response with `decodeResponse`
+(`connectors/response.js`). `loadManifest` and `folderEntry` take the
+manifest as a `JsonValue`. `validateSettings` (`connectors/settings.js`)
+takes the manifest's `SettingsSchema` and asserts the document is
+`ConnectionSettings` instead of returning it. `argStr`, `argInt` and
+`rowLimit` (`connectors/format.js`) take the arguments as a
+`JsonObject`.
+
 **Breaking for extensions.** The packages lint with Oxlint instead
 of ESLint. An extending repository loads the boundary rule from
 `lint/boundary.js` into a package's `.oxlintrc.json`;

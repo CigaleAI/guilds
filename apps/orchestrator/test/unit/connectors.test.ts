@@ -25,6 +25,8 @@ import { loadManifest, ManifestError } from "../../src/connectors/manifest.js";
 import { ConnectorRegistry, ConnectorRegistryError } from "../../src/connectors/registry.js";
 import { CORE_STATE_KEYS } from "../../src/state/index.js";
 import { ConnectorError, type ConnectorContext, type ConnectorTool, type RemoteSession } from "../../src/connectors/types.js";
+import { adapterTool, toolsAdapter } from "../../src/connectors/tools.js";
+import { Type } from "@sinclair/typebox";
 import drive from "../../src/connectors/drive/adapter.js";
 import opensea from "../../src/connectors/opensea/adapter.js";
 import { McpError } from "../../src/mcp/errors.js";
@@ -214,6 +216,38 @@ test("the registry refuses an entry that cannot run", () => {
   const notion = CONNECTORS.bySlug("notion")!;
   assert.throws(() => new ConnectorRegistry([{ ...notion, adapter: { state: async () => 1 } }]), /no state in its manifest/);
   assert.throws(() => CONNECTORS.with([x]), /registered twice/);
+});
+
+/** A tool `search` that answers with the query it was given. */
+const ECHO_SEARCH = adapterTool({
+  name: "search",
+  parameters: Type.Object({ query: Type.String(), limit: Type.Optional(Type.Integer()) }),
+  run: async ({ query, limit }) => `${query} ${limit ?? "-"}`,
+});
+
+test("the registry refuses code whose tool parameters are not the input_schema its manifest lists", () => {
+  const tavily = CONNECTORS.bySlug("tavily")!;
+  assert.deepEqual(tavily.adapter.tools?.map((tool) => tool.name), ["search"]);
+  assert.throws(
+    () => new ConnectorRegistry([{ ...tavily, adapter: toolsAdapter([ECHO_SEARCH]) }]),
+    /connector tavily tool search lists an input_schema that is not the parameters its code decodes/,
+  );
+  const unlisted = adapterTool({ name: "other", parameters: Type.Object({}), run: async () => "" });
+  assert.doesNotThrow(() => new ConnectorRegistry([{ ...tavily, adapter: toolsAdapter([...tavily.adapter.tools!, unlisted]) }]));
+});
+
+test("a tools adapter decodes each call against its tool's parameters and refuses another name", async () => {
+  const adapter = toolsAdapter([ECHO_SEARCH]);
+  const ctx = contextOf();
+  assert.equal(await adapter.call!("search", { query: "q", limit: null }, {}, ctx), "q -");
+  assert.equal(await adapter.call!("search", { query: "q", limit: 3 }, {}, ctx), "q 3");
+  const refused = (status: number, pattern: RegExp) => (error: unknown) =>
+    error instanceof ConnectorError && error.status === status && pattern.test(error.message);
+  await assert.rejects(adapter.call!("search", {}, {}, ctx), refused(422, /^query is required$/));
+  await assert.rejects(adapter.call!("search", { query: 1 }, {}, ctx), refused(422, /^\/query: /));
+  await assert.rejects(adapter.call!("other", {}, {}, ctx), refused(404, /^unknown tool other$/));
+  const remote = toolsAdapter([ECHO_SEARCH], { call: async (name) => `remote ${name}` });
+  assert.equal(await remote.call!("other", {}, {}, ctx), "remote other");
 });
 
 test("the registry finds a server row by id, then by slug", () => {

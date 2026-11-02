@@ -1,4 +1,5 @@
 import { Value } from "@sinclair/typebox/value";
+import type { JsonObject } from "../../lib/json.js";
 import { assertMatches } from "../../lib/decode.js";
 import { proxyFetch, withQuery, type FetchFn } from "../../net/http.js";
 import { LIST_DEFAULT, argStr, clipRows, clipText, fmtNum, joinParts, rowLimit } from "../format.js";
@@ -290,12 +291,12 @@ function userNameParam(value: string): Record<string, string> {
   return { userName: handleValue };
 }
 
-function cursorParams(arguments_: Record<string, unknown>): Record<string, string> {
+function cursorParams(arguments_: JsonObject): Record<string, string> {
   const pageKey = argStr(arguments_, "page_key");
   return pageKey ? { cursor: pageKey } : {};
 }
 
-function pageSize(arguments_: Record<string, unknown>): string {
+function pageSize(arguments_: JsonObject): string {
   return String(Math.max(20, Math.min(200, rowLimit(arguments_))));
 }
 
@@ -311,7 +312,7 @@ export async function ping(apiKey: string, options: TwitterApiIoOptions = {}): P
   await getJson("/oapi/my/info", {}, apiKey, options);
 }
 
-export async function searchTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+export async function searchTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
   const query = constrainSearchQuery(argStr(arguments_, "query"));
   const limit = rowLimit(arguments_);
   const payload = await getJson(
@@ -323,7 +324,7 @@ export async function searchTool(arguments_: Record<string, unknown>, options: T
   return formatSearch(payload, query, limit);
 }
 
-export async function userTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+export async function userTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
   const user = screenName(argStr(arguments_, "user"));
   if (!user) {
     throw new TwitterApiIoError("user is required");
@@ -338,7 +339,7 @@ export async function userTool(arguments_: Record<string, unknown>, options: Too
   return formatUser(payload);
 }
 
-export async function postsTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+export async function postsTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
   const limit = rowLimit(arguments_);
   const payload = await getJson(
     "/twitter/user/last_tweets",
@@ -349,13 +350,13 @@ export async function postsTool(arguments_: Record<string, unknown>, options: To
   return formatPosts(payload, limit);
 }
 
-export async function postTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+export async function postTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
   const tweetId = postId(argStr(arguments_, "id"));
   const payload = await getJson("/twitter/tweets", { tweet_ids: tweetId }, options.apiKey, options);
   return formatPost(payload);
 }
 
-export async function followersTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+export async function followersTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
   const limit = rowLimit(arguments_);
   const payload = await getJson(
     "/twitter/user/followers",
@@ -366,7 +367,7 @@ export async function followersTool(arguments_: Record<string, unknown>, options
   return formatUsers(payload, "followers", limit);
 }
 
-export async function followingTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+export async function followingTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
   const limit = rowLimit(arguments_);
   const payload = await getJson(
     "/twitter/user/followings",
@@ -377,7 +378,7 @@ export async function followingTool(arguments_: Record<string, unknown>, options
   return formatUsers(payload, "followings", limit);
 }
 
-export async function mentionsTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+export async function mentionsTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
   const limit = rowLimit(arguments_);
   const payload = await getJson(
     "/twitter/user/mentions",
@@ -388,7 +389,7 @@ export async function mentionsTool(arguments_: Record<string, unknown>, options:
   return formatPosts(payload, limit);
 }
 
-export async function repliesTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+export async function repliesTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
   const limit = rowLimit(arguments_);
   const payload = await getJson(
     "/twitter/tweet/replies",
@@ -399,7 +400,7 @@ export async function repliesTool(arguments_: Record<string, unknown>, options: 
   return formatPosts(payload, limit);
 }
 
-export async function quotesTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+export async function quotesTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
   const limit = rowLimit(arguments_);
   const payload = await getJson(
     "/twitter/tweet/quotes",
@@ -410,7 +411,7 @@ export async function quotesTool(arguments_: Record<string, unknown>, options: T
   return formatPosts(payload, limit);
 }
 
-export async function trendsTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+export async function trendsTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
   const limit = rowLimit(arguments_);
   const woeid = argStr(arguments_, "woeid") || WORLDWIDE_WOEID;
   if (!/^\d+$/.test(woeid)) {
@@ -420,7 +421,7 @@ export async function trendsTool(arguments_: Record<string, unknown>, options: T
   return formatTrends(payload, limit);
 }
 
-const HANDLERS: Record<string, (arguments_: Record<string, unknown>, options: ToolOptions) => Promise<string>> = {
+const HANDLERS: Record<string, (arguments_: JsonObject, options: ToolOptions) => Promise<string>> = {
   search: searchTool,
   user: userTool,
   posts: postsTool,
@@ -435,7 +436,7 @@ const HANDLERS: Record<string, (arguments_: Record<string, unknown>, options: To
 
 export async function callTool(
   name: string,
-  arguments_: Record<string, unknown>,
+  arguments_: JsonObject,
   options: ToolOptions,
 ): Promise<string> {
   const handler = HANDLERS[name];

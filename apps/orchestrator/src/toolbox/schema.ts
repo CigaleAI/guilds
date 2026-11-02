@@ -3,8 +3,8 @@
 import { Kind, Type, type TObject, type TUnsafe } from "@sinclair/typebox";
 import { JsonValueSchema, type JsonValue } from "../lib/json.js";
 import {
-  isToolSchema,
   llmToolParameters,
+  offeredParameters,
   type FunctionTool,
   type ToolSchema,
   type ToolSchemaProperties,
@@ -28,15 +28,6 @@ export function functionSchema(
       }),
     },
   };
-}
-
-/** `parameters` as the JSON Schema they serialise to, which is what the model is offered: TypeBox's own marks left out. */
-function offeredParameters(parameters: TObject): ToolSchema {
-  const offered: unknown = JSON.parse(JSON.stringify(parameters));
-  if (!isToolSchema(offered)) {
-    throw new TypeError("a tool's parameters must serialise to a JSON Schema object");
-  }
-  return offered;
 }
 
 /** The function schema of the tool `name`, whose arguments `parameters` describe; the same schema decodes its calls. */

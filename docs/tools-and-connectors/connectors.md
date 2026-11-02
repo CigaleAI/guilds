@@ -44,6 +44,8 @@ shares:
 | `naming.ts` | The writing verbs, and a tool's prefixed name |
 | `settings.ts` | The check of a login's settings |
 | `types.ts` | The adapter contract and `ConnectorError` |
+| `tools.ts` | A tool the adapter's code runs, its arguments decoded against its parameters |
+| `response.ts` | The decode of a provider's response, and the message of a failed one |
 | `instance.ts`, `instance-keys.ts` | Platform logins and platform key writes |
 | `login.ts` | Whether a login waits only for its settings |
 | `builder.ts`, `format.ts` | The guild builder's view of a connector, and number formatting for adapters |
@@ -331,6 +333,30 @@ The adapter gets:
   connector with no endpoint, it refuses.
 - `ctx.workspace_dir`: the agent's workspace on the host, when the
   call comes from a run
+
+A tool the adapter's own code runs is declared once with
+`adapterTool` (`src/connectors/tools.ts`): its name, the TypeBox
+schema of its parameters, and its work on a call. Each call's
+arguments are decoded against the parameters before the work, as a
+native tool's are: an optional argument sent as null is absent, and
+arguments that do not match are a 422 `ConnectorError` naming the
+first mismatch. `toolsAdapter(tools, hooks)` makes the adapter: its
+`call` runs the tool a call names, sends another name to the hooks'
+`call`, and refuses it with a 404 without one. The manifest lists
+each such tool with the JSON Schema of its parameters as its
+`input_schema`; the registry refuses an entry whose manifest lists
+another, for a core connector and for a registry connector's bundled
+code alike.
+
+An adapter's client decodes each response it reads once
+(`src/connectors/response.ts`): `decodeResponse(api, response, schema)`
+throws the client's error with the status and the provider's message
+on a status of 400 or above, and otherwise decodes the body against
+the TypeBox schema the connector's `responses.ts` declares for it. A
+body that is not JSON, or does not match, is the client's error
+naming the problem. `api` names the provider, the error its client
+throws, and the schema of its error bodies with the message one
+holds.
 
 An adapter reads what the agent names in its home through
 `lib/agent-file.ts`: `readAgentFile` for one file, `readAgentFolder`

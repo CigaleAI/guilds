@@ -1,15 +1,16 @@
+import { Type } from "@sinclair/typebox";
 import { search, TavilyError } from "./client.js";
-import { ConnectorError, requiredCredential, translated, type Adapter } from "../types.js";
+import { adapterTool, toolsAdapter } from "../tools.js";
+import { requiredCredential, translated } from "../types.js";
 
-const adapter: Adapter = {
-  async call(name, args, creds, ctx) {
-    if (name !== "search") {
-      throw new ConnectorError(`unknown Tavily tool ${name}`, 404);
-    }
+/** `search`: the live web for a natural-language query. */
+const searchTool = adapterTool({
+  name: "search",
+  parameters: Type.Object({ query: Type.String() }),
+  run: ({ query }, creds, ctx) => {
     const apiKey = requiredCredential(creds, "token", "Tavily API key is missing");
-    const query = typeof args.query === "string" ? args.query : "";
     return translated(TavilyError, () => search(query, { apiKey, client: ctx.http }));
   },
-};
+});
 
-export default adapter;
+export default toolsAdapter([searchTool]);

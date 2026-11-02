@@ -101,7 +101,7 @@
       "count": 4
     },
     "anti-slop/no-unsafe-dictionary-type": {
-      "count": 9
+      "count": 3
     }
   },
   "src/connectors/coingecko/client.ts": {
@@ -113,9 +113,6 @@
     },
     "anti-slop/no-unknown-parameters": {
       "count": 5
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 14
     }
   },
   "src/connectors/dexpaprika/client.ts": {
@@ -127,9 +124,6 @@
     },
     "anti-slop/no-unknown-parameters": {
       "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 12
     }
   },
   "src/connectors/drive/adapter.ts": {
@@ -181,12 +175,9 @@
   },
   "src/connectors/format.ts": {
     "anti-slop/no-runtime-typeof": {
-      "count": 5
-    },
-    "anti-slop/no-unknown-parameters": {
       "count": 3
     },
-    "anti-slop/no-unsafe-dictionary-type": {
+    "anti-slop/no-unknown-parameters": {
       "count": 3
     }
   },
@@ -201,7 +192,7 @@
       "count": 1
     },
     "anti-slop/no-unsafe-dictionary-type": {
-      "count": 12
+      "count": 1
     }
   },
   "src/connectors/qonto/client.ts": {
@@ -213,22 +204,6 @@
     },
     "anti-slop/no-unknown-parameters": {
       "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 6
-    }
-  },
-  "src/connectors/tavily/adapter.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    }
-  },
-  "src/connectors/tavily/client.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 2
     }
   },
   "src/connectors/twitterapiio/client.ts": {
@@ -240,9 +215,6 @@
     },
     "anti-slop/no-unknown-parameters": {
       "count": 5
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 14
     }
   },
   "src/connectors/x/client.ts": {
@@ -254,9 +226,6 @@
     },
     "anti-slop/no-unknown-parameters": {
       "count": 3
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 6
     }
   },
   "src/conversation/runner.ts": {

@@ -1,4 +1,5 @@
 import { Type, type Static, type TSchema } from "@sinclair/typebox";
+import type { JsonObject } from "../../lib/json.js";
 import { Value } from "@sinclair/typebox/value";
 import { assertMatches } from "../../lib/decode.js";
 import { proxyFetch, withQuery, type FetchFn } from "../../net/http.js";
@@ -275,7 +276,7 @@ export async function ping(apiKey: string, options: XOptions = {}): Promise<void
   await getJson({ path: `/users/by/username/${PING_USERNAME}`, params: {}, schema: PING }, apiKey, options);
 }
 
-export async function searchTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+export async function searchTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
   const query = argStr(arguments_, "query");
   if (!query) {
     throw new XError("query is required");
@@ -295,7 +296,7 @@ export async function searchTool(arguments_: Record<string, unknown>, options: T
   return formatSearch(payload, query, limit);
 }
 
-export async function userTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+export async function userTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
   return formatUser(await lookupUser(argStr(arguments_, "user"), options.apiKey, options));
 }
 
@@ -305,7 +306,7 @@ function withAuthor(payload: PostsResponse, user: XUser): PostsResponse {
   return { ...payload, includes: { ...payload.includes, users: [...users, user] } };
 }
 
-export async function postsTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+export async function postsTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
   const user = await lookupUser(argStr(arguments_, "user"), options.apiKey, options);
   const item = dataObj(user.data);
   const userId = item ? String(item.id ?? "").trim() : "";
@@ -327,7 +328,7 @@ export async function postsTool(arguments_: Record<string, unknown>, options: To
   return formatPosts(page, limit);
 }
 
-export async function postTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+export async function postTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
   const tweetId = postId(argStr(arguments_, "id"));
   const payload = await getJson(
     { path: `/tweets/${tweetId}`, params: tweetParams(), schema: PostsResponse },
@@ -337,7 +338,7 @@ export async function postTool(arguments_: Record<string, unknown>, options: Too
   return formatPost(payload);
 }
 
-const HANDLERS: Record<string, (arguments_: Record<string, unknown>, options: ToolOptions) => Promise<string>> = {
+const HANDLERS: Record<string, (arguments_: JsonObject, options: ToolOptions) => Promise<string>> = {
   search: searchTool,
   user: userTool,
   posts: postsTool,
@@ -346,7 +347,7 @@ const HANDLERS: Record<string, (arguments_: Record<string, unknown>, options: To
 
 export async function callTool(
   name: string,
-  arguments_: Record<string, unknown>,
+  arguments_: JsonObject,
   options: ToolOptions,
 ): Promise<string> {
   const handler = HANDLERS[name];

@@ -1,4 +1,5 @@
 import { Type, type Static, type TSchema } from "@sinclair/typebox";
+import type { JsonObject } from "../../lib/json.js";
 import { Value } from "@sinclair/typebox/value";
 import { assertMatches } from "../../lib/decode.js";
 import { proxyFetch, withQuery, type FetchFn } from "../../net/http.js";
@@ -43,7 +44,7 @@ export class AlchemyError extends Error {
   }
 }
 
-export function resolveChain(arguments_: Record<string, unknown>): [string, string] {
+export function resolveChain(arguments_: JsonObject): [string, string] {
   const chain = (argStr(arguments_, "chain", CHAIN_DEFAULT).toLowerCase() || CHAIN_DEFAULT);
   const network = CHAINS[chain];
   if (!network) {
@@ -346,7 +347,7 @@ export async function ping(apiKey: string, options: AlchemyOptions = {}): Promis
   await getJson({ network: "eth-mainnet", path: "/getNFTsForOwner", params, schema: PING }, apiKey, options);
 }
 
-export async function holdingsTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+export async function holdingsTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
   const owner = argStr(arguments_, "owner");
   if (!owner) {
     throw new AlchemyError("owner is required");
@@ -378,7 +379,7 @@ export async function holdingsTool(arguments_: Record<string, unknown>, options:
   return formatHoldings(payload, owner, chain, limit);
 }
 
-export async function nftTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+export async function nftTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
   const contract = argStr(arguments_, "contract");
   const tokenId = argStr(arguments_, "token_id");
   const [chain, network] = resolveChain(arguments_);
@@ -404,7 +405,7 @@ export async function nftTool(arguments_: Record<string, unknown>, options: Tool
   return formatNft(payload);
 }
 
-export async function collectionTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+export async function collectionTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
   const contract = argStr(arguments_, "contract");
   if (!contract) {
     throw new AlchemyError("contract is required");
@@ -422,7 +423,7 @@ export async function collectionTool(arguments_: Record<string, unknown>, option
   return formatCollection(payload);
 }
 
-const HANDLERS: Record<string, (arguments_: Record<string, unknown>, options: ToolOptions) => Promise<string>> = {
+const HANDLERS: Record<string, (arguments_: JsonObject, options: ToolOptions) => Promise<string>> = {
   holdings: holdingsTool,
   nft: nftTool,
   collection: collectionTool,
@@ -430,7 +431,7 @@ const HANDLERS: Record<string, (arguments_: Record<string, unknown>, options: To
 
 export async function callTool(
   name: string,
-  arguments_: Record<string, unknown>,
+  arguments_: JsonObject,
   options: ToolOptions,
 ): Promise<string> {
   const handler = HANDLERS[name];
