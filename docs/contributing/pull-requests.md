@@ -55,6 +55,10 @@ commits are what the reviewer reads.
     that the author filled on their own: what was assumed, what the
     change does because of it, and what the operator could say to
     change it. None, when there is none.
+- **Limits**: a lint warning on complexity or parameter count in
+  changed code is named here with the function and the one contract
+  it holds. A function that holds two contracts is split instead
+  ([Functions](code-guidelines.md#functions)).
 - **End-to-end tests**: every service the change touches has a
   test that drives the changed behaviour through that service's
   edge, as its callers use it: an HTTP route through `app.inject`,
@@ -121,7 +125,7 @@ The reviewer reads the diff, not the description, and checks:
    assert behaviour, not implementation. A refactor's named suites
    do reach the moved code.
 4. **Guidelines**: the [checklist](code-guidelines.md#checklist)
-   holds.
+   holds, and each function named under Limits holds one contract.
 5. **Boundaries**: routes call one domain function; `db/` rows
    leave typed; no package reaches into another's internals.
 6. **Docs**: every page that names the changed behaviour is
