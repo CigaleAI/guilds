@@ -8,8 +8,8 @@ function paragraph(value: string): MdNode {
 }
 
 test("link_markup_embeds_or_references_a_path", () => {
-  assert.equal(linkMarkup("org/o/guilds/g/rules.md", "embed"), "![[org/o/guilds/g/rules.md]]");
-  assert.equal(linkMarkup("org/o/guilds/g/rules.md", "reference"), "[[org/o/guilds/g/rules.md]]");
+  assert.equal(linkMarkup("org/o/rules.md", "embed"), "![[org/o/rules.md]]");
+  assert.equal(linkMarkup("org/o/rules.md", "reference"), "[[org/o/rules.md]]");
 });
 
 test("embeds_and_references_become_separate_chips", () => {

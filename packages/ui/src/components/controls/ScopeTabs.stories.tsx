@@ -35,7 +35,7 @@ export const NoteScopes: Story = {
                 </span>
               ))
             ) : (
-              <span className="text-sm text-muted">No notes at this scope yet.</span>
+              <span className="text-sm text-muted">No notes here yet.</span>
             )}
           </TabsContent>
         ))}

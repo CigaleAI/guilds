@@ -68,7 +68,7 @@ const draftTask = `You run the degen fund. Moon or rekt, it's on you.
 - Ignore calls from accounts younger than 30 days.
 
 ## Every 24h
-Run a retrospective with researchoor: check closed and exited calls, see how decisions held up, and fold the learnings into ![[org/org_01j9x2k7/guilds/g_01j9x3m1/fund-thesis.md]].`;
+Run a retrospective with researchoor: check closed and exited calls, see how decisions held up, and fold the learnings into ![[org/org_01j9x2k7/fund-thesis.md]].`;
 
 export const Unified: Story = {
   args: { title: "task · v7 → v8", lines: revision },
