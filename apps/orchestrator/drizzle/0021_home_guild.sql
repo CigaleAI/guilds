@@ -5,14 +5,17 @@ UPDATE public.artifacts a
  WHERE a.origin_guild_id IS NOT NULL
    AND NOT EXISTS (SELECT 1 FROM public.guilds g WHERE g.id = a.origin_guild_id AND g.org_id = a.org_id);
 --> statement-breakpoint
--- A live or deleted note or file without a home takes it from its access list: the one guild its
--- guild rows name, or, with no guild row, the one guild every agent its agent rows name sits in.
--- A row at `none` names no one. Any other list leaves the item without a home.
+-- A live or deleted note or file without a home takes it from its access list when the list has no
+-- organisation row: the one guild its guild rows name, or, with no guild row, the one guild every
+-- agent its agent rows name sits in. A row at `none` names no one. Any other list, and every list
+-- with an organisation row, leaves the item without a home.
 UPDATE public.artifacts a
    SET origin_guild_id = h.guild_id
   FROM (
     SELECT t.id,
            CASE
+             WHEN count(*) FILTER (WHERE x.subject_type = 'org') > 0
+               THEN NULL
              WHEN count(DISTINCT x.subject_id) FILTER (WHERE x.subject_type = 'guild') = 1
                THEN min(x.subject_id) FILTER (WHERE x.subject_type = 'guild')
              WHEN count(*) FILTER (WHERE x.subject_type = 'guild') = 0
