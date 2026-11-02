@@ -152,6 +152,8 @@ export type StateItemRow = {
   created_at: string;
   collection_id: string | null;
   note_id: string | null;
+  /** The note's, file's, Memory's, or script's artifact, whose changes are its own; null for a table. */
+  artifact_id: string | null;
   changes: number;
   reads: number;
   top_writer: StateShare | null;
