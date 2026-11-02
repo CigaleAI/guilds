@@ -90,20 +90,6 @@
       "count": 1
     }
   },
-  "src/connectors/alchemy/client.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 7
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 2
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 4
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 3
-    }
-  },
   "src/connectors/drive/adapter.ts": {
     "anti-slop/no-known-value-widening": {
       "count": 1

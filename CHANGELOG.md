@@ -22,6 +22,13 @@ and a records query's `where` a `RecordWhere` (`api/types/tables`). `api`
 sends a `JsonValue` body. `api/wire` drops `isRecord`: `isJsonObject`
 narrows a JSON object, and `isJsonSchema` a JSON Schema object.
 
+The CoinGecko, DexPaprika and Alchemy tools refuse a call whose
+arguments do not match the parameters their manifests list, naming
+the first mismatch: a `limit` sent as text is refused rather than
+read as a number. A response field of another type than the one the
+provider sends for it is an unexpected-response error rather than a
+value printed as it came.
+
 **Breaking for extensions.** A connector's code declares each tool it
 runs once with `adapterTool` (`connectors/tools.js`): its name, the
 TypeBox schema of its parameters, and its work on the arguments
