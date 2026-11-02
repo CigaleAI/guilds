@@ -9,6 +9,7 @@ risk is kept by design), or **Fixed** with its date.
 
 | Id | Issue | Status |
 |---|---|---|
+| [SEC-55](#sec-55--a-notes-or-a-files-reach-came-from-its-owner-as-well-as-its-access-list) | A note's or a file's reach came from its owner as well as its access list | Fixed 2026-11-02 |
 | [SEC-54](#sec-54--while-a-browse-call-runs-any-process-on-the-orchestrators-host-can-drive-the-agents-chrome-through-its-cdp-bridge) | While a `browse` call runs, any process on the orchestrator's host can drive the agent's Chrome through its CDP bridge | Open, accepted |
 | [SEC-53](#sec-53--an-agents-devtools-relay-answers-any-process-on-its-machines-container-network-without-authentication) | An agent's DevTools relay answers any process on its machine's container network without authentication | Open, accepted |
 | [SEC-52](#sec-52--the-sandbox-proxy-sent-a-request-to-any-host-a-proxied-path-named) | The sandbox proxy sent a request to any host a proxied path named | Fixed 2026-10-29 |
@@ -63,6 +64,49 @@ risk is kept by design), or **Fixed** with its date.
 | [SEC-3](#sec-3--check-then-open-race-on-agent-workspace-paths) | Check-then-open race on agent workspace paths | Open |
 | [SEC-2](#sec-2--any-organisation-member-could-write-organisation-wide-secrets) | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | [SEC-1](#sec-1--links-planted-in-an-agent-workspace-redirect-orchestrator-file-access) | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-55 — A note's or a file's reach came from its owner as well as its access list
+
+**Status:** fixed 2026-11-02.
+
+**Found:** 2026-11-02, giving notes and files an access list and
+nothing else.
+
+**Where:** `artifactModeSql` and `hiddenScope` in
+`apps/orchestrator/src/db/artifacts.ts`, `artifactMode` in
+`apps/orchestrator/src/artifacts/store.ts`, and the access routes
+`/api/notes/:id/access` and `/api/files/:id/access`
+(`apps/orchestrator/src/artifacts/access-lists.ts`).
+
+**Exposure:** two rules outside the access list decided who reached a
+note or a file. The agent that owned an agent-level item read and
+wrote it whatever its list said, and the list refused a row naming
+that agent, so an operator could neither lower nor remove the owner's
+reach and the Access panel showed no row for it. An operator's view
+hid an item by its owner: a guild-level item of a private guild the
+operator does not operate, or an agent-level item of one of its
+agents, stayed hidden even once its list opened it to the
+organisation, while an item owned elsewhere whose list named only a
+private guild's agents showed to every operator.
+
+**Fix:** an agent's mode on a note or a file is its access list alone,
+through `agentModeSql` and `effectiveAccess`: its own row, `none`
+shutting it out, else the better of its guild's and the
+organisation's rows. An item is hidden from an operator when its list
+is not empty and every row names a private guild the operator does
+not operate or an agent of such a guild; an item with no row is hidden
+from no one. Creating an item writes one row: an agent its own at
+`write`, an operator the subject it names. Migration
+`0020_access_list_only.sql` gives every live agent-level note and file
+a row for its agent at `write`, so no agent loses what it reached.
+Memory, the Task, and scripts stay bound to their agent and hidden with
+its guild. `test/integration/artifacts.test.ts`,
+`test/integration/private-guild-artifacts.test.ts`, and
+`test/integration/migrations.test.ts` pin the rules and the migration.
+
+**Residual risk:** an operator who removes every row of a private
+guild's note makes it visible, and writable, to every operator of the
+organisation. Creation never leaves an item without a row.
 
 ## SEC-54 — While a `browse` call runs, any process on the orchestrator's host can drive the agent's Chrome through its CDP bridge
 

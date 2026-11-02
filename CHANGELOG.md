@@ -8,6 +8,19 @@ commands for each effect are in
 
 ## Unreleased
 
+**Breaking.** A note or a file has an access list and nothing else:
+no level and no owner. A name is one note or one file across the
+organisation, at `org/<org>/<key>` or `org/<org>/files/<name>`. An
+agent creates a note or a file written by itself alone, and reaches
+any other through its rows; an operator creates one with the row it
+names, the organisation at write by default. `note_write` takes a
+`key` or a `path`, `file_put` no `level`, and `note_find` and
+`file_find` no `level`. The organisation's notes and files are listed
+and written under `/api/org/notes` and `/api/org/files`; a guild's and
+an agent's pages list what names them or what they read. Updating
+gives each agent note and file a row for its agent, renames a name
+several owners held, and rewrites every link to a moved item.
+
 The inbox stream's notice of a new group message names the message's
 guild. A message posted in the chat an operator is watching no
 longer chimes or raises a desktop notification, and a desktop
