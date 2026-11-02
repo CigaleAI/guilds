@@ -601,6 +601,23 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
     assert.equal((await getByDisplayPath(artifacts, noteReader, "org/org_home/fixture-desk-third-desk-rules.md")).row?.content_text, "Taken.\n");
     const orgOnly = await getByDisplayPath(artifacts, noteReader, "org/org_home/third-glossary.md");
     assert.equal(orgOnly.tombstone, true, "the refused apply deletes a note it wrote, whatever its rows");
+
+    // An abort deletes what the apply made as a failed apply does, its notes included.
+    const aborting = repeat("fixture-desk-abort", "abort");
+    aborting.notes = [
+      { id: "abort-glossary", key: "abort-glossary.md", body: "Read by all.\n", kind: "seed", author: operatorAuthor(), org: "read", writers: [] },
+      { id: "abort-rules", key: "abort-rules.md", body: "Ours.\n", kind: "seed", author: operatorAuthor(), writers: [] },
+    ];
+    aborting.roles[0]!.task.body = aborting.roles[0]!.task.body.replace("![[org/desk-rules.md]]", "![[org/abort-rules.md]]");
+    aborting.roles[0]!.task.embeds = ["org/abort-rules.md"];
+    const abortApplied = await applyRecipe(await importReady(aborting), "fixture-desk-abort");
+    assert.equal((await getByDisplayPath(artifacts, noteReader, "org/org_home/abort-glossary.md")).tombstone, undefined);
+    const aborted = await app.inject({ method: "POST", url: `/api/applies/${abortApplied.id}/abort`, headers: AUTH });
+    assert.equal(aborted.statusCode, 200, aborted.body);
+    for (const key of ["abort-glossary.md", "abort-rules.md"]) {
+      assert.equal((await getByDisplayPath(artifacts, noteReader, `org/org_home/${key}`)).tombstone, true, `${key} goes with the abort`);
+    }
+    assert.deepEqual(await listAgents(db, abortApplied.guild_id), []);
     const mixedReaderBindings = await listBindingsCovering(db, {
       orgId: "org_home",
       guildId: mixedApply.guild_id,

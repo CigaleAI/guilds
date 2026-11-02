@@ -424,7 +424,12 @@ export type PlannedCollection = {
 };
 
 /** What an apply created and decided, read back by its checklist and activation. */
+/** What an apply made, by id, which undoing it deletes: its agents, its collections, and its notes. */
+export type ApplyCreated = { agents: string[]; collections: string[]; notes: string[] };
+
 export type ApplyPlan = {
+  /** Absent on an apply whose plan does not record what it made. */
+  created?: ApplyCreated;
   names: PlannedAgent[];
   connections: PlannedConnection[];
   secrets: PlannedSecret[];

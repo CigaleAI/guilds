@@ -3,19 +3,18 @@ import { addAgent } from "../agents/service.js";
 import { writeAgentTask } from "../artifacts/task.js";
 import { validateAgentConfig } from "../agents/validation.js";
 import { operatorActor } from "../artifacts/actors.js";
-import { createCollection, deleteCollection } from "../artifacts/collections.js";
+import { createCollection } from "../artifacts/collections.js";
 import { ArtifactError } from "../artifacts/errors.js";
 import type { AccessGrant, ArtifactActor } from "../artifacts/types.js";
 import type { CollectionView } from "../artifacts/store.js";
 import { accessRaises, type AccessRaise } from "../artifacts/access.js";
 import { raiseAccess } from "../artifacts/access-lists.js";
-import { deleteNoteById, isNoteKeyTaken, writeNote } from "../artifacts/notes.js";
-import { deleteAgent } from "../db/agents.js";
-import { deleteGuild } from "../db/guilds.js";
+import { isNoteKeyTaken, writeNote } from "../artifacts/notes.js";
 import type { OrgMembershipRow } from "../db/orgs.js";
 import { insertRecipeApply, type RecipeApplyRow } from "../db/recipe-applies.js";
 import type { RecipeRow } from "../db/recipes.js";
 import type {
+  ApplyCreated,
   ApplyPlan,
   PlannedCollection,
   PlannedConnection,
@@ -38,6 +37,7 @@ import { RecipeConflictError, RecipeError } from "./errors.js";
 import { plannedAgents, previewApply, roleHarnessMap, roleModelMap } from "./plan.js";
 import { clippedInstruction, prepareRecipeForApply, roleBrowses, roleCodes, roleTaskText, schedulesForRole, withTrailingNewline } from "./prepare.js";
 import { recipeNotePath, rewriteRecipePathsToDisplayPaths, rewriteRolesToNames } from "./rewrite.js";
+import { undoApply } from "./undo.js";
 
 // The skeleton of an apply: the guild, its agents with their tasks, scripts, paused routines and
 // native tools, the recipe's notes and collections with their access, and the reused connections'
@@ -60,7 +60,7 @@ type Skeleton = {
   roleToAgent: Map<string, string>;
   /** The display path each recipe note was written at, by every name the recipe links it with. */
   noteHref: Map<string, string>;
-  created: { guild: boolean; agents: string[]; collections: string[]; notes: string[] };
+  created: ApplyCreated & { guild: boolean };
 };
 
 /** Refuses a preview the skeleton cannot be created from, naming what the operator still has to settle. */
@@ -359,21 +359,10 @@ async function bindReusedConnections(skeleton: Skeleton, planned: PlannedConnect
   return bound;
 }
 
-/** Removes what the skeleton created so far; each removal goes on when another fails. */
+/** Removes what the skeleton created so far, as an abort of the apply would. */
 async function rollBack(skeleton: Skeleton): Promise<void> {
-  const { db, artifacts } = skeleton.apply;
-  for (const agentId of [...skeleton.created.agents].reverse()) {
-    await deleteAgent(db, agentId, skeleton.actor).catch(() => undefined);
-  }
-  if (skeleton.created.guild) {
-    await deleteGuild(db, skeleton.guildId, skeleton.actor).catch(() => undefined);
-  }
-  for (const collectionId of [...skeleton.created.collections].reverse()) {
-    await deleteCollection(artifacts, skeleton.actor, collectionId).catch(() => undefined);
-  }
-  // A note's rows may name no guild or agent the apply made, such as an `org` row alone, so its
-  // guild's and agents' deletion need not take it.
-  await Promise.allSettled(skeleton.created.notes.map((noteId) => deleteNoteById(artifacts, skeleton.actor, noteId)));
+  const { guild, ...made } = skeleton.created;
+  await undoApply(skeleton.apply, skeleton.actor, { ...made, guildId: guild ? skeleton.guildId : null });
 }
 
 /** Creates everything the skeleton holds and records the apply with its plan and checklist. */
@@ -389,7 +378,9 @@ async function build(skeleton: Skeleton, recipe: RecipeDocument, preview: ApplyP
   for (const role of recipe.roles) {
     await fillAgent(skeleton, role, recipe);
   }
+  const { guild: _guild, ...created } = skeleton.created;
   const plan: ApplyPlan = {
+    created,
     names: plannedAgents(skeleton.names, skeleton.roleToAgent),
     collections: await settleCollections(skeleton, preview.collections),
     connections: await bindReusedConnections(skeleton, preview.connections),

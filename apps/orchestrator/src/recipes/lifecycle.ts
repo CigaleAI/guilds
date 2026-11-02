@@ -1,7 +1,5 @@
 import { operatorActor } from "../artifacts/actors.js";
-import { deleteCollection } from "../artifacts/collections.js";
-import { deleteAgent, listAgents } from "../db/agents.js";
-import { deleteGuild } from "../db/guilds.js";
+import { listAgents } from "../db/agents.js";
 import { getRecipeApply, latestGuildApply, markApplyAborted, markApplyReady, type RecipeApplyRow } from "../db/recipe-applies.js";
 import { listSchedules } from "../db/schedules.js";
 import type { ChangeActor } from "../lib/change-actor.js";
@@ -9,6 +7,7 @@ import type { RecipeApply } from "./apply.js";
 import { appliedRecipe, blockingApplySteps, browserLoginAgentIds, deferLaunchSteps } from "./checklist.js";
 import { RecipeError } from "./errors.js";
 import { schedulesForRole } from "./prepare.js";
+import { undoApply, type AppliedItems } from "./undo.js";
 
 // An apply from its open checklist to its close: activated, which unpauses its routines, or
 // aborted, which removes the guild it created.
@@ -65,28 +64,31 @@ export async function activateApply(apply: RecipeApply, row: RecipeApplyRow, act
   return ready;
 }
 
-/** Removes the guild an apply created, with its agents and the collections it created; each removal goes on when another fails. */
-async function removeCreatedGuild(apply: RecipeApply, row: RecipeApplyRow, guildId: string): Promise<void> {
-  const actor = operatorActor({ orgId: row.org_id, actorId: row.created_by_user_id ?? row.org_id, actorName: "operator" });
-  for (const member of await listAgents(apply.db, guildId)) {
-    await deleteAgent(apply.db, member.id, actor).catch(() => undefined);
+/**
+ * What an apply made, from its plan: the agents, collections, and notes it records, and the guild
+ * it created. A plan that records none names the created guild's agents and the collections it
+ * planned to create.
+ */
+async function appliedItems(apply: RecipeApply, row: RecipeApplyRow): Promise<AppliedItems> {
+  const guildId = row.created_guild ? row.guild_id : null;
+  if (row.plan.created) {
+    return { ...row.plan.created, guildId };
   }
-  await deleteGuild(apply.db, guildId, actor).catch(() => undefined);
-  for (const item of row.plan.collections) {
-    if (item.action === "create" && item.collection_id) {
-      await deleteCollection(apply.artifacts, actor, item.collection_id).catch(() => undefined);
-    }
-  }
+  return {
+    guildId,
+    agents: guildId ? (await listAgents(apply.db, guildId)).map((member) => member.id) : [],
+    collections: row.plan.collections.flatMap((item) => (item.action === "create" && item.collection_id ? [item.collection_id] : [])),
+    notes: [],
+  };
 }
 
-/** Aborts an apply that is not ready yet, removing the guild it created. */
+/** Aborts an apply that is not ready yet, deleting what it made as a failed apply does. */
 export async function abortApply(apply: RecipeApply, row: RecipeApplyRow): Promise<RecipeApplyRow> {
   if (row.status === "ready") {
     throw new RecipeError("completed apply cannot be aborted");
   }
-  if (row.created_guild && row.guild_id) {
-    await removeCreatedGuild(apply, row, row.guild_id);
-  }
+  const actor = operatorActor({ orgId: row.org_id, actorId: row.created_by_user_id ?? row.org_id, actorName: "operator" });
+  await undoApply(apply, actor, await appliedItems(apply, row));
   const aborted = await markApplyAborted(apply.db, row.id, new Date());
   if (!aborted) {
     throw new RecipeError("apply not found", 404);
