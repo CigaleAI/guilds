@@ -1,4 +1,6 @@
 import type { Manifest } from "../db/schema/index.js";
+import { dumpsCompact, type JsonValue } from "../lib/json.js";
+import { offeredParameters } from "../lib/tool-schema.js";
 import { loadManifest, serverIdOf } from "./manifest.js";
 import type { Adapter } from "./types.js";
 import type { LoadedConnector } from "./servers.js";
@@ -31,7 +33,7 @@ export class ConnectorRegistryError extends Error {
  * An entry for a connector folder shipped in the image, by core or by an extension: its
  * `connector.json`, checked against the folder name, its adapter, and who publishes it.
  */
-export function folderEntry(raw: unknown, adapter: Adapter, folder: string, publisher = "guilds"): ConnectorEntry {
+export function folderEntry(raw: JsonValue, adapter: Adapter, folder: string, publisher = "guilds"): ConnectorEntry {
   const name = folder.replace(/\/+$/, "").split("/").pop() ?? "";
   const manifest = loadManifest(raw, name);
   return {
@@ -50,8 +52,27 @@ function listsTools(entry: ConnectorEntry): boolean {
   return Boolean(entry.adapter.list) || Boolean(entry.manifest.tools?.length);
 }
 
+/**
+ * Why the tools the entry's code runs disagree with its manifest, or null when they agree: each
+ * one the manifest lists has the JSON Schema of the parameters the code decodes as its input_schema.
+ */
+function toolSchemaProblem(entry: ConnectorEntry): string | null {
+  const { manifest, adapter } = entry;
+  for (const tool of adapter.tools ?? []) {
+    const listed = manifest.tools?.find((item) => item.name === tool.name);
+    if (listed && dumpsCompact(listed.input_schema) !== dumpsCompact(offeredParameters(tool.parameters))) {
+      return `connector ${manifest.slug} tool ${tool.name} lists an input_schema that is not the parameters its code decodes`;
+    }
+  }
+  return null;
+}
+
 function checkEntry(entry: ConnectorEntry): void {
   const { manifest, adapter } = entry;
+  const toolProblem = toolSchemaProblem(entry);
+  if (toolProblem !== null) {
+    throw new ConnectorRegistryError(toolProblem);
+  }
   if (!manifest.endpoint && listsTools(entry) && !adapter.call) {
     throw new ConnectorRegistryError(`connector ${manifest.slug} lists tools with no endpoint and no call`);
   }

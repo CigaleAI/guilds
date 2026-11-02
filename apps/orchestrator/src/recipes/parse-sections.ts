@@ -169,7 +169,7 @@ export function parseNote(item: unknown, index: number): RecipeNote {
 }
 
 /** A connection's carried manifest: a valid, endpoint-only connector under the connection's slug. */
-function connectionManifest(raw: unknown, server: string, path: string): Manifest {
+function connectionManifest(raw: JsonValue, server: string, path: string): Manifest {
   let manifest: Manifest;
   try {
     manifest = loadManifest(raw, server);

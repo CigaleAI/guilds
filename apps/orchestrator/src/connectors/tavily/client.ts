@@ -1,6 +1,6 @@
 import { Value } from "@sinclair/typebox/value";
-import { assertMatches } from "../../lib/decode.js";
 import type { FetchFn } from "../../net/http.js";
+import { decodeResponse, type ConnectorApi } from "../response.js";
 import { ErrorBody, ErrorDetail, SearchResponse } from "./responses.js";
 
 export const BASE_URL = "https://api.tavily.com";
@@ -16,9 +16,10 @@ export class TavilyError extends Error {
   }
 }
 
-/** A field as text, trimmed; null when it is not text or is blank. */
-function text(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
+/** Text, trimmed; null when it is blank or absent. */
+function text(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
 }
 
 export function formatSearch(payload: SearchResponse): string {
@@ -33,32 +34,18 @@ export function formatSearch(payload: SearchResponse): string {
 }
 
 /** The message of an error body, as text or one object deeper. */
-function errorMessage(payload: unknown): string | null {
-  if (!Value.Check(ErrorBody, payload)) {
-    return null;
-  }
-  const detail = payload.detail ?? payload.error ?? payload.message;
-  if (Value.Check(ErrorDetail, detail)) {
-    return text(detail.error ?? detail.message);
-  }
-  return text(detail);
+function errorMessage(body: ErrorBody): string | null {
+  const detail = body.detail ?? body.error ?? body.message;
+  return Value.Check(ErrorDetail, detail) ? text(detail.error ?? detail.message) : text(detail);
 }
 
-async function errorDetail(response: Response): Promise<string> {
-  const body = await response.text();
-  let payload: unknown;
-  try {
-    payload = body ? JSON.parse(body) : {};
-  } catch {
-    const stripped = body.trim();
-    return stripped || `Tavily HTTP ${response.status}`;
-  }
-  return errorMessage(payload) ?? `Tavily HTTP ${response.status}`;
-}
-
-function unexpected(problem: string): TavilyError {
-  return new TavilyError(`Tavily returned an unexpected response at ${problem}`);
-}
+/** Tavily's API as the client reads its responses. */
+const TAVILY: ConnectorApi<typeof ErrorBody> = {
+  name: "Tavily",
+  error: (message, status) => new TavilyError(message, status),
+  errorBody: ErrorBody,
+  errorMessage,
+};
 
 export type SearchOptions = {
   apiKey: string;
@@ -79,15 +66,5 @@ export async function search(query: string, options: SearchOptions): Promise<str
     },
     body: JSON.stringify({ query: stripped, search_depth: "advanced" }),
   });
-  if (response.status >= 400) {
-    throw new TavilyError(await errorDetail(response), response.status);
-  }
-  let payload: unknown;
-  try {
-    payload = JSON.parse(await response.text());
-  } catch {
-    throw new TavilyError("Tavily returned a non-JSON body");
-  }
-  assertMatches(SearchResponse, payload, unexpected);
-  return formatSearch(payload);
+  return formatSearch(await decodeResponse(TAVILY, response, SearchResponse));
 }

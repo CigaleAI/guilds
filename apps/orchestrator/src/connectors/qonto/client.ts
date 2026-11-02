@@ -1,4 +1,5 @@
 import path from "node:path";
+import type { JsonObject } from "../../lib/json.js";
 import { randomUUID } from "node:crypto";
 import type { Static, TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
@@ -86,7 +87,7 @@ function utcDay(now: Date): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 }
 
-function settledRange(arguments_: Record<string, unknown>, now: Date): { from: string; to: string } {
+function settledRange(arguments_: JsonObject, now: Date): { from: string; to: string } {
   const today = utcDay(now);
   const defaultFrom = new Date(today);
   defaultFrom.setUTCDate(defaultFrom.getUTCDate() - 90);
@@ -300,7 +301,7 @@ type MissingQuery = {
 };
 
 /** The transactions query, amount floor and row limit `list_missing_invoices` is called with. */
-function missingQuery(arguments_: Record<string, unknown>, now: Date): MissingQuery {
+function missingQuery(arguments_: JsonObject, now: Date): MissingQuery {
   const range = settledRange(arguments_, now);
   const side = argStr(arguments_, "side") || "debit";
   if (side !== "debit" && side !== "credit" && side !== "both") {
@@ -338,7 +339,7 @@ async function accountMissing(options: QontoOptions, request: MissingQuery, acco
     .filter((row) => request.minAmount === null || asAmount(row.amount) >= request.minAmount);
 }
 
-async function listMissingInvoices(arguments_: Record<string, unknown>, options: QontoOptions): Promise<string> {
+async function listMissingInvoices(arguments_: JsonObject, options: QontoOptions): Promise<string> {
   const request = missingQuery(arguments_, options.now ? options.now() : new Date());
   const accountArg = argStr(arguments_, "bank_account_id");
   const accountIds = accountArg ? [accountArg] : await activeAccountIds(options);
@@ -356,7 +357,7 @@ async function listMissingInvoices(arguments_: Record<string, unknown>, options:
   return [summary, clipRows(missing.map((row) => transactionRow(row)), request.limit)].join("\n");
 }
 
-async function getTransaction(arguments_: Record<string, unknown>, options: QontoOptions): Promise<Transaction> {
+async function getTransaction(arguments_: JsonObject, options: QontoOptions): Promise<Transaction> {
   const transactionId = argStr(arguments_, "transaction_id");
   if (!transactionId) {
     throw new QontoError("transaction_id is required");
@@ -432,7 +433,7 @@ async function pollAttachments(transactionId: string, options: QontoOptions): Pr
   }
 }
 
-async function uploadInvoice(arguments_: Record<string, unknown>, options: QontoOptions): Promise<string> {
+async function uploadInvoice(arguments_: JsonObject, options: QontoOptions): Promise<string> {
   const transactionId = argStr(arguments_, "transaction_id");
   const filePath = argStr(arguments_, "file_path");
   if (!transactionId) {
@@ -470,7 +471,7 @@ async function uploadInvoice(arguments_: Record<string, unknown>, options: Qonto
 
 export async function callTool(
   name: string,
-  arguments_: Record<string, unknown>,
+  arguments_: JsonObject,
   options: QontoOptions,
 ): Promise<string> {
   if (name === "list_bank_accounts") {

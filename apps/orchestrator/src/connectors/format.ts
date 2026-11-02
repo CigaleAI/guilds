@@ -1,3 +1,5 @@
+import type { JsonObject, JsonValue } from "../lib/json.js";
+
 export const LIST_DEFAULT = 15;
 export const LIST_CAP = 30;
 
@@ -99,20 +101,23 @@ export function joinParts(...parts: unknown[]): string {
   return values.join("  ");
 }
 
-export function argStr(arguments_: Record<string, unknown>, key: string, fallback = ""): string {
-  const value = arguments_[key] ?? fallback;
-  if (value === null || value === undefined) {
-    return fallback;
-  }
-  return String(value).trim();
+/** The argument `key` as trimmed text; `fallback` when it is absent or null. */
+export function argStr(arguments_: JsonObject, key: string, fallback = ""): string {
+  return String(arguments_[key] ?? fallback).trim();
 }
 
-export function argInt(arguments_: Record<string, unknown>, key: string, fallback: number): number {
+/** Whether an argument is a finite number. */
+function isFiniteNumber(value: JsonValue): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+/** The argument `key` as a whole number: a number truncated, a boolean as 1 or 0, or text of digits; `fallback` otherwise. */
+export function argInt(arguments_: JsonObject, key: string, fallback: number): number {
   const value = arguments_[key] ?? fallback;
-  if (typeof value === "boolean") {
+  if (value === true || value === false) {
     return value ? 1 : 0;
   }
-  if (typeof value === "number" && Number.isFinite(value)) {
+  if (isFiniteNumber(value)) {
     return Math.trunc(value);
   }
   const text = String(value).trim();
@@ -122,7 +127,7 @@ export function argInt(arguments_: Record<string, unknown>, key: string, fallbac
   return Number.parseInt(text, 10);
 }
 
-export function rowLimit(arguments_: Record<string, unknown>): number {
+export function rowLimit(arguments_: JsonObject): number {
   return Math.max(1, Math.min(LIST_CAP, argInt(arguments_, "limit", LIST_DEFAULT)));
 }
 

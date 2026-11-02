@@ -1,4 +1,6 @@
 // Shapes a JSON Schema for a model's tool call, and the arguments a model sends against it.
+import type { Static, TObject } from "@sinclair/typebox";
+import { assertMatches } from "./decode.js";
 import { isJsonObject, isObjectNode, type JsonObject, type JsonValue } from "./json.js";
 
 /**
@@ -50,6 +52,15 @@ const KEYWORD_HOLDS = {
 /** Whether a value is a JSON Schema object whose keywords tool calling reads hold what JSON Schema puts there, at every depth. */
 export function isToolSchema(value: unknown): value is ToolSchema {
   return isJsonObject(value) && isSchemaNode(value);
+}
+
+/** `parameters` as the JSON Schema they serialise to, which is what the model is offered: TypeBox's own marks left out. */
+export function offeredParameters(parameters: TObject): ToolSchema {
+  const offered: unknown = JSON.parse(JSON.stringify(parameters));
+  if (!isToolSchema(offered)) {
+    throw new TypeError("a tool's parameters must serialise to a JSON Schema object");
+  }
+  return offered;
 }
 
 /** Whether a JSON object's keywords tool calling reads hold what JSON Schema puts there, at every depth. */
@@ -193,4 +204,36 @@ export function omitEmptyOptionalStrings(args: JsonObject, schema: ToolSchema): 
       : value;
   }
   return next;
+}
+
+/** `args` less each optional argument the model sent as null, which is an argument it left out. */
+function presentArguments(parameters: TObject, args: JsonObject): JsonObject {
+  const required = new Set(parameters.required ?? []);
+  const given: JsonObject = {};
+  for (const [key, value] of Object.entries(args)) {
+    if (value !== null || required.has(key)) {
+      given[key] = value;
+    }
+  }
+  return given;
+}
+
+/**
+ * `args`, a tool call's arguments as the model wrote them, decoded as `parameters` describe them.
+ * An optional argument sent as null is absent. A required argument left out throws the error
+ * `fail` makes of "<name> is required"; arguments that do not match throw the one it makes of the
+ * first mismatch, named by its JSON pointer.
+ */
+export function decodeArguments<P extends TObject>(
+  parameters: P,
+  args: JsonObject,
+  fail: (problem: string) => Error,
+): JsonObject & Static<P> {
+  const given = presentArguments(parameters, args);
+  const missing = parameters.required?.find((key) => given[key] === undefined);
+  if (missing !== undefined) {
+    throw fail(`${missing} is required`);
+  }
+  assertMatches(parameters, given, fail);
+  return given;
 }

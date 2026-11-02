@@ -1,4 +1,5 @@
 import { createHash, generateKeyPairSync } from "node:crypto";
+import type { JsonObject } from "../../src/lib/json.js";
 import { RegistryClient } from "../../src/registry/client.js";
 import { registryPublicKey, signIndex, type RegistryIndex } from "../../src/registry/index.js";
 import { packTarball } from "../../src/registry/tar.js";
@@ -11,7 +12,7 @@ export function tarball(files: Record<string, string | Buffer>): Buffer {
 }
 
 /** An endpoint-only manifest under `slug`. */
-export function endpointManifest(slug: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
+export function endpointManifest(slug: string, extra: JsonObject = {}): JsonObject {
   return {
     slug,
     display_name: `Acme ${slug}`,

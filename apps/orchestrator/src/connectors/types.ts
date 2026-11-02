@@ -1,4 +1,4 @@
-import type { TSchema } from "@sinclair/typebox";
+import type { TObject, TSchema } from "@sinclair/typebox";
 import type { ConnectionSettings, ToolInputSchema } from "../db/schema/index.js";
 import type { JsonObject } from "../lib/json.js";
 import type { FetchFn } from "../net/http.js";
@@ -50,6 +50,18 @@ export type ConnectorContext = {
   workspace_dir?: string;
 };
 
+/**
+ * A tool a connector's code runs, as its adapter runs it: its name, the TypeBox schema of its
+ * parameters, and the run of a call's arguments, decoded against the parameters before any work.
+ * The manifest lists the parameters' JSON Schema as the tool's `input_schema`; the registry
+ * refuses an entry whose manifest lists another.
+ */
+export type AdapterTool = {
+  name: string;
+  parameters: TObject;
+  call: (args: JsonObject, creds: Credentials, ctx: ConnectorContext) => Promise<string>;
+};
+
 export type Adapter = {
   /**
    * Checks the credentials and settings. Returns the account hint, empty when there is none.
@@ -60,6 +72,8 @@ export type Adapter = {
   lookup?(property: string, query: string, creds: Credentials, ctx: ConnectorContext): Promise<LookupOption[]>;
   /** The tools this login lists. Default: the manifest's tools, or the endpoint's `tools/list` when there is one. */
   list?(creds: Credentials, ctx: ConnectorContext): Promise<ConnectorTool[]>;
+  /** The tools the connector's code runs, which its `call` runs by name (see `toolsAdapter`). */
+  tools?: readonly AdapterTool[];
   /** Runs one tool. Default: the endpoint's `tools/call`. Required when there is no endpoint. */
   call?(name: string, args: JsonObject, creds: Credentials, ctx: ConnectorContext): Promise<string>;
   /** The value for the manifest's `state.key`, once per generation, under the pool's budget. Null leaves the key out. */

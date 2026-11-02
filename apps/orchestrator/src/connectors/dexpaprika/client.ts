@@ -1,4 +1,5 @@
 import { Type, type Static, type TSchema } from "@sinclair/typebox";
+import type { JsonObject } from "../../lib/json.js";
 import { Value } from "@sinclair/typebox/value";
 import { assertMatches } from "../../lib/decode.js";
 import { proxyFetch, withQuery, type FetchFn } from "../../net/http.js";
@@ -301,7 +302,7 @@ async function getJson<T extends TSchema>(
   return payload;
 }
 
-function requireNetwork(arguments_: Record<string, unknown>): string {
+function requireNetwork(arguments_: JsonObject): string {
   const network = argStr(arguments_, "network").toLowerCase();
   if (!network) {
     throw new DexPaprikaError("network is required");
@@ -309,7 +310,7 @@ function requireNetwork(arguments_: Record<string, unknown>): string {
   return network;
 }
 
-function requireAddress(arguments_: Record<string, unknown>, key = "address"): string {
+function requireAddress(arguments_: JsonObject, key = "address"): string {
   const address = argStr(arguments_, key);
   if (!address) {
     throw new DexPaprikaError(`${key} is required`);
@@ -329,7 +330,7 @@ export async function ping(apiKey: string, options: DexPaprikaOptions = {}): Pro
   }
 }
 
-export async function searchTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+export async function searchTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
   const query = argStr(arguments_, "query");
   if (!query) {
     throw new DexPaprikaError("query is required");
@@ -338,7 +339,7 @@ export async function searchTool(arguments_: Record<string, unknown>, options: T
   return formatSearch(payload, rowLimit(arguments_));
 }
 
-export async function tokenTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+export async function tokenTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
   const network = requireNetwork(arguments_);
   const address = requireAddress(arguments_);
   const payload = await getJson(
@@ -349,7 +350,7 @@ export async function tokenTool(arguments_: Record<string, unknown>, options: To
   return formatToken(payload);
 }
 
-export async function pricesTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+export async function pricesTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
   const network = requireNetwork(arguments_);
   const tokens = [
     ...new Set(
@@ -373,7 +374,7 @@ export async function pricesTool(arguments_: Record<string, unknown>, options: T
   return formatPrices(payload);
 }
 
-export async function poolTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+export async function poolTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
   const network = requireNetwork(arguments_);
   const address = requireAddress(arguments_);
   const payload = await getJson(
@@ -385,7 +386,7 @@ export async function poolTool(arguments_: Record<string, unknown>, options: Too
 }
 
 /** The arguments that, when given, become a query parameter of their own name. */
-function optionalParams(arguments_: Record<string, unknown>, names: Record<string, string>): Record<string, string> {
+function optionalParams(arguments_: JsonObject, names: Record<string, string>): Record<string, string> {
   const params: Record<string, string> = {};
   for (const [argument, param] of Object.entries(names)) {
     const value = argStr(arguments_, argument);
@@ -396,7 +397,7 @@ function optionalParams(arguments_: Record<string, unknown>, names: Record<strin
   return params;
 }
 
-export async function poolsTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+export async function poolsTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
   const network = requireNetwork(arguments_);
   const limit = rowLimit(arguments_);
   const params = {
@@ -418,7 +419,7 @@ export async function poolsTool(arguments_: Record<string, unknown>, options: To
   return formatPools(payload, limit);
 }
 
-export async function ohlcvTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+export async function ohlcvTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
   const network = requireNetwork(arguments_);
   const address = requireAddress(arguments_);
   const start = argStr(arguments_, "start", "-24h") || "-24h";
@@ -435,7 +436,7 @@ export async function ohlcvTool(arguments_: Record<string, unknown>, options: To
   return formatOhlcv(payload, `${network}:${address} ${interval} ${start}`);
 }
 
-export async function swapsTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+export async function swapsTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
   const network = requireNetwork(arguments_);
   const address = requireAddress(arguments_);
   const limit = rowLimit(arguments_);
@@ -448,7 +449,7 @@ export async function swapsTool(arguments_: Record<string, unknown>, options: To
   return formatSwaps(payload, limit);
 }
 
-const HANDLERS: Record<string, (arguments_: Record<string, unknown>, options: ToolOptions) => Promise<string>> = {
+const HANDLERS: Record<string, (arguments_: JsonObject, options: ToolOptions) => Promise<string>> = {
   search: searchTool,
   token: tokenTool,
   prices: pricesTool,
@@ -460,7 +461,7 @@ const HANDLERS: Record<string, (arguments_: Record<string, unknown>, options: To
 
 export async function callTool(
   name: string,
-  arguments_: Record<string, unknown>,
+  arguments_: JsonObject,
   options: ToolOptions,
 ): Promise<string> {
   const handler = HANDLERS[name];

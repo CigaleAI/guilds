@@ -2,7 +2,6 @@ import type { Static, TObject } from "@sinclair/typebox";
 import { DEFAULT_MAX_SCRIPTS } from "../agents/config.js";
 import type { Harness, Effort, ReportedToolMetadata } from "../db/schema/index.js";
 import { agentHome } from "../lib/agent-file.js";
-import { assertMatches } from "../lib/decode.js";
 import type { JsonObject } from "../lib/json.js";
 import type { ArtifactActor } from "../artifacts/types.js";
 import type { CdpTarget } from "../browse/bridge.js";
@@ -10,7 +9,7 @@ import type { RunScriptSnapshot } from "../db/schema/index.js";
 import type { SandboxHandle } from "../sandbox/sdk.js";
 import { ToolArgumentError } from "./errors.js";
 import { identityOutput } from "./output.js";
-import type { FunctionTool } from "../lib/tool-schema.js";
+import { decodeArguments, type FunctionTool } from "../lib/tool-schema.js";
 import { toolFunctionSchema } from "./schema.js";
 import type { ToolServices } from "./services.js";
 
@@ -233,31 +232,13 @@ export type NativeTool<P extends TObject> = {
   handler: (services: ToolServices, run: ToolRun, hooks: ToolHooks, call: ToolInvocation<Static<P>>) => Promise<string>;
 };
 
-/** `args` less each optional argument the model sent as null, which is an argument it left out. */
-function presentArguments(parameters: TObject, args: JsonObject): JsonObject {
-  const required = new Set(parameters.required ?? []);
-  const given: JsonObject = {};
-  for (const [key, value] of Object.entries(args)) {
-    if (value !== null || required.has(key)) {
-      given[key] = value;
-    }
-  }
-  return given;
-}
-
 /**
  * `args` decoded as `parameters` describe them. An optional argument sent as null is absent. A
  * required argument left out throws a ToolArgumentError naming it; arguments that do not match
  * throw one naming the first mismatch by its JSON pointer.
  */
 export function decodeToolArguments<P extends TObject>(parameters: P, args: JsonObject): JsonObject & Static<P> {
-  const given = presentArguments(parameters, args);
-  const missing = parameters.required?.find((key) => given[key] === undefined);
-  if (missing !== undefined) {
-    throw new ToolArgumentError(`${missing} is required`);
-  }
-  assertMatches(parameters, given, (problem) => new ToolArgumentError(problem));
-  return given;
+  return decodeArguments(parameters, args, (problem) => new ToolArgumentError(problem));
 }
 
 /** Decodes `call`'s arguments in place, as `parameters` describe them, so the handler reads them typed. */

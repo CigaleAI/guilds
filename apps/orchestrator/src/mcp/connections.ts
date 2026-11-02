@@ -234,7 +234,8 @@ export async function saveConnectionSettings(
   const mcp = poolOf(services, "settings are unavailable");
   // The check refuses settings that lack a property the schema requires, so a login waiting
   // for its settings connects with any it accepts.
-  const valid = validateSettings(schema, settings ?? null);
+  const valid = settings ?? null;
+  validateSettings(schema, valid);
   let accountHint: string;
   try {
     accountHint = await mcp.validateLogin(connection, server, valid);

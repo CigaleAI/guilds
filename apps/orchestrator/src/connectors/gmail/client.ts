@@ -1,4 +1,5 @@
 import type { Static, TSchema } from "@sinclair/typebox";
+import type { JsonObject } from "../../lib/json.js";
 import { Value } from "@sinclair/typebox/value";
 import { AgentFileError, agentDisplayPath, writeAgentFile } from "../../lib/agent-file.js";
 import { assertMatches } from "../../lib/decode.js";
@@ -289,7 +290,7 @@ async function gmailRequest<T extends TSchema>(request: GmailRequest<T>, options
   return body;
 }
 
-function composeFields(arguments_: Record<string, unknown>): OutgoingMessage {
+function composeFields(arguments_: JsonObject): OutgoingMessage {
   const to = argStr(arguments_, "to");
   const subject = argStr(arguments_, "subject");
   const body = argStr(arguments_, "body");
@@ -325,7 +326,7 @@ function formatMessage(message: Message): string {
   return [formatMessageHead(message), ...attachments, messageBody(message.payload)].filter(Boolean).join("\n");
 }
 
-function requiredArg(arguments_: Record<string, unknown>, key: string): string {
+function requiredArg(arguments_: JsonObject, key: string): string {
   const value = argStr(arguments_, key);
   if (!value) {
     throw new GmailError(`${key} is required`);
@@ -401,7 +402,7 @@ async function threadRow(thread: ThreadSummary, options: GmailOptions): Promise<
 }
 
 export async function searchThreadsTool(
-  arguments_: Record<string, unknown>,
+  arguments_: JsonObject,
   options: GmailOptions,
 ): Promise<string> {
   const query = argStr(arguments_, "query");
@@ -440,7 +441,7 @@ export async function searchThreadsTool(
 }
 
 export async function getThreadTool(
-  arguments_: Record<string, unknown>,
+  arguments_: JsonObject,
   options: GmailOptions,
 ): Promise<string> {
   const threadId = argStr(arguments_, "thread_id");
@@ -461,7 +462,7 @@ async function fullMessage(messageId: string, options: GmailOptions): Promise<Me
 }
 
 export async function getMessageTool(
-  arguments_: Record<string, unknown>,
+  arguments_: JsonObject,
   options: GmailOptions,
 ): Promise<string> {
   const messageId = argStr(arguments_, "message_id");
@@ -472,7 +473,7 @@ export async function getMessageTool(
 }
 
 export async function downloadAttachmentTool(
-  arguments_: Record<string, unknown>,
+  arguments_: JsonObject,
   options: GmailOptions,
 ): Promise<string> {
   const workspaceDir = options.workspaceDir;
@@ -524,7 +525,7 @@ async function draftRow(draft: DraftSummary, options: GmailOptions): Promise<str
 }
 
 export async function listDraftsTool(
-  arguments_: Record<string, unknown>,
+  arguments_: JsonObject,
   options: GmailOptions,
 ): Promise<string> {
   const limit = rowLimit(arguments_);
@@ -553,7 +554,7 @@ export async function listDraftsTool(
 }
 
 export async function createDraftTool(
-  arguments_: Record<string, unknown>,
+  arguments_: JsonObject,
   options: GmailOptions,
 ): Promise<string> {
   const body = { message: { raw: rfc2822Raw(composeFields(arguments_)) } };
@@ -562,7 +563,7 @@ export async function createDraftTool(
 }
 
 export async function sendMessageTool(
-  arguments_: Record<string, unknown>,
+  arguments_: JsonObject,
   options: GmailOptions,
 ): Promise<string> {
   const body = { raw: rfc2822Raw(composeFields(arguments_)) };
@@ -570,7 +571,7 @@ export async function sendMessageTool(
   return joinParts(`id=${payload.id ?? ""}`, `thread=${payload.threadId ?? ""}`) || "ok";
 }
 
-const HANDLERS: Record<string, (arguments_: Record<string, unknown>, options: GmailOptions) => Promise<string>> = {
+const HANDLERS: Record<string, (arguments_: JsonObject, options: GmailOptions) => Promise<string>> = {
   search_threads: searchThreadsTool,
   get_thread: getThreadTool,
   get_message: getMessageTool,
@@ -583,7 +584,7 @@ const HANDLERS: Record<string, (arguments_: Record<string, unknown>, options: Gm
 
 export async function callTool(
   name: string,
-  arguments_: Record<string, unknown>,
+  arguments_: JsonObject,
   options: GmailOptions,
 ): Promise<string> {
   const handler = HANDLERS[name];

@@ -101,12 +101,7 @@
       "count": 4
     },
     "anti-slop/no-unsafe-dictionary-type": {
-      "count": 9
-    }
-  },
-  "src/connectors/builder.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
+      "count": 3
     }
   },
   "src/connectors/coingecko/client.ts": {
@@ -118,9 +113,6 @@
     },
     "anti-slop/no-unknown-parameters": {
       "count": 5
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 14
     }
   },
   "src/connectors/dexpaprika/client.ts": {
@@ -132,9 +124,6 @@
     },
     "anti-slop/no-unknown-parameters": {
       "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 12
     }
   },
   "src/connectors/drive/adapter.ts": {
@@ -186,12 +175,9 @@
   },
   "src/connectors/format.ts": {
     "anti-slop/no-runtime-typeof": {
-      "count": 5
-    },
-    "anti-slop/no-unknown-parameters": {
       "count": 3
     },
-    "anti-slop/no-unsafe-dictionary-type": {
+    "anti-slop/no-unknown-parameters": {
       "count": 3
     }
   },
@@ -206,19 +192,6 @@
       "count": 1
     },
     "anti-slop/no-unsafe-dictionary-type": {
-      "count": 12
-    }
-  },
-  "src/connectors/instance.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    }
-  },
-  "src/connectors/manifest.ts": {
-    "anti-slop/no-unknown-parameters": {
       "count": 1
     }
   },
@@ -231,46 +204,6 @@
     },
     "anti-slop/no-unknown-parameters": {
       "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 6
-    }
-  },
-  "src/connectors/registry.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    }
-  },
-  "src/connectors/servers.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 4
-    }
-  },
-  "src/connectors/settings.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 11
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 5
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 5
-    },
-    "limits/erased-alias": {
-      "count": 1
-    }
-  },
-  "src/connectors/tavily/adapter.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    }
-  },
-  "src/connectors/tavily/client.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 2
     }
   },
   "src/connectors/twitterapiio/client.ts": {
@@ -282,9 +215,6 @@
     },
     "anti-slop/no-unknown-parameters": {
       "count": 5
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 14
     }
   },
   "src/connectors/x/client.ts": {
@@ -296,9 +226,6 @@
     },
     "anti-slop/no-unknown-parameters": {
       "count": 3
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 6
     }
   },
   "src/credentials/visibility.ts": {

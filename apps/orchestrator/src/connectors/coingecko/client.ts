@@ -1,4 +1,5 @@
 import { Value } from "@sinclair/typebox/value";
+import type { JsonObject } from "../../lib/json.js";
 import { Type, type Static, type TSchema } from "@sinclair/typebox";
 import { assertMatches } from "../../lib/decode.js";
 import { proxyFetch, withQuery, type FetchFn } from "../../net/http.js";
@@ -353,7 +354,7 @@ async function getJson<T extends TSchema>(
 }
 
 /** The coin the arguments name, as `[id, platform, address]`: by `id`, else by `platform` and `address`, each empty when not given. */
-function coinRef(arguments_: Record<string, unknown>): [string, string, string] {
+function coinRef(arguments_: JsonObject): [string, string, string] {
   const coinId = argStr(arguments_, "id");
   if (coinId) {
     return [coinId, "", ""];
@@ -362,7 +363,7 @@ function coinRef(arguments_: Record<string, unknown>): [string, string, string] 
 }
 
 /** The coin the arguments name, as `coinRef` reads it; throws when they name none. */
-function requiredCoinRef(arguments_: Record<string, unknown>): [string, string, string] {
+function requiredCoinRef(arguments_: JsonObject): [string, string, string] {
   const [coinId, platform, address] = coinRef(arguments_);
   if (!coinId && !(platform && address)) {
     throw new CoinGeckoError("id, or platform and address, is required");
@@ -378,7 +379,7 @@ export async function ping(apiKey: string, options: CoinGeckoOptions = {}): Prom
 
 type ToolOptions = CoinGeckoOptions & { apiKey: string };
 
-export async function searchTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+export async function searchTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
   const query = argStr(arguments_, "query");
   if (!query) {
     throw new CoinGeckoError("query is required");
@@ -387,7 +388,7 @@ export async function searchTool(arguments_: Record<string, unknown>, options: T
   return formatSearch(payload, rowLimit(arguments_));
 }
 
-export async function coinTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+export async function coinTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
   const [coinId, platform, address] = requiredCoinRef(arguments_);
   const params = {
     localization: "false",
@@ -399,12 +400,12 @@ export async function coinTool(arguments_: Record<string, unknown>, options: Too
   return formatCoin(await getJson({ path, params, schema: CoinResponse }, options.apiKey, options));
 }
 
-export async function newTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+export async function newTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
   const payload = await getJson({ path: "/coins/list/new", params: {}, schema: NewCoinsResponse }, options.apiKey, options);
   return formatNew(payload, rowLimit(arguments_));
 }
 
-export async function moversTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+export async function moversTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
   const vs = argStr(arguments_, "vs", VS_DEFAULT) || VS_DEFAULT;
   const params: Record<string, string> = { vs_currency: vs };
   const duration = argStr(arguments_, "duration");
@@ -423,7 +424,7 @@ export async function moversTool(arguments_: Record<string, unknown>, options: T
   return formatMovers(payload, vs, rowLimit(arguments_));
 }
 
-export async function supplyTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+export async function supplyTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
   const coinId = argStr(arguments_, "id");
   if (!coinId) {
     throw new CoinGeckoError("id is required");
@@ -448,7 +449,7 @@ type ChartRequest = {
 };
 
 /** The chart the arguments ask for: `price` when they name none; throws on any other kind. */
-function chartKind(arguments_: Record<string, unknown>): ChartRequest["kind"] {
+function chartKind(arguments_: JsonObject): ChartRequest["kind"] {
   const kind = argStr(arguments_, "kind", "price") || "price";
   if (kind !== "price" && kind !== "ohlc") {
     throw new CoinGeckoError("kind must be price or ohlc");
@@ -456,7 +457,7 @@ function chartKind(arguments_: Record<string, unknown>): ChartRequest["kind"] {
   return kind;
 }
 
-function chartRequest(arguments_: Record<string, unknown>): ChartRequest {
+function chartRequest(arguments_: JsonObject): ChartRequest {
   const [coinId, platform, address] = coinRef(arguments_);
   const kind = chartKind(arguments_);
   if (kind === "ohlc" && !coinId) {
@@ -476,7 +477,7 @@ function chartRequest(arguments_: Record<string, unknown>): ChartRequest {
   };
 }
 
-export async function chartTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+export async function chartTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
   const { coinId, platform, address, days, kind, vs, series } = chartRequest(arguments_);
   const params = { vs_currency: vs, days };
   if (kind === "ohlc") {
@@ -489,7 +490,7 @@ export async function chartTool(arguments_: Record<string, unknown>, options: To
   return formatChart(payload, title, series);
 }
 
-export async function trendingTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+export async function trendingTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
   const payload = await getJson({ path: "/search/trending", params: {}, schema: TrendingResponse }, options.apiKey, options);
   return formatTrending(payload, rowLimit(arguments_));
 }
@@ -571,7 +572,7 @@ export function formatPrices(ids: string[], prices: Record<string, CoinPrice>): 
   return rows.length ? rows.join("\n") : "no results";
 }
 
-export async function pricesTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+export async function pricesTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
   const ids = [
     ...new Set(
       argStr(arguments_, "ids")
@@ -589,7 +590,7 @@ export async function pricesTool(arguments_: Record<string, unknown>, options: T
   return formatPrices(ids, await simplePrices(ids, options));
 }
 
-const HANDLERS: Record<string, (arguments_: Record<string, unknown>, options: ToolOptions) => Promise<string>> = {
+const HANDLERS: Record<string, (arguments_: JsonObject, options: ToolOptions) => Promise<string>> = {
   search: searchTool,
   coin: coinTool,
   prices: pricesTool,
@@ -602,7 +603,7 @@ const HANDLERS: Record<string, (arguments_: Record<string, unknown>, options: To
 
 export async function callTool(
   name: string,
-  arguments_: Record<string, unknown>,
+  arguments_: JsonObject,
   options: ToolOptions,
 ): Promise<string> {
   const handler = HANDLERS[name];
