@@ -8,7 +8,6 @@ import {
   readEvents,
   stateFlags,
   stateRows,
-  tablePathOf,
   tallyBy,
   topActor,
   type StateEvent,
@@ -52,6 +51,7 @@ const event = (overrides: Partial<StateEvent>): StateEvent => ({
 /** A file change a person made, as the window query returns it, with `overrides`; its artifact is the one its path names by default. */
 const fileChange = (overrides: Partial<FileChangeEventRow>): FileChangeEventRow => ({
   artifact_id: `art:${overrides.display_path ?? "p"}`,
+  collection_id: null,
   display_path: "p",
   operation: "update",
   actor_type: "user",
@@ -131,13 +131,7 @@ test("a change links to the coach message it was applied from, else its run step
   assert.equal(changeLink(fileChange({ studio_session_id: "stu_1", studio_seq: null })), null);
 });
 
-test("a record's path names its table", () => {
-  assert.equal(tablePathOf("org/o/collections/leads/4"), "org/o/collections/leads");
-  assert.equal(tablePathOf("org/o/collections/leads"), null);
-  assert.equal(tablePathOf("org/o/rules.md"), null);
-});
-
-test("changes land on their item by its artifact, records on their table, and config changes on the table or note by id", () => {
+test("changes land on their item by its artifact, records on their table by its collection, and config changes on the table or note by id", () => {
   const items = [
     item("org/o/rules.md", { note_id: "art_1" }),
     item("org/o/collections/leads", { kind: "table", collection_id: "col_1" }),
@@ -145,7 +139,9 @@ test("changes land on their item by its artifact, records on their table, and co
   const events = changeEvents(
     [
       fileChange({ display_path: "org/o/rules.md" }),
-      fileChange({ display_path: "org/o/collections/leads/3", operation: "delete", actor_type: "run", run_agent_id: "a_2" }),
+      fileChange({ display_path: "org/o/collections/leads/3", collection_id: "col_1", operation: "delete", actor_type: "run", run_agent_id: "a_2" }),
+      // a record of a deleted table that had the same name is not this table's
+      fileChange({ display_path: "org/o/collections/leads/9", collection_id: "col_gone" }),
       fileChange({ display_path: "org/o/other.md" }),
       // a change of another item that held the same path before this one is not this item's
       fileChange({ display_path: "org/o/rules.md", artifact_id: "art_old" }),

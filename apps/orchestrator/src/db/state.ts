@@ -1,6 +1,6 @@
 import type { InferSelectModel } from "drizzle-orm";
 import { type Queryable, stamp } from "./pg.js";
-import type { configChanges, fileChanges, messages, runs } from "./schema/index.js";
+import type { artifacts, configChanges, fileChanges, messages, runs } from "./schema/index.js";
 
 type FileChange = InferSelectModel<typeof fileChanges>;
 type ConfigChange = InferSelectModel<typeof configChanges>;
@@ -30,7 +30,11 @@ export type FileChangeEventRow = Pick<
   | "studio_seq"
   | "created_at"
   | "id"
-> & { run_agent_id: Run["agent_id"] | null };
+> & {
+  run_agent_id: Run["agent_id"] | null;
+  /** The collection of the record the change is of; null for any other item. */
+  collection_id: InferSelectModel<typeof artifacts>["collection_id"];
+};
 
 /** A config change to a table or a note, with the agent of the run that made it, when a run did. */
 export type ConfigChangeEventRow = Pick<
@@ -69,7 +73,7 @@ export type ItemChangeRow = FileChangeEventRow & { summary: string | null };
 
 const CHANGE_COLUMNS = `fc.display_path, fc.operation, fc.actor_type, fc.actor_id, fc.actor_name,
        fc.run_id, fc.tool_call_id, fc.studio_session_id, fc.studio_seq, fc.created_at, fc.id,
-       r.agent_id AS run_agent_id, fc.artifact_id`;
+       r.agent_id AS run_agent_id, fc.artifact_id, rec.collection_id`;
 
 const CONFIG_COLUMNS = `cc.target_kind, cc.target_id, cc.operation, cc.actor_type, cc.actor_id, cc.actor_name,
        cc.run_id, cc.tool_call_id, cc.studio_session_id, cc.studio_seq, cc.created_at, cc.id, cc.summary,
@@ -84,6 +88,7 @@ export async function listWindowFileChanges(
   const result = await db.query<FileChangeEventRow>(
     `SELECT ${CHANGE_COLUMNS}
        FROM file_changes fc LEFT JOIN runs r ON r.id = fc.run_id
+       LEFT JOIN artifacts rec ON rec.id = fc.artifact_id
       WHERE fc.org_id = $1 AND fc.created_at >= $2 AND fc.created_at <= $3`,
     [orgId, stamp(window.since), stamp(window.until)],
   );
@@ -166,12 +171,13 @@ export async function listItemChanges(db: Queryable, orgId: string, page: ItemHi
     `SELECT * FROM (
        SELECT ${CHANGE_COLUMNS}, NULL::text AS summary
          FROM file_changes fc LEFT JOIN runs r ON r.id = fc.run_id
+         LEFT JOIN artifacts rec ON rec.id = fc.artifact_id
         WHERE fc.org_id = $1
           AND (fc.artifact_id = $9 OR fc.artifact_id IN (SELECT a.id FROM artifacts a WHERE a.collection_id = $3))
        UNION ALL
        SELECT $2::text, cc.operation, cc.actor_type, cc.actor_id, cc.actor_name,
               cc.run_id, cc.tool_call_id, cc.studio_session_id, cc.studio_seq, cc.created_at, cc.id,
-              r.agent_id, NULL::text, cc.summary
+              r.agent_id, NULL::text, NULL::text, cc.summary
          FROM config_changes cc LEFT JOIN runs r ON r.id = cc.run_id
         WHERE cc.org_id = $1
           AND ((cc.target_kind = 'collection' AND cc.target_id = $3) OR (cc.target_kind = 'note' AND cc.target_id = $8))

@@ -1,4 +1,3 @@
-import { COLLECTIONS_SEGMENT } from "../artifacts/paths.js";
 import { Type, type Static } from "typebox";
 import type { ConfigChangeEventRow, FileChangeEventRow, ReadCallRow, WindowRunRow } from "../db/state.js";
 import { iso } from "../db/views.js";
@@ -128,13 +127,6 @@ export function changeLink(row: ChangeOrigin): StateLink | null {
     : null;
 }
 
-/** A record's path names its table: `org/<org>/collections/<name>/<id>`. */
-export function tablePathOf(displayPath: string): string | null {
-  const parts = displayPath.split("/");
-  const at = parts.indexOf(COLLECTIONS_SEGMENT);
-  return at >= 0 && parts.length === at + 3 ? parts.slice(0, at + 2).join("/") : null;
-}
-
 /** The config-log key of an item's own changes: a table's shape and access, a note's access. */
 export function configKey(kind: string, id: string): string {
   return `${kind}:${id}`;
@@ -154,20 +146,23 @@ export function changeEvents(
   configChanges: ConfigChangeEventRow[],
   context: StateContext,
 ): StateEvent[] {
-  const paths = new Set(context.items.map((item) => item.display_path));
   const byArtifact = new Map(context.items.flatMap((item) => (item.artifact_id ? [[item.artifact_id, item.display_path] as const] : [])));
+  const byCollection = new Map(
+    context.items.flatMap((item) => (item.collection_id ? [[item.collection_id, item.display_path] as const] : [])),
+  );
   const configured = new Map(
     context.items.flatMap((item) => {
       const key = itemConfigKey(item);
       return key ? [[key, item.display_path] as const] : [];
     }),
   );
-  // A change is an item's own by its artifact, never by a display path another item held before.
+  // A change is an item's own by its artifact, and a record's its table's by its collection, never
+  // by a display path another item or table held before.
   const files = fileChanges.flatMap((row) => {
     const own = row.artifact_id ? byArtifact.get(row.artifact_id) : undefined;
     if (own) return [changeEvent(row, own, null, context.agents)];
-    const table = tablePathOf(row.display_path);
-    return table && paths.has(table) ? [changeEvent(row, table, row.display_path, context.agents)] : [];
+    const table = row.collection_id ? byCollection.get(row.collection_id) : undefined;
+    return table ? [changeEvent(row, table, row.display_path, context.agents)] : [];
   });
   const shapes = configChanges.flatMap((row) => {
     const path = configured.get(configKey(row.target_kind, row.target_id));
