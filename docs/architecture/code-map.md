@@ -76,7 +76,7 @@ A repository that extends core holds this one as a submodule
 | `seed/` | The database at boot (`connect.ts`): core's and an extension's migrations and seeds, the installed connectors' rows (`system.ts`), the native tool catalog (`catalog.ts`), and a fresh box's first user and organisation (`operator.ts`) |
 | `attachments/` | Chat images: sniffing, upload, and hydration |
 | `artifacts/` | The artifact store (`store.ts`) with one module per sub-domain (notes, Memory, collections, records, access lists), shared files (`files.ts`, `operator-files.ts`), the files an operator's pages read and write (`host-files.ts`), and the collection views ([Artifacts](../concepts/artifacts.md), [Access](../concepts/access.md)) |
-| `notes/` | `NotesStore` (`store.ts`): the `system.md` template and each agent's folder on disk, with its Task, Memory, notes, and routine files; the checks a relative path passes (`paths.ts`); and an operator's notes on a guild, agent, or organisation page (`operator.ts`) |
+| `notes/` | `NotesStore` (`store.ts`): the `system.md` template and each agent's folder on disk, with its Task, Memory, notes, and routine files; the checks a relative path passes (`paths.ts`); and the organisation's notes as an operator reads and writes them, listed for the organisation, a guild, or an agent page (`operator.ts`) |
 | `directories/` | The listing of an agent's private and shared notes, scripts, and environment that its State shows |
 | `memory/` | Hydration, the cap, the archive, and the version history ([Memory](../concepts/memory.md)) |
 | `prompts/` | Prompt composition and the `system.md`, `task.md`, and `memory.md` templates ([System prompt](../concepts/system-prompt.md)) |

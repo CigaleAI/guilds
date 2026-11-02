@@ -533,6 +533,7 @@ Core's tables:
 - artifacts
 - artifact_collections
 - artifact_access
+- artifact_renames
 - attachments
 - file_changes
 - config_changes
@@ -546,7 +547,10 @@ Core's tables:
 - recipes
 - recipe_applies
 
-Scripts are `artifacts` with `kind` `script` at agent level.
+Notes and files are `artifacts` of the organisation, with no
+`agent_id`; a name is unique among the organisation's live notes, and
+among its live files. Memory and scripts are `artifacts` with the
+agent's `agent_id`, unique per agent.
 
 Collections live in `artifact_collections` (name, purpose, typed
 `columns`, `next_id`). Their records live in `artifacts` (`kind`
@@ -554,13 +558,17 @@ Collections live in `artifact_collections` (name, purpose, typed
 `artifact_collections.guild_id` places a collection in one guild, or
 at the organisation when null.
 
-Notes and collections share one access list table, `artifact_access`:
-one row per item and subject, the subject being the organisation, a
-guild, or an agent. An agent's own row wins, and `none` there shuts it
-out; otherwise it takes the better of its guild's and the
-organisation's `read` or `write`. A new guild item starts with its
-guild at `write`, a new organisation item with the organisation at
-`read`. Rows go with their collection, guild, or agent
+Notes, files, and collections share one access list table,
+`artifact_access`: one row per item and subject, the subject being the
+organisation, a guild, or an agent. A note's or a file's rows are all
+that decides who reaches it. An agent's own row wins, and `none` there
+shuts it out; otherwise it takes the better of its guild's and the
+organisation's `read` or `write`. A new note or file starts with one
+row: the creating agent at `write`, or the subject the operator names,
+the organisation at `write` by default. A new guild collection starts
+with its guild at `write`, a new organisation collection with the
+organisation at `read`. Rows go with their item, and with the guild or
+agent they name; notes and files stay
 ([Access](../concepts/access.md#access-lists)).
 
 The standing task lives on `agents.task`. Agent names are globally

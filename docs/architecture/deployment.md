@@ -50,8 +50,8 @@ under the directory it runs in, unless the environment sets
   bind-mounted at `/home` in that machine's container, with one home
   per agent on it (`workspaces/<machine id>/<agent id>`, which the
   agent sees as `/home/<agent id>`). A home holds packages and
-  scratch, materialised `scripts/` (canonical source is the
-  agent-level `script` artifact rows), and `.browser/` for the
+  scratch, materialised `scripts/` (canonical source is the agent's
+  `script` artifact rows), and `.browser/` for the
   Chromium profile. OpenSandbox may mount only this prefix
   (`allowed_host_paths`).
 - `postgres/`: the Compose Postgres data directory.
@@ -71,7 +71,8 @@ The path is absolute because OpenSandbox bind-mounts each machine
 directory by that same path. `./setup.sh` writes the path into `.env`
 and creates the trees. `make state` creates them too.
 
-Notes, collection records, `memory`, and scripts are artifact rows.
+Notes, files, collection records, `memory`, and scripts are artifact
+rows.
 `task` is a column on the agent. Display paths are the unique
 reference
 ([Artifacts](../concepts/artifacts.md#display-paths)):
@@ -81,11 +82,10 @@ org/<org_id>/agents/<agent_id>/task.md
 org/<org_id>/agents/<agent_id>/memory.md
 org/<org_id>/agents/<agent_id>/history-archive/<stamp>-<source>.md
 org/<org_id>/agents/<agent_id>/scripts/<name>
-org/<org_id>/agents/<agent_id>/<note>.md
-org/<org_id>/guilds/<guild_id>/<note>.md
+org/<org_id>/<note>.md
+org/<org_id>/files/<name>
 org/<org_id>/collections/<name>
 org/<org_id>/collections/<name>/<id>
-org/<org_id>/<note>.md
 ```
 
 The Host Finder lists notes over HTTP. A laptop or phone sees
@@ -296,15 +296,15 @@ orchestrator.
 Authorization over the artifact store is:
 
 - the application store
-- the access lists of notes and collections (`artifact_access`: rows
+- the access lists of notes, files, and collections (`artifact_access`: rows
   for the organisation, a guild, or an agent; the agent's own row
   wins and may be `none`, otherwise the better of its guild's and the
   organisation's row; no row is no access)
 
 There is no row-level security on those tables.
 
-Note tools see the agent's own notes and the notes whose access list
-reaches it. Record tools see the collections whose access list
+Note and file tools see the notes and files whose access list reaches
+the agent, and write only under `write`. Record tools see the collections whose access list
 reaches the agent, and write only under `write`. A guild row or the
 organisation row covers agents created after it was written.
 
