@@ -90,8 +90,9 @@ export const ARTIFACT_RETURNING = `
 
 /**
  * The predicate over the artifact `a` leaving out what is hidden from the reader: the Memory and
- * scripts of its hidden agents, and every note and file whose access list is not empty and names
- * only its hidden guilds and agents. A note or a file with no row is hidden from no one.
+ * scripts of its hidden agents, every note and file homed in one of its hidden guilds, and every
+ * note and file whose access list is not empty and names only its hidden guilds and agents. A note
+ * or a file with no row and no hidden home is hidden from no one.
  */
 export function hiddenScope(reader: ArtifactReader, values: unknown[]): string {
   values.push(reader.hidden.guildIds, reader.hidden.agentIds);
@@ -101,7 +102,8 @@ export function hiddenScope(reader: ArtifactReader, values: unknown[]): string {
                       OR (x.subject_type = 'agent' AND x.subject_id = ANY($${agents}::text[])))`;
   return `NOT COALESCE(CASE
       WHEN a.agent_id IS NOT NULL THEN a.agent_id = ANY($${agents}::text[])
-      WHEN a.kind IN ('note', 'file') THEN EXISTS (${listed}) AND NOT EXISTS (${listed} AND NOT ${hiddenRow})
+      WHEN a.kind IN ('note', 'file') THEN COALESCE(a.origin_guild_id = ANY($${guilds}::text[]), false)
+                                         OR (EXISTS (${listed}) AND NOT EXISTS (${listed} AND NOT ${hiddenRow}))
     END, false)`;
 }
 

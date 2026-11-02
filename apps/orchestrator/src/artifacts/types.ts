@@ -19,7 +19,8 @@ export type ArtifactActor = ChangeActor & {
   operator: boolean;
   /**
    * What an operator actor never reaches: these agents' Memory, Task, and scripts, these guilds'
-   * own tables, and every note and file whose access list names only these guilds and agents.
+   * own tables, every note and file homed in one of these guilds, and every note and file whose
+   * access list names only these guilds and agents.
    */
   hidden: HiddenGuilds;
 };

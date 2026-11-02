@@ -1263,6 +1263,60 @@ describe("artifact store", { concurrency: 1 }, () => {
     assert.deepEqual(keys(await listOrgNotes(store, blind)), ["list-org.md", "list-other.md", "list-shut.md"], "a note with no row is hidden from no one");
   });
 
+  test("a note or a file homed in a guild hidden from an operator is hidden from them whatever its rows say", async () => {
+    const now = new Date();
+    await insertGuild(db, { guildId: "guild_home_vault", name: "home-vault", orgId: "org_home", about: "" }, now);
+    await insertGuild(db, { guildId: "guild_home_open", name: "home-open", orgId: "org_home", about: "" }, now);
+    await seedAgent("a_home_vault", "guild_home_vault", "home-vault", "art-home-vault");
+    await seedAgent("a_home_open", "guild_home_open", "home-open", "art-home-open");
+    const keeper = agentActor({ orgId: "org_home", guildId: "guild_home_vault", agentId: "a_home_vault", agentName: "home-vault" });
+    const outsider = agentActor({ orgId: "org_home", guildId: "guild_home_open", agentId: "a_home_open", agentName: "home-open" });
+    const operator = operatorActor({ orgId: "org_home", actorId: "user_operator", actorName: "operator" });
+    const blind = operatorActor({
+      orgId: "org_home",
+      actorId: "user_blind",
+      actorName: "blind",
+      hidden: { guildIds: ["guild_home_vault"], agentIds: ["a_home_vault"] },
+    });
+    const { row, href } = await writeNote(store, keeper, { key: "home-vault.md", content: "kept at home" });
+    assert.equal(row.origin_guild_id, "guild_home_vault");
+    await replaceAccess(store, operator, { kind: "note", id: row.id }, [{ type: "org", id: "org_home", mode: "read" }]);
+
+    // the organisation row reaches every agent, the outsider included: agents are unaffected by the home
+    assert.equal((await getByDisplayPath(store, outsider, href)).row?.access, "read");
+    // the operator outside the home guild neither lists, searches, reads, nor sees the history of it
+    assert.equal((await listOrgNotes(store, blind)).some((note) => note.path === "home-vault.md"), false);
+    assert.equal((await findNotes(store, blind, { query: "kept" })).notes.some((note) => note.key === "home-vault.md"), false);
+    assert.equal((await listEmbeddableNotes(store, blind)).some((note) => note.key === "home-vault.md"), false);
+    await assert.rejects(() => getByDisplayPath(store, blind, href), /artifact not found/);
+    assert.equal(await canReadDisplayPath(store, blind, href), false);
+    await assert.rejects(() => accessList(store, blind, { kind: "note", id: row.id }), /note not found/);
+    await assert.rejects(() => writeNote(store, blind, { key: "home-vault.md", content: "taken" }), /write not allowed/);
+    // the operator who sees the home guild reads it
+    assert.equal(await canReadDisplayPath(store, operator, href), true);
+    // the deleted note stays hidden by its home
+    await deleteByDisplayPath(store, operator, href);
+    assert.equal(await canReadDisplayPath(store, blind, href), false);
+  });
+
+  test("an item's reach never changes with its home", async () => {
+    const now = new Date();
+    await insertGuild(db, { guildId: "guild_home_reach", name: "home-reach", orgId: "org_home", about: "" }, now);
+    await seedAgent("a_home_reach", "guild_home_reach", "home-reach", "art-home-reach");
+    const homed = operatorActor({ orgId: "org_home", actorId: "user_operator", actorName: "operator", guildId: "guild_home_reach" });
+    const agent = agentActor({ orgId: "org_home", guildId: "guild_home_reach", agentId: "a_home_reach", agentName: "home-reach" });
+    const { row, href } = await writeNote(store, homed, {
+      key: "home-reach.md",
+      content: "homed, reached by no row",
+      startingAccess: [{ type: "agent", id: "a_home_reach", mode: "none" }],
+    });
+    assert.equal(row.origin_guild_id, "guild_home_reach");
+    await assert.rejects(() => getByDisplayPath(store, agent, href), /artifact not found/);
+    assert.equal((await findNotes(store, agent, { query: "" })).notes.some((note) => note.key === "home-reach.md"), false);
+    const reach = await reachOf(store, homed, { type: "guild", id: "guild_home_reach", guildId: "guild_home_reach" });
+    assert.equal(reach.notes.some((note) => note.id === row.id), false);
+  });
+
   test("notes sit directly under the organisation and the memory archive is the operator's", async () => {
     const now = new Date();
     await insertGuild(db,

@@ -142,10 +142,20 @@ export function reachesAgent(actor: ArtifactActor, agentId: string): boolean {
   return agentId === actor.agentId;
 }
 
-/** Whether a note or a file is hidden from an operator actor: its list names only guilds and agents it does not reach. */
-export async function isHiddenItem(store: ArtifactStore, actor: ArtifactActor, row: Pick<ArtifactRow, "id" | "kind">): Promise<boolean> {
+/**
+ * Whether a note or a file is hidden from an operator actor: it is homed in a guild hidden from them,
+ * or its list names only guilds and agents it does not reach.
+ */
+export async function isHiddenItem(
+  store: ArtifactStore,
+  actor: ArtifactActor,
+  row: Pick<ArtifactRow, "id" | "kind" | "origin_guild_id">,
+): Promise<boolean> {
   if (row.kind !== "note" && row.kind !== "file") {
     return false;
+  }
+  if (row.origin_guild_id !== null && actor.hidden.guildIds.includes(row.origin_guild_id)) {
+    return true;
   }
   return isHiddenByList(store.db, { kind: row.kind, id: row.id }, actor.hidden);
 }
