@@ -181,20 +181,6 @@
       "count": 3
     }
   },
-  "src/connectors/gmail/client.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 3
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 9
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    }
-  },
   "src/connectors/qonto/client.ts": {
     "anti-slop/no-known-value-widening": {
       "count": 5

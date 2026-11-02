@@ -1,10 +1,10 @@
 import type { Static, TSchema } from "@sinclair/typebox";
-import type { JsonObject } from "../../lib/json.js";
-import { Value } from "@sinclair/typebox/value";
 import { AgentFileError, agentDisplayPath, writeAgentFile } from "../../lib/agent-file.js";
-import { assertMatches } from "../../lib/decode.js";
+import type { JsonObject } from "../../lib/json.js";
 import { proxyFetch, type FetchFn } from "../../net/http.js";
-import { argStr, clipRows, clipText, joinParts, rowLimit } from "../format.js";
+import { LIST_CAP, LIST_DEFAULT, clipRows, clipText, joinParts } from "../format.js";
+import { decodeBody, failureMessage, type ConnectorApi } from "../response.js";
+import type { AttachmentDownload, DraftPage, OutgoingMessage, ThreadSearch } from "./parameters.js";
 import {
   AttachmentResponse,
   DraftListResponse,
@@ -59,13 +59,19 @@ export type MessageAttachment = {
   data: string;
 };
 
-export function headerMap(headers: Header[] | null | undefined): Record<string, string> {
-  const mapped: Record<string, string> = {};
+/** Text Gmail sent, trimmed; empty when it left the field out. */
+function trimmed(value: string | undefined): string {
+  return value?.trim() ?? "";
+}
+
+/** A message's headers by lowercased name, trimmed: the first of each name, blank ones left out. */
+export function headerMap(headers: Header[] | null | undefined): Map<string, string> {
+  const mapped = new Map<string, string>();
   for (const item of headers ?? []) {
-    const name = String(item.name ?? "").trim().toLowerCase();
-    const value = String(item.value ?? "").trim();
-    if (name && value && mapped[name] === undefined) {
-      mapped[name] = value;
+    const name = trimmed(item.name).toLowerCase();
+    const value = trimmed(item.value);
+    if (name && value && !mapped.has(name)) {
+      mapped.set(name, value);
     }
   }
   return mapped;
@@ -92,23 +98,19 @@ export function stripTags(html: string): string {
 }
 
 function partFilename(part: MessagePart): string {
-  return String(part.filename ?? "").trim();
+  return trimmed(part.filename);
 }
 
 /** The inline body data of a part that is message text, not an attachment. */
 function textData(part: MessagePart): string {
-  if (partFilename(part)) {
-    return "";
-  }
-  const data = part.body?.data;
-  return typeof data === "string" ? data : "";
+  return partFilename(part) ? "" : (part.body?.data ?? "");
 }
 
 /** A message's text, as its plain and its HTML parts carry it. */
 type MessageText = { plain: string; html: string };
 
 function collectText(part: MessagePart, into: MessageText): void {
-  const mime = String(part.mimeType ?? "");
+  const mime = part.mimeType ?? "";
   const data = textData(part);
   if (data && mime.startsWith("text/plain")) {
     into.plain += decodeBodyData(data);
@@ -125,14 +127,13 @@ function attachmentOf(part: MessagePart): MessageAttachment | null {
   if (!filename) {
     return null;
   }
-  const body = part.body ?? {};
   return {
-    partId: String(part.partId ?? "").trim(),
+    partId: trimmed(part.partId),
     filename,
-    mimeType: String(part.mimeType ?? "").trim(),
-    size: typeof body.size === "number" ? body.size : 0,
-    attachmentId: typeof body.attachmentId === "string" ? body.attachmentId : "",
-    data: typeof body.data === "string" ? body.data : "",
+    mimeType: trimmed(part.mimeType),
+    size: part.body?.size ?? 0,
+    attachmentId: part.body?.attachmentId ?? "",
+    data: part.body?.data ?? "",
   };
 }
 
@@ -187,9 +188,6 @@ function encodeSubject(subject: string): string {
   return `=?UTF-8?B?${Buffer.from(subject, "utf8").toString("base64")}?=`;
 }
 
-/** A plain-text message to send: its recipients, subject and body. */
-export type OutgoingMessage = { to: string; subject: string; body: string; cc?: string; bcc?: string };
-
 export function rfc2822Raw(fields: OutgoingMessage): string {
   const lines = [`To: ${fields.to}`];
   if (fields.cc) {
@@ -206,22 +204,32 @@ export function rfc2822Raw(fields: OutgoingMessage): string {
   return Buffer.from(lines.join("\r\n"), "utf8").toString("base64url");
 }
 
-/** A listing's next page token, trimmed; empty on the last page. */
-function pageToken(token: unknown): string {
-  return typeof token === "string" && token.trim() ? token.trim() : "";
+/** The rows a listing asks for: `limit`, `LIST_DEFAULT` when absent, kept between 1 and `LIST_CAP`. */
+function pageSize(limit: number | undefined): number {
+  return Math.max(1, Math.min(LIST_CAP, limit ?? LIST_DEFAULT));
 }
 
-async function errorDetail(response: Response): Promise<string> {
-  const text = await response.text();
-  let payload: unknown;
-  try {
-    payload = text ? JSON.parse(text) : {};
-  } catch {
-    return text.trim() || `Gmail HTTP ${response.status}`;
+/** `value` trimmed; blank, it throws "<name> is required". */
+function requiredText(value: string, name: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new GmailError(`${name} is required`);
   }
-  const message = Value.Check(ErrorBody, payload) ? payload.error.message : undefined;
-  return typeof message === "string" && message.trim() ? message.trim() : `Gmail HTTP ${response.status}`;
+  return trimmed;
 }
+
+/** The message of an error body, trimmed; null when it is blank or absent. */
+function errorMessage(body: ErrorBody): string | null {
+  return body.error.message?.trim() || null;
+}
+
+/** Gmail's API as the client reads its responses. */
+const GMAIL: ConnectorApi<typeof ErrorBody> = {
+  name: "Gmail",
+  error: (message, status) => new GmailError(message, status),
+  errorBody: ErrorBody,
+  errorMessage,
+};
 
 function gmailUrl(path: string, params: Record<string, string | string[] | undefined> = {}): string {
   const url = new URL(`${API_BASE}${path}`);
@@ -240,29 +248,13 @@ function gmailUrl(path: string, params: Record<string, string | string[] | undef
   return url.toString();
 }
 
-function unexpected(problem: string): GmailError {
-  return new GmailError(`Gmail returned an unexpected response at ${problem}`);
-}
-
-async function jsonBody(response: Response): Promise<unknown> {
-  const text = await response.text();
-  if (!text) {
-    return {};
-  }
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new GmailError("Gmail returned a non-JSON body");
-  }
-}
-
 /** One Gmail API call: `method` on `path` with its query and JSON body, the JSON response decoded with `schema`. */
 type GmailRequest<T extends TSchema> = {
   method: string;
   path: string;
   schema: T;
   params?: Record<string, string | string[] | undefined>;
-  body?: unknown;
+  body?: JsonObject;
 };
 
 /** The response of `method` on `path`, as `schema` describes it; an empty body reads as `{}`. */
@@ -272,51 +264,45 @@ async function gmailRequest<T extends TSchema>(request: GmailRequest<T>, options
     throw new GmailError("Gmail access token is missing", 401);
   }
   const fetchFn = options.client ?? proxyFetch(options.proxyUrl ?? "");
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${token}`,
-    Accept: "application/json",
-  };
-  const init: RequestInit = { method: request.method, headers };
-  if (request.body !== undefined) {
-    headers["Content-Type"] = "application/json";
-    init.body = JSON.stringify(request.body);
-  }
+  const auth = { Authorization: `Bearer ${token}`, Accept: "application/json" };
+  const init: RequestInit =
+    request.body === undefined
+      ? { method: request.method, headers: auth }
+      : {
+          method: request.method,
+          headers: { ...auth, "Content-Type": "application/json" },
+          body: JSON.stringify(request.body),
+        };
   const response = await fetchFn(gmailUrl(request.path, request.params), init);
+  const text = await response.text();
   if (response.status >= 400) {
-    throw new GmailError(await errorDetail(response), response.status);
+    throw GMAIL.error(failureMessage(GMAIL, response.status, text), response.status);
   }
-  const body = await jsonBody(response);
-  assertMatches(request.schema, body, unexpected);
-  return body;
+  return decodeBody(GMAIL, request.schema, text || "{}");
 }
 
-function composeFields(arguments_: JsonObject): OutgoingMessage {
-  const to = argStr(arguments_, "to");
-  const subject = argStr(arguments_, "subject");
-  const body = argStr(arguments_, "body");
-  if (!to) {
-    throw new GmailError("to is required");
-  }
-  const fields: OutgoingMessage = { to, subject, body };
-  const cc = argStr(arguments_, "cc");
-  const bcc = argStr(arguments_, "bcc");
-  if (cc) {
-    fields.cc = cc;
-  }
-  if (bcc) {
-    fields.bcc = bcc;
-  }
-  return fields;
+/** The message as it is sent: each field trimmed, a blank copy line left out; a blank `to` throws. */
+function composed(message: OutgoingMessage): OutgoingMessage {
+  const to = requiredText(message.to, "to");
+  const cc = message.cc?.trim();
+  const bcc = message.bcc?.trim();
+  return {
+    to,
+    subject: message.subject.trim(),
+    body: message.body.trim(),
+    ...(cc ? { cc } : {}),
+    ...(bcc ? { bcc } : {}),
+  };
 }
 
 function formatMessageHead(message: Message): string {
   const headers = headerMap(message.payload?.headers);
   return joinParts(
     message.id,
-    headers.from,
-    headers.to,
-    headers.date,
-    headers.subject,
+    headers.get("from"),
+    headers.get("to"),
+    headers.get("date"),
+    headers.get("subject"),
   );
 }
 
@@ -324,14 +310,6 @@ function formatMessageHead(message: Message): string {
 function formatMessage(message: Message): string {
   const attachments = messageAttachments(message.payload).map(attachmentLine);
   return [formatMessageHead(message), ...attachments, messageBody(message.payload)].filter(Boolean).join("\n");
-}
-
-function requiredArg(arguments_: JsonObject, key: string): string {
-  const value = argStr(arguments_, key);
-  if (!value) {
-    throw new GmailError(`${key} is required`);
-  }
-  return value;
 }
 
 function findAttachment(message: Message, partId: string): MessageAttachment {
@@ -355,7 +333,7 @@ async function attachmentBytes(
   }
   const path = `/users/me/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachment.attachmentId)}`;
   const fetched = await gmailRequest({ method: "GET", path, schema: AttachmentResponse }, options);
-  return Buffer.from(typeof fetched.data === "string" ? fetched.data : "", "base64url");
+  return Buffer.from(fetched.data ?? "", "base64url");
 }
 
 /** The attachment's filename as one name in the workspace root: no folders, controls, or leading dots. */
@@ -378,12 +356,12 @@ async function saveAttachment(workspaceDir: string, filePath: string, bytes: Buf
 export async function ping(accessToken: string, options: Omit<GmailOptions, "accessToken"> = {}): Promise<string> {
   const request = { method: "GET", path: "/users/me/profile", schema: ProfileResponse };
   const email = (await gmailRequest(request, { accessToken, ...options })).emailAddress;
-  return typeof email === "string" && email.trim() ? email.trim() : "ok";
+  return trimmed(email) || "ok";
 }
 
 /** A thread's row: its id, the first message's sender, subject and date, and a snippet. */
 async function threadRow(thread: ThreadSummary, options: GmailOptions): Promise<string | null> {
-  const id = String(thread.id ?? "").trim();
+  const id = trimmed(thread.id);
   if (!id) {
     return null;
   }
@@ -396,26 +374,27 @@ async function threadRow(thread: ThreadSummary, options: GmailOptions): Promise<
     },
     options,
   );
-  const first = detail.messages?.[0] ?? {};
-  const headers = headerMap(first.payload?.headers);
-  return joinParts(id, headers.from, headers.subject, headers.date, clipText(first.snippet ?? thread.snippet, SNIPPET_CAP));
+  const first = detail.messages?.[0];
+  const headers = headerMap(first?.payload?.headers);
+  return joinParts(
+    id,
+    headers.get("from"),
+    headers.get("subject"),
+    headers.get("date"),
+    clipText(first?.snippet ?? thread.snippet, SNIPPET_CAP),
+  );
 }
 
-export async function searchThreadsTool(
-  arguments_: JsonObject,
-  options: GmailOptions,
-): Promise<string> {
-  const query = argStr(arguments_, "query");
-  if (!query) {
-    throw new GmailError("query is required");
-  }
-  const limit = rowLimit(arguments_);
+/** `search_threads`: a page of the threads the query finds, a row each, and the next page's key. */
+export async function searchThreads(search: ThreadSearch, options: GmailOptions): Promise<string> {
+  const query = requiredText(search.query, "query");
+  const limit = pageSize(search.limit);
   const listed = await gmailRequest(
     {
       method: "GET",
       path: "/users/me/threads",
       schema: ThreadListResponse,
-      params: { q: query, maxResults: String(limit), pageToken: argStr(arguments_, "page_key") || undefined },
+      params: { q: query, maxResults: String(limit), pageToken: search.page_key?.trim() || undefined },
     },
     options,
   );
@@ -426,33 +405,27 @@ export async function searchThreadsTool(
       rows.push(row);
     }
   }
-  const estimate = listed.resultSizeEstimate;
-  const count = typeof estimate === "number" ? estimate : rows.length;
+  const count = listed.resultSizeEstimate ?? rows.length;
   const body = clipRows(rows, limit);
   if (body === "no results") {
     return joinParts(query, `n=${count}`);
   }
   const parts = [joinParts(query, `n=${count}`), body];
-  const token = pageToken(listed.nextPageToken);
+  const token = trimmed(listed.nextPageToken);
   if (token) {
     parts.push(`page=${token}`);
   }
   return parts.join("\n");
 }
 
-export async function getThreadTool(
-  arguments_: JsonObject,
-  options: GmailOptions,
-): Promise<string> {
-  const threadId = argStr(arguments_, "thread_id");
-  if (!threadId) {
-    throw new GmailError("thread_id is required");
-  }
-  const path = `/users/me/threads/${encodeURIComponent(threadId)}`;
+/** `get_thread`: every message of the thread, headers and text. */
+export async function getThread(threadId: string, options: GmailOptions): Promise<string> {
+  const id = requiredText(threadId, "thread_id");
+  const path = `/users/me/threads/${encodeURIComponent(id)}`;
   const payload = await gmailRequest({ method: "GET", path, schema: ThreadResponse, params: { format: "full" } }, options);
   const messages = payload.messages ?? [];
   const blocks = messages.map(formatMessage);
-  const intro = joinParts(payload.id ?? threadId, `messages=${messages.length}`);
+  const intro = joinParts(payload.id ?? id, `messages=${messages.length}`);
   return [intro, ...blocks].filter(Boolean).join("\n---\n") || "no results";
 }
 
@@ -461,30 +434,22 @@ async function fullMessage(messageId: string, options: GmailOptions): Promise<Me
   return gmailRequest({ method: "GET", path, schema: Message, params: { format: "full" } }, options);
 }
 
-export async function getMessageTool(
-  arguments_: JsonObject,
-  options: GmailOptions,
-): Promise<string> {
-  const messageId = argStr(arguments_, "message_id");
-  if (!messageId) {
-    throw new GmailError("message_id is required");
-  }
-  return formatMessage(await fullMessage(messageId, options)) || "no results";
+/** `get_message`: the message's headers, attachments and text. */
+export async function getMessage(messageId: string, options: GmailOptions): Promise<string> {
+  return formatMessage(await fullMessage(requiredText(messageId, "message_id"), options)) || "no results";
 }
 
-export async function downloadAttachmentTool(
-  arguments_: JsonObject,
-  options: GmailOptions,
-): Promise<string> {
+/** `download_attachment`: the attachment written in the run's workspace, and where. */
+export async function downloadAttachment(download: AttachmentDownload, options: GmailOptions): Promise<string> {
   const workspaceDir = options.workspaceDir;
   if (!workspaceDir) {
     throw new GmailError("download_attachment is only available during an agent run", 422);
   }
-  const messageId = requiredArg(arguments_, "message_id");
-  const partId = requiredArg(arguments_, "part_id");
+  const messageId = requiredText(download.message_id, "message_id");
+  const partId = requiredText(download.part_id, "part_id");
   const attachment = findAttachment(await fullMessage(messageId, options), partId);
   const bytes = await attachmentBytes(messageId, attachment, options);
-  const filePath = argStr(arguments_, "file_path") || attachmentFileName(attachment);
+  const filePath = download.file_path?.trim() || attachmentFileName(attachment);
   const resolved = await saveAttachment(workspaceDir, filePath, bytes);
   return joinParts(
     `file_path=${agentDisplayPath(workspaceDir, resolved)}`,
@@ -493,20 +458,16 @@ export async function downloadAttachmentTool(
   );
 }
 
-export async function listLabelsTool(
-  _arguments: Record<string, unknown>,
-  options: GmailOptions,
-): Promise<string> {
+/** `list_labels`: the mailbox's labels, a row each. */
+export async function listLabels(options: GmailOptions): Promise<string> {
   const payload = await gmailRequest({ method: "GET", path: "/users/me/labels", schema: LabelsResponse }, options);
-  const rows = (payload.labels ?? []).map((label) =>
-    joinParts(label.id, label.name, label.type),
-  );
+  const rows = (payload.labels ?? []).map((label) => joinParts(label.id, label.name, label.type));
   return clipRows(rows.filter(Boolean), 100);
 }
 
 /** A draft's row: its id, its message's id, and the message's recipient and subject. */
 async function draftRow(draft: DraftSummary, options: GmailOptions): Promise<string | null> {
-  const id = String(draft.id ?? "").trim();
+  const id = trimmed(draft.id);
   if (!id) {
     return null;
   }
@@ -519,22 +480,19 @@ async function draftRow(draft: DraftSummary, options: GmailOptions): Promise<str
     },
     options,
   );
-  const message = detail.message ?? {};
-  const headers = headerMap(message.payload?.headers);
-  return joinParts(id, message.id, headers.to, headers.subject);
+  const headers = headerMap(detail.message?.payload?.headers);
+  return joinParts(id, detail.message?.id, headers.get("to"), headers.get("subject"));
 }
 
-export async function listDraftsTool(
-  arguments_: JsonObject,
-  options: GmailOptions,
-): Promise<string> {
-  const limit = rowLimit(arguments_);
+/** `list_drafts`: a page of the drafts, a row each, and the next page's key. */
+export async function listDrafts(page: DraftPage, options: GmailOptions): Promise<string> {
+  const limit = pageSize(page.limit);
   const listed = await gmailRequest(
     {
       method: "GET",
       path: "/users/me/drafts",
       schema: DraftListResponse,
-      params: { maxResults: String(limit), pageToken: argStr(arguments_, "page_key") || undefined },
+      params: { maxResults: String(limit), pageToken: page.page_key?.trim() || undefined },
     },
     options,
   );
@@ -546,50 +504,23 @@ export async function listDraftsTool(
     }
   }
   const body = clipRows(rows, limit);
-  const token = pageToken(listed.nextPageToken);
+  const token = trimmed(listed.nextPageToken);
   if (body === "no results") {
     return body;
   }
   return token ? `${body}\npage=${token}` : body;
 }
 
-export async function createDraftTool(
-  arguments_: JsonObject,
-  options: GmailOptions,
-): Promise<string> {
-  const body = { message: { raw: rfc2822Raw(composeFields(arguments_)) } };
+/** `create_draft`: the message saved as a draft, and the ids Gmail gave it. */
+export async function createDraft(message: OutgoingMessage, options: GmailOptions): Promise<string> {
+  const body = { message: { raw: rfc2822Raw(composed(message)) } };
   const payload = await gmailRequest({ method: "POST", path: "/users/me/drafts", schema: DraftResponse, body }, options);
   return joinParts(`draft=${payload.id ?? ""}`, `message=${payload.message?.id ?? ""}`) || "ok";
 }
 
-export async function sendMessageTool(
-  arguments_: JsonObject,
-  options: GmailOptions,
-): Promise<string> {
-  const body = { raw: rfc2822Raw(composeFields(arguments_)) };
+/** `send_message`: the message sent, and the ids Gmail gave it. */
+export async function sendMessage(message: OutgoingMessage, options: GmailOptions): Promise<string> {
+  const body = { raw: rfc2822Raw(composed(message)) };
   const payload = await gmailRequest({ method: "POST", path: "/users/me/messages/send", schema: SentResponse, body }, options);
   return joinParts(`id=${payload.id ?? ""}`, `thread=${payload.threadId ?? ""}`) || "ok";
-}
-
-const HANDLERS: Record<string, (arguments_: JsonObject, options: GmailOptions) => Promise<string>> = {
-  search_threads: searchThreadsTool,
-  get_thread: getThreadTool,
-  get_message: getMessageTool,
-  download_attachment: downloadAttachmentTool,
-  list_labels: listLabelsTool,
-  list_drafts: listDraftsTool,
-  create_draft: createDraftTool,
-  send_message: sendMessageTool,
-};
-
-export async function callTool(
-  name: string,
-  arguments_: JsonObject,
-  options: GmailOptions,
-): Promise<string> {
-  const handler = HANDLERS[name];
-  if (!handler) {
-    throw new GmailError(`unknown Gmail tool ${name}`);
-  }
-  return handler(arguments_, options);
 }

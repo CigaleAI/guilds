@@ -1,65 +1,66 @@
-import { Type, type Static, type TSchema } from "@sinclair/typebox";
+import { Type, type Static } from "@sinclair/typebox";
 
-// The Gmail responses the tools read. Each object keeps the fields Gmail sends beyond the ones
-// named; a field the tools print, or read only when it has the type they expect, is `Shown`.
+// The Gmail responses the tools read, each field as Gmail sends it. Gmail leaves out a field it
+// has no value for rather than send null; each object keeps the fields Gmail sends beyond the
+// ones named.
 
-const Shown = Type.Optional(Type.Unknown());
+const Text = Type.Optional(Type.String());
 
-function Nullable<T extends TSchema>(schema: T) {
-  return Type.Optional(Type.Union([schema, Type.Null()]));
-}
-
-export const Header = Type.Object({ name: Shown, value: Shown });
+export const Header = Type.Object({ name: Text, value: Text });
 export type Header = Static<typeof Header>;
+
+/** A part's body: its bytes inline in `data` as base64url, or fetched by `attachmentId`, and their count. */
+const PartBody = Type.Object({ data: Text, size: Type.Optional(Type.Number()), attachmentId: Text });
 
 /** A message part: text, an attachment, or a container of parts. */
 export const MessagePart = Type.Recursive((Part) =>
   Type.Object({
-    partId: Shown,
-    mimeType: Shown,
-    filename: Shown,
-    headers: Nullable(Type.Array(Header)),
-    body: Nullable(Type.Object({ data: Shown, size: Shown, attachmentId: Shown })),
-    parts: Nullable(Type.Array(Part)),
+    partId: Text,
+    mimeType: Text,
+    filename: Text,
+    headers: Type.Optional(Type.Array(Header)),
+    body: Type.Optional(PartBody),
+    parts: Type.Optional(Type.Array(Part)),
   }),
 );
 export type MessagePart = Static<typeof MessagePart>;
 
-export const Message = Type.Object({ id: Shown, threadId: Shown, snippet: Shown, payload: Nullable(MessagePart) });
+export const Message = Type.Object({ id: Text, threadId: Text, snippet: Text, payload: Type.Optional(MessagePart) });
 export type Message = Static<typeof Message>;
 
-export const ProfileResponse = Type.Object({ emailAddress: Shown });
+export const ProfileResponse = Type.Object({ emailAddress: Text });
 
 /** A thread as a listing names it: its id and a snippet. */
-export const ThreadSummary = Type.Object({ id: Shown, snippet: Shown });
+export const ThreadSummary = Type.Object({ id: Text, snippet: Text });
 export type ThreadSummary = Static<typeof ThreadSummary>;
 
 export const ThreadListResponse = Type.Object({
-  threads: Nullable(Type.Array(ThreadSummary)),
-  resultSizeEstimate: Shown,
-  nextPageToken: Shown,
+  threads: Type.Optional(Type.Array(ThreadSummary)),
+  resultSizeEstimate: Type.Optional(Type.Number()),
+  nextPageToken: Text,
 });
 
-export const ThreadResponse = Type.Object({ id: Shown, messages: Nullable(Type.Array(Message)) });
+export const ThreadResponse = Type.Object({ id: Text, messages: Type.Optional(Type.Array(Message)) });
 
-export const AttachmentResponse = Type.Object({ data: Shown, size: Shown });
+export const AttachmentResponse = Type.Object({ data: Text, size: Type.Optional(Type.Number()) });
 
 export const LabelsResponse = Type.Object({
-  labels: Nullable(Type.Array(Type.Object({ id: Shown, name: Shown, type: Shown }))),
+  labels: Type.Optional(Type.Array(Type.Object({ id: Text, name: Text, type: Text }))),
 });
 
 /** A draft as a listing names it: its id. */
-export const DraftSummary = Type.Object({ id: Shown });
+export const DraftSummary = Type.Object({ id: Text });
 export type DraftSummary = Static<typeof DraftSummary>;
 
 export const DraftListResponse = Type.Object({
-  drafts: Nullable(Type.Array(DraftSummary)),
-  nextPageToken: Shown,
+  drafts: Type.Optional(Type.Array(DraftSummary)),
+  nextPageToken: Text,
 });
 
-export const DraftResponse = Type.Object({ id: Shown, message: Nullable(Message) });
+export const DraftResponse = Type.Object({ id: Text, message: Type.Optional(Message) });
 
-export const SentResponse = Type.Object({ id: Shown, threadId: Shown });
+export const SentResponse = Type.Object({ id: Text, threadId: Text });
 
 /** An error body: the message sits in `error.message`. */
-export const ErrorBody = Type.Object({ error: Type.Object({ message: Shown }) });
+export const ErrorBody = Type.Object({ error: Type.Object({ message: Text }) });
+export type ErrorBody = Static<typeof ErrorBody>;
