@@ -470,7 +470,9 @@ export function AgentPrompt() {
       <InsertPicker
         kind={picking}
         notes={notes.data}
+        notesError={notes.error}
         collections={collections.data}
+        collectionsError={collections.error}
         orgId={org.id}
         onPick={(markup) => {
           setPicking(null);
@@ -481,6 +483,7 @@ export function AgentPrompt() {
       <EmbedPreview
         path={previewPath}
         notes={notes.data}
+        notesError={notes.error}
         collections={collections.data}
         orgId={org.id}
         onClose={() => setPreviewPath(null)}

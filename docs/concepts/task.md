@@ -137,7 +137,9 @@ The agent's **Prompt** tab edits the Task.
   greyed and cannot be inserted. **Embed** or **Reference** above the
   list chooses how the note is inserted at the cursor:
   `![[display-path]]` or `[[display-path]]`. The info button next to
-  it explains the difference.
+  it explains the difference. When the agent's notes, or the tables,
+  fail to load, the picker shows the error in place of the list, and
+  no embed is marked from that list.
 - **Insert › Table** inserts the chosen collection as
   `![[display-path]]`. The preview lists its columns.
 - **Insert › Column** lists the tables, then the chosen table's

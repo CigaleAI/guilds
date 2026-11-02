@@ -23,6 +23,8 @@ type EmbedPreviewProps = {
   path: string | null;
   /** The notes the Task or note can embed; undefined while they load. */
   notes: EmbeddableNotes | undefined;
+  /** Why the notes did not load; null while they load or once they have. */
+  notesError: Error | null;
   collections: readonly Collection[] | undefined;
   orgId: string;
   onClose: () => void;
@@ -71,7 +73,14 @@ function NotePreview({ path, notes }: NotePreviewProps) {
 }
 
 /** What an embed pulls into the prompt: a note's text, or the table it names. */
-export function EmbedPreview({ path, notes, collections, orgId, onClose }: EmbedPreviewProps) {
+export function EmbedPreview({
+  path,
+  notes,
+  notesError,
+  collections,
+  orgId,
+  onClose,
+}: EmbedPreviewProps) {
   const table = path !== null && embedKind(path) === "table";
   const collection = table
     ? collections?.find((item) => collectionDisplayPath(orgId, item) === path)
@@ -84,6 +93,8 @@ export function EmbedPreview({ path, notes, collections, orgId, onClose }: Embed
         <DialogBody>
           {table ? (
             <TablePreview collection={collection} />
+          ) : !notes && notesError ? (
+            <Banner tone="error" title="Couldn't load the notes" meta={notesError.message} />
           ) : (
             <NotePreview path={path} notes={notes} />
           )}

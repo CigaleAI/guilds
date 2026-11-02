@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import type { EmbeddableNotes } from "../../api/types/notes";
 import type { Collection } from "../../api/types/tables";
 import {
+  Banner,
   Button,
   Markdown,
   SearchField,
@@ -43,7 +44,11 @@ type InsertPickerProps = {
    * agent does not reach is greyed and cannot be inserted; undefined while they load.
    */
   notes: EmbeddableNotes | undefined;
+  /** Why the notes did not load; null while they load or once they have. */
+  notesError: Error | null;
   collections: readonly Collection[] | undefined;
+  /** Why the tables did not load; null while they load or once they have. */
+  collectionsError: Error | null;
   orgId: string;
   /** The text to insert, or null when the operator cancels. */
   onPick: (markup: string | null) => void;
@@ -57,6 +62,8 @@ type PickerCopy = {
   icon: LucideIcon;
   emptyTitle: string;
   emptyDescription: string;
+  /** What the list says when its choices did not load. */
+  loadFailure: string;
   prompt: string;
 };
 
@@ -65,6 +72,7 @@ const tableCopy = {
   icon: Table2,
   emptyTitle: "No tables yet",
   emptyDescription: "Tables are created on the Tables page.",
+  loadFailure: "Couldn't load the tables",
 };
 
 const copyByKind: Record<InsertKind, PickerCopy> = {
@@ -74,6 +82,7 @@ const copyByKind: Record<InsertKind, PickerCopy> = {
     icon: FileText,
     emptyTitle: "No notes to insert",
     emptyDescription: "The organisation's notes appear here.",
+    loadFailure: "Couldn't load the notes",
     prompt: "Select a note to preview it.",
   },
   table: {
@@ -100,7 +109,15 @@ const modeDescription: Record<EmbedMode, string> = {
  * Picks what to insert in a Task or note: a note, embedded as `![[path]]` or referenced as
  * `[[path]]`; a table, embedded; or one of a table's columns, named as `table.column`.
  */
-export function InsertPicker({ kind, notes, collections, orgId, onPick }: InsertPickerProps) {
+export function InsertPicker({
+  kind,
+  notes,
+  notesError,
+  collections,
+  collectionsError,
+  orgId,
+  onPick,
+}: InsertPickerProps) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [column, setColumn] = useState<string | null>(null);
@@ -111,7 +128,13 @@ export function InsertPicker({ kind, notes, collections, orgId, onPick }: Insert
     [kind, notes, collections, orgId, query],
   );
   const chosen = selectedChoice(groups, selected);
-  const copy = copyByKind[kind ?? "note"];
+  const shownKind = kind ?? "note";
+  const copy = copyByKind[shownKind];
+  const failureByKind: Record<InsertKind, Error | null> = {
+    note: notesError,
+    table: collectionsError,
+    column: collectionsError,
+  };
   const markup =
     kind && chosen
       ? insertMarkup(kind, { path: chosen.path, table: chosen.title, column, mode })
@@ -155,6 +178,7 @@ export function InsertPicker({ kind, notes, collections, orgId, onPick }: Insert
             <div className="flex min-w-0 flex-col gap-1">
               <ChoiceList
                 groups={groups}
+                failure={failureByKind[shownKind]}
                 copy={copy}
                 searching={query.trim() !== ""}
                 showLabels={kind === "note"}
@@ -254,6 +278,8 @@ function ModeSwitch({ mode, onModeChange }: ModeSwitchProps) {
 
 type ChoiceListProps = {
   groups: ChoiceGroups | undefined;
+  /** Why the choices did not load; null while they load or once they have. */
+  failure: Error | null;
   copy: PickerCopy;
   /** Whether a search is typed, so an empty list says nothing matches. */
   searching: boolean;
@@ -267,7 +293,10 @@ type ChoiceListProps = {
  * The choices as they load: one list under its groups' labels, or the agent's two sections, each
  * folding closed under its label with its count.
  */
-function ChoiceList({ groups, copy, searching, showLabels, ...rowProps }: ChoiceListProps) {
+function ChoiceList({ groups, failure, copy, searching, showLabels, ...rowProps }: ChoiceListProps) {
+  if (!groups && failure) {
+    return <Banner tone="error" title={copy.loadFailure} meta={failure.message} />;
+  }
   if (!groups) return <SkeletonRows rows={4} label="Loading" />;
   if (groups.layout === "sections") {
     return (

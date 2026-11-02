@@ -468,7 +468,9 @@ function NoteView({
       <InsertPicker
         kind={picking}
         notes={otherNotes}
+        notesError={notes.error}
         collections={collections.data}
+        collectionsError={collections.error}
         orgId={org.id}
         onPick={(markup) => {
           setPicking(null);
@@ -479,6 +481,7 @@ function NoteView({
       <EmbedPreview
         path={previewPath}
         notes={notes.data}
+        notesError={notes.error}
         collections={collections.data}
         orgId={org.id}
         onClose={() => setPreviewPath(null)}
