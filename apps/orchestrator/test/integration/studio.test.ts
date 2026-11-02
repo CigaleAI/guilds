@@ -1180,6 +1180,19 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
     assert.deepEqual((found.artifacts as Array<{ display_path: string }>).map((item) => item.display_path), [sharedPath]);
     const houseRules = await studioGetArtifact.handler(toolDeps, toolCtx(), { display_path: sharedPath, cursor: "0" });
     assert.match(String(houseRules.content), /Always cite the source/);
+    // Studio reaches what the organisation's row gives the source guild, not what only another guild's row reaches.
+    const { href: orgWide } = await writeNote(artifacts, operator, {
+      key: "org-glossary.md",
+      content: "Terms everyone reads.\n",
+      startingAccess: [{ type: "org", id: "org_home", mode: "read" }],
+    });
+    const { href: farOnly } = await writeNote(artifacts, operator, {
+      key: "far-rules.md",
+      content: "Another guild's.\n",
+      startingAccess: [{ type: "guild", id: "guild_far", mode: "write" }],
+    });
+    assert.match(String((await studioGetArtifact.handler(toolDeps, toolCtx(), { display_path: orgWide })).content), /Terms everyone reads/);
+    await assert.rejects(studioGetArtifact.handler(toolDeps, toolCtx(), { display_path: farOnly }), /not in the source guild's reach/);
     const firstChange = await studioListFileChanges.handler(toolDeps, toolCtx(), { display_path: memoryPath, limit: 1 });
     assert.equal((firstChange.changes as unknown[]).length, 1);
     await assert.rejects(studioFindArtifacts.handler(toolDeps, toolCtx(), { query: ["cite"] }), /\/query: must be string/);

@@ -335,7 +335,7 @@ export async function listOrgNotes(store: ArtifactStore, actor: ArtifactActor): 
   return (await listOrgArtifacts(store.db, actor, "note")).map(hostNoteView);
 }
 
-/** The notes whose access list has a row for the guild or one of its agents, that the actor reads, as the Host lists them. */
+/** The notes whose access list has a row for the guild, one of its agents, or the organisation, that the actor reads, as the Host lists them. */
 export async function listGuildNotes(store: ArtifactStore, actor: ArtifactActor, guildId: string): Promise<HostNoteView[]> {
   return (await listGuildArtifacts(store.db, actor, guildId, "note")).map(hostNoteView);
 }
@@ -355,7 +355,7 @@ export async function listAgentNotes(store: ArtifactStore, actor: ArtifactActor,
 
 /**
  * What one guild's state holds that the actor can read: its agents' Memory and scripts, and the
- * notes and files whose access list has a row for the guild or one of its agents.
+ * notes and files whose access list has a row for the guild, one of its agents, or the organisation.
  */
 export async function listStateArtifacts(
   store: ArtifactStore,
@@ -386,8 +386,8 @@ export type LiveNote = { href: string; row: ArtifactRow };
 
 /**
  * The live notes of one guild's state the actor reads, with their text: those whose access list
- * has a row for the guild or one of its agents, in file name order. A note the store refuses to
- * read, an `ArtifactError`, is left out; any other failure throws.
+ * has a row for the guild, one of its agents, or the organisation, in file name order. A note the
+ * store refuses to read, an `ArtifactError`, is left out; any other failure throws.
  */
 export async function readStateNotes(store: ArtifactStore, actor: ArtifactActor, guildId: string): Promise<LiveNote[]> {
   const listed = await listGuildArtifacts(store.db, actor, guildId, "note");

@@ -34,7 +34,8 @@ export type OperatorNotesServices = {
 
 /**
  * The page whose notes a listing shows: the organisation's lists every note, a guild's the notes
- * whose access list has a row for the guild or one of its agents, an agent's the notes it reads.
+ * whose access list has a row for the guild, one of its agents, or the organisation, an agent's the
+ * notes it reads.
  */
 export type NotesPage =
   | { scope: "org"; orgId: string }

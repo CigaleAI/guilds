@@ -274,16 +274,22 @@ describe("artifact service", { concurrency: 1 }, () => {
     assert.deepEqual(await notesNamed(store, operator, new Set()), []);
   });
 
-  test("readStateNotes reads the notes whose list names the guild or one of its agents, by file name, with their text", async () => {
+  test("readStateNotes reads the notes whose list names the guild, one of its agents, or the organisation, by file name, with their text", async () => {
     const { href: ownPath } = await writeNote(store, agent, { key: "own.md", content: "Mine.\n" });
-    const { href: elsewhere } = await writeNote(store, operator, { key: "elsewhere.md", content: "Not here.\n" });
+    const { href: orgWide } = await writeNote(store, operator, { key: "org-wide.md", content: "Everyone's.\n" });
+    const { href: elsewhere } = await writeNote(store, operator, {
+      key: "elsewhere.md",
+      content: "Not here.\n",
+      startingAccess: [{ type: "guild", id: OTHER_GUILD, mode: "write" }],
+    });
     const notes = await readStateNotes(store, operator, GUILD);
     const hrefs = notes.map((note) => note.href);
     assert.ok(hrefs.indexOf(ownPath) < hrefs.indexOf(rulesPath));
     assert.ok(hrefs.indexOf(rulesPath) < hrefs.indexOf(shutPath));
     assert.equal(notes.find((note) => note.href === ownPath)?.row.content_text, "Mine.\n");
     assert.equal(notes.find((note) => note.href === rulesPath)?.row.content_text, "Cite sources.\n");
-    assert.ok(!hrefs.includes(elsewhere), "a note with only the organisation's row is not the guild's");
+    assert.ok(hrefs.includes(orgWide), "a note the organisation's row reaches is the guild's");
+    assert.ok(!hrefs.includes(elsewhere), "a note only another guild's row reaches is not the guild's");
   });
 
   test("readStateNotes leaves out a note the reader cannot read", async () => {

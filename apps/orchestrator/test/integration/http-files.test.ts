@@ -160,7 +160,11 @@ test("operators upload with a starting row, list per page, download, share, and 
     assert.equal(orgFiles.statusCode, 200);
     assert.deepEqual((orgFiles.json() as Array<{ id: string }>).map((item) => item.id).sort(), [file.id, htmlId].sort());
     const guildAfter = await app.inject({ method: "GET", url: `/api/guilds/${guildId}/files`, headers: OWNER });
-    assert.deepEqual((guildAfter.json() as Array<{ id: string }>).map((item) => item.id), [file.id], "a guild page lists what names the guild");
+    assert.deepEqual(
+      (guildAfter.json() as Array<{ id: string }>).map((item) => item.id).sort(),
+      [file.id, htmlId].sort(),
+      "a guild page lists what names the guild and what the organisation's row reaches",
+    );
 
     // A member who does not operate the private guild does not see a file only the guild's row reaches, by list or by id.
     const hiddenList = await app.inject({ method: "GET", url: `/api/guilds/${guildId}/files`, headers: TEAMMATE });

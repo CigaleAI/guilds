@@ -103,13 +103,14 @@ export async function isHiddenByList(
   return result.rows[0]?.hidden ?? false;
 }
 
-/** Whether an item's access list has a row for the guild or for one of its agents. */
-export async function hasGuildRow(db: Queryable, target: AccessTargetRef, guildId: string): Promise<boolean> {
+/** Whether an item is in a guild's scope: its access list has a row for the guild, for one of its agents, or for the organisation. */
+export async function isInGuildScope(db: Queryable, target: AccessTargetRef, guildId: string): Promise<boolean> {
   const result = await db.query<{ found: boolean }>(
     `SELECT EXISTS (
        SELECT 1 FROM artifact_access x
         WHERE x.target_kind = $1 AND x.target_id = $2
-          AND ((x.subject_type = 'guild' AND x.subject_id = $3)
+          AND (x.subject_type = 'org'
+               OR (x.subject_type = 'guild' AND x.subject_id = $3)
                OR (x.subject_type = 'agent' AND x.subject_id IN (SELECT id FROM agents WHERE guild_id = $3)))
      ) AS found`,
     [target.kind, target.id, guildId],

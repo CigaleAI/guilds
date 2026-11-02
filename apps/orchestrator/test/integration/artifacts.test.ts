@@ -1204,7 +1204,7 @@ describe("artifact store", { concurrency: 1 }, () => {
     );
   });
 
-  test("listings: the organisation lists every note, a guild what names it or its agents, an agent what it reads", async () => {
+  test("listings: the organisation lists every note, a guild what names it, its agents, or the organisation, an agent what it reads", async () => {
     const now = new Date();
     await insertGuild(db, { guildId: "guild_list", name: "list", orgId: "org_home", about: "" }, now);
     await insertGuild(db, { guildId: "guild_list_other", name: "list-other", orgId: "org_home", about: "" }, now);
@@ -1223,6 +1223,11 @@ describe("artifact store", { concurrency: 1 }, () => {
       content: "o",
       startingAccess: [{ type: "guild", id: "guild_list_other", mode: "write" }],
     });
+    await writeNote(store, operator, {
+      key: "list-org.md",
+      content: "everyone",
+      startingAccess: [{ type: "org", id: "org_home", mode: "read" }],
+    });
     const { row: shut } = await writeNote(store, operator, {
       key: "list-shut.md",
       content: "s",
@@ -1230,16 +1235,16 @@ describe("artifact store", { concurrency: 1 }, () => {
     });
     const keys = (rows: Array<{ path: string }>) => rows.map((row) => row.path).filter((key) => key.startsWith("list-")).sort();
 
-    assert.deepEqual(keys(await listOrgNotes(store, operator)), ["list-agent.md", "list-guild.md", "list-other.md", "list-shut.md"]);
-    // a row naming the guild's agent puts the note on the guild's page, whatever its mode
-    assert.deepEqual(keys(await listGuildNotes(store, operator, "guild_list")), ["list-agent.md", "list-guild.md", "list-shut.md"]);
-    assert.deepEqual(keys(await listGuildNotes(store, operator, "guild_list_other")), ["list-other.md"]);
+    assert.deepEqual(keys(await listOrgNotes(store, operator)), ["list-agent.md", "list-guild.md", "list-org.md", "list-other.md", "list-shut.md"]);
+    // a row naming the guild's agent, whatever its mode, or the organisation's row puts the note on the guild's page
+    assert.deepEqual(keys(await listGuildNotes(store, operator, "guild_list")), ["list-agent.md", "list-guild.md", "list-org.md", "list-shut.md"]);
+    assert.deepEqual(keys(await listGuildNotes(store, operator, "guild_list_other")), ["list-org.md", "list-other.md"]);
     // the agent's page lists what the agent reads: none shuts it out
-    assert.deepEqual(keys(await listAgentNotes(store, operator, { agentId: "a_list", guildId: "guild_list" })), ["list-agent.md", "list-guild.md"]);
-    assert.deepEqual(keys(await listAgentNotes(store, operator, { agentId: "a_list_other", guildId: "guild_list_other" })), ["list-other.md"]);
+    assert.deepEqual(keys(await listAgentNotes(store, operator, { agentId: "a_list", guildId: "guild_list" })), ["list-agent.md", "list-guild.md", "list-org.md"]);
+    assert.deepEqual(keys(await listAgentNotes(store, operator, { agentId: "a_list_other", guildId: "guild_list_other" })), ["list-org.md", "list-other.md"]);
     // a find lists what the actor reads, with its mode
     const found = (await findNotes(store, lister, { query: "" })).notes.filter((note) => note.key.startsWith("list-"));
-    assert.deepEqual(found.map((note) => [note.key, note.access]).sort(), [["list-agent.md", "write"], ["list-guild.md", "read"]]);
+    assert.deepEqual(found.map((note) => [note.key, note.access]).sort(), [["list-agent.md", "write"], ["list-guild.md", "read"], ["list-org.md", "read"]]);
     assert.equal(found.some((note) => "level" in note), false);
     // an operator hidden from the guild does not list the notes only its rows reach
     const blind = operatorActor({
@@ -1248,9 +1253,9 @@ describe("artifact store", { concurrency: 1 }, () => {
       actorName: "blind",
       hidden: { guildIds: ["guild_list"], agentIds: ["a_list"] },
     });
-    assert.deepEqual(keys(await listOrgNotes(store, blind)), ["list-other.md"]);
+    assert.deepEqual(keys(await listOrgNotes(store, blind)), ["list-org.md", "list-other.md"]);
     await replaceAccess(store, operator, { kind: "note", id: shut.id }, []);
-    assert.deepEqual(keys(await listOrgNotes(store, blind)), ["list-other.md", "list-shut.md"], "a note with no row is hidden from no one");
+    assert.deepEqual(keys(await listOrgNotes(store, blind)), ["list-org.md", "list-other.md", "list-shut.md"], "a note with no row is hidden from no one");
   });
 
   test("notes sit directly under the organisation and the memory archive is the operator's", async () => {

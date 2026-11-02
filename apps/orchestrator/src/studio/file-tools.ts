@@ -31,7 +31,7 @@ type FindArtifactsArguments = Static<typeof FindArtifactsArguments>;
 
 export const studioFindArtifacts: StudioTool = studioTool({
   name: "studio_find_artifacts",
-  description: "Search the notes whose access list names the source guild or one of its agents.",
+  description: "Search the notes whose access list names the source guild, one of its agents, or the organisation.",
   parameters: FindArtifactsArguments,
   async run(deps, call, input: FindArtifactsArguments) {
     const limit = clampLimit(input.limit, STUDIO_DEFAULT_LIMIT, STUDIO_ARTIFACT_LIST_MAX);

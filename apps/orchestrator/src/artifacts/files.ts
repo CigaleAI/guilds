@@ -230,7 +230,7 @@ export class ArtifactFiles {
     return (await listOrgArtifacts(this.store.db, actor, "file")).map((row) => this.view(row));
   }
 
-  /** The files whose access list has a row for the guild or one of its agents, that the actor may read, by name. */
+  /** The files whose access list has a row for the guild, one of its agents, or the organisation, that the actor may read, by name. */
   async listGuildFiles(actor: ArtifactActor, guildId: string): Promise<FileView[]> {
     return (await listGuildArtifacts(this.store.db, actor, guildId, "file")).map((row) => this.view(row));
   }

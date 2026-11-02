@@ -11,7 +11,8 @@ import type { UserRow } from "../db/users.js";
 
 /**
  * The page whose files a listing shows: the organisation's lists every file, a guild's the files
- * whose access list has a row for the guild or one of its agents, an agent's the files it reads.
+ * whose access list has a row for the guild, one of its agents, or the organisation, an agent's the
+ * files it reads.
  */
 export type FilesPage =
   | { scope: "agent"; agent: AgentRow }
