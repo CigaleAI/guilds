@@ -36,6 +36,12 @@ takes the manifest's `SettingsSchema` and asserts the document is
 `rowLimit` (`connectors/format.js`) take the arguments as a
 `JsonObject`.
 
+Drive's tools decode each call's arguments before any work: an
+argument of the wrong type, such as a `fileId` that is not text, is
+refused as a 422 naming it, on a tool the endpoint runs too.
+`create_file` and `download_file_content` read the arguments their
+listing offers and no other spelling of them.
+
 **Breaking for extensions.** The packages lint with Oxlint instead
 of ESLint. An extending repository loads the boundary rule from
 `lint/boundary.js` into a package's `.oxlintrc.json`;

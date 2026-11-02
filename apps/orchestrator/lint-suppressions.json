@@ -126,53 +126,6 @@
       "count": 1
     }
   },
-  "src/connectors/drive/adapter.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 2
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 1
-    }
-  },
-  "src/connectors/drive/content.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 3
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 9
-    }
-  },
-  "src/connectors/drive/folder.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 4
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 22
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 8
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 6
-    }
-  },
-  "src/connectors/drive/upload.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 4
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 6
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 9
-    },
-    "limits/erased-return-type": {
-      "count": 1
-    }
-  },
   "src/connectors/format.ts": {
     "anti-slop/no-runtime-typeof": {
       "count": 3
