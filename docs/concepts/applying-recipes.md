@@ -72,7 +72,9 @@ starts.
 **Create guild** builds the guild in an order that never leaves a
 broken state. Notes come before Tasks, because a Task that embeds a
 missing note cannot be written. Routines are created paused. If any
-step fails, everything the apply created so far is removed. The
+step fails, everything the apply created so far is removed: its
+guild and agents, its collections, and every seed note it wrote,
+soft-deleted by id, whatever rows the note carries. The
 [steps](#create) are listed under Reference.
 
 ### The checklist
@@ -508,7 +510,9 @@ other step is open it is 422 (`checklist still open: …`).
 
 `POST /api/applies/:id/abort` deletes a guild apply created, with its
 agents, and the collections the apply created, then moves the row to
-`aborted`. Reused collections and their records stay. Org-level logins
+`aborted`. The guild's deletion takes the notes and files whose only
+rows named the guild or its agents; a seed note with another row,
+such as the organisation's, stays. Reused collections and their records stay. Org-level logins
 created during the checklist stay. Only an apply that created its
 guild deletes anything: on an empty guild the operator brought, abort
 moves the row to `aborted` and leaves the guild, the agents apply made

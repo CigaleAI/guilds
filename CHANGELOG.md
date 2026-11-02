@@ -18,9 +18,13 @@ organisation at write by default, and writes every note and file but
 those whose rows all name private guilds it does not operate or their
 agents. Deleting a guild or an agent also deletes the notes and files
 only its rows reached, and a deleted note or file keeps its rows, so
-it stays hidden where it was. A change to an item with an
-organisation row is announced to every guild. `note_write` takes a
-`key` or a `path`, `file_put` no `level`, `note_find` and `file_find` no `level`, and Studio's `studio_edit_note`
+it stays hidden where it was. A path's change history shows only the
+changes of the items held there that the reader reads, so a name
+another item now holds does not show a hidden deleted item's history.
+A recipe apply that fails deletes the notes it wrote. A change to an
+item with an organisation row is announced to every guild.
+`note_write` takes a `key` or a `path`, `file_put` no `level`,
+`note_find` and `file_find` no `level`, and Studio's `studio_edit_note`
 no `level`; results carry no `level` or `owner_id`. Notes are written
 under `PUT /api/org/notes/*` with `{ content, expected_version?, access? }`
 and files uploaded to `POST /api/org/files` with optional
@@ -43,12 +47,16 @@ Tasks as `org/<key>`; apply writes a key the organisation already
 holds as `<guild name>-<key>`. The 10 000 live notes and files are
 counted per organisation. Updating gives each agent note and file a row for its
 agent, renames a name several owners held to `<owner>-<name>` and
-records it in `artifact_renames`, and rewrites every embed and mention
+records it in `artifact_renames`, gives each note or file deleted
+before the update a row for the guild or agent that held it, so its
+tombstone stays hidden where it was, and rewrites every embed and mention
 of a moved item in Tasks and their revisions, notes, Memory, routine
 instructions and descriptions, agent focus and wake triggers, guild
 about and description, recipes, change history, and Studio drafts. A
-stored recipe's notes lose `level` and `role`, its organisation notes
-gain `org: read`, and a key it held at several levels is renamed to
+stored recipe's notes lose `level` and `role`: its organisation notes
+gain `org: read`, and `guild: read` where they stated no `guild`; an
+agent note with a role gains that role as a writer; an agent note
+without one is written by the guild; and a key it held at several levels is renamed to
 `<role>-<key>`, `guild-<key>`, or `org-<key>`.
 
 The inbox stream's notice of a new group message names the message's

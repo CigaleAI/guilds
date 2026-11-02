@@ -247,6 +247,15 @@ POST /api/file-changes/latest                     the same, with { display_paths
 more than once, a body that is not a JSON object, or a field of
 another type is 422 naming the field, before the caller is identified.
 
+A path's history is read by item, not by text: the path resolves to
+the notes, files, Memory, and scripts that ever sat there, live or
+deleted, that the caller reads, a record of a collection the caller
+reads, or an agent's Task the caller reaches, and only those items'
+changes are returned. A name a hidden deleted note or file held, and
+another item holds now, shows only the visible item's changes. Memory
+history and Studio's file history, focus, and State read changes the
+same way; Studio counts a change on the item whose artifact made it.
+
 A run-owned change in the history expands to the run's agent,
 guild, kind, status, and routine. Each change carries `studio`:
 `{ session_id, seq }` for a change applied from a Studio card, or

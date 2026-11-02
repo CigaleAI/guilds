@@ -100,7 +100,9 @@ In both:
   name and description.
 - An open file shows its provenance strip
   ([Artifact store](artifacts.md#in-the-app)), then its description,
-  type, size, version, and display path.
+  type, size, version, and display path. Its history holds the changes
+  of the files that held this name and that the operator reads
+  ([Artifact store](artifacts.md#file-provenance)).
 - Its header offers **Access**, **Download**, and a delete button.
   The **Access** dialog is the one notes use
   ([Access](access.md#the-access-panel)).

@@ -152,8 +152,9 @@ In both:
   editing**, and the operator's text stays in the editor.
 - A provenance strip under the file header says who saved it last.
   **Open step** opens the run that wrote it in its agent's Chat tab
-  at that tool call. **History** lists every recorded change
-  ([Artifact store](artifacts.md#every-change-is-recorded)).
+  at that tool call. **History** lists every recorded change of the
+  notes that held this name and that the operator reads
+  ([Artifact store](artifacts.md#file-provenance)).
 - A link with a display path opens that note first. A `note_write`
   chip in the chat leads there.
 - Deleting a note asks first. A note a live Task embeds is not

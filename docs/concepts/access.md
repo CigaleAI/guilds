@@ -568,8 +568,12 @@ Rows go away:
 - with an agent: the rows naming it
 
 A deleted note or file keeps its rows on its tombstone, so the hiding
-rule still covers it and its change history. Deleting a guild or an agent removes the rows naming it, and with them
-every live note and file those rows alone reached: an item whose list
+rule still covers it and its change history. History is read by item,
+so a name a hidden deleted item held does not show that item's
+changes once another item holds it
+([Artifact store](artifacts.md#file-provenance)). Deleting a guild or
+an agent removes the rows naming it, and with them every live note
+and file those rows alone reached: an item whose list
 that leaves empty is deleted too, as the operator who deleted the
 guild or the agent, and its deletion is recorded in its history. Its
 tombstone has no row left, so its history shows to every operator. A
