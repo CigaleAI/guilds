@@ -537,6 +537,57 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
     assert.equal(modeOf(glossaryAccess, { type: "org", id: "org_home" }), "read", "an org mode is the organisation's row");
     assert.equal(modeOf(glossaryAccess, mixedGuild), "write");
     assert.equal(modeOf(rulesAccess, { type: "org", id: "org_home" }), null);
+
+    // A note key the organisation already uses is written under the new guild's name, and the Task points at it.
+    const repeat = (guildName: string, prefix: string) => {
+      const recipe = fixtureDeskRecipe();
+      recipe.guild.name_suggestion = guildName;
+      recipe.roles[0]!.name_suggestion = `${prefix}-reader`;
+      recipe.roles[1]!.name_suggestion = `${prefix}-writer`;
+      recipe.connections[0]!.recommended_scope = "guild";
+      recipe.connections[1]!.recommended_scope = "guild";
+      recipe.notes = [
+        { id: "desk-rules", key: "desk-rules.md", body: "Again.\n", kind: "seed", author: operatorAuthor(), writers: [] },
+      ];
+      recipe.roles[0]!.task.body += "\n\n![[org/desk-rules.md]]";
+      recipe.roles[0]!.task.embeds = ["org/desk-rules.md"];
+      return recipe;
+    };
+    const againApply = await applyRecipe(await importReady(repeat("fixture-desk-again", "again")), "fixture-desk-again");
+    const againReader = (await listAgents(db, againApply.guild_id)).find((row) => row.name === "again-reader");
+    assert.ok(againReader);
+    const againPath = "org/org_home/fixture-desk-again-desk-rules.md";
+    assert.ok((await getAgentTask(db, "org_home", String(againReader.id)))?.content_text.includes(`![[${againPath}]]`));
+    assert.equal((await getByDisplayPath(artifacts, noteReader, againPath)).row?.content_text, "Again.\n");
+    assert.equal(
+      (await getByDisplayPath(artifacts, noteReader, rulesPath)).row?.content_text,
+      "Skip thread ids already in seen-ids.\n",
+      "the note already there is left as it was",
+    );
+
+    // When the prefixed key is taken too, the apply is refused and nothing it made stays.
+    const taken = await app.inject({
+      method: "PUT",
+      url: "/api/org/notes/fixture-desk-third-desk-rules.md",
+      headers: { ...AUTH, "content-type": "application/json" },
+      payload: { content: "Taken.\n" },
+    });
+    assert.equal(taken.statusCode, 200, taken.body);
+    const thirdId = await importReady(repeat("fixture-desk-third", "third"));
+    const refused = await app.inject({
+      method: "POST",
+      url: `/api/recipes/${thirdId}/apply`,
+      headers: { ...AUTH, "content-type": "application/json" },
+      payload: { guild_name: "fixture-desk-third" },
+    });
+    assert.equal(refused.statusCode, 409, refused.body);
+    const guildsAfter = await app.inject({ method: "GET", url: "/api/guilds", headers: AUTH });
+    assert.equal(
+      (guildsAfter.json() as Array<{ name: string }>).some((guild) => guild.name === "fixture-desk-third"),
+      false,
+      "the refused apply leaves no guild",
+    );
+    assert.equal((await getByDisplayPath(artifacts, noteReader, "org/org_home/fixture-desk-third-desk-rules.md")).row?.content_text, "Taken.\n");
     const mixedReaderBindings = await listBindingsCovering(db, {
       orgId: "org_home",
       guildId: mixedApply.guild_id,
