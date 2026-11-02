@@ -113,6 +113,7 @@ export * from "./components/data/IntegrationCard";
 export * from "./components/data/IssueCard";
 export * from "./components/data/ListGroupLabel";
 export * from "./components/data/RoutineRow";
+export * from "./components/data/SectionList";
 export * from "./components/data/TermList";
 export * from "./components/data/ToolRow";
 export * from "./components/data/VersionBar";
