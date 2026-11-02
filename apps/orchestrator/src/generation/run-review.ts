@@ -4,7 +4,9 @@ import type { Queryable } from "../db/pg.js";
 import { getToolResultMetadata, type RunRow } from "../db/runs.js";
 import {
   HARNESSES,
+  type Effort,
   type Harness,
+  type HarnessLogin,
   type HarnessLogins,
   type MessageMetadata,
   type RunRepositoryChange,
@@ -17,10 +19,11 @@ import {
   harnessOf,
   harnessSecretSource,
   isHarness,
+  type HarnessInfo,
 } from "../coding/harnesses.js";
 import type { HarnessLog } from "../toolbox/harness-ops.js";
 import type { HarnessCheck } from "../toolbox/harness-setup.js";
-import type { CodingRuns } from "./coding.js";
+import type { CodeDiff, CodingRuns } from "./coding.js";
 import { RunRequestError } from "./errors.js";
 
 /** What a coding agent's harness and a coding run's changes are read through, built once from the app's services. */
@@ -30,7 +33,39 @@ export type RunReviewServices = {
   coding: Pick<CodingRuns, "runDiff" | "harnessLog" | "repositoryNames" | "checkHarness"> | null;
 };
 
-type Item = Record<string, unknown>;
+/**
+ * One harness's credentials for an agent: the secret that carries its subscription token and
+ * whether it reaches the agent, and the CLI login the agent's home holds.
+ */
+export type HarnessCredential = Pick<HarnessInfo, "harness" | "label" | "secret" | "login"> & {
+  /** The secret the harness's variable reads: the one aliased to it, else its own name; null without `secret`. */
+  secret_source: string | null;
+  /** Whether `secret_source` reaches the agent. */
+  secret_granted: boolean;
+  /** Whether an alias replaces a secret named `secret` that also reaches the agent. */
+  secret_shadowed: boolean;
+  login_seen_at: HarnessLogin["seen_at"];
+  login_account: HarnessLogin["account"];
+};
+
+/**
+ * A coding agent's harness, model and effort, the harness CLIs its machine carries (null before
+ * the machine first started), the repositories it works in, and each harness's credentials.
+ */
+export type AgentHarness = {
+  harness: Harness | null;
+  harness_model: string | null;
+  harness_effort: Effort | null;
+  machine_harnesses: Harness[] | null;
+  repositories: string[];
+  harnesses: HarnessCredential[];
+};
+
+/** What a run changed: each repository's change, as its end checkpoint reports it. */
+export type RunChanges = { repositories: RunRepositoryChange[] };
+
+/** A run's or one `code_task` call's diff in one repository. */
+export type RunDiff = { repository: string } & CodeDiff;
 
 function codingOf(services: RunReviewServices): NonNullable<RunReviewServices["coding"]> {
   if (services.coding === null) {
@@ -66,7 +101,7 @@ function harnessView(
   logins: HarnessLogins,
   aliases: Record<string, string>,
   granted: ReadonlySet<string | undefined>,
-): Item {
+): HarnessCredential {
   const info = HARNESS_INFO[harness];
   const login = harnessLoginOf(logins, harness);
   const source = harnessSecretSource(harness, aliases);
@@ -84,7 +119,7 @@ function harnessView(
 }
 
 /** A coding agent's harness, model and effort, the repositories it works in, and each harness's secret and login. */
-export async function loadHarnessView(services: RunReviewServices, agent: AgentRow): Promise<Item> {
+export async function loadHarnessView(services: RunReviewServices, agent: AgentRow): Promise<AgentHarness> {
   const config = agent.config;
   const granted = new Set(
     (await agentSecrets(services.db, agent)).map((secret) => secret.name),
@@ -108,7 +143,7 @@ export async function loadHarnessView(services: RunReviewServices, agent: AgentR
 export async function checkAgentHarness(
   services: RunReviewServices,
   agent: AgentRow,
-  harness: unknown,
+  harness: string | undefined,
 ): Promise<HarnessCheck> {
   if (!isHarness(harness)) {
     throw new RunRequestError(422, `harness must be one of: ${HARNESSES.join(", ")}`);
@@ -116,7 +151,7 @@ export async function checkAgentHarness(
   return codingOf(services).checkHarness(agent.id, harness);
 }
 
-export function listRunChanges(run: RunRow): { repositories: RunRepositoryChange[] } {
+export function listRunChanges(run: RunRow): RunChanges {
   return { repositories: changedRepositories(run) };
 }
 
@@ -125,7 +160,7 @@ export async function repositoryDiff(
   services: RunReviewServices,
   run: RunRow,
   repository: string,
-): Promise<Item> {
+): Promise<RunDiff> {
   if (!changedRepositories(run).some((item) => item.name === repository)) {
     throw new RunRequestError(404, "the run changed nothing in that repository");
   }
@@ -137,7 +172,7 @@ export async function taskDiff(
   services: RunReviewServices,
   run: RunRow,
   callId: string,
-): Promise<Item> {
+): Promise<RunDiff> {
   const repository = taskDiffRepository(await getToolResultMetadata(services.db, run.id, callId));
   if (repository === null) {
     throw new RunRequestError(404, "that call has no task diff");

@@ -410,6 +410,7 @@ request. A login request is read back the same way: its content is a
 | `apps/orchestrator/src/studio/routines.ts` | Routine requests |
 | `apps/orchestrator/src/studio/connections.ts` | Connection grants and the read-only proxy |
 | `apps/orchestrator/src/connectors/servers.ts` | `isReadOnlyRemote` |
+| `apps/web/src/api/types/studio.ts`, `apps/web/src/api/wire.ts` | Each request as the app reads it from its tool result, and `parseStudioWidget`, which reads it from the result's text |
 | `apps/web/src/features/studio/pendingModel.ts` | The turn's requests: where each lands and what was answered |
 | `apps/web/src/features/studio/approvals.ts` | Deciding requests from anywhere and the reply that continues the coach |
 | `apps/web/src/features/studio/ProposalCards.tsx`, `ApprovalTray.tsx`, `chatModel.ts` | The cards and the header tray, and each request's title and apply button by kind |

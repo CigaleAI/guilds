@@ -5,18 +5,17 @@ import { encryptPayload } from "../../src/credentials/crypto.js";
 import {
   AlchemyError,
   CHAINS,
-  callTool,
   formatCollection,
   formatHoldings,
   formatNft,
-  holdingsTool,
-  nftTool,
   ping,
 } from "../../src/connectors/alchemy/client.js";
 import { McpError } from "../../src/mcp/errors.js";
 import { McpPool, OPERATOR_CALLER } from "../../src/mcp/pool.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
-import { ConnectorError } from "../../src/connectors/types.js";
+import { ConnectorError, type ConnectorContext } from "../../src/connectors/types.js";
+import type { JsonObject } from "../../src/lib/json.js";
+import type { FetchFn } from "../../src/net/http.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { mockFetch } from "../helpers/http.js";
 import { serverRow } from "../helpers/servers.js";
@@ -27,7 +26,24 @@ import { restoreConnectorsAfterEach, runConnectors } from "../helpers/installed.
 restoreConnectorsAfterEach();
 
 const KEY = decodeMasterKey(HEX_MASTER_KEY);
-const TOOLS = CONNECTORS.bySlug("alchemy")!.manifest.tools!;
+const ALCHEMY = CONNECTORS.bySlug("alchemy")!;
+const TOOLS = ALCHEMY.manifest.tools!;
+
+/** Runs the Alchemy tool `name` on `args` with the key alc-test, fetching through `http`. */
+function callAlchemy(name: string, args: JsonObject, http: FetchFn = mockFetch(() => ({ status: 500, json: {} }))) {
+  const ctx: ConnectorContext = {
+    http,
+    remote: { initialize: async () => ({ name: "", instructions: "" }), list: async () => [], call: async () => "" },
+    connection_id: "conn_alc",
+    settings: {},
+  };
+  return ALCHEMY.adapter.call!(name, args, { token: "alc-test" }, ctx);
+}
+
+/** Whether `error` is the connector error a call is refused with: `status`, its message matching `pattern`. */
+function refused(status: number | null, pattern: RegExp) {
+  return (error: unknown) => error instanceof ConnectorError && error.status === status && pattern.test(error.message);
+}
 
 
 test("formatHoldings drops images and descriptions", () => {
@@ -125,21 +141,19 @@ test("formatNft and formatCollection keep floor", () => {
 
 test("holdings uses the NFT path and key", async () => {
   let url = "";
-  const stored = await holdingsTool(
+  const stored = await callAlchemy(
+    "holdings",
     { owner: "0xd8da", chain: "base" },
-    {
-      apiKey: "alc-test",
-      client: mockFetch((requestUrl) => {
-        url = requestUrl;
-        return {
-          status: 200,
-          json: {
-            ownedNfts: [{ contract: { address: "0xabc", symbol: "X", name: "Example" }, tokenId: "1", name: "Example #1" }],
-            totalCount: 1,
-          },
-        };
-      }),
-    },
+    mockFetch((requestUrl) => {
+      url = requestUrl;
+      return {
+        status: 200,
+        json: {
+          ownedNfts: [{ contract: { address: "0xabc", symbol: "X", name: "Example" }, tokenId: "1", name: "Example #1" }],
+          totalCount: 1,
+        },
+      };
+    }),
   );
   assert.equal(
     url,
@@ -154,9 +168,9 @@ test("holdings uses ink and robinhood hosts", async () => {
     seen.push(requestUrl);
     return { status: 200, json: { ownedNfts: [], totalCount: 0 } };
   });
-  await holdingsTool({ owner: "0xabc", chain: "ink" }, { apiKey: "alc-test", client });
-  await holdingsTool({ owner: "0xabc", chain: "robinhood" }, { apiKey: "alc-test", client });
-  await holdingsTool({ owner: "0xabc", chain: "bsc" }, { apiKey: "alc-test", client });
+  await callAlchemy("holdings", { owner: "0xabc", chain: "ink" }, client);
+  await callAlchemy("holdings", { owner: "0xabc", chain: "robinhood" }, client);
+  await callAlchemy("holdings", { owner: "0xabc", chain: "bsc" }, client);
   assert.ok(seen[0]?.startsWith("https://ink-mainnet.g.alchemy.com/nft/v3/alc-test/getNFTsForOwner"));
   assert.ok(seen[1]?.startsWith("https://robinhood-mainnet.g.alchemy.com/nft/v3/alc-test/getNFTsForOwner"));
   assert.ok(seen[2]?.startsWith("https://bnb-mainnet.g.alchemy.com/nft/v3/alc-test/getNFTsForOwner"));
@@ -167,36 +181,34 @@ test("holdings uses ink and robinhood hosts", async () => {
 test("holdings solana uses DAS", async () => {
   let url = "";
   let body = "";
-  const stored = await holdingsTool(
+  const stored = await callAlchemy(
+    "holdings",
     { owner: "So11111111111111111111111111111111111111112", chain: "solana" },
-    {
-      apiKey: "alc-test",
-      client: mockFetch((requestUrl, init) => {
-        url = requestUrl;
-        body = String(init?.body ?? "");
-        return {
-          status: 200,
-          json: {
-            jsonrpc: "2.0",
-            id: 1,
-            result: {
-              total: 1,
-              page: 1,
-              items: [{
-                id: "Mad1111111111111111111111111111111111111111",
-                interface: "V1_NFT",
-                content: { metadata: { name: "Mad Lads #1", symbol: "MAD" }, links: { image: "https://example.com/1.png" } },
-                grouping: [{
-                  group_key: "collection",
-                  group_value: "Col1111111111111111111111111111111111111111",
-                  collection_metadata: { name: "Mad Lads" },
-                }],
+    mockFetch((requestUrl, init) => {
+      url = requestUrl;
+      body = String(init?.body ?? "");
+      return {
+        status: 200,
+        json: {
+          jsonrpc: "2.0",
+          id: 1,
+          result: {
+            total: 1,
+            page: 1,
+            items: [{
+              id: "Mad1111111111111111111111111111111111111111",
+              interface: "V1_NFT",
+              content: { metadata: { name: "Mad Lads #1", symbol: "MAD" }, links: { image: "https://example.com/1.png" } },
+              grouping: [{
+                group_key: "collection",
+                group_value: "Col1111111111111111111111111111111111111111",
+                collection_metadata: { name: "Mad Lads" },
               }],
-            },
+            }],
           },
-        };
-      }),
-    },
+        },
+      };
+    }),
   );
   assert.equal(url, "https://solana-mainnet.g.alchemy.com/v2/alc-test");
   const parsed = JSON.parse(body) as { method: string; params: Record<string, unknown> };
@@ -214,26 +226,24 @@ test("holdings solana uses DAS", async () => {
 
 test("nft solana uses mint", async () => {
   let body = "";
-  const stored = await nftTool(
+  const stored = await callAlchemy(
+    "nft",
     { contract: "Mad1111111111111111111111111111111111111111", chain: "solana" },
-    {
-      apiKey: "alc-test",
-      client: mockFetch((_url, init) => {
-        body = String(init?.body ?? "");
-        return {
-          status: 200,
-          json: {
-            jsonrpc: "2.0",
-            id: 1,
-            result: {
-              id: "Mad1111111111111111111111111111111111111111",
-              interface: "V1_NFT",
-              content: { metadata: { name: "Mad Lads #1", symbol: "MAD" } },
-            },
+    mockFetch((_url, init) => {
+      body = String(init?.body ?? "");
+      return {
+        status: 200,
+        json: {
+          jsonrpc: "2.0",
+          id: 1,
+          result: {
+            id: "Mad1111111111111111111111111111111111111111",
+            interface: "V1_NFT",
+            content: { metadata: { name: "Mad Lads #1", symbol: "MAD" } },
           },
-        };
-      }),
-    },
+        },
+      };
+    }),
   );
   const parsed = JSON.parse(body) as { method: string; params: { id: string } };
   assert.equal(parsed.method, "getAsset");
@@ -242,32 +252,49 @@ test("nft solana uses mint", async () => {
 });
 
 test("holdings and nft refuse a body that is not JSON or does not match its schema", async () => {
-  const answering = (result: { json?: unknown; text?: string }) => ({
-    apiKey: "alc-test",
-    client: mockFetch(() => ({ status: 200, ...result })),
-  });
-  const unexpectedAt = (path: string) => (error: unknown) =>
-    error instanceof AlchemyError &&
-    error.message.startsWith(`Alchemy returned an unexpected response at ${path}: `);
+  const answering = (result: { json?: unknown; text?: string }) => mockFetch(() => ({ status: 200, ...result }));
+  await assert.rejects(
+    () => callAlchemy("holdings", { owner: "0xd8da", chain: "base" }, answering({ json: { ownedNfts: "none" } })),
+    refused(null, /^Alchemy returned an unexpected response at \/ownedNfts: /),
+  );
   await assert.rejects(
     () =>
-      holdingsTool({ owner: "0xd8da", chain: "base" }, answering({ json: { ownedNfts: "none" } })),
-    unexpectedAt("/ownedNfts"),
+      callAlchemy("holdings", { owner: "0xd8da", chain: "base" }, answering({ json: { ownedNfts: [{ tokenId: 1 }] } })),
+    refused(null, /^Alchemy returned an unexpected response at \/ownedNfts\/0\/tokenId: /),
   );
   const mint = "Mad1111111111111111111111111111111111111111";
   await assert.rejects(
-    () =>
-      nftTool(
-        { contract: mint, chain: "solana" },
-        answering({ json: { result: { id: mint, content: "none" } } }),
-      ),
-    unexpectedAt("/content"),
+    () => callAlchemy("nft", { contract: mint, chain: "solana" }, answering({ json: { result: { id: mint, content: "none" } } })),
+    refused(null, /^Alchemy returned an unexpected result at \/content: /),
   );
   await assert.rejects(
-    () => holdingsTool({ owner: "0xd8da", chain: "base" }, answering({ text: "not json" })),
-    (error: unknown) =>
-      error instanceof AlchemyError && error.message === "Alchemy returned a non-JSON body",
+    () => callAlchemy("nft", { contract: mint, chain: "solana" }, answering({ json: { error: { code: -32602, message: "bad mint" } } })),
+    refused(null, /^bad mint$/),
   );
+  await assert.rejects(
+    () => callAlchemy("holdings", { owner: "0xd8da", chain: "base" }, answering({ text: "not json" })),
+    refused(null, /^Alchemy returned a non-JSON body$/),
+  );
+});
+
+test("a tool decodes its arguments before it calls Alchemy", async () => {
+  const fetched: string[] = [];
+  const http = mockFetch((url) => {
+    fetched.push(url);
+    return { status: 200, json: { ownedNfts: [], totalCount: 0 } };
+  });
+  assert.equal(
+    await callAlchemy("holdings", { owner: "0xabc", contract: " 0xcol ", page_key: "p2", limit: 0 }, http),
+    "0xabc  ethereum  total=0",
+  );
+  await assert.rejects(callAlchemy("holdings", { owner: "0xabc", limit: "3" }, http), refused(422, /^\/limit: /));
+  await assert.rejects(callAlchemy("nft", { token_id: "1" }, http), refused(422, /^contract is required$/));
+  await assert.rejects(callAlchemy("nft", { contract: "0xabc" }, http), /token_id is required/);
+  await assert.rejects(callAlchemy("collection", { contract: "0xabc", chain: "tron" }, http), refused(422, /^\/chain: /));
+  await assert.rejects(callAlchemy("holdings", { owner: "0xabc", chain: "BSC" }, http), refused(422, /^\/chain: /));
+  assert.deepEqual(fetched, [
+    "https://eth-mainnet.g.alchemy.com/nft/v3/alc-test/getNFTsForOwner?owner=0xabc&withMetadata=true&pageSize=1&contractAddresses%5B%5D=0xcol&pageKey=p2",
+  ]);
 });
 
 test("ping rejects unauthorized", async () => {
@@ -277,8 +304,8 @@ test("ping rejects unauthorized", async () => {
   );
 });
 
-test("callTool unknown name", async () => {
-  await assert.rejects(() => callTool("swap", {}, { apiKey: "alc-test" }), /unknown Alchemy tool/);
+test("a call to a tool Alchemy does not have is refused", async () => {
+  await assert.rejects(() => callAlchemy("swap", {}), refused(404, /^unknown tool swap$/));
 });
 
 test("sync Alchemy writes the curated catalog", async () => {

@@ -2,6 +2,7 @@ import { encryptPayload } from "../../src/credentials/crypto.js";
 import { upsertOrgModelProvider } from "../../src/db/orgs.js";
 import type { Queryable } from "../../src/db/pg.js";
 import { newId } from "../../src/lib/ids.js";
+import type { JsonObject } from "../../src/lib/json.js";
 import type { ModelCredentialsProvider } from "../../src/llm/credentials.js";
 import { HEX_MASTER_KEY } from "./env.js";
 
@@ -28,7 +29,7 @@ export async function connectModelProvider(
 ): Promise<void> {
   process.env.SECRETS_MASTER_KEY ??= HEX_MASTER_KEY;
   const apiKey = options.apiKey ?? `sk-${provider}-test-abcd`;
-  const payload: Record<string, unknown> = { api_key: apiKey };
+  const payload: JsonObject = { api_key: apiKey };
   if (options.baseURL) {
     payload.base_url = options.baseURL;
   }

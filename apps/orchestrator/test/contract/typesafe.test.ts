@@ -62,7 +62,7 @@ function router() {
   return createGroupRouter({ client: createTypeSafeClient({ apiKey: process.env.TYPESAFE_API_KEY ?? "" }) });
 }
 
-async function routeRows(rows: Array<Record<string, unknown>>) {
+async function routeRows(rows: GroupMessageRow[]) {
   return router().recipients({
     rows,
     members: DESK,

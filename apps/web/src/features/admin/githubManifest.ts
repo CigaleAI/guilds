@@ -1,8 +1,10 @@
+import type { GithubAppManifest } from "../../api/types/admin";
+
 /**
  * Hands a GitHub App manifest to GitHub as a top-level form post. GitHub shows its confirmation
  * page, then sends the browser back to this box, which stores the App.
  */
-export function submitManifestForm(action: string, manifest: Record<string, unknown>): void {
+export function submitManifestForm(action: string, manifest: GithubAppManifest): void {
   const form = document.createElement("form");
   form.method = "post";
   form.action = action;

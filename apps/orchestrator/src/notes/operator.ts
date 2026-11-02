@@ -1,10 +1,11 @@
 import { loadOperatorActor } from "../artifacts/actors.js";
 import type { ArtifactActor } from "../artifacts/types.js";
-import type { ArtifactStore } from "../artifacts/store.js";
+import type { ArtifactStore, HostNoteView } from "../artifacts/store.js";
 import {
   deleteHostFile,
   ensureAgentArtifacts,
   listHostFiles,
+  type HostFilePayload,
   readHostFile,
   writeHostFile,
   type HostFileOwner,
@@ -14,7 +15,7 @@ import type { AgentRow } from "../db/agents.js";
 import type { GuildRow } from "../db/guilds.js";
 import type { Queryable } from "../db/pg.js";
 import type { GroupChat } from "../groupchat/index.js";
-import { memoryHistory } from "../memory/history.js";
+import { memoryHistory, type MemoryHistory } from "../memory/history.js";
 import type { UserRow } from "../db/users.js";
 
 /** What an operator's notes are read and written through, built once from the app's services. */
@@ -89,7 +90,7 @@ async function announce(
     });
     return;
   }
-  const data = { scope: "agent", agent_id: owner.agent.id, path };
+  const data = { scope: "agent" as const, agent_id: owner.agent.id, path };
   await services.stream.publish(owner.agent.guild_id, "guild.artifacts.changed", data);
 }
 
@@ -108,7 +109,7 @@ export async function listOwnerNotes(
   services: OperatorNotesServices,
   owner: NotesOwner,
   user: UserRow,
-): Promise<Array<Record<string, unknown>>> {
+): Promise<HostNoteView[]> {
   return listHostFiles(
     services.artifacts,
     await actorFor(services, owner, user),
@@ -121,7 +122,7 @@ export async function readOwnerNote(
   owner: NotesOwner,
   user: UserRow,
   path: string,
-): Promise<Record<string, unknown>> {
+): Promise<HostFilePayload> {
   const actor = await actorFor(services, owner, user);
   return readHostFile(
     { store: services.artifacts, db: services.db },
@@ -137,7 +138,7 @@ export async function writeOwnerNote(
   owner: NotesOwner,
   user: UserRow,
   write: NoteWrite,
-): Promise<Record<string, unknown>> {
+): Promise<HostFilePayload> {
   const expectedVersion =
     owner.level === "agent" ? validateExpectedVersion(write.expectedVersion) : undefined;
   const actor = await actorFor(services, owner, user);
@@ -169,7 +170,7 @@ export async function readMemoryHistory(
   services: OperatorNotesServices,
   agent: AgentRow,
   user: UserRow,
-): Promise<unknown> {
+): Promise<MemoryHistory> {
   const actor = await actorFor(services, { level: "agent", agent }, user);
   return memoryHistory({ artifacts: services.artifacts, db: services.db }, actor, {
     id: agent.id,

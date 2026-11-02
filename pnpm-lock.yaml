@@ -47,9 +47,6 @@ importers:
       '@sentry/profiling-node':
         specifier: ^10.75.0
         version: 10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))
-      '@sinclair/typebox':
-        specifier: ^0.34.52
-        version: 0.34.52
       croner:
         specifier: ^10.0.1
         version: 10.0.1
@@ -71,6 +68,9 @@ importers:
       pg:
         specifier: ^8.23.0
         version: 8.23.0
+      typebox:
+        specifier: ^1.3.31
+        version: 1.3.31
       undici:
         specifier: ^8.10.2
         version: 8.10.2
@@ -203,6 +203,12 @@ importers:
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.3.1(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13))
+      '@types/hast':
+        specifier: ^3.0.5
+        version: 3.0.5
+      '@types/mdast':
+        specifier: ^4.0.4
+        version: 4.0.4
       '@types/react':
         specifier: ^19.3.0
         version: 19.3.0
@@ -2302,9 +2308,6 @@ packages:
   '@sentry/server-utils@10.75.0':
     resolution: {integrity: sha512-7fIa9vFGNzB13hmxl8Sip3xImSkqpc4wETzuQ7CLzVOwPvwI6y/gVEm0pxRhtJSq8SzfOp26eJWl80u8v78Osg==}
     engines: {node: '>=18'}
-
-  '@sinclair/typebox@0.34.52':
-    resolution: {integrity: sha512-XiMQh7qqVlxZzcVD+kkGMNGMzcTrDMLWI7S4x7z1MkCkbDPrekpZXEUK0eZqZFMuHQg2a2DZOcDIh9o5v3Gonw==}
 
   '@stablelib/base64@1.0.1':
     resolution: {integrity: sha512-1bnPQqSxSuc3Ii6MhBysoWCg58j97aUjuCSZrGSmDxNqtytIi0k8utUenAwTZN4V5mXXYGsVUI9zeBqy+jBOSQ==}
@@ -5923,8 +5926,6 @@ snapshots:
     dependencies:
       '@sentry/conventions': 0.16.0
       '@sentry/core': 10.75.0
-
-  '@sinclair/typebox@0.34.52': {}
 
   '@stablelib/base64@1.0.1': {}
 

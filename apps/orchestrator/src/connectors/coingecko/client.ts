@@ -1,18 +1,8 @@
-import { Value } from "@sinclair/typebox/value";
-import { Type, type Static, type TSchema } from "@sinclair/typebox";
-import { decode } from "../../lib/decode.js";
+import { Value } from "typebox/value";
+import type { Static, TSchema } from "typebox";
 import { proxyFetch, withQuery, type FetchFn } from "../../net/http.js";
-import {
-  LIST_CAP,
-  LIST_DEFAULT,
-  argStr,
-  clipRows,
-  downsample,
-  fmtNum,
-  joinParts,
-  rowLimit,
-  tsSec,
-} from "../format.js";
+import { LIST_CAP, LIST_DEFAULT, clipRows, downsample, fmtNum, joinParts, tsSec } from "../format.js";
+import { decodeResponse, type ConnectorApi } from "../response.js";
 import type { ApiGet } from "../types.js";
 import {
   ChartResponse,
@@ -22,12 +12,15 @@ import {
   MoversResponse,
   NewCoinsResponse,
   OhlcResponse,
-  PerCurrency,
+  PingResponse,
   PricesResponse,
   SearchResponse,
   SupplyResponse,
   TrendingResponse,
+  type ChartPoint,
+  type Figure,
   type Mover,
+  type PerCurrency,
   type TrendingCategory,
   type TrendingCoin,
   type TrendingNft,
@@ -48,14 +41,20 @@ export class CoinGeckoError extends Error {
   }
 }
 
-function rank(value: unknown): string {
-  if (value === null || value === undefined || value === "") {
-    return "";
-  }
-  return `#${value}`;
+/** A coin as a call names it: by its CoinGecko id, or by its contract address on a platform. */
+export type CoinRef = { id: string } | { platform: string; address: string };
+
+/** The window and quote currency of a chart: `days` back (or `max`), priced in `vs`. */
+export type ChartWindow = { days: string; vs: string };
+
+/** The movers a call asks for: priced in `vs`, over `duration`, among the `top` coins by market cap; CoinGecko's default for each left empty. */
+export type MoversRequest = { vs: string; duration: string; top: string; limit: number };
+
+function rank(value: number | null | undefined): string {
+  return value === null || value === undefined ? "" : `#${value}`;
 }
 
-function pct(value: unknown): string {
+function pct(value: Figure | undefined): string {
   if (value === null || value === undefined || value === "") {
     return "-";
   }
@@ -69,15 +68,12 @@ function pct(value: unknown): string {
   return `+${number}%`;
 }
 
-/** A figure CoinGecko sends either as one number or per quote currency: the `vs` one, else USD. */
-function currency(value: unknown, vs: string): string {
-  if (!Value.Check(PerCurrency, value)) {
-    return fmtNum(value);
+/** A figure CoinGecko sends per quote currency: the `vs` one, else USD. */
+function currency(prices: PerCurrency | null | undefined, vs: string): string {
+  if (!prices) {
+    return "-";
   }
-  if (vs in value) {
-    return fmtNum(value[vs]);
-  }
-  return "usd" in value ? fmtNum(value.usd) : "-";
+  return fmtNum(vs in prices ? prices[vs] : prices.usd);
 }
 
 function section(title: string, rows: string[], limit: number): string {
@@ -91,11 +87,6 @@ function section(title: string, rows: string[], limit: number): string {
 function sections(blocks: string[]): string {
   const shown = blocks.filter(Boolean);
   return shown.length ? shown.join("\n\n") : "no results";
-}
-
-/** The points of a series that carry a timestamp and a value. */
-function pairs(points: unknown[][] | undefined): unknown[][] {
-  return (points ?? []).filter((point) => point.length >= 2);
 }
 
 export function formatSearch(payload: SearchResponse, limit = LIST_DEFAULT): string {
@@ -117,14 +108,15 @@ export function formatSearch(payload: SearchResponse, limit = LIST_DEFAULT): str
 export function formatPlatforms(payload: CoinResponse): string {
   const found: string[] = [];
   for (const [chain, address] of Object.entries(payload.platforms ?? {})) {
-    if (typeof address === "string" && address.trim()) {
-      found.push(`${chain}=${address.trim()}`);
+    const trimmed = address?.trim();
+    if (trimmed) {
+      found.push(`${chain}=${trimmed}`);
     }
   }
   const platform = payload.asset_platform_id;
-  const address = payload.contract_address;
-  if (!found.length && typeof platform === "string" && typeof address === "string" && address.trim()) {
-    found.push(`${platform}=${address.trim()}`);
+  const address = payload.contract_address?.trim();
+  if (!found.length && platform && address) {
+    found.push(`${platform}=${address}`);
   }
   return found.join("  ");
 }
@@ -201,9 +193,9 @@ export function formatSupply(payload: SupplyResponse): string {
 }
 
 export function formatOhlc(payload: OhlcResponse, title: string): string {
-  const rows = downsample(payload, CHART_POINTS)
-    .filter((point) => point.length >= 5)
-    .map((point) => joinParts(tsSec(point[0]), fmtNum(point[1]), fmtNum(point[2]), fmtNum(point[3]), fmtNum(point[4])));
+  const rows = downsample(payload, CHART_POINTS).map(([time, open, high, low, close]) =>
+    joinParts(tsSec(time), fmtNum(open), fmtNum(high), fmtNum(low), fmtNum(close)),
+  );
   const header = `${title} ohlc n=${rows.length}`;
   return rows.length ? [header, "t  o  h  l  c", ...rows].join("\n") : `${header}\nno results`;
 }
@@ -221,13 +213,13 @@ function chartSeries(series: string): Set<string> {
 
 export function formatChart(payload: ChartResponse, title: string, series = "price"): string {
   const wanted = chartSeries(series);
-  const price = pairs(payload.prices);
-  const mcap = pairs(payload.market_caps);
-  const volume = pairs(payload.total_volumes);
+  const price = payload.prices ?? [];
+  const mcap = payload.market_caps ?? [];
+  const volume = payload.total_volumes ?? [];
   const base = downsample(price.length ? price : mcap.length ? mcap : volume, CHART_POINTS);
-  const values = (points: unknown[][]) =>
-    downsample(points.length ? points : base, CHART_POINTS).map((point) => fmtNum(point[1]));
-  const columns: Array<[string, string[]]> = [["t", base.map((point) => tsSec(point[0]))]];
+  const values = (points: ChartPoint[]) =>
+    downsample(points.length ? points : base, CHART_POINTS).map(([, value]) => fmtNum(value));
+  const columns: Array<[string, string[]]> = [["t", base.map(([time]) => tsSec(time))]];
   if (wanted.has("price")) columns.push(["p", values(price)]);
   if (wanted.has("mcap")) columns.push(["m", values(mcap)]);
   if (wanted.has("vol")) columns.push(["v", values(volume)]);
@@ -284,45 +276,32 @@ export function formatTrending(payload: TrendingResponse, limit = LIST_DEFAULT):
   return blocks.length ? blocks.join("\n\n") : "no results";
 }
 
-/** The first non-empty text among `values`. */
-function firstText(...values: unknown[]): string | null {
-  for (const value of values) {
-    if (typeof value === "string" && value.trim()) {
-      return value.trim();
-    }
-  }
-  return null;
+/** Text, trimmed; null when it is blank or absent. */
+function text(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
 }
 
 /** The message of an error body, as text or one object deeper. */
-function errorMessage(payload: unknown): string | null {
-  if (!Value.Check(ErrorBody, payload)) {
-    return null;
-  }
-  const detail = payload.error ?? payload.status ?? payload.message;
-  if (Value.Check(ErrorDetail, detail)) {
-    return firstText(detail.error_message ?? detail.error ?? detail.message);
-  }
-  return firstText(detail);
+function errorMessage(body: ErrorBody): string | null {
+  const detail = body.error ?? body.status ?? body.message;
+  return Value.Check(ErrorDetail, detail)
+    ? text(detail.error_message ?? detail.error ?? detail.message)
+    : text(detail);
 }
 
-async function errorDetail(response: Response): Promise<string> {
-  const text = await response.text();
-  let payload: unknown;
-  try {
-    payload = text ? JSON.parse(text) : {};
-  } catch {
-    const stripped = text.trim();
-    return stripped || `CoinGecko HTTP ${response.status}`;
-  }
-  return errorMessage(payload) ?? `CoinGecko HTTP ${response.status}`;
-}
+/** CoinGecko's API as the client reads its responses. */
+const COINGECKO: ConnectorApi<typeof ErrorBody> = {
+  name: "CoinGecko",
+  error: (message, status) => new CoinGeckoError(message, status),
+  errorBody: ErrorBody,
+  errorMessage,
+};
 
 type CoinGeckoOptions = { client?: FetchFn; proxyUrl?: string };
 
-function unexpected(problem: string): CoinGeckoError {
-  return new CoinGeckoError(`CoinGecko returned an unexpected response at ${problem}`);
-}
+/** The options of a call with a login's key. */
+export type ToolOptions = CoinGeckoOptions & { apiKey: string };
 
 /** The response at `path` with `params`, as `schema` describes it. */
 async function getJson<T extends TSchema>(
@@ -339,158 +318,93 @@ async function getJson<T extends TSchema>(
     method: "GET",
     headers: { "x-cg-pro-api-key": key, Accept: "application/json" },
   });
-  if (response.status >= 400) {
-    throw new CoinGeckoError(await errorDetail(response), response.status);
-  }
-  let payload: unknown;
-  try {
-    payload = JSON.parse(await response.text());
-  } catch {
-    throw new CoinGeckoError("CoinGecko returned a non-JSON body");
-  }
-  return decode(request.schema, payload, unexpected);
+  return decodeResponse(COINGECKO, response, request.schema);
 }
-
-/** The coin the arguments name, as `[id, platform, address]`: by `id`, else by `platform` and `address`, each empty when not given. */
-function coinRef(arguments_: Record<string, unknown>): [string, string, string] {
-  const coinId = argStr(arguments_, "id");
-  if (coinId) {
-    return [coinId, "", ""];
-  }
-  return ["", argStr(arguments_, "platform"), argStr(arguments_, "address")];
-}
-
-/** The coin the arguments name, as `coinRef` reads it; throws when they name none. */
-function requiredCoinRef(arguments_: Record<string, unknown>): [string, string, string] {
-  const [coinId, platform, address] = coinRef(arguments_);
-  if (!coinId && !(platform && address)) {
-    throw new CoinGeckoError("id, or platform and address, is required");
-  }
-  return [coinId, platform, address];
-}
-
-const PING = Type.Unknown();
 
 export async function ping(apiKey: string, options: CoinGeckoOptions = {}): Promise<void> {
-  await getJson({ path: "/ping", params: {}, schema: PING }, apiKey, options);
+  await getJson({ path: "/ping", params: {}, schema: PingResponse }, apiKey, options);
 }
 
-type ToolOptions = CoinGeckoOptions & { apiKey: string };
-
-export async function searchTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
-  const query = argStr(arguments_, "query");
-  if (!query) {
+/** CoinGecko's coins, NFTs and categories for `query`, `limit` rows a section. */
+export async function search(query: string, limit: number, options: ToolOptions): Promise<string> {
+  const stripped = query.trim();
+  if (!stripped) {
     throw new CoinGeckoError("query is required");
   }
-  const payload = await getJson({ path: "/search", params: { query }, schema: SearchResponse }, options.apiKey, options);
-  return formatSearch(payload, rowLimit(arguments_));
+  const payload = await getJson({ path: "/search", params: { query: stripped }, schema: SearchResponse }, options.apiKey, options);
+  return formatSearch(payload, limit);
 }
 
-export async function coinTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
-  const [coinId, platform, address] = requiredCoinRef(arguments_);
+/** A coin's contracts and lean market data. */
+export async function coin(ref: CoinRef, options: ToolOptions): Promise<string> {
   const params = {
     localization: "false",
     tickers: "false",
     market_data: "true",
     sparkline: "false",
   };
-  const path = coinId ? `/coins/${coinId}` : `/coins/${platform}/contract/${address}`;
+  const path = "id" in ref ? `/coins/${ref.id}` : `/coins/${ref.platform}/contract/${ref.address}`;
   return formatCoin(await getJson({ path, params, schema: CoinResponse }, options.apiKey, options));
 }
 
-export async function newTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+/** The coins CoinGecko listed last, `limit` rows. */
+export async function newCoins(limit: number, options: ToolOptions): Promise<string> {
   const payload = await getJson({ path: "/coins/list/new", params: {}, schema: NewCoinsResponse }, options.apiKey, options);
-  return formatNew(payload, rowLimit(arguments_));
+  return formatNew(payload, limit);
 }
 
-export async function moversTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
-  const vs = argStr(arguments_, "vs", VS_DEFAULT) || VS_DEFAULT;
-  const params: Record<string, string> = { vs_currency: vs };
-  const duration = argStr(arguments_, "duration");
-  if (duration) {
-    params.duration = duration;
-  }
-  const top = argStr(arguments_, "top");
-  if (top) {
-    params.top_coins = top;
-  }
+/** The top gainers and losers `request` asks for, `limit` rows a side. */
+export async function movers(request: MoversRequest, options: ToolOptions): Promise<string> {
+  const { vs, duration, top, limit } = request;
+  const params = {
+    vs_currency: vs,
+    ...(duration ? { duration } : {}),
+    ...(top ? { top_coins: top } : {}),
+  };
   const payload = await getJson(
     { path: "/coins/top_gainers_losers", params, schema: MoversResponse },
     options.apiKey,
     options,
   );
-  return formatMovers(payload, vs, rowLimit(arguments_));
+  return formatMovers(payload, vs, limit);
 }
 
-export async function supplyTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
-  const coinId = argStr(arguments_, "id");
-  if (!coinId) {
+/** A coin's circulating, total and non-circulating supply, by its id. */
+export async function supply(coinId: string, options: ToolOptions): Promise<string> {
+  const id = coinId.trim();
+  if (!id) {
     throw new CoinGeckoError("id is required");
   }
   const payload = await getJson(
-    { path: `/coins/${coinId}/supply_breakdown`, params: {}, schema: SupplyResponse },
+    { path: `/coins/${id}/supply_breakdown`, params: {}, schema: SupplyResponse },
     options.apiKey,
     options,
   );
   return formatSupply(payload);
 }
 
-/** What the chart tool is asked for: a coin by id or by contract, over `days`, in `vs`. */
-type ChartRequest = {
-  coinId: string;
-  platform: string;
-  address: string;
-  days: string;
-  kind: "price" | "ohlc";
-  vs: string;
-  series: string;
-};
-
-/** The chart the arguments ask for: `price` when they name none; throws on any other kind. */
-function chartKind(arguments_: Record<string, unknown>): ChartRequest["kind"] {
-  const kind = argStr(arguments_, "kind", "price") || "price";
-  if (kind !== "price" && kind !== "ohlc") {
-    throw new CoinGeckoError("kind must be price or ohlc");
-  }
-  return kind;
-}
-
-function chartRequest(arguments_: Record<string, unknown>): ChartRequest {
-  const [coinId, platform, address] = coinRef(arguments_);
-  const kind = chartKind(arguments_);
-  if (kind === "ohlc" && !coinId) {
-    throw new CoinGeckoError("ohlc requires coin id");
-  }
-  if (!coinId && !(platform && address)) {
-    throw new CoinGeckoError("id, or platform and address, is required");
-  }
-  return {
-    coinId,
-    platform,
-    address,
-    kind,
-    days: argStr(arguments_, "days", "7") || "7",
-    vs: argStr(arguments_, "vs", VS_DEFAULT) || VS_DEFAULT,
-    series: argStr(arguments_, "series", "price") || "price",
-  };
-}
-
-export async function chartTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
-  const { coinId, platform, address, days, kind, vs, series } = chartRequest(arguments_);
+/** A coin's OHLC candles over `window`, by its id. */
+export async function ohlcChart(coinId: string, window: ChartWindow, options: ToolOptions): Promise<string> {
+  const { days, vs } = window;
   const params = { vs_currency: vs, days };
-  if (kind === "ohlc") {
-    const payload = await getJson({ path: `/coins/${coinId}/ohlc`, params, schema: OhlcResponse }, options.apiKey, options);
-    return formatOhlc(payload, `${coinId} ${vs} ${days}d`);
-  }
-  const path = coinId ? `/coins/${coinId}/market_chart` : `/coins/${platform}/contract/${address}/market_chart`;
-  const title = coinId ? `${coinId} ${vs} ${days}d` : `${platform}:${address} ${vs} ${days}d`;
-  const payload = await getJson({ path, params, schema: ChartResponse }, options.apiKey, options);
-  return formatChart(payload, title, series);
+  const payload = await getJson({ path: `/coins/${coinId}/ohlc`, params, schema: OhlcResponse }, options.apiKey, options);
+  return formatOhlc(payload, `${coinId} ${vs} ${days}d`);
 }
 
-export async function trendingTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+/** A coin's price history over `window`: the `series` it names, comma separated. */
+export async function priceChart(ref: CoinRef, window: ChartWindow, series: string, options: ToolOptions): Promise<string> {
+  const { days, vs } = window;
+  const params = { vs_currency: vs, days };
+  const path = "id" in ref ? `/coins/${ref.id}/market_chart` : `/coins/${ref.platform}/contract/${ref.address}/market_chart`;
+  const subject = "id" in ref ? ref.id : `${ref.platform}:${ref.address}`;
+  const payload = await getJson({ path, params, schema: ChartResponse }, options.apiKey, options);
+  return formatChart(payload, `${subject} ${vs} ${days}d`, series);
+}
+
+/** The coins, NFTs and categories trending in the last 24 hours, `limit` rows a section. */
+export async function trending(limit: number, options: ToolOptions): Promise<string> {
   const payload = await getJson({ path: "/search/trending", params: {}, schema: TrendingResponse }, options.apiKey, options);
-  return formatTrending(payload, rowLimit(arguments_));
+  return formatTrending(payload, limit);
 }
 
 export type CoinMatch = {
@@ -507,27 +421,23 @@ export type CoinPrice = {
   updated_at: number | null;
 };
 
-function finite(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
 export async function searchCoins(query: string, options: ToolOptions): Promise<CoinMatch[]> {
-  const text = query.trim();
-  if (!text) {
+  const stripped = query.trim();
+  if (!stripped) {
     throw new CoinGeckoError("query is required");
   }
-  const payload = await getJson({ path: "/search", params: { query: text }, schema: SearchResponse }, options.apiKey, options);
+  const payload = await getJson({ path: "/search", params: { query: stripped }, schema: SearchResponse }, options.apiKey, options);
   const matches: CoinMatch[] = [];
   for (const row of (payload.coins ?? []).slice(0, LIST_CAP)) {
-    if (typeof row.id !== "string" || !row.id) {
+    if (!row.id) {
       continue;
     }
     matches.push({
       id: row.id,
-      symbol: String(row.symbol ?? "").toUpperCase(),
-      name: String(row.name ?? row.id),
-      market_cap_rank: finite(row.market_cap_rank),
-      thumb: typeof row.thumb === "string" ? row.thumb : "",
+      symbol: (row.symbol ?? "").toUpperCase(),
+      name: row.name ?? row.id,
+      market_cap_rank: row.market_cap_rank ?? null,
+      thumb: row.thumb ?? "",
     });
   }
   return matches;
@@ -546,9 +456,8 @@ export async function simplePrices(ids: string[], options: ToolOptions): Promise
   const payload = await getJson({ path: "/simple/price", params, schema: PricesResponse }, options.apiKey, options);
   const prices: Record<string, CoinPrice> = {};
   for (const [id, row] of Object.entries(payload)) {
-    const usd = finite(row.usd);
-    if (usd !== null) {
-      prices[id] = { usd, change_24h: finite(row.usd_24h_change), updated_at: finite(row.last_updated_at) };
+    if (row.usd !== null && row.usd !== undefined) {
+      prices[id] = { usd: row.usd, change_24h: row.usd_24h_change ?? null, updated_at: row.last_updated_at ?? null };
     }
   }
   return prices;
@@ -570,10 +479,11 @@ export function formatPrices(ids: string[], prices: Record<string, CoinPrice>): 
   return rows.length ? rows.join("\n") : "no results";
 }
 
-export async function pricesTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+/** The USD quotes of the coins a comma list of CoinGecko ids names, each id once. */
+export async function prices(idList: string, options: ToolOptions): Promise<string> {
   const ids = [
     ...new Set(
-      argStr(arguments_, "ids")
+      idList
         .split(",")
         .map((part) => part.trim().toLowerCase())
         .filter(Boolean),
@@ -586,27 +496,4 @@ export async function pricesTool(arguments_: Record<string, unknown>, options: T
     throw new CoinGeckoError(`ids must list at most ${PRICES_IDS_MAX} coins`);
   }
   return formatPrices(ids, await simplePrices(ids, options));
-}
-
-const HANDLERS: Record<string, (arguments_: Record<string, unknown>, options: ToolOptions) => Promise<string>> = {
-  search: searchTool,
-  coin: coinTool,
-  prices: pricesTool,
-  new: newTool,
-  movers: moversTool,
-  supply: supplyTool,
-  chart: chartTool,
-  trending: trendingTool,
-};
-
-export async function callTool(
-  name: string,
-  arguments_: Record<string, unknown>,
-  options: ToolOptions,
-): Promise<string> {
-  const handler = HANDLERS[name];
-  if (!handler) {
-    throw new CoinGeckoError(`unknown CoinGecko tool ${name}`);
-  }
-  return handler(arguments_, options);
 }

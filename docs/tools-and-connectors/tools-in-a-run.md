@@ -80,8 +80,12 @@ port, `http://127.0.0.1:<9300 + slot>`, and leaves Chrome running
 
 ### Schemas
 
-Every tool, native or connector, declares a JSON Schema. Before a
-schema reaches the model, the orchestrator changes it:
+Every tool, native or connector, declares a JSON Schema. A tool whose
+code declares its parameters in TypeBox, native or connector, is
+offered the JSON Schema they serialise to, with a choice among
+constants of one type (a union of literals) offered as `{ type, enum }`
+beside the choice's own `description`. Before a schema reaches the
+model, the orchestrator changes it:
 
 - `format` is removed from optional and nullable properties, nested
   objects and array items included.
@@ -93,6 +97,35 @@ schema reaches the model, the orchestrator changes it:
 Before a connector tool is called, an empty or blank string is
 dropped when its key is optional on the tool's schema, nested objects
 included. An empty string for a required key is sent as is.
+
+A tool schema whose `type`, `description`, `format`, `required`,
+`properties`, `items`, `prefixItems`, `anyOf`, `oneOf` or `allOf`
+holds, at any depth, what JSON Schema does not allow there is refused
+where it enters: a connector manifest, an admin's tool edit and a
+script's parameters are rejected, and a remote server's tool is listed
+with an empty object schema.
+
+### Arguments
+
+A call's arguments are the JSON object the model wrote, empty when it
+wrote none; any other value is refused. A native tool declares its
+parameters once, and that declaration is both the schema the model is
+offered and the decode its arguments pass before the handler runs:
+
+- An optional argument sent as `null` is left out.
+- A required argument left out is refused as `<name> is required`.
+- An argument of another type, outside the range its schema states,
+  or not one of the values its schema lists, is refused naming it by
+  its JSON pointer, such as `/max_steps: must be <= 100`.
+
+A refused call does nothing. An argument the tool hands on to the part
+of the orchestrator that reads it, such as a record's `where`, `id`
+and `body`, a routine's timing, or a script's `parameters` and
+`arguments`, is taken as any JSON value and refused there in that
+part's words. A timeout the tool keeps within its range, `shell`'s
+`timeout_seconds` and `code_task`'s `timeout_minutes`, is read as a
+whole number, cut to the range, and its default when it is not a
+number.
 
 ### Handlers
 
@@ -108,8 +141,9 @@ A handler takes four parameters and returns a string:
   tracking for cancels, the browser start and its activity, the
   agent's DevTools relay, the repository token refresh before a
   command, and the secret store;
-- the call: its id, name, and arguments, and the exit code and
-  metadata the handler reports for it.
+- the call: its id, name, and arguments, decoded as its parameters
+  declare them, and the exit code and metadata the handler reports
+  for it.
 
 A handler that throws becomes the result `ERROR: <message>`. The full
 error goes to the operational log.

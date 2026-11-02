@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { JsonObject } from "../../src/lib/json.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import { McpDisconnectedError, McpError } from "../../src/mcp/errors.js";
 import {
@@ -11,6 +12,7 @@ import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { serverRow, connectionRow } from "../helpers/servers.js";
 import { MemoryMcpDatabase, storedTool } from "../helpers/mcp-database.js";
 import type { McpConnectionRow } from "../../src/db/mcp.js";
+import type { ToolInputSchema } from "../../src/db/schema/index.js";
 
 const masterKey = Buffer.from(HEX_MASTER_KEY, "hex");
 
@@ -19,7 +21,7 @@ function listed(
     remote_name: string;
     namespaced_name: string;
     description: string;
-    input_schema: Record<string, unknown>;
+    input_schema: ToolInputSchema;
   }> = {},
 ) {
   return {
@@ -37,7 +39,7 @@ function connection(overrides: Partial<McpConnectionRow> = {}): McpConnectionRow
 
 function call(args: {
   tool?: string;
-  arguments?: Record<string, unknown>;
+  arguments?: JsonObject;
   connection?: McpConnectionRow;
   tools?: Array<ReturnType<typeof listed>>;
   mcp?: (remoteName: string, arguments_: Record<string, unknown>) => Promise<string>;

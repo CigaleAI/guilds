@@ -4,6 +4,7 @@ import { decodeMasterKey } from "../../src/config/index.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import type { ConnectorRow } from "../../src/db/connectors.js";
 import type { McpConnectionRow } from "../../src/db/mcp.js";
+import type { JsonObject, JsonValue } from "../../src/lib/json.js";
 import { lookupProperties, settingsComplete, validateSettings } from "../../src/connectors/settings.js";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
@@ -24,6 +25,9 @@ import { loadManifest, ManifestError } from "../../src/connectors/manifest.js";
 import { ConnectorRegistry, ConnectorRegistryError } from "../../src/connectors/registry.js";
 import { CORE_STATE_KEYS } from "../../src/state/index.js";
 import { ConnectorError, type ConnectorContext, type ConnectorTool, type RemoteSession } from "../../src/connectors/types.js";
+import { adapterTool, toolsAdapter } from "../../src/connectors/tools.js";
+import { offeredParameters } from "../../src/lib/tool-schema.js";
+import { Type } from "typebox";
 import drive from "../../src/connectors/drive/adapter.js";
 import opensea from "../../src/connectors/opensea/adapter.js";
 import { McpError } from "../../src/mcp/errors.js";
@@ -37,6 +41,7 @@ import { serverRow } from "../helpers/servers.js";
 import { connectionRow } from "../helpers/servers.js";
 import { MemoryMcpDatabase } from "../helpers/mcp-database.js";
 import { restoreConnectorsAfterEach, runConnectors } from "../helpers/installed.js";
+import { emptyRunState } from "../helpers/state.js";
 
 restoreConnectorsAfterEach();
 
@@ -74,10 +79,10 @@ const FOLDERS = readdirSync(CONNECTORS_DIR).filter((name) => statSync(path.join(
 test("every connector folder holds a valid manifest named after it, and the core list has it", () => {
   assert.equal(FOLDERS.length, CONNECTORS.entries().length);
   for (const folder of FOLDERS) {
-    const raw = JSON.parse(readFileSync(path.join(CONNECTORS_DIR, folder, "connector.json"), "utf8")) as unknown;
-    const manifest = loadManifest(raw, folder);
+    const raw: JsonValue = JSON.parse(readFileSync(path.join(CONNECTORS_DIR, folder, "connector.json"), "utf8"));
     const entry = CONNECTORS.bySlug(folder);
     assert.ok(entry, folder);
+    const manifest = loadManifest(raw, folder, entry.adapter.tools);
     assert.equal(entry.id, `mcp_${folder}`);
     assert.deepEqual(entry.manifest, manifest);
     assert.ok(manifest.endpoint || existsSync(path.join(CONNECTORS_DIR, folder, "adapter.ts")) || !manifest.tools?.length, folder);
@@ -100,7 +105,7 @@ test("a manifest declares a key or a client of its own within the rules", () => 
     endpoint: undefined,
   });
   assert.equal(shipped.auth.oauth?.provider, "google-connectors", "a provider brings its own discovery");
-  const refused = (raw: Record<string, unknown>, pattern: RegExp) =>
+  const refused = (raw: JsonObject, pattern: RegExp) =>
     assert.throws(() => loadManifest(raw), (error: unknown) => error instanceof ManifestError && pattern.test(error.message));
   refused(
     endpointManifest("acme", { auth: { kind: "oauth", oauth: { strategy: "dynamic" }, instance: { own: true } } }),
@@ -149,7 +154,7 @@ test("manifests keep their tools, endpoints, settings, and state within the rule
 });
 
 test("an endpoint's headers are custom headers, each named once and apart from the credential's", () => {
-  const withHeaders = (headers: Record<string, string>, auth: Record<string, unknown> = { kind: "token" }) =>
+  const withHeaders = (headers: Record<string, string>, auth: JsonObject = { kind: "token" }) =>
     endpointManifest("portal", { endpoint: { url: "https://mcp.example.com/mcp", headers }, auth });
   assert.deepEqual(loadManifest(withHeaders({ "X-Toolsets": "a,b" })).endpoint?.headers, { "X-Toolsets": "a,b" });
   for (const [headers, auth] of [
@@ -212,6 +217,63 @@ test("the registry refuses an entry that cannot run", () => {
   const notion = CONNECTORS.bySlug("notion")!;
   assert.throws(() => new ConnectorRegistry([{ ...notion, adapter: { state: async () => 1 } }]), /no state in its manifest/);
   assert.throws(() => CONNECTORS.with([x]), /registered twice/);
+});
+
+/** A tool `search` that answers with the query it was given. */
+const ECHO_SEARCH = adapterTool({
+  name: "search",
+  parameters: Type.Object({ query: Type.String(), limit: Type.Optional(Type.Integer()) }),
+  run: async ({ query, limit }) => `${query} ${limit ?? "-"}`,
+});
+
+test("a tool the code runs takes its input schema from its parameters; an endpoint tool carries its own", () => {
+  const tavily = CONNECTORS.bySlug("tavily")!;
+  const [search] = tavily.adapter.tools ?? [];
+  assert.ok(search);
+  assert.deepEqual(tavily.manifest.tools?.find((tool) => tool.name === "search")?.input_schema, offeredParameters(search.parameters));
+  const source = (tools: JsonValue[]): JsonObject => ({ ...endpointManifest("acme"), endpoint: undefined, tools });
+  const plain = { name: "plain", description: "Plain.", input_schema: { type: "object", properties: {} } };
+  assert.deepEqual(loadManifest(source([{ name: "search", description: "Search.", mutating: false }, plain]), "acme", [ECHO_SEARCH]).tools, [
+    {
+      name: "search",
+      description: "Search.",
+      mutating: false,
+      input_schema: { type: "object", properties: { query: { type: "string" }, limit: { type: "integer" } }, required: ["query"] },
+    },
+    plain,
+  ]);
+  const refused = (raw: JsonObject, pattern: RegExp) =>
+    assert.throws(() => loadManifest(raw, "acme", [ECHO_SEARCH]), (error: unknown) => error instanceof ManifestError && pattern.test(error.message));
+  refused(source([{ ...plain, name: "search" }]), /^connector acme tool search lists an input_schema; its code declares its parameters$/);
+  refused(source([{ name: "plain", description: "Plain." }]), /^connector acme tool plain has no input_schema, and no code runs it$/);
+  refused(source([{ ...plain, input_schema: { type: "string" } }]), /^connector acme tool plain input schema must be an object$/);
+});
+
+test("the registry refuses code that runs a tool a connector without an endpoint does not list", () => {
+  const tavily = CONNECTORS.bySlug("tavily")!;
+  const unlisted = adapterTool({ name: "other", parameters: Type.Object({}), run: async () => "" });
+  assert.throws(
+    () => new ConnectorRegistry([{ ...tavily, adapter: toolsAdapter([...tavily.adapter.tools!, unlisted]) }]),
+    /connector tavily runs tool other, which its manifest does not list$/,
+  );
+  const drive = CONNECTORS.bySlug("drive")!;
+  assert.equal(drive.manifest.tools, undefined);
+  assert.ok(drive.adapter.tools?.length, "the endpoint lists the tools Drive's code runs");
+  assert.doesNotThrow(() => new ConnectorRegistry([drive]));
+});
+
+test("a tools adapter decodes each call against its tool's parameters and refuses another name", async () => {
+  const adapter = toolsAdapter([ECHO_SEARCH]);
+  const ctx = contextOf();
+  assert.equal(await adapter.call!("search", { query: "q", limit: null }, {}, ctx), "q -");
+  assert.equal(await adapter.call!("search", { query: "q", limit: 3 }, {}, ctx), "q 3");
+  const refused = (status: number, pattern: RegExp) => (error: unknown) =>
+    error instanceof ConnectorError && error.status === status && pattern.test(error.message);
+  await assert.rejects(adapter.call!("search", {}, {}, ctx), refused(422, /^query is required$/));
+  await assert.rejects(adapter.call!("search", { query: 1 }, {}, ctx), refused(422, /^\/query: /));
+  await assert.rejects(adapter.call!("other", {}, {}, ctx), refused(404, /^unknown tool other$/));
+  const remote = toolsAdapter([ECHO_SEARCH], { call: async (name) => `remote ${name}` });
+  assert.equal(await remote.call!("other", {}, {}, ctx), "remote other");
 });
 
 test("the registry finds a server row by id, then by slug", () => {
@@ -454,7 +516,7 @@ test("a connector's prompt guidance renders only when its tools are offered", ()
   try {
     assert.deepEqual(connectorGuidance(["guided"]), ["Cite the page you read."]);
     assert.deepEqual(connectorGuidance(["notion"]), []);
-    const prompt = composeSystemPrompt("Be brief.", "Work.", {}, "", undefined, connectorGuidance(["guided"]));
+    const prompt = composeSystemPrompt("Be brief.", "Work.", emptyRunState(), "", undefined, connectorGuidance(["guided"]));
     assert.match(prompt, /<guidelines>\nBe brief\.\n\nCite the page you read\.\n<\/guidelines>/);
   } finally {
     installConnectors([]);
@@ -469,7 +531,9 @@ test("an integration lists the connectors whose manifests require it", () => {
 
 test("settings are checked against the manifest's schema", () => {
   const schema = QUOTES.manifest.settings_schema!;
-  assert.deepEqual(validateSettings(schema, { symbols: [{ id: "bitcoin" }] }), { symbols: [{ id: "bitcoin" }] });
+  assert.doesNotThrow(() => validateSettings(schema, { symbols: [{ id: "bitcoin", name: "Bitcoin" }] }));
+  assert.throws(() => validateSettings(schema, "symbols"), /settings must be object/);
+  assert.throws(() => validateSettings(schema, { symbols: "bitcoin" }), /settings.symbols must be array/);
   assert.throws(() => validateSettings(schema, {}), /settings.symbols is required/);
   assert.throws(() => validateSettings(schema, { symbols: [] }), /at least 1/);
   assert.throws(() => validateSettings(schema, { symbols: [{ id: "Bad Id" }] }), /must match/);

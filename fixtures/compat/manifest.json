@@ -11,7 +11,7 @@
       "path": "adapters/twitterapiio.json",
       "source": "src/adapters/twitterapiio.ts formatSearch",
       "generator_version": "1",
-      "sha256": "6785bc63f049cddb28d8773842dc9d2be47fd92054c0f21eb5780bdf457d21bb"
+      "sha256": "30fa4414fb18132a9140c8fa49956b4ce4d84f6549d6998481ff669093795fcb"
     },
     {
       "path": "bindings/resolution.json",
@@ -71,13 +71,13 @@
       "path": "prompts/compose.txt",
       "source": "src/prompts composeSystemPrompt",
       "generator_version": "1",
-      "sha256": "2d11c771e32717f731ac0556bc445864b4fcc4106fff447f360759e3acee47cd"
+      "sha256": "6b01c29b019035dd21bfd7e894f80c4a5318fdbb1314994e708436bfc78ee53e"
     },
     {
       "path": "prompts/hashes.json",
       "source": "src/prompts promptHash",
       "generator_version": "1",
-      "sha256": "de005e59d808420a8fdcb66281b4b0fb2bd401dd3727e095eb6b4ee4bb42f8ad"
+      "sha256": "97b0c2b512cfe87808049db551a184f55057cfb6447537df99dcc8d7b0db9f47"
     },
     {
       "path": "prompts/hydrate.json",
@@ -137,7 +137,7 @@
       "path": "state/snapshot.json",
       "source": "src/state collectRunState",
       "generator_version": "1",
-      "sha256": "b3e6e176422c7cf5490daf2dccad5736256d3b45c1c00b46abbb7060fdf569df"
+      "sha256": "da60330afef10f7b4f53fd4a7ebe667e1cf2d1bddaa26c035257606d9cedb8da"
     },
     {
       "path": "views/run-message.json",

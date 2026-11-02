@@ -1,3 +1,4 @@
+import type { AgentView } from "./types.js";
 import { loadAgentView } from "./view.js";
 import { requireVisibleAgent } from "../agents/access.js";
 import {
@@ -21,7 +22,7 @@ export type AgentPageServices = AgentServices & { mcp: McpPool | null };
 async function loadAgentPageView(
   services: AgentPageServices,
   row: AgentRow,
-): Promise<Record<string, unknown>> {
+): Promise<AgentView> {
   const generating = services.generation?.isAgentBusy(row.id) ?? false;
   return loadAgentView(services.db, services.mcp, row, generating);
 }
@@ -31,7 +32,7 @@ export async function loadAgentPage(
   services: AgentPageServices,
   agentId: string,
   userId: string,
-): Promise<Record<string, unknown>> {
+): Promise<AgentView> {
   return loadAgentPageView(services, await requireVisibleAgent(services.db, agentId, userId));
 }
 
@@ -41,7 +42,7 @@ export async function createAgentFromPage(
   guildId: string,
   user: UserRow,
   request: AgentRequest,
-): Promise<Record<string, unknown>> {
+): Promise<AgentView> {
   const guild = await requireVisibleGuild(services.db, guildId, user.id);
   const operator = await loadOperatorActor(services.db, user, { orgId: guild.org_id });
   return loadAgentPageView(services, await createAgent(services, guild, operator, request));
@@ -53,7 +54,7 @@ export async function reconfigureAgentFromPage(
   agentId: string,
   userId: string,
   patch: AgentSettingsPatch,
-): Promise<Record<string, unknown>> {
+): Promise<AgentView> {
   const agent = await requireVisibleAgent(services.db, agentId, userId);
   return loadAgentPageView(services, await reconfigureAgent(services, agent, userId, patch));
 }
@@ -64,7 +65,7 @@ export async function moveAgentToMachineFromPage(
   agentId: string,
   userId: string,
   machineId: string | null | undefined,
-): Promise<Record<string, unknown>> {
+): Promise<AgentView> {
   const agent = await requireVisibleAgent(services.db, agentId, userId);
   return loadAgentPageView(services, await moveAgentToMachine(services, agent, userId, machineId));
 }

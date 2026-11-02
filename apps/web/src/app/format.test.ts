@@ -74,5 +74,5 @@ test("a cost reads in dollars: none, under a cent to four decimals, else to two"
   assert.equal(formatCost(0), "$0");
   assert.equal(formatCost(0.0031), "$0.0031");
   assert.equal(formatCost(0.12), "$0.12");
-  assert.equal(formatCost("x"), "");
+  assert.equal(formatCost(Number.NaN), "");
 });

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { CONTEXT_HISTORY_LIMIT } from "../../src/groupchat/history.js";
+import type { CatalogColumn } from "../../src/artifacts/columns.js";
+import type { RoutedMessage } from "../../src/groupchat/router.js";
 import { STATE_PREFIX, attachState } from "../../src/prompts/index.js";
 import { collectRunState } from "../../src/state/index.js";
 import { loadJsonFixture } from "../helpers/fixtures.js";
@@ -27,17 +29,8 @@ class FakeNotes {
   }
 }
 
-function chatRow(seq: number, content: string): Record<string, unknown> {
-  return {
-    id: seq,
-    seq,
-    author_type: "user",
-    author_name: "ada",
-    author_agent_id: null,
-    content,
-    tagged_names: [],
-    tagged_agent_ids: [],
-  };
+function chatRow(seq: number, content: string): RoutedMessage {
+  return { seq, author_type: "user", author_name: "ada", content, tagged_names: [] };
 }
 
 test("collect_run_state matches the R0 fixture", () => {
@@ -58,7 +51,7 @@ test("collect_run_state matches the R0 fixture", () => {
     operators: [{ user_id: "user_ada", name: "ada", role: "admin" }],
     historyRows: rows,
     guildAbout: "weekly synthesis",
-    collections: [{ name: "papers", purpose: "reading list", count: 3 }],
+    collections: [{ name: "papers", purpose: "reading list", access: "read", scope: "guild", display_path: "", columns: [] }],
     secrets: [{ id: "sec_1", name: "WALLET_PRIVATE_KEY", description: "signs sends" }],
     scripts: [
       {
@@ -76,23 +69,23 @@ test("collect_run_state matches the R0 fixture", () => {
 });
 
 test("collect_run_state lists each collection with its access, display path, and columns", () => {
-  const columns = [
+  const columns: CatalogColumn[] = [
     { name: "name", type: "text", required: true, unique: true, description: "token name" },
     { name: "status", type: "text", values: ["new", "done"], description: "queue state" },
   ];
   const state = collectRunState(new FakeNotes([], []), "acme", "research", "researcher", {
-    members: [{ name: "researcher" }],
+    members: [{ name: "researcher", focus: "" }],
     historyRows: [],
     collections: [
       { name: "metas", purpose: "tokens", access: "write", scope: "guild", display_path: "org/org_1/collections/metas", columns },
-      { name: "loose", purpose: "free-form", access: "read", scope: "org", columns: [] },
-      { name: "…", purpose: "more collections exist", truncated: true, columns: [] },
+      { name: "loose", purpose: "free-form", access: "read", scope: "org", display_path: "", columns: [] },
+      { truncated: true, name: "…", purpose: "more collections exist", access: "read", scope: "org", display_path: "", columns: [] },
     ],
   });
   assert.deepEqual(state.collections, [
     { name: "metas", purpose: "tokens", access: "write", scope: "guild", display_path: "org/org_1/collections/metas", columns },
     { name: "loose", purpose: "free-form", access: "read", scope: "org", columns: [] },
-    { name: "…", purpose: "more collections exist", columns: [], truncated: true },
+    { name: "…", purpose: "more collections exist", access: "read", scope: "org", columns: [], truncated: true },
   ]);
 });
 
@@ -104,7 +97,7 @@ test("collect_run_state always lists collections", () => {
   const state = collectRunState(notes, "acme", "research", "researcher", {
     members: [],
     historyRows: [],
-    collections: [{ name: "papers", purpose: "reading list" }],
+    collections: [{ name: "papers", purpose: "reading list", access: "read", scope: "guild", display_path: "", columns: [] }],
     now: new Date("2026-09-13T09:00:12.000Z"),
   });
   assert.deepEqual(state, fixture.without_database);
@@ -112,7 +105,7 @@ test("collect_run_state always lists collections", () => {
 
 test("collect_run_state uses supplied max_tool_calls", () => {
   const state = collectRunState(new FakeNotes([], []), "acme", "research", "researcher", {
-    members: [{ name: "researcher" }],
+    members: [{ name: "researcher", focus: "" }],
     historyRows: [],
     maxToolCalls: 12,
   });
@@ -121,7 +114,7 @@ test("collect_run_state uses supplied max_tool_calls", () => {
 
 test("collect_run_state stamps the UTC clock", () => {
   const state = collectRunState(new FakeNotes([], []), "acme", "research", "researcher", {
-    members: [{ name: "researcher" }],
+    members: [{ name: "researcher", focus: "" }],
     historyRows: [],
     now: new Date("2026-09-17T19:14:00.500Z"),
   });

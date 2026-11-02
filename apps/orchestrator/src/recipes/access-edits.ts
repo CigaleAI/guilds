@@ -1,6 +1,4 @@
-import { isPlainRecord } from "../db/json.js";
 import { RecipeError } from "./errors.js";
-import { asBool, asString, assertObject } from "./parse-fields.js";
 import type { RecipeConnection, RecipeDocument } from "../db/schema/index.js";
 
 // The operator's cuts to a recipe's connector access: a tool turned off for a role, or a
@@ -101,38 +99,6 @@ export function applyAccessEdits(recipe: RecipeDocument, edits: AccessEdit[]): A
     applyAccessEdit(recipe, edit);
   }
   return operatorAccessCuts(recipe);
-}
-
-function parseAccessEdit(item: unknown, index: number): AccessEdit {
-  const path = `edits[${index}]`;
-  const row = assertObject(item, path);
-  const action = asString(row.action, `${path}.action`);
-  const server = asString(row.server, `${path}.server`).trim();
-  if (!server) {
-    throw new RecipeError(`${path}.server is required`);
-  }
-  if (action === "remove_connection") {
-    return { action, server };
-  }
-  if (action !== "set_tool") {
-    throw new RecipeError(`${path}.action must be set_tool or remove_connection`);
-  }
-  return {
-    action,
-    server,
-    role: asString(row.role, `${path}.role`).trim(),
-    tool: asString(row.tool, `${path}.tool`).trim(),
-    enabled: asBool(row.enabled, `${path}.enabled`),
-  };
-}
-
-/** The edits of a request: a list, or `{ edits }`. */
-export function parseAccessEdits(value: unknown): AccessEdit[] {
-  const raw = Array.isArray(value) ? value : isPlainRecord(value) ? value.edits : undefined;
-  if (!Array.isArray(raw)) {
-    throw new RecipeError("edits must be an array");
-  }
-  return raw.map(parseAccessEdit);
 }
 
 export function formatAccessCutsMessage(cuts: AccessCut[]): string {

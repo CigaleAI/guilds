@@ -21,16 +21,10 @@ import { deleteInstanceKey } from "../db/orgs.js";
 import type { Queryable } from "../db/pg.js";
 
 /** A connector the box installed from a registry, beside the newest version its index offers. */
-export type InstalledConnector = {
-  slug: string;
-  display_name: string;
-  source: string;
-  version: string;
-  verified: boolean;
-  experimental: boolean;
-  enabled: boolean;
-  latest: string | null;
-};
+export type InstalledConnector = Pick<
+  LoadedConnector,
+  "slug" | "display_name" | "source" | "version" | "verified" | "experimental" | "enabled"
+> & { latest: string | null };
 
 function entriesFor(index: RegistryIndex, slug: string): RegistryConnectorEntry[] {
   return index.connectors.filter((entry) => entry.slug === slug);
@@ -155,13 +149,13 @@ export async function installConnector(
   }
 }
 
-async function registryRow(db: Queryable, slug: string): Promise<Record<string, unknown>> {
+async function registryRow(db: Queryable, slug: string): Promise<LoadedConnector> {
   const row = await getMcpServerBySlug(db, slug, null);
   if (row === null || row.owner_org_id) {
     throw new RegistryNotFoundError(`connector ${slug} is not installed`);
   }
   if (row.source !== "registry") {
-    throw new RegistryError(`connector ${slug} is ${String(row.source)}, not a registry install`, 409);
+    throw new RegistryError(`connector ${slug} is ${row.source}, not a registry install`, 409);
   }
   return row;
 }
@@ -188,9 +182,9 @@ export async function updateConnectors(
     : await listServers(db, { owner: "platform", source: "registry" });
   const moved: ConnectorMove[] = [];
   for (const row of rows) {
-    const slug = String(row.slug);
+    const { slug } = row;
     const latest = pickEntry(entriesFor(index, slug));
-    const current = String(row.version ?? "");
+    const current = row.version;
     if (latest === null || (current && compareVersions(latest.version, current) <= 0)) {
       continue;
     }
@@ -198,7 +192,7 @@ export async function updateConnectors(
     const pkg = await client.connectorPackage(entry);
     const code = await placeCode(client, entry, pkg, roots.codeTier);
     await updateConnector(db,
-      String(row.id),
+      row.id,
       {
         manifest: pkg.manifest,
         version: entry.version,
@@ -208,7 +202,7 @@ export async function updateConnectors(
       },
       new Date(),
     );
-    await expireMcpTools(db, String(row.id));
+    await expireMcpTools(db, row.id);
     if (roots.connectors) {
       removeCodePackage(roots.connectors, slug, code ? entry.version : null);
     }
@@ -220,7 +214,7 @@ export async function updateConnectors(
 /** Removes a registry connector with its logins, the bindings that name it, the key it declared of its own, and its code on disk. */
 export async function removeConnector(db: Queryable, slug: string, connectorsRoot: string | null = null): Promise<void> {
   const row = await registryRow(db, slug);
-  await deleteConnector(db, String(row.id));
+  await deleteConnector(db, row.id);
   await deleteInstanceKey(db, connectorIntegrationId(slug));
   if (connectorsRoot) {
     removeCodePackage(connectorsRoot, slug);
@@ -232,16 +226,15 @@ export async function listConnectors(db: Queryable, index: RegistryIndex | null)
   const rows = await listServers(db, { owner: "platform" });
   return rows
     .map((row) => {
-      const slug = String(row.slug);
-      const latest = index ? pickEntry(entriesFor(index, slug)) : null;
+      const latest = index ? pickEntry(entriesFor(index, row.slug)) : null;
       return {
-        slug,
-        display_name: String(row.display_name ?? slug),
-        source: String(row.source),
-        version: String(row.version ?? ""),
-        verified: row.verified === true,
-        experimental: row.experimental === true,
-        enabled: row.enabled !== false,
+        slug: row.slug,
+        display_name: row.display_name,
+        source: row.source,
+        version: row.version,
+        verified: row.verified,
+        experimental: row.experimental,
+        enabled: row.enabled,
         latest: row.source === "registry" && latest ? latest.version : null,
       };
     })

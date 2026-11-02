@@ -1,4 +1,5 @@
 import type { Manifest } from "../db/schema/index.js";
+import type { JsonValue } from "../lib/json.js";
 import { loadManifest, serverIdOf } from "./manifest.js";
 import type { Adapter } from "./types.js";
 import type { LoadedConnector } from "./servers.js";
@@ -29,11 +30,12 @@ export class ConnectorRegistryError extends Error {
 
 /**
  * An entry for a connector folder shipped in the image, by core or by an extension: its
- * `connector.json`, checked against the folder name, its adapter, and who publishes it.
+ * `connector.json`, checked against the folder name and given the input schemas of the tools its
+ * adapter runs, its adapter, and who publishes it.
  */
-export function folderEntry(raw: unknown, adapter: Adapter, folder: string, publisher = "guilds"): ConnectorEntry {
+export function folderEntry(raw: JsonValue, adapter: Adapter, folder: string, publisher = "guilds"): ConnectorEntry {
   const name = folder.replace(/\/+$/, "").split("/").pop() ?? "";
-  const manifest = loadManifest(raw, name);
+  const manifest = loadManifest(raw, name, adapter.tools);
   return {
     id: serverIdOf(manifest.slug),
     manifest,
@@ -50,8 +52,26 @@ function listsTools(entry: ConnectorEntry): boolean {
   return Boolean(entry.adapter.list) || Boolean(entry.manifest.tools?.length);
 }
 
+/**
+ * Why a tool the entry's code runs is never offered, or null when each one is: a connector with
+ * no endpoint offers the tools its manifest lists, so its manifest lists every tool its code runs.
+ * An endpoint's own listing may name the tools of a connector that has one.
+ */
+function unlistedToolProblem(entry: ConnectorEntry): string | null {
+  const { manifest, adapter } = entry;
+  if (manifest.endpoint) {
+    return null;
+  }
+  const unlisted = adapter.tools?.find((tool) => !manifest.tools?.some((listed) => listed.name === tool.name));
+  return unlisted === undefined ? null : `connector ${manifest.slug} runs tool ${unlisted.name}, which its manifest does not list`;
+}
+
 function checkEntry(entry: ConnectorEntry): void {
   const { manifest, adapter } = entry;
+  const toolProblem = unlistedToolProblem(entry);
+  if (toolProblem !== null) {
+    throw new ConnectorRegistryError(toolProblem);
+  }
   if (!manifest.endpoint && listsTools(entry) && !adapter.call) {
     throw new ConnectorRegistryError(`connector ${manifest.slug} lists tools with no endpoint and no call`);
   }

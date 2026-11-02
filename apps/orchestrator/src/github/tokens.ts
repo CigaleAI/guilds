@@ -15,7 +15,7 @@ import {
   type TokenPermissions,
   type TokenRepository,
 } from "./index.js";
-import { githubIdOf, githubRepositoriesOf } from "./repositories.js";
+import { githubIdOf, githubRepositoriesOf, type TokenScopedRepository } from "./repositories.js";
 
 /** A token closer than this to expiry is replaced before it is used again. */
 export const TOKEN_REFRESH_MS = 10 * 60 * 1000;
@@ -54,14 +54,15 @@ export type MintOptions = { app?: GithubAppConfig; fetch?: FetchFn; masterKey?: 
 /** A GitHub login, the repositories of it a token reaches, and the permissions it holds; none holds every one the installation grants. */
 export type RepositoryTokenRequest = {
   connection: McpConnectionRow;
-  repositories: Array<Record<string, unknown>>;
+  repositories: TokenScopedRepository[];
   permissions?: TokenPermissions;
 };
 
 /** A minted token, when it expires, and each repository's `owner/name` as GitHub names it now, by repository name. */
 export type RepositoryToken = { token: string; expiresAt: string; paths: Map<string, string> };
 
-type Item = { row: Record<string, unknown>; path: string };
+/** A repository a token is minted for, and its `owner/name` as the token request names it. */
+type Item = { row: TokenScopedRepository; path: string };
 
 type InstallationCall = {
   app: GithubAppConfig;
@@ -74,16 +75,16 @@ type InstallationCall = {
 function outOfReach(account: string, missing: Item[]): RepositoryAccessError {
   return new RepositoryAccessError(
     `the GitHub App installed for ${account} does not reach ${missing
-      .map((item) => `${String(item.row.name)} (${item.path})`)
+      .map((item) => `${item.row.name} (${item.path})`)
       .join(", ")}: give the App access to it on GitHub, or pick it again on the GitHub integration`,
   );
 }
 
-function repositoryItems(rows: Array<Record<string, unknown>>): Item[] {
+function repositoryItems(rows: TokenScopedRepository[]): Item[] {
   return rows.map((row) => {
-    const parsed = parseGithubUrl(String(row.url));
+    const parsed = parseGithubUrl(row.url);
     if (parsed === null) {
-      throw new RepositoryAccessError(`${String(row.name)} is not a GitHub repository URL`);
+      throw new RepositoryAccessError(`${row.name} is not a GitHub repository URL`);
     }
     return { row, path: `${parsed.owner}/${parsed.repository}` };
   });
@@ -117,8 +118,8 @@ async function identifyRepositories(call: InstallationCall, items: Item[]): Prom
  * repository is out of the App's reach, so that refusal names the repositories it does not
  * reach. Any other refusal stays as GitHub gave it.
  */
-async function explainRefusal(call: InstallationCall, items: Item[], error: unknown): Promise<unknown> {
-  if (!(error instanceof GithubError) || error.status !== 422) {
+async function explainRefusal(call: InstallationCall, items: Item[], error: GithubError): Promise<GithubError | RepositoryAccessError> {
+  if (error.status !== 422) {
     return error;
   }
   const reached = new Set(
@@ -138,6 +139,9 @@ async function mintScopedToken(call: InstallationCall, items: Item[], permission
       call.now,
     );
   } catch (error) {
+    if (!(error instanceof GithubError)) {
+      throw error;
+    }
     throw await explainRefusal(call, items, error);
   }
 }
@@ -192,14 +196,14 @@ export async function mintRepositoryToken(
   for (const item of new Set([...identified, ...adoptCurrentNames(items, minted.repositories)])) {
     await db.recordGithubRepository(
       String(request.connection.id),
-      { name: String(item.row.name), github_id: githubIdOf(item.row)!, url: String(item.row.url) },
+      { name: item.row.name, github_id: githubIdOf(item.row)!, url: item.row.url },
       now,
     );
   }
   return {
     token: minted.token,
     expiresAt: minted.expiresAt,
-    paths: new Map(items.map((item) => [String(item.row.name), item.path])),
+    paths: new Map(items.map((item) => [item.row.name, item.path])),
   };
 }
 

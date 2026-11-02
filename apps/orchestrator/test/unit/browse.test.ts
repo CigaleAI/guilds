@@ -5,8 +5,10 @@ import { BrowseModelError, FASTBROWSE_PINNED_ENV, fastbrowseEnv } from "../../sr
 import { formatBrowseResult, formatStep } from "../../src/browse/format.js";
 import { catalogCostUsd } from "../../src/llm/cost.js";
 import { logWriter } from "../../src/observability/log.js";
-import { browse, browseRequest, fieldsToOutputSchema } from "../../src/toolbox/browse.js";
+import type { JsonObject } from "../../src/lib/json.js";
+import { browse, BrowseParameters, browseRequest, fieldsToOutputSchema } from "../../src/toolbox/browse.js";
 import { ToolArgumentError } from "../../src/toolbox/errors.js";
+import { decodeToolArguments } from "../../src/toolbox/types.js";
 import { invokeTool } from "../../src/toolbox/index.js";
 import type { BrowseService } from "../../src/browse/service.js";
 import { costLine, runResult, stepResult as step } from "../helpers/browse.js";
@@ -38,9 +40,12 @@ function capturedLogs(work: () => void): Array<Record<string, unknown>> {
 
 // fastbrowseEnv
 
+/** Each pinned variable's value, by name. */
+const PINNED = new Map<string, string>(Object.entries(FASTBROWSE_PINNED_ENV));
+
 /** The variables of `env` that differ from their pinned value. */
 function routeOf(env: Record<string, string>): Record<string, string> {
-  return Object.fromEntries(Object.entries(env).filter(([name, value]) => FASTBROWSE_PINNED_ENV[name] !== value));
+  return Object.fromEntries(Object.entries(env).filter(([name, value]) => PINNED.get(name) !== value));
 }
 
 /** Asserts that `env` sets every pinned variable, and only those. */
@@ -55,7 +60,7 @@ test("the pinned environment blanks every key, endpoint, and model, routes Jev t
     }
   }
   for (const purpose of ["PLAN", "READ", "FIELD_TEXT", "SHORTCUT", "RECOVER", "COMPOSE", "VERIFY"]) {
-    assert.equal(FASTBROWSE_PINNED_ENV[`FASTBROWSE_LLM_MODEL_${purpose}`], "");
+    assert.equal(PINNED.get(`FASTBROWSE_LLM_MODEL_${purpose}`), "");
   }
   assert.equal(FASTBROWSE_PINNED_ENV.FASTBROWSE_DECISION_SOURCE, "typesafe");
   assert.equal(FASTBROWSE_PINNED_ENV.FASTBROWSE_JEV_SOURCE, "typesafe");
@@ -260,9 +265,14 @@ test("fields become a flat JSON Schema object with every field required", () => 
   );
 });
 
+/** The request of a `browse` call that sends `args`, decoded as the tool decodes them. */
+function requestOf(args: JsonObject) {
+  return browseRequest(decodeToolArguments(BrowseParameters, args));
+}
+
 test("no fields, null fields, and an empty object ask for no extraction", () => {
   assert.equal(fieldsToOutputSchema(undefined), null);
-  assert.equal(fieldsToOutputSchema(null), null);
+  assert.equal(requestOf({ task: "t", fields: null }).output, null);
   assert.equal(fieldsToOutputSchema({}), null);
 });
 
@@ -279,7 +289,7 @@ test("fields refuse a non-object, a bad name, a bad type, an extra key, a bad de
     { price: { type: "number", description: 4 } },
     tooMany,
   ]) {
-    assert.throws(() => fieldsToOutputSchema(fields), ToolArgumentError, JSON.stringify(fields));
+    assert.throws(() => requestOf({ task: "t", fields }), ToolArgumentError, JSON.stringify(fields));
   }
 });
 
@@ -329,7 +339,7 @@ test("a browse call refuses a missing task, a non-web start, a non-boolean autho
     { task: "t", max_seconds: 601 },
     { task: "t", max_seconds: "60" },
   ]) {
-    assert.throws(() => browseRequest(args), ToolArgumentError, JSON.stringify(args));
+    assert.throws(() => requestOf(args), ToolArgumentError, JSON.stringify(args));
   }
 });
 
@@ -410,6 +420,6 @@ test("browse refuses bad arguments before it wakes the browser", async () => {
     type: "function",
     function: { name: "browse", arguments: JSON.stringify({ task: "t", max_steps: 500 }) },
   });
-  assert.equal(message.content, "ERROR: max_steps must be an integer from 1 to 100");
+  assert.equal(message.content, "ERROR: /max_steps: must be <= 100");
   assert.equal(woke, false);
 });

@@ -2,6 +2,7 @@ import { parseColumns } from "../artifacts/columns.js";
 import { ArtifactError } from "../artifacts/errors.js";
 import { normalizeNoteKey } from "../artifacts/paths.js";
 import { COLLECTION_NAME_RE, PURPOSE_MAX, isAccessMode } from "../artifacts/types.js";
+import type { JsonObject, JsonValue } from "../lib/json.js";
 import { loadManifest, ManifestError, recipeManifestProblem } from "../connectors/manifest.js";
 import {
   SYSTEM_RESOLUTIONS,
@@ -38,7 +39,7 @@ import { builderAuthor, operatorAuthor, RECIPE_HINT_MAX, RECIPE_LIST_MAX, RECIPE
 // The sections of a recipe beside its roles: collections, notes, connections, secrets, external
 // setup cards, repositories, and the design record.
 
-function parseColumnsAt(value: unknown, path: string): CollectionColumn[] {
+function parseColumnsAt(value: JsonValue | undefined, path: string): CollectionColumn[] {
   try {
     return parseColumns(value ?? []);
   } catch (error) {
@@ -81,7 +82,7 @@ function parseCollectionGuild(value: unknown, scope: RecipeCollection["scope"], 
   return guild;
 }
 
-function parseCollectionAccess(row: Record<string, unknown>, path: string): Pick<RecipeCollection, "scope" | "guild" | "writers"> {
+function parseCollectionAccess(row: JsonObject, path: string): Pick<RecipeCollection, "scope" | "guild" | "writers"> {
   const scope = parseCollectionScope(row.scope, `${path}.scope`);
   const guild = parseCollectionGuild(row.guild, scope, `${path}.guild`);
   if (scope === "guild" && guild !== "write") {
@@ -132,7 +133,7 @@ function parseNoteGuild(value: unknown, level: RecipeNote["level"], path: string
 }
 
 /** A note's `guild` and `writers`, defaulting `guild` to what the note's level gives. A guild note takes guild write and no writers. */
-function parseNoteAccess(row: Record<string, unknown>, level: RecipeNote["level"], path: string): Pick<RecipeNote, "guild" | "writers"> {
+function parseNoteAccess(row: JsonObject, level: RecipeNote["level"], path: string): Pick<RecipeNote, "guild" | "writers"> {
   const guild = parseNoteGuild(row.guild, level, `${path}.guild`);
   const writers = parseWriters(row.writers, `${path}.writers`);
   if (level === "guild" && (guild !== "write" || writers.length)) {
@@ -168,7 +169,7 @@ export function parseNote(item: unknown, index: number): RecipeNote {
 }
 
 /** A connection's carried manifest: a valid, endpoint-only connector under the connection's slug. */
-function connectionManifest(raw: unknown, server: string, path: string): Manifest {
+function connectionManifest(raw: JsonValue, server: string, path: string): Manifest {
   let manifest: Manifest;
   try {
     manifest = loadManifest(raw, server);
@@ -337,15 +338,14 @@ export function parseRepositories(value: unknown): RecipeRepository[] {
   });
 }
 
-/** A design entry's fields: the decision every entry carries, under its own keys. */
-function designEntry(item: unknown, path: string, keys: string[]): { row: Record<string, unknown>; decision: DesignDecision } {
-  const row = assertObject(item, path);
+/** The decision every design entry carries; the entry holds only its own `keys` beside it. */
+function designDecision(row: JsonObject, path: string, keys: string[]): DesignDecision {
   assertKeys(row, [...keys, "proposed_by", "accepted"], path);
   const proposed = row.proposed_by;
   if (proposed !== "operator" && proposed !== "builder") {
     throw new RecipeError(`${path}.proposed_by must be operator or builder`);
   }
-  return { row, decision: { proposed_by: proposed, accepted: asBool(row.accepted, `${path}.accepted`, false) } };
+  return { proposed_by: proposed, accepted: asBool(row.accepted, `${path}.accepted`, false) };
 }
 
 const SPECIALIZATION_REASONS = ["narrower_tools", "narrower_access", "narrower_context", "volume", "other"] as const;
@@ -353,7 +353,8 @@ const HANDOFF_KINDS = ["collection", "tagged"] as const;
 
 function parseSystem(item: unknown, index: number): RecipeDesign["systems"][number] {
   const path = `design.systems[${index}]`;
-  const { row, decision } = designEntry(item, path, ["name", "resolution", "server", "reason"]);
+  const row = assertObject(item, path);
+  const decision = designDecision(row, path, ["name", "resolution", "server", "reason"]);
   return {
     ...decision,
     name: asString(row.name, `${path}.name`),
@@ -365,7 +366,8 @@ function parseSystem(item: unknown, index: number): RecipeDesign["systems"][numb
 
 function parseSpecialization(item: unknown, index: number): RecipeDesign["specialization"][number] {
   const path = `design.specialization[${index}]`;
-  const { row, decision } = designEntry(item, path, ["role", "reason", "detail"]);
+  const row = assertObject(item, path);
+  const decision = designDecision(row, path, ["role", "reason", "detail"]);
   return {
     ...decision,
     role: asString(row.role, `${path}.role`),
@@ -376,7 +378,8 @@ function parseSpecialization(item: unknown, index: number): RecipeDesign["specia
 
 function parseDesignRoutine(item: unknown, index: number): RecipeDesign["routines"][number] {
   const path = `design.routines[${index}]`;
-  const { row, decision } = designEntry(item, path, ["key", "role", "cadence", "dedupe_collection", "dedupe_key"]);
+  const row = assertObject(item, path);
+  const decision = designDecision(row, path, ["key", "role", "cadence", "dedupe_collection", "dedupe_key"]);
   return {
     ...decision,
     key: asString(row.key, `${path}.key`),
@@ -389,7 +392,8 @@ function parseDesignRoutine(item: unknown, index: number): RecipeDesign["routine
 
 function parseHandoff(item: unknown, index: number): RecipeDesign["handoffs"][number] {
   const path = `design.handoffs[${index}]`;
-  const { row, decision } = designEntry(item, path, ["from", "to", "kind", "collection", "budget"]);
+  const row = assertObject(item, path);
+  const decision = designDecision(row, path, ["from", "to", "kind", "collection", "budget"]);
   return {
     ...decision,
     from: asString(row.from, `${path}.from`),
@@ -402,7 +406,8 @@ function parseHandoff(item: unknown, index: number): RecipeDesign["handoffs"][nu
 
 function parseDesignBrowser(item: unknown, index: number): RecipeDesign["browser"][number] {
   const path = `design.browser[${index}]`;
-  const { row, decision } = designEntry(item, path, ["role", "site", "viable", "login_failure_policy"]);
+  const row = assertObject(item, path);
+  const decision = designDecision(row, path, ["role", "site", "viable", "login_failure_policy"]);
   return {
     ...decision,
     role: asString(row.role, `${path}.role`),

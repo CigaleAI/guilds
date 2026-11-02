@@ -1,7 +1,13 @@
 import { Filter, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useClearRecords, useDeleteRecord, useRecords } from "../../api/queries/tables";
-import type { Collection, CollectionRecord, Column, RecordsPage } from "../../api/types/tables";
+import type {
+  Collection,
+  CollectionRecord,
+  Column,
+  RecordValue,
+  RecordsPage,
+} from "../../api/types/tables";
 import { relativeTime } from "../../app/format";
 import {
   Button,
@@ -26,7 +32,7 @@ import { fits, whereOf, type ColumnFilter } from "./values";
 const pageSize = 50;
 const any = "__any__";
 
-type CellProps = { value: unknown; column: Column };
+type CellProps = { value: RecordValue | null | undefined; column: Column };
 
 function Cell({ value, column }: CellProps) {
   if (value === null || value === undefined) return <span className="text-faint">—</span>;

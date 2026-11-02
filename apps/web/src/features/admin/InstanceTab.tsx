@@ -25,6 +25,7 @@ import {
   useStartGithubAppManifest,
 } from "../../api/queries/admin";
 import type {
+  GithubAppManifestFailure,
   InstanceIntegration,
   IntegrationField,
   InstanceKeysResult,
@@ -35,31 +36,46 @@ import { safeReturnTo } from "../instance/instance";
 import { submitManifestForm } from "./githubManifest";
 import { asksToConfirmReplace } from "./instanceKeys";
 
-const stateTag: Record<IntegrationState, { tone: "tide" | "ochre" | "well"; label: string }> = {
+/** The tones an integration's and a field's tags take. */
+type SetupTone = "tide" | "ochre" | "well";
+
+const stateTag: Record<IntegrationState, { tone: SetupTone; label: string }> = {
   on: { tone: "tide", label: "On" },
   incomplete: { tone: "ochre", label: "Incomplete" },
   off: { tone: "well", label: "Off" },
 };
 
-/** The docs page that walks through setting up an integration, by its id. */
-const integrationDocs: Record<string, string> = {
-  "github-app": "/tools-and-connectors/github",
-};
+/** The docs page that walks through setting up an integration, for the integrations that have one. */
+const integrationDocs = new Map<InstanceIntegration["id"], string>([
+  ["github-app", "/tools-and-connectors/github"],
+]);
 
-/** What went wrong when GitHub sent the browser back from creating the App, by the callback's code. */
-const setupErrors: Record<string, string> = {
+/** What went wrong when GitHub sent the browser back from creating the App, by the server's failure. */
+const setupErrors: Record<GithubAppManifestFailure, string> = {
   state: "The GitHub redirect didn't match this session. Try again.",
   conversion: "GitHub refused the creation code. Try again.",
   store: "The App could not be stored. Check the server log.",
 };
 
+/** Whether a `setup_error` is a failure the server names. */
+function isManifestFailure(code: string): code is GithubAppManifestFailure {
+  return Object.hasOwn(setupErrors, code);
+}
+
+/** What went wrong creating the GitHub App, from the `setup_error` the server sent back. */
+function setupErrorText(code: string): string {
+  return isManifestFailure(code)
+    ? setupErrors[code]
+    : "The GitHub App could not be created. Try again.";
+}
+
+/** A field's tag: its tone and what it says of the field. */
+type FieldTag = { tone: SetupTone; note: string };
+
 const setDate = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
 
 /** A field's tag: set, missing from an integration that has some of its others, or just not set. */
-function fieldTag(
-  integration: InstanceIntegration,
-  field: IntegrationField,
-): { tone: "tide" | "ochre" | "well"; note: string } {
+function fieldTag(integration: InstanceIntegration, field: IntegrationField): FieldTag {
   if (field.set) return { tone: "tide", note: "set" };
   if (field.optional) return { tone: "well", note: "optional" };
   return integration.state === "incomplete"
@@ -78,9 +94,7 @@ export function InstanceTab() {
   const instance = useInstance();
   const returnTo = safeReturnTo(search.return_to);
   const [saved, setSaved] = useState(false);
-  const setupError = search.setup_error
-    ? (setupErrors[search.setup_error] ?? "The GitHub App could not be created. Try again.")
-    : null;
+  const setupError = search.setup_error ? setupErrorText(search.setup_error) : null;
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6 md:px-10">
@@ -150,7 +164,7 @@ function IntegrationBlock({ integration, focused, returnTo, onSaved }: Integrati
     if (focused) ref.current?.scrollIntoView({ block: "start" });
   }, [focused]);
   const tag = stateTag[integration.state];
-  const docs = integrationDocs[integration.id];
+  const docs = integrationDocs.get(integration.id);
 
   return (
     <div ref={ref} className="border-b border-line last:border-b-0">

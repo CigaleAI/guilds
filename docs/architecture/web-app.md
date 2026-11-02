@@ -173,7 +173,7 @@ import:
 | `api/client` | The API client and its error |
 | `api/session` | Who the app acts as, and the sign-in path |
 | `api/types/<domain>` | The API types of one domain, one module per query module |
-| `api/wire` | `JsonValue`, `JsonObject`, and the guards that narrow a server's reply, such as `isRecord` and `isJsonObject` |
+| `api/wire` | `JsonValue`, `JsonObject`, `JsonSchema`, and the guards that narrow a server's reply, such as `isJsonObject` and `isJsonSchema` |
 | `features/agent/runs/toolFormat` | Tool-call formatting |
 | `features/settings/members` | The member role helpers |
 

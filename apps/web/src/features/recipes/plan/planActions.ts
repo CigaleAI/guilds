@@ -126,6 +126,9 @@ export function externalActions(external: readonly ExternalDraft[]): PlanAction[
 }
 
 /** An external setup card: its title (or kind) and setup text. */
-export function externalCard(card: ExternalDraft): { title: string; setup: string } {
+export type ExternalCard = { title: string; setup: string };
+
+/** The card an external setup step shows. */
+export function externalCard(card: ExternalDraft): ExternalCard {
   return { title: card.title || card.kind || "", setup: card.setup || "" };
 }

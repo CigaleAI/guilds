@@ -18,6 +18,7 @@ import {
 import { recordFileChange } from "../db/file-changes.js";
 import { isUniqueViolation, type Queryable, withTransaction } from "../db/pg.js";
 import type { CollectionColumn, RecordBody } from "../db/schema/index.js";
+import type { JsonObject, JsonValue } from "../lib/json.js";
 import {
   collectionFacts,
   readableCollectionById,
@@ -149,14 +150,23 @@ async function insertNewRecord(
   return written;
 }
 
-/** A record as a writer adds it: the collection it goes to, by name, and its body before validation. */
-export type RecordDraft = { collection: string; body: Record<string, unknown> };
+/** A record added: the record, and the id of the live record its unique column merged it into, null when it is new. */
+export type AddedRecord = { record: RecordView; merged: number | null };
 
-/** One record as a caller names it: its collection, by name, and its id as sent. */
-export type RecordRef = { collection: string; id: unknown };
+/** A record patched: the record, and the problems the rest of it has against the columns. */
+export type UpdatedRecord = { record: RecordView; warnings: string[] };
 
-/** A patch to one record: the record, and the columns it sets or clears before validation. */
-export type RecordPatch = RecordRef & { body: Record<string, unknown> };
+/** One page of a collection's records, how many match in all, and the collection's columns. */
+export type RecordsPage = { total: number; records: RecordView[]; columns: CollectionColumn[] };
+
+/** A record as a writer adds it: the collection it goes to, by name, and its value in each column as sent, which the columns check. */
+export type RecordDraft = { collection: string; body: JsonObject };
+
+/** One record as a caller names it: its collection, by name, and its id as sent, a number or its digits. */
+export type RecordRef = { collection: string; id: JsonValue };
+
+/** A patch to one record: the record, and the value of each column it sets or clears as sent, which the columns check. */
+export type RecordPatch = RecordRef & { body: JsonObject };
 
 /**
  * Adds a record. The body is validated against the columns and rejected
@@ -168,7 +178,7 @@ export async function addRecord(
   store: ArtifactStore,
   actor: ArtifactActor,
   args: RecordDraft,
-): Promise<{ record: RecordView; merged: number | null }> {
+): Promise<AddedRecord> {
   const collection = await requireWritable(store, actor, args.collection);
   const checked = validateAdd(collection.columns, args.body);
   if (checked.problems.length) {
@@ -202,7 +212,7 @@ export async function updateRecord(
   store: ArtifactStore,
   actor: ArtifactActor,
   args: RecordPatch,
-): Promise<{ record: RecordView; warnings: string[] }> {
+): Promise<UpdatedRecord> {
   const collection = await requireWritable(store, actor, args.collection);
   const id = parseRecordId(args.id);
   const checked = validatePatch(collection.columns, args.body);
@@ -259,7 +269,7 @@ export async function getRecord(
   store: ArtifactStore,
   actor: ArtifactActor,
   collectionName: string,
-  id: unknown,
+  id: RecordRef["id"],
 ): Promise<RecordView> {
   const collection = await requireReadable(store, actor, collectionName);
   const row = await getLiveRecord(store.db, collection.id, parseRecordId(id));
@@ -270,16 +280,16 @@ export async function getRecord(
 }
 
 /**
- * A listing of one collection's records as a caller sends it, each argument before validation: `where`
- * a term per column, `since` a moment records changed at or after, `order`, and the page.
+ * A listing of one collection's records as a caller sends it, each argument as sent before it is
+ * checked: `where` a term per column, `since` a moment records changed at or after, `order`, and the page.
  */
 export type RecordListing = {
   collection: string;
-  where?: unknown;
-  since?: unknown;
-  order?: unknown;
-  limit?: unknown;
-  offset?: unknown;
+  where?: JsonValue | undefined;
+  since?: string | undefined;
+  order?: JsonValue | undefined;
+  limit?: JsonValue | undefined;
+  offset?: JsonValue | undefined;
 };
 
 /**
@@ -293,7 +303,7 @@ export async function listRecords(
   store: ArtifactStore,
   actor: ArtifactActor,
   args: RecordListing,
-): Promise<{ total: number; records: RecordView[]; columns: CollectionColumn[] }> {
+): Promise<RecordsPage> {
   const collection = await requireReadable(store, actor, args.collection);
   const since = parseSince(args.since);
   const order =
@@ -310,7 +320,7 @@ export async function listRecords(
 }
 
 /** A text search over records as a caller sends it: the collection to keep, the words, `where` within that collection, and how many. */
-export type RecordSearch = { collection?: string; query: string; where?: unknown; limit?: unknown };
+export type RecordSearch = { collection?: string; query: string; where?: JsonValue | undefined; limit?: JsonValue | undefined };
 
 /**
  * Text search over the records the actor can read: whole words through
@@ -350,11 +360,8 @@ export async function exportRecords(
   return { name: collection.name, records: rows.map(recordView) };
 }
 
-/** A listing of one collection's records whose `where` is an object of terms and whose `since` is a moment's text. */
-export type RecordQuery = RecordListing & {
-  where?: Record<string, unknown> | undefined;
-  since?: string | undefined;
-};
+/** A listing of one collection's records whose `where` is an object of terms, each as sent. */
+export type RecordQuery = RecordListing & { where?: JsonObject | undefined };
 
 /** A page of records, how many match in all, and what a narrowed listing that finds nothing says about its collection. */
 export type RecordList = { total: number; records: RecordView[]; hint: string | null };

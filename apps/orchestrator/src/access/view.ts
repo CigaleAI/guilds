@@ -1,5 +1,6 @@
-import { accessPayload, mcpToolView, resolvedMcp, type ResolutionScope } from "./index.js";
+import { accessPayload, mcpToolView, resolvedMcp, type ResolutionScope, type ScopeConnectors } from "./index.js";
 import { agentSecrets, resolveMcpTool } from "./runtime.js";
+import type { AccessView, AgentView } from "./types.js";
 import { agentDetail } from "../agents/view.js";
 import { listServers, serverTools, type LoadedConnector } from "../connectors/servers.js";
 import type { AgentRow } from "../db/agents.js";
@@ -74,7 +75,7 @@ type AccessViewOptions = {
 export async function loadAccessViewThrough(
   db: AccessViewDatabase,
   options: AccessViewOptions,
-): Promise<Record<string, unknown>> {
+): Promise<AccessView> {
   const scope = {
     orgId: options.orgId ?? null,
     guildId: options.guildId ?? null,
@@ -86,7 +87,7 @@ export async function loadAccessViewThrough(
   const rawListed = await listConnectionTools(db, options.mcp ?? null, connections, servers);
   // Read after the syncs: a sync writes an Off binding for each tool it lists for the first time.
   const rows = await db.listBindingsCovering(scope);
-  const listedTools: Record<string, Array<Record<string, unknown>>> = {};
+  const listedTools: ScopeConnectors["listedTools"] = {};
   for (const [item, server] of resolvedMcp(rows, servers, resolution)) {
     const key = item.connection_id ?? `catalog:${server.id}`;
     if (item.connection_id !== null) {
@@ -121,7 +122,7 @@ export async function loadAccessViewThrough(
 export async function loadAccessView(
   db: Queryable,
   options: AccessViewOptions,
-): Promise<Record<string, unknown>> {
+): Promise<AccessView> {
   return loadAccessViewThrough(accessViewDatabase(db), options);
 }
 
@@ -131,7 +132,7 @@ export async function loadAgentView(
   mcp: McpPool | null,
   row: AgentRow,
   generating: boolean,
-): Promise<Record<string, unknown>> {
+): Promise<AgentView> {
   const access = await loadAccessView(db, {
     orgId: row.org_id,
     guildId: row.guild_id,

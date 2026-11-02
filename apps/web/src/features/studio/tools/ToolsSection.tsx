@@ -28,15 +28,16 @@ import {
   toolFlags,
   toolsAwaitingApproval,
   type ToolFilters,
+  type ToolWindowHours,
 } from "./toolsModel";
 
 const hoursKey = "studio.tools.hours";
-const windowLabel: Record<number, string> = { 24: "24 h", 72: "3 d", 168: "7 d" };
+const windowLabel: Record<ToolWindowHours, string> = { 24: "24 h", 72: "3 d", 168: "7 d" };
 const allAgents = "all";
 
-function storedHours(): number {
+function storedHours(): ToolWindowHours {
   const value = Number(readStored(hoursKey));
-  return TOOL_WINDOW_HOURS.includes(value) ? value : TOOL_DEFAULT_HOURS;
+  return TOOL_WINDOW_HOURS.find((hours) => hours === value) ?? TOOL_DEFAULT_HOURS;
 }
 
 /**
@@ -49,7 +50,7 @@ export function ToolsSection() {
   const tools = useStudioTools(session.id, hours);
   const pending = toolsAwaitingApproval(approvals.proposals, tools.data ?? []);
   const flagsOf = (tool: StudioTool) => toolFlags(tool, pending.has(tool.name));
-  const changeHours = (next: number) => {
+  const changeHours = (next: ToolWindowHours) => {
     setHours(next);
     writeStored(hoursKey, String(next));
   };
@@ -74,8 +75,8 @@ export function ToolsSection() {
 type ToolListProps = {
   tools: StudioTool[];
   flagsOf: (tool: StudioTool) => ReturnType<typeof toolFlags>;
-  hours: number;
-  onHoursChange: (hours: number) => void;
+  hours: ToolWindowHours;
+  onHoursChange: (hours: ToolWindowHours) => void;
 };
 
 function ToolList({ tools, flagsOf, hours, onHoursChange }: ToolListProps) {
@@ -110,8 +111,8 @@ type ToolFiltersBarProps = {
   filters: ToolFilters;
   onChange: (filters: ToolFilters) => void;
   agents: StudioAgent[];
-  hours: number;
-  onHoursChange: (hours: number) => void;
+  hours: ToolWindowHours;
+  onHoursChange: (hours: ToolWindowHours) => void;
 };
 
 function ToolFiltersBar({ filters, onChange, agents, hours, onHoursChange }: ToolFiltersBarProps) {
@@ -158,10 +159,13 @@ function ToolFiltersBar({ filters, onChange, agents, hours, onHoursChange }: Too
             mono
             label="Window"
             value={String(hours)}
-            onValueChange={(value) => onHoursChange(Number(value))}
+            onValueChange={(value) => {
+              const next = TOOL_WINDOW_HOURS.find((window) => String(window) === value);
+              if (next) onHoursChange(next);
+            }}
             options={TOOL_WINDOW_HOURS.map((value) => ({
               value: String(value),
-              label: windowLabel[value] ?? `${value} h`,
+              label: windowLabel[value],
             }))}
           />
         </>

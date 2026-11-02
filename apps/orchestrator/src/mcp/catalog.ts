@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { loadManifest, ManifestError, SLUG_RE } from "../connectors/manifest.js";
 import {
   connectorFacts,
@@ -8,17 +8,25 @@ import {
   installedConnectorBySlug,
   loadConnector,
   overriddenCopyFields,
+  type ConnectorFacts,
   type CopyField,
   type LoadedConnector,
+  type ServerTool,
 } from "../connectors/servers.js";
-import { isPlainRecord, jsonObj } from "../db/json.js";
 import { SLUG_PATTERN, ToolInputSchema, type Manifest, type Overrides, type ToolOverride } from "../db/schema/index.js";
-import { decode } from "../lib/decode.js";
+import { assertMatches } from "../lib/decode.js";
 import { newId } from "../lib/ids.js";
+import { JsonObjectSchema, type JsonObject } from "../lib/json.js";
 import { generateToolPrefix, isReservedSlug, isReservedToolPrefix } from "../mcp/policy.js";
 import { assertPublicHttpsUrl, EndpointError } from "../net/endpoints.js";
 import { oauthSetupState } from "../oauth/index.js";
-import { insertConnector, listConnectorSlugOwners, listTakenToolPrefixes, updateConnector } from "../db/connectors.js";
+import {
+  insertConnector,
+  listConnectorSlugOwners,
+  listTakenToolPrefixes,
+  updateConnector,
+  type ConnectorPatch as ConnectorRowPatch,
+} from "../db/connectors.js";
 import type { Queryable } from "../db/pg.js";
 
 export const AUTH_KINDS = ["none", "token", "oauth"] as const;
@@ -59,7 +67,7 @@ export type ConnectorPatch = Static<typeof ConnectorPatchSchema>;
 /** A change to one of a connector's tools; null clears that edit, and a field left out keeps it. */
 export const ToolEditSchema = Type.Object({
   description: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-  input_schema: Type.Optional(Type.Unknown()),
+  input_schema: Type.Optional(Type.Union([JsonObjectSchema, Type.Null()])),
   default: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
 });
 
@@ -73,10 +81,37 @@ function editsFields(server: LoadedConnector): boolean {
   return server.source === "local";
 }
 
+/**
+ * A connector as the Admin tab shows it: the effective copy, how its OAuth client is set up, its
+ * endpoint, whether the admin edits its fields or overrides them, its manifest's own copy, the
+ * fields an override replaces, its facts, and its tools.
+ */
+export type CatalogServerView = Pick<
+  LoadedConnector,
+  | "id"
+  | "slug"
+  | "display_name"
+  | "auth"
+  | "oauth_strategy"
+  | "description"
+  | "limitations"
+  | "setup_hint"
+  | "enabled"
+  | "tool_prefix"
+  | "version"
+> &
+  ConnectorFacts & {
+    oauth_setup_state: ReturnType<typeof oauthSetupState>;
+    url: string | null;
+    editable: "fields" | "overrides";
+    upstream: Pick<Manifest, "display_name" | "description"> & Record<"limitations" | "setup_hint", string | null>;
+    overridden: CopyField[];
+    tools: ServerTool[];
+  };
+
 /** A connector as the Admin tab shows it: the effective copy, what overrides it, and its tools. */
-export function catalogServerItem(server: LoadedConnector): Record<string, unknown> {
+export function catalogServerItem(server: LoadedConnector): CatalogServerView {
   const upstream = server.upstream;
-  const config = jsonObj(server.config);
   return {
     id: server.id,
     slug: server.slug,
@@ -87,7 +122,7 @@ export function catalogServerItem(server: LoadedConnector): Record<string, unkno
     description: server.description || "",
     limitations: server.limitations,
     setup_hint: server.setup_hint,
-    url: isPlainRecord(config) && typeof config.url === "string" ? config.url : null,
+    url: server.config.url ?? null,
     enabled: server.enabled,
     tool_prefix: server.tool_prefix,
     version: server.version,
@@ -123,11 +158,11 @@ export function validateAuth(raw: string): Manifest["auth"]["kind"] {
   return kind;
 }
 
-export function validateOauthStrategy(auth: string, raw: unknown): string {
+export function validateOauthStrategy(auth: string, raw: ConnectorDraft["oauth_strategy"]): string {
   if (raw === undefined || raw === null || raw === "") {
     return auth === "oauth" ? "dynamic" : "none";
   }
-  if (typeof raw !== "string" || !OAUTH_STRATEGIES.some((strategy) => strategy === raw)) {
+  if (!OAUTH_STRATEGIES.some((strategy) => strategy === raw)) {
     throw new CatalogError("oauth_strategy must be none, dynamic, or configured");
   }
   if (auth !== "oauth" && raw !== "none") {
@@ -140,20 +175,17 @@ export function validateOauthStrategy(auth: string, raw: unknown): string {
 }
 
 /** The trimmed description, or an empty string when none is given. */
-export function validateCatalogDescription(raw: unknown): string {
-  const text = typeof raw === "string" ? raw.trim() : "";
+export function validateCatalogDescription(raw: ConnectorDraft["description"]): string {
+  const text = raw?.trim() ?? "";
   if (text.length > DESCRIPTION_MAX) {
     throw new CatalogError(`description exceeds ${DESCRIPTION_MAX} characters`);
   }
   return text;
 }
 
-export function validateOptionalText(raw: unknown, field: string): string | null {
+export function validateOptionalText(raw: string | null | undefined, field: string): string | null {
   if (raw === undefined || raw === null || raw === "") {
     return null;
-  }
-  if (typeof raw !== "string") {
-    throw new CatalogError(`${field} must be a string`);
   }
   if (raw.length > DESCRIPTION_MAX) {
     throw new CatalogError(`${field} exceeds ${DESCRIPTION_MAX} characters`);
@@ -162,17 +194,14 @@ export function validateOptionalText(raw: unknown, field: string): string | null
 }
 
 /** How the Admin form's value for each copy field an override replaces is checked. */
-const COPY_CHECKS: Readonly<Record<CopyField, (value: unknown) => string>> = {
-  display_name: (value) => String(value).trim(),
+const COPY_CHECKS: Readonly<Record<CopyField, (value: string) => string>> = {
+  display_name: (value) => value.trim(),
   description: validateCatalogDescription,
   limitations: (value) => validateOptionalText(value, "limitations") ?? "",
   setup_hint: (value) => validateOptionalText(value, "setup_hint") ?? "",
 };
 
-export function validateEndpointUrl(raw: unknown): string {
-  if (typeof raw !== "string") {
-    throw new CatalogError("url is required");
-  }
+export function validateEndpointUrl(raw: string): string {
   try {
     return assertPublicHttpsUrl(raw.trim(), "url").toString();
   } catch (error) {
@@ -183,17 +212,13 @@ export function validateEndpointUrl(raw: unknown): string {
   }
 }
 
-export function validateInputSchema(raw: unknown): ToolInputSchema {
-  const obj = jsonObj(raw);
-  if (!isPlainRecord(obj)) {
-    throw new CatalogError("input_schema must be an object");
-  }
-  const schema = decode(ToolInputSchema, obj, (problem) => new CatalogError(`input_schema ${problem}`));
-  const encoded = JSON.stringify(schema);
+export function validateInputSchema(raw: JsonObject): ToolInputSchema {
+  assertMatches(ToolInputSchema, raw, (problem) => new CatalogError(`input_schema ${problem}`));
+  const encoded = JSON.stringify(raw);
   if (Buffer.byteLength(encoded, "utf8") > SCHEMA_MAX_BYTES) {
     throw new CatalogError("input_schema exceeds size limit");
   }
-  return schema;
+  return raw;
 }
 
 /** A hand-made connector as the Admin form gives it, each field checked, with the tools it keeps. */
@@ -372,7 +397,7 @@ export async function patchConnector(
   body: ConnectorPatch,
   now = new Date(),
 ): Promise<LoadedConnector> {
-  const patch: { slug?: string; manifest?: Manifest; overrides?: Overrides; enabled?: boolean } = {};
+  const patch: ConnectorRowPatch = {};
   if (body.enabled !== undefined) {
     patch.enabled = body.enabled;
   }

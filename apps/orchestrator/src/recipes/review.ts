@@ -1,7 +1,7 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { RecipeError } from "./errors.js";
 import { roleBrowses } from "./prepare.js";
-import type { FieldAuthor, RecipeDocument, RecipeRole } from "../db/schema/index.js";
+import type { FieldAuthor, RecipeConnection, RecipeDocument, RecipeRole, RecipeSchedule } from "../db/schema/index.js";
 import { builderAuthor, markReviewed, operatorAuthor } from "./schema.js";
 
 // Who wrote each reviewable field of a recipe, and the operator's review of it: a Builder write
@@ -38,12 +38,25 @@ export function unreviewedFields(recipe: RecipeDocument): string[] {
   return fields;
 }
 
-function sameContent(left: unknown, right: unknown): boolean {
+/**
+ * What an operator's review of a field covers: the field's text, or a routine's timing and
+ * instruction, or a connection's setup and resources; undefined where the field did not exist.
+ */
+type ReviewedContent =
+  | string
+  | undefined
+  | { cron: RecipeSchedule["cron"]; instruction: RecipeSchedule["instruction"] | undefined }
+  | { setup: RecipeConnection["setup"] | undefined; resources: RecipeConnection["resources"] };
+
+function sameContent(left: ReviewedContent, right: ReviewedContent): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
 /** The previous author while the field was reviewed and its content is the same; the Builder otherwise. */
-function preserveOrBuilder(previous: FieldAuthor | undefined, contents: { before: unknown; after: unknown }): FieldAuthor {
+function preserveOrBuilder(
+  previous: FieldAuthor | undefined,
+  contents: { before: ReviewedContent; after: ReviewedContent },
+): FieldAuthor {
   if (previous?.reviewed && sameContent(contents.before, contents.after)) {
     return previous;
   }

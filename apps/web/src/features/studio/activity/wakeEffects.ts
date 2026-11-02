@@ -4,7 +4,7 @@ import type {
   ActivityWrite,
   ActivityWriteKind,
 } from "../../../api/types/studio";
-import { isRecord } from "../../../api/wire";
+import { isJsonObject, isString, parseJson } from "../../../api/wire";
 
 /** Tools whose calls a step shows as side effects rather than as plain tool calls. */
 const EFFECT_TOOLS = new Set([
@@ -71,13 +71,12 @@ export function tally(values: readonly string[]): Tally[] {
 }
 
 function argument(args: string, key: string): string | null {
-  try {
-    const parsed: unknown = JSON.parse(args);
-    const value = isRecord(parsed) ? parsed[key] : null;
-    return typeof value === "string" ? value : null;
-  } catch {
+  const parsed = parseJson(args);
+  if (parsed === undefined) {
     return new RegExp(`"${key}"\\s*:\\s*"([^"]*)`).exec(args)?.[1] ?? null;
   }
+  const value = isJsonObject(parsed) ? parsed[key] : null;
+  return isString(value) ? value : null;
 }
 
 /**

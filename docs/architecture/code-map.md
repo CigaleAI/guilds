@@ -105,7 +105,7 @@ A repository that extends core holds this one as a submodule
 | `cli/` | `seed:system`, `seed:operator`, `migrate`, and `pnpm connector` |
 | `observability/` | Logs, request ids, client-error intake, Sentry, and runtime metrics ([Observability](orchestrator.md#observability)) |
 | `net/` | Outbound HTTP and endpoint validation |
-| `lib/` | Shared helpers with no domain of their own: ids, paths, locks, the clock, JSON and schema decoding, names, emails, numbers, the event queue, change actors, an agent's home files, the blob store under attachments and shared files (`blob-store.ts`), and what a forwarding proxy sends upstream (`forwarding.ts`) |
+| `lib/` | Shared helpers with no domain of their own: ids, paths, locks, the clock, JSON and schema decoding, names, emails, numbers, the event queue and the stream event, change actors, an agent's home files, the blob store under attachments and shared files (`blob-store.ts`), and what a forwarding proxy sends upstream (`forwarding.ts`) |
 
 ## `apps/web/`
 

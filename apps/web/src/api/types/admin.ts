@@ -1,3 +1,4 @@
+import type { JsonSchema } from "../wire";
 import type { ConnectorFacts } from "./access";
 
 /**
@@ -62,10 +63,45 @@ export type InstanceKeysResult = { integration: InstanceIntegration; disconnecte
 /** The GitHub App a manifest creates: its name, the account that owns it, and where GitHub returns to. */
 export type GithubAppManifestInput = { name?: string; owner?: string; return_to?: string };
 
+/** The repository permissions the box's GitHub App asks for, by permission. */
+export type GithubAppPermissions = {
+  contents: "write";
+  pull_requests: "write";
+  issues: "write";
+  actions: "read";
+  checks: "read";
+  statuses: "read";
+  metadata: "read";
+};
+
+/**
+ * The manifest GitHub registers the box's App from: its name and address, where GitHub returns,
+ * the OAuth callbacks, the permissions, and an inactive webhook when the box is public.
+ */
+export type GithubAppManifest = {
+  name: string;
+  url: string;
+  hook_attributes?: { url: string; active: false };
+  redirect_url: string;
+  callback_urls: string[];
+  description: string;
+  public: false;
+  default_permissions: GithubAppPermissions;
+  request_oauth_on_install: true;
+  setup_on_update: true;
+};
+
+/**
+ * Why creating the GitHub App failed, as the server's redirect back from GitHub names it in
+ * `setup_error`: the callback did not match the session, GitHub refused the code, or the App could
+ * not be stored.
+ */
+export type GithubAppManifestFailure = "state" | "conversion" | "store";
+
 /** `POST /api/admin/instance/keys/github-app/manifest`: where the browser posts the manifest, and the manifest. */
 export type GithubAppManifestStart = {
   action: string;
-  manifest: Record<string, unknown>;
+  manifest: GithubAppManifest;
   state: string;
 };
 
@@ -86,7 +122,7 @@ export type CatalogTool = {
   remote_name: string;
   namespaced_name: string;
   description: string;
-  input_schema: Record<string, unknown>;
+  input_schema: JsonSchema;
   mutating: boolean;
   /** Whether a new login's tool starts On. */
   default_enabled: boolean;
@@ -178,7 +214,7 @@ export type CatalogServerInput = {
 /** An edit to one tool; null clears that part of the edit. */
 export type CatalogToolInput = {
   description?: string | null;
-  input_schema?: Record<string, unknown> | null;
+  input_schema?: JsonSchema | null;
   default?: boolean | null;
 };
 

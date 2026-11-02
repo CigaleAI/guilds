@@ -136,7 +136,8 @@ test("a login waits for its settings, looks them up, and connects once they are 
       payload: { settings: "symbols" },
     });
     assert.equal(notAnObject.statusCode, 422);
-    assert.match(notAnObject.body, /settings must be object/);
+    assert.deepEqual(notAnObject.json().detail[0].loc, ["body", "settings"]);
+    assert.equal(notAnObject.json().detail[0].msg, "must be object");
 
     const saved = await app.inject({
       method: "PUT",

@@ -110,8 +110,11 @@ export function catalogModelId(provider: string, model: string): string {
   return `${provider}/${model}`;
 }
 
+/** A stored model id split at its provider prefix: the provider, and the id the provider knows the model by. */
+export type ProviderModel = { provider: ProviderDef; model: string };
+
 /** A stored model id split at its provider prefix; null unless the prefix is a provider and a model follows. */
-export function parseModelId(model: string): { provider: ProviderDef; model: string } | null {
+export function parseModelId(model: string): ProviderModel | null {
   const slash = model.indexOf("/");
   if (slash <= 0) {
     return null;

@@ -2,8 +2,10 @@ import { iso } from "../db/views.js";
 import { parseGithubUrl } from "../github/index.js";
 import { githubIdOf, githubRepositoriesOf } from "../github/repositories.js";
 import { agentHome } from "../lib/agent-file.js";
+import type { GuildRepositoryListItemRow, GuildRepositoryRow } from "../db/guilds.js";
 import type { McpConnectionRow } from "../db/mcp.js";
 import type { GithubRepositorySelection } from "../db/schema/index.js";
+import type { GithubSelection, RepositoryDraft } from "./guild-repositories.js";
 
 export const REPOSITORY_NAME_RE = /^[a-z][a-z0-9_-]{0,62}$/;
 /** The branch a repository without a GitHub connection is recorded with when none is given. */
@@ -27,12 +29,38 @@ export type RepositoryInput = {
   connectionId: string | null;
 };
 
-export function validateRepositoryInput(body: Record<string, unknown>): RepositoryInput {
-  const name = String(body.name ?? "").trim();
+/** A git repository of a guild as the operator app reads it, with the GitHub login it is cloned with when it has one. */
+export type GuildRepository = Pick<GuildRepositoryRow, "id" | "guild_id" | "name" | "url" | "default_branch" | "connection_id"> & {
+  connection: {
+    id: string;
+    status: GuildRepositoryListItemRow["connection_status"];
+    account_hint: McpConnectionRow["account_hint"];
+  } | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/** A GitHub login a guild may use when adding repositories. */
+export type GithubLogin = Pick<McpConnectionRow, "id" | "owner_scope" | "owner_id" | "account_hint" | "status">;
+
+/**
+ * A repository a coding agent clones: its name, URL and branch, GitHub's id for it when known, and
+ * the GitHub login it is cloned with, with that login's status and account, when it has one.
+ */
+export type CodingRepository = Pick<
+  GuildRepositoryListItemRow,
+  "name" | "url" | "default_branch" | "github_id" | "connection_id" | "connection_status" | "connection_account"
+>;
+
+/** A guild repository as a run's state lists it: where it sits in the agent's home. */
+export type StateRepository = { name: string; path: string; default_branch: string };
+
+export function validateRepositoryInput(body: RepositoryDraft): RepositoryInput {
+  const name = body.name.trim();
   if (!REPOSITORY_NAME_RE.test(name)) {
     throw new RepositoryValidationError("name must match ^[a-z][a-z0-9_-]{0,62}$");
   }
-  const url = String(body.url ?? "").trim();
+  const url = body.url.trim();
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -44,17 +72,11 @@ export function validateRepositoryInput(body: Record<string, unknown>): Reposito
       "url must be an https git URL without credentials, query, or fragment",
     );
   }
-  const rawBranch = body.default_branch;
-  let defaultBranch: string | null = null;
-  if (rawBranch !== undefined && rawBranch !== null && String(rawBranch).trim() !== "") {
-    defaultBranch = String(rawBranch).trim();
-    if (!BRANCH_RE.test(defaultBranch)) {
-      throw new RepositoryValidationError("default_branch is not a valid branch name");
-    }
+  const defaultBranch = body.default_branch?.trim() || null;
+  if (defaultBranch !== null && !BRANCH_RE.test(defaultBranch)) {
+    throw new RepositoryValidationError("default_branch is not a valid branch name");
   }
-  const rawConnection = body.connection_id;
-  const connectionId =
-    rawConnection === undefined || rawConnection === null || rawConnection === "" ? null : String(rawConnection);
+  const connectionId = body.connection_id || null;
   if (connectionId !== null && parseGithubUrl(url) === null) {
     throw new RepositoryValidationError(
       "with a GitHub connection, url must be https://github.com/<owner>/<repository>",
@@ -63,8 +85,8 @@ export function validateRepositoryInput(body: Record<string, unknown>): Reposito
   return { name, url, defaultBranch, connectionId };
 }
 
-export function repositoryItem(row: Record<string, unknown>): Record<string, unknown> {
-  const connectionId = row.connection_id === null || row.connection_id === undefined ? null : String(row.connection_id);
+export function repositoryItem(row: GuildRepositoryListItemRow): GuildRepository {
+  const connectionId = row.connection_id;
   return {
     id: row.id,
     guild_id: row.guild_id,
@@ -77,7 +99,7 @@ export function repositoryItem(row: Record<string, unknown>): Record<string, unk
         ? null
         : {
             id: connectionId,
-            status: row.connection_status ?? null,
+            status: row.connection_status,
             account_hint: row.connection_account ?? "",
           },
     created_at: iso(row.created_at),
@@ -86,27 +108,17 @@ export function repositoryItem(row: Record<string, unknown>): Record<string, unk
 }
 
 /** The repositories stored on a GitHub login. */
-export function validateGithubRepositories(value: unknown): GithubRepositorySelection[] {
-  if (!Array.isArray(value)) {
-    throw new RepositoryValidationError("repositories must be an array");
-  }
+export function validateGithubRepositories(repositories: GithubSelection): GithubRepositorySelection[] {
   const seen = new Set<string>();
   const selected: GithubRepositorySelection[] = [];
-  for (const item of value) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) {
-      throw new RepositoryValidationError("repositories entries must be objects");
-    }
-    const input = validateRepositoryInput({
-      ...(item as Record<string, unknown>),
-      connection_id: "github",
-    });
+  for (const item of repositories) {
+    const input = validateRepositoryInput({ ...item, connection_id: "github" });
     if (seen.has(input.name)) {
       throw new RepositoryValidationError(`the login already has a repository named ${input.name}`);
     }
     seen.add(input.name);
-    const raw = (item as Record<string, unknown>).github_id;
-    const githubId = githubIdOf(item as Record<string, unknown>);
-    if (raw !== undefined && raw !== null && githubId === null) {
+    const githubId = githubIdOf(item);
+    if (item.github_id !== undefined && item.github_id !== null && githubId === null) {
       throw new RepositoryValidationError("github_id must be a positive integer");
     }
     selected.push({
@@ -124,42 +136,39 @@ export function validateGithubRepositories(value: unknown): GithubRepositorySele
  * guild's other git URLs (anonymous, or a login that is not that effective one).
  */
 export function codingRepositories(
-  guildRepos: Array<Record<string, unknown>>,
+  guildRepos: CodingRepository[],
   github: McpConnectionRow | null | undefined,
-): Array<Record<string, unknown>> {
-  const selected = githubRepositoriesOf(github).map((item) => ({
+): CodingRepository[] {
+  const selected = githubRepositoriesOf(github).map((item): CodingRepository => ({
     name: item.name,
     url: item.url,
     default_branch: item.default_branch,
     github_id: item.github_id ?? null,
-    connection_id: github ? String(github.id) : null,
+    connection_id: github?.id ?? null,
     connection_status: github?.status ?? null,
     connection_account: github?.account_hint ?? "",
   }));
   const selectedNames = new Set(selected.map((item) => item.name));
-  const extras = guildRepos.filter((row) => !selectedNames.has(String(row.name)));
+  const extras = guildRepos.filter((row) => !selectedNames.has(row.name));
   return [...selected, ...extras];
 }
 
 /** A GitHub login a guild may use when adding repositories. */
-export function githubLoginItem(row: Record<string, unknown>): Record<string, unknown> {
+export function githubLoginItem(row: McpConnectionRow): GithubLogin {
   return {
     id: row.id,
     owner_scope: row.owner_scope,
-    owner_id: row.owner_id === null || row.owner_id === undefined ? null : String(row.owner_id),
-    account_hint: row.account_hint ?? "",
+    owner_id: row.owner_id,
+    account_hint: row.account_hint,
     status: row.status,
   };
 }
 
 /** State's `repositories`: where each guild repository sits in the agent's home. */
-export function stateRepositories(
-  rows: Array<Record<string, unknown>>,
-  agentId: string,
-): Array<Record<string, string>> {
+export function stateRepositories(rows: CodingRepository[], agentId: string): StateRepository[] {
   return rows.map((row) => ({
-    name: String(row.name),
-    path: `${agentHome(agentId)}/repos/${String(row.name)}`,
-    default_branch: String(row.default_branch),
+    name: row.name,
+    path: `${agentHome(agentId)}/repos/${row.name}`,
+    default_branch: row.default_branch,
   }));
 }

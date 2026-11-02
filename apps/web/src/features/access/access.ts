@@ -218,12 +218,18 @@ export function withCapabilityNativeTools(
   ];
 }
 
+/**
+ * How a native tool's row shows for an owner: whether it reads as on, the caption that says why
+ * when the owner's binding does not decide it, and whether the operator can switch it.
+ */
+export type NativeToolDisplay = { enabled: boolean; caption?: string; bindable: boolean };
+
 export function nativeToolDisplay(
   item: AccessBinding,
   scope: BindingScope,
   capabilities?: AgentNativeCapabilities,
   instance?: Instance,
-): { enabled: boolean; caption?: string; bindable: boolean } {
+): NativeToolDisplay {
   const waitsFor = toolIntegrationGap(instance, item.name);
   if (waitsFor) {
     return {

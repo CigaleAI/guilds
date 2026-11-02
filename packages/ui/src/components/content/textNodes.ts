@@ -1,13 +1,17 @@
+import type { Properties } from "hast";
+import type { Data } from "mdast";
+
 /** A Markdown syntax-tree node, as far as the text plugins need it. */
 export type MdNode = {
   type: string;
   value?: string;
   children?: MdNode[];
-  data?: Record<string, unknown>;
+  /** What the node becomes in HTML, as `mdast-util-to-hast` reads it. */
+  data?: Data;
 };
 
 /** A node that renders as `<span {...properties}>{label}</span>`. */
-export function spanNode(type: string, properties: Record<string, string>, label: string): MdNode {
+export function spanNode(type: string, properties: Properties, label: string): MdNode {
   return {
     type,
     data: { hName: "span", hProperties: properties, hChildren: [{ type: "text", value: label }] },

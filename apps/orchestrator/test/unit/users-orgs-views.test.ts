@@ -71,21 +71,20 @@ test("resolve_user requires header when several", () => {
 });
 
 test("user_item formats timestamps and optional fields", () => {
-  const item = userItem({
+  const row = {
     id: "user_operator",
     name: "operator",
+    email: null,
+    image: null,
+    timezone: null,
+    color: null,
     created_at: "2026-09-12T00:00:00+00:00",
     updated_at: "2026-09-12T00:00:00+00:00",
-  });
+  };
+  const item = userItem(row);
   assert.equal(item.email, null);
   assert.equal(item.image, null);
-  const emailed = userItem({
-    id: "user_operator",
-    name: "operator",
-    email: "Ada@Example.com",
-    created_at: "2026-09-12T00:00:00+00:00",
-    updated_at: "2026-09-12T00:00:00+00:00",
-  });
+  const emailed = userItem({ ...row, email: "Ada@Example.com" });
   assert.equal(emailed.email, "Ada@Example.com");
 });
 
@@ -244,6 +243,8 @@ test("run and message views match R0 fixtures", () => {
       name: "operator",
       email: null,
       image: null,
+      timezone: null,
+      color: null,
       created_at: "2026-09-13T12:00:00+00:00",
       updated_at: "2026-09-13T12:00:00+00:00",
     }),
@@ -251,16 +252,14 @@ test("run and message views match R0 fixtures", () => {
   );
 });
 
-test("iso formats a timestamp column and rejects a missing one", () => {
+test("iso formats a timestamp column", () => {
   assert.equal(iso("2024-05-01 10:00:00+00"), "2024-05-01T10:00:00+00:00");
   assert.equal(iso("2024-05-01T10:00:00+00:00"), "2024-05-01T10:00:00+00:00");
   assert.equal(iso(new Date("2024-05-01T10:00:00Z")), "2024-05-01T10:00:00.000Z");
-  assert.throws(() => iso(null), TypeError);
 });
 
 test("isoOrNull returns null for a missing timestamp and formats the rest", () => {
   assert.equal(isoOrNull(null), null);
   assert.equal(isoOrNull(undefined), null);
   assert.equal(isoOrNull("2024-05-01 10:00:00+00"), "2024-05-01T10:00:00+00:00");
-  assert.throws(() => isoOrNull(42), TypeError);
 });

@@ -1,7 +1,7 @@
 // A routine's timing and changes as a request or a tool call names them, decoded once at the
 // boundary into these types. The decode checks each value's type; the domain validates what it says.
 
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 
 /** A random-wake window: when an agent may wake, in which timezone, and how often at most. */
 export const WakeWindowInput = Type.Object({

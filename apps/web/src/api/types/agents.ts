@@ -3,6 +3,9 @@
  * them. Timestamps are ISO-8601 in UTC.
  */
 
+import type { AgentAccess } from "./access";
+import type { SecretRef } from "./secrets";
+
 export type Agent = {
   id: string;
   guild_id: string;
@@ -189,7 +192,7 @@ export type AgentDetail = Agent & {
   config: AgentConfig;
   /** The agent's home, measured after its last generation; null before one. */
   workspace_mib: number | null;
-  access: Record<string, unknown>;
+  access: AgentAccess & { secrets: SecretRef[] };
 };
 
 /** A new agent of a guild; without `machine_id` it goes on the organisation's only machine. */
@@ -248,3 +251,21 @@ export type AgentSettingsInput = {
   avatar_shape?: string;
   avatar_color?: string;
 };
+
+/**
+ * noVNC's RFB connection to an agent's browser desktop, as the viewer the server serves at
+ * `/api/agents/:agent_id/browser/vnc` holds it: the parts the clipboard bridge uses.
+ */
+export type RfbConnection = {
+  focus: () => void;
+  sendKey: (keysym: number, code: string, down: boolean) => void;
+  clipboardPasteFrom: (text: string) => void;
+  addEventListener: (
+    type: "clipboard",
+    listener: (event: CustomEvent<{ text?: string }>) => void,
+  ) => void;
+  _clipboardServerCapabilitiesActions?: Record<number, boolean>;
+};
+
+/** noVNC's UI module in the browser desktop's viewer: its RFB connection once it connects. */
+export type NovncUi = { rfb?: RfbConnection | null };

@@ -1,3 +1,4 @@
+import { Type } from "typebox";
 import { decryptPayload, encryptPayload } from "../credentials/crypto.js";
 import type { OwnerScope } from "../credentials/validate.js";
 import type {
@@ -13,6 +14,9 @@ import { SettingsError } from "../connectors/settings.js";
 import type { Credentials } from "../connectors/types.js";
 import { connectMcp, getMcpConnectionForOwner } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
+import type { AuthField, ConnectionSettings } from "../db/schema/index.js";
+import { keepMatching } from "../lib/decode.js";
+import type { JsonObject } from "../lib/json.js";
 
 /**
  * What to do when the owner already has a connected login on the server. `refuse`: a 409.
@@ -29,13 +33,13 @@ export type ConnectInput = {
   ownerScope: OwnerScope;
   ownerId: string | null;
   /** The form's values, by the manifest's field names. */
-  credentials: Record<string, unknown>;
+  credentials: JsonObject;
   /**
    * The login's settings, checked against the manifest's `settings_schema` and by the
    * connector's `validate`. A login whose schema has required properties it lacks is stored
    * pending until a settings save completes it.
    */
-  settings?: Record<string, unknown>;
+  settings?: JsonObject;
   onExisting?: OnExisting;
   /** Replaces the hint the connector's `validate` returns. */
   accountHint?: string;
@@ -87,12 +91,21 @@ export function connectDatabase(db: Queryable): ConnectDatabase {
   };
 }
 
-/** The form's values for a token login, by field: every declared field trimmed, the required ones present. */
-export function tokenCredentials(server: LoadedConnector, values: Record<string, unknown>): Credentials {
+/** The form a token login is connected with: each credential field the manifest declares, as text when it is given. */
+function tokenForm(fields: AuthField[]) {
+  return Type.Object(Object.fromEntries(fields.map((field) => [field.name, Type.Optional(Type.String())])));
+}
+
+/**
+ * The form's values for a token login, by field: every declared field trimmed, the required ones
+ * present. A field the form gives as anything but text counts as left out.
+ */
+export function tokenCredentials(server: LoadedConnector, values: JsonObject): Credentials {
+  const fields = authFields(serverManifest(server));
+  const form = keepMatching(tokenForm(fields), values) ?? {};
   const credentials: Record<string, string> = {};
-  for (const field of authFields(serverManifest(server))) {
-    const raw = values[field.name];
-    const value = typeof raw === "string" ? raw.trim() : "";
+  for (const field of fields) {
+    const value = form[field.name]?.trim() ?? "";
     if (!value && !field.optional) {
       throw new ConnectError(422, `${field.label.toLowerCase()} is required`);
     }
@@ -101,14 +114,14 @@ export function tokenCredentials(server: LoadedConnector, values: Record<string,
   return credentials;
 }
 
-function sameCredentials(stored: Record<string, unknown>, credentials: Credentials): boolean {
+function sameCredentials(stored: JsonObject, credentials: Credentials): boolean {
   return Object.entries(credentials).every(([name, value]) => (stored[name] ?? "") === value);
 }
 
 function storedCredentials(
   connection: Pick<McpConnectionRow, "ciphertext" | "nonce">,
   masterKey: Buffer | undefined,
-): Record<string, unknown> {
+): JsonObject {
   try {
     return decryptPayload(connection.ciphertext, connection.nonce, masterKey);
   } catch {
@@ -117,13 +130,16 @@ function storedCredentials(
 }
 
 /**
- * The error a connector's failure answers: a rejected credential or a bad setting is a 422
- * `ConnectError`, any other failure upstream a 502; an error that is not the connector's stays.
+ * The error a failure while connecting answers, `cause` being the value thrown: a connector's
+ * failure is the `ConnectError` it answers (`connectFailure`); an error that is not the
+ * connector's, or a login that is not connected, stays.
  */
-export function translateConnectFailure(error: unknown, server: LoadedConnector): unknown {
-  if (!(error instanceof McpError) || error instanceof McpDisconnectedError) {
-    return error;
-  }
+export function translateConnectFailure(cause: unknown, server: LoadedConnector): unknown {
+  return cause instanceof McpError && !(cause instanceof McpDisconnectedError) ? connectFailure(cause, server) : cause;
+}
+
+/** The `ConnectError` a connector's failure answers: a rejected credential or a bad setting is a 422, any other failure upstream a 502. */
+function connectFailure(error: McpError, server: LoadedConnector): ConnectError {
   if (error.status === 401 || error.status === 403) {
     return new ConnectError(422, "api key was rejected");
   }
@@ -134,7 +150,7 @@ export function translateConnectFailure(error: unknown, server: LoadedConnector)
 }
 
 /** The login's settings checked against the manifest's `settings_schema`; a setting it refuses is a 422. */
-export function validateConnectSettings(server: LoadedConnector, values: Record<string, unknown>): SettingsOutcome {
+export function validateConnectSettings(server: LoadedConnector, values: JsonObject): SettingsOutcome {
   try {
     return settingsOutcome(server, values);
   } catch (error) {
@@ -167,7 +183,7 @@ function resolveExistingLogin(
   if (sameCredentials(storedCredentials(existing, masterKey), credentials)) {
     return { connection: existing, outcome: "current" };
   }
-  if (typeof onExisting === "object" && existing.account_hint !== onExisting.replace_when_hint) {
+  if (onExisting !== "replace" && existing.account_hint !== onExisting.replace_when_hint) {
     return { connection: existing, outcome: "kept" };
   }
   return null;
@@ -178,7 +194,7 @@ async function validateCredentials(
   pool: ConnectPool | null,
   server: LoadedConnector,
   credentials: Credentials,
-  settings: Record<string, unknown>,
+  settings: ConnectionSettings,
 ): Promise<string> {
   if (pool === null) {
     return "";

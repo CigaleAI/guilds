@@ -1,6 +1,6 @@
 // The Studio tools for a source-guild agent's routines: listing them and proposing a change to one.
 
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { routineRunStats } from "../db/runs.js";
 import { listSchedules, listSchedulesForGuild, type AgentScheduleRow } from "../db/schedules.js";
 import { scheduleItem } from "../schedules/item.js";

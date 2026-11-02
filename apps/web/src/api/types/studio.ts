@@ -1,4 +1,4 @@
-import type { RunError, RunKind } from "./runs";
+import type { CompletionMetadata, MessagePayload, RunError, RunKind } from "./runs";
 import type { Schedule } from "./schedules";
 import type { BindingScope, McpConnectionStatus } from "./access";
 
@@ -47,8 +47,27 @@ export type NewStudioSession = {
   parent?: string;
 };
 
+/**
+ * The evidence an operator pins to a Studio message: its kind and the ids that name it, null for
+ * one it names none of. A step or version is a number or its digits.
+ */
+export type StudioFocusRequest = {
+  kind: StudioFocusKind;
+  agent_id?: string | null;
+  run_id?: string | null;
+  seq?: number | string | null;
+  call_id?: string | null;
+  revision_id?: string | null;
+  version_index?: number | string | null;
+  schedule_id?: string | null;
+  display_path?: string | null;
+  change_id?: string | null;
+  issue_id?: string | null;
+  tool_name?: string | null;
+};
+
 /** The operator's message to the coach, pinned to what `focus` names when given. */
-export type StudioMessageInput = { content: string; focus?: unknown };
+export type StudioMessageInput = { content: string; focus?: StudioFocusRequest };
 
 /** What the operator does with a Task draft; `content` is the revised text of a revision. */
 export type StudioDraftAction = {
@@ -164,17 +183,176 @@ export type StateItemDetail = {
   next_cursor: string | null;
 };
 
+export type StudioFocusKind = "run" | "memory_version" | "routine" | "file" | "issue" | "tool";
+
+/**
+ * The evidence a Studio message is pinned to, as the server resolved and stored it: its kind and
+ * label, its agent, and the ids that locate it, null for one it names none of.
+ */
+export type StudioFocus = {
+  kind: StudioFocusKind;
+  agent_id: string;
+  agent_name: string;
+  label: string;
+  run_id: string | null;
+  seq: number | null;
+  call_id: string | null;
+  tool_name: string | null;
+  revision_id: string | null;
+  version_index: number | null;
+  schedule_id: string | null;
+  display_path: string | null;
+  change_id: string | null;
+  issue_id: string | null;
+};
+
+/** Where a coach conversation's system or user message came from. */
+export type ConversationMessageSource =
+  "studio_system" | "builder_system" | "studio_focus" | "continuation" | "ui";
+
+/** What a coach conversation's generation records on the assistant message it commits. */
+export type ConversationStepMetadata = CompletionMetadata & {
+  generation: number;
+  projection_policy_version: number;
+  projected_input_hash: string;
+  stubbed_message_seqs: number[];
+};
+
+/** How the operator answered a Studio edit request or login request, kept on the tool result that made it. */
+export type ConversationResolutionMetadata = {
+  edit_status: "applied" | "declined";
+  edit_resolved_at: string;
+  edit_version: number | null;
+  access_status: "granted" | "declined";
+  access_resolved_at: string;
+  resolved_by_user_id: string | null;
+};
+
+/**
+ * The metadata of a Studio or Builder message. A system message records its prompt's hash, a
+ * user message its source and, pinned, its focus, an assistant message the completion, a tool
+ * result the tool and how the call ended, and a Studio edit or login request how the operator
+ * answered it.
+ */
+export type ConversationMessageMetadata = {
+  generation?: number;
+} & Partial<ConversationStepMetadata> & {
+    source?: ConversationMessageSource;
+    system_prompt_hash?: string;
+    /** Set when the session's system prompt was recomposed in place. */
+    refreshed?: boolean;
+    focus?: StudioFocus;
+    tool_name?: string;
+    tool_error?: boolean;
+    interrupted?: boolean;
+    detail?: string;
+  } & Partial<ConversationResolutionMetadata>;
+
 /** One row of the coach conversation, shaped like a run's rows. */
 export type StudioMessage = {
   id: number;
   session_id: string;
   seq: number;
   generation: number;
-  payload: Record<string, unknown>;
-  metadata: Record<string, unknown> | null;
+  payload: MessagePayload;
+  metadata: ConversationMessageMetadata | null;
   cost_usd: number | null;
   created_at: string;
 };
+
+/*
+ * The requests a coach's tool result carries for the operator to decide, as the app reads them
+ * from the result's text: each field is kept only when it holds what it names.
+ */
+
+/** What a coach edit can change. */
+export type EditKind = "memory" | "note" | "guild" | "collection" | "access" | "routine";
+
+/** What a table, routine, or note edit does to its target. */
+export type EditAction = "create" | "edit" | "delete";
+
+/**
+ * What a coach edit changes: an agent's memory, access, or routine, a note, the guild's
+ * descriptions, or a table.
+ */
+export type EditTarget = {
+  agent_id?: string;
+  agent_name?: string;
+  display_path?: string;
+  title?: string;
+  guild_id?: string;
+  guild_name?: string;
+  /** A table's id, null until the table a create request names exists. */
+  collection_id?: string | null;
+  /** A table's name. */
+  name?: string;
+  /** A routine's id, null until the routine a create request names exists. */
+  schedule_id?: string | null;
+  /** A routine's one-line label. */
+  description?: string;
+};
+
+/** The lines an edit adds and removes. */
+export type LineCounts = { added?: number; removed?: number };
+
+/** What an access overlay sets: a native tool, a connection, or one tool of a connection. */
+export type AccessChangeKind = "native_tool" | "mcp" | "mcp_tool";
+
+/** How an access overlay sets its tool or connection. */
+export type AccessSetting = "on" | "off" | "inherit";
+
+/** One overlay an access edit writes. */
+export type AccessChange = {
+  kind: AccessChangeKind;
+  id: string;
+  label: string;
+  setting: AccessSetting;
+};
+
+/** An edit the coach asks the operator to apply or decline. */
+export type EditWidget = {
+  kind: "edit";
+  title?: string;
+  reason?: string;
+  edit: {
+    kind?: EditKind;
+    /** What a table, routine, or note edit does to its target; a note edit without one changes its text. */
+    action?: EditAction;
+    target?: EditTarget;
+    base_version?: number;
+    /** The guild fields a guild edit changes. */
+    fields?: string[];
+    lines?: LineCounts;
+    /** An access edit's changes, one per tool or connection. */
+    changes?: AccessChange[];
+    /** Whether an access edit turns on anything the agent cannot use today. */
+    widens?: boolean;
+  };
+};
+
+/** A Task draft the coach wrote, decided like an edit: published, edited and published, or discarded. */
+export type DraftWidget = {
+  kind: "draft";
+  agent: { id: string; name: string };
+  draft_id: string;
+  rationale?: string;
+};
+
+/** A login the coach asks to read through. */
+export type AccessWidget = {
+  kind: "access";
+  title?: string;
+  reason?: string;
+  connection: {
+    id?: string;
+    server?: { id?: string; slug?: string; display_name?: string };
+    owner_scope?: string;
+    account_hint?: string;
+  };
+};
+
+/** A request the coach made in its turn: an edit, a login, or a Task draft. */
+export type StudioWidget = EditWidget | AccessWidget | DraftWidget;
 
 /** `message.committed` on a coach session's stream: the row the session committed. */
 export type StudioMessageCommit = { message: StudioMessage };
@@ -255,6 +433,9 @@ export type StudioDraft = {
   large_deletion: boolean;
 };
 
+/** The guild's about and description, the text a guild edit reads and writes. */
+export type GuildText = { about: string; description: string };
+
 /** An edit the coach asked to make to a memory, note, the guild or a table, waiting for the operator. */
 export type StudioEdit = {
   status: "pending" | "applied" | "declined";
@@ -264,9 +445,9 @@ export type StudioEdit = {
    * definition or an agent's access written out line by line (empty for a table or note not
    * created yet).
    */
-  live: string | { about: string; description: string } | null;
+  live: string | GuildText | null;
   /** The text the edit writes, in the same shape as `live`; empty for a table or note it deletes. */
-  proposed: string | { about: string; description: string } | null;
+  proposed: string | GuildText | null;
   /** What applying a table, note create or delete, or access edit does. */
   effects?: string[];
   error?: string;

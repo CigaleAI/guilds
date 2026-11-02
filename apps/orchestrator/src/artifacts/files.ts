@@ -72,7 +72,8 @@ type FileTarget = { level: ArtifactLevel; owner: Owner; name: string };
 
 const MIME_RE = /^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/i;
 
-const MIME_BY_EXTENSION: Record<string, string> = {
+/** The media type of each file name extension this store knows. */
+const MIME_BY_EXTENSION = {
   ".csv": "text/csv",
   ".gif": "image/gif",
   ".html": "text/html",
@@ -89,11 +90,19 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   ".yaml": "application/yaml",
   ".yml": "application/yaml",
   ".zip": "application/zip",
-};
+} satisfies Record<string, string>;
+
+/** A file name extension whose media type this store knows. */
+type KnownExtension = keyof typeof MIME_BY_EXTENSION;
+
+function isKnownExtension(extension: string): extension is KnownExtension {
+  return Object.hasOwn(MIME_BY_EXTENSION, extension);
+}
 
 /** The media type a file name's extension says, `application/octet-stream` for one it does not know. */
 export function mimeForName(name: string): string {
-  return MIME_BY_EXTENSION[path.extname(name).toLowerCase()] ?? "application/octet-stream";
+  const extension = path.extname(name).toLowerCase();
+  return isKnownExtension(extension) ? MIME_BY_EXTENSION[extension] : "application/octet-stream";
 }
 
 /** A media type as sent by a client, or the one the name says when the client sent none. */

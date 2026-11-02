@@ -1,7 +1,7 @@
 import { AgentMessageLimitReached, GroupChatCleared } from "../db/errors.js";
 import { groupMessageItem, type GroupMessageView } from "../db/views.js";
-import { AsyncEvent, EventQueue } from "../lib/event.js";
-import { writeLog } from "../observability/log.js";
+import { AsyncEvent, EventQueue, type StreamEvent } from "../lib/event.js";
+import { errorMessage, errorName, writeLog } from "../observability/log.js";
 import { serializeRecipientDecision, type GroupRouter, type RecipientDecision } from "./router.js";
 import { recognizedTags, type GroupTags } from "./tags.js";
 import { recipientNamesAfter, taggedRecipientNamesAfter } from "./recipients.js";
@@ -12,6 +12,7 @@ import {
   interruptTargets,
   withActiveCursors,
   type ActiveDelivery,
+  type DeliveryStart,
   type GroupDelivery,
   type GroupRunner,
   type PendingAgent,
@@ -28,7 +29,7 @@ import { advanceGroupCursor,
 import { getGuild, listGuilds } from "../db/guilds.js";
 import { getAgent, listAgents } from "../db/agents.js";
 import { getRun } from "../db/runs.js";
-import type { RecipientRouting } from "../db/schema/index.js";
+import type { GroupChatFailure, RecipientRouting } from "../db/schema/index.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 
 const EVENT_QUEUE_LIMIT = 4096;
@@ -84,11 +85,47 @@ function groupChatDatabase(db: Queryable) {
 
 export type GroupChatDatabase = ReturnType<typeof groupChatDatabase>;
 
-export type GuildEventObserver = (
-  guildId: string,
-  event: string,
-  data: Record<string, unknown>,
-) => Promise<void>;
+/** A group run starting: its agent, the agent's name while it runs, and the snapshot it sees. */
+export type DeliveryStarted = { agent_id: string; agent_name: string | null; through_seq: number };
+
+/** A group run that finished: its agent, and the snapshot it saw. */
+export type DeliveryFinished = { agent_id: string; through_seq: number };
+
+/** An agent's routine that was created, edited, paused, resumed or deleted. */
+export type RoutinesChanged = { agent_id: string; action: string; schedule_id: string };
+
+/** An agent's script that was written or deleted, by its name when the change names one. */
+export type ScriptsChanged = { agent_id: string; action: string; name?: string };
+
+/**
+ * A file of the guild that changed: its path, the level it sits at when the change names one, and
+ * the agent whose file it is when it is an agent's.
+ */
+export type ArtifactsChanged = { path: string; scope?: "agent" | "guild" | "files"; agent_id?: string };
+
+/** An issue that was created, resolved or reopened, and the agent that reported it when one did. */
+export type IssuesChanged = { action: string; issue_id?: string; agent_id?: string };
+
+/** What each event of a guild's stream carries. */
+export type GuildEvents = {
+  "group.message.committed": GroupMessageView;
+  "group.cleared": GroupChatView;
+  "group.limit_reached": GroupChatView;
+  "group.idle": GroupChatView;
+  "group.delivery.started": DeliveryStarted;
+  "group.delivery.finished": DeliveryFinished;
+  "group.delivery.failed": GroupChatFailure;
+  "guild.issues.changed": IssuesChanged;
+  "guild.artifacts.changed": ArtifactsChanged;
+  "agent.routines.changed": RoutinesChanged;
+  "agent.scripts.changed": ScriptsChanged;
+};
+
+/** One event of a guild's stream. */
+export type GuildEvent = StreamEvent<GuildEvents>;
+
+/** What runs on every guild event once the guild's streams have it. */
+export type GuildEventObserver = (guildId: string, ...event: GuildEvent) => Promise<void>;
 
 type RecipientPick = { decision: RecipientDecision; tagged: Set<string> };
 
@@ -121,7 +158,7 @@ export class GroupChat {
   db: GroupChatDatabase;
   _is_deleting: (guildId: string) => boolean;
   _runner: GroupRunner | null = null;
-  _subs = new Map<string, Set<EventQueue<[string, Record<string, unknown>]>>>();
+  _subs = new Map<string, Set<EventQueue<GuildEvent>>>();
   _observers: GuildEventObserver[] = [];
   _dispatch_tasks = new Map<string, DispatchHandle>();
   /** Each guild's group runs under way, by agent id. */
@@ -152,15 +189,15 @@ export class GroupChat {
     return task !== undefined && !task.done();
   }
 
-  subscribe(guildId: string): EventQueue<[string, Record<string, unknown>]> {
-    const queue = new EventQueue<[string, Record<string, unknown>]>();
+  subscribe(guildId: string): EventQueue<GuildEvent> {
+    const queue = new EventQueue<GuildEvent>();
     const listeners = this._subs.get(guildId) ?? new Set();
     listeners.add(queue);
     this._subs.set(guildId, listeners);
     return queue;
   }
 
-  unsubscribe(guildId: string, queue: EventQueue<[string, Record<string, unknown>]>): void {
+  unsubscribe(guildId: string, queue: EventQueue<GuildEvent>): void {
     const listeners = this._subs.get(guildId);
     if (listeners) {
       listeners.delete(queue);
@@ -175,17 +212,17 @@ export class GroupChat {
     this._observers.push(observer);
   }
 
-  async publish(guildId: string, event: string, data: Record<string, unknown>): Promise<void> {
+  async publish(guildId: string, ...event: GuildEvent): Promise<void> {
     for (const queue of [...(this._subs.get(guildId) ?? [])]) {
       if (queue.size >= EVENT_QUEUE_LIMIT) {
         this.unsubscribe(guildId, queue);
         continue;
       }
-      await queue.put([event, data]);
+      await queue.put(event);
     }
     for (const observer of this._observers) {
       try {
-        await observer(guildId, event, data);
+        await observer(guildId, ...event);
       } catch (error) {
         writeLog("error", "group.observer_failed", { operation: "group.observer", guild_id: guildId }, error);
       }
@@ -384,7 +421,7 @@ export class GroupChat {
     return recognizedTags(text, members, guild ? guild.operators : []);
   }
 
-  async _after_commit(guildId: string, message: Record<string, unknown>): Promise<void> {
+  async _after_commit(guildId: string, message: GroupMessageView): Promise<void> {
     await this.publish(guildId, "group.message.committed", message);
     const state = await this.state(guildId);
     if (state.limit_reached) {
@@ -557,11 +594,7 @@ export class GroupChat {
     pending: PendingAgent[],
     snapshot: number,
     runner: GroupRunner,
-  ): Promise<{
-    start: PendingAgent[];
-    waitsForRelease: boolean;
-    pick: RecipientPick;
-  }> {
+  ): Promise<DeliveryStart<PendingAgent> & { pick: RecipientPick }> {
     const pick = await this._recipients(guildId, pending, snapshot);
     const actionable = pending.filter((agent) => pick.decision.names.has(agent.name));
     for (const agent of pending) {
@@ -657,15 +690,15 @@ export class GroupChat {
     guildId: string,
     agentId: string,
     snapshot: number,
-    exc: unknown,
+    cause: unknown,
   ): Promise<void> {
     const now = new Date();
-    const entry = {
+    const entry: GroupChatFailure = {
       at: now.toISOString(),
       agent_id: agentId,
       operation: "group.delivery",
-      error_type: exc instanceof Error ? exc.name : "Error",
-      message: String(exc instanceof Error ? exc.message : exc),
+      error_type: errorName(cause),
+      message: errorMessage(cause),
     };
     await this.db.appendGroupChatError(guildId, entry, now);
     await this.db.advanceGroupCursor(agentId, snapshot);

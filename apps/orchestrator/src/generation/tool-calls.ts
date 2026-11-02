@@ -1,8 +1,12 @@
+import { Type } from "typebox";
 import { DEFAULT_MAX_TOOL_CALLS } from "../agents/config.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import { getRun, listMessages, type RunRow, type MessageRow } from "../db/runs.js";
 import type { AssistantMessage, Harness, ToolCall, ToolMessage, ToolResultMetadata } from "../db/schema/index.js";
+import { keepMatching } from "../lib/decode.js";
+import type { JsonObject } from "../lib/json.js";
+import type { FunctionTool } from "../lib/tool-schema.js";
 import { callTool } from "../mcp/service.js";
 import { errorMessage } from "../observability/log.js";
 import { callSegment, repeatedReadStep, repeatedReadText, type ReadRow } from "../toolbox/code.js";
@@ -17,12 +21,14 @@ import {
   type ToolHooks,
   type ToolRun,
 } from "../toolbox/index.js";
+import { CodeTaskParameters } from "../toolbox/harness.js";
 import type { ToolServices } from "../toolbox/services.js";
 import type { ActiveGenerations } from "./active-generations.js";
 import type { CodingRuns } from "./coding.js";
 import { GenerationCancelled, logOperationFailure, type OperationFailure } from "./errors.js";
 import type { RunEvents, RunGeneration } from "./events.js";
 import type { AgentMachines } from "./machines.js";
+import type { ConnectionTarget } from "./offered-tools.js";
 import type { ConnectorPool } from "./prepare.js";
 
 /** The tool calls of a run's history: which are pending, how many ran, and the record of an interrupted one. */
@@ -39,16 +45,22 @@ export type LostCodeTask = {
   call_id: string;
 };
 
-function optionalText(value: unknown): string | null {
-  return typeof value === "string" && value ? value : null;
-}
+/** The arguments of a `code_task` call that say where its work was: the repository and the session. */
+const CodeTaskWhere = Type.Pick(CodeTaskParameters, ["repo", "session_id"]);
 
-function callArguments(call: ToolCall): Record<string, unknown> {
+/** The call's arguments; none when the model wrote no JSON object. */
+function callArguments(call: ToolCall): JsonObject {
   try {
     return parseArguments(call);
   } catch {
     return {};
   }
+}
+
+/** Where a `code_task` call's arguments say its work was: the repository and the session, each null when they name none. */
+function codeTaskWhere(call: ToolCall): Pick<LostCodeTask, "repository" | "session_id"> {
+  const args = keepMatching(CodeTaskWhere, callArguments(call));
+  return { repository: args?.repo || null, session_id: args?.session_id || null };
 }
 
 /** A lost `code_task` call, from what its run remembered about it and from the call's own arguments. */
@@ -60,11 +72,11 @@ export function lostCodeTask(
   const callId = callSegment(call.id);
   const remembered = run.metadata.harness_task;
   const known = remembered?.call_id === callId ? remembered : null;
-  const args = callArguments(call);
+  const where = codeTaskWhere(call);
   return {
     harness,
-    repository: known?.repository ?? optionalText(args.repo),
-    session_id: known?.session_id ?? optionalText(args.session_id),
+    repository: known?.repository ?? where.repository,
+    session_id: known?.session_id ?? where.session_id,
     log_path: known?.log_path ?? null,
     run_id: run.id,
     call_id: callId,
@@ -187,9 +199,9 @@ export function toolCallsDatabase(db: Queryable): ToolCallsDatabase {
 export type GenerationTools = {
   run: ToolRun;
   hooks: ToolHooks;
-  schemas: unknown[];
+  schemas: FunctionTool[];
   secrets: Record<string, string>;
-  connections: Record<string, [string, string]>;
+  connections: Map<string, ConnectionTarget>;
   maxToolCalls: number;
 };
 
@@ -273,7 +285,7 @@ export class ToolCalls {
     const { run, hooks, connections, secrets } = tools;
     const name = call.function.name;
     const offered = run.offered_tools === null || run.offered_tools.has(name) || name in run.dynamic_tools;
-    const target = Object.hasOwn(connections, name) ? connections[name] : undefined;
+    const target = connections.get(name);
     if (offered && target !== undefined) {
       return this.callConnectionTool(call, target, owner, secrets);
     }
@@ -297,7 +309,7 @@ export class ToolCalls {
   /** Calls `remoteName` on the connection; a failure is the call's result, as the model reads it, and is logged. */
   private async callConnectionTool(
     call: ToolCall,
-    target: [string, string],
+    target: ConnectionTarget,
     owner: AgentRow | null,
     secrets: Record<string, string>,
   ): Promise<ToolRecord> {
@@ -329,7 +341,7 @@ export class ToolCalls {
   /** What the connection answers the call with, or the failure of a call that did not go through. */
   private async askConnection(
     call: ToolCall,
-    [connectionId, remoteName]: [string, string],
+    [connectionId, remoteName]: ConnectionTarget,
     owner: AgentRow | null,
   ): Promise<ConnectionAnswer> {
     const { mcp, machines } = this.services;

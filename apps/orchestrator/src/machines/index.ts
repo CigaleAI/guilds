@@ -1,9 +1,9 @@
 import path from "node:path";
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { NAME_RE } from "../lib/names.js";
 import { numberOrNull } from "../lib/numbers.js";
 import { isHarness } from "../coding/harnesses.js";
-import type { MachineWithAgentsQueryRow } from "../db/machines.js";
+import type { MachineAgentQueryRow, MachineQueryRow, MachineWithAgentsQueryRow } from "../db/machines.js";
 import { DEFAULT_MACHINE_BOX, DEFAULT_MACHINE_MAX_WORKSPACE_MIB, type Harness } from "../db/schema/index.js";
 
 /**
@@ -68,36 +68,20 @@ export class MachineError extends Error {
   }
 }
 
-export type MachineRow = {
-  id: string;
-  org_id: string;
-  name: string;
-  box: MachineBox;
+/** A machine as the domain reads it: its custom CPUs as a number, and the harnesses it carries. */
+export type MachineRow = Omit<MachineQueryRow, "cpu" | "harnesses"> & {
   cpu: number | null;
-  memory_mib: number | null;
-  max_workspace_mib: number;
-  workspace_mib: number | null;
   /** The coding harness CLIs its image carries; null until its container first started. */
   harnesses: Harness[] | null;
 };
 
-/** An agent on a machine, as the machine listing carries it. */
-export type MachineAgent = {
-  id: string;
-  name: string;
-  guild_id: string;
-  guild_name: string;
-  slot: number;
-  browser: boolean;
-  coding: boolean;
-  /** The agent's own disk cap in MiB. */
-  max_workspace_mib: number;
-};
+/** An agent on a machine, as the machine listing carries it, with its own disk cap in MiB. */
+export type MachineAgent = MachineAgentQueryRow;
 
 export type MachineWithAgents = MachineRow & { agents: MachineAgent[] };
 
-export function isMachineBox(value: unknown): value is MachineBox {
-  return typeof value === "string" && (MACHINE_BOXES as readonly string[]).includes(value);
+export function isMachineBox(value: string): value is MachineBox {
+  return MACHINE_BOXES.some((box) => box === value);
 }
 
 /** The CPUs and memory a machine runs with: its tier's, or a custom machine's own. */
@@ -224,17 +208,18 @@ export function lowestFreeSlot(taken: Iterable<number>, ceiling = MAX_AGENTS_PER
   return null;
 }
 
-export function validateMachineName(value: unknown): string {
-  const name = typeof value === "string" ? value.trim() : "";
+export function validateMachineName(value: string): string {
+  const name = value.trim();
   if (!NAME_RE.test(name)) {
     throw new MachineError(422, "name must match ^[a-z][a-z0-9-]{0,62}$");
   }
   return name;
 }
 
-function validateCustomCpu(value: unknown): number {
+function validateCustomCpu(value: number | null | undefined): number {
   if (
-    typeof value !== "number"
+    value === undefined
+    || value === null
     || !Number.isFinite(value)
     || value < CUSTOM_MIN_CPU
     || value > CUSTOM_MAX_CPU
@@ -248,9 +233,10 @@ function validateCustomCpu(value: unknown): number {
   return value;
 }
 
-function validateCustomMemory(value: unknown): number {
+function validateCustomMemory(value: number | null | undefined): number {
   if (
-    typeof value !== "number"
+    value === undefined
+    || value === null
     || !Number.isInteger(value)
     || value < CUSTOM_MIN_MEMORY_MIB
     || value > CUSTOM_MAX_MEMORY_MIB
@@ -314,7 +300,7 @@ function resolveCustomSize(
   body: MachineBody,
   box: MachineBox,
   current: MachineRow | undefined,
-): { cpu: number | null; memory_mib: number | null } {
+): Pick<MachineInput, "cpu" | "memory_mib"> {
   if (box !== "custom") {
     if (body.cpu !== undefined || body.memory_mib !== undefined) {
       throw new MachineError(422, "cpu and memory_mib are only for a custom machine");
@@ -353,21 +339,18 @@ export function validateMachineInput(body: MachineBody, current?: MachineRow): M
   };
 }
 
-/** A machine row from the database: numeric columns as numbers. An unknown tier is refused. */
-export function machineFromRow(row: Record<string, unknown>): MachineRow {
-  if (!isMachineBox(row.box)) {
-    throw new Error(`machine ${String(row.id)} has an unknown box: ${String(row.box)}`);
-  }
+/** A machine row from the database: its numeric CPUs as a number, and the harnesses core knows. */
+export function machineFromRow(row: MachineQueryRow): MachineRow {
   return {
-    id: String(row.id),
-    org_id: String(row.org_id),
-    name: String(row.name),
+    id: row.id,
+    org_id: row.org_id,
+    name: row.name,
     box: row.box,
     cpu: numberOrNull(row.cpu),
-    memory_mib: numberOrNull(row.memory_mib),
-    max_workspace_mib: Number(row.max_workspace_mib ?? DEFAULT_MACHINE_MAX_WORKSPACE_MIB),
-    workspace_mib: numberOrNull(row.workspace_mib),
-    harnesses: Array.isArray(row.harnesses) ? row.harnesses.filter(isHarness) : null,
+    memory_mib: row.memory_mib,
+    max_workspace_mib: row.max_workspace_mib,
+    workspace_mib: row.workspace_mib,
+    harnesses: row.harnesses === null ? null : row.harnesses.filter(isHarness),
   };
 }
 

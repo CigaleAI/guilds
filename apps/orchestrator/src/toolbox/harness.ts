@@ -1,18 +1,29 @@
+import { Type, type Static } from "typebox";
 import { harnessLaunch } from "../coding/harness-models.js";
 import type { Harness } from "../db/schema/index.js";
+import { keepMatching } from "../lib/decode.js";
 import { errorMessage, writeLog } from "../observability/log.js";
 import { callSegment, type CodeResult } from "./code.js";
 import { buildBrief } from "./harness-brief.js";
-import { checkpoint, harnessOp, numberOrZero, opsRun, shownProgressLines, stringOrNull } from "./harness-ops.js";
+import {
+  checkpoint,
+  HarnessExit,
+  harnessOp,
+  HarnessPoll,
+  HarnessStop,
+  opsRun,
+  shownProgressLines,
+  stringOrNull,
+  type CheckpointRepository,
+} from "./harness-ops.js";
 import { codeTaskText, failureDetail, isChangedFile, type CodeTaskOutcome, type CodeTaskStatus } from "./harness-result.js";
 import { checkHarness, requiredHarness } from "./harness-setup.js";
-import { functionSchema } from "./schema.js";
-import { identityOutput } from "./output.js";
+import { jsonArgument, wholeWithin } from "./schema.js";
 import type { ToolServices } from "./services.js";
 import {
   callActor,
+  nativeTool,
   type CancelEvent,
-  type Tool,
   type ToolHooks,
   type ToolInvocation,
   type ToolRun,
@@ -29,12 +40,27 @@ const POLL_FAILURES_MAX = 3;
 
 // --- the call's arguments ---------------------------------------------------
 
-function repositoryFor(run: ToolRun, args: Record<string, unknown>): string {
+/** A `code_task` call's arguments: the brief, the repository, the session it resumes, the notes it appends, and its timeout. */
+export const CodeTaskParameters = Type.Object({
+  brief: Type.String({ description: "The whole task, self-contained." }),
+  repo: Type.Optional(Type.String({ description: "Repository name under repos/." })),
+  session_id: Type.Optional(Type.String({ description: "Resume this harness session." })),
+  notes: Type.Optional(
+    Type.Array(Type.String(), { description: "Display paths of notes or records to append to the brief." }),
+  ),
+  timeout_minutes: Type.Optional(jsonArgument({ type: "integer", minimum: 1, maximum: CODE_TASK_MAX_MINUTES })),
+});
+export type CodeTaskArguments = Static<typeof CodeTaskParameters>;
+
+/** A call's timeout in whole minutes: the default when the call gives none, kept within the range. */
+const TIMEOUT_MINUTES = { min: 1, max: CODE_TASK_MAX_MINUTES, fallback: CODE_TASK_DEFAULT_MINUTES };
+
+function repositoryFor(run: ToolRun, repo: string | undefined): string {
   const names = run.code_repositories;
   if (!names.length) {
     throw new ToolUnavailableError("this guild has no repositories; the operator adds them in the guild's Repositories");
   }
-  const named = typeof args.repo === "string" ? args.repo.trim() : "";
+  const named = repo?.trim() ?? "";
   if (named) {
     return knownRepository(names, named);
   }
@@ -52,26 +78,16 @@ function knownRepository(names: string[], named: string): string {
 }
 
 /** The call's timeout in whole minutes: 30 when not given, between 1 and 60. */
-export function timeoutMinutes(args: Record<string, unknown>): number {
-  const raw = args.timeout_minutes;
-  const value = typeof raw === "number" && Number.isFinite(raw) ? Math.trunc(raw) : CODE_TASK_DEFAULT_MINUTES;
-  return Math.max(1, Math.min(CODE_TASK_MAX_MINUTES, value));
+export function timeoutMinutes(args: Pick<CodeTaskArguments, "timeout_minutes">): number {
+  return wholeWithin(args.timeout_minutes, TIMEOUT_MINUTES);
 }
 
-/** The distinct display paths `notes` names; throws when it is not a list of strings. */
-export function notePaths(args: Record<string, unknown>): string[] {
-  const raw = args.notes;
-  if (raw === undefined || raw === null) {
-    return [];
-  }
-  if (!Array.isArray(raw) || !raw.every((item): item is string => typeof item === "string")) {
-    throw new ToolArgumentError("notes must be a list of display paths");
-  }
-  return [...new Set(raw.map((item) => item.trim()).filter(Boolean))];
+/** The distinct display paths `notes` names. */
+export function notePaths(args: Pick<CodeTaskArguments, "notes">): string[] {
+  return [...new Set((args.notes ?? []).map((item) => item.trim()).filter(Boolean))];
 }
 
-function requiredBrief(args: Record<string, unknown>): string {
-  const brief = typeof args.brief === "string" ? args.brief : "";
+function requiredBrief(brief: string): string {
   if (!brief.trim()) {
     throw new ToolArgumentError("brief is required");
   }
@@ -112,7 +128,7 @@ type Settled = "exited" | "missing" | "cancelled" | "timed_out" | "unresponsive"
 type TurnEnding = {
   settled: Settled | "unreadable";
   stopped: boolean | null;
-  result: Record<string, unknown> | null;
+  result: HarnessExit | null;
 };
 
 const NOT_STARTED: TurnEnding = { settled: "not_started", stopped: null, result: null };
@@ -138,16 +154,12 @@ const SETTLED_DETAIL: Record<TurnEnding["settled"], (minutes: number) => string>
 
 type CheckedCall = Pick<HarnessTurn, "harness" | "repository" | "prompt" | "version" | "ops" | "call_id">;
 
-function sessionIdOf(args: Record<string, unknown>): string | null {
-  return typeof args.session_id === "string" ? stringOrNull(args.session_id.trim()) : null;
-}
-
 /** Validates the call's arguments, checks its harness, and builds the brief. */
-async function checkedCall(services: ToolServices, run: ToolRun, call: ToolInvocation): Promise<CheckedCall> {
+async function checkedCall(services: ToolServices, run: ToolRun, call: ToolInvocation<CodeTaskArguments>): Promise<CheckedCall> {
   const args = call.arguments;
   const harness = requiredHarness(run);
-  const brief = requiredBrief(args);
-  const repository = repositoryFor(run, args);
+  const brief = requiredBrief(args.brief);
+  const repository = repositoryFor(run, args.repo);
   const notes = notePaths(args);
   const callId = callSegment(call.id || `code_task_${Date.now()}`);
   const version = await checkHarness(services, run, callId, harness);
@@ -156,7 +168,7 @@ async function checkedCall(services: ToolServices, run: ToolRun, call: ToolInvoc
 }
 
 /** A checked call, with the task's start checkpoint taken and its clock started. */
-async function openHarnessTurn(services: ToolServices, run: ToolRun, call: ToolInvocation): Promise<HarnessTurn> {
+async function openHarnessTurn(services: ToolServices, run: ToolRun, call: ToolInvocation<CodeTaskArguments>): Promise<HarnessTurn> {
   const args = call.arguments;
   const checked = await checkedCall(services, run, call);
   const start = await checkpoint(checked.ops, checked.call_id, "start", checked.repository);
@@ -170,7 +182,7 @@ async function openHarnessTurn(services: ToolServices, run: ToolRun, call: ToolI
     start_sha: stringOrNull(start.start_sha),
     started,
     deadline: started + minutes * harnessTiming.minuteMs,
-    session: sessionIdOf(args),
+    session: stringOrNull(args.session_id?.trim()),
     offset: 0,
     failures: 0,
   };
@@ -230,31 +242,31 @@ function interruption(run: ToolRun, turn: HarnessTurn): Settled | null {
   return Date.now() >= turn.deadline ? "timed_out" : null;
 }
 
-function countFailedPoll(turn: HarnessTurn, error: unknown): Settled | null {
+function countFailedPoll(turn: HarnessTurn, message: string): Settled | null {
   turn.failures += 1;
   if (turn.failures < POLL_FAILURES_MAX) {
     return null;
   }
-  writeLog("warn", errorMessage(error), { run_id: turn.ops.run_id, agent_id: turn.ops.agent_id, operation: "code_task.poll" });
+  writeLog("warn", message, { run_id: turn.ops.run_id, agent_id: turn.ops.agent_id, operation: "code_task.poll" });
   return "unresponsive";
 }
 
-async function noteSession(services: ToolServices, run: ToolRun, turn: HarnessTurn, seen: unknown): Promise<void> {
-  if (typeof seen !== "string" || !seen || seen === turn.session) {
+async function noteSession(services: ToolServices, run: ToolRun, turn: HarnessTurn, seen: string | undefined): Promise<void> {
+  if (!seen || seen === turn.session) {
     return;
   }
   turn.session = seen;
   await rememberTurn(services, run, turn);
 }
 
-async function publishLines(services: ToolServices, run: ToolRun, turn: HarnessTurn, lines: unknown): Promise<void> {
-  if (!Array.isArray(lines) || !lines.length) {
+async function publishLines(services: ToolServices, run: ToolRun, turn: HarnessTurn, lines: string[] | undefined): Promise<void> {
+  if (!lines?.length) {
     return;
   }
   await services.events?.publish(run.run_id, "tool.progress", {
     run_id: run.run_id,
     tool_call_id: turn.tool_call_id,
-    lines: shownProgressLines(lines.map(String), run.secrets),
+    lines: shownProgressLines(lines, run.secrets),
     session_id: turn.session,
   });
 }
@@ -263,12 +275,12 @@ async function applyPoll(
   services: ToolServices,
   run: ToolRun,
   turn: HarnessTurn,
-  meta: Record<string, unknown>,
+  meta: HarnessPoll,
 ): Promise<Settled | null> {
   if (meta.missing === true) {
     return "missing";
   }
-  turn.offset = typeof meta.offset === "number" ? meta.offset : turn.offset;
+  turn.offset = meta.offset ?? turn.offset;
   await noteSession(services, run, turn, meta.session_id);
   await publishLines(services, run, turn, meta.lines);
   return meta.exited === true ? "exited" : null;
@@ -280,10 +292,10 @@ async function pollOnce(services: ToolServices, run: ToolRun, hooks: ToolHooks, 
     await hooks.before_command?.();
     poll = await harnessOp(turn.ops, turn.call_id, "poll", { harness: turn.harness, offset: turn.offset });
   } catch (error) {
-    return countFailedPoll(turn, error);
+    return countFailedPoll(turn, errorMessage(error));
   }
   turn.failures = 0;
-  return applyPoll(services, run, turn, poll.meta);
+  return applyPoll(services, run, turn, keepMatching(HarnessPoll, poll.meta) ?? {});
 }
 
 /** Polls the harness, publishing its progress, until it exits, is lost, or must be stopped. */
@@ -298,9 +310,10 @@ async function pollUntilSettled(services: ToolServices, run: ToolRun, hooks: Too
 }
 
 /** The `result` op's meta, which also clears the call's state once the harness exited; null when unread. */
-async function readResult(ops: ToolRun, callId: string, harness: Harness): Promise<Record<string, unknown> | null> {
+async function readResult(ops: ToolRun, callId: string, harness: Harness): Promise<HarnessExit | null> {
   const result = await harnessOp(ops, callId, "result", { harness }).catch(() => null);
-  return result === null || result.meta.missing === true ? null : result.meta;
+  const exit = result === null ? null : (keepMatching(HarnessExit, result.meta) ?? {});
+  return exit === null || exit.missing === true ? null : exit;
 }
 
 /** Stops the harness and, once it has exited, reads its result. A call with no state left has nothing to stop. */
@@ -308,9 +321,9 @@ async function stopHarness(
   ops: ToolRun,
   callId: string,
   harness: Harness,
-): Promise<{ stopped: boolean; result: Record<string, unknown> | null }> {
+): Promise<{ stopped: boolean; result: HarnessExit | null }> {
   const stop = await harnessOp(ops, callId, "stop", { harness }).catch(() => null);
-  const stopped = stop !== null && stop.meta.exited !== false;
+  const stopped = stop !== null && keepMatching(HarnessStop, stop.meta)?.exited !== false;
   return { stopped, result: stopped ? await readResult(ops, callId, harness) : null };
 }
 
@@ -387,7 +400,7 @@ function endingDetail(turn: HarnessTurn, ending: TurnEnding, status: CodeTaskSta
   return SETTLED_DETAIL[ending.settled](turn.minutes);
 }
 
-function turnOutcome(turn: HarnessTurn, ending: TurnEnding, changed: Record<string, unknown>): CodeTaskOutcome {
+function turnOutcome(turn: HarnessTurn, ending: TurnEnding, changed: CheckpointRepository): CodeTaskOutcome {
   const status = endingStatus(ending);
   return {
     status,
@@ -395,10 +408,10 @@ function turnOutcome(turn: HarnessTurn, ending: TurnEnding, changed: Record<stri
     repository: turn.repository,
     session_id: stringOrNull(ending.result?.session_id) ?? turn.session,
     duration_ms: Date.now() - turn.started,
-    files_changed: numberOrZero(changed.files_changed),
-    insertions: numberOrZero(changed.insertions),
-    deletions: numberOrZero(changed.deletions),
-    files: Array.isArray(changed.files) ? changed.files.filter(isChangedFile) : [],
+    files_changed: changed.files_changed ?? 0,
+    insertions: changed.insertions ?? 0,
+    deletions: changed.deletions ?? 0,
+    files: (changed.files ?? []).filter(isChangedFile),
     detail: endingDetail(turn, ending, status),
     message: stringOrNull(ending.result?.message) ?? "",
     log_path: turn.log_path,
@@ -409,7 +422,7 @@ function turnOutcome(turn: HarnessTurn, ending: TurnEnding, changed: Record<stri
 async function finishHarnessTurn(call: ToolInvocation, turn: HarnessTurn, ending: TurnEnding): Promise<string> {
   const end = await checkpoint(turn.ops, turn.call_id, "end", turn.repository);
   const outcome = turnOutcome(turn, ending, end);
-  const exitCode = typeof ending.result?.exit_code === "number" ? ending.result.exit_code : null;
+  const exitCode = ending.result?.exit_code ?? null;
   call.exit_code = exitCode;
   call.metadata = {
     harness: turn.harness,
@@ -427,7 +440,7 @@ async function finishHarnessTurn(call: ToolInvocation, turn: HarnessTurn, ending
   return codeTaskText(outcome);
 }
 
-export const codeTask: Tool = {
+export const codeTask = nativeTool({
   name: "code_task",
   description:
     "Delegate code work to your coding harness, which runs in your sandbox against one of the " +
@@ -438,27 +451,11 @@ export const codeTask: Tool = {
     "its question or follow up) in the repository it started in. repo is a name under repos/, " +
     "optional when the guild has one. timeout_minutes defaults to 30, at most 60. The harness " +
     "may commit but never pushes; check its work, then push and open pull requests yourself.",
-  output_filter: identityOutput,
-  filter_name: "identity",
-  schema: functionSchema(
-    "code_task",
-    "Delegate code work to your coding harness and return its result.",
-    {
-      brief: { type: "string", description: "The whole task, self-contained." },
-      repo: { type: "string", description: "Repository name under repos/." },
-      session_id: { type: "string", description: "Resume this harness session." },
-      notes: {
-        type: "array",
-        items: { type: "string" },
-        description: "Display paths of notes or records to append to the brief.",
-      },
-      timeout_minutes: { type: "integer", minimum: 1, maximum: CODE_TASK_MAX_MINUTES },
-    },
-    ["brief"],
-  ),
+  summary: "Delegate code work to your coding harness and return its result.",
+  parameters: CodeTaskParameters,
   async handler(services, run, hooks, call) {
     const turn = await openHarnessTurn(services, run, call);
     const ending = run.cancel_event?.aborted ? NOT_STARTED : await runHarnessTurn(services, run, hooks, turn);
     return finishHarnessTurn(call, turn, ending);
   },
-};
+});

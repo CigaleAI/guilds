@@ -1,21 +1,22 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { agentSecrets, snapshotEnvValues } from "../access/runtime.js";
 import {
   agentGitIdentity,
+  CloneFailure,
   cloneFailures,
   repositoryTokens,
   RepositoryTokenInstallationGoneError,
 } from "../coding/git.js";
 import { retireInstallationGone } from "../coding/guild-repositories.js";
-import { codingRepositories } from "../coding/repositories.js";
+import { codingRepositories, type CodingRepository } from "../coding/repositories.js";
 import { clearHarnessLogin, getAgent, markHarnessLogin, type AgentRow } from "../db/agents.js";
 import { getGuild, listGuildRepositories } from "../db/guilds.js";
-import { isPlainRecord } from "../db/json.js";
 import { getMcpConnectionForOwner, type McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import { getRun, mergeRunMetadata, type RunRow } from "../db/runs.js";
 import { RunRepositoryChangeSchema, type Harness, type RunRepositoryChange, type ToolCall } from "../db/schema/index.js";
-import { decode } from "../lib/decode.js";
+import { assertMatches, keepMatching } from "../lib/decode.js";
+import { isObjectNode, type JsonValue } from "../lib/json.js";
 import { RepositoryAccessError } from "../github/tokens.js";
 import { GITHUB_SERVER_ID } from "../instance/integrations.js";
 import { retireLogin, type LoginFailure } from "../mcp/service.js";
@@ -38,6 +39,9 @@ import { lostCodeTask, type GenerationTools, type InterruptedToolRecord, type Lo
 import { maintenanceRun } from "./workspace.js";
 
 export const RUN_DIFF_MAX_BYTES = 256 * 1024;
+
+/** A diff the agent's machine produced: at most `RUN_DIFF_MAX_BYTES` of it, redacted, and whether it was cut. */
+export type CodeDiff = { diff: string; truncated: boolean };
 
 /** The db/ functions a coding run's repositories are read through. */
 export type CodingRepositoriesDatabase = {
@@ -75,7 +79,7 @@ async function githubConnectionOf(
 export async function guildRepositories(
   db: CodingRepositoriesDatabase,
   agent: AgentRow,
-): Promise<Array<Record<string, unknown>>> {
+): Promise<CodingRepository[]> {
   return codingRepositories(await db.listGuildRepositories(agent.guild_id), await githubConnectionOf(db, agent));
 }
 
@@ -122,15 +126,14 @@ export type CodingRunsServices = {
 };
 
 /** The repositories the helper's `git_setup` could not clone, with why. */
-function failedClones(value: unknown): Array<{ name: string; error: string }> {
+function failedClones(value: JsonValue | undefined): CloneFailure[] {
   if (!Array.isArray(value)) {
     return [];
   }
-  return value.flatMap((item) =>
-    isPlainRecord(item) && typeof item.name === "string" && typeof item.error === "string"
-      ? [{ name: item.name, error: item.error }]
-      : [],
-  );
+  return value.flatMap((item) => {
+    const failure = isObjectNode(item) ? keepMatching(CloneFailure, item) : null;
+    return failure === null ? [] : [failure];
+  });
 }
 
 /**
@@ -192,7 +195,7 @@ export class CodingRuns {
       return false;
     }
     const maintenance = maintenanceRun(turn.runId, agent, sandbox);
-    let failed: Array<{ name: string; error: string }>;
+    let failed: CloneFailure[];
     try {
       const guild = await db.getGuild(agent.guild_id);
       const setup = await runCodeHelper(
@@ -251,7 +254,7 @@ export class CodingRuns {
     runId: string,
     repository: string,
     task: string | null = null,
-  ): Promise<{ diff: string; truncated: boolean }> {
+  ): Promise<CodeDiff> {
     const { agent, sandbox } = await this.runAgent(runId);
     let result;
     try {
@@ -377,9 +380,12 @@ export class CodingRuns {
   private async checkpoint(run: ToolRun, which: "start" | "end", agent: AgentRow): Promise<RunRepositoryChange[]> {
     try {
       const result = await runCodeHelper(run, createToolHooks(), { op: "checkpoint", which }, { timeoutSeconds: 300 });
-      return which === "end"
-        ? decode(Type.Array(RunRepositoryChangeSchema), result.meta.repositories, (problem) => new Error(`checkpoint ${problem}`))
-        : [];
+      if (which === "start") {
+        return [];
+      }
+      const { repositories } = result.meta;
+      assertMatches(Type.Array(RunRepositoryChangeSchema), repositories, (problem) => new Error(`checkpoint ${problem}`));
+      return repositories;
     } catch (error) {
       writeLog("warn", errorMessage(error), {
         run_id: run.run_id,

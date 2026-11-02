@@ -1,7 +1,7 @@
 // The arguments of the Studio edit tools: what the model is offered and sends, decoded when the
 // tool runs and again from the recorded call when the operator reviews or applies the proposal.
 
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { AGENT_ROW_MODES, GUILD_ROW_MODES } from "../artifacts/access-lists.js";
 import { ARTIFACT_LEVELS } from "../artifacts/types.js";
 import { EDIT_ACTIONS } from "./actions.js";
@@ -135,7 +135,7 @@ export const EditCollectionArguments = Type.Object({
 });
 export type EditCollectionArguments = Static<typeof EditCollectionArguments>;
 
-const ACCESS_SETTINGS = ["on", "off", "inherit"] as const;
+export const ACCESS_SETTINGS = ["on", "off", "inherit"] as const;
 export type AccessSetting = (typeof ACCESS_SETTINGS)[number];
 const ACCESS_SETTING = studioChoice(ACCESS_SETTINGS);
 

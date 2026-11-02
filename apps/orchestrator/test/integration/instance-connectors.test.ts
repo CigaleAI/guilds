@@ -12,6 +12,7 @@ import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { endpointManifest, fakeRegistry } from "../helpers/registry.js";
 import { getMcpConnectionForOwner } from "../../src/db/mcp.js";
+import type { JsonObject } from "../../src/lib/json.js";
 
 const OWNER = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 const JSON_HEADERS = { ...OWNER, "content-type": "application/json" };
@@ -36,7 +37,7 @@ test("a connector's own key or OAuth client is an instance key the admin fills u
   const database = await connect(await createIsolatedDatabase(dbName));
   const db = database.pool;
   const registry = fakeRegistry();
-  const publish = (slug: string, extra: Record<string, unknown>) =>
+  const publish = (slug: string, extra: JsonObject) =>
     registry.connector(slug, "1.0.0", { "connector.json": JSON.stringify(endpointManifest(slug, extra)) });
   publish("acme", { display_name: "Acme", auth: { kind: "token", fields: [{ name: "api_key", label: "Acme key" }], instance: { own: true } } });
   publish("borrow", { auth: { kind: "token", instance: { integration: "web-search", field: "api_key" } } });

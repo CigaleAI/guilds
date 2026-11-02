@@ -44,6 +44,8 @@ shares:
 | `naming.ts` | The writing verbs, and a tool's prefixed name |
 | `settings.ts` | The check of a login's settings |
 | `types.ts` | The adapter contract and `ConnectorError` |
+| `tools.ts` | A tool the adapter's code runs, its arguments decoded against its parameters |
+| `response.ts` | The decode of a provider's response, and the message of a failed one |
 | `instance.ts`, `instance-keys.ts` | Platform logins and platform key writes |
 | `login.ts` | Whether a login waits only for its settings |
 | `builder.ts`, `format.ts` | The guild builder's view of a connector, and number formatting for adapters |
@@ -89,7 +91,7 @@ A connector has an endpoint, an adapter, or both:
 | `auth.oauth` | `{ strategy, provider, scopes }`. `strategy` is `dynamic`, `configured`, or `github_app` ([OAuth](#oauth)) |
 | `auth.instance` | `{ integration, field }` or `{ own: true }` ([Platform logins](#platform-logins)) |
 | `requires.integration` | The integration the connector needs ([Platform keys](platform-keys.md)) |
-| `tools[]` | `{ name, description, input_schema, mutating }`, the curated list |
+| `tools[]` | `{ name, description, input_schema, mutating }`, the curated list. A tool the adapter's code runs has no `input_schema` here ([The pool and adapters](#the-pool-and-adapters)) |
 | `policy.default_off` | Name patterns that start Off; `*` matches any run of characters |
 | `policy.exclude` | Name patterns of listed tools no login's catalog keeps |
 | `settings_schema` | The login's settings document ([Login settings](#login-settings)) |
@@ -98,9 +100,14 @@ A connector has an endpoint, an adapter, or both:
 | `prompt.guidance` | A paragraph the agent prompt adds when one of the connector's tools is offered |
 
 TypeBox validates each manifest at load, and its slug against its
-folder. A connector that lists tools and has no endpoint needs an
-adapter `call`. A `state` key needs a `state` hook, and a `state` hook
-needs a `state` key.
+folder. The loaded manifest gives every tool it lists an
+`input_schema`: a tool the adapter's code runs takes the JSON Schema
+of the parameters its code declares, and a tool the endpoint runs
+carries its own. A listed `input_schema` for a tool the code runs, and
+a tool that carries none and that no code runs, are refused. A
+connector that lists tools and has no endpoint needs an adapter
+`call`, and lists every tool its code runs. A `state` key needs a
+`state` hook, and a `state` hook needs a `state` key.
 
 An organisation login to a connector with `builder.searchable` is
 searchable from the guild builder, so the coach can suggest what it
@@ -181,10 +188,18 @@ describes it: Drive's `folder_id` ([Gmail and Drive](google.md)) and
 the GitHub login's `repositories` ([GitHub](github.md)). A login's
 settings live on that login, not in the agent's configuration.
 
-The check covers `type`, `properties`, `required`,
-`additionalProperties`, `items`, `minItems`, `maxItems`, `minLength`,
-`maxLength`, `pattern`, and `enum`. A property marked `x-lookup` gets
-a search box that the adapter's `lookup` fills.
+`SettingsSchema` (`src/db/schema/connectors.ts`) declares the
+keywords a settings schema uses, at every depth: `type` (`object`,
+`array`, `string`, `number`, `integer`, `boolean`), `title`,
+`description`, `properties`, `required`, `additionalProperties`,
+`items`, `minItems`, `maxItems`, `minLength`, `maxLength`, `pattern`,
+`enum`, and `x-lookup`. The manifest's `settings_schema` is checked
+against it at load: a keyword that does not hold what JSON Schema puts
+there is refused, and another keyword is kept and checks nothing. A
+login's settings are checked against `type`, `properties`, `required`,
+`additionalProperties: false`, `items`, the counts and lengths,
+`pattern`, and `enum`. A property marked `x-lookup` gets a search box
+that the adapter's `lookup` fills.
 
 A login that lacks a required setting is signed in but `pending`. Its
 metadata carries `needs_settings`, and its card shows the settings
@@ -331,6 +346,33 @@ The adapter gets:
   connector with no endpoint, it refuses.
 - `ctx.workspace_dir`: the agent's workspace on the host, when the
   call comes from a run
+
+A tool the adapter's own code runs is declared once with
+`adapterTool` (`src/connectors/tools.ts`): its name, the TypeBox
+schema of its parameters, and its work on a call. Each call's
+arguments are decoded against the parameters before the work, as a
+native tool's are: an optional argument sent as null is absent, and
+arguments that do not match are a 422 `ConnectorError` naming the
+first mismatch. `toolsAdapter(tools, hooks)` makes the adapter: its
+`call` runs the tool a call names, sends another name to the hooks'
+`call`, and refuses it with a 404 without one. The parameters are the
+tool's one declaration: `connector.json` lists the tool with its
+name, description and `mutating`, and the loaded manifest offers the
+JSON Schema of its parameters as its `input_schema`. `Paged`
+(`src/connectors/tools.ts`) is the `limit` and `page_key` of a tool
+that lists rows a page at a time, and `listRows`
+(`src/connectors/format.ts`) keeps a call's `limit` between 1 and the
+cap.
+
+An adapter's client decodes each response it reads once
+(`src/connectors/response.ts`): `decodeResponse(api, response, schema)`
+throws the client's error with the status and the provider's message
+on a status of 400 or above, and otherwise decodes the body against
+the TypeBox schema the connector's `responses.ts` declares for it. A
+body that is not JSON, or does not match, is the client's error
+naming the problem. `api` names the provider, the error its client
+throws, and the schema of its error bodies with the message one
+holds.
 
 An adapter reads what the agent names in its home through
 `lib/agent-file.ts`: `readAgentFile` for one file, `readAgentFolder`

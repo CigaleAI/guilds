@@ -1,7 +1,7 @@
 import { existsSync, statSync } from "node:fs";
 import { agentLogins, agentRuntime, type RuntimeAccess } from "../access/runtime.js";
-import { isOptimizedBrowserOn, validateAgentConfig } from "../agents/config.js";
-import { AgentValidationError } from "../agents/validation.js";
+import { isOptimizedBrowserOn } from "../agents/config.js";
+import { AgentValidationError, validateAgentConfig } from "../agents/validation.js";
 import { agentActor } from "../artifacts/actors.js";
 import { ArtifactError } from "../artifacts/errors.js";
 import { stateRepositories } from "../coding/repositories.js";
@@ -11,6 +11,7 @@ import { listAgents, type AgentRow } from "../db/agents.js";
 import { listGroupMessages } from "../db/group-chat.js";
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import type { GroupRouter } from "../groupchat/router.js";
+import type { JsonObject } from "../lib/json.js";
 import { McpDisconnectedError } from "../mcp/errors.js";
 import type { McpPool } from "../mcp/pool.js";
 import { readMemory } from "../memory/index.js";
@@ -26,7 +27,7 @@ import {
 } from "../prompts/index.js";
 import { prepareBrowserWorkspace, prepareWorkspace } from "../sandbox/index.js";
 import type { Scripts } from "../scripts/catalog.js";
-import { collectRunState, type RunStateInputs } from "../state/index.js";
+import { collectRunState, type RunState, type RunStateInputs } from "../state/index.js";
 import { SCRIPT_TOOLS } from "../toolbox/script.js";
 import { serializeHistoryDecision } from "../typesafe/group.js";
 import type { ActiveGenerations } from "./active-generations.js";
@@ -34,7 +35,7 @@ import { codingRepositoriesDatabase, guildRepositories, type CodingRepositoriesD
 import { RunRequestError } from "./errors.js";
 import type { AgentMachines } from "./machines.js";
 import type { PreparedRun } from "./snapshot.js";
-import { collectionCatalog } from "../artifacts/collections.js";
+import { collectionCatalog, type CatalogCollection } from "../artifacts/collections.js";
 import { agentTask, taskSnapshot } from "../artifacts/task.js";
 import type { ArtifactStore } from "../artifacts/store.js";
 import { toolArtifacts, type ToolArtifacts } from "../toolbox/artifacts.js";
@@ -219,7 +220,7 @@ export class RunPreparation {
       }
       throw error;
     }
-    if (typeof task !== "string") {
+    if (task === null) {
       throw new RunRequestError(422, "task prompt is required");
     }
     return [system, task, readMemory(agentDir)];
@@ -257,7 +258,7 @@ export class RunPreparation {
   }
 
   /** The collections the agent can read; none when the box keeps no artifacts or the store refuses. */
-  private async collections(agent: AgentRow): Promise<unknown[]> {
+  private async collections(agent: AgentRow): Promise<CatalogCollection[]> {
     const { artifacts } = this.services;
     if (!artifacts || !agent.org_id) {
       return [];
@@ -273,13 +274,13 @@ export class RunPreparation {
     }
   }
 
-  private async connectorState(agent: AgentRow): Promise<Record<string, unknown>> {
+  private async connectorState(agent: AgentRow): Promise<JsonObject> {
     const { mcp, db } = this.services;
     return mcp.state(await db.agentLogins(agent));
   }
 
   /** The guild's state as the run's system prompt shows it; a notes folder it cannot read is a 422. */
-  private runState(agent: AgentRow, inputs: RunStateInputs): Record<string, unknown> {
+  private runState(agent: AgentRow, inputs: RunStateInputs): RunState {
     try {
       return collectRunState(
         this.services.artifacts ? null : this.services.notes,

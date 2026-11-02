@@ -10,164 +10,35 @@
   "tools": [
     {
       "name": "search",
-      "description": "Find CoinGecko coin, NFT, and category ids by name or phrase. Does not return contract addresses; call coin after this.",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "query": {
-            "type": "string",
-            "description": "Name, symbol, or phrase."
-          },
-          "limit": {
-            "type": "integer",
-            "description": "Rows per section. Default 15, max 30."
-          }
-        },
-        "required": [
-          "query"
-        ]
-      }
+      "description": "Find CoinGecko coin, NFT, and category ids by name or phrase. Does not return contract addresses; call coin after this."
     },
     {
       "name": "coin",
-      "description": "Coin id or platform+address → contract addresses and lean market data. Pass id, or platform and address.",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "CoinGecko coin id."
-          },
-          "platform": {
-            "type": "string",
-            "description": "Asset platform id, e.g. ethereum."
-          },
-          "address": {
-            "type": "string",
-            "description": "Token contract address."
-          }
-        }
-      }
+      "description": "Coin id or platform+address → contract addresses and lean market data. Pass id, or platform and address."
     },
     {
       "name": "prices",
-      "description": "Current USD price, 24h change, and last update for CoinGecko coin ids.",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "ids": {
-            "type": "string",
-            "description": "Comma list of CoinGecko coin ids, at most 50."
-          }
-        },
-        "required": [
-          "ids"
-        ]
-      }
+      "description": "Current USD price, 24h change, and last update for CoinGecko coin ids."
     },
     {
       "name": "new",
-      "description": "Recently listed coins on CoinGecko. Analyst plan and above.",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "limit": {
-            "type": "integer",
-            "description": "Row cap. Default 15, max 30."
-          }
-        }
-      }
+      "description": "Recently listed coins on CoinGecko. Analyst plan and above."
     },
     {
       "name": "movers",
-      "description": "Top gainers and losers. Analyst plan and above.",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "vs": {
-            "type": "string",
-            "description": "Quote currency. Default usd."
-          },
-          "duration": {
-            "type": "string",
-            "description": "1h, 24h, 7d, 14d, 30d, 60d, or 1y. Default 24h."
-          },
-          "top": {
-            "type": "string",
-            "description": "Market-cap universe: 300, 500, 1000, or all. Default 1000."
-          },
-          "limit": {
-            "type": "integer",
-            "description": "Rows per side. Default 15, max 30."
-          }
-        }
-      }
+      "description": "Top gainers and losers. Analyst plan and above."
     },
     {
       "name": "supply",
-      "description": "Circulating, total, and labeled non-circulating wallets. Analyst plan and above.",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "CoinGecko coin id."
-          }
-        },
-        "required": [
-          "id"
-        ]
-      }
+      "description": "Circulating, total, and labeled non-circulating wallets. Analyst plan and above."
     },
     {
       "name": "chart",
-      "description": "Price history or OHLC. Pass id, or platform and address. OHLC requires id. Default 7 days, price series only.",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "CoinGecko coin id."
-          },
-          "platform": {
-            "type": "string",
-            "description": "Asset platform id."
-          },
-          "address": {
-            "type": "string",
-            "description": "Token contract address."
-          },
-          "days": {
-            "type": "string",
-            "description": "Lookback. Default 7. Use max for full range."
-          },
-          "kind": {
-            "type": "string",
-            "description": "price or ohlc. Default price."
-          },
-          "vs": {
-            "type": "string",
-            "description": "Quote currency. Default usd."
-          },
-          "series": {
-            "type": "string",
-            "description": "price, or comma list including mcap and vol."
-          }
-        }
-      }
+      "description": "Price history or OHLC. Pass id, or platform and address. OHLC requires id. Default 7 days, price series only."
     },
     {
       "name": "trending",
-      "description": "Trending coins, NFTs, and categories in the last 24 hours.",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "limit": {
-            "type": "integer",
-            "description": "Rows per section. Default 15, max 30."
-          }
-        }
-      }
+      "description": "Trending coins, NFTs, and categories in the last 24 hours."
     }
   ]
 }

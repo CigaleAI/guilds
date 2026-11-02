@@ -51,6 +51,14 @@ commits are what the reviewer reads.
     route, event, type, export, or storage format. Nothing is kept
     backward compatible by default; a break is listed here and the
     operator chooses how to handle it.
+  - *Assumptions*: each gap in the request, the rules, or the code
+    that the author filled on their own: what was assumed, what the
+    change does because of it, and what the operator could say to
+    change it. None, when there is none.
+- **Limits**: a lint warning on complexity or parameter count in
+  changed code is named here with the function and the one contract
+  it holds. A function that holds two contracts is split instead
+  ([Functions](code-guidelines.md#functions)).
 - **End-to-end tests**: every service the change touches has a
   test that drives the changed behaviour through that service's
   edge, as its callers use it: an HTTP route through `app.inject`,
@@ -117,13 +125,15 @@ The reviewer reads the diff, not the description, and checks:
    assert behaviour, not implementation. A refactor's named suites
    do reach the moved code.
 4. **Guidelines**: the [checklist](code-guidelines.md#checklist)
-   holds.
+   holds, and each function named under Limits holds one contract.
 5. **Boundaries**: routes call one domain function; `db/` rows
    leave typed; no package reaches into another's internals.
 6. **Docs**: every page that names the changed behaviour is
    updated, and no page describes a previous state.
 7. **Compatibility**: every break the diff introduces is flagged in
    the description.
+8. **Assumptions**: each assumption the description lists is one the
+   reviewer accepts, or it becomes a comment.
 
 A comment asks for a change or asks a question. A pull request is
 merged when the check passes and the reviewer has no open comment.

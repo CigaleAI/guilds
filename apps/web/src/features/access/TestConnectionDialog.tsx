@@ -2,6 +2,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { callConnectionTool } from "../../api/queries/access";
 import type { McpServerAccess, McpToolAccess, McpToolCallResult } from "../../api/types/access";
+import type { JsonObject } from "../../api/wire";
 import {
   Button,
   CopyButton,
@@ -99,7 +100,6 @@ type ResultViewProps = { result: McpToolCallResult };
 
 function ResultView({ result }: ResultViewProps) {
   const shown = prettyResult(result.content);
-  const structured = shown.json !== null && typeof shown.json === "object";
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
       <div className="flex items-center gap-2">
@@ -107,7 +107,7 @@ function ResultView({ result }: ResultViewProps) {
         {result.truncated ? <span className="text-xs text-muted">truncated</span> : null}
         <CopyButton className="ml-auto" text={result.content} what="result" />
       </div>
-      {structured ? (
+      {shown.json ? (
         <div className="max-h-80 overflow-auto rounded-md bg-surface p-3">
           <JsonTree value={shown.json} />
         </div>
@@ -174,7 +174,7 @@ function ToolPicker({ tools, onPick }: ToolPickerProps) {
 }
 
 /** One call of a listed tool on the login under test. */
-type ConnectionToolCall = { name: string; arguments_: Record<string, unknown> };
+type ConnectionToolCall = { name: string; arguments_: JsonObject };
 
 type TestConnectionFormProps = {
   server: McpServerAccess;

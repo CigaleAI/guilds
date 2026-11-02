@@ -298,19 +298,21 @@ export function CodingAgentForm({ guild, onClose }: CodingAgentFormProps) {
   const stepProps = { form, setConfig, errors, machine };
   /** What each step shows, in the order of `STEPS`. */
   const stepViews: readonly ReactNode[] = [
-    <Group title="Identity">
+    <Group key="identity" title="Identity">
       <IdentityFields draft={identity.draft} onChange={identity.setDraft} />
     </Group>,
     <MachineGroup
+      key="machine"
       {...stepProps}
       machines={machines}
       coding
       onDiskTyped={disk.onTyped}
       hint="Coding agents need a Code machine."
     />,
-    <HarnessStep {...stepProps} guild={guild} token={token} onToken={setToken} />,
-    <ModelStep {...stepProps} lead models={models.data} noProvider={noProvider} />,
+    <HarnessStep key="harness" {...stepProps} guild={guild} token={token} onToken={setToken} />,
+    <ModelStep key="model" {...stepProps} lead models={models.data} noProvider={noProvider} />,
     <CodingRepositories
+      key="repositories"
       guild={guild}
       missingNote="No repository yet. You can create the agent and add one later in the guild's Settings."
     />,

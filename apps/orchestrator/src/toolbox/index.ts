@@ -9,8 +9,8 @@ import {
   recordSearch,
   recordUpdate,
 } from "./artifacts.js";
-import { isPlainRecord } from "../db/json.js";
 import type { ToolCall, ToolMessage, ToolResultMetadata } from "../db/schema/index.js";
+import { isJsonObject, type JsonObject } from "../lib/json.js";
 import { writeLog } from "../observability/log.js";
 import { identityOutput, processOutput } from "./output.js";
 import { browse } from "./browse.js";
@@ -24,11 +24,12 @@ import { reportIssue } from "./report.js";
 import { scheduleCreateCron, scheduleCreateWindow, scheduleDelete, scheduleList, schedulePause, scheduleResume, scheduleUpdate } from "./schedule.js";
 import { scriptCreate, scriptDelete, scriptList, scriptRead, scriptRun } from "./script.js";
 import { secretRequest, secretStore } from "./secret.js";
+import type { FunctionTool } from "../lib/tool-schema.js";
 import type { ToolServices } from "./services.js";
-import type { Tool, ToolHooks, ToolInvocation, ToolRun } from "./types.js";
+import type { Tool, ToolHooks, ToolInvocation, ToolRun, ToolsByName } from "./types.js";
 import { ToolArgumentError } from "./errors.js";
 
-export const REGISTRY: Record<string, Tool> = {};
+export const REGISTRY: ToolsByName = {};
 
 function register(tool: Tool): void {
   REGISTRY[tool.name] = tool;
@@ -81,17 +82,17 @@ register(secretRequest);
 
 export const NATIVE_TOOL_NAMES = Object.freeze(Object.keys(REGISTRY));
 
-export function schemasFor(names: string[]): Array<Record<string, unknown>> {
+export function schemasFor(names: string[]): FunctionTool[] {
   return names.flatMap((name) => (REGISTRY[name] ? [REGISTRY[name].schema] : []));
 }
 
 /** A call's arguments: the JSON object the model wrote, empty when it wrote none. */
-export function parseArguments(call: ToolCall): Record<string, unknown> {
+export function parseArguments(call: ToolCall): JsonObject {
   if (call.function.arguments === "") {
     return {};
   }
   const loaded: unknown = JSON.parse(call.function.arguments);
-  if (!isPlainRecord(loaded)) {
+  if (!isJsonObject(loaded)) {
     throw new ToolArgumentError("tool arguments must be a JSON object");
   }
   return loaded;
@@ -122,10 +123,7 @@ export async function invokeTool(
   const invocation: ToolInvocation = { id: call.id, name, arguments: {}, exit_code: null, metadata: null };
   try {
     invocation.arguments = parseArguments(call);
-    const raw: unknown = await registered.handler(services, run, hooks, invocation);
-    if (typeof raw !== "string") {
-      throw new TypeError("tool must return str");
-    }
+    const raw = await registered.handler(services, run, hooks, invocation);
     return toolResult(run, call, started, { raw, error: null, tool: registered, invocation });
   } catch (caught) {
     const message = caught instanceof Error ? caught.message : String(caught);

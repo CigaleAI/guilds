@@ -480,10 +480,13 @@ The name may be reused.
 
 ### Code
 
-- `apps/orchestrator/src/agents/config.ts`: configuration keys,
-  defaults, and their checks
-- `apps/orchestrator/src/agents/validation.ts`: name, focus, wake
-  triggers, and avatar rules
+- `apps/orchestrator/src/agents/config.ts`: configuration keys and
+  defaults
+- `apps/orchestrator/src/agents/validation.ts`: the parse of a
+  configuration payload into an agent's config, and the name, focus,
+  wake triggers, and avatar rules
+- `apps/orchestrator/src/agents/view.ts`: an agent as its guild's list
+  and its page show it
 - `apps/orchestrator/src/avatars/`: the default look, the stored shape
   and colour formats, and the renderer
 - `apps/orchestrator/src/agents/service.ts`: create, configure, move,

@@ -20,8 +20,9 @@ import {
   type ModelCredentialsProvider,
 } from "../llm/credentials.js";
 import { streamCompletion } from "../llm/client.js";
-import { LLMError, type Completion, type ModelEvent } from "../llm/completion.js";
+import { LLMError, type Completion, type ModelEvent, type ModelMessage, type ModelRequest } from "../llm/completion.js";
 import { countInputTokens } from "../llm/tokens.js";
+import type { FunctionTool } from "../lib/tool-schema.js";
 import { PolicyError, type OrgPolicy } from "../policy/index.js";
 import type { CancelEvent } from "../toolbox/index.js";
 import type { ActiveGenerations } from "./active-generations.js";
@@ -61,32 +62,25 @@ export type ModelCompletionServices = {
   attachments: AttachmentService | null;
 };
 
-/** One call of the model: the history it is sent and the settings from the run's snapshot. */
-export type CompletionRequest = {
-  model: string;
-  messages: Array<Record<string, unknown>>;
-  temperature: number;
-  max_tokens: number;
-  tools: unknown[] | null;
-  thinking_level?: string;
-};
+/** One call of the model: the history it is sent, the tools it is offered, and the settings from the run's snapshot. */
+export type CompletionRequest = Omit<ModelRequest, "tools" | "tool_choice"> & { tools: FunctionTool[] | null };
 
 /** A run's history as the model is sent it: the rows as projected, and their payloads with images. */
 export type ModelHistory = {
   rows: MessageRow[];
-  payloads: Array<Record<string, unknown>>;
+  payloads: ModelMessage[];
 };
 
 /** The input tokens the run's history takes with the schemas it is offered. */
-export function historyTokens(snapshot: RunConfigSnapshot, history: ModelHistory, schemas: unknown[]): number {
+export function historyTokens(snapshot: RunConfigSnapshot, history: ModelHistory, schemas: FunctionTool[]): number {
   return countRunInputTokens(snapshot.model, history.rows, schemas.length ? schemas : null, countInputTokensImpl);
 }
 
 /** A model call with the settings of the run's snapshot. */
 export function completionRequest(
   snapshot: RunConfigSnapshot,
-  messages: Array<Record<string, unknown>>,
-  schemas: unknown[],
+  messages: ModelMessage[],
+  schemas: FunctionTool[],
 ): CompletionRequest {
   return {
     model: snapshot.model,
@@ -159,7 +153,7 @@ export class ModelCompletion {
     turn: RunGeneration,
     agent: AgentRow | null,
     snapshot: RunConfigSnapshot,
-    schemas: unknown[],
+    schemas: FunctionTool[],
   ): Promise<ModelHistory> {
     const listed = await this.services.db.listMessages(turn.runId);
     const projectedPayloads = projectToolResults({
@@ -185,10 +179,9 @@ export class ModelCompletion {
     if (!attachments) {
       return { rows, payloads: projectedPayloads };
     }
-    const model = agent?.config.model;
     return {
       rows,
-      payloads: await attachments.projectMessages(agent?.org_id ?? "", rows, typeof model === "string" ? model : ""),
+      payloads: await attachments.projectMessages(agent?.org_id ?? "", rows, agent?.config.model ?? ""),
     };
   }
 

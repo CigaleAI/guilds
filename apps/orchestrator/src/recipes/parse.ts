@@ -1,6 +1,8 @@
-import { Value } from "@sinclair/typebox/value";
+import { Value } from "typebox/value";
 import { RecipeError } from "./errors.js";
-import { assertKeys, assertObject } from "./parse-fields.js";
+import { asBool, asString, assertKeys, assertObject } from "./parse-fields.js";
+import type { AccessEdit } from "./access-edits.js";
+import { isJsonObject } from "../lib/json.js";
 import { parseRole } from "./parse-roles.js";
 import {
   parseCollection,
@@ -46,8 +48,8 @@ function checkedDocument(input: unknown) {
   }
   assertKeys(assertObject(input, "$"), RECIPE_TOP_KEYS, "$");
   if (!Value.Check(RecipeSchema, input)) {
-    const first = Value.Errors(RecipeSchema, input).First();
-    throw new RecipeError(first ? `${first.path || "$"} ${first.message}` : "recipe is invalid");
+    const [first] = Value.Errors(RecipeSchema, input);
+    throw new RecipeError(first ? `${first.instancePath || "$"} ${first.message}` : "recipe is invalid");
   }
   if (input.version !== RECIPE_VERSION) {
     throw new RecipeError(
@@ -124,4 +126,36 @@ export function parseRecipe(input: unknown): RecipeDocument {
     repositories: parseRepositories(document.repositories),
     design: parseDesign(document.design),
   };
+}
+
+function parseAccessEdit(item: unknown, index: number): AccessEdit {
+  const path = `edits[${index}]`;
+  const row = assertObject(item, path);
+  const action = asString(row.action, `${path}.action`);
+  const server = asString(row.server, `${path}.server`).trim();
+  if (!server) {
+    throw new RecipeError(`${path}.server is required`);
+  }
+  if (action === "remove_connection") {
+    return { action, server };
+  }
+  if (action !== "set_tool") {
+    throw new RecipeError(`${path}.action must be set_tool or remove_connection`);
+  }
+  return {
+    action,
+    server,
+    role: asString(row.role, `${path}.role`).trim(),
+    tool: asString(row.tool, `${path}.tool`).trim(),
+    enabled: asBool(row.enabled, `${path}.enabled`),
+  };
+}
+
+/** The edits of a request: a list, or `{ edits }`. */
+export function parseAccessEdits(value: unknown): AccessEdit[] {
+  const raw = Array.isArray(value) ? value : isJsonObject(value) ? value.edits : undefined;
+  if (!Array.isArray(raw)) {
+    throw new RecipeError("edits must be an array");
+  }
+  return raw.map(parseAccessEdit);
 }

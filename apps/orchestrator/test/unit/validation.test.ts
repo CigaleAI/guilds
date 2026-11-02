@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { secretPayload } from "../../src/credentials/validate.js";
+import { secretPayload, validateSecretName } from "../../src/credentials/validate.js";
 import {
-  assertCodingAgent,
   CONFIG_KEYS,
   DEFAULT_KEEP_TOOL_RESULT_GENERATIONS,
   DEFAULT_MAX_INPUT_TOKENS,
@@ -14,13 +13,14 @@ import {
   DEFAULT_TEMPERATURE,
   CODING_MAX_STEPS,
   CODING_MAX_TOOL_CALLS,
-  isValidSecretAliases,
-  validateAgentConfig,
-  validateThinkingLevel,
-  withCodingLimits,
 } from "../../src/agents/config.js";
 import {
   AgentValidationError,
+  assertCodingAgent,
+  isValidSecretAliases,
+  validateAgentConfig,
+  validateNewAgentConfig,
+  validateThinkingLevel,
   validateAvatarColor,
   validateAvatarShape,
   validateFocus,
@@ -282,22 +282,21 @@ test("a config without a model is refused, naming the missing key", () => {
 });
 
 test("a new coding agent's payload takes the coding budgets for the limits it leaves out", () => {
-  assert.deepEqual(withCodingLimits({ coding: true }), {
-    max_steps: CODING_MAX_STEPS,
-    max_tool_calls: CODING_MAX_TOOL_CALLS,
-    coding: true,
-  });
-  assert.deepEqual(withCodingLimits({ coding: true, max_steps: 5 }), {
-    max_steps: 5,
-    max_tool_calls: CODING_MAX_TOOL_CALLS,
-    coding: true,
-  });
+  const model = VALID_CONFIG.model;
+  const coder = validateNewAgentConfig({ model, coding: true });
+  assert.equal(coder.max_steps, CODING_MAX_STEPS);
+  assert.equal(coder.max_tool_calls, CODING_MAX_TOOL_CALLS);
+  const explicit = validateNewAgentConfig({ model, coding: true, max_steps: 5 });
+  assert.equal(explicit.max_steps, 5);
+  assert.equal(explicit.max_tool_calls, CODING_MAX_TOOL_CALLS);
 });
 
-test("a new agent's payload without coding is left as it is", () => {
-  const payload = { model: VALID_CONFIG.model };
-  assert.equal(withCodingLimits(payload), payload);
-  assert.deepEqual(withCodingLimits({ coding: false }), { coding: false });
+test("a new agent's payload without coding takes the default limits", () => {
+  const model = VALID_CONFIG.model;
+  assert.deepEqual(validateNewAgentConfig({ model }), validateAgentConfig({ model }));
+  assert.deepEqual(validateNewAgentConfig({ model, coding: false }), validateAgentConfig({ model, coding: false }));
+  assert.equal(validateNewAgentConfig({ model }).max_steps, DEFAULT_MAX_STEPS);
+  assert.equal(validateNewAgentConfig({ model }).max_tool_calls, DEFAULT_MAX_TOOL_CALLS);
 });
 
 test("harness is one of the coding harnesses, and only a coding agent has one", () => {
@@ -531,4 +530,11 @@ test("secretPayload keeps a value without the whitespace around it and refuses o
   assert.deepEqual(secretPayload("correct horse battery"), { value: "correct horse battery" });
   assert.throws(() => secretPayload(" \t\n"), /value must contain non-whitespace text/);
   assert.throws(() => secretPayload(42), /value must contain non-whitespace text/);
+});
+
+test("a secret's name is required and is an environment variable name", () => {
+  assert.equal(validateSecretName(" API_TOKEN "), "API_TOKEN");
+  assert.throws(() => validateSecretName(undefined), /name is required/);
+  assert.throws(() => validateSecretName("  "), /name is required/);
+  assert.throws(() => validateSecretName("api-token"), /environment variable name/);
 });

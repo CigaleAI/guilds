@@ -3,6 +3,7 @@ import { inflateSync, gunzipSync } from "node:zlib";
 import { request as undiciRequest } from "undici";
 import WebSocket from "ws";
 import { filterHeaders, HOP_REQ, HOP_RESP, wsUrl } from "../lib/forwarding.js";
+import { isJsonObject } from "../lib/json.js";
 
 /**
  * A request the sandbox proxy refuses, with the status it answers: a path outside the daemon's
@@ -42,18 +43,28 @@ function rawQuery(request: FastifyRequest): string {
   return index === -1 ? "" : url.slice(index + 1);
 }
 
+/** Whether a body is text, as Fastify's `text/plain` parser leaves it. */
+function isText(body: unknown): body is string {
+  return typeof body === "string";
+}
+
+/**
+ * The bytes a proxied request carries, from its body as Fastify's parsers left it: bytes as they
+ * are, text as UTF-8, and parsed JSON written again; an empty object, a JSON scalar, or no body is
+ * nothing.
+ */
 async function requestBody(request: FastifyRequest): Promise<Buffer> {
   const body = request.body;
   if (Buffer.isBuffer(body)) {
     return body;
   }
-  if (typeof body === "string") {
+  if (isText(body)) {
     return Buffer.from(body);
   }
-  if (body && typeof body === "object" && !Array.isArray(body) && Object.keys(body).length === 0) {
+  if (isJsonObject(body) && Object.keys(body).length === 0) {
     return Buffer.alloc(0);
   }
-  if (body !== undefined && body !== null && typeof body === "object") {
+  if (Array.isArray(body) || isJsonObject(body)) {
     return Buffer.from(JSON.stringify(body));
   }
   return Buffer.alloc(0);
@@ -200,7 +211,7 @@ export function startSandboxWsProxy(
   socket: WebSocket,
   request: FastifyRequest,
   resolve: () => Promise<SandboxProxyTarget>,
-  closeCode: (error: unknown) => number | undefined,
+  closeCode: (error: Error) => number | undefined,
   onClientMessage?: () => void,
 ): void {
   const pending: Array<[WebSocket.RawData, boolean]> = [];
@@ -223,7 +234,8 @@ export function startSandboxWsProxy(
       const target = await resolve();
       sendUp = connectUpstream(socket, request, target, pending);
     } catch (error) {
-      socket.close(closeCode(error));
+      // A thrown value that is not an Error names no reason, and the socket closes without a code.
+      socket.close(error instanceof Error ? closeCode(error) : undefined);
     }
   })();
 }

@@ -30,7 +30,7 @@ export type ConnectableServer = Pick<McpServerAccess, "id" | "slug" | "name" | "
   /** The inputs the connector's key login asks for; one API key when absent. */
   auth_fields?: ConnectorAuthField[] | undefined;
   /** What the login stores beside its credentials, when it stores something. */
-  settings_schema?: Record<string, unknown> | null | undefined;
+  settings_schema?: McpServerAccess["settings_schema"] | undefined;
 };
 
 const API_KEY_FIELD: ConnectorAuthField = { name: "token", label: "API key", secret: true };

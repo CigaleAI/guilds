@@ -1,6 +1,6 @@
-import { Type, type Static } from "@sinclair/typebox";
-import { isoOrNull } from "../db/views.js";
-import { jsonObj } from "../db/json.js";
+import { Type, type Static } from "typebox";
+import type { SecretGrantRow, SecretRow } from "../db/secrets.js";
+import { iso } from "../db/views.js";
 
 /** Who gets a secret: every agent of the organisation, or the granted guilds and agents. */
 export type SecretAccess = {
@@ -20,17 +20,34 @@ export const SecretAccessSchema = Type.Object({
 export type SecretAccessRequest = Static<typeof SecretAccessSchema>;
 
 /** A change to who gets a secret, which names `org_wide`. */
-export const SecretAccessChangeSchema = Type.Composite([
-  Type.Omit(SecretAccessSchema, ["org_wide"]),
-  Type.Object({ org_wide: Type.Union([Type.Boolean(), Type.Null()]) }),
-]);
+export const SecretAccessChangeSchema = Type.Evaluate(
+  Type.Intersect([
+    Type.Omit(SecretAccessSchema, ["org_wide"]),
+    Type.Object({ org_wide: Type.Union([Type.Boolean(), Type.Null()]) }),
+  ]),
+);
 
-/** One grant row as the repository reads it: its target, that target's name, and the guild it sits in. */
-export type SecretGrantRow = {
-  guild_id: string | null;
-  agent_id: string | null;
-  name: string;
-  in_guild_id: string;
+/**
+ * One guild or agent a secret is granted to, as a viewer sees it. A grant in a guild the viewer
+ * cannot see keeps its kind and shows no id or name.
+ */
+export type SecretGrant = { kind: "guild" | "agent"; id: string | null; name: string | null };
+
+/** The operator who added a secret, or the agent that stored it; one in a guild the viewer cannot see shows no id or name. */
+export type SecretCreator = { kind: "user" | "agent"; id: string | null; name: string | null };
+
+/** A secret's metadata as one viewer sees it, with whether they may manage it; never its value. */
+export type Secret = {
+  id: SecretRow["id"];
+  name: SecretRow["name"];
+  description: SecretRow["description"];
+  org_wide: SecretRow["org_wide"];
+  grants: SecretGrant[];
+  created_by: SecretCreator | null;
+  created_at: string;
+  updated_at: string;
+  rotated_at: string;
+  can_manage: boolean;
 };
 
 /** Who is looking at a secret: their organisation role and the guilds they can see. */
@@ -71,46 +88,30 @@ export function validateSecretAccess(body: SecretAccessRequest): SecretAccess {
   return { org_wide: false, guild_ids: guildIds, agent_ids: agentIds };
 }
 
-export function secretGrants(row: Record<string, unknown>): SecretGrantRow[] {
-  const loaded = jsonObj(row.grants ?? []);
-  if (!Array.isArray(loaded)) {
-    return [];
-  }
-  return loaded.map((item) => {
-    const grant = item as Record<string, unknown>;
-    return {
-      guild_id: grant.guild_id === null || grant.guild_id === undefined ? null : String(grant.guild_id),
-      agent_id: grant.agent_id === null || grant.agent_id === undefined ? null : String(grant.agent_id),
-      name: String(grant.name ?? ""),
-      in_guild_id: String(grant.in_guild_id ?? ""),
-    };
-  });
+/** Who gets a stored secret, read from its row and its grants. */
+export function accessOf(row: SecretRow): SecretAccess {
+  return {
+    org_wide: row.org_wide,
+    guild_ids: row.grants.flatMap((grant) => (grant.guild_id ? [grant.guild_id] : [])),
+    agent_ids: row.grants.flatMap((grant) => (grant.agent_id ? [grant.agent_id] : [])),
+  };
 }
 
-export function accessOf(row: Record<string, unknown>): SecretAccess {
-  const grants = secretGrants(row);
-  return {
-    org_wide: Boolean(row.org_wide),
-    guild_ids: grants.flatMap((grant) => (grant.guild_id ? [grant.guild_id] : [])),
-    agent_ids: grants.flatMap((grant) => (grant.agent_id ? [grant.agent_id] : [])),
-  };
+/** Whether a grant sits in a guild the viewer can see; one whose target is deleted sits in none. */
+export function grantSeen(grant: SecretGrantRow, visibleGuildIds: ReadonlySet<string>): boolean {
+  return grant.in_guild_id !== null && visibleGuildIds.has(grant.in_guild_id);
 }
 
 /**
  * A secret is local to a member when it is not organisation-wide, has at least one
  * grant, and every grant targets a guild they can see or an agent in one.
  */
-export function localTo(row: Record<string, unknown>, visibleGuildIds: ReadonlySet<string>): boolean {
-  const grants = secretGrants(row);
-  return (
-    !row.org_wide &&
-    grants.length > 0 &&
-    grants.every((grant) => visibleGuildIds.has(grant.in_guild_id))
-  );
+export function localTo(row: SecretRow, visibleGuildIds: ReadonlySet<string>): boolean {
+  return !row.org_wide && row.grants.length > 0 && row.grants.every((grant) => grantSeen(grant, visibleGuildIds));
 }
 
 /** The caller may edit, rotate, and delete this secret. */
-export function canManageSecret(row: Record<string, unknown>, viewer: SecretViewer): boolean {
+export function canManageSecret(row: SecretRow, viewer: SecretViewer): boolean {
   return managesOrgSecrets(viewer.role) || localTo(row, viewer.visibleGuildIds);
 }
 
@@ -135,44 +136,45 @@ export function canCreateSecret(
   );
 }
 
-/**
- * A secret's metadata for one caller; never its value. A grant or creating agent
- * in a guild the caller cannot see keeps its kind and loses its id and name.
- */
-export function secretMetadata(row: Record<string, unknown>, viewer: SecretViewer): Record<string, unknown> {
-  const grants = secretGrants(row).map((grant) => {
-    const visible = viewer.visibleGuildIds.has(grant.in_guild_id);
-    return {
-      kind: grant.guild_id ? "guild" : "agent",
-      id: visible ? (grant.guild_id ?? grant.agent_id) : null,
-      name: visible ? grant.name : null,
-    };
-  });
-  let createdBy: Record<string, unknown> | null = null;
+/** What created a secret, as one viewer sees it: the operator, or the agent when it sits in a guild they see. */
+function secretCreator(row: SecretRow, viewer: SecretViewer): SecretCreator | null {
   if (row.created_by_user_id) {
-    createdBy = {
-      kind: "user",
-      id: row.created_by_user_id,
-      name: row.created_by_user_name ?? "",
-    };
-  } else if (row.created_by_agent_id) {
-    const visible = viewer.visibleGuildIds.has(String(row.created_by_agent_guild_id ?? ""));
-    createdBy = {
+    return { kind: "user", id: row.created_by_user_id, name: row.created_by_user_name ?? "" };
+  }
+  if (row.created_by_agent_id) {
+    const visible = row.created_by_agent_guild_id !== null && viewer.visibleGuildIds.has(row.created_by_agent_guild_id);
+    return {
       kind: "agent",
       id: visible ? row.created_by_agent_id : null,
       name: visible ? (row.created_by_agent_name ?? "") : null,
     };
   }
+  return null;
+}
+
+/**
+ * A secret's metadata for one caller; never its value. A grant or creating agent
+ * in a guild the caller cannot see keeps its kind and loses its id and name.
+ */
+export function secretMetadata(row: SecretRow, viewer: SecretViewer): Secret {
+  const grants = row.grants.map((grant): SecretGrant => {
+    const visible = grantSeen(grant, viewer.visibleGuildIds);
+    return {
+      kind: grant.guild_id ? "guild" : "agent",
+      id: visible ? (grant.guild_id ?? grant.agent_id) : null,
+      name: visible ? (grant.name ?? "") : null,
+    };
+  });
   return {
     id: row.id,
     name: row.name,
-    description: row.description ?? "",
-    org_wide: Boolean(row.org_wide),
+    description: row.description,
+    org_wide: row.org_wide,
     grants,
-    created_by: createdBy,
-    created_at: isoOrNull(row.created_at),
-    updated_at: isoOrNull(row.updated_at),
-    rotated_at: isoOrNull(row.rotated_at),
+    created_by: secretCreator(row, viewer),
+    created_at: iso(row.created_at),
+    updated_at: iso(row.updated_at),
+    rotated_at: iso(row.rotated_at),
     can_manage: canManageSecret(row, viewer),
   };
 }

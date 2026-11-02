@@ -3,6 +3,8 @@ import { ArrowDownToLine, Check, Copy, Globe, RotateCw } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api } from "../../../api/client";
 import { useAgent } from "../../../api/queries/agents";
+import type { RfbConnection } from "../../../api/types/agents";
+import { isNovncUi } from "../../../api/wire";
 import { copyText } from "../../../app/clipboard";
 import { Button, IconButton, TextField, EmptyState, StatusBadge } from "@guildsrun/ui";
 /** The browser desktop is fixed at 1280 × 720 and scales to the pane. */
@@ -13,32 +15,10 @@ const XK_C = 0x0063;
 const XK_V = 0x0076;
 const EXTENDED_CLIPBOARD_NOTIFY = 1 << 27;
 
-/** The parts of noVNC's RFB connection the clipboard bridge uses. */
-type Rfb = {
-  focus: () => void;
-  sendKey: (keysym: number, code: string, down: boolean) => void;
-  clipboardPasteFrom: (text: string) => void;
-  addEventListener: (
-    type: "clipboard",
-    listener: (event: CustomEvent<{ text?: string }>) => void,
-  ) => void;
-  _clipboardServerCapabilitiesActions?: Record<number, boolean>;
-};
-
-const RFB_METHODS = ["focus", "sendKey", "clipboardPasteFrom", "addEventListener"] as const;
-
-/** Whether a value is noVNC's RFB connection: it has every method the clipboard bridge calls. */
-export function isRfb(value: unknown): value is Rfb {
-  if (typeof value !== "object" || value === null) return false;
-  return RFB_METHODS.every((method) => typeof Reflect.get(value, method) === "function");
-}
-
 /** The RFB connection noVNC's UI exposes on the viewer's window once it connects; null before. */
-function novncConnection(viewer: Window): Rfb | null {
+function novncConnection(viewer: Window): RfbConnection | null {
   const ui: unknown = Reflect.get(viewer, "guildsNovnc");
-  if (typeof ui !== "object" || ui === null) return null;
-  const connection: unknown = Reflect.get(ui, "rfb");
-  return isRfb(connection) ? connection : null;
+  return isNovncUi(ui) ? (ui.rfb ?? null) : null;
 }
 
 /** Hides noVNC's own controls so the desktop fills the pane. */
@@ -61,7 +41,7 @@ function viewerUrl(agentId: string, nonce: number): string {
   return `${base}/vnc.html?autoconnect=1&reconnect=1&resize=scale&path=${socket}&_=${nonce}`;
 }
 
-function chord(rfb: Rfb, keysym: number, code: string) {
+function chord(rfb: RfbConnection, keysym: number, code: string) {
   rfb.focus();
   rfb.sendKey(XK_CONTROL_L, "ControlLeft", true);
   rfb.sendKey(keysym, code, true);
@@ -202,7 +182,7 @@ type ViewerProps = { agentId: string; name: string; nonce: number };
 function Viewer({ agentId, name, nonce }: ViewerProps) {
   const area = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
-  const rfb = useRef<Rfb | null>(null);
+  const rfb = useRef<RfbConnection | null>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [clip, setClip] = useState("");
   const [flash, setFlash] = useState<"send" | "copy" | null>(null);

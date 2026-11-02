@@ -1,10 +1,11 @@
-import type { StudioTool, StudioToolCall } from "../../../api/types/studio";
-import type { AccessChange } from "../chatModel";
+import type { AccessChange, StudioTool, StudioToolCall } from "../../../api/types/studio";
 import type { Proposal } from "../pendingModel";
 
-/** The windows Tools offers, in hours: a day, three days, a week. */
-export const TOOL_WINDOW_HOURS: readonly number[] = [24, 72, 168];
-export const TOOL_DEFAULT_HOURS = 24;
+/** A window Tools offers, in hours: a day, three days, a week. */
+export type ToolWindowHours = 24 | 72 | 168;
+
+export const TOOL_WINDOW_HOURS: readonly ToolWindowHours[] = [24, 72, 168];
+export const TOOL_DEFAULT_HOURS: ToolWindowHours = 24;
 
 /** A tool failing this share of its calls or more is flagged. */
 export const TOOL_FAIL_SHARE = 0.1;

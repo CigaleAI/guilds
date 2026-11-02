@@ -29,6 +29,9 @@ export type Secret = {
   can_manage: boolean;
 };
 
+/** A secret as an agent's environment carries it: its id, name and description. */
+export type SecretRef = { id: string; name: string; description: string };
+
 /** Who gets a secret; neither organisation-wide nor granted leaves it unassigned. */
 export type SecretAccessChoice = { org_wide: boolean; guild_ids: string[]; agent_ids: string[] };
 
@@ -42,3 +45,12 @@ export type SecretUpdate = { secretId: string; changes: SecretChanges };
 
 /** Who gets one secret, replacing who got it. */
 export type SecretAccessUpdate = { secretId: string; access: SecretAccessChoice };
+
+/**
+ * A secret_request call's arguments, as the agent wrote them: the environment variable's name, how
+ * the agent will use the value, and why it needs it now.
+ */
+export type SecretRequest = { name: string; description: string; reason: string };
+
+/** The line a secret_request result opens with when it asked the operator for the secret it names. */
+export type SecretRequestAsked = { widget: "secret_request"; name: string; status: "asked" };

@@ -1,5 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
-import { Value } from "@sinclair/typebox/value";
+import { Type, type Static } from "typebox";
 import { isSystemOfRecord, storageHint } from "../connectors/builder.js";
 import { connectorFacts, type ConnectorFacts, type LoadedConnector } from "../connectors/servers.js";
 import { oauthSetupState } from "../oauth/index.js";
@@ -16,6 +15,12 @@ export const QUESTION_OPTIONS_MAX = 8;
 export const CONNECT_SCOPES = ["org", "guild", "agent"] as const;
 
 export type ConnectWidgetScope = (typeof CONNECT_SCOPES)[number];
+
+/** The owner of a login as the coach names it: the organisation, the guild or an agent. */
+export const ConnectScopeInput = Type.Union(
+  CONNECT_SCOPES.map((scope) => Type.Literal(scope)),
+  { description: "Best owner for this login. Org can connect now; guild and agent wait for apply." },
+);
 
 export type ConnectWidgetMode = "org" | "any";
 
@@ -93,31 +98,36 @@ export type BuilderWidget = OrgConnectWidget | AnyConnectWidget | QuestionWidget
 /** Why a widget cannot be shown. */
 export type WidgetRefusal = { error: string };
 
-/** An option as the model writes it: its label alone, or its fields. Other fields are read only when they are strings. */
-const OptionInput = Type.Union([
-  Type.String(),
-  Type.Object({
-    label: Type.String(),
-    id: Type.Optional(Type.Unknown()),
-    description: Type.Optional(Type.Unknown()),
-  }),
-]);
+/** A choice as the coach writes it: its label, and what picking it means. */
+const OptionInput = Type.Object({
+  label: Type.String(),
+  description: Type.Optional(Type.String()),
+});
 
-/** A question as the model writes it: the question alone, or its fields. Other fields are read only when they have their type. */
-const QuestionInput = Type.Union([
-  Type.String(),
-  Type.Object({
-    question: Type.String(),
-    id: Type.Optional(Type.Unknown()),
-    header: Type.Optional(Type.Unknown()),
-    options: Type.Optional(Type.Unknown()),
-    allow_other: Type.Optional(Type.Unknown()),
-    multi_select: Type.Optional(Type.Unknown()),
-  }),
-]);
+/** A question as the coach writes it: its label, the question, its choices, and whether the operator may type another answer or pick several. */
+const QuestionInput = Type.Object({
+  header: Type.Optional(Type.String({ description: "Short label, a few words." })),
+  question: Type.String({ description: "The question to answer." }),
+  options: Type.Optional(Type.Array(OptionInput)),
+  allow_other: Type.Optional(Type.Boolean({ description: "Show an Other field. Defaults to true." })),
+  multi_select: Type.Optional(Type.Boolean({ description: "Allow more than one option. Defaults to false." })),
+});
+
+/** What the coach asks the operator: its questions, or one question by its fields alone. */
+export const QuestionCardInput = Type.Object({
+  questions: Type.Optional(
+    Type.Array(QuestionInput, { description: "One to four questions. Each pauses the same turn until submitted." }),
+  ),
+  question: Type.Optional(
+    Type.String({ description: "Shorthand for a single question when questions[] is omitted." }),
+  ),
+  header: Type.Optional(Type.String()),
+  options: Type.Optional(Type.Array(OptionInput)),
+});
 
 export type OptionInput = Static<typeof OptionInput>;
 export type QuestionInput = Static<typeof QuestionInput>;
+export type QuestionCardInput = Static<typeof QuestionCardInput>;
 
 /** `row` as a connect widget shows it; `connected` says whether the organisation has a login to it it may reuse. */
 function compactServer(row: LoadedConnector, connected: boolean): ConnectServer {
@@ -131,14 +141,6 @@ function compactServer(row: LoadedConnector, connected: boolean): ConnectServer 
     ...(row.auth === "token" ? { auth_fields: connectorFacts(row).auth_fields } : {}),
     connection_state: connected ? "connected" : "registered_not_connected",
   };
-}
-
-function isConnectScope(value: string): value is ConnectWidgetScope {
-  return CONNECT_SCOPES.some((scope) => scope === value);
-}
-
-export function normalizeConnectScope(value: string, fallback: ConnectWidgetScope = "org"): ConnectWidgetScope {
-  return isConnectScope(value) ? value : fallback;
 }
 
 /** The widget that asks the operator to connect `serverRef` to organisation `orgId` now, for `reason`. */
@@ -221,55 +223,48 @@ export async function buildAnyConnectWidget(
   };
 }
 
-/** `value` trimmed when it is a string; empty otherwise. */
-function trimmedString(value: unknown): string {
-  return typeof value === "string" ? value.trim() : "";
-}
-
+/** The choice `input` writes, at `index` of its question; null when its label is blank. */
 function optionOf(input: OptionInput, index: number): QuestionOption | null {
-  const fallbackId = `opt-${index + 1}`;
-  if (typeof input === "string") {
-    const label = input.trim();
-    return label ? { id: fallbackId, label, description: "" } : null;
-  }
   const label = input.label.trim();
   if (!label) return null;
-  return { id: trimmedString(input.id) || fallbackId, label, description: trimmedString(input.description) };
+  return { id: `opt-${index + 1}`, label, description: input.description?.trim() ?? "" };
 }
 
+/** The question `input` writes, at `index` of the card; null when its question is blank. */
 function questionOf(input: QuestionInput, index: number): Question | null {
-  const fallbackId = `q-${index + 1}`;
-  if (typeof input === "string") {
-    const question = input.trim();
-    return question
-      ? { id: fallbackId, header: "Question", question, options: [], allow_other: true, multi_select: false }
-      : null;
-  }
   const question = input.question.trim();
   if (!question) return null;
-  const options = (Array.isArray(input.options) ? input.options : [])
-    .map((item, optionIndex) => (Value.Check(OptionInput, item) ? optionOf(item, optionIndex) : null))
+  const options = (input.options ?? [])
+    .map(optionOf)
     .filter((item): item is QuestionOption => item !== null)
     .slice(0, QUESTION_OPTIONS_MAX);
   return {
-    id: trimmedString(input.id) || fallbackId,
-    header: trimmedString(input.header) || "Question",
+    id: `q-${index + 1}`,
+    header: input.header?.trim() || "Question",
     question,
     options,
-    allow_other: options.length === 0 ? true : input.allow_other !== false,
-    multi_select: input.multi_select === true,
+    allow_other: options.length === 0 || input.allow_other !== false,
+    multi_select: input.multi_select ?? false,
   };
 }
 
-/** The question card for the questions in `args`: `questions[]`, or `args` itself as one question. */
-export function buildQuestionWidget(args: Record<string, unknown>): QuestionWidget | WidgetRefusal {
-  const raw = Array.isArray(args.questions)
-    ? args.questions
-    : args.question
-      ? [args]
-      : [];
-  const questions = raw
-    .map((item, index) => (Value.Check(QuestionInput, item) ? questionOf(item, index) : null))
+/** The questions `input` asks: its `questions`, or the one question its own fields write. */
+function askedQuestions(input: QuestionCardInput): QuestionInput[] {
+  if (input.questions !== undefined) return input.questions;
+  if (!input.question) return [];
+  return [
+    {
+      question: input.question,
+      ...(input.header === undefined ? {} : { header: input.header }),
+      ...(input.options === undefined ? {} : { options: input.options }),
+    },
+  ];
+}
+
+/** The question card for the questions `input` asks. */
+export function buildQuestionWidget(input: QuestionCardInput): QuestionWidget | WidgetRefusal {
+  const questions = askedQuestions(input)
+    .map(questionOf)
     .filter((item): item is Question => item !== null)
     .slice(0, QUESTION_MAX);
   if (!questions.length) {

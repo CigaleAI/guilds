@@ -5,6 +5,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { api } from "../client";
+import type { JsonValue } from "../wire";
 import { guildKeys, guildPath } from "./guilds";
 import { refreshMachines } from "./agents";
 import type {
@@ -48,7 +49,7 @@ export function useRecipes() {
 export function useImportRecipe() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (recipe: unknown) =>
+    mutationFn: (recipe: JsonValue) =>
       api<RecipeRow>("/api/recipes/import", { method: "POST", body: { recipe } }),
     onSuccess: () => void client.invalidateQueries({ queryKey: recipeKeys.recipes }),
   });

@@ -4,12 +4,9 @@ import type { GroupMessageRow } from "./group-chat.js";
 import type { MessageRow, RunRow } from "./runs.js";
 import type { RunChain, RunConfigSnapshot, RunMetadata, RunRepositoryChange } from "./schema/index.js";
 
-export function iso(value: unknown): string {
+export function iso(value: string | Date): string {
   if (value instanceof Date) {
     return value.toISOString();
-  }
-  if (typeof value !== "string") {
-    throw new TypeError("timestamp must be a string");
   }
   if (value.includes("T")) {
     return value;
@@ -18,7 +15,7 @@ export function iso(value: unknown): string {
 }
 
 /** The ISO form of a nullable timestamp column; null when the column is empty. */
-export function isoOrNull(value: unknown): string | null {
+export function isoOrNull(value: string | Date | null | undefined): string | null {
   if (value === null || value === undefined) {
     return null;
   }

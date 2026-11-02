@@ -1,7 +1,7 @@
-import { decode } from "../lib/decode.js";
+import { assertMatches } from "../lib/decode.js";
 import { proxyFetch, readJson } from "../net/http.js";
 import { GITHUB_API, GithubError, githubApiError, unexpectedGithubReply, type GithubServices } from "./index.js";
-import { ManifestConversionReply } from "./responses.js";
+import { ManifestConversionReply, type ManifestCredential } from "./responses.js";
 
 /**
  * Registering the box's GitHub App from a manifest: the operator app posts the manifest to GitHub,
@@ -176,15 +176,13 @@ export type ConvertedGithubApp = {
   html_url: string;
 };
 
-/** A credential GitHub sent as a non-blank string or a number, as a string. */
-function credentialField(value: unknown, name: string): string {
-  if (typeof value === "string" && value.trim()) {
-    return value;
+/** A credential GitHub sent, as a string; one it left out or sent blank is refused. */
+function credentialField(value: ManifestCredential | undefined, name: string): string {
+  const text = value === undefined ? "" : String(value);
+  if (!text.trim()) {
+    throw new GithubError(`GitHub App creation returned no ${name}`);
   }
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return String(value);
-  }
-  throw new GithubError(`GitHub App creation returned no ${name}`);
+  return text;
 }
 
 /**
@@ -207,13 +205,14 @@ export async function convertManifestCode(
   if (response.status !== 201) {
     throw await githubApiError(response, "GitHub App creation failed");
   }
-  const body = decode(ManifestConversionReply, await readJson(response), unexpectedGithubReply);
+  const body = await readJson(response);
+  assertMatches(ManifestConversionReply, body, unexpectedGithubReply);
   return {
     app_id: credentialField(body.id, "id"),
     slug: credentialField(body.slug, "slug"),
     private_key: credentialField(body.pem, "pem"),
     client_id: credentialField(body.client_id, "client_id"),
     client_secret: credentialField(body.client_secret, "client_secret"),
-    html_url: typeof body.html_url === "string" ? body.html_url : "",
+    html_url: body.html_url ?? "",
   };
 }

@@ -90,12 +90,12 @@ export async function deliverReport(body: string): Promise<boolean> {
   }
 }
 
-/** The report for anything thrown. */
-export function reportThrown(kind: string, error: unknown): void {
+/** The report for anything thrown: `cause` is the value thrown, an `Error` or anything else. */
+export function reportThrown(kind: string, cause: unknown): void {
   reportClientError({
     kind,
-    message: error instanceof Error ? error.message : String(error ?? kind),
-    stack: error instanceof Error ? error.stack : undefined,
+    message: cause instanceof Error ? cause.message : String(cause ?? kind),
+    stack: cause instanceof Error ? cause.stack : undefined,
   });
 }
 

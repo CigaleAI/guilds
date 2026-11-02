@@ -1,7 +1,7 @@
 // The files an operator's pages list, read and write at each level, and their provenance.
 import { ArtifactError } from "./errors.js";
 import { hostFileDisplayPath, normalizeNoteKey, parseDisplayPath, MEMORY_KEY, TASK_KEY } from "./paths.js";
-import { listFileChanges, listLatestFileChanges } from "../db/file-changes.js";
+import { listFileChanges, listLatestFileChanges, type FileChangeView } from "../db/file-changes.js";
 import type { ArtifactActor, ArtifactLevel } from "./types.js";
 import { taskDisplayPath, writeAgentTask } from "./task.js";
 import { formatColumnTimestamp } from "../db/codecs.js";
@@ -15,7 +15,7 @@ import {
   listOwnerNotes,
   writeNote,
 } from "./notes.js";
-import { artifactView, type ArtifactStore } from "./store.js";
+import { artifactTextView, type ArtifactStore, type ArtifactTextView, type HostNoteView } from "./store.js";
 import { ensureAgentRows, writeMemory } from "./memory.js";
 
 /** What host files are read and written through: the artifact store, and the database an agent's Task lives in. */
@@ -30,7 +30,8 @@ export type HostFileWrite = { path: string; content: string; expectedVersion: nu
 /** A host file as it was read or written: what the page receives, its kind, and its version. */
 type LoadedHostFile = { payload: HostFilePayload; kind: string; version: number };
 
-type HostFilePayload = {
+/** A host file as the page receives it: its path, content and display path, and for a note its id, version and revisions. */
+export type HostFilePayload = {
   /** A note's id, which names it to the access API. */
   id?: string;
   path: string;
@@ -69,11 +70,27 @@ async function readablePaths(
   return displayPaths.filter((_, index) => readable[index]);
 }
 
-function changedAt(updatedAt: unknown): string | null {
-  if (updatedAt instanceof Date) {
-    return updatedAt.toISOString();
-  }
-  if (typeof updatedAt !== "string" || !updatedAt) {
+/**
+ * The last-saved facts of a path no recorded change covers, in the shape of a recorded change
+ * marked `recorded: false`: its version, its saver's name when the row keeps one, and when.
+ */
+export type UnrecordedChange = {
+  id: null;
+  recorded: false;
+  display_path: string;
+  operation: "update";
+  version: number;
+  actor: { type: "unknown"; id: null; name: string | null };
+  run: null;
+  tool: null;
+  created_at: string | null;
+};
+
+/** A display path's newest change: the one the change log recorded, or its last-saved facts. */
+export type LatestFileChange = FileChangeView | UnrecordedChange;
+
+function changedAt(updatedAt: string | null): string | null {
+  if (!updatedAt) {
     return null;
   }
   return updatedAt.includes("T") ? updatedAt : formatColumnTimestamp(updatedAt);
@@ -83,8 +100,8 @@ function fallbackChange(
   displayPath: string,
   version: number,
   name: string | null,
-  updatedAt: unknown,
-): Record<string, unknown> {
+  updatedAt: string | null,
+): UnrecordedChange {
   return {
     id: null,
     recorded: false,
@@ -113,7 +130,7 @@ async function lastSavedRow(
   store: ArtifactStore,
   actor: ArtifactActor,
   path: string,
-): Promise<Record<string, unknown> | null> {
+): Promise<UnrecordedChange | null> {
   try {
     const loaded = await getByDisplayPath(store, actor, path);
     const live = loaded.row && !loaded.tombstone ? loaded.row : null;
@@ -131,7 +148,7 @@ async function unrecordedChange(
   services: HostFileServices,
   actor: ArtifactActor,
   path: string,
-): Promise<Record<string, unknown> | null> {
+): Promise<UnrecordedChange | null> {
   let parsed;
   try {
     parsed = parseDisplayPath(path);
@@ -157,11 +174,11 @@ export async function latestFileChanges(
   services: HostFileServices,
   actor: ArtifactActor,
   displayPaths: string[],
-): Promise<Record<string, unknown>> {
+): Promise<Record<string, LatestFileChange>> {
   const paths = await readablePaths(services.store, actor, [
     ...new Set(displayPaths.filter((path) => path)),
   ]);
-  const latest: Record<string, unknown> = await listLatestFileChanges(
+  const latest: Record<string, LatestFileChange> = await listLatestFileChanges(
     services.db,
     actor.orgId,
     paths,
@@ -180,7 +197,7 @@ export async function listHostFiles(
   store: ArtifactStore,
   actor: ArtifactActor,
   owner: HostFileOwner,
-): Promise<Array<Record<string, unknown>>> {
+): Promise<HostNoteView[]> {
   return listOwnerNotes(store, actor, owner.level, owner.ownerId);
 }
 
@@ -298,7 +315,7 @@ export async function listPathChanges(
   services: HostFileServices,
   actor: ArtifactActor,
   displayPath: string,
-): Promise<unknown[]> {
+): Promise<FileChangeView[]> {
   if (!displayPath) {
     throw new ArtifactError("display_path is required", 422);
   }
@@ -308,6 +325,9 @@ export async function listPathChanges(
   return listFileChanges(services.db, actor.orgId, displayPath);
 }
 
+/** A note as an embed reads it: where it sits, its title, its level, and its text. */
+export type EmbeddedNote = { display_path: string; title: string; level: ArtifactLevel; content: string };
+
 /**
  * The notes the actor may embed, or with `displayPath` the one note it names.
  */
@@ -315,9 +335,9 @@ export async function readEmbeddableNotes(
   store: ArtifactStore,
   actor: ArtifactActor,
   displayPath: string,
-): Promise<unknown> {
+): Promise<ArtifactTextView[] | EmbeddedNote> {
   if (!displayPath) {
-    return (await listEmbeddableNotes(store, actor)).map(artifactView);
+    return (await listEmbeddableNotes(store, actor)).map(artifactTextView);
   }
   const loaded = await getByDisplayPath(store, actor, displayPath);
   const row = !loaded.tombstone && !loaded.revision ? loaded.row : null;

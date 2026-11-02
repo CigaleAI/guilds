@@ -7,20 +7,21 @@ import {
   isJsonValue,
   isListOf,
   isNumber,
+  isNovncUi,
   isNumberOrNull,
-  isRecord,
+  isRecordToolArguments,
+  isRfbConnection,
+  isShellArguments,
+  isStudioToolArguments,
   isString,
   isStringList,
   isStringOrNull,
+  isToolLevelArguments,
   parseJson,
+  parseStudioConnection,
+  parseStudioEdit,
+  isStudioFocusRequest,
 } from "./wire";
-
-test("isRecord admits an object and refuses null, a list and a scalar", () => {
-  assert.equal(isRecord({ a: 1 }), true);
-  assert.equal(isRecord(null), false);
-  assert.equal(isRecord([]), false);
-  assert.equal(isRecord("a"), false);
-});
 
 test("the scalar checks admit their own kind only", () => {
   assert.equal(isString("a"), true);
@@ -81,4 +82,110 @@ test("parseJson reads the value a JSON text holds", () => {
 test("parseJson is undefined for a text that is not JSON", () => {
   assert.equal(parseJson("{oops"), undefined);
   assert.equal(parseJson(""), undefined);
+});
+
+test("parseStudioEdit keeps every field that holds what it names", () => {
+  const edit = {
+    kind: "access",
+    action: "edit",
+    target: { agent_id: "a_1", collection_id: null },
+    base_version: 3,
+    fields: ["about"],
+    lines: { added: 2, removed: 1 },
+    changes: [{ kind: "mcp", id: "conn_1", label: "Notion", setting: "on" }],
+    widens: true,
+  };
+  assert.deepEqual(parseStudioEdit(edit), edit);
+});
+
+test("parseStudioEdit drops a field of the wrong type and an access change it cannot read", () => {
+  assert.deepEqual(
+    parseStudioEdit({
+      kind: "secret",
+      action: 2,
+      target: { agent_id: 7, schedule_id: "sch_1" },
+      base_version: "3",
+      fields: ["about", 4],
+      lines: { added: "2" },
+      changes: [
+        { kind: "mcp", id: "conn_1", label: "Notion", setting: "maybe" },
+        { kind: "native_tool", id: "web_fetch", label: "Fetch", setting: "off" },
+        "on",
+      ],
+      widens: "yes",
+    }),
+    {
+      target: { schedule_id: "sch_1" },
+      fields: ["about"],
+      lines: {},
+      changes: [{ kind: "native_tool", id: "web_fetch", label: "Fetch", setting: "off" }],
+    },
+  );
+  assert.deepEqual(parseStudioEdit(null), {});
+  assert.deepEqual(parseStudioEdit(["memory"]), {});
+});
+
+test("parseStudioConnection keeps the text fields of the connection and its server", () => {
+  assert.deepEqual(
+    parseStudioConnection({
+      id: "conn_1",
+      owner_scope: "org",
+      account_hint: 5,
+      server: { slug: "notion", display_name: null },
+    }),
+    { id: "conn_1", owner_scope: "org", server: { slug: "notion" } },
+  );
+  assert.deepEqual(parseStudioConnection("conn_1"), {});
+});
+
+test("isStudioFocusRequest admits a pin of a kind the server resolves and refuses another", () => {
+  assert.equal(isStudioFocusRequest({ kind: "issue", issue_id: "iss_1", seq: "3" }), true);
+  assert.equal(isStudioFocusRequest({ kind: "focus", issue_id: "iss_1" }), false);
+  assert.equal(isStudioFocusRequest({ kind: "run", run_id: 7 }), false);
+});
+
+test("a tool call's arguments pass their tool's check when each parameter has its schema's type", () => {
+  assert.equal(isShellArguments({ command: "ls", background: true }), true);
+  assert.equal(isShellArguments({ command: "ls", timeout_seconds: 30 }), true);
+  assert.equal(isShellArguments({}), true);
+  assert.equal(isShellArguments({ command: ["ls"] }), false);
+  assert.equal(isShellArguments({ command: "ls", background: "yes" }), false);
+  assert.equal(isRecordToolArguments({ collection: "deals", id: 42, body: {} }), true);
+  assert.equal(isRecordToolArguments({ collection: "deals", id: "42" }), false);
+  assert.equal(isStudioToolArguments({ action: "create", agent_id: "scout" }), true);
+  assert.equal(isStudioToolArguments({ agent_id: 7 }), false);
+  assert.equal(isToolLevelArguments({ level: "guild", path: "org/o1/plan.md" }), true);
+  assert.equal(isToolLevelArguments({ path: 7 }), false);
+  assert.equal(isToolLevelArguments("plan.md"), false);
+});
+
+test("a connection with every method the clipboard bridge calls is noVNC's RFB", () => {
+  const call = () => undefined;
+  const rfb = { focus: call, sendKey: call, clipboardPasteFrom: call, addEventListener: call };
+  assert.equal(isRfbConnection(rfb), true);
+});
+
+test("a connection missing a method the clipboard bridge calls is not noVNC's RFB", () => {
+  const call = () => undefined;
+  assert.equal(isRfbConnection({ focus: call, sendKey: call, addEventListener: call }), false);
+  assert.equal(
+    isRfbConnection({
+      focus: call,
+      sendKey: call,
+      clipboardPasteFrom: "x",
+      addEventListener: call,
+    }),
+    false,
+  );
+  assert.equal(isRfbConnection(null), false);
+});
+
+test("noVNC's UI holds an RFB connection once it connects, and none before", () => {
+  const call = () => undefined;
+  const rfb = { focus: call, sendKey: call, clipboardPasteFrom: call, addEventListener: call };
+  assert.equal(isNovncUi({ rfb }), true);
+  assert.equal(isNovncUi({}), true);
+  assert.equal(isNovncUi({ rfb: null }), true);
+  assert.equal(isNovncUi({ rfb: { focus: call } }), false);
+  assert.equal(isNovncUi(undefined), false);
 });

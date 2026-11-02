@@ -97,7 +97,7 @@ test("a container of another tier, size, or image is not the machine's", () => {
   assert.equal(machineMatches(metadata, { ...STANDARD, box: "custom" }, pinned), false);
   assert.equal(machineMatches(metadata, { ...STANDARD, memoryMib: 4096 }, pinned), false);
   assert.equal(machineMatches({ kind: "standard" }, STANDARD), false);
-  assert.equal(machineMatches(null, STANDARD), false);
+  assert.equal(machineMatches(undefined, STANDARD), false);
 });
 
 test("prepareBrowserWorkspace lays the agent's home out in its machine's directory and keeps its profile", () => {

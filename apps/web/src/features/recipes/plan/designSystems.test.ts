@@ -40,7 +40,7 @@ test("operator and pending-question systems are told apart", () => {
     ],
   };
   assert.deepEqual(
-    pendingDesignQuestions({ body: recipe }).map((item) => item.name),
+    pendingDesignQuestions(recipe).map((item) => item.name),
     ["a"],
   );
 });

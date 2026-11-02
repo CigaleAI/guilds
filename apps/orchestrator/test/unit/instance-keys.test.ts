@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { replacesGithubApp } from "../../src/instance/changes.js";
 import { GITHUB_APP, REGISTRY, SYSTEM_ONE, WEB_SEARCH } from "../../src/instance/integrations.js";
-import { InstanceKeyError, validateKeyValues } from "../../src/instance/keys.js";
+import { assertKeyValues, InstanceKeyError, validateKeyValues } from "../../src/instance/keys.js";
 
 function refused(work: () => unknown, pattern: RegExp): void {
   assert.throws(
@@ -41,13 +41,14 @@ test("a System One write with a provider it does not accept is a 422 naming the 
 });
 
 test("a field the integration lacks, an env-sourced integration, and a value that is not a string are refused", () => {
-  refused(() => validateKeyValues(WEB_SEARCH, { api_key: "k", token: "x" }), /Web search has no field token/);
+  refused(() => assertKeyValues(WEB_SEARCH, { api_key: "k", token: "x" }), /Web search has no field token/);
   refused(() => validateKeyValues(REGISTRY, { REGISTRY_URL: "https://r.example" }), /Registry is read from the environment/);
-  refused(() => validateKeyValues(WEB_SEARCH, { api_key: 42 }), /Tavily API key must be a string/);
-  refused(() => validateKeyValues(WEB_SEARCH, { api_key: null }), /must be a string/);
-  refused(() => validateKeyValues(WEB_SEARCH, "api_key=k"), /values must be an object/);
-  refused(() => validateKeyValues(WEB_SEARCH, [["api_key", "k"]]), /values must be an object/);
-  refused(() => validateKeyValues(WEB_SEARCH, null), /values must be an object/);
+  refused(() => assertKeyValues(WEB_SEARCH, { api_key: 42 }), /Tavily API key must be a string/);
+  refused(() => assertKeyValues(WEB_SEARCH, { api_key: null }), /must be a string/);
+  refused(() => assertKeyValues(WEB_SEARCH, "api_key=k"), /values must be an object/);
+  refused(() => assertKeyValues(WEB_SEARCH, [["api_key", "k"]]), /values must be an object/);
+  refused(() => assertKeyValues(WEB_SEARCH, null), /values must be an object/);
+  assert.doesNotThrow(() => assertKeyValues(SYSTEM_ONE, { api_key: "k", model: "" }));
 });
 
 test("a GitHub App write replaces the App when its id changes or the row goes away, not when a secret rotates", () => {

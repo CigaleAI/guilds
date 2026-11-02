@@ -120,7 +120,7 @@ function ScriptDetail({ agent, script }: ScriptDetailProps) {
                   ask({
                     kind: "file",
                     agent_id: agent.id,
-                    display_path: script.display_path,
+                    display_path: script.display_path ?? null,
                     label: `${agent.name} · script · ${script.name}`,
                   })
                 }

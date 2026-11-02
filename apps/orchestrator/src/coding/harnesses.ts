@@ -3,7 +3,14 @@
  * agent's sandbox on the user's own subscription: a token granted to the agent as a secret,
  * or a login stored in the agent's home.
  */
-import { HARNESSES, type Harness, type HarnessLogin, type HarnessLogins } from "../db/schema/index.js";
+import {
+  HARNESSES,
+  type AgentConfig,
+  type Harness,
+  type HarnessLogin,
+  type HarnessLogins,
+  type RecipeRole,
+} from "../db/schema/index.js";
 
 export type HarnessInfo = {
   harness: Harness;
@@ -72,8 +79,8 @@ export function harnessOffMessage(harness: Harness): string {
   return `${HARNESS_INFO[harness].label} is turned off on this box: pick another harness in the agent's Settings`;
 }
 
-/** The agent's harness from its config; null when none is set. */
-export function harnessOf(config: Record<string, unknown> | null | undefined): Harness | null {
+/** The harness an agent's config, or a recipe role's as its author wrote it, names; null when it names none. */
+export function harnessOf(config: AgentConfig | RecipeRole["config"] | null | undefined): Harness | null {
   return isHarness(config?.harness) ? config.harness : null;
 }
 
@@ -83,10 +90,17 @@ export function harnessOf(config: Record<string, unknown> | null | undefined): H
  */
 export const HARNESS_MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:/=,[\]-]{0,119}$/;
 
-/** The model the agent's harness runs; null leaves it to the harness's subscription. */
-export function harnessModelOf(config: Record<string, unknown> | null | undefined): string | null {
-  const model = config?.harness_model;
-  return typeof model === "string" && HARNESS_MODEL_RE.test(model) ? model : null;
+/** Whether a value is a harness model name. */
+export function isHarnessModel(value: unknown): value is string {
+  return typeof value === "string" && HARNESS_MODEL_RE.test(value);
+}
+
+/**
+ * The model the harness of an agent's config, or of a recipe role's as its author wrote it, runs;
+ * null leaves it to the harness's subscription.
+ */
+export function harnessModelOf(config: AgentConfig | RecipeRole["config"] | null | undefined): string | null {
+  return isHarnessModel(config?.harness_model) ? config.harness_model : null;
 }
 
 /** A coding run whose guild has no repository fails at start with this. */

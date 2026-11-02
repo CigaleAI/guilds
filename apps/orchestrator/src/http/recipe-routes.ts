@@ -1,5 +1,5 @@
-import { Type } from "@sinclair/typebox";
-import { parseAccessEdits } from "../recipes/access-edits.js";
+import { Type } from "typebox";
+import { parseAccessEdits, parseRecipe } from "../recipes/parse.js";
 import {
   captureRecipe,
   changeRecipe,
@@ -114,7 +114,7 @@ export async function registerRecipeRoutes(app: RouteApp, deps: AppDeps): Promis
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
       const body = request.body;
-      const row = await importRecipe(db, body.recipe ?? body, { orgId: org.id, userId: user.id });
+      const row = await importRecipe(db, parseRecipe(body.recipe ?? body), { orgId: org.id, userId: user.id });
       reply.code(201);
       return row;
     },

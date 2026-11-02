@@ -1,3 +1,5 @@
+import type { SecretEnv } from "../access/types.js";
+
 export class MissingSecretError extends Error {
   name = "MissingSecretError";
   secretName: string;
@@ -8,11 +10,12 @@ export class MissingSecretError extends Error {
   }
 }
 
+/** The value of each named secret in `env`, by its name; a name with no value throws `MissingSecretError`. */
 export function resolveSecrets(
   names: string[],
   env: NodeJS.ProcessEnv = process.env,
-): Record<string, string> {
-  const values: Record<string, string> = {};
+): SecretEnv {
+  const values: SecretEnv = {};
   for (const name of names) {
     const value = env[name];
     if (value === undefined || value === "") {
@@ -23,7 +26,10 @@ export function resolveSecrets(
   return values;
 }
 
-export function redact(text: string, secrets: Record<string, string>): string {
+/** Secret values a text is redacted of, each by the name its `[REDACTED:<name>]` mark shows. */
+export type Redactions = Record<string, string>;
+
+export function redact(text: string, secrets: Redactions): string {
   const items = Object.entries(secrets).sort((left, right) => right[1].length - left[1].length);
   let out = text;
   for (const [name, value] of items) {

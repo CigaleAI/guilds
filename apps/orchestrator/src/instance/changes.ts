@@ -1,12 +1,12 @@
-import { GITHUB_APP, GITHUB_SERVER_ID, type Integration } from "./integrations.js";
+import { GITHUB_APP, GITHUB_SERVER_ID, type Integration, type IntegrationValues } from "./integrations.js";
 import { InstanceKeyError } from "./keys.js";
 import { countServerConnections } from "../db/mcp.js";
 import type { Queryable } from "../db/pg.js";
 
 /** Whether a GitHub App write puts another App in place of the one connections were installed with, or takes it away. */
 export function replacesGithubApp(
-  previous: Record<string, string> | null,
-  next: Record<string, string> | null,
+  previous: IntegrationValues | null,
+  next: IntegrationValues | null,
 ): boolean {
   if (previous === null || !previous.app_id) {
     return false;
@@ -22,8 +22,8 @@ export function replacesGithubApp(
 export async function assertKeyChangeConfirmed(
   db: Queryable,
   integration: Integration,
-  previous: Record<string, string> | null,
-  next: Record<string, string> | null,
+  previous: IntegrationValues | null,
+  next: IntegrationValues | null,
 ): Promise<void> {
   if (integration.id !== GITHUB_APP.id || !replacesGithubApp(previous, next)) {
     return;

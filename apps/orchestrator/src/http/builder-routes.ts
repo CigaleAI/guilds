@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import type { BuilderService } from "../builder/index.js";
 import type { AppDeps, RouteApp } from "./deps.js";
@@ -7,6 +7,7 @@ import { currentOrg, currentUser } from "./identity.js";
 import { frameSse, SSE_HEADERS } from "./sse.js";
 import { ApplyChoicesSchema } from "../recipes/apply.js";
 import { parseReviewAction, ReviewSchema } from "../recipes/review.js";
+import { parseAccessEdits, parseRecipe } from "../recipes/parse.js";
 
 /** A new Builder session: the coach's model and, optionally, its temperature. */
 const BuilderSessionSchema = Type.Object({
@@ -109,7 +110,7 @@ export async function registerBuilderSessionRoutes(app: RouteApp, deps: AppDeps)
       const { expected_body_version: expected, recipe } = request.body;
       const builder = builderOf(deps);
       const session = await builder.getOwnedSession(request.params.session_id, user, org);
-      return await builder.writeRecipe(session, expected, recipe);
+      return await builder.writeRecipe(session, expected, parseRecipe(recipe));
     },
   );
 
@@ -121,7 +122,7 @@ export async function registerBuilderSessionRoutes(app: RouteApp, deps: AppDeps)
       const org = await currentOrg(db, request, user);
       const builder = builderOf(deps);
       const session = await builder.getOwnedSession(request.params.session_id, user, org);
-      return await builder.editAccess(session, request.body);
+      return await builder.editAccess(session, parseAccessEdits(request.body));
     },
   );
 

@@ -8,11 +8,11 @@ import {
   DEFAULT_MAX_STEPS,
   DEFAULT_MAX_TOKENS,
   DEFAULT_TEMPERATURE,
-  validateAgentConfig,
 } from "../../src/agents/config.js";
+import { validateAgentConfig } from "../../src/agents/validation.js";
 import { operatorAuthor, linkedInNotionRecipe, huskLeadMatcherRecipe } from "../helpers/recipe-docs.js";
 import { validateRecipe } from "../../src/recipes/validate.js";
-import type { ApplyPlan, PlannedConnection } from "../../src/db/schema/index.js";
+import type { ApplyPlan, PlannedConnection, RecipeRole } from "../../src/db/schema/index.js";
 
 function applyPlan(overrides: Partial<ApplyPlan> = {}): ApplyPlan {
   return { names: [], connections: [], secrets: [], collections: [], activate_keys: [], ...overrides };
@@ -198,7 +198,7 @@ test("apply gives a coding role the harness chosen, else the recipe's, and no ot
     remainingCodingAgents: 5,
     groupLimit: 20,
   };
-  const findings = (config: Record<string, unknown>) => {
+  const findings = (config: RecipeRole["config"]) => {
     role.config = config;
     return validateRecipe(recipe, ctx).filter((item) => item.code.startsWith("harness."));
   };
@@ -221,7 +221,7 @@ test("a recipe's harness model that apply cannot use is a warning", () => {
     remainingCodingAgents: 5,
     groupLimit: 20,
   };
-  const codes = (config: Record<string, unknown>) => {
+  const codes = (config: RecipeRole["config"]) => {
     role.config = config;
     return validateRecipe(recipe, ctx)
       .filter((item) => item.code.startsWith("harness_model."))
@@ -231,7 +231,7 @@ test("a recipe's harness model that apply cannot use is a warning", () => {
   assert.deepEqual(codes({ coding: true, harness: "claude-code" }), []);
   assert.deepEqual(codes({ coding: true, harness: "claude-code", harness_model: "--bad" }), [["harness_model.invalid", "warning"]]);
   assert.deepEqual(codes({ coding: true, harness_model: "opus" }), [["harness_model.harness", "warning"]]);
-  const effortCodes = (config: Record<string, unknown>) => {
+  const effortCodes = (config: RecipeRole["config"]) => {
     role.config = config;
     return validateRecipe(recipe, ctx)
       .filter((item) => item.code.startsWith("harness_effort."))
@@ -243,7 +243,7 @@ test("a recipe's harness model that apply cannot use is a warning", () => {
   assert.deepEqual(effortCodes({ coding: true, harness: "cursor", harness_model: "composer-2.5", harness_effort: "low" }), [
     ["harness_effort.model", "warning"],
   ]);
-  const aliasCodes = (config: Record<string, unknown>) => {
+  const aliasCodes = (config: RecipeRole["config"]) => {
     role.config = config;
     return validateRecipe(recipe, ctx)
       .filter((item) => item.code.startsWith("secret_aliases."))

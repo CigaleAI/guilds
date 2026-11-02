@@ -149,8 +149,8 @@ function resetImported(recipe: RecipeDocument): RecipeDocument {
 }
 
 /** Adds a recipe document to the owner's library as a private draft with every field unreviewed; a document that carries secrets is refused. */
-export async function importRecipe(db: Queryable, document: unknown, owner: RecipeOwner): Promise<RecipeRow> {
-  const parsed = resetImported(parseRecipe(document));
+export async function importRecipe(db: Queryable, document: RecipeDocument, owner: RecipeOwner): Promise<RecipeRow> {
+  const parsed = resetImported(structuredClone(document));
   if (hasForbiddenSecrets(parsed)) {
     throw new RecipeError("recipe must not contain secrets or ciphertext");
   }
@@ -267,13 +267,12 @@ export async function changeRecipe(db: Queryable, row: RecipeRow, change: Recipe
   );
 }
 
-/** Parses `document` and writes it over the recipe at `version`, under the name and description it gives itself. */
-export async function writeRecipeDocument(db: Queryable, version: RecipeVersion, document: unknown): Promise<RecipeRow> {
-  const parsed = parseRecipe(document);
+/** Writes `document` over the recipe at `version`, under the name and description it gives itself. */
+export async function writeRecipeDocument(db: Queryable, version: RecipeVersion, document: RecipeDocument): Promise<RecipeRow> {
   return writeRecipe(
     db,
     version,
-    { body: parsed, name: parsed.meta.name, description: parsed.meta.description },
+    { body: document, name: document.meta.name, description: document.meta.description },
     new Date(),
   );
 }

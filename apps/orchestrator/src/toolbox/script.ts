@@ -1,5 +1,6 @@
-import { isPlainRecord } from "../db/json.js";
-import { ScriptError } from "../scripts/validation.js";
+import { Type } from "typebox";
+import { isJsonObject, type JsonObject, type JsonValue } from "../lib/json.js";
+import { ScriptError, validateScriptParameters } from "../scripts/validation.js";
 import type { AgentScript } from "../scripts/catalog.js";
 import type { RunScriptSnapshot } from "../db/schema/index.js";
 import { liveExtraRows } from "../scripts/snapshot.js";
@@ -9,12 +10,13 @@ import {
   writeThroughLiveExtra,
   removeManagedScript,
 } from "../scripts/materialise.js";
-import { argString, functionSchema } from "./schema.js";
+import { functionSchema, isText, jsonArgument } from "./schema.js";
+import type { FunctionTool, ToolSchema } from "../lib/tool-schema.js";
 import { identityOutput } from "./output.js";
 import { commandOutput, executeCommand } from "./shell.js";
 import type { ToolServices } from "./services.js";
 import type { CommandResult } from "../sandbox/sdk.js";
-import { callActor, type Tool, type ToolHooks, type ToolInvocation, type ToolRun } from "./types.js";
+import { callActor, nativeTool, type ToolHooks, type ToolInvocation, type ToolRun, type ToolsByName } from "./types.js";
 
 export const SCRIPT_TOOLS = [
   "script_create",
@@ -54,7 +56,10 @@ async function publish(
   }
 }
 
-export const scriptCreate: Tool = {
+/** The arguments of a call that names one of the agent's scripts: its name, as `script_list` shows it. */
+const ScriptName = Type.Object({ name: Type.String() });
+
+export const scriptCreate = nativeTool({
   name: "script_create",
   description:
     "Create or replace a reusable Python script for this agent. name " +
@@ -69,30 +74,12 @@ export const scriptCreate: Tool = {
     "max_scripts setting (default 10); replacing a name does not count " +
     "as a new script. Read secrets from the process environment inside " +
     "the script; never print them.",
-  output_filter: identityOutput,
-  filter_name: "identity",
-  schema: functionSchema(
-    "script_create",
-    "Create or replace a reusable Python script for this agent. name " +
-      "matches ^[a-z][a-z0-9_-]{0,62}$. description is a short why so " +
-      "later wakes know when to run it. source is the Python file, which " +
-      "is stored at scripts/<name>.py in your home. Optional parameters is a " +
-      "JSON Schema object that also offers the script as a tool under its " +
-      "name from the next run on. A script reads its arguments as a JSON " +
-      "object from stdin (json.load(sys.stdin)): script_run arguments, or " +
-      "that tool's arguments. Replacing a script this run started with " +
-      "takes effect from the next run. An agent may hold at most its " +
-      "max_scripts setting (default 10); replacing a name does not count " +
-      "as a new script. Read secrets from the process environment inside " +
-      "the script; never print them.",
-    {
-      name: { type: "string" },
-      description: { type: "string" },
-      source: { type: "string" },
-      parameters: { type: "object" },
-    },
-    ["name", "description", "source"],
-  ),
+  parameters: Type.Object({
+    name: Type.String(),
+    description: Type.String(),
+    source: Type.String(),
+    parameters: Type.Optional(jsonArgument({ type: "object" })),
+  }),
   async handler(services, run, _hooks, call) {
     const args = call.arguments;
     const row = await scripts(services).create(
@@ -101,7 +88,7 @@ export const scriptCreate: Tool = {
       args.name,
       args.description,
       args.source,
-      args.parameters ?? null,
+      validateScriptParameters(args.parameters),
       { reservedNames: run.connection_tool_names, maxScripts: run.max_scripts },
     );
     if (run.sandbox?.files) {
@@ -120,93 +107,57 @@ export const scriptCreate: Tool = {
     }
     return wrote;
   },
-};
+});
 
-export const scriptList: Tool = {
+export const scriptList = nativeTool({
   name: "script_list",
   description: "List this agent's reusable scripts and why each exists.",
-  output_filter: identityOutput,
-  filter_name: "identity",
-  schema: functionSchema(
-    "script_list",
-    "List this agent's reusable scripts and why each exists.",
-    {},
-    [],
-  ),
+  parameters: Type.Object({}),
   async handler(services, run) {
     return scripts(services).formatList(run.agent_id);
   },
-};
+});
 
-export const scriptRead: Tool = {
+export const scriptRead = nativeTool({
   name: "script_read",
   description: "Read one of this agent's scripts by name from script_list.",
-  output_filter: identityOutput,
-  filter_name: "identity",
-  schema: functionSchema(
-    "script_read",
-    "Read one of this agent's scripts by name from script_list.",
-    {
-      name: { type: "string" },
-    },
-    ["name"],
-  ),
+  parameters: ScriptName,
   async handler(services, run, _hooks, call) {
-    const args = call.arguments;
-    const row = await scripts(services).get(run.agent_id, args.name);
+    const row = await scripts(services).get(run.agent_id, call.arguments.name);
     return `${row.name}\n${row.description}\n\n${row.source}`;
   },
-};
+});
 
-export const scriptRun: Tool = {
+const RUN_DESCRIPTION =
+  "Run one of this agent's Python scripts by name. The file executes " +
+  "in your home as scripts/<name>.py with the bound " +
+  "environment variables available. Optional arguments is a JSON " +
+  "object the script reads from stdin (json.load(sys.stdin)); without " +
+  "it the script reads {}.";
+
+export const scriptRun = nativeTool({
   name: "script_run",
-  description:
-    "Run one of this agent's Python scripts by name. The file executes " +
-    "in your home as scripts/<name>.py with the bound " +
-    "environment variables available. Optional arguments is a JSON " +
-    "object the script reads from stdin (json.load(sys.stdin)); without " +
-    "it the script reads {}.",
-  output_filter: identityOutput,
-  filter_name: "identity",
-  schema: functionSchema(
-    "script_run",
-    "Run one of this agent's Python scripts by name. The file executes " +
-      "in your home as scripts/<name>.py with the bound " +
-      "environment variables available. Optional arguments is a JSON " +
-      "object the script reads from stdin (json.load(sys.stdin)); without " +
-      "it the script reads {}.",
-    {
-      name: { type: "string" },
-      arguments: { type: "object" },
-    },
-    ["name"],
-  ),
+  description: RUN_DESCRIPTION,
+  parameters: Type.Object({
+    name: Type.String(),
+    arguments: Type.Optional(jsonArgument({ type: "object" })),
+  }),
   async handler(services, run, hooks, call) {
-    const args = call.arguments;
-    const name = await resolveRunnableName(services, run, args.name);
-    return commandOutput(call, await runScript(run, hooks, name, scriptArguments(args.arguments)));
+    const name = await resolveRunnableName(services, run, call.arguments.name);
+    return commandOutput(call, await runScript(run, hooks, name, scriptArguments(call.arguments.arguments)));
   },
-};
+});
 
-export const scriptDelete: Tool = {
+const DELETE_DESCRIPTION =
+  "Delete one of this agent's scripts by name from script_list. " +
+  "The file leaves scripts/ in your home and cannot be run again this run.";
+
+export const scriptDelete = nativeTool({
   name: "script_delete",
-  description:
-    "Delete one of this agent's scripts by name from script_list. " +
-    "The file leaves scripts/ in your home and cannot be run again this run.",
-  output_filter: identityOutput,
-  filter_name: "identity",
-  schema: functionSchema(
-    "script_delete",
-    "Delete one of this agent's scripts by name from script_list. " +
-      "The file leaves scripts/ in your home and cannot be run again this run.",
-    {
-      name: { type: "string" },
-    },
-    ["name"],
-  ),
+  description: DELETE_DESCRIPTION,
+  parameters: ScriptName,
   async handler(services, run, _hooks, call) {
-    const args = call.arguments;
-    const row = await scripts(services).delete(scriptActor(run, call), run.agent_id, args.name);
+    const row = await scripts(services).delete(scriptActor(run, call), run.agent_id, call.arguments.name);
     const name = String(row.name);
     const pinned = run.run_scripts.findIndex((item) => item.name === name);
     if (pinned >= 0) {
@@ -221,40 +172,41 @@ export const scriptDelete: Tool = {
     await publish(services, run, "delete", name);
     return `deleted ${name}`;
   },
-};
+});
 
 /** Runs a managed script through the launcher, which writes `args` as JSON to its stdin. */
-function runScript(run: ToolRun, hooks: ToolHooks, name: string, args: Record<string, unknown>): Promise<CommandResult> {
+function runScript(run: ToolRun, hooks: ToolHooks, name: string, args: JsonObject): Promise<CommandResult> {
   return executeCommand(run, hooks, launcherCommand(run.agent_home, name), {
     envs: { [SCRIPT_ARGS_ENV]: JSON.stringify(args) },
   });
 }
 
-function scriptArguments(raw: unknown): Record<string, unknown> {
-  if (raw === undefined || raw === null) {
+/** The JSON object a script reads on stdin: the call's `arguments`, sent as an object or as its JSON text; `{}` without them. */
+function scriptArguments(raw: JsonValue | undefined): JsonObject {
+  if (raw === undefined) {
     return {};
   }
   let value: unknown = raw;
-  if (typeof raw === "string") {
+  if (isText(raw)) {
     try {
       value = JSON.parse(raw);
     } catch {
       throw new ScriptError("arguments must be a JSON object");
     }
   }
-  if (!isPlainRecord(value)) {
+  if (!isJsonObject(value)) {
     throw new ScriptError("arguments must be a JSON object");
   }
   return value;
 }
 
-async function resolveRunnableName(services: ToolServices, run: ToolRun, raw: unknown): Promise<string> {
-  const token = argString({ name: typeof raw === "string" ? raw : "" }, "name") || String(raw ?? "");
-  const snap = run.run_scripts.find((row) => row.name === token);
+/** The script `name` runs: the version this run started with, or the agent's script of that name. */
+async function resolveRunnableName(services: ToolServices, run: ToolRun, name: string): Promise<string> {
+  const snap = run.run_scripts.find((row) => row.name === name);
   if (snap) {
     return snap.name;
   }
-  const row = await scripts(services).get(run.agent_id, raw);
+  const row = await scripts(services).get(run.agent_id, name);
   return String(row.name);
 }
 
@@ -262,14 +214,12 @@ function firstClassSnapshots(snapshot: RunScriptSnapshot[]): RunScriptSnapshot[]
   return snapshot.filter((row) => row.parameters !== null);
 }
 
-export function dynamicScriptTools(snapshot: RunScriptSnapshot[]): Record<string, Tool> {
-  const tools: Record<string, Tool> = {};
+export function dynamicScriptTools(snapshot: RunScriptSnapshot[]): ToolsByName {
+  const tools: ToolsByName = {};
   for (const row of firstClassSnapshots(snapshot)) {
-    const parameters = row.parameters ?? { type: "object" };
-    const properties = isPlainRecord(parameters.properties) ? parameters.properties : {};
-    const required = Array.isArray(parameters.required)
-      ? parameters.required.filter((item): item is string => typeof item === "string" && item in properties)
-      : [];
+    const parameters: ToolSchema = row.parameters ?? { type: "object" };
+    const properties = parameters.properties ?? {};
+    const required = (parameters.required ?? []).filter((item) => item in properties);
     tools[row.name] = {
       name: row.name,
       description: row.description,
@@ -284,7 +234,7 @@ export function dynamicScriptTools(snapshot: RunScriptSnapshot[]): Record<string
   return tools;
 }
 
-export function firstClassScriptSchemas(snapshot: RunScriptSnapshot[]): Array<Record<string, unknown>> {
+export function firstClassScriptSchemas(snapshot: RunScriptSnapshot[]): FunctionTool[] {
   return Object.values(dynamicScriptTools(snapshot)).map((tool) => tool.schema);
 }
 

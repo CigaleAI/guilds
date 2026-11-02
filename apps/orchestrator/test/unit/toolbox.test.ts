@@ -41,15 +41,12 @@ test("functionSchema drops format from optional properties", () => {
     },
     ["id"],
   );
-  const properties = (
-    schema.function as {
-      parameters: { properties: { id: Record<string, unknown>; campaignId: Record<string, unknown> } };
-    }
-  ).parameters.properties;
-  assert.equal(properties.id.format, "uuid");
-  assert.equal("format" in properties.campaignId, false);
-  assert.match(String(properties.campaignId.description), /Omit this key when unused/);
-  assert.equal("description" in properties.id, false);
+  const { id, campaignId } = schema.function.parameters.properties ?? {};
+  assert.ok(typeof id === "object" && typeof campaignId === "object");
+  assert.equal(id.format, "uuid");
+  assert.equal("format" in campaignId, false);
+  assert.match(String(campaignId.description), /Omit this key when unused/);
+  assert.equal("description" in id, false);
 });
 
 test("script_run schema from type hints", () => {
@@ -77,10 +74,9 @@ test("script_run schema from type hints", () => {
   assert.match(String(noteWrite.function.parameters.properties.key?.description), /the \.md file name, for example queries\.md$/);
   assert.deepEqual(schemaRequired("group_post"), ["content"]);
   assert.deepEqual(schemaRequired("report_issue"), ["summary", "detail", "kind"]);
-  const reportIssue = REGISTRY.report_issue!.schema as {
-    function: { parameters: { properties: { severity: { enum: string[] } } } };
-  };
-  assert.deepEqual(reportIssue.function.parameters.properties.severity.enum, [
+  const severity = REGISTRY.report_issue!.schema.function.parameters.properties?.severity;
+  assert.ok(typeof severity === "object");
+  assert.deepEqual(severity.enum, [
     "medium",
     "low",
     "high",
@@ -153,10 +149,7 @@ test("script_run schema from type hints", () => {
   assert.deepEqual(schemaRequired("schedule_resume"), ["schedule_id"]);
   assert.deepEqual(schemaRequired("schedule_delete"), ["schedule_id"]);
   assert.deepEqual(schemaRequired("script_create"), ["name", "description", "source"]);
-  const scriptCreate = REGISTRY.script_create!.schema as {
-    function: { parameters: { properties: { parameters: unknown } } };
-  };
-  assert.deepEqual(scriptCreate.function.parameters.properties.parameters, { type: "object" });
+  assert.deepEqual(REGISTRY.script_create!.schema.function.parameters.properties?.parameters, { type: "object" });
   assert.deepEqual(schemaRequired("script_list"), []);
   assert.deepEqual(schemaRequired("script_read"), ["name"]);
   assert.deepEqual(schemaRequired("script_run"), ["name"]);
@@ -201,11 +194,10 @@ test("filter failure becomes error result", () => {
   assert.equal(meta.error, "tool output filter failed");
 });
 
-test("a filter that returns no string becomes an error result", () => {
-  const notText: unknown = 3;
-  const [stored, meta] = processOutput("hi", () => notText as string, {}, 1024);
-  assert.equal(stored, "ERROR: tool output filter failed");
-  assert.equal(meta.error, "tool output filter failed");
+test("a filter's string is the result, an empty one included", () => {
+  const [stored, meta] = processOutput("hi", () => "", {}, 1024);
+  assert.equal(stored, "");
+  assert.equal(meta.error, null);
 });
 
 test("format_execution includes nonzero exit code", () => {
@@ -245,7 +237,7 @@ test("invoke_script_run stores payload and exit_code", async () => {
       commands: {
         async run(command, opts) {
           commands.push(command);
-          assert.equal(opts?.workingDirectory ?? opts?.working_directory, "/home/a_1");
+          assert.equal(opts?.workingDirectory, "/home/a_1");
           return {
             exit_code: 0,
             logs: { stdout: [{ text: "hi" }], stderr: [] },
@@ -334,7 +326,7 @@ test("invoke still runs a first-class script when it is not in offered_tools", a
         description: "price a bag",
         output_filter: (result) => result,
         filter_name: "identity",
-        schema: {},
+        schema: functionSchema("priced", "price a bag", {}, []),
         async handler() {
           return "priced";
         },
@@ -412,7 +404,7 @@ test("browser_navigate runs helper", async () => {
       commands: {
         async run(command, opts) {
           seen.push(command);
-          assert.equal(opts?.workingDirectory ?? opts?.working_directory, "/home/a_1");
+          assert.equal(opts?.workingDirectory, "/home/a_1");
           return {
             exit_code: 0,
             logs: { stdout: [{ text: "https://example.com\nExample" }], stderr: [] },
@@ -440,7 +432,7 @@ test("browser_scroll runs helper", async () => {
       commands: {
         async run(command, opts) {
           seen.push(command);
-          assert.equal(opts?.timeoutSeconds ?? opts?.timeout_seconds, 60);
+          assert.equal(opts?.timeoutSeconds, 60);
           return {
             exit_code: 0,
             logs: { stdout: [{ text: "scrolled down\ncontainer: window\nfrom: 0\nto: 600\nremaining: 0" }], stderr: [] },
@@ -469,7 +461,7 @@ test("browser_eval runs helper", async () => {
       commands: {
         async run(command, opts) {
           seen.push(command);
-          assert.equal(opts?.timeoutSeconds ?? opts?.timeout_seconds, 60);
+          assert.equal(opts?.timeoutSeconds, 60);
           return {
             exit_code: 0,
             logs: { stdout: [{ text: '"ok"' }], stderr: [] },

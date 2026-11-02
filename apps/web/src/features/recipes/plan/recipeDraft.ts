@@ -1,4 +1,3 @@
-import { isRecord } from "../../../api/wire";
 import type { WakeWindow } from "../../../api/types/schedules";
 import type {
   ApplyCreates,
@@ -21,6 +20,7 @@ import type {
   RecipeSchedule,
   RecipeScript,
   RecipeSecret,
+  RecipeStatus,
 } from "../../../api/types/recipes";
 
 /**
@@ -46,10 +46,8 @@ export type ScriptDraft = Draft<RecipeScript>;
 /** A role routine as the plan reads it. */
 export type ScheduleDraft = Draft<RecipeSchedule>;
 
-/** A role as the plan reads it; the task may also be given as plain text. */
-export type RoleDraft = Omit<Draft<RecipeRole>, "task"> & {
-  task?: Draft<RecipeRole["task"]> | string | null | undefined;
-};
+/** A role as the plan reads it. */
+export type RoleDraft = Draft<RecipeRole>;
 
 /** A design system as the plan reads it, with an optional `kind` and explicit target `roles`. */
 export type SystemDraft = Draft<DesignSystem> & {
@@ -67,9 +65,6 @@ export type RecipeDraft = Omit<Draft<RecipeDocument>, "roles" | "design"> & {
   roles?: readonly RoleDraft[] | null | undefined;
   design?: DesignDraft | null | undefined;
 };
-
-/** A stored recipe row (its `body` is the document, as in `RecipeRow`), a recipe document, or nothing. */
-export type RecipeSource = { body: unknown } | RecipeDraft | null | undefined;
 
 /** A connector from the recipe, the apply plan, or both merged. */
 export type ConnectionDraft = Draft<RecipeConnection> &
@@ -115,7 +110,7 @@ export function asArray<T>(value: readonly T[] | null | undefined): readonly T[]
 }
 
 export function asObject<T extends object>(value: T | null | undefined): Partial<T> {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  return value ?? {};
 }
 
 export function plural(count: number, word: string): string {
@@ -129,28 +124,18 @@ export function enabledKeys(map: Draft<Record<string, boolean>> | null | undefin
 }
 
 /** True when a recipe's status means it is approved. */
-export function isRecipeApproved(status: unknown): boolean {
-  return String(status || "") === "ready";
+export function isRecipeApproved(status: RecipeStatus): boolean {
+  return status === "ready";
 }
 
 /** The word a recipe's status reads as: "approved" or "draft". */
-export function recipeStatusLabel(status: unknown): "approved" | "draft" {
+export function recipeStatusLabel(status: RecipeStatus): "approved" | "draft" {
   return isRecipeApproved(status) ? "approved" : "draft";
 }
 
-/**
- * True when a value is an object, which the plan reads as a recipe document: every field of a
- * draft is optional and read defensively.
- */
-function isRecipeDraft(value: unknown): value is RecipeDraft {
-  return isRecord(value);
-}
-
-/** The recipe document inside a recipe row, the value itself when it is a document, or an empty recipe. */
-export function recipeBody(row: unknown): RecipeDraft {
-  if (!isRecipeDraft(row)) return { roles: [], collections: [], connections: [], design: {} };
-  if ("body" in row && isRecipeDraft(row.body)) return row.body;
-  return row;
+/** The recipe document, or an empty recipe when there is none. */
+export function recipeBody(doc: RecipeDraft | null | undefined): RecipeDraft {
+  return doc ?? { roles: [], collections: [], connections: [], design: {} };
 }
 
 /** True when a builder wrote the field and no operator has confirmed it. */

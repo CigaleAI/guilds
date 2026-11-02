@@ -1,3 +1,4 @@
+import type { GuildAgentRow } from "../db/agents.js";
 import type { GroupMessageRow } from "../db/group-chat.js";
 import type { RecipientRouting, TypeSafeUsage } from "../db/schema/index.js";
 
@@ -21,13 +22,22 @@ export type HistoryDecision = {
   usage?: TypeSafeUsage;
 };
 
+/** A public message as a router reads it: where it sits, who wrote it, its text and its tags. */
+export type RoutedMessage = Pick<
+  GroupMessageRow,
+  "seq" | "author_type" | "author_name" | "content" | "tagged_names"
+>;
+
+/** A guild member as a router offers it: its name, and the focus and Task that say its duties. */
+export type RoutedMember = Pick<GuildAgentRow, "name" | "focus" | "task">;
+
 /** What a group chat asks of its router: who a message wakes, and which history an agent reads. */
 export type GroupRouter = {
   configured: boolean;
   recipients(args: {
-    rows: Array<Record<string, unknown>>;
-    members: Array<Record<string, unknown>>;
-    pending: Array<Record<string, unknown>>;
+    rows: RoutedMessage[];
+    members: RoutedMember[];
+    pending: Array<Pick<RoutedMember, "name">>;
     taggedNames?: Set<string>;
     ruleNames?: Set<string>;
   }): Promise<RecipientDecision>;

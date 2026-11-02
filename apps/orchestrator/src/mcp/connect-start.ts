@@ -4,10 +4,10 @@ import { connect, connectDatabase, validateConnectSettings } from "./connect-tok
 import { getMcpServer, type LoadedConnector } from "../connectors/servers.js";
 import { connectionMetadata, type ConnectionView } from "./view.js";
 import { validateOwner, type OwnerScope } from "../credentials/validate.js";
-import { isPlainRecord } from "../db/json.js";
 import { connectMcp, getMcpConnectionForOwner } from "../db/mcp.js";
 import { githubAppConfig, userAuthorizationUrl } from "../github/index.js";
 import { newId } from "../lib/ids.js";
+import { isJsonObject, type JsonObject } from "../lib/json.js";
 import { relistTools } from "./pool.js";
 import { assertActsFor, ConnectionError, ownerOrgId, serverVisible } from "./visibility.js";
 import {
@@ -37,7 +37,7 @@ export type ConnectionStart = {
   serverId: string;
   ownerScope: string;
   ownerId: string | null | undefined;
-  form: Record<string, unknown>;
+  form: JsonObject;
   redirectUri: string;
 };
 
@@ -70,7 +70,7 @@ async function requireConnectable(
 /** The settings a login's form gives, none when it gives none; settings that are not an object are a 422. */
 function formSettings(form: Payload): Payload | undefined {
   const settings = form.settings;
-  if (settings !== undefined && !isPlainRecord(settings)) {
+  if (settings !== undefined && !isJsonObject(settings)) {
     throw new ConnectionError(422, "settings must be an object");
   }
   return settings;
@@ -141,10 +141,7 @@ function githubSignIn(ownerScope: string, redirectUri: string, replaces: boolean
   }
   const github = githubAppConfig();
   if (github === null) {
-    throw new ConnectionError(422, {
-      message: "the GitHub App is not configured",
-      setup_state: "unsupported",
-    });
+    throw new ConnectionError(422, "the GitHub App is not configured", "unsupported");
   }
   const oauthState = newState();
   // GitHub sends nobody back from editing an existing installation, so Connect never starts on
@@ -180,7 +177,7 @@ async function browserSignIn(
     };
   } catch (error) {
     if (error instanceof OAuthUnsupportedError) {
-      throw new ConnectionError(422, { message: error.message, setup_state: "unsupported" });
+      throw new ConnectionError(422, error.message, "unsupported");
     }
     throw error instanceof OAuthError ? new ConnectionError(502, error.message) : error;
   }
@@ -197,10 +194,7 @@ export async function startConnection(
   start: ConnectionStart,
 ): Promise<StartedConnection> {
   const { db } = services;
-  const [ownerScope, ownerId] = validateOwner(
-    start.ownerScope,
-    typeof start.ownerId === "string" ? start.ownerId : null,
-  );
+  const [ownerScope, ownerId] = validateOwner(start.ownerScope, start.ownerId ?? null);
   await assertActsFor(db, ownerScope, ownerId, userId);
   const server = await requireConnectable(services, start, ownerId);
   if (server.auth === "token") {

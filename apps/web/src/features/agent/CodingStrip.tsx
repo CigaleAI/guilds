@@ -47,7 +47,9 @@ export function CodingStrip({ guildId, agentId }: CodingStripProps) {
   const status = useAgentHarness(agentId);
   const secrets = useSecrets({ scope: "agent", id: agentId });
   if (!status.data) return null;
-  const strip = codingStrip({ status: status.data, secrets: secrets.data ?? [], now: new Date() });
+  // A login's age reads as of when the harness status was read.
+  const now = new Date(status.dataUpdatedAt);
+  const strip = codingStrip({ status: status.data, secrets: secrets.data ?? [], now });
   const parts = [strip.harnessPart, strip.credential, strip.repositories];
   const problem = parts.some((part) => part?.problem);
   const where = { guildId, agentId };

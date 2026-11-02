@@ -215,6 +215,15 @@ test("recipe schema rejects unknown keys and duplicate routine keys", () => {
   assert.throws(() => parseRecipe(linkedin), /duplicate routine key/);
 });
 
+test("a recipe script's parameters are a JSON Schema object at every depth", () => {
+  const recipe = linkedInNotionRecipe();
+  const script = { name: "lookup", description: "Look up", source: "print(1)\n", secrets: [], author: builderAuthor() };
+  recipe.roles[0]!.scripts = [{ ...script, parameters: { type: "object", properties: { id: { type: "string" } } } }];
+  assert.deepEqual(parseRecipe(recipe).roles[0]?.scripts[0]?.parameters, { type: "object", properties: { id: { type: "string" } } });
+  const role = { ...recipe.roles[0]!, scripts: [{ ...script, parameters: { type: "object", properties: { id: { required: true } } } }] };
+  assert.throws(() => parseRecipe({ ...recipe, roles: [role] }), /roles\[0\]\.scripts\[0\]\.parameters must be a JSON Schema object/);
+});
+
 test("recipe roles carry optional, capped wake triggers", () => {
   const recipe = linkedInNotionRecipe();
   const omitted = { ...recipe, roles: recipe.roles.map(({ wake_triggers: _omit, ...role }) => role) };
@@ -259,7 +268,10 @@ test("unreviewed builder fields and import reset", () => {
     role.browser.author = resetReview(role.browser.author);
   }
   assert.ok(unreviewedFields(imported).includes("roles.watcher.task"));
-  assert.equal(hasForbiddenSecrets({ ciphertext: "nope" }), true);
+  assert.equal(hasForbiddenSecrets(imported), false);
+  const leaking = parseRecipe(linkedInNotionRecipe());
+  leaking.roles[0]!.config.ciphertext = "nope";
+  assert.equal(hasForbiddenSecrets(leaking), true);
 });
 
 test("LinkedIn and crypto fixtures are structurally valid without per-field confirm", () => {

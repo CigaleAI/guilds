@@ -1,7 +1,7 @@
 // The Studio tools for guilds: the source guild's public history, about, and description, the
 // organisation's other guilds, and a proposed change to the source guild's text.
 
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { listGroupMessages } from "../db/group-chat.js";
 import { listGuildsForUser } from "../db/guilds.js";
 import { ABOUT_MAX, DESCRIPTION_MAX } from "../guilds/validation.js";
@@ -84,6 +84,9 @@ export const studioGetGuild: StudioTool = studioTool({
   },
 });
 
+/** Another guild of the organisation as studio_list_guilds lists it: its id, and its name, about and description as evidence. */
+type GuildListing = { guild_id: string; name: string; about: string; description: string };
+
 const ListGuildsArguments = Type.Object({
   cursor: Type.Optional(Type.String()),
   limit: Type.Optional(Type.Integer()),
@@ -102,7 +105,7 @@ export const studioListGuilds: StudioTool = studioTool({
       (row) => row.id !== call.sourceGuildId,
     );
     // A page ends at the limit or where the next guild would pass the byte cap.
-    const guilds: Array<Record<string, unknown>> = [];
+    const guilds: GuildListing[] = [];
     let bytes = 0;
     for (const row of others.slice(offset, offset + limit)) {
       const item = {

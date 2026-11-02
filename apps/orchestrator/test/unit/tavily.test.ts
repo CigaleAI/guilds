@@ -5,6 +5,7 @@ import { encryptPayload } from "../../src/credentials/crypto.js";
 import { decodeMasterKey } from "../../src/config/index.js";
 import { NATIVE_TOOLS } from "../../src/seed/catalog.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
+import { ConnectorError } from "../../src/connectors/types.js";
 import { instanceCredentials, instanceKey, instanceRedactions } from "../../src/connectors/instance.js";
 import { TavilyError, formatSearch, search } from "../../src/connectors/tavily/client.js";
 import { McpPool, OPERATOR_CALLER } from "../../src/mcp/pool.js";
@@ -17,6 +18,7 @@ import { loadJsonFixture } from "../helpers/fixtures.js";
 import { mockFetch } from "../helpers/http.js";
 import { serverRow, connectionRow } from "../helpers/servers.js";
 import type { McpConnectionRow } from "../../src/db/mcp.js";
+import type { JsonObject } from "../../src/lib/json.js";
 import { MemoryMcpDatabase } from "../helpers/mcp-database.js";
 
 const fixture = loadJsonFixture<{ results: string; empty: string }>("adapters/tavily.json");
@@ -41,7 +43,7 @@ function webSearch(apiKey: string) {
 
 function login(
   scope: "platform" | "org",
-  payload: Record<string, unknown>,
+  payload: JsonObject,
   status: McpConnectionRow["status"] = "connected",
 ): McpConnectionRow {
   const [ciphertext, nonce] = encryptPayload(payload, KEY);
@@ -80,7 +82,6 @@ test("formatSearch joins title, url, and content", () => {
 test("formatSearch empty is no results", () => {
   assert.equal(formatSearch({}), fixture.empty);
   assert.equal(formatSearch({ results: [] }), fixture.empty);
-  assert.equal(formatSearch({ results: [{ title: 1 }] }), fixture.empty);
 });
 
 test("search requires a query", async () => {
@@ -121,6 +122,12 @@ test("search refuses a body that is not JSON or does not match its schema", asyn
       /^Tavily returned an unexpected response at \/results: /.test(error.message),
   );
   await assert.rejects(
+    () => search("messi", answering({ json: { results: [{ title: 1 }] } })),
+    (error: unknown) =>
+      error instanceof TavilyError &&
+      /^Tavily returned an unexpected response at \/results\/0\/title: /.test(error.message),
+  );
+  await assert.rejects(
     () => search("messi", answering({ text: "not json" })),
     (error: unknown) =>
       error instanceof TavilyError && error.message === "Tavily returned a non-JSON body",
@@ -136,6 +143,31 @@ test("search HTTP error", async () => {
       }),
     (error: unknown) => error instanceof TavilyError && error.message === "Unauthorized" && error.status === 401,
   );
+  const failing = (result: { json?: unknown; text?: string }) =>
+    search("messi", { apiKey: "tvly-test", client: mockFetch(() => ({ status: 502, ...result })) });
+  await assert.rejects(failing({ text: "Bad gateway" }), (error: unknown) => error instanceof TavilyError && error.message === "Bad gateway");
+  await assert.rejects(failing({ json: { detail: [] } }), (error: unknown) => error instanceof TavilyError && error.message === "Tavily HTTP 502");
+});
+
+test("the search tool decodes its arguments before it searches", async () => {
+  const fetched: string[] = [];
+  const ctx = {
+    http: mockFetch((url) => {
+      fetched.push(url);
+      return { status: 200, json: { results: [] } };
+    }),
+    remote: { initialize: async () => ({ name: "", instructions: "" }), list: async () => [], call: async () => "" },
+    connection_id: "conn_tavily",
+    settings: {},
+  };
+  const creds = { token: "tvly-test" };
+  assert.equal(await TAVILY.adapter.call!("search", { query: "messi" }, creds, ctx), "no results");
+  await assert.rejects(
+    TAVILY.adapter.call!("search", { query: 7 }, creds, ctx),
+    (error: unknown) => error instanceof ConnectorError && error.status === 422 && /^\/query: /.test(error.message),
+  );
+  await assert.rejects(TAVILY.adapter.call!("extract", {}, creds, ctx), (error: unknown) => error instanceof ConnectorError && error.status === 404);
+  assert.deepEqual(fetched, ["https://api.tavily.com/search"]);
 });
 
 test("web search is the Tavily connector's search tool, not a native tool", () => {

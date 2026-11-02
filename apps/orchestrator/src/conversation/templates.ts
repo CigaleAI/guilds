@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { builderGuidance, searchableNames, systemOfRecordNames } from "../connectors/builder.js";
-import { isPlainRecord } from "../db/json.js";
+import { isJsonObject, type JsonObject } from "../lib/json.js";
 import { hereDir } from "../lib/paths.js";
 import { MEMORY_INTRO } from "../memory/index.js";
 import {
@@ -77,13 +77,13 @@ export function readSharedAgentPrompt(options: CoachTemplateOptions = {}, metaUr
     .replace("{{AGENT_GUIDELINES}}", () => readAgentGuidelines(options.guidelinesPath, metaUrl));
 }
 
-export function readBuilderWriteExample(metaUrl = import.meta.url): Record<string, unknown> {
+export function readBuilderWriteExample(metaUrl = import.meta.url): JsonObject {
   const filePath = path.join(hereDir(metaUrl), BUILDER_WRITE_EXAMPLE);
   if (!existsSync(filePath)) {
     throw new ConversationError(422, `${BUILDER_WRITE_EXAMPLE} not found`);
   }
   const parsed: unknown = JSON.parse(readFileSync(filePath, "utf8"));
-  if (!isPlainRecord(parsed)) {
+  if (!isJsonObject(parsed)) {
     throw new ConversationError(422, `${BUILDER_WRITE_EXAMPLE} must be a JSON object`);
   }
   return parsed;

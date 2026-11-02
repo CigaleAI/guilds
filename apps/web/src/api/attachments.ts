@@ -2,17 +2,17 @@ import { ApiError, readApiFailure } from "./client";
 import { reportClientError, requestId } from "./clientLog";
 import { identityHeaders } from "./session";
 import type { ChatAttachment } from "./types/runs";
-import { hasFields, isRecord, isString } from "./wire";
+import { hasFields, isJsonObject, isString } from "./wire";
 
 /** Stores image bytes, then returns the id later messages reference. */
 export async function uploadAttachment(file: File): Promise<ChatAttachment> {
-  const headers: Record<string, string> = {
+  const headers = {
     Accept: "application/json",
     "Content-Type": "application/octet-stream",
     "X-Filename": file.name,
     "X-Request-Id": requestId(),
     ...identityHeaders(),
-  };
+  } satisfies Record<string, string>;
   let response: Response;
   try {
     response = await fetch("/api/attachments", {
@@ -41,7 +41,7 @@ export async function uploadAttachment(file: File): Promise<ChatAttachment> {
 /** Whether a reply is a stored attachment, as `POST /api/attachments` returns one. */
 export function isChatAttachment(value: unknown): value is ChatAttachment {
   return (
-    isRecord(value) &&
+    isJsonObject(value) &&
     hasFields(value, ["id", "filename", "mime", "url", "created_at"], isString) &&
     typeof value.bytes === "number" &&
     (value.kind === "image" || value.kind === "file")

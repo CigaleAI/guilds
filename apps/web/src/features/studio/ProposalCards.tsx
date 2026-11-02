@@ -1,16 +1,16 @@
 import { Eye } from "lucide-react";
 import type { ReactNode } from "react";
 import { useStudioEdits } from "../../api/queries/studio";
-import type { StudioEdit } from "../../api/types/studio";
+import type {
+  AccessWidget,
+  DraftWidget,
+  EditWidget,
+  GuildText,
+  StudioDraft,
+  StudioEdit,
+} from "../../api/types/studio";
 import { Button, DiffView, diffLines, Icon, Tag, cn, toast } from "@guildsrun/ui";
-import {
-  applyLabel,
-  connectionLabel,
-  editTargetLabel,
-  type AccessWidget,
-  type DraftWidget,
-  type EditWidget,
-} from "./chatModel";
+import { applyLabel, connectionLabel, editTargetLabel } from "./chatModel";
 import type { Proposal } from "./pendingModel";
 import { useStudio } from "./StudioContext";
 
@@ -264,6 +264,18 @@ function EditPreview({ view }: EditPreviewProps) {
   );
 }
 
+type EditText = StudioEdit["live"];
+
+/** Whether an edit's text is the guild's about and description, rather than one text. */
+function isGuildText(text: EditText): text is GuildText {
+  return text !== null && typeof text === "object";
+}
+
+/** An edit's text as one text; empty for the guild's fields or none. */
+function singleText(text: EditText): string {
+  return isGuildText(text) ? "" : (text ?? "");
+}
+
 type EditDiffProps = { view: StudioEdit };
 
 /**
@@ -273,13 +285,10 @@ type EditDiffProps = { view: StudioEdit };
 function EditDiff({ view }: EditDiffProps) {
   if (view.error) return <p className="text-sm text-plum-t">{view.error}</p>;
   const { live, proposed } = view;
-  if (typeof live === "string" || typeof proposed === "string" || !live || !proposed) {
+  if (!isGuildText(live) || !isGuildText(proposed)) {
     return (
       <DiffView
-        lines={diffLines(
-          typeof live === "string" ? live : "",
-          typeof proposed === "string" ? proposed : "",
-        )}
+        lines={diffLines(singleText(live), singleText(proposed))}
         title="live → proposed"
         className="max-h-96 overflow-y-auto"
       />
@@ -332,7 +341,7 @@ function AccessCard({ proposal, actionable, widget }: AccessCardProps) {
   );
 }
 
-const draftOutcomeLabel: Record<string, string> = {
+const draftOutcomeLabel: Partial<Record<StudioDraft["status"], string>> = {
   published: "Published",
   unchanged: "Published unchanged",
   discarded: "Discarded",

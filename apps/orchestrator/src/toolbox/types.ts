@@ -1,14 +1,20 @@
+import type { Static, TObject } from "typebox";
 import { DEFAULT_MAX_SCRIPTS } from "../agents/config.js";
 import type { Harness, Effort, ReportedToolMetadata } from "../db/schema/index.js";
 import { agentHome } from "../lib/agent-file.js";
+import type { JsonObject } from "../lib/json.js";
 import type { ArtifactActor } from "../artifacts/types.js";
 import type { CdpTarget } from "../browse/bridge.js";
 import type { RunScriptSnapshot } from "../db/schema/index.js";
-import type { CommandResult } from "../sandbox/sdk.js";
+import type { SandboxHandle } from "../sandbox/sdk.js";
+import { ToolArgumentError } from "./errors.js";
+import { identityOutput } from "./output.js";
+import { decodeArguments, type FunctionTool } from "../lib/tool-schema.js";
+import { toolFunctionSchema } from "./schema.js";
 import type { ToolServices } from "./services.js";
 
 export type GroupChat = {
-  publish?(guildId: string, event: string, data: Record<string, unknown>): Promise<void>;
+  publish?(guildId: string, event: string, data: JsonObject): Promise<void>;
   postFromRun?(
     runId: string,
     agentId: string,
@@ -60,30 +66,8 @@ export class CancelEvent {
   }
 }
 
-/** What a sandbox command reports once it starts: its execution id, which interrupts it. */
-export type CommandInit = { id?: string };
-
-export type SandboxCommands = {
-  run(
-    command: string,
-    opts?: Record<string, unknown>,
-    handlers?: { onInit?: (init: CommandInit) => Promise<void> | void; on_init?: (init: CommandInit) => Promise<void> | void },
-  ): Promise<CommandResult>;
-  interrupt?(executionId: string): Promise<void>;
-};
-
-export type SandboxFiles = {
-  writeFiles(entries: Array<{ path: string; data: string }>): Promise<void>;
-  moveFiles(entries: Array<{ src: string; dest: string }>): Promise<void>;
-  listDirectory?(entry: { path: string; depth?: number }): Promise<Array<{ path: string; type?: string }>>;
-  deleteFiles(paths: string[]): Promise<void>;
-};
-
-export type SandboxHandle = {
-  id?: string;
-  commands: SandboxCommands;
-  files?: SandboxFiles;
-};
+/** The sandbox a run's commands go to, as the tools reach it: its commands and its files. */
+export type RunSandbox = Pick<SandboxHandle, "commands" | "files"> & Partial<Pick<SandboxHandle, "id">>;
 
 /** Saves values the agent produced as secrets of its organisation, granted to the agent. */
 export type AgentSecretStore = {
@@ -105,7 +89,7 @@ export type ToolRun = {
   org_slug: string;
   run_kind: string;
   /** The agent's container on its machine, with the run's environment; null without one. */
-  sandbox: SandboxHandle | null;
+  sandbox: RunSandbox | null;
   /** The values of the run's secrets, which its tool results are redacted with. */
   secrets: Record<string, string>;
   /** Names of the secrets in this generation's environment. */
@@ -127,7 +111,7 @@ export type ToolRun = {
   /** How many scripts this agent may keep; `script_create` of a new name is refused past it. */
   max_scripts: number;
   connection_tool_names: string[];
-  dynamic_tools: Record<string, Tool>;
+  dynamic_tools: ToolsByName;
   /** When set, only these names plus `dynamic_tools` may run. `null` skips the check. */
   offered_tools: Set<string> | null;
   /** The run's coding harness, from its snapshot; null without one. */
@@ -189,12 +173,15 @@ export function createToolRun(
   };
 }
 
-/** One call the model made to a tool: its id, its name, its arguments, and what its handler reports of it. */
-export type ToolInvocation = {
+/**
+ * One call the model made to a tool: its id, its name, its arguments, and what its handler reports
+ * of it. The arguments are the JSON object the model wrote, or `A` once the tool decoded them.
+ */
+export type ToolInvocation<A = JsonObject> = {
   /** The provider id of the call. */
   id: string;
   name: string;
-  arguments: Record<string, unknown>;
+  arguments: A;
   /** The exit code of the command the call ran; null when it ran none. */
   exit_code: number | null;
   /** Fields the handler reports for the call's metadata row (exit code, path, line counts). */
@@ -219,11 +206,65 @@ export function createToolHooks(partial: Partial<ToolHooks> = {}): ToolHooks {
   };
 }
 
+/** A tool a run can call: what the model is offered, and the handler of a call's arguments as the model wrote them. */
 export type Tool = {
   name: string;
   description: string;
   output_filter: (result: string) => string;
   filter_name: string;
   handler: (services: ToolServices, run: ToolRun, hooks: ToolHooks, call: ToolInvocation) => Promise<string>;
-  schema: Record<string, unknown>;
+  schema: FunctionTool;
 };
+
+/** Tools by the name the model calls them by. */
+export type ToolsByName = Record<string, Tool>;
+
+/**
+ * A native tool as it is written: its name, what it does as the tool list and its function schema
+ * say it, the TypeBox schema of its parameters, and its handler of a call decoded against them.
+ */
+export type NativeTool<P extends TObject> = {
+  name: string;
+  description: string;
+  /** What the function schema says the tool does; `description` when it is the same. */
+  summary?: string;
+  parameters: P;
+  handler: (services: ToolServices, run: ToolRun, hooks: ToolHooks, call: ToolInvocation<JsonObject & Static<P>>) => Promise<string>;
+};
+
+/**
+ * `args` decoded as `parameters` describe them. An optional argument sent as null is absent. A
+ * required argument left out throws a ToolArgumentError naming it; arguments that do not match
+ * throw one naming the first mismatch by its JSON pointer.
+ */
+export function decodeToolArguments<P extends TObject>(parameters: P, args: JsonObject): JsonObject & Static<P> {
+  return decodeArguments(parameters, args, (problem) => new ToolArgumentError(problem));
+}
+
+/** Decodes `call`'s arguments in place, as `parameters` describe them, so the handler reads them typed. */
+function assertDecoded<P extends TObject>(
+  parameters: P,
+  call: ToolInvocation,
+): asserts call is ToolInvocation & ToolInvocation<JsonObject & Static<P>> {
+  call.arguments = decodeToolArguments(parameters, call.arguments);
+}
+
+/**
+ * The tool `definition` describes. The model is offered the JSON Schema of its parameters, and
+ * each call's arguments are decoded against the same schema before the handler runs, so a call
+ * that does not match them is refused with nothing done.
+ */
+export function nativeTool<P extends TObject>(definition: NativeTool<P>): Tool {
+  const { name, description, summary, parameters, handler } = definition;
+  return {
+    name,
+    description,
+    output_filter: identityOutput,
+    filter_name: "identity",
+    schema: toolFunctionSchema(name, summary ?? description, parameters),
+    handler: async (services, run, hooks, call) => {
+      assertDecoded(parameters, call);
+      return handler(services, run, hooks, call);
+    },
+  };
+}

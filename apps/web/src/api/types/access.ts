@@ -3,6 +3,8 @@
  * Timestamps are ISO-8601 in UTC.
  */
 
+import type { JsonObject, JsonSchema, JsonValue } from "../wire";
+
 /** A repository a GitHub connection's installation reaches. */
 export type GithubRepository = {
   name: string;
@@ -101,7 +103,7 @@ export type AccessBinding = {
 export type McpToolAccess = AccessBinding & {
   remote_name: string;
   description: string;
-  input_schema: Record<string, unknown>;
+  input_schema: JsonSchema;
 };
 
 /** The result of an operator test call on a connected login. */
@@ -128,7 +130,7 @@ export type ConnectorAuthField = {
 export type ConnectorFacts = {
   auth_fields: ConnectorAuthField[];
   /** The JSON Schema of what a login stores beside its credentials, or null when it stores nothing. */
-  settings_schema: Record<string, unknown> | null;
+  settings_schema: JsonSchema | null;
   source: "core" | "registry" | "local";
   verified: boolean;
   /** Whether the connector is still being tried out and may change or break. */
@@ -160,13 +162,27 @@ export type McpServerAccess = Omit<AccessBinding, "name"> &
     connection_owner_scope: BindingScope | null;
     tools: McpToolAccess[];
     /** What the login stores beside its credentials, as its connector's `settings_schema` describes it. */
-    settings: Record<string, unknown>;
+    settings: JsonObject;
     /** The login is signed in and connects once its settings are saved. */
     needs_settings: boolean;
   };
 
+/** A key-based login's values, by the connector's field names. */
+export type LoginKeys = Record<ConnectorAuthField["name"], string>;
+
 /** One value a connector setting may take: what it stores, and how the search box shows it. */
-export type LookupOption = { value: unknown; label: string; detail?: string; image?: string };
+export type LookupOption = { value: JsonValue; label: string; detail?: string; image?: string };
+
+/**
+ * A lookup value that is one of the connector's items: an object with the id it is known by, and
+ * the name and symbol it shows as, beside whatever else the connector stores.
+ */
+export type LookupItem = {
+  id?: string;
+  name?: string;
+  symbol?: string;
+  [field: string]: JsonValue | undefined;
+};
 
 export type AgentAccess = {
   tools: AccessBinding[];
@@ -192,7 +208,7 @@ export type BindingsChange = { targets: BindingTarget[]; enabled: boolean | "inh
 export type McpConnection = {
   id: string;
   status: McpConnectionStatus;
-  settings?: Record<string, unknown>;
+  settings?: JsonObject;
   /** Signed in, and connects once its settings are saved. */
   needs_settings?: boolean;
   authorization_url?: string;
@@ -206,8 +222,8 @@ export type McpConnection = {
  * connector stores some; empty for OAuth.
  */
 export type McpCredentials = {
-  [field: string]: string | McpServerAccess["settings"];
-  settings?: McpServerAccess["settings"];
+  [field: string]: string | JsonObject;
+  settings?: JsonObject;
 };
 
 /** A login to start: the server signed in to, and the values a key-based login needs. */

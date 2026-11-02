@@ -10,8 +10,8 @@ export type AgentHeaderProps = Omit<ComponentProps<"header">, "children"> & {
   tone: IdentityTone;
   src?: string;
   state: AgentState;
-  /** What the agent is for (`focus`, up to 150 characters), or a control to add one. */
-  focus?: ReactNode;
+  /** What the agent is for (`focus`, up to 150 characters). */
+  focus?: string | undefined;
   /** Trailing IconButtons: expand, options (⋯), close. */
   actions?: ReactNode;
   /** Id for the name heading, so a dialog can point `aria-labelledby` at it. */
@@ -66,7 +66,7 @@ export function AgentHeader({
         {focus ? (
           <div
             className={cn("text-fg-2", compact ? "truncate text-sm" : "text-md")}
-            title={compact && typeof focus === "string" ? focus : undefined}
+            title={compact ? focus : undefined}
           >
             {focus}
           </div>

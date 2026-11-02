@@ -1,6 +1,7 @@
 import { credentialFix, HARNESS_INFO, harnessesOn, harnessOffMessage, isHarnessOff } from "../coding/harnesses.js";
 import type { Harness } from "../db/schema/index.js";
-import { checkCallId, harnessOp, opsRun, stringOrNull } from "./harness-ops.js";
+import { keepMatching } from "../lib/decode.js";
+import { checkCallId, HarnessCheckMeta, harnessOp, opsRun, stringOrNull } from "./harness-ops.js";
 import type { ToolServices } from "./services.js";
 import type { ToolRun } from "./types.js";
 
@@ -33,7 +34,7 @@ export function requiredHarness(run: ToolRun): Harness {
   return run.harness;
 }
 
-function assertInstalled(harness: Harness, meta: Record<string, unknown>): void {
+function assertInstalled(harness: Harness, meta: HarnessCheckMeta): void {
   if (meta.installed === true) {
     return;
   }
@@ -51,7 +52,7 @@ async function assertCredential(
   services: ToolServices,
   run: ToolRun,
   harness: Harness,
-  meta: Record<string, unknown>,
+  meta: HarnessCheckMeta,
 ): Promise<void> {
   if (meta.credential === "login") {
     await services.db?.markHarnessLogin(
@@ -68,6 +69,12 @@ async function assertCredential(
   }
 }
 
+/** What `guilds-harness check` says of `harness` on the run's machine, for the call `callId` names. */
+async function readCheck(run: ToolRun, callId: string, harness: Harness): Promise<HarnessCheckMeta> {
+  const check = await harnessOp(opsRun(run), callId, "check", { harness });
+  return keepMatching(HarnessCheckMeta, check.meta) ?? {};
+}
+
 /** Checks the harness's CLI is installed and has a credential; returns its version. */
 export async function checkHarness(
   services: ToolServices,
@@ -75,10 +82,10 @@ export async function checkHarness(
   callId: string,
   harness: Harness,
 ): Promise<string | null> {
-  const check = await harnessOp(opsRun(run), callId, "check", { harness });
-  assertInstalled(harness, check.meta);
-  await assertCredential(services, run, harness, check.meta);
-  return stringOrNull(check.meta.version);
+  const check = await readCheck(run, callId, harness);
+  assertInstalled(harness, check);
+  await assertCredential(services, run, harness, check);
+  return stringOrNull(check.version);
 }
 
 /**
@@ -103,12 +110,11 @@ export type HarnessCheck = {
 
 /** Runs `guilds-harness check` for `harness` in `run`, outside any tool call. */
 export async function checkHarnessOn(run: ToolRun, harness: Harness): Promise<HarnessCheck> {
-  const check = await harnessOp(opsRun(run), checkCallId(), "check", { harness });
-  const credential = check.meta.credential;
+  const check = await readCheck(run, checkCallId(), harness);
   return {
-    installed: check.meta.installed === true,
-    version: stringOrNull(check.meta.version),
-    credential: credential === "secret" || credential === "login" ? credential : null,
-    account: stringOrNull(check.meta.account),
+    installed: check.installed === true,
+    version: stringOrNull(check.version),
+    credential: check.credential ?? null,
+    account: stringOrNull(check.account),
   };
 }

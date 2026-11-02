@@ -3,19 +3,20 @@ import { agentActor } from "../artifacts/actors.js";
 import { REPOSITORIES_MISSING, REPOSITORIES_MISSING_MESSAGE } from "../coding/harnesses.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
 import { listBindingsCovering } from "../db/bindings.js";
-import { isPlainRecord } from "../db/json.js";
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import { completeRun, getRun, listMessages, mergeRunMetadata, type MessageRow, type RunRow } from "../db/runs.js";
 import { agentHome } from "../lib/agent-file.js";
+import { isJsonObject } from "../lib/json.js";
 import { INPUT_TOKEN_LIMIT_MESSAGE } from "../llm/tokens.js";
 import { slotPorts } from "../machines/index.js";
 import { writeLog } from "../observability/log.js";
 import { agentSandbox, applyRunScripts, prepareBrowserWorkspace, prepareWorkspace, seatEnvironment } from "../sandbox/index.js";
 import type { SandboxHandle } from "../sandbox/sdk.js";
 import type { Scripts } from "../scripts/catalog.js";
-import type { RunConfigSnapshot, RunScriptSnapshot } from "../db/schema/index.js";
+import type { RunConfigSnapshot, RunScriptSnapshot, ToolCall } from "../db/schema/index.js";
 import { harnessMissingError } from "../toolbox/harness-setup.js";
 import { createToolRun, type ToolHooks, type ToolRun } from "../toolbox/index.js";
+import { isText } from "../toolbox/schema.js";
 import { dynamicScriptTools, liveExtraForAgent } from "../toolbox/script.js";
 import type { ActiveGenerations } from "./active-generations.js";
 import { chainOf, completeIfActive, HANDOFF_FRACTION, type RunChains } from "./chain.js";
@@ -30,6 +31,7 @@ import {
   snapshotOfferedNames,
   toolSchemaName,
   withFirstClassScriptTools,
+  type ConnectionTarget,
   type ToolBindingScope,
 } from "./offered-tools.js";
 import type { GenerationSecrets, RunSecrets } from "./run-secrets.js";
@@ -47,7 +49,7 @@ export type Generation = RunGeneration & { run: RunRow; agent: AgentRow; snapsho
 type RunSandboxes = { machine: SandboxHandle; agent: SandboxHandle };
 
 /** What a generation offers the model: the tool names, the scripts its snapshot pins, and its connection tools. */
-type ToolOffer = { names: Set<string>; scripts: RunScriptSnapshot[]; connections: Record<string, [string, string]> };
+type ToolOffer = { names: Set<string>; scripts: RunScriptSnapshot[]; connections: Map<string, ConnectionTarget> };
 
 /** A coding run's prompt reached the hand-off share of its input limit. */
 class HandoffDue extends Error {
@@ -83,7 +85,7 @@ function scheduleInstructionOf(rows: MessageRow[]): string {
   const text = raw.slice(SCHEDULE_WAKE_PREFIX.length);
   try {
     const info: unknown = JSON.parse(text);
-    return isPlainRecord(info) ? String(info.instruction || "") : "";
+    return isJsonObject(info) && isText(info.instruction) ? info.instruction : "";
   } catch {
     return text;
   }
@@ -494,7 +496,7 @@ export class RunGenerator {
       run_scripts: offer.scripts,
       max_scripts: agent.config.max_scripts,
       dynamic_tools: offer.names.has("script_run") ? dynamicScriptTools(offer.scripts) : {},
-      connection_tool_names: Object.keys(offer.connections),
+      connection_tool_names: [...offer.connections.keys()],
       offered_tools: offer.names,
       harness: snapshot.harness,
       harness_model: snapshot.harness_model,
@@ -561,7 +563,7 @@ export class RunGenerator {
    * One model step with its tool calls; null when the step ended the generation: a hand-off, a
    * limit that completes the run, or a failed model call, and the run says which.
    */
-  private async stepOrStop(gen: Generation, tools: GenerationTools): Promise<Array<Record<string, unknown>> | null> {
+  private async stepOrStop(gen: Generation, tools: GenerationTools): Promise<ToolCall[] | null> {
     const { db, events, chains } = this.services;
     try {
       return await this.modelStep(gen, tools);
@@ -587,7 +589,7 @@ export class RunGenerator {
    * Calls the model with the run's history and runs the tool calls it makes. A history over
    * the input limit ends the run; a coding run's history at the hand-off share hands off.
    */
-  private async modelStep(gen: Generation, tools: GenerationTools): Promise<Array<Record<string, unknown>>> {
+  private async modelStep(gen: Generation, tools: GenerationTools): Promise<ToolCall[]> {
     const { db, completion, events, toolCalls } = this.services;
     const maxInputTokens = gen.snapshot.max_input_tokens;
     const agent = await db.getAgent(gen.run.agent_id);

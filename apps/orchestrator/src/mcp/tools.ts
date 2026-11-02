@@ -1,10 +1,8 @@
-import { Value } from "@sinclair/typebox/value";
 import type { ConnectorTool } from "../connectors/types.js";
-import { isPlainRecord, jsonObj } from "../db/json.js";
 import type { McpToolRow } from "../db/mcp.js";
-import { ToolInputSchema } from "../db/schema/index.js";
-import { llmToolParameters } from "../lib/tool-schema.js";
-import { McpError } from "./errors.js";
+import type { ToolInputSchema } from "../db/schema/index.js";
+import { llmToolParameters, type FunctionTool } from "../lib/tool-schema.js";
+import type { McpTool } from "./session.js";
 import { namespacedName } from "../connectors/naming.js";
 
 /**
@@ -16,7 +14,8 @@ export type ListedTool = Pick<
   "remote_name" | "namespaced_name" | "description" | "input_schema" | "read_only_hint" | "destructive_hint"
 >;
 
-export function mcpSchema(tool: Pick<ListedTool, "namespaced_name" | "description" | "input_schema">): Record<string, unknown> {
+/** A listed tool as the model is offered it: a function taking its input schema, or any object when the schema is empty. */
+export function mcpSchema(tool: Pick<ListedTool, "namespaced_name" | "description" | "input_schema">): FunctionTool {
   const parameters = Object.keys(tool.input_schema).length ? tool.input_schema : { type: "object" };
   return {
     type: "function",
@@ -28,43 +27,22 @@ export function mcpSchema(tool: Pick<ListedTool, "namespaced_name" | "descriptio
   };
 }
 
-/** A remote tool's input schema, or an empty object schema when it sends none the box can read. */
-function remoteSchema(tool: Record<string, unknown>): ToolInputSchema {
-  let loaded = pythonOr(tool.inputSchema, tool.input_schema, { type: "object" });
-  if (typeof loaded === "string") {
-    try {
-      loaded = JSON.parse(loaded);
-    } catch {
-      return { type: "object" };
-    }
-  }
-  return Value.Check(ToolInputSchema, loaded) ? loaded : { type: "object" };
+/**
+ * A remote tool's input schema, or an empty object schema when it declares none or an empty one.
+ * A declared schema that is not a JSON Schema the box reads is left out where the listing is read
+ * (`McpSession.listTools`), so that tool too takes any object, and its server checks the arguments.
+ */
+function remoteSchema(tool: McpTool): ToolInputSchema {
+  const declared = tool.inputSchema;
+  return declared !== undefined && Object.keys(declared).length ? declared : { type: "object" };
 }
 
-function pythonOr(...values: unknown[]): unknown {
-  for (const value of values) {
-    if (value === null || value === undefined || value === false || value === 0 || value === "") {
-      continue;
-    }
-    if (isPlainRecord(value) && Object.keys(value).length === 0) {
-      continue;
-    }
-    return value;
-  }
-  return values[values.length - 1];
-}
-
-export function fromRemote(slug: string, tool: Record<string, unknown>): ListedTool {
-  const remoteName = tool.name;
-  if (typeof remoteName !== "string" || !remoteName.trim()) {
-    throw new McpError("mcp tool is missing a name");
-  }
-  const remote = remoteName.trim();
-  const description = tool.description;
+export function fromRemote(slug: string, tool: McpTool): ListedTool {
+  const remote = tool.name.trim();
   return {
     remote_name: remote,
     namespaced_name: namespacedName(slug, remote),
-    description: typeof description === "string" ? description : "",
+    description: tool.description ?? "",
     input_schema: remoteSchema(tool),
     read_only_hint: null,
     destructive_hint: null,
@@ -83,18 +61,13 @@ export function listedFromRows(rows: McpToolRow[]): ListedTool[] {
 }
 
 /** A tool from a remote `tools/list`, with its annotations, null when absent. */
-export function remoteConnectorTool(tool: Record<string, unknown>): ConnectorTool {
+export function remoteConnectorTool(tool: McpTool): ConnectorTool {
   const listed = fromRemote("", tool);
-  const annotations = jsonObj(tool.annotations);
-  const hint = (name: string): boolean | null => {
-    const value = isPlainRecord(annotations) ? annotations[name] : undefined;
-    return typeof value === "boolean" ? value : null;
-  };
   return {
     name: listed.remote_name,
     description: listed.description,
     input_schema: listed.input_schema,
-    read_only_hint: hint("readOnlyHint"),
-    destructive_hint: hint("destructiveHint"),
+    read_only_hint: tool.annotations?.readOnlyHint ?? null,
+    destructive_hint: tool.annotations?.destructiveHint ?? null,
   };
 }

@@ -4,7 +4,6 @@ import { decodeMasterKey } from "../../src/config/index.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import {
   DexPaprikaError,
-  callTool,
   formatOhlcv,
   formatPool,
   formatPools,
@@ -13,12 +12,13 @@ import {
   formatSwaps,
   formatToken,
   ping,
-  searchTool,
 } from "../../src/connectors/dexpaprika/client.js";
 import { McpError } from "../../src/mcp/errors.js";
 import { McpPool, OPERATOR_CALLER } from "../../src/mcp/pool.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
-import { ConnectorError } from "../../src/connectors/types.js";
+import { ConnectorError, type ConnectorContext } from "../../src/connectors/types.js";
+import type { JsonObject } from "../../src/lib/json.js";
+import type { FetchFn } from "../../src/net/http.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { mockFetch } from "../helpers/http.js";
 import { serverRow } from "../helpers/servers.js";
@@ -29,7 +29,24 @@ import { restoreConnectorsAfterEach, runConnectors } from "../helpers/installed.
 restoreConnectorsAfterEach();
 
 const KEY = decodeMasterKey(HEX_MASTER_KEY);
-const TOOLS = CONNECTORS.bySlug("dexpaprika")!.manifest.tools!;
+const DEXPAPRIKA = CONNECTORS.bySlug("dexpaprika")!;
+const TOOLS = DEXPAPRIKA.manifest.tools!;
+
+/** Runs the DexPaprika tool `name` on `args` with the key api_test, fetching through `http`. */
+function callDexPaprika(name: string, args: JsonObject, http: FetchFn = mockFetch(() => ({ status: 500, json: {} }))) {
+  const ctx: ConnectorContext = {
+    http,
+    remote: { initialize: async () => ({ name: "", instructions: "" }), list: async () => [], call: async () => "" },
+    connection_id: "conn_dp",
+    settings: {},
+  };
+  return DEXPAPRIKA.adapter.call!(name, args, { token: "api_test" }, ctx);
+}
+
+/** Whether `error` is the connector error a call is refused with: `status`, its message matching `pattern`. */
+function refused(status: number | null, pattern: RegExp) {
+  return (error: unknown) => error instanceof ConnectorError && error.status === status && pattern.test(error.message);
+}
 
 
 test("formatSearch drops descriptions and caps rows", () => {
@@ -183,42 +200,58 @@ test("formatSwaps keeps amounts", () => {
   );
 });
 
-test("searchTool sends the raw Authorization header", async () => {
+test("search sends the raw Authorization header", async () => {
   let url = "";
   let key = "";
-  const stored = await searchTool(
+  const stored = await callDexPaprika(
+    "search",
     { query: "sol" },
-    {
-      apiKey: "api_test",
-      client: mockFetch((requestUrl, init) => {
-        url = requestUrl;
-        const headers = init?.headers as Record<string, string>;
-        key = headers.Authorization ?? "";
-        return { status: 200, json: { tokens: [{ id: "sol", symbol: "SOL", name: "Solana", chain: "solana", price_usd: 100 }] } };
-      }),
-    },
+    mockFetch((requestUrl, init) => {
+      url = requestUrl;
+      const headers = init?.headers as Record<string, string>;
+      key = headers.Authorization ?? "";
+      return { status: 200, json: { tokens: [{ id: "sol", symbol: "SOL", name: "Solana", chain: "solana", price_usd: 100 }] } };
+    }),
   );
   assert.equal(url, "https://api.dexpaprika.com/search?query=sol");
   assert.equal(key, "api_test");
   assert.equal(stored, "tokens\nsolana  sol  SOL  Solana  p=100");
 });
 
-test("searchTool refuses a body that is not JSON or does not match its schema", async () => {
-  const answering = (result: { json?: unknown; text?: string }) => ({
-    apiKey: "api_test",
-    client: mockFetch(() => ({ status: 200, ...result })),
+test("search refuses a body that is not JSON or does not match its schema", async () => {
+  const answering = (result: { json?: unknown; text?: string }) => mockFetch(() => ({ status: 200, ...result }));
+  await assert.rejects(
+    () => callDexPaprika("search", { query: "sol" }, answering({ json: { tokens: "none" } })),
+    refused(null, /^DexPaprika returned an unexpected response at \/tokens: /),
+  );
+  await assert.rejects(
+    () => callDexPaprika("search", { query: "sol" }, answering({ json: { tokens: [{ id: "sol", price_usd: { usd: 1 } }] } })),
+    refused(null, /^DexPaprika returned an unexpected response at \/tokens\/0\/price_usd: /),
+  );
+  await assert.rejects(
+    () => callDexPaprika("search", { query: "sol" }, answering({ text: "not json" })),
+    refused(null, /^DexPaprika returned a non-JSON body$/),
+  );
+});
+
+test("a tool decodes its arguments before it calls DexPaprika", async () => {
+  const fetched: string[] = [];
+  const http = mockFetch((url) => {
+    fetched.push(url);
+    return { status: 200, json: [] };
   });
-  await assert.rejects(
-    () => searchTool({ query: "sol" }, answering({ json: { tokens: "none" } })),
-    (error: unknown) =>
-      error instanceof DexPaprikaError &&
-      /^DexPaprika returned an unexpected response at \/tokens: /.test(error.message),
+  assert.equal(
+    await callDexPaprika("pools", { network: "Base", token: " 0xabc ", order_by: "liquidity_usd", sort: "", limit: 50 }, http),
+    "no results",
   );
-  await assert.rejects(
-    () => searchTool({ query: "sol" }, answering({ text: "not json" })),
-    (error: unknown) =>
-      error instanceof DexPaprikaError && error.message === "DexPaprika returned a non-JSON body",
-  );
+  await assert.rejects(callDexPaprika("pools", { network: "base", limit: 2.5 }, http), refused(422, /^\/limit: /));
+  await assert.rejects(callDexPaprika("token", { network: "base" }, http), refused(422, /^address is required$/));
+  await assert.rejects(callDexPaprika("token", { network: " ", address: "0xabc" }, http), /network is required/);
+  await assert.rejects(callDexPaprika("ohlcv", { network: "base", address: "0xabc", interval: "2h" }, http), /interval must be 1m/);
+  await assert.rejects(callDexPaprika("prices", { network: "base", tokens: " , " }, http), /tokens is required/);
+  assert.deepEqual(fetched, [
+    "https://api.dexpaprika.com/networks/base/pools/search?limit=30&token_address=0xabc&order_by=liquidity_usd",
+  ]);
 });
 
 test("ping rejects keyless and unauthorized", async () => {
@@ -249,8 +282,8 @@ test("getJson retries the Pro host on 403", async () => {
   ]);
 });
 
-test("callTool unknown name", async () => {
-  await assert.rejects(() => callTool("stream", {}, { apiKey: "api_test" }), /unknown DexPaprika tool/);
+test("a call to a tool DexPaprika does not have is refused", async () => {
+  await assert.rejects(() => callDexPaprika("stream", {}), refused(404, /^unknown tool stream$/));
 });
 
 test("sync DexPaprika writes the curated catalog", async () => {

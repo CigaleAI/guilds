@@ -52,6 +52,9 @@ import {
 
 export const SYSTEM_PROMPT = "system.md";
 
+/** A file in a notes folder: its path within the folder, and the Obsidian link that opens it. */
+export type NotesFile = { path: string; obsidian: string };
+
 export class NotesStore {
   root: string;
   templates: string;
@@ -477,7 +480,7 @@ export class NotesStore {
     });
   }
 
-  listAgentFiles(orgSlug: string, guildName: string, name: string): Array<{ path: string; obsidian: string }> {
+  listAgentFiles(orgSlug: string, guildName: string, name: string): NotesFile[] {
     const agent = this.agentDir(orgSlug, guildName, name);
     if (!isDir(agent)) {
       throw new NotesError("agent folder not found");
@@ -514,12 +517,12 @@ export class NotesStore {
     return readFileSync(filePath, "utf8");
   }
 
-  listSharedFiles(orgSlug: string, guildName: string): Array<{ path: string; obsidian: string }> {
+  listSharedFiles(orgSlug: string, guildName: string): NotesFile[] {
     const shared = this.sharedDir(orgSlug, guildName);
     if (!isDir(shared)) {
       throw new NotesError("shared folder not found");
     }
-    const items: Array<{ path: string; obsidian: string }> = [];
+    const items: NotesFile[] = [];
     for (const child of rglobFiles(shared)
       .filter((item) => path.extname(item) === ".md")
       .sort()) {
@@ -755,7 +758,7 @@ export class NotesStore {
     return resolved(path.join(this.guildDir(orgSlug, name), "shared"));
   }
 
-  private fileItem(absolute: string, relative: string): { path: string; obsidian: string } {
+  private fileItem(absolute: string, relative: string): NotesFile {
     const value = resolved(absolute);
     return {
       path: relative,

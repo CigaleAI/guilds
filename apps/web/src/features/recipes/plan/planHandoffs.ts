@@ -27,14 +27,14 @@ function handoffVia(item: HandoffDraft): HandoffVia {
   return { kind: "tagged", label: `tagged${item.budget ? ` · ${item.budget}` : ""}` };
 }
 
+/** The handoff chart: the roles taking part, and one row per pair of roles work passes between. */
+export type HandoffChart = { nodes: HandoffActor[]; rows: HandoffRow[] };
+
 /**
  * The handoff chart: one row per from/to pair in first-seen order with every way work passes, and
  * the roles taking part in first-seen order.
  */
-export function handoffChart(plan: Pick<RecipePlan, "agents" | "handoffs">): {
-  nodes: HandoffActor[];
-  rows: HandoffRow[];
-} {
+export function handoffChart(plan: Pick<RecipePlan, "agents" | "handoffs">): HandoffChart {
   const groups: Array<{
     from: string | null | undefined;
     to: string | null | undefined;

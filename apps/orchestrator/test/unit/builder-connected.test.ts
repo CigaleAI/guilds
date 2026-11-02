@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { parseRecipe } from "../../src/recipes/parse.js";
 import { linkedInNotionRecipe } from "../helpers/recipe-docs.js";
 import {
-  hitFromUnknown,
+  hitOf,
   parseWorkspaceHits,
   pickSearchRemote,
   searchConnectedWorkspace,
@@ -69,7 +69,7 @@ test("parseWorkspaceHits prefers Notion databases and unwraps MCP text", () => {
   assert.equal(parsed.hits[0]?.kind, "database");
   assert.equal(parsed.hits[0]?.title, "CRM");
   assert.equal(parsed.hits[1]?.kind, "page");
-  assert.equal(hitFromUnknown({ title: "no-id" }), null);
+  assert.equal(hitOf({ title: "no-id" }), null);
   assert.equal(pickSearchRemote([{ remote_name: "fetch" }, { remote_name: "search" }]), "search");
 });
 
@@ -183,9 +183,18 @@ test("builder_ask_question pauses with option cards", async () => {
 
   const shorthand = (await builderAskQuestion.handler(
     { orgId: "org_1", capabilities: {} as never },
-    { question: "Which CRM table?", options: ["Deals", "Companies"] },
+    { question: "Which CRM table?", options: [{ label: "Deals" }, { label: "Companies" }] },
   )) as Record<string, unknown>;
   assert.equal(shorthand.widget, "question");
   assert.equal(shorthand.await_operator, true);
   assert.equal((shorthand.questions as unknown[]).length, 1);
+});
+
+test("builder_ask_question refuses arguments its parameters do not describe", async () => {
+  const refused = await builderAskQuestion.handler(
+    { orgId: "org_1", capabilities: {} as never },
+    { question: "Which CRM table?", options: ["Deals", "Companies"] },
+  );
+  assert.ok("error" in refused);
+  assert.match(refused.error, /^invalid builder_ask_question arguments: \/options\/0: /);
 });

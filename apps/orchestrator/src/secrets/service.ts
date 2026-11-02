@@ -1,8 +1,9 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { requireVisibleAgent } from "../agents/access.js";
 import { encryptPayload } from "../credentials/crypto.js";
 import {
   secretPayload,
+  type SecretPayload,
   validateSecretDescription,
   validateSecretName,
 } from "../credentials/validate.js";
@@ -19,6 +20,7 @@ import {
   secretGrantTargets,
   setSecretAccess,
   updateSecret,
+  type SecretPatch,
 } from "../db/secrets.js";
 import type { RunSecrets } from "../generation/run-secrets.js";
 import { requireVisibleGuild } from "../guilds/access.js";
@@ -27,11 +29,12 @@ import {
   accessOf,
   canCreateSecret,
   canManageSecret,
+  grantSeen,
   managesOrgSecrets,
-  secretGrants,
   SecretAccessSchema,
   secretMetadata,
   validateSecretAccess,
+  type Secret,
   type SecretAccess,
   type SecretAccessRequest,
   type SecretViewer,
@@ -58,10 +61,12 @@ export type SecretServices = {
 };
 
 /** A new secret as it is asked for, before validation: the name, description and value, and who gets it. */
-export const SecretDraftSchema = Type.Composite([
-  Type.Object({ name: Type.String(), description: Type.String(), value: Type.String() }),
-  SecretAccessSchema,
-]);
+export const SecretDraftSchema = Type.Evaluate(
+  Type.Intersect([
+    Type.Object({ name: Type.String(), description: Type.String(), value: Type.String() }),
+    SecretAccessSchema,
+  ]),
+);
 
 export type SecretDraft = Static<typeof SecretDraftSchema>;
 
@@ -83,9 +88,10 @@ export type HeldSecret = {
 /** Which secrets a listing shows: the organisation's, or the ones that reach a guild or an agent. */
 export type SecretListScope = { guildId: string | null; agentId: string | null };
 
-type Metadata = Record<string, unknown>;
+/** The secrets a listing shows its viewer. */
+export type SecretListing = { secrets: Secret[] };
 
-function encrypt(services: SecretServices, payload: Record<string, unknown>): [Buffer, Buffer] {
+function encrypt(services: SecretServices, payload: SecretPayload): [Buffer, Buffer] {
   return services.masterKey ? encryptPayload(payload, services.masterKey) : encryptPayload(payload);
 }
 
@@ -133,17 +139,13 @@ async function grantTargets(
   return found.agentGuilds;
 }
 
-function nameConflict(error: unknown): unknown {
-  return error instanceof SecretNameTaken ? new SecretError(409, error.message) : error;
-}
-
 /** The organisation's secrets the user sees, or the ones that reach a guild or agent of it they see. */
 export async function listOrgSecrets(
   db: Queryable,
   orgId: string,
   userId: string,
   scope: SecretListScope,
-): Promise<{ secrets: Metadata[] }> {
+): Promise<SecretListing> {
   if (scope.guildId && (await requireVisibleGuild(db, scope.guildId, userId)).org_id !== orgId) {
     throw new SecretError(404, "guild not found");
   }
@@ -164,7 +166,7 @@ export async function createSecret(
   orgId: string,
   userId: string,
   draft: SecretDraft,
-): Promise<Metadata> {
+): Promise<Secret> {
   const { db } = services;
   const name = validateSecretName(draft.name);
   const description = validateSecretDescription(draft.description);
@@ -193,7 +195,7 @@ export async function createSecret(
   try {
     row = await insertSecret(db, secret, new Date());
   } catch (error) {
-    throw nameConflict(error);
+    throw error instanceof SecretNameTaken ? new SecretError(409, error.message) : error;
   }
   await services.runSecrets?.secretAccessChanged(await listAgentIdsReached(db, orgId, access));
   return secretMetadata(row, viewer);
@@ -213,8 +215,25 @@ export async function requireMemberSecret(
   return { row, viewer };
 }
 
-export function viewHeldSecret(held: HeldSecret): Metadata {
+export function viewHeldSecret(held: HeldSecret): Secret {
   return secretMetadata(held.row, held.viewer);
+}
+
+/** What a change writes: its name and description validated and its value encrypted; a field it leaves out stays. */
+function secretPatch(services: SecretServices, change: SecretChange): SecretPatch {
+  const name = change.name ?? null;
+  const description = change.description ?? null;
+  const value = change.value ?? null;
+  if (name === null && description === null && value === null) {
+    throw new SecretError(422, "name, description, or value is required");
+  }
+  const [ciphertext, nonce] = value === null ? [null, null] : encrypt(services, secretPayload(value));
+  return {
+    name: name === null ? null : validateSecretName(name),
+    description: description === null ? null : validateSecretDescription(description),
+    ciphertext,
+    nonce,
+  };
 }
 
 /** Renames a secret, rewrites its description, or replaces its value, for a member who manages it. */
@@ -222,28 +241,15 @@ export async function changeSecret(
   services: SecretServices,
   held: HeldSecret,
   change: SecretChange,
-): Promise<Metadata> {
+): Promise<Secret> {
   if (!canManageSecret(held.row, held.viewer)) {
     throw new SecretError(403, "only an org owner or admin can change this secret");
   }
-  const given = (value: unknown) => value !== undefined && value !== null;
-  if (!given(change.name) && !given(change.description) && !given(change.value)) {
-    throw new SecretError(422, "name, description, or value is required");
-  }
-  const [ciphertext, nonce] = given(change.value)
-    ? encrypt(services, secretPayload(change.value))
-    : [null, null];
-  const changes = {
-    name: given(change.name) ? validateSecretName(change.name) : null,
-    description: given(change.description) ? validateSecretDescription(change.description) : null,
-    ciphertext,
-    nonce,
-  };
   let updated;
   try {
-    updated = await updateSecret(services.db, held.row.id, changes, new Date());
+    updated = await updateSecret(services.db, held.row.id, secretPatch(services, change), new Date());
   } catch (error) {
-    throw nameConflict(error);
+    throw error instanceof SecretNameTaken ? new SecretError(409, error.message) : error;
   }
   if (updated === null) {
     throw new SecretError(404, "secret not found");
@@ -257,9 +263,7 @@ function keepUnseenGrants(held: HeldSecret, access: SecretAccess): SecretAccess 
   if (access.org_wide) {
     return access;
   }
-  const unseen = secretGrants(held.row).filter(
-    (grant) => !held.viewer.visibleGuildIds.has(grant.in_guild_id),
-  );
+  const unseen = held.row.grants.filter((grant) => !grantSeen(grant, held.viewer.visibleGuildIds));
   const guildIds = new Set(access.guild_ids);
   const agentIds = new Set(access.agent_ids);
   for (const grant of unseen) {
@@ -278,7 +282,7 @@ export async function replaceSecretAccess(
   services: SecretServices,
   held: HeldSecret,
   requested: SecretAccessRequest,
-): Promise<Metadata> {
+): Promise<Secret> {
   const { db } = services;
   if (!managesOrgSecrets(held.viewer.role)) {
     throw new SecretError(403, "only an org owner or admin can change who gets a secret");

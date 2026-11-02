@@ -99,19 +99,18 @@ test("only a result that asked the operator becomes a card", () => {
   assert.equal(askedRequest(args, "null"), null);
 });
 
-test("an asked request reads its arguments as text or as an object, and none from text that is not JSON", () => {
+test("an asked request takes its name from the result, and none comes of arguments that are not a request's", () => {
   const asked = JSON.stringify({ widget: "secret_request", name: "ACME_KEY", status: "asked" });
-  assert.deepEqual(askedRequest({ description: "Calls Acme", reason: "Report" }, asked), {
+  const args = JSON.stringify({ name: " ACME_KEY ", description: "Calls Acme", reason: "Report" });
+  assert.deepEqual(askedRequest(args, asked), {
     name: "ACME_KEY",
     description: "Calls Acme",
     reason: "Report",
   });
-  assert.deepEqual(askedRequest('"ACME_KEY"', asked), {
-    name: "ACME_KEY",
-    description: "",
-    reason: "",
-  });
+  assert.equal(askedRequest(JSON.stringify({ name: "ACME_KEY", reason: "Report" }), asked), null);
+  assert.equal(askedRequest('"ACME_KEY"', asked), null);
   assert.equal(askedRequest('{"name":', asked), null);
+  assert.equal(askedRequest(undefined, asked), null);
 });
 
 test("owners and admins manage secrets; members do not", () => {

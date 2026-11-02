@@ -1,5 +1,8 @@
-import type { CostSource, TokenUsage } from "../db/schema/index.js";
+import type { CompletionMetadata, TokenUsage } from "../db/schema/index.js";
 import { modelCatalog, type ModelCatalog } from "./catalog.js";
+
+/** What a completion records of the price the catalog puts on it: the cost, where it came from, and the catalog's version. */
+export type CatalogCost = Required<Pick<CompletionMetadata, "cost_usd" | "cost_source" | "pricing_version">>;
 
 /**
  * The cost of a call from the catalog's rates, for a billed provider whose row has a price.
@@ -9,11 +12,7 @@ export function catalogCostUsd(
   model: string,
   usage: TokenUsage,
   catalog: ModelCatalog = modelCatalog,
-): {
-  cost_usd: number;
-  cost_source: CostSource;
-  pricing_version: string;
-} {
+): CatalogCost {
   const pricingVersion = catalog.pricingVersion();
   const rates = catalog.entry(model)?.rates;
   if (!rates) {

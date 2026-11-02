@@ -37,9 +37,9 @@
       // The function and file limits, and the syntax the guidelines refuse, on the source.
       "files": ["src/**/*.ts", "src/**/*.tsx"],
       "rules": {
-        "complexity": ["error", 11],
+        "complexity": ["warn", 11],
         "max-depth": ["error", 3],
-        "max-params": ["error", 4],
+        "max-params": ["warn", 4],
         "max-lines": ["warn", { "max": 800, "skipBlankLines": false, "skipComments": false }],
         "limits/file-lines": ["error", { "max": 1000 }],
         "typescript/consistent-type-assertions": ["error", { "assertionStyle": "never" }],

@@ -1,5 +1,6 @@
 import { getTableColumns, type InferSelectModel } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
+import { isJsonObject, type JsonValue } from "../lib/json.js";
 
 /** A column of `table`: a schema key is its column's name in the database. */
 export type ColumnName<T extends PgTable> = keyof InferSelectModel<T> & string;
@@ -25,15 +26,21 @@ export function pickColumns<T extends PgTable>(
   return qualified(columns, alias);
 }
 
+/** A value a patch writes to a column: a time, written as its stamp, or a value JSON carries. */
+export type PatchValue = Date | JsonValue;
+
+/** A patch as SQL: its `SET` assignments, numbered, and the parameter each one reads, in order. */
+export type SetAssignments = { sets: string[]; values: unknown[] };
+
 /**
  * The `SET` assignments for the fields of `patch` that `columns` lists, numbered from parameter
  * `first`, and their values: a date as its stamp, an object or array as jsonb.
  */
-export function patchAssignments(
-  patch: Readonly<Record<string, unknown>>,
-  columns: readonly string[],
+export function patchAssignments<K extends string>(
+  patch: { readonly [C in K]?: PatchValue },
+  columns: readonly K[],
   first: number,
-): { sets: string[]; values: unknown[] } {
+): SetAssignments {
   const sets: string[] = [];
   const values: unknown[] = [];
   for (const column of columns) {
@@ -41,7 +48,7 @@ export function patchAssignments(
       continue;
     }
     const value = patch[column];
-    const json = value !== null && typeof value === "object" && !(value instanceof Date);
+    const json = Array.isArray(value) || isJsonObject(value);
     sets.push(`${column} = $${first + values.length}${json ? "::jsonb" : ""}`);
     values.push(value instanceof Date ? value.toISOString() : json ? JSON.stringify(value) : value);
   }

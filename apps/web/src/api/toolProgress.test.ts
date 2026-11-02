@@ -5,89 +5,83 @@ import {
   dropToolProgress,
   progressLineCount,
   progressLinesKept,
+  type CallProgress,
+  type ToolProgress,
 } from "./toolProgress";
+import type { ToolProgressEvent } from "./types/runs";
+
+/** A `tool.progress` event of run r1 for call `callId`. */
+function event(callId: string, lines: string[], session?: string | null): ToolProgressEvent {
+  return {
+    run_id: "r1",
+    tool_call_id: callId,
+    lines,
+    ...(session === undefined ? {} : { session_id: session }),
+  };
+}
+
+/** The progress held for one call. */
+function holding(callId: string, call: CallProgress): ToolProgress {
+  return new Map([[callId, call]]);
+}
 
 test("applyToolProgress appends each event's new lines to its call", () => {
-  const first = applyToolProgress(
-    {},
-    { run_id: "r1", tool_call_id: "c1", lines: ["read a.py"], session_id: null },
-  );
-  assert.deepEqual(first, { c1: { lines: ["read a.py"], session_id: null } });
-  const second = applyToolProgress(first, {
-    run_id: "r1",
-    tool_call_id: "c1",
-    lines: ["edit a.py", "run tests"],
+  const first = applyToolProgress(new Map(), event("c1", ["read a.py"], null));
+  assert.deepEqual(first, holding("c1", { lines: ["read a.py"], session_id: null }));
+  const second = applyToolProgress(first, event("c1", ["edit a.py", "run tests"], "s1"));
+  assert.deepEqual(second.get("c1"), {
+    lines: ["read a.py", "edit a.py", "run tests"],
     session_id: "s1",
   });
-  assert.deepEqual(second.c1, { lines: ["read a.py", "edit a.py", "run tests"], session_id: "s1" });
-  const other = applyToolProgress(second, { tool_call_id: "c2", lines: ["start"] });
-  assert.deepEqual(Object.keys(other), ["c1", "c2"]);
+  const other = applyToolProgress(second, event("c2", ["start"]));
+  assert.deepEqual([...other.keys()], ["c1", "c2"]);
   assert.equal(progressLineCount(other), 4);
 });
 
-test("applyToolProgress keeps a known session and ignores empty or malformed events", () => {
-  const known = { c1: { lines: ["a"], session_id: "s1" } };
-  assert.equal(
-    applyToolProgress(known, { tool_call_id: "c1", lines: [], session_id: null }),
-    known,
-  );
-  assert.equal(applyToolProgress(known, null), known);
-  assert.equal(applyToolProgress(known, { lines: ["x"] }), known);
-  assert.equal(
-    applyToolProgress(known, { tool_call_id: "c1", lines: ["b"], session_id: null }).c1?.session_id,
-    "s1",
-  );
+test("applyToolProgress keeps a known session and ignores an event that adds nothing", () => {
+  const known = holding("c1", { lines: ["a"], session_id: "s1" });
+  assert.equal(applyToolProgress(known, event("c1", [], null)), known);
+  assert.equal(applyToolProgress(known, event("c1", ["b"], null)).get("c1")?.session_id, "s1");
 });
 
-test("applyToolProgress ignores data that is not an object or names no call", () => {
-  const known = { c1: { lines: ["a"], session_id: null } };
-  assert.equal(applyToolProgress(known, "read a.py"), known);
-  assert.equal(applyToolProgress(known, { tool_call_id: "", lines: ["x"] }), known);
-  assert.equal(applyToolProgress(known, { tool_call_id: 7, lines: ["x"] }), known);
-});
-
-test("applyToolProgress keeps only the string lines of an event", () => {
-  const progress = applyToolProgress({}, { tool_call_id: "c1", lines: ["a", 2, null, "b"] });
-  assert.deepEqual(progress.c1?.lines, ["a", "b"]);
-  assert.deepEqual(applyToolProgress({}, { tool_call_id: "c1", lines: "a" }).c1?.lines, []);
+test("applyToolProgress ignores an event that names no call", () => {
+  const known = holding("c1", { lines: ["a"], session_id: null });
+  assert.equal(applyToolProgress(known, event("", ["x"])), known);
 });
 
 test("applyToolProgress records a new call even before it reports a line", () => {
-  assert.deepEqual(applyToolProgress({}, { tool_call_id: "c1", session_id: "s1" }), {
-    c1: { lines: [], session_id: "s1" },
-  });
+  assert.deepEqual(
+    applyToolProgress(new Map(), event("c1", [], "s1")),
+    holding("c1", { lines: [], session_id: "s1" }),
+  );
 });
 
 test("applyToolProgress takes a new session from an event without lines", () => {
-  const known = { c1: { lines: ["a"], session_id: "s1" } };
-  assert.deepEqual(applyToolProgress(known, { tool_call_id: "c1", session_id: "s2" }).c1, {
+  const known = holding("c1", { lines: ["a"], session_id: "s1" });
+  assert.deepEqual(applyToolProgress(known, event("c1", [], "s2")).get("c1"), {
     lines: ["a"],
     session_id: "s2",
   });
 });
 
 test("applyToolProgress treats an empty session as none", () => {
-  const known = { c1: { lines: ["a"], session_id: "s1" } };
-  assert.equal(applyToolProgress(known, { tool_call_id: "c1", session_id: "" }), known);
-  assert.equal(
-    applyToolProgress(known, { tool_call_id: "c1", lines: ["b"], session_id: "" }).c1?.session_id,
-    "s1",
-  );
+  const known = holding("c1", { lines: ["a"], session_id: "s1" });
+  assert.equal(applyToolProgress(known, event("c1", [], "")), known);
+  assert.equal(applyToolProgress(known, event("c1", ["b"], "")).get("c1")?.session_id, "s1");
 });
 
 test("applyToolProgress keeps only the latest lines", () => {
   const lines = Array.from({ length: progressLinesKept + 5 }, (_, index) => `line ${index}`);
-  const progress = applyToolProgress({}, { tool_call_id: "c1", lines });
-  assert.equal(progress.c1?.lines.length, progressLinesKept);
-  assert.equal(progress.c1?.lines[0], "line 5");
+  const progress = applyToolProgress(new Map(), event("c1", lines));
+  assert.equal(progress.get("c1")?.lines.length, progressLinesKept);
+  assert.equal(progress.get("c1")?.lines[0], "line 5");
 });
 
 test("dropToolProgress forgets only the finished call", () => {
-  const progress = {
-    c1: { lines: ["a"], session_id: null },
-    c2: { lines: ["b"], session_id: null },
-  };
-  assert.deepEqual(Object.keys(dropToolProgress(progress, "c1")), ["c2"]);
+  const progress: ToolProgress = new Map([
+    ["c1", { lines: ["a"], session_id: null }],
+    ["c2", { lines: ["b"], session_id: null }],
+  ]);
+  assert.deepEqual([...dropToolProgress(progress, "c1").keys()], ["c2"]);
   assert.equal(dropToolProgress(progress, "c3"), progress);
-  assert.equal(dropToolProgress(progress, undefined), progress);
 });

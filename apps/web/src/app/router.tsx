@@ -5,6 +5,9 @@ import {
   lazyRouteComponent,
   type SearchSchemaInput,
 } from "@tanstack/react-router";
+import { isString, type JsonObject, type JsonValue } from "../api/wire";
+import type { RevealStep } from "../features/agent/chat/FlowView";
+import type { ChatSearch } from "../features/agent/chat/SessionChrome";
 import { GuildChatPage, GuildWorkspace } from "../features/guild/GuildWorkspace";
 import { Home } from "../features/home/Home";
 import type { TableTab } from "../features/tables/TablesPage";
@@ -22,16 +25,32 @@ const inboxRoute = createRoute({
   component: lazyRouteComponent(() => import("../features/inbox/Inbox"), "Inbox"),
 });
 
+// Each route's `validateSearch` reads the search as the router parses it from the URL: a JSON
+// object, each value decoded as JSON when it is JSON text and kept as text otherwise. It keeps
+// the fields its route reads, of their types, and drops the rest.
+
+/** A search value as text, when it is non-empty text. */
+function searchText(value: JsonValue | undefined): string | undefined {
+  return isString(value) && value ? value : undefined;
+}
+
+/** A search value as a place in a sequence: a whole number from zero, written as one or as its digits. */
+function searchIndex(value: JsonValue | undefined): number | undefined {
+  const index = Number(value);
+  return value !== undefined && Number.isInteger(index) && index >= 0 ? index : undefined;
+}
+
 /**
  * A tabbed page's search: the tab, and whatever a tab reads for itself. The page decides which tabs
  * exist, since an extension adds its own.
  */
 export type TabSearch = { tab?: string } & Record<string, string | undefined>;
 
-function tabSearch(search: Record<string, unknown>): TabSearch {
+function tabSearch(search: JsonObject): TabSearch {
   const kept: TabSearch = {};
   for (const [key, value] of Object.entries(search)) {
-    if (typeof value === "string" && value) kept[key] = value;
+    const text = searchText(value);
+    if (text) kept[key] = text;
   }
   return kept;
 }
@@ -95,12 +114,17 @@ const applyRoute = createRoute({
   component: lazyRouteComponent(() => import("../features/recipes/ApplyPage"), "ApplyPage"),
 });
 
+/** The guild Studio's start opens on, when a link names one. */
+type StudioLandingSearch = { guild?: string };
+
 const studioRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/studio",
   component: lazyRouteComponent(() => import("../features/studio/StudioLanding"), "StudioLanding"),
-  validateSearch: (search: Record<string, unknown>): { guild?: string } =>
-    typeof search.guild === "string" && search.guild ? { guild: search.guild } : {},
+  validateSearch: (search: JsonObject): StudioLandingSearch => {
+    const guild = searchText(search.guild);
+    return guild ? { guild } : {};
+  },
 });
 
 const studioSessionRoute = createRoute({
@@ -116,7 +140,10 @@ const studioSessionRoute = createRoute({
 
 const tableTabs = ["records", "columns", "access"] as const satisfies readonly TableTab[];
 
-const validateTableTab = (search: Record<string, unknown>): { tab?: TableTab } => {
+/** The tab a table page opens on; Records without one. */
+type TableSearch = { tab?: TableTab };
+
+const validateTableTab = (search: JsonObject): TableSearch => {
   const tab = tableTabs.find((item) => item === search.tab);
   return tab && tab !== "records" ? { tab } : {};
 };
@@ -147,14 +174,17 @@ const guildRoute = createRoute({
   component: GuildWorkspace,
 });
 
+/** The message the group chat opens at. */
+type GuildChatSearch = { seq?: number };
+
 const guildChatRoute = createRoute({
   getParentRoute: () => guildRoute,
   path: "/",
   component: GuildChatPage,
   /** `seq` opens the chat at that message, such as the one that tagged the operator. */
-  validateSearch: (search: Record<string, unknown>): { seq?: number } => {
-    const seq = Number(search.seq);
-    return search.seq !== undefined && Number.isInteger(seq) && seq >= 0 ? { seq } : {};
+  validateSearch: (search: JsonObject): GuildChatSearch => {
+    const seq = searchIndex(search.seq);
+    return seq === undefined ? {} : { seq };
   },
 });
 
@@ -231,9 +261,12 @@ const agentAccessRoute = createRoute({
   component: lazyRouteComponent(() => import("../features/agent/AgentAccessTabs"), "AgentReachTab"),
 });
 
-/** `path` opens that note or file first, by display path. */
-function parseFileSearch(search: Record<string, unknown>): { path?: string } {
-  return typeof search.path === "string" && search.path ? { path: search.path } : {};
+/** The note or file a notes or files tab opens first, by display path. */
+type FileSearch = { path?: string };
+
+function parseFileSearch(search: JsonObject): FileSearch {
+  const path = searchText(search.path);
+  return path ? { path } : {};
 }
 
 const guildNotesRoute = createRoute({
@@ -303,30 +336,26 @@ const guildSecretsRoute = createRoute({
   ),
 });
 
-/** The step a run opens on: its tool call, or its place in the run's sequence. */
-type RunStepSearch = { call?: string; seq?: number };
-
-/** The step a search names in the run it opens. */
-function parseRunStepSearch(search: Record<string, unknown>): RunStepSearch {
-  const seq = Number(search.seq);
+/** The step a search names in the run it opens: its tool call, or its place in the run's sequence. */
+function parseRevealStep(search: JsonObject): RevealStep {
+  const call = searchText(search.call);
+  const seq = searchIndex(search.seq);
   return {
-    ...(typeof search.call === "string" && search.call ? { call: search.call } : {}),
-    ...(search.seq !== undefined && Number.isInteger(seq) && seq >= 0 ? { seq } : {}),
+    ...(call ? { call } : {}),
+    ...(seq === undefined ? {} : { seq }),
   };
 }
 
 /** Whether a search value opens the session history drawer: `true`, `"true"` or `1`. */
-function opensHistory(value: unknown): boolean {
+function opensHistory(value: JsonValue | undefined): boolean {
   return value === true || value === "true" || value === 1;
 }
 
 /** The run the agent's chat shows, the step to open in it, and whether the session history drawer is open. */
-function parseAgentSearch(
-  search: Record<string, unknown>,
-): RunStepSearch & { run?: string; history?: true } {
-  const run = typeof search.run === "string" && search.run ? search.run : undefined;
+function parseAgentSearch(search: JsonObject): ChatSearch {
+  const run = searchText(search.run);
   return {
-    ...(run ? { run, ...parseRunStepSearch(search) } : {}),
+    ...(run ? { run, ...parseRevealStep(search) } : {}),
     ...(opensHistory(search.history) ? { history: true as const } : {}),
   };
 }
@@ -409,6 +438,9 @@ const agentUsageRoute = createRoute({
   ),
 });
 
+/** The settings section open; Identity without one. */
+type AgentSettingsSearch = { section?: string };
+
 /** Settings, one section at a time; `section` names the one open (Identity without it). */
 const agentSettingsRoute = createRoute({
   getParentRoute: () => agentRoute,
@@ -417,8 +449,10 @@ const agentSettingsRoute = createRoute({
     () => import("../features/agent/settings/AgentSettings"),
     "AgentSettings",
   ),
-  validateSearch: (search: Record<string, unknown>): { section?: string } =>
-    typeof search.section === "string" && search.section ? { section: search.section } : {},
+  validateSearch: (search: JsonObject): AgentSettingsSearch => {
+    const section = searchText(search.section);
+    return section ? { section } : {};
+  },
 });
 
 const agentHistoryRoute = createRoute({

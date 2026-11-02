@@ -5,7 +5,7 @@ import { generateKeyPairSync } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, describe, test } from "node:test";
-import { validateAgentConfig, withCodingLimits } from "../../src/agents/config.js";
+import { validateAgentConfig, validateNewAgentConfig } from "../../src/agents/validation.js";
 import { agentWorkspaceMaxMib } from "../../src/generation/workspace.js";
 import { generationLive } from "../../src/generation/completion.js";
 import { configSnapshot } from "../../src/generation/snapshot.js";
@@ -334,11 +334,11 @@ test("agent workspace max is the agent's cap, never above the host cap", () => {
 
 test("coding defaults to off, and a new coding agent gets the coding budgets", () => {
   assert.equal(validateAgentConfig({ ...AGENT_CONFIG }).coding, false);
-  const coder = validateAgentConfig(withCodingLimits({ model: AGENT_CONFIG.model, browser: false, coding: true }));
+  const coder = validateNewAgentConfig({ model: AGENT_CONFIG.model, browser: false, coding: true });
   assert.equal(coder.max_steps, 200);
   assert.equal(coder.max_tool_calls, 200);
   assert.equal(coder.max_input_tokens, 100000);
-  const explicit = validateAgentConfig(withCodingLimits({ ...AGENT_CONFIG, coding: true, max_steps: 12 }));
+  const explicit = validateNewAgentConfig({ ...AGENT_CONFIG, coding: true, max_steps: 12 });
   assert.equal(explicit.max_steps, 12);
   assert.equal(explicit.max_tool_calls, AGENT_CONFIG.max_tool_calls);
   assert.throws(() => validateAgentConfig({ ...AGENT_CONFIG, coding: "yes" }), /coding must be a boolean/);

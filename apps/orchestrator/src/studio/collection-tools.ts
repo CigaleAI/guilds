@@ -1,6 +1,6 @@
 // The Studio tools for tables (collections): listing and reading them, and a proposed change to one.
 
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { studioTool } from "./arguments.js";
 import { EditCollectionArguments } from "./edit-arguments.js";
 import { tableEditRequest } from "./edits.js";

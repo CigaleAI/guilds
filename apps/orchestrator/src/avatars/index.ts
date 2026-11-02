@@ -21,7 +21,14 @@ export const SUPPORTED_AVATAR_STYLES = [
 
 export type AvatarStyleName = (typeof SUPPORTED_AVATAR_STYLES)[number];
 
-const STYLE_SET = new Set<string>(SUPPORTED_AVATAR_STYLES);
+/** A stored shape read as the avatar it draws: the style, and the seed that style is drawn from. */
+export type AvatarShape = { style: AvatarStyleName; seed: string };
+
+/** Whether a shape's prefix names one of the supported styles. */
+function isAvatarStyleName(prefix: string): prefix is AvatarStyleName {
+  return SUPPORTED_AVATAR_STYLES.some((style) => style === prefix);
+}
+
 const PREFIX_STYLES = [...SUPPORTED_AVATAR_STYLES].sort((a, b) => b.length - a.length);
 
 /** A stored avatar shape: a seed, with or without its style's prefix. */
@@ -66,10 +73,7 @@ export function normalizeAvatarColor(value: string | null | undefined): string |
   return AVATAR_COLOR_RE.test(text) ? text : null;
 }
 
-export function parseAvatarShape(raw?: string | null): {
-  style: AvatarStyleName;
-  seed: string;
-} {
+export function parseAvatarShape(raw?: string | null): AvatarShape {
   const text = String(raw || "").trim().toLowerCase();
   if (!text) {
     return { style: "clay", seed: DEFAULT_AVATAR_SHAPE };
@@ -79,9 +83,9 @@ export function parseAvatarShape(raw?: string | null): {
   if (colonIndex > 0) {
     const prefix = text.slice(0, colonIndex);
     const rest = text.slice(colonIndex + 1);
-    if (STYLE_SET.has(prefix)) {
+    if (isAvatarStyleName(prefix)) {
       return {
-        style: prefix as AvatarStyleName,
+        style: prefix,
         seed: rest || DEFAULT_AVATAR_SHAPE,
       };
     }

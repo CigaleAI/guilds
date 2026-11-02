@@ -1,7 +1,7 @@
 // The Studio tools for the files a session reaches: finding and reading notes, one file's change
 // history, and a proposed change to a note.
 
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { operatorActor } from "../artifacts/actors.js";
 import { artifactAt, findNotes, parseActorPath } from "../artifacts/notes.js";
 import { listFileChanges } from "../db/file-changes.js";
@@ -59,7 +59,6 @@ export const studioFindArtifacts: StudioTool = studioTool({
         display_path: item.display_path,
         level: item.level,
         kind: item.kind,
-        owner_id: item.owner_id ?? item.agent_id ?? item.guild_id,
         version: item.version,
         title: item.title,
         trust: "untrusted",

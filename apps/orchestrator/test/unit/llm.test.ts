@@ -10,7 +10,7 @@ import {
   parseCompletionChunk,
   streamCompletion,
 } from "../../src/llm/client.js";
-import { LLMError, MODEL_USER_AGENT, reasoningEffortForModel, assistantMetadata, assistantPayload, completionTimeoutMs, redactApiKey, type ModelEvent } from "../../src/llm/completion.js";
+import { LLMError, MODEL_USER_AGENT, reasoningEffortForModel, assistantMetadata, assistantPayload, completionTimeoutMs, redactApiKey, type ModelEvent, type ModelMessage, type ModelRequest } from "../../src/llm/completion.js";
 import { catalogCostUsd } from "../../src/llm/cost.js";
 import { modelNeedsInlineImages, providerById } from "../../src/llm/providers.js";
 import { GenerationLimitError, INPUT_TOKEN_LIMIT_MESSAGE, countInputTokens, enforceInputTokenLimit } from "../../src/llm/tokens.js";
@@ -41,7 +41,7 @@ test("applyPromptCacheControl marks the last text message", () => {
     content: [{ type: "text", text: "hi", cache_control: { type: "ephemeral" } }],
   });
   assert.deepEqual(marked[2], { role: "assistant", content: "" });
-  const empty = [{ role: "assistant", tool_calls: [] }];
+  const empty: ModelMessage[] = [{ role: "assistant", content: "", tool_calls: [] }];
   assert.equal(applyPromptCacheControl(empty), empty);
   const multimodal = applyPromptCacheControl([
     {
@@ -330,7 +330,7 @@ test("listProviderModels reaches a local endpoint at its saved URL, with no key 
 });
 
 test("completionRequestBody shapes the body per provider", () => {
-  const base = {
+  const base: Omit<ModelRequest, "model"> = {
     messages: [{ role: "user", content: "hi" }],
     temperature: 0.4,
     max_tokens: 64,

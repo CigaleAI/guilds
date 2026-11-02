@@ -1,3 +1,4 @@
+import type { JsonObject } from "../../src/lib/json.js";
 import type { ToolboxDatabase, ToolEvents, ToolServices } from "../../src/toolbox/services.js";
 import { createToolRun, type ToolHooks, type ToolInvocation, type ToolRun } from "../../src/toolbox/types.js";
 
@@ -24,7 +25,7 @@ export function fakeToolEvents(
 }
 
 /** A call of the tool `name` with `args`, as the model makes it, under the provider id `id`. */
-export function toolInvocation(name: string, args: Record<string, unknown> = {}, id = "call_1"): ToolInvocation {
+export function toolInvocation(name: string, args: JsonObject = {}, id = "call_1"): ToolInvocation {
   return { id, name, arguments: args, exit_code: null, metadata: null };
 }
 

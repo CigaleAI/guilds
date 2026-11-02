@@ -15,6 +15,7 @@ import {
   validateAdd,
   validatePatch,
 } from "../../src/artifacts/columns.js";
+import type { JsonObject } from "../../src/lib/json.js";
 
 const columns = parseColumns([
   { name: "email", type: "text", description: "the contact's email", required: true, unique: true },
@@ -40,7 +41,7 @@ test("parseColumns normalises a valid column list", () => {
 });
 
 test("parseColumns names the rule a column breaks", () => {
-  const one = (column: Record<string, unknown>) => () => parseColumns([column]);
+  const one = (column: JsonObject) => () => parseColumns([column]);
   assert.throws(() => parseColumns("nope"), /columns must be an array/);
   assert.throws(() => parseColumns([1]), /column 1: must be an object/);
   assert.throws(one({ name: "Bad Name", type: "text", description: "x" }), /name must match/);

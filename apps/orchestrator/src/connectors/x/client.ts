@@ -1,13 +1,11 @@
-import { Type, type Static, type TSchema } from "@sinclair/typebox";
-import { Value } from "@sinclair/typebox/value";
-import { decode } from "../../lib/decode.js";
+import type { Static, TSchema } from "typebox";
 import { proxyFetch, withQuery, type FetchFn } from "../../net/http.js";
-import { LIST_DEFAULT, argStr, clipRows, clipText, fmtNum, joinParts, rowLimit } from "../format.js";
+import { decodeResponse, type ConnectorApi } from "../response.js";
+import { LIST_DEFAULT, clipRows, clipText, fmtNum, joinParts } from "../format.js";
 import type { ApiGet } from "../types.js";
 import {
   ErrorBody,
-  ErrorEntry,
-  ErrorList,
+  PostResponse,
   PostsResponse,
   UserResponse,
   type XPost,
@@ -23,6 +21,13 @@ export const TWEET_FIELDS = "created_at,public_metrics,conversation_id,note_twee
 export const USER_FIELDS = "username,name,created_at,description,public_metrics,verified,verified_type";
 const STATUS_ID = /(?:status\/)?(\d{5,25})\s*$/i;
 
+/** The query every request for posts carries: the fields of each post, and its author expanded. */
+const POST_QUERY = {
+  "tweet.fields": TWEET_FIELDS,
+  expansions: "author_id",
+  "user.fields": "username,name",
+} as const;
+
 export class XError extends Error {
   status: number | null;
 
@@ -32,6 +37,9 @@ export class XError extends Error {
     this.status = status;
   }
 }
+
+/** The page of a list a call asks for: how many rows it shows, and the token of the page to start at. */
+export type ListPage = { rows: number; token: string | undefined };
 
 export function postId(value: string): string {
   const text = value.trim().split("#", 1)[0]!.split("?", 1)[0]!;
@@ -46,93 +54,63 @@ export function isUserId(value: string): boolean {
   return /^\d+$/.test(value) && value.length >= 5;
 }
 
-function handle(value: unknown): string {
-  const text = String(value || "").trim().replace(/^@+/, "");
-  return text ? `@${text}` : "";
+/** Text, trimmed; null when it is blank or absent. */
+function text(value: string | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
 }
 
-/** The item of `data`: the object itself, or the first of a list; none when it is empty. */
-function dataObj<T extends object>(data: T[] | T | null | undefined): T | null {
-  if (Array.isArray(data)) {
-    return data[0] ?? null;
-  }
-  return data && Object.keys(data).length ? data : null;
+function handle(username: string | undefined): string {
+  const name = username?.trim().replace(/^@+/, "") ?? "";
+  return name ? `@${name}` : "";
 }
 
-/** The items of `data`: the list itself, or the one object; none when it is empty. */
-function dataList<T extends object>(data: T[] | T | null | undefined): T[] {
-  if (Array.isArray(data)) {
-    return data;
-  }
-  return data && Object.keys(data).length ? [data] : [];
+/** The users a response names, by id. */
+function usersById(users: readonly XUser[] | undefined): Map<string, XUser> {
+  return new Map((users ?? []).filter((user) => user.id !== "").map((user) => [user.id, user]));
 }
 
-function usersById(payload: PostsResponse): Record<string, XUser> {
-  const mapped: Record<string, XUser> = {};
-  for (const user of payload.includes?.users ?? []) {
-    if (user.id != null && user.id !== "") {
-      mapped[String(user.id)] = user;
-    }
-  }
-  return mapped;
-}
-
-function nextToken(payload: PostsResponse): string {
-  const token = payload.meta?.next_token;
-  return typeof token === "string" && token.trim() ? token.trim() : "";
-}
-
-function resultCount(payload: PostsResponse): string {
-  return fmtNum(payload.meta?.result_count ?? dataList(payload.data).length);
-}
-
+/** A post's text: its long form when it has one. */
 function tweetText(item: XPost): string {
-  const text = item.note_tweet?.text;
-  if (typeof text === "string" && text.trim()) {
-    return text;
-  }
-  return typeof item.text === "string" ? item.text : "";
+  const long = item.note_tweet?.text;
+  return long?.trim() ? long : item.text;
 }
 
-function postRow(item: XPost, users: Record<string, XUser>): string {
-  const author = users[String(item.author_id ?? "")] ?? {};
-  const metrics = item.public_metrics ?? {};
+function postRow(item: XPost, users: Map<string, XUser>): string {
+  const author = users.get(item.author_id ?? "");
+  const metrics = item.public_metrics;
   return joinParts(
     item.id,
-    handle(author.username),
-    author.name,
+    handle(author?.username),
+    author?.name,
     item.created_at,
-    `likes=${fmtNum(metrics.like_count)}`,
-    `rts=${fmtNum(metrics.retweet_count)}`,
-    `replies=${fmtNum(metrics.reply_count)}`,
-    `quotes=${fmtNum(metrics.quote_count)}`,
+    `likes=${fmtNum(metrics?.like_count)}`,
+    `rts=${fmtNum(metrics?.retweet_count)}`,
+    `replies=${fmtNum(metrics?.reply_count)}`,
+    `quotes=${fmtNum(metrics?.quote_count)}`,
     clipText(tweetText(item), TEXT_CAP),
   );
 }
 
 /** The verification mark of a user: its kind, or `verified`; none when unverified. */
 function verifiedMark(item: XUser): string[] {
-  if (item.verified !== true) {
-    return [];
-  }
-  const kind = item.verified_type;
-  return [typeof kind === "string" && kind.trim() ? kind.trim() : "verified"];
+  return item.verified === true ? [text(item.verified_type) ?? "verified"] : [];
 }
 
 export function formatUser(payload: UserResponse): string {
-  const item = dataObj(payload.data);
+  const item = payload.data;
   if (!item) {
     return "no results";
   }
-  const metrics = item.public_metrics ?? {};
+  const metrics = item.public_metrics;
   const head = joinParts(
     item.id,
     handle(item.username),
     item.name,
     ...verifiedMark(item),
-    `followers=${fmtNum(metrics.followers_count)}`,
-    `following=${fmtNum(metrics.following_count)}`,
-    `posts=${fmtNum(metrics.tweet_count)}`,
+    `followers=${fmtNum(metrics?.followers_count)}`,
+    `following=${fmtNum(metrics?.following_count)}`,
+    `posts=${fmtNum(metrics?.tweet_count)}`,
     item.created_at,
   );
   const bio = clipText(item.description, TEXT_CAP);
@@ -140,18 +118,14 @@ export function formatUser(payload: UserResponse): string {
 }
 
 export function formatPosts(payload: PostsResponse, limit = LIST_DEFAULT): string {
-  const users = usersById(payload);
-  const rows = dataList(payload.data).map((item) => postRow(item, users));
+  const users = usersById(payload.includes?.users);
+  const rows = (payload.data ?? []).map((item) => postRow(item, users));
   const body = clipRows(rows.filter(Boolean), limit);
   if (body === "no results") {
     return body;
   }
-  const parts = [body];
-  const token = nextToken(payload);
-  if (token) {
-    parts.push(`page=${token}`);
-  }
-  return parts.join("\n");
+  const token = text(payload.meta?.next_token);
+  return token ? `${body}\npage=${token}` : body;
 }
 
 export function formatSearch(payload: PostsResponse, query: string, limit = LIST_DEFAULT): string {
@@ -159,80 +133,46 @@ export function formatSearch(payload: PostsResponse, query: string, limit = LIST
   if (body === "no results") {
     return body;
   }
-  return [joinParts(query, `n=${resultCount(payload)}`), body].join("\n");
+  const count = payload.meta?.result_count ?? payload.data?.length;
+  return [joinParts(query, `n=${fmtNum(count)}`), body].join("\n");
 }
 
-export function formatPost(payload: PostsResponse): string {
-  const item = dataObj(payload.data);
+export function formatPost(payload: PostResponse): string {
+  const item = payload.data;
   if (!item) {
     return "no results";
   }
-  const row = postRow(item, usersById(payload));
-  const conversation = item.conversation_id;
-  let extra = "";
-  if (
-    typeof conversation === "string"
-    && conversation.trim()
-    && conversation.trim() !== String(item.id ?? "").trim()
-  ) {
-    extra = `conversation=${conversation.trim()}`;
-  }
+  const row = postRow(item, usersById(payload.includes?.users));
+  const conversation = text(item.conversation_id);
+  const extra = conversation && conversation !== item.id.trim() ? `conversation=${conversation}` : "";
   return [row, extra].filter(Boolean).join("\n") || "no results";
 }
 
-function trimmed(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
 /** The message of an error body: the first error's, else the body's own. */
-function errorMessage(payload: unknown): string | null {
-  if (!Value.Check(ErrorBody, payload)) {
-    return null;
-  }
-  const errors = payload.errors;
-  if (Value.Check(ErrorList, errors) && Value.Check(ErrorEntry, errors[0])) {
-    const first = errors[0];
-    const inner = trimmed(first.message ?? first.detail ?? first.title);
-    if (inner) {
-      return inner;
-    }
-  }
-  return trimmed(payload.detail ?? payload.title ?? payload.error);
+function errorMessage(body: ErrorBody): string | null {
+  const first = body.errors?.[0];
+  return text(first?.message ?? first?.detail ?? first?.title) ?? text(body.detail ?? body.title ?? body.error);
 }
 
-async function errorDetail(response: Response): Promise<string> {
-  const text = await response.text();
-  let payload: unknown;
-  try {
-    payload = text ? JSON.parse(text) : {};
-  } catch {
-    const stripped = text.trim();
-    return stripped || `X HTTP ${response.status}`;
-  }
-  return errorMessage(payload) ?? `X HTTP ${response.status}`;
-}
+/** X's API as the client reads its responses. */
+const X_API: ConnectorApi<typeof ErrorBody> = {
+  name: "X",
+  error: (message, status) => new XError(message, status),
+  errorBody: ErrorBody,
+  errorMessage,
+};
 
-function tweetParams(maxResults?: number): Record<string, string> {
-  const params: Record<string, string> = {
-    "tweet.fields": TWEET_FIELDS,
-    expansions: "author_id",
-    "user.fields": "username,name",
-  };
-  if (maxResults !== undefined) {
-    params.max_results = String(maxResults);
-  }
-  return params;
+/** The query of a page of posts: the post fields, `max_results`, and the token of the page to start at. */
+function pageQuery(maxResults: number, page: ListPage) {
+  const query = { ...POST_QUERY, max_results: String(maxResults) };
+  return page.token ? { ...query, pagination_token: page.token } : query;
 }
 
 type XOptions = { client?: FetchFn; proxyUrl?: string };
 
 type ToolOptions = XOptions & { apiKey: string };
 
-function unexpected(problem: string): XError {
-  return new XError(`X returned an unexpected response at ${problem}`);
-}
-
-/** The response at `path` with `params`, as `schema` describes it. */
+/** The response at the request's path with its query, as its schema describes it. */
 async function getJson<T extends TSchema>(
   request: ApiGet<T>,
   apiKey: string,
@@ -247,16 +187,7 @@ async function getJson<T extends TSchema>(
     method: "GET",
     headers: { Authorization: `Bearer ${key}`, Accept: "application/json" },
   });
-  if (response.status >= 400) {
-    throw new XError(await errorDetail(response), response.status);
-  }
-  let payload: unknown;
-  try {
-    payload = JSON.parse(await response.text());
-  } catch {
-    throw new XError("X returned a non-JSON body");
-  }
-  return decode(request.schema, payload, unexpected);
+  return decodeResponse(X_API, response, request.schema);
 }
 
 async function lookupUser(value: string, apiKey: string, options: XOptions = {}): Promise<UserResponse> {
@@ -268,89 +199,62 @@ async function lookupUser(value: string, apiKey: string, options: XOptions = {})
   return getJson({ path, params: { "user.fields": USER_FIELDS }, schema: UserResponse }, apiKey, options);
 }
 
-const PING = Type.Unknown();
-
 export async function ping(apiKey: string, options: XOptions = {}): Promise<void> {
-  await getJson({ path: `/users/by/username/${PING_USERNAME}`, params: {}, schema: PING }, apiKey, options);
+  await getJson({ path: `/users/by/username/${PING_USERNAME}`, params: {}, schema: UserResponse }, apiKey, options);
 }
 
-export async function searchTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
-  const query = argStr(arguments_, "query");
-  if (!query) {
+/** Recent posts matching `query`. */
+export async function search(query: string, page: ListPage, options: ToolOptions): Promise<string> {
+  const stripped = query.trim();
+  if (!stripped) {
     throw new XError("query is required");
   }
-  const limit = rowLimit(arguments_);
-  const params = tweetParams(Math.max(SEARCH_MIN, Math.min(100, limit)));
-  params.query = query;
-  const pageKey = argStr(arguments_, "page_key");
-  if (pageKey) {
-    params.pagination_token = pageKey;
-  }
+  const params = { ...pageQuery(Math.max(SEARCH_MIN, Math.min(100, page.rows)), page), query: stripped };
   const payload = await getJson(
     { path: "/tweets/search/recent", params, schema: PostsResponse },
     options.apiKey,
     options,
   );
-  return formatSearch(payload, query, limit);
+  return formatSearch(payload, stripped, page.rows);
 }
 
-export async function userTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
-  return formatUser(await lookupUser(argStr(arguments_, "user"), options.apiKey, options));
+/** One profile, by username or user id. */
+export async function user(value: string, options: ToolOptions): Promise<string> {
+  return formatUser(await lookupUser(value, options.apiKey, options));
 }
 
-/** The page with `user` among its users, so each post can name its author. */
-function withAuthor(payload: PostsResponse, user: XUser): PostsResponse {
+/** The page with `author` among its users, so each post can name its author. */
+function withAuthor(payload: PostsResponse, author: XUser): PostsResponse {
   const users = payload.includes?.users ?? [];
-  return { ...payload, includes: { ...payload.includes, users: [...users, user] } };
+  return { ...payload, includes: { ...payload.includes, users: [...users, author] } };
 }
 
-export async function postsTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
-  const user = await lookupUser(argStr(arguments_, "user"), options.apiKey, options);
-  const item = dataObj(user.data);
-  const userId = item ? String(item.id ?? "").trim() : "";
-  if (!item || !userId) {
+/** Recent posts of one account, by username or user id. */
+export async function posts(value: string, page: ListPage, options: ToolOptions): Promise<string> {
+  const author = (await lookupUser(value, options.apiKey, options)).data;
+  const userId = author?.id.trim() ?? "";
+  if (!author || !userId) {
     throw new XError("user not found");
   }
-  const limit = rowLimit(arguments_);
-  const params = tweetParams(Math.max(TIMELINE_MIN, Math.min(100, limit)));
-  const pageKey = argStr(arguments_, "page_key");
-  if (pageKey) {
-    params.pagination_token = pageKey;
-  }
   const payload = await getJson(
-    { path: `/users/${userId}/tweets`, params, schema: PostsResponse },
+    {
+      path: `/users/${userId}/tweets`,
+      params: pageQuery(Math.max(TIMELINE_MIN, Math.min(100, page.rows)), page),
+      schema: PostsResponse,
+    },
     options.apiKey,
     options,
   );
-  const page = userId in usersById(payload) ? payload : withAuthor(payload, item);
-  return formatPosts(page, limit);
+  const named = usersById(payload.includes?.users).has(userId);
+  return formatPosts(named ? payload : withAuthor(payload, author), page.rows);
 }
 
-export async function postTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
-  const tweetId = postId(argStr(arguments_, "id"));
+/** One post, by id or status URL. */
+export async function post(value: string, options: ToolOptions): Promise<string> {
   const payload = await getJson(
-    { path: `/tweets/${tweetId}`, params: tweetParams(), schema: PostsResponse },
+    { path: `/tweets/${postId(value)}`, params: POST_QUERY, schema: PostResponse },
     options.apiKey,
     options,
   );
   return formatPost(payload);
-}
-
-const HANDLERS: Record<string, (arguments_: Record<string, unknown>, options: ToolOptions) => Promise<string>> = {
-  search: searchTool,
-  user: userTool,
-  posts: postsTool,
-  post: postTool,
-};
-
-export async function callTool(
-  name: string,
-  arguments_: Record<string, unknown>,
-  options: ToolOptions,
-): Promise<string> {
-  const handler = HANDLERS[name];
-  if (!handler) {
-    throw new XError(`unknown X tool ${name}`);
-  }
-  return handler(arguments_, options);
 }

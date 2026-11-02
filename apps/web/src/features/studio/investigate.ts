@@ -2,23 +2,25 @@ import { useNavigate } from "@tanstack/react-router";
 import { useCreateStudioSession } from "../../api/queries/studio";
 import { useOrgModels } from "../../api/queries/models";
 import type { Issue } from "../../api/types/issues";
-import { isRecord } from "../../api/wire";
+import type { StudioFocusRequest } from "../../api/types/studio";
+import { isJsonObject, isStudioFocusRequest } from "../../api/wire";
 import { useIdentity } from "../../app/identity";
 import { preselectedModel } from "../models/models";
 import { toast } from "@guildsrun/ui";
 
 /** What a new session starts pinned to, and the question it offers to ask. */
-export type StudioPin = { focus: Record<string, unknown> & { label: string }; prompt: string };
+export type StudioPin = { focus: StudioFocusRequest & { label: string }; prompt: string };
 
 const pinKey = (sessionId: string) => `studio-pin:${sessionId}`;
 
 /** Whether a value read back from storage is a pin: a prompt and a focus with its label. */
 function isStudioPin(value: unknown): value is StudioPin {
   return (
-    isRecord(value) &&
+    isJsonObject(value) &&
     typeof value.prompt === "string" &&
-    isRecord(value.focus) &&
-    typeof value.focus.label === "string"
+    isJsonObject(value.focus) &&
+    typeof value.focus.label === "string" &&
+    isStudioFocusRequest(value.focus)
   );
 }
 

@@ -24,6 +24,7 @@ import { installedManifests, listServers } from "./servers.js";
 import type { Credentials } from "./types.js";
 import { connectMcp, disconnectServerConnections, getMcpConnectionForOwner, saveMcpConnection } from "../db/mcp.js";
 import type { Queryable } from "../db/pg.js";
+import type { Redactions } from "../secrets/index.js";
 
 /**
  * What a connector's manifest holds at instance level of its own: a platform key (token auth
@@ -185,8 +186,8 @@ export function instanceCredentials(manifest: Manifest, sources?: IntegrationSou
  * Every instance key a connector's platform login uses, for run redaction: `platform_<slug>_<field>`,
  * the named field of a shipped integration, or each login field of the connector's own key.
  */
-export function instanceRedactions(sources?: IntegrationSources): Record<string, string> {
-  const redactions: Record<string, string> = {};
+export function instanceRedactions(sources?: IntegrationSources): Redactions {
+  const redactions: Redactions = {};
   for (const item of platformConnectors()) {
     const instance = item.manifest.auth.instance;
     if (!instance) {
@@ -200,7 +201,7 @@ export function instanceRedactions(sources?: IntegrationSources): Record<string,
       continue;
     }
     for (const [field, value] of Object.entries(instanceCredentials(item.manifest, sources))) {
-      if (typeof value === "string" && value) {
+      if (value) {
         redactions[`platform_${item.slug}_${field}`] = value;
       }
     }

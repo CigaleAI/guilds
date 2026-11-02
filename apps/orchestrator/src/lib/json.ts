@@ -1,18 +1,70 @@
-export function sortKeys(value: unknown): unknown {
+import { Type } from "typebox";
+
+/** A value JSON carries: a string, number, boolean or null, or an array or object of them. */
+export type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject;
+
+/** A JSON object. A field held as `undefined` is one JSON leaves out. */
+export type JsonObject = { [key: string]: JsonValue | undefined };
+
+/** Whether a value is one JSON carries, every element and field of it included. */
+export function isJsonValue(value: unknown): value is JsonValue {
+  if (value === null) return true;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return true;
+  if (Array.isArray(value)) return value.every(isJsonValue);
+  return isJsonObject(value);
+}
+
+/**
+ * Whether a value is a JSON object, every field of it a JSON value or left out. A JSON object is a bag of
+ * fields with nothing inherited: its prototype chain reaches `Object.prototype` or `null` through
+ * prototypes that hold no own properties. A class instance inherits its class's members and is not one.
+ */
+export function isJsonObject(value: unknown): value is JsonObject {
+  if (typeof value !== "object" || value === null) return false;
+  let prototype: object | null = Object.getPrototypeOf(value);
+  while (prototype !== Object.prototype && prototype !== null) {
+    if (Reflect.ownKeys(prototype).length > 0) return false;
+    prototype = Object.getPrototypeOf(prototype);
+  }
+  return Object.values(value).every((field) => field === undefined || isJsonValue(field));
+}
+
+// Each schema refines a JSON Schema whose Static is the lib's type with the lib's predicate, so
+// Value.Check agrees with the type at every depth.
+
+/** The TypeBox schema of a JSON value, checked at every depth. */
+export const JsonValueSchema = Type.Refine(Type.Unsafe<JsonValue>({}), isJsonValue, () => "must be a JSON value");
+
+/** The TypeBox schema of a JSON object, checked at every depth. */
+export const JsonObjectSchema = Type.Refine(
+  Type.Unsafe<JsonObject>({ type: "object" }),
+  isJsonObject,
+  () => "must be a JSON object",
+);
+
+/** Whether a JSON value is an object, and not an array or a scalar. */
+export function isObjectNode(value: JsonValue): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** The value with every object's keys in sorted order, at every depth. */
+export function sortKeys(value: JsonValue): JsonValue {
   if (Array.isArray(value)) {
     return value.map((item) => sortKeys(item));
   }
-  if (value && typeof value === "object") {
-    const out: Record<string, unknown> = {};
-    for (const key of Object.keys(value as Record<string, unknown>).sort()) {
-      out[key] = sortKeys((value as Record<string, unknown>)[key]);
-    }
-    return out;
+  if (!isObjectNode(value)) {
+    return value;
   }
-  return value;
+  const out: JsonObject = {};
+  for (const key of Object.keys(value).sort()) {
+    const field = value[key];
+    out[key] = field === undefined ? undefined : sortKeys(field);
+  }
+  return out;
 }
 
-export function dumpsCompact(value: unknown, ensureAscii = false): string {
+/** The value as JSON text with sorted keys and no whitespace; `ensureAscii` escapes every non-ASCII character. */
+export function dumpsCompact(value: JsonValue, ensureAscii = false): string {
   const json = JSON.stringify(sortKeys(value));
   if (!ensureAscii) {
     return json;

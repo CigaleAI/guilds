@@ -38,7 +38,7 @@ import {
 } from "./paths.js";
 import { removeRecord } from "./records.js";
 import { findLimit, parseRecordId } from "./search.js";
-import { artifactMode, artifactView, assertBytes, assertLiveCount, assertRead, assertWrite, hashArtifactContent, hostNoteView, isRecordRow, ownerFor, reachesOwner, recordViewWithPath, type ArtifactOwnerRef, type ArtifactStore, type StateArtifact, rowDisplayPath } from "./store.js";
+import { artifactMode, artifactTextView, assertBytes, assertLiveCount, assertRead, assertWrite, hashArtifactContent, hostNoteView, isRecordRow, ownerFor, reachesOwner, recordViewWithPath, type ArtifactOwnerRef, type ArtifactStore, type ArtifactTextView, type HostNoteView, type StateArtifact, rowDisplayPath } from "./store.js";
 import {
   SEARCH_TEXT_MAX,
   type AccessEntry,
@@ -311,13 +311,13 @@ export async function findNotes(
   store: ArtifactStore,
   actor: ArtifactActor,
   args: NoteSearch,
-): Promise<{ notes: Array<Record<string, unknown>> }> {
+): Promise<{ notes: ArtifactTextView[] }> {
   const limit = findLimit(args.limit);
   const query = (args.query ?? "").trim();
   const rows = query
     ? await searchArtifactsByKind(store.db, actor, "note", { query, level: args.level, limit })
     : await listArtifactsByKind(store.db, actor, "note", { level: args.level, limit });
-  return { notes: rows.map(artifactView) };
+  return { notes: rows.map(artifactTextView) };
 }
 
 /** The notes one owner holds, as the Host lists them. */
@@ -326,7 +326,7 @@ export async function listOwnerNotes(
   actor: ArtifactActor,
   level: ArtifactLevel,
   ownerId: string,
-): Promise<Array<Record<string, unknown>>> {
+): Promise<HostNoteView[]> {
   const rows = await listOwnerArtifacts(store.db, actor, { level, owner_id: ownerId, kind: "note" });
   return rows.map(hostNoteView);
 }

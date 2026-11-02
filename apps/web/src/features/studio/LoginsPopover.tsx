@@ -1,5 +1,6 @@
 import { KeyRound } from "lucide-react";
 import { useGrantStudioConnection, useStudioConnections } from "../../api/queries/studio";
+import type { BindingScope } from "../../api/types/access";
 import type { StudioSession } from "../../api/types/studio";
 import {
   Button,
@@ -10,7 +11,7 @@ import {
   toast,
   Icon,
 } from "@guildsrun/ui";
-const scopeWord: Record<string, string> = {
+const scopeWord: Record<BindingScope, string> = {
   platform: "platform",
   org: "organisation",
   guild: "guild",
@@ -64,9 +65,8 @@ export function LoginsPopover({ session }: LoginsPopoverProps) {
                       {connection.account_hint ? ` · ${connection.account_hint}` : ""}
                     </span>
                     <span className="text-xs text-muted">
-                      {scopeWord[connection.owner_scope] ?? connection.owner_scope} ·{" "}
-                      {connection.status} · {connection.readable_tools.length}/
-                      {connection.tool_count} read-only
+                      {scopeWord[connection.owner_scope]} · {connection.status} ·{" "}
+                      {connection.readable_tools.length}/{connection.tool_count} read-only
                     </span>
                   </div>
                   <Button

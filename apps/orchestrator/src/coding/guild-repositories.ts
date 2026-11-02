@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { getMcpServer } from "../connectors/servers.js";
 import type { GuildRow } from "../db/guilds.js";
 import {
@@ -39,6 +39,8 @@ import {
   githubLoginItem,
   repositoryItem,
   RepositoryValidationError,
+  type GithubLogin,
+  type GuildRepository,
   validateGithubRepositories,
   validateRepositoryInput,
 } from "./repositories.js";
@@ -61,7 +63,8 @@ export async function retireInstallationGone(
   await services.retireLogin(connection, "installation_gone");
 }
 
-type Item = Record<string, unknown>;
+/** A guild's repositories, and the GitHub logins its repositories may be added with. */
+export type GuildRepositoryView = { repositories: GuildRepository[]; github_connections: GithubLogin[] };
 
 /** A repository's fields as a request sends them, before validation: its name, URL and branch. */
 const RepositoryFields = {
@@ -184,7 +187,7 @@ export async function listGuildRepositoryView(
   db: Queryable,
   guild: GuildRow,
   userId: string,
-): Promise<Item> {
+): Promise<GuildRepositoryView> {
   const visible = await listGuildsForUser(db, guild.org_id, userId);
   const connections = await listVisibleGithubConnections(
     db,
@@ -228,7 +231,7 @@ export async function addGuildRepository(
   guild: GuildRow,
   userId: string,
   body: RepositoryDraft,
-): Promise<Item> {
+): Promise<GuildRepository> {
   const { db } = services;
   const input = validateRepositoryInput(body);
   let defaultBranch = input.defaultBranch;
@@ -265,8 +268,11 @@ export async function addGuildRepository(
       };
       await addToGuildLogin(db, guild, input.connectionId, entry);
     }
-    const listed =
-      (await listGuildRepositories(db, guild.id)).find((item) => item.id === row.id) ?? row;
+    const listed = (await listGuildRepositories(db, guild.id)).find((item) => item.id === row.id) ?? {
+      ...row,
+      connection_status: null,
+      connection_account: null,
+    };
     return repositoryItem(listed);
   } catch (error) {
     throw isUniqueViolation(error)
@@ -302,17 +308,11 @@ export async function removeGuildRepository(
 function matchSelection(
   selected: GithubRepositorySelection[],
   reached: GithubRepository[],
-  raw: unknown[],
+  given: GithubSelection,
 ) {
   return selected.map((item, index) => {
     const match = reachedRepository(reached, item.url);
-    const given = raw[index];
-    const rawBranch =
-      given && typeof given === "object" && "default_branch" in given
-        ? given.default_branch
-        : undefined;
-    const keepsBranch =
-      rawBranch !== undefined && rawBranch !== null && String(rawBranch).trim() !== "";
+    const keepsBranch = Boolean(given[index]?.default_branch?.trim());
     return {
       ...item,
       github_id: match.id,

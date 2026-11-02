@@ -136,7 +136,7 @@ describe("generation", { concurrency: 1 }, () => {
       temperature: 0,
       max_tokens: 32,
       max_steps: 30,
-      tools: [{ type: "function" as const, function: { name: "script_run", arguments: "{}" } }],
+      tools: [{ type: "function" as const, function: { name: "script_run", description: "", parameters: { type: "object" } } }],
       secrets: [],
     };
     const db = new FakeDB(snapshot);
@@ -195,7 +195,7 @@ describe("generation", { concurrency: 1 }, () => {
       max_steps: 30,
       max_tool_calls: 1,
       max_input_tokens: 100000,
-      tools: [{ type: "function" as const, function: { name: "script_run", arguments: "{}" } }],
+      tools: [{ type: "function" as const, function: { name: "script_run", description: "", parameters: { type: "object" } } }],
       secrets: [],
     };
     const db = new FakeDB(snapshot);
@@ -258,8 +258,7 @@ describe("generation", { concurrency: 1 }, () => {
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), new FakeSandboxes());
     live.countInputTokens = () => 9;
     live.streamCompletion = async function* shouldNotRun() {
-      throw new Error("model should not be called");
-      yield ["done", completionReply("nope")];
+      yield await Promise.reject(new Error("model should not be called"));
     };
     await loop.generator.generate("r_1", 1);
     assert.ok(db.messages.every((row) => (row.payload as Record<string, unknown>).role !== "assistant"));
@@ -439,7 +438,7 @@ describe("generation", { concurrency: 1 }, () => {
       temperature: 0,
       max_tokens: 32,
       max_steps: 30,
-      tools: [{ type: "function" as const, function: { name: "notion_search", arguments: "{}" } }],
+      tools: [{ type: "function" as const, function: { name: "notion_search", description: "", parameters: { type: "object" } } }],
       mcp: [
         {
           connection_id: "conn_u",
@@ -490,7 +489,7 @@ describe("generation", { concurrency: 1 }, () => {
       temperature: 0,
       max_tokens: 32,
       max_steps: 30,
-      tools: [{ type: "function" as const, function: { name: "notion_search", arguments: "{}" } }],
+      tools: [{ type: "function" as const, function: { name: "notion_search", description: "", parameters: { type: "object" } } }],
       mcp: [
         {
           connection_id: "conn_u",
@@ -1136,7 +1135,7 @@ describe("generation", { concurrency: 1 }, () => {
       temperature: 0,
       max_tokens: 32,
       max_steps: 30,
-      tools: [{ type: "function" as const, function: { name: "note_find", arguments: "{}" } }],
+      tools: [{ type: "function" as const, function: { name: "note_find", description: "", parameters: { type: "object" } } }],
       secrets: [],
     };
     const db = new FakeDB(snapshot);
@@ -1169,8 +1168,8 @@ describe("generation", { concurrency: 1 }, () => {
       max_steps: 30,
       browser: true,
       tools: [
-        { type: "function" as const, function: { name: "browser_navigate", arguments: "{}" } },
-        { type: "function" as const, function: { name: "note_find", arguments: "{}" } },
+        { type: "function" as const, function: { name: "browser_navigate", description: "", parameters: { type: "object" } } },
+        { type: "function" as const, function: { name: "note_find", description: "", parameters: { type: "object" } } },
       ],
       secrets: [],
     };
@@ -1461,8 +1460,7 @@ describe("generation", { concurrency: 1 }, () => {
     restoreBindings();
     const { loop, db } = await seededLoop();
     live.streamCompletion = async function* boom() {
-      throw new LLMError("request timed out");
-      yield ["done", completionReply("nope")];
+      yield await Promise.reject(new LLMError("request timed out"));
     };
     const created = await loop.runs.createRun("a_1", "hello");
     await waitTask(loop, String(created.id));
@@ -1615,7 +1613,7 @@ describe("generation", { concurrency: 1 }, () => {
       temperature: 0,
       max_tokens: 32,
       max_steps: 30,
-      tools: [{ type: "function" as const, function: { name: "script_run", arguments: "{}" } }],
+      tools: [{ type: "function" as const, function: { name: "script_run", description: "", parameters: { type: "object" } } }],
       secrets: [],
     };
     const db = new FakeDB(snapshot);
@@ -1673,7 +1671,7 @@ describe("generation", { concurrency: 1 }, () => {
       temperature: 0,
       max_tokens: 32,
       max_steps: 30,
-      tools: [{ type: "function" as const, function: { name: "script_run", arguments: "{}" } }],
+      tools: [{ type: "function" as const, function: { name: "script_run", description: "", parameters: { type: "object" } } }],
       secrets: [],
     };
     const db = new FakeDB(snapshot);
@@ -1882,7 +1880,7 @@ describe("generation", { concurrency: 1 }, () => {
       temperature: 0,
       max_tokens: 32,
       max_steps: 30,
-      tools: [{ type: "function" as const, function: { name: "script_run", arguments: "{}" } }],
+      tools: [{ type: "function" as const, function: { name: "script_run", description: "", parameters: { type: "object" } } }],
       scripts: [
         {
           id: "script_1",
@@ -2112,7 +2110,7 @@ describe("generation", { concurrency: 1 }, () => {
       tools: [],
       secrets: [],
     };
-    const db = new FakeDB({ ...snapshot, tools: [{ type: "function" as const, function: { name: "script_run", arguments: "{}" } }] });
+    const db = new FakeDB({ ...snapshot, tools: [{ type: "function" as const, function: { name: "script_run", description: "", parameters: { type: "object" } } }] });
     db.agent.org_id = "org_1";
     db.secrets = [liveSecret()];
     const sandboxes = new FakeSandboxes();

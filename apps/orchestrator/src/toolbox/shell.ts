@@ -1,5 +1,5 @@
-import { exitCodeOf, type CommandResult } from "../sandbox/sdk.js";
-import type { CommandInit, ToolHooks, ToolInvocation, ToolRun } from "./types.js";
+import { exitCodeOf, type CommandInit, type CommandOptions, type CommandResult } from "../sandbox/sdk.js";
+import type { ToolHooks, ToolInvocation, ToolRun } from "./types.js";
 import { SandboxCommandError, ToolUnavailableError } from "./errors.js";
 
 export const COMMAND_TIMEOUT_SECONDS = 120;
@@ -40,23 +40,18 @@ export async function executeCommand(
     throw new ToolUnavailableError("sandbox is not available");
   }
   const timeoutSeconds = options.timeoutSeconds ?? COMMAND_TIMEOUT_SECONDS;
-  const opts: Record<string, unknown> = {
+  const opts: CommandOptions = {
     workingDirectory: run.agent_home,
-    working_directory: run.agent_home,
-    timeout: timeoutSeconds,
     timeoutSeconds,
+    ...(options.envs ? { envs: options.envs } : {}),
   };
-  if (options.envs) {
-    opts.envs = options.envs;
-  }
   const track = hooks.track_command;
   const handlers =
     run.cancel_event !== null && track !== null
       ? {
           onInit: async (init: CommandInit) => {
-            const executionId = init.id;
-            if (typeof executionId === "string" && executionId) {
-              track(executionId);
+            if (init.id) {
+              track(init.id);
             }
           },
         }

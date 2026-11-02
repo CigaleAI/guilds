@@ -1,13 +1,12 @@
 import { Buffer } from "node:buffer";
-import { Type } from "@sinclair/typebox";
-import { isPlainRecord } from "../db/json.js";
+import { Type } from "typebox";
 import type { MessageMetadata, ReportedToolMetadata } from "../db/schema/index.js";
 import { keepMatching } from "../lib/decode.js";
+import { isJsonObject, isObjectNode, type JsonObject } from "../lib/json.js";
 import { stderrOf, stdoutOf, type CommandResult } from "../sandbox/sdk.js";
 import { executeCommand } from "./shell.js";
-import { functionSchema } from "./schema.js";
-import { identityOutput } from "./output.js";
-import type { Tool, ToolHooks, ToolRun } from "./types.js";
+import { jsonArgument, wholeWithin } from "./schema.js";
+import { nativeTool, type ToolHooks, type ToolRun } from "./types.js";
 import { SandboxCommandError, ToolLimitError } from "./errors.js";
 
 /**
@@ -33,7 +32,7 @@ export function codeResultMaxBytes(env: NodeJS.ProcessEnv = process.env): number
   return Number.isInteger(value) && value >= 1024 ? value : 8192;
 }
 
-export type CodeResult = { text: string; meta: Record<string, unknown> };
+export type CodeResult = { text: string; meta: JsonObject };
 
 /** A call id as a file name: providers may use characters a path segment cannot hold. */
 export function callSegment(callId: string): string {
@@ -42,25 +41,37 @@ export function callSegment(callId: string): string {
 }
 
 /** What a sandbox helper prints: whether its op succeeded, its text and meta, and its error text when it says one. */
-export type HelperEnvelope = { ok: boolean; text: string; meta: Record<string, unknown>; error: string | null };
+export type HelperEnvelope = { ok: boolean; text: string; meta: JsonObject; error: string | null };
+
+/** The fields of an envelope the helper printed, each one kept when it holds what the envelope puts there. */
+const EnvelopeFields = Type.Object({
+  ok: Type.Optional(Type.Boolean()),
+  text: Type.Optional(Type.String()),
+  error: Type.Optional(Type.String()),
+});
 
 /** The envelope a helper printed as base64 JSON; throws when it is not a JSON object. */
 export function decodeEnvelope(stdout: string): HelperEnvelope {
   const compact = stdout.replace(/\s+/g, "");
   const decoded: unknown = JSON.parse(Buffer.from(compact, "base64").toString("utf8"));
-  if (!isPlainRecord(decoded)) {
+  if (!isJsonObject(decoded)) {
     throw new SandboxCommandError("code helper returned a non-object");
   }
+  const fields = keepMatching(EnvelopeFields, decoded) ?? {};
+  const meta = decoded.meta;
   return {
-    ok: Boolean(decoded.ok),
-    text: typeof decoded.text === "string" ? decoded.text : "",
-    meta: isPlainRecord(decoded.meta) ? decoded.meta : {},
-    error: typeof decoded.error === "string" && decoded.error ? decoded.error : null,
+    ok: fields.ok === true,
+    text: fields.text ?? "",
+    meta: meta !== undefined && isObjectNode(meta) ? meta : {},
+    error: fields.error || null,
   };
 }
 
+/** A request as a helper is sent it: the op's own fields, and the run and call it runs for. */
+type SentRequest = HelperRequest & { run_id: string; agent_id: string; call_id: string; default_cwd: string; max_bytes: number };
+
 /** The command that runs `helper` on `request`: inline, or through a request file when it is too large. */
-async function helperCommand(run: ToolRun, helper: string, request: Record<string, unknown>): Promise<string> {
+async function helperCommand(run: ToolRun, helper: string, request: SentRequest): Promise<string> {
   const json = JSON.stringify(request);
   const encoded = Buffer.from(json, "utf8").toString("base64");
   if (encoded.length <= INLINE_REQUEST_MAX) {
@@ -70,7 +81,7 @@ async function helperCommand(run: ToolRun, helper: string, request: Record<strin
   if (!files) {
     throw new ToolLimitError("request is too large for this sandbox");
   }
-  const requestPath = `${CODE_REQUEST_DIR}/${run.run_id}-${String(request.call_id)}.json`;
+  const requestPath = `${CODE_REQUEST_DIR}/${run.run_id}-${request.call_id}.json`;
   await files.writeFiles([{ path: requestPath, data: json }]);
   return `python3 ${helper} @${requestPath}`;
 }
@@ -106,12 +117,12 @@ const ReportedFields = Type.Object({
 });
 
 /** The fields of a helper's metadata a call's result keeps; one of another shape is dropped. */
-function reportedFields(meta: Record<string, unknown>): ReportedToolMetadata | null {
+function reportedFields(meta: JsonObject): ReportedToolMetadata | null {
   return keepMatching(ReportedFields, meta);
 }
 
 /** A request a sandbox helper reads: its op, the call it runs for when there is one, and the op's own fields. */
-export type HelperRequest = { op: string; call_id?: string; [field: string]: unknown };
+export type HelperRequest = JsonObject & { op: string; call_id?: string };
 
 /** How a helper request runs: which helper, how long it may take, and how many bytes its text keeps. */
 export type HelperSettings = { timeoutSeconds?: number; maxBytes?: number; helper?: string };
@@ -127,7 +138,7 @@ export async function runCodeHelper(
   request: HelperRequest,
   options: HelperSettings = {},
 ): Promise<CodeResult> {
-  const sent = {
+  const sent: SentRequest = {
     ...request,
     run_id: run.run_id,
     agent_id: run.agent_id,
@@ -142,152 +153,120 @@ export async function runCodeHelper(
   return helperResult(execution);
 }
 
-function tool(
-  name: string,
-  description: string,
-  properties: Record<string, unknown>,
-  required: string[],
-  handler: Tool["handler"],
-): Tool {
-  return {
-    name,
-    description,
-    output_filter: identityOutput,
-    filter_name: "identity",
-    schema: functionSchema(name, description, properties, required),
-    handler,
-  };
-}
+/** How long a `shell` command may run, in seconds: the default when the call gives none, kept within the range. */
+const SHELL_TIMEOUT = { min: 1, max: SHELL_MAX_TIMEOUT_SECONDS, fallback: SHELL_DEFAULT_TIMEOUT_SECONDS };
 
-function shellTimeout(args: Record<string, unknown>): number {
-  const raw = args.timeout_seconds;
-  const value = typeof raw === "number" && Number.isFinite(raw) ? Math.trunc(raw) : SHELL_DEFAULT_TIMEOUT_SECONDS;
-  return Math.max(1, Math.min(SHELL_MAX_TIMEOUT_SECONDS, value));
-}
-
-export const shell = tool(
-  "shell",
-  "Run a bash command in your sandbox and return its combined stdout and stderr. " +
+export const shell = nativeTool({
+  name: "shell",
+  description:
+    "Run a bash command in your sandbox and return its combined stdout and stderr. " +
     "The working directory carries over between calls (a cd persists); environment " +
     "changes do not. Output over 8 KiB keeps its first 2 KiB and last 6 KiB and names a " +
     "log file holding all of it. A non-zero exit ends the result with exit_code: N. " +
     "timeout_seconds defaults to 120, at most 600. Set background for a long-running " +
     "process (a dev server, a watcher) and follow it with shell_status. Read files with " +
     "file_read rather than cat. Code changes are your harness's work: use code_task.",
-  {
-    command: { type: "string" },
-    timeout_seconds: { type: "integer", minimum: 1, maximum: SHELL_MAX_TIMEOUT_SECONDS },
-    background: { type: "boolean" },
-  },
-  ["command"],
-  async (_services, run, hooks, call) => {
-    const args = call.arguments;
-    const timeout = shellTimeout(args);
+  parameters: Type.Object({
+    command: Type.String(),
+    timeout_seconds: Type.Optional(jsonArgument({ type: "integer", minimum: 1, maximum: SHELL_MAX_TIMEOUT_SECONDS })),
+    background: Type.Optional(Type.Boolean()),
+  }),
+  handler: async (_services, run, hooks, call) => {
+    const { command, background = false } = call.arguments;
+    const timeout = wholeWithin(call.arguments.timeout_seconds, SHELL_TIMEOUT);
     await hooks.before_command?.();
     const result = await runCodeHelper(
       run,
       hooks,
-      { op: "shell", call_id: call.id, command: args.command, timeout_seconds: timeout, background: args.background === true },
+      { op: "shell", call_id: call.id, command, timeout_seconds: timeout, background },
       { timeoutSeconds: timeout + SHELL_TIMEOUT_MARGIN_SECONDS },
     );
     call.metadata = reportedFields(result.meta);
-    const code = result.meta.exit_code;
-    call.exit_code = typeof code === "number" ? code : null;
+    call.exit_code = call.metadata?.exit_code ?? null;
     return result.text;
   },
-);
+});
 
-export const shellStatus = tool(
-  "shell_status",
-  "Without id, list your background commands with their state. With id, show that " +
+export const shellStatus = nativeTool({
+  name: "shell_status",
+  description:
+    "Without id, list your background commands with their state. With id, show that " +
     "command's state, exit code, and the last lines of its log; set stop to end it. " +
     "Background commands also end when the sandbox stops after 5 idle minutes.",
-  { id: { type: "string" }, stop: { type: "boolean" } },
-  [],
-  async (_services, run, hooks, call) => {
-    const args = call.arguments;
-    const result = await runCodeHelper(run, hooks, {
-      op: "shell_status",
-      call_id: call.id,
-      id: typeof args.id === "string" ? args.id : "",
-      stop: args.stop === true,
-    });
+  parameters: Type.Object({ id: Type.Optional(Type.String()), stop: Type.Optional(Type.Boolean()) }),
+  handler: async (_services, run, hooks, call) => {
+    const { id = "", stop = false } = call.arguments;
+    const result = await runCodeHelper(run, hooks, { op: "shell_status", call_id: call.id, id, stop });
     call.metadata = reportedFields(result.meta);
     return result.text;
   },
-);
+});
 
-export const fileRead = tool(
-  "file_read",
-  "Read a text file as numbered lines under a `path · lines a–b of n` header. offset " +
+export const fileRead = nativeTool({
+  name: "file_read",
+  description:
+    "Read a text file as numbered lines under a `path · lines a–b of n` header. offset " +
     "is the first line (default 1); limit is how many lines (default 200, at most 500). " +
     "Lines over 400 characters are clipped. A range you already read, unchanged since, " +
     "returns a pointer to that earlier result instead of the text. Relative paths start " +
     "at the working directory; paths must stay under your home.",
-  {
-    path: { type: "string" },
-    offset: { type: "integer", minimum: 1 },
-    limit: { type: "integer", minimum: 1, maximum: 500 },
-  },
-  ["path"],
-  async (_services, run, hooks, call) => {
-    const args = call.arguments;
+  parameters: Type.Object({
+    path: Type.String(),
+    offset: Type.Optional(Type.Integer({ minimum: 1 })),
+    limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
+  }),
+  handler: async (_services, run, hooks, call) => {
+    const { path, offset, limit } = call.arguments;
     const result = await runCodeHelper(run, hooks, {
       op: "file_read",
       call_id: call.id,
-      path: args.path,
-      offset: args.offset,
-      limit: args.limit,
+      path,
+      ...(offset === undefined ? {} : { offset }),
+      ...(limit === undefined ? {} : { limit }),
     });
     call.metadata = reportedFields(result.meta);
     return result.text;
   },
-);
+});
 
-function optional(args: Record<string, unknown>, names: string[]): Record<string, unknown> {
-  const picked: Record<string, unknown> = {};
-  for (const name of names) {
-    if (args[name] !== undefined && args[name] !== null && args[name] !== "") {
-      picked[name] = args[name];
-    }
-  }
-  return picked;
-}
-
-export const codeSearch = tool(
-  "code_search",
-  "Search file text with ripgrep, respecting .gitignore. mode files (default) lists the " +
+export const codeSearch = nativeTool({
+  name: "code_search",
+  description:
+    "Search file text with ripgrep, respecting .gitignore. mode files (default) lists the " +
     "matching paths with their match counts, highest first, at most 30, then the totals: " +
     "search paths first. mode content returns path:line: text for at most 40 lines, at " +
     "most 10 matches per file, with context lines (0 to 5) around each. pattern is a " +
     "regex unless fixed; path (default the working directory) and glob (such as *.ts) " +
     "narrow it.",
-  {
-    pattern: { type: "string" },
-    mode: { type: "string", enum: ["files", "content"] },
-    path: { type: "string" },
-    glob: { type: "string" },
-    fixed: { type: "boolean" },
-    ignore_case: { type: "boolean" },
-    context: { type: "integer", minimum: 0, maximum: 5 },
-    limit: { type: "integer", minimum: 1 },
-  },
-  ["pattern"],
-  async (_services, run, hooks, call) => {
-    const args = call.arguments;
+  parameters: Type.Object({
+    pattern: Type.String(),
+    mode: Type.Optional(Type.String({ enum: ["files", "content"] })),
+    path: Type.Optional(Type.String()),
+    glob: Type.Optional(Type.String()),
+    fixed: Type.Optional(Type.Boolean()),
+    ignore_case: Type.Optional(Type.Boolean()),
+    context: Type.Optional(Type.Integer({ minimum: 0, maximum: 5 })),
+    limit: Type.Optional(Type.Integer({ minimum: 1 })),
+  }),
+  handler: async (_services, run, hooks, call) => {
+    const { pattern, mode, path, glob, context, limit, fixed = false, ignore_case = false } = call.arguments;
     const request = {
       op: "code_search",
       call_id: call.id,
-      pattern: args.pattern,
-      ...optional(args, ["mode", "path", "glob", "context", "limit"]),
-      fixed: args.fixed === true,
-      ignore_case: args.ignore_case === true,
+      pattern,
+      ...(mode ? { mode } : {}),
+      ...(path ? { path } : {}),
+      ...(glob ? { glob } : {}),
+      ...(context === undefined ? {} : { context }),
+      ...(limit === undefined ? {} : { limit }),
+      fixed,
+      ignore_case,
     };
     const result = await runCodeHelper(run, hooks, request);
     call.metadata = reportedFields(result.meta);
     return result.text;
   },
-);
+});
 
 /** The size of the agent's home in MiB, measured with `du` inside the sandbox. */
 export async function measureWorkspace(run: ToolRun, hooks: ToolHooks): Promise<number> {

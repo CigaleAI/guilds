@@ -7,11 +7,17 @@ import { decodeMasterKey } from "../../src/config/index.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import {
   QontoError,
-  callTool,
   isMissingInvoice,
+  listBankAccounts,
+  listMissingInvoices,
   ping,
   readInvoiceFile,
+  transactionDetail,
+  uploadInvoice,
 } from "../../src/connectors/qonto/client.js";
+import type { Transaction } from "../../src/connectors/qonto/responses.js";
+import { ConnectorError, type ConnectorContext } from "../../src/connectors/types.js";
+import type { FetchFn } from "../../src/net/http.js";
 import { McpPool } from "../../src/mcp/pool.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
@@ -34,7 +40,18 @@ const KEY = decodeMasterKey(HEX_MASTER_KEY);
 const TOOLS = CONNECTORS.bySlug("qonto")!.manifest.tools!;
 const CREDS = { login: "org-login", secretKey: "org-secret" };
 
-function tx(extra: Record<string, unknown> = {}): Record<string, unknown> {
+/** The context a run gives the Qonto adapter: `http` for its calls, and the agent's workspace when there is one. */
+function adapterContext(http: FetchFn, workspaceDir?: string): ConnectorContext {
+  return {
+    http,
+    remote: { initialize: async () => ({ name: "", instructions: "" }), list: async () => [], call: async () => "" },
+    connection_id: "conn_qonto",
+    settings: {},
+    ...(workspaceDir ? { workspace_dir: workspaceDir } : {}),
+  };
+}
+
+function tx(extra: Partial<Transaction> = {}): Transaction {
   return {
     id: "tx-1",
     settled_at: "2026-09-01T12:00:00.000Z",
@@ -86,9 +103,7 @@ test("readInvoiceFile reads an invoice under the workspace and nothing a link po
 
 test("list_bank_accounts maps fields and sends secret-key auth", async () => {
   let authorization = "";
-  const stored = await callTool(
-    "list_bank_accounts",
-    {},
+  const stored = await listBankAccounts(
     {
       ...CREDS,
       client: mockFetch((url, init) => {
@@ -108,13 +123,13 @@ test("list_bank_accounts refuses a body that is not JSON or does not match its s
     client: mockFetch(() => ({ status: 200, ...result })),
   });
   await assert.rejects(
-    () => callTool("list_bank_accounts", {}, answering({ json: { organization: "none" } })),
+    () => listBankAccounts(answering({ json: { organization: "none" } })),
     (error: unknown) =>
       error instanceof QontoError &&
       /^Qonto returned an unexpected response at \/organization: /.test(error.message),
   );
   await assert.rejects(
-    () => callTool("list_bank_accounts", {}, answering({ text: "not json" })),
+    () => listBankAccounts(answering({ text: "not json" })),
     (error: unknown) =>
       error instanceof QontoError && error.message === "Qonto returned a non-JSON body",
   );
@@ -122,8 +137,7 @@ test("list_bank_accounts refuses a body that is not JSON or does not match its s
 
 test("list_missing_invoices paginates, filters, and skips closed accounts", async () => {
   const seen: string[] = [];
-  const stored = await callTool(
-    "list_missing_invoices",
+  const stored = await listMissingInvoices(
     {},
     {
       ...CREDS,
@@ -180,6 +194,41 @@ test("list_missing_invoices paginates, filters, and skips closed accounts", asyn
   assert.ok(!stored.includes("lost"));
 });
 
+test("list_missing_invoices refuses a transaction that does not match its schema", async () => {
+  await assert.rejects(
+    () =>
+      listMissingInvoices(
+        { bank_account_id: "acc-1" },
+        { ...CREDS, client: mockFetch(() => ({ status: 200, json: { transactions: [{ ...tx(), amount: "12,50" }] } })) },
+      ),
+    (error: unknown) =>
+      error instanceof QontoError &&
+      /^Qonto returned an unexpected response at \/transactions\/0\/amount: must be number$/.test(error.message),
+  );
+});
+
+test("the Qonto tools decode their arguments before they call Qonto", async () => {
+  const fetched: string[] = [];
+  const ctx = adapterContext(
+    mockFetch((url) => {
+      fetched.push(url);
+      return { status: 200, json: organization() };
+    }),
+  );
+  const creds = { login: "org-login", secret_key: "org-secret" };
+  const refused = (status: number | null, pattern: RegExp) => (error: unknown) =>
+    error instanceof ConnectorError && error.status === status && pattern.test(error.message);
+  const adapter = CONNECTORS.bySlug("qonto")!.adapter;
+  assert.equal(await adapter.call!("list_bank_accounts", {}, creds, ctx), "acc-1  Main  FR76  EUR  active");
+  await assert.rejects(adapter.call!("list_bank_accounts", { extra: 1 }, creds, ctx), refused(422, /^\/extra: /));
+  await assert.rejects(adapter.call!("get_transaction", {}, creds, ctx), refused(422, /^transaction_id is required$/));
+  await assert.rejects(adapter.call!("list_missing_invoices", { min_amount: "5" }, creds, ctx), refused(422, /^\/min_amount: /));
+  await assert.rejects(adapter.call!("list_missing_invoices", { side: "sideways" }, creds, ctx), refused(422, /^\/side: /));
+  await assert.rejects(adapter.call!("upload_invoice", { transaction_id: "tx-1" }, creds, ctx), refused(422, /^file_path is required$/));
+  await assert.rejects(adapter.call!("nope", {}, creds, ctx), refused(404, /^unknown tool nope$/));
+  assert.deepEqual(fetched, ["https://thirdparty.qonto.com/v2/organization"]);
+});
+
 test("retry honors Retry-After then succeeds", async () => {
   let hits = 0;
   await ping(CREDS, {
@@ -213,7 +262,7 @@ test("401 is bad credentials and is not retried", async () => {
 test("get_transaction 404 is unknown transaction", async () => {
   await assert.rejects(
     () =>
-      callTool("get_transaction", { transaction_id: "missing" }, {
+      transactionDetail("missing", {
         ...CREDS,
         client: mockFetch(() => ({ status: 404, json: { errors: [{ detail: "Transaction not found" }] } })),
       }),
@@ -226,8 +275,7 @@ test("upload_invoice refuses a duplicate without force", async () => {
   const invoice = path.join(workspace, "receipt.pdf");
   await writeFile(invoice, "%PDF-1.4");
   let posted = false;
-  const stored = await callTool(
-    "upload_invoice",
+  const stored = await uploadInvoice(
     { transaction_id: "tx-1", file_path: "/home/a_1/receipt.pdf" },
     {
       ...CREDS,
@@ -250,7 +298,7 @@ test("upload_invoice rejects a non-pdf/jpeg/png", async () => {
   await writeFile(notes, "hello");
   await assert.rejects(
     () =>
-      callTool("upload_invoice", { transaction_id: "tx-1", file_path: "notes.txt" }, {
+      uploadInvoice({ transaction_id: "tx-1", file_path: "notes.txt" }, {
         ...CREDS,
         workspaceDir: workspace,
         client: mockFetch(() => ({ status: 200, json: {} })),
@@ -266,8 +314,7 @@ test("upload_invoice posts, reuses the idempotency key, and polls", async () => 
   const keys: string[] = [];
   let gets = 0;
   let posts = 0;
-  const stored = await callTool(
-    "upload_invoice",
+  const stored = await uploadInvoice(
     { transaction_id: "tx-1", file_path: "receipt.pdf" },
     {
       ...CREDS,

@@ -1,18 +1,11 @@
-import { Value } from "@sinclair/typebox/value";
+import type { Static } from "typebox";
 import { SYSTEM_ONE, integrationValue, type IntegrationSources } from "../instance/integrations.js";
 import { httpRequest, readJson, type FetchFn } from "../net/http.js";
 import type { TypeSafeUsage } from "../db/schema/index.js";
 import { redactApiKey } from "../llm/completion.js";
-import { decode } from "../lib/decode.js";
-import {
-  ChoiceAnswerBody,
-  ErrorBody,
-  Fields,
-  NoulAnswerBody,
-  ScoreAnswerBody,
-  SystemOneResponse,
-  Usage,
-} from "./responses.js";
+import { keepMatching } from "../lib/decode.js";
+import { isJsonObject, isObjectNode, type JsonObject, type JsonValue } from "../lib/json.js";
+import { ChoiceAnswer, ErrorBody, NoulAnswer, ScoreAnswer, SystemOneReply } from "./responses.js";
 
 export const TYPESAFE_URL = "https://api.typesafe.ai/v1/systemone";
 export const TYPESAFE_MODEL = "jev-latest";
@@ -38,8 +31,10 @@ export class TypeSafeError extends Error {
   }
 }
 
-export type TypeSafeInstructions = string | Record<string, unknown> | unknown[];
-export type TypeSafeCriteriaValue = string | null | Record<string, unknown> | unknown[];
+/** What a question asks: text, or JSON that lays the question out. */
+export type TypeSafeInstructions = string | JsonObject | JsonValue[];
+/** What one option or verdict of a question means: text, JSON that lays it out, or nothing. */
+export type TypeSafeCriteriaValue = string | null | JsonObject | JsonValue[];
 
 export type TypeSafeNoulQuestion = {
   type: "noul";
@@ -62,25 +57,11 @@ export type TypeSafeScoreQuestion = {
 export type TypeSafeQuestion =
   TypeSafeNoulQuestion | TypeSafeChoiceQuestion | TypeSafeScoreQuestion;
 
-export type TypeSafeNoulAnswer = {
-  type: "noul";
-  noul: number;
-};
+export type TypeSafeNoulAnswer = Static<typeof NoulAnswer>;
 
-export type TypeSafeChoiceAnswer = {
-  type: "choice";
-  choice: string;
-  probabilities: Record<string, number>;
-  confidence: number;
-};
+export type TypeSafeChoiceAnswer = Static<typeof ChoiceAnswer>;
 
-export type TypeSafeScoreAnswer = {
-  type: "score";
-  score: number;
-  legend: Record<string, string>;
-  probabilities: Record<string, number>;
-  confidence: number;
-};
+export type TypeSafeScoreAnswer = Static<typeof ScoreAnswer>;
 
 export type TypeSafeAnswer = TypeSafeNoulAnswer | TypeSafeChoiceAnswer | TypeSafeScoreAnswer;
 
@@ -92,7 +73,7 @@ export type TypeSafeResult = {
 
 /** One evaluation: the state TypeSafe reads and the questions it answers about it, by id. */
 export type TypeSafeRequest = {
-  state: unknown;
+  state: JsonValue;
   questions: Record<string, TypeSafeQuestion>;
 };
 
@@ -135,122 +116,106 @@ export function typeSafeModel(sources?: IntegrationSources): string {
 
 const KEY_NOT_SET = "the System One key is not set";
 
-function asTypeSafeError(error: unknown, apiKey: string | null, attempts: number): TypeSafeError {
+/** `error` as the TypeSafeError a call reports after `attempts` attempts, `apiKey` redacted. */
+function asTypeSafeError(error: Error, apiKey: string, attempts: number): TypeSafeError {
   if (error instanceof TypeSafeError) {
     error.message = redactApiKey(error.message, apiKey);
     error.attempts = attempts;
     return error;
   }
-  const message = error instanceof Error ? error.message : String(error);
-  return new TypeSafeError(redactApiKey(message, apiKey), null, attempts);
+  return new TypeSafeError(redactApiKey(error.message, apiKey), null, attempts);
 }
 
-function requireAnswerObject(value: unknown, id: string): void {
-  if (!Value.Check(Fields, value)) {
+/** The answer System One gave question `id`, as the JSON object it is read from. */
+function answerFields(answers: JsonObject, id: string): JsonObject {
+  const value = answers[id];
+  if (value === undefined || !isObjectNode(value)) {
     throw new TypeSafeError(`missing TypeSafe answer ${id}`);
   }
+  return value;
 }
 
-function isUnitInterval(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
+function invalidAnswer(type: TypeSafeQuestion["type"], id: string): TypeSafeError {
+  return new TypeSafeError(`invalid TypeSafe ${type} answer ${id}`);
 }
 
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value);
-}
-
-function isText(value: unknown): value is string {
-  return typeof value === "string";
-}
-
-/** The fields of `value` that pass `keep`, each other one dropped; empty when it is no object. */
-function keptFields<T>(value: unknown, keep: (item: unknown) => item is T): Record<string, T> {
-  const out: Record<string, T> = {};
-  if (!Value.Check(Fields, value)) {
-    return out;
+function noulAnswer(answers: JsonObject, id: string): TypeSafeNoulAnswer {
+  const answer = keepMatching(NoulAnswer, answerFields(answers, id));
+  if (answer === null) {
+    throw invalidAnswer("noul", id);
   }
-  for (const [key, item] of Object.entries(value)) {
-    if (keep(item)) {
-      out[key] = item;
-    }
-  }
-  return out;
-}
-
-function noulAnswer(value: unknown, id: string): TypeSafeNoulAnswer {
-  requireAnswerObject(value, id);
-  if (!Value.Check(NoulAnswerBody, value)) {
-    throw new TypeSafeError(`invalid TypeSafe noul answer ${id}`);
-  }
-  return { type: "noul", noul: value.noul };
-}
-
-export function requireNoul(result: TypeSafeResult, id: string): number {
-  return noulAnswer(result.answers[id], id).noul;
+  return answer;
 }
 
 function choiceAnswer(
-  value: unknown,
+  answers: JsonObject,
   id: string,
-  options?: ReadonlySet<string>,
+  options: ReadonlySet<string>,
 ): TypeSafeChoiceAnswer {
-  requireAnswerObject(value, id);
-  if (!Value.Check(ChoiceAnswerBody, value)) {
-    throw new TypeSafeError(`invalid TypeSafe choice answer ${id}`);
+  const answer = keepMatching(ChoiceAnswer, answerFields(answers, id));
+  if (answer === null) {
+    throw invalidAnswer("choice", id);
   }
-  if (options && !options.has(value.choice)) {
-    throw new TypeSafeError(`TypeSafe choice answer ${id} picked unknown option ${value.choice}`);
+  if (!options.has(answer.choice)) {
+    throw new TypeSafeError(`TypeSafe choice answer ${id} picked unknown option ${answer.choice}`);
   }
-  return {
-    type: "choice",
-    choice: value.choice,
-    probabilities: keptFields(value.probabilities, isFiniteNumber),
-    confidence: isUnitInterval(value.confidence) ? value.confidence : 0,
-  };
+  return answer;
+}
+
+function scoreAnswer(answers: JsonObject, id: string): TypeSafeScoreAnswer {
+  const answer = keepMatching(ScoreAnswer, answerFields(answers, id));
+  if (answer === null) {
+    throw invalidAnswer("score", id);
+  }
+  return answer;
+}
+
+/** The answer `result` holds for question `id`. */
+function resultAnswer(result: TypeSafeResult, id: string): TypeSafeAnswer {
+  const answer = result.answers[id];
+  if (answer === undefined) {
+    throw new TypeSafeError(`missing TypeSafe answer ${id}`);
+  }
+  return answer;
+}
+
+export function requireNoul(result: TypeSafeResult, id: string): number {
+  const answer = resultAnswer(result, id);
+  if (answer.type !== "noul") {
+    throw invalidAnswer("noul", id);
+  }
+  return answer.noul;
 }
 
 export function requireChoice(result: TypeSafeResult, id: string): TypeSafeChoiceAnswer {
-  return choiceAnswer(result.answers[id], id);
-}
-
-function scoreAnswer(value: unknown, id: string): TypeSafeScoreAnswer {
-  requireAnswerObject(value, id);
-  if (!Value.Check(ScoreAnswerBody, value)) {
-    throw new TypeSafeError(`invalid TypeSafe score answer ${id}`);
+  const answer = resultAnswer(result, id);
+  if (answer.type !== "choice") {
+    throw invalidAnswer("choice", id);
   }
-  return {
-    type: "score",
-    score: value.score,
-    legend: keptFields(value.legend, isText),
-    probabilities: keptFields(value.probabilities, isFiniteNumber),
-    confidence: isUnitInterval(value.confidence) ? value.confidence : 0,
-  };
+  return answer;
 }
 
 export function requireScore(result: TypeSafeResult, id: string): TypeSafeScoreAnswer {
-  return scoreAnswer(result.answers[id], id);
-}
-
-function choiceOptions(question: TypeSafeChoiceQuestion): ReadonlySet<string> | undefined {
-  const criteria: unknown = question.criteria;
-  if (!criteria || typeof criteria !== "object" || Array.isArray(criteria)) {
-    return undefined;
+  const answer = resultAnswer(result, id);
+  if (answer.type !== "score") {
+    throw invalidAnswer("score", id);
   }
-  return new Set(Object.keys(criteria));
+  return answer;
 }
 
+/** The answers System One gave `questions`, each read by the type of its question. */
 function parseAnswers(
-  questions: Record<string, TypeSafeQuestion>,
-  answers: Record<string, unknown>,
-): Record<string, TypeSafeAnswer> {
-  const parsed: Record<string, TypeSafeAnswer> = {};
+  questions: TypeSafeRequest["questions"],
+  answers: JsonObject,
+): TypeSafeResult["answers"] {
+  const parsed: TypeSafeResult["answers"] = {};
   for (const [id, question] of Object.entries(questions)) {
     if (question.type === "noul") {
-      parsed[id] = noulAnswer(answers[id], id);
+      parsed[id] = noulAnswer(answers, id);
     } else if (question.type === "choice") {
-      parsed[id] = choiceAnswer(answers[id], id, choiceOptions(question));
+      parsed[id] = choiceAnswer(answers, id, new Set(Object.keys(question.criteria)));
     } else {
-      parsed[id] = scoreAnswer(answers[id], id);
+      parsed[id] = scoreAnswer(answers, id);
     }
   }
   return parsed;
@@ -265,17 +230,8 @@ async function errorDetail(response: Response): Promise<string> {
     const stripped = text.trim();
     return stripped || `TypeSafe HTTP ${response.status}`;
   }
-  if (Value.Check(ErrorBody, payload)) {
-    const message = typeof payload.message === "string" ? payload.message.trim() : "";
-    if (message) {
-      return message;
-    }
-    const error = typeof payload.error === "string" ? payload.error.trim() : "";
-    if (error) {
-      return error;
-    }
-  }
-  return `TypeSafe HTTP ${response.status}`;
+  const body = isJsonObject(payload) ? keepMatching(ErrorBody, payload) : null;
+  return body?.message?.trim() || body?.error?.trim() || `TypeSafe HTTP ${response.status}`;
 }
 
 function retryableStatus(status: number): boolean {
@@ -379,19 +335,26 @@ function systemOneSender(
     : () => httpRequest(TYPESAFE_URL, init, { timeoutMs });
 }
 
-/** A System One reply as the result of `questions`; its model is `model` when it names none. */
-function systemOneResult(
-  payload: unknown,
-  questions: Record<string, TypeSafeQuestion>,
-  model: string,
-): TypeSafeResult {
-  const reply = decode(SystemOneResponse, payload, unexpected);
+/**
+ * The reply System One sent with `response`, as the result of `call`'s questions; its model is
+ * the call's when the reply names none.
+ */
+async function systemOneResult(response: Response, call: SystemOneCall): Promise<TypeSafeResult> {
+  const reply = await readJson(response);
+  if (!isJsonObject(reply)) {
+    throw unexpected("/: Expected object");
+  }
+  const answers = reply.answers;
+  if (answers === undefined || !isObjectNode(answers)) {
+    throw unexpected("/answers: Expected object");
+  }
+  const envelope = keepMatching(SystemOneReply, reply);
   const result: TypeSafeResult = {
-    model: typeof reply.model === "string" && reply.model ? reply.model : model,
-    answers: parseAnswers(questions, reply.answers),
+    model: envelope?.model || call.model,
+    answers: parseAnswers(call.questions, answers),
   };
-  if (Value.Check(Usage, reply.usage)) {
-    result.usage = reply.usage;
+  if (envelope?.usage) {
+    result.usage = envelope.usage;
   }
   return result;
 }
@@ -399,7 +362,7 @@ function systemOneResult(
 /** One System One call: how it is sent, and the questions and model its reply is read against. */
 type SystemOneCall = {
   send: () => Promise<Response>;
-  questions: Record<string, TypeSafeQuestion>;
+  questions: TypeSafeRequest["questions"];
   model: string;
 };
 
@@ -409,7 +372,7 @@ type SystemOneAttempt = { result: TypeSafeResult } | { waitMs: number };
 /**
  * Attempt number `attempt` of `call`. While it is below `maxRetries`, a connection failure or
  * timeout, or a 408, 429 or 5xx reply, comes back as the wait before the next attempt, like the
- * SDK; any other failure is thrown as a TypeSafeError.
+ * SDK; any other failure is thrown, for `evaluateSystemOne` to report as a TypeSafeError.
  */
 async function attemptSystemOne(
   call: SystemOneCall,
@@ -424,7 +387,7 @@ async function attemptSystemOne(
     if (retryable) {
       return { waitMs: backoffMs(attempt) };
     }
-    throw asTypeSafeError(error, null, attempt + 1);
+    throw error;
   }
   if (!response.ok) {
     const detail = await errorDetail(response);
@@ -433,7 +396,7 @@ async function attemptSystemOne(
     }
     throw new TypeSafeError(detail, response.status);
   }
-  return { result: systemOneResult(await readJson(response), call.questions, call.model) };
+  return { result: await systemOneResult(response, call) };
 }
 
 export async function evaluateSystemOne(
@@ -456,7 +419,8 @@ export async function evaluateSystemOne(
     try {
       outcome = await attemptSystemOne(call, attempt, maxRetries);
     } catch (error) {
-      throw asTypeSafeError(error, apiKey, attempt + 1);
+      const thrown = error instanceof Error ? error : new Error(String(error));
+      throw asTypeSafeError(thrown, apiKey, attempt + 1);
     }
     if ("result" in outcome) {
       return outcome.result;

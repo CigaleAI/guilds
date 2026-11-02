@@ -425,6 +425,13 @@ One in-process bus carries every event. Each SSE stream sends
 `: connected\n\n`, then live events only. The Builder stream also
 sends a `: keepalive\n\n` comment every 15 seconds.
 
+An event is a name and a JSON object (`StreamEvent` in
+`lib/event.ts`), written as the SSE frame's data by `http/sse.ts`.
+The Studio and Builder, guild, and inbox streams each declare their
+events and what each carries, beside the stream: `CoachEvents` in
+`conversation/runner.ts`, `GuildEvents` in `groupchat/index.ts`, and
+`InboxEvents` in `notifications/index.ts`.
+
 | Event | Stream | Class | What it says |
 |---|---|---|---|
 | `message.committed` | run, Studio, Builder | durable | A message row committed |
@@ -917,8 +924,10 @@ tab's id on every API call. It reports uncaught errors, unhandled
 rejections, React render errors, and API calls that fail with a 5xx
 or on the network to `POST /api/client-errors` (the app
 deduplicates for 30 s and sends at most 10 a minute; the endpoint
-accepts 30 a minute per address). Each report is logged with that
-request id.
+accepts 30 a minute per address). A report is its `kind` and
+`message`, with the `stack`, the page's `href` and the tab's
+`request_id` when it has them, each text; any other body is refused
+with a 422. Each report is logged with that request id.
 
 Compose json-file rotation is `max-size: 10m`, `max-file: 5`.
 `error`-level events go to Sentry when `SENTRY_DSN` is set

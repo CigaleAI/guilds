@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { SecretAccessChangeSchema } from "../secrets/access.js";
 import {
   changeSecret,

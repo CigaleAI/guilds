@@ -1,5 +1,5 @@
 import { NAME_RE } from "../lib/names.js";
-import type { FieldAuthor } from "../db/schema/index.js";
+import type { FieldAuthor, RecipeDocument } from "../db/schema/index.js";
 
 // The `guilds.recipe` document's caps and author helpers. Its schema and types sit beside the
 // `recipes` table (db/schema/recipe-document.ts), and code imports them from db/schema; the box
@@ -33,8 +33,9 @@ export function resetReview(author: FieldAuthor): FieldAuthor {
   return { by: author.by, reviewed: false };
 }
 
-export function hasForbiddenSecrets(value: unknown): boolean {
-  const text = JSON.stringify(value).toLowerCase();
+/** Whether the document carries a credential: a ciphertext, an OAuth client, a token or a private key. */
+export function hasForbiddenSecrets(document: RecipeDocument): boolean {
+  const text = JSON.stringify(document).toLowerCase();
   return (
     text.includes("ciphertext") ||
     text.includes("oauth_client") ||

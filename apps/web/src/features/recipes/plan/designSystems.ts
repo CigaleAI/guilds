@@ -1,4 +1,11 @@
-import { asArray, asObject, recipeBody, reviewLabel, type SystemDraft } from "./recipeDraft";
+import {
+  asArray,
+  asObject,
+  recipeBody,
+  reviewLabel,
+  type RecipeDraft,
+  type SystemDraft,
+} from "./recipeDraft";
 import type { RecipePlan } from "./planModel";
 import type { PlanAgent } from "./planAgents";
 
@@ -60,9 +67,9 @@ export function isPendingQuestion(system: SystemDraft | null | undefined): boole
   return questionKinds.has(systemKind(system)) || questionKinds.has(systemResolution(system));
 }
 
-/** The design systems of a recipe row or document that are still open questions. */
-export function pendingDesignQuestions(recipe: unknown): SystemDraft[] {
-  const systems = asArray(asObject(recipeBody(recipe).design).systems);
+/** The design systems of a recipe document that are still open questions. */
+export function pendingDesignQuestions(doc: RecipeDraft | null | undefined): SystemDraft[] {
+  const systems = asArray(asObject(recipeBody(doc).design).systems);
   return systems.filter((system) => isPendingQuestion(system));
 }
 

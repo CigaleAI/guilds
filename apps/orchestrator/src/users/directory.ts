@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { GuildNameTaken, LastOrgOwner } from "../db/errors.js";
 import type { OrgCreatedHook } from "../db/orgs.js";
 import { isUniqueViolation, type Queryable } from "../db/pg.js";
@@ -22,6 +22,7 @@ import {
   validateUserColor,
   validateUserEmail,
   validateUserName,
+  type UserItem,
 } from "./index.js";
 
 /** A change to the user directory refused, with the HTTP status it answers with. */
@@ -46,18 +47,14 @@ export type UserDraft = Static<typeof UserDraftSchema>;
 /** The email a user is identified by; null clears it. */
 export const UserEmailSchema = Type.Object({ email: Type.Union([Type.String(), Type.Null()]) });
 
-export type UserItem = ReturnType<typeof userItem>;
-
-/** The 409 for a user insert or update that broke a unique index; any other error as it is. */
-function userConflict(error: unknown): unknown {
-  if (!isUniqueViolation(error)) {
-    return error;
+/** The 409 for a user insert or update that broke a unique index; null for any other failure. */
+function userConflict(cause: unknown): UserError | null {
+  if (!isUniqueViolation(cause)) {
+    return null;
   }
-  const index =
-    typeof error === "object" && error !== null && "constraint" in error ? error.constraint : null;
   return new UserError(
     409,
-    index === "users_email_lower_unique"
+    cause.constraint === "users_email_lower_unique"
       ? "email already belongs to a user"
       : "user name already exists",
   );
@@ -86,7 +83,7 @@ export async function createUser(
   try {
     return userItem(await insertUser(db, user, new Date(), orgCreated));
   } catch (error) {
-    throw userConflict(error);
+    throw userConflict(error) ?? error;
   }
 }
 
@@ -101,7 +98,7 @@ export async function changeUserEmail(
   try {
     row = await setUserEmail(db, userId, address, new Date());
   } catch (error) {
-    throw userConflict(error);
+    throw userConflict(error) ?? error;
   }
   if (row === null) {
     throw new UserError(404, "user not found");

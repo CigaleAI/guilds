@@ -397,6 +397,35 @@ test("refresh invalid_grant is reauth", async () => {
   );
 });
 
+test("a token response's field of another type counts as left out, and one without an access token fails", async () => {
+  const discovery: OAuthDiscovery = {
+    resource: "",
+    authorization_endpoint: "https://mcp.example/authorize",
+    token_endpoint: "https://mcp.example/token",
+    registration_endpoint: null,
+    scopes: [],
+    access_type: null,
+  };
+  const grant = { refreshToken: "ref", clientId: "cid", clientSecret: null };
+  const lenient = mockFetch(() => ({
+    status: 200,
+    json: { access_token: "tok", refresh_token: "", expires_in: "3600", token_type: 7, email_domain: "acme.com" },
+  }));
+  const tokens = await refreshTokens(discovery, grant, { client: lenient });
+  const now = new Date("2026-09-12T00:00:00.000Z");
+  assert.deepEqual(tokenPayload(tokens, now, { refresh_token: "kept", expires_at: "2026-09-12T01:00:00.000Z" }), {
+    access_token: "tok",
+    refresh_token: "kept",
+    token_type: "Bearer",
+    expires_at: "2026-09-12T01:00:00.000Z",
+    email_domain: "acme.com",
+  });
+  await assert.rejects(
+    refreshTokens(discovery, grant, { client: mockFetch(() => ({ status: 200, json: { token_type: "Bearer" } })) }),
+    { name: "OAuthError", message: "token response is missing access_token" },
+  );
+});
+
 test("register 400 includes provider error", async () => {
   const discovery: OAuthDiscovery = {
     resource: "https://mcp.notion.com",

@@ -4,8 +4,8 @@ import { attachmentBlobUrl } from "../../../api/attachments";
 import { liveTurnActive, type LiveTurn } from "../../../api/liveTurn";
 import type { ToolProgress } from "../../../api/toolProgress";
 import type { AgentDetail } from "../../../api/types/agents";
-import type { MessageAttachment, Run, RunMessage } from "../../../api/types/runs";
-import { isJsonObject } from "../../../api/wire";
+import type { MessageAttachment, MessageMetadata, Run, RunMessage } from "../../../api/types/runs";
+import type { SecretRequest } from "../../../api/types/secrets";
 import { agentLook } from "../../../app/agents";
 import { isoTime, messageTime } from "../../../app/format";
 import { useIdentity } from "../../../app/identity";
@@ -25,7 +25,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@guildsrun/ui";
-import { askedRequest, type SecretRequest } from "../../access/secrets";
+import { askedRequest } from "../../access/secrets";
 import {
   buildFlowSegments,
   turnReasoning,
@@ -51,35 +51,9 @@ type TranscriptProps = {
   onAskCall?: ((call: FlowCall) => void) | undefined;
 };
 
-const ATTACHMENT_KINDS = ["image", "file"] as const;
-
-function isAttachmentKind(value: unknown): value is MessageAttachment["kind"] {
-  const kinds: readonly unknown[] = ATTACHMENT_KINDS;
-  return kinds.includes(value);
-}
-
-/** Whether a value is an attachment reference a user message stores, its id, filename and MIME type filled. */
-function isMessageAttachment(value: unknown): value is MessageAttachment {
-  if (!isJsonObject(value)) return false;
-  const { id, filename, mime, kind } = value;
-  return (
-    typeof id === "string" &&
-    id !== "" &&
-    typeof filename === "string" &&
-    filename !== "" &&
-    typeof mime === "string" &&
-    mime !== "" &&
-    isAttachmentKind(kind)
-  );
-}
-
-/** The attachments a user message's metadata references; a malformed reference is left out. */
-export function messageAttachments(meta: Record<string, unknown>): MessageAttachment[] {
-  const raw = meta.attachments;
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .filter(isMessageAttachment)
-    .map(({ id, filename, mime, kind }) => ({ id, filename, mime, kind }));
+/** The attachments a user message's metadata references. */
+export function messageAttachments(meta: MessageMetadata): MessageAttachment[] {
+  return meta.attachments ?? [];
 }
 
 /** An attached image as a blob URL, or `null` when it cannot be fetched and its filename shows instead. */
@@ -146,11 +120,13 @@ function WakeNote({ icon, children }: WakeNoteProps) {
 }
 
 /** The secret_request calls in a flow that asked the operator, each with its call id. */
-function secretRequests(flow: FlowSegment): Array<{ id: string; request: SecretRequest }> {
+function secretRequests(
+  flow: FlowSegment<RunMessage>,
+): Array<{ id: string; request: SecretRequest }> {
   return flow.steps.flatMap((step) =>
     step.calls.flatMap((call) => {
-      if (call.call.function?.name !== "secret_request") return [];
-      const request = askedRequest(call.call.function.arguments, call.result?.payload?.content);
+      if (call.call.function.name !== "secret_request") return [];
+      const request = askedRequest(call.call.function.arguments, call.result?.payload.content);
       return request ? [{ id: `${call.id}:${call.position}`, request }] : [];
     }),
   );
@@ -158,7 +134,7 @@ function secretRequests(flow: FlowSegment): Array<{ id: string; request: SecretR
 
 /** When a message was written, as a chat row shows it; nothing for a message without a time. */
 function messageStamp(message: RunMessage): { time?: string; dateTime?: string } {
-  const createdAt = typeof message.created_at === "string" ? message.created_at : "";
+  const createdAt = message.created_at;
   return createdAt ? { time: messageTime(createdAt), dateTime: isoTime(createdAt) } : {};
 }
 
@@ -235,7 +211,7 @@ function TranscriptMessage({ agent, message }: TranscriptMessageProps) {
 type TranscriptFlowProps = {
   agent: AgentDetail;
   run: Run;
-  flow: FlowSegment;
+  flow: FlowSegment<RunMessage>;
   progress: ToolProgress | undefined;
   reveal: RevealStep | undefined;
   onAskCall: ((call: FlowCall) => void) | undefined;

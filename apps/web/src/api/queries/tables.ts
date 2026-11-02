@@ -6,6 +6,7 @@ import {
 import { api } from "../client";
 import { accessKeys } from "./access";
 import type {
+  RecordBody,
   Collection,
   CollectionRecord,
   RecordsPage,
@@ -110,7 +111,7 @@ export function useDeleteDatabase() {
 export function useAddRecord(id: string) {
   const refresh = useDatabasesRefresh();
   return useMutation({
-    mutationFn: (body: Record<string, unknown>) =>
+    mutationFn: (body: RecordBody) =>
       api<{ record: CollectionRecord; merged: number | null }>(`${collectionPath(id)}/records`, {
         method: "POST",
         body: { body },

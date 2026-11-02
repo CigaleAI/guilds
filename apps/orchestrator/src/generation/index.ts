@@ -18,7 +18,7 @@ import {
   reopenRun,
   type RunRow,
 } from "../db/runs.js";
-import { runItem } from "../db/views.js";
+import { runItem, type RunView } from "../db/views.js";
 import { guildGroupChat, type GroupChat } from "../groupchat/index.js";
 import type { GroupDelivery, GroupRunner } from "../groupchat/delivery.js";
 import type { GroupRouter } from "../groupchat/router.js";
@@ -386,7 +386,7 @@ export class GenerationLoop implements GroupRunner {
     }
   }
 
-  async resumeRun(runId: string): Promise<Record<string, unknown>> {
+  async resumeRun(runId: string): Promise<RunView> {
     const run = await this.db.getRun(runId);
     if (run === null) {
       throw new RunRequestError(404, "run not found");
@@ -416,7 +416,7 @@ export class GenerationLoop implements GroupRunner {
     runId: string,
     content: string,
     attachments: AttachmentRef[] = [],
-  ): Promise<Record<string, unknown>> {
+  ): Promise<RunView> {
     const run = await this.runTakingMessages(runId);
     try {
       await this.beginGeneration(runId, run.agent_id);
@@ -477,7 +477,7 @@ export class GenerationLoop implements GroupRunner {
     return generation;
   }
 
-  async cancel(runId: string): Promise<Record<string, unknown> | null> {
+  async cancel(runId: string): Promise<RunView | null> {
     const run = await this.db.getRun(runId);
     if (run === null) {
       throw new RunRequestError(404, "run not found");
@@ -530,15 +530,15 @@ export class GenerationLoop implements GroupRunner {
     await this.machines.armIdleForRunning();
   }
 
-  async listRunViews(agentId: string): Promise<Array<Record<string, unknown>>> {
+  async listRunViews(agentId: string): Promise<RunView[]> {
     return (await this.db.listRuns(agentId)).map((item) => this.runView(item));
   }
 
-  runView(row: RunRow): Record<string, unknown> {
+  runView(row: RunRow): RunView {
     return runItem(row, this.isGenerating(row.id));
   }
 
-  private async currentRunView(runId: string): Promise<Record<string, unknown>> {
+  private async currentRunView(runId: string): Promise<RunView> {
     const row = await this.db.getRun(runId);
     if (row === null) {
       throw new RunRequestError(404, "run not found");

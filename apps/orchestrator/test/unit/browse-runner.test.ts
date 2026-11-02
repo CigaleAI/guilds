@@ -33,7 +33,7 @@ afterEach(() => {
 
 function browseContext(overrides: Partial<BrowseContext> = {}): BrowseContext {
   return {
-    env: { TYPESAFE_API_KEY: "ts-key" },
+    env: { ...FASTBROWSE_PINNED_ENV, TYPESAFE_API_KEY: "ts-key" },
     model: "openai/gpt-5",
     target: TARGET,
     signal: new AbortController().signal,
@@ -120,7 +120,7 @@ test("a browse run starts fastbrowse on the bridge, reports each step in order, 
   assert.deepEqual(fastbrowse.calls, ["start", "run", "close"]);
   const [started] = fastbrowse.started;
   assert.ok(started);
-  assert.deepEqual(started.env, { TYPESAFE_API_KEY: "ts-key" });
+  assert.deepEqual(started.env, { ...FASTBROWSE_PINNED_ENV, TYPESAFE_API_KEY: "ts-key" });
   assert.equal(started.attach, true);
   assert.equal(started.foreground, true);
   assert.equal(started.local, undefined);

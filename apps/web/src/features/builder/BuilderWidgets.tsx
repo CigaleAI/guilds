@@ -2,20 +2,22 @@ import { Check, Link2 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useIdentity } from "../../app/identity";
 import { Button, Select, TextField, cn, Icon, Tag } from "@guildsrun/ui";
+import type {
+  ConnectScope,
+  ConnectServer,
+  ConnectWidget,
+  QuestionWidget,
+} from "../../api/types/builder";
+import { isConnectScope } from "../../api/wire";
 import { useServerConnect } from "../access/ConnectDialogs";
 import {
   answeredAll,
   answerMessage,
   connectReplies,
   initialServerId,
-  isConnectScope,
   pickedServer,
   serverName,
   type Answer,
-  type ConnectScope,
-  type ConnectWidget,
-  type QuestionWidget,
-  type WidgetServer,
 } from "./widgets";
 
 const scopeLabel: Record<ConnectScope, string> = {
@@ -74,12 +76,12 @@ type ConnectCardProps = WidgetProps & { widget: ConnectWidget };
 export function ConnectCard({ widget, answered, live, onReply }: ConnectCardProps) {
   const { org } = useIdentity();
   const [picked, setPicked] = useState(initialServerId(widget));
-  const [scope, setScope] = useState<ConnectScope>(widget.recommendedScope);
+  const [scope, setScope] = useState<ConnectScope>(widget.recommended_scope);
   const [done, setDone] = useState<string | null>(null);
   const server = pickedServer(widget, picked);
   const name = serverName(server);
   const orgConnected =
-    scope === "org" && (widget.alreadyConnected || server?.connection_state === "connected");
+    scope === "org" && (widget.already_connected || server?.connection_state === "connected");
   const settle = (status: string, reply: string) => {
     setDone(status);
     onReply(reply);
@@ -115,7 +117,7 @@ export function ConnectCard({ widget, answered, live, onReply }: ConnectCardProp
       settled={settledStatus !== null}
     >
       {widget.reason ? <p className="text-sm text-fg-2">{widget.reason}</p> : null}
-      {widget.storageHint ? <p className="text-xs text-muted">{widget.storageHint}</p> : null}
+      {widget.storage_hint ? <p className="text-xs text-muted">{widget.storage_hint}</p> : null}
       {settledStatus === null ? (
         <>
           <ConnectFields
@@ -175,18 +177,18 @@ function ConnectFields({ widget, picked, onPick, scope, onScope }: ConnectFields
         label="Where it logs in"
         className="min-w-48"
         value={scope}
-        disabled={widget.allowedScopes.length < 2}
+        disabled={widget.allowed_scopes.length < 2}
         onValueChange={(value) => {
           if (isConnectScope(value)) onScope(value);
         }}
-        options={widget.allowedScopes.map((value) => ({ value, label: scopeLabel[value] }))}
+        options={widget.allowed_scopes.map((value) => ({ value, label: scopeLabel[value] }))}
       />
     </div>
   );
 }
 
 type ConnectActionsProps = {
-  server: WidgetServer | null;
+  server: ConnectServer | null;
   /** How the card names the server. */
   name: string;
   scope: ConnectScope;
@@ -306,7 +308,7 @@ export function QuestionCard({ widget, answered, live, onReply, kicker }: Questi
                       onClick={() =>
                         update(question.id, (current) => ({
                           ...current,
-                          picked: question.multiSelect
+                          picked: question.multi_select
                             ? on
                               ? current.picked.filter((id) => id !== option.id)
                               : [...current.picked, option.id]
@@ -329,7 +331,7 @@ export function QuestionCard({ widget, answered, live, onReply, kicker }: Questi
                 })}
               </div>
             ) : null}
-            {question.allowOther ? (
+            {question.allow_other ? (
               <TextField
                 tone="paper"
                 label={question.options.length ? "Other" : "Your answer"}

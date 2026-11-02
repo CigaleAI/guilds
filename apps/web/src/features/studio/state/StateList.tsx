@@ -27,15 +27,16 @@ import {
   itemsAwaitingApproval,
   stateFlagLabels,
   type StateSortKey,
+  type StateWindowHours,
 } from "./stateModel";
 
 const hoursKey = "studio.state.hours";
-const windowLabel: Record<number, string> = { 24: "24 h", 72: "3 d", 168: "7 d" };
+const windowLabel: Record<StateWindowHours, string> = { 24: "24 h", 72: "3 d", 168: "7 d" };
 
 /** The window State last showed, remembered in this browser. */
-export function storedStateHours(): number {
+export function storedStateHours(): StateWindowHours {
   const value = Number(readStored(hoursKey));
-  return STATE_WINDOW_HOURS.includes(value) ? value : STATE_DEFAULT_HOURS;
+  return STATE_WINDOW_HOURS.find((hours) => hours === value) ?? STATE_DEFAULT_HOURS;
 }
 
 /**
@@ -66,7 +67,7 @@ export function StateList() {
       />
     );
   }
-  const changeHours = (next: number) => {
+  const changeHours = (next: StateWindowHours) => {
     setHours(next);
     writeStored(hoursKey, String(next));
   };
@@ -75,18 +76,24 @@ export function StateList() {
   );
 }
 
-const sortKeys: Record<string, StateSortKey> = {
+/** The order each sortable column sorts by. */
+const sortKeys = {
   item: "name",
   changes: "changes",
   reads: "reads",
   last: "last",
-};
+} satisfies Record<string, StateSortKey>;
+
+/** Whether the table sorts by a column State orders by. */
+function isSortColumn(columnId: string): columnId is keyof typeof sortKeys {
+  return Object.hasOwn(sortKeys, columnId);
+}
 
 type StateTableProps = {
   rows: StateItemRow[];
   waiting: Set<string>;
-  hours: number;
-  onHoursChange: (hours: number) => void;
+  hours: StateWindowHours;
+  onHoursChange: (hours: StateWindowHours) => void;
 };
 
 function StateTable({ rows, waiting, hours, onHoursChange }: StateTableProps) {
@@ -95,7 +102,7 @@ function StateTable({ rows, waiting, hours, onHoursChange }: StateTableProps) {
   const [needsLook, setNeedsLook] = useState(false);
   const [sort, setSort] = useState<DataTableSort>({ columnId: "changes", direction: "descending" });
   const shown = filterStateRows(rows, { needsLook, query }, waiting, {
-    key: sortKeys[sort.columnId] ?? "changes",
+    key: isSortColumn(sort.columnId) ? sortKeys[sort.columnId] : "changes",
     descending: sort.direction === "descending",
   });
   return (
@@ -118,10 +125,13 @@ function StateTable({ rows, waiting, hours, onHoursChange }: StateTableProps) {
               mono
               label="Window"
               value={String(hours)}
-              onValueChange={(value) => onHoursChange(Number(value))}
+              onValueChange={(value) => {
+                const next = STATE_WINDOW_HOURS.find((window) => String(window) === value);
+                if (next) onHoursChange(next);
+              }}
               options={STATE_WINDOW_HOURS.map((value) => ({
                 value: String(value),
-                label: windowLabel[value] ?? `${value} h`,
+                label: windowLabel[value],
               }))}
             />
           </>

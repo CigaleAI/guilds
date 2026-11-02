@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { type Static, Type } from "typebox";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import type pg from "pg";
-import { isPlainRecord } from "./json.js";
+import { assertMatches } from "../lib/decode.js";
 
 /**
  * Core's committed migrations, and the checks around applying them. The migrator applies a
@@ -41,11 +42,25 @@ export function committedMigrations(folder: string): CommittedMigration[] {
   }));
 }
 
-/** The tag of each entry of the folder's journal, in order; an entry without one has none. */
-function journalTags(folder: string): Array<string | undefined> {
-  const journal: unknown = JSON.parse(readFileSync(path.join(folder, "meta", "_journal.json"), "utf8"));
-  const entries: unknown[] = isPlainRecord(journal) && Array.isArray(journal.entries) ? journal.entries : [];
-  return entries.map((entry) => (isPlainRecord(entry) && typeof entry.tag === "string" ? entry.tag : undefined));
+/**
+ * A migrations folder's `meta/_journal.json`, as drizzle-kit writes it: an entry per migration in
+ * order, each tagged with the name of its SQL file.
+ */
+const MigrationJournal = Type.Object({ entries: Type.Array(Type.Object({ tag: Type.String() })) });
+
+type MigrationJournal = Static<typeof MigrationJournal>;
+
+/** The folder's journal; one that does not match throws. */
+function readJournal(folder: string): MigrationJournal {
+  const file = path.join(folder, "meta", "_journal.json");
+  const journal: unknown = JSON.parse(readFileSync(file, "utf8"));
+  assertMatches(MigrationJournal, journal, (problem) => new Error(`${file}: ${problem}`));
+  return journal;
+}
+
+/** The tag of each entry of the folder's journal, in order. */
+function journalTags(folder: string): string[] {
+  return readJournal(folder).entries.map((entry) => entry.tag);
 }
 
 /** A migration the database has recorded: its SQL's hash and its stamp, a `bigint` read as a string. */

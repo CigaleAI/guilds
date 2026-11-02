@@ -1,12 +1,11 @@
 import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import path from "node:path";
-import { validateAgentConfig } from "../agents/config.js";
-import { AgentValidationError } from "../agents/validation.js";
+import { AgentValidationError, validateAgentConfig } from "../agents/validation.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
 import { setMachineHarnesses } from "../db/machines.js";
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import type { AgentConfig } from "../db/schema/index.js";
-import { agentDirectory, machineDirectory, machineFromRow, type AgentNeeds } from "../machines/index.js";
+import { agentDirectory, machineDirectory, type AgentNeeds } from "../machines/index.js";
 import { moveAgent } from "../machines/placement.js";
 import { errorMessage, errorName, writeLog } from "../observability/log.js";
 import {
@@ -59,7 +58,7 @@ export function agentMachine(agent: AgentRow): MachineSpec {
   return machineSpec({
     id: agent.machine_id,
     org_id: agent.org_id,
-    box: machineFromRow({ box: agent.machine_box }).box,
+    box: agent.machine_box,
     // A numeric column reads as text.
     cpu: agent.machine_cpu === null ? null : Number(agent.machine_cpu),
     memory_mib: agent.machine_memory_mib,
@@ -401,8 +400,8 @@ export class AgentMachines {
       return;
     }
     this.harnessReports.set(machineId, listed.join(" "));
-    void Promise.resolve(this.db.setMachineHarnesses?.(machineId, listed)).catch((error: unknown) => {
-      writeLog("warn", errorMessage(error), { operation: "machine.harnesses", error_type: errorName(error) });
+    void Promise.resolve(this.db.setMachineHarnesses?.(machineId, listed)).catch((cause: unknown) => {
+      writeLog("warn", errorMessage(cause), { operation: "machine.harnesses", error_type: errorName(cause) });
     });
   }
 

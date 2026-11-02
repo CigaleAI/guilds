@@ -3,6 +3,7 @@ import { completionMetadata } from "../helpers/generation.js";
 import { test } from "node:test";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import type { OrgModelProviderRow } from "../../src/db/orgs.js";
+import type { JsonObject } from "../../src/lib/json.js";
 import {
   ModelNotConnectedError,
   assertModelConnected,
@@ -16,7 +17,7 @@ import {
 import { PolicyError } from "../../src/policy/index.js";
 import { TEST_MASTER_KEY } from "../helpers/models.js";
 
-function row(payload: Record<string, unknown>): OrgModelProviderRow {
+function row(payload: JsonObject): OrgModelProviderRow {
   const [ciphertext, nonce] = encryptPayload(payload, TEST_MASTER_KEY);
   return {
     id: "mp_1",

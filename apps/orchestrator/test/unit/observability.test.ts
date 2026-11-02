@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import Fastify from "fastify";
 import { registerErrorHandler } from "../../src/http/error-handler.js";
-import { HttpError } from "../../src/http/errors.js";
+import { HttpError, validationHttp } from "../../src/http/errors.js";
 import { registerClientErrorRoute } from "../../src/observability/client-errors.js";
 import {
   fastifyRequestIdOptions,
@@ -58,6 +58,9 @@ async function testApp() {
   const app = Fastify({
     logger: false,
     ...fastifyRequestIdOptions(),
+    // As `buildApp` does: a route's schema refuses a value of the wrong type, with a 422.
+    ajv: { customOptions: { coerceTypes: false, verbose: true } },
+    schemaErrorFormatter: validationHttp,
   });
   registerHttpObservability(app);
   registerErrorHandler(app);
@@ -175,6 +178,24 @@ test("client errors are ingested as frontend stdout logs", async () => {
     assert.equal(errorLine.error_type, "client.onerror");
     assert.equal(captured.sentry.length, 1);
     assert.equal((captured.sentry[0]?.[2] as { source?: string }).source, "frontend");
+  } finally {
+    await app.close();
+  }
+});
+
+test("a client error body that is not a report is refused and not logged", async () => {
+  const app = await testApp();
+  try {
+    const captured = await captureStdout(async () => {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/client-errors",
+        payload: { kind: "onerror", message: 42 },
+      });
+      assert.equal(response.statusCode, 422);
+    });
+    assert.equal(captured.lines.some((line) => line.operation === "client.error"), false);
+    assert.equal(captured.sentry.length, 0);
   } finally {
     await app.close();
   }

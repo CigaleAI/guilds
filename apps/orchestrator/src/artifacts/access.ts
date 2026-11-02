@@ -1,5 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
-import { isPlainRecord } from "../db/json.js";
+import { Type, type Static } from "typebox";
 import { ArtifactError } from "./errors.js";
 import {
   isAccessMode,
@@ -12,9 +11,9 @@ import {
 } from "./types.js";
 import type { AccessMode } from "../db/schema/index.js";
 
-/** A mode read back from SQL: `read` or `write`, null for `none` or no row. */
-export function reachedMode(value: unknown): AccessMode | null {
-  return isAccessMode(value) ? value : null;
+/** The mode an access list's row gives, read back from SQL: `read` or `write`, null for `none` or no row. */
+export function reachedMode(value: AgentAccessMode | null): AccessMode | null {
+  return value === "none" ? null : value;
 }
 
 /**
@@ -41,12 +40,11 @@ export function createsWritable(level: ArtifactLevel): boolean {
  * One validated grant from the operator; `none` belongs to agents alone.
  * `where` prefixes each error, naming the grant's place in a list.
  */
-export function parseGrant(value: unknown, where = ""): AccessGrant {
-  const item: Record<string, unknown> = isPlainRecord(value) ? value : {};
+export function parseGrant(item: SubjectEntry, where = ""): AccessGrant {
   if (!isAccessSubject(item.type)) {
     throw new ArtifactError(`${where}type must be org, guild, or agent`, 422);
   }
-  const id = typeof item.id === "string" ? item.id.trim() : "";
+  const id = item.id.trim();
   if (!id) {
     throw new ArtifactError(`${where}id is required`, 422);
   }
@@ -88,11 +86,11 @@ export function grantKey(grant: AccessSubjectRef): string {
   return `${grant.type}:${grant.id}`;
 }
 
+/** What going from one access list to another takes: the rows to write, and the subjects to drop. */
+export type GrantDiff = { upserts: AccessGrant[]; removals: AccessGrant[] };
+
 /** The rows to write and the subjects to drop to go from `before` to `after`. */
-export function diffGrants(
-  before: AccessGrant[],
-  after: AccessGrant[],
-): { upserts: AccessGrant[]; removals: AccessGrant[] } {
+export function diffGrants(before: AccessGrant[], after: AccessGrant[]): GrantDiff {
   const old = new Map(before.map((grant) => [grantKey(grant), grant.mode]));
   const wanted = new Set(after.map(grantKey));
   return {

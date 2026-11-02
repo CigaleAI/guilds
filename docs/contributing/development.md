@@ -361,9 +361,9 @@ drizzle-kit reads.
 
 Every package also runs the limits of the
 [code guidelines](code-guidelines.md#functions) on its source,
-tests and stories excepted: Oxlint's `complexity`, `max-depth`, an
-error at five parameters, a warning past 800 lines and, from the
-limits plugin (`lint/limits.js`), an error past 1,000, a refusal of
+tests and stories excepted: Oxlint's `max-depth`, a warning past a
+complexity of 11 and at five parameters, a warning past 800 lines
+and, from the limits plugin (`lint/limits.js`), an error past 1,000, a refusal of
 every type assertion except `as const`, and a refusal of a silent
 catch: a `catch` that neither throws nor returns, a `catch` whose
 only exit is a bare `return;`, and a promise's `.catch()` whose

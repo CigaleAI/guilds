@@ -1,9 +1,10 @@
-import { Type, type Static, type TSchema } from "@sinclair/typebox";
+import { Type, type Static, type TSchema } from "typebox";
 import type { CollectionColumn } from "./artifacts.js";
 import type { AccessMode } from "./artifacts.js";
 import type { WakeWindow } from "./agents.js";
 import type { ConnectionResource } from "./coaches.js";
-import type { Manifest } from "./connectors.js";
+import type { Manifest, ToolInputSchema } from "./connectors.js";
+import type { JsonObject } from "../../lib/json.js";
 
 // The `guilds.recipe` document `recipes.body` holds: its schema, and the types of the document
 // the box reads it into, with who wrote each reviewable field.
@@ -79,7 +80,7 @@ export type RecipeRole = {
   avatar_shape: string;
   avatar_color: string;
   /** The author's agent config keys; validation reports the ones the box does not take. */
-  config: Record<string, unknown>;
+  config: JsonObject;
   task: { body: string; embeds: string[]; author: FieldAuthor };
   scripts: RecipeScript[];
   schedules: RecipeSchedule[];
@@ -90,7 +91,7 @@ export type RecipeRole = {
 export type RecipeScript = {
   name: string;
   description: string;
-  parameters: Record<string, unknown> | null;
+  parameters: ToolInputSchema | null;
   source: string;
   secrets: string[];
   author: FieldAuthor;

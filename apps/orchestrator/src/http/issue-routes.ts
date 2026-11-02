@@ -1,11 +1,10 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { requireVisibleGuild } from "../guilds/access.js";
 import { guildIssues } from "../issues/index.js";
 import { changeIssueStatus, resolveGuildIssues, type IssueWriteDeps } from "../issues/operator.js";
 import type { AppDeps, RouteApp } from "./deps.js";
 import { currentUser } from "./identity.js";
 import { GuildParams } from "./params.js";
-import type { UserRow } from "../db/users.js";
 
 /** Which of a guild's issues to list: `open`, `resolved`, or every one when left out or `all`. */
 const IssueListQuery = Type.Object({ status: Type.Optional(Type.String()) });
@@ -15,10 +14,6 @@ const IssueParams = Type.Object({ guild_id: Type.String(), issue_id: Type.String
 
 /** The status an issue is set to. */
 const IssueStatusBody = Type.Object({ status: Type.String() });
-
-function resolverOf(user: UserRow): string {
-  return typeof user.name === "string" ? user.name : "user";
-}
 
 /** A guild's issues: listed, resolved together, and set open or resolved one at a time. */
 export async function registerIssueRoutes(app: RouteApp, deps: AppDeps): Promise<void> {
@@ -42,7 +37,7 @@ export async function registerIssueRoutes(app: RouteApp, deps: AppDeps): Promise
     async (request) => {
       const user = await currentUser(db, request, deps);
       const guild = await requireVisibleGuild(db, request.params.guild_id, user.id);
-      return { resolved: await resolveGuildIssues(writes, guild.id, resolverOf(user)) };
+      return { resolved: await resolveGuildIssues(writes, guild.id, user.name) };
     },
   );
 
@@ -53,7 +48,7 @@ export async function registerIssueRoutes(app: RouteApp, deps: AppDeps): Promise
       const user = await currentUser(db, request, deps);
       const guild = await requireVisibleGuild(db, request.params.guild_id, user.id);
       const issue = { guildId: guild.id, issueId: request.params.issue_id };
-      return changeIssueStatus(writes, issue, request.body.status, resolverOf(user));
+      return changeIssueStatus(writes, issue, request.body.status, user.name);
     },
   );
 }

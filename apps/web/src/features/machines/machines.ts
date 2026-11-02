@@ -144,11 +144,14 @@ export function chosenMachine<T extends { id: string }>(
 /** A machine's planned load on one resource: what is there, what a placement adds, and the capacity. */
 export type LoadShare = { planned: number; adds: number; capacity: number; over: boolean };
 
+/** A machine's planned load on its CPUs and on its memory. */
+export type MachineLoad = { cpu: LoadShare; memory: LoadShare };
+
 /** What adding `adds` to a machine's planned load does, CPUs and memory each. */
 export function loadShares(
   machine: Pick<Machine, "cpu" | "memory_mib" | "planned_cpu" | "planned_mib">,
   adds: MachineSize = { cpu: 0, memory_mib: 0 },
-): { cpu: LoadShare; memory: LoadShare } {
+): MachineLoad {
   const capacity = machineCapacity(machine);
   const share = (planned: number, add: number, cap: number): LoadShare => ({
     planned,
@@ -163,14 +166,24 @@ export function loadShares(
 }
 
 /**
- * What an agent placed on a machine does to it: whether the machine meets the agent's minimum, and
- * the machine's planned load without the agent with what it adds. An agent already on the machine
- * counts once, with the needs it is given here.
+ * What an agent placed on a machine does to it: whether the machine meets the agent's minimum, the
+ * machine's planned load without the agent, and what the agent adds to it.
+ */
+export type PlacementBudget = {
+  fits: boolean;
+  minimum: MachineSize;
+  planned: MachineSize;
+  adds: MachineSize;
+};
+
+/**
+ * The placement budget of an agent on a machine. An agent already on the machine counts once, with
+ * the needs it is given here.
  */
 export function placementBudget(
   machine: Pick<Machine, "cpu" | "memory_mib" | "planned_cpu" | "planned_mib" | "agents">,
   agent: AgentToPlace,
-): { fits: boolean; minimum: MachineSize; planned: MachineSize; adds: MachineSize } {
+): PlacementBudget {
   const current = machine.agents.find((item) => item.id === agent.id);
   const own = current ? agentMinimum(current) : { cpu: 0, memory_mib: 0 };
   const minimum = agentMinimum(agent);
@@ -190,22 +203,28 @@ export const minSeededDiskMib = 1024;
 
 /**
  * What an agent's own disk cap does to its machine's disk: the free disk as last measured (null
- * before a measure), what the other agents' caps reserve, the room they leave unreserved, and
- * whether this cap passes it, so the machine's cap could stop the agent before its own does. An
- * agent already on the machine gives its saved cap as `ownMib`, which the reserve then leaves out.
+ * before a measure), what the other agents' caps reserve, the room they leave unreserved, the cap
+ * the agent adds, the machine's cap, and whether the agent's cap passes the unreserved room, so the
+ * machine's cap could stop the agent before its own does.
  */
-export function diskBudget(
-  machine: Pick<Machine, "max_workspace_mib" | "workspace_mib" | "allocated_workspace_mib">,
-  capMib: number,
-  ownMib = 0,
-): {
+export type DiskBudget = {
   freeMib: number | null;
   othersMib: number;
   unreservedMib: number;
   addsMib: number;
   machineMib: number;
   over: boolean;
-} {
+};
+
+/**
+ * The disk budget of an agent's cap on a machine. An agent already on the machine gives its saved
+ * cap as `ownMib`, which the reserve then leaves out.
+ */
+export function diskBudget(
+  machine: Pick<Machine, "max_workspace_mib" | "workspace_mib" | "allocated_workspace_mib">,
+  capMib: number,
+  ownMib = 0,
+): DiskBudget {
   const machineMib = machine.max_workspace_mib;
   const othersMib = Math.max(0, machine.allocated_workspace_mib - ownMib);
   const unreservedMib = Math.max(0, machineMib - othersMib);

@@ -1,6 +1,17 @@
-import { Value } from "@sinclair/typebox/value";
-import { ManifestSchema, SLUG_PATTERN, type AuthField, type Manifest } from "../db/schema/index.js";
+import { Value } from "typebox/value";
+import {
+  ManifestSchema,
+  SLUG_PATTERN,
+  type AuthField,
+  type ListedTool,
+  type Manifest,
+  type ManifestSource,
+  type ManifestTool,
+} from "../db/schema/index.js";
+import type { JsonValue } from "../lib/json.js";
+import { offeredParameters } from "../lib/tool-schema.js";
 import { assertPublicHttpsUrl, EndpointError } from "../net/endpoints.js";
+import type { AdapterTool } from "./types.js";
 
 export const SLUG_RE = new RegExp(SLUG_PATTERN);
 
@@ -183,19 +194,51 @@ const MANIFEST_PROBLEMS: ReadonlyArray<(manifest: Manifest) => string | null> = 
 ];
 
 /**
- * Checks a parsed `connector.json` against the schema and, when `folder` is given, its slug against
- * the folder name. Returns the manifest; throws `ManifestError` naming the first problem.
+ * A listed tool with its input schema: for a tool `code` runs, the JSON Schema of the parameters
+ * the code declares; for a tool the endpoint runs, the one its listing carries. Throws
+ * `ManifestError` when the listing of a coded tool carries a schema, or that of an endpoint tool
+ * carries none.
  */
-export function loadManifest(raw: unknown, folder?: string): Manifest {
+function toolWithSchema(slug: string, listed: ListedTool, code: readonly AdapterTool[]): ManifestTool {
+  const { input_schema, ...fields } = listed;
+  const coded = code.find((tool) => tool.name === listed.name);
+  if (coded !== undefined) {
+    if (input_schema !== undefined) {
+      throw new ManifestError(`connector ${slug} tool ${listed.name} lists an input_schema; its code declares its parameters`);
+    }
+    return { ...fields, input_schema: offeredParameters(coded.parameters) };
+  }
+  if (input_schema === undefined) {
+    throw new ManifestError(`connector ${slug} tool ${listed.name} has no input_schema, and no code runs it`);
+  }
+  return { ...fields, input_schema };
+}
+
+/** The manifest a `connector.json` loads as: each tool it lists with its input schema, `code` declaring the schemas of those it runs. */
+function loadedManifest(source: ManifestSource, code: readonly AdapterTool[]): Manifest {
+  const { tools, ...fields } = source;
+  if (tools === undefined) {
+    return fields;
+  }
+  return { ...fields, tools: tools.map((tool) => toolWithSchema(source.slug, tool, code)) };
+}
+
+/**
+ * Checks a parsed `connector.json`, the JSON as it arrives, against the schema and, when `folder`
+ * is given, its slug against the folder name. `code` is the tools the connector's adapter runs,
+ * whose input schemas are their declared parameters. Returns the manifest; throws
+ * `ManifestError` naming the first problem.
+ */
+export function loadManifest(raw: JsonValue, folder?: string, code: readonly AdapterTool[] = []): Manifest {
   if (!Value.Check(ManifestSchema, raw)) {
-    const first = Value.Errors(ManifestSchema, raw).First();
-    const where = first ? `${first.path || "/"}: ${first.message}` : "invalid";
+    const [first] = Value.Errors(ManifestSchema, raw);
+    const where = first ? `${first.instancePath || "/"}: ${first.message}` : "invalid";
     throw new ManifestError(`connector manifest ${folder ?? ""} ${where}`.replace(/\s+/g, " ").trim());
   }
-  const manifest = raw;
-  if (folder !== undefined && manifest.slug !== folder) {
-    throw new ManifestError(`connector slug ${manifest.slug} does not match its folder ${folder}`);
+  if (folder !== undefined && raw.slug !== folder) {
+    throw new ManifestError(`connector slug ${raw.slug} does not match its folder ${folder}`);
   }
+  const manifest = loadedManifest(raw, code);
   for (const problemOf of MANIFEST_PROBLEMS) {
     const problem = problemOf(manifest);
     if (problem !== null) {

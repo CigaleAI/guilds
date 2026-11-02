@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { RunScriptSnapshot } from "../db/schema/index.js";
+import type { LiveScript } from "../sandbox/index.js";
 
 export const SCRIPT_LAUNCHER = "/usr/local/bin/guilds-script-run";
 export const SCRIPT_ARGS_ENV = "GUILDS_SCRIPT_ARGS";
@@ -41,15 +42,13 @@ export async function materialiseScripts(
   files: ScriptFiles,
   home: string,
   snapshot: RunScriptSnapshot[],
-  liveExtra: Array<{ name: unknown; source: unknown }> = [],
+  liveExtra: LiveScript[] = [],
 ): Promise<void> {
   const wanted = new Map<string, string>();
   for (const row of snapshot) {
     wanted.set(row.name, row.source);
   }
-  for (const row of liveExtra) {
-    const name = typeof row.name === "string" ? row.name : "";
-    const source = typeof row.source === "string" ? row.source : "";
+  for (const { name, source } of liveExtra) {
     if (name && !wanted.has(name)) {
       wanted.set(name, source);
     }
@@ -74,7 +73,7 @@ export async function materialiseScripts(
     try {
       await files.moveFiles([{ src: temp, dest }]);
     } catch (error) {
-      if (!isDestinationExists(error)) {
+      if (!(error instanceof Error && isDestinationExists(error))) {
         throw error;
       }
       await files.deleteFiles([dest]);
@@ -114,7 +113,7 @@ function snapshotNamePinned(snapshot: RunScriptSnapshot[], name: string): boolea
   return snapshot.some((row) => row.name === name);
 }
 
-function isDestinationExists(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.includes("destination path already exists");
+/** Whether the files API refused a move because its destination is taken. */
+function isDestinationExists(error: Error): boolean {
+  return error.message.includes("destination path already exists");
 }

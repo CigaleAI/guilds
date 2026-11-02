@@ -1,7 +1,14 @@
-import type { AssistantMessage, CompletionMetadata, ReasoningDetail, TokenUsage, ToolCall } from "../db/schema/index.js";
+import { Type, type Static } from "typebox";
+import type {
+  AssistantMessage,
+  CompletionMetadata,
+  MessagePayload,
+  ReasoningDetail,
+  TokenUsage,
+  ToolCall,
+} from "../db/schema/index.js";
 import { catalogCostUsd } from "./cost.js";
-import { optionalString } from "./payload.js";
-import { parseModelId, type ProviderDef } from "./providers.js";
+import { parseModelId, type ProviderModel } from "./providers.js";
 
 // What a model call is on every provider's wire: the provider and the reasoning effort a model id
 // names, the user agent the call sends, its timeout, its error, and the completion it returns.
@@ -13,12 +20,13 @@ export class LLMError extends Error {
   }
 }
 
-export function asLlmError(error: unknown, apiKey?: string | null): LLMError {
-  if (error instanceof LLMError) {
-    error.message = redactApiKey(error.message, apiKey);
-    return error;
+/** What a provider call threw, as the `LLMError` it is reported as: its message, with the key redacted. */
+export function asLlmError(cause: unknown, apiKey?: string | null): LLMError {
+  if (cause instanceof LLMError) {
+    cause.message = redactApiKey(cause.message, apiKey);
+    return cause;
   }
-  const message = error instanceof Error ? error.message : String(error);
+  const message = cause instanceof Error ? cause.message : String(cause);
   return new LLMError(redactApiKey(message, apiKey));
 }
 
@@ -29,13 +37,33 @@ export type Completion = {
 
 export type ModelEvent = ["delta", string] | ["reasoning", string] | ["done", Completion];
 
+/** The prompt cache mark a provider reads on a request or on one of its parts. */
+export const PROMPT_CACHE_CONTROL = { type: "ephemeral" } as const;
+
+/** A text part of a message's content; the prompt cache mark ends the prefix OpenRouter caches. */
+export type TextPart = { type: "text"; text: string; cache_control?: typeof PROMPT_CACHE_CONTROL };
+
+/** An image part of a message's content: an http(s) URL, or a `data:` URL of the image's bytes. */
+export type ImagePart = { type: "image_url"; image_url: { url: string } };
+
+/** A part of a message's content, as Chat Completions takes it. */
+export type ContentPart = TextPart | ImagePart;
+
+/** A stored message whose content is given as parts: its text and the images attached to it. */
+export type PartsMessage<M extends MessagePayload = MessagePayload> = M extends MessagePayload
+  ? Omit<M, "content"> & { content: ContentPart[] }
+  : never;
+
+/** A message a model call sends, in the Chat Completions shape: a stored message, or one with its content as parts. */
+export type ModelMessage = MessagePayload | PartsMessage;
+
 /**
  * A completion asked of a model: the stored model id, the OpenAI-style messages and tools, the
  * sampling settings, and the thinking level.
  */
 export type ModelRequest = {
   model: string;
-  messages: Array<Record<string, unknown>>;
+  messages: ModelMessage[];
   temperature: number;
   max_tokens: number;
   tools?: unknown[] | null;
@@ -57,14 +85,18 @@ export type ModelListingServices = {
 
 export const LISTING_TIMEOUT_MS = 10_000;
 
-/** The token counts and the price a provider reports for one completion. */
-export type ProviderUsage = {
-  prompt_tokens?: number;
-  completion_tokens?: number;
-  cache_read_input_tokens?: number;
-  prompt_tokens_details?: { cached_tokens?: number };
-  cost?: number;
-};
+/**
+ * The token counts and the price a provider reports for one completion: OpenAI's counts, the cache
+ * read OpenAI counts among the prompt's details, and the cache read and cost OpenRouter adds.
+ */
+export const ProviderUsage = Type.Object({
+  prompt_tokens: Type.Optional(Type.Number()),
+  completion_tokens: Type.Optional(Type.Number()),
+  cache_read_input_tokens: Type.Optional(Type.Number()),
+  prompt_tokens_details: Type.Optional(Type.Object({ cached_tokens: Type.Optional(Type.Number()) })),
+  cost: Type.Optional(Type.Number()),
+});
+export type ProviderUsage = Static<typeof ProviderUsage>;
 
 /** A completion as a provider's response assembled it, before it is priced. */
 export type AssembledCompletion = {
@@ -89,12 +121,12 @@ export function redactApiKey(text: string, apiKey?: string | null): string {
 }
 
 /** The provider a stored model id names, and the id the provider knows the model by. */
-export function providerForModel(model: string): { provider: ProviderDef; upstream: string } {
+export function providerForModel(model: string): ProviderModel {
   const parsed = parseModelId(model);
   if (!parsed) {
     throw new LLMError("model must be {provider}/{model}");
   }
-  return { provider: parsed.provider, upstream: parsed.model };
+  return parsed;
 }
 
 /** Kimi Code documents `low` / `high` / `max`; the picker is `none` / `low` / `medium` / `high`. */
@@ -141,16 +173,16 @@ export function assistantMetadata(assembled: AssembledCompletion, model: string,
   const tokenUsage = tokenUsageOf(usage);
   const providerCost = assembled.provider_cost ?? usage.cost;
   const cost =
-    typeof providerCost === "number"
-      ? { cost_usd: providerCost, cost_source: "provider" as const }
-      : catalogCostUsd(model, tokenUsage);
+    providerCost === undefined
+      ? catalogCostUsd(model, tokenUsage)
+      : { cost_usd: providerCost, cost_source: "provider" as const };
   return {
     usage: tokenUsage,
     latency_ms: latencyMs,
-    finish_reason: optionalString(assembled.finish_reason) ?? "stop",
-    model: optionalString(assembled.model) ?? "",
-    response_id: optionalString(assembled.id),
-    provider_request_id: optionalString(assembled.provider_request_id),
+    finish_reason: assembled.finish_reason || "stop",
+    model: assembled.model || "",
+    response_id: assembled.id || null,
+    provider_request_id: assembled.provider_request_id || null,
     ...cost,
     ...(assembled.reasoning ? { reasoning: assembled.reasoning } : {}),
     ...(assembled.reasoning_details?.length ? { reasoning_details: assembled.reasoning_details } : {}),

@@ -1,5 +1,6 @@
+import type { StudioFocus, StudioFocusKind } from "../../api/types/studio";
+import { isString, type JsonObject, type JsonValue } from "../../api/wire";
 import type { RevealStep } from "../agent/chat/FlowView";
-import type { PinnedFocus } from "./chatModel";
 
 /** The four parts of a session's workspace. */
 export type StudioSection = "guild" | "agents" | "state" | "tools";
@@ -83,13 +84,16 @@ export function agentTab(
   );
 }
 
-const text = (value: unknown): string | undefined =>
-  typeof value === "string" && value.trim() ? value.trim() : undefined;
+/** A value the URL holds for a location's field; the router reads each one as JSON. */
+type SearchValue = JsonValue | undefined;
 
-const oneOf = <T extends string>(allowed: readonly T[], value: unknown): T | undefined =>
+const text = (value: SearchValue): string | undefined =>
+  isString(value) && value.trim() ? value.trim() : undefined;
+
+const oneOf = <T extends string>(allowed: readonly T[], value: SearchValue): T | undefined =>
   allowed.find((entry) => entry === text(value));
 
-const parseSeq = (value: unknown): number | undefined => {
+const parseSeq = (value: SearchValue): number | undefined => {
   const seq = Number(value);
   return value !== undefined && Number.isInteger(seq) && seq >= 0 ? seq : undefined;
 };
@@ -114,7 +118,7 @@ function compact(search: LooseSearch): StudioSearch {
 }
 
 /** Each section keeps only the fields it reads. */
-const sectionParsers: Record<StudioSection, (search: Record<string, unknown>) => LooseSearch> = {
+const sectionParsers: Record<StudioSection, (search: JsonObject) => LooseSearch> = {
   guild: () => ({ section: "guild" }),
   agents: (search) => {
     const agent = text(search.agent);
@@ -137,8 +141,11 @@ const sectionParsers: Record<StudioSection, (search: Record<string, unknown>) =>
   tools: (search) => ({ section: "tools", item: text(search.item) }),
 };
 
-/** A URL without a known section opens the guild's overview. */
-export function parseStudioSearch(search: Record<string, unknown>): StudioSearch {
+/**
+ * The location a session's URL names, each field kept only when it holds what it names. A URL
+ * without a known section opens the guild's overview.
+ */
+export function parseStudioSearch(search: JsonObject): StudioSearch {
   const section = oneOf(studioSections, search.section) ?? "guild";
   return compact(sectionParsers[section](search));
 }
@@ -152,7 +159,7 @@ export function revealedStep(search: StudioSearch): RevealStep {
 }
 
 /** A file opens in State with the file selected; a record opens its table. */
-function fileLocation(focus: PinnedFocus): StudioSearch {
+function fileLocation(focus: StudioFocus): StudioSearch {
   const path = focus.display_path ?? "";
   return compact({
     section: "state",
@@ -168,7 +175,7 @@ export function tablePathOf(path: string): string | null {
   return match?.[1] ?? null;
 }
 
-function runLocation(focus: PinnedFocus): StudioSearch | null {
+function runLocation(focus: StudioFocus): StudioSearch | null {
   if (!focus.agent_id || !focus.run_id) return null;
   return compact({
     section: "agents",
@@ -176,11 +183,11 @@ function runLocation(focus: PinnedFocus): StudioSearch | null {
     tab: "history",
     item: focus.run_id,
     call: focus.call_id ?? undefined,
-    seq: typeof focus.seq === "number" ? focus.seq : undefined,
+    seq: focus.seq ?? undefined,
   });
 }
 
-const focusLocations: Record<string, (focus: PinnedFocus) => StudioSearch | null> = {
+const focusLocations: Record<StudioFocusKind, (focus: StudioFocus) => StudioSearch | null> = {
   run: runLocation,
   issue: runLocation,
   memory_version: (focus) =>
@@ -197,9 +204,13 @@ const focusLocations: Record<string, (focus: PinnedFocus) => StudioSearch | null
       ? { section: "agents", agent: focus.agent_id, tab: "routines", item: focus.schedule_id }
       : null,
   file: fileLocation,
+  tool: () => null,
 };
 
-/** Where a pin points in the workspace: the run step, memory version, routine, script or file. */
-export function focusLocation(focus: PinnedFocus): StudioSearch | null {
-  return focusLocations[focus.kind]?.(focus) ?? null;
+/**
+ * Where a pin points in the workspace: the run step, memory version, routine, script or file; a
+ * tool points nowhere.
+ */
+export function focusLocation(focus: StudioFocus): StudioSearch | null {
+  return focusLocations[focus.kind](focus);
 }

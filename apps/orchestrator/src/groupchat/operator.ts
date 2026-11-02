@@ -1,8 +1,8 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { getGroupChatSeenThrough, markGroupChatSeen } from "../db/group-chat.js";
 import type { Queryable } from "../db/pg.js";
 import type { GroupMessageView } from "../db/views.js";
-import { GroupChatError, type GroupChat, type MessageAuthor } from "./index.js";
+import { GroupChatError, type GroupChat, type GroupChatView, type MessageAuthor } from "./index.js";
 
 /** What an operator reads and posts a guild's group chat through, built once from the app's services. */
 export type GroupChatOperatorServices = {
@@ -21,6 +21,12 @@ export const OperatorMessageSchema = Type.Object({
 
 export type OperatorMessage = Static<typeof OperatorMessageSchema>;
 
+/**
+ * A guild's group chat as one operator reads it: its state, and the seq they have read it
+ * through; null before they have read any of it.
+ */
+export type OperatorGroupChat = GroupChatView & { seen_through_seq: number | null };
+
 /** The guilds' group chat; a box without a generation loop has none (503). */
 export function groupChatOf(services: GroupChatOperatorServices): GroupChat {
   if (services.chat === null) {
@@ -34,7 +40,7 @@ export async function readGroupChat(
   services: GroupChatOperatorServices,
   guildId: string,
   userId: string,
-): Promise<Record<string, unknown>> {
+): Promise<OperatorGroupChat> {
   const chat = await groupChatOf(services).state(guildId);
   return { ...chat, seen_through_seq: await getGroupChatSeenThrough(services.db, guildId, userId) };
 }

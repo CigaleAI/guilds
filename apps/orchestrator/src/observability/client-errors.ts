@@ -1,3 +1,5 @@
+import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
+import { Type, type Static } from "typebox";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { writeLog } from "./log.js";
 
@@ -9,10 +11,24 @@ const REQUEST_ID_MAX = 128;
 const MAX_PER_MINUTE = 30;
 const RATE_WINDOW_MS = 60_000;
 
+/**
+ * A failure the operator app reports from a page: its kind (`onerror`, `unhandledrejection`,
+ * `react` or `api`), its message and stack, the page's address, and the tab's request id.
+ */
+const ClientErrorReport = Type.Object({
+  kind: Type.String(),
+  message: Type.String(),
+  stack: Type.Optional(Type.String()),
+  href: Type.Optional(Type.String()),
+  request_id: Type.Optional(Type.String()),
+});
+export type ClientErrorReport = Static<typeof ClientErrorReport>;
+
 const hits = new Map<string, number[]>();
 
-function clip(value: unknown, max: number): string | null {
-  if (typeof value !== "string") {
+/** The text trimmed and cut to `max`; null when it is absent or blank. */
+function clip(value: string | undefined, max: number): string | null {
+  if (value === undefined) {
     return null;
   }
   const trimmed = value.trim();
@@ -46,39 +62,16 @@ function clientPath(href: string | null): string | null {
   }
 }
 
-function asObject(body: unknown): Record<string, unknown> {
-  if (body && typeof body === "object" && !Array.isArray(body) && !Buffer.isBuffer(body)) {
-    return body as Record<string, unknown>;
-  }
-  const raw = Buffer.isBuffer(body)
-    ? body.toString("utf8")
-    : typeof body === "string"
-      ? body
-      : "";
-  if (!raw.trim()) {
-    return {};
-  }
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
-    }
-  } catch {
-    /* ignore */
-  }
-  return {};
-}
-
-export function ingestClientError(body: unknown, request: FastifyRequest): void {
+/** Logs a page's report as a frontend error line, unless its address has sent its minute's quota. */
+export function ingestClientError(report: ClientErrorReport, request: FastifyRequest): void {
   if (!allow(request.ip || "unknown")) {
     return;
   }
-  const payload = asObject(body);
-  const message = clip(payload.message, MESSAGE_MAX) ?? "client error";
-  const stack = clip(payload.stack, STACK_MAX);
-  const href = clip(payload.href, HREF_MAX);
-  const kind = clip(payload.kind, KIND_MAX) ?? "onerror";
-  const requestId = clip(payload.request_id, REQUEST_ID_MAX) ?? request.id;
+  const message = clip(report.message, MESSAGE_MAX) ?? "client error";
+  const stack = clip(report.stack, STACK_MAX);
+  const href = clip(report.href, HREF_MAX);
+  const kind = clip(report.kind, KIND_MAX) ?? "onerror";
+  const requestId = clip(report.request_id, REQUEST_ID_MAX) ?? request.id;
   const err = new Error(message);
   err.name = kind.startsWith("client.") ? kind : `client.${kind}`;
   if (stack) {
@@ -98,8 +91,10 @@ export function ingestClientError(body: unknown, request: FastifyRequest): void 
   );
 }
 
+/** `POST /api/client-errors`: the route's schema reads the report, and every report taken answers 204. */
 export function registerClientErrorRoute(app: FastifyInstance): void {
-  app.post("/api/client-errors", async (request, reply) => {
+  const typed = app.withTypeProvider<TypeBoxTypeProvider>();
+  typed.post("/api/client-errors", { schema: { body: ClientErrorReport } }, async (request, reply) => {
     try {
       ingestClientError(request.body, request);
     } catch {

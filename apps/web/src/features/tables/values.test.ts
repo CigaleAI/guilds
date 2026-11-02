@@ -108,7 +108,8 @@ test("a time fits a datetime column and a boolean a boolean column", () => {
   assert.equal(fits("2026-01-02T00:00:00Z", column("seen", "datetime")), true);
   assert.equal(fits("someday", column("seen", "datetime")), false);
   assert.equal(fits(false, column("done", "boolean")), true);
-  assert.equal(fits(["a", 1], column("tags", "array")), false);
+  assert.equal(fits(["a", "b"], column("tags", "array", { values: ["a"] })), false);
+  assert.equal(fits(3, column("tags", "array")), false);
 });
 
 test("columns for save drop empty values and values on the wrong type", () => {

@@ -1,4 +1,5 @@
 import { getBuilderSession, insertBuilderSession, listBuilderSessions, listGeneratingBuilderSessions, lockBuilderSession, updateBuilderSession, type BuilderSessionRow } from "../db/builder.js";
+import type { RecipeDocument } from "../db/schema/index.js";
 import {
   type ConversationMessageRow,
   type ConversationUsageRow,
@@ -19,10 +20,10 @@ import { newId } from "../lib/ids.js";
 import { EventQueue } from "../lib/event.js";
 import { AdmissionCoordinator } from "../admission/coordinator.js";
 import { OPEN_POLICY, claimCoachRun, type OrgPolicy } from "../policy/index.js";
-import { ConversationRunner } from "../conversation/runner.js";
+import { ConversationRunner, type CoachEvent } from "../conversation/runner.js";
 import type { CapabilityService } from "../capabilities/index.js";
 import { assignGuildLooks } from "../avatars/looks.js";
-import { parseAccessEdits } from "../recipes/access-edits.js";
+import type { AccessCut, AccessEdit } from "../recipes/access-edits.js";
 import { emptyRecipe } from "../recipes/minimal.js";
 import {
   addRecipeDraft,
@@ -53,6 +54,43 @@ import { connectedDatabase } from "./connected.js";
 import { type Queryable, withTransaction } from "../db/pg.js";
 import type { UserRow } from "../db/users.js";
 import type { OrgMembershipRow } from "../db/orgs.js";
+
+/** A Builder session's state as the operator app shows it: whose it is, the recipe it writes, and where its generation stands. */
+export type BuilderSessionState = Pick<
+  BuilderSessionRow,
+  | "id"
+  | "org_id"
+  | "recipe_id"
+  | "status"
+  | "blocked_reason"
+  | "generation_state"
+  | "generation_number"
+  | "created_at"
+  | "updated_at"
+>;
+
+/** A Builder session as the operator app opens it: its state and the recipe it writes, null once it is being cancelled. */
+export type BuilderSessionView = BuilderSessionState & { recipe: RecipeRow | null };
+
+/** A Builder session as its list shows it: its state, and the name, status and version of its recipe. */
+export type BuilderSessionSummary = BuilderSessionState & {
+  recipe: { name: RecipeRow["name"] | null; status: RecipeRow["status"] | null; body_version: RecipeRow["body_version"] | null };
+};
+
+/** `session`'s state as the operator app shows it. */
+function sessionState(session: BuilderSessionRow): BuilderSessionState {
+  return {
+    id: session.id,
+    org_id: session.org_id,
+    recipe_id: session.recipe_id,
+    status: session.status,
+    blocked_reason: session.blocked_reason,
+    generation_state: session.generation_state,
+    generation_number: session.generation_number,
+    created_at: session.created_at,
+    updated_at: session.updated_at,
+  };
+}
 
 export type BuilderServiceDeps = {
   db: Queryable;
@@ -98,24 +136,6 @@ export class BuilderService {
     }
   }
 
-  private viewSession(
-    session: BuilderSessionRow,
-    recipe?: Record<string, unknown> | null,
-  ): Record<string, unknown> {
-    return {
-      id: session.id,
-      org_id: session.org_id,
-      recipe_id: session.recipe_id,
-      status: session.status,
-      blocked_reason: session.blocked_reason,
-      generation_state: session.generation_state,
-      generation_number: session.generation_number,
-      created_at: session.created_at,
-      updated_at: session.updated_at,
-      recipe: recipe ?? null,
-    };
-  }
-
   async getOwnedSession(
     sessionId: string,
     user: UserRow,
@@ -131,15 +151,12 @@ export class BuilderService {
     return session;
   }
 
-  async listSessions(orgId: string, userId: string): Promise<Array<Record<string, unknown>>> {
+  async listSessions(orgId: string, userId: string): Promise<BuilderSessionSummary[]> {
     const rows = await listBuilderSessions(this.deps.db, orgId, userId);
-    return rows.map((row) =>
-      this.viewSession(row, {
-        name: row.recipe_name,
-        status: row.recipe_status,
-        body_version: row.recipe_body_version,
-      }),
-    );
+    return rows.map((row) => ({
+      ...sessionState(row),
+      recipe: { name: row.recipe_name, status: row.recipe_status, body_version: row.recipe_body_version },
+    }));
   }
 
   /** The coach's model: a marketplace model whose provider the organisation has connected. */
@@ -168,9 +185,9 @@ export class BuilderService {
     org: OrgMembershipRow,
     modelRef: string,
     temperature: number | undefined,
-  ): Promise<Record<string, unknown>> {
+  ): Promise<BuilderSessionView> {
     const model = await this.validateModel(String(org.id), modelRef);
-    const coachTemperature = typeof temperature === "number" ? temperature : BUILDER_DEFAULT_TEMPERATURE;
+    const coachTemperature = temperature ?? BUILDER_DEFAULT_TEMPERATURE;
     const now = new Date();
     const recipeId = newId("rcp");
     const sessionId = newId("bld");
@@ -211,7 +228,7 @@ export class BuilderService {
           sessionId,
           orgId: String(org.id),
           createdByUserId: String(user.id),
-          createdByName: typeof user.name === "string" ? user.name : "operator",
+          createdByName: user.name,
           recipeId,
           configSnapshot: {
             ...coachConfig,
@@ -237,7 +254,7 @@ export class BuilderService {
       now,
     );
     const recipe = await getRecipe(this.deps.db, recipeId);
-    return this.viewSession(session, recipe);
+    return { ...sessionState(session), recipe };
   }
 
   private async recipeFor(session: BuilderSessionRow): Promise<RecipeRow> {
@@ -249,8 +266,8 @@ export class BuilderService {
   }
 
   /** The session as the operator sees it, with its recipe row. */
-  async loadSessionView(session: BuilderSessionRow): Promise<Record<string, unknown>> {
-    return this.viewSession(session, await this.recipeFor(session));
+  async loadSessionView(session: BuilderSessionRow): Promise<BuilderSessionView> {
+    return { ...sessionState(session), recipe: await this.recipeFor(session) };
   }
 
   toolContext(session: BuilderSessionRow): BuilderToolContext {
@@ -270,7 +287,7 @@ export class BuilderService {
     session: BuilderSessionRow,
     user: UserRow,
     content: string,
-  ): Promise<Record<string, unknown>> {
+  ): Promise<BuilderSessionView> {
     if (!content.trim()) {
       throw new ConversationError(422, "content must not be empty");
     }
@@ -348,8 +365,8 @@ export class BuilderService {
         started.expectedBodyVersion,
       ),
       systemContent: started.system.content,
-      tools: builderConversationTools(toolContext),
-      toolContext,
+      tools: builderConversationTools(),
+      toolContext: () => toolContext,
       maxTokens: limits.max_tokens,
       maxSteps: BUILDER_MAX_STEPS,
       maxToolCalls: limits.max_tool_calls,
@@ -358,10 +375,10 @@ export class BuilderService {
     return this.loadSessionView(started.session);
   }
 
-  async cancel(session: BuilderSessionRow): Promise<Record<string, unknown>> {
+  async cancel(session: BuilderSessionRow): Promise<BuilderSessionView> {
     await updateBuilderSession(this.deps.db, session.id, { generation_state: "cancelling" }, new Date());
     this.runner.cancel(session.id);
-    return this.viewSession({ ...session, generation_state: "cancelling" });
+    return { ...sessionState(session), generation_state: "cancelling", recipe: null };
   }
 
   /** The session's conversation, in order. */
@@ -374,36 +391,34 @@ export class BuilderService {
     return conversationUsageByOrg(this.deps.db, "builder");
   }
 
-  subscribe(sessionId: string): EventQueue<[string, Record<string, unknown>]> {
+  subscribe(sessionId: string): EventQueue<CoachEvent> {
     return this.runner.subscribe(sessionId);
   }
 
-  unsubscribe(sessionId: string, queue: EventQueue<[string, Record<string, unknown>]>): void {
+  unsubscribe(sessionId: string, queue: EventQueue<CoachEvent>): void {
     this.runner.unsubscribe(sessionId, queue);
   }
 
+  /** Writes the operator's `document` over the session's recipe at `expectedVersion`, under the name and description it gives itself. */
   async writeRecipe(
     session: BuilderSessionRow,
     expectedVersion: number,
-    body: unknown,
-  ): Promise<Record<string, unknown>> {
-    return writeRecipeDocument(this.deps.db, { id: String(session.recipe_id), body_version: expectedVersion }, body);
+    document: RecipeDocument,
+  ): Promise<RecipeRow> {
+    return writeRecipeDocument(this.deps.db, { id: session.recipe_id, body_version: expectedVersion }, document);
   }
 
   async reviewField(
     session: BuilderSessionRow,
     path: string,
     review: ReviewAction,
-  ): Promise<Record<string, unknown>> {
+  ): Promise<RecipeRow> {
     return reviewRecipe(this.deps.db, await this.recipeFor(session), path, review);
   }
 
-  async editAccess(
-    session: BuilderSessionRow,
-    input: unknown,
-  ): Promise<Record<string, unknown>> {
+  async editAccess(session: BuilderSessionRow, edits: AccessEdit[]): Promise<RecipeRow & { access_cuts: AccessCut[] }> {
     const row = await this.recipeFor(session);
-    return editRecipeAccess(this.deps.db, row, parseAccessEdits(input));
+    return editRecipeAccess(this.deps.db, row, edits);
   }
 
   async validate(session: BuilderSessionRow): Promise<RecipeValidation> {
@@ -411,7 +426,7 @@ export class BuilderService {
   }
 
   /** Gives each role a look of the guild's when it has none, then publishes the recipe. */
-  async publish(session: BuilderSessionRow): Promise<Record<string, unknown>> {
+  async publish(session: BuilderSessionRow): Promise<RecipeRow> {
     const row = await this.recipeFor(session);
     const recipe = row.body;
     let current = row;

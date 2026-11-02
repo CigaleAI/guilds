@@ -30,13 +30,14 @@ export type GenerationHeroProps = Omit<ComponentProps<"section">, "title"> & {
   children?: ReactNode;
 };
 
-const bandColumns: Record<number, string> = {
-  1: "grid-cols-1",
-  2: "grid-cols-2",
-  3: "grid-cols-3",
-  4: "grid-cols-4",
-  5: "grid-cols-5",
-};
+/** The band's grid for one to five stats, by count less one; more than five wrap. */
+const bandColumns = [
+  "grid-cols-1",
+  "grid-cols-2",
+  "grid-cols-3",
+  "grid-cols-4",
+  "grid-cols-5",
+] as const;
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 
@@ -104,7 +105,12 @@ export function GenerationHero({
         ) : null}
       </div>
       {stats.length ? (
-        <dl className={cn("grid bg-signal text-on-signal", bandColumns[Math.min(stats.length, 5)])}>
+        <dl
+          className={cn(
+            "grid bg-signal text-on-signal",
+            bandColumns[Math.min(stats.length, bandColumns.length) - 1],
+          )}
+        >
           {stats.map((stat, index) => (
             <div
               key={index}

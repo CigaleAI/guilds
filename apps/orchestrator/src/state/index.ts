@@ -1,56 +1,50 @@
 import { DEFAULT_MAX_TOOL_CALLS } from "../agents/config.js";
+import type { CatalogCollection } from "../artifacts/collections.js";
+import type { StateRepository } from "../coding/repositories.js";
+import type { GuildAgentRow } from "../db/agents.js";
+import type { GuildOperatorRow } from "../db/guilds.js";
+import type { SecretRef } from "../db/schema/index.js";
 import { collectDirectoryListing, type DirectoryNotes } from "../directories/index.js";
 import { CONTEXT_HISTORY_LIMIT, groupChatHistory } from "../groupchat/history.js";
-import type { GuildOperatorRow } from "../db/guilds.js";
-import { utcClock } from "../lib/clock.js";
+import type { RoutedMessage } from "../groupchat/router.js";
+import { utcClock, type UtcClock } from "../lib/clock.js";
+import type { JsonObject, JsonValue } from "../lib/json.js";
+import type { ScriptCatalogItem } from "../scripts/catalog.js";
 import { environmentCatalog } from "../scripts/validation.js";
 
-function memberEntry(member: unknown): Record<string, string> {
-  if (typeof member === "string") {
-    return { name: member };
-  }
-  const record = member as Record<string, unknown>;
-  const name = String(record.name);
-  const entry: Record<string, string> = { name };
-  const focus = String(record.focus ?? "").trim();
-  if (focus) {
-    entry.focus = focus;
-  }
-  return entry;
-}
+/** A guild member as State lists it: its name, and its focus when it has one. */
+export type StateMember = Pick<GuildAgentRow, "name"> & Partial<Pick<GuildAgentRow, "focus">>;
+
+/** A guild operator as State lists it: their name and role. */
+export type StateOperator = Pick<GuildOperatorRow, "name" | "role">;
+
+/** The guild as State shows it: its members, its operators, the recent group chat, and its about and description when set. */
+export type StateGroup = {
+  members: StateMember[];
+  operators: StateOperator[];
+  history: ReturnType<typeof groupChatHistory>;
+  about?: string;
+  description?: string;
+};
+
+/** A collection as State lists it: the catalog's entry, without a display path when it has none. */
+export type StateCollection = Omit<CatalogCollection, "display_path"> & Partial<Pick<CatalogCollection, "display_path">>;
+
+/** What core fills in a run's State, under the `CORE_STATE_KEYS`. A coding agent's State alone has `repositories`. */
+export type CoreState = UtcClock & {
+  max_tool_calls: number;
+  group: StateGroup;
+  collections: StateCollection[];
+  scripts: ScriptCatalogItem[];
+  environment: ReturnType<typeof environmentCatalog>;
+  repositories?: StateRepository[];
+};
 
 /**
- * One State entry per collection the agent can read: its name, purpose, the
- * agent's access, its display path, and its columns.
+ * A run's State, as the system prompt prints it and the Studio previews it: core's entries, and
+ * beside them each connector State hook's JSON entry under a key core does not use.
  */
-function collectionEntries(items: unknown[] | null | undefined): Array<Record<string, unknown>> {
-  const entries: Array<Record<string, unknown>> = [];
-  for (const item of items ?? []) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) {
-      continue;
-    }
-    const record = item as Record<string, unknown>;
-    if (!("name" in record) || !("purpose" in record)) {
-      continue;
-    }
-    const entry: Record<string, unknown> = { name: record.name, purpose: record.purpose };
-    if (record.access === "read" || record.access === "write") {
-      entry.access = record.access;
-    }
-    if (record.scope === "guild" || record.scope === "org") {
-      entry.scope = record.scope;
-    }
-    if (typeof record.display_path === "string" && record.display_path) {
-      entry.display_path = record.display_path;
-    }
-    entry.columns = Array.isArray(record.columns) ? record.columns : [];
-    if (record.truncated) {
-      entry.truncated = true;
-    }
-    entries.push(entry);
-  }
-  return entries;
-}
+export type RunState = CoreState & { [key: string]: CoreState[keyof CoreState] | JsonValue };
 
 /** The State keys core fills. A connector's State hook may not use one. */
 export const CORE_STATE_KEYS: ReadonlySet<string> = new Set([
@@ -66,40 +60,43 @@ export const CORE_STATE_KEYS: ReadonlySet<string> = new Set([
 
 /** What a run's State is built from, besides the agent's notes. */
 export type RunStateInputs = {
-  members: unknown[];
+  members: Array<Pick<GuildAgentRow, "name" | "focus">>;
   operators?: GuildOperatorRow[];
-  historyRows: Array<Record<string, unknown>>;
+  historyRows: RoutedMessage[];
   guildAbout?: string;
   guildDescription?: string;
-  collections?: unknown[] | null;
-  secrets?: Array<Record<string, unknown>> | null | undefined;
-  scripts?: unknown[] | null | undefined;
+  /** The collections the agent can read, as the artifact store's State catalog lists them. */
+  collections?: CatalogCollection[] | null;
+  secrets?: SecretRef[] | null | undefined;
+  scripts?: ScriptCatalogItem[] | null | undefined;
   maxToolCalls?: number;
   /** The entries connectors' State hooks returned, by key. A key core uses is not one of them. */
-  connectors?: Record<string, unknown>;
+  connectors?: JsonObject;
   /** A coding agent's guild repositories; other agents' State has no `repositories`. */
-  repositories?: Array<Record<string, string>> | null;
+  repositories?: StateRepository[] | null;
   now?: Date;
 };
 
-export function collectRunState(
-  notes: DirectoryNotes | null,
-  orgSlug: string,
-  guildName: string,
-  agentName: string,
-  options: RunStateInputs,
-): Record<string, unknown> {
-  const listing = notes
-    ? collectDirectoryListing(notes, orgSlug, guildName, agentName, {
-        secrets: options.secrets,
-        scripts: options.scripts,
-      })
-    : {
-        scripts: [...(options.scripts ?? [])],
-        environment: environmentCatalog(options.secrets),
-      };
-  const group: Record<string, unknown> = {
-    members: options.members.map(memberEntry),
+function stateMember(member: Pick<GuildAgentRow, "name" | "focus">): StateMember {
+  const focus = member.focus.trim();
+  return focus ? { name: member.name, focus } : { name: member.name };
+}
+
+function stateCollection(item: CatalogCollection): StateCollection {
+  return {
+    name: item.name,
+    purpose: item.purpose,
+    access: item.access,
+    scope: item.scope,
+    ...(item.display_path ? { display_path: item.display_path } : {}),
+    columns: item.columns,
+    ...(item.truncated ? { truncated: true } : {}),
+  };
+}
+
+function stateGroup(options: RunStateInputs): StateGroup {
+  const group: StateGroup = {
+    members: options.members.map(stateMember),
     operators: (options.operators ?? []).map(({ name, role }) => ({ name, role })),
     history: groupChatHistory(options.historyRows, { limit: CONTEXT_HISTORY_LIMIT }),
   };
@@ -111,23 +108,41 @@ export function collectRunState(
   if (description) {
     group.description = description;
   }
+  return group;
+}
+
+/**
+ * The run's State. With `notes`, the agent's notes folder is listed first, so a folder that cannot
+ * be read refuses the run as it would its prompts.
+ */
+export function collectRunState(
+  notes: DirectoryNotes | null,
+  orgSlug: string,
+  guildName: string,
+  agentName: string,
+  options: RunStateInputs,
+): RunState {
+  if (notes) {
+    collectDirectoryListing(notes, orgSlug, guildName, agentName);
+  }
   const clock = utcClock(options.now);
-  const state: Record<string, unknown> = {
+  const core: CoreState = {
     utc_now: clock.utc_now,
     utc_date: clock.utc_date,
-    max_tool_calls: Number(options.maxToolCalls ?? DEFAULT_MAX_TOOL_CALLS),
-    group,
-    collections: collectionEntries(options.collections),
-    scripts: listing.scripts,
-    environment: listing.environment,
+    max_tool_calls: options.maxToolCalls ?? DEFAULT_MAX_TOOL_CALLS,
+    group: stateGroup(options),
+    collections: (options.collections ?? []).map(stateCollection),
+    scripts: [...(options.scripts ?? [])],
+    environment: environmentCatalog(options.secrets),
   };
   if (options.repositories) {
-    state.repositories = options.repositories;
+    core.repositories = options.repositories;
   }
+  const hooked: JsonObject = {};
   for (const [key, value] of Object.entries(options.connectors ?? {})) {
     if (!CORE_STATE_KEYS.has(key)) {
-      state[key] = value;
+      hooked[key] = value;
     }
   }
-  return state;
+  return { ...core, ...hooked };
 }

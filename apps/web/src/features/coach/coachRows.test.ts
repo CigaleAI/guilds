@@ -5,7 +5,7 @@ import { answered } from "./coachRows";
 
 function message(
   seq: number,
-  payload: Record<string, unknown>,
+  payload: StudioMessage["payload"],
   metadata: Record<string, unknown> | null = null,
 ): StudioMessage {
   return {
@@ -21,7 +21,10 @@ function message(
 }
 
 test("a request is answered once the operator writes after it", () => {
-  const rows = [message(4, { role: "tool" }), message(5, { role: "assistant" })];
+  const rows = [
+    message(4, { role: "tool", tool_call_id: "c1", content: "" }),
+    message(5, { role: "assistant", content: "" }),
+  ];
   assert.equal(answered(rows, 4), false);
-  assert.equal(answered([...rows, message(6, { role: "user" })], 4), true);
+  assert.equal(answered([...rows, message(6, { role: "user", content: "" })], 4), true);
 });

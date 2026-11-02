@@ -51,11 +51,13 @@ test("attachDriveCreateFile reads a workspace file and encodes it", async () => 
     { file_path: "/home/a_1/notes.txt", parentId: "folder_1" },
     workspace,
   );
-  assert.equal(attached.title, "notes.txt");
-  assert.equal(attached.contentMimeType, "text/plain");
-  assert.equal(attached.base64Content, Buffer.from("hello drive").toString("base64"));
-  assert.equal(attached.parentId, "folder_1");
-  assert.equal(attached.file_path, undefined);
+  assert.deepEqual(attached, {
+    title: "notes.txt",
+    parentId: "folder_1",
+    contentMimeType: "text/plain",
+    bytes: Buffer.from("hello drive"),
+    keepType: false,
+  });
 });
 
 test("attachDriveCreateFile rejects a path outside the workspace", async () => {

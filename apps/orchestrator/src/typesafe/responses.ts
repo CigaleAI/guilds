@@ -1,40 +1,54 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 
-// The System One replies the client reads. Each object keeps the fields TypeSafe sends beyond the
-// ones named; a field the client reads only when it has the expected shape is `Kept`.
+// The System One replies the client reads. An object may carry fields beyond the ones named, which
+// the client does not read; an optional field that does not have its shape is read as absent.
 
-const Kept = Type.Optional(Type.Unknown());
+/** A probability or a confidence: a number from 0 to 1. */
+const UnitInterval = Type.Number({ minimum: 0, maximum: 1 });
 
-/** A JSON object whose fields are read one by one. */
-export const Fields = Type.Record(Type.String(), Type.Unknown());
+/** How likely each option was, by option. */
+const Probabilities = Type.Record(Type.String(), Type.Number());
 
+/** The tokens an evaluation spent. */
 export const Usage = Type.Object({
   input_tokens: Type.Optional(Type.Number()),
   output_tokens: Type.Optional(Type.Number()),
 });
 
-/** An evaluation reply: the answers by question id, each decoded by its question's type. */
-export const SystemOneResponse = Type.Object({ model: Kept, answers: Fields, usage: Kept });
-
-export const NoulAnswerBody = Type.Object({
-  type: Type.Literal("noul"),
-  noul: Type.Number({ minimum: 0, maximum: 1 }),
+/**
+ * An evaluation reply beside its answers: the model that answered and the tokens it spent. Its
+ * `answers` object holds one answer per question id, each read by the type of its question.
+ */
+export const SystemOneReply = Type.Object({
+  model: Type.Optional(Type.String()),
+  usage: Type.Optional(Usage),
 });
 
-export const ChoiceAnswerBody = Type.Object({
+/** The answer to a Noul question: how true the statement is, from 0 to 1. */
+export const NoulAnswer = Type.Object({
+  type: Type.Literal("noul"),
+  noul: UnitInterval,
+});
+
+/** The answer to a Choice question: the option picked, how likely each was, and how sure it is. */
+export const ChoiceAnswer = Type.Object({
   type: Type.Literal("choice"),
   choice: Type.String({ minLength: 1 }),
-  probabilities: Kept,
-  confidence: Kept,
+  probabilities: Probabilities,
+  confidence: UnitInterval,
 });
 
-export const ScoreAnswerBody = Type.Object({
+/** The answer to a Score question: the score, what each level means, how likely each was. */
+export const ScoreAnswer = Type.Object({
   type: Type.Literal("score"),
   score: Type.Number(),
-  legend: Kept,
-  probabilities: Kept,
-  confidence: Kept,
+  legend: Type.Record(Type.String(), Type.String()),
+  probabilities: Probabilities,
+  confidence: UnitInterval,
 });
 
 /** An error body: the message sits in `message` or `error`, as text. */
-export const ErrorBody = Type.Object({ message: Kept, error: Kept });
+export const ErrorBody = Type.Object({
+  message: Type.Optional(Type.String()),
+  error: Type.Optional(Type.String()),
+});

@@ -319,6 +319,11 @@ Approve assigns looks too when a role still lacks one.
 | `builder_validate_recipe` | Mechanical and design findings against the current blueprint |
 | `builder_write_recipe` | Create or revise the draft, sending `body_version` |
 
+Each tool's parameters are declared once: they are the JSON Schema
+the coach is offered and the decode its arguments pass before the
+tool runs. A call whose arguments do not match is refused with the
+first mismatch, named by its JSON pointer, and nothing is done.
+
 A connect or question widget pauses the coach until the operator
 answers, connects, or skips.
 

@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import {
   removeInstanceKey,
@@ -13,7 +13,7 @@ import {
 } from "../github/manifest.js";
 import { GITHUB_APP } from "../instance/integrations.js";
 import { GithubManifestFlows, type ManifestAddresses } from "../mcp/github-app-manifest.js";
-import { cookieSecure, requestCookies } from "./cookies.js";
+import { cookieSecure, requestCookie } from "./cookies.js";
 import type { InstanceKeys } from "../instance/keys.js";
 import type { AppDeps, RouteApp } from "./deps.js";
 import { currentUser } from "./identity.js";
@@ -139,7 +139,7 @@ export async function registerAdminInstanceRoutes(app: RouteApp, deps: AppDeps):
     const callback = {
       code: request.query.code ?? "",
       state: request.query.state ?? "",
-      cookieState: requestCookies(request)[GITHUB_MANIFEST_STATE_COOKIE] ?? "",
+      cookieState: requestCookie(request, GITHUB_MANIFEST_STATE_COOKIE) ?? "",
     };
     appendSetCookie(reply, clearGithubManifestStateCookie(secure()));
     const outcome = await flows.complete(db, services(), callback);

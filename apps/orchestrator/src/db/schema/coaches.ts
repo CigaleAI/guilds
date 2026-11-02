@@ -14,6 +14,8 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+import { Type, type Static, type TObject } from "typebox";
+import type { FunctionTool } from "../../lib/tool-schema.js";
 import { agents } from "./agents.js";
 import { artifacts } from "./artifacts.js";
 import { timestamptz } from "./columns.js";
@@ -32,17 +34,25 @@ export const EVIDENCE_REF_KINDS = ["run_message", "group_message", "artifact", "
 export type EvidenceRefKind = (typeof EVIDENCE_REF_KINDS)[number];
 
 /**
- * A reference the coach cites for a draft, checked against the tool result it names: the
- * coordinates the coach gave beside `kind` and `tool_message_seq`, with the hash and an excerpt
- * of what it cites.
+ * The coordinates that name what a reference of each kind cites, as the evidence of the tool result
+ * that returned it gives them. A routine may carry the instruction it cites, which its hash is of.
  */
-export type EvidenceRef = {
-  kind: EvidenceRefKind;
-  tool_message_seq: number;
-  content_hash: string;
-  excerpt: string;
-  [coordinate: string]: unknown;
-};
+export const EvidenceCoordinates = {
+  run_message: Type.Object({ run_id: Type.String(), seq: Type.Integer() }),
+  group_message: Type.Object({ seq: Type.Integer() }),
+  artifact: Type.Object({ display_path: Type.String(), version: Type.Integer() }),
+  task_revision: Type.Object({ agent_id: Type.String(), version: Type.Integer() }),
+  memory_revision: Type.Object({ revision_id: Type.String() }),
+  routine: Type.Object({ schedule_id: Type.String(), instruction: Type.Optional(Type.String()) }),
+} satisfies Record<EvidenceRefKind, TObject>;
+
+/** A reference the coach cites for a draft: its kind, the tool result it names by `tool_message_seq`, and its kind's coordinates. */
+export type EvidenceCitation = {
+  [K in EvidenceRefKind]: { kind: K; tool_message_seq: number } & Static<(typeof EvidenceCoordinates)[K]>;
+}[EvidenceRefKind];
+
+/** A reference checked against the tool result it names, with the hash and an excerpt of what it cites. */
+export type EvidenceRef = EvidenceCitation & { content_hash: string; excerpt: string };
 
 /** A reference the coach cited that did not check out, and why. */
 export type EvidenceWarning =
@@ -67,7 +77,7 @@ export type CoachSessionConfig = CoachRunLimits & {
   temperature: number;
   max_steps: number;
   system_prompt_hash: string;
-  tool_schemas: Array<Record<string, unknown>>;
+  tool_schemas: FunctionTool[];
 };
 
 /** An entry of a Studio or Builder session's `errors`: why a generation failed. */

@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { StudioMessage } from "../../api/types/studio";
+import type {
+  ConversationMessageMetadata,
+  StudioFocus,
+  StudioMessage,
+} from "../../api/types/studio";
 import {
   applyLabel,
   batchReply,
@@ -10,15 +14,13 @@ import {
   draftDecision,
   editTargetLabel,
   focusOf,
-  parseConnection,
-  parseEdit,
   widgetOf,
 } from "./chatModel";
 
 function message(
   seq: number,
-  payload: Record<string, unknown>,
-  metadata: Record<string, unknown> | null = null,
+  payload: StudioMessage["payload"],
+  metadata: ConversationMessageMetadata | null = null,
 ): StudioMessage {
   return {
     id: seq,
@@ -35,6 +37,7 @@ function message(
 test("edit and access requests are read from tool results", () => {
   const edit = message(4, {
     role: "tool",
+    tool_call_id: "c1",
     content: JSON.stringify({
       widget: "studio_edit_request",
       title: "Tidy memory",
@@ -81,6 +84,7 @@ test("edit and access requests are read from tool results", () => {
   assert.equal(editTargetLabel({ kind: "routine", target: { agent_id: "a_1" } }), "a_1 · routine");
   const access = message(5, {
     role: "tool",
+    tool_call_id: "c1",
     content: JSON.stringify({
       widget: "studio_connection_access",
       connection: { id: "conn_1", server: { id: "mcp_x", slug: "x", display_name: "X" } },
@@ -89,25 +93,35 @@ test("edit and access requests are read from tool results", () => {
   const login = widgetOf(access);
   assert.ok(login?.kind === "access");
   assert.equal(connectionLabel(login.connection), "X");
-  assert.equal(widgetOf(message(6, { role: "tool", content: '{"rows":[]}' })), null);
+  assert.equal(
+    widgetOf(message(6, { role: "tool", tool_call_id: "c1", content: '{"rows":[]}' })),
+    null,
+  );
   assert.equal(widgetOf(message(7, { role: "assistant", content: "hi" })), null);
 });
 
 test("a focused message names what it was pinned to", () => {
+  const focus: StudioFocus = {
+    kind: "run",
+    agent_id: "a_1",
+    agent_name: "wallet",
+    label: "Group run",
+    run_id: "r_1",
+    seq: null,
+    call_id: null,
+    tool_name: null,
+    revision_id: null,
+    version_index: null,
+    schedule_id: null,
+    display_path: null,
+    change_id: null,
+    issue_id: null,
+  };
   assert.deepEqual(
-    focusOf(
-      message(
-        1,
-        { role: "user" },
-        { source: "studio_focus", focus: { kind: "run", label: "Group run" } },
-      ),
-    ),
-    {
-      kind: "run",
-      label: "Group run",
-    },
+    focusOf(message(1, { role: "user", content: "" }, { source: "studio_focus", focus })),
+    focus,
   );
-  assert.equal(focusOf(message(2, { role: "user" }, { source: "ui" })), null);
+  assert.equal(focusOf(message(2, { role: "user", content: "" }, { source: "ui" })), null);
 });
 
 test("a turn's requests are answered by one reply once each is decided", () => {
@@ -152,6 +166,7 @@ test("a Task draft is read from its tool result and answered in the coach's word
   const draft = widgetOf(
     message(6, {
       role: "tool",
+      tool_call_id: "c1",
       content: JSON.stringify({
         widget: "studio_task_draft",
         agent: { id: "a_1", name: "wallet" },
@@ -183,6 +198,7 @@ test("a Task draft is read from its tool result and answered in the coach's word
     widgetOf(
       message(7, {
         role: "tool",
+        tool_call_id: "c1",
         content: JSON.stringify({ widget: "studio_task_draft", agent: { id: "a_1" } }),
       }),
     ),
@@ -192,6 +208,7 @@ test("a Task draft is read from its tool result and answered in the coach's word
     widgetOf(
       message(8, {
         role: "tool",
+        tool_call_id: "c1",
         content: JSON.stringify({
           widget: "studio_task_draft",
           agent: { id: "a_1" },
@@ -201,78 +218,4 @@ test("a Task draft is read from its tool result and answered in the coach's word
     ),
     { kind: "draft", agent: { id: "a_1", name: "a_1" }, draft_id: "d" },
   );
-});
-
-test("an edit keeps every field that holds what it names", () => {
-  const edit = {
-    kind: "access",
-    action: "edit",
-    target: { agent_id: "a_1", collection_id: null },
-    base_version: 3,
-    fields: ["about"],
-    lines: { added: 2, removed: 1 },
-    changes: [{ kind: "mcp", id: "conn_1", label: "Notion", setting: "on" }],
-    widens: true,
-  };
-  assert.deepEqual(parseEdit(edit), edit);
-});
-
-test("an edit drops a field of the wrong type and an access change it cannot read", () => {
-  assert.deepEqual(
-    parseEdit({
-      kind: "secret",
-      action: 2,
-      target: { agent_id: 7, schedule_id: "sch_1" },
-      base_version: "3",
-      fields: ["about", 4],
-      lines: { added: "2" },
-      changes: [
-        { kind: "mcp", id: "conn_1", label: "Notion", setting: "maybe" },
-        { kind: "native_tool", id: "web_fetch", label: "Fetch", setting: "off" },
-        "on",
-      ],
-      widens: "yes",
-    }),
-    {
-      target: { schedule_id: "sch_1" },
-      fields: ["about"],
-      lines: {},
-      changes: [{ kind: "native_tool", id: "web_fetch", label: "Fetch", setting: "off" }],
-    },
-  );
-  assert.deepEqual(parseEdit(null), {});
-  assert.deepEqual(parseEdit(["memory"]), {});
-});
-
-test("a login keeps the text fields of the connection and its server", () => {
-  assert.deepEqual(
-    parseConnection({
-      id: "conn_1",
-      owner_scope: "org",
-      account_hint: 5,
-      server: { slug: "notion", display_name: null },
-    }),
-    { id: "conn_1", owner_scope: "org", server: { slug: "notion" } },
-  );
-  assert.deepEqual(parseConnection("conn_1"), {});
-});
-
-test("a focus keeps the ids that locate it and drops a field of the wrong type", () => {
-  assert.deepEqual(
-    focusOf(
-      message(
-        3,
-        { role: "user" },
-        {
-          source: "studio_focus",
-          focus: { kind: 4, run_id: "r_1", seq: null, call_id: 9, revision_id: null },
-        },
-      ),
-    ),
-    { kind: "focus", label: "Pinned evidence", run_id: "r_1", seq: null, revision_id: null },
-  );
-  assert.deepEqual(focusOf(message(4, { role: "user" }, { source: "studio_focus", focus: [] })), {
-    kind: "focus",
-    label: "Pinned evidence",
-  });
 });

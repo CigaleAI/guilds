@@ -1,9 +1,11 @@
 import type { StateFlag, StateItemRow, StateLink, StateShare } from "../../../api/types/studio";
 import type { Proposal } from "../pendingModel";
 
-/** The windows State offers, in hours: a day, three days, a week. */
-export const STATE_WINDOW_HOURS: readonly number[] = [24, 72, 168];
-export const STATE_DEFAULT_HOURS = 24;
+/** A window State offers, in hours: a day, three days, a week. */
+export type StateWindowHours = 24 | 72 | 168;
+
+export const STATE_WINDOW_HOURS: readonly StateWindowHours[] = [24, 72, 168];
+export const STATE_DEFAULT_HOURS: StateWindowHours = 24;
 
 const flagLabels: Record<StateFlag, (row: StateItemRow) => string> = {
   no_agent_read: () => "no agent read it",
@@ -90,7 +92,7 @@ export function itemSize(row: Pick<StateItemRow, "kind" | "size">): string {
   return `${(row.size / 1024).toFixed(row.size < 10 * 1024 ? 1 : 0)} KB`;
 }
 
-const readWords: Record<string, string> = {
+const readWords = {
   embed: "embedded in its Task",
   memory: "its Memory",
   note_get: "note_get",
@@ -98,11 +100,16 @@ const readWords: Record<string, string> = {
   record_list: "record_list",
   record_search: "record_search",
   script: "ran it",
-};
+} satisfies Record<string, string>;
+
+/** Whether a way of reading is one State words; a tool's name otherwise. */
+function isWordedRead(how: string): how is keyof typeof readWords {
+  return Object.hasOwn(readWords, how);
+}
 
 /** How an agent read an item, in words. */
 export function readHow(how: string): string {
-  return readWords[how] ?? how;
+  return isWordedRead(how) ? readWords[how] : how;
 }
 
 /** Where a history entry opens: its run step, or the coach message it came from. */

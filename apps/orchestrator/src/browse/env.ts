@@ -9,8 +9,6 @@ export class BrowseModelError extends Error {
   }
 }
 
-const LLM_PURPOSES = ["PLAN", "READ", "FIELD_TEXT", "SHORTCUT", "RECOVER", "COMPOSE", "VERIFY"] as const;
-
 /**
  * Every variable fastbrowse reads a key, an endpoint, a model, a Jev source, or a browser choice
  * from, at the value it holds unless a run's route sets it. `Fastbrowse.start` adds a run's
@@ -21,7 +19,7 @@ const LLM_PURPOSES = ["PLAN", "READ", "FIELD_TEXT", "SHORTCUT", "RECOVER", "COMP
  * here, and none carries a key or an endpoint: `FASTBROWSE_PROFILE`, which fastbrowse refuses
  * beside an attached Chrome, and `FASTBROWSE_LLM_STRICT` and `FASTBROWSE_LLM_REASONING*`.
  */
-export const FASTBROWSE_PINNED_ENV: Readonly<Record<string, string>> = {
+export const FASTBROWSE_PINNED_ENV = {
   TYPESAFE_API_KEY: "",
   OPENROUTER_API_KEY: "",
   OPENAI_API_KEY: "",
@@ -41,7 +39,13 @@ export const FASTBROWSE_PINNED_ENV: Readonly<Record<string, string>> = {
   PERPLEXITY_API_KEY: "",
   FASTBROWSE_LLM_PROVIDER: "",
   FASTBROWSE_LLM_MODEL: "",
-  ...Object.fromEntries(LLM_PURPOSES.map((purpose) => [`FASTBROWSE_LLM_MODEL_${purpose}`, ""])),
+  FASTBROWSE_LLM_MODEL_PLAN: "",
+  FASTBROWSE_LLM_MODEL_READ: "",
+  FASTBROWSE_LLM_MODEL_FIELD_TEXT: "",
+  FASTBROWSE_LLM_MODEL_SHORTCUT: "",
+  FASTBROWSE_LLM_MODEL_RECOVER: "",
+  FASTBROWSE_LLM_MODEL_COMPOSE: "",
+  FASTBROWSE_LLM_MODEL_VERIFY: "",
   FASTBROWSE_LLM_BASE_URL: "",
   FASTBROWSE_LLM_API_KEY: "",
   FASTBROWSE_LLM_EXTRA_BODY: "",
@@ -56,10 +60,16 @@ export const FASTBROWSE_PINNED_ENV: Readonly<Record<string, string>> = {
   FASTBROWSE_CHROME: "",
   FASTBROWSE_HEADED: "false",
   FASTBROWSE_BINARY: "",
-};
+} as const satisfies Record<string, string>;
+
+/** A variable fastbrowse reads that a run pins: every one `FASTBROWSE_PINNED_ENV` sets. */
+export type FastbrowseVariable = keyof typeof FASTBROWSE_PINNED_ENV;
+
+/** The whole environment a fastbrowse run starts with: a value for every pinned variable. */
+export type FastbrowseEnv = Record<FastbrowseVariable, string>;
 
 /** The providers fastbrowse calls by name: its provider value and the variable it reads the key from. */
-const NAMED_ROUTES: Partial<Record<ProviderId, [string, string]>> = {
+const NAMED_ROUTES: Partial<Record<ProviderId, [string, FastbrowseVariable]>> = {
   openrouter: ["openrouter", "OPENROUTER_API_KEY"],
   openai: ["openai", "OPENAI_API_KEY"],
   anthropic: ["anthropic", "ANTHROPIC_API_KEY"],
@@ -73,7 +83,7 @@ const NAMED_ROUTES: Partial<Record<ProviderId, [string, string]>> = {
  * any other OpenAI-compatible endpoint, or a provider reached at another address, is fastbrowse's
  * `custom` provider at that address. The model is the id without its provider prefix.
  */
-export function fastbrowseEnv(jevKey: string, model: string, credentials: ModelCredentials): Record<string, string> {
+export function fastbrowseEnv(jevKey: string, model: string, credentials: ModelCredentials): FastbrowseEnv {
   const parsed = parseModelId(model);
   if (parsed === null) {
     throw new BrowseModelError("browser_model must be {provider}/{model}");
@@ -82,7 +92,7 @@ export function fastbrowseEnv(jevKey: string, model: string, credentials: ModelC
   if (provider.kind === "coding") {
     throw new BrowseModelError(`${provider.label} models cannot run the agent-optimized browser`);
   }
-  const env: Record<string, string> = {
+  const env: FastbrowseEnv = {
     ...FASTBROWSE_PINNED_ENV,
     TYPESAFE_API_KEY: jevKey,
     FASTBROWSE_LLM_MODEL: parsed.model,

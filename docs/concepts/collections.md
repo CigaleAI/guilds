@@ -564,9 +564,12 @@ PUT    /api/collections/:collection_id/access              { subjects: [{ type, 
   and `direction` are accepted in place of `order`.
 - A `query` runs the text search instead of a listing; `total` is
   then the number of hits.
-- `name` and `purpose` are strings, `guild_id` a string or null, a
-  record's `body` an object, and each query value given once. Anything
-  else is 422 naming the field.
+- `name` and `purpose` are strings, `guild_id` a string or null,
+  `columns` a list of objects whose `name`, `type`, `description` and
+  `rename_from` are strings, `required` and `unique` true or false, and
+  `values` a list of strings, a record's `body` an object whose values
+  are text, numbers, true or false, lists of text, or null, and each
+  query value given once. Anything else is 422 naming the field.
 - Records carry `display_path`, so the provenance strip can look them
   up.
 - The routes act as the operator for any organisation member. They

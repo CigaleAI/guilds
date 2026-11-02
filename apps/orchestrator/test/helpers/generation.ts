@@ -33,6 +33,7 @@ import { TEST_CREDENTIALS } from "./models.js";
 import type { AgentPlaceRow, AgentRow, AgentScriptRow, FoundHarnessLogin, NewAgentScript } from "../../src/db/agents.js";
 import { Scripts, type ScriptDatabase } from "../../src/scripts/catalog.js";
 import { RepositoryTokens } from "../../src/coding/git.js";
+import type { CodingRepository } from "../../src/coding/repositories.js";
 import type { GroupDelivery, NewDirectRun, NewGroupRun, NewMessage, NewScheduleRun } from "../../src/db/runs.js";
 import type { ScheduleRow, PlannedWake } from "../../src/db/schedules.js";
 import { Schedules, type ScheduleDatabase } from "../../src/schedules/service.js";
@@ -40,7 +41,7 @@ import { Issues, type IssuesDatabase } from "../../src/issues/index.js";
 import { GroupChat, type GroupChatDatabase } from "../../src/groupchat/index.js";
 import { defaultGroupRouter } from "../../src/typesafe/group.js";
 import type { AgentConfig, CompletionMetadata, RunConfigSnapshot, SecretRef, ToolCall } from "../../src/db/schema/index.js";
-import { validateAgentConfig } from "../../src/agents/config.js";
+import { validateAgentConfig } from "../../src/agents/validation.js";
 
 export const AGENT_CONFIG: AgentConfig = {
   model: "openrouter/openai/gpt-5.6-luna",
@@ -468,7 +469,7 @@ export class FakeDB {
   }
 
   /** A run's repository tokens, minted and recorded through this fake. */
-  repositoryTokens(repositories: Array<Record<string, unknown>>): RepositoryTokens {
+  repositoryTokens(repositories: CodingRepository[]): RepositoryTokens {
     return new RepositoryTokens(this as never, repositories);
   }
 
@@ -696,7 +697,7 @@ export class RecordingDB {
   }
 
   /** A run's repository tokens, minted and recorded through this fake. */
-  repositoryTokens(repositories: Array<Record<string, unknown>>): RepositoryTokens {
+  repositoryTokens(repositories: CodingRepository[]): RepositoryTokens {
     return new RepositoryTokens(this as never, repositories);
   }
 

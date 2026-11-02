@@ -4,7 +4,6 @@ import type { ArtifactStore } from "../artifacts/store.js";
 import { operatorActor } from "../artifacts/actors.js";
 import { agentTask, expandTaskText, publishAgentTask, taskDisplayPath } from "../artifacts/task.js";
 import { WRITE_MAX_BYTES } from "../artifacts/types.js";
-import { jsonObj as _jsonObj } from "../db/json.js";
 import { newId } from "../lib/ids.js";
 import { composeAgentSystemPrompt, hydrateStanding, promptHash, schemasOffer } from "../prompts/index.js";
 import { countInputTokens } from "../llm/tokens.js";
@@ -27,16 +26,21 @@ import { nextConversationSeq } from "../db/conversations.js";
 import type { Queryable } from "../db/pg.js";
 import { getStudioDraft, insertStudioDraft, listStudioDraftHeads, lockStudioDraft, updateStudioDraft, type StudioDraftRow, type StudioSessionRow } from "../db/studio.js";
 import { listConversationMessages, type ConversationMessageRow } from "../db/conversations.js";
-import { isPlainRecord } from "../db/json.js";
-import { EVIDENCE_REF_KINDS, type EvidenceRef, type EvidenceRefKind, type EvidenceWarning } from "../db/schema/index.js";
+import {
+  EVIDENCE_REF_KINDS,
+  EvidenceCoordinates,
+  type EvidenceCitation,
+  type EvidenceRef,
+  type EvidenceRefKind,
+  type EvidenceWarning,
+} from "../db/schema/index.js";
 import type { UserRow } from "../db/users.js";
+import { Type } from "typebox";
+import { keepMatching } from "../lib/decode.js";
+import { isObjectNode, type JsonObject, type JsonValue } from "../lib/json.js";
 
 export type StudioDraftService = {
-  createFromTool(
-    db: Queryable,
-    call: StudioToolCall,
-    args: CreateTaskDraftArguments,
-  ): Promise<Record<string, unknown>>;
+  createFromTool(db: Queryable, call: StudioToolCall, args: CreateTaskDraftArguments): Promise<StudioDraftWidget>;
 };
 
 /** What a draft's preflight and publish read through: its agent in `db`, the agent's offer from `preview`, the standing notes at `notesSystemPath`. */
@@ -50,9 +54,67 @@ export type DraftPublishDeps = {
 // pauses until the operator publishes or discards it.
 export const STUDIO_TASK_DRAFT_WIDGET = "studio_task_draft";
 
-function userIdOf(user: UserRow): string | null {
-  return typeof user.id === "string" ? user.id : null;
-}
+/** A draft as the operator app reads it: the row, with whether its evidence checked out and how much it changes. */
+export type StudioDraft = Pick<
+  StudioDraftRow,
+  | "id"
+  | "session_id"
+  | "resource_kind"
+  | "target_agent_id"
+  | "target_snapshot"
+  | "source_display_path"
+  | "base_version"
+  | "base_hash"
+  | "base_content"
+  | "proposed_content"
+  | "rationale"
+  | "evidence_refs"
+  | "evidence_warnings"
+  | "risks"
+  | "status"
+  | "draft_number"
+  | "supersedes_draft_id"
+  | "created_generation"
+  | "created_message_seq"
+  | "created_at"
+  | "published_resource_version"
+> & { verified_evidence: boolean; size_delta_bytes: number; large_deletion: boolean };
+
+/** The Task draft the coach wrote, which the turn pauses on until the operator publishes or discards it. */
+export type StudioDraftWidget = {
+  widget: typeof STUDIO_TASK_DRAFT_WIDGET;
+  await_operator: true;
+  agent: { id: string; name: string };
+  draft_id: string;
+  rationale: string;
+  draft: StudioDraft;
+  evidence_warnings: EvidenceWarning[];
+  verified_evidence: boolean;
+};
+
+/** What a publish checks a draft against: the target agent's configuration, the catalog, and the prompt the Task composes. */
+export type DraftPreflight = {
+  config_hash: string;
+  projected_at: string;
+  catalog_revision: string | null;
+  token_estimate: number;
+  token_estimate_kind: "stored_catalog_projection";
+  effective_hash: string;
+  prior_effective_hash: string;
+  has_embeds: boolean;
+};
+
+/** How a publish ended: the Task already held the draft, or the draft is its new version. */
+export type DraftPublication =
+  | { outcome: "unchanged"; draft: StudioDraft; preflight: DraftPreflight }
+  | {
+      outcome: "published";
+      draft: StudioDraft;
+      version: number;
+      prior_effective_hash: string;
+      published_effective_hash: string;
+      preflight: DraftPreflight;
+    };
 
 export class StudioDrafts implements StudioDraftService {
   constructor(
@@ -64,7 +126,7 @@ export class StudioDrafts implements StudioDraftService {
     db: Queryable,
     call: StudioToolCall,
     args: CreateTaskDraftArguments,
-  ): Promise<Record<string, unknown>> {
+  ): Promise<StudioDraftWidget> {
     const handle = args.agent_id;
     const agent = await resolveSourceGuildAgent(sourceGuildAgents(db), call, handle);
     if (!agent) {
@@ -147,7 +209,7 @@ export class StudioDrafts implements StudioDraftService {
     draftId: string,
     proposed: string,
     expectedHeadId: string,
-  ): Promise<Record<string, unknown>> {
+  ): Promise<StudioDraft> {
     if (Buffer.byteLength(proposed, "utf8") > WRITE_MAX_BYTES) {
       throw new StudioUnprocessableError("proposed_content exceeds the 256 KiB artifact write limit");
     }
@@ -186,7 +248,7 @@ export class StudioDrafts implements StudioDraftService {
     session: StudioSessionRow,
     user: UserRow,
     draftId: string,
-  ): Promise<Record<string, unknown>> {
+  ): Promise<StudioDraft> {
     const now = new Date();
     return withLockedSession(this.db, session.id, async (client) => {
       const current = await lockStudioDraft(client, draftId);
@@ -199,7 +261,7 @@ export class StudioDrafts implements StudioDraftService {
       const updated = await updateStudioDraft(
         client,
         current.id,
-        { status: "discarded", resolved_at: now, discarded_by_user_id: userIdOf(user) },
+        { status: "discarded", resolved_at: now, discarded_by_user_id: user.id },
       );
       return viewDraft(updated ?? current);
     });
@@ -210,7 +272,7 @@ export class StudioDrafts implements StudioDraftService {
     session: StudioSessionRow,
     user: UserRow,
     draftId: string,
-  ): Promise<Record<string, unknown>> {
+  ): Promise<DraftPublication> {
     const now = new Date();
     const preflight = await this.preflight(deps, draftId);
     return withLockedSession(this.db, session.id, async (client) => {
@@ -258,7 +320,7 @@ export class StudioDrafts implements StudioDraftService {
         const unchanged = await updateStudioDraft(
           client,
           draft.id,
-          { status: "unchanged", resolved_at: now, published_at: now, published_by_user_id: userIdOf(user) },
+          { status: "unchanged", resolved_at: now, published_at: now, published_by_user_id: user.id },
         );
         return { outcome: "unchanged", draft: viewDraft(unchanged ?? draft), preflight };
       }
@@ -270,7 +332,7 @@ export class StudioDrafts implements StudioDraftService {
           status: "published",
           resolved_at: now,
           published_at: now,
-          published_by_user_id: userIdOf(user),
+          published_by_user_id: user.id,
           published_resource_version: written.version,
         },
       );
@@ -285,7 +347,7 @@ export class StudioDrafts implements StudioDraftService {
     });
   }
 
-  async preflight(deps: DraftPublishDeps, draftId: string): Promise<Record<string, unknown>> {
+  async preflight(deps: DraftPublishDeps, draftId: string): Promise<DraftPreflight> {
     const draft = await getStudioDraft(this.db, draftId);
     if (!draft || !draft.target_agent_id) {
       throw new StudioNotFoundError("draft not found");
@@ -301,7 +363,7 @@ export class StudioDrafts implements StudioDraftService {
     deps: DraftPublishDeps,
     agent: AgentRow,
     proposed: string,
-  ): Promise<Record<string, unknown>> {
+  ): Promise<DraftPreflight> {
     let expanded: string;
     try {
       expanded = await expandTaskText(this.artifacts, agent, proposed);
@@ -347,7 +409,7 @@ export class StudioDrafts implements StudioDraftService {
   }
 }
 
-export function viewDraft(row: StudioDraftRow): Record<string, unknown> {
+export function viewDraft(row: StudioDraftRow): StudioDraft {
   const base = row.base_content;
   const proposed = row.proposed_content;
   const baseBytes = Buffer.byteLength(base, "utf8");
@@ -390,38 +452,88 @@ function isEvidenceRefKind(value: string): value is EvidenceRefKind {
 /** One cited reference checked against the tool result it names: the reference, or why it does not check out. */
 type CheckedRef = { ref: EvidenceRef } | { warning: EvidenceWarning };
 
-function resolveEvidenceRef(item: unknown, bySeq: Map<number, ConversationMessageRow>): CheckedRef {
-  if (!isPlainRecord(item)) {
+/** A citation of `kind` from its coordinates; null when the coach did not give them. */
+function cite<K extends EvidenceRefKind, C extends JsonObject>(
+  kind: K,
+  seq: number,
+  coordinates: C | null,
+): ({ kind: K; tool_message_seq: number } & C) | null {
+  return coordinates === null ? null : { kind, tool_message_seq: seq, ...coordinates };
+}
+
+/** What the coach cited, as the coordinates its kind takes; null when they are not there. */
+function citation(kind: EvidenceRefKind, seq: number, item: JsonObject): EvidenceCitation | null {
+  switch (kind) {
+    case "run_message":
+      return cite(kind, seq, keepMatching(EvidenceCoordinates.run_message, item));
+    case "group_message":
+      return cite(kind, seq, keepMatching(EvidenceCoordinates.group_message, item));
+    case "artifact":
+      return cite(kind, seq, keepMatching(EvidenceCoordinates.artifact, item));
+    case "task_revision":
+      return cite(kind, seq, keepMatching(EvidenceCoordinates.task_revision, item));
+    case "memory_revision":
+      return cite(kind, seq, keepMatching(EvidenceCoordinates.memory_revision, item));
+    case "routine":
+      return cite(kind, seq, keepMatching(EvidenceCoordinates.routine, item));
+  }
+}
+
+/** What the tool result a citation names must contain for the citation to check out. */
+function citedValues(cited: EvidenceCitation): Array<string | number> {
+  switch (cited.kind) {
+    case "run_message":
+      return [cited.run_id, cited.seq];
+    case "group_message":
+      return [cited.seq];
+    case "artifact":
+      return [cited.display_path, cited.version];
+    case "task_revision":
+      return [cited.agent_id, cited.version];
+    case "memory_revision":
+      return [cited.revision_id];
+    case "routine":
+      return [cited.schedule_id];
+  }
+}
+
+/** What a citation names, as the coach sent it: its kind and the tool result it cites, before its coordinates are read. */
+const CitationHead = Type.Object({ kind: Type.String(), tool_message_seq: Type.Integer() });
+
+function resolveEvidenceRef(item: JsonValue, bySeq: Map<number, ConversationMessageRow>): CheckedRef {
+  if (!isObjectNode(item)) {
     return { warning: { reason: "invalid_reference" } };
   }
-  const kind = String(item.kind ?? item.type ?? "");
+  const head = keepMatching(CitationHead, item);
+  if (!head) {
+    return { warning: { reason: "invalid_reference" } };
+  }
+  const { kind, tool_message_seq: seq } = head;
   if (!isEvidenceRefKind(kind)) {
     return { warning: { reason: "unknown_kind", kind } };
   }
-  const seq = Number(item.tool_message_seq);
   const message = bySeq.get(seq);
   if (!message) {
     return { warning: { reason: "missing_tool_message", tool_message_seq: seq } };
   }
+  const cited = citation(kind, seq, item);
+  if (!cited) {
+    return { warning: { reason: "invalid_reference" } };
+  }
   const payload = JSON.stringify(message.payload);
-  if (!evidenceCoordinates(kind, item).every((value) => payload.includes(String(value)))) {
+  if (!citedValues(cited).every((value) => payload.includes(String(value)))) {
     return { warning: { reason: "coordinates_not_in_tool_result", kind, tool_message_seq: seq } };
   }
   const excerpt = excerptBytes(payload, STUDIO_EVIDENCE_EXCERPT_BYTES).text;
-  const ref: EvidenceRef = {
-    ...Object.fromEntries(Object.entries(item).filter(([key]) => !["content_hash", "instruction_hash", "excerpt"].includes(key))),
-    kind,
-    tool_message_seq: seq,
-    content_hash: kind === "routine" ? instructionHash(String(item.instruction ?? excerpt)) : promptHash(excerpt),
-    excerpt: capBytes(excerpt, STUDIO_EVIDENCE_EXCERPT_BYTES)[0],
-  };
-  return { ref };
+  const contentHash =
+    cited.kind === "routine" ? instructionHash(cited.instruction ?? excerpt) : promptHash(excerpt);
+  return { ref: { ...cited, content_hash: contentHash, excerpt: capBytes(excerpt, STUDIO_EVIDENCE_EXCERPT_BYTES)[0] } };
 }
 
-function resolveEvidenceRefs(
-  raw: unknown[] | undefined,
-  messages: ConversationMessageRow[],
-): { refs: EvidenceRef[]; warnings: EvidenceWarning[] } {
+/** The references a draft cites that checked out, and a warning for each that did not. */
+type CheckedEvidence = { refs: EvidenceRef[]; warnings: EvidenceWarning[] };
+
+function resolveEvidenceRefs(raw: JsonValue[] | undefined, messages: ConversationMessageRow[]): CheckedEvidence {
   const refs: EvidenceRef[] = [];
   const warnings: EvidenceWarning[] = [];
   const bySeq = new Map(messages.map((message) => [message.seq, message]));
@@ -449,15 +561,5 @@ async function missingDraftAgentMessage(
     return `studio_create_task_draft agent ${needle} is not a source-guild member.${known}`;
   }
   return `studio_create_task_draft requires agent_id of a source-guild member.${known}`;
-}
-
-function evidenceCoordinates(kind: string, candidate: Record<string, unknown>): unknown[] {
-  if (kind === "run_message") return [candidate.run_id, candidate.seq_start ?? candidate.seq];
-  if (kind === "group_message") return [candidate.seq];
-  if (kind === "artifact") return [candidate.display_path, candidate.version];
-  if (kind === "task_revision") return [candidate.agent_id, candidate.version];
-  if (kind === "memory_revision") return [candidate.revision_id];
-  if (kind === "routine") return [candidate.schedule_id];
-  return [];
 }
 

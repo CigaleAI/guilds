@@ -1,16 +1,7 @@
-import { Type, type Static, type TSchema } from "@sinclair/typebox";
-import { Value } from "@sinclair/typebox/value";
-import { decode } from "../../lib/decode.js";
+import type { Static, TSchema } from "typebox";
 import { proxyFetch, withQuery, type FetchFn } from "../../net/http.js";
-import {
-  LIST_DEFAULT,
-  argStr,
-  clipRows,
-  downsample,
-  fmtNum,
-  joinParts,
-  rowLimit,
-} from "../format.js";
+import { LIST_DEFAULT, clipRows, downsample, fmtNum, joinParts } from "../format.js";
+import { decodeResponse, type ConnectorApi } from "../response.js";
 import type { ApiGet } from "../types.js";
 import {
   ErrorBody,
@@ -22,6 +13,7 @@ import {
   SwapsResponse,
   TokenResponse,
   UsageResponse,
+  type Figure,
   type PageInfo,
 } from "./responses.js";
 
@@ -51,12 +43,30 @@ export class DexPaprikaError extends Error {
   }
 }
 
-/** The first of `values` that is set: not undefined, null, or empty text. */
-function present(...values: unknown[]): unknown {
+/** A search for pools on a network: one page of `limit`, each filter empty when the call gives none. */
+export type PoolSearch = {
+  network: string;
+  limit: number;
+  token: string;
+  dex: string;
+  createdAfter: string;
+  orderBy: string;
+  sort: string;
+  cursor: string;
+};
+
+/** The candles of a pool from `start` to `end` (empty for now), one per `interval`. */
+export type OhlcvRequest = { network: string; address: string; start: string; end: string; interval: string };
+
+/** A page of a pool's swaps from `from` to `to`, after `cursor`; each bound empty when the call gives none. */
+export type SwapsRequest = { network: string; address: string; from: string; to: string; cursor: string; limit: number };
+
+/** The first of `values` that is set: not absent, null, or empty text. */
+function present(...values: Array<Figure | undefined>): Figure | undefined {
   return values.find((value) => value !== undefined && value !== null && value !== "");
 }
 
-function pct(value: unknown): string {
+function pct(value: Figure | undefined): string {
   if (value === null || value === undefined || value === "") {
     return "-";
   }
@@ -72,13 +82,12 @@ function pct(value: unknown): string {
 
 function pair(row: PoolRow): string {
   const symbols = (row.tokens ?? [])
-    .map((token) => String(token.symbol ?? "").trim())
+    .map((token) => (token.symbol ?? "").trim())
     .filter(Boolean);
   if (symbols.length >= 2) {
     return symbols.slice(0, 2).join("/");
   }
-  const named = String(row.pool_name ?? row.name ?? "").trim();
-  return named;
+  return (row.pool_name ?? row.name ?? "").trim();
 }
 
 function section(title: string, rows: string[], limit: number): string {
@@ -90,21 +99,8 @@ function section(title: string, rows: string[], limit: number): string {
 }
 
 function pageNote(payload: PageInfo): string {
-  const cursor =
-    (typeof payload.next_cursor === "string" && payload.next_cursor.trim())
-    || payload.page_info?.next_cursor;
-  if (typeof cursor === "string" && cursor.trim()) {
-    return `page=${cursor.trim()}`;
-  }
-  return "";
-}
-
-/** The pools of a page, and its cursor. */
-function poolPage(payload: PoolsResponse): { rows: PoolRow[]; page: PageInfo } {
-  if (Array.isArray(payload)) {
-    return { rows: payload, page: {} };
-  }
-  return { rows: payload.results ?? payload.pools ?? [], page: payload };
+  const cursor = payload.next_cursor?.trim() || payload.page_info?.next_cursor?.trim();
+  return cursor ? `page=${cursor}` : "";
 }
 
 function searchPoolRow(row: PoolRow): string {
@@ -185,7 +181,8 @@ export function formatPool(payload: PoolRow): string {
 }
 
 export function formatPools(payload: PoolsResponse, limit = LIST_DEFAULT): string {
-  const { rows: pools, page } = poolPage(payload);
+  const pools = Array.isArray(payload) ? payload : (payload.results ?? payload.pools ?? []);
+  const page = Array.isArray(payload) ? {} : payload;
   const rows = pools.map((row) =>
     joinParts(
       row.chain,
@@ -240,35 +237,24 @@ export function formatSwaps(payload: SwapsResponse, limit = LIST_DEFAULT): strin
   return [body, pageNote(page)].filter(Boolean).join("\n");
 }
 
-async function errorDetail(response: Response): Promise<string> {
-  const text = await response.text();
-  let payload: unknown;
-  try {
-    payload = text ? JSON.parse(text) : {};
-  } catch {
-    const stripped = text.trim();
-    return stripped || `DexPaprika HTTP ${response.status}`;
-  }
-  if (Value.Check(ErrorBody, payload)) {
-    const detail = payload.message ?? payload.error;
-    if (typeof detail === "string" && detail.trim()) {
-      return detail.trim();
-    }
-  }
-  return `DexPaprika HTTP ${response.status}`;
+/** The message of an error body, trimmed; null when it holds none. */
+function errorMessage(body: ErrorBody): string | null {
+  const detail = (body.message ?? body.error)?.trim();
+  return detail ? detail : null;
 }
 
-function authHeaders(apiKey: string): Record<string, string> {
-  return { Authorization: apiKey, Accept: "application/json" };
-}
+/** DexPaprika's API as the client reads its responses. */
+const DEXPAPRIKA: ConnectorApi<typeof ErrorBody> = {
+  name: "DexPaprika",
+  error: (message, status) => new DexPaprikaError(message, status),
+  errorBody: ErrorBody,
+  errorMessage,
+};
 
 type DexPaprikaOptions = { client?: FetchFn; proxyUrl?: string };
 
-type ToolOptions = DexPaprikaOptions & { apiKey: string };
-
-function unexpected(problem: string): DexPaprikaError {
-  return new DexPaprikaError(`DexPaprika returned an unexpected response at ${problem}`);
-}
+/** The options of a call with a login's key. */
+export type ToolOptions = DexPaprikaOptions & { apiKey: string };
 
 /** The response at `path` with `params`, as `schema` describes it; the pro host when the free one refuses. */
 async function getJson<T extends TSchema>(
@@ -281,78 +267,65 @@ async function getJson<T extends TSchema>(
     throw new DexPaprikaError("DexPaprika API key is missing", 401);
   }
   const fetchFn = options.client ?? proxyFetch(options.proxyUrl ?? "");
-  const headers = authHeaders(key);
+  const headers = { Authorization: key, Accept: "application/json" };
   const send = async (base: string) =>
     fetchFn(withQuery(`${base}${request.path}`, request.params), { method: "GET", headers });
   let response = await send(API_BASE);
   if (response.status === 403) {
     response = await send(PRO_BASE);
   }
-  if (response.status >= 400) {
-    throw new DexPaprikaError(await errorDetail(response), response.status);
-  }
-  let payload: unknown;
-  try {
-    payload = JSON.parse(await response.text());
-  } catch {
-    throw new DexPaprikaError("DexPaprika returned a non-JSON body");
-  }
-  return decode(request.schema, payload, unexpected);
+  return decodeResponse(DEXPAPRIKA, response, request.schema);
 }
 
-function requireNetwork(arguments_: Record<string, unknown>): string {
-  const network = argStr(arguments_, "network").toLowerCase();
-  if (!network) {
+/** A network id a call names, lower-cased; throws when it is blank. */
+function requireNetwork(network: string): string {
+  const id = network.trim().toLowerCase();
+  if (!id) {
     throw new DexPaprikaError("network is required");
   }
-  return network;
+  return id;
 }
 
-function requireAddress(arguments_: Record<string, unknown>, key = "address"): string {
-  const address = argStr(arguments_, key);
-  if (!address) {
+/** An address a call names under `key`, trimmed; throws when it is blank. */
+function requireAddress(address: string, key = "address"): string {
+  const trimmed = address.trim();
+  if (!trimmed) {
     throw new DexPaprikaError(`${key} is required`);
   }
-  return address;
+  return trimmed;
 }
 
-const USAGE = Type.Unknown();
-
 export async function ping(apiKey: string, options: DexPaprikaOptions = {}): Promise<void> {
-  const payload = await getJson({ path: "/usage", params: {}, schema: USAGE }, apiKey, options);
-  const plan = Value.Check(UsageResponse, payload) && typeof payload.plan === "string"
-    ? payload.plan.trim().toLowerCase()
-    : "";
+  const payload = await getJson({ path: "/usage", params: {}, schema: UsageResponse }, apiKey, options);
+  const plan = payload.plan?.trim().toLowerCase();
   if (!plan || plan === "keyless") {
     throw new DexPaprikaError("api key was rejected", 401);
   }
 }
 
-export async function searchTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
-  const query = argStr(arguments_, "query");
-  if (!query) {
+/** DexPaprika's tokens, pools and DEXes for `query` across networks, `limit` rows a section. */
+export async function search(query: string, limit: number, options: ToolOptions): Promise<string> {
+  const stripped = query.trim();
+  if (!stripped) {
     throw new DexPaprikaError("query is required");
   }
-  const payload = await getJson({ path: "/search", params: { query }, schema: SearchResponse }, options.apiKey, options);
-  return formatSearch(payload, rowLimit(arguments_));
+  const payload = await getJson({ path: "/search", params: { query: stripped }, schema: SearchResponse }, options.apiKey, options);
+  return formatSearch(payload, limit);
 }
 
-export async function tokenTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
-  const network = requireNetwork(arguments_);
-  const address = requireAddress(arguments_);
-  const payload = await getJson(
-    { path: `/networks/${network}/tokens/${address}`, params: {}, schema: TokenResponse },
-    options.apiKey,
-    options,
-  );
+/** A token's lean market on a network, by its contract address. */
+export async function token(network: string, address: string, options: ToolOptions): Promise<string> {
+  const path = `/networks/${requireNetwork(network)}/tokens/${requireAddress(address)}`;
+  const payload = await getJson({ path, params: {}, schema: TokenResponse }, options.apiKey, options);
   return formatToken(payload);
 }
 
-export async function pricesTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
-  const network = requireNetwork(arguments_);
+/** The USD prices of the tokens a comma list of addresses names on a network, each address once. */
+export async function prices(network: string, tokenList: string, options: ToolOptions): Promise<string> {
+  const id = requireNetwork(network);
   const tokens = [
     ...new Set(
-      argStr(arguments_, "tokens")
+      tokenList
         .split(",")
         .map((part) => part.trim())
         .filter(Boolean),
@@ -365,67 +338,49 @@ export async function pricesTool(arguments_: Record<string, unknown>, options: T
     throw new DexPaprikaError(`tokens must list at most ${PRICES_MAX} addresses`);
   }
   const payload = await getJson(
-    { path: `/networks/${network}/multi/prices`, params: { tokens: tokens.join(",") }, schema: PricesResponse },
+    { path: `/networks/${id}/multi/prices`, params: { tokens: tokens.join(",") }, schema: PricesResponse },
     options.apiKey,
     options,
   );
   return formatPrices(payload);
 }
 
-export async function poolTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
-  const network = requireNetwork(arguments_);
-  const address = requireAddress(arguments_);
-  const payload = await getJson(
-    { path: `/networks/${network}/pools/${address}`, params: {}, schema: PoolRow },
-    options.apiKey,
-    options,
-  );
+/** A pool's market on a network, by its address. */
+export async function pool(network: string, address: string, options: ToolOptions): Promise<string> {
+  const path = `/networks/${requireNetwork(network)}/pools/${requireAddress(address)}`;
+  const payload = await getJson({ path, params: {}, schema: PoolRow }, options.apiKey, options);
   return formatPool(payload);
 }
 
-/** The arguments that, when given, become a query parameter of their own name. */
-function optionalParams(arguments_: Record<string, unknown>, names: Record<string, string>): Record<string, string> {
-  const params: Record<string, string> = {};
-  for (const [argument, param] of Object.entries(names)) {
-    const value = argStr(arguments_, argument);
-    if (value) {
-      params[param] = value;
-    }
-  }
-  return params;
-}
-
-export async function poolsTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
-  const network = requireNetwork(arguments_);
-  const limit = rowLimit(arguments_);
+/** One page of the pools `request` searches for. */
+export async function pools(request: PoolSearch, options: ToolOptions): Promise<string> {
+  const { token: tokenAddress, dex, createdAfter, orderBy, sort, cursor, limit } = request;
   const params = {
     limit: String(limit),
-    ...optionalParams(arguments_, {
-      token: "token_address",
-      dex: "dex_name",
-      created_after: "created_after",
-      order_by: "order_by",
-      sort: "sort",
-      cursor: "cursor",
-    }),
+    ...(tokenAddress ? { token_address: tokenAddress } : {}),
+    ...(dex ? { dex_name: dex } : {}),
+    ...(createdAfter ? { created_after: createdAfter } : {}),
+    ...(orderBy ? { order_by: orderBy } : {}),
+    ...(sort ? { sort } : {}),
+    ...(cursor ? { cursor } : {}),
   };
   const payload = await getJson(
-    { path: `/networks/${network}/pools/search`, params, schema: PoolsResponse },
+    { path: `/networks/${requireNetwork(request.network)}/pools/search`, params, schema: PoolsResponse },
     options.apiKey,
     options,
   );
   return formatPools(payload, limit);
 }
 
-export async function ohlcvTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
-  const network = requireNetwork(arguments_);
-  const address = requireAddress(arguments_);
-  const start = argStr(arguments_, "start", "-24h") || "-24h";
-  const interval = argStr(arguments_, "interval", "1h") || "1h";
+/** The candles `request` asks for, downsampled to the chart's points. */
+export async function ohlcv(request: OhlcvRequest, options: ToolOptions): Promise<string> {
+  const network = requireNetwork(request.network);
+  const address = requireAddress(request.address);
+  const { start, end, interval } = request;
   if (!OHLCV_INTERVALS.some((entry) => entry === interval)) {
     throw new DexPaprikaError(`interval must be ${OHLCV_INTERVALS.join(", ")}`);
   }
-  const params = { start, interval, limit: "1000", ...optionalParams(arguments_, { end: "end" }) };
+  const params = { start, interval, limit: "1000", ...(end ? { end } : {}) };
   const payload = await getJson(
     { path: `/networks/${network}/pools/${address}/ohlcv`, params, schema: OhlcvResponse },
     options.apiKey,
@@ -434,37 +389,21 @@ export async function ohlcvTool(arguments_: Record<string, unknown>, options: To
   return formatOhlcv(payload, `${network}:${address} ${interval} ${start}`);
 }
 
-export async function swapsTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
-  const network = requireNetwork(arguments_);
-  const address = requireAddress(arguments_);
-  const limit = rowLimit(arguments_);
-  const params = { limit: String(limit), ...optionalParams(arguments_, { from: "from", to: "to", cursor: "cursor" }) };
+/** The page of swaps `request` asks for. */
+export async function swaps(request: SwapsRequest, options: ToolOptions): Promise<string> {
+  const network = requireNetwork(request.network);
+  const address = requireAddress(request.address);
+  const { from, to, cursor, limit } = request;
+  const params = {
+    limit: String(limit),
+    ...(from ? { from } : {}),
+    ...(to ? { to } : {}),
+    ...(cursor ? { cursor } : {}),
+  };
   const payload = await getJson(
     { path: `/networks/${network}/pools/${address}/transactions`, params, schema: SwapsResponse },
     options.apiKey,
     options,
   );
   return formatSwaps(payload, limit);
-}
-
-const HANDLERS: Record<string, (arguments_: Record<string, unknown>, options: ToolOptions) => Promise<string>> = {
-  search: searchTool,
-  token: tokenTool,
-  prices: pricesTool,
-  pool: poolTool,
-  pools: poolsTool,
-  ohlcv: ohlcvTool,
-  swaps: swapsTool,
-};
-
-export async function callTool(
-  name: string,
-  arguments_: Record<string, unknown>,
-  options: ToolOptions,
-): Promise<string> {
-  const handler = HANDLERS[name];
-  if (!handler) {
-    throw new DexPaprikaError(`unknown DexPaprika tool ${name}`);
-  }
-  return handler(arguments_, options);
 }

@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
+import { Type } from "typebox";
+import { Value } from "typebox/value";
 import { HARNESS_LIST, isHarness } from "../coding/harnesses.js";
 import type { Harness } from "../db/schema/index.js";
-import { isPlainRecord } from "../db/json.js";
 import { agentHome } from "../lib/agent-file.js";
 import { writeLog } from "../observability/log.js";
 import {
@@ -36,7 +37,9 @@ import {
   type SandboxEndpoint,
   type SandboxHandle,
   type SandboxInfo,
+  type SandboxLabels,
   type SandboxManagerHandle,
+  type SandboxResource,
 } from "./sdk.js";
 
 export const BROWSER_PROFILE = ".browser";
@@ -57,6 +60,10 @@ function blankNavigate(cdpPort: number): string {
   return `python3 /usr/local/bin/guilds-browser ${Buffer.from(JSON.stringify(spec)).toString("base64")}`;
 }
 
+/** A page Chrome's DevTools lists: its address and its title. */
+const DevtoolsPage = Type.Object({ url: Type.Optional(Type.String()), title: Type.Optional(Type.String()) });
+
+/** Whether DevTools lists a page on the host's home or Chrome's error page; a list that is not JSON is searched as text. */
 export function browserNeedsBlankReset(pagesJson: string): boolean {
   let pages: unknown;
   try {
@@ -64,13 +71,12 @@ export function browserNeedsBlankReset(pagesJson: string): boolean {
   } catch {
     return HOST_HOME_RE.test(pagesJson);
   }
-  const list = Array.isArray(pages) ? pages : [pages];
-  return list.some((page: unknown) => {
-    if (!isPlainRecord(page)) {
-      return false;
-    }
-    return HOST_HOME_RE.test(String(page.url ?? "")) || HOST_HOME_RE.test(String(page.title ?? ""));
-  });
+  const listed: unknown[] = Array.isArray(pages) ? pages : [pages];
+  return listed.some(
+    (page) =>
+      Value.Check(DevtoolsPage, page)
+      && (HOST_HOME_RE.test(page.url ?? "") || HOST_HOME_RE.test(page.title ?? "")),
+  );
 }
 
 
@@ -141,7 +147,14 @@ export function seatPorts(seat: AgentSeat): SlotPorts {
  * The environment every command run for an agent carries, without its secrets: its home as
  * `HOME`, and its port block.
  */
-export function seatEnvironment(seat: AgentSeat): Record<string, string> {
+export type SeatEnvironment = {
+  HOME: string;
+  GUILDS_AGENT_HOME: string;
+  PORT: string;
+  GUILDS_PORTS: string;
+};
+
+export function seatEnvironment(seat: AgentSeat): SeatEnvironment {
   const home = agentHome(seat.agentId);
   const ports = slotPorts(seat.slot);
   return {
@@ -217,10 +230,22 @@ export function imageFingerprint(image: string): string {
 /** Where a machine's container comes from: the host that created it and the image it runs. */
 export type ContainerOrigin = { hostId?: string | undefined; image?: string };
 
-/** The labels a machine's container carries. */
-export function machineMetadata(machine: MachineSpec, origin: ContainerOrigin = {}): Record<string, string> {
+/**
+ * The labels a machine's container carries: its machine, tier, and size, the host that created it,
+ * and its image's fingerprint.
+ */
+export type MachineLabels = {
+  machine_id: string;
+  kind: MachineBox;
+  cpu: string;
+  memory: string;
+  host_id?: string;
+  image?: string;
+};
+
+export function machineMetadata(machine: MachineSpec, origin: ContainerOrigin = {}): MachineLabels {
   const resource = machineResource(machine);
-  const metadata: Record<string, string> = {
+  const metadata: MachineLabels = {
     machine_id: machine.id,
     kind: machine.box,
     cpu: resource.cpu,
@@ -235,9 +260,6 @@ export function machineMetadata(machine: MachineSpec, origin: ContainerOrigin = 
   return metadata;
 }
 
-/** What a sandbox is created with, as OpenSandbox takes it: CPUs and memory with a `Mi` suffix. */
-export type SandboxResource = { cpu: string; memory: string };
-
 export function machineResource(machine: Pick<MachineSpec, "cpu" | "memoryMib">): SandboxResource {
   return { cpu: String(machine.cpu), memory: `${machine.memoryMib}Mi` };
 }
@@ -246,8 +268,8 @@ export function machineResource(machine: Pick<MachineSpec, "cpu" | "memoryMib">)
  * Whether a running container is the one this machine would create: the same tier and size, and
  * with `image`, the same image, since the helpers the tools call are part of it.
  */
-export function machineMatches(metadata: unknown, machine: MachineSpec, image?: string): boolean {
-  if (!isPlainRecord(metadata)) {
+export function machineMatches(metadata: SandboxLabels | undefined, machine: MachineSpec, image?: string): boolean {
+  if (metadata === undefined) {
     return false;
   }
   if (image !== undefined && metadata.image !== imageFingerprint(image)) {
@@ -590,8 +612,9 @@ export class RunSandboxes {
     const matches = await listSandboxes(manager, { states: ["Running"], pageSize: 100 });
     const machineIds = new Set<string>();
     for (const { metadata } of matches) {
-      if (isPlainRecord(metadata) && typeof metadata.machine_id === "string") {
-        machineIds.add(metadata.machine_id);
+      const machineId = metadata?.machine_id;
+      if (machineId !== undefined) {
+        machineIds.add(machineId);
       }
     }
     return machineIds;
@@ -610,7 +633,7 @@ export class RunSandboxes {
     const manager = this.requireManager();
     let count = 0;
     for (const info of await listSandboxes(manager, { pageSize: 100 })) {
-      if (isPlainRecord(info.metadata) && "agent_id" in info.metadata) {
+      if (info.metadata !== undefined && "agent_id" in info.metadata) {
         await killSandbox(manager, info.id);
         count += 1;
       }

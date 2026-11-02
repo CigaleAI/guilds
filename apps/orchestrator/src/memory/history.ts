@@ -3,19 +3,36 @@ import type { ArtifactActor } from "../artifacts/types.js";
 import { listFileChanges } from "../db/file-changes.js";
 import { iso } from "../db/views.js";
 import { memoryTimeline, type MemoryTimelineEntry } from "../artifacts/memory.js";
-import { getRun } from "../db/runs.js";
+import type { AgentRow } from "../db/agents.js";
+import { getRun, type RunRow } from "../db/runs.js";
 import type { Queryable } from "../db/pg.js";
 
 export type MemoryWriteCall = { call_id: string; name: string | null };
 
+/** A run as the memory history reads it: what kind it was, its status, its schedule and when it started. */
+export type MemoryRun = Pick<RunRow, "kind" | "status" | "schedule_id" | "created_at">;
+
+/** The run that wrote a memory version; `exists` is false, and its fields null, once the run is gone. */
 export type MemoryHistoryRun = {
   id: string;
   exists: boolean;
-  kind: unknown;
-  status: unknown;
-  schedule_id: unknown;
+  kind: MemoryRun["kind"] | null;
+  status: MemoryRun["status"] | null;
+  schedule_id: MemoryRun["schedule_id"];
   created_at: string | null;
   memory_write: MemoryWriteCall | null;
+};
+
+/** A memory version with the run that wrote it; null for a version an operator wrote. */
+export type MemoryHistoryEntry = MemoryTimelineEntry & { run: MemoryHistoryRun | null };
+
+/** Every version an agent's memory has held, newest first, as the operator reads it. */
+export type MemoryHistory = {
+  agent: Pick<AgentRow, "id" | "name">;
+  display_path: string;
+  /** The live memory's version and content hash; both null when the agent has no memory yet. */
+  live: { version: number | null; content_hash: string | null };
+  entries: MemoryHistoryEntry[];
 };
 
 export function firstMemoryWriteByRun(
@@ -33,7 +50,7 @@ export function firstMemoryWriteByRun(
 
 export function historyRunPayload(
   runId: string | null,
-  runs: Map<string, Record<string, unknown>>,
+  runs: Map<string, MemoryRun>,
   callByRun: Map<string, MemoryWriteCall>,
 ): MemoryHistoryRun | null {
   if (!runId) {
@@ -46,16 +63,16 @@ export function historyRunPayload(
     kind: run?.kind ?? null,
     status: run?.status ?? null,
     schedule_id: run?.schedule_id ?? null,
-    created_at: run?.created_at ? iso(run.created_at) : null,
+    created_at: run ? iso(run.created_at) : null,
     memory_write: callByRun.get(runId) ?? null,
   };
 }
 
 export function attachRunsToMemoryEntries(
   entries: MemoryTimelineEntry[],
-  runs: Map<string, Record<string, unknown>>,
+  runs: Map<string, MemoryRun>,
   callByRun: Map<string, MemoryWriteCall>,
-): Array<MemoryTimelineEntry & { run: MemoryHistoryRun | null }> {
+): MemoryHistoryEntry[] {
   return entries.map((entry) => ({
     ...entry,
     run: historyRunPayload(entry.run_id, runs, callByRun),
@@ -65,8 +82,8 @@ export function attachRunsToMemoryEntries(
 async function runsById(
   db: Queryable,
   runIds: string[],
-): Promise<Map<string, Record<string, unknown>>> {
-  const runs = new Map<string, Record<string, unknown>>();
+): Promise<Map<string, MemoryRun>> {
+  const runs = new Map<string, MemoryRun>();
   for (const runId of runIds) {
     const run = await getRun(db, runId);
     if (run) {
@@ -83,8 +100,8 @@ async function runsById(
 export async function memoryHistory(
   deps: { artifacts: ArtifactStore; db: Queryable },
   actor: ArtifactActor,
-  agent: { id: string; name: string },
-): Promise<Record<string, unknown>> {
+  agent: Pick<AgentRow, "id" | "name">,
+): Promise<MemoryHistory> {
   const timeline = await memoryTimeline(deps.artifacts, actor, agent.id);
   const changes = await listFileChanges(deps.db, actor.orgId, timeline.displayPath);
   const callByRun = firstMemoryWriteByRun(changes);

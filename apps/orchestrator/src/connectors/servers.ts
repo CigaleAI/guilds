@@ -15,6 +15,7 @@ import type {
   Manifest,
   OAuthClient,
   Overrides,
+  SettingsSchema,
   ToolInputSchema,
 } from "../db/schema/index.js";
 import { installedConnectors } from "./index.js";
@@ -35,7 +36,7 @@ function applyOverrides(manifest: Manifest, overrides: Overrides): Manifest {
   const next: Manifest = { ...manifest };
   for (const field of OVERRIDE_FIELDS) {
     const value = overrides[field];
-    if (typeof value === "string") {
+    if (value !== undefined) {
       next[field] = value;
     }
   }
@@ -187,7 +188,7 @@ export async function saveOauthClient(
 
 /** The copy fields the admin's overrides replace on this connector. */
 export function overriddenCopyFields(server: LoadedConnector): CopyField[] {
-  return OVERRIDE_FIELDS.filter((field) => typeof server.overrides[field] === "string");
+  return OVERRIDE_FIELDS.filter((field) => server.overrides[field] !== undefined);
 }
 
 /**
@@ -196,8 +197,8 @@ export function overriddenCopyFields(server: LoadedConnector): CopyField[] {
  */
 export function editCopyOverrides(
   overrides: Overrides,
-  edit: Readonly<Record<string, unknown>>,
-  checks: Readonly<Record<CopyField, (value: unknown) => string>>,
+  edit: Readonly<Partial<Record<CopyField, string | null | undefined>>>,
+  checks: Readonly<Record<CopyField, (value: string) => string>>,
 ): Overrides {
   const next: Overrides = { ...overrides };
   for (const field of OVERRIDE_FIELDS) {
@@ -266,7 +267,7 @@ function manifestStartsOff(manifest: Manifest, name: string): boolean {
  */
 function toolStartsOff(server: LoadedConnector, name: string, destructiveHint: boolean | null): boolean {
   const override = server.overrides.tools?.[name]?.default;
-  if (typeof override === "boolean") {
+  if (override !== undefined) {
     return !override;
   }
   if (manifestStartsOff(server.manifest, name)) {
@@ -280,7 +281,7 @@ function toolStartsOff(server: LoadedConnector, name: string, destructiveHint: b
 
 function defaultOverride(server: LoadedConnector, name: string): boolean | null {
   const choice = server.overrides.tools?.[name]?.default;
-  return typeof choice === "boolean" ? choice : null;
+  return choice ?? null;
 }
 
 /** The tools a server offers before any login lists them: the ones its manifest names, by namespaced name. */
@@ -387,9 +388,6 @@ export function isReadOnlyRemote(server: LoadedConnector, remoteName: string, re
   }
   return !nameMutates(remoteName);
 }
-
-/** The JSON Schema of the settings a login of a server stores, as the server's manifest declares it. */
-export type SettingsSchema = NonNullable<Manifest["settings_schema"]>;
 
 /** The JSON Schema of the settings a login of this server stores: its installed connector's, or null when it takes none. */
 export function serverSettings(server: LoadedConnector): SettingsSchema | null {

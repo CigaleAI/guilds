@@ -26,6 +26,8 @@ import {
   validateOrgName,
   validateRole,
   validateSlug,
+  type OrgItem,
+  type OrgMemberItem,
   type OrgRole,
 } from "./index.js";
 
@@ -48,8 +50,6 @@ export type OrgPatch = { name?: string; slug?: string };
 
 /** The user a member is added as: by id, or by name with an optional leading `@`. */
 export type MemberRef = { userId: string } | { name: string };
-
-type Item = Record<string, unknown>;
 
 const NOT_FOUND = "organisation not found";
 
@@ -104,7 +104,7 @@ export async function ownsSeedOrg(db: Queryable, userId: string): Promise<boolea
   return (await getMembership(db, SEED_ORG_ID, userId))?.role === "owner";
 }
 
-export async function listUserOrgs(db: Queryable, userId: string): Promise<Item[]> {
+export async function listUserOrgs(db: Queryable, userId: string): Promise<OrgItem[]> {
   return (await listOrgsForUser(db, userId)).map((row) => orgItem(row));
 }
 
@@ -113,7 +113,7 @@ export async function createOrg(
   db: Queryable,
   draft: OrgDraft,
   orgCreated?: OrgCreatedHook,
-): Promise<Item> {
+): Promise<OrgItem> {
   const name = validateOrgName(draft.name);
   const slug = validateSlug(draft.slug);
   try {
@@ -138,7 +138,7 @@ export async function updateOrgSettings(
   notes: NotesStore,
   membership: OrgMembershipRow,
   patch: OrgPatch,
-): Promise<Item> {
+): Promise<OrgItem> {
   if (!canManageSettings(membership.role)) {
     throw new OrgError(404, NOT_FOUND);
   }
@@ -159,11 +159,11 @@ export async function updateOrgSettings(
   return { ...orgItem(row), role: membership.role };
 }
 
-export async function listOrgMembers(db: Queryable, membership: OrgMembershipRow): Promise<Item[]> {
+export async function listOrgMembers(db: Queryable, membership: OrgMembershipRow): Promise<OrgMemberItem[]> {
   return (await listMembers(db, membership.id)).map((row) => memberItem(row));
 }
 
-async function memberOf(db: Queryable, orgId: string, userId: string): Promise<Item> {
+async function memberOf(db: Queryable, orgId: string, userId: string): Promise<OrgMemberItem> {
   const rows = await listMembers(db, orgId);
   const row = rows.find((item) => item.user_id === userId);
   if (row === undefined) {
@@ -178,7 +178,7 @@ export async function addOrgMember(
   membership: OrgMembershipRow,
   ref: MemberRef,
   role: string,
-): Promise<Item> {
+): Promise<OrgMemberItem> {
   const granted: OrgRole = validateRole(role);
   if (!mayChangeMember(membership.role, [granted])) {
     throw new OrgError(404, NOT_FOUND);
@@ -208,7 +208,7 @@ export async function changeMemberRole(
   membership: OrgMembershipRow,
   userId: string,
   role: string,
-): Promise<Item> {
+): Promise<OrgMemberItem> {
   const granted = validateRole(role);
   const existing = await getMembership(db, membership.id, userId);
   if (existing === null) {

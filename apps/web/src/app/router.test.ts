@@ -1,14 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { JsonObject } from "../api/wire";
 import { router } from "./router";
 
-function tableSearch(search: Record<string, unknown>) {
+function tableSearch(search: JsonObject) {
   const validate = router.routesById["/tables/$collectionId"].options.validateSearch;
   if (typeof validate !== "function") throw new TypeError("the table route validates its search");
   return validate(search);
 }
 
-function agentSearch(search: Record<string, unknown>) {
+function agentSearch(search: JsonObject) {
   const validate = router.routesById["/guilds/$guildId/agents/$agentId"].options.validateSearch;
   if (typeof validate !== "function") throw new TypeError("the agent route validates its search");
   return validate(search);

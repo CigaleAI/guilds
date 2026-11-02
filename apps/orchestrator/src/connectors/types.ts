@@ -1,5 +1,6 @@
-import type { TSchema } from "@sinclair/typebox";
+import type { TObject, TSchema } from "typebox";
 import type { ConnectionSettings, ToolInputSchema } from "../db/schema/index.js";
+import type { JsonObject } from "../lib/json.js";
 import type { FetchFn } from "../net/http.js";
 
 /** One GET a connector's API client sends: `path` on its API with the query `params`, the JSON body decoded with `schema`. */
@@ -34,7 +35,7 @@ export type RemoteInfo = { name: string; instructions: string };
 export type RemoteSession = {
   initialize(): Promise<RemoteInfo>;
   list(): Promise<ConnectorTool[]>;
-  call(name: string, args: Record<string, unknown>): Promise<string>;
+  call(name: string, args: JsonObject): Promise<string>;
 };
 
 export type ConnectorContext = {
@@ -49,6 +50,18 @@ export type ConnectorContext = {
   workspace_dir?: string;
 };
 
+/**
+ * A tool a connector's code runs, as its adapter runs it: its name, the TypeBox schema of its
+ * parameters, and the run of a call's arguments, decoded against the parameters before any work.
+ * The parameters are the tool's one declaration: the loaded manifest's `input_schema` for the
+ * tool is their JSON Schema, and its `connector.json` lists the tool without one.
+ */
+export type AdapterTool = {
+  name: string;
+  parameters: TObject;
+  call: (args: JsonObject, creds: Credentials, ctx: ConnectorContext) => Promise<string>;
+};
+
 export type Adapter = {
   /**
    * Checks the credentials and settings. Returns the account hint, empty when there is none.
@@ -59,8 +72,10 @@ export type Adapter = {
   lookup?(property: string, query: string, creds: Credentials, ctx: ConnectorContext): Promise<LookupOption[]>;
   /** The tools this login lists. Default: the manifest's tools, or the endpoint's `tools/list` when there is one. */
   list?(creds: Credentials, ctx: ConnectorContext): Promise<ConnectorTool[]>;
+  /** The tools the connector's code runs, which its `call` runs by name (see `toolsAdapter`). */
+  tools?: readonly AdapterTool[];
   /** Runs one tool. Default: the endpoint's `tools/call`. Required when there is no endpoint. */
-  call?(name: string, args: Record<string, unknown>, creds: Credentials, ctx: ConnectorContext): Promise<string>;
+  call?(name: string, args: JsonObject, creds: Credentials, ctx: ConnectorContext): Promise<string>;
   /** The value for the manifest's `state.key`, once per generation, under the pool's budget. Null leaves the key out. */
   state?(creds: Credentials, ctx: ConnectorContext): Promise<unknown>;
 };

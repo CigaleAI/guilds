@@ -1,5 +1,6 @@
 import { ownerRefs } from "../db/columns.js";
 import type { ConfigChange, ConfigOperation } from "../db/config-changes.js";
+import { isCatalogKind, type CatalogKind } from "./index.js";
 
 /** A binding's identity: what it sets and at which scope. */
 export type BindingKey = {
@@ -9,14 +10,16 @@ export type BindingKey = {
   scopeId: string | null;
 };
 
-const KIND_WORDS: Record<string, string> = {
+/** The word a change's summary calls each kind of catalog item by. */
+const KIND_WORDS: Record<CatalogKind, string> = {
   native_tool: "tool",
   mcp: "connector",
   mcp_tool: "tool",
 };
 
 function bindingLabel(key: BindingKey): string {
-  return `${KIND_WORDS[key.catalogKind] ?? key.catalogKind} ${key.catalogId}`;
+  const word = isCatalogKind(key.catalogKind) ? KIND_WORDS[key.catalogKind] : key.catalogKind;
+  return `${word} ${key.catalogId}`;
 }
 
 function bindingOperation(before: boolean | null, after: boolean | null): ConfigOperation {

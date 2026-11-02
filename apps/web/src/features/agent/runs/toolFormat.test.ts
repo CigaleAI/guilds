@@ -14,6 +14,48 @@ import {
   toolOutcome,
   toolResultError,
 } from "./toolFormat";
+import type {
+  BrowserUsageMetadata,
+  MessageMetadata,
+  RunMessage,
+  ToolCall,
+} from "../../../api/types/runs";
+
+/** A tool call as the model makes it, its arguments the JSON text given. */
+function toolCall(name: string, args: string): ToolCall {
+  return { id: "c1", type: "function", function: { name, arguments: args } };
+}
+
+/** A tool call whose arguments are the JSON of an object. */
+function callWith(name: string, args: Record<string, unknown>): ToolCall {
+  return toolCall(name, JSON.stringify(args));
+}
+
+/** A recorded tool result with its body and metadata. */
+function toolResult(content: string, metadata: MessageMetadata): RunMessage {
+  return {
+    id: 1,
+    seq: 1,
+    payload: { role: "tool", tool_call_id: "c1", content },
+    metadata,
+    created_at: "2026-09-21T08:00:00Z",
+    cost_usd: null,
+  };
+}
+
+/** What a browse call spent, its total `cost_usd`. */
+function browserUsage(cost_usd: number): BrowserUsageMetadata {
+  return {
+    model: "m",
+    jev_input_tokens: 0,
+    jev_output_tokens: 0,
+    jev_cost_usd: 0,
+    llm_input_tokens: 0,
+    llm_output_tokens: 0,
+    llm_cost_usd: 0,
+    cost_usd,
+  };
+}
 
 test("stripRemainingToolCalls removes only the trailing budget stamp", () => {
   const wrapUp = "Wrap up and finish with text.";
@@ -28,13 +70,11 @@ test("stripRemainingToolCalls removes only the trailing budget stamp", () => {
   );
 });
 
-test("parseToolArgs reads a JSON string or an object, and is empty otherwise", () => {
+test("parseToolArgs reads the JSON object the text holds, and is empty otherwise", () => {
   assert.deepEqual(parseToolArgs('{"path":"a.md"}'), { path: "a.md" });
-  assert.deepEqual(parseToolArgs({ path: "a.md" }), { path: "a.md" });
   assert.deepEqual(parseToolArgs("not json"), {});
   assert.deepEqual(parseToolArgs("[1]"), {});
   assert.deepEqual(parseToolArgs(""), {});
-  assert.deepEqual(parseToolArgs(undefined), {});
 });
 
 test("formatToolArgs shows arguments as JSON, and what it cannot read as text", () => {
@@ -49,22 +89,17 @@ test("formatToolArgs shows arguments as JSON, and what it cannot read as text", 
     parsed: {},
   });
   assert.deepEqual(formatToolArgs("plain"), { isEmpty: false, text: "plain", parsed: null });
-  assert.equal(formatToolArgs(null).isEmpty, true);
-  assert.equal(formatToolArgs({ run: "a", at: new Date(0) }).parsed, null);
+  assert.deepEqual(formatToolArgs("[1]"), { isEmpty: false, text: "[\n  1\n]", parsed: [1] });
+  assert.equal(formatToolArgs('"text"').parsed, null);
+  assert.equal(formatToolArgs("").isEmpty, true);
 });
 
 test("toolResultError prefers metadata and falls back to the ERROR body", () => {
   assert.equal(toolResultError(null), null);
-  assert.equal(toolResultError({ payload: { content: "fine" }, metadata: { error: null } }), null);
+  assert.equal(toolResultError(toolResult("fine", { error: null })), null);
+  assert.equal(toolResultError(toolResult("fine", { error: "boom" })), "boom");
   assert.equal(
-    toolResultError({ payload: { content: "fine" }, metadata: { error: "boom" } }),
-    "boom",
-  );
-  assert.equal(
-    toolResultError({
-      payload: { content: "ERROR: unknown tool x\nmore\n\nremaining_tool_calls: 3" },
-      metadata: {},
-    }),
+    toolResultError(toolResult("ERROR: unknown tool x\nmore\n\nremaining_tool_calls: 3", {})),
     "unknown tool x",
   );
 });
@@ -94,8 +129,7 @@ test("compact formatters", () => {
 });
 
 test("friendlyToolCall summarises known calls and falls back to a single short argument", () => {
-  const friendly = (name: string, args: string) =>
-    friendlyToolCall({ function: { name, arguments: args } });
+  const friendly = (name: string, args: string) => friendlyToolCall(toolCall(name, args));
   assert.equal(friendly("note_find", '{"query":"thesis"}'), "Find notes thesis");
   assert.equal(friendly("memory_write", "{}"), "Write memory");
   assert.equal(
@@ -155,9 +189,15 @@ test("friendlyToolCall summarises known calls and falls back to a single short a
   assert.equal(friendly("custom", '{"a":1,"b":2}'), "");
 });
 
+test("a known tool's call whose arguments do not fit its schema reads as its name", () => {
+  assert.equal(friendlyToolCall(callWith("file_read", { path: 7 })), "");
+  assert.equal(friendlyToolCall(callWith("shell", { command: "ls", background: "yes" })), "");
+  assert.equal(summarizeCalls([callWith("record_update", { id: "42" })]), "record_update");
+});
+
 test("code tools read as the command, the file, or the background job they touch", () => {
   const call = (name: string, args: Record<string, unknown>) =>
-    friendlyToolCall({ function: { name, arguments: JSON.stringify(args) } });
+    friendlyToolCall(callWith(name, args));
   assert.equal(
     call("shell", { command: "npm test -- --watch=false\necho done" }),
     "Run npm test -- --watch=false",
@@ -177,8 +217,7 @@ test("code tools read as the command, the file, or the background job they touch
 });
 
 test("browse reads as where the delegated web task starts", () => {
-  const call = (args: Record<string, unknown>) =>
-    friendlyToolCall({ function: { name: "browse", arguments: JSON.stringify(args) } });
+  const call = (args: Record<string, unknown>) => friendlyToolCall(callWith("browse", args));
   assert.equal(
     call({ task: "find the price", start: "https://example.com" }),
     "Browse from https://example.com",
@@ -187,9 +226,7 @@ test("browse reads as where the delegated web task starts", () => {
 });
 
 test("summarizeCalls names what a batch did, merging calls that share a verb", () => {
-  const call = (name: string, args: Record<string, unknown>) => ({
-    function: { name, arguments: JSON.stringify(args) },
-  });
+  const call = callWith;
   assert.equal(summarizeCalls([call("file_read", { path: "a.md" })]), "Read a.md");
   assert.equal(
     summarizeCalls([
@@ -211,7 +248,6 @@ test("summarizeCalls names what a batch did, merging calls that share a verb", (
     summarizeCalls([call("group_post", {}), call("browser_snapshot", {})]),
     "Post to group · Read page snapshot",
   );
-  assert.equal(summarizeCalls([call("custom", { a: 1, b: 2 }), null]), "custom · tool");
   assert.equal(
     summarizeCalls([call("custom", { a: 1, b: 2 }), call("custom", { a: 3, b: 4 })]),
     "custom",
@@ -224,26 +260,23 @@ test("toolOutcome names a failing exit and a repeated read", () => {
   assert.equal(toolOutcome({ tool_name: "shell", exit_code: 2 }), "exit 2");
   assert.equal(toolOutcome({ tool_name: "shell", exit_code: 124, timed_out: true }), "timed out");
   assert.equal(toolOutcome({ tool_name: "file_read", repeat_of: 14 }), "unchanged since step 14");
-  assert.equal(toolOutcome(null), "");
+  assert.equal(toolOutcome(undefined), "");
 });
 
 test("a browse call ends with its status when it did not complete, and its cost", () => {
   assert.equal(
-    toolOutcome({ tool_name: "browse", status: "complete", browser_usage: { cost_usd: 0.0123 } }),
+    toolOutcome({ tool_name: "browse", status: "complete", browser_usage: browserUsage(0.0123) }),
     "$0.01",
   );
   assert.equal(
-    toolOutcome({ tool_name: "browse", status: "needs_login", browser_usage: { cost_usd: 0.004 } }),
+    toolOutcome({ tool_name: "browse", status: "needs_login", browser_usage: browserUsage(0.004) }),
     "needs login · $0.0040",
   );
   assert.equal(toolOutcome({ tool_name: "browse", status: "cancelled" }), "cancelled");
 });
 
 test("a code task reads by its repository and session, and ends with its status and diffstat", () => {
-  const call = (args: Record<string, unknown>) => ({
-    id: "c1",
-    function: { name: "code_task", arguments: JSON.stringify(args) },
-  });
+  const call = (args: Record<string, unknown>) => callWith("code_task", args);
   assert.equal(friendlyToolCall(call({ brief: "Fix greet", repo: "app" })), "Code task in app");
   assert.equal(
     friendlyToolCall(call({ brief: "Go on", repo: "app", session_id: "s1" })),

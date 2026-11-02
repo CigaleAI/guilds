@@ -1,5 +1,6 @@
 import { reportClientError, requestId } from "./clientLog";
 import { authMode, identityHeaders, signInUrl } from "./session";
+import { isErrorReply, isString, type JsonObject, type JsonValue } from "./wire";
 
 /** A failed API call; `message` is the server's `detail` made readable. */
 export class ApiError extends Error {
@@ -12,19 +13,26 @@ export class ApiError extends Error {
   }
 }
 
+/** One problem the server's schema found in a refused request: its kind, where it sits, and its message. */
+export type ValidationProblem = { type: string; loc: string[]; msg: string };
+
+/**
+ * What a failed reply's `detail` says: a message, the problems of a request the server's schema
+ * refused, or an object that carries a message beside the facts of the failure.
+ */
+export type ErrorDetail = string | ValidationProblem[] | (JsonObject & { message: string });
+
+/** A failed reply's body. */
+export type ErrorReply = { detail: ErrorDetail };
+
 /** The server's `detail` as one readable line, or `fallback` when it carries none. */
-export function detailText(detail: unknown, fallback: string): string {
-  if (typeof detail === "string") return detail;
+export function detailText(detail: ErrorDetail, fallback: string): string {
+  if (isString(detail)) return detail;
   if (Array.isArray(detail)) {
-    const messages = detail
-      .map((item) => (item && typeof item === "object" && "msg" in item ? String(item.msg) : ""))
-      .filter(Boolean);
-    if (messages.length) return messages.join("; ");
-  } else if (detail && typeof detail === "object" && "message" in detail) {
-    const message = String(detail.message ?? "").trim();
-    if (message) return message;
+    const messages = detail.map((problem) => problem.msg).filter(Boolean);
+    return messages.length ? messages.join("; ") : fallback;
   }
-  return fallback;
+  return detail.message.trim() || fallback;
 }
 
 /** A failed reply's status as text: its status text, or `HTTP <status>` when it has none. */
@@ -43,8 +51,7 @@ export async function readErrorBody(response: Response): Promise<string | null> 
   } catch {
     return null;
   }
-  const detail = body && typeof body === "object" && "detail" in body ? body.detail : null;
-  return detailText(detail, statusLine(response));
+  return isErrorReply(body) ? detailText(body.detail, statusLine(response)) : statusLine(response);
 }
 
 /**
@@ -70,22 +77,22 @@ type ApiMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 type RequestOptions = {
   method?: ApiMethod;
-  body?: unknown;
+  body?: JsonValue;
   signal?: AbortSignal;
 };
 
 /** The request `api` sends: as the operator, with the tab's request id, and `body` as JSON. */
 function buildApiRequest(
   method: ApiMethod,
-  body: unknown,
+  body: JsonValue | undefined,
   signal: AbortSignal | undefined,
 ): RequestInit {
-  const headers: Record<string, string> = {
+  const headers = {
     Accept: "application/json",
     "X-Request-Id": requestId(),
     ...identityHeaders(),
-  };
-  if (body !== undefined) headers["Content-Type"] = "application/json";
+    ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+  } satisfies Record<string, string>;
   return {
     method,
     headers,

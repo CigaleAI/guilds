@@ -1,9 +1,15 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { Type, type Static } from "typebox";
+import { Value } from "typebox/value";
+import type { ChatCompletionChunk } from "openai/resources/chat/completions";
+import { keepMatching } from "../lib/decode.js";
+import { isJsonObject, isObjectNode, type JsonObject, type JsonValue } from "../lib/json.js";
 import { modelCatalog } from "./catalog.js";
 import {
   LISTING_TIMEOUT_MS,
   LLMError,
   MODEL_USER_AGENT,
+  PROMPT_CACHE_CONTROL,
   asLlmError,
   assistantMetadata,
   assistantPayload,
@@ -11,12 +17,13 @@ import {
   providerForModel,
   reasoningEffortForModel,
   type AssembledCompletion,
+  type ContentPart,
   type ModelEndpoint,
   type ModelEvent,
   type ModelListingServices,
+  type ModelMessage,
   type ModelRequest,
 } from "./completion.js";
-import { isPlainObject } from "./payload.js";
 import type { ProviderDef } from "./providers.js";
 
 // A provider on Anthropic's Messages API. The run speaks OpenAI-style messages; a request is
@@ -27,8 +34,37 @@ type UserBlock = Anthropic.TextBlockParam | Anthropic.ImageBlockParam | Anthropi
 type Effort = NonNullable<Anthropic.OutputConfig["effort"]>;
 type ImageMediaType = Anthropic.Base64ImageSource["media_type"];
 
-const PROMPT_CACHE_CONTROL = { type: "ephemeral" } as const;
-const EMPTY_INPUT_SCHEMA: Anthropic.Tool.InputSchema = { type: "object", properties: {} };
+/** An assistant turn of the history, its content as text or as parts. */
+type AssistantTurn = Extract<ModelMessage, { role: "assistant" }>;
+
+/** A tool's result in the history. */
+type ToolTurn = Extract<ModelMessage, { role: "tool" }>;
+
+/** The history as a Messages API conversation: the leading system text, and the turns. */
+type MessagesConversation = { system: Anthropic.TextBlockParam[]; messages: Anthropic.MessageParam[] };
+
+const EMPTY_INPUT_SCHEMA = { type: "object", properties: {} } satisfies JsonObject;
+
+/** A tool's parameters as the Messages API takes them: an object schema, whose required names are strings when it lists them. */
+const InputSchema = Type.Object({
+  type: Type.Literal("object"),
+  required: Type.Optional(Type.Union([Type.Array(Type.String()), Type.Null()])),
+});
+
+/** The function an OpenAI tool schema defines, as far as the Messages API reads it: its name, and its description when it gives one. */
+const FunctionTool = Type.Object({
+  name: Type.String(),
+  description: Type.Optional(Type.String({ minLength: 1 })),
+});
+
+/** An OpenAI `tool_choice` the Messages API has a counterpart for: a mode, or the function it names. */
+const ToolChoice = Type.Union([
+  Type.Literal("auto"),
+  Type.Literal("none"),
+  Type.Literal("required"),
+  Type.Object({ function: Type.Object({ name: Type.String() }) }),
+]);
+type ToolChoice = Static<typeof ToolChoice>;
 
 // Keyed by every value the SDK names, so a value the SDK adds fails the typecheck until it is listed.
 const IMAGE_MEDIA_TYPES: Record<ImageMediaType, true> = {
@@ -45,17 +81,6 @@ function isImageMediaType(value: string): value is ImageMediaType {
 
 function isEffort(value: string): value is Effort {
   return Object.hasOwn(EFFORTS, value);
-}
-
-/** A tool's parameters as the Messages API takes them: an object schema whose required names are strings. */
-function isInputSchema(schema: Record<string, unknown>): schema is Anthropic.Tool.InputSchema {
-  const required = schema.required;
-  return (
-    schema.type === "object" &&
-    (required === undefined ||
-      required === null ||
-      (Array.isArray(required) && required.every((name) => typeof name === "string")))
-  );
 }
 
 /** A Messages API client for a key: no retries, no credentials read from the environment. */
@@ -87,62 +112,51 @@ function imageBlock(url: string): Anthropic.ImageBlockParam | null {
   return /^https?:\/\//.test(url) ? { type: "image", source: { type: "url", url } } : null;
 }
 
-/** The text and image blocks of an OpenAI content value: a string, or a list of parts. */
-function contentBlocks(content: unknown): Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam> {
-  if (typeof content === "string") {
-    return content ? [{ type: "text", text: content }] : [];
+/** The block of a content part: the text of a part that has some, the image of one the API can address. */
+function partBlocks(part: ContentPart): Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam> {
+  if (part.type === "text") {
+    return part.text ? [{ type: "text", text: part.text }] : [];
   }
-  if (!Array.isArray(content)) {
-    return [];
-  }
-  return content.flatMap((part: unknown): Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam> => {
-    if (!isPlainObject(part)) {
-      return [];
-    }
-    if (part.type === "text" && typeof part.text === "string" && part.text) {
-      return [{ type: "text", text: part.text }];
-    }
-    const image = isPlainObject(part.image_url) ? part.image_url : null;
-    if (part.type !== "image_url" || typeof image?.url !== "string") {
-      return [];
-    }
-    const block = imageBlock(image.url);
-    return block ? [block] : [];
-  });
+  const block = imageBlock(part.image_url.url);
+  return block ? [block] : [];
 }
 
-function toolUseInput(args: unknown): Record<string, unknown> {
-  if (typeof args !== "string" || !args.trim()) {
+/** The text and image blocks of a message's content: its text, or its parts. */
+function contentBlocks(content: ModelMessage["content"]): Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam> {
+  if (Array.isArray(content)) {
+    return content.flatMap(partBlocks);
+  }
+  return content ? [{ type: "text", text: content }] : [];
+}
+
+/** The input a tool call's arguments give: their JSON object; none when they are empty or not an object. */
+function toolUseInput(args: string): JsonObject {
+  if (!args.trim()) {
     return {};
   }
   try {
-    const input: unknown = JSON.parse(args);
-    return isPlainObject(input) ? input : {};
+    const input: JsonValue = JSON.parse(args);
+    return isObjectNode(input) ? input : {};
   } catch {
     return {};
   }
 }
 
-function assistantBlocks(message: Record<string, unknown>): Array<Anthropic.TextBlockParam | Anthropic.ToolUseBlockParam> {
+function assistantBlocks(message: AssistantTurn): Array<Anthropic.TextBlockParam | Anthropic.ToolUseBlockParam> {
   const blocks: Array<Anthropic.TextBlockParam | Anthropic.ToolUseBlockParam> = contentBlocks(message.content).filter(
     (block): block is Anthropic.TextBlockParam => block.type === "text",
   );
-  const calls: unknown[] = Array.isArray(message.tool_calls) ? message.tool_calls : [];
-  for (const call of calls) {
-    const fn = isPlainObject(call) && isPlainObject(call.function) ? call.function : null;
-    if (!isPlainObject(call) || typeof call.id !== "string" || typeof fn?.name !== "string") {
-      continue;
-    }
-    blocks.push({ type: "tool_use", id: call.id, name: fn.name, input: toolUseInput(fn.arguments) });
+  for (const call of message.tool_calls ?? []) {
+    blocks.push({ type: "tool_use", id: call.id, name: call.function.name, input: toolUseInput(call.function.arguments) });
   }
   return blocks;
 }
 
-function toolResultBlock(message: Record<string, unknown>): Anthropic.ToolResultBlockParam {
+function toolResultBlock(message: ToolTurn): Anthropic.ToolResultBlockParam {
   const content = contentBlocks(message.content);
   return {
     type: "tool_result",
-    tool_use_id: String(message.tool_call_id ?? ""),
+    tool_use_id: message.tool_call_id,
     ...(content.length ? { content } : {}),
   };
 }
@@ -152,10 +166,7 @@ function toolResultBlock(message: Record<string, unknown>): Anthropic.ToolResult
  * `system`; a later one is a user turn. Tool results are user turns, and consecutive turns of one
  * role are merged, so each assistant turn's tool results reach the model together.
  */
-export function messagesFromHistory(history: Array<Record<string, unknown>>): {
-  system: Anthropic.TextBlockParam[];
-  messages: Anthropic.MessageParam[];
-} {
+export function messagesFromHistory(history: ModelMessage[]): MessagesConversation {
   const system: Anthropic.TextBlockParam[] = [];
   const messages: Anthropic.MessageParam[] = [];
   let leading = true;
@@ -171,15 +182,14 @@ export function messagesFromHistory(history: Array<Record<string, unknown>>): {
     messages.push({ role, content: [...blocks] });
   };
   for (const message of history) {
-    const role = message.role;
-    if (role === "system" && leading) {
+    if (message.role === "system" && leading) {
       system.push(...contentBlocks(message.content).filter((block): block is Anthropic.TextBlockParam => block.type === "text"));
       continue;
     }
     leading = false;
-    if (role === "assistant") {
+    if (message.role === "assistant") {
       append("assistant", assistantBlocks(message));
-    } else if (role === "tool") {
+    } else if (message.role === "tool") {
       append("user", [toolResultBlock(message)]);
     } else {
       append("user", contentBlocks(message.content));
@@ -192,29 +202,29 @@ export function messagesFromHistory(history: Array<Record<string, unknown>>): {
  * An OpenAI tool schema as a Messages API tool; null when it names no function. Parameters that are
  * not an object take none; an object that is not an object schema fails the call.
  */
-function messagesTool(raw: unknown): Anthropic.Tool | null {
-  const fn = isPlainObject(raw) && isPlainObject(raw.function) ? raw.function : null;
-  if (typeof fn?.name !== "string") {
+function messagesTool(tool: JsonObject): Anthropic.Tool | null {
+  const definition = tool.function !== undefined && isObjectNode(tool.function) ? tool.function : null;
+  const fn = definition && keepMatching(FunctionTool, definition);
+  if (!definition || !fn) {
     return null;
   }
-  const parameters = isPlainObject(fn.parameters) ? fn.parameters : EMPTY_INPUT_SCHEMA;
-  if (!isInputSchema(parameters)) {
+  const parameters = definition.parameters !== undefined && isObjectNode(definition.parameters) ? definition.parameters : EMPTY_INPUT_SCHEMA;
+  if (!Value.Check(InputSchema, parameters)) {
     throw new LLMError(`tool ${fn.name} has parameters that are not an object schema`);
   }
   return {
     name: fn.name,
-    ...(typeof fn.description === "string" && fn.description ? { description: fn.description } : {}),
+    ...(fn.description === undefined ? {} : { description: fn.description }),
     input_schema: parameters,
   };
 }
 
-/** An OpenAI `tool_choice` as a Messages API one; null when it names nothing the API knows. */
-function messagesToolChoice(choice: unknown): Anthropic.ToolChoice | null {
+/** An OpenAI `tool_choice` as the Messages API's. */
+function messagesToolChoice(choice: ToolChoice): Anthropic.ToolChoice {
   if (choice === "auto") return { type: "auto" };
   if (choice === "none") return { type: "none" };
   if (choice === "required") return { type: "any" };
-  const fn = isPlainObject(choice) && isPlainObject(choice.function) ? choice.function : null;
-  return typeof fn?.name === "string" ? { type: "tool", name: fn.name } : null;
+  return { type: "tool", name: choice.function.name };
 }
 
 /** The Messages API effort a thinking level asks for; null for none. An effort the API does not take fails the call. */
@@ -235,7 +245,7 @@ function messagesEffort(model: string, level: string): Effort | null {
  * the catalog says the model takes one. The prompt is cached up to its last block.
  */
 export function messagesRequestBody(request: ModelRequest): Anthropic.MessageStreamParams {
-  const { upstream } = providerForModel(request.model);
+  const { model: upstream } = providerForModel(request.model);
   const { system, messages } = messagesFromHistory(request.messages);
   const body: Anthropic.MessageStreamParams = {
     model: upstream,
@@ -253,18 +263,22 @@ export function messagesRequestBody(request: ModelRequest): Anthropic.MessageStr
   } else if (modelCatalog.entry(request.model)?.temperature !== false) {
     body.temperature = request.temperature;
   }
-  const tools = (request.tools ?? []).map(messagesTool).filter((tool): tool is Anthropic.Tool => tool !== null);
+  // The tools arrive as the run's offered schemas; one that is not a JSON object names no function.
+  const tools = (request.tools ?? [])
+    .filter(isJsonObject)
+    .map(messagesTool)
+    .filter((tool): tool is Anthropic.Tool => tool !== null);
   if (tools.length) {
     body.tools = tools;
   }
-  const choice = request.tool_choice === undefined || request.tool_choice === null ? null : messagesToolChoice(request.tool_choice);
-  if (choice) {
-    body.tool_choice = choice;
+  if (Value.Check(ToolChoice, request.tool_choice)) {
+    body.tool_choice = messagesToolChoice(request.tool_choice);
   }
   return body;
 }
 
-const FINISH_REASONS: Record<string, string> = {
+/** The Chat Completions name of each reason a Messages API message stops for. */
+const FINISH_REASONS = {
   end_turn: "stop",
   stop_sequence: "stop",
   pause_turn: "stop",
@@ -272,7 +286,7 @@ const FINISH_REASONS: Record<string, string> = {
   max_tokens: "length",
   model_context_window_exceeded: "length",
   refusal: "content_filter",
-};
+} satisfies Record<Anthropic.StopReason, NonNullable<ChatCompletionChunk.Choice["finish_reason"]>>;
 
 /**
  * A finished Messages API message as the completion it assembles, before it is priced: the cache
@@ -289,7 +303,7 @@ function assembledMessage(message: Anthropic.Message, reasoning: string, request
       completion_tokens: message.usage.output_tokens,
       cache_read_input_tokens: cacheRead,
     },
-    finish_reason: FINISH_REASONS[message.stop_reason ?? ""] ?? "stop",
+    finish_reason: message.stop_reason === null ? "stop" : FINISH_REASONS[message.stop_reason],
     provider_request_id: requestId,
     reasoning,
   };
@@ -365,7 +379,7 @@ export async function listMessagesModels(
     if (error instanceof Anthropic.AuthenticationError || error instanceof Anthropic.PermissionDeniedError) {
       throw new LLMError(`${provider.label} rejected the key`);
     }
-    if (error instanceof Anthropic.APIError && typeof error.status === "number") {
+    if (error instanceof Anthropic.APIError && error.status !== undefined) {
       throw new LLMError(`${provider.label} did not accept the key (${error.status})`);
     }
     throw asLlmError(error, endpoint.apiKey);

@@ -9,11 +9,17 @@ const orgKey = "guilds-org-id";
 const userCookie = "guilds_user";
 const orgCookie = "guilds_org";
 
-const current: { mode: AuthMode | null; userId: string | null; orgId: string | null } = {
+/** How the server identifies a request, and the user and organisation the app acts as; null until known. */
+type Identity = { mode: AuthMode | null; userId: string | null; orgId: string | null };
+
+const current: Identity = {
   mode: null,
   userId: null,
   orgId: null,
 };
+
+/** The headers that say who a request acts as: its user and its organisation. */
+export type IdentityHeaders = { "X-Guilds-User"?: string; "X-Guilds-Org"?: string };
 
 function read(key: string): string | null {
   try {
@@ -69,11 +75,13 @@ export function rememberOrg(id: string | null): void {
 }
 
 /** Identity headers for API requests: the user only in compat-cookie mode, the org always. */
-export function identityHeaders(): Record<string, string> {
-  const headers: Record<string, string> = {};
-  if (current.mode === "compat-cookie" && current.userId) headers["X-Guilds-User"] = current.userId;
-  if (current.orgId) headers["X-Guilds-Org"] = current.orgId;
-  return headers;
+export function identityHeaders(): IdentityHeaders {
+  return {
+    ...(current.mode === "compat-cookie" && current.userId
+      ? { "X-Guilds-User": current.userId }
+      : {}),
+    ...(current.orgId ? { "X-Guilds-Org": current.orgId } : {}),
+  };
 }
 
 let signInPath: string | null = null;
